@@ -44,6 +44,7 @@ uniform float uAtlasRows;
 uniform float uPadding;
 uniform float uTime;
 uniform float uGlowSpeed;
+uniform float uMotion; // 1 = animate, 0 = prefers-reduced-motion (steady glow)
 uniform vec4 uGlowColor[4]; // rgb + intensity, indexed by NODE_STATES
 
 varying vec2 vUv;
@@ -62,7 +63,7 @@ void main() {
 
   int stateIndex = int(vState + 0.5);
   vec4 glow = uGlowColor[stateIndex];
-  float pulse = 0.65 + 0.35 * sin(uTime * uGlowSpeed + vGlowSeed * TAU);
+  float pulse = 0.65 + 0.35 * uMotion * sin(uTime * uGlowSpeed + vGlowSeed * TAU);
   float glowFalloff = smoothstep(1.05, 0.1, dist);
   float glowAlpha = glow.a * pulse * glowFalloff * (1.0 + vSelected * 0.6);
 

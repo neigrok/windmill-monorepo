@@ -24,6 +24,7 @@ void main() {
 export const connectorFragmentShader = /* glsl */ `
 uniform float uTime;
 uniform float uGrowDuration;
+uniform float uMotion; // 1 = animate growth, 0 = prefers-reduced-motion (snap to grown)
 uniform vec3 uColorInactive;
 uniform vec3 uColorActive;
 
@@ -32,7 +33,8 @@ varying float vAlongT;
 varying float vGrowStart;
 
 void main() {
-  float progress = clamp((uTime - vGrowStart) / uGrowDuration, 0.0, 1.0);
+  float swept = clamp((uTime - vGrowStart) / uGrowDuration, 0.0, 1.0);
+  float progress = mix(1.0, swept, uMotion);
   float revealed = 1.0 - smoothstep(progress - 0.08, progress, vAlongT);
   float lit = vActive * revealed;
 

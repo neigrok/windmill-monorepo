@@ -1,6 +1,10 @@
-import React from 'react';
-import { SkillTreeView } from './skilltree';
-import Showcase from './Showcase.jsx';
+import React, { Suspense, lazy } from 'react';
+
+// Both routes are lazy so the entry chunk is just React + the router: the
+// heavy WebGL route (three + troika) and the design-system showcase each load
+// on demand, and the first paint below shows instantly while they stream in.
+const SkillTreeView = lazy(() => import('./skilltree').then((m) => ({ default: m.SkillTreeView })));
+const Showcase = lazy(() => import('./Showcase.jsx'));
 
 function useHashRoute() {
   const [hash, setHash] = React.useState(() => window.location.hash);
@@ -12,8 +16,34 @@ function useHashRoute() {
   return hash;
 }
 
+function RouteFallback() {
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'var(--surface-canvas)',
+        color: 'var(--text-tertiary)',
+        fontFamily: 'var(--font-display)',
+        fontWeight: 800,
+        fontSize: 'var(--text-xl)',
+        letterSpacing: 'var(--tracking-wide)',
+      }}
+    >
+      Windmill
+    </div>
+  );
+}
+
 export default function App() {
   const route = useHashRoute();
-  if (route === '#/showcase') return <Showcase />;
-  return <SkillTreeView />;
+  const View = route === '#/showcase' ? Showcase : SkillTreeView;
+  return (
+    <Suspense fallback={<RouteFallback />}>
+      <View />
+    </Suspense>
+  );
 }

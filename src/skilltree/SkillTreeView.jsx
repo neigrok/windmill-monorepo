@@ -10,12 +10,12 @@ import { DetailPanel } from './ui/DetailPanel.jsx';
 import { Minimap } from './ui/Minimap.jsx';
 import { SkillTree } from './model/SkillTree.js';
 import { UnlockRules } from './model/UnlockRules.js';
-import { DagreLayoutEngine } from './layout/DagreLayoutEngine.js';
+import { WorkerLayoutEngine } from './layout/WorkerLayoutEngine.js';
 import { applyNudges } from './layout/applyNudges.js';
 import { MockTreeRepository } from './mock/MockTreeRepository.js';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
 
-const layoutEngine = new DagreLayoutEngine();
+const layoutEngine = new WorkerLayoutEngine();
 const EMPTY_BOUNDS = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 
 export function SkillTreeView() {
@@ -66,7 +66,7 @@ export function SkillTreeView() {
       const nextTree = new SkillTree(await repo.loadTree());
       const progress = await repo.loadProgress(nextTree.id);
       const states = UnlockRules.derive(nextTree, progress);
-      const positions = applyNudges(layoutEngine.layout(nextTree), nextTree);
+      const positions = applyNudges(await layoutEngine.layout(nextTree), nextTree);
       const model = nextTree.toRenderModel(positions, states);
       if (cancelled) return;
 

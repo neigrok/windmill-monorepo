@@ -85,6 +85,7 @@ export class ConnectorLayer {
       side: THREE.DoubleSide,
       uniforms: {
         uTime: { value: 0 },
+        uMotion: { value: 1 },
         uGrowDuration: { value: GROW_DURATION },
         uColorInactive: { value: new THREE.Color(CONNECTOR.inactive) },
         uColorActive: { value: new THREE.Color(CONNECTOR.active) },

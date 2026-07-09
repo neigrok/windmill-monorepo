@@ -48,6 +48,7 @@ export class NodeLayer {
       depthTest: true,
       uniforms: {
         uTime: { value: 0 },
+        uMotion: { value: 1 },
         uAtlas: { value: atlas.texture },
         uAtlasCols: { value: atlas.cols },
         uAtlasRows: { value: atlas.rows },

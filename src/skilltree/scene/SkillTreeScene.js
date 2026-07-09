@@ -45,6 +45,15 @@ export class SkillTreeScene {
     this.connectorLayer = new ConnectorLayer();
     this.labelLayer = new LabelLayer(this.scene);
 
+    this.motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    this.applyMotion = () => {
+      const motion = this.motionQuery.matches ? 0 : 1;
+      this.nodeLayer.material.uniforms.uMotion.value = motion;
+      this.connectorLayer.material.uniforms.uMotion.value = motion;
+    };
+    this.applyMotion();
+    this.motionQuery.addEventListener('change', this.applyMotion);
+
     this.scene.add(this.connectorLayer.mesh);
     this.scene.add(this.nodeLayer.mesh);
 
@@ -145,6 +154,7 @@ export class SkillTreeScene {
   dispose() {
     this.stop();
     this.unbindEvents();
+    this.motionQuery.removeEventListener('change', this.applyMotion);
     this.scene.remove(this.connectorLayer.mesh, this.nodeLayer.mesh);
     this.nodeLayer.dispose();
     this.connectorLayer.dispose();
