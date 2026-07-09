@@ -19,6 +19,11 @@ import {
   Info,
   Flag,
   Check,
+  ZoomIn,
+  ZoomOut,
+  Maximize,
+  X,
+  ExternalLink,
 } from 'lucide-react';
 
 /**
@@ -51,6 +56,11 @@ const REGISTRY = {
   info: Info,
   flag: Flag,
   check: Check,
+  'zoom-in': ZoomIn,
+  'zoom-out': ZoomOut,
+  maximize: Maximize,
+  x: X,
+  'external-link': ExternalLink,
 };
 
 export function Icon({ name, size = 16, strokeWidth = 2, color = 'currentColor', style }) {
