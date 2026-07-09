@@ -1,6 +1,6 @@
 ## Project
 
-Mapping tables is a module that will be included by other hosts
+Windmill is highly animated and performant three.js app for building roadmaps in a form of RPG skill tree.
 
 ## Architecture & Design
 Optimize for the reader, not the writer. Code is read far more than it's written — favor the obvious over the clever
@@ -25,8 +25,6 @@ For a small, self-contained feature area (one file format, one integration), pre
 
 use constructors on entities instead of helper functions
 When working with API endpoints, for models that come in name them with Request suffix, for outgoing name with Response suffix.
-Dont use from collections.abc import Mapping or from typing import Mapping for type notations, use dict.
-Dont use assert_never, raise ValueError instead.
 Dont write docstrings or multiline commentaries.
 
 If you have an abstraction with different implementations. put abstraction and all required data structures in a single file, but all implementations should be contained in their own files. Unless implementations are small and can be placed in a single file
@@ -46,7 +44,6 @@ in if-else statements do early returns rather then assigning variables
 
 ## Workflow & Tooling
 
-You have poetry runtime in this project, so use poetry directly or .venv/bin/python
 Stage your changes when you're done with the phase (or iteration)
 After each phase note observarions you had that can enhance overall structure of the program or/and performance
 Keep a running log of such observations in .md file and execute ones you find most important
