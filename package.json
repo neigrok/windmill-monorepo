@@ -16,9 +16,7 @@
     "@fontsource/nunito": "^5.2.7",
     "lucide-react": "^0.400.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "three": "^0.185.1",
-    "troika-three-text": "^0.52.4"
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
