@@ -11,7 +11,7 @@ const ICONS = [
 const ROOT_COUNT = 4;
 const MIN_FAN_OUT = 2;
 const FAN_OUT_SPREAD = 3; // fan-out is MIN_FAN_OUT..MIN_FAN_OUT+FAN_OUT_SPREAD-1, i.e. 2..4
-const CROSS_LINK_CHANCE = 0.08;
+const CROSS_LINK_CHANCE = 0.05;
 
 function mulberry32(seed) {
   let state = seed >>> 0;
@@ -41,14 +41,19 @@ export function generateBigTree(count = 5000, seed = 1) {
   let layer = [];
   for (let i = 0; i < rootCount; i++) layer.push(addNode([]));
   const layers = [layer];
+  const parentIndexOf = new Map();
 
   while (nodes.length < count) {
     const previous = layers[layers.length - 1];
     const nextLayer = [];
-    for (const parent of previous) {
-      if (nodes.length >= count) break;
+    for (let pIdx = 0; pIdx < previous.length && nodes.length < count; pIdx++) {
+      const parent = previous[pIdx];
       const fanOut = MIN_FAN_OUT + Math.floor(random() * FAN_OUT_SPREAD);
-      for (let i = 0; i < fanOut && nodes.length < count; i++) nextLayer.push(addNode([parent.id]));
+      for (let i = 0; i < fanOut && nodes.length < count; i++) {
+        const child = addNode([parent.id]);
+        parentIndexOf.set(child, pIdx);
+        nextLayer.push(child);
+      }
     }
     if (nextLayer.length === 0) break;
     layers.push(nextLayer);
@@ -59,7 +64,11 @@ export function generateBigTree(count = 5000, seed = 1) {
     if (previous.length < 2) continue;
     for (const node of layers[rank]) {
       if (random() >= CROSS_LINK_CHANCE) continue;
-      const candidate = pick(random, previous);
+      // A *local* second prerequisite: a node beside this one's parent, so the
+      // diamond stays short and doesn't slash across branches.
+      const offset = (random() < 0.5 ? -1 : 1) * (1 + Math.floor(random() * 2));
+      const idx = Math.max(0, Math.min(previous.length - 1, parentIndexOf.get(node) + offset));
+      const candidate = previous[idx];
       if (candidate.id === node.prerequisites[0]) continue;
       node.prerequisites.push(candidate.id);
     }

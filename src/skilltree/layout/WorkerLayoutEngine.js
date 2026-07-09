@@ -8,6 +8,7 @@ import { NODE_SIZE } from '../theme.js';
 
 const NODE_SEPARATION = NODE_SIZE * 1.6;
 const RANK_SEPARATION = NODE_SIZE * 2.4;
+const NETWORK_SIMPLEX_MAX = 800;
 
 export class WorkerLayoutEngine extends LayoutEngine {
   constructor() {
@@ -20,11 +21,14 @@ export class WorkerLayoutEngine extends LayoutEngine {
   layout(tree) {
     const worker = this.ensureWorker();
     const id = this.nextId++;
+    // network-simplex is the tightest ranker but superlinear on big diamond-heavy
+    // DAGs; use the O(V+E) longest-path ranker only for the large stress tree.
+    const ranker = tree.nodes.length <= NETWORK_SIMPLEX_MAX ? 'network-simplex' : 'longest-path';
     const request = {
       id,
       nodes: tree.nodes.map((node) => node.id),
       edges: tree.edges,
-      cfg: { rankdir: 'TB', nodesep: NODE_SEPARATION, ranksep: RANK_SEPARATION, ranker: 'longest-path', nodeSize: NODE_SIZE },
+      cfg: { rankdir: 'TB', nodesep: NODE_SEPARATION, ranksep: RANK_SEPARATION, ranker, nodeSize: NODE_SIZE },
     };
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject });

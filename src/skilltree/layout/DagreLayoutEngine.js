@@ -7,18 +7,20 @@ import { NODE_SIZE } from '../theme.js';
 
 const NODE_SEPARATION = NODE_SIZE * 1.6;
 const RANK_SEPARATION = NODE_SIZE * 2.4;
+const NETWORK_SIMPLEX_MAX = 800;
 
 export class DagreLayoutEngine extends LayoutEngine {
   layout(tree) {
     const graph = new dagre.graphlib.Graph();
-    // 'longest-path': the default 'network-simplex' ranker is superlinear on
-    // diamond-heavy DAGs (minutes at 5,000 nodes); this stays O(V+E) and
-    // agrees with SkillTree.ranks(), which is also longest-path depth.
+    // network-simplex gives the tightest, least-tangled layout but is superlinear
+    // on big diamond-heavy DAGs; fall back to the O(V+E) longest-path ranker only
+    // for the large stress tree.
+    const ranker = tree.nodes.length <= NETWORK_SIMPLEX_MAX ? 'network-simplex' : 'longest-path';
     graph.setGraph({
       rankdir: 'TB',
       nodesep: NODE_SEPARATION,
       ranksep: RANK_SEPARATION,
-      ranker: 'longest-path',
+      ranker,
     });
     graph.setDefaultEdgeLabel(() => ({}));
 
