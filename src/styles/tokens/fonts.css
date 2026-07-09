@@ -1,0 +1,10 @@
+/* Font substitution notice: no font files were provided with the brand brief.
+   Baloo 2 (display, rounded/bold), Nunito (body/UI, rounded), and JetBrains Mono
+   (numeric) are the nearest free Google Fonts matches for a "warm rounded sans"
+   direction. The @font-face load happens via <link> in index.html; swap in
+   licensed brand fonts if/when available (update index.html + these vars). */
+:root {
+  --font-display: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif;
+  --font-body: 'Nunito', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+}

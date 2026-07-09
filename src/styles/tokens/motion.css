@@ -1,0 +1,46 @@
+:root {
+  --ease-soft: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-glow: cubic-bezier(0.45, 0, 0.15, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --duration-fast: 150ms;
+  --duration-base: 280ms;
+  --duration-slow: 480ms;
+  --duration-glow: 2400ms;
+}
+
+@keyframes wm-fade-in-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes wm-pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(188, 108, 66, 0.18), 0 0 18px rgba(188, 108, 66, 0.28); }
+  50% { box-shadow: 0 0 0 6px rgba(188, 108, 66, 0.28), 0 0 32px rgba(188, 108, 66, 0.45); }
+}
+
+@keyframes wm-pulse-glow-gold {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(196, 151, 47, 0.18), 0 0 18px rgba(196, 151, 47, 0.28); }
+  50% { box-shadow: 0 0 0 6px rgba(196, 151, 47, 0.28), 0 0 32px rgba(196, 151, 47, 0.45); }
+}
+
+@keyframes wm-pulse-glow-olive {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(125, 140, 67, 0.18), 0 0 18px rgba(125, 140, 67, 0.28); }
+  50% { box-shadow: 0 0 0 6px rgba(125, 140, 67, 0.28), 0 0 32px rgba(125, 140, 67, 0.45); }
+}
+
+@keyframes wm-grow-path {
+  from { stroke-dashoffset: var(--path-length, 300); }
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes wm-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes wm-pop-in {
+  0% { opacity: 0; transform: scale(0.85); }
+  60% { opacity: 1; transform: scale(1.04); }
+  100% { transform: scale(1); }
+}

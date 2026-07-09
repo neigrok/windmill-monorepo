@@ -1,0 +1,122 @@
+:root {
+  /* ---- Neutrals (warm Tuscan cream/sand, not cold gray) ---- */
+  --neutral-0: #FFFFFF;
+  --neutral-25: #FDFBF6;
+  --neutral-50: #F9F5EB;
+  --neutral-100: #F1EADA;
+  --neutral-200: #E5D9C0;
+  --neutral-300: #D3C2A0;
+  --neutral-400: #B29F7B;
+  --neutral-500: #92805F;
+  --neutral-600: #6F5F45;
+  --neutral-700: #514431;
+  --neutral-800: #372E21;
+  --neutral-900: #211B13;
+
+  /* ---- Accent: Terracotta (primary brand — sun-baked clay) ---- */
+  --accent-terracotta-50: #F9EFE9;
+  --accent-terracotta-100: #F3DFD2;
+  --accent-terracotta-200: #EAC6B0;
+  --accent-terracotta-400: #D08A5E;
+  --accent-terracotta-500: #BC6C42;
+  --accent-terracotta-600: #9D5330;
+  --accent-terracotta-700: #7C3F23;
+
+  /* ---- Accent: Olive (growth / available / success) ---- */
+  --accent-olive-50: #F3F4E4;
+  --accent-olive-100: #E7EBCB;
+  --accent-olive-200: #D2DAA5;
+  --accent-olive-400: #9AA859;
+  --accent-olive-500: #7D8C43;
+  --accent-olive-600: #616E33;
+
+  /* ---- Accent: Gold (ochre — ripening / warning / flourish) ---- */
+  --accent-gold-50: #FAF3DF;
+  --accent-gold-100: #F5E7BE;
+  --accent-gold-200: #EEDA9E;
+  --accent-gold-400: #D9B04C;
+  --accent-gold-500: #C4972F;
+  --accent-gold-600: #A17822;
+
+  /* ---- Accent: Brick (danger — deep fired clay) ---- */
+  --accent-brick-50: #F7E9E5;
+  --accent-brick-200: #E4B6A8;
+  --accent-brick-400: #BF6A50;
+  --accent-brick-500: #A84E35;
+  --accent-brick-600: #8A3A26;
+
+  /* ---- Accent: Sky (muted Tuscan sky — info only) ---- */
+  --accent-sky-50: #EDF2F4;
+  --accent-sky-200: #C4D5DC;
+  --accent-sky-400: #7FA0AE;
+  --accent-sky-500: #5F8494;
+  --accent-sky-600: #4A6875;
+
+  /* ---- Surfaces ---- */
+  --surface-canvas: var(--neutral-50);
+  --surface-card: var(--neutral-0);
+  --surface-sunken: var(--neutral-100);
+  --surface-hover: var(--neutral-100);
+  --surface-overlay: rgba(33, 27, 19, 0.45);
+  --surface-inverse: var(--neutral-900);
+
+  /* ---- Borders ---- */
+  --border-subtle: var(--neutral-200);
+  --border-default: var(--neutral-300);
+  --border-strong: var(--neutral-400);
+
+  /* ---- Text ---- */
+  --text-primary: var(--neutral-900);
+  --text-secondary: var(--neutral-600);
+  --text-tertiary: var(--neutral-500);
+  --text-on-accent: #FFFFFF;
+  --text-link: var(--accent-terracotta-600);
+  --text-link-hover: var(--accent-terracotta-700);
+
+  /* ---- Semantic ---- */
+  --color-success: var(--accent-olive-500);
+  --color-success-bg: var(--accent-olive-50);
+  --color-warning: var(--accent-gold-500);
+  --color-warning-bg: var(--accent-gold-50);
+  --color-danger: var(--accent-brick-500);
+  --color-danger-bg: var(--accent-brick-50);
+  --color-info: var(--accent-sky-500);
+  --color-info-bg: var(--accent-sky-50);
+
+  /* ---- Brand primary (used for CTAs / focus rings) ---- */
+  --color-brand: var(--accent-terracotta-500);
+  --color-brand-hover: var(--accent-terracotta-600);
+  --color-brand-active: var(--accent-terracotta-700);
+  --color-brand-soft: var(--accent-terracotta-50);
+
+  /* ---- Skill-tree fruit states: bud → olive → ripening gold → ripe terracotta ---- */
+  --node-locked-fill: var(--neutral-100);
+  --node-locked-border: var(--neutral-300);
+  --node-locked-icon: var(--neutral-400);
+
+  --node-available-fill: var(--neutral-0);
+  --node-available-border: var(--accent-olive-500);
+  --node-available-icon: var(--accent-olive-600);
+  --node-available-glow: rgba(125, 140, 67, 0.45);
+
+  --node-active-fill: var(--accent-gold-50);
+  --node-active-border: var(--accent-gold-500);
+  --node-active-icon: var(--accent-gold-600);
+  --node-active-glow: rgba(196, 151, 47, 0.42);
+
+  --node-complete-fill: var(--accent-terracotta-500);
+  --node-complete-border: var(--accent-terracotta-600);
+  --node-complete-icon: #FFFFFF;
+  --node-complete-glow: rgba(188, 108, 66, 0.5);
+
+  --connector-inactive: var(--neutral-300);
+  --connector-active: var(--color-bark);
+
+  /* ---- Nature motif: bark & leaf (organic branches + fruit nodes) ---- */
+  --color-bark: #9C6B44;
+  --color-bark-dry: var(--neutral-300);
+  --color-bark-shadow: #7D5232;
+  --color-leaf: var(--accent-olive-500);
+  --color-leaf-light: var(--accent-olive-400);
+  --color-leaf-vein: var(--accent-olive-600);
+}
