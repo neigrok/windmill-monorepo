@@ -17,12 +17,12 @@ const PORT_COUNT = 2;
 const GRACE_MS = 260; // keep chrome alive after leaving the node, so the plus is reachable
 
 export class AffordanceLayer {
-  constructor(canvas, { camera, pick, onCreate, onConnect } = {}) {
+  constructor(canvas, { camera, pick, onCreate, onConnect, onReconnect } = {}) {
     this.onCreate = onCreate;
     this.container = document.createElement('div');
     this.container.className = 'st-affordances';
     canvas.parentElement.appendChild(this.container);
-    this.connectGesture = new ConnectGesture(canvas, this.container, { camera, pick, onConnect });
+    this.connectGesture = new ConnectGesture(canvas, this.container, { camera, pick, onConnect, onReconnect });
 
     this.plus = document.createElement('div');
     this.plus.className = 'st-plus';

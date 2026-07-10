@@ -1,20 +1,23 @@
-// Dragging a connection from a node's rim port to another node (design editing-spec
-// §03). A dashed ghost branch follows the cursor; the node under it gets an olive
+// Dragging one end of a branch to a node (design editing-spec §03–§04). A dashed
+// ghost follows the cursor from the pinned end; the node under it gets an olive
 // ring when it's a valid target, or a brick ring + "would create a loop" tip when
-// dropping there would make a cycle (the source's ancestors). Cycles are shown —
-// and blocked — before the drop; releasing on a valid target fires onConnect, on
-// anything else it just retracts.
+// dropping there would make a cycle. Two entry points share the gesture: `start`
+// pulls a brand-new edge from a rim port, `startReconnect` re-aims one end of an
+// existing edge — same targeting, same cycle guard, one drops onConnect, the other
+// onReconnect. Reconnect judges cycles against the graph with the old edge already
+// removed, so dropping back where it started is a no-op rather than a false loop.
 import { NODE_SIZE } from '../theme.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 const NODE_RADIUS = NODE_SIZE * 0.42;
 
 export class ConnectGesture {
-  constructor(canvas, container, { camera, pick, onConnect }) {
+  constructor(canvas, container, { camera, pick, onConnect, onReconnect }) {
     this.canvas = canvas;
     this.camera = camera;
     this.pick = pick;
     this.onConnect = onConnect;
+    this.onReconnect = onReconnect;
     this.nodesById = new Map();
     this.parents = new Map();
     this.active = null;
@@ -41,14 +44,38 @@ export class ConnectGesture {
     this.parents = parents;
   }
 
+  // Rim port → a brand-new edge sourceId → target.
   start(sourceId, event) {
     if (!sourceId || !this.nodesById.has(sourceId)) return;
+    this.begin(event, {
+      mode: 'create',
+      anchorId: sourceId,
+      parents: this.parents,
+      resolve: (hit) => ({ from: sourceId, to: hit }),
+    });
+  }
+
+  // Edge endpoint handle → re-aim one end; the other stays pinned as the anchor.
+  startReconnect(edge, movingEnd, event) {
+    if (!this.nodesById.has(edge.from) || !this.nodesById.has(edge.to)) return;
+    this.begin(event, {
+      mode: 'reconnect',
+      edge,
+      anchorId: movingEnd === 'from' ? edge.to : edge.from,
+      parents: this.parentsWithout(edge.from, edge.to),
+      resolve: movingEnd === 'from'
+        ? (hit) => ({ from: hit, to: edge.to })
+        : (hit) => ({ from: edge.from, to: hit }),
+    });
+  }
+
+  begin(event, active) {
     event.stopPropagation();
     this.captureEl = event.target;
     this.captureEl.setPointerCapture(event.pointerId);
     this.captureEl.addEventListener('pointermove', this.onMove);
     this.captureEl.addEventListener('pointerup', this.onUp);
-    this.active = { sourceId, pointerId: event.pointerId, targetId: null, ancestors: this.ancestorsOf(sourceId) };
+    this.active = { ...active, pointerId: event.pointerId, result: null };
     this.svg.classList.add('st-connect--on');
     this.onMove(event);
   }
@@ -59,13 +86,16 @@ export class ConnectGesture {
     const rect = this.canvas.getBoundingClientRect();
     const px = event.clientX - rect.left;
     const py = event.clientY - rect.top;
-    const source = this.nodesById.get(this.active.sourceId);
-    const sx = (source.x - cam.x) * cam.zoom + cam.viewportWidth / 2;
-    const sy = (source.y - cam.y) * cam.zoom + cam.viewportHeight / 2;
+    const anchor = this.nodesById.get(this.active.anchorId);
+    const ax = (anchor.x - cam.x) * cam.zoom + cam.viewportWidth / 2;
+    const ay = (anchor.y - cam.y) * cam.zoom + cam.viewportHeight / 2;
 
     const hit = this.pick(px, py);
-    const cyclic = hit && this.active.ancestors.has(hit);
-    const valid = hit && hit !== this.active.sourceId && !cyclic && !(this.parents.get(hit) || []).includes(this.active.sourceId);
+    const { from, to } = hit ? this.active.resolve(hit) : { from: null, to: null };
+    const eff = this.active.parents;
+    const cyclic = hit && from !== to && this.isAncestor(to, from, eff);
+    const connected = hit && from !== to && (eff.get(to) || []).includes(from);
+    const valid = hit && from !== to && !cyclic && !connected;
 
     let ex = px;
     let ey = py;
@@ -80,8 +110,8 @@ export class ConnectGesture {
       this.hideRing();
       this.hideTip();
     }
-    this.active.targetId = valid ? hit : null;
-    this.path.setAttribute('d', this.curve(sx, sy, ex, ey));
+    this.active.result = valid ? { from, to } : null;
+    this.path.setAttribute('d', this.curve(ax, ay, ex, ey));
   };
 
   onUp = (event) => {
@@ -89,24 +119,36 @@ export class ConnectGesture {
     if (this.captureEl.hasPointerCapture(event.pointerId)) this.captureEl.releasePointerCapture(event.pointerId);
     this.captureEl.removeEventListener('pointermove', this.onMove);
     this.captureEl.removeEventListener('pointerup', this.onUp);
-    const { sourceId, targetId } = this.active;
+    const { mode, edge, result } = this.active;
     this.active = null;
     this.svg.classList.remove('st-connect--on');
     this.hideRing();
     this.hideTip();
-    if (targetId && this.onConnect) this.onConnect(sourceId, targetId);
+    if (!result) return;
+    if (mode === 'create') { if (this.onConnect) this.onConnect(result.from, result.to); return; }
+    if (result.from === edge.from && result.to === edge.to) return; // dropped back on its own end
+    if (this.onReconnect) this.onReconnect(edge.from, edge.to, result.from, result.to);
   };
 
-  ancestorsOf(id) {
+  // A copy of the parents map with one edge removed — the pending graph a reconnect
+  // is judged against, so the edge being moved never counts against itself.
+  parentsWithout(from, to) {
+    const clone = new Map();
+    for (const [id, list] of this.parents) clone.set(id, id === to ? list.filter((p) => p !== from) : list);
+    return clone;
+  }
+
+  isAncestor(ancestor, of, parents) {
+    const stack = [...(parents.get(of) || [])];
     const seen = new Set();
-    const stack = [...(this.parents.get(id) || [])];
     while (stack.length > 0) {
       const parent = stack.pop();
+      if (parent === ancestor) return true;
       if (seen.has(parent)) continue;
       seen.add(parent);
-      stack.push(...(this.parents.get(parent) || []));
+      stack.push(...(parents.get(parent) || []));
     }
-    return seen;
+    return false;
   }
 
   curve(sx, sy, ex, ey) {

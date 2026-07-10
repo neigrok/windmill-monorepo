@@ -272,9 +272,24 @@ one undoable step; the target keeps its other parents — removing an edge never
 Grace window keeps the × reachable, same as the node affordances. Verified headless: hovering a
 branch shows the ×, clicking it drops the edge (node count unchanged), ⌘Z restores.
 
-Reconnect (§04) adds endpoint **handles** to this same chrome next (drag to re-aim, reusing the
-ConnectGesture targeting + cycle guard). The **unlinked** visual (§5.2: gold dashed ring + tag when
-a node loses its last branch) rides on the deferred `bud-state` dashed treatment.
+The **unlinked** visual (§5.2: gold dashed ring + tag when a node loses its last branch) rides on
+the deferred `bud-state` dashed treatment.
+
+## Editing: reconnect an edge
+
+`ConnectGesture` now serves both create and reconnect from one body: `start` pulls a new edge from a
+rim port; `startReconnect(edge, movingEnd)` re-aims one end while the other stays pinned as the ghost
+anchor. Same targeting, same cycle tip. Reconnect judges cycles against a `parentsWithout(old edge)`
+copy, so dropping back on the original end is a clean no-op and every other drop is scored against the
+pending shape. The two endpoint handles live on `EdgeChrome` (alongside the delete ×); pressing one
+hands `(edge, end)` to the shared gesture via the scene. Drop on a valid node → `edits.reconnectEdge`
+(removeEdge ∘ addEdge) as one undo step; the child keeps its other parents. Verified headless: dragging
+the parent-end of product→domain onto renderer re-tethers domain to renderer, ⌘Z restores product.
+
+Gotcha worth keeping: overlay chips that are re-placed every frame from the render loop must NOT put
+`transform` in their CSS `transition` — the per-frame reposition then animates instead of snapping, so
+the chip perpetually lags the cursor and never sits where a pointerdown lands. Handles/× transition
+opacity only (the delete × was already correct; the handle had to drop its `transform` transition).
 
 ## Observations / follow-ups (not blocking)
 - **Three visual tiers over 4 model states.** `nodeTier` folds active+complete into

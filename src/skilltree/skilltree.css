@@ -493,3 +493,26 @@
   border-color: var(--accent-brick-500);
   color: #fff;
 }
+.st-edge-handle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid var(--color-bark);
+  border-radius: 50%;
+  background: var(--surface-card);
+  cursor: grab;
+  opacity: 0;
+  pointer-events: none;
+  box-shadow: var(--shadow-sm);
+  transition: opacity var(--duration-fast) var(--ease-soft);
+  will-change: transform, opacity;
+}
+.st-edgechrome--on .st-edge-handle {
+  opacity: 1;
+  pointer-events: auto;
+}
+.st-edge-handle:hover {
+  background: var(--color-bark);
+}

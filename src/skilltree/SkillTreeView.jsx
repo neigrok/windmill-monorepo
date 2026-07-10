@@ -15,7 +15,7 @@ import { applyNudges } from './layout/applyNudges.js';
 import { MockTreeRepository } from './mock/MockTreeRepository.js';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
 import { TreeEditor } from './editing/TreeEditor.js';
-import { repositionNode, addChildNode, renameNode, deleteNode, addEdge, removeEdge, setNodeColor } from './editing/edits.js';
+import { repositionNode, addChildNode, renameNode, deleteNode, addEdge, removeEdge, reconnectEdge, setNodeColor } from './editing/edits.js';
 import { NODE_SIZE } from './theme.js';
 
 const layoutEngine = new WorkerLayoutEngine();
@@ -162,6 +162,14 @@ export function SkillTreeView() {
     if (editor.commit(removeEdge(editor.treeData, sourceId, targetId))) syncStructure();
   }, [syncStructure]);
 
+  // Drag an edge endpoint to a new node → re-aim it in one undoable step. The
+  // gesture already blocked cycles and dropping back on the original end.
+  const handleReconnect = useCallback((oldFrom, oldTo, newFrom, newTo) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    if (editor.commit(reconnectEdge(editor.treeData, oldFrom, oldTo, newFrom, newTo))) syncStructure();
+  }, [syncStructure]);
+
   // Delete a node; its children splice up to the deleted node's parents (one
   // history step). The one destructive edit that earns a toast.
   const deleteNodeAt = useCallback((id) => {
@@ -192,6 +200,7 @@ export function SkillTreeView() {
       onDeleteNode: deleteNodeAt,
       onSetKind: handleSetKind,
       onDeleteEdge: handleDeleteEdge,
+      onReconnectEdge: handleReconnect,
     });
     sceneRef.current = nextScene;
     setScene(nextScene);
@@ -206,7 +215,7 @@ export function SkillTreeView() {
       sceneRef.current = null;
       setScene(null);
     };
-  }, [handleNodeMoved, handleCreateChild, handleBeginRename, handleConnect, deleteNodeAt, handleSetKind, handleDeleteEdge]);
+  }, [handleNodeMoved, handleCreateChild, handleBeginRename, handleConnect, deleteNodeAt, handleSetKind, handleDeleteEdge, handleReconnect]);
 
   // Keyboard: ⌘Z / ⇧⌘Z history, ⌫ / Delete removes the selection.
   useEffect(() => {

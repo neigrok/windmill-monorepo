@@ -44,6 +44,12 @@ export function removeEdge(treeData, sourceId, targetId) {
   };
 }
 
+// Re-aim one end of an edge: drop the old dependency and add the new one, as a
+// single transform → one undo step (the child keeps its other parents).
+export function reconnectEdge(treeData, oldFrom, oldTo, newFrom, newTo) {
+  return addEdge(removeEdge(treeData, oldFrom, oldTo), newFrom, newTo);
+}
+
 export function renameNode(treeData, id, label) {
   return {
     ...treeData,

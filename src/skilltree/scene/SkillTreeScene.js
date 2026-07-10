@@ -51,6 +51,7 @@ export class SkillTreeScene {
       pick: (x, y) => this.pick(x, y),
       onCreate: (id) => this.options.onCreateChild && this.options.onCreateChild(id),
       onConnect: (sourceId, targetId) => this.options.onConnectNodes && this.options.onConnectNodes(sourceId, targetId),
+      onReconnect: (oldFrom, oldTo, newFrom, newTo) => this.options.onReconnectEdge && this.options.onReconnectEdge(oldFrom, oldTo, newFrom, newTo),
     });
     this.selectionBar = new SelectionBar(canvas, {
       onRename: (id) => this.beginRename(id),
@@ -59,6 +60,7 @@ export class SkillTreeScene {
     });
     this.edgeChrome = new EdgeChrome(canvas, {
       onDeleteEdge: (from, to) => this.options.onDeleteEdge && this.options.onDeleteEdge(from, to),
+      onReconnectStart: (edge, end, event) => this.affordanceLayer.connectGesture.startReconnect(edge, end, event),
     });
 
     this.motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');

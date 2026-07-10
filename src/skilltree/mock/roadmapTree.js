@@ -42,7 +42,7 @@ export const roadmapTree = {
     { id: 'edit-mode', label: 'Always-editable mode', icon: 'pencil', color: 'terracotta', status: 'complete', prerequisites: ['edit-affordances', 'command-layer'] },
     { id: 'create-node', label: 'Create node', icon: 'plus', color: 'terracotta', status: 'complete', prerequisites: ['edit-mode', 'bud-state'] },
     { id: 'connect', label: 'Connect + cycle guard', icon: 'plug', color: 'terracotta', status: 'complete', prerequisites: ['edit-mode', 'domain'] },
-    { id: 'reconnect', label: 'Reconnect edge', icon: 'wifi', color: 'terracotta', status: 'available', prerequisites: ['connect'] },
+    { id: 'reconnect', label: 'Reconnect edge', icon: 'wifi', color: 'terracotta', status: 'complete', prerequisites: ['connect'] },
     { id: 'delete-edge', label: 'Delete edge', icon: 'x', color: 'terracotta', status: 'complete', prerequisites: ['connect', 'bud-state'] },
     { id: 'delete-node', label: 'Delete node + splice', icon: 'trash-2', color: 'terracotta', status: 'complete', prerequisites: ['create-node'] },
     { id: 'reorder', label: 'Move / reorder', icon: 'grid-3x3', color: 'terracotta', status: 'locked', prerequisites: ['radial-layout', 'edit-mode'] },
