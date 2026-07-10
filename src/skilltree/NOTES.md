@@ -197,14 +197,15 @@ revisit only with edge-bundling / cross-branch de-emphasis if a real tree-like r
 ## Editing: create node (first structural gesture)
 
 The plus is live (editing-spec §02), and it's the first structural edit through the command
-layer. Flow: hover → `AffordanceLayer` plus click → `scene.onCreateChild(parentId)` → the view
-spawns a child just below the parent (`addChildNode`, inheriting the parent's kind, a
-`position` override so nothing else re-lays-out) as an **uncommitted draft** (`draftRef`) and
-opens an inline `<input>` over it. ↵ commits `addChildNode` with the name as **one** history
-step; esc/blank discards the draft with no history entry. So `syncStructure` renders
-`draftRef ?? editor.treeData`. The new node's tier falls out of UnlockRules like any other
-(child of a done node → available). Verified headless: create adds one node (inherits kind,
-tethered, positioned), and ⌘Z removes it.
+layer. Clicking + **commits a child immediately** (saved even unnamed) — `scene.onCreateChild`
+→ `addChildNode` (inherits the parent's kind, a `position` override so nothing else
+re-lays-out) → `editor.commit`, then an inline `<input>` opens over it to name it optionally.
+↵ / blur amends the label in place (`editor.amend` — create + name stay **one** undo step); a
+blank name is fine. Clicking + again first saves the last one, then adds another (successive
+new children spread by `SIBLING_GAP` so they don't stack). While the field is focused its
+keydown `stopPropagation`s, so ⌘Z there undoes your typing, not the tree — close the field then
+⌘Z removes the node. The new node's tier falls out of UnlockRules (child of a done node →
+available). Verified headless: 3 unnamed creates spread and save; ⌘Z removes them one at a time.
 
 We adopted the design's **always-editable** model (§01A, the recommended one): no mode toggle —
 hover shows affordances, click opens detail, drag moves, the plus creates. That's why `edit-mode`

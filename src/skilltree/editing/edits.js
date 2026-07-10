@@ -19,3 +19,10 @@ export function addChildNode(treeData, { id, label, icon, color, parentId, x, y 
   const node = { id, label, icon, color, prerequisites: [parentId], position: { x, y } };
   return { ...treeData, nodes: [...treeData.nodes, node] };
 }
+
+export function renameNode(treeData, id, label) {
+  return {
+    ...treeData,
+    nodes: treeData.nodes.map((node) => (node.id === id ? { ...node, label } : node)),
+  };
+}

@@ -15,12 +15,13 @@ import { applyNudges } from './layout/applyNudges.js';
 import { MockTreeRepository } from './mock/MockTreeRepository.js';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
 import { TreeEditor } from './editing/TreeEditor.js';
-import { repositionNode, addChildNode } from './editing/edits.js';
+import { repositionNode, addChildNode, renameNode } from './editing/edits.js';
 import { NODE_SIZE } from './theme.js';
 
 const layoutEngine = new WorkerLayoutEngine();
 const EMPTY_BOUNDS = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 const CHILD_DROP = NODE_SIZE * 2.6; // world units a new child spawns below its parent
+const SIBLING_GAP = NODE_SIZE * 1.8; // horizontal spread between successive new children
 const NEW_NODE_ICON = 'sparkles';
 
 export function SkillTreeView() {
@@ -31,8 +32,8 @@ export function SkillTreeView() {
   const editorRef = useRef(null);
   const rawLayoutRef = useRef(new Map());
   const completedRef = useRef(new Set());
-  const draftRef = useRef(null); // an uncommitted TreeData shown while naming a new node
-  const pendingCreateRef = useRef(null); // params of the node being named
+  const namingIdRef = useRef(null); // id of the just-created node whose name field is open
+  const nameValueRef = useRef('');
 
   const [datasetSize, setDatasetSize] = useState('demo');
   const [loading, setLoading] = useState(true);
@@ -46,15 +47,14 @@ export function SkillTreeView() {
   const [naming, setNaming] = useState(null); // { x, y } screen position of the name field
   const [nameValue, setNameValue] = useState('');
 
-  // Re-derive the whole render model from the current TreeData (the naming draft if
-  // one is open, else the editor's committed state) and apply it to the scene
-  // preserving the view. The seam every structural edit + undo/redo funnels through;
-  // constructing a SkillTree here also re-validates the DAG.
+  // Re-derive the whole render model from the editor's current TreeData and apply
+  // it to the scene preserving the view. The seam every structural edit + undo/redo
+  // funnels through; constructing a SkillTree here also re-validates the DAG.
   const syncStructure = useCallback(() => {
     const editor = editorRef.current;
     const sceneNow = sceneRef.current;
     if (!editor || !sceneNow) return;
-    const nextTree = new SkillTree(draftRef.current ?? editor.treeData);
+    const nextTree = new SkillTree(editor.treeData);
     const positions = applyNudges(rawLayoutRef.current, nextTree);
     const nextStates = UnlockRules.derive(nextTree, { completed: completedRef.current, inProgress: progressRef.current.inProgress });
     const model = nextTree.toRenderModel(positions, nextStates);
@@ -76,24 +76,36 @@ export function SkillTreeView() {
   const undo = useCallback(() => { if (editorRef.current?.undo()) syncStructure(); }, [syncStructure]);
   const redo = useCallback(() => { if (editorRef.current?.redo()) syncStructure(); }, [syncStructure]);
 
-  // Plus clicked: spawn a child just below the parent (inheriting its kind) as an
-  // uncommitted draft, and open the inline name field over it.
+  // Apply the open name field's text to its node (no new history step — create +
+  // name undo as one). A blank name is fine; the node is already saved.
+  const applyPendingName = useCallback(() => {
+    const editor = editorRef.current;
+    const id = namingIdRef.current;
+    namingIdRef.current = null;
+    if (!editor || !id) return false;
+    const label = nameValueRef.current.trim();
+    if (!label) return false;
+    editor.amend(renameNode(editor.treeData, id, label));
+    return true;
+  }, []);
+
+  // Plus clicked: create + commit a child immediately (saved even unnamed), then
+  // open an inline field to name it. Clicking + again just saves the last one and
+  // adds another.
   const handleCreateChild = useCallback((parentId) => {
     const scene = sceneRef.current;
     const editor = editorRef.current;
     const parent = scene?.nodesById.get(parentId);
-    if (!parent || !editor || pendingCreateRef.current) return;
+    if (!parent || !editor) return;
 
-    const params = {
-      id: (crypto.randomUUID?.() ?? `n-${Date.now()}`),
-      icon: NEW_NODE_ICON,
-      color: parent.color,
-      parentId,
-      x: parent.x,
-      y: parent.y + CHILD_DROP,
-    };
-    pendingCreateRef.current = params;
-    draftRef.current = addChildNode(editor.treeData, { ...params, label: '' });
+    applyPendingName();
+    // spread successive new children beside each other rather than stacking
+    const placed = editor.treeData.nodes.filter((n) => n.position && n.prerequisites.includes(parentId)).length;
+    const id = crypto.randomUUID?.() ?? `n-${Date.now()}`;
+    const params = { id, icon: NEW_NODE_ICON, color: parent.color, parentId, x: parent.x + placed * SIBLING_GAP, y: parent.y + CHILD_DROP };
+    editor.commit(addChildNode(editor.treeData, { ...params, label: '' }));
+    namingIdRef.current = id;
+    nameValueRef.current = '';
     setNameValue('');
     syncStructure();
 
@@ -102,19 +114,17 @@ export function SkillTreeView() {
       x: (params.x - cam.x) * cam.zoom + cam.viewportWidth / 2,
       y: (params.y - cam.y) * cam.zoom + cam.viewportHeight / 2,
     });
-  }, [syncStructure]);
+  }, [syncStructure, applyPendingName]);
 
-  const finishCreate = useCallback((label) => {
-    const editor = editorRef.current;
-    const params = pendingCreateRef.current;
-    draftRef.current = null;
-    pendingCreateRef.current = null;
+  const confirmName = useCallback(() => {
+    if (applyPendingName()) syncStructure();
     setNaming(null);
-    if (editor && params && label.trim()) {
-      editor.commit(addChildNode(editor.treeData, { ...params, label: label.trim() }));
-    }
-    syncStructure(); // commit → new node stays; blank → draft discarded
-  }, [syncStructure]);
+  }, [applyPendingName, syncStructure]);
+
+  const cancelName = useCallback(() => {
+    namingIdRef.current = null; // keep the (already saved) node, drop the typed name
+    setNaming(null);
+  }, []);
 
   // Construct the scene once; React only ever drives it through the methods below.
   useEffect(() => {
@@ -282,12 +292,12 @@ export function SkillTreeView() {
           value={nameValue}
           placeholder="Name this step"
           autoFocus
-          onChange={(event) => setNameValue(event.target.value)}
-          onBlur={() => finishCreate(nameValue)}
+          onChange={(event) => { nameValueRef.current = event.target.value; setNameValue(event.target.value); }}
+          onBlur={confirmName}
           onKeyDown={(event) => {
             event.stopPropagation(); // typing never reaches the ⌘Z history handler
-            if (event.key === 'Enter') { event.preventDefault(); finishCreate(nameValue); }
-            else if (event.key === 'Escape') { event.preventDefault(); finishCreate(''); }
+            if (event.key === 'Enter') { event.preventDefault(); confirmName(); }
+            else if (event.key === 'Escape') { event.preventDefault(); cancelName(); }
           }}
         />
       )}
