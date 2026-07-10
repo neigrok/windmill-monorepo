@@ -49,3 +49,5 @@ After each phase note observarions you had that can enhance overall structure of
 Keep a running log of such observations in .md file and execute ones you find most important
 
 If you seek for an advice, you can spin up an agent that has no access to the code, so he can give you unbiased advice on architecture or ideas
+
+Keep running log of tasks in src/skilltree/mock/roadmapTree.js
