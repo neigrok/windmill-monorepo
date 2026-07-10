@@ -15,10 +15,13 @@ import { applyNudges } from './layout/applyNudges.js';
 import { MockTreeRepository } from './mock/MockTreeRepository.js';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
 import { TreeEditor } from './editing/TreeEditor.js';
-import { repositionNode } from './editing/edits.js';
+import { repositionNode, addChildNode } from './editing/edits.js';
+import { NODE_SIZE } from './theme.js';
 
 const layoutEngine = new WorkerLayoutEngine();
 const EMPTY_BOUNDS = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+const CHILD_DROP = NODE_SIZE * 2.6; // world units a new child spawns below its parent
+const NEW_NODE_ICON = 'sparkles';
 
 export function SkillTreeView() {
   const canvasRef = useRef(null);
@@ -28,6 +31,8 @@ export function SkillTreeView() {
   const editorRef = useRef(null);
   const rawLayoutRef = useRef(new Map());
   const completedRef = useRef(new Set());
+  const draftRef = useRef(null); // an uncommitted TreeData shown while naming a new node
+  const pendingCreateRef = useRef(null); // params of the node being named
 
   const [datasetSize, setDatasetSize] = useState('demo');
   const [loading, setLoading] = useState(true);
@@ -38,15 +43,18 @@ export function SkillTreeView() {
   const [hoveredId, setHoveredId] = useState(null);
   const [bounds, setBounds] = useState(EMPTY_BOUNDS);
   const [scene, setScene] = useState(null);
+  const [naming, setNaming] = useState(null); // { x, y } screen position of the name field
+  const [nameValue, setNameValue] = useState('');
 
-  // Re-derive the whole render model from the editor's current TreeData and apply
-  // it to the scene preserving the view. The seam every structural edit + undo/redo
-  // funnels through; constructing a SkillTree here also re-validates the DAG.
+  // Re-derive the whole render model from the current TreeData (the naming draft if
+  // one is open, else the editor's committed state) and apply it to the scene
+  // preserving the view. The seam every structural edit + undo/redo funnels through;
+  // constructing a SkillTree here also re-validates the DAG.
   const syncStructure = useCallback(() => {
     const editor = editorRef.current;
     const sceneNow = sceneRef.current;
     if (!editor || !sceneNow) return;
-    const nextTree = new SkillTree(editor.treeData);
+    const nextTree = new SkillTree(draftRef.current ?? editor.treeData);
     const positions = applyNudges(rawLayoutRef.current, nextTree);
     const nextStates = UnlockRules.derive(nextTree, { completed: completedRef.current, inProgress: progressRef.current.inProgress });
     const model = nextTree.toRenderModel(positions, nextStates);
@@ -68,12 +76,53 @@ export function SkillTreeView() {
   const undo = useCallback(() => { if (editorRef.current?.undo()) syncStructure(); }, [syncStructure]);
   const redo = useCallback(() => { if (editorRef.current?.redo()) syncStructure(); }, [syncStructure]);
 
+  // Plus clicked: spawn a child just below the parent (inheriting its kind) as an
+  // uncommitted draft, and open the inline name field over it.
+  const handleCreateChild = useCallback((parentId) => {
+    const scene = sceneRef.current;
+    const editor = editorRef.current;
+    const parent = scene?.nodesById.get(parentId);
+    if (!parent || !editor || pendingCreateRef.current) return;
+
+    const params = {
+      id: (crypto.randomUUID?.() ?? `n-${Date.now()}`),
+      icon: NEW_NODE_ICON,
+      color: parent.color,
+      parentId,
+      x: parent.x,
+      y: parent.y + CHILD_DROP,
+    };
+    pendingCreateRef.current = params;
+    draftRef.current = addChildNode(editor.treeData, { ...params, label: '' });
+    setNameValue('');
+    syncStructure();
+
+    const cam = scene.camera;
+    setNaming({
+      x: (params.x - cam.x) * cam.zoom + cam.viewportWidth / 2,
+      y: (params.y - cam.y) * cam.zoom + cam.viewportHeight / 2,
+    });
+  }, [syncStructure]);
+
+  const finishCreate = useCallback((label) => {
+    const editor = editorRef.current;
+    const params = pendingCreateRef.current;
+    draftRef.current = null;
+    pendingCreateRef.current = null;
+    setNaming(null);
+    if (editor && params && label.trim()) {
+      editor.commit(addChildNode(editor.treeData, { ...params, label: label.trim() }));
+    }
+    syncStructure(); // commit → new node stays; blank → draft discarded
+  }, [syncStructure]);
+
   // Construct the scene once; React only ever drives it through the methods below.
   useEffect(() => {
     const nextScene = new SkillTreeScene(canvasRef.current, {
       onNodePick: (id) => setSelectedId(id),
       onNodeHover: (id) => setHoveredId(id),
       onNodeMoveEnd: handleNodeMoved,
+      onCreateChild: handleCreateChild,
     });
     sceneRef.current = nextScene;
     setScene(nextScene);
@@ -88,7 +137,7 @@ export function SkillTreeView() {
       sceneRef.current = null;
       setScene(null);
     };
-  }, [handleNodeMoved]);
+  }, [handleNodeMoved, handleCreateChild]);
 
   // Keyboard history: ⌘Z / Ctrl+Z undo, ⇧⌘Z / Ctrl+Shift+Z redo.
   useEffect(() => {
@@ -225,6 +274,23 @@ export function SkillTreeView() {
           onClose={() => setSelectedId(null)}
         />
       </aside>
+
+      {naming && (
+        <input
+          className="st-name-input"
+          style={{ left: naming.x, top: naming.y }}
+          value={nameValue}
+          placeholder="Name this step"
+          autoFocus
+          onChange={(event) => setNameValue(event.target.value)}
+          onBlur={() => finishCreate(nameValue)}
+          onKeyDown={(event) => {
+            event.stopPropagation(); // typing never reaches the ⌘Z history handler
+            if (event.key === 'Enter') { event.preventDefault(); finishCreate(nameValue); }
+            else if (event.key === 'Escape') { event.preventDefault(); finishCreate(''); }
+          }}
+        />
+      )}
 
       {loading && <div className="st-loading">Planting the tree…</div>}
     </div>

@@ -194,6 +194,27 @@ depends on both the interaction and data foundations), so radial necessarily str
 cross-branches; layered reads cleaner. `radial-layout` stays `available` on the roadmap;
 revisit only with edge-bundling / cross-branch de-emphasis if a real tree-like roadmap wants it.
 
+## Editing: create node (first structural gesture)
+
+The plus is live (editing-spec §02), and it's the first structural edit through the command
+layer. Flow: hover → `AffordanceLayer` plus click → `scene.onCreateChild(parentId)` → the view
+spawns a child just below the parent (`addChildNode`, inheriting the parent's kind, a
+`position` override so nothing else re-lays-out) as an **uncommitted draft** (`draftRef`) and
+opens an inline `<input>` over it. ↵ commits `addChildNode` with the name as **one** history
+step; esc/blank discards the draft with no history entry. So `syncStructure` renders
+`draftRef ?? editor.treeData`. The new node's tier falls out of UnlockRules like any other
+(child of a done node → available). Verified headless: create adds one node (inherits kind,
+tethered, positioned), and ⌘Z removes it.
+
+We adopted the design's **always-editable** model (§01A, the recommended one): no mode toggle —
+hover shows affordances, click opens detail, drag moves, the plus creates. That's why `edit-mode`
+is marked complete. The dashed **bud** visual (§02.2) is deferred to the `bud-state` slice; for
+now a created node uses the normal not-done treatment while it's named.
+
+Grace window: the plus lives outside the disc, so the affordance layer keeps chrome alive for
+~260ms after the pointer leaves the node (cancelled when the pointer reaches the plus/ports),
+and `pointer-events` flip to `auto` only while shown.
+
 ## Observations / follow-ups (not blocking)
 - **Three visual tiers over 4 model states.** `nodeTier` folds active+complete into
   `activated`; `UnlockRules` still keeps the finer states for `DetailPanel`. If we

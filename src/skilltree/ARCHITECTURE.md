@@ -117,11 +117,12 @@ Everything in `model/` is pure JS — no WebGL, no React.
     per state to match the fruit) that cross-fades in as the baked atlas fades out over the
     handoff band. `setStates` re-tints on completion; only near nodes get a DOM element.
 - `scene/AffordanceLayer.js` — the **calm edit chrome**: a DOM layer that fades a bark-and-cream
-  plus chip + ports onto the hovered node (invisible at rest, `setHovered` toggles a class →
-  150ms opacity fade). The plus sits on the node's outward rim (opposite its parents), ports at
-  the widest gaps between branches. Repositioned per frame from the render loop so it tracks the
-  camera and drags. Tools are neutral chrome — never a kind hue. Visual for now; create/connect
-  gestures wire into it next.
+  plus chip + ports onto the hovered node (invisible at rest, 150ms fade). The plus sits on the
+  node's outward rim (opposite its parents), ports at the widest gaps between branches;
+  repositioned per frame so it tracks the camera and drags. Tools are neutral — never a kind hue.
+  A **grace window** keeps the chrome alive after the pointer leaves the node so the plus stays
+  reachable. The plus is live: clicking it fires `onCreate(nodeId)` → the shell's create flow.
+  Ports (connect) wire in next.
 - `scene/input/` — pointer interaction, extracted so the scene isn't a god-object and edit
   tools plug in without touching event plumbing. `InputController` owns the canvas listeners
   + pointer capture + single-pointer bookkeeping, forwards down/drag/move/up/leave to the

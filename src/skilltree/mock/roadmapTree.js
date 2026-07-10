@@ -39,15 +39,15 @@ export const roadmapTree = {
     { id: 'edit-affordances', label: 'Calm hover affordances', icon: 'sparkles', color: 'olive', status: 'complete', prerequisites: ['tool-seam', 'state-tiers'] },
 
     // ---- editing features (terracotta) — the incoming spec ----
-    { id: 'edit-mode', label: 'Always-editable mode', icon: 'pencil', color: 'terracotta', status: 'available', prerequisites: ['edit-affordances', 'command-layer'] },
-    { id: 'create-node', label: 'Create node', icon: 'plus', color: 'terracotta', status: 'locked', prerequisites: ['edit-mode', 'bud-state'] },
-    { id: 'connect', label: 'Connect + cycle guard', icon: 'plug', color: 'terracotta', status: 'locked', prerequisites: ['edit-mode', 'domain'] },
+    { id: 'edit-mode', label: 'Always-editable mode', icon: 'pencil', color: 'terracotta', status: 'complete', prerequisites: ['edit-affordances', 'command-layer'] },
+    { id: 'create-node', label: 'Create node', icon: 'plus', color: 'terracotta', status: 'complete', prerequisites: ['edit-mode', 'bud-state'] },
+    { id: 'connect', label: 'Connect + cycle guard', icon: 'plug', color: 'terracotta', status: 'available', prerequisites: ['edit-mode', 'domain'] },
     { id: 'reconnect', label: 'Reconnect edge', icon: 'wifi', color: 'terracotta', status: 'locked', prerequisites: ['connect'] },
     { id: 'delete-edge', label: 'Delete edge', icon: 'x', color: 'terracotta', status: 'locked', prerequisites: ['connect', 'bud-state'] },
-    { id: 'delete-node', label: 'Delete node + splice', icon: 'trash-2', color: 'terracotta', status: 'locked', prerequisites: ['create-node'] },
+    { id: 'delete-node', label: 'Delete node + splice', icon: 'trash-2', color: 'terracotta', status: 'available', prerequisites: ['create-node'] },
     { id: 'reorder', label: 'Move / reorder', icon: 'grid-3x3', color: 'terracotta', status: 'locked', prerequisites: ['radial-layout', 'edit-mode'] },
-    { id: 'rename', label: 'Rename inline', icon: 'ruler', color: 'terracotta', status: 'locked', prerequisites: ['edit-mode'] },
-    { id: 'kind-picker', label: 'Kind picker', icon: 'sun', color: 'terracotta', status: 'locked', prerequisites: ['edit-mode', 'color-kind'] },
+    { id: 'rename', label: 'Rename inline', icon: 'ruler', color: 'terracotta', status: 'available', prerequisites: ['edit-mode'] },
+    { id: 'kind-picker', label: 'Kind picker', icon: 'sun', color: 'terracotta', status: 'available', prerequisites: ['edit-mode', 'color-kind'] },
     { id: 'undo-redo', label: 'Undo / redo (⌘Z)', icon: 'flag', color: 'terracotta', status: 'complete', prerequisites: ['command-layer'] },
   ],
 };

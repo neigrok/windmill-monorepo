@@ -211,7 +211,9 @@
   background: var(--surface-card);
   border: 1.5px solid var(--color-bark);
   opacity: 0;
-  transition: opacity var(--duration-fast) var(--ease-soft);
+  pointer-events: none;
+  transition: opacity var(--duration-fast) var(--ease-soft),
+    background var(--duration-fast) var(--ease-soft);
   will-change: transform, opacity;
 }
 .st-plus {
@@ -225,6 +227,7 @@
   font-weight: 700;
   line-height: 1;
   box-shadow: var(--shadow-sm);
+  cursor: pointer;
 }
 .st-port {
   width: 8px;
@@ -233,4 +236,29 @@
 .st-affordances--on .st-plus,
 .st-affordances--on .st-port {
   opacity: 1;
+  pointer-events: auto;
+}
+.st-plus:hover {
+  background: var(--color-bark);
+  color: #fff;
+}
+
+/* ---- Inline name field for a freshly created step ---- */
+.st-name-input {
+  position: absolute;
+  z-index: 12;
+  transform: translate(-50%, 0);
+  min-width: 120px;
+  padding: 5px 9px;
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  background: var(--surface-card);
+  border: 1.5px solid var(--accent-terracotta-400);
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 0 3px var(--color-brand-soft), var(--shadow-sm);
+  outline: none;
+}
+.st-name-input::placeholder {
+  color: var(--text-tertiary);
 }

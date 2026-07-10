@@ -43,7 +43,9 @@ export class SkillTreeScene {
     this.connectorBatch = new ConnectorBatch(gl);
     this.labelOverlay = new LabelOverlay(canvas);
     this.iconOverlay = new IconOverlay(canvas);
-    this.affordanceLayer = new AffordanceLayer(canvas);
+    this.affordanceLayer = new AffordanceLayer(canvas, {
+      onCreate: (id) => this.options.onCreateChild && this.options.onCreateChild(id),
+    });
 
     this.motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     this.motion = this.motionQuery.matches ? 0 : 1;

@@ -13,9 +13,11 @@ const NODE_RADIUS = NODE_SIZE * 0.42; // the disc's world radius (matches the sh
 const PLUS_GAP = 16;
 const PORT_GAP = 5;
 const PORT_COUNT = 2;
+const GRACE_MS = 260; // keep chrome alive after leaving the node, so the plus is reachable
 
 export class AffordanceLayer {
-  constructor(canvas) {
+  constructor(canvas, { onCreate } = {}) {
+    this.onCreate = onCreate;
     this.container = document.createElement('div');
     this.container.className = 'st-affordances';
     canvas.parentElement.appendChild(this.container);
@@ -23,11 +25,16 @@ export class AffordanceLayer {
     this.plus = document.createElement('div');
     this.plus.className = 'st-plus';
     this.plus.textContent = '+';
+    this.plus.addEventListener('pointerenter', () => this.keepAlive());
+    this.plus.addEventListener('pointerleave', () => this.scheduleHide());
+    this.plus.addEventListener('click', () => { if (this.target && this.onCreate) this.onCreate(this.target); });
     this.container.appendChild(this.plus);
 
     this.ports = Array.from({ length: PORT_COUNT }, () => {
       const port = document.createElement('div');
       port.className = 'st-port';
+      port.addEventListener('pointerenter', () => this.keepAlive());
+      port.addEventListener('pointerleave', () => this.scheduleHide());
       this.container.appendChild(port);
       return port;
     });
@@ -35,7 +42,8 @@ export class AffordanceLayer {
     this.nodesById = new Map();
     this.parents = new Map();
     this.neighbors = new Map();
-    this.hoveredId = null;
+    this.target = null;
+    this.hideTimer = null;
   }
 
   setModel(renderModel) {
@@ -47,16 +55,38 @@ export class AffordanceLayer {
       this.neighbors.get(edge.from).push(edge.to);
       this.neighbors.get(edge.to).push(edge.from);
     }
-    this.setHovered(null);
+    this.clear();
   }
 
+  // Hovering a node shows its chrome; leaving schedules a hide after a grace
+  // window (cancelled if the pointer reaches the chrome), so the plus is reachable.
   setHovered(id) {
-    this.hoveredId = this.nodesById.has(id) ? id : null;
-    this.container.classList.toggle('st-affordances--on', this.hoveredId !== null);
+    if (this.nodesById.has(id)) {
+      this.target = id;
+      this.keepAlive();
+      this.container.classList.add('st-affordances--on');
+    } else {
+      this.scheduleHide();
+    }
+  }
+
+  keepAlive() {
+    if (this.hideTimer) { clearTimeout(this.hideTimer); this.hideTimer = null; }
+  }
+
+  scheduleHide() {
+    this.keepAlive();
+    this.hideTimer = setTimeout(() => this.clear(), GRACE_MS);
+  }
+
+  clear() {
+    this.keepAlive();
+    this.target = null;
+    this.container.classList.remove('st-affordances--on');
   }
 
   update(camera) {
-    const node = this.hoveredId ? this.nodesById.get(this.hoveredId) : null;
+    const node = this.target ? this.nodesById.get(this.target) : null;
     if (!node) return;
     const sx = (node.x - camera.x) * camera.zoom + camera.viewportWidth / 2;
     const sy = (node.y - camera.y) * camera.zoom + camera.viewportHeight / 2;
