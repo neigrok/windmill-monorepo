@@ -12,10 +12,13 @@ const PENCIL = '<svg viewBox="0 0 24 24"><path d="M16 3l5 5L8 21H3v-5L16 3z"/></
 const TRASH = '<svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2m-2 0v13H10V6M5 6v15h14V6"/></svg>';
 
 export class SelectionBar {
-  constructor(canvas, { onRename, onDelete, onSetKind } = {}) {
+  constructor(canvas, { onRename, onDelete, onSetKind, onPreviewKind, onRestoreKind, onDirty } = {}) {
     this.onRename = onRename;
     this.onDelete = onDelete;
     this.onSetKind = onSetKind;
+    this.onPreviewKind = onPreviewKind;
+    this.onRestoreKind = onRestoreKind;
+    this.onDirty = onDirty; // ask the render loop to reposition (bar/chips) next frame
 
     this.container = document.createElement('div');
     this.container.className = 'st-actionbar-layer';
@@ -24,7 +27,7 @@ export class SelectionBar {
     this.bar = document.createElement('div');
     this.bar.className = 'st-actionbar';
     this.rename = this.button('st-actionbtn', PENCIL, () => this.onRename && this.onRename(this.selectedId));
-    this.swatch = this.button('st-actionbtn st-actionbtn--swatch', '', () => { this.fanOpen = !this.fanOpen; this.render(); if (this.lastCamera) this.update(this.lastCamera); });
+    this.swatch = this.button('st-actionbtn st-actionbtn--swatch', '', () => { this.fanOpen = !this.fanOpen; this.render(); if (this.onDirty) this.onDirty(); });
     this.trash = this.button('st-actionbtn st-actionbtn--danger', TRASH, () => this.onDelete && this.onDelete(this.selectedId));
     this.bar.append(this.rename, this.swatch, this.trash);
     this.container.appendChild(this.bar);
@@ -35,6 +38,10 @@ export class SelectionBar {
       const chip = document.createElement('button');
       chip.className = 'st-kindchip';
       chip.style.background = NODE_COLORS[kind].base;
+      // Hover previews the recolour live on the node; leaving restores it (the
+      // pointer always leaves a chip before it can click elsewhere).
+      chip.addEventListener('pointerenter', () => { if (this.onPreviewKind) this.onPreviewKind(this.selectedId, kind); this.swatch.style.background = NODE_COLORS[kind].base; });
+      chip.addEventListener('pointerleave', () => { if (this.onRestoreKind) this.onRestoreKind(this.selectedId); this.render(); });
       chip.addEventListener('click', () => { if (this.onSetKind) this.onSetKind(this.selectedId, kind); this.fanOpen = false; this.render(); });
       this.fan.appendChild(chip);
       return { kind, el: chip };
@@ -73,7 +80,6 @@ export class SelectionBar {
   }
 
   update(camera) {
-    this.lastCamera = camera;
     const node = this.selectedId ? this.nodesById.get(this.selectedId) : null;
     if (!node) return;
     const sx = (node.x - camera.x) * camera.zoom + camera.viewportWidth / 2;

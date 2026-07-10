@@ -57,6 +57,9 @@ export class SkillTreeScene {
       onRename: (id) => this.beginRename(id),
       onDelete: (id) => this.options.onDeleteNode && this.options.onDeleteNode(id),
       onSetKind: (id, kind) => this.options.onSetKind && this.options.onSetKind(id, kind),
+      onPreviewKind: (id, kind) => this.nodeBatch.setColor(id, kind),
+      onRestoreKind: (id) => { const node = this.nodesById.get(id); if (node) this.nodeBatch.setColor(id, node.color); },
+      onDirty: () => { this.overlaysDirty = true; },
     });
     this.edgeChrome = new EdgeChrome(canvas, {
       onDeleteEdge: (from, to) => this.options.onDeleteEdge && this.options.onDeleteEdge(from, to),

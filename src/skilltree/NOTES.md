@@ -323,6 +323,20 @@ back to 29 + entry cleared; a planted stale-signature entry is ignored (loads au
 Note the pipeline change: `repo.loadProgress` now takes the resolved `treeData` (not a treeId) so
 progress derives from the actual tree in play — the persisted edit, not the seed.
 
+## Polish: live kind preview (§8.2)
+
+Hovering a swatch in the kind fan now recolours the node live before you commit — `NodeBatch.setColor`
+writes one instance's colour attribute (like `moveInstance`), the scene wires the fan's
+`onPreviewKind`/`onRestoreKind` to it, and clicking still commits through `onSetKind`. No history for
+the preview; leaving the chip restores the model colour (the pointer always leaves a chip before it
+can click elsewhere, so leave-restore is enough). The commit's model rebuild supersedes the preview.
+
+This fixed a latent bug in the fan itself: it positioned chips only via a cached `lastCamera`, which is
+unset until the first render-loop overlay pass runs — so on a still camera the chips could stay stacked
+at (0,0). Replaced with an `onDirty` callback the fan raises on open/toggle; the render loop then
+repositions bar + chips with the live camera next frame. Same family as the transform-transition
+gotcha above: overlay chrome must be driven from the render loop, never from a stale cached camera.
+
 ## Observations / follow-ups (not blocking)
 - **Three visual tiers over 4 model states.** `nodeTier` folds active+complete into
   `activated`; `UnlockRules` still keeps the finer states for `DetailPanel`. If we

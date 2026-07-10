@@ -232,7 +232,8 @@ export class NodeBatch {
     this.selectedIndex = -1;
 
     this.offsets = new Float32Array(count * 2);
-    const colors = new Float32Array(count);
+    this.colors = new Float32Array(count);
+    const colors = this.colors;
     const glowSeeds = new Float32Array(count);
     this.selected = new Float32Array(count);
     const iconCells = new Float32Array(count);
@@ -274,6 +275,18 @@ export class NodeBatch {
     const gl = this.gl;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.offsetBuffer);
     gl.bufferSubData(gl.ARRAY_BUFFER, i * 2 * 4, this.offsets, i * 2, 2);
+  }
+
+  // Recolour one node in place — the live kind preview while a swatch is hovered.
+  // No history; the model rebuild on commit (or restore on leave) supersedes it.
+  setColor(id, name) {
+    if (!this.colors) return;
+    const i = this.idToIndex.get(id);
+    if (i === undefined) return;
+    this.colors[i] = colorIndex(name);
+    const gl = this.gl;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.colorBuffer);
+    gl.bufferSubData(gl.ARRAY_BUFFER, i * 4, this.colors, i, 1);
   }
 
   setStates(statesMap) {
