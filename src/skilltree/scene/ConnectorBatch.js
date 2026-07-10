@@ -14,6 +14,7 @@ const GROW_DURATION = 0.5;
 const ALREADY_GROWN = -1000;
 const VERTS_PER_EDGE = (SEGMENTS + 1) * 2;
 const NC = NODE_COLOR_NAMES.length;
+const HOVER_COLOR = '#B29F7B'; // the hot hue a hovered branch deepens to
 
 // A node's disc renders out to EDGE (0.84) of its half-size in NodeBatch, so its
 // world radius is 0.84 * NODE_SIZE/2. Ending edges here (rather than at the node
@@ -27,6 +28,7 @@ layout(location=1) in float aAlongT;
 layout(location=2) in float aActive;
 layout(location=3) in float aGrowStart;
 layout(location=4) in float aColor;
+layout(location=5) in float aHover;
 uniform vec2 uResolution;
 uniform vec2 uCamera;
 uniform float uZoom;
@@ -34,11 +36,13 @@ out float vActive;
 out float vAlongT;
 out float vGrowStart;
 out float vColor;
+out float vHover;
 void main() {
   vActive = aActive;
   vAlongT = aAlongT;
   vGrowStart = aGrowStart;
   vColor = aColor;
+  vHover = aHover;
   vec2 screen = (aPos - uCamera) * uZoom;
   vec2 clip = vec2(screen.x / (uResolution.x * 0.5), -screen.y / (uResolution.y * 0.5));
   gl_Position = vec4(clip, 0.0, 1.0);
@@ -50,10 +54,12 @@ in float vActive;
 in float vAlongT;
 in float vGrowStart;
 in float vColor;
+in float vHover;
 uniform float uTime;
 uniform float uGrowDuration;
 uniform float uMotion;
 uniform vec3 uColorInactive;
+uniform vec3 uColorHot;
 uniform vec3 uEdgeColor[${NC}];
 out vec4 fragColor;
 void main() {
@@ -66,6 +72,8 @@ void main() {
 
   vec3 color = mix(dim, hue, lit) + hue * lit * 0.16;
   float alpha = mix(0.6, 0.95, lit);
+  color = mix(color, uColorHot, vHover); // hover deepens the line to the hot hue
+  alpha = mix(alpha, 0.95, vHover);
   fragColor = vec4(color, alpha);
 }`;
 
@@ -152,9 +160,11 @@ export class ConnectorBatch {
     this.edges = [];
 
     this.program = createProgram(gl, VERTEX_SRC, FRAGMENT_SRC);
-    this.u = uniformLocations(gl, this.program, ['uResolution', 'uCamera', 'uZoom', 'uTime', 'uGrowDuration', 'uMotion', 'uColorInactive', 'uEdgeColor']);
+    this.u = uniformLocations(gl, this.program, ['uResolution', 'uCamera', 'uZoom', 'uTime', 'uGrowDuration', 'uMotion', 'uColorInactive', 'uColorHot', 'uEdgeColor']);
     this.colorInactive = hexRgb(CONNECTOR.inactive);
+    this.colorHot = hexRgb(HOVER_COLOR);
     this.edgeColors = new Float32Array(NODE_COLOR_NAMES.flatMap((c) => hexRgb(NODE_COLORS[c].base)));
+    this.hoveredEdge = -1;
 
     this.vao = gl.createVertexArray();
     gl.bindVertexArray(this.vao);
@@ -163,6 +173,7 @@ export class ConnectorBatch {
     this.activeBuffer = this.attrib(2, 1, gl.DYNAMIC_DRAW);
     this.growBuffer = this.attrib(3, 1, gl.DYNAMIC_DRAW);
     this.colorBuffer = this.attrib(4, 1, gl.STATIC_DRAW);
+    this.hoverBuffer = this.attrib(5, 1, gl.DYNAMIC_DRAW);
     this.indexBuffer = gl.createBuffer();
     gl.bindVertexArray(null);
   }
@@ -187,10 +198,13 @@ export class ConnectorBatch {
     const colors = new Float32Array(vertexTotal);
     this.active = new Float32Array(vertexTotal);
     this.grow = new Float32Array(vertexTotal).fill(ALREADY_GROWN);
+    this.hover = new Float32Array(vertexTotal);
+    this.hoveredEdge = -1;
     const indices = new Uint32Array(edgeCount * SEGMENTS * 6);
 
     this.nodePos = new Map(renderModel.nodes.map((node) => [node.id, { x: node.x, y: node.y }]));
     this.edgesByNode = new Map();
+    this.edgeIndex = new Map();
 
     this.edges = renderModel.edges.map((edge, e) => {
       const from = nodesById.get(edge.from);
@@ -217,6 +231,7 @@ export class ConnectorBatch {
         if (!this.edgesByNode.has(nid)) this.edgesByNode.set(nid, []);
         this.edgesByNode.get(nid).push(e);
       }
+      this.edgeIndex.set(`${edge.from}→${edge.to}`, e);
       return { from: edge.from, to: edge.to, active, vertexStart };
     });
 
@@ -227,6 +242,7 @@ export class ConnectorBatch {
     this.uploadStatic(this.colorBuffer, colors);
     this.uploadDynamic(this.activeBuffer, this.active);
     this.uploadDynamic(this.growBuffer, this.grow);
+    this.uploadDynamic(this.hoverBuffer, this.hover);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
     gl.bindVertexArray(null);
@@ -277,6 +293,23 @@ export class ConnectorBatch {
     }
   }
 
+  // The transient hover deepen: a per-vertex flag paints one edge's ribbon hot,
+  // leaving the baked kind hue and the activation sweep untouched underneath.
+  setHovered(edge) {
+    if (!this.hover) return;
+    const next = edge == null ? -1 : (this.edgeIndex.get(`${edge.from}→${edge.to}`) ?? -1);
+    if (next === this.hoveredEdge) return;
+    const gl = this.gl;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.hoverBuffer);
+    for (const [e, value] of [[this.hoveredEdge, 0], [next, 1]]) {
+      if (e < 0) continue;
+      const start = this.edges[e].vertexStart;
+      this.hover.fill(value, start, start + VERTS_PER_EDGE);
+      gl.bufferSubData(gl.ARRAY_BUFFER, start * 4, this.hover, start, VERTS_PER_EDGE);
+    }
+    this.hoveredEdge = next;
+  }
+
   draw(camera, timeSeconds, motion) {
     const gl = this.gl;
     if (this.indexCount === 0) return;
@@ -289,6 +322,7 @@ export class ConnectorBatch {
     gl.uniform1f(this.u.uGrowDuration, GROW_DURATION);
     gl.uniform1f(this.u.uMotion, motion);
     gl.uniform3fv(this.u.uColorInactive, this.colorInactive);
+    gl.uniform3fv(this.u.uColorHot, this.colorHot);
     gl.uniform3fv(this.u.uEdgeColor, this.edgeColors);
     gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_INT, 0);
     gl.bindVertexArray(null);
@@ -298,6 +332,6 @@ export class ConnectorBatch {
     const gl = this.gl;
     gl.deleteProgram(this.program);
     gl.deleteVertexArray(this.vao);
-    [this.posBuffer, this.alongBuffer, this.activeBuffer, this.growBuffer, this.colorBuffer, this.indexBuffer].forEach((b) => gl.deleteBuffer(b));
+    [this.posBuffer, this.alongBuffer, this.activeBuffer, this.growBuffer, this.colorBuffer, this.hoverBuffer, this.indexBuffer].forEach((b) => gl.deleteBuffer(b));
   }
 }

@@ -22,6 +22,7 @@ layout(location=4) in float aSelected;
 layout(location=5) in float aIconCell;
 layout(location=6) in float aTier;
 layout(location=7) in float aForm;
+layout(location=8) in float aFaded;
 uniform vec2 uResolution;
 uniform vec2 uCamera;
 uniform float uZoom;
@@ -34,6 +35,7 @@ out float vGlowSeed;
 out float vSelected;
 out float vIconCell;
 out float vForm;
+out float vFaded;
 void main() {
   vUv = aQuad + 0.5;
   vColor = aColor;
@@ -42,6 +44,7 @@ void main() {
   vSelected = aSelected;
   vIconCell = aIconCell;
   vForm = aForm;
+  vFaded = aFaded;
   float size = uNodeSize * (1.0 + aSelected * 0.14) * uPadding;
   vec2 world = aOffset + aQuad * size;
   vec2 screen = (world - uCamera) * uZoom;
@@ -58,6 +61,7 @@ in float vGlowSeed;
 in float vSelected;
 in float vIconCell;
 in float vForm;
+in float vFaded;
 uniform float uPadding;
 uniform float uTime;
 uniform float uGlowSpeed;
@@ -122,6 +126,7 @@ void main() {
   if (tier >= 1) strength = max(strength, vSelected);
   float glowFalloff = smoothstep(1.6, 0.1, dist);
   float glowAmt = glow.a * strength * glowFalloff * 1.7;
+  if (vFaded > 0.5) glowAmt = 0.0; // a faded ghost carries no halo
 
   // ---- outer ring (activated only) ----
   float outerBand = 1.0 - smoothstep(0.0, OUTER_W, abs(dist - OUTER_R));
@@ -143,6 +148,9 @@ void main() {
     color = color * (1.0 - dashA) + dashColor * dashA;
     alpha = max(alpha, dashA);
   }
+
+  // ---- cycle dim: nodes a connect-drag can't target read as faint ghosts ----
+  if (vFaded > 0.5) alpha *= 0.3;
 
   if (alpha < 0.01) discard;
   fragColor = vec4(color, alpha);
@@ -204,6 +212,7 @@ export class NodeBatch {
     this.iconCellBuffer = this.attribBuffer(5, 1, null, 1, gl.DYNAMIC_DRAW);
     this.tierBuffer = this.attribBuffer(6, 1, null, 1, gl.DYNAMIC_DRAW);
     this.formBuffer = this.attribBuffer(7, 1, null, 1, gl.DYNAMIC_DRAW);
+    this.fadedBuffer = this.attribBuffer(8, 1, null, 1, gl.DYNAMIC_DRAW);
 
     gl.bindVertexArray(null);
   }
@@ -239,6 +248,7 @@ export class NodeBatch {
     const iconCells = new Float32Array(count);
     this.tiers = new Float32Array(count);
     const forms = new Float32Array(count);
+    this.faded = new Float32Array(count);
 
     renderNodes.forEach((node, i) => {
       this.idToIndex.set(node.id, i);
@@ -258,6 +268,7 @@ export class NodeBatch {
     this.upload(this.iconCellBuffer, iconCells);
     this.upload(this.tierBuffer, this.tiers);
     this.upload(this.formBuffer, forms);
+    this.upload(this.fadedBuffer, this.faded);
   }
 
   upload(buffer, data) {
@@ -312,6 +323,20 @@ export class NodeBatch {
     this.upload(this.selectedBuffer, this.selected);
   }
 
+  // Dim the nodes a connect-drag can't target (they'd create a cycle). A whole-
+  // buffer upload, but it runs once per gesture — not per frame.
+  setFaded(idSet) {
+    if (!this.faded) return;
+    for (const [id, i] of this.idToIndex) this.faded[i] = idSet.has(id) ? 1 : 0;
+    this.upload(this.fadedBuffer, this.faded);
+  }
+
+  clearFaded() {
+    if (!this.faded) return;
+    this.faded.fill(0);
+    this.upload(this.fadedBuffer, this.faded);
+  }
+
   draw(camera, timeSeconds, motion, iconOpacity) {
     const gl = this.gl;
     if (this.count === 0) return;
@@ -347,7 +372,7 @@ export class NodeBatch {
     const gl = this.gl;
     gl.deleteProgram(this.program);
     gl.deleteVertexArray(this.vao);
-    [this.quadBuffer, this.offsetBuffer, this.colorBuffer, this.glowSeedBuffer, this.selectedBuffer, this.iconCellBuffer, this.tierBuffer, this.formBuffer]
+    [this.quadBuffer, this.offsetBuffer, this.colorBuffer, this.glowSeedBuffer, this.selectedBuffer, this.iconCellBuffer, this.tierBuffer, this.formBuffer, this.fadedBuffer]
       .forEach((b) => gl.deleteBuffer(b));
   }
 }

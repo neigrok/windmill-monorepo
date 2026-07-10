@@ -19,6 +19,7 @@ export const NODE_COLORS = {
   gold:       { base: '#C4972F', ring: '#A17822', soft: '#EEDA9E', glow: 'rgba(196,151,47,0.50)' },
   brick:      { base: '#A84E35', ring: '#8A3A26', soft: '#E4B6A8', glow: 'rgba(168,78,53,0.50)' },
   sky:        { base: '#5F8494', ring: '#4A6875', soft: '#C4D5DC', glow: 'rgba(95,132,148,0.50)' },
+  plum:       { base: '#8D4F83', ring: '#6F3B67', soft: '#D9BDD4', glow: 'rgba(141,79,131,0.50)' },
 };
 
 export const NODE_COLOR_NAMES = Object.keys(NODE_COLORS);
