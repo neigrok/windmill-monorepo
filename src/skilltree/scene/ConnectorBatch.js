@@ -58,13 +58,14 @@ uniform vec3 uEdgeColor[${NC}];
 out vec4 fragColor;
 void main() {
   vec3 hue = uEdgeColor[int(vColor + 0.5)];
+  vec3 dim = mix(uColorInactive, hue, 0.6); // dormant branch: a muted tint of its kind
   float swept = clamp((uTime - vGrowStart) / uGrowDuration, 0.0, 1.0);
   float progress = mix(1.0, swept, uMotion);
   float revealed = 1.0 - smoothstep(progress - 0.08, progress, vAlongT);
   float lit = vActive * revealed;
 
-  vec3 color = mix(uColorInactive, hue, lit) + hue * lit * 0.16;
-  float alpha = mix(0.7, 0.95, lit);
+  vec3 color = mix(dim, hue, lit) + hue * lit * 0.16;
+  float alpha = mix(0.6, 0.95, lit);
   fragColor = vec4(color, alpha);
 }`;
 
