@@ -34,8 +34,10 @@ or React layers. Layout runs off the main thread, so `layout.layout(tree)` is aw
   `TreeRepository`, `LayoutEngine` (`layout` may return a `Map` or a `Promise` of one).
 - `theme.js` — resolved hex palette, pulled from the design system's `--kind-*`
   tokens + the `dag-clean-colors` exploration. A node's look is two orthogonal
-  dimensions: `NODE_COLORS` / `NODE_COLOR_NAMES` (its *kind* → hue: `base`
-  accent-500, `ring` accent-600, `soft` accent-200, `glow`) and one of three
+  dimensions: `NODE_COLORS` / `NODE_COLOR_NAMES` (its *kind* — six hues
+  terracotta/olive/gold/brick/sky/plum → `base` accent-500, `ring` accent-600,
+  `soft` accent-200, `glow`; the shader + swatches size themselves off the name
+  list, so a new kind is a one-line addition) and one of three
   `nodeTier(state)` tiers — `unavailable` (locked → low-opacity wash, no glow),
   `available` (saturated fill + ring, glow on hover), `activated` (active/complete
   → + an outer ring + a breathing glow). `isDone(state)` (complete only) still
@@ -117,16 +119,22 @@ Everything in `model/` is pure JS — no WebGL, no React.
     per state to match the fruit) that cross-fades in as the baked atlas fades out over the
     handoff band. `setStates` re-tints on completion; only near nodes get a DOM element.
 - `scene/AffordanceLayer.js` — the **calm edit chrome**: a DOM layer that fades a bark-and-cream
-  plus chip + ports onto the hovered node (invisible at rest, 150ms fade). The plus sits on the
-  node's outward rim (opposite its parents), ports at the widest gaps between branches;
-  repositioned per frame so it tracks the camera and drags. Tools are neutral — never a kind hue.
-  A **grace window** keeps the chrome alive after the pointer leaves the node so the plus stays
-  reachable. The plus is live (`onCreate`); each port starts a `ConnectGesture`.
-- `scene/ConnectGesture.js` — dragging a dependency from a port to another node: a dashed SVG
-  **ghost branch** follows the cursor; the node under it gets an **olive ring** (valid) or a
-  **brick ring + "would create a loop" tip** (a cycle — the source's ancestors, computed from the
-  parents map). Cycles are shown and blocked *before* the drop; a valid release fires
-  `onConnect(source, target)` → the shell adds the edge.
+  plus chip + ports onto the **selected** node (spec v2 — hover shows no structure; invisible at
+  rest, 150ms fade). The plus sits on the node's outward rim (opposite its parents), ports at the
+  widest gaps between branches; repositioned per frame so it tracks the camera and drags. Tools are
+  neutral — never a kind hue. A **grace window** keeps the chrome alive briefly after deselect so
+  the plus stays reachable. The plus is live (`onCreate`); each port starts a `ConnectGesture`.
+- `scene/HoverLabel.js` — the **hover name tip** (spec v2 §1.1): hovering a node shows only its
+  label on a dark bark pill below the disc — never structural chrome. A scene overlay repositioned
+  from the render loop; inline-styled, so it owns no CSS. Hidden when nothing is hovered / unnamed.
+- `scene/EdgeChrome.js` — the **selected-edge** chrome (spec v2 §4.2): a clicked branch turns bark
+  and grows two endpoint handles + a midpoint × (delete). Selection-gated, not hover — `setSelectedEdge`
+  shows it, handles hand `(edge, end)` to the shared `ConnectGesture` (reconnect), the × fires `onDeleteEdge`.
+- `scene/ConnectGesture.js` — dragging a dependency from a port (or an edge handle) to another node: a
+  dashed SVG **ghost branch** follows the cursor; the node under it gets an **olive ring** (valid) or a
+  **brick ring + "would create a loop" tip** (a cycle). The whole cycle-closing set is collected up front
+  and **faded to 30%** for the drag (`onFadeNodes` → `NodeBatch.setFaded`); that same set is the cyclic
+  predicate, so a faded node can never take the drop. A valid release fires `onConnect`/`onReconnect`.
 - `scene/input/` — pointer interaction, extracted so the scene isn't a god-object and edit
   tools plug in without touching event plumbing. `InputController` owns the canvas listeners
   + pointer capture + single-pointer bookkeeping, forwards down/drag/move/up/leave to the
@@ -140,13 +148,16 @@ Everything in `model/` is pure JS — no WebGL, no React.
   advances `uTime` and the camera; **whenever the camera moved (or a node moved) that frame it
   updates both overlays**, and on camera move emits the viewport to per-frame
   `subscribeViewport` listeners (the minimap) — no throttle, so overlays track the GPU at frame
-  rate. Exposes scene-state hooks the active tool drives (`select`, `hover`, `pick`) and
-  incremental edit APIs. Public API (renderer-agnostic, so the React shell never touches GL):
-  `setModel` (full load, fits camera), `applyModel` (re-derived graph — add/remove/relayout —
-  preserving camera + selection, reusing the atlas unless a new icon appears), `moveNode`
-  (live per-instance reposition of a node + its edges), `applyStates`, `fitToView`, `focusNode`,
-  `panTo`, `zoomBy`, `subscribeViewport`, `getBounds`, `getViewport`, `resize`, `start`, `stop`,
-  `dispose`.
+  rate. Exposes scene-state hooks the active tool drives (`select`/`selectEdge` — node and edge
+  selection are mutually exclusive; `hover`, `hoverEdge`, `pick`, `pickEdge`) and incremental edit
+  APIs. Selection is mirrored two ways: `select` drives it from the canvas and notifies the shell;
+  `setSelection` lets the shell mirror an Esc/close/create deselect back to the scene without echoing.
+  Live panel previews: `previewKind`/`restoreKind`, `previewDeleteCost`/`clearDeleteCost`. Public API
+  (renderer-agnostic, so the React shell never touches GL): `setModel` (full load, fits camera),
+  `applyModel` (re-derived graph — add/remove/relayout — preserving camera + selection, reusing the
+  atlas unless a new icon appears), `moveNode` (live per-instance reposition of a node + its edges),
+  `applyStates`, `fitToView`, `focusNode`, `panTo`, `zoomBy`, `subscribeViewport`, `getBounds`,
+  `getViewport`, `resize`, `start`, `stop`, `dispose`.
 
 Perf rules (non-negotiable): constant draw calls regardless of node count; no per-node JS
 in the animation loop except the LOD-gated, bounded overlay pick; no per-frame allocation;
@@ -171,17 +182,22 @@ Runs the pipeline above (repo → domain → layout → scene) and owns the edit
 `TreeEditor` from the loaded TreeData, caches the raw layout, and funnels every edit through
 `syncStructure()` (re-derive the model from `editor.treeData` — which re-validates the DAG —
 and `scene.applyModel`). Edits: `MoveTool` drops (`onNodeMoveEnd` → `repositionNode`); the
-affordance plus (`onCreateChild` → `addChildNode`, committed immediately, then an inline field
-`amend`s the name); ⌫/Delete on the selection (`deleteNode`, children splice up, one step + an
-Undo toast). Keys: ⌘Z/⇧⌘Z → `undo`/`redo`. Wires:
+affordance plus (`onCreateChild` → `addChildNode`, committed as an unnamed bud, auto-selected with
+the panel's name field focused); rename/kind from the step panel (`renameNode`/`setNodeColor`, one
+step each); ⌫/Delete on the selection (`deleteNode`, children splice up, one step + an Undo toast;
+or the scene's selected edge → `removeEdge`). Keys: ⌘Z/⇧⌘Z → `undo`/`redo`, Esc deselects. A
+`selectedId`→`scene.setSelection` effect keeps the canvas chrome in step with React selection. Wires:
 - A full-viewport `<canvas className="st-canvas">`; constructs `SkillTreeScene` in an effect,
   `setModel` + `start()`, `dispose()` on unmount, `resize()` on container resize (ResizeObserver).
   Holds the scene in state so overlay children can subscribe once it exists.
 - Overlay UI (`src/components` design system):
   - `ui/ControlBar.jsx` — zoom in/out, fit-to-view, a demo↔huge (5k) size toggle, link to
     `#/showcase`.
-  - `ui/DetailPanel.jsx` — slides in on node pick: label, state badge, prerequisites, and a
-    "Mark complete" that mutates progress → re-derives states → `scene.applyStates`.
+  - `ui/StepPanel.jsx` — the one docked panel (spec v2 §01), slides in on node pick: an inline-editable
+    **name**, the six **kind** swatches (hover previews live via `scene.previewKind`, click commits),
+    the **prerequisites** + "Mark complete" (mutates progress → re-derives states → `scene.applyStates`),
+    and an isolated **Delete** at the bottom (hover dims the step via `scene.previewDeleteCost`). It
+    absorbed the old floating action bar, kind fan, inline name field, and `DetailPanel`.
   - `ui/Minimap.jsx` — two stacked canvases: a **dots** layer (a dot per node, redrawn only on
     node/state/bounds change) and a **viewport-rectangle** layer redrawn every frame via
     `scene.subscribeViewport`, so the rectangle tracks the camera without redrawing thousands

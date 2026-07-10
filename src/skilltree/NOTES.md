@@ -337,6 +337,42 @@ at (0,0). Replaced with an `onDirty` callback the fan raises on open/toggle; the
 repositions bar + chips with the live camera next frame. Same family as the transform-transition
 gotcha above: overlay chrome must be driven from the render loop, never from a stale cached camera.
 
+## v2 editing spec — selection-gated chrome + a docked step panel
+
+Migrated the editing interactions from spec v1 to **v2** (`dag-editing-interactions-v2`). The
+principle shift: affordances move from **hover-gated** to **selection-gated**, and editing chrome
+consolidates off the canvas into one place.
+- **Hover is calm again** (§1.1): hovering a node only scales/glows it and shows a name tooltip
+  (`scene/HoverLabel`, inline-styled) — no plus, ports, or handles. Structural affordances
+  (`AffordanceLayer` plus + ports) now appear on the **selected** node.
+- **One docked step panel** (`ui/StepPanel`, §01) replaces the floating action bar, the kind fan,
+  the inline name field, and the old `DetailPanel`: inline name edit, six kind swatches (live
+  preview via `scene.previewKind`), prerequisites + Mark complete, and an isolated Delete at the
+  bottom (hover dims the step via `scene.previewDeleteCost`). Creating a child spawns a **bud** and
+  focuses the panel's name field (§2.2).
+- **Edges are click-to-select** (§04): hover only deepens a branch (`ConnectorBatch.setHovered`) +
+  a pointer cursor; a click selects the edge → handles + × on `EdgeChrome`. ⌫ deletes the selected
+  edge, esc/click-away deselects.
+- **Connect-drag cycle feedback** (§3.1): the whole cycle-closing set fades to 30%
+  (`NodeBatch.setFaded`) for the drag; that same set is the cyclic predicate, so a faded node can't
+  take the drop. `ConnectGesture.reachable` walks ancestors (create / reconnect-child-end) or
+  descendants (reconnect-parent-end) on the pending graph — the two ends close loops differently.
+- **Sixth kind `plum`** — the shader arrays + panel swatches size off `NODE_COLOR_NAMES`, so it was
+  a one-line palette addition that propagated everywhere.
+
+Integration seam worth remembering: **edge selection lives only in the scene** (there's no
+`onEdgePick` to React), and node selection lives in React (`selectedId`). Two glue points close the
+gap — a `selectedId → scene.setSelection` effect mirrors React deselects (Esc, the panel's ×) back
+to the canvas so the affordance chrome doesn't get stuck on, and the ⌫/esc key handler reads
+`scene.selectedEdge` to delete/clear a selected edge. `select()` notifies the shell; `setSelection()`
+mirrors without echoing (an id guard keeps it idempotent so canvas picks don't double-fire).
+
+Built in parallel by three Fable-5 subagents on disjoint file sets (palette/GPU · scene behavior ·
+panel/view), each behind a pinned interface contract, then merged and integration-tested live.
+Deferred (not blocking): §3.2 valid-target scale-up (olive ring only); §5.1 dimming a deleted
+step's *branches* (needs a connector fade — only the node dims today); §2.2 esc-removes-bud (esc
+reverts the name; an unnamed bud persists as a bud form).
+
 ## Observations / follow-ups (not blocking)
 - **Three visual tiers over 4 model states.** `nodeTier` folds active+complete into
   `activated`; `UnlockRules` still keeps the finer states for `DetailPanel`. If we

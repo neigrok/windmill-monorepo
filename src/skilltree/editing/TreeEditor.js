@@ -33,12 +33,6 @@ export class TreeEditor {
     return true;
   }
 
-  // Refine the current present without a new history step — e.g. naming a node
-  // that was just committed, so create + name undo together as one.
-  amend(nextTreeData) {
-    this.present = nextTreeData;
-  }
-
   undo() {
     if (this.undoStack.length === 0) return false;
     this.redoStack.push(this.present);

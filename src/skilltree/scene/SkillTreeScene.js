@@ -306,13 +306,22 @@ export class SkillTreeScene {
   // ---- scene-state hooks the active tool drives -------------------------
 
   // Node and edge selection are mutually exclusive: picking one clears the other.
+  // select() drives selection from the canvas — clears any edge and notifies the
+  // shell. setSelection() mirrors a selection the shell already made (Esc / close /
+  // create) without clearing the edge or echoing back, so the canvas chrome tracks
+  // React however it changed. The id guard makes the mirror idempotent.
   select(id) {
+    this.setSelection(id);
+    this.selectEdge(null);
+    if (this.options.onNodePick) this.options.onNodePick(id);
+  }
+
+  setSelection(id) {
+    if (id === this.selectedId) return;
     this.selectedId = id;
     this.affordanceLayer.setSelected(id);
-    this.selectEdge(null);
     this.overlaysDirty = true;
     this.refreshHighlight();
-    if (this.options.onNodePick) this.options.onNodePick(id);
   }
 
   selectEdge(edge) {

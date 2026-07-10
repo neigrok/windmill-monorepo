@@ -208,23 +208,28 @@ export function SkillTreeView() {
         return;
       }
       if (event.key === 'Escape') {
-        if (!selectedIdRef.current) return;
-        setSelectedId(null);
+        if (selectedIdRef.current) { setSelectedId(null); return; }
+        if (sceneRef.current?.selectedEdge) sceneRef.current.selectEdge(null);
         return;
       }
       if (event.key === 'Backspace' || event.key === 'Delete') {
         const el = document.activeElement;
         if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
-        if (!selectedIdRef.current) return;
-        event.preventDefault();
-        deleteSelected();
+        if (selectedIdRef.current) { event.preventDefault(); deleteSelected(); return; }
+        const edge = sceneRef.current?.selectedEdge; // edge selection lives in the scene, not React
+        if (edge) { event.preventDefault(); handleDeleteEdge(edge.from, edge.to); }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [undo, redo, deleteSelected]);
+  }, [undo, redo, deleteSelected, handleDeleteEdge]);
 
   useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
+
+  // Mirror React's selection back to the scene so the canvas chrome (affordances,
+  // highlight) tracks it however it cleared — Esc, the panel's close button, or a
+  // canvas click. The scene guards a same-id call, so canvas-driven picks no-op here.
+  useEffect(() => { sceneRef.current?.setSelection(selectedId); }, [selectedId]);
 
   // The autofocus flag is for the bud's first appearance only — once the
   // selection moves elsewhere, re-selecting it later must not steal focus.
