@@ -21,9 +21,8 @@ export class MockTreeRepository extends TreeRepository {
     return this.cachedTree;
   }
 
-  async loadProgress(treeId) {
+  async loadProgress(treeData) {
     await Promise.resolve();
-    const treeData = this.cachedTree ?? (await this.loadTree());
     const tree = new SkillTree(treeData);
 
     // The roadmap carries authoritative per-node `status`; honor `complete`/`active`

@@ -9,7 +9,7 @@ const DATASET_OPTIONS = [
   { value: 'huge', label: 'Huge (5k)' },
 ];
 
-export function ControlBar({ title, datasetSize, onDatasetSizeChange, onZoomIn, onZoomOut, onFitToView }) {
+export function ControlBar({ title, datasetSize, onDatasetSizeChange, onZoomIn, onZoomOut, onFitToView, canReset, onResetEdits }) {
   return (
     <div className="st-topbar">
       <div className="st-brand">
@@ -28,6 +28,11 @@ export function ControlBar({ title, datasetSize, onDatasetSizeChange, onZoomIn, 
       </div>
 
       <div className="st-controls">
+        {canReset && (
+          <Tooltip label="Reset to authored roadmap" side="bottom">
+            <IconButton icon={<Icon name="rotate-ccw" />} label="Reset edits" size="sm" onClick={onResetEdits} />
+          </Tooltip>
+        )}
         <Tabs tabs={DATASET_OPTIONS} value={datasetSize} onChange={onDatasetSizeChange} />
         <div className="st-zoom-group">
           <Tooltip label="Zoom out" side="bottom">

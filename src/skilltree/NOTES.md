@@ -307,6 +307,22 @@ its edge deleted = form 2, zero non-linked nodes on load.
 The "reconnect me" **tag** on an unlinked node (design §5.2) is deferred — the dashed ring carries the
 signal for now; a text tag can ride the label overlay later.
 
+## Persistence: save & load
+
+`persistence/TreeStore.js` is the whole feature — a thin localStorage gateway at the boundary. The
+authored roadmap stays the source of truth; the store only overlays a browser's in-app edits between
+reloads. Each saved entry is stamped with a **signature** of the seed it was edited from (a hash over
+the authored fields — id/label/icon/color/status/prerequisites, not layout); on load, a mismatched
+signature drops the stale edits, so editing `roadmapTree.js` cleanly wins over leftover browser state.
+Persistence is best-effort (try/catch around every storage call) and demo-only (the 5k perf tree is a
+throwaway). Every edit funnels through `persistEdits()` (called from `syncStructure` + node-move), and
+a **Reset to authored** control (shown only when local edits exist) clears the entry and re-runs the
+load pipeline via a `reloadKey` bump. Verified headless: create → stored + survives reload; reset →
+back to 29 + entry cleared; a planted stale-signature entry is ignored (loads authored, no reset).
+
+Note the pipeline change: `repo.loadProgress` now takes the resolved `treeData` (not a treeId) so
+progress derives from the actual tree in play — the persisted edit, not the seed.
+
 ## Observations / follow-ups (not blocking)
 - **Three visual tiers over 4 model states.** `nodeTier` folds active+complete into
   `activated`; `UnlockRules` still keeps the finer states for `DetailPanel`. If we

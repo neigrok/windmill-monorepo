@@ -23,7 +23,7 @@ export const roadmapTree = {
     { id: 'layout-dagre', label: 'Layered layout', icon: 'layout-grid', color: 'brick', status: 'complete', prerequisites: ['domain'] },
     { id: 'radial-layout', label: 'Radial layout', icon: 'compass', color: 'brick', status: 'available', prerequisites: ['domain', 'layout-dagre'] },
     { id: 'command-layer', label: 'Command + undo stack', icon: 'clipboard-check', color: 'brick', status: 'complete', prerequisites: ['domain'] },
-    { id: 'persistence', label: 'Save & load', icon: 'archive', color: 'brick', status: 'locked', prerequisites: ['command-layer'] },
+    { id: 'persistence', label: 'Save & load', icon: 'archive', color: 'brick', status: 'complete', prerequisites: ['command-layer'] },
 
     // ---- visual system (gold) ----
     { id: 'color-kind', label: 'Color by kind', icon: 'palette', color: 'gold', status: 'complete', prerequisites: ['renderer'] },

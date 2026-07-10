@@ -13,12 +13,14 @@ import { UnlockRules } from './model/UnlockRules.js';
 import { WorkerLayoutEngine } from './layout/WorkerLayoutEngine.js';
 import { applyNudges } from './layout/applyNudges.js';
 import { MockTreeRepository } from './mock/MockTreeRepository.js';
+import { TreeStore } from './persistence/TreeStore.js';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
 import { TreeEditor } from './editing/TreeEditor.js';
 import { repositionNode, addChildNode, renameNode, deleteNode, addEdge, removeEdge, reconnectEdge, setNodeColor } from './editing/edits.js';
 import { NODE_SIZE } from './theme.js';
 
 const layoutEngine = new WorkerLayoutEngine();
+const treeStore = new TreeStore();
 const EMPTY_BOUNDS = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 const CHILD_DROP = NODE_SIZE * 2.6; // world units a new child spawns below its parent
 const SIBLING_GAP = NODE_SIZE * 1.8; // horizontal spread between successive new children
@@ -32,6 +34,8 @@ export function SkillTreeView() {
   const editorRef = useRef(null);
   const rawLayoutRef = useRef(new Map());
   const completedRef = useRef(new Set());
+  const seedRef = useRef(null); // authored tree for the current dataset (persistence baseline)
+  const datasetSizeRef = useRef('demo');
   const namingIdRef = useRef(null); // id of the node whose name field is open
   const namingModeRef = useRef('create'); // 'create' (amend) | 'rename' (commit)
   const nameValueRef = useRef('');
@@ -49,6 +53,24 @@ export function SkillTreeView() {
   const [naming, setNaming] = useState(null); // { x, y } screen position of the name field
   const [nameValue, setNameValue] = useState('');
   const [toast, setToast] = useState(null); // { message } shown briefly after a destructive edit
+  const [hasLocalEdits, setHasLocalEdits] = useState(false); // local edits overlaid on the authored seed
+  const [reloadKey, setReloadKey] = useState(0); // bump to re-run the load pipeline (e.g. after reset)
+
+  // Save the edited tree over its seed. Only the dogfood roadmap persists — the
+  // huge perf tree is a throwaway. Every structural edit, undo/redo, and move
+  // funnels here, so the browser always reloads the latest edit.
+  const persistEdits = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor || !seedRef.current || datasetSizeRef.current !== 'demo') return;
+    treeStore.save(seedRef.current, editor.treeData);
+    setHasLocalEdits(true);
+  }, []);
+
+  // Discard local edits and reload the authored seed fresh (clears history too).
+  const handleResetEdits = useCallback(() => {
+    if (seedRef.current) treeStore.clear(seedRef.current.id);
+    setReloadKey((key) => key + 1);
+  }, []);
 
   // Re-derive the whole render model from the editor's current TreeData and apply
   // it to the scene preserving the view. The seam every structural edit + undo/redo
@@ -65,7 +87,8 @@ export function SkillTreeView() {
     setTree(nextTree);
     setRenderModel(model);
     setBounds(sceneNow.getBounds());
-  }, []);
+    persistEdits();
+  }, [persistEdits]);
 
   // A node was dragged to a new spot: record it as one edit. The scene is already
   // showing the new position, so only history + the minimap need updating.
@@ -74,7 +97,8 @@ export function SkillTreeView() {
     if (!editor) return;
     editor.commit(repositionNode(editor.treeData, id, x, y));
     setRenderModel((model) => (model ? { ...model } : model));
-  }, []);
+    persistEdits();
+  }, [persistEdits]);
 
   const undo = useCallback(() => { if (editorRef.current?.undo()) syncStructure(); }, [syncStructure]);
   const redo = useCallback(() => { if (editorRef.current?.redo()) syncStructure(); }, [syncStructure]);
@@ -255,9 +279,14 @@ export function SkillTreeView() {
 
     async function loadTree() {
       const repo = new MockTreeRepository({ size: datasetSize });
-      const treeData = await repo.loadTree();
+      const seed = await repo.loadTree();
+      // Overlay any locally-saved edits on the seed (dogfood roadmap only); a
+      // changed seed invalidates them inside the store, so code wins over state.
+      const persisted = datasetSize === 'demo' ? treeStore.load(seed) : null;
+      const treeData = persisted ?? seed;
+      if (!cancelled) setHasLocalEdits(!!persisted);
       const nextTree = new SkillTree(treeData);
-      const progress = await repo.loadProgress(nextTree.id);
+      const progress = await repo.loadProgress(treeData);
       const states = UnlockRules.derive(nextTree, progress);
       const rawLayout = await layoutEngine.layout(nextTree);
       const positions = applyNudges(rawLayout, nextTree);
@@ -270,6 +299,8 @@ export function SkillTreeView() {
 
       editorRef.current = new TreeEditor(treeData);
       rawLayoutRef.current = rawLayout;
+      seedRef.current = seed;
+      datasetSizeRef.current = datasetSize;
       progressRef.current = progress;
       completedRef.current = new Set(progress.completed);
       setTree(nextTree);
@@ -281,7 +312,7 @@ export function SkillTreeView() {
 
     loadTree();
     return () => { cancelled = true; };
-  }, [datasetSize]);
+  }, [datasetSize, reloadKey]);
 
   // Single source of truth for node state — every completion ripples through here.
   const states = useMemo(() => {
@@ -349,6 +380,8 @@ export function SkillTreeView() {
         onZoomIn={handleZoomIn}
         onZoomOut={handleZoomOut}
         onFitToView={handleFitToView}
+        canReset={hasLocalEdits}
+        onResetEdits={handleResetEdits}
       />
 
       <Minimap
