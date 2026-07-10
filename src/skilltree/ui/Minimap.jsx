@@ -1,7 +1,8 @@
 // Small always-visible map of the whole tree: a dot per node, colored by its
 // current state, plus a rectangle for the camera's current viewport. Clicking
-// anywhere on it pans the scene there. Pure presentation — all state (bounds,
-// viewport, node positions) is handed down from the pipeline in SkillTreeView.
+// anywhere on it pans the scene there. Two stacked canvases keep it smooth: the
+// dots redraw only when nodes/states/bounds change, while the viewport rectangle
+// tracks the camera every frame through `subscribeViewport` — never through React.
 
 import React, { useEffect, useRef } from 'react';
 import { FRUIT } from '../theme.js';
@@ -27,18 +28,16 @@ function hasArea(bounds) {
   return bounds.maxX > bounds.minX && bounds.maxY > bounds.minY;
 }
 
-export function Minimap({ nodes, states, bounds, viewport, onPanTo }) {
-  const canvasRef = useRef(null);
+export function Minimap({ nodes, states, bounds, subscribeViewport, onPanTo }) {
+  const dotsRef = useRef(null);
+  const viewRef = useRef(null);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = dotsRef.current.getContext('2d');
     ctx.clearRect(0, 0, WIDTH, HEIGHT);
     if (!hasArea(bounds)) return;
 
     const { toScreen } = projectBounds(bounds, WIDTH, HEIGHT);
-
     nodes.forEach((node) => {
       const state = states.get(node.id) ?? node.state;
       const [px, py] = toScreen(node.x, node.y);
@@ -47,19 +46,27 @@ export function Minimap({ nodes, states, bounds, viewport, onPanTo }) {
       ctx.arc(px, py, 1.6, 0, Math.PI * 2);
       ctx.fill();
     });
+  }, [nodes, states, bounds]);
 
-    if (hasArea(viewport)) {
+  useEffect(() => {
+    if (!subscribeViewport || !hasArea(bounds)) return;
+    const ctx = viewRef.current.getContext('2d');
+    const { toScreen } = projectBounds(bounds, WIDTH, HEIGHT);
+
+    return subscribeViewport((viewport) => {
+      ctx.clearRect(0, 0, WIDTH, HEIGHT);
+      if (!hasArea(viewport)) return;
       const [vx0, vy0] = toScreen(viewport.minX, viewport.minY);
       const [vx1, vy1] = toScreen(viewport.maxX, viewport.maxY);
       ctx.strokeStyle = FRUIT.complete.ring;
       ctx.lineWidth = 1.5;
       ctx.strokeRect(vx0, vy0, Math.max(1, vx1 - vx0), Math.max(1, vy1 - vy0));
-    }
-  }, [nodes, states, bounds, viewport]);
+    });
+  }, [subscribeViewport, bounds]);
 
   function handleClick(event) {
     if (!hasArea(bounds)) return;
-    const rect = canvasRef.current.getBoundingClientRect();
+    const rect = viewRef.current.getBoundingClientRect();
     const px = ((event.clientX - rect.left) / rect.width) * WIDTH;
     const py = ((event.clientY - rect.top) / rect.height) * HEIGHT;
     const { toWorld } = projectBounds(bounds, WIDTH, HEIGHT);
@@ -69,13 +76,16 @@ export function Minimap({ nodes, states, bounds, viewport, onPanTo }) {
 
   return (
     <div className="st-minimap">
-      <canvas
-        ref={canvasRef}
-        width={WIDTH}
-        height={HEIGHT}
-        className="st-minimap-canvas"
-        onClick={handleClick}
-      />
+      <div className="st-minimap-stack" style={{ width: WIDTH, height: HEIGHT }}>
+        <canvas ref={dotsRef} width={WIDTH} height={HEIGHT} className="st-minimap-canvas st-minimap-canvas--dots" />
+        <canvas
+          ref={viewRef}
+          width={WIDTH}
+          height={HEIGHT}
+          className="st-minimap-canvas st-minimap-canvas--view"
+          onClick={handleClick}
+        />
+      </div>
     </div>
   );
 }

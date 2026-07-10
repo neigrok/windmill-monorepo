@@ -1,6 +1,6 @@
 // Contracts for the skilltree feature: the shared data shapes plus the two
 // ports (TreeRepository, LayoutEngine) that let mock data plug in now and a
-// real backend plug in later. Everything in model/ is pure — no three.js, no React.
+// real backend plug in later. Everything in model/ is pure — no WebGL, no React.
 
 /**
  * @typedef {'locked'|'available'|'active'|'complete'} NodeState

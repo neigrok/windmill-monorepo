@@ -32,25 +32,26 @@ export function SkillTreeView() {
   const [selectedId, setSelectedId] = useState(null);
   const [hoveredId, setHoveredId] = useState(null);
   const [bounds, setBounds] = useState(EMPTY_BOUNDS);
-  const [viewport, setViewport] = useState(EMPTY_BOUNDS);
+  const [scene, setScene] = useState(null);
 
   // Construct the scene once; React only ever drives it through the methods below.
   useEffect(() => {
-    const scene = new SkillTreeScene(canvasRef.current, {
+    const nextScene = new SkillTreeScene(canvasRef.current, {
       onNodePick: (id) => setSelectedId(id),
       onNodeHover: (id) => setHoveredId(id),
-      onCameraChange: (nextViewport) => setViewport(nextViewport),
     });
-    sceneRef.current = scene;
-    scene.start();
+    sceneRef.current = nextScene;
+    setScene(nextScene);
+    nextScene.start();
 
-    const observer = new ResizeObserver(() => scene.resize());
+    const observer = new ResizeObserver(() => nextScene.resize());
     observer.observe(rootRef.current);
 
     return () => {
       observer.disconnect();
-      scene.dispose();
+      nextScene.dispose();
       sceneRef.current = null;
+      setScene(null);
     };
   }, []);
 
@@ -79,7 +80,6 @@ export function SkillTreeView() {
       setRenderModel(model);
       setCompleted(new Set(progress.completed));
       setBounds(scene.getBounds());
-      setViewport(scene.getViewport());
       setLoading(false);
     }
 
@@ -134,7 +134,6 @@ export function SkillTreeView() {
     if (!scene) return;
     scene.fitToView();
     setBounds(scene.getBounds());
-    setViewport(scene.getViewport());
   }
 
   function handlePanTo(x, y) {
@@ -158,7 +157,7 @@ export function SkillTreeView() {
         nodes={renderModel?.nodes ?? []}
         states={states}
         bounds={bounds}
-        viewport={viewport}
+        subscribeViewport={scene?.subscribeViewport ?? null}
         onPanTo={handlePanTo}
       />
 

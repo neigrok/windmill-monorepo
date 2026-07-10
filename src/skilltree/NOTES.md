@@ -48,7 +48,35 @@ logic, "it compiles"). The whole three.js episode passed every proxy while rende
 nothing. A single "are there non-background pixels where a node should be?" check
 would have caught it on day one.
 
+## Overlay smoothness: labels + minimap track the camera every frame
+The GPU canvas redrew every rAF, but labels and the minimap viewport rectangle
+only updated inside `notifyCameraChange()`, which was throttled to 100ms — so
+they moved at ~10fps while the tree panned at 60fps ("text/minimap wait several
+frames then jump"). Root cause was one path feeding two very different consumers:
+React state (rightly kept off the hot loop) and pure-render overlays (which
+belong *on* it).
+
+Fix: the render loop now drives the overlays directly. `SkillTreeScene.tick`
+calls `labelOverlay.update` and per-frame `viewportListeners` whenever the camera
+moved — no throttle, no React. The throttled `notifyCameraChange` / `onCameraChange`
+/ React `viewport` state are gone. The minimap subscribes via `scene.subscribeViewport`
+and splits into two stacked canvases: dots redraw only on node/state/bounds change
+(rare, up to 5k arcs), the viewport rectangle redraws per frame on its own layer.
+Labels now position with `transform: translate(...)` instead of `left/top`, so 64
+spans move each frame without triggering layout.
+
+Verified live: during a 1s pan the minimap rectangle redrew 121× and each visible
+label repositioned 120× (120Hz display) — max frame gap ~10ms, no stalls.
+
+Lesson: don't route a per-frame value and a React-state value through one throttled
+callback. Per-frame render concerns belong in the rAF loop; React state stays off it.
+
 ## Observations / follow-ups (not blocking)
+- **Label pool assignment is by distance-rank, recomputed each frame** (`within` +
+  sort → slice 64). Now that it runs at 60fps, a node crossing a rank boundary makes
+  two pooled spans swap nodes mid-pan. Not visible in testing, but a stable
+  nodeId→slot matching (keep in-view assignments, only reslot on enter/leave) would
+  remove any residual shimmer and drop the per-frame sort.
 - **Web-Worker layout** — dagre runs off the main thread (`WorkerLayoutEngine` +
   `layout/dagre.worker.js`); the 5k toggle doesn't freeze the UI.
 - **Code-split** — routes are `React.lazy`; entry chunk is ~3 kB.

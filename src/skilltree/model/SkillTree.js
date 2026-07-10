@@ -1,6 +1,6 @@
 // The tree entity: validates the DAG once at construction, then answers every
 // graph question (ranks, ancestry, render projection) from indices built here.
-// Pure — no three.js, no React.
+// Pure — no WebGL, no React.
 
 import { NODE_SIZE } from '../theme.js';
 

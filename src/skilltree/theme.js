@@ -1,4 +1,4 @@
-// Design tokens the three.js scene needs as concrete values — WebGL can't read
+// Design tokens the WebGL scene needs as concrete values — WebGL can't read
 // CSS custom properties. These mirror src/styles/tokens/colors.css exactly, so
 // the baked node atlas matches the DOM SkillNode look 1:1. If colors.css changes,
 // change these too.

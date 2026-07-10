@@ -15,7 +15,6 @@ import { createTextureFromCanvas } from './glcore.js';
 const SPATIAL_CELL_SIZE = NODE_SIZE * 2;
 const PICK_RADIUS = NODE_SIZE * 0.65;
 const HOVER_THROTTLE_MS = 40;
-const CAMERA_NOTIFY_THROTTLE_MS = 100;
 const DRAG_CLICK_THRESHOLD_PX = 4;
 const MAX_FRAME_DELTA = 0.1;
 const ICON_ZOOM_START = 0.5;
@@ -56,12 +55,12 @@ export class SkillTreeScene {
     this.selectedId = null;
     this.hoveredId = null;
 
+    this.viewportListeners = new Set();
     this.running = false;
     this.elapsedSeconds = 0;
     this.lastFrameTime = null;
     this.rafHandle = null;
     this.lastHoverAt = 0;
-    this.lastCameraNotifyAt = 0;
     this.dragState = null;
 
     this.resize();
@@ -93,7 +92,6 @@ export class SkillTreeScene {
   fitToView() {
     if (!this.renderModel) return;
     this.camera.fitToView(this.renderModel.bounds, this.camera.viewportWidth, this.camera.viewportHeight);
-    this.notifyCameraChange();
   }
 
   focusNode(id) {
@@ -102,11 +100,19 @@ export class SkillTreeScene {
     this.selectedId = id;
     this.nodeBatch.setSelected(id);
     this.camera.focus(node.x, node.y);
-    this.notifyCameraChange();
   }
 
-  panTo(x, y) { this.camera.panTo(x, y); this.notifyCameraChange(); }
-  zoomBy(factor) { this.camera.zoomBy(factor); this.notifyCameraChange(); }
+  panTo(x, y) { this.camera.panTo(x, y); }
+  zoomBy(factor) { this.camera.zoomBy(factor); }
+
+  // Per-frame camera viewport, straight from the render loop (never throttled,
+  // never through React). The listener fires now with the current viewport and
+  // again on every frame the camera moves; returns an unsubscribe.
+  subscribeViewport = (listener) => {
+    this.viewportListeners.add(listener);
+    listener(this.getViewport());
+    return () => this.viewportListeners.delete(listener);
+  };
 
   getBounds() { return this.renderModel ? this.renderModel.bounds : { minX: 0, minY: 0, maxX: 0, maxY: 0 }; }
   getViewport() { return this.camera.getViewport(); }
@@ -119,7 +125,6 @@ export class SkillTreeScene {
     this.canvas.height = Math.round(height * dpr);
     this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     this.camera.resize(width, height);
-    this.notifyCameraChange();
   }
 
   start() {
@@ -155,7 +160,10 @@ export class SkillTreeScene {
     this.elapsedSeconds += dt;
 
     const moved = this.camera.update(dt);
-    if (moved && now - this.lastCameraNotifyAt > CAMERA_NOTIFY_THROTTLE_MS) this.notifyCameraChange();
+    if (moved) {
+      this.labelOverlay.update(this.camera);
+      this.viewportListeners.forEach((listener) => listener(this.getViewport()));
+    }
 
     const gl = this.gl;
     gl.clearColor(this.clearColor[0], this.clearColor[1], this.clearColor[2], 1);
@@ -167,12 +175,6 @@ export class SkillTreeScene {
 
     this.rafHandle = requestAnimationFrame(this.tick);
   };
-
-  notifyCameraChange() {
-    this.labelOverlay.update(this.camera);
-    if (this.options.onCameraChange) this.options.onCameraChange(this.getViewport());
-    this.lastCameraNotifyAt = performance.now();
-  }
 
   // ---- icon atlas -------------------------------------------------------
 

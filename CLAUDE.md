@@ -1,6 +1,6 @@
 ## Project
 
-Windmill is highly animated and performant three.js app for building roadmaps in a form of RPG skill tree.
+Windmill is a highly animated and performant app for building roadmaps in the form of an RPG skill tree, rendered with a hand-rolled WebGL2 renderer (no three.js).
 
 ## Architecture & Design
 Optimize for the reader, not the writer. Code is read far more than it's written — favor the obvious over the clever

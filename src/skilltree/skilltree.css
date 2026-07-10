@@ -137,10 +137,20 @@
   box-shadow: var(--shadow-md);
   backdrop-filter: saturate(1.3) blur(8px);
 }
+.st-minimap-stack {
+  position: relative;
+}
 .st-minimap-canvas {
   display: block;
   border-radius: var(--radius-md);
+}
+.st-minimap-canvas--dots {
   background: var(--surface-sunken);
+}
+.st-minimap-canvas--view {
+  position: absolute;
+  inset: 0;
+  background: transparent;
   cursor: crosshair;
 }
 

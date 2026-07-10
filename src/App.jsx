@@ -1,7 +1,7 @@
 import React, { Suspense, lazy } from 'react';
 
 // Both routes are lazy so the entry chunk is just React + the router: the
-// heavy WebGL route (three + troika) and the design-system showcase each load
+// heavy WebGL skill-tree route and the design-system showcase each load
 // on demand, and the first paint below shows instantly while they stream in.
 const SkillTreeView = lazy(() => import('./skilltree').then((m) => ({ default: m.SkillTreeView })));
 const Showcase = lazy(() => import('./Showcase.jsx'));

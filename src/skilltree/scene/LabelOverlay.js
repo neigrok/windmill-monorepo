@@ -20,7 +20,7 @@ export class LabelOverlay {
     this.pool = Array.from({ length: POOL_SIZE }, () => {
       const span = document.createElement('span');
       span.className = 'st-label';
-      span.style.cssText = 'position:absolute;transform:translate(-50%,0);white-space:nowrap;display:none;';
+      span.style.cssText = 'position:absolute;left:0;top:0;white-space:nowrap;display:none;will-change:transform;';
       this.container.appendChild(span);
       return span;
     });
@@ -60,8 +60,7 @@ export class LabelOverlay {
       const sx = (node.x - camera.x) * camera.zoom + camera.viewportWidth / 2;
       const sy = (node.y - camera.y) * camera.zoom + camera.viewportHeight / 2;
       span.style.display = 'block';
-      span.style.left = `${sx}px`;
-      span.style.top = `${sy + offsetY}px`;
+      span.style.transform = `translate(${sx}px, ${sy + offsetY}px) translate(-50%, 0)`;
       if (this.assignedId[i] !== node.id) { this.assignedId[i] = node.id; span.textContent = node.label; }
     });
   }
