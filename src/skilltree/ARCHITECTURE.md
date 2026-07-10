@@ -142,9 +142,25 @@ in the animation loop except the LOD-gated, bounded overlay pick; no per-frame a
 instanced attribute updates flag their buffer rather than reallocating. Ortho camera keeps
 world↔screen linear.
 
+## `editing/`  (pure edit logic)
+
+Direct-manipulation editing of the tree. Pure and dependency-light — the view drives it
+and feeds results back through the render pipeline.
+- `editing/TreeEditor.js` — `class TreeEditor`. Session edit history: a `present` TreeData
+  plus undo/redo stacks. `commit(next)` records one step (and clears redo — linear history),
+  `undo()`/`redo()` swap snapshots, `canUndo`/`canRedo`. Snapshots share unchanged node
+  objects, so a compound edit is one step and keeping many is cheap.
+- `editing/edits.js` — pure `TreeData → TreeData` transforms with structural sharing (only
+  touched nodes replaced). `repositionNode(treeData, id, x, y)` pins a manual position; the
+  structural transforms (add/connect/delete/rename/kind) land here as their features are built.
+
 ## `SkillTreeView.jsx` + overlay UI
 
-Runs the pipeline above (repo → domain → layout → scene). Wires:
+Runs the pipeline above (repo → domain → layout → scene) and owns the edit loop: builds a
+`TreeEditor` from the loaded TreeData, caches the raw layout, commits `MoveTool` drops
+(`onNodeMoveEnd` → `repositionNode`) to history, and binds ⌘Z/⇧⌘Z → `undo`/`redo` →
+`syncStructure()` (re-derive the model from `editor.treeData` — which re-validates the DAG —
+and `scene.applyModel`). Wires:
 - A full-viewport `<canvas className="st-canvas">`; constructs `SkillTreeScene` in an effect,
   `setModel` + `start()`, `dispose()` on unmount, `resize()` on container resize (ResizeObserver).
   Holds the scene in state so overlay children can subscribe once it exists.

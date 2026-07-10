@@ -154,6 +154,30 @@ already exists for it), and per-instance add/remove GPU compaction (`applyModel`
 re-upload is fine at edit cadence). Verified live (headless): drag-node moves it with edges +
 label following and it stays clickable; pan/select/hover unchanged; no errors.
 
+## Editing phase — command layer + undo/redo (first slice)
+
+The substrate every edit will write through, proven end-to-end by making node drags
+undoable. `editing/TreeEditor` holds the present TreeData + undo/redo stacks; edits are pure
+`TreeData → TreeData` transforms (`editing/edits.js`) with structural sharing, so a compound
+edit is one history step and snapshots stay cheap. The view builds the editor from the loaded
+data, caches the raw layout, and:
+- a `MoveTool` drop past the 4px threshold fires `scene.onNodeMoveEnd` → the view commits
+  `repositionNode(treeData, id, x, y)` (a `NodeSpec.position` override) as one history step —
+  the scene is already at the new spot from the live drag, so only history + minimap update.
+- ⌘Z/⇧⌘Z → `undo`/`redo` → `syncStructure()`: rebuild a `SkillTree` from `editor.treeData`
+  (re-validating the DAG — this is also the cycle guard for structural edits), re-derive
+  positions (cached raw layout + overrides via `applyNudges`) + states, and `scene.applyModel`
+  (preserve-view). Verified headless: drag → ⌘Z restores the exact position (override cleared),
+  ⇧⌘Z re-applies it; canUndo/canRedo flip correctly; a new edit clears redo.
+
+Design alignment / next: this move is a free-pixel `position` override — the design's move
+(§07) is *angular reorder* over a deterministic **radial layout** (`radial-layout`, still
+`available` on the roadmap), which will replace the gesture. The structural edit transforms
+(create/connect/reconnect/delete/rename/kind) each add a pure transform to `edits.js` + a tool
+or affordance; they flow through the same `commit`/`syncStructure` seam. Cycle prevention needs
+a live `wouldCreateCycle(from, to)` predicate for in-drag feedback (spec §03) in addition to
+the commit-time `new SkillTree` validation.
+
 ## Observations / follow-ups (not blocking)
 - **Three visual tiers over 4 model states.** `nodeTier` folds active+complete into
   `activated`; `UnlockRules` still keeps the finer states for `DetailPanel`. If we

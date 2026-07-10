@@ -3,7 +3,7 @@
 // detail panel, and a minimap. No business logic lives here — every node
 // state comes from UnlockRules.derive; this file only wires data through.
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './skilltree.css';
 import { ControlBar } from './ui/ControlBar.jsx';
 import { DetailPanel } from './ui/DetailPanel.jsx';
@@ -14,6 +14,8 @@ import { WorkerLayoutEngine } from './layout/WorkerLayoutEngine.js';
 import { applyNudges } from './layout/applyNudges.js';
 import { MockTreeRepository } from './mock/MockTreeRepository.js';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
+import { TreeEditor } from './editing/TreeEditor.js';
+import { repositionNode } from './editing/edits.js';
 
 const layoutEngine = new WorkerLayoutEngine();
 const EMPTY_BOUNDS = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
@@ -23,6 +25,9 @@ export function SkillTreeView() {
   const rootRef = useRef(null);
   const sceneRef = useRef(null);
   const progressRef = useRef({ completed: new Set(), inProgress: new Set() });
+  const editorRef = useRef(null);
+  const rawLayoutRef = useRef(new Map());
+  const completedRef = useRef(new Set());
 
   const [datasetSize, setDatasetSize] = useState('demo');
   const [loading, setLoading] = useState(true);
@@ -34,11 +39,41 @@ export function SkillTreeView() {
   const [bounds, setBounds] = useState(EMPTY_BOUNDS);
   const [scene, setScene] = useState(null);
 
+  // Re-derive the whole render model from the editor's current TreeData and apply
+  // it to the scene preserving the view. The seam every structural edit + undo/redo
+  // funnels through; constructing a SkillTree here also re-validates the DAG.
+  const syncStructure = useCallback(() => {
+    const editor = editorRef.current;
+    const sceneNow = sceneRef.current;
+    if (!editor || !sceneNow) return;
+    const nextTree = new SkillTree(editor.treeData);
+    const positions = applyNudges(rawLayoutRef.current, nextTree);
+    const nextStates = UnlockRules.derive(nextTree, { completed: completedRef.current, inProgress: progressRef.current.inProgress });
+    const model = nextTree.toRenderModel(positions, nextStates);
+    sceneNow.applyModel(model);
+    setTree(nextTree);
+    setRenderModel(model);
+    setBounds(sceneNow.getBounds());
+  }, []);
+
+  // A node was dragged to a new spot: record it as one edit. The scene is already
+  // showing the new position, so only history + the minimap need updating.
+  const handleNodeMoved = useCallback((id, x, y) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.commit(repositionNode(editor.treeData, id, x, y));
+    setRenderModel((model) => (model ? { ...model } : model));
+  }, []);
+
+  const undo = useCallback(() => { if (editorRef.current?.undo()) syncStructure(); }, [syncStructure]);
+  const redo = useCallback(() => { if (editorRef.current?.redo()) syncStructure(); }, [syncStructure]);
+
   // Construct the scene once; React only ever drives it through the methods below.
   useEffect(() => {
     const nextScene = new SkillTreeScene(canvasRef.current, {
       onNodePick: (id) => setSelectedId(id),
       onNodeHover: (id) => setHoveredId(id),
+      onNodeMoveEnd: handleNodeMoved,
     });
     sceneRef.current = nextScene;
     setScene(nextScene);
@@ -53,7 +88,19 @@ export function SkillTreeView() {
       sceneRef.current = null;
       setScene(null);
     };
-  }, []);
+  }, [handleNodeMoved]);
+
+  // Keyboard history: ⌘Z / Ctrl+Z undo, ⇧⌘Z / Ctrl+Shift+Z redo.
+  useEffect(() => {
+    const onKey = (event) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z') return;
+      event.preventDefault();
+      if (event.shiftKey) redo();
+      else undo();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [undo, redo]);
 
   // The pipeline itself: repository loads → domain computes → scene renders.
   // Re-runs whenever the dataset toggle swaps demo ↔ huge.
@@ -64,10 +111,12 @@ export function SkillTreeView() {
 
     async function loadTree() {
       const repo = new MockTreeRepository({ size: datasetSize });
-      const nextTree = new SkillTree(await repo.loadTree());
+      const treeData = await repo.loadTree();
+      const nextTree = new SkillTree(treeData);
       const progress = await repo.loadProgress(nextTree.id);
       const states = UnlockRules.derive(nextTree, progress);
-      const positions = applyNudges(await layoutEngine.layout(nextTree), nextTree);
+      const rawLayout = await layoutEngine.layout(nextTree);
+      const positions = applyNudges(rawLayout, nextTree);
       const model = nextTree.toRenderModel(positions, states);
       if (cancelled) return;
 
@@ -75,7 +124,10 @@ export function SkillTreeView() {
       scene.setModel(model);
       scene.fitToView();
 
+      editorRef.current = new TreeEditor(treeData);
+      rawLayoutRef.current = rawLayout;
       progressRef.current = progress;
+      completedRef.current = new Set(progress.completed);
       setTree(nextTree);
       setRenderModel(model);
       setCompleted(new Set(progress.completed));
@@ -98,6 +150,8 @@ export function SkillTreeView() {
   useEffect(() => {
     sceneRef.current?.applyStates(states);
   }, [states]);
+
+  useEffect(() => { completedRef.current = completed; }, [completed]);
 
   const nodesById = useMemo(() => {
     if (!tree) return new Map();

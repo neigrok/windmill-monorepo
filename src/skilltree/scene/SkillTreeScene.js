@@ -70,6 +70,7 @@ export class SkillTreeScene {
       select: (id) => this.select(id),
       hover: (id) => this.hover(id),
       moveNode: (id, x, y) => this.moveNode(id, x, y),
+      endMove: (id) => this.endMove(id),
     };
     this.input = new InputController(canvas, this.toolContext, new MoveTool(this.toolContext));
 
@@ -130,6 +131,13 @@ export class SkillTreeScene {
     this.connectorBatch.moveNode(id, x, y);
     this.spatialGrid.move(id, x, y);
     this.overlaysDirty = true;
+  }
+
+  // A drag ended: report the node's committed position so the shell can record it
+  // in edit history. The scene snapshot already holds the new position.
+  endMove(id) {
+    const node = this.nodesById.get(id);
+    if (node && this.options.onNodeMoveEnd) this.options.onNodeMoveEnd(id, node.x, node.y);
   }
 
   fitToView() {

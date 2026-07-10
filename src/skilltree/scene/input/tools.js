@@ -71,6 +71,9 @@ export class MoveTool extends NavigateTool {
     this.node = null;
     this.grabX = 0;
     this.grabY = 0;
+    this.startX = 0;
+    this.startY = 0;
+    this.moved = false;
   }
 
   onPointerDown(pos, event) {
@@ -81,6 +84,9 @@ export class MoveTool extends NavigateTool {
       this.node = id;
       this.grabX = node.x - world.x;
       this.grabY = node.y - world.y;
+      this.startX = pos.x;
+      this.startY = pos.y;
+      this.moved = false;
       this.ctx.select(id);
       return;
     }
@@ -89,15 +95,24 @@ export class MoveTool extends NavigateTool {
 
   onPointerDrag(pos, event) {
     if (this.node) {
-      const world = this.ctx.camera.screenToWorld(pos.x, pos.y);
-      this.ctx.moveNode(this.node, world.x + this.grabX, world.y + this.grabY);
+      if (!this.moved && Math.hypot(pos.x - this.startX, pos.y - this.startY) > DRAG_THRESHOLD_PX) this.moved = true;
+      if (this.moved) {
+        const world = this.ctx.camera.screenToWorld(pos.x, pos.y);
+        this.ctx.moveNode(this.node, world.x + this.grabX, world.y + this.grabY);
+      }
       return;
     }
     super.onPointerDrag(pos, event);
   }
 
   onPointerUp(pos, event) {
-    if (this.node) { this.node = null; return; }
+    if (this.node) {
+      const id = this.node;
+      const moved = this.moved;
+      this.node = null;
+      if (moved) this.ctx.endMove(id); // a real drag — record it; a click just selected
+      return;
+    }
     super.onPointerUp(pos, event);
   }
 }

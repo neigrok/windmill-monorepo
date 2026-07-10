@@ -22,7 +22,7 @@ export const roadmapTree = {
     { id: 'domain', label: 'DAG domain + validation', icon: 'git-branch-plus', color: 'brick', status: 'complete', prerequisites: ['product'] },
     { id: 'layout-dagre', label: 'Layered layout', icon: 'layout-grid', color: 'brick', status: 'complete', prerequisites: ['domain'] },
     { id: 'radial-layout', label: 'Radial layout', icon: 'compass', color: 'brick', status: 'available', prerequisites: ['domain', 'layout-dagre'] },
-    { id: 'command-layer', label: 'Command + undo stack', icon: 'clipboard-check', color: 'brick', status: 'available', prerequisites: ['domain'] },
+    { id: 'command-layer', label: 'Command + undo stack', icon: 'clipboard-check', color: 'brick', status: 'complete', prerequisites: ['domain'] },
     { id: 'persistence', label: 'Save & load', icon: 'archive', color: 'brick', status: 'locked', prerequisites: ['command-layer'] },
 
     // ---- visual system (gold) ----
@@ -48,6 +48,6 @@ export const roadmapTree = {
     { id: 'reorder', label: 'Move / reorder', icon: 'grid-3x3', color: 'terracotta', status: 'locked', prerequisites: ['radial-layout', 'edit-mode'] },
     { id: 'rename', label: 'Rename inline', icon: 'ruler', color: 'terracotta', status: 'locked', prerequisites: ['edit-mode'] },
     { id: 'kind-picker', label: 'Kind picker', icon: 'sun', color: 'terracotta', status: 'locked', prerequisites: ['edit-mode', 'color-kind'] },
-    { id: 'undo-redo', label: 'Undo / redo (⌘Z)', icon: 'flag', color: 'terracotta', status: 'locked', prerequisites: ['command-layer'] },
+    { id: 'undo-redo', label: 'Undo / redo (⌘Z)', icon: 'flag', color: 'terracotta', status: 'complete', prerequisites: ['command-layer'] },
   ],
 };
