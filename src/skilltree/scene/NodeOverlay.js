@@ -7,7 +7,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Icon } from '../../components/Icon.jsx';
-import { FRUIT, NODE_SIZE } from '../theme.js';
+import { NODE_COLORS, DEFAULT_NODE_COLOR, BACKGROUND, nodeTier, NODE_SIZE } from '../theme.js';
 
 const POOL_SIZE = 64;
 const LABEL_ZOOM_THRESHOLD = 0.5;
@@ -19,6 +19,23 @@ const LABEL_FONT_FRACTION = 0.23; // caption height as a share of the node diame
 function smoothstep(x, edge0, edge1) {
   const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
   return t * t * (3 - 2 * t);
+}
+
+// Mirrors the node shader's glyph so the high-zoom live glyph matches the baked
+// one: a saturated node (available/activated) shows the bright `soft` tint of its
+// kind; an unavailable node a muted mix of the kind toward the cream canvas.
+function rgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function glyphCssColor(color, state) {
+  const family = NODE_COLORS[color] ?? NODE_COLORS[DEFAULT_NODE_COLOR];
+  if (nodeTier(state) > 0) return `rgb(${rgb(family.soft).join(', ')})`;
+  const [br, bg, bb] = rgb(family.base);
+  const [cr, cg, cb] = rgb(BACKGROUND.canvas);
+  const mix = (a, b) => Math.round(b + (a - b) * 0.55);
+  return `rgb(${mix(br, cr)}, ${mix(bg, cg)}, ${mix(bb, cb)})`;
 }
 
 class NodeOverlay {
@@ -115,13 +132,16 @@ export class IconOverlay extends NodeOverlay {
     super(canvas, 'st-icons');
     this.markupByName = new Map();
     this.stateById = new Map();
+    this.colorById = new Map();
   }
 
   setModel(renderModel, spatialGrid) {
     this.markupByName = new Map();
     this.stateById = new Map();
+    this.colorById = new Map();
     for (const node of renderModel.nodes) {
       this.stateById.set(node.id, node.state);
+      this.colorById.set(node.id, node.color);
       if (!this.markupByName.has(node.icon)) {
         this.markupByName.set(node.icon, renderToStaticMarkup(createElement(Icon, { name: node.icon, strokeWidth: 2.25 })));
       }
@@ -133,7 +153,7 @@ export class IconOverlay extends NodeOverlay {
     for (const [id, state] of statesMap) this.stateById.set(id, state);
     this.pool.forEach((element, i) => {
       const id = this.assignedId[i];
-      if (id !== null) element.style.color = FRUIT[this.stateById.get(id)].icon;
+      if (id !== null) element.style.color = glyphCssColor(this.colorById.get(id), this.stateById.get(id));
     });
   }
 
@@ -157,6 +177,6 @@ export class IconOverlay extends NodeOverlay {
 
   render(element, node) {
     element.innerHTML = this.markupByName.get(node.icon) ?? '';
-    element.style.color = FRUIT[this.stateById.get(node.id)].icon;
+    element.style.color = glyphCssColor(this.colorById.get(node.id), this.stateById.get(node.id));
   }
 }

@@ -5,11 +5,19 @@
 // tracks the camera every frame through `subscribeViewport` — never through React.
 
 import React, { useEffect, useRef } from 'react';
-import { FRUIT } from '../theme.js';
+import { NODE_COLORS, DEFAULT_NODE_COLOR, nodeTier } from '../theme.js';
 
 const WIDTH = 168;
 const HEIGHT = 128;
 const PADDING = 10;
+const VIEWPORT_STROKE = NODE_COLORS.terracotta.base;
+
+// A dot keeps its kind's hue; an unavailable node drops to the family's lighter
+// tint so it reads as faded without losing its color.
+function dotColor(color, state) {
+  const family = NODE_COLORS[color] ?? NODE_COLORS[DEFAULT_NODE_COLOR];
+  return nodeTier(state) === 0 ? family.soft : family.base;
+}
 
 function projectBounds(bounds, width, height) {
   const spanX = Math.max(1, bounds.maxX - bounds.minX);
@@ -41,7 +49,7 @@ export function Minimap({ nodes, states, bounds, subscribeViewport, onPanTo }) {
     nodes.forEach((node) => {
       const state = states.get(node.id) ?? node.state;
       const [px, py] = toScreen(node.x, node.y);
-      ctx.fillStyle = (FRUIT[state] || FRUIT.locked).outer;
+      ctx.fillStyle = dotColor(node.color, state);
       ctx.beginPath();
       ctx.arc(px, py, 1.6, 0, Math.PI * 2);
       ctx.fill();
@@ -58,7 +66,7 @@ export function Minimap({ nodes, states, bounds, subscribeViewport, onPanTo }) {
       if (!hasArea(viewport)) return;
       const [vx0, vy0] = toScreen(viewport.minX, viewport.minY);
       const [vx1, vy1] = toScreen(viewport.maxX, viewport.maxY);
-      ctx.strokeStyle = FRUIT.complete.ring;
+      ctx.strokeStyle = VIEWPORT_STROKE;
       ctx.lineWidth = 1.5;
       ctx.strokeRect(vx0, vy0, Math.max(1, vx1 - vx0), Math.max(1, vy1 - vy0));
     });

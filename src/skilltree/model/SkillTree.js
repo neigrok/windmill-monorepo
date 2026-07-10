@@ -2,7 +2,7 @@
 // graph question (ranks, ancestry, render projection) from indices built here.
 // Pure — no WebGL, no React.
 
-import { NODE_SIZE } from '../theme.js';
+import { NODE_SIZE, DEFAULT_NODE_COLOR } from '../theme.js';
 
 function hashToUnit(id) {
   let hash = 2166136261;
@@ -95,6 +95,7 @@ export class SkillTree {
         id: node.id,
         label: node.label,
         icon: node.icon,
+        color: node.color ?? DEFAULT_NODE_COLOR,
         x: position.x,
         y: position.y,
         layer: this.rankById.get(node.id) % 3,
@@ -103,11 +104,7 @@ export class SkillTree {
       };
     });
 
-    const renderEdges = this.allEdges.map((edge) => ({
-      from: edge.from,
-      to: edge.to,
-      active: states.get(edge.from) === 'complete',
-    }));
+    const renderEdges = this.allEdges.map((edge) => ({ from: edge.from, to: edge.to }));
 
     const xs = renderNodes.map((node) => node.x);
     const ys = renderNodes.map((node) => node.y);

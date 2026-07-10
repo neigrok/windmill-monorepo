@@ -94,7 +94,52 @@ per-state color (locked #B29F7B, complete #FFFFFF); marking a node complete flip
 its icon tan→white immediately; the cross-fade sums to 1.0 at zoom 2.5; DOM icons
 are hidden below the band.
 
+## Color = kind, state = three tiers (pulled from the design system)
+
+Node look is **two orthogonal dimensions**. `color` (a `NodeSpec` field: terracotta
+/ olive / gold / brick / sky) picks the **hue** — a node's *kind*, a stand-in until
+real categorization lands. State maps to one of **three tiers** via `nodeTier(state)`
+(design: the `dag-clean-colors` exploration); the finer 4 `NodeState`s live on only
+for the detail/dashboard panels:
+- **unavailable** (locked) — the same hue at low opacity `mix(canvas, base, 0.22)`,
+  muted ring, muted glyph, no glow. Opaque (so trimmed edges never show through).
+- **available** — flat saturated `base` fill + `ring` (accent-600), `soft` glyph,
+  no resting glow (glow on hover via selection).
+- **activated** (active **or** complete — "engaged") — the available look plus an
+  **outer ring** (a thin `base` circle beyond the disc) and a **breathing glow**.
+
+Values are the design tokens verbatim (`--kind-*`): `base` = accent-500, `ring` =
+accent-600, `soft` = accent-200, `glow` = the kind's rgba. Fills are flat/matte (the
+exploration dropped the old glossy gradient). One `aTier` float per instance selects
+the branch in-shader; `setStates` rewrites only that float.
+
+Edges follow their **source node** (design `SkillConnector` with
+`glowColor=var(--kind-{from.kind})`): a branch lights in the source kind's `base` hue
+with a grow-sweep once the source is `isDone` (complete); otherwise a thin muted line
+at `0.7` alpha. Edges are trimmed to the node's disc radius (`NODE_SIZE*0.42`) so they
+meet the boundary instead of running under the body.
+
+`MockTreeRepository` completes the root + 3 rings so the demo shows all three tiers at
+once: an activated spine, a saturated available frontier, dimmed leaves.
+
+Verified live (headless Chromium + swiftshader, since the perpetual rAF loop blocks
+the in-browser extension's `document_idle` screenshot): activated spine is saturated
+with outer rings + glow + lit edges; the frontier row reads as saturated-no-glow
+(available); leaves are pale washes of their own kind — all three tiers distinct.
+
 ## Observations / follow-ups (not blocking)
+- **Three visual tiers over 4 model states.** `nodeTier` folds active+complete into
+  `activated`; `UnlockRules` still keeps the finer states for `DetailPanel`. If we
+  ever want completed to read differently from in-progress *in the tree*, that's a
+  scene-only change (add a 4th tier + attribute) — the design's exploration
+  deliberately shows three.
+- **Glyph math is duplicated** — the GLSL glyph (`soft` when saturated, else
+  `mix(canvas, base, 0.55)`) and the DOM `glyphCssColor()` in `NodeOverlay.js`
+  (high-zoom live SVG). Keep them in step or the baked/live glyph disagrees at the
+  LOD seam.
+- **Outer-ring / glow radii are shader constants** (`OUTER_R`, `glowFalloff` reach,
+  `QUAD_PADDING`). The padding must stay wide enough to contain the glow halo, or it
+  clips at the quad edge.
 - **Overlay pool assignment is by distance-rank, recomputed each frame** (`within` +
   sort → slice 64), shared by labels and icons via `NodeOverlay`. Now that it runs at
   60fps, a node crossing a rank boundary makes two pooled elements swap nodes mid-pan.

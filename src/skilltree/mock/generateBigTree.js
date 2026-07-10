@@ -3,6 +3,8 @@
 // cross-link) so real diamonds show up. Deterministic given the seed — same
 // (count, seed) always yields the same TreeData, byte for byte.
 
+import { NODE_COLOR_NAMES } from '../theme.js';
+
 const ICONS = [
   'star', 'flag', 'zap', 'shield', 'flame', 'droplet', 'leaf', 'compass',
   'anchor', 'feather', 'gem', 'crown', 'sun', 'moon', 'cloud', 'mountain',
@@ -30,9 +32,17 @@ function pick(random, list) {
 export function generateBigTree(count = 5000, seed = 1) {
   const random = mulberry32(seed);
   const nodes = [];
+  const colorById = new Map();
 
+  // Each root claims one kind and passes it down its subtree, so color reads as
+  // coherent regions rather than confetti.
   function addNode(prerequisites) {
     const node = { id: `n${nodes.length}`, label: `Skill ${nodes.length}`, icon: pick(random, ICONS), prerequisites };
+    const color = prerequisites.length === 0
+      ? NODE_COLOR_NAMES[nodes.length % NODE_COLOR_NAMES.length]
+      : colorById.get(prerequisites[0]);
+    node.color = color;
+    colorById.set(node.id, color);
     nodes.push(node);
     return node;
   }

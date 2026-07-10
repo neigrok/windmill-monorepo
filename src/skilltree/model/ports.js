@@ -7,10 +7,13 @@
  * @typedef {{ x: number, y: number }} Vec2
  * @typedef {{ minX: number, minY: number, maxX: number, maxY: number }} Bounds
  *
+ * @typedef {'terracotta'|'olive'|'gold'|'sky'|'brick'} NodeColor
+ *
  * @typedef {Object} NodeSpec              input shape (mock now, backend later)
  * @property {string} id
  * @property {string} label
  * @property {string} icon                 lucide icon name
+ * @property {NodeColor} [color]           the node's kind; picks its hue (defaults to terracotta)
  * @property {string[]} prerequisites      ids that must be complete to unlock (DAG parents)
  * @property {Vec2} [position]             manual nudge; overrides auto-layout
  * @property {Object} [meta]
@@ -28,16 +31,16 @@
  * @property {string} id
  * @property {string} label
  * @property {string} icon
+ * @property {NodeColor} color             its kind → hue
  * @property {number} x
  * @property {number} y
  * @property {number} layer                z-band for parallax (0 = back)
- * @property {NodeState} state
+ * @property {NodeState} state             progress → brightness/glow envelope
  * @property {number} glowSeed             stable 0..1 per node; decorrelates pulse phase
  *
- * @typedef {Object} RenderEdge
+ * @typedef {Object} RenderEdge            a branch; its look follows its source node
  * @property {string} from
  * @property {string} to
- * @property {boolean} active              source complete → branch is "grown"
  *
  * @typedef {Object} RenderModel
  * @property {RenderNode[]} nodes

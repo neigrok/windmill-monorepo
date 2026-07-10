@@ -32,8 +32,15 @@ or React layers. Layout runs off the main thread, so `layout.layout(tree)` is aw
 - `model/ports.js` — data shapes (`NodeSpec`, `TreeData`, `Progress`, `RenderNode`,
   `RenderEdge`, `RenderModel`, `Bounds`, `Vec2`, `NodeState`) + base ports
   `TreeRepository`, `LayoutEngine` (`layout` may return a `Map` or a `Promise` of one).
-- `theme.js` — resolved hex palette (`FRUIT`, `CONNECTOR`, `LEAF`, `BACKGROUND`,
-  `NODE_STATES`, `NODE_SIZE`). Scene + atlas use these so the GPU look matches the CSS.
+- `theme.js` — resolved hex palette, pulled from the design system's `--kind-*`
+  tokens + the `dag-clean-colors` exploration. A node's look is two orthogonal
+  dimensions: `NODE_COLORS` / `NODE_COLOR_NAMES` (its *kind* → hue: `base`
+  accent-500, `ring` accent-600, `soft` accent-200, `glow`) and one of three
+  `nodeTier(state)` tiers — `unavailable` (locked → low-opacity wash, no glow),
+  `available` (saturated fill + ring, glow on hover), `activated` (active/complete
+  → + an outer ring + a breathing glow). `isDone(state)` (complete only) still
+  drives edge growth. Also `CONNECTOR`, `LEAF`, `BACKGROUND`, `NODE_SIZE`. Scene +
+  atlas use these so the GPU look matches the design-system tree.
 
 Positions are in **world units** where a node is `NODE_SIZE` (56) units in diameter.
 Everything in `model/` is pure JS — no WebGL, no React.

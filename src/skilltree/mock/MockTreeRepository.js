@@ -26,19 +26,21 @@ export class MockTreeRepository extends TreeRepository {
     const treeData = this.cachedTree ?? (await this.loadTree());
     const tree = new SkillTree(treeData);
 
-    const firstRing = new Set();
-    for (const root of tree.roots()) {
-      for (const child of tree.childrenOf(root.id)) firstRing.add(child.id);
+    // Complete the root and its first three rings; the frontier just past them is
+    // left unlocked ("available"), everything deeper stays locked. This shows all
+    // three tree tiers at once: an activated spine, a saturated available frontier,
+    // and dimmed leaves.
+    const completed = new Set();
+    let frontier = tree.roots().map((root) => root.id);
+    for (let depth = 0; depth < 4 && frontier.length > 0; depth++) {
+      const next = [];
+      for (const id of frontier) {
+        completed.add(id);
+        for (const child of tree.childrenOf(id)) next.push(child.id);
+      }
+      frontier = next;
     }
 
-    const completed = new Set([...tree.roots().map((root) => root.id), ...firstRing]);
-
-    const secondRing = new Set();
-    for (const id of firstRing) {
-      for (const child of tree.childrenOf(id)) secondRing.add(child.id);
-    }
-    const inProgress = new Set([...secondRing].filter((id) => !completed.has(id)));
-
-    return { completed, inProgress };
+    return { completed, inProgress: new Set() };
   }
 }
