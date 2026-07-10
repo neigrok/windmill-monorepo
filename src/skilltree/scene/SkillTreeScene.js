@@ -44,7 +44,10 @@ export class SkillTreeScene {
     this.labelOverlay = new LabelOverlay(canvas);
     this.iconOverlay = new IconOverlay(canvas);
     this.affordanceLayer = new AffordanceLayer(canvas, {
+      camera: this.camera,
+      pick: (x, y) => this.pick(x, y),
       onCreate: (id) => this.options.onCreateChild && this.options.onCreateChild(id),
+      onConnect: (sourceId, targetId) => this.options.onConnectNodes && this.options.onConnectNodes(sourceId, targetId),
     });
 
     this.motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');

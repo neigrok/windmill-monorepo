@@ -8,6 +8,7 @@
 // frame the camera moves, so it's repositioned from the render loop. Purely visual
 // for now — the create/connect gestures wire into these in their own slices.
 import { NODE_SIZE } from '../theme.js';
+import { ConnectGesture } from './ConnectGesture.js';
 
 const NODE_RADIUS = NODE_SIZE * 0.42; // the disc's world radius (matches the shader edge)
 const PLUS_GAP = 16;
@@ -16,11 +17,12 @@ const PORT_COUNT = 2;
 const GRACE_MS = 260; // keep chrome alive after leaving the node, so the plus is reachable
 
 export class AffordanceLayer {
-  constructor(canvas, { onCreate } = {}) {
+  constructor(canvas, { camera, pick, onCreate, onConnect } = {}) {
     this.onCreate = onCreate;
     this.container = document.createElement('div');
     this.container.className = 'st-affordances';
     canvas.parentElement.appendChild(this.container);
+    this.connectGesture = new ConnectGesture(canvas, this.container, { camera, pick, onConnect });
 
     this.plus = document.createElement('div');
     this.plus.className = 'st-plus';
@@ -35,6 +37,7 @@ export class AffordanceLayer {
       port.className = 'st-port';
       port.addEventListener('pointerenter', () => this.keepAlive());
       port.addEventListener('pointerleave', () => this.scheduleHide());
+      port.addEventListener('pointerdown', (event) => this.connectGesture.start(this.target, event));
       this.container.appendChild(port);
       return port;
     });
@@ -55,6 +58,7 @@ export class AffordanceLayer {
       this.neighbors.get(edge.from).push(edge.to);
       this.neighbors.get(edge.to).push(edge.from);
     }
+    this.connectGesture.setModel(this.nodesById, this.parents);
     this.clear();
   }
 

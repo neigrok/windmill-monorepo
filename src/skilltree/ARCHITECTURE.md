@@ -121,8 +121,12 @@ Everything in `model/` is pure JS — no WebGL, no React.
   node's outward rim (opposite its parents), ports at the widest gaps between branches;
   repositioned per frame so it tracks the camera and drags. Tools are neutral — never a kind hue.
   A **grace window** keeps the chrome alive after the pointer leaves the node so the plus stays
-  reachable. The plus is live: clicking it fires `onCreate(nodeId)` → the shell's create flow.
-  Ports (connect) wire in next.
+  reachable. The plus is live (`onCreate`); each port starts a `ConnectGesture`.
+- `scene/ConnectGesture.js` — dragging a dependency from a port to another node: a dashed SVG
+  **ghost branch** follows the cursor; the node under it gets an **olive ring** (valid) or a
+  **brick ring + "would create a loop" tip** (a cycle — the source's ancestors, computed from the
+  parents map). Cycles are shown and blocked *before* the drop; a valid release fires
+  `onConnect(source, target)` → the shell adds the edge.
 - `scene/input/` — pointer interaction, extracted so the scene isn't a god-object and edit
   tools plug in without touching event plumbing. `InputController` owns the canvas listeners
   + pointer capture + single-pointer bookkeeping, forwards down/drag/move/up/leave to the

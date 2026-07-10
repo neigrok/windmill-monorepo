@@ -15,7 +15,7 @@ import { applyNudges } from './layout/applyNudges.js';
 import { MockTreeRepository } from './mock/MockTreeRepository.js';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
 import { TreeEditor } from './editing/TreeEditor.js';
-import { repositionNode, addChildNode, renameNode, deleteNode } from './editing/edits.js';
+import { repositionNode, addChildNode, renameNode, deleteNode, addEdge } from './editing/edits.js';
 import { NODE_SIZE } from './theme.js';
 
 const layoutEngine = new WorkerLayoutEngine();
@@ -147,6 +147,14 @@ export function SkillTreeView() {
     setNaming(null);
   }, []);
 
+  // Drag from a port to a node → add a dependency (one history step). The gesture
+  // already blocked cycles before the drop.
+  const handleConnect = useCallback((sourceId, targetId) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    if (editor.commit(addEdge(editor.treeData, sourceId, targetId))) syncStructure();
+  }, [syncStructure]);
+
   // Delete the selected node; its children splice up to the deleted node's parents
   // (one history step). The one destructive edit that earns a toast.
   const deleteSelected = useCallback(() => {
@@ -167,6 +175,7 @@ export function SkillTreeView() {
       onNodeMoveEnd: handleNodeMoved,
       onCreateChild: handleCreateChild,
       onRenameNode: handleBeginRename,
+      onConnectNodes: handleConnect,
     });
     sceneRef.current = nextScene;
     setScene(nextScene);
@@ -181,7 +190,7 @@ export function SkillTreeView() {
       sceneRef.current = null;
       setScene(null);
     };
-  }, [handleNodeMoved, handleCreateChild, handleBeginRename]);
+  }, [handleNodeMoved, handleCreateChild, handleBeginRename, handleConnect]);
 
   // Keyboard: ⌘Z / ⇧⌘Z history, ⌫ / Delete removes the selection.
   useEffect(() => {

@@ -20,6 +20,18 @@ export function addChildNode(treeData, { id, label, icon, color, parentId, x, y 
   return { ...treeData, nodes: [...treeData.nodes, node] };
 }
 
+// Add `sourceId` as a prerequisite of `targetId` (a new dependency edge). A no-op
+// if already connected; the caller prevents cycles before committing.
+export function addEdge(treeData, sourceId, targetId) {
+  return {
+    ...treeData,
+    nodes: treeData.nodes.map((node) =>
+      node.id === targetId && !node.prerequisites.includes(sourceId)
+        ? { ...node, prerequisites: [...node.prerequisites, sourceId] }
+        : node),
+  };
+}
+
 export function renameNode(treeData, id, label) {
   return {
     ...treeData,

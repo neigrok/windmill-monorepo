@@ -241,6 +241,21 @@ via a `namingModeRef`: `create` **amends** the just-committed node, `rename` **c
 `renameNode` as its own step only if the label changed; esc reverts. Verified headless:
 double-click pre-fills, edit commits (count unchanged), ⌘Z reverts.
 
+## Editing: connect + cycle guard
+
+The ports are live (editing-spec §03) — the biggest structural gesture, and it spans the
+DOM→canvas boundary, so it's its own class. `scene/ConnectGesture` (owned by `AffordanceLayer`,
+started on a port `pointerdown` with capture): a dashed SVG ghost branch follows the cursor; the
+node under it gets an olive ring (valid) or a brick ring + "would create a loop" tip (a cycle —
+i.e. the target is one of the source's ancestors, walked from the parents map). Invalidity is
+visible before the drop; a valid release → `scene.onConnectNodes` → `editor.commit(addEdge)`
+(adds the source to the target's prerequisites — real multi-parent), one undoable step. Dropping
+on empty/invalid just retracts. Verified headless: a valid drag adds the edge (⌘Z removes it); a
+drag to an ancestor shows the brick ring + tip and adds nothing.
+
+Deferred polish (not blocking): §3.2 fading *all* cycle-making nodes to 30% during the drag (a
+GPU per-node dim flag) and the §3.3 target scale-up. The ring + tip already prevent cycles.
+
 ## Observations / follow-ups (not blocking)
 - **Three visual tiers over 4 model states.** `nodeTier` folds active+complete into
   `activated`; `UnlockRules` still keeps the finer states for `DetailPanel`. If we
