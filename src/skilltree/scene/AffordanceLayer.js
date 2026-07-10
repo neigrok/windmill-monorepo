@@ -1,12 +1,13 @@
-// Calm edit affordances: bark-and-cream chrome that fades in on the hovered node
-// and vanishes on leave (design editing-spec §00–§03). A plus chip sits on the
-// node's outward rim — opposite its parents, where a child would grow — and a
-// couple of ports dot the free rim, at the widest gaps between existing branches.
-// Tools are neutral, data is coloured: this chrome never takes a kind hue.
+// Calm edit affordances: bark-and-cream chrome that fades in on the SELECTED node
+// and vanishes on deselect (design editing-spec v2 §2.1, §3.1 — hover shows no
+// structure). A plus chip sits on the node's outward rim — opposite its parents,
+// where a child would grow — and a couple of ports dot the free rim, at the widest
+// gaps between existing branches. Tools are neutral, data is coloured: this chrome
+// never takes a kind hue.
 //
-// A scene overlay (not React): the hovered node's screen position changes every
-// frame the camera moves, so it's repositioned from the render loop. Purely visual
-// for now — the create/connect gestures wire into these in their own slices.
+// A scene overlay (not React): the selected node's screen position changes every
+// frame the camera moves, so it's repositioned from the render loop. The plus is
+// live (onCreate); each port starts the shared ConnectGesture.
 import { NODE_SIZE } from '../theme.js';
 import { ConnectGesture } from './ConnectGesture.js';
 
@@ -14,15 +15,15 @@ const NODE_RADIUS = NODE_SIZE * 0.42; // the disc's world radius (matches the sh
 const PLUS_GAP = 16;
 const PORT_GAP = 5;
 const PORT_COUNT = 2;
-const GRACE_MS = 260; // keep chrome alive after leaving the node, so the plus is reachable
+const GRACE_MS = 260; // keep chrome alive briefly after deselect, so the plus stays reachable
 
 export class AffordanceLayer {
-  constructor(canvas, { camera, pick, onCreate, onConnect, onReconnect } = {}) {
+  constructor(canvas, { camera, pick, onCreate, onConnect, onReconnect, onFadeNodes, onRestoreNodes } = {}) {
     this.onCreate = onCreate;
     this.container = document.createElement('div');
     this.container.className = 'st-affordances';
     canvas.parentElement.appendChild(this.container);
-    this.connectGesture = new ConnectGesture(canvas, this.container, { camera, pick, onConnect, onReconnect });
+    this.connectGesture = new ConnectGesture(canvas, this.container, { camera, pick, onConnect, onReconnect, onFadeNodes, onRestoreNodes });
 
     this.plus = document.createElement('div');
     this.plus.className = 'st-plus';
@@ -62,9 +63,9 @@ export class AffordanceLayer {
     this.clear();
   }
 
-  // Hovering a node shows its chrome; leaving schedules a hide after a grace
+  // Selecting a node shows its chrome; deselecting schedules a hide after a grace
   // window (cancelled if the pointer reaches the chrome), so the plus is reachable.
-  setHovered(id) {
+  setSelected(id) {
     if (this.nodesById.has(id)) {
       this.target = id;
       this.keepAlive();

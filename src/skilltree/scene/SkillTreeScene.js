@@ -11,7 +11,7 @@ import { ConnectorBatch } from './ConnectorBatch.js';
 import { IconAtlas } from './IconAtlas.js';
 import { LabelOverlay, IconOverlay, ICON_DOM_START, ICON_DOM_FULL } from './NodeOverlay.js';
 import { AffordanceLayer } from './AffordanceLayer.js';
-import { SelectionBar } from './SelectionBar.js';
+import { HoverLabel } from './HoverLabel.js';
 import { EdgeChrome } from './EdgeChrome.js';
 import { createTextureFromCanvas } from './glcore.js';
 import { InputController } from './input/InputController.js';
@@ -46,23 +46,18 @@ export class SkillTreeScene {
     this.connectorBatch = new ConnectorBatch(gl);
     this.labelOverlay = new LabelOverlay(canvas);
     this.iconOverlay = new IconOverlay(canvas);
+    this.hoverLabel = new HoverLabel(canvas);
     this.affordanceLayer = new AffordanceLayer(canvas, {
       camera: this.camera,
       pick: (x, y) => this.pick(x, y),
       onCreate: (id) => this.options.onCreateChild && this.options.onCreateChild(id),
       onConnect: (sourceId, targetId) => this.options.onConnectNodes && this.options.onConnectNodes(sourceId, targetId),
       onReconnect: (oldFrom, oldTo, newFrom, newTo) => this.options.onReconnectEdge && this.options.onReconnectEdge(oldFrom, oldTo, newFrom, newTo),
-    });
-    this.selectionBar = new SelectionBar(canvas, {
-      onRename: (id) => this.beginRename(id),
-      onDelete: (id) => this.options.onDeleteNode && this.options.onDeleteNode(id),
-      onSetKind: (id, kind) => this.options.onSetKind && this.options.onSetKind(id, kind),
-      onPreviewKind: (id, kind) => this.nodeBatch.setColor(id, kind),
-      onRestoreKind: (id) => { const node = this.nodesById.get(id); if (node) this.nodeBatch.setColor(id, node.color); },
-      onDirty: () => { this.overlaysDirty = true; },
+      onFadeNodes: (ids) => this.nodeBatch.setFaded(ids),
+      onRestoreNodes: () => this.nodeBatch.clearFaded(),
     });
     this.edgeChrome = new EdgeChrome(canvas, {
-      onDeleteEdge: (from, to) => this.options.onDeleteEdge && this.options.onDeleteEdge(from, to),
+      onDeleteEdge: (from, to) => { this.selectEdge(null); if (this.options.onDeleteEdge) this.options.onDeleteEdge(from, to); },
       onReconnectStart: (edge, end, event) => this.affordanceLayer.connectGesture.startReconnect(edge, end, event),
     });
 
@@ -78,6 +73,8 @@ export class SkillTreeScene {
     this.iconTexture = null;
     this.selectedId = null;
     this.hoveredId = null;
+    this.selectedEdge = null;
+    this.hoveredEdge = null;
 
     this.viewportListeners = new Set();
     this.running = false;
@@ -89,13 +86,14 @@ export class SkillTreeScene {
     this.toolContext = {
       camera: this.camera,
       pick: (x, y) => this.pick(x, y),
+      pickEdge: (x, y) => this.pickEdge(x, y),
       getNode: (id) => this.nodesById.get(id),
       select: (id) => this.select(id),
+      selectEdge: (edge) => this.selectEdge(edge),
       hover: (id) => this.hover(id),
-      hoverEdge: (pos) => this.hoverEdge(pos),
+      hoverEdge: (edge) => this.hoverEdge(edge),
       moveNode: (id, x, y) => this.moveNode(id, x, y),
       endMove: (id) => this.endMove(id),
-      beginRename: (id) => this.beginRename(id),
     };
     this.input = new InputController(canvas, this.toolContext, new MoveTool(this.toolContext));
 
@@ -111,20 +109,28 @@ export class SkillTreeScene {
     this.installModel(renderModel);
     this.selectedId = null;
     this.hoveredId = null;
+    this.selectedEdge = null;
     this.fitToView();
   }
 
   // Apply a re-derived model (add/remove/reconnect/relayout) while keeping the
-  // camera and any still-present selection. The edit layer produces the new model
-  // and hands it here; live single-node drags use moveNode instead.
+  // camera and any still-present selection — node chrome stays up, a selected
+  // edge survives only if the new model still carries it. The edit layer produces
+  // the new model and hands it here; live single-node drags use moveNode instead.
   applyModel(renderModel) {
     const selected = this.selectedId;
     const hovered = this.hoveredId;
+    const selectedEdge = this.selectedEdge;
     this.installModel(renderModel);
     this.selectedId = this.nodesById.has(selected) ? selected : null;
     this.hoveredId = this.nodesById.has(hovered) ? hovered : null;
+    this.selectedEdge = selectedEdge
+      ? renderModel.edges.find((edge) => edge.from === selectedEdge.from && edge.to === selectedEdge.to) ?? null
+      : null;
     this.nodeBatch.setSelected(this.hoveredId ?? this.selectedId);
-    this.selectionBar.setSelected(this.selectedId); // keep the action bar up across edits
+    this.affordanceLayer.setSelected(this.selectedId);
+    this.hoverLabel.setHovered(this.hoveredId);
+    this.edgeChrome.setSelectedEdge(this.selectedEdge);
     this.overlaysDirty = true;
   }
 
@@ -132,14 +138,15 @@ export class SkillTreeScene {
     this.renderModel = renderModel;
     this.nodesById = new Map(renderModel.nodes.map((node) => [node.id, node]));
     this.spatialGrid = new SpatialGrid(renderModel.nodes, SPATIAL_CELL_SIZE);
+    this.hoveredEdge = null; // the connector batch was rebuilt; the next move re-picks
 
     this.syncIconAtlas(renderModel.nodes);
     this.nodeBatch.setInstances(renderModel.nodes, this.iconAtlas);
     this.connectorBatch.setModel(renderModel);
     this.labelOverlay.setModel(renderModel, this.spatialGrid);
     this.iconOverlay.setModel(renderModel, this.spatialGrid);
+    this.hoverLabel.setModel(renderModel);
     this.affordanceLayer.setModel(renderModel);
-    this.selectionBar.setModel(renderModel);
     this.edgeChrome.setModel(renderModel);
   }
 
@@ -169,14 +176,13 @@ export class SkillTreeScene {
     if (node && this.options.onNodeMoveEnd) this.options.onNodeMoveEnd(id, node.x, node.y);
   }
 
-  // Double-click: ask the shell to open the inline name field at the node's label.
-  beginRename(id) {
-    const node = this.nodesById.get(id);
-    if (!node || !this.options.onRenameNode) return;
-    const sx = (node.x - this.camera.x) * this.camera.zoom + this.camera.viewportWidth / 2;
-    const sy = (node.y - this.camera.y) * this.camera.zoom + this.camera.viewportHeight / 2 + NODE_SIZE * 0.62 * this.camera.zoom;
-    this.options.onRenameNode(id, node.label, sx, sy);
-  }
+  // Live previews the React step panel drives: recolour while a kind swatch is
+  // hovered, dim while the delete button is hovered. No history; a commit's
+  // model rebuild (or the restore/clear on leave) supersedes them.
+  previewKind(id, kind) { this.nodeBatch.setColor(id, kind); }
+  restoreKind(id) { const node = this.nodesById.get(id); if (node) this.nodeBatch.setColor(id, node.color); }
+  previewDeleteCost(id) { this.nodeBatch.setFaded(new Set([id])); } // §5.1 branch-dim deferred: needs a connector fade
+  clearDeleteCost() { this.nodeBatch.clearFaded(); }
 
   fitToView() {
     if (!this.renderModel) return;
@@ -237,8 +243,8 @@ export class SkillTreeScene {
     this.connectorBatch.dispose();
     this.labelOverlay.dispose();
     this.iconOverlay.dispose();
+    this.hoverLabel.dispose();
     this.affordanceLayer.dispose();
-    this.selectionBar.dispose();
     this.edgeChrome.dispose();
     if (this.iconTexture) this.gl.deleteTexture(this.iconTexture);
   }
@@ -256,8 +262,8 @@ export class SkillTreeScene {
     if (moved || this.overlaysDirty) {
       this.labelOverlay.update(this.camera);
       this.iconOverlay.update(this.camera);
+      this.hoverLabel.update(this.camera);
       this.affordanceLayer.update(this.camera);
-      this.selectionBar.update(this.camera);
       this.edgeChrome.update(this.camera);
       this.overlaysDirty = false;
     }
@@ -299,21 +305,39 @@ export class SkillTreeScene {
 
   // ---- scene-state hooks the active tool drives -------------------------
 
+  // Node and edge selection are mutually exclusive: picking one clears the other.
   select(id) {
     this.selectedId = id;
-    this.selectionBar.setSelected(id);
+    this.affordanceLayer.setSelected(id);
+    this.selectEdge(null);
     this.overlaysDirty = true;
     this.refreshHighlight();
     if (this.options.onNodePick) this.options.onNodePick(id);
   }
 
+  selectEdge(edge) {
+    if (edge && this.selectedId !== null) this.select(null); // safe: its selectEdge(null) recursion stops on the falsy edge
+    this.selectedEdge = edge ?? null;
+    this.edgeChrome.setSelectedEdge(this.selectedEdge);
+    this.overlaysDirty = true;
+  }
+
   hover(id) {
     if (id === this.hoveredId) return;
     this.hoveredId = id;
-    this.affordanceLayer.setHovered(id);
+    this.hoverLabel.setHovered(id);
     this.overlaysDirty = true;
     this.refreshHighlight();
     if (this.options.onNodeHover) this.options.onNodeHover(id);
+  }
+
+  // Hovering a branch only deepens its line + a pointer cursor — never chrome.
+  hoverEdge(edge) {
+    const next = edge ?? null;
+    if (next === this.hoveredEdge) return;
+    this.hoveredEdge = next;
+    this.connectorBatch.setHovered(next);
+    this.canvas.style.cursor = next ? 'pointer' : '';
   }
 
   refreshHighlight() {
@@ -324,13 +348,6 @@ export class SkillTreeScene {
     if (!this.spatialGrid) return null;
     const world = this.camera.screenToWorld(x, y);
     return this.spatialGrid.nearest(world.x, world.y, PICK_RADIUS);
-  }
-
-  hoverEdge(pos) {
-    if (!pos) { this.edgeChrome.setHoveredEdge(null); return; }
-    const edge = this.pickEdge(pos.x, pos.y);
-    this.edgeChrome.setHoveredEdge(edge);
-    this.overlaysDirty = true;
   }
 
   // Nearest branch to the cursor within EDGE_PICK_RADIUS (straight-segment

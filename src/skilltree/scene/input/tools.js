@@ -1,11 +1,13 @@
 // Pointer tools: each interprets the same gesture stream differently. The
 // InputController routes canvas pointer events to the active tool, which reads
-// and drives the scene through a small context (camera, pick, getNode, select,
-// hover, moveNode). Wheel-zoom is global and never goes through a tool.
+// and drives the scene through a small context (camera, pick, pickEdge, getNode,
+// select, selectEdge, hover, hoverEdge, moveNode). Wheel-zoom is global and
+// never goes through a tool.
 //
-// NavigateTool is the viewer behaviour: drag to pan, click to select, hover to
-// highlight. MoveTool adds node dragging — press on a node drags it, press on
-// empty space falls back to NavigateTool's pan.
+// NavigateTool is the viewer behaviour: drag to pan; hover highlights a node or
+// deepens a branch (never chrome — spec v2 §1.1, §4.1); a click selects a node,
+// else a branch, else clears. MoveTool adds node dragging — press on a node
+// drags it, press on empty space falls back to NavigateTool's pan.
 
 const DRAG_THRESHOLD_PX = 4;
 const HOVER_THROTTLE_MS = 40;
@@ -52,7 +54,7 @@ export class NavigateTool extends Tool {
     this.lastHoverAt = now;
     const id = this.ctx.pick(pos.x, pos.y);
     this.ctx.hover(id);
-    this.ctx.hoverEdge(id ? null : pos); // branch chrome only when not over a node
+    this.ctx.hoverEdge(id ? null : this.ctx.pickEdge(pos.x, pos.y)); // deepen a branch only off-node
   }
 
   onPointerUp(pos) {
@@ -60,16 +62,21 @@ export class NavigateTool extends Tool {
     const { moved, vx, vy } = this.drag;
     this.drag = null;
     if (moved) { this.ctx.camera.launchInertia(vx, vy); return; }
-    this.ctx.select(this.ctx.pick(pos.x, pos.y));
+    const id = this.ctx.pick(pos.x, pos.y);
+    if (id) { this.ctx.select(id); return; }
+    const edge = this.ctx.pickEdge(pos.x, pos.y);
+    if (edge) { this.ctx.selectEdge(edge); return; }
+    this.ctx.select(null);
   }
 
   onPointerLeave() {
     this.ctx.hover(null);
+    this.ctx.hoverEdge(null);
   }
 
   onDoubleClick(pos) {
     const id = this.ctx.pick(pos.x, pos.y);
-    if (id) this.ctx.beginRename(id);
+    if (id) this.ctx.select(id);
   }
 }
 
