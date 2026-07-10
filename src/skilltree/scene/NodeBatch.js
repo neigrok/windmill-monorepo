@@ -212,7 +212,7 @@ export class NodeBatch {
     this.idToIndex = new Map();
     this.selectedIndex = -1;
 
-    const offsets = new Float32Array(count * 2);
+    this.offsets = new Float32Array(count * 2);
     const colors = new Float32Array(count);
     const glowSeeds = new Float32Array(count);
     this.selected = new Float32Array(count);
@@ -221,15 +221,15 @@ export class NodeBatch {
 
     renderNodes.forEach((node, i) => {
       this.idToIndex.set(node.id, i);
-      offsets[i * 2] = node.x;
-      offsets[i * 2 + 1] = node.y;
+      this.offsets[i * 2] = node.x;
+      this.offsets[i * 2 + 1] = node.y;
       colors[i] = colorIndex(node.color);
       glowSeeds[i] = node.glowSeed;
       iconCells[i] = iconAtlas ? iconAtlas.cellFor(node.icon) : -1;
       this.tiers[i] = nodeTier(node.state);
     });
 
-    this.upload(this.offsetBuffer, offsets);
+    this.upload(this.offsetBuffer, this.offsets);
     this.upload(this.colorBuffer, colors);
     this.upload(this.glowSeedBuffer, glowSeeds);
     this.upload(this.selectedBuffer, this.selected);
@@ -241,6 +241,17 @@ export class NodeBatch {
     const gl = this.gl;
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+  }
+
+  moveInstance(id, x, y) {
+    if (!this.offsets) return;
+    const i = this.idToIndex.get(id);
+    if (i === undefined) return;
+    this.offsets[i * 2] = x;
+    this.offsets[i * 2 + 1] = y;
+    const gl = this.gl;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.offsetBuffer);
+    gl.bufferSubData(gl.ARRAY_BUFFER, i * 2 * 4, this.offsets, i * 2, 2);
   }
 
   setStates(statesMap) {

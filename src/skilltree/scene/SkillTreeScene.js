@@ -11,11 +11,11 @@ import { ConnectorBatch } from './ConnectorBatch.js';
 import { IconAtlas } from './IconAtlas.js';
 import { LabelOverlay, IconOverlay, ICON_DOM_START, ICON_DOM_FULL } from './NodeOverlay.js';
 import { createTextureFromCanvas } from './glcore.js';
+import { InputController } from './input/InputController.js';
+import { MoveTool } from './input/tools.js';
 
 const SPATIAL_CELL_SIZE = NODE_SIZE * 2;
 const PICK_RADIUS = NODE_SIZE * 0.65;
-const HOVER_THROTTLE_MS = 40;
-const DRAG_CLICK_THRESHOLD_PX = 4;
 const MAX_FRAME_DELTA = 0.1;
 const ICON_ZOOM_START = 0.5;
 const ICON_ZOOM_FULL = 1.1;
@@ -61,35 +61,75 @@ export class SkillTreeScene {
     this.elapsedSeconds = 0;
     this.lastFrameTime = null;
     this.rafHandle = null;
-    this.lastHoverAt = 0;
-    this.dragState = null;
+    this.overlaysDirty = false;
+
+    this.toolContext = {
+      camera: this.camera,
+      pick: (x, y) => this.pick(x, y),
+      getNode: (id) => this.nodesById.get(id),
+      select: (id) => this.select(id),
+      hover: (id) => this.hover(id),
+      moveNode: (id, x, y) => this.moveNode(id, x, y),
+    };
+    this.input = new InputController(canvas, this.toolContext, new MoveTool(this.toolContext));
 
     this.resize();
-    this.bindEvents();
+    this.input.bind();
   }
 
   // ---- public API -----------------------------------------------------
 
+  // Full load: fit the camera and clear selection. Used for first paint and
+  // dataset swaps.
   setModel(renderModel) {
+    this.installModel(renderModel);
+    this.selectedId = null;
+    this.hoveredId = null;
+    this.fitToView();
+  }
+
+  // Apply a re-derived model (add/remove/reconnect/relayout) while keeping the
+  // camera and any still-present selection. The edit layer produces the new model
+  // and hands it here; live single-node drags use moveNode instead.
+  applyModel(renderModel) {
+    const selected = this.selectedId;
+    const hovered = this.hoveredId;
+    this.installModel(renderModel);
+    this.selectedId = this.nodesById.has(selected) ? selected : null;
+    this.hoveredId = this.nodesById.has(hovered) ? hovered : null;
+    this.nodeBatch.setSelected(this.hoveredId ?? this.selectedId);
+    this.overlaysDirty = true;
+  }
+
+  installModel(renderModel) {
     this.renderModel = renderModel;
     this.nodesById = new Map(renderModel.nodes.map((node) => [node.id, node]));
     this.spatialGrid = new SpatialGrid(renderModel.nodes, SPATIAL_CELL_SIZE);
-    this.selectedId = null;
-    this.hoveredId = null;
 
-    this.buildIconAtlas(renderModel.nodes);
+    this.syncIconAtlas(renderModel.nodes);
     this.nodeBatch.setInstances(renderModel.nodes, this.iconAtlas);
     this.connectorBatch.setModel(renderModel);
     this.labelOverlay.setModel(renderModel, this.spatialGrid);
     this.iconOverlay.setModel(renderModel, this.spatialGrid);
-
-    this.fitToView();
   }
 
   applyStates(statesMap) {
     this.nodeBatch.setStates(statesMap);
     this.connectorBatch.setStates(statesMap, this.elapsedSeconds);
     this.iconOverlay.setStates(statesMap);
+  }
+
+  // Live reposition of one node: cheap per-instance GPU writes for the node and
+  // its incident edges, plus a spatial re-bucket. Overlays follow next frame.
+  moveNode(id, x, y) {
+    const node = this.nodesById.get(id);
+    if (!node) return;
+    node.x = x;
+    node.y = y;
+    this.nodeBatch.moveInstance(id, x, y);
+    this.connectorBatch.moveNode(id, x, y);
+    this.spatialGrid.move(id, x, y);
+    this.overlaysDirty = true;
   }
 
   fitToView() {
@@ -145,7 +185,7 @@ export class SkillTreeScene {
 
   dispose() {
     this.stop();
-    this.unbindEvents();
+    this.input.unbind();
     this.motionQuery.removeEventListener('change', this.applyMotion);
     this.nodeBatch.dispose();
     this.connectorBatch.dispose();
@@ -164,11 +204,12 @@ export class SkillTreeScene {
     this.elapsedSeconds += dt;
 
     const moved = this.camera.update(dt);
-    if (moved) {
+    if (moved || this.overlaysDirty) {
       this.labelOverlay.update(this.camera);
       this.iconOverlay.update(this.camera);
-      this.viewportListeners.forEach((listener) => listener(this.getViewport()));
+      this.overlaysDirty = false;
     }
+    if (moved) this.viewportListeners.forEach((listener) => listener(this.getViewport()));
 
     const gl = this.gl;
     gl.clearColor(this.clearColor[0], this.clearColor[1], this.clearColor[2], 1);
@@ -184,6 +225,13 @@ export class SkillTreeScene {
 
   // ---- icon atlas -------------------------------------------------------
 
+  // Keep the current atlas when every icon it needs is already baked; only
+  // re-raster when a new icon appears (so add/relayout doesn't flicker the atlas).
+  syncIconAtlas(nodes) {
+    if (this.iconAtlas && nodes.every((node) => this.iconAtlas.cellFor(node.icon) >= 0)) return;
+    this.buildIconAtlas(nodes);
+  }
+
   buildIconAtlas(nodes) {
     const gl = this.gl;
     if (this.iconTexture) gl.deleteTexture(this.iconTexture);
@@ -197,96 +245,19 @@ export class SkillTreeScene {
     });
   }
 
-  // ---- pointer input ----------------------------------------------------
+  // ---- scene-state hooks the active tool drives -------------------------
 
-  bindEvents() {
-    this.canvas.addEventListener('pointerdown', this.handlePointerDown);
-    this.canvas.addEventListener('pointermove', this.handlePointerMove);
-    this.canvas.addEventListener('pointerup', this.handlePointerUp);
-    this.canvas.addEventListener('pointercancel', this.handlePointerUp);
-    this.canvas.addEventListener('pointerleave', this.handlePointerLeave);
-    this.canvas.addEventListener('wheel', this.handleWheel, { passive: false });
-  }
-
-  unbindEvents() {
-    this.canvas.removeEventListener('pointerdown', this.handlePointerDown);
-    this.canvas.removeEventListener('pointermove', this.handlePointerMove);
-    this.canvas.removeEventListener('pointerup', this.handlePointerUp);
-    this.canvas.removeEventListener('pointercancel', this.handlePointerUp);
-    this.canvas.removeEventListener('pointerleave', this.handlePointerLeave);
-    this.canvas.removeEventListener('wheel', this.handleWheel);
-  }
-
-  pointerPosition(event) {
-    const rect = this.canvas.getBoundingClientRect();
-    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
-  }
-
-  handlePointerDown = (event) => {
-    this.canvas.setPointerCapture(event.pointerId);
-    const { x, y } = this.pointerPosition(event);
-    this.dragState = { pointerId: event.pointerId, startX: x, startY: y, lastX: x, lastY: y, lastTime: performance.now(), moved: false, velocityX: 0, velocityY: 0 };
-  };
-
-  handlePointerMove = (event) => {
-    const { x, y } = this.pointerPosition(event);
-    if (this.dragState && this.dragState.pointerId === event.pointerId) {
-      const dx = x - this.dragState.lastX;
-      const dy = y - this.dragState.lastY;
-      const now = performance.now();
-      const dt = Math.max(now - this.dragState.lastTime, 1);
-      if (!this.dragState.moved && Math.hypot(x - this.dragState.startX, y - this.dragState.startY) > DRAG_CLICK_THRESHOLD_PX) this.dragState.moved = true;
-      if (this.dragState.moved) this.camera.pan(dx, dy);
-      this.dragState.velocityX = this.dragState.velocityX * 0.7 + (dx / dt) * 0.3;
-      this.dragState.velocityY = this.dragState.velocityY * 0.7 + (dy / dt) * 0.3;
-      this.dragState.lastX = x;
-      this.dragState.lastY = y;
-      this.dragState.lastTime = now;
-      return;
-    }
-    this.handleHover(x, y);
-  };
-
-  handlePointerUp = (event) => {
-    if (!this.dragState || this.dragState.pointerId !== event.pointerId) return;
-    if (this.canvas.hasPointerCapture(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId);
-    const { x, y } = this.pointerPosition(event);
-    const { moved, velocityX, velocityY } = this.dragState;
-    this.dragState = null;
-    if (moved) { this.camera.launchInertia(velocityX, velocityY); return; }
-    this.handleClick(x, y);
-  };
-
-  handlePointerLeave = () => {
-    if (this.dragState) return;
-    if (this.hoveredId === null) return;
-    this.hoveredId = null;
+  select(id) {
+    this.selectedId = id;
     this.refreshHighlight();
-    if (this.options.onNodeHover) this.options.onNodeHover(null);
-  };
+    if (this.options.onNodePick) this.options.onNodePick(id);
+  }
 
-  handleWheel = (event) => {
-    event.preventDefault();
-    const { x, y } = this.pointerPosition(event);
-    this.camera.zoomAt(x, y, event.deltaY);
-  };
-
-  handleHover(x, y) {
-    const now = performance.now();
-    if (now - this.lastHoverAt < HOVER_THROTTLE_MS) return;
-    this.lastHoverAt = now;
-    const id = this.pick(x, y);
+  hover(id) {
     if (id === this.hoveredId) return;
     this.hoveredId = id;
     this.refreshHighlight();
     if (this.options.onNodeHover) this.options.onNodeHover(id);
-  }
-
-  handleClick(x, y) {
-    const id = this.pick(x, y);
-    this.selectedId = id;
-    this.refreshHighlight();
-    if (this.options.onNodePick) this.options.onNodePick(id);
   }
 
   refreshHighlight() {

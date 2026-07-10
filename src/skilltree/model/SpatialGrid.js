@@ -6,17 +6,35 @@ export class SpatialGrid {
     this.cellSize = cellSize;
     this.nodesById = new Map();
     this.cells = new Map();
+    this.cellByNode = new Map();
 
     for (const node of renderNodes) {
       this.nodesById.set(node.id, node);
       const key = this.cellKey(Math.floor(node.x / cellSize), Math.floor(node.y / cellSize));
       if (!this.cells.has(key)) this.cells.set(key, []);
       this.cells.get(key).push(node.id);
+      this.cellByNode.set(node.id, key);
     }
   }
 
   cellKey(cellX, cellY) {
     return `${cellX},${cellY}`;
+  }
+
+  // Re-bucket a node after it moves. Positions are read from the shared node
+  // objects, so callers that mutate node.x/y are already reflected in queries;
+  // this keeps the cell index (which query cells to scan) consistent too.
+  move(id, x, y) {
+    const oldKey = this.cellByNode.get(id);
+    if (oldKey === undefined) return;
+    const newKey = this.cellKey(Math.floor(x / this.cellSize), Math.floor(y / this.cellSize));
+    if (newKey === oldKey) return;
+    const bucket = this.cells.get(oldKey);
+    const at = bucket.indexOf(id);
+    if (at >= 0) bucket.splice(at, 1);
+    if (!this.cells.has(newKey)) this.cells.set(newKey, []);
+    this.cells.get(newKey).push(id);
+    this.cellByNode.set(id, newKey);
   }
 
   nearest(x, y, maxRadius) {

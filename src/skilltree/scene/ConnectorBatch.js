@@ -118,6 +118,33 @@ function colorIndex(name) {
   return i < 0 ? 0 : i;
 }
 
+// Tessellate one edge's bézier ribbon into `positions` at its vertex range. Only
+// the positions depend on the endpoints, so both setModel (bulk) and moveNode
+// (a single node's incident edges) go through here; the along/active/color
+// attributes are constant under a move and written once.
+function writeEdgePositions(positions, vertexStart, fx, fy, tx, ty) {
+  const { cx, cy } = controlPoint(fx, fy, tx, ty);
+  const [t0, t1] = trimRange(fx, fy, cx, cy, tx, ty);
+  const span = t1 - t0;
+  const halfWidth = WIDTH / 2;
+  for (let i = 0; i <= SEGMENTS; i++) {
+    const t = t0 + span * (i / SEGMENTS);
+    const omt = 1 - t;
+    const px = omt * omt * fx + 2 * omt * t * cx + t * t * tx;
+    const py = omt * omt * fy + 2 * omt * t * cy + t * t * ty;
+    const dx = 2 * omt * (cx - fx) + 2 * t * (tx - cx);
+    const dy = 2 * omt * (cy - fy) + 2 * t * (ty - cy);
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len;
+    const ny = dx / len;
+    const v = vertexStart + i * 2;
+    positions[v * 2] = px + nx * halfWidth;
+    positions[v * 2 + 1] = py + ny * halfWidth;
+    positions[(v + 1) * 2] = px - nx * halfWidth;
+    positions[(v + 1) * 2 + 1] = py - ny * halfWidth;
+  }
+}
+
 export class ConnectorBatch {
   constructor(gl) {
     this.gl = gl;
@@ -155,46 +182,30 @@ export class ConnectorBatch {
     const edgeCount = renderModel.edges.length;
     const vertexTotal = edgeCount * VERTS_PER_EDGE;
 
-    const positions = new Float32Array(vertexTotal * 2);
+    this.positions = new Float32Array(vertexTotal * 2);
     const along = new Float32Array(vertexTotal);
     const colors = new Float32Array(vertexTotal);
     this.active = new Float32Array(vertexTotal);
     this.grow = new Float32Array(vertexTotal).fill(ALREADY_GROWN);
     const indices = new Uint32Array(edgeCount * SEGMENTS * 6);
 
+    this.nodePos = new Map(renderModel.nodes.map((node) => [node.id, { x: node.x, y: node.y }]));
+    this.edgesByNode = new Map();
+
     this.edges = renderModel.edges.map((edge, e) => {
       const from = nodesById.get(edge.from);
       const to = nodesById.get(edge.to);
       const vertexStart = e * VERTS_PER_EDGE;
-      const { cx, cy } = controlPoint(from.x, from.y, to.x, to.y);
-      const halfWidth = WIDTH / 2;
       const active = isDone(from.state) ? 1 : 0;
       const colorIdx = colorIndex(from.color);
-      const [t0, t1] = trimRange(from.x, from.y, cx, cy, to.x, to.y);
-      const span = t1 - t0;
 
+      writeEdgePositions(this.positions, vertexStart, from.x, from.y, to.x, to.y);
       for (let i = 0; i <= SEGMENTS; i++) {
-        const local = i / SEGMENTS;
-        const t = t0 + span * local;
-        const omt = 1 - t;
-        const px = omt * omt * from.x + 2 * omt * t * cx + t * t * to.x;
-        const py = omt * omt * from.y + 2 * omt * t * cy + t * t * to.y;
-        const dx = 2 * omt * (cx - from.x) + 2 * t * (to.x - cx);
-        const dy = 2 * omt * (cy - from.y) + 2 * t * (to.y - cy);
-        const len = Math.hypot(dx, dy) || 1;
-        const nx = -dy / len;
-        const ny = dx / len;
         const v = vertexStart + i * 2;
-        positions[v * 2] = px + nx * halfWidth;
-        positions[v * 2 + 1] = py + ny * halfWidth;
-        positions[(v + 1) * 2] = px - nx * halfWidth;
-        positions[(v + 1) * 2 + 1] = py - ny * halfWidth;
-        along[v] = local;
-        along[v + 1] = local;
-        this.active[v] = active;
-        this.active[v + 1] = active;
-        colors[v] = colorIdx;
-        colors[v + 1] = colorIdx;
+        const local = i / SEGMENTS;
+        along[v] = local; along[v + 1] = local;
+        this.active[v] = active; this.active[v + 1] = active;
+        colors[v] = colorIdx; colors[v + 1] = colorIdx;
       }
       for (let i = 0; i < SEGMENTS; i++) {
         const a = vertexStart + i * 2;
@@ -202,12 +213,16 @@ export class ConnectorBatch {
         indices[o] = a; indices[o + 1] = a + 1; indices[o + 2] = a + 2;
         indices[o + 3] = a + 1; indices[o + 4] = a + 3; indices[o + 5] = a + 2;
       }
-      return { from: edge.from, active, vertexStart };
+      for (const nid of [edge.from, edge.to]) {
+        if (!this.edgesByNode.has(nid)) this.edgesByNode.set(nid, []);
+        this.edgesByNode.get(nid).push(e);
+      }
+      return { from: edge.from, to: edge.to, active, vertexStart };
     });
 
     this.indexCount = indices.length;
     gl.bindVertexArray(this.vao);
-    this.uploadStatic(this.posBuffer, positions);
+    this.uploadStatic(this.posBuffer, this.positions);
     this.uploadStatic(this.alongBuffer, along);
     this.uploadStatic(this.colorBuffer, colors);
     this.uploadDynamic(this.activeBuffer, this.active);
@@ -215,6 +230,27 @@ export class ConnectorBatch {
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
     gl.bindVertexArray(null);
+  }
+
+  // Re-tessellate just the edges touching a moved node and re-upload their vertex
+  // ranges in place — no full rebuild, so it stays cheap under a live drag.
+  moveNode(id, x, y) {
+    const pos = this.nodePos.get(id);
+    if (!pos) return;
+    pos.x = x;
+    pos.y = y;
+    const indices = this.edgesByNode.get(id);
+    if (!indices || indices.length === 0) return;
+    const gl = this.gl;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuffer);
+    for (const e of indices) {
+      const edge = this.edges[e];
+      const from = this.nodePos.get(edge.from);
+      const to = this.nodePos.get(edge.to);
+      writeEdgePositions(this.positions, edge.vertexStart, from.x, from.y, to.x, to.y);
+      const start = edge.vertexStart * 2;
+      gl.bufferSubData(gl.ARRAY_BUFFER, start * 4, this.positions, start, VERTS_PER_EDGE * 2);
+    }
   }
 
   uploadStatic(buffer, data) { const gl = this.gl; gl.bindBuffer(gl.ARRAY_BUFFER, buffer); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW); }

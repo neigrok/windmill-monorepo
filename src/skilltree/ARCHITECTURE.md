@@ -60,7 +60,8 @@ Everything in `model/` is pure JS — no WebGL, no React.
   prerequisite is complete (roots qualify vacuously), else `locked`.
 - `model/SpatialGrid.js` — `class SpatialGrid`. Buckets node ids by cell. `nearest(x,
   y, maxRadius)` → id | null (scans the 3×3 neighborhood, so keep `cellSize ≥ pickRadius`);
-  `within(minX, minY, maxX, maxY)` → id[] for LOD label selection.
+  `within(minX, minY, maxX, maxY)` → id[] for LOD label selection; `move(id, x, y)`
+  re-buckets a node after a live drag so picking follows it.
 - `mock/MockTreeRepository.js` — `class MockTreeRepository extends TreeRepository`;
   `{ size: 'demo' | 'huge' }`. `loadTree()` → the hand-authored tree or a generated
   5,000-node one; `loadProgress()` → a plausible seeded `{completed, inProgress}`.
@@ -94,10 +95,13 @@ Everything in `model/` is pure JS — no WebGL, no React.
   procedural (disc + gradient + ring); glow pulses from `uTime`; the icon atlas is sampled
   and tinted per state (`uIconColor`), fading in with zoom and back out over the DOM-icon
   handoff band so the baked raster never has to hold up under extreme zoom. `setInstances`,
-  `setStates`, `setSelected`, `setIconAtlas`.
+  `setStates`, `setSelected`, `setIconAtlas`, and `moveInstance(id, x, y)` (a ranged
+  `bufferSubData` write of one node's offset — the live-drag fast path).
 - `scene/ConnectorBatch.js` — **one draw** for all edges; bézier ribbons packed into one
   buffer. Activation replays as a GPU color/growth sweep driven by `uTime`; `setModel`
-  rebuilds geometry, `setStates` only rewrites the active/grow attributes.
+  rebuilds geometry, `setStates` only rewrites the active/grow attributes. `moveNode(id,
+  x, y)` re-tessellates just that node's incident edges (via an internal node→edge index)
+  and re-uploads their vertex ranges — no full rebuild, so it's cheap under a live drag.
 - `scene/IconAtlas.js` — rasterizes lucide glyphs (via the app's Icon registry) into an
   alpha-mask canvas atlas (192px cells) for the **far/mid LOD**, where thousands of small
   icons draw in the single node instanced call; the scene uploads it as a GL texture and
@@ -110,15 +114,26 @@ Everything in `model/` is pure JS — no WebGL, no React.
   - `IconOverlay` — the **near LOD** for icons: live `<Icon>` SVG (crisp at any zoom, tinted
     per state to match the fruit) that cross-fades in as the baked atlas fades out over the
     handoff band. `setStates` re-tints on completion; only near nodes get a DOM element.
+- `scene/input/` — pointer interaction, extracted so the scene isn't a god-object and edit
+  tools plug in without touching event plumbing. `InputController` owns the canvas listeners
+  + pointer capture + single-pointer bookkeeping, forwards down/drag/move/up/leave to the
+  active `Tool`, and handles wheel-zoom globally. `tools.js`: the `Tool` contract + two
+  impls sharing a small scene context (`camera`, `pick`, `getNode`, `select`, `hover`,
+  `moveNode`) — `NavigateTool` (drag-pan + inertia, click-select, throttled hover) and
+  `MoveTool` (adds node dragging: press-on-node drags it live, press-on-empty falls back to
+  pan). The scene defaults to `MoveTool` and can `input.setTool(...)` later.
 - `scene/SkillTreeScene.js` — orchestrator: owns the GL context, the `Camera2D`, both
-  batches, the `IconAtlas`, and the label + icon overlays. The rAF loop advances `uTime` and
-  the camera; **whenever the camera moved that frame it updates both overlays and emits the
-  viewport to per-frame `subscribeViewport` listeners** (the minimap) — no throttle, so the
-  overlays track the GPU at frame rate. Pointer input: drag-pan with inertia, cursor-anchored
-  wheel zoom, throttled hover; picking is pointer → world → `SpatialGrid.nearest`. Public API
-  (renderer-agnostic, so the React shell never touches GL): `setModel`, `applyStates`,
-  `fitToView`, `focusNode`, `panTo`, `zoomBy`, `subscribeViewport`, `getBounds`, `getViewport`,
-  `resize`, `start`, `stop`, `dispose`.
+  batches, the `IconAtlas`, the label + icon overlays, and the `InputController`. The rAF loop
+  advances `uTime` and the camera; **whenever the camera moved (or a node moved) that frame it
+  updates both overlays**, and on camera move emits the viewport to per-frame
+  `subscribeViewport` listeners (the minimap) — no throttle, so overlays track the GPU at frame
+  rate. Exposes scene-state hooks the active tool drives (`select`, `hover`, `pick`) and
+  incremental edit APIs. Public API (renderer-agnostic, so the React shell never touches GL):
+  `setModel` (full load, fits camera), `applyModel` (re-derived graph — add/remove/relayout —
+  preserving camera + selection, reusing the atlas unless a new icon appears), `moveNode`
+  (live per-instance reposition of a node + its edges), `applyStates`, `fitToView`, `focusNode`,
+  `panTo`, `zoomBy`, `subscribeViewport`, `getBounds`, `getViewport`, `resize`, `start`, `stop`,
+  `dispose`.
 
 Perf rules (non-negotiable): constant draw calls regardless of node count; no per-node JS
 in the animation loop except the LOD-gated, bounded overlay pick; no per-frame allocation;

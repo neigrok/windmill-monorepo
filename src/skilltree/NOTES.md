@@ -127,6 +127,33 @@ the in-browser extension's `document_idle` screenshot): activated spine is satur
 with outer rings + glow + lit edges; the frontier row reads as saturated-no-glow
 (available); leaves are pale washes of their own kind — all three tiers distinct.
 
+## Enabling pass for graph editing (interaction seam + incremental scene)
+
+Prep before the editing phase, without committing to a command/undo model yet. Two seams:
+
+1. **Interaction is now a tool router.** `scene/input/InputController` owns the canvas
+   listeners + pointer capture + single-pointer bookkeeping and forwards to the active
+   `Tool`; wheel-zoom stays global. `NavigateTool` is the old pan/select/hover behaviour
+   verbatim; `MoveTool` extends it with node dragging (press-on-node → live move, press-on-
+   empty → pan). Scene defaults to `MoveTool`; edit tools (connect/add/marquee) drop in as
+   new `Tool`s via `input.setTool` with no change to the scene or the plumbing. The scene
+   keeps only the state hooks tools call (`select`, `hover`, `pick`, `moveNode`).
+
+2. **The scene can update incrementally, not just replace-all.** `moveNode(id, x, y)` is the
+   per-frame drag path: `NodeBatch.moveInstance` (ranged `bufferSubData` of one offset) +
+   `ConnectorBatch.moveNode` (re-tessellate only the node's incident edges via a node→edge
+   index, subData their ranges) + `SpatialGrid.move` (re-bucket so it stays pickable) +
+   an `overlaysDirty` nudge (labels/icons refresh on node move, not only camera move). For
+   structural changes there's `applyModel(newModel)` — a preserve-view rebuild (keeps camera
+   + still-present selection, reuses the atlas unless a new icon appears) that the edit layer
+   will feed re-derived models to.
+
+Deliberately deferred (co-design with editing): the `TreeData → TreeData` command/reducer +
+undo stack, persistence, committing a dragged position back into the domain (`NodeSpec.position`
+already exists for it), and per-instance add/remove GPU compaction (`applyModel`'s full
+re-upload is fine at edit cadence). Verified live (headless): drag-node moves it with edges +
+label following and it stays clickable; pan/select/hover unchanged; no errors.
+
 ## Observations / follow-ups (not blocking)
 - **Three visual tiers over 4 model states.** `nodeTier` folds active+complete into
   `activated`; `UnlockRules` still keeps the finer states for `DetailPanel`. If we
