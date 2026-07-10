@@ -15,7 +15,7 @@ import { applyNudges } from './layout/applyNudges.js';
 import { MockTreeRepository } from './mock/MockTreeRepository.js';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
 import { TreeEditor } from './editing/TreeEditor.js';
-import { repositionNode, addChildNode, renameNode } from './editing/edits.js';
+import { repositionNode, addChildNode, renameNode, deleteNode } from './editing/edits.js';
 import { NODE_SIZE } from './theme.js';
 
 const layoutEngine = new WorkerLayoutEngine();
@@ -34,6 +34,7 @@ export function SkillTreeView() {
   const completedRef = useRef(new Set());
   const namingIdRef = useRef(null); // id of the just-created node whose name field is open
   const nameValueRef = useRef('');
+  const selectedIdRef = useRef(null);
 
   const [datasetSize, setDatasetSize] = useState('demo');
   const [loading, setLoading] = useState(true);
@@ -46,6 +47,7 @@ export function SkillTreeView() {
   const [scene, setScene] = useState(null);
   const [naming, setNaming] = useState(null); // { x, y } screen position of the name field
   const [nameValue, setNameValue] = useState('');
+  const [toast, setToast] = useState(null); // { message } shown briefly after a destructive edit
 
   // Re-derive the whole render model from the editor's current TreeData and apply
   // it to the scene preserving the view. The seam every structural edit + undo/redo
@@ -126,6 +128,18 @@ export function SkillTreeView() {
     setNaming(null);
   }, []);
 
+  // Delete the selected node; its children splice up to the deleted node's parents
+  // (one history step). The one destructive edit that earns a toast.
+  const deleteSelected = useCallback(() => {
+    const editor = editorRef.current;
+    const id = selectedIdRef.current;
+    if (!editor || !id) return;
+    editor.commit(deleteNode(editor.treeData, id));
+    setSelectedId(null);
+    syncStructure();
+    setToast({ message: 'Step deleted' });
+  }, [syncStructure]);
+
   // Construct the scene once; React only ever drives it through the methods below.
   useEffect(() => {
     const nextScene = new SkillTreeScene(canvasRef.current, {
@@ -149,17 +163,34 @@ export function SkillTreeView() {
     };
   }, [handleNodeMoved, handleCreateChild]);
 
-  // Keyboard history: ⌘Z / Ctrl+Z undo, ⇧⌘Z / Ctrl+Shift+Z redo.
+  // Keyboard: ⌘Z / ⇧⌘Z history, ⌫ / Delete removes the selection.
   useEffect(() => {
     const onKey = (event) => {
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z') return;
-      event.preventDefault();
-      if (event.shiftKey) redo();
-      else undo();
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
+        event.preventDefault();
+        if (event.shiftKey) redo();
+        else undo();
+        return;
+      }
+      if (event.key === 'Backspace' || event.key === 'Delete') {
+        const el = document.activeElement;
+        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
+        if (!selectedIdRef.current) return;
+        event.preventDefault();
+        deleteSelected();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [undo, redo]);
+  }, [undo, redo, deleteSelected]);
+
+  useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
+
+  useEffect(() => {
+    if (!toast) return undefined;
+    const timer = setTimeout(() => setToast(null), 6000);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   // The pipeline itself: repository loads → domain computes → scene renders.
   // Re-runs whenever the dataset toggle swaps demo ↔ huge.
@@ -300,6 +331,13 @@ export function SkillTreeView() {
             else if (event.key === 'Escape') { event.preventDefault(); cancelName(); }
           }}
         />
+      )}
+
+      {toast && (
+        <div className="st-toast" role="status">
+          <span>{toast.message}</span>
+          <button className="st-toast-undo" onClick={() => { undo(); setToast(null); }}>Undo</button>
+        </div>
       )}
 
       {loading && <div className="st-loading">Planting the tree…</div>}

@@ -164,10 +164,12 @@ and feeds results back through the render pipeline.
 ## `SkillTreeView.jsx` + overlay UI
 
 Runs the pipeline above (repo → domain → layout → scene) and owns the edit loop: builds a
-`TreeEditor` from the loaded TreeData, caches the raw layout, commits `MoveTool` drops
-(`onNodeMoveEnd` → `repositionNode`) to history, and binds ⌘Z/⇧⌘Z → `undo`/`redo` →
+`TreeEditor` from the loaded TreeData, caches the raw layout, and funnels every edit through
 `syncStructure()` (re-derive the model from `editor.treeData` — which re-validates the DAG —
-and `scene.applyModel`). Wires:
+and `scene.applyModel`). Edits: `MoveTool` drops (`onNodeMoveEnd` → `repositionNode`); the
+affordance plus (`onCreateChild` → `addChildNode`, committed immediately, then an inline field
+`amend`s the name); ⌫/Delete on the selection (`deleteNode`, children splice up, one step + an
+Undo toast). Keys: ⌘Z/⇧⌘Z → `undo`/`redo`. Wires:
 - A full-viewport `<canvas className="st-canvas">`; constructs `SkillTreeScene` in an effect,
   `setModel` + `start()`, `dispose()` on unmount, `resize()` on container resize (ResizeObserver).
   Holds the scene in state so overlay children can subscribe once it exists.

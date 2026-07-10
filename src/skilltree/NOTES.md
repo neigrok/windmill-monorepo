@@ -216,6 +216,22 @@ Grace window: the plus lives outside the disc, so the affordance layer keeps chr
 ~260ms after the pointer leaves the node (cancelled when the pointer reaches the plus/ports),
 and `pointer-events` flip to `auto` only while shown.
 
+## Editing: delete node + splice + toast
+
+Select a node, ⌫/Delete removes it (editing-spec §06). `edits.deleteNode` is a compound
+transform → **one** history step: the node is dropped and any child that loses its *only*
+parent is spliced up to the deleted node's parents (children with other parents just drop this
+one; re-tether targets are ancestors so it stays a DAG). `syncStructure` doesn't re-layout, so
+"nothing else moves" (§6.2) — the spliced edges just span the gap. Node deletion is the one
+destructive edit that earns a **toast** ("Step deleted · Undo", bottom-center, 6s, gold Undo
+that calls `undo()`); everything else relies on being visible + ⌘Z. The ⌫ handler ignores
+key events while an input is focused. Verified headless: delete splices children up, toast
+shows, Undo restores the node + edges + unwinds the splice in one step.
+
+Deferred: the floating **action bar** (§6.1: a rename·kind·delete bar that rises on select) is
+shared chrome — build it with rename + kind so it carries all three buttons. For now delete is
+keyboard-only (⌫), which the spec sanctions as the secondary path.
+
 ## Observations / follow-ups (not blocking)
 - **Three visual tiers over 4 model states.** `nodeTier` folds active+complete into
   `activated`; `UnlockRules` still keeps the finer states for `DetailPanel`. If we

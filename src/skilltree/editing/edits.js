@@ -26,3 +26,23 @@ export function renameNode(treeData, id, label) {
     nodes: treeData.nodes.map((node) => (node.id === id ? { ...node, label } : node)),
   };
 }
+
+// Remove a node without orphaning its children: a child that loses its only
+// parent is re-tethered to the deleted node's own parents (spliced up); a child
+// with other parents just drops this one. One transform → one undo step, and the
+// re-tether targets are ancestors, so it stays a DAG.
+export function deleteNode(treeData, id) {
+  const target = treeData.nodes.find((node) => node.id === id);
+  if (!target) return treeData;
+  const grandparents = target.prerequisites;
+  const nodes = treeData.nodes
+    .filter((node) => node.id !== id)
+    .map((node) => {
+      if (!node.prerequisites.includes(id)) return node;
+      const others = node.prerequisites.filter((prereqId) => prereqId !== id);
+      const rewired = others.length > 0 ? others : grandparents;
+      const prerequisites = [...new Set(rewired)].filter((prereqId) => prereqId !== node.id);
+      return { ...node, prerequisites };
+    });
+  return { ...treeData, nodes };
+}
