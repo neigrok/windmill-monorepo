@@ -1,12 +1,12 @@
 // Skill-tree view — runs the pipeline (repository → domain → layout → scene)
-// and hosts the overlay UI around the GPU canvas: top controls, the node
-// detail panel, and a minimap. No business logic lives here — every node
+// and hosts the overlay UI around the GPU canvas: top controls, the docked
+// step panel, and a minimap. No business logic lives here — every node
 // state comes from UnlockRules.derive; this file only wires data through.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './skilltree.css';
 import { ControlBar } from './ui/ControlBar.jsx';
-import { DetailPanel } from './ui/DetailPanel.jsx';
+import { StepPanel } from './ui/StepPanel.jsx';
 import { Minimap } from './ui/Minimap.jsx';
 import { SkillTree } from './model/SkillTree.js';
 import { UnlockRules } from './model/UnlockRules.js';
@@ -36,9 +36,6 @@ export function SkillTreeView() {
   const completedRef = useRef(new Set());
   const seedRef = useRef(null); // authored tree for the current dataset (persistence baseline)
   const datasetSizeRef = useRef('demo');
-  const namingIdRef = useRef(null); // id of the node whose name field is open
-  const namingModeRef = useRef('create'); // 'create' (amend) | 'rename' (commit)
-  const nameValueRef = useRef('');
   const selectedIdRef = useRef(null);
 
   const [datasetSize, setDatasetSize] = useState('demo');
@@ -50,8 +47,7 @@ export function SkillTreeView() {
   const [hoveredId, setHoveredId] = useState(null);
   const [bounds, setBounds] = useState(EMPTY_BOUNDS);
   const [scene, setScene] = useState(null);
-  const [naming, setNaming] = useState(null); // { x, y } screen position of the name field
-  const [nameValue, setNameValue] = useState('');
+  const [autoFocusNameId, setAutoFocusNameId] = useState(null); // freshly created bud → StepPanel focuses its name field
   const [toast, setToast] = useState(null); // { message } shown briefly after a destructive edit
   const [hasLocalEdits, setHasLocalEdits] = useState(false); // local edits overlaid on the authored seed
   const [reloadKey, setReloadKey] = useState(0); // bump to re-run the load pipeline (e.g. after reset)
@@ -103,73 +99,35 @@ export function SkillTreeView() {
   const undo = useCallback(() => { if (editorRef.current?.undo()) syncStructure(); }, [syncStructure]);
   const redo = useCallback(() => { if (editorRef.current?.redo()) syncStructure(); }, [syncStructure]);
 
-  // Apply the open name field to its node. Create: amend the just-committed node
-  // (blank stays blank — one undo step with the create). Rename: commit a new step
+  // The panel's name field committed (Enter/blur): one history step, and only
   // if the label actually changed.
-  const applyPendingName = useCallback(() => {
+  const handleRename = useCallback((id, label) => {
     const editor = editorRef.current;
-    const id = namingIdRef.current;
-    namingIdRef.current = null;
-    if (!editor || !id) return false;
-    const label = nameValueRef.current.trim();
-    if (namingModeRef.current === 'rename') {
-      const node = editor.treeData.nodes.find((n) => n.id === id);
-      if (!node || node.label === label) return false;
-      editor.commit(renameNode(editor.treeData, id, label));
-      return true;
-    }
-    if (!label) return false;
-    editor.amend(renameNode(editor.treeData, id, label));
-    return true;
-  }, []);
+    if (!editor) return;
+    const node = editor.treeData.nodes.find((n) => n.id === id);
+    if (!node || node.label === label) return;
+    editor.commit(renameNode(editor.treeData, id, label));
+    syncStructure();
+  }, [syncStructure]);
 
-  // Double-click a node → open the inline field pre-filled with its label.
-  const handleBeginRename = useCallback((id, label, x, y) => {
-    applyPendingName();
-    namingIdRef.current = id;
-    namingModeRef.current = 'rename';
-    nameValueRef.current = label ?? '';
-    setNameValue(label ?? '');
-    setNaming({ x, y });
-  }, [applyPendingName]);
-
-  // Plus clicked: create + commit a child immediately (saved even unnamed), then
-  // open an inline field to name it. Clicking + again just saves the last one and
-  // adds another.
+  // Plus clicked: create + commit an unnamed bud (saved even unnamed), select it,
+  // and flag the step panel to focus its name field so typing flows straight in.
   const handleCreateChild = useCallback((parentId) => {
     const scene = sceneRef.current;
     const editor = editorRef.current;
     const parent = scene?.nodesById.get(parentId);
     if (!parent || !editor) return;
 
-    applyPendingName();
     // spread successive new children beside each other rather than stacking
     const placed = editor.treeData.nodes.filter((n) => n.position && n.prerequisites.includes(parentId)).length;
     const id = crypto.randomUUID?.() ?? `n-${Date.now()}`;
-    const params = { id, icon: NEW_NODE_ICON, color: parent.color, parentId, x: parent.x + placed * SIBLING_GAP, y: parent.y + CHILD_DROP };
-    editor.commit(addChildNode(editor.treeData, { ...params, label: '' }));
-    namingIdRef.current = id;
-    namingModeRef.current = 'create';
-    nameValueRef.current = '';
-    setNameValue('');
+    const params = { id, label: '', icon: NEW_NODE_ICON, color: parent.color, parentId, x: parent.x + placed * SIBLING_GAP, y: parent.y + CHILD_DROP };
+    editor.commit(addChildNode(editor.treeData, params));
     syncStructure();
-
-    const cam = scene.camera;
-    setNaming({
-      x: (params.x - cam.x) * cam.zoom + cam.viewportWidth / 2,
-      y: (params.y - cam.y) * cam.zoom + cam.viewportHeight / 2,
-    });
-  }, [syncStructure, applyPendingName]);
-
-  const confirmName = useCallback(() => {
-    if (applyPendingName()) syncStructure();
-    setNaming(null);
-  }, [applyPendingName, syncStructure]);
-
-  const cancelName = useCallback(() => {
-    namingIdRef.current = null; // keep the (already saved) node, drop the typed name
-    setNaming(null);
-  }, []);
+    scene.select(id);
+    setSelectedId(id);
+    setAutoFocusNameId(id);
+  }, [syncStructure]);
 
   // Drag from a port to a node → add a dependency (one history step). The gesture
   // already blocked cycles before the drop.
@@ -219,7 +177,6 @@ export function SkillTreeView() {
       onNodeHover: (id) => setHoveredId(id),
       onNodeMoveEnd: handleNodeMoved,
       onCreateChild: handleCreateChild,
-      onRenameNode: handleBeginRename,
       onConnectNodes: handleConnect,
       onDeleteNode: deleteNodeAt,
       onSetKind: handleSetKind,
@@ -239,15 +196,20 @@ export function SkillTreeView() {
       sceneRef.current = null;
       setScene(null);
     };
-  }, [handleNodeMoved, handleCreateChild, handleBeginRename, handleConnect, deleteNodeAt, handleSetKind, handleDeleteEdge, handleReconnect]);
+  }, [handleNodeMoved, handleCreateChild, handleConnect, deleteNodeAt, handleSetKind, handleDeleteEdge, handleReconnect]);
 
-  // Keyboard: ⌘Z / ⇧⌘Z history, ⌫ / Delete removes the selection.
+  // Keyboard: ⌘Z / ⇧⌘Z history, ⌫ / Delete removes the selection, Esc deselects.
   useEffect(() => {
     const onKey = (event) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
         event.preventDefault();
         if (event.shiftKey) redo();
         else undo();
+        return;
+      }
+      if (event.key === 'Escape') {
+        if (!selectedIdRef.current) return;
+        setSelectedId(null);
         return;
       }
       if (event.key === 'Backspace' || event.key === 'Delete') {
@@ -263,6 +225,12 @@ export function SkillTreeView() {
   }, [undo, redo, deleteSelected]);
 
   useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
+
+  // The autofocus flag is for the bud's first appearance only — once the
+  // selection moves elsewhere, re-selecting it later must not steal focus.
+  useEffect(() => {
+    if (autoFocusNameId && selectedId !== autoFocusNameId) setAutoFocusNameId(null);
+  }, [selectedId, autoFocusNameId]);
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -393,32 +361,24 @@ export function SkillTreeView() {
       />
 
       <aside className={`st-detail-panel ${selectedNode ? 'st-detail-panel--open' : ''}`}>
-        <DetailPanel
+        <StepPanel
+          key={selectedNode?.id}
           node={selectedNode}
           state={selectedState}
           prerequisites={prerequisites}
           canComplete={selectedState === 'available' || selectedState === 'active'}
+          autoFocusName={selectedId !== null && selectedId === autoFocusNameId}
+          onRename={handleRename}
+          onPreviewKind={(id, kind) => sceneRef.current?.previewKind(id, kind)}
+          onRestoreKind={(id) => sceneRef.current?.restoreKind(id)}
+          onSetKind={handleSetKind}
           onMarkComplete={handleMarkComplete}
+          onDelete={deleteNodeAt}
+          onPreviewDeleteCost={(id) => sceneRef.current?.previewDeleteCost(id)}
+          onClearDeleteCost={() => sceneRef.current?.clearDeleteCost()}
           onClose={() => setSelectedId(null)}
         />
       </aside>
-
-      {naming && (
-        <input
-          className="st-name-input"
-          style={{ left: naming.x, top: naming.y }}
-          value={nameValue}
-          placeholder="Name this step"
-          autoFocus
-          onChange={(event) => { nameValueRef.current = event.target.value; setNameValue(event.target.value); }}
-          onBlur={confirmName}
-          onKeyDown={(event) => {
-            event.stopPropagation(); // typing never reaches the ⌘Z history handler
-            if (event.key === 'Enter') { event.preventDefault(); confirmName(); }
-            else if (event.key === 'Escape') { event.preventDefault(); cancelName(); }
-          }}
-        />
-      )}
 
       {toast && (
         <div className="st-toast" role="status">

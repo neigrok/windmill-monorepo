@@ -154,7 +154,7 @@
   cursor: crosshair;
 }
 
-/* ---- Detail panel: slides in from the right on node pick ---- */
+/* ---- Step panel: docked right, slides in on node pick ---- */
 .st-detail-panel {
   position: absolute;
   top: var(--space-6);
@@ -170,6 +170,129 @@
 .st-detail-panel--open {
   pointer-events: auto;
   transform: translateX(0);
+}
+
+.st-step-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.st-step-identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  flex: 1;
+}
+.st-step-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  color: var(--text-primary);
+}
+
+/* Name: rendered text that swaps to an input in place — matched metrics, no shift */
+.st-step-name,
+.st-step-name-input {
+  display: block;
+  width: 100%;
+  margin: 0 0 2px -7px;
+  padding: 1px 6px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-xl);
+  line-height: 1.25;
+  color: var(--text-primary);
+  text-align: left;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-sm);
+}
+.st-step-name {
+  background: none;
+  cursor: text;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+.st-step-name:hover {
+  background: var(--surface-hover);
+}
+.st-step-name--empty {
+  color: var(--text-tertiary);
+  font-weight: 600;
+}
+.st-step-name-input {
+  background: var(--surface-card);
+  border-color: var(--accent-terracotta-400);
+  box-shadow: 0 0 0 3px var(--color-brand-soft);
+  outline: none;
+}
+.st-step-name-input::placeholder {
+  color: var(--text-tertiary);
+  font-weight: 600;
+}
+
+.st-step-heading {
+  margin-bottom: var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 800;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+/* Kind: one round swatch per category hue; hover previews, ring marks the current */
+.st-step-kinds {
+  display: flex;
+  gap: var(--space-2);
+}
+.st-step-swatch {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 2px solid var(--surface-card);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--border-default);
+  cursor: pointer;
+  transition: box-shadow var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-soft);
+}
+.st-step-swatch:hover {
+  box-shadow: 0 0 0 2px var(--text-tertiary);
+  transform: scale(1.1);
+}
+.st-step-swatch--current,
+.st-step-swatch--current:hover {
+  box-shadow: 0 0 0 2px var(--text-primary);
+}
+
+/* Delete: the lone destructive control, isolated at the very bottom */
+.st-step-danger {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-3);
+}
+.st-step-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--color-danger);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+.st-step-delete:hover {
+  background: var(--color-danger-bg);
 }
 
 /* ---- Node labels: pooled DOM over the GPU canvas, LOD-gated ---- */
@@ -241,26 +364,6 @@
 .st-plus:hover {
   background: var(--color-bark);
   color: #fff;
-}
-
-/* ---- Inline name field for a freshly created step ---- */
-.st-name-input {
-  position: absolute;
-  z-index: 12;
-  transform: translate(-50%, 0);
-  min-width: 120px;
-  padding: 5px 9px;
-  font-family: var(--font-body);
-  font-size: var(--text-sm);
-  color: var(--text-primary);
-  background: var(--surface-card);
-  border: 1.5px solid var(--accent-terracotta-400);
-  border-radius: var(--radius-md);
-  box-shadow: 0 0 0 3px var(--color-brand-soft), var(--shadow-sm);
-  outline: none;
-}
-.st-name-input::placeholder {
-  color: var(--text-tertiary);
 }
 
 /* ---- Toast: the one destructive edit (node delete) surfaces an Undo ---- */
@@ -352,104 +455,6 @@
 }
 .st-connect-tip--on {
   opacity: 1;
-}
-
-/* ---- Action bar: rises above a selected node (rename · kind · delete) ---- */
-.st-actionbar-layer {
-  position: absolute;
-  inset: 0;
-  z-index: 13;
-  overflow: visible;
-  pointer-events: none;
-}
-.st-actionbar {
-  position: absolute;
-  left: 0;
-  top: 0;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 4px;
-  background: var(--surface-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  box-shadow: var(--shadow-md);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--duration-fast) var(--ease-soft), transform var(--duration-fast) var(--ease-soft);
-  will-change: transform, opacity;
-}
-.st-actionbar-layer--on .st-actionbar {
-  opacity: 1;
-  pointer-events: auto;
-}
-.st-actionbtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
-}
-.st-actionbtn:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-.st-actionbtn svg {
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.st-actionbtn--swatch {
-  width: 16px;
-  height: 16px;
-  margin: 0 3px;
-  border: 2px solid var(--surface-card);
-  box-shadow: 0 0 0 1px var(--border-default);
-}
-.st-actionbtn--danger:hover {
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
-}
-
-/* ---- Kind picker: swatches fan around the node ---- */
-.st-kindfan {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-.st-kindchip {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: 2px solid var(--surface-card);
-  border-radius: 50%;
-  box-shadow: var(--shadow-sm);
-  opacity: 0;
-  transform: translate(-50%, -50%) scale(0.4);
-  pointer-events: none;
-  cursor: pointer;
-  transition: opacity var(--duration-fast) var(--ease-soft), transform var(--duration-fast) var(--ease-soft);
-}
-.st-kindfan--on .st-kindchip {
-  opacity: 1;
-  pointer-events: auto;
-}
-.st-kindchip:hover {
-  box-shadow: 0 0 0 3px var(--color-brand-soft), var(--shadow-sm);
 }
 
 /* ---- Edge chrome: midpoint × on branch hover (delete edge) ---- */
