@@ -124,6 +124,7 @@ export class SkillTreeScene {
     this.selectedId = this.nodesById.has(selected) ? selected : null;
     this.hoveredId = this.nodesById.has(hovered) ? hovered : null;
     this.nodeBatch.setSelected(this.hoveredId ?? this.selectedId);
+    this.selectionBar.setSelected(this.selectedId); // keep the action bar up across edits
     this.overlaysDirty = true;
   }
 
