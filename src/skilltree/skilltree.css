@@ -451,3 +451,45 @@
 .st-kindchip:hover {
   box-shadow: 0 0 0 3px var(--color-brand-soft), var(--shadow-sm);
 }
+
+/* ---- Edge chrome: midpoint × on branch hover (delete edge) ---- */
+.st-edgechrome {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  overflow: visible;
+  pointer-events: none;
+}
+.st-edge-x {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1.5px solid var(--color-bark);
+  border-radius: 50%;
+  background: var(--surface-card);
+  color: var(--color-bark);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  box-shadow: var(--shadow-sm);
+  transition: opacity var(--duration-fast) var(--ease-soft), background var(--duration-fast) var(--ease-soft), color var(--duration-fast) var(--ease-soft);
+  will-change: transform, opacity;
+}
+.st-edgechrome--on .st-edge-x {
+  opacity: 1;
+  pointer-events: auto;
+}
+.st-edge-x:hover {
+  background: var(--accent-brick-500);
+  border-color: var(--accent-brick-500);
+  color: #fff;
+}

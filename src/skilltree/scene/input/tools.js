@@ -50,7 +50,9 @@ export class NavigateTool extends Tool {
     const now = performance.now();
     if (now - this.lastHoverAt < HOVER_THROTTLE_MS) return;
     this.lastHoverAt = now;
-    this.ctx.hover(this.ctx.pick(pos.x, pos.y));
+    const id = this.ctx.pick(pos.x, pos.y);
+    this.ctx.hover(id);
+    this.ctx.hoverEdge(id ? null : pos); // branch chrome only when not over a node
   }
 
   onPointerUp(pos) {

@@ -12,12 +12,14 @@ import { IconAtlas } from './IconAtlas.js';
 import { LabelOverlay, IconOverlay, ICON_DOM_START, ICON_DOM_FULL } from './NodeOverlay.js';
 import { AffordanceLayer } from './AffordanceLayer.js';
 import { SelectionBar } from './SelectionBar.js';
+import { EdgeChrome } from './EdgeChrome.js';
 import { createTextureFromCanvas } from './glcore.js';
 import { InputController } from './input/InputController.js';
 import { MoveTool } from './input/tools.js';
 
 const SPATIAL_CELL_SIZE = NODE_SIZE * 2;
 const PICK_RADIUS = NODE_SIZE * 0.65;
+const EDGE_PICK_RADIUS = 12; // screen px tolerance for hovering a branch
 const MAX_FRAME_DELTA = 0.1;
 const ICON_ZOOM_START = 0.5;
 const ICON_ZOOM_FULL = 1.1;
@@ -55,6 +57,9 @@ export class SkillTreeScene {
       onDelete: (id) => this.options.onDeleteNode && this.options.onDeleteNode(id),
       onSetKind: (id, kind) => this.options.onSetKind && this.options.onSetKind(id, kind),
     });
+    this.edgeChrome = new EdgeChrome(canvas, {
+      onDeleteEdge: (from, to) => this.options.onDeleteEdge && this.options.onDeleteEdge(from, to),
+    });
 
     this.motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     this.motion = this.motionQuery.matches ? 0 : 1;
@@ -82,6 +87,7 @@ export class SkillTreeScene {
       getNode: (id) => this.nodesById.get(id),
       select: (id) => this.select(id),
       hover: (id) => this.hover(id),
+      hoverEdge: (pos) => this.hoverEdge(pos),
       moveNode: (id, x, y) => this.moveNode(id, x, y),
       endMove: (id) => this.endMove(id),
       beginRename: (id) => this.beginRename(id),
@@ -128,6 +134,7 @@ export class SkillTreeScene {
     this.iconOverlay.setModel(renderModel, this.spatialGrid);
     this.affordanceLayer.setModel(renderModel);
     this.selectionBar.setModel(renderModel);
+    this.edgeChrome.setModel(renderModel);
   }
 
   applyStates(statesMap) {
@@ -226,6 +233,7 @@ export class SkillTreeScene {
     this.iconOverlay.dispose();
     this.affordanceLayer.dispose();
     this.selectionBar.dispose();
+    this.edgeChrome.dispose();
     if (this.iconTexture) this.gl.deleteTexture(this.iconTexture);
   }
 
@@ -244,6 +252,7 @@ export class SkillTreeScene {
       this.iconOverlay.update(this.camera);
       this.affordanceLayer.update(this.camera);
       this.selectionBar.update(this.camera);
+      this.edgeChrome.update(this.camera);
       this.overlaysDirty = false;
     }
     if (moved) this.viewportListeners.forEach((listener) => listener(this.getViewport()));
@@ -310,9 +319,41 @@ export class SkillTreeScene {
     const world = this.camera.screenToWorld(x, y);
     return this.spatialGrid.nearest(world.x, world.y, PICK_RADIUS);
   }
+
+  hoverEdge(pos) {
+    if (!pos) { this.edgeChrome.setHoveredEdge(null); return; }
+    const edge = this.pickEdge(pos.x, pos.y);
+    this.edgeChrome.setHoveredEdge(edge);
+    this.overlaysDirty = true;
+  }
+
+  // Nearest branch to the cursor within EDGE_PICK_RADIUS (straight-segment
+  // approximation — the curve bend is small), or null. Only meaningful off-node.
+  pickEdge(sx, sy) {
+    if (!this.renderModel) return null;
+    const world = this.camera.screenToWorld(sx, sy);
+    const maxDist = EDGE_PICK_RADIUS / this.camera.zoom;
+    let best = null;
+    let bestDist = maxDist;
+    for (const edge of this.renderModel.edges) {
+      const from = this.nodesById.get(edge.from);
+      const to = this.nodesById.get(edge.to);
+      const d = distanceToSegment(world.x, world.y, from.x, from.y, to.x, to.y);
+      if (d < bestDist) { bestDist = d; best = edge; }
+    }
+    return best;
+  }
 }
 
 function smoothstep(x, edge0, edge1) {
   const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
   return t * t * (3 - 2 * t);
+}
+
+function distanceToSegment(px, py, ax, ay, bx, by) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lenSq = dx * dx + dy * dy || 1;
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }

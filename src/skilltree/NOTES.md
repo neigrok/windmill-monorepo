@@ -262,6 +262,20 @@ drag to an ancestor shows the brick ring + tip and adds nothing.
 Deferred polish (not blocking): §3.2 fading *all* cycle-making nodes to 30% during the drag (a
 GPU per-node dim flag) and the §3.3 target scale-up. The ring + tip already prevent cycles.
 
+## Editing: branch hover chrome + delete edge
+
+Foundation for edge editing (editing-spec §04–§05). `NavigateTool.onPointerMove` now also picks
+the nearest branch when the cursor is off any node (`scene.pickEdge` — straight-segment distance
+within `EDGE_PICK_RADIUS`), and `scene/EdgeChrome` fades a bark **midpoint ×** onto that branch,
+offset perpendicular so the branch stays visible (§5.1). Clicking it commits `removeEdge` (silent,
+one undoable step; the target keeps its other parents — removing an edge never deletes a node).
+Grace window keeps the × reachable, same as the node affordances. Verified headless: hovering a
+branch shows the ×, clicking it drops the edge (node count unchanged), ⌘Z restores.
+
+Reconnect (§04) adds endpoint **handles** to this same chrome next (drag to re-aim, reusing the
+ConnectGesture targeting + cycle guard). The **unlinked** visual (§5.2: gold dashed ring + tag when
+a node loses its last branch) rides on the deferred `bud-state` dashed treatment.
+
 ## Observations / follow-ups (not blocking)
 - **Three visual tiers over 4 model states.** `nodeTier` folds active+complete into
   `activated`; `UnlockRules` still keeps the finer states for `DetailPanel`. If we

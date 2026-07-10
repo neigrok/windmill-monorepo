@@ -15,7 +15,7 @@ import { applyNudges } from './layout/applyNudges.js';
 import { MockTreeRepository } from './mock/MockTreeRepository.js';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
 import { TreeEditor } from './editing/TreeEditor.js';
-import { repositionNode, addChildNode, renameNode, deleteNode, addEdge, setNodeColor } from './editing/edits.js';
+import { repositionNode, addChildNode, renameNode, deleteNode, addEdge, removeEdge, setNodeColor } from './editing/edits.js';
 import { NODE_SIZE } from './theme.js';
 
 const layoutEngine = new WorkerLayoutEngine();
@@ -155,6 +155,13 @@ export function SkillTreeView() {
     if (editor.commit(addEdge(editor.treeData, sourceId, targetId))) syncStructure();
   }, [syncStructure]);
 
+  // Midpoint × on a branch → drop the edge (silent, one step; ⌘Z restores).
+  const handleDeleteEdge = useCallback((sourceId, targetId) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    if (editor.commit(removeEdge(editor.treeData, sourceId, targetId))) syncStructure();
+  }, [syncStructure]);
+
   // Delete a node; its children splice up to the deleted node's parents (one
   // history step). The one destructive edit that earns a toast.
   const deleteNodeAt = useCallback((id) => {
@@ -184,6 +191,7 @@ export function SkillTreeView() {
       onConnectNodes: handleConnect,
       onDeleteNode: deleteNodeAt,
       onSetKind: handleSetKind,
+      onDeleteEdge: handleDeleteEdge,
     });
     sceneRef.current = nextScene;
     setScene(nextScene);
@@ -198,7 +206,7 @@ export function SkillTreeView() {
       sceneRef.current = null;
       setScene(null);
     };
-  }, [handleNodeMoved, handleCreateChild, handleBeginRename, handleConnect, deleteNodeAt, handleSetKind]);
+  }, [handleNodeMoved, handleCreateChild, handleBeginRename, handleConnect, deleteNodeAt, handleSetKind, handleDeleteEdge]);
 
   // Keyboard: ⌘Z / ⇧⌘Z history, ⌫ / Delete removes the selection.
   useEffect(() => {

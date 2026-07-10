@@ -32,6 +32,18 @@ export function addEdge(treeData, sourceId, targetId) {
   };
 }
 
+// Drop the dependency edge sourceId → targetId. The target keeps its other
+// parents; removing an edge never deletes a node.
+export function removeEdge(treeData, sourceId, targetId) {
+  return {
+    ...treeData,
+    nodes: treeData.nodes.map((node) =>
+      node.id === targetId
+        ? { ...node, prerequisites: node.prerequisites.filter((prereqId) => prereqId !== sourceId) }
+        : node),
+  };
+}
+
 export function renameNode(treeData, id, label) {
   return {
     ...treeData,
