@@ -229,8 +229,17 @@ key events while an input is focused. Verified headless: delete splices children
 shows, Undo restores the node + edges + unwinds the splice in one step.
 
 Deferred: the floating **action bar** (§6.1: a rename·kind·delete bar that rises on select) is
-shared chrome — build it with rename + kind so it carries all three buttons. For now delete is
+shared chrome — build it with kind so it carries all three buttons. For now delete is
 keyboard-only (⌫), which the spec sanctions as the secondary path.
+
+## Editing: rename inline
+
+Double-click a node → the inline field opens pre-filled with its label (editing-spec §8.1). The
+`InputController` forwards `dblclick` → `Tool.onDoubleClick` → `ctx.beginRename(id)` →
+`scene.onRenameNode(id, label, x, y)` (positioned at the label). It reuses the create name field
+via a `namingModeRef`: `create` **amends** the just-committed node, `rename` **commits** a
+`renameNode` as its own step only if the label changed; esc reverts. Verified headless:
+double-click pre-fills, edit commits (count unchanged), ⌘Z reverts.
 
 ## Observations / follow-ups (not blocking)
 - **Three visual tiers over 4 model states.** `nodeTier` folds active+complete into

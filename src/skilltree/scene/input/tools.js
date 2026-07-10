@@ -16,6 +16,7 @@ export class Tool {
   onPointerMove() {} // a free pointer moving with no button (hover)
   onPointerUp() {}
   onPointerLeave() {}
+  onDoubleClick() {}
 }
 
 export class NavigateTool extends Tool {
@@ -62,6 +63,11 @@ export class NavigateTool extends Tool {
 
   onPointerLeave() {
     this.ctx.hover(null);
+  }
+
+  onDoubleClick(pos) {
+    const id = this.ctx.pick(pos.x, pos.y);
+    if (id) this.ctx.beginRename(id);
   }
 }
 

@@ -22,6 +22,7 @@ export class InputController {
     this.canvas.addEventListener('pointerup', this.onUp);
     this.canvas.addEventListener('pointercancel', this.onUp);
     this.canvas.addEventListener('pointerleave', this.onLeave);
+    this.canvas.addEventListener('dblclick', this.onDblClick);
     this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
   }
 
@@ -31,6 +32,7 @@ export class InputController {
     this.canvas.removeEventListener('pointerup', this.onUp);
     this.canvas.removeEventListener('pointercancel', this.onUp);
     this.canvas.removeEventListener('pointerleave', this.onLeave);
+    this.canvas.removeEventListener('dblclick', this.onDblClick);
     this.canvas.removeEventListener('wheel', this.onWheel);
   }
 
@@ -61,6 +63,10 @@ export class InputController {
   onLeave = (event) => {
     if (this.activePointerId !== null) return;
     this.tool.onPointerLeave(event);
+  };
+
+  onDblClick = (event) => {
+    this.tool.onDoubleClick(this.localPos(event), event);
   };
 
   onWheel = (event) => {

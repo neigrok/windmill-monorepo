@@ -32,7 +32,8 @@ export function SkillTreeView() {
   const editorRef = useRef(null);
   const rawLayoutRef = useRef(new Map());
   const completedRef = useRef(new Set());
-  const namingIdRef = useRef(null); // id of the just-created node whose name field is open
+  const namingIdRef = useRef(null); // id of the node whose name field is open
+  const namingModeRef = useRef('create'); // 'create' (amend) | 'rename' (commit)
   const nameValueRef = useRef('');
   const selectedIdRef = useRef(null);
 
@@ -78,18 +79,35 @@ export function SkillTreeView() {
   const undo = useCallback(() => { if (editorRef.current?.undo()) syncStructure(); }, [syncStructure]);
   const redo = useCallback(() => { if (editorRef.current?.redo()) syncStructure(); }, [syncStructure]);
 
-  // Apply the open name field's text to its node (no new history step — create +
-  // name undo as one). A blank name is fine; the node is already saved.
+  // Apply the open name field to its node. Create: amend the just-committed node
+  // (blank stays blank — one undo step with the create). Rename: commit a new step
+  // if the label actually changed.
   const applyPendingName = useCallback(() => {
     const editor = editorRef.current;
     const id = namingIdRef.current;
     namingIdRef.current = null;
     if (!editor || !id) return false;
     const label = nameValueRef.current.trim();
+    if (namingModeRef.current === 'rename') {
+      const node = editor.treeData.nodes.find((n) => n.id === id);
+      if (!node || node.label === label) return false;
+      editor.commit(renameNode(editor.treeData, id, label));
+      return true;
+    }
     if (!label) return false;
     editor.amend(renameNode(editor.treeData, id, label));
     return true;
   }, []);
+
+  // Double-click a node → open the inline field pre-filled with its label.
+  const handleBeginRename = useCallback((id, label, x, y) => {
+    applyPendingName();
+    namingIdRef.current = id;
+    namingModeRef.current = 'rename';
+    nameValueRef.current = label ?? '';
+    setNameValue(label ?? '');
+    setNaming({ x, y });
+  }, [applyPendingName]);
 
   // Plus clicked: create + commit a child immediately (saved even unnamed), then
   // open an inline field to name it. Clicking + again just saves the last one and
@@ -107,6 +125,7 @@ export function SkillTreeView() {
     const params = { id, icon: NEW_NODE_ICON, color: parent.color, parentId, x: parent.x + placed * SIBLING_GAP, y: parent.y + CHILD_DROP };
     editor.commit(addChildNode(editor.treeData, { ...params, label: '' }));
     namingIdRef.current = id;
+    namingModeRef.current = 'create';
     nameValueRef.current = '';
     setNameValue('');
     syncStructure();
@@ -147,6 +166,7 @@ export function SkillTreeView() {
       onNodeHover: (id) => setHoveredId(id),
       onNodeMoveEnd: handleNodeMoved,
       onCreateChild: handleCreateChild,
+      onRenameNode: handleBeginRename,
     });
     sceneRef.current = nextScene;
     setScene(nextScene);
@@ -161,7 +181,7 @@ export function SkillTreeView() {
       sceneRef.current = null;
       setScene(null);
     };
-  }, [handleNodeMoved, handleCreateChild]);
+  }, [handleNodeMoved, handleCreateChild, handleBeginRename]);
 
   // Keyboard: ⌘Z / ⇧⌘Z history, ⌫ / Delete removes the selection.
   useEffect(() => {

@@ -75,6 +75,7 @@ export class SkillTreeScene {
       hover: (id) => this.hover(id),
       moveNode: (id, x, y) => this.moveNode(id, x, y),
       endMove: (id) => this.endMove(id),
+      beginRename: (id) => this.beginRename(id),
     };
     this.input = new InputController(canvas, this.toolContext, new MoveTool(this.toolContext));
 
@@ -143,6 +144,15 @@ export class SkillTreeScene {
   endMove(id) {
     const node = this.nodesById.get(id);
     if (node && this.options.onNodeMoveEnd) this.options.onNodeMoveEnd(id, node.x, node.y);
+  }
+
+  // Double-click: ask the shell to open the inline name field at the node's label.
+  beginRename(id) {
+    const node = this.nodesById.get(id);
+    if (!node || !this.options.onRenameNode) return;
+    const sx = (node.x - this.camera.x) * this.camera.zoom + this.camera.viewportWidth / 2;
+    const sy = (node.y - this.camera.y) * this.camera.zoom + this.camera.viewportHeight / 2 + NODE_SIZE * 0.62 * this.camera.zoom;
+    this.options.onRenameNode(id, node.label, sx, sy);
   }
 
   fitToView() {
