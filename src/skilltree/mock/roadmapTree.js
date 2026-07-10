@@ -30,7 +30,7 @@ export const roadmapTree = {
     { id: 'state-tiers', label: 'Three state tiers', icon: 'layers', color: 'gold', status: 'complete', prerequisites: ['color-kind'] },
     { id: 'edge-tint', label: 'Kind-tinted edges', icon: 'leaf', color: 'gold', status: 'complete', prerequisites: ['state-tiers'] },
     { id: 'edge-trim', label: 'Trim edges to node', icon: 'frame', color: 'gold', status: 'complete', prerequisites: ['edge-tint'] },
-    { id: 'bud-state', label: 'Bud + unlinked states', icon: 'gem', color: 'gold', status: 'available', prerequisites: ['state-tiers'] },
+    { id: 'bud-state', label: 'Bud + unlinked states', icon: 'gem', color: 'gold', status: 'complete', prerequisites: ['state-tiers'] },
 
     // ---- interaction (olive) ----
     { id: 'camera', label: 'Pan · zoom · inertia', icon: 'maximize', color: 'olive', status: 'complete', prerequisites: ['renderer'] },

@@ -21,6 +21,7 @@ layout(location=3) in float aGlowSeed;
 layout(location=4) in float aSelected;
 layout(location=5) in float aIconCell;
 layout(location=6) in float aTier;
+layout(location=7) in float aForm;
 uniform vec2 uResolution;
 uniform vec2 uCamera;
 uniform float uZoom;
@@ -32,6 +33,7 @@ out float vTier;
 out float vGlowSeed;
 out float vSelected;
 out float vIconCell;
+out float vForm;
 void main() {
   vUv = aQuad + 0.5;
   vColor = aColor;
@@ -39,6 +41,7 @@ void main() {
   vGlowSeed = aGlowSeed;
   vSelected = aSelected;
   vIconCell = aIconCell;
+  vForm = aForm;
   float size = uNodeSize * (1.0 + aSelected * 0.14) * uPadding;
   vec2 world = aOffset + aQuad * size;
   vec2 screen = (world - uCamera) * uZoom;
@@ -54,6 +57,7 @@ in float vTier;
 in float vGlowSeed;
 in float vSelected;
 in float vIconCell;
+in float vForm;
 uniform float uPadding;
 uniform float uTime;
 uniform float uGlowSpeed;
@@ -126,6 +130,20 @@ void main() {
   vec3 color = body * bodyMask + glow.rgb * glowAmt;
   color = color * (1.0 - outerA) + base * outerA;
   float alpha = max(max(bodyMask, glowAmt), outerA);
+
+  // ---- structural form: a dashed ring on buds (nascent) and unlinked strays ----
+  int form = int(vForm + 0.5); // 0 linked, 1 bud, 2 unlinked
+  if (form >= 1) {
+    float ang = atan(centered.y, centered.x);
+    float dashOn = step(fract((ang / TAU) * 14.0), 0.55);
+    float ringBand = 1.0 - smoothstep(0.05, 0.085, abs(dist - 0.99));
+    vec3 dashColor = form == 2 ? mix(uCanvas, ring, 0.5) : ring;
+    float dashA = ringBand * dashOn * 0.85;
+    if (form == 2) color = mix(uCanvas, color, 0.9); // detached reads a touch lighter
+    color = color * (1.0 - dashA) + dashColor * dashA;
+    alpha = max(alpha, dashA);
+  }
+
   if (alpha < 0.01) discard;
   fragColor = vec4(color, alpha);
 }`;
@@ -185,6 +203,7 @@ export class NodeBatch {
     this.selectedBuffer = this.attribBuffer(4, 1, null, 1, gl.DYNAMIC_DRAW);
     this.iconCellBuffer = this.attribBuffer(5, 1, null, 1, gl.DYNAMIC_DRAW);
     this.tierBuffer = this.attribBuffer(6, 1, null, 1, gl.DYNAMIC_DRAW);
+    this.formBuffer = this.attribBuffer(7, 1, null, 1, gl.DYNAMIC_DRAW);
 
     gl.bindVertexArray(null);
   }
@@ -218,6 +237,7 @@ export class NodeBatch {
     this.selected = new Float32Array(count);
     const iconCells = new Float32Array(count);
     this.tiers = new Float32Array(count);
+    const forms = new Float32Array(count);
 
     renderNodes.forEach((node, i) => {
       this.idToIndex.set(node.id, i);
@@ -227,6 +247,7 @@ export class NodeBatch {
       glowSeeds[i] = node.glowSeed;
       iconCells[i] = iconAtlas ? iconAtlas.cellFor(node.icon) : -1;
       this.tiers[i] = nodeTier(node.state);
+      forms[i] = node.form ?? 0;
     });
 
     this.upload(this.offsetBuffer, this.offsets);
@@ -235,6 +256,7 @@ export class NodeBatch {
     this.upload(this.selectedBuffer, this.selected);
     this.upload(this.iconCellBuffer, iconCells);
     this.upload(this.tierBuffer, this.tiers);
+    this.upload(this.formBuffer, forms);
   }
 
   upload(buffer, data) {
@@ -312,7 +334,7 @@ export class NodeBatch {
     const gl = this.gl;
     gl.deleteProgram(this.program);
     gl.deleteVertexArray(this.vao);
-    [this.quadBuffer, this.offsetBuffer, this.colorBuffer, this.glowSeedBuffer, this.selectedBuffer, this.iconCellBuffer, this.tierBuffer]
+    [this.quadBuffer, this.offsetBuffer, this.colorBuffer, this.glowSeedBuffer, this.selectedBuffer, this.iconCellBuffer, this.tierBuffer, this.formBuffer]
       .forEach((b) => gl.deleteBuffer(b));
   }
 }

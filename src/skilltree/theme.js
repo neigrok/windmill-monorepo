@@ -32,6 +32,17 @@ export function nodeTier(state) {
   return 0; // locked → unavailable
 }
 
+// A node's structural *form*, orthogonal to its tier — a dashed ring the editing
+// gestures reveal. `bud` is a just-born, still-unnamed tip (grows a name/edges);
+// `unlinked` is a stray with neither parents nor children (a leaf whose last
+// branch was cut) that wants re-attaching. Authored nodes are always `linked`.
+export const NODE_FORMS = ['linked', 'bud', 'unlinked'];
+export function nodeForm(label, parentCount, childCount) {
+  if (parentCount === 0 && childCount === 0) return 2; // unlinked — a detached stray
+  if (!label || label.trim() === '') return 1; // bud — created but not yet named
+  return 0; // linked
+}
+
 // An edge grows once its source is complete (the dependency is satisfied).
 export function isDone(state) {
   return state === 'complete';

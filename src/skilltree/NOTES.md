@@ -291,6 +291,22 @@ Gotcha worth keeping: overlay chips that are re-placed every frame from the rend
 the chip perpetually lags the cursor and never sits where a pointerdown lands. Handles/× transition
 opacity only (the delete × was already correct; the handle had to drop its `transform` transition).
 
+## Visual: bud + unlinked forms
+
+A node now carries a structural *form* alongside its tier, derived (not stored) in `toRenderModel`
+via `theme.nodeForm(label, parents, children)`: `bud` = a just-created, still-unnamed tip (blank
+label, but linked); `unlinked` = a stray with neither parents nor children (a leaf whose last branch
+was cut). Both surface as a dashed ring in the node shader — a new `aForm` instance attribute drives
+an `atan`-segmented ring at r≈0.99: kind-hued for a bud, muted-toward-canvas + a lighter body for an
+unlinked stray. The authored roadmap is all `linked` (every node named + attached), so the forms only
+ever appear through the editing gestures — create → bud (clears when you name it), cut last edge →
+unlinked (clears when you reconnect). Structural edits always re-run `setInstances`, so form updates
+ride the normal sync; no incremental form path needed. Verified headless: created node = form 1,
+its edge deleted = form 2, zero non-linked nodes on load.
+
+The "reconnect me" **tag** on an unlinked node (design §5.2) is deferred — the dashed ring carries the
+signal for now; a text tag can ride the label overlay later.
+
 ## Observations / follow-ups (not blocking)
 - **Three visual tiers over 4 model states.** `nodeTier` folds active+complete into
   `activated`; `UnlockRules` still keeps the finer states for `DetailPanel`. If we

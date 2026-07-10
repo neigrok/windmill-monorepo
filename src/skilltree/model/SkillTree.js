@@ -2,7 +2,7 @@
 // graph question (ranks, ancestry, render projection) from indices built here.
 // Pure — no WebGL, no React.
 
-import { NODE_SIZE, DEFAULT_NODE_COLOR } from '../theme.js';
+import { NODE_SIZE, DEFAULT_NODE_COLOR, nodeForm } from '../theme.js';
 
 function hashToUnit(id) {
   let hash = 2166136261;
@@ -100,6 +100,7 @@ export class SkillTree {
         y: position.y,
         layer: this.rankById.get(node.id) % 3,
         state: states.get(node.id) ?? 'locked',
+        form: nodeForm(node.label, node.prerequisites.length, this.childrenIndex.get(node.id).length),
         glowSeed: hashToUnit(node.id),
       };
     });
