@@ -14,6 +14,7 @@ const LABEL_ZOOM_THRESHOLD = 0.5;
 export const ICON_DOM_START = 2.0;
 export const ICON_DOM_FULL = 3.0;
 const ICON_NODE_FRACTION = 0.44; // glyph share of the node diameter; matches the atlas inset
+const LABEL_FONT_FRACTION = 0.23; // caption height as a share of the node diameter (~13px at zoom 1)
 
 function smoothstep(x, edge0, edge1) {
   const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
@@ -100,6 +101,7 @@ export class LabelOverlay extends NodeOverlay {
 
   place(element, sx, sy, zoom) {
     const offsetY = NODE_SIZE * 0.62 * zoom;
+    element.style.fontSize = `${NODE_SIZE * LABEL_FONT_FRACTION * zoom}px`;
     element.style.transform = `translate(${sx}px, ${sy + offsetY}px) translate(-50%, 0)`;
   }
 
