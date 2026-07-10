@@ -228,9 +228,15 @@ that calls `undo()`); everything else relies on being visible + ⌘Z. The ⌫ ha
 key events while an input is focused. Verified headless: delete splices children up, toast
 shows, Undo restores the node + edges + unwinds the splice in one step.
 
-Deferred: the floating **action bar** (§6.1: a rename·kind·delete bar that rises on select) is
-shared chrome — build it with kind so it carries all three buttons. For now delete is
-keyboard-only (⌫), which the spec sanctions as the secondary path.
+## Editing: action bar + kind picker
+
+Selecting a node raises the **action bar** (§6.1) — `scene/SelectionBar`, a DOM overlay (plain
+buttons + callbacks, like AffordanceLayer) positioned above the node each frame: rename · kind ·
+delete. It's the discoverable home for delete (was ⌫-only) and rename (was dblclick-only). The
+kind button fans the palette **swatches** around the node (§8.2); clicking one commits
+`setNodeColor` (one undoable step). Bar chrome is neutral; only the swatches carry hue. Verified
+headless: select → bar; swatch → 5-chip fan; chip recolors (⌘Z reverts); trash deletes + toast.
+Deferred polish: live hover-preview of a kind (§8.2) and the bar's rise animation.
 
 ## Editing: rename inline
 

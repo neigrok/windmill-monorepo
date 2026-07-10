@@ -353,3 +353,101 @@
 .st-connect-tip--on {
   opacity: 1;
 }
+
+/* ---- Action bar: rises above a selected node (rename · kind · delete) ---- */
+.st-actionbar-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 13;
+  overflow: visible;
+  pointer-events: none;
+}
+.st-actionbar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-md);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-fast) var(--ease-soft), transform var(--duration-fast) var(--ease-soft);
+  will-change: transform, opacity;
+}
+.st-actionbar-layer--on .st-actionbar {
+  opacity: 1;
+  pointer-events: auto;
+}
+.st-actionbtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+}
+.st-actionbtn:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+.st-actionbtn svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.st-actionbtn--swatch {
+  width: 16px;
+  height: 16px;
+  margin: 0 3px;
+  border: 2px solid var(--surface-card);
+  box-shadow: 0 0 0 1px var(--border-default);
+}
+.st-actionbtn--danger:hover {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+/* ---- Kind picker: swatches fan around the node ---- */
+.st-kindfan {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.st-kindchip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 2px solid var(--surface-card);
+  border-radius: 50%;
+  box-shadow: var(--shadow-sm);
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.4);
+  pointer-events: none;
+  cursor: pointer;
+  transition: opacity var(--duration-fast) var(--ease-soft), transform var(--duration-fast) var(--ease-soft);
+}
+.st-kindfan--on .st-kindchip {
+  opacity: 1;
+  pointer-events: auto;
+}
+.st-kindchip:hover {
+  box-shadow: 0 0 0 3px var(--color-brand-soft), var(--shadow-sm);
+}

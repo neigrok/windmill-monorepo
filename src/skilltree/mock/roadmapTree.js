@@ -47,7 +47,7 @@ export const roadmapTree = {
     { id: 'delete-node', label: 'Delete node + splice', icon: 'trash-2', color: 'terracotta', status: 'complete', prerequisites: ['create-node'] },
     { id: 'reorder', label: 'Move / reorder', icon: 'grid-3x3', color: 'terracotta', status: 'locked', prerequisites: ['radial-layout', 'edit-mode'] },
     { id: 'rename', label: 'Rename inline', icon: 'ruler', color: 'terracotta', status: 'complete', prerequisites: ['edit-mode'] },
-    { id: 'kind-picker', label: 'Kind picker', icon: 'sun', color: 'terracotta', status: 'available', prerequisites: ['edit-mode', 'color-kind'] },
+    { id: 'kind-picker', label: 'Kind picker', icon: 'sun', color: 'terracotta', status: 'complete', prerequisites: ['edit-mode', 'color-kind'] },
     { id: 'undo-redo', label: 'Undo / redo (⌘Z)', icon: 'flag', color: 'terracotta', status: 'complete', prerequisites: ['command-layer'] },
   ],
 };

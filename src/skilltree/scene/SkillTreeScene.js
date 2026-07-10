@@ -11,6 +11,7 @@ import { ConnectorBatch } from './ConnectorBatch.js';
 import { IconAtlas } from './IconAtlas.js';
 import { LabelOverlay, IconOverlay, ICON_DOM_START, ICON_DOM_FULL } from './NodeOverlay.js';
 import { AffordanceLayer } from './AffordanceLayer.js';
+import { SelectionBar } from './SelectionBar.js';
 import { createTextureFromCanvas } from './glcore.js';
 import { InputController } from './input/InputController.js';
 import { MoveTool } from './input/tools.js';
@@ -48,6 +49,11 @@ export class SkillTreeScene {
       pick: (x, y) => this.pick(x, y),
       onCreate: (id) => this.options.onCreateChild && this.options.onCreateChild(id),
       onConnect: (sourceId, targetId) => this.options.onConnectNodes && this.options.onConnectNodes(sourceId, targetId),
+    });
+    this.selectionBar = new SelectionBar(canvas, {
+      onRename: (id) => this.beginRename(id),
+      onDelete: (id) => this.options.onDeleteNode && this.options.onDeleteNode(id),
+      onSetKind: (id, kind) => this.options.onSetKind && this.options.onSetKind(id, kind),
     });
 
     this.motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -121,6 +127,7 @@ export class SkillTreeScene {
     this.labelOverlay.setModel(renderModel, this.spatialGrid);
     this.iconOverlay.setModel(renderModel, this.spatialGrid);
     this.affordanceLayer.setModel(renderModel);
+    this.selectionBar.setModel(renderModel);
   }
 
   applyStates(statesMap) {
@@ -218,6 +225,7 @@ export class SkillTreeScene {
     this.labelOverlay.dispose();
     this.iconOverlay.dispose();
     this.affordanceLayer.dispose();
+    this.selectionBar.dispose();
     if (this.iconTexture) this.gl.deleteTexture(this.iconTexture);
   }
 
@@ -235,6 +243,7 @@ export class SkillTreeScene {
       this.labelOverlay.update(this.camera);
       this.iconOverlay.update(this.camera);
       this.affordanceLayer.update(this.camera);
+      this.selectionBar.update(this.camera);
       this.overlaysDirty = false;
     }
     if (moved) this.viewportListeners.forEach((listener) => listener(this.getViewport()));
@@ -277,6 +286,8 @@ export class SkillTreeScene {
 
   select(id) {
     this.selectedId = id;
+    this.selectionBar.setSelected(id);
+    this.overlaysDirty = true;
     this.refreshHighlight();
     if (this.options.onNodePick) this.options.onNodePick(id);
   }

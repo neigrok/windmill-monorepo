@@ -39,6 +39,13 @@ export function renameNode(treeData, id, label) {
   };
 }
 
+export function setNodeColor(treeData, id, color) {
+  return {
+    ...treeData,
+    nodes: treeData.nodes.map((node) => (node.id === id ? { ...node, color } : node)),
+  };
+}
+
 // Remove a node without orphaning its children: a child that loses its only
 // parent is re-tethered to the deleted node's own parents (spliced up); a child
 // with other parents just drops this one. One transform → one undo step, and the
