@@ -183,3 +183,13 @@
   color: var(--text-primary);
   text-shadow: 0 1px 2px var(--surface-canvas), 0 0 5px var(--surface-canvas), 0 0 5px var(--surface-canvas);
 }
+
+/* ---- Node icons: live SVG glyphs that replace the baked atlas when zoomed in ---- */
+.st-icons {
+  z-index: 9;
+}
+.st-icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}

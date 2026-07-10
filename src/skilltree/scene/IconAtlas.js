@@ -6,7 +6,7 @@ import { Icon } from '../../components/Icon.jsx';
 // node shader samples for its glyph. Reuses the app's Icon registry (one source
 // of truth, only registered icons bundle). Rasterization is async (SVG -> Image
 // decode); onReady fires once the canvas is filled so the scene can re-upload it.
-const CELL = 96;
+const CELL = 192;
 const CAPACITY = 64;
 const GLYPH_INSET = 0.28;
 

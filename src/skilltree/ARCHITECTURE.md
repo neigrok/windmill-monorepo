@@ -85,22 +85,27 @@ Everything in `model/` is pure JS — no WebGL, no React.
 - `scene/NodeBatch.js` — **one instanced draw** for all fruit. A base quad drawn N times;
   per-instance attributes (offset/state/glowSeed/selected/iconCell). Fruit body is
   procedural (disc + gradient + ring); glow pulses from `uTime`; the icon atlas is sampled
-  with a zoom-based opacity so glyphs fade in as you zoom. `setInstances`, `setStates`,
-  `setSelected`, `setIconAtlas`.
+  and tinted per state (`uIconColor`), fading in with zoom and back out over the DOM-icon
+  handoff band so the baked raster never has to hold up under extreme zoom. `setInstances`,
+  `setStates`, `setSelected`, `setIconAtlas`.
 - `scene/ConnectorBatch.js` — **one draw** for all edges; bézier ribbons packed into one
   buffer. Activation replays as a GPU color/growth sweep driven by `uTime`; `setModel`
   rebuilds geometry, `setStates` only rewrites the active/grow attributes.
 - `scene/IconAtlas.js` — rasterizes lucide glyphs (via the app's Icon registry) into an
-  alpha-mask canvas atlas; the scene uploads it as a GL texture and re-uploads once async
-  glyph decode completes (`onReady`). Exposes `canvas`, `cols`, `rows`.
-- `scene/LabelOverlay.js` — node captions as a **fixed pool (~64) of absolutely-positioned
-  DOM `<span>`s** over the canvas (crisper and simpler than SDF text). LOD-gated: below a
-  zoom threshold all labels hide; above it, `SpatialGrid.within(viewport)` → the nearest N
-  to viewport center get the pooled spans, positioned via CSS `transform: translate(...)`
-  (so repositioning every frame costs no layout). Hidden spans are `display:none`.
+  alpha-mask canvas atlas (192px cells) for the **far/mid LOD**, where thousands of small
+  icons draw in the single node instanced call; the scene uploads it as a GL texture and
+  re-uploads once async glyph decode completes (`onReady`). Exposes `canvas`, `cols`, `rows`.
+- `scene/NodeOverlay.js` — DOM overlays above the canvas: an abstract `NodeOverlay` owns one
+  placement skeleton (a **fixed pool of ~64** absolutely-positioned elements on the nodes
+  nearest the viewport center, LOD-gated by zoom, positioned via CSS `transform` so a frame
+  costs no layout), and two subclasses override only element / visibility band / draw:
+  - `LabelOverlay` — captions (`<span>` text) below the node; visible above a zoom threshold.
+  - `IconOverlay` — the **near LOD** for icons: live `<Icon>` SVG (crisp at any zoom, tinted
+    per state to match the fruit) that cross-fades in as the baked atlas fades out over the
+    handoff band. `setStates` re-tints on completion; only near nodes get a DOM element.
 - `scene/SkillTreeScene.js` — orchestrator: owns the GL context, the `Camera2D`, both
-  batches, the `IconAtlas`, and the `LabelOverlay`. The rAF loop advances `uTime` and the
-  camera; **whenever the camera moved that frame it updates the label overlay and emits the
+  batches, the `IconAtlas`, and the label + icon overlays. The rAF loop advances `uTime` and
+  the camera; **whenever the camera moved that frame it updates both overlays and emits the
   viewport to per-frame `subscribeViewport` listeners** (the minimap) — no throttle, so the
   overlays track the GPU at frame rate. Pointer input: drag-pan with inertia, cursor-anchored
   wheel zoom, throttled hover; picking is pointer → world → `SpatialGrid.nearest`. Public API
@@ -109,7 +114,7 @@ Everything in `model/` is pure JS — no WebGL, no React.
   `resize`, `start`, `stop`, `dispose`.
 
 Perf rules (non-negotiable): constant draw calls regardless of node count; no per-node JS
-in the animation loop except the LOD-gated, bounded label pick; no per-frame allocation;
+in the animation loop except the LOD-gated, bounded overlay pick; no per-frame allocation;
 instanced attribute updates flag their buffer rather than reallocating. Ortho camera keeps
 world↔screen linear.
 

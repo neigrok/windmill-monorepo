@@ -29,8 +29,8 @@ removed (bundle −~600 kB). What each module does:
   Activation replays as a GPU color sweep; `setStates` only rewrites active/grow.
 - `IconAtlas.js` — rasterizes lucide glyphs (via the app's Icon registry) into an
   alpha-mask canvas; the scene uploads it as a GL texture, re-uploads on async decode.
-- `LabelOverlay.js` — pooled DOM labels over the canvas, LOD-gated by zoom (crisper
-  and simpler than SDF text).
+- `NodeOverlay.js` — pooled DOM overlays over the canvas, LOD-gated by zoom (crisper
+  and simpler than SDF text): `LabelOverlay` captions + `IconOverlay` live SVG glyphs.
 - `SkillTreeScene.js` — owns the context, batches, camera, rAF loop, pointer input,
   picking (`SpatialGrid`). Public API unchanged, so the React shell is renderer-agnostic.
 
@@ -71,12 +71,36 @@ label repositioned 120× (120Hz display) — max frame gap ~10ms, no stalls.
 Lesson: don't route a per-frame value and a React-state value through one throttled
 callback. Per-frame render concerns belong in the rAF loop; React state stays off it.
 
+## Node icons: baked atlas for the many, live SVG for the near
+Node glyphs are baked once into an alpha-mask texture atlas (`IconAtlas`) so
+thousands draw in the single instanced node call. That raster is fixed-resolution,
+so it softens once a node is zoomed large enough to out-resolve its cell. Two-part
+fix: (1) bump the atlas cell 96→192px, which keeps it crisp through the whole band
+where the GPU icon is at full strength; (2) above that, an `IconOverlay` places the
+node's real `<Icon>` SVG as pooled DOM — crisp at any zoom, tinted per state to
+match the fruit — and the GPU icon cross-fades out over `[2.0, 3.0]` as the DOM
+icons fade in (`iconOpacity * (1 - smoothstep(zoom, ICON_DOM_START, ICON_DOM_FULL))`
+vs the overlay's container opacity). The atlas keeps the far/mid LOD where DOM would
+be thousands of elements; DOM only ever touches the ~64 nearest nodes.
+
+Structure: labels and icons wanted the same pool + spatial-pick + per-frame
+placement skeleton, so it lives once on an abstract `NodeOverlay` and `LabelOverlay`
+/ `IconOverlay` override only element / visibility band / draw (`NodeOverlay.js`
+replaces the old `LabelOverlay.js`). `IconOverlay.setStates` re-tints visible icons
+on completion without a camera move.
+
+Verified live: at zoom 3.5 real `<svg>` icons render at 0.44·NODE_SIZE·zoom with
+per-state color (locked #B29F7B, complete #FFFFFF); marking a node complete flips
+its icon tan→white immediately; the cross-fade sums to 1.0 at zoom 2.5; DOM icons
+are hidden below the band.
+
 ## Observations / follow-ups (not blocking)
-- **Label pool assignment is by distance-rank, recomputed each frame** (`within` +
-  sort → slice 64). Now that it runs at 60fps, a node crossing a rank boundary makes
-  two pooled spans swap nodes mid-pan. Not visible in testing, but a stable
-  nodeId→slot matching (keep in-view assignments, only reslot on enter/leave) would
-  remove any residual shimmer and drop the per-frame sort.
+- **Overlay pool assignment is by distance-rank, recomputed each frame** (`within` +
+  sort → slice 64), shared by labels and icons via `NodeOverlay`. Now that it runs at
+  60fps, a node crossing a rank boundary makes two pooled elements swap nodes mid-pan.
+  Not visible in testing, but a stable nodeId→slot matching (keep in-view assignments,
+  only reslot on enter/leave) would remove any residual shimmer and drop the per-frame
+  sort — and would let both overlays share one query instead of two.
 - **Web-Worker layout** — dagre runs off the main thread (`WorkerLayoutEngine` +
   `layout/dagre.worker.js`); the 5k toggle doesn't freeze the UI.
 - **Code-split** — routes are `React.lazy`; entry chunk is ~3 kB.

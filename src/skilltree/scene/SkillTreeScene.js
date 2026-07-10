@@ -9,7 +9,7 @@ import { Camera2D } from './Camera2D.js';
 import { NodeBatch } from './NodeBatch.js';
 import { ConnectorBatch } from './ConnectorBatch.js';
 import { IconAtlas } from './IconAtlas.js';
-import { LabelOverlay } from './LabelOverlay.js';
+import { LabelOverlay, IconOverlay, ICON_DOM_START, ICON_DOM_FULL } from './NodeOverlay.js';
 import { createTextureFromCanvas } from './glcore.js';
 
 const SPATIAL_CELL_SIZE = NODE_SIZE * 2;
@@ -41,6 +41,7 @@ export class SkillTreeScene {
     this.nodeBatch = new NodeBatch(gl);
     this.connectorBatch = new ConnectorBatch(gl);
     this.labelOverlay = new LabelOverlay(canvas);
+    this.iconOverlay = new IconOverlay(canvas);
 
     this.motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     this.motion = this.motionQuery.matches ? 0 : 1;
@@ -80,6 +81,7 @@ export class SkillTreeScene {
     this.nodeBatch.setInstances(renderModel.nodes, this.iconAtlas);
     this.connectorBatch.setModel(renderModel);
     this.labelOverlay.setModel(renderModel, this.spatialGrid);
+    this.iconOverlay.setModel(renderModel, this.spatialGrid);
 
     this.fitToView();
   }
@@ -87,6 +89,7 @@ export class SkillTreeScene {
   applyStates(statesMap) {
     this.nodeBatch.setStates(statesMap);
     this.connectorBatch.setStates(statesMap, this.elapsedSeconds);
+    this.iconOverlay.setStates(statesMap);
   }
 
   fitToView() {
@@ -147,6 +150,7 @@ export class SkillTreeScene {
     this.nodeBatch.dispose();
     this.connectorBatch.dispose();
     this.labelOverlay.dispose();
+    this.iconOverlay.dispose();
     if (this.iconTexture) this.gl.deleteTexture(this.iconTexture);
   }
 
@@ -162,6 +166,7 @@ export class SkillTreeScene {
     const moved = this.camera.update(dt);
     if (moved) {
       this.labelOverlay.update(this.camera);
+      this.iconOverlay.update(this.camera);
       this.viewportListeners.forEach((listener) => listener(this.getViewport()));
     }
 
@@ -170,7 +175,8 @@ export class SkillTreeScene {
     gl.clear(gl.COLOR_BUFFER_BIT);
 
     this.connectorBatch.draw(this.camera, this.elapsedSeconds, this.motion);
-    const iconOpacity = smoothstep(this.camera.zoom, ICON_ZOOM_START, ICON_ZOOM_FULL);
+    const zoom = this.camera.zoom;
+    const iconOpacity = smoothstep(zoom, ICON_ZOOM_START, ICON_ZOOM_FULL) * (1 - smoothstep(zoom, ICON_DOM_START, ICON_DOM_FULL));
     this.nodeBatch.draw(this.camera, this.elapsedSeconds, this.motion, iconOpacity);
 
     this.rafHandle = requestAnimationFrame(this.tick);
