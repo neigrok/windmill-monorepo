@@ -36,10 +36,10 @@ export const roadmapTree = {
     { id: 'camera', label: 'Pan · zoom · inertia', icon: 'maximize', color: 'olive', status: 'complete', prerequisites: ['renderer'] },
     { id: 'tool-seam', label: 'Tool seam', icon: 'move', color: 'olive', status: 'complete', prerequisites: ['camera'] },
     { id: 'incr-move', label: 'Incremental node move', icon: 'truck', color: 'olive', status: 'complete', prerequisites: ['tool-seam', 'edge-trim'] },
-    { id: 'edit-affordances', label: 'Calm hover affordances', icon: 'sparkles', color: 'olive', status: 'available', prerequisites: ['tool-seam', 'state-tiers'] },
+    { id: 'edit-affordances', label: 'Calm hover affordances', icon: 'sparkles', color: 'olive', status: 'complete', prerequisites: ['tool-seam', 'state-tiers'] },
 
     // ---- editing features (terracotta) — the incoming spec ----
-    { id: 'edit-mode', label: 'Always-editable mode', icon: 'pencil', color: 'terracotta', status: 'locked', prerequisites: ['edit-affordances', 'command-layer'] },
+    { id: 'edit-mode', label: 'Always-editable mode', icon: 'pencil', color: 'terracotta', status: 'available', prerequisites: ['edit-affordances', 'command-layer'] },
     { id: 'create-node', label: 'Create node', icon: 'plus', color: 'terracotta', status: 'locked', prerequisites: ['edit-mode', 'bud-state'] },
     { id: 'connect', label: 'Connect + cycle guard', icon: 'plug', color: 'terracotta', status: 'locked', prerequisites: ['edit-mode', 'domain'] },
     { id: 'reconnect', label: 'Reconnect edge', icon: 'wifi', color: 'terracotta', status: 'locked', prerequisites: ['connect'] },

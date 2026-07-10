@@ -178,6 +178,22 @@ or affordance; they flow through the same `commit`/`syncStructure` seam. Cycle p
 a live `wouldCreateCycle(from, to)` predicate for in-drag feedback (spec §03) in addition to
 the commit-time `new SkillTree` validation.
 
+## Editing: calm hover affordances
+
+The chrome every editing gesture starts from (editing-spec §00–§03). `scene/AffordanceLayer`
+is a DOM overlay (sibling to the label/icon overlays) that shows a plus chip + two ports on the
+hovered node and hides on leave — bark-and-cream, invisible at rest, 150ms fade. The plus lands
+on the outward rim (opposite the mean parent direction, where a child grows); ports go to the
+widest gaps between incident branches (free rim). It's driven by `scene.hover()` and
+repositioned from the render loop, so it follows pan/zoom/drag. Purely visual for this slice —
+`pointer-events: none`; wiring the plus (create) and ports (connect) comes with those features,
+which will also need to keep the node "hovered" while the pointer is on the chrome.
+
+Radial layout: attempted (5 algorithms) and reverted — our roadmap is a bridging DAG (editing
+depends on both the interaction and data foundations), so radial necessarily stretches long
+cross-branches; layered reads cleaner. `radial-layout` stays `available` on the roadmap;
+revisit only with edge-bundling / cross-branch de-emphasis if a real tree-like roadmap wants it.
+
 ## Observations / follow-ups (not blocking)
 - **Three visual tiers over 4 model states.** `nodeTier` folds active+complete into
   `activated`; `UnlockRules` still keeps the finer states for `DetailPanel`. If we

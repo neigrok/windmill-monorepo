@@ -10,6 +10,7 @@ import { NodeBatch } from './NodeBatch.js';
 import { ConnectorBatch } from './ConnectorBatch.js';
 import { IconAtlas } from './IconAtlas.js';
 import { LabelOverlay, IconOverlay, ICON_DOM_START, ICON_DOM_FULL } from './NodeOverlay.js';
+import { AffordanceLayer } from './AffordanceLayer.js';
 import { createTextureFromCanvas } from './glcore.js';
 import { InputController } from './input/InputController.js';
 import { MoveTool } from './input/tools.js';
@@ -42,6 +43,7 @@ export class SkillTreeScene {
     this.connectorBatch = new ConnectorBatch(gl);
     this.labelOverlay = new LabelOverlay(canvas);
     this.iconOverlay = new IconOverlay(canvas);
+    this.affordanceLayer = new AffordanceLayer(canvas);
 
     this.motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     this.motion = this.motionQuery.matches ? 0 : 1;
@@ -112,6 +114,7 @@ export class SkillTreeScene {
     this.connectorBatch.setModel(renderModel);
     this.labelOverlay.setModel(renderModel, this.spatialGrid);
     this.iconOverlay.setModel(renderModel, this.spatialGrid);
+    this.affordanceLayer.setModel(renderModel);
   }
 
   applyStates(statesMap) {
@@ -199,6 +202,7 @@ export class SkillTreeScene {
     this.connectorBatch.dispose();
     this.labelOverlay.dispose();
     this.iconOverlay.dispose();
+    this.affordanceLayer.dispose();
     if (this.iconTexture) this.gl.deleteTexture(this.iconTexture);
   }
 
@@ -215,6 +219,7 @@ export class SkillTreeScene {
     if (moved || this.overlaysDirty) {
       this.labelOverlay.update(this.camera);
       this.iconOverlay.update(this.camera);
+      this.affordanceLayer.update(this.camera);
       this.overlaysDirty = false;
     }
     if (moved) this.viewportListeners.forEach((listener) => listener(this.getViewport()));
@@ -264,6 +269,8 @@ export class SkillTreeScene {
   hover(id) {
     if (id === this.hoveredId) return;
     this.hoveredId = id;
+    this.affordanceLayer.setHovered(id);
+    this.overlaysDirty = true;
     this.refreshHighlight();
     if (this.options.onNodeHover) this.options.onNodeHover(id);
   }

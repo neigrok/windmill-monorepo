@@ -193,3 +193,44 @@
   width: 100%;
   height: 100%;
 }
+
+/* ---- Calm edit affordances: bark & cream chrome, invisible until node hover ---- */
+.st-affordances {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  overflow: visible;
+  pointer-events: none;
+}
+.st-plus,
+.st-port {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-radius: 50%;
+  background: var(--surface-card);
+  border: 1.5px solid var(--color-bark);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-soft);
+  will-change: transform, opacity;
+}
+.st-plus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: var(--color-bark);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: var(--shadow-sm);
+}
+.st-port {
+  width: 8px;
+  height: 8px;
+}
+.st-affordances--on .st-plus,
+.st-affordances--on .st-port {
+  opacity: 1;
+}
