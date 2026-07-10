@@ -63,10 +63,12 @@ Everything in `model/` is pure JS — no WebGL, no React.
   `within(minX, minY, maxX, maxY)` → id[] for LOD label selection; `move(id, x, y)`
   re-buckets a node after a live drag so picking follows it.
 - `mock/MockTreeRepository.js` — `class MockTreeRepository extends TreeRepository`;
-  `{ size: 'demo' | 'huge' }`. `loadTree()` → the hand-authored tree or a generated
-  5,000-node one; `loadProgress()` → a plausible seeded `{completed, inProgress}`.
-- `mock/handAuthoredTree.js` — `handAuthoredTree`: a small, legible `TreeData` roadmap
-  with a couple of diamonds and lucide `icon` names — the showcase tree.
+  `{ size: 'demo' | 'huge' }`. `loadTree()` → the roadmap tree or a generated
+  5,000-node one; `loadProgress()` honors the roadmap's per-node `status`
+  (`complete`/`active`; the rest derive via UnlockRules), or completes the root +
+  3 rings for the status-less perf tree.
+- `mock/roadmapTree.js` — `roadmapTree`: Windmill's own roadmap as a Windmill tree
+  (dogfood). Nodes are real product increments, `color` = area, `status` = progress.
 - `mock/generateBigTree.js` — `generateBigTree(count = 5000)` → a wide, layered `TreeData`
   with occasional cross-links (real diamonds), deterministic so perf runs reproduce.
 
