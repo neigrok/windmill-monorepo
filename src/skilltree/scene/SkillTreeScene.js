@@ -3,7 +3,7 @@
 // the camera; geometry is uploaded once per model and mutated in place on state
 // change. Picking reuses the domain SpatialGrid. Public API is unchanged so the
 // React shell above is renderer-agnostic.
-import { BACKGROUND, NODE_SIZE, nodeTier, TIER_EMBER, TIER_COMPLETE } from '../theme.js';
+import { BACKGROUND, NODE_SIZE, nodeTier, TIER_EMBER, TIER_COMPLETE, DEFAULT_NODE_COLOR } from '../theme.js';
 import { SpatialGrid } from '../model/SpatialGrid.js';
 import { CeremonyDirector } from '../ceremony/CeremonyDirector.js';
 import { Camera2D } from './Camera2D.js';
@@ -389,6 +389,21 @@ export class SkillTreeScene {
     this.nodeBatch.setFaded(rest);
     this.nodeBatch.setSelected(id);
     this.connectorBatch.setSpotlight(id);
+  }
+
+  // Legend highlight: hold every node of one kind (hue) and fade the rest to a wash.
+  // An overlay on the real selection — unlike spotlightNode it never touches setSelected,
+  // so the current selection chrome stays put. Passing null clears back to the resting look.
+  highlightKind(hue) {
+    if (hue == null) {
+      this.nodeBatch.clearFaded();
+      this.connectorBatch.setSpotlight(null);
+      this.refreshHighlight();
+      return;
+    }
+    const rest = new Set();
+    for (const [id, node] of this.nodesById) if ((node.color ?? DEFAULT_NODE_COLOR) !== hue) rest.add(id);
+    this.nodeBatch.setFaded(rest);
   }
 
   // Camera-only reveal: glide to a node without selecting it (a feed row flies the

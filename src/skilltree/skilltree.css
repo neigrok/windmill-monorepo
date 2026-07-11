@@ -320,6 +320,24 @@
 .st-step-swatch--current:hover {
   box-shadow: 0 0 0 2px var(--text-primary);
 }
+/* The ghost "+" swatch (F6): opens the legend — kinds are managed in one place */
+.st-step-swatch--add {
+  border: 1.5px dashed var(--neutral-400);
+  box-shadow: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-sm);
+  font-weight: 800;
+  line-height: 1;
+}
+.st-step-swatch--add:hover {
+  border-color: var(--text-secondary);
+  color: var(--text-secondary);
+  box-shadow: none;
+}
 
 /* Delete: the lone destructive control, isolated at the very bottom */
 .st-step-danger {

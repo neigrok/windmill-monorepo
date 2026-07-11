@@ -50,6 +50,10 @@ function absoluteTime(at) {
   return `${MONTHS[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()} · ${hour}:${minute} ${meridiem}`;
 }
 
+function cap(hue) {
+  return hue.charAt(0).toUpperCase() + hue.slice(1);
+}
+
 // One line, most-recent event visible; hover reveals the absolute time(s) of both.
 function TimestampLine({ state, startedAt, completedAt, now }) {
   const title = [
@@ -62,7 +66,7 @@ function TimestampLine({ state, startedAt, completedAt, now }) {
   return <div className="st-state-time" title={title}>{text}</div>;
 }
 
-export function StepPanel({ node, state, prerequisites, startedAt, completedAt, history = [], workspace = EMPTY_WORKSPACE, autoFocusName, onRename, onPreviewKind, onRestoreKind, onSetKind, onStart, onMarkComplete, onSetState, onReveal, onDelete, onPreviewDeleteCost, onClearDeleteCost, onClose, onAddSubtask = noop, onToggleSubtask = noop, onEditSubtask = noop, onDeleteSubtask = noop, onSetNote = noop, onAddLink = noop, onDeleteLink = noop }) {
+export function StepPanel({ node, state, prerequisites, startedAt, completedAt, history = [], workspace = EMPTY_WORKSPACE, kinds = [], onOpenLegend = noop, autoFocusName, onRename, onPreviewKind, onRestoreKind, onSetKind, onStart, onMarkComplete, onSetState, onReveal, onDelete, onPreviewDeleteCost, onClearDeleteCost, onClose, onAddSubtask = noop, onToggleSubtask = noop, onEditSubtask = noop, onDeleteSubtask = noop, onSetNote = noop, onAddLink = noop, onDeleteLink = noop }) {
   const [editingName, setEditingName] = useState(!!autoFocusName);
   const [draft, setDraft] = useState(node?.label ?? '');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -96,6 +100,7 @@ export function StepPanel({ node, state, prerequisites, startedAt, completedAt, 
 
   const now = Date.now();
   const currentKind = node.color ?? DEFAULT_NODE_COLOR;
+  const legendKinds = kinds.length > 0 ? kinds : NODE_COLOR_NAMES.map((hue) => ({ id: hue, hue }));
   const hue = NODE_COLORS[currentKind] ?? NODE_COLORS[DEFAULT_NODE_COLOR];
   const chipHue = { '--chip-base': hue.base, '--chip-ring': hue.ring, '--chip-glow': hue.glow };
   const lockedBy = prerequisites.find((prerequisite) => !prerequisite.complete)?.label;
@@ -295,19 +300,28 @@ export function StepPanel({ node, state, prerequisites, startedAt, completedAt, 
       <div>
         <div className="st-step-heading">Kind</div>
         <div className="st-step-kinds">
-          {NODE_COLOR_NAMES.map((kind) => (
+          {legendKinds.map((kind) => (
             <button
-              key={kind}
+              key={kind.id}
               type="button"
-              className={`st-step-swatch ${kind === currentKind ? 'st-step-swatch--current' : ''}`}
-              style={{ background: NODE_COLORS[kind].base }}
-              title={kind}
-              aria-label={`Set kind to ${kind}`}
-              onPointerEnter={() => onPreviewKind(node.id, kind)}
+              className={`st-step-swatch ${kind.hue === currentKind ? 'st-step-swatch--current' : ''}`}
+              style={{ background: NODE_COLORS[kind.hue].base }}
+              title={kind.label || cap(kind.hue)}
+              aria-label={`Set kind to ${kind.label || cap(kind.hue)}`}
+              onPointerEnter={() => onPreviewKind(node.id, kind.hue)}
               onPointerLeave={() => onRestoreKind(node.id)}
-              onClick={() => onSetKind(node.id, kind)}
+              onClick={() => onSetKind(node.id, kind.hue)}
             />
           ))}
+          <button
+            type="button"
+            className="st-step-swatch st-step-swatch--add"
+            title="Manage kinds"
+            aria-label="Manage kinds"
+            onClick={() => onOpenLegend()}
+          >
+            +
+          </button>
         </div>
       </div>
 

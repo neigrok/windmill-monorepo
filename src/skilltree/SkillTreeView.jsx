@@ -27,7 +27,10 @@ import { PresenceLayer } from './presence/PresenceLayer.jsx';
 import { TreeStore } from './persistence/TreeStore.js';
 import { ProgressStore } from './persistence/ProgressStore.js';
 import { WorkspaceStore } from './persistence/WorkspaceStore.js';
+import { LegendStore } from './persistence/LegendStore.js';
 import { emptyWorkspace, arcFraction, addSubtask, toggleSubtask, editSubtask, deleteSubtask, setNote, addLink, deleteLink } from './model/NodeWorkspace.js';
+import { deriveLegend, withCounts, inUseCount, freeHue, renameKind, describeKind, addKind, removeKind, recolorKind } from './model/Legend.js';
+import { KindLegend } from '../components/tree/KindLegend.jsx';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
 import { TreeEditor } from './editing/TreeEditor.js';
 import { repositionNode, addChildNode, renameNode, deleteNode, addEdge, removeEdge, reconnectEdge, setNodeColor, transitiveReduction } from './editing/edits.js';
@@ -37,6 +40,7 @@ const layoutEngine = new RadialLayoutEngine();
 const treeStore = new TreeStore();
 const progressStore = new ProgressStore();
 const workspaceStore = new WorkspaceStore();
+const legendStore = new LegendStore();
 const AUTO_COMPLETE_HOLD = 600; // held breath before auto-completing: arc-close 280 + hold 320 (§4)
 const EMPTY_BOUNDS = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 const CHILD_DROP = NODE_SIZE * 2.6; // world units a new child spawns below its parent
@@ -68,6 +72,9 @@ export function SkillTreeView() {
   const workspaceByNodeRef = useRef({}); // nodeId → workspace; the fresh read for arc pushes + persistence
   const pendingCompleteRef = useRef(new Map()); // nodeId → auto-complete timer awaiting its held breath
   const completeStepRef = useRef(null); // always points at the latest completeStep (for the deferred beat)
+  const legendRef = useRef([]); // the current ordered kinds; the fresh read for legend ops + persistence
+  const legendOpenRef = useRef(true); // mirrors legendOpen so persistence reads it without a dep churn
+  const highlightedKindIdRef = useRef(null); // mirrors the highlighted kind for the Esc/toggle checks
 
   const [datasetSize, setDatasetSize] = useState('demo');
   const [loading, setLoading] = useState(true);
@@ -78,6 +85,10 @@ export function SkillTreeView() {
   const [startedAt, setStartedAt] = useState(() => ({})); // { nodeId: ms } — when work began
   const [completedAt, setCompletedAt] = useState(() => ({})); // { nodeId: ms } — when it finished
   const [workspaceByNode, setWorkspaceByNode] = useState(() => ({})); // { nodeId: workspace } — sub-tasks, note, links
+  const [legend, setLegend] = useState([]); // the tree's ordered kinds (F6 — color legend)
+  const [legendOpen, setLegendOpen] = useState(true); // whether the key is expanded, remembered per tree
+  const [legendForceOpen, setLegendForceOpen] = useState(false); // the picker's "+" summoned the key on a 1-kind tree
+  const [highlightedKindId, setHighlightedKindId] = useState(null); // a legend row is spotlighting its kind on the graph
   const [selectedId, setSelectedId] = useState(null);
   const [hoveredId, setHoveredId] = useState(null);
   const [bounds, setBounds] = useState(EMPTY_BOUNDS);
@@ -233,6 +244,7 @@ export function SkillTreeView() {
       treeStore.clear(seedRef.current.id);
       progressStore.clear(seedRef.current.id);
       workspaceStore.clear(seedRef.current.id);
+      legendStore.clear(seedRef.current.id);
     }
     pendingCompleteRef.current.forEach(clearTimeout);
     pendingCompleteRef.current.clear();
@@ -445,6 +457,73 @@ export function SkillTreeView() {
     }
   }, [syncStructure]);
 
+  // The legend (F6): every kind edit funnels through one seam — update the fresh ref,
+  // set state, and persist — mirroring commitWorkspace. Persistence is demo-only, the
+  // same throwaway-tree guard as progress/workspace; the open flag rides in the payload.
+  const persistLegend = useCallback((kinds, open) => {
+    if (!seedRef.current || datasetSizeRef.current !== 'demo') return;
+    legendStore.save(seedRef.current.id, { kinds, open });
+  }, []);
+
+  const commitLegend = useCallback((kinds) => {
+    legendRef.current = kinds;
+    setLegend(kinds);
+    persistLegend(kinds, legendOpenRef.current);
+  }, [persistLegend]);
+
+  const onRenameKind = useCallback((id, label) => commitLegend(renameKind(legendRef.current, id, label)), [commitLegend]);
+  const onDescribeKind = useCallback((id, description) => commitLegend(describeKind(legendRef.current, id, description)), [commitLegend]);
+  const onAddKind = useCallback((hue) => commitLegend(addKind(legendRef.current, hue ?? freeHue(legendRef.current))), [commitLegend]);
+
+  // Remove is offered only for a kind no node wears; guard here against a stale click,
+  // reading the editor's live nodes (the freshest source of every node's hue).
+  const onRemoveKind = useCallback((id) => {
+    const nodes = editorRef.current?.treeData.nodes ?? [];
+    const target = withCounts(legendRef.current, nodes).find((kind) => kind.id === id);
+    if (!target || target.count > 0) return;
+    commitLegend(removeKind(legendRef.current, id));
+  }, [commitLegend]);
+
+  // Recolor a kind = swap its hue AND repaint every node of the old hue to the new,
+  // live, reusing the per-node SetNodeColor edit path (one syncStructure closes it),
+  // then persist the updated legend. A no-op swap (hue taken) leaves the nodes alone.
+  const onRecolorKind = useCallback((id, targetHue) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const { legend: nextLegend, oldHue, newHue } = recolorKind(legendRef.current, id, targetHue);
+    if (!newHue) return;
+    const repainted = editor.treeData.nodes.filter((node) => node.color === oldHue);
+    for (const node of repainted) {
+      editor.commit(setNodeColor(editor.treeData, node.id, newHue));
+      collabRef.current?.send('SetNodeColor', { id: node.id, color: newHue });
+    }
+    if (repainted.length > 0) syncStructure();
+    commitLegend(nextLegend);
+  }, [commitLegend, syncStructure]);
+
+  // A legend row spotlights its kind on the graph (WS-C's scene.highlightKind, called
+  // defensively — a sibling adds it). Clicking the lit row again clears it. We track the
+  // kind id in state but hand the scene the *hue* (the shared contract), null to clear.
+  const onHighlightKind = useCallback((id) => {
+    const nextId = id === highlightedKindIdRef.current ? null : id;
+    highlightedKindIdRef.current = nextId;
+    setHighlightedKindId(nextId);
+    const hue = nextId ? legendRef.current.find((kind) => kind.id === nextId)?.hue ?? null : null;
+    sceneRef.current?.highlightKind?.(hue);
+  }, []);
+
+  const onLegendOpenChange = useCallback((open) => {
+    legendOpenRef.current = open;
+    setLegendOpen(open);
+    persistLegend(legendRef.current, open);
+  }, [persistLegend]);
+
+  // The StepPanel picker's ghost "+" forces the key open on a still-keyless 1-kind tree.
+  const openLegendFromPicker = useCallback(() => {
+    setLegendForceOpen(true);
+    onLegendOpenChange(true);
+  }, [onLegendOpenChange]);
+
   // One-click tidy: drop transitively-implied dependencies in one undoable step.
   // Only offered when there's redundancy to remove, so the commit is never a no-op.
   const handleTidy = useCallback(() => {
@@ -502,6 +581,12 @@ export function SkillTreeView() {
         return;
       }
       if (event.key === 'Escape') {
+        if (highlightedKindIdRef.current) {
+          highlightedKindIdRef.current = null;
+          setHighlightedKindId(null);
+          sceneRef.current?.highlightKind?.(null);
+          return;
+        }
         if (selectedIdRef.current) { setSelectedId(null); return; }
         if (sceneRef.current?.selectedEdge) { sceneRef.current.selectEdge(null); return; }
         if (feedOpenRef.current || pinnedRef.current) closeActivity();
@@ -579,6 +664,11 @@ export function SkillTreeView() {
       // the throwaway perf tree keeps none. The arc feed reads this hydrated map below.
       const savedWorkspace = datasetSize === 'demo' ? workspaceStore.load(seed.id) : null;
       const workspaceMap = savedWorkspace ?? {};
+      // The color legend (F6) overlays the same way: a saved legend wins (reconciled so
+      // every in-use hue still has an entry), else it's derived from the hues in use — or
+      // the three defaults for a fresh, empty tree. Open/collapsed is remembered too.
+      const savedLegend = datasetSize === 'demo' ? legendStore.load(seed.id) : null;
+      const legendKinds = deriveLegend(nextTree.nodes, savedLegend?.kinds ?? null);
       const states = UnlockRules.derive(nextTree, progress);
       const rawLayout = await layoutEngine.layout(nextTree);
       const positions = applyNudges(rawLayout, nextTree);
@@ -614,6 +704,13 @@ export function SkillTreeView() {
       setCompletedAt(completedAtMap);
       workspaceByNodeRef.current = workspaceMap;
       setWorkspaceByNode(workspaceMap);
+      legendRef.current = legendKinds;
+      legendOpenRef.current = savedLegend?.open ?? true;
+      highlightedKindIdRef.current = null;
+      setLegend(legendKinds);
+      setLegendOpen(savedLegend?.open ?? true);
+      setLegendForceOpen(false);
+      setHighlightedKindId(null);
       pushArcs(); // seed the gauges from the hydrated workspaces (model is already applied)
       setLogVersion((version) => version + 1);
       setTicker([]);
@@ -661,6 +758,12 @@ export function SkillTreeView() {
     return UnlockRules.derive(tree, { completed, inProgress });
   }, [tree, completed, inProgress]);
 
+  // The legend against the live nodes: each kind's count, and how many are worn (the
+  // key appears at two). Recomputes as structure changes — a recolor/set-kind lands a
+  // new tree, an add/rename a new legend — so counts and the mount gate stay honest.
+  const legendWithCounts = useMemo(() => (tree ? withCounts(legend, tree.nodes) : []), [legend, tree, states]);
+  const inUse = useMemo(() => (tree ? inUseCount(legend, tree.nodes) : 0), [legend, tree, states]);
+
   // The share "score" — done/total + the dominant kind that tints the exported frame.
   const shareStats = useMemo(() => (tree ? ShareStats.from(tree, states) : null), [tree, states]);
 
@@ -675,6 +778,9 @@ export function SkillTreeView() {
   useEffect(() => { workspaceByNodeRef.current = workspaceByNode; }, [workspaceByNode]);
   useEffect(() => { feedOpenRef.current = feedOpen; }, [feedOpen]);
   useEffect(() => { pinnedRef.current = pinned; }, [pinned]);
+  useEffect(() => { legendRef.current = legend; }, [legend]);
+  useEffect(() => { legendOpenRef.current = legendOpen; }, [legendOpen]);
+  useEffect(() => { highlightedKindIdRef.current = highlightedKindId; }, [highlightedKindId]);
 
   // The feed is the visible dock tenant when summoned/pinned and no step is
   // selected. Whenever it becomes visible, mark everything read (with a catch-up flash).
@@ -920,6 +1026,26 @@ export function SkillTreeView() {
         onPanTo={handlePanTo}
       />
 
+      {/* The color key (F6): the legend is the editor. It mounts once two hues are in
+          use, or when the picker's "+" forces it open on a still-one-kind tree. Screen-
+          space, bottom-left, lifted clear of the minimap in that same corner. */}
+      {(inUse >= 2 || legendForceOpen) && (
+        <div style={{ position: 'absolute', left: 'var(--space-6)', bottom: 'calc(var(--space-6) + 196px)', zIndex: 16 }}>
+          <KindLegend
+            kinds={legendWithCounts}
+            defaultOpen={legendOpen}
+            onOpenChange={onLegendOpenChange}
+            selectedId={highlightedKindId}
+            onHighlight={onHighlightKind}
+            onRename={onRenameKind}
+            onRecolor={onRecolorKind}
+            onAdd={onAddKind}
+            onRemove={onRemoveKind}
+            onDescribe={onDescribeKind}
+          />
+        </div>
+      )}
+
       <aside className={`st-detail-panel ${selectedNode || feedVisible ? 'st-detail-panel--open' : ''}`}>
         {/* One dock, two tenants (design A′/A″): the feed is summoned over the canvas
             edge; selecting a fruit swaps in its details. Key toggle replays the swap. */}
@@ -945,6 +1071,8 @@ export function SkillTreeView() {
               onPreviewKind={(id, kind) => sceneRef.current?.previewKind(id, kind)}
               onRestoreKind={(id) => sceneRef.current?.restoreKind(id)}
               onSetKind={handleSetKind}
+              kinds={legend}
+              onOpenLegend={openLegendFromPicker}
               onStart={handleStart}
               onMarkComplete={handleMarkComplete}
               onSetState={handleSetState}
