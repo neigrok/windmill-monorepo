@@ -719,34 +719,55 @@ becomes the bottleneck a fast renderer is waiting on.
 
 ## 13. Migration & rollout phases
 
-Each phase is independently shippable and leaves the app working. The frontend seam
-that makes this painless already exists: swap the `TreeRepository` implementation.
+Each phase is independently shippable and leaves the app working.
 
-- **Phase 0 — Contract & scaffolding.** Stand up the C++ skeleton (domain port +
-  ports/adapters + the `trees.document` JSONB column). Implement `GET
-  /trees/:id` and `GET /trees/:id/progress` plus a `PUT /trees/:id` whole-document write.
-  Frontend swaps `MockTreeRepository` → `HttpTreeRepository` (same port). Still
-  single-user, no auth, whole-document writes. Proves the seam end-to-end with zero collab
-  complexity. **Exit:** the dogfood roadmap loads and saves from the server.
+**Status as built.** Phases 0 and 2 are done — real-time collaboration was built *ahead*
+of accounts, so **Phase 1 was leapfrogged** and the system currently runs as a single
+fixed `dev` user. Completed increments are logged in `NOTES.md` and dogfooded as nodes
+in the `windmill-roadmap` tree itself (the deed DAG); the upcoming work is added there as
+planned nodes, so the roadmap doubles as the forward plan.
 
-- **Phase 1 — Accounts & progress.** `users`, JWT auth, `node_progress`. Sign-in in the
-  app; progress leaves `localStorage`. Server enforces P1/P2. **Exit:** two devices,
-  one account, shared progress.
+- **Phase 0 — Contract & scaffolding.** ✅ **Done.** C++ skeleton (domain port +
+  ports/adapters + the `trees.document` JSONB column); `GET /trees/:id` → `{seq, data}`,
+  `GET /trees/:id/progress`, `GET /trees/:id/diagnostics`, `PUT /trees/:id`. Frontend
+  `HttpTreeRepository` loads the dogfood roadmap from the server.
 
-- **Phase 2 — Op log & real-time.** Introduce `trees.document` + the `tree_ops` log, the
-  `TreeRoom` actor, the WebSocket protocol, optimistic apply + merge, presence, and the
-  client's **loose-graph render path** (cycle-tolerant layout + diagnostic overlay).
-  `edits.js` transforms become convergent commands (§6); `TreeDiagnostics` becomes the
-  authoritative validity report. `TreeStore`/`localStorage` demotes to a warm-start
-  cache. **Exit:** two people edit one roadmap live, cursors visible, and a concurrent
-  cycle is shown-and-fixable rather than prevented.
+- **Phase 2 — Op log & real-time.** ✅ **Done** (built before Phase 1). `tree_ops` log,
+  `TreeRoom` actor, the WebSocket protocol, optimistic apply + merge, the client's
+  loose-graph render path, live two-tab co-editing (every edit incl. delete-sync via
+  DeleteNode + re-tether), and — beyond the original scope — full-CRDT-state persistence
+  with a snapshot cadence, HTTP reads routed through rooms, and collaborative undo/redo.
+  **Remaining Phase 2 edges (not yet done):**
+    - **Progress write-path** — marking a node complete is still *local only*.
+      `ProgressService` (P1/P2) exists but nothing writes progress: no `{t:'progress'}`
+      handler on the socket, no write endpoint. The visible "should work but doesn't."
+    - **Presence** — the relay (`broadcastRaw`) exists, but no cursor/selection frames,
+      overlay, or ≤ 20 Hz coalescing (§12).
+    - **Undo grouping** — undo is per-op, so a compound delete takes several undos.
+    - **Cycle-edge visual** — invalid edges are dropped for layout and named in a toast;
+      drawing them red needs a `ConnectorBatch` shader change.
 
-- **Phase 3 — Sharing & orgs.** `orgs`, `org_members`, `tree_shares`, visibility, the
-  authz matrix (§10). **Exit:** invite a teammate as editor/viewer; org-visible trees.
+- **Phase 1 — Accounts & auth.** ⏭ **Skipped so far — the biggest gap.** `users`,
+  register/login/refresh (Argon2id + JWT), the WebSocket presenting a token at connect,
+  per-room authorization, and real per-user progress (pairs with the write-path above).
+  Until this lands, "multi-user" is notional. **Exit:** two devices, one account, shared
+  progress.
 
-- **Phase 4 — Templates, forking & activity.** Publish a tree as a template, fork it
-  into a new tree, and the activity feed derived from the op log. **Exit:** the full
-  platform.
+- **Phase 3 — Sharing & orgs.** ☐ **Not started.** `orgs`, `org_members`, `tree_shares`,
+  visibility, the authz matrix (§10). Depends on Phase 1 (needs real identities). Note:
+  the frontend `share/` work is *visual* export (a postcard/gallery), a different concern
+  from these permissions. **Exit:** invite a teammate as editor/viewer; org-visible trees.
+
+- **Phase 4 — Templates, forking & activity.** ☐ **Not started.** Publish a tree as a
+  template, fork it, and the activity feed (`GET /trees/:id/activity`) derived from
+  `tree_ops` with `TrunkTree` context — the frontend `ActivityFeed` UI is already waiting
+  for it. **Exit:** the full platform.
+
+- **Hardening — cross-cutting (§12).** ☐ **Not started.** Cross-node Redis/NATS bus +
+  sticky routing for horizontal scale; a real `asio::strand` (today a coarse per-tree
+  mutex); Postgres connection pooling; command rate limits + size-cap enforcement;
+  observability. Logged debts: unbounded in-memory dedupe set, text-vs-uuid ids,
+  projection-snapshot compaction, and the stale frontend `ports.js` contract.
 
 ---
 
