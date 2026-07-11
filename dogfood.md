@@ -33,13 +33,20 @@ Fields the frontend reads off each node:
 - `status: "complete" | "active"` — an authoring seed. On first load `HttpTreeRepository`
   turns these into progress (completed / in-progress), so finished deeds light up.
 
+## Live over the socket (read-path)
+
+On the dogfood roadmap the app now goes **live**: `CollabClient`
+(`src/skilltree/persistence/CollabClient.js`) opens `ws://localhost:8088/v1/socket`,
+subscribes, and applies authoritative op frames through the same `syncStructure` seam a
+local edit uses. So a deed added on the server — or an edit from another client —
+appears in the app without a reload. (An op that would leave the graph invalid, e.g. a
+remote cycle, is swallowed and the view holds its last valid render; a proper
+loose-graph render path is still future work.)
+
 ## In-app editing vs. persisting a deed
 
-The editor's create/connect/rename gestures currently commit to `localStorage` via
-`TreeStore` — a per-browser overlay, **not** the server. So treat in-app edits as a local
-preview: they survive reloads on your machine but aren't part of the shared deed log.
-
-To make a deed part of the shared DAG, persist it on the server (the backend `dogfood.md`
-recipe). Wiring the editor to write straight to the backend (HTTP `PUT`, or a
-`cmd` over the socket) is the next step — until then, authoring happens server-side and
-the app is the read/first-paint view.
+The editor's own create/connect/rename gestures still commit to `localStorage` via
+`TreeStore` — a per-browser overlay, **not** the server — so treat in-app edits as a
+local preview. The **write-path** (in-app edits → a `cmd` over the socket) is the next
+step; until then, author shared deeds on the server (the backend `dogfood.md` recipe)
+and watch them arrive live.

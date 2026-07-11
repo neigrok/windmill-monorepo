@@ -19,6 +19,7 @@ import { RadialLayoutEngine } from './layout/RadialLayoutEngine.js';
 import { applyNudges } from './layout/applyNudges.js';
 import { MockTreeRepository } from './mock/MockTreeRepository.js';
 import { HttpTreeRepository } from './persistence/HttpTreeRepository.js';
+import { CollabClient } from './persistence/CollabClient.js';
 import { TreeStore } from './persistence/TreeStore.js';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
 import { TreeEditor } from './editing/TreeEditor.js';
@@ -47,6 +48,8 @@ export function SkillTreeView() {
   const unseenIdsRef = useRef(new Set()); // events that arrived while the feed wasn't visible
   const seedRef = useRef(null); // authored tree for the current dataset (persistence baseline)
   const datasetSizeRef = useRef('demo');
+  const collabRef = useRef(null); // live socket to windmill-backend (dogfood roadmap only)
+  const applyRemoteOpRef = useRef(null); // always points at the latest applyRemoteOp
   const selectedIdRef = useRef(null);
   const toastTimersRef = useRef([]); // pending hold→leave→unmount timers for the active toast
   const toastKeyRef = useRef(0); // monotonic key so a replacing toast remounts and re-enters
@@ -198,6 +201,43 @@ export function SkillTreeView() {
     setBounds(sceneNow.getBounds());
     persistEdits();
   }, [persistEdits]);
+
+  // Apply an authoritative op frame from the backend to the local tree, then re-render
+  // through the same seam a local edit uses. Wrapped: an op that leaves the graph
+  // invalid (e.g. a remote cycle) makes SkillTree throw — swallow it so the view holds
+  // the last valid state rather than crashing (a loose-graph render path is future work).
+  const applyRemoteOp = useCallback((op) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const data = editor.treeData;
+    const p = op.payload || {};
+    let next = null;
+    switch (op.kind) {
+      case 'CreateNode':
+        next = { ...data, nodes: [...data.nodes, {
+          id: p.id, label: p.label, icon: p.icon, color: p.color,
+          prerequisites: p.parentId ? [p.parentId] : [],
+          position: (p.x != null && p.y != null) ? { x: p.x, y: p.y } : undefined,
+        }] };
+        break;
+      case 'AddEdge': next = addEdge(data, p.from, p.to); break;
+      case 'RemoveEdge': next = removeEdge(data, p.from, p.to); break;
+      case 'ReconnectEdge': next = reconnectEdge(data, p.oldFrom, p.oldTo, p.newFrom, p.newTo); break;
+      case 'RenameNode': next = renameNode(data, p.id, p.label); break;
+      case 'SetNodeColor': next = setNodeColor(data, p.id, p.color); break;
+      case 'RepositionNode': next = repositionNode(data, p.id, p.x, p.y); break;
+      case 'DeleteNode': next = deleteNode(data, p.id); break;
+      case 'TransitiveReduction': next = transitiveReduction(data); break;
+      default: return;
+    }
+    console.log('[collab] applying op', op.seq, op.kind, op.payload);
+    try {
+      if (editor.commit(next)) syncStructure();
+    } catch (error) {
+      console.warn('[collab] op left the tree invalid, holding last valid render', error);
+    }
+  }, [syncStructure]);
+  applyRemoteOpRef.current = applyRemoteOp;
 
   // A node was dragged to a new spot: record it as one edit. The scene is already
   // showing the new position, so only history + the minimap need updating.
@@ -445,10 +485,23 @@ export function SkillTreeView() {
       unseenIdsRef.current = new Set();
       setBounds(scene.getBounds());
       setLoading(false);
+
+      // Go live: subscribe to the backend and apply authoritative ops as they land, so
+      // an edit made anywhere shows up here. Dogfood roadmap only.
+      collabRef.current?.close();
+      if (datasetSize === 'demo') {
+        collabRef.current = new CollabClient({ treeId: seed.id })
+          .onOp((op) => applyRemoteOpRef.current?.(op))
+          .connect();
+      }
     }
 
     loadTree();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      collabRef.current?.close();
+      collabRef.current = null;
+    };
   }, [datasetSize, reloadKey]);
 
   // Single source of truth for node state — every completion ripples through here.
