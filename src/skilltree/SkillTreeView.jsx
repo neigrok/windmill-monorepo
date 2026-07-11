@@ -9,6 +9,8 @@ import { ControlBar } from './ui/ControlBar.jsx';
 import { TidinessBadge } from './ui/TidinessBadge.jsx';
 import { StepPanel } from './ui/StepPanel.jsx';
 import { Minimap } from './ui/Minimap.jsx';
+import { ShareDialog } from './share/ShareDialog.jsx';
+import { ShareStats } from './share/ShareStats.js';
 import { ActivityFeed } from './activity/ActivityFeed.jsx';
 import { ActivityLog, ActivityEvent } from './activity/ActivityLog.js';
 import { ActorAvatar, EventSentence } from './activity/grammar.jsx';
@@ -79,6 +81,7 @@ export function SkillTreeView() {
   const showActivity = datasetSize === 'demo'; // the feed only rides on the dogfood roadmap
   const [hasLocalEdits, setHasLocalEdits] = useState(false); // local edits overlaid on the authored seed
   const [reloadKey, setReloadKey] = useState(0); // bump to re-run the load pipeline (e.g. after reset)
+  const [shareOpen, setShareOpen] = useState(false); // the Share dialog (export postcard preview)
 
   // Save the edited tree over its seed. Only the dogfood roadmap persists — the
   // huge perf tree is a throwaway. Every structural edit, undo/redo, and move
@@ -268,8 +271,16 @@ export function SkillTreeView() {
     collabRef.current?.send('RepositionNode', { id, x, y });
   }, [persistEdits]);
 
-  const undo = useCallback(() => { if (editorRef.current?.undo()) syncStructure(); }, [syncStructure]);
-  const redo = useCallback(() => { if (editorRef.current?.redo()) syncStructure(); }, [syncStructure]);
+  // On the live roadmap, undo/redo is server-driven (per author) so it stays in sync;
+  // the throwaway perf tree falls back to the local editor history.
+  const undo = useCallback(() => {
+    if (collabRef.current) { collabRef.current.undo(); return; }
+    if (editorRef.current?.undo()) syncStructure();
+  }, [syncStructure]);
+  const redo = useCallback(() => {
+    if (collabRef.current) { collabRef.current.redo(); return; }
+    if (editorRef.current?.redo()) syncStructure();
+  }, [syncStructure]);
 
   // The panel's name field committed (Enter/blur): one history step, and only
   // if the label actually changed.
@@ -559,6 +570,9 @@ export function SkillTreeView() {
     return UnlockRules.derive(tree, { completed, inProgress });
   }, [tree, completed, inProgress]);
 
+  // The share "score" — done/total + the dominant kind that tints the exported frame.
+  const shareStats = useMemo(() => (tree ? ShareStats.from(tree, states) : null), [tree, states]);
+
   // Push re-derived states to the scene whenever completion changes; the
   // scene owns the growth animation for newly-unlocked branches.
   useEffect(() => {
@@ -670,6 +684,7 @@ export function SkillTreeView() {
         onResetEdits={handleResetEdits}
         canTidy={!!health && health.redundant > 0}
         onTidy={handleTidy}
+        onShare={() => setShareOpen(true)}
         showActivity={showActivity}
         activityOpen={feedVisible}
         activityUnread={unreadCount}
@@ -752,6 +767,14 @@ export function SkillTreeView() {
           ))}
         </div>
       )}
+
+      <ShareDialog
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        model={renderModel}
+        title={tree?.title}
+        stats={shareStats}
+      />
 
       {loading && <div className="st-loading">Planting the tree…</div>}
     </div>

@@ -54,4 +54,10 @@ still commit to `localStorage` too, as a per-browser fallback.
 Delete is aligned across the split semantics: the app splices orphaned children up to
 grandparents, while the backend's `DeleteNode` is a plain tombstone — so a delete sends
 `DeleteNode` **plus** the re-tether `AddEdge`s, and both sides converge on the same
-spliced result. (Undo of a delete is still local-only; syncing undo/redo is separate.)
+spliced result.
+
+**Undo/redo is server-driven** on the live roadmap: the buttons send `{t:'undo'|'redo'}`,
+and the backend replays this author's inverse as fresh ops that come back through the
+socket — so undo stays in sync and only touches your own edits. It's per-op, so a
+compound delete takes a few undos to fully reverse. (The throwaway perf tree still uses
+the local editor history.)

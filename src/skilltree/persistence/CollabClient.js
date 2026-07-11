@@ -46,6 +46,14 @@ export class CollabClient {
     this.ws.send(JSON.stringify({ t: 'cmd', treeId: this.treeId, opId, kind, payload }));
   }
 
+  // Collaborative undo/redo is server-driven: the backend replays this author's inverse
+  // as fresh ops, which come back through onOp like any edit.
+  undo() { this.control('undo'); }
+  redo() { this.control('redo'); }
+  control(t) {
+    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ t, treeId: this.treeId }));
+  }
+
   close() {
     this.closed = true;
     this.ws?.close();
