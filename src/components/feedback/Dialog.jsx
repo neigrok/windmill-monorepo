@@ -1,6 +1,6 @@
 import React from 'react';
 
-export function Dialog({ open, onClose, title, children, footer }) {
+export function Dialog({ open, onClose, title, children, footer, width = 420 }) {
   if (!open) return null;
   return (
     <div
@@ -19,7 +19,7 @@ export function Dialog({ open, onClose, title, children, footer }) {
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: 420,
+          width: width,
           maxWidth: '90vw',
           background: 'var(--surface-card)',
           borderRadius: 'var(--radius-2xl)',

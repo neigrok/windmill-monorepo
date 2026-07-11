@@ -21,6 +21,8 @@ import {
   SkillConnector,
   ProgressBar,
 } from './components/index.js';
+import { GalleryCard } from './skilltree/share/GalleryCard.jsx';
+import { ShareStats } from './skilltree/share/ShareStats.js';
 
 /* ------------------------------------------------------------------ *
  * Skill-tree demo — the signature Windmill metaphor.
@@ -104,6 +106,43 @@ const TYPE_SPECIMENS = [
   { tag: 'body lg', size: 'var(--text-lg)', font: 'var(--font-body)', weight: 400, text: 'Finishing one step unlocks whatever comes next.' },
   { tag: 'body base', size: 'var(--text-base)', font: 'var(--font-body)', weight: 400, text: 'A calm, capable tool first — a game second.' },
   { tag: 'mono sm', size: 'var(--text-sm)', font: 'var(--font-mono)', weight: 500, text: 'XP 1,240 · STEP-04F' },
+];
+
+/* ---- Share identity demo (X2) — one fake RenderModel, reused across cards ---- */
+const SHARE_DEMO_MODEL = {
+  nodes: [
+    { id: 'root', color: 'terracotta', x: 300, y: 210, state: 'complete', emphasis: 1 },
+    { id: 'a', color: 'olive', x: 150, y: 120, state: 'complete', emphasis: 0 },
+    { id: 'b', color: 'terracotta', x: 150, y: 300, state: 'complete', emphasis: 0 },
+    { id: 'c', color: 'gold', x: 450, y: 120, state: 'available', emphasis: 0 },
+    { id: 'd', color: 'plum', x: 450, y: 300, state: 'available', emphasis: 0 },
+    { id: 'a1', color: 'olive', x: 60, y: 60, state: 'complete', emphasis: 0 },
+    { id: 'a2', color: 'sky', x: 60, y: 180, state: 'locked', emphasis: 0 },
+    { id: 'b1', color: 'brick', x: 60, y: 360, state: 'available', emphasis: 0 },
+    { id: 'c1', color: 'gold', x: 540, y: 60, state: 'locked', emphasis: 0 },
+    { id: 'd1', color: 'plum', x: 540, y: 300, state: 'locked', emphasis: 0 },
+    { id: 'd2', color: 'brick', x: 480, y: 400, state: 'locked', emphasis: 0 },
+  ],
+  edges: [
+    { from: 'root', to: 'a', kind: 'trunk' },
+    { from: 'root', to: 'b', kind: 'trunk' },
+    { from: 'root', to: 'c', kind: 'trunk' },
+    { from: 'root', to: 'd', kind: 'trunk' },
+    { from: 'a', to: 'a1', kind: 'trunk' },
+    { from: 'a', to: 'a2', kind: 'trunk' },
+    { from: 'b', to: 'b1', kind: 'trunk' },
+    { from: 'c', to: 'c1', kind: 'trunk' },
+    { from: 'd', to: 'd1', kind: 'trunk' },
+    { from: 'd', to: 'd2', kind: 'trunk' },
+  ],
+  bounds: { minX: 40, minY: 40, maxX: 560, maxY: 420 },
+};
+
+const SHARE_CARDS = [
+  { title: 'Learn to sail', theme: 'light', dominantKind: 'terracotta', stats: new ShareStats({ done: 8, total: 17, dominantKind: 'terracotta' }), author: 'Maren K.', updatedAgo: '2d ago' },
+  { title: 'Ship the redesign', theme: 'dark', dominantKind: 'plum', stats: new ShareStats({ done: 12, total: 20, dominantKind: 'plum' }), author: 'Sam Gold', updatedAgo: '5h ago' },
+  { title: 'Marathon base', theme: 'light', dominantKind: 'olive', stats: new ShareStats({ done: 4, total: 24, dominantKind: 'olive' }), author: 'Ada Vale', updatedAgo: '1w ago' },
+  { title: 'Home studio', theme: 'dark', dominantKind: 'gold', stats: new ShareStats({ done: 19, total: 19, dominantKind: 'gold' }), author: 'Ravi Okon', updatedAgo: 'just now' },
 ];
 
 function Section({ title, meta, children }) {
@@ -194,6 +233,15 @@ export default function Showcase() {
               </div>
               <ProgressBar value={60} label="Branch XP" />
             </Card>
+          </div>
+        </Section>
+
+        {/* ---- Share identity ---- */}
+        <Section title="Share identity" meta="GalleryCard · dominant kind · light + dark">
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-5)' }}>
+            {SHARE_CARDS.map((c) => (
+              <GalleryCard key={c.title} model={SHARE_DEMO_MODEL} {...c} />
+            ))}
           </div>
         </Section>
 

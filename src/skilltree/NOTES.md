@@ -535,3 +535,44 @@ Aligned every animated moment to `guidelines/motion-language.md` (X1): one gramm
   deterministic director harness (fake collaborators asserting beat order/timing), not by the
   build. Both key-generators now use an explicit `|`. Lesson: verify the *sequence*, not just
   that it compiles.
+
+## X2 share identity — the artifact that leaves the app
+
+Built the share surface (`share/`) to the design system's `share-identity.html` spec: one
+frame recipe (mat + kind rule + tree portrait + progress readout + terracotta wordmark)
+behind the OG card, the PNG, the gallery thumb and the GIF.
+
+- **SVG portrait over WebGL capture.** The tree exports as a deterministic SVG built from the
+  `RenderModel` (`TreePortrait`), not a grab of the live GL canvas. The spec needs *light and
+  dark* frames at *four* geometries; the renderer is light-only and sized to the viewport, and
+  a read-back would need `preserveDrawingBuffer` + an offscreen fit-camera pass. A portrait
+  from the model is pure, resolution-independent, themeable, and matches the mockup's own
+  technique. Fidelity note: it re-draws the tree (same `theme.js` hues/glow/crown) rather than
+  being pixel-identical to the GPU frame — a GL raster could later drop into the same panel
+  rect without touching the frame recipe.
+- **The preview IS the export.** One Canvas2D compositor (`exportImage`) paints the whole
+  postcard; the dialog shows that canvas and downloads that canvas. No second render path, so
+  preview and posted image can't drift — the same discipline as "a paused GIF is the share
+  image."
+- **`ctx.font` can't parse `var()`.** Canvas2D silently falls back to 10px sans-serif on a CSS
+  custom property, so the compositor reads `--font-display/body/mono` off the document root and
+  awaits `document.fonts.ready` before any `fillText`. (Fonts render right; the one deviation
+  from the spec's literal `var()` in `ctx.font`.)
+- **Dominant kind ties to terracotta.** A *shared* maximum among done kinds — not just an empty
+  tree — resolves to the brand hue, so the frame never picks an arbitrary winner. Caught in
+  review: a naive KIND_ORDER-first compare would have returned olive for an olive/gold tie.
+- **Gotcha (tooling, not code):** the extension's screenshot/`read_page` wait for the page to go
+  *idle*, which never happens on this continuously-animated app (rAF + the WebGL loop) — every
+  capture timed out. `Runtime.evaluate` (`javascript_tool`) runs between frames, so verification
+  went through the DOM + reading the exported canvas's pixel buffer directly (mat white, rule =
+  terracotta 188,108,66, strip text + gradient + wordmark present, light *and* dark) rather than
+  a visual diff. Lesson for this repo: verify animated surfaces by evaluating in-page, not by
+  screenshot.
+- **Parallel build.** Foundation (palette/stats/frame recipe) authored first as the seam, then
+  three agents fanned out on disjoint files — portrait / export+dialog+wiring / gallery+showcase —
+  against a written contract. Integration was clean (no file collisions); the only reconciliation
+  was confirming shared primitives (`Button` variants, shadow tokens) the surfaces leaned on.
+- **Open / deferred:** true animated-GIF encoding (#14) is not shipped — there's no encoder dep,
+  and browsers can't natively encode GIF. What ships: the intro title-card frame + the final
+  frame (≡ the PNG) as a filmstrip in the dialog, and the reduced-motion path (the static PNG).
+  `share-gif` stays `active` in the roadmap log until a real encoder lands.

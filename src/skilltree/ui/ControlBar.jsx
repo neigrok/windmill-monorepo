@@ -9,7 +9,7 @@ const DATASET_OPTIONS = [
   { value: 'huge', label: 'Huge (5k)' },
 ];
 
-export function ControlBar({ title, datasetSize, onDatasetSizeChange, onZoomIn, onZoomOut, onFitToView, canReset, onResetEdits, canTidy, onTidy, showActivity, activityOpen, activityUnread, activityPing, onToggleActivity }) {
+export function ControlBar({ title, datasetSize, onDatasetSizeChange, onZoomIn, onZoomOut, onFitToView, canReset, onResetEdits, canTidy, onTidy, onShare, showActivity, activityOpen, activityUnread, activityPing, onToggleActivity }) {
   return (
     <div className="st-topbar">
       <div className="st-brand">
@@ -42,6 +42,9 @@ export function ControlBar({ title, datasetSize, onDatasetSizeChange, onZoomIn, 
             </button>
           </Tooltip>
         )}
+        <Tooltip label="Share roadmap" side="bottom">
+          <IconButton icon={<Icon name="image" />} label="Share roadmap" size="sm" onClick={onShare} />
+        </Tooltip>
         {canTidy && (
           <Tooltip label="Drop redundant dependencies" side="bottom">
             <IconButton icon={<Icon name="spray-can" />} label="Tidy up" size="sm" onClick={onTidy} />

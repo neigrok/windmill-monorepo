@@ -93,5 +93,19 @@ export const roadmapTree = {
     { id: 'motion-visual-qa', label: 'Ceremony visual QA', icon: 'sun', color: 'plum', status: 'complete', prerequisites: ['ceremony-director', 'crown-pulse'] },
     { id: 'hover-press-feedback', label: 'Hover / press feedback', icon: 'gem', color: 'plum', status: 'complete', prerequisites: ['motion-tokens'] },
     { id: 'arrival-cascade', label: 'Paste-arrival cascade', icon: 'sprout', color: 'plum', status: 'complete', prerequisites: ['ceremony-director', 'camera-ease'] },
+
+    // ---- share identity initiative (X2) — one frame for everything that leaves the app ----
+    // A warm postcard mat around the tree's own canvas, a dominant-kind rule, the progress
+    // "score" and the terracotta wordmark — one shared recipe behind the OG card, the PNG,
+    // the gallery thumb and the GIF, so they can't drift. Canonical spec:
+    // explorations/share-identity.html (X2). These deeds are the running log (per CLAUDE.md).
+    { id: 'share-palette', label: 'Share palette (light + dark)', icon: 'palette', color: 'gold', status: 'complete', prerequisites: ['color-kind'] },
+    { id: 'share-stats', label: 'Dominant kind + progress', icon: 'thermometer', color: 'brick', status: 'complete', prerequisites: ['domain'] },
+    { id: 'share-frame', label: 'Shared frame recipe', icon: 'frame', color: 'gold', status: 'complete', prerequisites: ['share-palette'] },
+    { id: 'tree-portrait', label: 'Tree portrait (SVG)', icon: 'image', color: 'sky', status: 'complete', prerequisites: ['share-frame'] },
+    { id: 'share-export', label: 'Canvas2D export · PNG @2x', icon: 'archive', color: 'sky', status: 'complete', prerequisites: ['tree-portrait', 'share-stats'] },
+    { id: 'share-dialog', label: 'Share dialog', icon: 'external-link', color: 'terracotta', status: 'complete', prerequisites: ['share-export'] },
+    { id: 'gallery-card', label: 'Gallery card', icon: 'layout-grid', color: 'gold', status: 'complete', prerequisites: ['tree-portrait'] },
+    { id: 'share-gif', label: 'GIF intro / outro', icon: 'sparkles', color: 'plum', status: 'active', prerequisites: ['share-export', 'reduced-motion'] },
   ],
 };

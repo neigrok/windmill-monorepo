@@ -176,6 +176,44 @@ and feeds results back through the render pipeline.
   touched nodes replaced). `repositionNode(treeData, id, x, y)` pins a manual position; the
   structural transforms (add/connect/delete/rename/kind) land here as their features are built.
 
+## `share/`  (the X2 share identity)
+
+Everything Windmill exports — the OG/unfurl card, the share PNG, the gallery thumb,
+the GIF frames — through one shared recipe so the surfaces can't drift. Canonical
+spec: the design system's `explorations/share-identity.html`. Grouped as one
+feature package (not split across layers) because it's a self-contained surface.
+
+- `share/palette.js` — `SHARE_PALETTE` (`light` + `dark`) + `KIND_ORDER`. Light is the
+  design system 1:1 (kinds pulled from `theme.js`, so an exported tree can't drift from
+  the in-app tree); dark is the export-only night skin the live renderer doesn't have.
+  Per theme: chrome (`mat/panel/edge/track/brand/grad*`) + per-kind `{c,rgb,soft}`.
+- `share/ShareStats.js` — `class ShareStats`; `from(tree, states)` → `done/total/percent`
+  and the **dominant kind**: the most common kind among *done* nodes, a shared max (or an
+  empty tree) tying to terracotta. The only hue the frame chrome takes.
+- `share/ShareFrame.js` — the pure **frame recipe**: `SHARE_SIZES` (OG 1200×630, feed
+  1600×900, square 1080×1080, GIF 960×540) and `class ShareFrame` resolving every rect,
+  hue and type size off `k = w/1200` (mat, kind rule, panel, identity strip, safe inset,
+  1:1 crop). No rendering — renderers read it.
+- `share/TreePortrait.js` — `treePortraitSvg(model, palette, box)`: the tree as a
+  standalone SVG string from the `RenderModel` (glow halos, crowned root, kind hues, done/
+  available/locked looks), self-contained (own xmlns, unique filter ids, no text/urls) so it
+  rasterizes into an `<img>`. Deterministic and resolution-independent, in light and dark —
+  chosen over capturing the WebGL canvas so both themes and any size work without a GL
+  read-back or `preserveDrawingBuffer` (see NOTES).
+- `share/exportImage.js` — the one **Canvas2D compositor**: `renderShareCanvas(frame, model,
+  {scale})` paints mat → kind rule → panel → rasterized portrait → identity strip onto a
+  canvas; `canvasToPngBlob` / `canvasToDataUrl` for @2x export. Reads font stacks off the
+  document root (Canvas2D can't parse `var()` in `ctx.font`).
+- `share/ShareDialog.jsx` — the Share surface. **The preview IS the export**: it renders the
+  frame onto a canvas via `renderShareCanvas` and shows/downloads that very canvas, so what
+  the user sees and what they post can't diverge. Size + light/dark pickers; the dominant
+  kind is computed, never chosen. A filmstrip illustrates GIF intro → final ≡ the PNG.
+- `share/GalleryCard.jsx` — the in-product card (#12): drops the mat (it lives inside app
+  chrome) but keeps the kind rule + the same title/readout, presentational, light and dark.
+
+`ControlBar` gains a Share button; `SkillTreeView` opens `ShareDialog` with the live
+`renderModel` + `ShareStats.from(tree, states)`.
+
 ## `SkillTreeView.jsx` + overlay UI
 
 Runs the pipeline above (repo → domain → layout → scene) and owns the edit loop: builds a
