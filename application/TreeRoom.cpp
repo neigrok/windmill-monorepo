@@ -16,6 +16,12 @@ std::optional<Applied> TreeRoom::submit(const Incoming& incoming) {
   return Applied{std::move(op), std::move(inverse)};
 }
 
+void TreeRoom::replay(const AppliedOp& op) {
+  appliedOpIds_.insert(op.opId);
+  merge(graph_, op.command, op.hlc);
+  head_ = op.seq;
+}
+
 TreeDiagnostics TreeRoom::diagnose() const {
   return TreeDiagnostics::assess(graph_);
 }

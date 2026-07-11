@@ -10,8 +10,7 @@ namespace {
 std::shared_ptr<Collab> g_collab;
 
 UserId actorOf(const drogon::WebSocketConnectionPtr& conn) {
-  auto stored = conn->getContextRef<UserId>();
-  return stored;
+  return conn->getContextRef<UserId>();
 }
 
 void send(const drogon::WebSocketConnectionPtr& conn, const Json::Value& frame) {
@@ -22,7 +21,15 @@ void send(const drogon::WebSocketConnectionPtr& conn, const Json::Value& frame) 
 void setCollab(std::shared_ptr<Collab> collab) { g_collab = std::move(collab); }
 Collab* collab() { return g_collab.get(); }
 
-Collab::Collab(RoomRegistry& registry, WsPresenceBus& bus) : registry_(registry), bus_(bus) {}
+Collab::Collab(RoomRegistry& registry, OpLog& ops, WsPresenceBus& bus)
+    : registry_(registry), ops_(ops), bus_(bus) {}
+
+std::mutex& Collab::strandFor(const std::string& treeId) {
+  std::lock_guard<std::mutex> lock(strandsMutex_);
+  std::unique_ptr<std::mutex>& strand = strands_[treeId];
+  if (!strand) strand = std::make_unique<std::mutex>();
+  return *strand;
+}
 
 void Collab::onOpen(const drogon::WebSocketConnectionPtr& conn) {
   conn->setContext(std::make_shared<UserId>("u" + std::to_string(++actorSeq_)));
@@ -36,23 +43,24 @@ void Collab::onMessage(const drogon::WebSocketConnectionPtr& conn, const std::st
   Json::Value frame = parse(text);
   std::string type = frame.get("t", "").asString();
   std::string treeId = frame.get("treeId", "").asString();
-  if (type == "subscribe") return subscribe(conn, treeId);
+  if (type == "subscribe") return subscribe(conn, treeId, frame.get("lastSeq", 0).asUInt64());
   if (type == "cmd") return command(conn, treeId, frame);
   if (type == "presence") { bus_.broadcastRaw(TreeId{treeId}, text, conn); return; }
 }
 
-void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId) {
+void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, Seq lastSeq) {
   bus_.subscribe(TreeId{treeId}, conn);
 
+  Seq head = 0;
+  bool replay = false;
   Json::Value snapshot(Json::objectValue);
   {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> lock(strandFor(treeId));
     try {
       TreeRoom& room = registry_.open(TreeId{treeId});
-      snapshot["t"] = "snapshot";
-      snapshot["treeId"] = treeId;
-      snapshot["seq"] = static_cast<Json::Int64>(room.head());
-      snapshot["data"] = toJson(room.snapshot());
+      head = room.head();
+      replay = lastSeq > 0 && lastSeq <= head;
+      if (!replay) snapshot["data"] = toJson(room.snapshot());
     } catch (const std::exception& error) {
       Json::Value reject(Json::objectValue);
       reject["t"] = "reject";
@@ -62,6 +70,20 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
       return;
     }
   }
+
+  if (replay) {
+    // Incremental catch-up: ship only the ops the client is missing.
+    for (const AppliedOp& op : ops_.since(TreeId{treeId}, lastSeq)) {
+      Json::Value frame = opFrame(op);
+      frame["treeId"] = treeId;
+      send(conn, frame);
+    }
+    return;
+  }
+
+  snapshot["t"] = "snapshot";
+  snapshot["treeId"] = treeId;
+  snapshot["seq"] = static_cast<Json::Int64>(head);
   send(conn, snapshot);
 }
 
@@ -75,7 +97,7 @@ void Collab::command(const drogon::WebSocketConnectionPtr& conn, const std::stri
 
   std::optional<Applied> applied;
   {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> lock(strandFor(treeId));
     TreeRoom& room = registry_.open(TreeId{treeId});
     applied = room.submit(incoming);
   }

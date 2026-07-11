@@ -51,6 +51,26 @@ TEST(registry_open_unknown_tree_throws) {
   CHECK(threw);
 }
 
+TEST(registry_replays_op_log_tail_on_open) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  TreeData empty;
+  empty.id = tid();
+  empty.title = "Empty";
+  repo.byId["t"] = StoredTree{empty, 0};  // snapshot is empty at head 0
+  log.byTree["t"] = {
+    AppliedOp{1, "o1", createNode("a"), at(1), uid()},
+    AppliedOp{2, "o2", createNode("b"), at(2), uid()},
+    AppliedOp{3, "o3", AddEdge{nid("a"), nid("b")}, at(3), uid()},
+  };
+  RoomRegistry registry(repo, log, bus, at(0));
+
+  TreeRoom& room = registry.open(tid());
+  CHECK_EQ(room.head(), static_cast<Seq>(3));      // head advanced to the log tail
+  CHECK_EQ(room.snapshot().nodes.size(), 2u);      // state rebuilt from replay
+}
+
 TEST(registry_evict_persists_and_closes) {
   FakeTreeRepository repo;
   FakeOpLog log;

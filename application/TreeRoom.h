@@ -40,6 +40,11 @@ public:
   TreeRoom(TreeId id, std::string title, LooseGraph graph, Seq head, OpLog& ops, PresenceBus& bus);
 
   std::optional<Applied> submit(const Incoming& incoming);
+
+  // Re-apply an op already in the log (loading the tail after a snapshot). Merges and
+  // advances head + dedup set, but does not re-persist or re-broadcast.
+  void replay(const AppliedOp& op);
+
   TreeDiagnostics diagnose() const;
   TreeData snapshot() const;
   Seq head() const { return head_; }

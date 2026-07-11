@@ -50,12 +50,21 @@ map unknown color strings to a rejected/flagged value.
       TreeSocket at `/v1/socket`, RoomRegistry wired into main. Verified with a raw-WS
       two-client test: subscribe→snapshot, cmd→merge→seq→persist→broadcast→ack, dup opId
       deduped, cycle-forming edge accepted, both clients see ops live.
+- [x] Phase 2 edges tightened (verified through a real server restart):
+        - **Snapshot + tail-replay load** (`RoomRegistry::open` → `TreeRoom::replay`):
+          reopening a tree seeds from `trees.document` then replays the `tree_ops` tail
+          to the true head. Fixes a latent bug — reopening from a lagging document left
+          `head` behind the log, so the next op collided on the `(tree_id, seq)` PK.
+        - **Reconnect replay** via `lastSeq`: `Collab::subscribe` ships only ops since
+          the client's seq (no full snapshot) when it's caught up enough.
+        - **Per-tree strand**: `Collab` now locks a per-tree mutex (one writer per tree,
+          §11) instead of a global lock; `RoomRegistry` is internally thread-safe.
       Remaining Phase 2 polish:
-        - reconnect replay ignores `lastSeq` (always sends full snapshot); wire
-          `PgOpLog::since` for incremental catch-up.
-        - room edits persist to `trees.document` only on evict — restart relies on
-          tree_ops replay. Add a snapshot cadence (every N ops / T seconds).
-        - coarse global mutex in Collab stands in for the per-tree strand.
+        - `trees.document` still persists only on evict, and as a *projection*
+          (`toTreeData`) that loses tombstones/inert edges. Reopen stays lossless via
+          full op-log replay, but a bounded snapshot cadence needs full-CRDT-state
+          serialization (stamps + tombstones), not the projection. Same change makes
+          HTTP `GET /trees/:id` reflect live WS edits (today it reads the stored doc).
         - presence relay implemented (broadcastRaw) but not yet exercised.
         - frontend still loads over HTTP (Phase 0); no live WS editing in the browser yet.
 - [ ] Frontend save path (PUT) would need CORS preflight/OPTIONS fixed — Drogon's

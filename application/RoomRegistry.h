@@ -8,6 +8,7 @@
 
 #include <map>
 #include <memory>
+#include <mutex>
 
 namespace wm {
 
@@ -26,6 +27,7 @@ private:
   OpLog& ops_;
   PresenceBus& bus_;
   Hlc genesis_;
+  mutable std::mutex mutex_;
   std::map<TreeId, std::unique_ptr<TreeRoom>> rooms_;
 };
 

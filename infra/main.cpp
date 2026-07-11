@@ -29,7 +29,7 @@ int main() {
   auto oplog = std::make_shared<PgOpLog>(connString);
   auto bus = std::make_shared<WsPresenceBus>();
   auto registry = std::make_shared<RoomRegistry>(*trees, *oplog, *bus, genesis);
-  setCollab(std::make_shared<Collab>(*registry, *bus));
+  setCollab(std::make_shared<Collab>(*registry, *oplog, *bus));
   linkTreeSocket();
 
   auto& app = drogon::app();
