@@ -13,6 +13,7 @@ import { ActivityFeed } from './activity/ActivityFeed.jsx';
 import { ActivityLog, ActivityEvent } from './activity/ActivityLog.js';
 import { ActorAvatar, EventSentence } from './activity/grammar.jsx';
 import { SkillTree } from './model/SkillTree.js';
+import { makeRenderable } from './model/looseGraph.js';
 import { TreeHealth } from './model/TreeHealth.js';
 import { UnlockRules } from './model/UnlockRules.js';
 import { RadialLayoutEngine } from './layout/RadialLayoutEngine.js';
@@ -50,6 +51,7 @@ export function SkillTreeView() {
   const datasetSizeRef = useRef('demo');
   const collabRef = useRef(null); // live socket to windmill-backend (dogfood roadmap only)
   const applyRemoteOpRef = useRef(null); // always points at the latest applyRemoteOp
+  const invalidRef = useRef(false); // whether the last render fell back to the loose-graph path
   const selectedIdRef = useRef(null);
   const toastTimersRef = useRef([]); // pending hold→leave→unmount timers for the active toast
   const toastKeyRef = useRef(0); // monotonic key so a replacing toast remounts and re-enters
@@ -191,7 +193,19 @@ export function SkillTreeView() {
     const editor = editorRef.current;
     const sceneNow = sceneRef.current;
     if (!editor || !sceneNow) return;
-    const nextTree = new SkillTree(editor.treeData);
+
+    // A concurrent edit can leave the graph invalid (a cycle). Rather than freeze,
+    // render the best-effort projection with the cycle edges dropped, and surface it.
+    let nextTree;
+    let cycles = null;
+    try {
+      nextTree = new SkillTree(editor.treeData);
+    } catch {
+      const renderable = makeRenderable(editor.treeData);
+      nextTree = new SkillTree(renderable.tree);
+      cycles = renderable.cycles;
+    }
+
     const positions = applyNudges(rawLayoutRef.current, nextTree);
     const nextStates = UnlockRules.derive(nextTree, { completed: completedRef.current, inProgress: inProgressRef.current });
     const model = nextTree.toRenderModel(positions, nextStates);
@@ -200,12 +214,20 @@ export function SkillTreeView() {
     setRenderModel(model);
     setBounds(sceneNow.getBounds());
     persistEdits();
-  }, [persistEdits]);
+
+    const invalid = !!(cycles && cycles.length > 0);
+    if (invalid && !invalidRef.current) {
+      const labelOf = (id) => editor.treeData.nodes.find((n) => n.id === id)?.label || id;
+      const ring = cycles[0];
+      console.log('[loose] rendering invalid graph, cycles:', cycles);
+      showToast(`Cycle: ${[...ring, ring[0]].map(labelOf).join(' → ')} — remove a link to fix it`);
+    }
+    invalidRef.current = invalid;
+  }, [persistEdits, showToast]);
 
   // Apply an authoritative op frame from the backend to the local tree, then re-render
-  // through the same seam a local edit uses. Wrapped: an op that leaves the graph
-  // invalid (e.g. a remote cycle) makes SkillTree throw — swallow it so the view holds
-  // the last valid state rather than crashing (a loose-graph render path is future work).
+  // through the same seam a local edit uses. If the op leaves the graph invalid (e.g. a
+  // remote cycle), syncStructure renders the loose-graph projection and surfaces it.
   const applyRemoteOp = useCallback((op) => {
     const editor = editorRef.current;
     if (!editor) return;
@@ -231,11 +253,7 @@ export function SkillTreeView() {
       default: return;
     }
     console.log('[collab] applying op', op.seq, op.kind, op.payload);
-    try {
-      if (editor.commit(next)) syncStructure();
-    } catch (error) {
-      console.warn('[collab] op left the tree invalid, holding last valid render', error);
-    }
+    if (editor.commit(next)) syncStructure();
   }, [syncStructure]);
   applyRemoteOpRef.current = applyRemoteOp;
 
