@@ -22,6 +22,10 @@ public:
   void evict(const TreeId& id);
   bool isOpen(const TreeId& id) const;
 
+  // The per-tree strand: one writer per tree (§11). Every caller that touches a room —
+  // socket commands, HTTP reads, eviction — must hold this while doing so.
+  std::mutex& strandFor(const TreeId& id);
+
 private:
   TreeRepository& repo_;
   OpLog& ops_;
@@ -29,6 +33,8 @@ private:
   Hlc genesis_;
   mutable std::mutex mutex_;
   std::map<TreeId, std::unique_ptr<TreeRoom>> rooms_;
+  std::mutex strandsMutex_;
+  std::map<TreeId, std::unique_ptr<std::mutex>> strands_;
 };
 
 }

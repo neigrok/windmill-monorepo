@@ -1,5 +1,6 @@
 #pragma once
 
+#include "application/RoomRegistry.h"
 #include "domain/Ids.h"
 #include "ports/ProgressRepository.h"
 #include "ports/TreeRepository.h"
@@ -14,12 +15,12 @@ namespace wm {
 
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
-// Phase 0 REST surface: read/write a tree document and read its progress and
-// diagnostics, straight over the repositories (no rooms yet — that is Phase 2).
+// Phase 0 REST surface. Reads go through the room (so they reflect live socket edits);
+// PUT is the whole-document fallback, which evicts the room so the next open reloads it.
 class HttpApi {
 public:
-  HttpApi(std::shared_ptr<TreeRepository> trees, std::shared_ptr<ProgressRepository> progress,
-          Hlc genesis, UserId caller);
+  HttpApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
+          std::shared_ptr<ProgressRepository> progress, UserId caller);
 
   void getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);
   void putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);
@@ -27,9 +28,9 @@ public:
   void getDiagnostics(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);
 
 private:
+  std::shared_ptr<RoomRegistry> registry_;
   std::shared_ptr<TreeRepository> trees_;
   std::shared_ptr<ProgressRepository> progress_;
-  Hlc genesis_;
   UserId caller_;
 };
 

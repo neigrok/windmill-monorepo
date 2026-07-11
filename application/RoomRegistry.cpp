@@ -38,4 +38,11 @@ bool RoomRegistry::isOpen(const TreeId& id) const {
   return rooms_.count(id) > 0;
 }
 
+std::mutex& RoomRegistry::strandFor(const TreeId& id) {
+  std::lock_guard<std::mutex> lock(strandsMutex_);
+  std::unique_ptr<std::mutex>& strand = strands_[id];
+  if (!strand) strand = std::make_unique<std::mutex>();
+  return *strand;
+}
+
 }

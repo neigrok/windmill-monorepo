@@ -29,13 +29,10 @@ public:
 private:
   void subscribe(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, Seq lastSeq);
   void command(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, const Json::Value& frame);
-  std::mutex& strandFor(const std::string& treeId);
 
   RoomRegistry& registry_;
   OpLog& ops_;
   WsPresenceBus& bus_;
-  std::mutex strandsMutex_;
-  std::map<std::string, std::unique_ptr<std::mutex>> strands_;  // one writer per tree (§11)
   std::atomic<std::uint64_t> tick_{1};  // first command HLC sorts after the genesis seed
   std::atomic<std::uint64_t> actorSeq_{0};
 };

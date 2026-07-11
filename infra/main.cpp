@@ -22,15 +22,15 @@ int main() {
 
   auto trees = std::make_shared<PgTreeRepository>(connString);
   auto progress = std::make_shared<PgProgressRepository>(connString);
-  auto api = std::make_shared<HttpApi>(trees, progress, genesis, UserId{std::string("dev")});
 
-  // Live collaboration (Phase 2): rooms merge commands, persist to the op log, and
-  // fan out over the socket.
+  // Rooms are the authority; HTTP reads and socket edits both go through them (Phase 2).
   auto oplog = std::make_shared<PgOpLog>(connString);
   auto bus = std::make_shared<WsPresenceBus>();
   auto registry = std::make_shared<RoomRegistry>(*trees, *oplog, *bus, genesis);
   setCollab(std::make_shared<Collab>(*registry, *oplog, *bus));
   linkTreeSocket();
+
+  auto api = std::make_shared<HttpApi>(registry, trees, progress, UserId{std::string("dev")});
 
   auto& app = drogon::app();
 

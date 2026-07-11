@@ -1,8 +1,9 @@
 #include "adapters/http/HttpApi.h"
 
 #include "adapters/json/TreeJson.h"
-#include "domain/LooseGraph.h"
-#include "domain/TreeDiagnostics.h"
+#include "application/TreeRoom.h"
+
+#include <mutex>
 
 namespace wm {
 
@@ -20,20 +21,39 @@ drogon::HttpResponsePtr error(drogon::HttpStatusCode code, const std::string& me
 }
 }
 
-HttpApi::HttpApi(std::shared_ptr<TreeRepository> trees, std::shared_ptr<ProgressRepository> progress,
-                 Hlc genesis, UserId caller)
-    : trees_(std::move(trees)), progress_(std::move(progress)), genesis_(std::move(genesis)), caller_(std::move(caller)) {}
+HttpApi::HttpApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
+                 std::shared_ptr<ProgressRepository> progress, UserId caller)
+    : registry_(std::move(registry)), trees_(std::move(trees)), progress_(std::move(progress)), caller_(std::move(caller)) {}
 
 void HttpApi::getTree(const drogon::HttpRequestPtr&, HttpCallback&& callback, const std::string& treeId) {
-  std::optional<StoredTree> stored = trees_->load(TreeId{treeId});
-  if (!stored) {
-    callback(error(drogon::k404NotFound, "no such tree"));
-    return;
-  }
   Json::Value body(Json::objectValue);
-  body["seq"] = static_cast<Json::Int64>(stored->head);
-  body["data"] = toJson(stored->data);
-  callback(jsonResponse(body));
+  bool found = true;
+  {
+    std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
+    try {
+      TreeRoom& room = registry_->open(TreeId{treeId});
+      body["seq"] = static_cast<Json::Int64>(room.head());
+      body["data"] = toJson(room.snapshot());
+    } catch (const std::exception&) {
+      found = false;
+    }
+  }
+  callback(found ? jsonResponse(body) : error(drogon::k404NotFound, "no such tree"));
+}
+
+void HttpApi::getDiagnostics(const drogon::HttpRequestPtr&, HttpCallback&& callback, const std::string& treeId) {
+  Json::Value body;
+  bool found = true;
+  {
+    std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
+    try {
+      TreeRoom& room = registry_->open(TreeId{treeId});
+      body = toJson(room.diagnose());
+    } catch (const std::exception&) {
+      found = false;
+    }
+  }
+  callback(found ? jsonResponse(body) : error(drogon::k404NotFound, "no such tree"));
 }
 
 void HttpApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
@@ -43,9 +63,15 @@ void HttpApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
     return;
   }
   TreeData data = treeFromJson(*json, TreeId{treeId});
-  std::optional<StoredTree> existing = trees_->load(TreeId{treeId});
-  Seq head = existing ? existing->head : 0;
-  trees_->save(TreeId{treeId}, data, head);
+
+  Seq head = 0;
+  {
+    std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
+    registry_->evict(TreeId{treeId});  // drop any live room so the next open reloads this write
+    std::optional<StoredTree> existing = trees_->load(TreeId{treeId});
+    head = existing ? existing->head : 0;
+    trees_->save(TreeId{treeId}, data, head);
+  }
 
   Json::Value body(Json::objectValue);
   body["seq"] = static_cast<Json::Int64>(head);
@@ -56,16 +82,6 @@ void HttpApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
 void HttpApi::getProgress(const drogon::HttpRequestPtr&, HttpCallback&& callback, const std::string& treeId) {
   Progress progress = progress_->load(TreeId{treeId}, caller_);
   callback(jsonResponse(toJson(progress)));
-}
-
-void HttpApi::getDiagnostics(const drogon::HttpRequestPtr&, HttpCallback&& callback, const std::string& treeId) {
-  std::optional<StoredTree> stored = trees_->load(TreeId{treeId});
-  if (!stored) {
-    callback(error(drogon::k404NotFound, "no such tree"));
-    return;
-  }
-  LooseGraph graph(stored->data, genesis_);
-  callback(jsonResponse(toJson(TreeDiagnostics::assess(graph))));
 }
 
 }

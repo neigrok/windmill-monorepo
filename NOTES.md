@@ -59,12 +59,16 @@ map unknown color strings to a rejected/flagged value.
           the client's seq (no full snapshot) when it's caught up enough.
         - **Per-tree strand**: `Collab` now locks a per-tree mutex (one writer per tree,
           §11) instead of a global lock; `RoomRegistry` is internally thread-safe.
+- [x] Reads go through rooms: `HttpApi` GET tree/diagnostics now open the room and
+      return its live state (reflecting socket edits), and the per-tree strand moved to
+      `RoomRegistry::strandFor` so HTTP reads and WS commands serialize together (fixes a
+      latent read/write race). PUT evicts the room so the next open reloads the write.
+      Verified: a socket-only `CreateNode` is visible on the next HTTP `GET`.
       Remaining Phase 2 polish:
         - `trees.document` still persists only on evict, and as a *projection*
           (`toTreeData`) that loses tombstones/inert edges. Reopen stays lossless via
           full op-log replay, but a bounded snapshot cadence needs full-CRDT-state
-          serialization (stamps + tombstones), not the projection. Same change makes
-          HTTP `GET /trees/:id` reflect live WS edits (today it reads the stored doc).
+          serialization (stamps + tombstones), not the projection.
         - presence relay implemented (broadcastRaw) but not yet exercised.
         - frontend still loads over HTTP (Phase 0); no live WS editing in the browser yet.
 - [ ] Frontend save path (PUT) would need CORS preflight/OPTIONS fixed — Drogon's

@@ -24,13 +24,6 @@ Collab* collab() { return g_collab.get(); }
 Collab::Collab(RoomRegistry& registry, OpLog& ops, WsPresenceBus& bus)
     : registry_(registry), ops_(ops), bus_(bus) {}
 
-std::mutex& Collab::strandFor(const std::string& treeId) {
-  std::lock_guard<std::mutex> lock(strandsMutex_);
-  std::unique_ptr<std::mutex>& strand = strands_[treeId];
-  if (!strand) strand = std::make_unique<std::mutex>();
-  return *strand;
-}
-
 void Collab::onOpen(const drogon::WebSocketConnectionPtr& conn) {
   conn->setContext(std::make_shared<UserId>("u" + std::to_string(++actorSeq_)));
 }
@@ -55,7 +48,7 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
   bool replay = false;
   Json::Value snapshot(Json::objectValue);
   {
-    std::lock_guard<std::mutex> lock(strandFor(treeId));
+    std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     try {
       TreeRoom& room = registry_.open(TreeId{treeId});
       head = room.head();
@@ -97,7 +90,7 @@ void Collab::command(const drogon::WebSocketConnectionPtr& conn, const std::stri
 
   std::optional<Applied> applied;
   {
-    std::lock_guard<std::mutex> lock(strandFor(treeId));
+    std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     TreeRoom& room = registry_.open(TreeId{treeId});
     applied = room.submit(incoming);
   }
