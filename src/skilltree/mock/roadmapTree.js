@@ -91,5 +91,7 @@ export const roadmapTree = {
     { id: 'ceremony-director', label: 'Ceremony director', icon: 'compass', color: 'plum', status: 'complete', prerequisites: ['travel-beat', 'camera-ease', 'toast-beat'] },
     { id: 'yield-to-input', label: 'Motion yields to interaction', icon: 'move', color: 'plum', status: 'complete', prerequisites: ['ceremony-director'] },
     { id: 'motion-visual-qa', label: 'Ceremony visual QA', icon: 'sun', color: 'plum', status: 'complete', prerequisites: ['ceremony-director', 'crown-pulse'] },
+    { id: 'hover-press-feedback', label: 'Hover / press feedback', icon: 'gem', color: 'plum', status: 'complete', prerequisites: ['motion-tokens'] },
+    { id: 'arrival-cascade', label: 'Paste-arrival cascade', icon: 'sprout', color: 'plum', status: 'complete', prerequisites: ['ceremony-director', 'camera-ease'] },
   ],
 };

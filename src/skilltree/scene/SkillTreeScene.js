@@ -24,6 +24,7 @@ const EDGE_PICK_RADIUS = 12; // screen px tolerance for hovering a branch
 const MAX_FRAME_DELTA = 0.1;
 const ICON_ZOOM_START = 0.5;
 const ICON_ZOOM_FULL = 1.1;
+const ARRIVAL_MAX = 120; // above this a fresh model paints at rest — no plant cascade (the 5k perf tree)
 
 function hexRgb(hex) {
   const n = parseInt(hex.slice(1), 16);
@@ -111,6 +112,7 @@ export class SkillTreeScene {
       moveNode: (id, x, y) => this.moveNode(id, x, y),
       endMove: (id) => this.endMove(id),
       onInteract: () => this.director.yieldToInput(),
+      press: (id) => this.setPress(id),
     };
     this.input = new InputController(canvas, this.toolContext, new MoveTool(this.toolContext));
 
@@ -124,12 +126,18 @@ export class SkillTreeScene {
   // dataset swaps.
   setModel(renderModel) {
     this.director.cancel();
-    this.nodeStates = new Map(); // a fresh dataset re-baselines: the next applyStates is a silent paint
+    this.nodeStates = new Map(); // a fresh dataset re-baselines: the next applyStates plants or paints
     this.installModel(renderModel);
     this.selectedId = null;
     this.hoveredId = null;
     this.selectedEdge = null;
     this.fitToView();
+    // Pre-dim before the first paint so the plant cascade doesn't flash the resting tree first.
+    if (this.arrivalLikely()) {
+      const dimmed = new Map(renderModel.nodes.map((node) => [node.id, 'locked']));
+      this.nodeBatch.setStates(dimmed);
+      this.connectorBatch.setStates(dimmed, this.elapsedSeconds);
+    }
   }
 
   // Apply a re-derived model (add/remove/reconnect/relayout) while keeping the
@@ -177,9 +185,10 @@ export class SkillTreeScene {
     this.iconOverlay.setStates(statesMap);
 
     if (this.nodeStates.size === 0) {
+      this.nodeStates = new Map(statesMap);
+      if (this.shouldAnimateArrival(statesMap)) { this.playArrival(statesMap); return; }
       this.nodeBatch.setStates(statesMap);
       this.connectorBatch.setStates(statesMap, this.elapsedSeconds);
-      this.nodeStates = new Map(statesMap);
       return;
     }
 
@@ -239,6 +248,59 @@ export class SkillTreeScene {
   announceCeremony(summary, opts = {}) {
     this.pendingSummary = summary;
     this.pendingHasAction = !!opts.hasAction;
+  }
+
+  // ---- arrival cascade (#3) --------------------------------------------
+
+  // A fresh model plants itself only when it's small enough to read and motion is on;
+  // the huge perf tree and reduced motion paint at rest instead.
+  arrivalLikely() {
+    return this.motion === 1 && !!this.renderModel && this.renderModel.nodes.length >= 2 && this.renderModel.nodes.length <= ARRIVAL_MAX;
+  }
+
+  shouldAnimateArrival(statesMap) {
+    if (!this.arrivalLikely()) return false;
+    for (const state of statesMap.values()) if (nodeTier(state) >= 1) return true;
+    return false;
+  }
+
+  // Paint the whole tree dim, then hand the director a ring plan so it wakes the roadmap
+  // outward from the crowned root — the light travels each edge as its ring enters.
+  playArrival(statesMap) {
+    const dimmed = new Map();
+    for (const id of statesMap.keys()) dimmed.set(id, 'locked');
+    this.nodeBatch.setStates(dimmed);
+    this.connectorBatch.setStates(dimmed, this.elapsedSeconds);
+    this.director.arrival(this.buildArrivalPlan(statesMap));
+  }
+
+  // Depth rings by BFS from the crowned root(s); each node carries its resting tier, and
+  // each ring the edges a freshly-complete source in it lights as the ring wakes.
+  buildArrivalPlan(statesMap) {
+    const nodes = this.renderModel.nodes;
+    const children = new Map();
+    for (const edge of this.renderModel.edges) {
+      if (!children.has(edge.from)) children.set(edge.from, []);
+      children.get(edge.from).push(edge.to);
+    }
+    const depth = new Map();
+    const queue = [];
+    for (const node of nodes) if (node.emphasis === 1) { depth.set(node.id, 0); queue.push(node.id); }
+    if (queue.length === 0 && nodes.length > 0) { depth.set(nodes[0].id, 0); queue.push(nodes[0].id); }
+    for (let i = 0; i < queue.length; i += 1) {
+      const next = depth.get(queue[i]) + 1;
+      for (const child of children.get(queue[i]) ?? []) if (!depth.has(child)) { depth.set(child, next); queue.push(child); }
+    }
+    let maxDepth = 0;
+    for (const node of nodes) { if (!depth.has(node.id)) depth.set(node.id, 0); maxDepth = Math.max(maxDepth, depth.get(node.id)); }
+
+    const rings = Array.from({ length: maxDepth + 1 }, () => []);
+    for (const node of nodes) rings[depth.get(node.id)].push({ id: node.id, tier: nodeTier(statesMap.get(node.id) ?? 'locked'), x: node.x, y: node.y });
+    const litEdgesByRing = Array.from({ length: maxDepth + 1 }, () => []);
+    for (const edge of this.renderModel.edges) {
+      if ((statesMap.get(edge.from) ?? 'locked') === 'complete') litEdgesByRing[depth.get(edge.from) ?? 0].push({ from: edge.from, to: edge.to });
+    }
+    return { rings, litEdgesByRing, summary: `Roadmap planted · ${nodes.length} steps` };
   }
 
   // Live reposition of one node: cheap per-instance GPU writes for the node and
@@ -449,10 +511,14 @@ export class SkillTreeScene {
     if (id === this.hoveredId) return;
     this.hoveredId = id;
     this.hoverLabel.setHovered(id);
+    this.nodeBatch.setHover(id, this.elapsedSeconds); // feedback: swell 1.06 + a subtle brightness
     this.overlaysDirty = true;
-    this.refreshHighlight();
     if (this.options.onNodeHover) this.options.onNodeHover(id);
   }
+
+  // Press feedback: a node dips to 0.97 while held (pointer-down over it), springs back
+  // on release. Immediate feedback, never queued; the shader skips the scale under reduced motion.
+  setPress(id) { this.nodeBatch.setPress(id, this.elapsedSeconds); }
 
   // Hovering a branch only deepens its line + a pointer cursor — never chrome.
   hoverEdge(edge) {
@@ -464,7 +530,7 @@ export class SkillTreeScene {
   }
 
   refreshHighlight() {
-    this.nodeBatch.setSelected(this.hoveredId ?? this.selectedId);
+    this.nodeBatch.setSelected(this.selectedId);
   }
 
   pick(x, y) {

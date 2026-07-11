@@ -43,9 +43,12 @@ export class InputController {
 
   onDown = (event) => {
     this.context.onInteract?.(); // the user grabs — any live ceremony fast-forwards
+    const pos = this.localPos(event);
+    const pressed = this.context.pick?.(pos.x, pos.y); // press feedback on the node under the cursor
+    if (pressed != null) this.context.press?.(pressed);
     this.canvas.setPointerCapture(event.pointerId);
     this.activePointerId = event.pointerId;
-    this.tool.onPointerDown(this.localPos(event), event);
+    this.tool.onPointerDown(pos, event);
   };
 
   onMove = (event) => {
@@ -58,6 +61,7 @@ export class InputController {
     if (event.pointerId !== this.activePointerId) return;
     if (this.canvas.hasPointerCapture(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId);
     this.activePointerId = null;
+    this.context.press?.(null); // release: the pressed node springs back
     this.tool.onPointerUp(this.localPos(event), event);
   };
 

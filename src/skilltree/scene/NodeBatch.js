@@ -26,6 +26,7 @@ layout(location=8) in float aFaded;
 layout(location=9) in float aEmphasis;
 layout(location=10) in float aPulseStart;
 layout(location=11) in vec4 aBloom;   // (start, fromTier, durSec, blossom)
+layout(location=12) in vec4 aFeedback; // (hoverStart, hoverTo, pressStart, pressTo)
 uniform vec2 uResolution;
 uniform vec2 uCamera;
 uniform float uZoom;
@@ -44,8 +45,16 @@ out float vFaded;
 out float vEmphasis;
 out float vPulseStart;
 out vec4 vBloom;
+out vec4 vFeedback;
 const float PI = 3.14159265;
 const float BLOSSOM = 0.62;   // scale-settle window (s)
+const float HOVER_DUR = 0.28; // hover feedback ease (ease-soft)
+const float PRESS_DUR = 0.12; // press feedback ease (snappier)
+float feedbackEase(float start, float target, float now, float dur) {
+  float t = clamp((now - start) / max(dur, 0.001), 0.0, 1.0);
+  float e = t * t * (3.0 - 2.0 * t);
+  return mix(1.0 - target, target, e);
+}
 void main() {
   vUv = aQuad + 0.5;
   vColor = aColor;
@@ -58,6 +67,7 @@ void main() {
   vEmphasis = aEmphasis;
   vPulseStart = aPulseStart;
   vBloom = aBloom;
+  vFeedback = aFeedback;
   // scale settle: a finite 1->peak->1 bump while a node blooms (motion only)
   float settle = 1.0;
   if (uMotion > 0.5 && aBloom.x > -900.0) {
@@ -67,7 +77,12 @@ void main() {
       settle = 1.0 + (peak - 1.0) * sin(st * PI);
     }
   }
-  float size = uNodeSize * (1.0 + aSelected * 0.14 + aEmphasis * 0.55) * settle * uPadding;
+  // feedback: hover swells 1.06, press dips 0.97 -- skipped under reduced motion
+  float hoverE = feedbackEase(aFeedback.x, aFeedback.y, uTime, HOVER_DUR);
+  float pressE = feedbackEase(aFeedback.z, aFeedback.w, uTime, PRESS_DUR);
+  float fbScale = (1.0 + 0.06 * hoverE) * (1.0 - 0.03 * pressE);
+  if (uMotion < 0.5) fbScale = 1.0;
+  float size = uNodeSize * (1.0 + aSelected * 0.14 + aEmphasis * 0.55) * settle * fbScale * uPadding;
   vec2 world = aOffset + aQuad * size;
   vec2 screen = (world - uCamera) * uZoom;
   vec2 clip = vec2(screen.x / (uResolution.x * 0.5), -screen.y / (uResolution.y * 0.5));
@@ -87,6 +102,7 @@ in float vFaded;
 in float vEmphasis;
 in float vPulseStart;
 in vec4 vBloom;
+in vec4 vFeedback;
 uniform float uPadding;
 uniform float uTime;
 uniform float uMotion;
@@ -112,6 +128,12 @@ const float PULSE_DUR = 2.8;     // arrival-pulse window (s)
 const float PULSE_CYCLE = 1.4;   // one crest per cycle -> two crests, slightly slower
 const float PULSE_CREST1 = 1.5;  // first crest (boosted for legibility)
 const float PULSE_CREST2 = 1.15; // second crest (decaying)
+const float HOVER_DUR = 0.28;    // hover feedback ease (matches vertex)
+float feedbackEase(float start, float target, float now, float dur) {
+  float t = clamp((now - start) / max(dur, 0.001), 0.0, 1.0);
+  float e = t * t * (3.0 - 2.0 * t);
+  return mix(1.0 - target, target, e);
+}
 void main() {
   vec2 nodeUv = (vUv - 0.5) * uPadding + 0.5;
   vec2 centered = (nodeUv - 0.5) * 2.0;
@@ -154,6 +176,9 @@ void main() {
   vec3 body = mix(fill, ringColor, ringBand);
   body = mix(body, glyphColor, iconMask * uIconOpacity);
   body *= (1.0 + vSelected * 0.20);
+  // hover brightness: a subtle lift kept even under reduced motion (color feedback)
+  float hoverE = feedbackEase(vFeedback.x, vFeedback.y, uTime, HOVER_DUR);
+  body *= (1.0 + 0.12 * hoverE);
 
   // ---- glow: the root crown breathes; every other activated node wears a STATIC halo ----
   float crownWave = uMotion > 0.5 ? 0.5 + 0.5 * sin(uTime * (TAU / CROWN_PERIOD)) : 0.5;
@@ -254,6 +279,8 @@ export class NodeBatch {
     this.count = 0;
     this.idToIndex = new Map();
     this.selectedIndex = -1;
+    this.hoveredIndex = -1;
+    this.pressedIndex = -1;
 
     this.program = createProgram(gl, VERTEX_SRC, FRAGMENT_SRC);
     this.u = uniformLocations(gl, this.program, [
@@ -287,6 +314,7 @@ export class NodeBatch {
     this.emphasisBuffer = this.attribBuffer(9, 1, null, 1, gl.DYNAMIC_DRAW);
     this.pulseBuffer = this.attribBuffer(10, 1, null, 1, gl.DYNAMIC_DRAW);
     this.bloomBuffer = this.attribBuffer(11, 4, null, 1, gl.DYNAMIC_DRAW);
+    this.feedbackBuffer = this.attribBuffer(12, 4, null, 1, gl.DYNAMIC_DRAW);
 
     gl.bindVertexArray(null);
   }
@@ -313,6 +341,8 @@ export class NodeBatch {
     this.count = count;
     this.idToIndex = new Map();
     this.selectedIndex = -1;
+    this.hoveredIndex = -1;
+    this.pressedIndex = -1;
 
     this.offsets = new Float32Array(count * 2);
     this.colors = new Float32Array(count);
@@ -327,6 +357,11 @@ export class NodeBatch {
     this.pulseStarts = new Float32Array(count).fill(-1000); // sentinel: no pulse
     this.bloom = new Float32Array(count * 4); // (start, fromTier, durSec, blossom) per node
     for (let i = 0; i < count; i++) this.bloom[i * 4] = BLOOM_NONE;
+    this.feedback = new Float32Array(count * 4); // (hoverStart, hoverTo, pressStart, pressTo)
+    for (let i = 0; i < count; i++) {
+      this.feedback[i * 4] = BLOOM_NONE;     // hoverStart sentinel
+      this.feedback[i * 4 + 2] = BLOOM_NONE; // pressStart sentinel
+    }
 
     renderNodes.forEach((node, i) => {
       this.idToIndex.set(node.id, i);
@@ -351,6 +386,7 @@ export class NodeBatch {
     this.upload(this.emphasisBuffer, emphasis);
     this.upload(this.pulseBuffer, this.pulseStarts);
     this.upload(this.bloomBuffer, this.bloom);
+    this.upload(this.feedbackBuffer, this.feedback);
   }
 
   upload(buffer, data) {
@@ -439,6 +475,49 @@ export class NodeBatch {
     this.upload(this.selectedBuffer, this.selected);
   }
 
+  // Hover feedback (decoupled from selection): the newly hovered node swells; the
+  // node we left eases back out. Stamps atSeconds so the shader runs the ease.
+  setHover(id, atSeconds) {
+    if (!this.feedback) return;
+    const i = id == null ? -1 : this.idToIndex.get(id) ?? -1;
+    if (i === this.hoveredIndex) return;
+    if (this.hoveredIndex >= 0) {
+      this.feedback[this.hoveredIndex * 4] = atSeconds;
+      this.feedback[this.hoveredIndex * 4 + 1] = 0;
+      this.uploadFeedbackSlot(this.hoveredIndex);
+    }
+    this.hoveredIndex = i;
+    if (i >= 0) {
+      this.feedback[i * 4] = atSeconds;
+      this.feedback[i * 4 + 1] = 1;
+      this.uploadFeedbackSlot(i);
+    }
+  }
+
+  // Press feedback: same shape as hover but on the (z, w) slot -- the node dips 0.97.
+  setPress(id, atSeconds) {
+    if (!this.feedback) return;
+    const i = id == null ? -1 : this.idToIndex.get(id) ?? -1;
+    if (i === this.pressedIndex) return;
+    if (this.pressedIndex >= 0) {
+      this.feedback[this.pressedIndex * 4 + 2] = atSeconds;
+      this.feedback[this.pressedIndex * 4 + 3] = 0;
+      this.uploadFeedbackSlot(this.pressedIndex);
+    }
+    this.pressedIndex = i;
+    if (i >= 0) {
+      this.feedback[i * 4 + 2] = atSeconds;
+      this.feedback[i * 4 + 3] = 1;
+      this.uploadFeedbackSlot(i);
+    }
+  }
+
+  uploadFeedbackSlot(i) {
+    const gl = this.gl;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.feedbackBuffer);
+    gl.bufferSubData(gl.ARRAY_BUFFER, i * 16, this.feedback, i * 4, 4);
+  }
+
   // Dim the nodes a connect-drag can't target (they'd create a cycle). A whole-
   // buffer upload, but it runs once per gesture — not per frame.
   setFaded(idSet) {
@@ -487,7 +566,7 @@ export class NodeBatch {
     const gl = this.gl;
     gl.deleteProgram(this.program);
     gl.deleteVertexArray(this.vao);
-    [this.quadBuffer, this.offsetBuffer, this.colorBuffer, this.glowSeedBuffer, this.selectedBuffer, this.iconCellBuffer, this.tierBuffer, this.formBuffer, this.fadedBuffer, this.emphasisBuffer, this.pulseBuffer, this.bloomBuffer]
+    [this.quadBuffer, this.offsetBuffer, this.colorBuffer, this.glowSeedBuffer, this.selectedBuffer, this.iconCellBuffer, this.tierBuffer, this.formBuffer, this.fadedBuffer, this.emphasisBuffer, this.pulseBuffer, this.bloomBuffer, this.feedbackBuffer]
       .forEach((b) => gl.deleteBuffer(b));
   }
 }

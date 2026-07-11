@@ -20,6 +20,10 @@ const IDLE_COALESCE = 400;
 const JITTER = 60; // ±, seeded per node
 const SETTLE_POLL = 16;
 const SETTLE_CAP = 760; // never wait past the 720ms camera cap + slack
+const CADENCE = 320;       // one depth ring enters this long after the previous
+const CADENCE_FLOOR = 160; // compress no tighter than this when a deep tree won't fit
+const CEREMONY_MAX = 2400; // structural budget, first ignite -> last settle
+const TWEEN_MAX = 24;      // a wider ring drops the blossom overshoot and plain-cross-fades
 
 export class CeremonyDirector {
   constructor(deps) {
@@ -134,6 +138,32 @@ export class CeremonyDirector {
     this.schedule(IGNITE, () => { this.speakNow(changeset); this.live = null; this.drain(); });
   }
 
+  // #3 paste arrival: the whole roadmap comes alive. The scene has dimmed everything
+  // and fit the camera; here each depth ring wakes on the 320ms cadence (light travels
+  // the edges into it), the root's crown ignites first, and one toast plants the tree.
+  // A deep tree compresses the cadence to a floor; rings past the budget join the last.
+  arrival(plan) {
+    this.live = { changeset: arrivalChangeset(plan), spoken: false };
+    if (this.motion() === 0) { this.playReduced(this.live.changeset); return; }
+
+    const rings = plan.rings;
+    let cadence = CADENCE;
+    if (rings.length * cadence > CEREMONY_MAX) cadence = Math.max(CADENCE_FLOOR, Math.floor(CEREMONY_MAX / rings.length));
+    const lastAnimated = Math.min(rings.length - 1, Math.floor(CEREMONY_MAX / cadence));
+    let lastSettle = 0;
+
+    rings.forEach((ring, depth) => {
+      const at = Math.min(depth, lastAnimated) * cadence; // rings past the budget join the last beat
+      const blossomOK = ring.length <= TWEEN_MAX;
+      for (const node of ring) this.schedule(at + jitter(node.id), () => this.nodes.igniteNode(node.id, this.clock(), node.tier, { blossom: blossomOK && node.tier === 2 }));
+      for (const e of plan.litEdgesByRing[depth]) this.schedule(at, () => this.edges.travel(e.from, e.to, this.clock(), {}));
+      lastSettle = Math.max(lastSettle, at + BLOSSOM);
+    });
+
+    this.schedule(lastSettle + TOAST_GAP, () => this.speakNow(this.live.changeset));
+    this.schedule(lastSettle + TOAST_GAP + 1, () => { this.live = null; this.drain(); });
+  }
+
   // ---- plumbing --------------------------------------------------------
 
   settleAll(changeset) {
@@ -177,6 +207,13 @@ export class CeremonyDirector {
 }
 
 const key = (from, to) => `${from}|${to}`;
+
+// The arrival's end state, for a yield/reduced-motion fast-forward: every ring node
+// that lights (tier >= 1) rose from the dimmed baseline, and every ring edge lights.
+function arrivalChangeset(plan) {
+  const risen = plan.rings.flat().filter((n) => n.tier >= 1).map((n) => ({ id: n.id, fromTier: 0, toTier: n.tier, x: n.x, y: n.y }));
+  return { focus: null, risen, fell: [], litEdges: plan.litEdgesByRing.flat(), wakeByEdge: {}, frontier: [], summary: plan.summary, hasAction: false };
+}
 
 function jitter(id) {
   let h = 0;
