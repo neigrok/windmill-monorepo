@@ -20,6 +20,22 @@ int main() {
 
   auto& app = drogon::app();
 
+  // Dev CORS: the frontend dev server is a different origin. Permissive for now.
+  app.registerPostHandlingAdvice(
+      [](const drogon::HttpRequestPtr&, const drogon::HttpResponsePtr& resp) {
+        resp->addHeader("Access-Control-Allow-Origin", "*");
+        resp->addHeader("Access-Control-Allow-Methods", "GET, PUT, POST, OPTIONS");
+        resp->addHeader("Access-Control-Allow-Headers", "content-type");
+      });
+  auto preflight = [](const drogon::HttpRequestPtr&, HttpCallback&& cb, const std::string&) {
+    auto resp = drogon::HttpResponse::newHttpResponse();
+    resp->setStatusCode(drogon::k204NoContent);
+    cb(resp);
+  };
+  app.registerHandler("/v1/trees/{id}", preflight, {drogon::Options});
+  app.registerHandler("/v1/trees/{id}/progress", preflight, {drogon::Options});
+  app.registerHandler("/v1/trees/{id}/diagnostics", preflight, {drogon::Options});
+
   app.registerHandler(
       "/v1/trees/{id}",
       [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {

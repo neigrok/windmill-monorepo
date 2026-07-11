@@ -74,6 +74,8 @@ struct Edge {
 };
 
 // The wire/persist shape of a node: `from -> id` edges live as `prerequisites`.
+// `status` is an opaque authoring-time seed (§2) the server round-trips but never acts
+// on — runtime status is the per-user Progress overlay.
 struct NodeSpec {
   NodeId id;
   std::string label;
@@ -81,6 +83,7 @@ struct NodeSpec {
   NodeColor color = NodeColor::terracotta;
   std::vector<NodeId> prerequisites;
   std::optional<Vec2> position;
+  std::optional<std::string> status;
 };
 
 struct TreeData {

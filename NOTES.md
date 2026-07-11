@@ -40,7 +40,15 @@ map unknown color strings to a rejected/flagged value.
         (used `auto`). Everything else (Drogon registerHandler arity, jsoncpp Int64,
         `libpqxx::pqxx` target) was correct.
       - Gotcha: Docker Desktop owns :8080 → run with `PORT=8088`.
+- [x] Frontend wired (Phase 0 exit): `HttpTreeRepository` in windmill-frontend swaps in
+      for `MockTreeRepository` on the demo dataset; browser loads the dogfood roadmap +
+      progress from the backend (verified: GET tree/progress → 200, no console errors,
+      scene renders). Needed backend additions: `NodeSpec.status` passthrough (opaque
+      authoring seed, so the roadmap's statuses survive) and dev CORS in main.cpp.
 - [ ] Phase 2 adapters: PgOpLog, WebSocket sessions, room routing, presence bus.
+- [ ] Frontend save path (PUT) would need CORS preflight/OPTIONS fixed — Drogon's
+      built-in OPTIONS handling currently reports only `OPTIONS` in allow-methods. Load
+      (GET) is a simple request and works; revisit when the frontend writes over HTTP.
 
 ## CRDT semantics decisions (domain)
 

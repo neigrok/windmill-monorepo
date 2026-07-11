@@ -37,6 +37,7 @@ Json::Value toJson(const TreeData& data) {
       position["y"] = node.position->y;
       n["position"] = position;
     }
+    if (node.status) n["status"] = *node.status;
     nodes.append(n);
   }
   root["nodes"] = nodes;
@@ -103,6 +104,7 @@ TreeData treeFromJson(const Json::Value& root, const TreeId& id) {
       position.y = n["position"].get("y", 0.0).asDouble();
       node.position = position;
     }
+    if (n.isMember("status") && n["status"].isString()) node.status = n["status"].asString();
     data.nodes.push_back(std::move(node));
   }
   return data;
