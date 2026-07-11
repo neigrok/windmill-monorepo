@@ -11,12 +11,28 @@ export class CollabClient {
     this.lastSeq = lastSeq;
     this.ws = null;
     this.opHandler = null;
+    this.presenceHandler = null;
+    this.peerHandler = null;
+    this.presence = null; // latest un-sent presence, coalesced by the throttle
+    this.presenceTimer = null;
     this.sent = new Set(); // opIds we authored — their echoes are already applied locally
     this.closed = false;
   }
 
   onOp(handler) {
     this.opHandler = handler;
+    return this;
+  }
+
+  // A peer's coalesced cursor/selection (server sends at ≤ 20 Hz, latest-wins per actor).
+  onPresence(handler) {
+    this.presenceHandler = handler;
+    return this;
+  }
+
+  // A peer joined or left the room (`{ event, actor, profile }`) — brackets the cursor.
+  onPeer(handler) {
+    this.peerHandler = handler;
     return this;
   }
 
@@ -34,6 +50,10 @@ export class CollabClient {
         this.lastSeq = frame.seq;
         if (frame.opId && this.sent.has(frame.opId)) return; // our own edit, already applied
         this.opHandler?.(frame);
+      } else if (frame.t === 'presence') {
+        this.presenceHandler?.(frame); // the server never echoes our own cursor back to us
+      } else if (frame.t === 'peer') {
+        this.peerHandler?.(frame);
       }
     });
     return this;
@@ -46,6 +66,22 @@ export class CollabClient {
     this.ws.send(JSON.stringify({ t: 'cmd', treeId: this.treeId, opId, kind, payload }));
   }
 
+  // Our cursor/selection (cursor in world coords, or null). Ephemeral — coalesced to the
+  // trailing edge of a ~40 ms window (≈25 Hz) so a drag doesn't flood the socket; the
+  // server coalesces again to ≤ 20 Hz per subscriber. The latest state always wins.
+  sendPresence(cursor, selection) {
+    if (this.ws?.readyState !== WebSocket.OPEN) return;
+    this.presence = { cursor, selection };
+    if (this.presenceTimer) return;
+    this.presenceTimer = setTimeout(() => {
+      this.presenceTimer = null;
+      if (!this.presence || this.ws?.readyState !== WebSocket.OPEN) return;
+      const { cursor, selection } = this.presence;
+      this.presence = null;
+      this.ws.send(JSON.stringify({ t: 'presence', treeId: this.treeId, cursor, selection }));
+    }, 40);
+  }
+
   // Collaborative undo/redo is server-driven: the backend replays this author's inverse
   // as fresh ops, which come back through onOp like any edit.
   undo() { this.control('undo'); }
@@ -56,6 +92,8 @@ export class CollabClient {
 
   close() {
     this.closed = true;
+    clearTimeout(this.presenceTimer);
+    this.presenceTimer = null;
     this.ws?.close();
     this.ws = null;
   }

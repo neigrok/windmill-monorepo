@@ -23,6 +23,7 @@ import { applyNudges } from './layout/applyNudges.js';
 import { MockTreeRepository } from './mock/MockTreeRepository.js';
 import { HttpTreeRepository } from './persistence/HttpTreeRepository.js';
 import { CollabClient } from './persistence/CollabClient.js';
+import { PresenceLayer } from './presence/PresenceLayer.jsx';
 import { TreeStore } from './persistence/TreeStore.js';
 import { ProgressStore } from './persistence/ProgressStore.js';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
@@ -54,6 +55,7 @@ export function SkillTreeView() {
   const seedRef = useRef(null); // authored tree for the current dataset (persistence baseline)
   const datasetSizeRef = useRef('demo');
   const collabRef = useRef(null); // live socket to windmill-backend (dogfood roadmap only)
+  const peersRef = useRef(new Map()); // actor -> { name, color, cursor, selection } for the presence overlay
   const applyRemoteOpRef = useRef(null); // always points at the latest applyRemoteOp
   const invalidRef = useRef(false); // whether the last render fell back to the loose-graph path
   const selectedIdRef = useRef(null);
@@ -578,9 +580,20 @@ export function SkillTreeView() {
       // Go live: subscribe to the backend and apply authoritative ops as they land, so
       // an edit made anywhere shows up here. Dogfood roadmap only.
       collabRef.current?.close();
+      peersRef.current.clear();
       if (datasetSize === 'demo') {
         collabRef.current = new CollabClient({ treeId: seed.id })
           .onOp((op) => applyRemoteOpRef.current?.(op))
+          .onPresence((frame) => peersRef.current.set(frame.actor, {
+            name: frame.profile?.name, color: frame.profile?.color,
+            cursor: frame.cursor ?? null, selection: frame.selection ?? null,
+          }))
+          .onPeer((frame) => {
+            if (frame.event === 'leave') { peersRef.current.delete(frame.actor); return; }
+            if (!peersRef.current.has(frame.actor)) {
+              peersRef.current.set(frame.actor, { name: frame.profile?.name, color: frame.profile?.color, cursor: null, selection: null });
+            }
+          })
           .connect();
       }
     }
@@ -746,6 +759,10 @@ export function SkillTreeView() {
   return (
     <div className="st-root" ref={rootRef}>
       <canvas ref={canvasRef} className={`st-canvas ${hoveredId ? 'st-canvas--hover' : ''}`} />
+
+      {showActivity && (
+        <PresenceLayer peersRef={peersRef} scene={scene} canvasRef={canvasRef} collabRef={collabRef} selection={selectedId} />
+      )}
 
       <ControlBar
         title={tree?.title}
