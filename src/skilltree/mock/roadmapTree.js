@@ -107,5 +107,18 @@ export const roadmapTree = {
     { id: 'share-dialog', label: 'Share dialog', icon: 'external-link', color: 'terracotta', status: 'complete', prerequisites: ['share-export'] },
     { id: 'gallery-card', label: 'Gallery card', icon: 'layout-grid', color: 'gold', status: 'complete', prerequisites: ['tree-portrait'] },
     { id: 'share-gif', label: 'GIF intro / outro', icon: 'sparkles', color: 'plum', status: 'active', prerequisites: ['share-export', 'reduced-motion'] },
+
+    // ---- durable progress initiative (F1) — a started step wakes up, and progress lasts ----
+    // The third calm read between available and complete: an "ember" that keeps available's
+    // ring, tints its fill, and breathes at half the crown on the shared 2400ms clock —
+    // kindled quietly (no ceremony, no toast) and made durable across reloads. The StepPanel
+    // grows a state chip whose menu is the correction path, plus started/completed timestamps.
+    // Canonical spec: explorations/progress-and-tree-registry.html (F1). These deeds are the
+    // running log (per CLAUDE.md).
+    { id: 'ember-state', label: 'In-progress ember read', icon: 'flame', color: 'gold', status: 'complete', prerequisites: ['state-tiers', 'crown-pulse'] },
+    { id: 'kindle-beat', label: 'Kindle · start warms a node', icon: 'sparkles', color: 'plum', status: 'complete', prerequisites: ['motion-tokens', 'ember-state'] },
+    { id: 'step-state-block', label: 'StepPanel state chip + menu', icon: 'clipboard-check', color: 'terracotta', status: 'complete', prerequisites: ['activity-feed', 'ember-state'] },
+    { id: 'progress-timestamps', label: 'Started / completed times', icon: 'flag', color: 'terracotta', status: 'complete', prerequisites: ['step-state-block'] },
+    { id: 'durable-progress', label: 'Durable progress store', icon: 'archive', color: 'brick', status: 'complete', prerequisites: ['persistence', 'step-state-block'] },
   ],
 };

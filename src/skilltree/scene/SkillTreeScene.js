@@ -3,7 +3,7 @@
 // the camera; geometry is uploaded once per model and mutated in place on state
 // change. Picking reuses the domain SpatialGrid. Public API is unchanged so the
 // React shell above is renderer-agnostic.
-import { BACKGROUND, NODE_SIZE, nodeTier } from '../theme.js';
+import { BACKGROUND, NODE_SIZE, nodeTier, TIER_EMBER, TIER_COMPLETE } from '../theme.js';
 import { SpatialGrid } from '../model/SpatialGrid.js';
 import { CeremonyDirector } from '../ceremony/CeremonyDirector.js';
 import { Camera2D } from './Camera2D.js';
@@ -208,6 +208,8 @@ export class SkillTreeScene {
   // which nodes rose a tier (and from where), which edges a freshly-completed
   // source lights, which children the light wakes, the available frontier to pulse,
   // and the node to settle the camera on. Downward transitions ride along as `fell`.
+  // A rise into ember (a *start*) is applied here as a quiet kindle and kept out of
+  // `risen`, so the ceremony director never celebrates starting — only finishing.
   buildChangeset(statesMap) {
     const risen = [];
     const fell = [];
@@ -216,9 +218,10 @@ export class SkillTreeScene {
       const from = this.nodeStates.get(id) ?? 'locked';
       const toTier = nodeTier(state);
       const fromTier = nodeTier(from);
-      if (toTier > fromTier) {
-        const node = this.nodesById.get(id);
-        if (node) risen.push({ id, fromTier, toTier, x: node.x, y: node.y });
+      const node = this.nodesById.get(id);
+      if (toTier > fromTier && node) {
+        if (state === 'active') this.kindle(id);
+        else risen.push({ id, fromTier, toTier, x: node.x, y: node.y });
       } else if (toTier < fromTier) {
         fell.push({ id, toTier });
       }
@@ -238,9 +241,17 @@ export class SkillTreeScene {
     }
 
     const frontier = risen.filter((r) => r.toTier === 1).map((r) => r.id);
-    const focusNode = risen.find((r) => r.toTier === 2) ?? risen[0] ?? null;
+    const focusNode = risen.find((r) => r.toTier === TIER_COMPLETE) ?? risen[0] ?? null;
     const focus = focusNode ? { x: focusNode.x, y: focusNode.y } : null;
     return { focus, risen, fell, litEdges, wakeByEdge, frontier, summary: null, hasAction: false };
+  }
+
+  // A quiet start: a step became in-progress. Kindle the ember directly — a soft glow-in
+  // over 480ms and a 1.02 wake — with no camera glide, no light-travel, no pulse, no toast.
+  // Kept out of the changeset (see buildChangeset) so downstream branches stay dormant:
+  // unlock stays completion-gated.
+  kindle(id) {
+    this.nodeBatch.igniteNode(id, this.elapsedSeconds, TIER_EMBER, { blossom: false, durationMs: 480 });
   }
 
   // The shell hands the next ceremony its summary line before it triggers the state

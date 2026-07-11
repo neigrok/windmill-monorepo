@@ -7,11 +7,11 @@
 //   • color — the node's *kind* (a category). Picks the hue: `base` (accent-500)
 //     is the flat fill, `ring` (accent-600) the border, `soft` (accent-200) the
 //     glyph, `glow` the halo.
-//   • state — one of three tiers in the tree (design: dag-clean-colors):
+//   • state — one of four tiers in the tree (design: dag-clean-colors):
 //       unavailable → the same hue at low opacity, no glow (locked)
 //       available   → saturated fill + ring, no resting glow (glow on hover)
-//       activated   → saturated fill + ring + an outer ring + a breathing glow
-//     The finer 4 states live on only for the detail/dashboard panels.
+//       inprogress  → available's fill + ring + a soft glow breathing at half the crown
+//       activated   → same + an outer ring + a breathing halo
 
 export const NODE_COLORS = {
   terracotta: { base: '#BC6C42', ring: '#9D5330', soft: '#EAC6B0', glow: 'rgba(188,108,66,0.50)' },
@@ -25,12 +25,19 @@ export const NODE_COLORS = {
 export const NODE_COLOR_NAMES = Object.keys(NODE_COLORS);
 export const DEFAULT_NODE_COLOR = 'terracotta';
 
-// The tree's three visual tiers. Indices are what the shaders receive.
-export const NODE_TIERS = ['unavailable', 'available', 'activated'];
+// The tree's four visual tiers. Indices are what the shaders receive; higher = more
+// progress, so a state diff reads growth as a rise in tier. In-progress ("ember") is a
+// third calm read between available and complete — not a re-hue and not a fourth read.
+export const NODE_TIERS = ['unavailable', 'available', 'inprogress', 'activated'];
+export const TIER_LOCKED = 0;
+export const TIER_AVAILABLE = 1;
+export const TIER_EMBER = 2;
+export const TIER_COMPLETE = 3;
 export function nodeTier(state) {
-  if (state === 'complete' || state === 'active') return 2; // activated — engaged
-  if (state === 'available') return 1;
-  return 0; // locked → unavailable
+  if (state === 'complete') return TIER_COMPLETE; // activated — earned
+  if (state === 'active') return TIER_EMBER;      // in-progress — kindled, not yet earned
+  if (state === 'available') return TIER_AVAILABLE;
+  return TIER_LOCKED; // locked → unavailable
 }
 
 // A node's structural *form*, orthogonal to its tier — a dashed ring the editing

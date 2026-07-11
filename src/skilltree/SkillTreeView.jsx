@@ -24,6 +24,7 @@ import { MockTreeRepository } from './mock/MockTreeRepository.js';
 import { HttpTreeRepository } from './persistence/HttpTreeRepository.js';
 import { CollabClient } from './persistence/CollabClient.js';
 import { TreeStore } from './persistence/TreeStore.js';
+import { ProgressStore } from './persistence/ProgressStore.js';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
 import { TreeEditor } from './editing/TreeEditor.js';
 import { repositionNode, addChildNode, renameNode, deleteNode, addEdge, removeEdge, reconnectEdge, setNodeColor, transitiveReduction } from './editing/edits.js';
@@ -31,6 +32,7 @@ import { NODE_SIZE } from './theme.js';
 
 const layoutEngine = new RadialLayoutEngine();
 const treeStore = new TreeStore();
+const progressStore = new ProgressStore();
 const EMPTY_BOUNDS = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 const CHILD_DROP = NODE_SIZE * 2.6; // world units a new child spawns below its parent
 const SIBLING_GAP = NODE_SIZE * 1.8; // horizontal spread between successive new children
@@ -64,6 +66,8 @@ export function SkillTreeView() {
   const [renderModel, setRenderModel] = useState(null);
   const [completed, setCompleted] = useState(() => new Set());
   const [inProgress, setInProgress] = useState(() => new Set());
+  const [startedAt, setStartedAt] = useState(() => ({})); // { nodeId: ms } — when work began
+  const [completedAt, setCompletedAt] = useState(() => ({})); // { nodeId: ms } — when it finished
   const [selectedId, setSelectedId] = useState(null);
   const [hoveredId, setHoveredId] = useState(null);
   const [bounds, setBounds] = useState(EMPTY_BOUNDS);
@@ -91,6 +95,15 @@ export function SkillTreeView() {
     if (!editor || !seedRef.current || datasetSizeRef.current !== 'demo') return;
     treeStore.save(seedRef.current, editor.treeData);
     setHasLocalEdits(true);
+  }, []);
+
+  // Durable progress: save the user's completions, in-progress steps, and the
+  // timestamps of those actions so they survive a reload. Same dataset guard as
+  // persistEdits — only the dogfood roadmap persists; the perf tree is a throwaway.
+  // Callers pass the freshly-computed next values, since state setters are async.
+  const persistProgress = useCallback((next) => {
+    if (!seedRef.current || datasetSizeRef.current !== 'demo') return;
+    progressStore.save(seedRef.current.id, next);
   }, []);
 
   // The single status beat (canonical §2): a toast enters fade+rise, holds, then
@@ -183,9 +196,13 @@ export function SkillTreeView() {
   const closeActivity = useCallback(() => { setFeedOpen(false); setPinned(false); }, []);
   const togglePin = useCallback(() => setPinned((value) => !value), []);
 
-  // Discard local edits and reload the authored seed fresh (clears history too).
+  // Discard local edits and reload the authored seed fresh (clears history too),
+  // including the user's durable progress and its timestamps for this tree.
   const handleResetEdits = useCallback(() => {
-    if (seedRef.current) treeStore.clear(seedRef.current.id);
+    if (seedRef.current) {
+      treeStore.clear(seedRef.current.id);
+      progressStore.clear(seedRef.current.id);
+    }
     setReloadKey((key) => key + 1);
   }, []);
 
@@ -511,6 +528,16 @@ export function SkillTreeView() {
       if (!cancelled) setHasLocalEdits(!!persisted);
       const nextTree = new SkillTree(treeData);
       const progress = await repo.loadProgress(treeData);
+      // Durable progress overlays the repo/seed baseline: a user's saved completions
+      // win (they already fold in whatever seed state existed when saved), so marking
+      // — or un-marking — a step sticks across reloads. No saved progress → seed as today.
+      const savedProgress = datasetSize === 'demo' ? progressStore.load(seed.id) : null;
+      if (savedProgress) {
+        progress.completed = new Set(savedProgress.completed);
+        progress.inProgress = new Set(savedProgress.inProgress);
+      }
+      const startedAtMap = savedProgress?.startedAt ?? {};
+      const completedAtMap = savedProgress?.completedAt ?? {};
       const states = UnlockRules.derive(nextTree, progress);
       const rawLayout = await layoutEngine.layout(nextTree);
       const positions = applyNudges(rawLayout, nextTree);
@@ -535,6 +562,8 @@ export function SkillTreeView() {
       setRenderModel(model);
       setCompleted(new Set(progress.completed));
       setInProgress(new Set(progress.inProgress));
+      setStartedAt(startedAtMap);
+      setCompletedAt(completedAtMap);
       setLogVersion((version) => version + 1);
       setTicker([]);
       setNewEventIds(new Set());
@@ -617,30 +646,42 @@ export function SkillTreeView() {
     }));
   }, [selectedNode, nodesById, states]);
 
+  // Begin work on a step: mark it in-progress and stamp its start (once). The kindle
+  // beat is deliberately quiet — the emit is silent (log only, no pulse/ticker) and the
+  // scene plays the kindle off the states recompute, so we never double-announce it.
   function handleStart() {
     if (!selectedId) return;
     const node = nodesById.get(selectedId);
-    setInProgress((prev) => new Set(prev).add(selectedId));
-    emit({ verb: 'started', nodeId: selectedId, label: node?.label, kind: node?.color });
+    const nextInProgress = new Set(inProgress).add(selectedId);
+    const nextStartedAt = startedAt[selectedId] ? startedAt : { ...startedAt, [selectedId]: Date.now() };
+    setInProgress(nextInProgress);
+    setStartedAt(nextStartedAt);
+    persistProgress({ completed, inProgress: nextInProgress, startedAt: nextStartedAt, completedAt });
+    emit({ verb: 'started', nodeId: selectedId, label: node?.label, kind: node?.color }, { silent: true });
   }
 
-  function handleMarkComplete() {
-    if (!selectedId) return;
-    const node = nodesById.get(selectedId);
-    const nextCompleted = new Set(completed).add(selectedId);
+  // The shared completion path the button and the chip menu both take, so they can't
+  // drift: mark complete, stamp completedAt (keep any startedAt), persist, then run the
+  // ceremony — record the beat + its unlocks in the log and hand the scene the summary.
+  function completeStep(id) {
+    const node = nodesById.get(id);
+    const nextCompleted = new Set(completed).add(id);
     const nextInProgress = new Set(inProgress);
-    nextInProgress.delete(selectedId);
+    nextInProgress.delete(id);
+    const nextCompletedAt = { ...completedAt, [id]: Date.now() };
     setCompleted(nextCompleted);
     setInProgress(nextInProgress);
+    setCompletedAt(nextCompletedAt);
+    persistProgress({ completed: nextCompleted, inProgress: nextInProgress, startedAt, completedAt: nextCompletedAt });
     // Record every beat in the log (the feed still tells the full story), but keep
     // them off the ticker — one summary toast closes the ceremony instead.
-    emit({ verb: 'completed', nodeId: selectedId, label: node?.label, kind: node?.color }, { silent: true });
+    emit({ verb: 'completed', nodeId: id, label: node?.label, kind: node?.color }, { silent: true });
     const after = UnlockRules.derive(tree, { completed: nextCompleted, inProgress: nextInProgress });
     let opened = 0;
-    for (const [id, nodeState] of after) {
-      if (nodeState === 'available' && states.get(id) !== 'available') {
-        const unlocked = nodesById.get(id);
-        emit({ verb: 'unlocked', nodeId: id, label: unlocked?.label, kind: unlocked?.color }, { silent: true });
+    for (const [otherId, nodeState] of after) {
+      if (nodeState === 'available' && states.get(otherId) !== 'available') {
+        const unlocked = nodesById.get(otherId);
+        emit({ verb: 'unlocked', nodeId: otherId, label: unlocked?.label, kind: unlocked?.color }, { silent: true });
         opened += 1;
       }
     }
@@ -648,6 +689,39 @@ export function SkillTreeView() {
     // it once the bloom/travel/pulse have settled (§2 toast — last), not up front.
     const label = node?.label?.trim() || 'Step';
     sceneRef.current?.announceCeremony(opened > 0 ? `Step completed: ${label} · ${opened} more opened` : `Step completed: ${label}`);
+  }
+
+  function handleMarkComplete() {
+    if (selectedId) completeStep(selectedId);
+  }
+
+  // The chip menu's correction path: set a step to any of the three states directly.
+  // Complete reuses completeStep (bloom + ceremony); backward moves are silent — the
+  // scene dims them off the states recompute, and the menu itself is the reversibility.
+  function handleSetState(id, target) {
+    if (!id) return;
+    if (target === 'complete') { completeStep(id); return; }
+
+    const nextCompleted = new Set(completed);
+    const nextInProgress = new Set(inProgress);
+    const nextStartedAt = { ...startedAt };
+    const nextCompletedAt = { ...completedAt };
+    if (target === 'notstarted') {
+      nextCompleted.delete(id);
+      nextInProgress.delete(id);
+      delete nextStartedAt[id];
+      delete nextCompletedAt[id];
+    } else {
+      nextInProgress.add(id);
+      nextCompleted.delete(id);
+      if (!nextStartedAt[id]) nextStartedAt[id] = Date.now();
+      delete nextCompletedAt[id];
+    }
+    setCompleted(nextCompleted);
+    setInProgress(nextInProgress);
+    setStartedAt(nextStartedAt);
+    setCompletedAt(nextCompletedAt);
+    persistProgress({ completed: nextCompleted, inProgress: nextInProgress, startedAt: nextStartedAt, completedAt: nextCompletedAt });
   }
 
   function handleZoomIn() {
@@ -711,8 +785,8 @@ export function SkillTreeView() {
               node={selectedNode}
               state={selectedState}
               prerequisites={prerequisites}
-              canComplete={selectedState === 'available' || selectedState === 'active'}
-              canStart={selectedState === 'available'}
+              startedAt={startedAt[selectedId]}
+              completedAt={completedAt[selectedId]}
               history={selectedHistory}
               autoFocusName={selectedId !== null && selectedId === autoFocusNameId}
               onRename={handleRename}
@@ -721,6 +795,7 @@ export function SkillTreeView() {
               onSetKind={handleSetKind}
               onStart={handleStart}
               onMarkComplete={handleMarkComplete}
+              onSetState={handleSetState}
               onReveal={handleRevealNode}
               onDelete={deleteNodeAt}
               onPreviewDeleteCost={(id) => sceneRef.current?.previewDeleteCost(id)}

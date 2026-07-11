@@ -20,11 +20,13 @@ const fruitStyles = {
     icon: '#FFFFFF',
     glow: 'var(--glow-olive)',
   },
+  // In-progress "ember": available that woke up — same olive hue and ring, set apart only
+  // by a soft breathing glow (wm-ember). Never a re-hue; the gold ramp is earned at complete.
   active: {
-    body: 'radial-gradient(circle at 34% 28%, var(--accent-gold-200), var(--accent-gold-500) 80%)',
-    ring: 'var(--node-active-border)',
+    body: 'radial-gradient(circle at 34% 28%, var(--accent-olive-200), var(--accent-olive-500) 80%)',
+    ring: 'var(--node-available-border)',
     icon: '#FFFFFF',
-    glow: 'var(--glow-gold)',
+    glow: 'var(--glow-olive)',
   },
   complete: {
     body: 'radial-gradient(circle at 34% 28%, var(--accent-gold-200), var(--accent-terracotta-600) 85%)',
@@ -91,7 +93,7 @@ export function SkillNode({ label, state = 'locked', icon = null, size = 64, onC
             transform: hover && interactive ? 'scale(1.06)' : 'scale(1)',
             transition: 'transform var(--duration-base) var(--ease-soft), box-shadow var(--duration-base) var(--ease-soft)',
             animation: pulse && (state === 'available' || state === 'active')
-              ? `${state === 'available' ? 'wm-pulse-glow-olive' : 'wm-pulse-glow-gold'} var(--duration-glow) var(--ease-glow) infinite`
+              ? `${state === 'available' ? 'wm-pulse-glow-olive' : 'wm-ember'} var(--duration-glow) var(--ease-glow) infinite`
               : 'none',
           }}
         >

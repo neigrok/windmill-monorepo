@@ -3,6 +3,7 @@
 // tier picks the treatment, mirroring the design's dag-clean-colors states:
 //   unavailable → same hue at low opacity, muted ring, no glow
 //   available   → flat saturated fill + kind ring, glow on hover
+//   inprogress  → available's fill + ring + a soft glow breathing at half the crown (no ring)
 //   activated   → same + an outer ring and a static halo (only the root breathes)
 // The body is procedural; no per-node JS runs per frame.
 import { createProgram, uniformLocations } from './glcore.js';
@@ -73,7 +74,8 @@ void main() {
   if (uMotion > 0.5 && aBloom.x > -900.0) {
     float st = (uTime - aBloom.x) / BLOSSOM;
     if (st >= 0.0 && st < 1.0) {
-      float peak = int(aTier + 0.5) == 2 ? 1.10 : 1.05; // full vs wake (boosted for legibility)
+      int t = int(aTier + 0.5);
+      float peak = t == 3 ? 1.10 : (t == 2 ? 1.02 : 1.05); // full bloom / ember wake / frontier wake
       settle = 1.0 + (peak - 1.0) * sin(st * PI);
     }
   }
@@ -124,6 +126,10 @@ const float BLOSSOM = 0.62;      // halo-overshoot window (s)
 const float HALO_STEADY = 0.6;   // static activated halo ~= a .28 (the old mid-breath)
 const float HALO_OVERSHOOT = 1.2; // blossom halo peak (boosted for legibility)
 const float CROWN_PERIOD = 2.4;  // crown breath period (s) -- the only infinite loop
+const float CROWN_LO = 0.471;    // crown halo trough ~= a .22
+const float CROWN_HI = 0.729;    // crown halo crest ~= a .34
+const float EMBER_MID = 0.471;   // ember resting glow ~= a .22 (crown trough), below complete's a .28
+const float EMBER_AMP = 0.5;     // ember breathes at half the crown's amplitude (spec: glow 1/2 crown)
 const float PULSE_DUR = 2.8;     // arrival-pulse window (s)
 const float PULSE_CYCLE = 1.4;   // one crest per cycle -> two crests, slightly slower
 const float PULSE_CREST1 = 1.5;  // first crest (boosted for legibility)
@@ -139,7 +145,7 @@ void main() {
   vec2 centered = (nodeUv - 0.5) * 2.0;
   float dist = length(centered);
   int ci = int(vColor + 0.5);
-  int tier = int(vTier + 0.5); // 0 unavailable, 1 available, 2 activated
+  int tier = int(vTier + 0.5); // 0 unavailable, 1 available, 2 ember, 3 activated
 
   vec3 base = uBase[ci];
   vec3 ring = uRing[ci];
@@ -180,25 +186,37 @@ void main() {
   float hoverE = feedbackEase(vFeedback.x, vFeedback.y, uTime, HOVER_DUR);
   body *= (1.0 + 0.12 * hoverE);
 
-  // ---- glow: the root crown breathes; every other activated node wears a STATIC halo ----
+  // ---- glow: the root crown breathes; complete wears a STATIC halo; ember a soft breath ----
   float crownWave = uMotion > 0.5 ? 0.5 + 0.5 * sin(uTime * (TAU / CROWN_PERIOD)) : 0.5;
   float haloRadiusMul = 1.0;
   float strength = 0.0;
-  if (tier == 2) {
+  if (tier == 3) {
     strength = HALO_STEADY; // no oscillation -- a still a .28 halo
-    // blossom overshoot: a finite lift 0->overshoot->steady, starting +80ms after ignite
+    // blossom overshoot: a finite lift ->overshoot->steady, starting +80ms after ignite.
+    // It swells from wherever the glow already sat -- 0 from available, the ember glow from an
+    // in-progress node -- so an ember->complete never dips to black before it blooms.
     if (vBloom.w > 0.5 && vBloom.x > -900.0 && uMotion > 0.5) {
+      float fromGlow = int(vBloom.y + 0.5) == 2 ? EMBER_MID : 0.0;
       float bt = (uTime - vBloom.x - 0.08) / BLOSSOM;
-      if (bt < 0.0) strength = 0.0;
+      if (bt < 0.0) strength = fromGlow;
       else if (bt < 1.0) {
         float up = smoothstep(0.0, 0.55, bt);   // rise to overshoot at 55%
         float down = smoothstep(0.55, 1.0, bt); // settle overshoot->steady
-        strength = HALO_OVERSHOOT * up - (HALO_OVERSHOOT - HALO_STEADY) * down;
+        strength = mix(fromGlow, HALO_OVERSHOOT, up) - (HALO_OVERSHOOT - HALO_STEADY) * down;
         haloRadiusMul = 1.0 + 0.45 * (up - down); // radius swell at the peak (boosted)
       }
     }
+  } else if (tier == 2) {
+    // ember: no static halo, no outer ring -- just a soft glow breathing in phase with the
+    // crown at half its amplitude, resting at a .22 and peaking below complete's a .28.
+    strength = EMBER_MID + (crownWave - 0.5) * (CROWN_HI - CROWN_LO) * EMBER_AMP;
+    // kindle glow-in: the glow rises from 0 (the available it woke from) over the bloom window.
+    if (vBloom.x > -900.0 && uMotion > 0.5) {
+      float gt = clamp((uTime - vBloom.x) / max(vBloom.z, 0.001), 0.0, 1.0);
+      strength *= smoothstep(0.0, 1.0, gt);
+    }
   }
-  if (vEmphasis > 0.5) strength = mix(0.471, 0.729, crownWave); // crown halo a .22<->.34
+  if (vEmphasis > 0.5) strength = mix(CROWN_LO, CROWN_HI, crownWave); // crown halo a .22<->.34
   if (tier >= 1) strength = max(strength, vSelected);
   // arrival pulse: a finite double-bump when an event lands (any tier), 2400ms with two
   // decaying crests (a .42->.34) -- felt on the graph first (design F). Gated by motion.
@@ -214,7 +232,7 @@ void main() {
 
   // ---- outer ring (activated only) ----
   float outerBand = 1.0 - smoothstep(0.0, OUTER_W, abs(dist - OUTER_R));
-  float outerA = (tier == 2 ? 1.0 : 0.0) * outerBand * 0.6;
+  float outerA = (tier == 3 ? 1.0 : 0.0) * outerBand * 0.6;
 
   vec3 color = body * bodyMask + glow.rgb * glowAmt;
   color = color * (1.0 - outerA) + base * outerA;
@@ -438,7 +456,7 @@ export class NodeBatch {
     const i = this.idToIndex.get(id);
     if (i === undefined) return;
     const durationMs = opts.durationMs ?? 280;
-    const blossom = opts.blossom ?? (toTier === 2);
+    const blossom = opts.blossom ?? (toTier === 3); // the halo bloom belongs to complete
     const fromTier = this.tiers[i];
     this.tiers[i] = toTier;
     this.bloom[i * 4] = atSeconds;

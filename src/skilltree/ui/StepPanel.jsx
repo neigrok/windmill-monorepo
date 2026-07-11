@@ -1,20 +1,70 @@
 // The docked step panel — the one home for everything about the selected step:
-// inline-editable name, kind swatches with live recolor preview, the prerequisite
-// checklist + "Mark complete", and the lone destructive control at the bottom.
-// Purely presentational; SkillTreeView derives every prop via UnlockRules.
+// inline-editable name, the state block (a correction chip + its menu, the lone
+// forward action, and a calm timestamp line), kind swatches with live recolor
+// preview, the prerequisite checklist, per-node History, and the destructive
+// control at the bottom. Purely presentational; SkillTreeView derives every prop
+// via UnlockRules and owns all state + persistence.
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Card, Badge, Button, IconButton, Icon } from '../../components';
+import { Card, Button, IconButton, Icon } from '../../components';
 import { EventRow } from '../activity/EventRow.jsx';
 import { NODE_COLORS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../theme.js';
 
-const STATE_TONE = { locked: 'neutral', available: 'success', active: 'warning', complete: 'brand' };
-const STATE_LABEL = { locked: 'Locked', available: 'Available', active: 'In progress', complete: 'Complete' };
+const CHIP_LABEL = { available: 'Not started', active: 'In progress', complete: 'Complete', locked: 'Locked' };
 
-export function StepPanel({ node, state, prerequisites, canComplete, canStart, history = [], autoFocusName, onRename, onPreviewKind, onRestoreKind, onSetKind, onStart, onMarkComplete, onReveal, onDelete, onPreviewDeleteCost, onClearDeleteCost, onClose }) {
+// The chip menu's three targets, paired with the state each one lands the node in
+// so the current one wears the check.
+const STATE_CHOICES = [
+  { target: 'notstarted', label: 'Not started', state: 'available' },
+  { target: 'active', label: 'In progress', state: 'active' },
+  { target: 'complete', label: 'Complete', state: 'complete' },
+];
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// A calmer tone than the feed's terse relativeTime: never seconds, never ticking.
+function relativeTime(at, now) {
+  const seconds = Math.max(0, Math.round((now - at) / 1000));
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  const date = new Date(at);
+  const sameYear = date.getFullYear() === new Date(now).getFullYear();
+  const stamp = `${MONTHS[date.getMonth()]} ${date.getDate()}`;
+  return sameYear ? stamp : `${stamp}, ${date.getFullYear()}`;
+}
+
+function absoluteTime(at) {
+  const date = new Date(at);
+  const meridiem = date.getHours() < 12 ? 'AM' : 'PM';
+  const hour = date.getHours() % 12 || 12;
+  const minute = String(date.getMinutes()).padStart(2, '0');
+  return `${MONTHS[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()} · ${hour}:${minute} ${meridiem}`;
+}
+
+// One line, most-recent event visible; hover reveals the absolute time(s) of both.
+function TimestampLine({ state, startedAt, completedAt, now }) {
+  const title = [
+    startedAt ? `Started ${absoluteTime(startedAt)}` : null,
+    completedAt ? `Completed ${absoluteTime(completedAt)}` : null,
+  ].filter(Boolean).join(' · ');
+  const text = state === 'active'
+    ? `Started ${relativeTime(startedAt, now)}`
+    : `Completed ${relativeTime(completedAt, now)}`;
+  return <div className="st-state-time" title={title}>{text}</div>;
+}
+
+export function StepPanel({ node, state, prerequisites, startedAt, completedAt, history = [], autoFocusName, onRename, onPreviewKind, onRestoreKind, onSetKind, onStart, onMarkComplete, onSetState, onReveal, onDelete, onPreviewDeleteCost, onClearDeleteCost, onClose }) {
   const [editingName, setEditingName] = useState(!!autoFocusName);
   const [draft, setDraft] = useState(node?.label ?? '');
+  const [menuOpen, setMenuOpen] = useState(false);
   const inputRef = useRef(null);
+  const chipRef = useRef(null);
+  const menuRef = useRef(null);
   const escapedRef = useRef(false); // Esc reverts — the blur that follows must not commit
 
   useEffect(() => {
@@ -23,9 +73,28 @@ export function StepPanel({ node, state, prerequisites, canComplete, canStart, h
     inputRef.current?.select();
   }, [editingName]);
 
+  // On open, land focus on the current state so arrow keys walk from there; a click
+  // anywhere outside the chip or its menu dismisses it.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const checked = menuRef.current?.querySelector('[aria-checked="true"]');
+    const first = menuRef.current?.querySelector('[role="menuitemradio"]');
+    (checked ?? first)?.focus();
+    const onDocDown = (event) => {
+      if (menuRef.current?.contains(event.target) || chipRef.current?.contains(event.target)) return;
+      setMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', onDocDown);
+    return () => document.removeEventListener('pointerdown', onDocDown);
+  }, [menuOpen]);
+
   if (!node) return null;
 
+  const now = Date.now();
   const currentKind = node.color ?? DEFAULT_NODE_COLOR;
+  const hue = NODE_COLORS[currentKind] ?? NODE_COLORS[DEFAULT_NODE_COLOR];
+  const chipHue = { '--chip-base': hue.base, '--chip-ring': hue.ring, '--chip-glow': hue.glow };
+  const lockedBy = prerequisites.find((prerequisite) => !prerequisite.complete)?.label;
 
   const commitOrRevertName = () => {
     setEditingName(false);
@@ -36,6 +105,20 @@ export function StepPanel({ node, state, prerequisites, canComplete, canStart, h
     }
     const label = draft.trim();
     if (label !== node.label) onRename(node.id, label);
+  };
+
+  // Esc closes the menu (not the panel); arrows walk the rows. stopPropagation keeps
+  // the app's global Esc / ⌘Z / ⌫ shortcuts quiet while the menu has focus.
+  const onMenuKeyDown = (event) => {
+    event.stopPropagation();
+    if (event.key === 'Escape') { event.preventDefault(); setMenuOpen(false); chipRef.current?.focus(); return; }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      const items = [...menuRef.current.querySelectorAll('[role="menuitemradio"]')];
+      const index = items.indexOf(document.activeElement);
+      const next = event.key === 'ArrowDown' ? (index + 1) % items.length : (index - 1 + items.length) % items.length;
+      items[next]?.focus();
+    }
   };
 
   return (
@@ -69,10 +152,79 @@ export function StepPanel({ node, state, prerequisites, canComplete, canStart, h
                 {node.label || 'Unnamed step'}
               </button>
             )}
-            <Badge tone={STATE_TONE[state] || 'neutral'}>{STATE_LABEL[state] || state}</Badge>
           </div>
         </div>
         <IconButton icon={<Icon name="x" />} label="Close" size="sm" onClick={onClose} />
+      </div>
+
+      <div className="st-step-state">
+        {state === 'locked' ? (
+          <>
+            <span className="st-state-chip st-state-chip--static">
+              <span className="st-state-dot st-state-dot--locked"><Icon name="lock" size={11} /></span>
+              Locked
+            </span>
+            {lockedBy && (
+              <div className="st-state-lockedline">Unlocks when ‘{lockedBy}’ is complete.</div>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="st-state-chip-row">
+              <button
+                ref={chipRef}
+                type="button"
+                className="st-state-chip"
+                style={chipHue}
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                onClick={() => setMenuOpen((open) => !open)}
+              >
+                <span className={`st-state-dot st-state-dot--${state}`} />
+                {CHIP_LABEL[state]}
+                <span className="st-state-caret" aria-hidden>▾</span>
+              </button>
+              {menuOpen && (
+                <div ref={menuRef} className="st-state-menu" role="menu" onKeyDown={onMenuKeyDown}>
+                  {STATE_CHOICES.map((choice) => (
+                    <button
+                      key={choice.target}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={choice.state === state}
+                      className="st-state-menu-item"
+                      onClick={() => { setMenuOpen(false); onSetState(node.id, choice.target); }}
+                    >
+                      <span className="st-state-menu-check">
+                        {choice.state === state && <Icon name="check" size={14} />}
+                      </span>
+                      {choice.label}
+                    </button>
+                  ))}
+                  <div className="st-state-menu-caption">Timestamps adjust with the move</div>
+                </div>
+              )}
+            </div>
+
+            {state === 'available' && (
+              <div className="st-state-actions">
+                <Button variant="primary" onClick={onStart} icon={<Icon name="play" />}>Start step</Button>
+                <Button variant="ghost" onClick={onMarkComplete} icon={<Icon name="check" />}>Mark complete</Button>
+              </div>
+            )}
+            {state === 'active' && (
+              <>
+                <div className="st-state-actions">
+                  <Button variant="primary" onClick={onMarkComplete} icon={<Icon name="check" />}>Mark complete</Button>
+                </div>
+                {startedAt && <TimestampLine state="active" startedAt={startedAt} completedAt={completedAt} now={now} />}
+              </>
+            )}
+            {state === 'complete' && completedAt && (
+              <TimestampLine state="complete" startedAt={startedAt} completedAt={completedAt} now={now} />
+            )}
+          </>
+        )}
       </div>
 
       <div>
@@ -123,25 +275,6 @@ export function StepPanel({ node, state, prerequisites, canComplete, canStart, h
               </li>
             ))}
           </ul>
-        )}
-      </div>
-
-      <div className="st-step-actions">
-        {state === 'complete' ? (
-          <Badge tone="brand" dot>Completed</Badge>
-        ) : state === 'active' ? (
-          <Button variant="primary" onClick={onMarkComplete} icon={<Icon name="check" />}>
-            Mark complete
-          </Button>
-        ) : (
-          <>
-            <Button variant="secondary" disabled={!canComplete} onClick={onMarkComplete} icon={<Icon name="check" />}>
-              Complete
-            </Button>
-            <Button variant="primary" disabled={!canStart} onClick={onStart} icon={<Icon name="play" />}>
-              Start
-            </Button>
-          </>
         )}
       </div>
 

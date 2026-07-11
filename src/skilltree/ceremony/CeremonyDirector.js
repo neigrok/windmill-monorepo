@@ -9,6 +9,8 @@
 // celebrate once. Any canvas grab fast-forwards the live beats to their end state
 // over a single YIELD; the toast still speaks.
 
+import { TIER_COMPLETE } from '../theme.js';
+
 // Canonical constants — guidelines/motion-language.md §6. Milliseconds.
 const IGNITE = 280;
 const BLOSSOM = 620; // matches the shader bloom window — pulse/toast land after it settles
@@ -103,8 +105,8 @@ export class CeremonyDirector {
     const waking = new Set();
 
     for (const n of changeset.risen) {
-      if (n.toTier !== 2) continue;
-      this.nodes.igniteNode(n.id, t0, 2, { blossom: true });
+      if (n.toTier !== TIER_COMPLETE) continue;
+      this.nodes.igniteNode(n.id, t0, TIER_COMPLETE, { blossom: true });
       lastSettle = Math.max(lastSettle, BLOSSOM);
     }
 
@@ -115,12 +117,12 @@ export class CeremonyDirector {
       if (!child) { lastSettle = Math.max(lastSettle, IGNITE + dur); continue; }
       waking.add(child.id);
       const wakeAt = IGNITE + dur * HANDOFF + jitter(child.id);
-      this.schedule(wakeAt, () => this.nodes.igniteNode(child.id, this.clock(), child.toTier, { blossom: child.toTier === 2 }));
+      this.schedule(wakeAt, () => this.nodes.igniteNode(child.id, this.clock(), child.toTier, { blossom: child.toTier === TIER_COMPLETE }));
       lastSettle = Math.max(lastSettle, wakeAt + BLOSSOM);
     }
 
     for (const n of changeset.risen) {
-      if (n.toTier === 2 || waking.has(n.id)) continue;
+      if (n.toTier === TIER_COMPLETE || waking.has(n.id)) continue;
       this.nodes.igniteNode(n.id, t0, n.toTier, {});
       lastSettle = Math.max(lastSettle, BLOSSOM);
     }
@@ -155,7 +157,7 @@ export class CeremonyDirector {
     rings.forEach((ring, depth) => {
       const at = Math.min(depth, lastAnimated) * cadence; // rings past the budget join the last beat
       const blossomOK = ring.length <= TWEEN_MAX;
-      for (const node of ring) this.schedule(at + jitter(node.id), () => this.nodes.igniteNode(node.id, this.clock(), node.tier, { blossom: blossomOK && node.tier === 2 }));
+      for (const node of ring) this.schedule(at + jitter(node.id), () => this.nodes.igniteNode(node.id, this.clock(), node.tier, { blossom: blossomOK && node.tier === TIER_COMPLETE }));
       for (const e of plan.litEdgesByRing[depth]) this.schedule(at, () => this.edges.travel(e.from, e.to, this.clock(), {}));
       lastSettle = Math.max(lastSettle, at + BLOSSOM);
     });
