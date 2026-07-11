@@ -1,0 +1,22 @@
+#pragma once
+
+#include "ports/TreeRepository.h"
+
+#include <string>
+
+namespace wm {
+
+// Stores each tree as a single jsonb document row. A connection is opened per call —
+// simple and correct for Phase 0; a pool is the obvious later optimization.
+class PgTreeRepository : public TreeRepository {
+public:
+  explicit PgTreeRepository(std::string connString);
+
+  std::optional<StoredTree> load(const TreeId& tree) override;
+  void save(const TreeId& tree, const TreeData& data, Seq head) override;
+
+private:
+  std::string connString_;
+};
+
+}

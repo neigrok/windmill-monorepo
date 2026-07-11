@@ -1,0 +1,156 @@
+#include "domain/LooseGraph.h"
+
+#include <deque>
+#include <set>
+
+namespace wm {
+
+LooseGraph::LooseGraph(const TreeData& seed, const Hlc& at) {
+  for (const auto& node : seed.nodes) {
+    createNode(node.id, node.label, node.icon, node.color, node.position, at);
+  }
+  for (const auto& node : seed.nodes) {
+    for (const auto& prereq : node.prerequisites) addEdge(prereq, node.id, at);
+  }
+}
+
+void LooseGraph::createNode(const NodeId& id, const std::string& label, const std::string& icon,
+                            NodeColor color, const std::optional<Vec2>& position, const Hlc& at) {
+  NodeRecord& record = nodes_[id];
+  record.life.add(at);
+  record.label.merge(label, at);
+  record.icon.merge(icon, at);
+  record.color.merge(color, at);
+  if (position) record.position.merge(position, at);
+}
+
+void LooseGraph::deleteNode(const NodeId& id, const Hlc& at) {
+  nodes_[id].life.remove(at);
+}
+
+void LooseGraph::setLabel(const NodeId& id, const std::string& label, const Hlc& at) {
+  nodes_[id].label.merge(label, at);
+}
+
+void LooseGraph::setColor(const NodeId& id, NodeColor color, const Hlc& at) {
+  nodes_[id].color.merge(color, at);
+}
+
+void LooseGraph::setPosition(const NodeId& id, const Vec2& position, const Hlc& at) {
+  nodes_[id].position.merge(position, at);
+}
+
+void LooseGraph::addEdge(const NodeId& from, const NodeId& to, const Hlc& at) {
+  edges_[Edge{from, to}].add(at);
+}
+
+void LooseGraph::removeEdge(const NodeId& from, const NodeId& to, const Hlc& at) {
+  edges_[Edge{from, to}].remove(at);
+}
+
+bool LooseGraph::hasNode(const NodeId& id) const {
+  auto it = nodes_.find(id);
+  return it != nodes_.end() && it->second.life.present();
+}
+
+bool LooseGraph::edgePresent(const NodeId& from, const NodeId& to) const {
+  auto it = edges_.find(Edge{from, to});
+  return it != edges_.end() && it->second.present();
+}
+
+std::optional<NodeSpec> LooseGraph::nodeView(const NodeId& id) const {
+  if (!hasNode(id)) return std::nullopt;
+  const NodeRecord& record = nodes_.at(id);
+  NodeSpec spec;
+  spec.id = id;
+  spec.label = record.label.value;
+  spec.icon = record.icon.value;
+  spec.color = record.color.value;
+  spec.position = record.position.value;
+  for (const auto& edge : liveEdges()) {
+    if (edge.to == id) spec.prerequisites.push_back(edge.from);
+  }
+  return spec;
+}
+
+std::vector<NodeId> LooseGraph::presentNodeIds() const {
+  std::vector<NodeId> ids;
+  for (const auto& [id, record] : nodes_) {
+    if (record.life.present()) ids.push_back(id);
+  }
+  return ids;
+}
+
+std::vector<Edge> LooseGraph::presentEdges() const {
+  std::vector<Edge> live;
+  for (const auto& [edge, element] : edges_) {
+    if (element.present()) live.push_back(edge);
+  }
+  return live;
+}
+
+std::vector<Edge> LooseGraph::liveEdges() const {
+  std::vector<Edge> live;
+  for (const auto& [edge, element] : edges_) {
+    if (element.present() && edge.from != edge.to && hasNode(edge.from) && hasNode(edge.to)) {
+      live.push_back(edge);
+    }
+  }
+  return live;
+}
+
+std::vector<Edge> LooseGraph::redundantEdges() const {
+  std::map<NodeId, std::vector<NodeId>> parents;
+  for (const auto& edge : liveEdges()) parents[edge.to].push_back(edge.from);
+
+  std::map<NodeId, std::set<NodeId>> memo;
+  auto ancestorsOf = [&](const NodeId& start) -> const std::set<NodeId>& {
+    auto cached = memo.find(start);
+    if (cached != memo.end()) return cached->second;
+    std::set<NodeId> ancestors;
+    std::deque<NodeId> queue(parents[start].begin(), parents[start].end());
+    while (!queue.empty()) {
+      NodeId current = queue.front();
+      queue.pop_front();
+      if (!ancestors.insert(current).second) continue;
+      for (const auto& parent : parents[current]) queue.push_back(parent);
+    }
+    return memo.emplace(start, std::move(ancestors)).first->second;
+  };
+
+  std::vector<Edge> redundant;
+  for (const auto& [child, directParents] : parents) {
+    for (const auto& from : directParents) {
+      for (const auto& other : directParents) {
+        if (other != from && ancestorsOf(other).count(from)) {
+          redundant.push_back(Edge{from, child});
+          break;
+        }
+      }
+    }
+  }
+  return redundant;
+}
+
+TreeData LooseGraph::toTreeData(const TreeId& id, const std::string& title) const {
+  std::map<NodeId, std::vector<NodeId>> parents;
+  for (const auto& edge : liveEdges()) parents[edge.to].push_back(edge.from);
+
+  TreeData data;
+  data.id = id;
+  data.title = title;
+  for (const auto& [nodeId, record] : nodes_) {
+    if (!record.life.present()) continue;
+    NodeSpec spec;
+    spec.id = nodeId;
+    spec.label = record.label.value;
+    spec.icon = record.icon.value;
+    spec.color = record.color.value;
+    spec.position = record.position.value;
+    if (auto it = parents.find(nodeId); it != parents.end()) spec.prerequisites = it->second;
+    data.nodes.push_back(std::move(spec));
+  }
+  return data;
+}
+
+}
