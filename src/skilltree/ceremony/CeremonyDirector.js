@@ -11,7 +11,7 @@
 
 // Canonical constants — guidelines/motion-language.md §6. Milliseconds.
 const IGNITE = 280;
-const BLOSSOM = 480;
+const BLOSSOM = 620; // matches the shader bloom window — pulse/toast land after it settles
 const HANDOFF = 0.85;
 const DEPEND_AT = 0.90;
 const TOAST_GAP = 120;

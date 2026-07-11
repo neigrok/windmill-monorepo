@@ -45,7 +45,7 @@ out float vEmphasis;
 out float vPulseStart;
 out vec4 vBloom;
 const float PI = 3.14159265;
-const float BLOSSOM = 0.48;   // scale-settle window (s)
+const float BLOSSOM = 0.62;   // scale-settle window (s)
 void main() {
   vUv = aQuad + 0.5;
   vColor = aColor;
@@ -63,7 +63,7 @@ void main() {
   if (uMotion > 0.5 && aBloom.x > -900.0) {
     float st = (uTime - aBloom.x) / BLOSSOM;
     if (st >= 0.0 && st < 1.0) {
-      float peak = int(aTier + 0.5) == 2 ? 1.045 : 1.02; // wake vs full
+      float peak = int(aTier + 0.5) == 2 ? 1.10 : 1.05; // full vs wake (boosted for legibility)
       settle = 1.0 + (peak - 1.0) * sin(st * PI);
     }
   }
@@ -104,14 +104,14 @@ const float TAU = 6.28318530718;
 const float EDGE = 0.84;
 const float OUTER_R = 1.16;      // outer-ring radius (activated), in centered space
 const float OUTER_W = 0.07;
-const float BLOSSOM = 0.48;      // halo-overshoot window (s)
+const float BLOSSOM = 0.62;      // halo-overshoot window (s)
 const float HALO_STEADY = 0.6;   // static activated halo ~= a .28 (the old mid-breath)
-const float HALO_OVERSHOOT = 0.857; // blossom halo peak ~= a .40
+const float HALO_OVERSHOOT = 1.2; // blossom halo peak (boosted for legibility)
 const float CROWN_PERIOD = 2.4;  // crown breath period (s) -- the only infinite loop
-const float PULSE_DUR = 2.4;     // arrival-pulse window (s)
-const float PULSE_CYCLE = 1.2;   // one crest per cycle -> two crests
-const float PULSE_CREST1 = 0.9;  // first crest ~= a .42
-const float PULSE_CREST2 = 0.729; // second crest ~= a .34 (decaying)
+const float PULSE_DUR = 2.8;     // arrival-pulse window (s)
+const float PULSE_CYCLE = 1.4;   // one crest per cycle -> two crests, slightly slower
+const float PULSE_CREST1 = 1.5;  // first crest (boosted for legibility)
+const float PULSE_CREST2 = 1.15; // second crest (decaying)
 void main() {
   vec2 nodeUv = (vUv - 0.5) * uPadding + 0.5;
   vec2 centered = (nodeUv - 0.5) * 2.0;
@@ -169,7 +169,7 @@ void main() {
         float up = smoothstep(0.0, 0.55, bt);   // rise to overshoot at 55%
         float down = smoothstep(0.55, 1.0, bt); // settle overshoot->steady
         strength = HALO_OVERSHOOT * up - (HALO_OVERSHOOT - HALO_STEADY) * down;
-        haloRadiusMul = 1.0 + 0.25 * (up - down); // radius x1.25 at the peak
+        haloRadiusMul = 1.0 + 0.45 * (up - down); // radius swell at the peak (boosted)
       }
     }
   }
