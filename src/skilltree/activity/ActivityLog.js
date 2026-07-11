@@ -9,7 +9,7 @@
 export const VERBS = ['started', 'completed', 'unlocked', 'added', 'renamed', 'removed'];
 
 export class ActivityEvent {
-  constructor({ id, actor, verb, nodeId, label, kind, at }) {
+  constructor({ id, actor, verb, nodeId, label, kind, at, summary }) {
     this.id = id;
     this.actor = actor ?? null; // null → the tree itself (an unlock has no person)
     this.verb = verb;
@@ -17,6 +17,7 @@ export class ActivityEvent {
     this.label = label ?? ''; // snapshot at emit — survives a later rename/delete
     this.kind = kind ?? null; // snapshot kind hue
     this.at = at; // epoch ms
+    this.summary = summary ?? null; // server-composed sentence for structural verbs
   }
 }
 

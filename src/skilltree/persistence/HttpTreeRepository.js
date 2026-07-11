@@ -35,4 +35,15 @@ export class HttpTreeRepository extends TreeRepository {
       inProgress: new Set(treeData.nodes.filter((node) => node.status === 'active').map((node) => node.id)),
     };
   }
+
+  // The authoritative structural history from the op log: added/renamed/removed and the
+  // edge deeds (linked/unlinked/rerouted/tidied), each with a ready `summary` sentence and
+  // a real timestamp — including edits by collaborators the local feed never saw. `since`
+  // is a seq cursor for catch-up; 0 = the whole tail (capped at `limit`).
+  async loadActivity({ since = 0, limit = 200 } = {}) {
+    const response = await fetch(`${this.baseUrl}/v1/trees/${this.treeId}/activity?since=${since}&limit=${limit}`);
+    if (!response.ok) return [];
+    const body = await response.json();
+    return body.events ?? [];
+  }
 }

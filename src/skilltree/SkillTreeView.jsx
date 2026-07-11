@@ -562,6 +562,9 @@ export function SkillTreeView() {
       if (!cancelled) setHasLocalEdits(!!persisted);
       const nextTree = new SkillTree(treeData);
       const progress = await repo.loadProgress(treeData);
+      // The authoritative structural history from the op log (demo only) — merged into the
+      // resting feed below so a collaborator's edits show up, not just this browser's.
+      const serverActivity = datasetSize === 'demo' ? await repo.loadActivity({ limit: 200 }) : [];
       // Durable progress overlays the repo/seed baseline: a user's saved completions
       // win (they already fold in whatever seed state existed when saved), so marking
       // — or un-marking — a step sticks across reloads. No saved progress → seed as today.
@@ -593,9 +596,16 @@ export function SkillTreeView() {
       progressRef.current = progress;
       completedRef.current = new Set(progress.completed);
       inProgressRef.current = new Set(progress.inProgress);
-      // Seed the resting feed from the roadmap's build history (demo only; the 5k
-      // perf tree is a throwaway with no story to tell).
-      logRef.current = datasetSize === 'demo' ? ActivityLog.fromTree(nextTree, states, Date.now()) : new ActivityLog();
+      // Seed the resting feed from the roadmap's build history (the completed deeds) and
+      // fold in the server's structural op history, oldest-first (demo only; the 5k perf
+      // tree is a throwaway with no story to tell).
+      if (datasetSize === 'demo') {
+        const built = ActivityLog.fromTree(nextTree, states, Date.now()).events;
+        const fromServer = serverActivity.map((event) => new ActivityEvent({ ...event, actor: event.actor || null }));
+        logRef.current = new ActivityLog([...built, ...fromServer].sort((a, b) => a.at - b.at));
+      } else {
+        logRef.current = new ActivityLog();
+      }
       setTree(nextTree);
       setRenderModel(model);
       setCompleted(new Set(progress.completed));
