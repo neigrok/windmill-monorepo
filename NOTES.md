@@ -45,7 +45,19 @@ map unknown color strings to a rejected/flagged value.
       progress from the backend (verified: GET tree/progress → 200, no console errors,
       scene renders). Needed backend additions: `NodeSpec.status` passthrough (opaque
       authoring seed, so the roadmap's statuses survive) and dev CORS in main.cpp.
-- [ ] Phase 2 adapters: PgOpLog, WebSocket sessions, room routing, presence bus.
+- [x] Phase 2 core (built + verified live): CommandJson codec, PgOpLog (tree_ops
+      append/since), WsPresenceBus (per-tree fanout), Collab coordinator, Drogon
+      TreeSocket at `/v1/socket`, RoomRegistry wired into main. Verified with a raw-WS
+      two-client test: subscribe→snapshot, cmd→merge→seq→persist→broadcast→ack, dup opId
+      deduped, cycle-forming edge accepted, both clients see ops live.
+      Remaining Phase 2 polish:
+        - reconnect replay ignores `lastSeq` (always sends full snapshot); wire
+          `PgOpLog::since` for incremental catch-up.
+        - room edits persist to `trees.document` only on evict — restart relies on
+          tree_ops replay. Add a snapshot cadence (every N ops / T seconds).
+        - coarse global mutex in Collab stands in for the per-tree strand.
+        - presence relay implemented (broadcastRaw) but not yet exercised.
+        - frontend still loads over HTTP (Phase 0); no live WS editing in the browser yet.
 - [ ] Frontend save path (PUT) would need CORS preflight/OPTIONS fixed — Drogon's
       built-in OPTIONS handling currently reports only `OPTIONS` in allow-methods. Load
       (GET) is a simple request and works; revisit when the frontend writes over HTTP.

@@ -1,0 +1,64 @@
+#include "adapters/postgres/PgOpLog.h"
+
+#include "adapters/json/CommandJson.h"
+#include "adapters/json/TreeJson.h"
+
+#include <pqxx/pqxx>
+
+namespace wm {
+
+namespace {
+std::string hlcText(const Hlc& at) {
+  return std::to_string(at.physicalMs) + ":" + std::to_string(at.counter) + ":" + at.actor;
+}
+
+Hlc hlcFromText(const std::string& text) {
+  Hlc hlc;
+  auto first = text.find(':');
+  auto second = text.find(':', first + 1);
+  if (first == std::string::npos || second == std::string::npos) return hlc;
+  hlc.physicalMs = std::stoull(text.substr(0, first));
+  hlc.counter = static_cast<std::uint32_t>(std::stoul(text.substr(first + 1, second - first - 1)));
+  hlc.actor = text.substr(second + 1);
+  return hlc;
+}
+}
+
+PgOpLog::PgOpLog(std::string connString) : connString_(std::move(connString)) {}
+
+void PgOpLog::append(const TreeId& tree, const AppliedOp& op) {
+  std::string payload = dump(commandPayload(op.command));
+  pqxx::connection conn{connString_};
+  pqxx::work txn{conn};
+  txn.exec_params(
+      "INSERT INTO tree_ops (tree_id, seq, actor_id, op_id, kind, payload, hlc) "
+      "VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7) ON CONFLICT (tree_id, op_id) DO NOTHING",
+      tree.str(), static_cast<long long>(op.seq), op.actor.str(), op.opId,
+      commandKind(op.command), payload, hlcText(op.hlc));
+  txn.commit();
+}
+
+std::vector<AppliedOp> PgOpLog::since(const TreeId& tree, Seq afterSeq) const {
+  pqxx::connection conn{connString_};
+  pqxx::work txn{conn};
+  pqxx::result rows = txn.exec_params(
+      "SELECT seq, actor_id, op_id, kind, payload::text, hlc FROM tree_ops "
+      "WHERE tree_id = $1 AND seq > $2 ORDER BY seq",
+      tree.str(), static_cast<long long>(afterSeq));
+
+  std::vector<AppliedOp> ops;
+  for (const auto& row : rows) {
+    std::optional<Command> command = commandFromJson(row["kind"].as<std::string>(), parse(row["payload"].as<std::string>()));
+    if (!command) continue;
+    AppliedOp op;
+    op.seq = static_cast<Seq>(row["seq"].as<long long>());
+    op.opId = row["op_id"].as<std::string>();
+    op.command = std::move(*command);
+    op.hlc = hlcFromText(row["hlc"].as<std::string>());
+    op.actor = UserId{row["actor_id"].as<std::string>()};
+    ops.push_back(std::move(op));
+  }
+  return ops;
+}
+
+}

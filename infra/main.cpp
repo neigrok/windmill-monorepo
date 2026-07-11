@@ -1,6 +1,11 @@
 #include "adapters/http/HttpApi.h"
+#include "adapters/postgres/PgOpLog.h"
 #include "adapters/postgres/PgProgressRepository.h"
 #include "adapters/postgres/PgTreeRepository.h"
+#include "adapters/ws/Collab.h"
+#include "adapters/ws/TreeSocket.h"
+#include "adapters/ws/WsPresenceBus.h"
+#include "application/RoomRegistry.h"
 
 #include <drogon/drogon.h>
 
@@ -13,10 +18,19 @@ int main() {
 
   const char* url = std::getenv("DATABASE_URL");
   std::string connString = url ? url : "postgresql://localhost/windmill";
+  const Hlc genesis{1, 0, "genesis"};
 
   auto trees = std::make_shared<PgTreeRepository>(connString);
   auto progress = std::make_shared<PgProgressRepository>(connString);
-  auto api = std::make_shared<HttpApi>(trees, progress, Hlc{1, 0, "genesis"}, UserId{std::string("dev")});
+  auto api = std::make_shared<HttpApi>(trees, progress, genesis, UserId{std::string("dev")});
+
+  // Live collaboration (Phase 2): rooms merge commands, persist to the op log, and
+  // fan out over the socket.
+  auto oplog = std::make_shared<PgOpLog>(connString);
+  auto bus = std::make_shared<WsPresenceBus>();
+  auto registry = std::make_shared<RoomRegistry>(*trees, *oplog, *bus, genesis);
+  setCollab(std::make_shared<Collab>(*registry, *bus));
+  linkTreeSocket();
 
   auto& app = drogon::app();
 

@@ -49,8 +49,8 @@ create table if not exists trees (
 create table if not exists tree_ops (
   tree_id    text not null,
   seq        bigint not null,
-  actor_id   uuid,
-  op_id      uuid not null,
+  actor_id   text not null default '',
+  op_id      text not null,
   kind       text not null,
   payload    jsonb not null,
   hlc        text not null,

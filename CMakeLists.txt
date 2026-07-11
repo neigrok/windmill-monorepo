@@ -47,9 +47,14 @@ find_package(libpqxx CONFIG QUIET)
 if(Drogon_FOUND AND libpqxx_FOUND)
   add_library(windmill_adapters
     adapters/json/TreeJson.cpp
+    adapters/json/CommandJson.cpp
     adapters/postgres/PgTreeRepository.cpp
     adapters/postgres/PgProgressRepository.cpp
-    adapters/http/HttpApi.cpp)
+    adapters/postgres/PgOpLog.cpp
+    adapters/http/HttpApi.cpp
+    adapters/ws/WsPresenceBus.cpp
+    adapters/ws/Collab.cpp
+    adapters/ws/TreeSocket.cpp)
   target_link_libraries(windmill_adapters PUBLIC windmill_application Drogon::Drogon libpqxx::pqxx)
 
   add_executable(windmill_server infra/main.cpp)
