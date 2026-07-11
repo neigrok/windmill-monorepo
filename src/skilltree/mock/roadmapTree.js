@@ -75,5 +75,21 @@ export const roadmapTree = {
     { id: 'edit-cost-hints', label: 'Cross-boundary cost hints', icon: 'flame', color: 'terracotta', status: 'complete', prerequisites: ['connect', 'tree-health'] },
     { id: 'tidy-action', label: 'One-click tidy', icon: 'spray-can', color: 'terracotta', status: 'complete', prerequisites: ['tree-health', 'command-layer'] },
     { id: 'clean-create', label: 'Clean-by-default create', icon: 'feather', color: 'terracotta', status: 'complete', prerequisites: ['create-node', 'trunk-skeleton'] },
+
+    // ---- motion language initiative (plum) — the tree breathes, it doesn't flash ----
+    // One grammar for every animated moment: camera ease → travel → bloom → pulse →
+    // toast, composed one ceremony at a time. Canonical spec: guidelines/motion-language.md
+    // (X1). These plum deeds are the running log for the initiative (per CLAUDE.md); the
+    // beats are GPU/DOM increments the ceremony director composes into the sentence.
+    { id: 'motion-tokens', label: 'Motion tokens & beats', icon: 'ruler', color: 'plum', status: 'complete', prerequisites: ['state-tiers'] },
+    { id: 'bloom-beat', label: 'Bloom · node ignites', icon: 'sparkles', color: 'plum', status: 'complete', prerequisites: ['motion-tokens'] },
+    { id: 'travel-beat', label: 'Travel · light runs the edge', icon: 'zap', color: 'plum', status: 'complete', prerequisites: ['bloom-beat'] },
+    { id: 'camera-ease', label: 'Camera ease · settle', icon: 'camera', color: 'plum', status: 'complete', prerequisites: ['motion-tokens'] },
+    { id: 'crown-pulse', label: 'Crown & pulse · the breath', icon: 'star', color: 'plum', status: 'complete', prerequisites: ['bloom-beat'] },
+    { id: 'toast-beat', label: 'Toast · quiet status', icon: 'speaker', color: 'plum', status: 'complete', prerequisites: ['motion-tokens'] },
+    { id: 'reduced-motion', label: 'Reduced-motion fallbacks', icon: 'shield', color: 'plum', status: 'complete', prerequisites: ['motion-tokens'] },
+    { id: 'ceremony-director', label: 'Ceremony director', icon: 'compass', color: 'plum', status: 'complete', prerequisites: ['travel-beat', 'camera-ease', 'toast-beat'] },
+    { id: 'yield-to-input', label: 'Motion yields to interaction', icon: 'move', color: 'plum', status: 'complete', prerequisites: ['ceremony-director'] },
+    { id: 'motion-visual-qa', label: 'Ceremony visual QA', icon: 'sun', color: 'plum', status: 'active', prerequisites: ['ceremony-director', 'crown-pulse'] },
   ],
 };

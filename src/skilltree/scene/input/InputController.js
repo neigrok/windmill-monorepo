@@ -42,6 +42,7 @@ export class InputController {
   }
 
   onDown = (event) => {
+    this.context.onInteract?.(); // the user grabs — any live ceremony fast-forwards
     this.canvas.setPointerCapture(event.pointerId);
     this.activePointerId = event.pointerId;
     this.tool.onPointerDown(this.localPos(event), event);
@@ -71,6 +72,7 @@ export class InputController {
 
   onWheel = (event) => {
     event.preventDefault();
+    this.context.onInteract?.(); // wheel-zoom is a grab too — yield the ceremony
     const pos = this.localPos(event);
     this.context.camera.zoomAt(pos.x, pos.y, event.deltaY);
   };

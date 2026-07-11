@@ -3,14 +3,14 @@
 // tier picks the treatment, mirroring the design's dag-clean-colors states:
 //   unavailable → same hue at low opacity, muted ring, no glow
 //   available   → flat saturated fill + kind ring, glow on hover
-//   activated   → same + an outer ring and a breathing glow halo
+//   activated   → same + an outer ring and a static halo (only the root breathes)
 // The body is procedural; no per-node JS runs per frame.
 import { createProgram, uniformLocations } from './glcore.js';
 import { NODE_COLORS, NODE_COLOR_NAMES, nodeTier, BACKGROUND, NODE_SIZE } from '../theme.js';
 
 const QUAD_PADDING = 1.9;
-const GLOW_SPEED = (2 * Math.PI) / 2.6;
 const NC = NODE_COLOR_NAMES.length;
+const BLOOM_NONE = -1000; // sentinel: this node is not blooming
 
 const VERTEX_SRC = `#version 300 es
 precision highp float;
@@ -25,11 +25,14 @@ layout(location=7) in float aForm;
 layout(location=8) in float aFaded;
 layout(location=9) in float aEmphasis;
 layout(location=10) in float aPulseStart;
+layout(location=11) in vec4 aBloom;   // (start, fromTier, durSec, blossom)
 uniform vec2 uResolution;
 uniform vec2 uCamera;
 uniform float uZoom;
 uniform float uNodeSize;
 uniform float uPadding;
+uniform float uTime;
+uniform float uMotion;
 out vec2 vUv;
 out float vColor;
 out float vTier;
@@ -40,6 +43,9 @@ out float vForm;
 out float vFaded;
 out float vEmphasis;
 out float vPulseStart;
+out vec4 vBloom;
+const float PI = 3.14159265;
+const float BLOSSOM = 0.48;   // scale-settle window (s)
 void main() {
   vUv = aQuad + 0.5;
   vColor = aColor;
@@ -51,7 +57,17 @@ void main() {
   vFaded = aFaded;
   vEmphasis = aEmphasis;
   vPulseStart = aPulseStart;
-  float size = uNodeSize * (1.0 + aSelected * 0.14 + aEmphasis * 0.55) * uPadding;
+  vBloom = aBloom;
+  // scale settle: a finite 1->peak->1 bump while a node blooms (motion only)
+  float settle = 1.0;
+  if (uMotion > 0.5 && aBloom.x > -900.0) {
+    float st = (uTime - aBloom.x) / BLOSSOM;
+    if (st >= 0.0 && st < 1.0) {
+      float peak = int(aTier + 0.5) == 2 ? 1.045 : 1.02; // wake vs full
+      settle = 1.0 + (peak - 1.0) * sin(st * PI);
+    }
+  }
+  float size = uNodeSize * (1.0 + aSelected * 0.14 + aEmphasis * 0.55) * settle * uPadding;
   vec2 world = aOffset + aQuad * size;
   vec2 screen = (world - uCamera) * uZoom;
   vec2 clip = vec2(screen.x / (uResolution.x * 0.5), -screen.y / (uResolution.y * 0.5));
@@ -70,9 +86,9 @@ in float vForm;
 in float vFaded;
 in float vEmphasis;
 in float vPulseStart;
+in vec4 vBloom;
 uniform float uPadding;
 uniform float uTime;
-uniform float uGlowSpeed;
 uniform float uMotion;
 uniform vec4 uGlow[${NC}];
 uniform vec3 uBase[${NC}];
@@ -86,8 +102,16 @@ uniform float uIconOpacity;
 out vec4 fragColor;
 const float TAU = 6.28318530718;
 const float EDGE = 0.84;
-const float OUTER_R = 1.16;   // outer-ring radius (activated), in centered space
+const float OUTER_R = 1.16;      // outer-ring radius (activated), in centered space
 const float OUTER_W = 0.07;
+const float BLOSSOM = 0.48;      // halo-overshoot window (s)
+const float HALO_STEADY = 0.6;   // static activated halo ~= a .28 (the old mid-breath)
+const float HALO_OVERSHOOT = 0.857; // blossom halo peak ~= a .40
+const float CROWN_PERIOD = 2.4;  // crown breath period (s) -- the only infinite loop
+const float PULSE_DUR = 2.4;     // arrival-pulse window (s)
+const float PULSE_CYCLE = 1.2;   // one crest per cycle -> two crests
+const float PULSE_CREST1 = 0.9;  // first crest ~= a .42
+const float PULSE_CREST2 = 0.729; // second crest ~= a .34 (decaying)
 void main() {
   vec2 nodeUv = (vUv - 0.5) * uPadding + 0.5;
   vec2 centered = (nodeUv - 0.5) * 2.0;
@@ -103,17 +127,21 @@ void main() {
   float bodyMask = 1.0 - smoothstep(EDGE - 0.02, EDGE + 0.015, dist);
   float ringBand = smoothstep(EDGE - 0.12, EDGE - 0.05, dist) * (1.0 - smoothstep(EDGE - 0.02, EDGE + 0.005, dist));
 
-  // ---- fill / ring / glyph per tier ----
-  vec3 fill, ringColor, glyphColor;
-  if (tier == 0) {
-    fill = mix(uCanvas, base, 0.22);
-    ringColor = mix(uCanvas, base, 0.42);
-    glyphColor = mix(uCanvas, base, 0.55);
-  } else {
-    fill = base;
-    ringColor = ring;
-    glyphColor = soft;
+  // ---- fill / ring / glyph: a litness lerp, cross-faded fromTier->toTier on bloom ----
+  // Litness 0 = muted (unavailable), 1 = full (available/activated share a palette).
+  // A bloom eases litness from the tier the node left to the tier it woke into.
+  float toLit = tier == 0 ? 0.0 : 1.0;
+  float lit = toLit;
+  if (vBloom.x > -900.0) {
+    float dur = uMotion > 0.5 ? vBloom.z : 0.15; // reduced motion: 150ms fade only
+    float t = clamp((uTime - vBloom.x) / max(dur, 0.001), 0.0, 1.0);
+    float p = t * t * (3.0 - 2.0 * t); // ease-standard ~= cubic-bezier(0.4,0,0.2,1)
+    float fromLit = int(vBloom.y + 0.5) == 0 ? 0.0 : 1.0;
+    lit = mix(fromLit, toLit, p);
   }
+  vec3 fill = mix(mix(uCanvas, base, 0.22), base, lit);
+  vec3 ringColor = mix(mix(uCanvas, base, 0.42), ring, lit);
+  vec3 glyphColor = mix(mix(uCanvas, base, 0.55), soft, lit);
 
   float iconMask = 0.0;
   if (bodyMask > 0.01 && vIconCell >= 0.0) {
@@ -127,20 +155,35 @@ void main() {
   body = mix(body, glyphColor, iconMask * uIconOpacity);
   body *= (1.0 + vSelected * 0.20);
 
-  // ---- glow: activated breathes; available lights on hover; unavailable never ----
-  float pulse = 0.6 + 0.4 * uMotion * sin(uTime * uGlowSpeed + vGlowSeed * TAU);
+  // ---- glow: the root crown breathes; every other activated node wears a STATIC halo ----
+  float crownWave = uMotion > 0.5 ? 0.5 + 0.5 * sin(uTime * (TAU / CROWN_PERIOD)) : 0.5;
+  float haloRadiusMul = 1.0;
   float strength = 0.0;
-  if (tier == 2) strength = pulse;
-  if (tier >= 1) strength = max(strength, vSelected);
-  strength = max(strength, vEmphasis * (0.7 + 0.3 * pulse)); // the heart always breathes
-  // arrival pulse: a one-shot double-bump in the kind glow when an event lands on
-  // this node (any tier), decaying over 2.6s — felt on the graph first (design F).
-  float pt = uTime - vPulseStart;
-  if (vPulseStart > -900.0 && pt >= 0.0 && pt < 2.6) {
-    float bump = 0.5 - 0.5 * cos(pt * (TAU / 1.3)); // two crests over 2.6s
-    strength = max(strength, bump * (1.0 - pt / 2.6) * uMotion);
+  if (tier == 2) {
+    strength = HALO_STEADY; // no oscillation -- a still a .28 halo
+    // blossom overshoot: a finite lift 0->overshoot->steady, starting +80ms after ignite
+    if (vBloom.w > 0.5 && vBloom.x > -900.0 && uMotion > 0.5) {
+      float bt = (uTime - vBloom.x - 0.08) / BLOSSOM;
+      if (bt < 0.0) strength = 0.0;
+      else if (bt < 1.0) {
+        float up = smoothstep(0.0, 0.55, bt);   // rise to overshoot at 55%
+        float down = smoothstep(0.55, 1.0, bt); // settle overshoot->steady
+        strength = HALO_OVERSHOOT * up - (HALO_OVERSHOOT - HALO_STEADY) * down;
+        haloRadiusMul = 1.0 + 0.25 * (up - down); // radius x1.25 at the peak
+      }
+    }
   }
-  float glowFalloff = smoothstep(1.6, 0.1, dist);
+  if (vEmphasis > 0.5) strength = mix(0.471, 0.729, crownWave); // crown halo a .22<->.34
+  if (tier >= 1) strength = max(strength, vSelected);
+  // arrival pulse: a finite double-bump when an event lands (any tier), 2400ms with two
+  // decaying crests (a .42->.34) -- felt on the graph first (design F). Gated by motion.
+  float pt = uTime - vPulseStart;
+  if (vPulseStart > -900.0 && pt >= 0.0 && pt < PULSE_DUR) {
+    float amp = mix(PULSE_CREST1, PULSE_CREST2, (pt - PULSE_CYCLE * 0.5) / PULSE_CYCLE);
+    float bump = 0.5 - 0.5 * cos(pt * (TAU / PULSE_CYCLE)); // two crests over 2400ms
+    strength = max(strength, bump * amp * uMotion);
+  }
+  float glowFalloff = smoothstep(1.6 * haloRadiusMul, 0.1, dist);
   float glowAmt = glow.a * strength * glowFalloff * 1.7;
   if (vFaded > 0.5) glowAmt = 0.0; // a faded ghost carries no halo
 
@@ -152,11 +195,17 @@ void main() {
   color = color * (1.0 - outerA) + base * outerA;
   float alpha = max(max(bodyMask, glowAmt), outerA);
 
-  // ---- root crown: an emphasized node wears a bright ring beyond its body ----
-  float crownBand = 1.0 - smoothstep(0.0, 0.05, abs(dist - 1.32));
-  float crownA = crownBand * vEmphasis * 0.85;
+  // ---- root crown: a bright ring plus a satellite ring, breathing in sync with the halo ----
+  float crownR = 1.32 + (crownWave - 0.5) * 0.06; // radius +/-2px equiv
+  float crownBand = 1.0 - smoothstep(0.0, 0.05, abs(dist - crownR));
+  float crownA = crownBand * vEmphasis * mix(0.78, 0.92, crownWave);
   color = color * (1.0 - crownA) + mix(ring, vec3(1.0), 0.25) * crownA;
   alpha = max(alpha, crownA);
+  float satR = 1.45 + (crownWave - 0.5) * 0.06; // ~8px beyond the crown, +/-2px
+  float satBand = 1.0 - smoothstep(0.0, 0.035, abs(dist - satR));
+  float satA = satBand * vEmphasis * mix(0.5, 0.85, crownWave);
+  color = color * (1.0 - satA) + mix(ring, vec3(1.0), 0.4) * satA;
+  alpha = max(alpha, satA);
 
   // ---- structural form: a dashed ring on buds (nascent) and unlinked strays ----
   int form = int(vForm + 0.5); // 0 linked, 1 bud, 2 unlinked
@@ -208,7 +257,7 @@ export class NodeBatch {
 
     this.program = createProgram(gl, VERTEX_SRC, FRAGMENT_SRC);
     this.u = uniformLocations(gl, this.program, [
-      'uResolution', 'uCamera', 'uZoom', 'uNodeSize', 'uPadding', 'uTime', 'uGlowSpeed', 'uMotion',
+      'uResolution', 'uCamera', 'uZoom', 'uNodeSize', 'uPadding', 'uTime', 'uMotion',
       'uGlow', 'uBase', 'uRing', 'uSoft', 'uCanvas',
       'uIconAtlas', 'uIconCols', 'uIconRows', 'uIconOpacity',
     ]);
@@ -237,6 +286,7 @@ export class NodeBatch {
     this.fadedBuffer = this.attribBuffer(8, 1, null, 1, gl.DYNAMIC_DRAW);
     this.emphasisBuffer = this.attribBuffer(9, 1, null, 1, gl.DYNAMIC_DRAW);
     this.pulseBuffer = this.attribBuffer(10, 1, null, 1, gl.DYNAMIC_DRAW);
+    this.bloomBuffer = this.attribBuffer(11, 4, null, 1, gl.DYNAMIC_DRAW);
 
     gl.bindVertexArray(null);
   }
@@ -275,6 +325,8 @@ export class NodeBatch {
     this.faded = new Float32Array(count);
     const emphasis = new Float32Array(count);
     this.pulseStarts = new Float32Array(count).fill(-1000); // sentinel: no pulse
+    this.bloom = new Float32Array(count * 4); // (start, fromTier, durSec, blossom) per node
+    for (let i = 0; i < count; i++) this.bloom[i * 4] = BLOOM_NONE;
 
     renderNodes.forEach((node, i) => {
       this.idToIndex.set(node.id, i);
@@ -298,6 +350,7 @@ export class NodeBatch {
     this.upload(this.fadedBuffer, this.faded);
     this.upload(this.emphasisBuffer, emphasis);
     this.upload(this.pulseBuffer, this.pulseStarts);
+    this.upload(this.bloomBuffer, this.bloom);
   }
 
   upload(buffer, data) {
@@ -330,7 +383,7 @@ export class NodeBatch {
   }
 
   // Fire a one-shot arrival pulse on one node — stamps the current time into its
-  // aPulseStart; the shader draws the decaying double-bump for the next 2.6s.
+  // aPulseStart; the shader draws the decaying double-bump for the next 2400ms.
   pulse(id, atSeconds) {
     if (!this.pulseStarts) return;
     const i = this.idToIndex.get(id);
@@ -339,6 +392,28 @@ export class NodeBatch {
     const gl = this.gl;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.pulseBuffer);
     gl.bufferSubData(gl.ARRAY_BUFFER, i * 4, this.pulseStarts, i, 1);
+  }
+
+  // Ignite one node: the animated state-rise. Records the tier it's leaving, snaps
+  // the resting tier to toTier, and stamps a bloom the shaders read for the next
+  // ~500ms — a color cross-fade, a scale settle, and (on a full node) a halo bloom.
+  igniteNode(id, atSeconds, toTier, opts = {}) {
+    if (!this.bloom) return;
+    const i = this.idToIndex.get(id);
+    if (i === undefined) return;
+    const durationMs = opts.durationMs ?? 280;
+    const blossom = opts.blossom ?? (toTier === 2);
+    const fromTier = this.tiers[i];
+    this.tiers[i] = toTier;
+    this.bloom[i * 4] = atSeconds;
+    this.bloom[i * 4 + 1] = fromTier;
+    this.bloom[i * 4 + 2] = durationMs / 1000;
+    this.bloom[i * 4 + 3] = blossom ? 1 : 0;
+    const gl = this.gl;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.tierBuffer);
+    gl.bufferSubData(gl.ARRAY_BUFFER, i * 4, this.tiers, i, 1);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.bloomBuffer);
+    gl.bufferSubData(gl.ARRAY_BUFFER, i * 16, this.bloom, i * 4, 4);
   }
 
   setStates(statesMap) {
@@ -390,7 +465,6 @@ export class NodeBatch {
     gl.uniform1f(this.u.uNodeSize, NODE_SIZE);
     gl.uniform1f(this.u.uPadding, QUAD_PADDING);
     gl.uniform1f(this.u.uTime, timeSeconds);
-    gl.uniform1f(this.u.uGlowSpeed, GLOW_SPEED);
     gl.uniform1f(this.u.uMotion, motion);
     gl.uniform4fv(this.u.uGlow, this.glowColors);
     gl.uniform3fv(this.u.uBase, this.baseColors);
@@ -413,7 +487,7 @@ export class NodeBatch {
     const gl = this.gl;
     gl.deleteProgram(this.program);
     gl.deleteVertexArray(this.vao);
-    [this.quadBuffer, this.offsetBuffer, this.colorBuffer, this.glowSeedBuffer, this.selectedBuffer, this.iconCellBuffer, this.tierBuffer, this.formBuffer, this.fadedBuffer, this.emphasisBuffer, this.pulseBuffer]
+    [this.quadBuffer, this.offsetBuffer, this.colorBuffer, this.glowSeedBuffer, this.selectedBuffer, this.iconCellBuffer, this.tierBuffer, this.formBuffer, this.fadedBuffer, this.emphasisBuffer, this.pulseBuffer, this.bloomBuffer]
       .forEach((b) => gl.deleteBuffer(b));
   }
 }

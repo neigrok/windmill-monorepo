@@ -6,6 +6,7 @@
   --duration-fast: 150ms;
   --duration-base: 280ms;
   --duration-slow: 480ms;
+  --duration-beat: 320ms;
   --duration-glow: 2400ms;
 }
 
@@ -43,4 +44,22 @@
   0% { opacity: 0; transform: scale(0.85); }
   60% { opacity: 1; transform: scale(1.04); }
   100% { transform: scale(1); }
+}
+
+@keyframes wm-bloom {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(188, 108, 66, 0); }
+  55% { transform: scale(1.045); box-shadow: 0 0 0 6px rgba(188, 108, 66, 0.40), 0 0 32px rgba(188, 108, 66, 0.40); } /* overshoot radius ×1.25, α.40 */
+  100% { transform: scale(1); box-shadow: 0 0 0 4px rgba(188, 108, 66, 0.28), 0 0 18px rgba(188, 108, 66, 0.28); } /* rest α.28 */
+}
+
+@keyframes wm-pulse-echo {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(188, 108, 66, 0.28), 0 0 18px rgba(188, 108, 66, 0.28); } /* rest α.28 */
+  25% { box-shadow: 0 0 0 7px rgba(188, 108, 66, 0.42), 0 0 32px rgba(188, 108, 66, 0.42); } /* crest 1: radius +3px, α.42 */
+  50% { box-shadow: 0 0 0 4px rgba(188, 108, 66, 0.28), 0 0 18px rgba(188, 108, 66, 0.28); } /* mid rest α.28 */
+  75% { box-shadow: 0 0 0 5.5px rgba(188, 108, 66, 0.34), 0 0 26px rgba(188, 108, 66, 0.34); } /* crest 2: radius +1.5px, α.34 */
+}
+
+@keyframes wm-pulse-node {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(188, 108, 66, 0.28), 0 0 18px rgba(188, 108, 66, 0.28); } /* rest α.28 */
+  50% { box-shadow: 0 0 0 6px rgba(188, 108, 66, 0.40), 0 0 28px rgba(188, 108, 66, 0.40); } /* crest α.40 */
 }

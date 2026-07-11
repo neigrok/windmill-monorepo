@@ -7,14 +7,75 @@ const WHEEL_ZOOM_SPEED = 0.0016;
 const INERTIA_FRICTION = 3.2;
 const INERTIA_STOP_SPEED = 2;
 const FOCUS_MIN_ZOOM = 0.6;
-const GLIDE_DURATION = 0.48; // seconds — a calm reveal, matches the spec's ease-soft
+
+// Distance-based glide tiers (seconds) — canonical motion spec §6: 600ms default,
+// 480ms for near targets, 720ms cap for far ones.
+const GLIDE_SHORT = 0.48;
+const GLIDE_DEFAULT = 0.6;
+const GLIDE_FAR = 0.72;
+
+const SAFE_FRAME_INSET = 0.1; // central 80% viewport = 10% inset per side
+const ZOOM_MATCH_EPSILON = 0.02; // zooms within 2% count as "no change"
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
-function easeSoft(t) {
-  return 1 - Math.pow(1 - t, 3); // ease-out cubic
+// Cubic-bezier sampler for a CSS timing token: solves x(t)=x by Newton (bisection
+// fallback), then evaluates y(t). Control points are P0=(0,0), P3=(1,1).
+function cubicBezier(x1, y1, x2, y2) {
+  const ax = 1 - 3 * x2 + 3 * x1;
+  const bx = 3 * x2 - 6 * x1;
+  const cx = 3 * x1;
+  const ay = 1 - 3 * y2 + 3 * y1;
+  const by = 3 * y2 - 6 * y1;
+  const cy = 3 * y1;
+  const sampleX = (t) => ((ax * t + bx) * t + cx) * t;
+  const sampleY = (t) => ((ay * t + by) * t + cy) * t;
+  const slopeX = (t) => (3 * ax * t + 2 * bx) * t + cx;
+  return (x) => {
+    if (x <= 0) return 0;
+    if (x >= 1) return 1;
+    let t = x;
+    for (let i = 0; i < 8; i++) {
+      const err = sampleX(t) - x;
+      if (Math.abs(err) < 1e-6) return sampleY(t);
+      const d = slopeX(t);
+      if (Math.abs(d) < 1e-6) break;
+      t -= err / d;
+    }
+    let lo = 0;
+    let hi = 1;
+    let mid = x;
+    for (let i = 0; i < 24; i++) {
+      const err = sampleX(mid) - x;
+      if (Math.abs(err) < 1e-6) return sampleY(mid);
+      if (err > 0) hi = mid;
+      else lo = mid;
+      mid = (lo + hi) / 2;
+    }
+    return sampleY(mid);
+  };
+}
+
+// --ease-soft = cubic-bezier(0.16, 1, 0.3, 1) — the calm-reveal curve. Built once.
+const easeSoft = cubicBezier(0.16, 1, 0.3, 1);
+
+function glideDuration(distance, viewportSpan) {
+  if (distance <= viewportSpan / 2) return GLIDE_SHORT;
+  if (distance >= viewportSpan) return GLIDE_FAR;
+  return GLIDE_DEFAULT;
+}
+
+function insideSafeFrame(viewport, x, y) {
+  const insetX = (viewport.maxX - viewport.minX) * SAFE_FRAME_INSET;
+  const insetY = (viewport.maxY - viewport.minY) * SAFE_FRAME_INSET;
+  return (
+    x >= viewport.minX + insetX &&
+    x <= viewport.maxX - insetX &&
+    y >= viewport.minY + insetY &&
+    y <= viewport.maxY - insetY
+  );
 }
 
 export class Camera2D {
@@ -62,10 +123,21 @@ export class Camera2D {
   // Camera-only reveal: an eased glide to a point (used by the activity feed, so a
   // clicked row flies the camera without disturbing selection). Cancels inertia.
   glideTo(x, y, zoom = null) {
+    const targetZoom = zoom == null ? Math.max(this.zoom, FOCUS_MIN_ZOOM) : clamp(zoom, MIN_ZOOM, MAX_ZOOM);
+    const zoomChanged = Math.abs(targetZoom - this.zoom) > this.zoom * ZOOM_MATCH_EPSILON;
+    const viewport = this.getViewport();
+    // Safe-frame gate: target already in the central 80% and no material zoom change
+    // means the user is already looking at it — do nothing.
+    if (!zoomChanged && insideSafeFrame(viewport, x, y)) return;
+
     this.velocityX = 0;
     this.velocityY = 0;
-    const targetZoom = zoom == null ? Math.max(this.zoom, FOCUS_MIN_ZOOM) : clamp(zoom, MIN_ZOOM, MAX_ZOOM);
-    this.glide = { fromX: this.x, fromY: this.y, fromZoom: this.zoom, toX: x, toY: y, toZoom: targetZoom, t: 0 };
+    const distance = Math.hypot(x - this.x, y - this.y);
+    const viewportSpan = Math.min(viewport.maxX - viewport.minX, viewport.maxY - viewport.minY);
+    const duration = glideDuration(distance, viewportSpan);
+    // Retarget-live: fromX/Y/Zoom are the current position, so an in-flight glide
+    // bends toward the new target continuously (t resets, inertia stays zeroed).
+    this.glide = { fromX: this.x, fromY: this.y, fromZoom: this.zoom, toX: x, toY: y, toZoom: targetZoom, t: 0, duration };
     this.dirty = true;
   }
 
@@ -117,7 +189,7 @@ export class Camera2D {
   update(dt) {
     if (this.glide) {
       const g = this.glide;
-      g.t = Math.min(1, g.t + dt / GLIDE_DURATION);
+      g.t = Math.min(1, g.t + dt / g.duration);
       const e = easeSoft(g.t);
       this.x = g.fromX + (g.toX - g.fromX) * e;
       this.y = g.fromY + (g.toY - g.fromY) * e;
@@ -142,6 +214,17 @@ export class Camera2D {
     const moved = this.dirty;
     this.dirty = false;
     return moved;
+  }
+
+  isGliding() {
+    return this.glide != null;
+  }
+
+  // Eased 0..1 settle of the active glide (idle = 1, fully settled). The ceremony
+  // orchestrator starts dependent beats once this crosses DEPEND_AT (0.90).
+  settleProgress() {
+    if (!this.glide) return 1;
+    return easeSoft(this.glide.t);
   }
 
   getViewport() {

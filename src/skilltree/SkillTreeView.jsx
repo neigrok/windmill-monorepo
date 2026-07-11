@@ -18,6 +18,7 @@ import { UnlockRules } from './model/UnlockRules.js';
 import { RadialLayoutEngine } from './layout/RadialLayoutEngine.js';
 import { applyNudges } from './layout/applyNudges.js';
 import { MockTreeRepository } from './mock/MockTreeRepository.js';
+import { HttpTreeRepository } from './persistence/HttpTreeRepository.js';
 import { TreeStore } from './persistence/TreeStore.js';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
 import { TreeEditor } from './editing/TreeEditor.js';
@@ -47,6 +48,8 @@ export function SkillTreeView() {
   const seedRef = useRef(null); // authored tree for the current dataset (persistence baseline)
   const datasetSizeRef = useRef('demo');
   const selectedIdRef = useRef(null);
+  const toastTimersRef = useRef([]); // pending hold→leave→unmount timers for the active toast
+  const toastKeyRef = useRef(0); // monotonic key so a replacing toast remounts and re-enters
 
   const [datasetSize, setDatasetSize] = useState('demo');
   const [loading, setLoading] = useState(true);
@@ -59,7 +62,7 @@ export function SkillTreeView() {
   const [bounds, setBounds] = useState(EMPTY_BOUNDS);
   const [scene, setScene] = useState(null);
   const [autoFocusNameId, setAutoFocusNameId] = useState(null); // freshly created bud → StepPanel focuses its name field
-  const [toast, setToast] = useState(null); // { message } shown briefly after a destructive edit
+  const [toast, setToast] = useState(null); // single status beat: { message, action, key, leaving }
   const [logVersion, setLogVersion] = useState(0); // bump to re-render off the mutable activity log
   const [ticker, setTicker] = useState([]); // live arrival toasts (design C), max 3
   const [newEventIds, setNewEventIds] = useState(() => new Set()); // rows flashing on arrival
@@ -82,11 +85,35 @@ export function SkillTreeView() {
     setHasLocalEdits(true);
   }, []);
 
+  // The single status beat (canonical §2): a toast enters fade+rise, holds, then
+  // fades out. A newer call REPLACES the current one (never stacks); toasts that
+  // carry an action (Undo) hold longer so there's time to act.
+  const showToast = useCallback((message, options = {}) => {
+    toastTimersRef.current.forEach(clearTimeout);
+    toastTimersRef.current = [];
+    const action = options.action ?? null;
+    const hold = action ? 6000 : 4000;
+    const key = (toastKeyRef.current += 1);
+    setToast({ message, action, key, leaving: false });
+    const leave = setTimeout(() => {
+      setToast((current) => (current && current.key === key ? { ...current, leaving: true } : current));
+      const drop = setTimeout(() => setToast((current) => (current && current.key === key ? null : current)), 280); // matches the CSS exit
+      toastTimersRef.current.push(drop);
+    }, hold);
+    toastTimersRef.current.push(leave);
+  }, []);
+
+  const dismissToast = useCallback(() => {
+    toastTimersRef.current.forEach(clearTimeout);
+    toastTimersRef.current = [];
+    setToast(null);
+  }, []);
+
   // Record one activity event and play its arrival: the node pulses on the graph
   // (felt first), a ticker toast announces it, and the fresh row flashes in the
   // feed. Removed events skip the pulse/toast — the node is gone and the delete's
   // Undo toast already speaks. Unlocks belong to the tree, so they carry no actor.
-  const emit = useCallback((partial) => {
+  const emit = useCallback((partial, options = {}) => {
     const event = new ActivityEvent({
       id: crypto.randomUUID?.() ?? `ev-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
       actor: partial.actor ?? (partial.verb === 'unlocked' ? null : 'You'),
@@ -111,11 +138,17 @@ export function SkillTreeView() {
 
     if (event.verb === 'removed') return event;
 
-    sceneRef.current?.pulseNode(event.nodeId);
-    setTicker((prev) => [...prev, event].slice(-3));
     setNewEventIds((prev) => new Set(prev).add(event.id));
     setTimeout(() => setNewEventIds((prev) => { const next = new Set(prev); next.delete(event.id); return next; }), 1400);
-    setTimeout(() => setTicker((prev) => prev.filter((entry) => entry.id !== event.id)), 4500);
+
+    // A ceremony's completed/unlocked beats are the growth ceremony's to animate and
+    // summarize: they don't pulse individually here, nor stack the ticker. Other
+    // verbs (added / renamed / started) still feel their arrival pulse + ticker.
+    if (!options.silent) {
+      sceneRef.current?.pulseNode(event.nodeId);
+      setTicker((prev) => [...prev, event].slice(-3));
+      setTimeout(() => setTicker((prev) => prev.filter((entry) => entry.id !== event.id)), 4500);
+    }
     return event;
   }, []);
 
@@ -252,9 +285,9 @@ export function SkillTreeView() {
     editor.commit(deleteNode(editor.treeData, id));
     if (selectedIdRef.current === id) setSelectedId(null);
     syncStructure();
-    setToast({ message: 'Step deleted' });
+    showToast('Step deleted', { action: { label: 'Undo', run: undo } });
     emit({ verb: 'removed', nodeId: id, label: node?.label, kind: node?.color });
-  }, [syncStructure, emit]);
+  }, [syncStructure, emit, showToast, undo]);
   const deleteSelected = useCallback(() => deleteNodeAt(selectedIdRef.current), [deleteNodeAt]);
 
   const handleSetKind = useCallback((id, kind) => {
@@ -270,9 +303,9 @@ export function SkillTreeView() {
     if (!editor) return;
     if (editor.commit(transitiveReduction(editor.treeData))) {
       syncStructure();
-      setToast({ message: 'Tidied — dropped redundant links' });
+      showToast('Tidied — dropped redundant links', { action: { label: 'Undo', run: undo } });
     }
-  }, [syncStructure]);
+  }, [syncStructure, showToast, undo]);
 
   // Construct the scene once; React only ever drives it through the methods below.
   useEffect(() => {
@@ -292,6 +325,7 @@ export function SkillTreeView() {
       onSetKind: handleSetKind,
       onDeleteEdge: handleDeleteEdge,
       onReconnectEdge: handleReconnect,
+      onCeremonyToast: (message, options) => showToast(message, options),
     });
     sceneRef.current = nextScene;
     setScene(nextScene);
@@ -306,7 +340,7 @@ export function SkillTreeView() {
       sceneRef.current = null;
       setScene(null);
     };
-  }, [handleNodeMoved, handleCreateChild, handleConnect, deleteNodeAt, handleSetKind, handleDeleteEdge, handleReconnect]);
+  }, [handleNodeMoved, handleCreateChild, handleConnect, deleteNodeAt, handleSetKind, handleDeleteEdge, handleReconnect, showToast]);
 
   // Keyboard: ⌘Z / ⇧⌘Z history, ⌫ / Delete removes the selection, Esc deselects.
   useEffect(() => {
@@ -354,11 +388,7 @@ export function SkillTreeView() {
     if (autoFocusNameId && selectedId !== autoFocusNameId) setAutoFocusNameId(null);
   }, [selectedId, autoFocusNameId]);
 
-  useEffect(() => {
-    if (!toast) return undefined;
-    const timer = setTimeout(() => setToast(null), 6000);
-    return () => clearTimeout(timer);
-  }, [toast]);
+  useEffect(() => () => toastTimersRef.current.forEach(clearTimeout), []);
 
   // The pipeline itself: repository loads → domain computes → scene renders.
   // Re-runs whenever the dataset toggle swaps demo ↔ huge.
@@ -368,7 +398,11 @@ export function SkillTreeView() {
     setSelectedId(null);
 
     async function loadTree() {
-      const repo = new MockTreeRepository({ size: datasetSize });
+      // The dogfood roadmap comes from the backend; the throwaway 5k perf tree is
+      // generated client-side, so it stays on the mock repository.
+      const repo = datasetSize === 'huge'
+        ? new MockTreeRepository({ size: 'huge' })
+        : new HttpTreeRepository();
       const seed = await repo.loadTree();
       // Overlay any locally-saved edits on the seed (dogfood roadmap only); a
       // changed seed invalidates them inside the store, so code wins over state.
@@ -482,15 +516,22 @@ export function SkillTreeView() {
     nextInProgress.delete(selectedId);
     setCompleted(nextCompleted);
     setInProgress(nextInProgress);
-    emit({ verb: 'completed', nodeId: selectedId, label: node?.label, kind: node?.color });
-    // Every step this completion unlocks records itself too — attributed to the tree.
+    // Record every beat in the log (the feed still tells the full story), but keep
+    // them off the ticker — one summary toast closes the ceremony instead.
+    emit({ verb: 'completed', nodeId: selectedId, label: node?.label, kind: node?.color }, { silent: true });
     const after = UnlockRules.derive(tree, { completed: nextCompleted, inProgress: nextInProgress });
+    let opened = 0;
     for (const [id, nodeState] of after) {
       if (nodeState === 'available' && states.get(id) !== 'available') {
         const unlocked = nodesById.get(id);
-        emit({ verb: 'unlocked', nodeId: id, label: unlocked?.label, kind: unlocked?.color });
+        emit({ verb: 'unlocked', nodeId: id, label: unlocked?.label, kind: unlocked?.color }, { silent: true });
+        opened += 1;
       }
     }
+    // The summary is the ceremony's closing beat: hand it to the scene, which speaks
+    // it once the bloom/travel/pulse have settled (§2 toast — last), not up front.
+    const label = node?.label?.trim() || 'Step';
+    sceneRef.current?.announceCeremony(opened > 0 ? `Step completed: ${label} · ${opened} more opened` : `Step completed: ${label}`);
   }
 
   function handleZoomIn() {
@@ -589,9 +630,13 @@ export function SkillTreeView() {
       </aside>
 
       {toast && (
-        <div className="st-toast" role="status">
+        <div className={`st-toast ${toast.leaving ? 'is-leaving' : ''}`} role="status" key={toast.key}>
           <span>{toast.message}</span>
-          <button className="st-toast-undo" onClick={() => { undo(); setToast(null); }}>Undo</button>
+          {toast.action && (
+            <button className="st-toast-undo" onClick={() => { toast.action.run(); dismissToast(); }}>
+              {toast.action.label}
+            </button>
+          )}
         </div>
       )}
 

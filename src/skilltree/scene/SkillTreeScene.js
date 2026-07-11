@@ -3,8 +3,9 @@
 // the camera; geometry is uploaded once per model and mutated in place on state
 // change. Picking reuses the domain SpatialGrid. Public API is unchanged so the
 // React shell above is renderer-agnostic.
-import { BACKGROUND, NODE_SIZE } from '../theme.js';
+import { BACKGROUND, NODE_SIZE, nodeTier } from '../theme.js';
 import { SpatialGrid } from '../model/SpatialGrid.js';
+import { CeremonyDirector } from '../ceremony/CeremonyDirector.js';
 import { Camera2D } from './Camera2D.js';
 import { NodeBatch } from './NodeBatch.js';
 import { ConnectorBatch } from './ConnectorBatch.js';
@@ -83,6 +84,21 @@ export class SkillTreeScene {
     this.rafHandle = null;
     this.overlaysDirty = false;
 
+    // The one ceremony scheduler: it composes the growth "sentence" and yields to
+    // any canvas grab. It reaches growth only through the batches/camera and never
+    // owns GL state. The scene diffs states into changesets and hands them here.
+    this.director = new CeremonyDirector({
+      nodes: this.nodeBatch,
+      edges: this.connectorBatch,
+      camera: this.camera,
+      speak: (message, opts) => this.options.onCeremonyToast && this.options.onCeremonyToast(message, opts),
+      clock: () => this.elapsedSeconds,
+      motion: () => this.motion,
+    });
+    this.nodeStates = new Map(); // last states pushed — the diff baseline
+    this.pendingSummary = null; // the toast the next ceremony speaks (set by the shell)
+    this.pendingHasAction = false;
+
     this.toolContext = {
       camera: this.camera,
       pick: (x, y) => this.pick(x, y),
@@ -94,6 +110,7 @@ export class SkillTreeScene {
       hoverEdge: (edge) => this.hoverEdge(edge),
       moveNode: (id, x, y) => this.moveNode(id, x, y),
       endMove: (id) => this.endMove(id),
+      onInteract: () => this.director.yieldToInput(),
     };
     this.input = new InputController(canvas, this.toolContext, new MoveTool(this.toolContext));
 
@@ -106,6 +123,8 @@ export class SkillTreeScene {
   // Full load: fit the camera and clear selection. Used for first paint and
   // dataset swaps.
   setModel(renderModel) {
+    this.director.cancel();
+    this.nodeStates = new Map(); // a fresh dataset re-baselines: the next applyStates is a silent paint
     this.installModel(renderModel);
     this.selectedId = null;
     this.hoveredId = null;
@@ -150,10 +169,76 @@ export class SkillTreeScene {
     this.edgeChrome.setModel(renderModel);
   }
 
+  // Push re-derived node states to the scene. The first push (a fresh model) paints
+  // the resting look silently; later pushes diff against it — upward changes become
+  // one growth ceremony (bloom/travel/pulse/toast), downward changes just dim in
+  // place (280ms, no beat). Icons always follow the new state at once.
   applyStates(statesMap) {
-    this.nodeBatch.setStates(statesMap);
-    this.connectorBatch.setStates(statesMap, this.elapsedSeconds);
     this.iconOverlay.setStates(statesMap);
+
+    if (this.nodeStates.size === 0) {
+      this.nodeBatch.setStates(statesMap);
+      this.connectorBatch.setStates(statesMap, this.elapsedSeconds);
+      this.nodeStates = new Map(statesMap);
+      return;
+    }
+
+    const changeset = this.buildChangeset(statesMap);
+    for (const fall of changeset.fell) this.nodeBatch.igniteNode(fall.id, this.elapsedSeconds, fall.toTier, { durationMs: 280, blossom: false });
+    if (changeset.fell.length > 0) this.connectorBatch.setStates(statesMap, this.elapsedSeconds); // an un-done source unlights its edges
+    this.nodeStates = new Map(statesMap);
+
+    changeset.summary = this.pendingSummary;
+    changeset.hasAction = this.pendingHasAction;
+    this.pendingSummary = null;
+    this.pendingHasAction = false;
+    this.director.celebrate(changeset);
+  }
+
+  // Diff the incoming states against the baseline into the ceremony's changeset:
+  // which nodes rose a tier (and from where), which edges a freshly-completed
+  // source lights, which children the light wakes, the available frontier to pulse,
+  // and the node to settle the camera on. Downward transitions ride along as `fell`.
+  buildChangeset(statesMap) {
+    const risen = [];
+    const fell = [];
+    const completedNow = new Set();
+    for (const [id, state] of statesMap) {
+      const from = this.nodeStates.get(id) ?? 'locked';
+      const toTier = nodeTier(state);
+      const fromTier = nodeTier(from);
+      if (toTier > fromTier) {
+        const node = this.nodesById.get(id);
+        if (node) risen.push({ id, fromTier, toTier, x: node.x, y: node.y });
+      } else if (toTier < fromTier) {
+        fell.push({ id, toTier });
+      }
+      if (state === 'complete' && from !== 'complete') completedNow.add(id);
+    }
+
+    const risenById = new Map(risen.map((r) => [r.id, r]));
+    const litEdges = [];
+    const wakeByEdge = {};
+    if (completedNow.size > 0) {
+      for (const edge of this.renderModel.edges) {
+        if (!completedNow.has(edge.from)) continue;
+        litEdges.push({ from: edge.from, to: edge.to });
+        const child = risenById.get(edge.to);
+        if (child) wakeByEdge[`${edge.from}|${edge.to}`] = child;
+      }
+    }
+
+    const frontier = risen.filter((r) => r.toTier === 1).map((r) => r.id);
+    const focusNode = risen.find((r) => r.toTier === 2) ?? risen[0] ?? null;
+    const focus = focusNode ? { x: focusNode.x, y: focusNode.y } : null;
+    return { focus, risen, fell, litEdges, wakeByEdge, frontier, summary: null, hasAction: false };
+  }
+
+  // The shell hands the next ceremony its summary line before it triggers the state
+  // change; the director speaks it as the closing beat (§2 toast — last, once).
+  announceCeremony(summary, opts = {}) {
+    this.pendingSummary = summary;
+    this.pendingHasAction = !!opts.hasAction;
   }
 
   // Live reposition of one node: cheap per-instance GPU writes for the node and
@@ -265,6 +350,7 @@ export class SkillTreeScene {
 
   dispose() {
     this.stop();
+    this.director.cancel();
     this.input.unbind();
     this.motionQuery.removeEventListener('change', this.applyMotion);
     this.nodeBatch.dispose();

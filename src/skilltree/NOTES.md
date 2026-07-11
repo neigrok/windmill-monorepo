@@ -500,3 +500,38 @@ default so the canvas runs full-bleed, opened on demand. Same feed, new resting 
   effect *after* render, so driving `select(id)` then `onNodePick(null)` in one synchronous tick
   reads a stale ref and mis-fires the empty-click branch. Real interactions render between the
   two, so it only bites synchronous test scripts — drive them as separate steps.
+
+## Motion language (X1) — the beats, composed
+
+Aligned every animated moment to `guidelines/motion-language.md` (X1): one grammar,
+`camera ease -> travel -> bloom -> pulse -> toast`, composed one ceremony at a time.
+
+- **Tokens** (`styles/tokens/motion.css`): added `--duration-beat: 320ms` and the DOM
+  approximations `wm-bloom` / `wm-pulse-echo` / `wm-pulse-node`. Easings were already the
+  canonical `--ease-soft/standard/glow`.
+- **Beats live on the GPU.** `NodeBatch` gained `igniteNode(id, at, toTier, {durationMs,
+  blossom})` — a per-instance `aBloom` (start, fromTier, durSec, blossom) the shaders read for
+  a 280ms tier cross-fade, a 1.02/1.045 scale settle, and the +80ms blossom halo overshoot.
+  Only the crown breathes now (2400ms, + satellite ring) — every other activated halo is static
+  (a .28); `pulse` retuned to the x2 decaying echo. `ConnectorBatch.travel(from, to, at,
+  {durationMs})` runs a comet head (white-hot front + 24px exp tail) with length-derived
+  duration (540 wpx/s, clamp [180,420]); `edgeDuration()` lets the director time the 0.85
+  handoff. `Camera2D.glideTo` now self-gates on the 80% safe frame, picks 480/600/720 by
+  distance, eases on a real `cubic-bezier(0.16,1,0.3,1)` sampler, and exposes
+  `settleProgress()` for DEPEND_AT.
+- **`ceremony/CeremonyDirector.js`** is the composer — pure sequencing, no GL state, reaches
+  growth only through injected batches/camera + a toast sink + a seconds clock + a motion flag.
+  `SkillTreeScene.applyStates` now DIFFS states into a changeset (risen/fell/litEdges/frontier/
+  focus) and hands upward growth to `director.celebrate`; downward changes just dim (280ms).
+  The first push after a fresh model paints silently (baseline seed). Any canvas grab
+  (`InputController.onInteract -> director.yieldToInput`) fast-forwards the live beats over
+  150ms; the toast still speaks. Reduced motion collapses to 150ms cross-fades, no glide/pulse.
+- **Toast is the last beat.** `handleMarkComplete` hands its summary to `scene.announceCeremony`;
+  the director speaks it +120ms after the structural beats settle (not up front). Ceremony
+  completed/unlocked events stay off the stacking ticker (one summary replaces them).
+- **Gotcha (cost a real bug):** a hidden control character had leaked into the director's
+  edge-key template literal while `buildChangeset` keyed on a space — the handoff-wake lookup
+  silently missed, so children ignited at t=0 instead of when the light lands. Caught only by a
+  deterministic director harness (fake collaborators asserting beat order/timing), not by the
+  build. Both key-generators now use an explicit `|`. Lesson: verify the *sequence*, not just
+  that it compiles.
