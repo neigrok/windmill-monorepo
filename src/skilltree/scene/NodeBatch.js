@@ -24,6 +24,7 @@ layout(location=6) in float aTier;
 layout(location=7) in float aForm;
 layout(location=8) in float aFaded;
 layout(location=9) in float aEmphasis;
+layout(location=10) in float aPulseStart;
 uniform vec2 uResolution;
 uniform vec2 uCamera;
 uniform float uZoom;
@@ -38,6 +39,7 @@ out float vIconCell;
 out float vForm;
 out float vFaded;
 out float vEmphasis;
+out float vPulseStart;
 void main() {
   vUv = aQuad + 0.5;
   vColor = aColor;
@@ -48,6 +50,7 @@ void main() {
   vForm = aForm;
   vFaded = aFaded;
   vEmphasis = aEmphasis;
+  vPulseStart = aPulseStart;
   float size = uNodeSize * (1.0 + aSelected * 0.14 + aEmphasis * 0.55) * uPadding;
   vec2 world = aOffset + aQuad * size;
   vec2 screen = (world - uCamera) * uZoom;
@@ -66,6 +69,7 @@ in float vIconCell;
 in float vForm;
 in float vFaded;
 in float vEmphasis;
+in float vPulseStart;
 uniform float uPadding;
 uniform float uTime;
 uniform float uGlowSpeed;
@@ -129,6 +133,13 @@ void main() {
   if (tier == 2) strength = pulse;
   if (tier >= 1) strength = max(strength, vSelected);
   strength = max(strength, vEmphasis * (0.7 + 0.3 * pulse)); // the heart always breathes
+  // arrival pulse: a one-shot double-bump in the kind glow when an event lands on
+  // this node (any tier), decaying over 2.6s — felt on the graph first (design F).
+  float pt = uTime - vPulseStart;
+  if (vPulseStart > -900.0 && pt >= 0.0 && pt < 2.6) {
+    float bump = 0.5 - 0.5 * cos(pt * (TAU / 1.3)); // two crests over 2.6s
+    strength = max(strength, bump * (1.0 - pt / 2.6) * uMotion);
+  }
   float glowFalloff = smoothstep(1.6, 0.1, dist);
   float glowAmt = glow.a * strength * glowFalloff * 1.7;
   if (vFaded > 0.5) glowAmt = 0.0; // a faded ghost carries no halo
@@ -225,6 +236,7 @@ export class NodeBatch {
     this.formBuffer = this.attribBuffer(7, 1, null, 1, gl.DYNAMIC_DRAW);
     this.fadedBuffer = this.attribBuffer(8, 1, null, 1, gl.DYNAMIC_DRAW);
     this.emphasisBuffer = this.attribBuffer(9, 1, null, 1, gl.DYNAMIC_DRAW);
+    this.pulseBuffer = this.attribBuffer(10, 1, null, 1, gl.DYNAMIC_DRAW);
 
     gl.bindVertexArray(null);
   }
@@ -262,6 +274,7 @@ export class NodeBatch {
     const forms = new Float32Array(count);
     this.faded = new Float32Array(count);
     const emphasis = new Float32Array(count);
+    this.pulseStarts = new Float32Array(count).fill(-1000); // sentinel: no pulse
 
     renderNodes.forEach((node, i) => {
       this.idToIndex.set(node.id, i);
@@ -284,6 +297,7 @@ export class NodeBatch {
     this.upload(this.formBuffer, forms);
     this.upload(this.fadedBuffer, this.faded);
     this.upload(this.emphasisBuffer, emphasis);
+    this.upload(this.pulseBuffer, this.pulseStarts);
   }
 
   upload(buffer, data) {
@@ -313,6 +327,18 @@ export class NodeBatch {
     const gl = this.gl;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.colorBuffer);
     gl.bufferSubData(gl.ARRAY_BUFFER, i * 4, this.colors, i, 1);
+  }
+
+  // Fire a one-shot arrival pulse on one node — stamps the current time into its
+  // aPulseStart; the shader draws the decaying double-bump for the next 2.6s.
+  pulse(id, atSeconds) {
+    if (!this.pulseStarts) return;
+    const i = this.idToIndex.get(id);
+    if (i === undefined) return;
+    this.pulseStarts[i] = atSeconds;
+    const gl = this.gl;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.pulseBuffer);
+    gl.bufferSubData(gl.ARRAY_BUFFER, i * 4, this.pulseStarts, i, 1);
   }
 
   setStates(statesMap) {
@@ -387,7 +413,7 @@ export class NodeBatch {
     const gl = this.gl;
     gl.deleteProgram(this.program);
     gl.deleteVertexArray(this.vao);
-    [this.quadBuffer, this.offsetBuffer, this.colorBuffer, this.glowSeedBuffer, this.selectedBuffer, this.iconCellBuffer, this.tierBuffer, this.formBuffer, this.fadedBuffer, this.emphasisBuffer]
+    [this.quadBuffer, this.offsetBuffer, this.colorBuffer, this.glowSeedBuffer, this.selectedBuffer, this.iconCellBuffer, this.tierBuffer, this.formBuffer, this.fadedBuffer, this.emphasisBuffer, this.pulseBuffer]
       .forEach((b) => gl.deleteBuffer(b));
   }
 }

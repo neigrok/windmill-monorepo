@@ -13,6 +13,9 @@ const KIND_HALF_WIDTH = { trunk: 2.6, 'in-branch': 1.6, 'cross-branch': 1.3 };
 const KIND_CODE = { trunk: 0, 'in-branch': 1, 'cross-branch': 2 };
 const BEND_FACTOR = 0.18;
 const GROW_DURATION = 0.5;
+const SOLO_SPEED = 540; // world-px/s the travel front covers a solo edge
+const MIN_TRAVEL = 0.18; // seconds — floor so short edges still read as motion
+const MAX_TRAVEL = 0.42; // seconds — ceiling so long trunks don't drag
 const ALREADY_GROWN = -1000;
 const VERTS_PER_EDGE = (SEGMENTS + 1) * 2;
 const NC = NODE_COLOR_NAMES.length;
@@ -32,6 +35,10 @@ layout(location=3) in float aGrowStart;
 layout(location=4) in float aColor;
 layout(location=5) in float aHover;
 layout(location=6) in float aKind;
+layout(location=7) in float aDim;
+layout(location=8) in float aDuration;
+layout(location=9) in float aLength;
+layout(location=10) in float aHead;
 uniform vec2 uResolution;
 uniform vec2 uCamera;
 uniform float uZoom;
@@ -41,6 +48,10 @@ out float vGrowStart;
 out float vColor;
 out float vHover;
 out float vKind;
+out float vDim;
+out float vDuration;
+out float vLength;
+out float vHead;
 void main() {
   vActive = aActive;
   vAlongT = aAlongT;
@@ -48,6 +59,10 @@ void main() {
   vColor = aColor;
   vHover = aHover;
   vKind = aKind;
+  vDim = aDim;
+  vDuration = aDuration;
+  vLength = aLength;
+  vHead = aHead;
   vec2 screen = (aPos - uCamera) * uZoom;
   vec2 clip = vec2(screen.x / (uResolution.x * 0.5), -screen.y / (uResolution.y * 0.5));
   gl_Position = vec4(clip, 0.0, 1.0);
@@ -61,6 +76,10 @@ in float vGrowStart;
 in float vColor;
 in float vHover;
 in float vKind;
+in float vDim;
+in float vDuration;
+in float vLength;
+in float vHead;
 uniform float uTime;
 uniform float uGrowDuration;
 uniform float uMotion;
@@ -71,18 +90,39 @@ out vec4 fragColor;
 void main() {
   vec3 hue = uEdgeColor[int(vColor + 0.5)];
   vec3 dim = mix(uColorInactive, hue, 0.6); // dormant branch: a muted tint of its kind
-  float swept = clamp((uTime - vGrowStart) / uGrowDuration, 0.0, 1.0);
-  float progress = mix(1.0, swept, uMotion);
-  float revealed = 1.0 - smoothstep(progress - 0.08, progress, vAlongT);
-  float lit = vActive * revealed;
 
-  vec3 color = mix(dim, hue, lit) + hue * lit * 0.16;
+  float lit;
+  float head = 0.0; // comet contribution (front core + trailing wake)
+  float core = 0.0; // the bright front band alone
+  if (uMotion < 0.5) {
+    // reduced motion: the whole edge cross-fades dim->lit over 150ms — no sweep, no comet
+    lit = vActive * clamp((uTime - vGrowStart) / 0.15, 0.0, 1.0);
+  } else {
+    // travel beat: a parent->child reveal front trailed by a comet head + fading tail
+    float dur = vDuration > 0.0 ? vDuration : uGrowDuration; // per-edge, length-derived
+    float progress = clamp((uTime - vGrowStart) / dur, 0.0, 1.0);
+    lit = vActive * (1.0 - smoothstep(progress - 0.08, progress, vAlongT)); // wakes behind the front
+    float tailFrac = 24.0 / max(vLength, 1.0); // 24 world-px wake, in vAlongT units
+    float coreFrac = 10.0 / max(vLength, 1.0); // tight bright band on the front
+    float dist = vAlongT - progress; // <0 behind the front, where the wake trails
+    float onEdge = vActive * vHead * (1.0 - smoothstep(0.9, 1.0, progress)); // comet vanishes as the front lands
+    core = (1.0 - smoothstep(0.0, coreFrac, abs(dist))) * onEdge;
+    float tail = (dist <= 0.0 ? exp(dist / tailFrac) : 0.0) * onEdge; // exp fade over ~24px
+    head = max(core, tail);
+  }
+
+  vec3 color = mix(dim, hue, lit) + hue * lit * 0.16; // +0.16 static glow on the woken body
+  color += hue * head * 0.6; // comet: additive kind-hue highlight, ~2x brighter at the front
+  color = mix(color, vec3(1.0), core * 0.3); // hottest white at the very front
   float alpha = mix(0.6, 0.95, lit);
+  alpha = max(alpha, head * 0.9);
   float deemph = vKind < 0.5 ? 1.0 : (vKind < 1.5 ? 0.7 : 0.4); // non-trunk edges recede
   color = mix(color, dim, (1.0 - deemph) * 0.6);
   alpha *= deemph;
   color = mix(color, uColorHot, vHover); // hover deepens the line to the hot hue
   alpha = mix(alpha, 0.95, vHover);
+  color = mix(color, dim, vDim * 0.5); // spotlight: branches off the focused node recede
+  alpha *= 1.0 - vDim * 0.72;
   fragColor = vec4(color, alpha);
 }`;
 
@@ -135,6 +175,12 @@ function colorIndex(name) {
   return i < 0 ? 0 : i;
 }
 
+// Solo travel time for one edge: its front covers SOLO_SPEED world-px/s, clamped so
+// even short edges register as motion and long trunks never drag. Seconds.
+function travelDuration(lengthWorld) {
+  return Math.min(MAX_TRAVEL, Math.max(MIN_TRAVEL, lengthWorld / SOLO_SPEED));
+}
+
 // Tessellate one edge's bézier ribbon into `positions` at its vertex range. Only
 // the positions depend on the endpoints, so both setModel (bulk) and moveNode
 // (a single node's incident edges) go through here; the along/active/color
@@ -143,11 +189,17 @@ function writeEdgePositions(positions, vertexStart, fx, fy, tx, ty, halfWidth) {
   const { cx, cy } = controlPoint(fx, fy, tx, ty);
   const [t0, t1] = trimRange(fx, fy, cx, cy, tx, ty);
   const span = t1 - t0;
+  let length = 0; // centerline polyline length — drives per-edge travel duration
+  let prevX = 0;
+  let prevY = 0;
   for (let i = 0; i <= SEGMENTS; i++) {
     const t = t0 + span * (i / SEGMENTS);
     const omt = 1 - t;
     const px = omt * omt * fx + 2 * omt * t * cx + t * t * tx;
     const py = omt * omt * fy + 2 * omt * t * cy + t * t * ty;
+    if (i > 0) length += Math.hypot(px - prevX, py - prevY);
+    prevX = px;
+    prevY = py;
     const dx = 2 * omt * (cx - fx) + 2 * t * (tx - cx);
     const dy = 2 * omt * (cy - fy) + 2 * t * (ty - cy);
     const len = Math.hypot(dx, dy) || 1;
@@ -159,6 +211,7 @@ function writeEdgePositions(positions, vertexStart, fx, fy, tx, ty, halfWidth) {
     positions[(v + 1) * 2] = px - nx * halfWidth;
     positions[(v + 1) * 2 + 1] = py - ny * halfWidth;
   }
+  return length;
 }
 
 export class ConnectorBatch {
@@ -183,6 +236,11 @@ export class ConnectorBatch {
     this.colorBuffer = this.attrib(4, 1, gl.STATIC_DRAW);
     this.hoverBuffer = this.attrib(5, 1, gl.DYNAMIC_DRAW);
     this.kindBuffer = this.attrib(6, 1);
+    this.dimBuffer = this.attrib(7, 1, gl.DYNAMIC_DRAW);
+    this.durationBuffer = this.attrib(8, 1, gl.DYNAMIC_DRAW);
+    this.lengthBuffer = this.attrib(9, 1, gl.DYNAMIC_DRAW);
+    this.headBuffer = this.attrib(10, 1, gl.DYNAMIC_DRAW);
+    this.spotlit = null;
     this.indexBuffer = gl.createBuffer();
     gl.bindVertexArray(null);
   }
@@ -209,7 +267,12 @@ export class ConnectorBatch {
     this.active = new Float32Array(vertexTotal);
     this.grow = new Float32Array(vertexTotal).fill(ALREADY_GROWN);
     this.hover = new Float32Array(vertexTotal);
+    this.dim = new Float32Array(vertexTotal);
+    this.duration = new Float32Array(vertexTotal); // per-edge, length-derived travel seconds
+    this.length = new Float32Array(vertexTotal); // per-edge world length, for the wake px->t
+    this.head = new Float32Array(vertexTotal); // 1 only on edges lit via travel() — enables the comet
     this.hoveredEdge = -1;
+    this.spotlit = null;
     const indices = new Uint32Array(edgeCount * SEGMENTS * 6);
 
     this.nodePos = new Map(renderModel.nodes.map((node) => [node.id, { x: node.x, y: node.y }]));
@@ -225,7 +288,8 @@ export class ConnectorBatch {
       const halfWidth = KIND_HALF_WIDTH[edge.kind] ?? KIND_HALF_WIDTH.trunk;
       const code = KIND_CODE[edge.kind] ?? 0;
 
-      writeEdgePositions(this.positions, vertexStart, from.x, from.y, to.x, to.y, halfWidth);
+      const length = writeEdgePositions(this.positions, vertexStart, from.x, from.y, to.x, to.y, halfWidth);
+      const duration = travelDuration(length);
       for (let i = 0; i <= SEGMENTS; i++) {
         const v = vertexStart + i * 2;
         const local = i / SEGMENTS;
@@ -233,6 +297,8 @@ export class ConnectorBatch {
         this.active[v] = active; this.active[v + 1] = active;
         colors[v] = colorIdx; colors[v + 1] = colorIdx;
         kinds[v] = code; kinds[v + 1] = code;
+        this.duration[v] = duration; this.duration[v + 1] = duration;
+        this.length[v] = length; this.length[v + 1] = length;
       }
       for (let i = 0; i < SEGMENTS; i++) {
         const a = vertexStart + i * 2;
@@ -245,7 +311,7 @@ export class ConnectorBatch {
         this.edgesByNode.get(nid).push(e);
       }
       this.edgeIndex.set(`${edge.from}→${edge.to}`, e);
-      return { from: edge.from, to: edge.to, active, vertexStart, halfWidth };
+      return { from: edge.from, to: edge.to, active, vertexStart, halfWidth, length, duration };
     });
 
     this.indexCount = indices.length;
@@ -257,6 +323,10 @@ export class ConnectorBatch {
     this.uploadDynamic(this.activeBuffer, this.active);
     this.uploadDynamic(this.growBuffer, this.grow);
     this.uploadDynamic(this.hoverBuffer, this.hover);
+    this.uploadDynamic(this.dimBuffer, this.dim);
+    this.uploadDynamic(this.durationBuffer, this.duration);
+    this.uploadDynamic(this.lengthBuffer, this.length);
+    this.uploadDynamic(this.headBuffer, this.head);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
     gl.bindVertexArray(null);
@@ -272,14 +342,22 @@ export class ConnectorBatch {
     const indices = this.edgesByNode.get(id);
     if (!indices || indices.length === 0) return;
     const gl = this.gl;
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuffer);
     for (const e of indices) {
       const edge = this.edges[e];
       const from = this.nodePos.get(edge.from);
       const to = this.nodePos.get(edge.to);
-      writeEdgePositions(this.positions, edge.vertexStart, from.x, from.y, to.x, to.y, edge.halfWidth);
-      const start = edge.vertexStart * 2;
-      gl.bufferSubData(gl.ARRAY_BUFFER, start * 4, this.positions, start, VERTS_PER_EDGE * 2);
+      const length = writeEdgePositions(this.positions, edge.vertexStart, from.x, from.y, to.x, to.y, edge.halfWidth);
+      edge.length = length;
+      edge.duration = travelDuration(length); // the move changed the edge's length, so retime it
+      const start = edge.vertexStart;
+      this.length.fill(length, start, start + VERTS_PER_EDGE);
+      this.duration.fill(edge.duration, start, start + VERTS_PER_EDGE);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuffer);
+      gl.bufferSubData(gl.ARRAY_BUFFER, start * 2 * 4, this.positions, start * 2, VERTS_PER_EDGE * 2);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.lengthBuffer);
+      gl.bufferSubData(gl.ARRAY_BUFFER, start * 4, this.length, start, VERTS_PER_EDGE);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.durationBuffer);
+      gl.bufferSubData(gl.ARRAY_BUFFER, start * 4, this.duration, start, VERTS_PER_EDGE);
     }
   }
 
@@ -307,6 +385,40 @@ export class ConnectorBatch {
     }
   }
 
+  // The animated wake the ceremony orchestrator drives: light one edge from atSeconds
+  // and fire its comet head down the ribbon parent->child. Unlike setStates, this arms
+  // the head flag so the front reads as a travelling highlight. durationMs overrides the
+  // length-derived clamp when the orchestrator wants a specific beat.
+  travel(from, to, atSeconds, opts = {}) {
+    if (!this.active) return;
+    const e = this.edgeIndex.get(`${from}→${to}`);
+    if (e === undefined) return;
+    const edge = this.edges[e];
+    const duration = opts.durationMs != null ? opts.durationMs / 1000 : travelDuration(edge.length);
+    edge.active = 1;
+    edge.duration = duration;
+    const start = edge.vertexStart;
+    for (let v = start; v < start + VERTS_PER_EDGE; v++) {
+      this.active[v] = 1;
+      this.grow[v] = atSeconds;
+      this.duration[v] = duration;
+      this.head[v] = 1;
+    }
+    const gl = this.gl;
+    for (const [buffer, data] of [[this.activeBuffer, this.active], [this.growBuffer, this.grow], [this.durationBuffer, this.duration], [this.headBuffer, this.head]]) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.bufferSubData(gl.ARRAY_BUFFER, start * 4, data, start, VERTS_PER_EDGE);
+    }
+  }
+
+  // Length-derived travel time in milliseconds, so the orchestrator can ignite the
+  // child at HANDOFF (0.85) of the edge's travel.
+  edgeDuration(from, to) {
+    const e = this.edgeIndex.get(`${from}→${to}`);
+    if (e === undefined) return 0;
+    return travelDuration(this.edges[e].length) * 1000;
+  }
+
   // The transient hover deepen: a per-vertex flag paints one edge's ribbon hot,
   // leaving the baked kind hue and the activation sweep untouched underneath.
   setHovered(edge) {
@@ -322,6 +434,25 @@ export class ConnectorBatch {
       gl.bufferSubData(gl.ARRAY_BUFFER, start * 4, this.hover, start, VERTS_PER_EDGE);
     }
     this.hoveredEdge = next;
+  }
+
+  // Spotlight one node's branches: every edge not incident to it recedes (design
+  // A — a hovered feed row lights its node + branches, the rest dims). Whole-
+  // buffer upload, once per hover-change, so it stays off the render loop.
+  setSpotlight(nodeId) {
+    if (!this.dim) return;
+    if (nodeId === this.spotlit) return;
+    if (nodeId == null) {
+      this.dim.fill(0);
+    } else {
+      const lit = new Set(this.edgesByNode.get(nodeId) ?? []);
+      for (let e = 0; e < this.edges.length; e++) {
+        const start = this.edges[e].vertexStart;
+        this.dim.fill(lit.has(e) ? 0 : 1, start, start + VERTS_PER_EDGE);
+      }
+    }
+    this.spotlit = nodeId;
+    this.uploadDynamic(this.dimBuffer, this.dim);
   }
 
   draw(camera, timeSeconds, motion) {
@@ -346,6 +477,6 @@ export class ConnectorBatch {
     const gl = this.gl;
     gl.deleteProgram(this.program);
     gl.deleteVertexArray(this.vao);
-    [this.posBuffer, this.alongBuffer, this.activeBuffer, this.growBuffer, this.colorBuffer, this.hoverBuffer, this.kindBuffer, this.indexBuffer].forEach((b) => gl.deleteBuffer(b));
+    [this.posBuffer, this.alongBuffer, this.activeBuffer, this.growBuffer, this.colorBuffer, this.hoverBuffer, this.kindBuffer, this.dimBuffer, this.durationBuffer, this.lengthBuffer, this.headBuffer, this.indexBuffer].forEach((b) => gl.deleteBuffer(b));
   }
 }

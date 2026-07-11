@@ -9,7 +9,7 @@ const DATASET_OPTIONS = [
   { value: 'huge', label: 'Huge (5k)' },
 ];
 
-export function ControlBar({ title, datasetSize, onDatasetSizeChange, onZoomIn, onZoomOut, onFitToView, canReset, onResetEdits, canTidy, onTidy }) {
+export function ControlBar({ title, datasetSize, onDatasetSizeChange, onZoomIn, onZoomOut, onFitToView, canReset, onResetEdits, canTidy, onTidy, showActivity, activityOpen, activityUnread, activityPing, onToggleActivity }) {
   return (
     <div className="st-topbar">
       <div className="st-brand">
@@ -28,6 +28,20 @@ export function ControlBar({ title, datasetSize, onDatasetSizeChange, onZoomIn, 
       </div>
 
       <div className="st-controls">
+        {showActivity && (
+          <Tooltip label="Activity (A)" side="bottom">
+            <button
+              type="button"
+              className={`st-activity-chip ${activityOpen ? 'st-activity-chip--on' : ''} ${activityPing ? 'st-activity-chip--ping' : ''}`}
+              onClick={onToggleActivity}
+              aria-pressed={activityOpen}
+            >
+              <Icon name="bell" size={14} />
+              <span>Activity</span>
+              {activityUnread > 0 && <span className="st-activity-chip-badge">{activityUnread}</span>}
+            </button>
+          </Tooltip>
+        )}
         {canTidy && (
           <Tooltip label="Drop redundant dependencies" side="bottom">
             <IconButton icon={<Icon name="spray-can" />} label="Tidy up" size="sm" onClick={onTidy} />

@@ -200,6 +200,34 @@ export class SkillTreeScene {
   panTo(x, y) { this.camera.panTo(x, y); }
   zoomBy(factor) { this.camera.zoomBy(factor); }
 
+  // ---- activity feed hooks (design: event-log-options) -----------------
+
+  // A live event landed on this node: fire its one-shot arrival pulse.
+  pulseNode(id) { this.nodeBatch.pulse(id, this.elapsedSeconds); }
+
+  // Row hover ↔ graph: light one node + its branches, dim the rest to a wash.
+  // Passing null restores the resting look and the real selection highlight.
+  spotlightNode(id) {
+    if (id == null) {
+      this.nodeBatch.clearFaded();
+      this.connectorBatch.setSpotlight(null);
+      this.refreshHighlight();
+      return;
+    }
+    const rest = new Set();
+    for (const nodeId of this.nodesById.keys()) if (nodeId !== id) rest.add(nodeId);
+    this.nodeBatch.setFaded(rest);
+    this.nodeBatch.setSelected(id);
+    this.connectorBatch.setSpotlight(id);
+  }
+
+  // Camera-only reveal: glide to a node without selecting it (a feed row flies the
+  // camera; only a fruit click opens details — design A′).
+  revealNode(id) {
+    const node = this.nodesById.get(id);
+    if (node) this.camera.glideTo(node.x, node.y);
+  }
+
   // Per-frame camera viewport, straight from the render loop (never throttled,
   // never through React). The listener fires now with the current viewport and
   // again on every frame the camera moves; returns an unsubscribe.

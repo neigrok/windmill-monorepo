@@ -9,6 +9,9 @@ import { ControlBar } from './ui/ControlBar.jsx';
 import { TidinessBadge } from './ui/TidinessBadge.jsx';
 import { StepPanel } from './ui/StepPanel.jsx';
 import { Minimap } from './ui/Minimap.jsx';
+import { ActivityFeed } from './activity/ActivityFeed.jsx';
+import { ActivityLog, ActivityEvent } from './activity/ActivityLog.js';
+import { ActorAvatar, EventSentence } from './activity/grammar.jsx';
 import { SkillTree } from './model/SkillTree.js';
 import { TreeHealth } from './model/TreeHealth.js';
 import { UnlockRules } from './model/UnlockRules.js';
@@ -36,6 +39,11 @@ export function SkillTreeView() {
   const editorRef = useRef(null);
   const rawLayoutRef = useRef(new Map());
   const completedRef = useRef(new Set());
+  const inProgressRef = useRef(new Set());
+  const logRef = useRef(new ActivityLog());
+  const feedOpenRef = useRef(false); // mirrors feedOpen for emit's synchronous "is the feed being watched?" check
+  const pinnedRef = useRef(false);
+  const unseenIdsRef = useRef(new Set()); // events that arrived while the feed wasn't visible
   const seedRef = useRef(null); // authored tree for the current dataset (persistence baseline)
   const datasetSizeRef = useRef('demo');
   const selectedIdRef = useRef(null);
@@ -45,12 +53,22 @@ export function SkillTreeView() {
   const [tree, setTree] = useState(null);
   const [renderModel, setRenderModel] = useState(null);
   const [completed, setCompleted] = useState(() => new Set());
+  const [inProgress, setInProgress] = useState(() => new Set());
   const [selectedId, setSelectedId] = useState(null);
   const [hoveredId, setHoveredId] = useState(null);
   const [bounds, setBounds] = useState(EMPTY_BOUNDS);
   const [scene, setScene] = useState(null);
   const [autoFocusNameId, setAutoFocusNameId] = useState(null); // freshly created bud → StepPanel focuses its name field
   const [toast, setToast] = useState(null); // { message } shown briefly after a destructive edit
+  const [logVersion, setLogVersion] = useState(0); // bump to re-render off the mutable activity log
+  const [ticker, setTicker] = useState([]); // live arrival toasts (design C), max 3
+  const [newEventIds, setNewEventIds] = useState(() => new Set()); // rows flashing on arrival
+  const [feedOpen, setFeedOpen] = useState(false); // the activity feed is summoned (design A″ — closed by default)
+  const [pinned, setPinned] = useState(false); // …or pinned to stay docked (= option A)
+  const [unreadCount, setUnreadCount] = useState(0); // events since the feed was last opened
+  const [activityPing, setActivityPing] = useState(false); // transient chip pulse on a fresh arrival
+
+  const showActivity = datasetSize === 'demo'; // the feed only rides on the dogfood roadmap
   const [hasLocalEdits, setHasLocalEdits] = useState(false); // local edits overlaid on the authored seed
   const [reloadKey, setReloadKey] = useState(0); // bump to re-run the load pipeline (e.g. after reset)
 
@@ -63,6 +81,66 @@ export function SkillTreeView() {
     treeStore.save(seedRef.current, editor.treeData);
     setHasLocalEdits(true);
   }, []);
+
+  // Record one activity event and play its arrival: the node pulses on the graph
+  // (felt first), a ticker toast announces it, and the fresh row flashes in the
+  // feed. Removed events skip the pulse/toast — the node is gone and the delete's
+  // Undo toast already speaks. Unlocks belong to the tree, so they carry no actor.
+  const emit = useCallback((partial) => {
+    const event = new ActivityEvent({
+      id: crypto.randomUUID?.() ?? `ev-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
+      actor: partial.actor ?? (partial.verb === 'unlocked' ? null : 'You'),
+      verb: partial.verb,
+      nodeId: partial.nodeId,
+      label: partial.label,
+      kind: partial.kind,
+      at: Date.now(),
+    });
+    logRef.current.record(event);
+    setLogVersion((version) => version + 1);
+
+    // Closed ≠ deaf (design A″): an arrival that lands while the feed isn't being
+    // watched counts toward the unread badge and pings the chip; it'll flash on open.
+    const watching = (feedOpenRef.current || pinnedRef.current) && !selectedIdRef.current;
+    if (!watching) {
+      unseenIdsRef.current.add(event.id);
+      setUnreadCount(unseenIdsRef.current.size);
+      setActivityPing(true);
+      setTimeout(() => setActivityPing(false), 900);
+    }
+
+    if (event.verb === 'removed') return event;
+
+    sceneRef.current?.pulseNode(event.nodeId);
+    setTicker((prev) => [...prev, event].slice(-3));
+    setNewEventIds((prev) => new Set(prev).add(event.id));
+    setTimeout(() => setNewEventIds((prev) => { const next = new Set(prev); next.delete(event.id); return next; }), 1400);
+    setTimeout(() => setTicker((prev) => prev.filter((entry) => entry.id !== event.id)), 4500);
+    return event;
+  }, []);
+
+  // The feed became visible: clear the unread badge and replay the events that
+  // arrived while it was closed with the arrival flash (design A″ — E's catch-up).
+  const markRead = useCallback(() => {
+    const ids = [...unseenIdsRef.current];
+    if (ids.length === 0) return;
+    unseenIdsRef.current = new Set();
+    setUnreadCount(0);
+    setActivityPing(false);
+    setNewEventIds((prev) => new Set([...prev, ...ids]));
+    setTimeout(() => setNewEventIds((prev) => { const next = new Set(prev); ids.forEach((id) => next.delete(id)); return next; }), 1400);
+  }, []);
+
+  // The Activity chip / the `a` key: summon the feed, or dismiss it if it's the
+  // visible tenant. Opening deselects so the feed (not a step's details) shows.
+  const toggleActivity = useCallback(() => {
+    const visibleAsFeed = (feedOpenRef.current || pinnedRef.current) && !selectedIdRef.current;
+    if (visibleAsFeed) { setFeedOpen(false); setPinned(false); }
+    else { setFeedOpen(true); setSelectedId(null); }
+  }, []);
+
+  const closeActivity = useCallback(() => { setFeedOpen(false); setPinned(false); }, []);
+  const togglePin = useCallback(() => setPinned((value) => !value), []);
 
   // Discard local edits and reload the authored seed fresh (clears history too).
   const handleResetEdits = useCallback(() => {
@@ -79,7 +157,7 @@ export function SkillTreeView() {
     if (!editor || !sceneNow) return;
     const nextTree = new SkillTree(editor.treeData);
     const positions = applyNudges(rawLayoutRef.current, nextTree);
-    const nextStates = UnlockRules.derive(nextTree, { completed: completedRef.current, inProgress: progressRef.current.inProgress });
+    const nextStates = UnlockRules.derive(nextTree, { completed: completedRef.current, inProgress: inProgressRef.current });
     const model = nextTree.toRenderModel(positions, nextStates);
     sceneNow.applyModel(model);
     setTree(nextTree);
@@ -108,9 +186,11 @@ export function SkillTreeView() {
     if (!editor) return;
     const node = editor.treeData.nodes.find((n) => n.id === id);
     if (!node || node.label === label) return;
+    const wasNamed = node.label.trim() !== ''; // naming a fresh bud is part of the add, not a rename
     editor.commit(renameNode(editor.treeData, id, label));
     syncStructure();
-  }, [syncStructure]);
+    if (wasNamed) emit({ verb: 'renamed', nodeId: id, label, kind: node.color });
+  }, [syncStructure, emit]);
 
   // Plus clicked: create + commit an unnamed bud (saved even unnamed), select it,
   // and flag the step panel to focus its name field so typing flows straight in.
@@ -137,7 +217,8 @@ export function SkillTreeView() {
     scene.select(id);
     setSelectedId(id);
     setAutoFocusNameId(id);
-  }, [syncStructure]);
+    emit({ verb: 'added', nodeId: id, label: '', kind: parent.color });
+  }, [syncStructure, emit]);
 
   // Drag from a port to a node → add a dependency (one history step). The gesture
   // already blocked cycles before the drop.
@@ -167,11 +248,13 @@ export function SkillTreeView() {
   const deleteNodeAt = useCallback((id) => {
     const editor = editorRef.current;
     if (!editor || !id) return;
+    const node = editor.treeData.nodes.find((n) => n.id === id); // snapshot before it's gone
     editor.commit(deleteNode(editor.treeData, id));
     if (selectedIdRef.current === id) setSelectedId(null);
     syncStructure();
     setToast({ message: 'Step deleted' });
-  }, [syncStructure]);
+    emit({ verb: 'removed', nodeId: id, label: node?.label, kind: node?.color });
+  }, [syncStructure, emit]);
   const deleteSelected = useCallback(() => deleteNodeAt(selectedIdRef.current), [deleteNodeAt]);
 
   const handleSetKind = useCallback((id, kind) => {
@@ -194,7 +277,13 @@ export function SkillTreeView() {
   // Construct the scene once; React only ever drives it through the methods below.
   useEffect(() => {
     const nextScene = new SkillTreeScene(canvasRef.current, {
-      onNodePick: (id) => setSelectedId(id),
+      onNodePick: (id) => {
+        if (id) { setSelectedId(id); return; }
+        // Empty-canvas click: close details (the feed returns iff it was open),
+        // or dismiss the feed itself when nothing was selected (design A″).
+        if (selectedIdRef.current) setSelectedId(null);
+        else { setFeedOpen(false); setPinned(false); }
+      },
       onNodeHover: (id) => setHoveredId(id),
       onNodeMoveEnd: handleNodeMoved,
       onCreateChild: handleCreateChild,
@@ -230,7 +319,14 @@ export function SkillTreeView() {
       }
       if (event.key === 'Escape') {
         if (selectedIdRef.current) { setSelectedId(null); return; }
-        if (sceneRef.current?.selectedEdge) sceneRef.current.selectEdge(null);
+        if (sceneRef.current?.selectedEdge) { sceneRef.current.selectEdge(null); return; }
+        if (feedOpenRef.current || pinnedRef.current) closeActivity();
+        return;
+      }
+      const typing = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA');
+      if (event.key === 'a' && !event.metaKey && !event.ctrlKey && !event.altKey && !typing) {
+        event.preventDefault();
+        toggleActivity();
         return;
       }
       if (event.key === 'Backspace' || event.key === 'Delete') {
@@ -243,7 +339,7 @@ export function SkillTreeView() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [undo, redo, deleteSelected, handleDeleteEdge]);
+  }, [undo, redo, deleteSelected, handleDeleteEdge, toggleActivity, closeActivity]);
 
   useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
 
@@ -297,9 +393,22 @@ export function SkillTreeView() {
       datasetSizeRef.current = datasetSize;
       progressRef.current = progress;
       completedRef.current = new Set(progress.completed);
+      inProgressRef.current = new Set(progress.inProgress);
+      // Seed the resting feed from the roadmap's build history (demo only; the 5k
+      // perf tree is a throwaway with no story to tell).
+      logRef.current = datasetSize === 'demo' ? ActivityLog.fromTree(nextTree, states, Date.now()) : new ActivityLog();
       setTree(nextTree);
       setRenderModel(model);
       setCompleted(new Set(progress.completed));
+      setInProgress(new Set(progress.inProgress));
+      setLogVersion((version) => version + 1);
+      setTicker([]);
+      setNewEventIds(new Set());
+      setFeedOpen(false);
+      setPinned(false);
+      setUnreadCount(0);
+      setActivityPing(false);
+      unseenIdsRef.current = new Set();
       setBounds(scene.getBounds());
       setLoading(false);
     }
@@ -311,8 +420,8 @@ export function SkillTreeView() {
   // Single source of truth for node state — every completion ripples through here.
   const states = useMemo(() => {
     if (!tree) return new Map();
-    return UnlockRules.derive(tree, { completed, inProgress: progressRef.current.inProgress });
-  }, [tree, completed]);
+    return UnlockRules.derive(tree, { completed, inProgress });
+  }, [tree, completed, inProgress]);
 
   // Push re-derived states to the scene whenever completion changes; the
   // scene owns the growth animation for newly-unlocked branches.
@@ -321,6 +430,14 @@ export function SkillTreeView() {
   }, [states]);
 
   useEffect(() => { completedRef.current = completed; }, [completed]);
+  useEffect(() => { inProgressRef.current = inProgress; }, [inProgress]);
+  useEffect(() => { feedOpenRef.current = feedOpen; }, [feedOpen]);
+  useEffect(() => { pinnedRef.current = pinned; }, [pinned]);
+
+  // The feed is the visible dock tenant when summoned/pinned and no step is
+  // selected. Whenever it becomes visible, mark everything read (with a catch-up flash).
+  const feedVisible = showActivity && (feedOpen || pinned) && !selectedId;
+  useEffect(() => { if (feedVisible) markRead(); }, [feedVisible, markRead]);
 
   const nodesById = useMemo(() => {
     if (!tree) return new Map();
@@ -329,6 +446,14 @@ export function SkillTreeView() {
 
   // Graph tidiness — cross-area coupling + redundancy → a score the user nudges up.
   const health = useMemo(() => (tree ? TreeHealth.assess(tree) : null), [tree]);
+
+  // The grouped view and per-node history both recompute when the log version bumps.
+  const activityGroups = useMemo(() => logRef.current.groupedByDay(Date.now()), [logVersion]);
+  const selectedHistory = useMemo(() => (selectedId ? logRef.current.forNode(selectedId) : []), [selectedId, logVersion]);
+
+  const handleRowHover = useCallback((id) => sceneRef.current?.spotlightNode(id), []);
+  const handleRowLeave = useCallback(() => sceneRef.current?.spotlightNode(null), []);
+  const handleRevealNode = useCallback((id) => sceneRef.current?.revealNode(id), []);
 
   const selectedNode = selectedId ? nodesById.get(selectedId) ?? null : null;
   const selectedState = selectedId ? states.get(selectedId) ?? 'locked' : null;
@@ -342,9 +467,30 @@ export function SkillTreeView() {
     }));
   }, [selectedNode, nodesById, states]);
 
+  function handleStart() {
+    if (!selectedId) return;
+    const node = nodesById.get(selectedId);
+    setInProgress((prev) => new Set(prev).add(selectedId));
+    emit({ verb: 'started', nodeId: selectedId, label: node?.label, kind: node?.color });
+  }
+
   function handleMarkComplete() {
     if (!selectedId) return;
-    setCompleted((prev) => new Set(prev).add(selectedId));
+    const node = nodesById.get(selectedId);
+    const nextCompleted = new Set(completed).add(selectedId);
+    const nextInProgress = new Set(inProgress);
+    nextInProgress.delete(selectedId);
+    setCompleted(nextCompleted);
+    setInProgress(nextInProgress);
+    emit({ verb: 'completed', nodeId: selectedId, label: node?.label, kind: node?.color });
+    // Every step this completion unlocks records itself too — attributed to the tree.
+    const after = UnlockRules.derive(tree, { completed: nextCompleted, inProgress: nextInProgress });
+    for (const [id, nodeState] of after) {
+      if (nodeState === 'available' && states.get(id) !== 'available') {
+        const unlocked = nodesById.get(id);
+        emit({ verb: 'unlocked', nodeId: id, label: unlocked?.label, kind: unlocked?.color });
+      }
+    }
   }
 
   function handleZoomIn() {
@@ -381,6 +527,11 @@ export function SkillTreeView() {
         onResetEdits={handleResetEdits}
         canTidy={!!health && health.redundant > 0}
         onTidy={handleTidy}
+        showActivity={showActivity}
+        activityOpen={feedVisible}
+        activityUnread={unreadCount}
+        activityPing={activityPing}
+        onToggleActivity={toggleActivity}
       />
 
       {datasetSize === 'demo' && <TidinessBadge health={health} />}
@@ -393,30 +544,65 @@ export function SkillTreeView() {
         onPanTo={handlePanTo}
       />
 
-      <aside className={`st-detail-panel ${selectedNode ? 'st-detail-panel--open' : ''}`}>
-        <StepPanel
-          key={selectedNode?.id}
-          node={selectedNode}
-          state={selectedState}
-          prerequisites={prerequisites}
-          canComplete={selectedState === 'available' || selectedState === 'active'}
-          autoFocusName={selectedId !== null && selectedId === autoFocusNameId}
-          onRename={handleRename}
-          onPreviewKind={(id, kind) => sceneRef.current?.previewKind(id, kind)}
-          onRestoreKind={(id) => sceneRef.current?.restoreKind(id)}
-          onSetKind={handleSetKind}
-          onMarkComplete={handleMarkComplete}
-          onDelete={deleteNodeAt}
-          onPreviewDeleteCost={(id) => sceneRef.current?.previewDeleteCost(id)}
-          onClearDeleteCost={() => sceneRef.current?.clearDeleteCost()}
-          onClose={() => setSelectedId(null)}
-        />
+      <aside className={`st-detail-panel ${selectedNode || feedVisible ? 'st-detail-panel--open' : ''}`}>
+        {/* One dock, two tenants (design A′/A″): the feed is summoned over the canvas
+            edge; selecting a fruit swaps in its details. Key toggle replays the swap. */}
+        <div className="st-dock-tenant" key={selectedNode ? selectedNode.id : 'activity'}>
+          {selectedNode ? (
+            <StepPanel
+              node={selectedNode}
+              state={selectedState}
+              prerequisites={prerequisites}
+              canComplete={selectedState === 'available' || selectedState === 'active'}
+              canStart={selectedState === 'available'}
+              history={selectedHistory}
+              autoFocusName={selectedId !== null && selectedId === autoFocusNameId}
+              onRename={handleRename}
+              onPreviewKind={(id, kind) => sceneRef.current?.previewKind(id, kind)}
+              onRestoreKind={(id) => sceneRef.current?.restoreKind(id)}
+              onSetKind={handleSetKind}
+              onStart={handleStart}
+              onMarkComplete={handleMarkComplete}
+              onReveal={handleRevealNode}
+              onDelete={deleteNodeAt}
+              onPreviewDeleteCost={(id) => sceneRef.current?.previewDeleteCost(id)}
+              onClearDeleteCost={() => sceneRef.current?.clearDeleteCost()}
+              onClose={() => setSelectedId(null)}
+            />
+          ) : feedVisible ? (
+            <ActivityFeed
+              groups={activityGroups}
+              count={logRef.current.size}
+              nodesById={nodesById}
+              now={Date.now()}
+              hoveredId={hoveredId}
+              newIds={newEventIds}
+              pinned={pinned}
+              onTogglePin={togglePin}
+              onClose={closeActivity}
+              onHoverNode={handleRowHover}
+              onLeaveNode={handleRowLeave}
+              onRevealNode={handleRevealNode}
+            />
+          ) : null}
+        </div>
       </aside>
 
       {toast && (
         <div className="st-toast" role="status">
           <span>{toast.message}</span>
           <button className="st-toast-undo" onClick={() => { undo(); setToast(null); }}>Undo</button>
+        </div>
+      )}
+
+      {ticker.length > 0 && (
+        <div className="st-ticker" role="status" aria-live="polite">
+          {ticker.map((event) => (
+            <div className="st-ticker-item" key={event.id}>
+              <ActorAvatar event={event} size={20} />
+              <span><EventSentence event={event} node={nodesById.get(event.nodeId) ?? null} /></span>
+            </div>
+          ))}
         </div>
       )}
 

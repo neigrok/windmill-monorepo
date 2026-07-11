@@ -65,6 +65,12 @@ import {
   Moon,
   Cloud,
   Mountain,
+  Unlock,
+  Minus,
+  Activity,
+  Bell,
+  Pin,
+  RotateCcw,
 } from 'lucide-react';
 
 /**
@@ -143,6 +149,12 @@ const REGISTRY = {
   moon: Moon,
   cloud: Cloud,
   mountain: Mountain,
+  unlock: Unlock,
+  minus: Minus,
+  activity: Activity,
+  bell: Bell,
+  pin: Pin,
+  'rotate-ccw': RotateCcw,
 };
 
 export function Icon({ name, size = 16, strokeWidth = 2, color = 'currentColor', style }) {

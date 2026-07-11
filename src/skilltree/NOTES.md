@@ -437,3 +437,66 @@ cost, not chaos, so users self-correct.
 - **Follow-ups**: huge (5k) crowds at outer rings under pure radial (ring spacing /
   angular padding needed); cost-hint tip still uses the brick colour (could go amber to
   match its ring); root visual is a first pass (user will refine).
+
+## Activity feed — the event log for the tree canvas (design: event-log-options)
+
+Shipped the design's recommended placement — **A (docked feed) + C (arrival toasts) +
+F (node pulse) + A′ (dock coexistence)**. Before this the app recorded nothing; now every
+completion/edit leaves an actor–verb–object trace.
+
+- **Feature package `activity/`** (grouped by kind, per CLAUDE.md). `ActivityLog.js` is pure
+  domain: `ActivityEvent` snapshots its object's label+kind so a row still renders (struck
+  through) after the node is deleted, while live rows resolve the object from the current
+  tree by id; `ActivityLog` answers `record` / `recent` / `forNode` / `groupedByDay`, and a
+  static `fromTree(tree, states, now)` seeds the resting feed from the roadmap's build
+  history. `grammar.jsx` is the one presentation grammar every surface speaks (VERB_STYLE,
+  `relativeTime`, `ActorAvatar`, `ObjectLabel`, `EventSentence`) — the feed rows, the step
+  panel's History, and the ticker all compose from it, so a verb reads the same everywhere.
+- **The dock has two tenants now (A′).** `SkillTreeView` renders `ActivityFeed` at rest and
+  `StepPanel` on selection inside one `.st-dock-tenant` (keyed so the swap replays a fade-
+  rise), same 360px width — the canvas is an absolute layer beneath, so the swap causes zero
+  reflow. Deselect always returns to Activity. The panel's new **History** section is the
+  same feed filtered to one node (`forNode`) — one row component, two scopes.
+- **Events emit at the real seams** through one `emit()` helper: completed (+ the unlocks it
+  causes, attributed to the tree), started (new Start action lifts `inProgress` into React
+  state), added, renamed (only when the old label was non-empty — naming a fresh bud is part
+  of the add), removed (snapshot before delete; no toast/pulse, the Undo toast already
+  speaks). `emit` also plays the arrival: the node pulses, a ticker toast announces it, the
+  fresh row flashes.
+- **Felt on the graph first.** Three thin renderer additions, each mirroring an existing
+  per-instance-attribute pattern: `NodeBatch.aPulseStart` + a decaying double-bump shader
+  envelope (`pulseNode`), `ConnectorBatch.aDim` + a recede branch (`setSpotlight`, so a
+  hovered feed row lights its node's branches and dims the rest), and `Camera2D.glideTo` (an
+  eased reveal so a clicked row flies the camera without touching selection). The scene
+  exposes `pulseNode` / `spotlightNode` / `revealNode`; row hover ↔ graph is two-way (a
+  hovered fruit lights its rows via `hoveredId`).
+- **Demo-only**, like the tidiness badge — the 5k perf tree seeds an empty log and shows no
+  feed at rest. The feature is dogfooded as a node in `roadmapTree.js`, so it also appears in
+  its own seeded history.
+- **Deferred**: narrow-viewport collapse to E's bell; ticker burst-coalescing ("completed 3
+  steps"); the terracotta focus-ring on reveal; undo/redo reconciling the append-only log (a
+  create-then-undo leaves a row whose node is gone — it renders muted, which is acceptable).
+
+### A″ — summoned, not docked-by-default (design update)
+
+The doc's verdict moved from "A docked-by-default" to **A″ — the panel, summoned**: closed by
+default so the canvas runs full-bleed, opened on demand. Same feed, new resting state.
+- **The dock is now gated on a summon state** (`feedOpen`) instead of always-open. A labeled
+  **Activity chip** in the toolbar (`ControlBar`) toggles it; the panel was already an absolute
+  slide-in overlay, so "open = zero-reflow overlay" needed no layout change. A **pin** in the
+  feed header (`pinned`) keeps it docked — pinned mode *is* the old option A.
+- **Closed ≠ deaf.** `emit` still fires the toast + node pulse while closed; when the feed
+  isn't the watched tenant it adds the event to `unseenIdsRef`, bumps the chip's unread badge,
+  and pings the chip. Opening (or returning to the feed from details) runs `markRead`, which
+  clears the badge and re-flashes the unseen rows — E's catch-up, folded into `newEventIds`.
+- **A′ rules intact.** Selecting a fruit swaps the overlay to details regardless of feed state;
+  deselecting returns to the feed **only if it was open** (`feedVisible` keys off `feedOpen ||
+  pinned`, independent of selection — no `wasOpen` bookkeeping needed). An empty-canvas click
+  with the feed showing dismisses it (the `onNodePick(null)` branch); with details open it
+  closes details first.
+- **Keyboard:** `a` toggles, `esc` closes (after selection/edge). The `rotate-ccw` reset icon
+  (a pre-existing unregistered-icon warning) got registered while adding the chip.
+- Gotcha for future live-testing: React refs (`selectedIdRef`, `feedOpenRef`) update in an
+  effect *after* render, so driving `select(id)` then `onNodePick(null)` in one synchronous tick
+  reads a stale ref and mis-fires the empty-click branch. Real interactions render between the
+  two, so it only bites synchronous test scripts — drive them as separate steps.

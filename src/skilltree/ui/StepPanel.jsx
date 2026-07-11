@@ -5,12 +5,13 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Card, Badge, Button, IconButton, Icon } from '../../components';
+import { EventRow } from '../activity/EventRow.jsx';
 import { NODE_COLORS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../theme.js';
 
 const STATE_TONE = { locked: 'neutral', available: 'success', active: 'warning', complete: 'brand' };
 const STATE_LABEL = { locked: 'Locked', available: 'Available', active: 'In progress', complete: 'Complete' };
 
-export function StepPanel({ node, state, prerequisites, canComplete, autoFocusName, onRename, onPreviewKind, onRestoreKind, onSetKind, onMarkComplete, onDelete, onPreviewDeleteCost, onClearDeleteCost, onClose }) {
+export function StepPanel({ node, state, prerequisites, canComplete, canStart, history = [], autoFocusName, onRename, onPreviewKind, onRestoreKind, onSetKind, onStart, onMarkComplete, onReveal, onDelete, onPreviewDeleteCost, onClearDeleteCost, onClose }) {
   const [editingName, setEditingName] = useState(!!autoFocusName);
   const [draft, setDraft] = useState(node?.label ?? '');
   const inputRef = useRef(null);
@@ -125,17 +126,39 @@ export function StepPanel({ node, state, prerequisites, canComplete, autoFocusNa
         )}
       </div>
 
-      <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'flex-end' }}>
+      <div className="st-step-actions">
         {state === 'complete' ? (
           <Badge tone="brand" dot>Completed</Badge>
-        ) : (
-          <Button variant="primary" disabled={!canComplete} onClick={onMarkComplete} icon={<Icon name="check" />}>
+        ) : state === 'active' ? (
+          <Button variant="primary" onClick={onMarkComplete} icon={<Icon name="check" />}>
             Mark complete
           </Button>
+        ) : (
+          <>
+            <Button variant="secondary" disabled={!canComplete} onClick={onMarkComplete} icon={<Icon name="check" />}>
+              Complete
+            </Button>
+            <Button variant="primary" disabled={!canStart} onClick={onStart} icon={<Icon name="play" />}>
+              Start
+            </Button>
+          </>
         )}
       </div>
 
-      <div className="st-step-danger">
+      <div>
+        <div className="st-step-heading">History</div>
+        {history.length === 0 ? (
+          <div className="st-step-empty">No activity yet — this step hasn’t been touched.</div>
+        ) : (
+          <div className="st-step-history">
+            {history.map((event) => (
+              <EventRow key={event.id} event={event} node={node} now={Date.now()} onReveal={onReveal} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="st-step-danger" style={{ marginTop: 'auto' }}>
         <button
           type="button"
           className="st-step-delete"

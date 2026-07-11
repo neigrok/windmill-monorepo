@@ -62,6 +62,7 @@ export const roadmapTree = {
     { id: 'rename', label: 'Rename inline', icon: 'ruler', color: 'terracotta', status: 'complete', prerequisites: ['edit-mode'] },
     { id: 'kind-picker', label: 'Kind picker', icon: 'sun', color: 'terracotta', status: 'complete', prerequisites: ['edit-mode'] },
     { id: 'undo-redo', label: 'Undo / redo (⌘Z)', icon: 'flag', color: 'terracotta', status: 'complete', prerequisites: ['command-layer'] },
+    { id: 'activity-feed', label: 'Activity feed', icon: 'activity', color: 'terracotta', status: 'complete', prerequisites: ['edit-mode', 'state-tiers'] },
 
     // ---- radial constraints initiative — keep any user's DAG clean & beautiful ----
     // Working theory: elect one trunk parent per node → radial sectors by branch →
