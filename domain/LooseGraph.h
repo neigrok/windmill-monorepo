@@ -1,5 +1,6 @@
 #pragma once
 
+#include "domain/GraphState.h"
 #include "domain/Ids.h"
 #include "domain/Tree.h"
 
@@ -41,6 +42,7 @@ struct NodeRecord {
   Lww<std::string> icon;
   Lww<NodeColor> color;
   Lww<std::optional<Vec2>> position;
+  Lww<std::optional<std::string>> status;  // opaque authoring seed, round-tripped
 };
 
 // The authoritative, possibly-invalid state of one tree. Every command merges into it;
@@ -49,9 +51,11 @@ class LooseGraph {
 public:
   LooseGraph() = default;
   LooseGraph(const TreeData& seed, const Hlc& at);
+  explicit LooseGraph(const GraphState& state);
 
   void createNode(const NodeId& id, const std::string& label, const std::string& icon,
-                  NodeColor color, const std::optional<Vec2>& position, const Hlc& at);
+                  NodeColor color, const std::optional<Vec2>& position, const Hlc& at,
+                  const std::optional<std::string>& status = std::nullopt);
   void deleteNode(const NodeId& id, const Hlc& at);
   void setLabel(const NodeId& id, const std::string& label, const Hlc& at);
   void setColor(const NodeId& id, NodeColor color, const Hlc& at);
@@ -69,6 +73,7 @@ public:
   std::vector<Edge> redundantEdges() const;
 
   TreeData toTreeData(const TreeId& id, const std::string& title) const;
+  GraphState exportState() const;
 
 private:
   std::map<NodeId, NodeRecord> nodes_;

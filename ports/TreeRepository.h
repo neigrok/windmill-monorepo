@@ -1,24 +1,25 @@
 #pragma once
 
+#include "domain/GraphState.h"
 #include "domain/Ids.h"
-#include "domain/Tree.h"
 
 #include <optional>
+#include <string>
 
 namespace wm {
 
-// A stored tree document plus the seq of the last op folded into it.
+// A stored tree: its full loose-graph CRDT state, title, and the seq of the last op
+// folded into the snapshot.
 struct StoredTree {
-  TreeData data;
+  GraphState state;
+  std::string title;
   Seq head = 0;
 };
 
-// Loads and stores a tree's document. Phase 0 persists the projected TreeData; later
-// phases store the full loose-graph CRDT state behind this same port.
 struct TreeRepository {
   virtual ~TreeRepository() = default;
   virtual std::optional<StoredTree> load(const TreeId& tree) = 0;
-  virtual void save(const TreeId& tree, const TreeData& data, Seq head) = 0;
+  virtual void save(const TreeId& tree, const GraphState& state, const std::string& title, Seq head) = 0;
 };
 
 }

@@ -17,20 +17,20 @@ std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
   if (rows.empty()) return std::nullopt;
 
   const auto row = rows[0];
-  TreeData data = treeFromJson(parse(row["document"].as<std::string>()), tree);
-  data.title = row["title"].as<std::string>();
-  return StoredTree{std::move(data), static_cast<Seq>(row["head_seq"].as<long long>())};
+  GraphState state = graphStateFromJson(parse(row["document"].as<std::string>()));
+  return StoredTree{std::move(state), row["title"].as<std::string>(),
+                    static_cast<Seq>(row["head_seq"].as<long long>())};
 }
 
-void PgTreeRepository::save(const TreeId& tree, const TreeData& data, Seq head) {
-  std::string document = dump(toJson(data));
+void PgTreeRepository::save(const TreeId& tree, const GraphState& state, const std::string& title, Seq head) {
+  std::string document = dump(toJson(state));
   pqxx::connection conn{connString_};
   pqxx::work txn{conn};
   txn.exec_params(
       "INSERT INTO trees (id, title, head_seq, document) VALUES ($1, $2, $3, $4::jsonb) "
       "ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, head_seq = EXCLUDED.head_seq, "
       "document = EXCLUDED.document, updated_at = now()",
-      tree.str(), data.title, static_cast<long long>(head), document);
+      tree.str(), title, static_cast<long long>(head), document);
   txn.commit();
 }
 

@@ -2,6 +2,7 @@
 
 #include "adapters/json/TreeJson.h"
 #include "application/TreeRoom.h"
+#include "domain/LooseGraph.h"
 
 #include <mutex>
 
@@ -22,8 +23,9 @@ drogon::HttpResponsePtr error(drogon::HttpStatusCode code, const std::string& me
 }
 
 HttpApi::HttpApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
-                 std::shared_ptr<ProgressRepository> progress, UserId caller)
-    : registry_(std::move(registry)), trees_(std::move(trees)), progress_(std::move(progress)), caller_(std::move(caller)) {}
+                 std::shared_ptr<ProgressRepository> progress, Hlc genesis, UserId caller)
+    : registry_(std::move(registry)), trees_(std::move(trees)), progress_(std::move(progress)),
+      genesis_(std::move(genesis)), caller_(std::move(caller)) {}
 
 void HttpApi::getTree(const drogon::HttpRequestPtr&, HttpCallback&& callback, const std::string& treeId) {
   Json::Value body(Json::objectValue);
@@ -63,6 +65,7 @@ void HttpApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
     return;
   }
   TreeData data = treeFromJson(*json, TreeId{treeId});
+  GraphState state = LooseGraph(data, genesis_).exportState();  // seed full state from the posted tree
 
   Seq head = 0;
   {
@@ -70,7 +73,7 @@ void HttpApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
     registry_->evict(TreeId{treeId});  // drop any live room so the next open reloads this write
     std::optional<StoredTree> existing = trees_->load(TreeId{treeId});
     head = existing ? existing->head : 0;
-    trees_->save(TreeId{treeId}, data, head);
+    trees_->save(TreeId{treeId}, state, data.title, head);
   }
 
   Json::Value body(Json::objectValue);

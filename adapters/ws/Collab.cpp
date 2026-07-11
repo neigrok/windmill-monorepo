@@ -8,6 +8,7 @@ namespace wm {
 
 namespace {
 std::shared_ptr<Collab> g_collab;
+constexpr Seq kSnapshotEvery = 25;  // persist full state every N ops to bound tail replay
 
 UserId actorOf(const drogon::WebSocketConnectionPtr& conn) {
   return conn->getContextRef<UserId>();
@@ -93,6 +94,7 @@ void Collab::command(const drogon::WebSocketConnectionPtr& conn, const std::stri
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     TreeRoom& room = registry_.open(TreeId{treeId});
     applied = room.submit(incoming);
+    if (applied && applied->op.seq % kSnapshotEvery == 0) registry_.persist(TreeId{treeId});
   }
   if (!applied) return;
 

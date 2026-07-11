@@ -64,11 +64,18 @@ map unknown color strings to a rejected/flagged value.
       `RoomRegistry::strandFor` so HTTP reads and WS commands serialize together (fixes a
       latent read/write race). PUT evicts the room so the next open reloads the write.
       Verified: a socket-only `CreateNode` is visible on the next HTTP `GET`.
+- [x] **Full-CRDT-state persistence**: `LooseGraph::exportState()`/`LooseGraph(GraphState)`
+      serialize the complete state (per-field + element-set HLC stamps, tombstones, inert
+      edges). `trees.document` now stores `GraphState` JSON, not the `toTreeData`
+      projection, so reload is lossless. `status` became a first-class `LooseGraph` field
+      (fixing the regression where routing GET through rooms dropped it). A **snapshot
+      cadence** persists full state every 25 ops (`Collab` → `RoomRegistry::persist`), so
+      op-log replay on open is bounded. Verified live: roadmap migrated (42/42 status
+      restored), doc carries stamps, and 25 socket ops persisted `head_seq=25` with no
+      eviction. Domain test proves a delete+resurrect survives a full-state round-trip.
+      Note: the document format changed (TreeData → GraphState); old docs must be re-PUT
+      to migrate (done for the roadmap; junk scratch trees left as-is).
       Remaining Phase 2 polish:
-        - `trees.document` still persists only on evict, and as a *projection*
-          (`toTreeData`) that loses tombstones/inert edges. Reopen stays lossless via
-          full op-log replay, but a bounded snapshot cadence needs full-CRDT-state
-          serialization (stamps + tombstones), not the projection.
         - presence relay implemented (broadcastRaw) but not yet exercised.
         - frontend still loads over HTTP (Phase 0); no live WS editing in the browser yet.
 - [ ] Frontend save path (PUT) would need CORS preflight/OPTIONS fixed — Drogon's

@@ -30,4 +30,8 @@ TreeData TreeRoom::snapshot() const {
   return graph_.toTreeData(id_, title_);
 }
 
+GraphState TreeRoom::exportState() const {
+  return graph_.exportState();
+}
+
 }

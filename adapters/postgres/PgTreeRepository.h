@@ -13,7 +13,7 @@ public:
   explicit PgTreeRepository(std::string connString);
 
   std::optional<StoredTree> load(const TreeId& tree) override;
-  void save(const TreeId& tree, const TreeData& data, Seq head) override;
+  void save(const TreeId& tree, const GraphState& state, const std::string& title, Seq head) override;
 
 private:
   std::string connString_;

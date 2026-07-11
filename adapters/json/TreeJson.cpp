@@ -12,6 +12,21 @@ Json::Value edgeJson(const Edge& edge) {
   value["to"] = edge.to.str();
   return value;
 }
+
+std::string hlcText(const Hlc& at) {
+  return std::to_string(at.physicalMs) + ":" + std::to_string(at.counter) + ":" + at.actor;
+}
+
+Hlc hlcFromText(const std::string& text) {
+  Hlc hlc;
+  auto first = text.find(':');
+  auto second = text.find(':', first + 1);
+  if (first == std::string::npos || second == std::string::npos) return hlc;
+  hlc.physicalMs = std::stoull(text.substr(0, first));
+  hlc.counter = static_cast<std::uint32_t>(std::stoul(text.substr(first + 1, second - first - 1)));
+  hlc.actor = text.substr(second + 1);
+  return hlc;
+}
 }
 
 Json::Value toJson(const TreeData& data) {
@@ -108,6 +123,78 @@ TreeData treeFromJson(const Json::Value& root, const TreeId& id) {
     data.nodes.push_back(std::move(node));
   }
   return data;
+}
+
+Json::Value toJson(const GraphState& state) {
+  Json::Value root(Json::objectValue);
+  Json::Value nodes(Json::arrayValue);
+  for (const NodeStateEntry& node : state.nodes) {
+    Json::Value n(Json::objectValue);
+    n["id"] = node.id.str();
+    n["createdAt"] = hlcText(node.createdAt);
+    n["deletedAt"] = hlcText(node.deletedAt);
+    n["label"] = node.label;
+    n["labelAt"] = hlcText(node.labelAt);
+    n["icon"] = node.icon;
+    n["iconAt"] = hlcText(node.iconAt);
+    n["color"] = std::string(toString(node.color));
+    n["colorAt"] = hlcText(node.colorAt);
+    if (node.position) {
+      Json::Value position(Json::objectValue);
+      position["x"] = node.position->x;
+      position["y"] = node.position->y;
+      n["position"] = position;
+    }
+    n["positionAt"] = hlcText(node.positionAt);
+    if (node.status) n["status"] = *node.status;
+    n["statusAt"] = hlcText(node.statusAt);
+    nodes.append(n);
+  }
+  root["nodes"] = nodes;
+
+  Json::Value edges(Json::arrayValue);
+  for (const EdgeStateEntry& edge : state.edges) {
+    Json::Value e = edgeJson(edge.edge);
+    e["addedAt"] = hlcText(edge.addedAt);
+    e["removedAt"] = hlcText(edge.removedAt);
+    edges.append(e);
+  }
+  root["edges"] = edges;
+  return root;
+}
+
+GraphState graphStateFromJson(const Json::Value& root) {
+  GraphState state;
+  for (const Json::Value& n : root["nodes"]) {
+    NodeStateEntry node;
+    node.id = NodeId{n["id"].asString()};
+    node.createdAt = hlcFromText(n.get("createdAt", "").asString());
+    node.deletedAt = hlcFromText(n.get("deletedAt", "").asString());
+    node.label = n.get("label", "").asString();
+    node.labelAt = hlcFromText(n.get("labelAt", "").asString());
+    node.icon = n.get("icon", "").asString();
+    node.iconAt = hlcFromText(n.get("iconAt", "").asString());
+    node.color = parseColor(n.get("color", "terracotta").asString()).value_or(NodeColor::terracotta);
+    node.colorAt = hlcFromText(n.get("colorAt", "").asString());
+    if (n.isMember("position") && n["position"].isObject()) {
+      Vec2 position;
+      position.x = n["position"].get("x", 0.0).asDouble();
+      position.y = n["position"].get("y", 0.0).asDouble();
+      node.position = position;
+    }
+    node.positionAt = hlcFromText(n.get("positionAt", "").asString());
+    if (n.isMember("status") && n["status"].isString()) node.status = n["status"].asString();
+    node.statusAt = hlcFromText(n.get("statusAt", "").asString());
+    state.nodes.push_back(std::move(node));
+  }
+  for (const Json::Value& e : root["edges"]) {
+    EdgeStateEntry edge;
+    edge.edge = Edge{NodeId{e["from"].asString()}, NodeId{e["to"].asString()}};
+    edge.addedAt = hlcFromText(e.get("addedAt", "").asString());
+    edge.removedAt = hlcFromText(e.get("removedAt", "").asString());
+    state.edges.push_back(std::move(edge));
+  }
+  return state;
 }
 
 std::string dump(const Json::Value& value) {

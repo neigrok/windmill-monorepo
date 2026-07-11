@@ -7,21 +7,40 @@ namespace wm {
 
 LooseGraph::LooseGraph(const TreeData& seed, const Hlc& at) {
   for (const auto& node : seed.nodes) {
-    createNode(node.id, node.label, node.icon, node.color, node.position, at);
+    createNode(node.id, node.label, node.icon, node.color, node.position, at, node.status);
   }
   for (const auto& node : seed.nodes) {
     for (const auto& prereq : node.prerequisites) addEdge(prereq, node.id, at);
   }
 }
 
+LooseGraph::LooseGraph(const GraphState& state) {
+  for (const auto& node : state.nodes) {
+    NodeRecord record;
+    record.life.addedAt = node.createdAt;
+    record.life.removedAt = node.deletedAt;
+    record.label = {node.label, node.labelAt};
+    record.icon = {node.icon, node.iconAt};
+    record.color = {node.color, node.colorAt};
+    record.position = {node.position, node.positionAt};
+    record.status = {node.status, node.statusAt};
+    nodes_[node.id] = std::move(record);
+  }
+  for (const auto& edge : state.edges) {
+    edges_[edge.edge] = ElementSet{edge.addedAt, edge.removedAt};
+  }
+}
+
 void LooseGraph::createNode(const NodeId& id, const std::string& label, const std::string& icon,
-                            NodeColor color, const std::optional<Vec2>& position, const Hlc& at) {
+                            NodeColor color, const std::optional<Vec2>& position, const Hlc& at,
+                            const std::optional<std::string>& status) {
   NodeRecord& record = nodes_[id];
   record.life.add(at);
   record.label.merge(label, at);
   record.icon.merge(icon, at);
   record.color.merge(color, at);
   if (position) record.position.merge(position, at);
+  if (status) record.status.merge(status, at);
 }
 
 void LooseGraph::deleteNode(const NodeId& id, const Hlc& at) {
@@ -67,6 +86,7 @@ std::optional<NodeSpec> LooseGraph::nodeView(const NodeId& id) const {
   spec.icon = record.icon.value;
   spec.color = record.color.value;
   spec.position = record.position.value;
+  spec.status = record.status.value;
   for (const auto& edge : liveEdges()) {
     if (edge.to == id) spec.prerequisites.push_back(edge.from);
   }
@@ -147,10 +167,36 @@ TreeData LooseGraph::toTreeData(const TreeId& id, const std::string& title) cons
     spec.icon = record.icon.value;
     spec.color = record.color.value;
     spec.position = record.position.value;
+    spec.status = record.status.value;
     if (auto it = parents.find(nodeId); it != parents.end()) spec.prerequisites = it->second;
     data.nodes.push_back(std::move(spec));
   }
   return data;
+}
+
+GraphState LooseGraph::exportState() const {
+  GraphState state;
+  for (const auto& [id, record] : nodes_) {
+    NodeStateEntry entry;
+    entry.id = id;
+    entry.createdAt = record.life.addedAt;
+    entry.deletedAt = record.life.removedAt;
+    entry.label = record.label.value;
+    entry.labelAt = record.label.stamp;
+    entry.icon = record.icon.value;
+    entry.iconAt = record.icon.stamp;
+    entry.color = record.color.value;
+    entry.colorAt = record.color.stamp;
+    entry.position = record.position.value;
+    entry.positionAt = record.position.stamp;
+    entry.status = record.status.value;
+    entry.statusAt = record.status.stamp;
+    state.nodes.push_back(std::move(entry));
+  }
+  for (const auto& [edge, element] : edges_) {
+    state.edges.push_back(EdgeStateEntry{edge, element.addedAt, element.removedAt});
+  }
+  return state;
 }
 
 }

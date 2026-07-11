@@ -41,8 +41,8 @@ struct FakeTreeRepository : TreeRepository {
     if (it == byId.end()) return std::nullopt;
     return it->second;
   }
-  void save(const TreeId& tree, const TreeData& data, Seq head) override {
-    byId[tree.str()] = StoredTree{data, head};
+  void save(const TreeId& tree, const GraphState& state, const std::string& title, Seq head) override {
+    byId[tree.str()] = StoredTree{state, title, head};
   }
 };
 

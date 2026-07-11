@@ -4,8 +4,8 @@
 
 namespace wm {
 
-RoomRegistry::RoomRegistry(TreeRepository& repo, OpLog& ops, PresenceBus& bus, Hlc genesis)
-    : repo_(repo), ops_(ops), bus_(bus), genesis_(std::move(genesis)) {}
+RoomRegistry::RoomRegistry(TreeRepository& repo, OpLog& ops, PresenceBus& bus)
+    : repo_(repo), ops_(ops), bus_(bus) {}
 
 TreeRoom& RoomRegistry::open(const TreeId& id) {
   std::lock_guard<std::mutex> lock(mutex_);
@@ -15,8 +15,8 @@ TreeRoom& RoomRegistry::open(const TreeId& id) {
   std::optional<StoredTree> stored = repo_.load(id);
   if (!stored) throw std::runtime_error("no such tree \"" + id.str() + "\"");
 
-  LooseGraph graph(stored->data, genesis_);
-  auto room = std::make_unique<TreeRoom>(id, stored->data.title, std::move(graph), stored->head, ops_, bus_);
+  LooseGraph graph(stored->state);  // full CRDT state — lossless
+  auto room = std::make_unique<TreeRoom>(id, stored->title, std::move(graph), stored->head, ops_, bus_);
   // The document is a snapshot at stored->head; replay the op-log tail to reach the
   // true current state (and the true head), so new ops never collide on seq.
   for (const AppliedOp& op : ops_.since(id, stored->head)) room->replay(op);
@@ -29,8 +29,23 @@ void RoomRegistry::evict(const TreeId& id) {
   std::lock_guard<std::mutex> lock(mutex_);
   auto it = rooms_.find(id);
   if (it == rooms_.end()) return;
-  repo_.save(id, it->second->snapshot(), it->second->head());
+  repo_.save(id, it->second->exportState(), it->second->title(), it->second->head());
   rooms_.erase(it);
+}
+
+void RoomRegistry::persist(const TreeId& id) {
+  GraphState state;
+  std::string title;
+  Seq head = 0;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = rooms_.find(id);
+    if (it == rooms_.end()) return;
+    state = it->second->exportState();
+    title = it->second->title();
+    head = it->second->head();
+  }
+  repo_.save(id, state, title, head);  // I/O outside the map lock
 }
 
 bool RoomRegistry::isOpen(const TreeId& id) const {

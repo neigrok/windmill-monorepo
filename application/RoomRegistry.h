@@ -16,10 +16,11 @@ namespace wm {
 // its document (seeding the loose graph), and evicts idle ones after persisting.
 class RoomRegistry {
 public:
-  RoomRegistry(TreeRepository& repo, OpLog& ops, PresenceBus& bus, Hlc genesis);
+  RoomRegistry(TreeRepository& repo, OpLog& ops, PresenceBus& bus);
 
   TreeRoom& open(const TreeId& id);
   void evict(const TreeId& id);
+  void persist(const TreeId& id);  // snapshot a live room's full state without evicting
   bool isOpen(const TreeId& id) const;
 
   // The per-tree strand: one writer per tree (§11). Every caller that touches a room —
@@ -30,7 +31,6 @@ private:
   TreeRepository& repo_;
   OpLog& ops_;
   PresenceBus& bus_;
-  Hlc genesis_;
   mutable std::mutex mutex_;
   std::map<TreeId, std::unique_ptr<TreeRoom>> rooms_;
   std::mutex strandsMutex_;

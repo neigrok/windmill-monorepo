@@ -26,11 +26,11 @@ int main() {
   // Rooms are the authority; HTTP reads and socket edits both go through them (Phase 2).
   auto oplog = std::make_shared<PgOpLog>(connString);
   auto bus = std::make_shared<WsPresenceBus>();
-  auto registry = std::make_shared<RoomRegistry>(*trees, *oplog, *bus, genesis);
+  auto registry = std::make_shared<RoomRegistry>(*trees, *oplog, *bus);
   setCollab(std::make_shared<Collab>(*registry, *oplog, *bus));
   linkTreeSocket();
 
-  auto api = std::make_shared<HttpApi>(registry, trees, progress, UserId{std::string("dev")});
+  auto api = std::make_shared<HttpApi>(registry, trees, progress, genesis, UserId{std::string("dev")});
 
   auto& app = drogon::app();
 

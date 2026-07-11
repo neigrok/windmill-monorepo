@@ -20,7 +20,7 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 class HttpApi {
 public:
   HttpApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
-          std::shared_ptr<ProgressRepository> progress, UserId caller);
+          std::shared_ptr<ProgressRepository> progress, Hlc genesis, UserId caller);
 
   void getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);
   void putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);
@@ -31,6 +31,7 @@ private:
   std::shared_ptr<RoomRegistry> registry_;
   std::shared_ptr<TreeRepository> trees_;
   std::shared_ptr<ProgressRepository> progress_;
+  Hlc genesis_;
   UserId caller_;
 };
 

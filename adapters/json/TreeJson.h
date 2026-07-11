@@ -1,5 +1,6 @@
 #pragma once
 
+#include "domain/GraphState.h"
 #include "domain/Ids.h"
 #include "domain/Tree.h"
 #include "domain/TreeDiagnostics.h"
@@ -15,8 +16,10 @@ namespace wm {
 Json::Value toJson(const TreeData& data);
 Json::Value toJson(const Progress& progress);
 Json::Value toJson(const TreeDiagnostics& diagnostics);
+Json::Value toJson(const GraphState& state);  // the persisted document
 
 TreeData treeFromJson(const Json::Value& root, const TreeId& id);
+GraphState graphStateFromJson(const Json::Value& root);
 
 std::string dump(const Json::Value& value);
 Json::Value parse(const std::string& text);

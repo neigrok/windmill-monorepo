@@ -1,4 +1,5 @@
 #include "application/RoomRegistry.h"
+#include "domain/LooseGraph.h"
 #include "test/application/Fakes.h"
 #include "test/testing.h"
 
@@ -8,16 +9,13 @@ using namespace wm::fake;
 namespace {
 
 StoredTree oneNodeTree() {
-  TreeData data;
-  data.id = tid();
-  data.title = "Seeded";
-  NodeSpec node;
-  node.id = nid("seed");
-  node.label = "Seed";
-  node.icon = "icon";
-  node.color = NodeColor::sky;
-  data.nodes = {node};
-  return StoredTree{data, 7};
+  LooseGraph graph;
+  graph.createNode(nid("seed"), "Seed", "icon", NodeColor::sky, std::nullopt, at(1));
+  return StoredTree{graph.exportState(), "Seeded", 7};
+}
+
+std::size_t nodeCount(const GraphState& state) {
+  return LooseGraph(state).presentNodeIds().size();
 }
 
 }
@@ -27,7 +25,7 @@ TEST(registry_opens_room_from_repository) {
   FakeOpLog log;
   FakeBus bus;
   repo.byId["t"] = oneNodeTree();
-  RoomRegistry registry(repo, log, bus, at(1));
+  RoomRegistry registry(repo, log, bus);
 
   TreeRoom& room = registry.open(tid());
   CHECK(registry.isOpen(tid()));
@@ -40,7 +38,7 @@ TEST(registry_open_unknown_tree_throws) {
   FakeTreeRepository repo;
   FakeOpLog log;
   FakeBus bus;
-  RoomRegistry registry(repo, log, bus, at(1));
+  RoomRegistry registry(repo, log, bus);
 
   bool threw = false;
   try {
@@ -55,20 +53,33 @@ TEST(registry_replays_op_log_tail_on_open) {
   FakeTreeRepository repo;
   FakeOpLog log;
   FakeBus bus;
-  TreeData empty;
-  empty.id = tid();
-  empty.title = "Empty";
-  repo.byId["t"] = StoredTree{empty, 0};  // snapshot is empty at head 0
+  repo.byId["t"] = StoredTree{GraphState{}, "Empty", 0};  // snapshot is empty at head 0
   log.byTree["t"] = {
     AppliedOp{1, "o1", createNode("a"), at(1), uid()},
     AppliedOp{2, "o2", createNode("b"), at(2), uid()},
     AppliedOp{3, "o3", AddEdge{nid("a"), nid("b")}, at(3), uid()},
   };
-  RoomRegistry registry(repo, log, bus, at(0));
+  RoomRegistry registry(repo, log, bus);
 
   TreeRoom& room = registry.open(tid());
   CHECK_EQ(room.head(), static_cast<Seq>(3));      // head advanced to the log tail
   CHECK_EQ(room.snapshot().nodes.size(), 2u);      // state rebuilt from replay
+}
+
+TEST(registry_persist_snapshots_full_state_without_evicting) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  repo.byId["t"] = oneNodeTree();
+  RoomRegistry registry(repo, log, bus);
+
+  TreeRoom& room = registry.open(tid());
+  room.submit(Incoming{"c1", createNode("added"), at(10), uid()});
+  registry.persist(tid());
+
+  CHECK(registry.isOpen(tid()));                       // still live
+  CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(8));  // snapshot advanced
+  CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);
 }
 
 TEST(registry_evict_persists_and_closes) {
@@ -76,7 +87,7 @@ TEST(registry_evict_persists_and_closes) {
   FakeOpLog log;
   FakeBus bus;
   repo.byId["t"] = oneNodeTree();
-  RoomRegistry registry(repo, log, bus, at(1));
+  RoomRegistry registry(repo, log, bus);
 
   TreeRoom& room = registry.open(tid());
   room.submit(Incoming{"c1", createNode("added"), at(10), uid()});
@@ -84,5 +95,5 @@ TEST(registry_evict_persists_and_closes) {
 
   CHECK_FALSE(registry.isOpen(tid()));
   CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(8));
-  CHECK_EQ(repo.byId["t"].data.nodes.size(), 2u);
+  CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);
 }

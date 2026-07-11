@@ -47,6 +47,8 @@ public:
 
   TreeDiagnostics diagnose() const;
   TreeData snapshot() const;
+  GraphState exportState() const;
+  const std::string& title() const { return title_; }
   Seq head() const { return head_; }
 
 private:

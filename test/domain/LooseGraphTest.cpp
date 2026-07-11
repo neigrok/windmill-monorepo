@@ -80,6 +80,44 @@ TEST(delete_tombstones_then_resurrection_revives_edges) {
   CHECK_EQ(g.liveEdges().size(), 1u);
 }
 
+TEST(status_seed_round_trips_through_projection) {
+  LooseGraph g;
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1), std::string("complete"));
+  auto view = g.nodeView(nid("a"));
+  CHECK(view->status.has_value());
+  CHECK_EQ(*view->status, std::string("complete"));
+}
+
+TEST(export_import_round_trips_full_state) {
+  LooseGraph g;
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, Vec2{1, 2}, at(1));
+  g.createNode(nid("b"), "B", "x", NodeColor::gold, std::nullopt, at(1));
+  g.addEdge(nid("a"), nid("b"), at(2));
+
+  LooseGraph reloaded(g.exportState());
+  CHECK(reloaded.presentNodeIds() == g.presentNodeIds());
+  CHECK(reloaded.liveEdges() == g.liveEdges());
+  CHECK_EQ(reloaded.nodeView(nid("a"))->color, NodeColor::sky);
+  CHECK(reloaded.nodeView(nid("a"))->position.has_value());
+}
+
+TEST(export_import_preserves_tombstones_and_inert_edges) {
+  LooseGraph g;
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("b"), "B", "x", NodeColor::sky, std::nullopt, at(1));
+  g.addEdge(nid("a"), nid("b"), at(2));
+  g.deleteNode(nid("b"), at(3));  // b tombstoned; edge a->b now inert
+
+  LooseGraph reloaded(g.exportState());  // full-state round-trip (the projection would lose these)
+  CHECK_FALSE(reloaded.hasNode(nid("b")));
+  CHECK_EQ(reloaded.liveEdges().size(), 0u);
+  CHECK_EQ(reloaded.presentEdges().size(), 1u);  // inert edge survived
+
+  reloaded.createNode(nid("b"), "B", "x", NodeColor::sky, std::nullopt, at(4));  // resurrect
+  CHECK(reloaded.hasNode(nid("b")));
+  CHECK_EQ(reloaded.liveEdges().size(), 1u);  // edge revived — lossless
+}
+
 TEST(merge_is_order_independent) {
   std::vector<std::pair<Command, Hlc>> ops = {
     {CreateNode{nid("a"), "A", "x", NodeColor::sky, std::nullopt, std::nullopt}, at(1)},
