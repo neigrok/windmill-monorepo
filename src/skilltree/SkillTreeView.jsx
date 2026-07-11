@@ -26,6 +26,8 @@ import { CollabClient } from './persistence/CollabClient.js';
 import { PresenceLayer } from './presence/PresenceLayer.jsx';
 import { TreeStore } from './persistence/TreeStore.js';
 import { ProgressStore } from './persistence/ProgressStore.js';
+import { WorkspaceStore } from './persistence/WorkspaceStore.js';
+import { emptyWorkspace, arcFraction, addSubtask, toggleSubtask, editSubtask, deleteSubtask, setNote, addLink, deleteLink } from './model/NodeWorkspace.js';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
 import { TreeEditor } from './editing/TreeEditor.js';
 import { repositionNode, addChildNode, renameNode, deleteNode, addEdge, removeEdge, reconnectEdge, setNodeColor, transitiveReduction } from './editing/edits.js';
@@ -34,6 +36,8 @@ import { NODE_SIZE } from './theme.js';
 const layoutEngine = new RadialLayoutEngine();
 const treeStore = new TreeStore();
 const progressStore = new ProgressStore();
+const workspaceStore = new WorkspaceStore();
+const AUTO_COMPLETE_HOLD = 600; // held breath before auto-completing: arc-close 280 + hold 320 (§4)
 const EMPTY_BOUNDS = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 const CHILD_DROP = NODE_SIZE * 2.6; // world units a new child spawns below its parent
 const SIBLING_GAP = NODE_SIZE * 1.8; // horizontal spread between successive new children
@@ -61,6 +65,9 @@ export function SkillTreeView() {
   const selectedIdRef = useRef(null);
   const toastTimersRef = useRef([]); // pending hold→leave→unmount timers for the active toast
   const toastKeyRef = useRef(0); // monotonic key so a replacing toast remounts and re-enters
+  const workspaceByNodeRef = useRef({}); // nodeId → workspace; the fresh read for arc pushes + persistence
+  const pendingCompleteRef = useRef(new Map()); // nodeId → auto-complete timer awaiting its held breath
+  const completeStepRef = useRef(null); // always points at the latest completeStep (for the deferred beat)
 
   const [datasetSize, setDatasetSize] = useState('demo');
   const [loading, setLoading] = useState(true);
@@ -70,6 +77,7 @@ export function SkillTreeView() {
   const [inProgress, setInProgress] = useState(() => new Set());
   const [startedAt, setStartedAt] = useState(() => ({})); // { nodeId: ms } — when work began
   const [completedAt, setCompletedAt] = useState(() => ({})); // { nodeId: ms } — when it finished
+  const [workspaceByNode, setWorkspaceByNode] = useState(() => ({})); // { nodeId: workspace } — sub-tasks, note, links
   const [selectedId, setSelectedId] = useState(null);
   const [hoveredId, setHoveredId] = useState(null);
   const [bounds, setBounds] = useState(EMPTY_BOUNDS);
@@ -106,6 +114,26 @@ export function SkillTreeView() {
   const persistProgress = useCallback((next) => {
     if (!seedRef.current || datasetSizeRef.current !== 'demo') return;
     progressStore.save(seedRef.current.id, next);
+  }, []);
+
+  // Durable per-node workspaces (F13): same dataset guard as progress — only the
+  // dogfood roadmap persists; the perf tree is a throwaway. Callers pass the
+  // freshly-computed map, since the state setter is async.
+  const persistWorkspace = useCallback((byNode) => {
+    if (!seedRef.current || datasetSizeRef.current !== 'demo') return;
+    workspaceStore.save(seedRef.current.id, byNode);
+  }, []);
+
+  // The arc feed (§3): hand the scene a fraction for every node whose workspace has
+  // sub-tasks (nodes absent = no arc). Reads the fresh ref, so it can fire right after
+  // a commit. The scene caches these and re-applies them across model rebuilds.
+  const pushArcs = useCallback(() => {
+    const arcs = new Map();
+    for (const [nodeId, ws] of Object.entries(workspaceByNodeRef.current)) {
+      const fraction = arcFraction(ws);
+      if (fraction !== null) arcs.set(nodeId, fraction);
+    }
+    sceneRef.current?.setArcs?.(arcs);
   }, []);
 
   // The single status beat (canonical §2): a toast enters fade+rise, holds, then
@@ -204,7 +232,10 @@ export function SkillTreeView() {
     if (seedRef.current) {
       treeStore.clear(seedRef.current.id);
       progressStore.clear(seedRef.current.id);
+      workspaceStore.clear(seedRef.current.id);
     }
+    pendingCompleteRef.current.forEach(clearTimeout);
+    pendingCompleteRef.current.clear();
     setReloadKey((key) => key + 1);
   }, []);
 
@@ -508,6 +539,7 @@ export function SkillTreeView() {
   }, [selectedId, autoFocusNameId]);
 
   useEffect(() => () => toastTimersRef.current.forEach(clearTimeout), []);
+  useEffect(() => () => pendingCompleteRef.current.forEach(clearTimeout), []);
 
   // The pipeline itself: repository loads → domain computes → scene renders.
   // Re-runs whenever the dataset toggle swaps demo ↔ huge.
@@ -540,6 +572,10 @@ export function SkillTreeView() {
       }
       const startedAtMap = savedProgress?.startedAt ?? {};
       const completedAtMap = savedProgress?.completedAt ?? {};
+      // Per-node workspaces overlay the same way — saved sub-tasks/notes/links win, and
+      // the throwaway perf tree keeps none. The arc feed reads this hydrated map below.
+      const savedWorkspace = datasetSize === 'demo' ? workspaceStore.load(seed.id) : null;
+      const workspaceMap = savedWorkspace ?? {};
       const states = UnlockRules.derive(nextTree, progress);
       const rawLayout = await layoutEngine.layout(nextTree);
       const positions = applyNudges(rawLayout, nextTree);
@@ -566,6 +602,9 @@ export function SkillTreeView() {
       setInProgress(new Set(progress.inProgress));
       setStartedAt(startedAtMap);
       setCompletedAt(completedAtMap);
+      workspaceByNodeRef.current = workspaceMap;
+      setWorkspaceByNode(workspaceMap);
+      pushArcs(); // seed the gauges from the hydrated workspaces (model is already applied)
       setLogVersion((version) => version + 1);
       setTicker([]);
       setNewEventIds(new Set());
@@ -623,6 +662,7 @@ export function SkillTreeView() {
 
   useEffect(() => { completedRef.current = completed; }, [completed]);
   useEffect(() => { inProgressRef.current = inProgress; }, [inProgress]);
+  useEffect(() => { workspaceByNodeRef.current = workspaceByNode; }, [workspaceByNode]);
   useEffect(() => { feedOpenRef.current = feedOpen; }, [feedOpen]);
   useEffect(() => { pinnedRef.current = pinned; }, [pinned]);
 
@@ -704,6 +744,8 @@ export function SkillTreeView() {
     sceneRef.current?.announceCeremony(opened > 0 ? `Step completed: ${label} · ${opened} more opened` : `Step completed: ${label}`);
   }
 
+  completeStepRef.current = completeStep; // the auto-complete timer fires the freshest one
+
   function handleMarkComplete() {
     if (selectedId) completeStep(selectedId);
   }
@@ -736,6 +778,81 @@ export function SkillTreeView() {
     setCompletedAt(nextCompletedAt);
     persistProgress({ completed: nextCompleted, inProgress: nextInProgress, startedAt: nextStartedAt, completedAt: nextCompletedAt });
   }
+
+  // Any workspace change on a node calls off a pending auto-complete for it (§4) —
+  // an uncheck, a note edit, a link, all count as "the user is still working".
+  const cancelAutoComplete = useCallback((nodeId) => {
+    const timer = pendingCompleteRef.current.get(nodeId);
+    if (!timer) return;
+    clearTimeout(timer);
+    pendingCompleteRef.current.delete(nodeId);
+  }, []);
+
+  // The one seam every workspace edit funnels through: store the node's next
+  // workspace (fresh ref for immediate reads), render it, and persist the map.
+  const commitWorkspace = useCallback((nodeId, nextWs) => {
+    const nextMap = { ...workspaceByNodeRef.current, [nodeId]: nextWs };
+    workspaceByNodeRef.current = nextMap;
+    setWorkspaceByNode(nextMap);
+    persistWorkspace(nextMap);
+  }, [persistWorkspace]);
+
+  const onAddSubtask = useCallback((nodeId, label) => {
+    cancelAutoComplete(nodeId);
+    const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
+    commitWorkspace(nodeId, addSubtask(current, label));
+    pushArcs();
+  }, [cancelAutoComplete, commitWorkspace, pushArcs]);
+
+  // A check can close the gauge: after the fraction is pushed, if every box is now
+  // done and the node isn't already complete, hold a breath then run F1's completion
+  // beat (bloom + unlocks). The timer is cancelable — a later change lands the
+  // cancelAutoComplete above first. Sticky (§4.3): only a check ever schedules this.
+  const onToggleSubtask = useCallback((nodeId, subtaskId) => {
+    cancelAutoComplete(nodeId);
+    const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
+    const next = toggleSubtask(current, subtaskId);
+    commitWorkspace(nodeId, next);
+    pushArcs();
+    const allDone = next.subtasks.length > 0 && next.subtasks.every((subtask) => subtask.done);
+    if (!allDone || completedRef.current.has(nodeId)) return;
+    const timer = setTimeout(() => {
+      pendingCompleteRef.current.delete(nodeId);
+      completeStepRef.current?.(nodeId);
+    }, AUTO_COMPLETE_HOLD);
+    pendingCompleteRef.current.set(nodeId, timer);
+  }, [cancelAutoComplete, commitWorkspace, pushArcs]);
+
+  const onEditSubtask = useCallback((nodeId, subtaskId, label) => {
+    cancelAutoComplete(nodeId);
+    const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
+    commitWorkspace(nodeId, editSubtask(current, subtaskId, label));
+  }, [cancelAutoComplete, commitWorkspace]);
+
+  const onDeleteSubtask = useCallback((nodeId, subtaskId) => {
+    cancelAutoComplete(nodeId);
+    const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
+    commitWorkspace(nodeId, deleteSubtask(current, subtaskId));
+    pushArcs();
+  }, [cancelAutoComplete, commitWorkspace, pushArcs]);
+
+  const onSetNote = useCallback((nodeId, markdown) => {
+    cancelAutoComplete(nodeId);
+    const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
+    commitWorkspace(nodeId, setNote(current, markdown));
+  }, [cancelAutoComplete, commitWorkspace]);
+
+  const onAddLink = useCallback((nodeId, rawUrl) => {
+    cancelAutoComplete(nodeId);
+    const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
+    commitWorkspace(nodeId, addLink(current, rawUrl));
+  }, [cancelAutoComplete, commitWorkspace]);
+
+  const onDeleteLink = useCallback((nodeId, linkId) => {
+    cancelAutoComplete(nodeId);
+    const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
+    commitWorkspace(nodeId, deleteLink(current, linkId));
+  }, [cancelAutoComplete, commitWorkspace]);
 
   function handleZoomIn() {
     sceneRef.current?.zoomBy(1.2);
@@ -805,8 +922,16 @@ export function SkillTreeView() {
               startedAt={startedAt[selectedId]}
               completedAt={completedAt[selectedId]}
               history={selectedHistory}
+              workspace={workspaceByNode[selectedId] ?? emptyWorkspace()}
               autoFocusName={selectedId !== null && selectedId === autoFocusNameId}
               onRename={handleRename}
+              onAddSubtask={onAddSubtask}
+              onToggleSubtask={onToggleSubtask}
+              onEditSubtask={onEditSubtask}
+              onDeleteSubtask={onDeleteSubtask}
+              onSetNote={onSetNote}
+              onAddLink={onAddLink}
+              onDeleteLink={onDeleteLink}
               onPreviewKind={(id, kind) => sceneRef.current?.previewKind(id, kind)}
               onRestoreKind={(id) => sceneRef.current?.restoreKind(id)}
               onSetKind={handleSetKind}

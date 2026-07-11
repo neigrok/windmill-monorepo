@@ -77,6 +77,7 @@ export class SkillTreeScene {
     this.hoveredId = null;
     this.selectedEdge = null;
     this.hoveredEdge = null;
+    this.lastArcs = new Map(); // last workspace arc fractions — re-applied across model rebuilds
 
     this.viewportListeners = new Set();
     this.running = false;
@@ -127,6 +128,7 @@ export class SkillTreeScene {
   setModel(renderModel) {
     this.director.cancel();
     this.nodeStates = new Map(); // a fresh dataset re-baselines: the next applyStates plants or paints
+    this.lastArcs = new Map();   // and drops any arcs the previous dataset carried
     this.installModel(renderModel);
     this.selectedId = null;
     this.hoveredId = null;
@@ -169,6 +171,7 @@ export class SkillTreeScene {
 
     this.syncIconAtlas(renderModel.nodes);
     this.nodeBatch.setInstances(renderModel.nodes, this.iconAtlas);
+    this.nodeBatch.setArcs(this.lastArcs, this.elapsedSeconds); // rebuild reset the arcs; re-apply them (snaps, no ease)
     this.connectorBatch.setModel(renderModel);
     this.labelOverlay.setModel(renderModel, this.spatialGrid);
     this.iconOverlay.setModel(renderModel, this.spatialGrid);
@@ -259,6 +262,15 @@ export class SkillTreeScene {
   announceCeremony(summary, opts = {}) {
     this.pendingSummary = summary;
     this.pendingHasAction = !!opts.hasAction;
+  }
+
+  // Push each node's sub-task completion fraction (done / total) to the progress arcs.
+  // arcMap is Map<nodeId, fraction in [0,1]>; a node absent from the map has no sub-tasks and
+  // shows no arc. We cache it so installModel can re-apply after a structural rebuild — the
+  // workspace layer only calls this when its data changes, not on every add/relayout.
+  setArcs(arcMap) {
+    this.lastArcs = arcMap;
+    this.nodeBatch.setArcs(arcMap, this.elapsedSeconds);
   }
 
   // ---- arrival cascade (#3) --------------------------------------------

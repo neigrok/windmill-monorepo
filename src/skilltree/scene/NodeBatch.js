@@ -12,6 +12,7 @@ import { NODE_COLORS, NODE_COLOR_NAMES, nodeTier, BACKGROUND, NODE_SIZE } from '
 const QUAD_PADDING = 1.9;
 const NC = NODE_COLOR_NAMES.length;
 const BLOOM_NONE = -1000; // sentinel: this node is not blooming
+const ARC_NONE = -1;      // sentinel arc target: this node has no sub-tasks -> no arc, no track
 
 const VERTEX_SRC = `#version 300 es
 precision highp float;
@@ -28,6 +29,7 @@ layout(location=9) in float aEmphasis;
 layout(location=10) in float aPulseStart;
 layout(location=11) in vec4 aBloom;   // (start, fromTier, durSec, blossom)
 layout(location=12) in vec4 aFeedback; // (hoverStart, hoverTo, pressStart, pressTo)
+layout(location=13) in vec3 aArc;      // (fromFraction, targetFraction, easeStart); target < 0 == no arc
 uniform vec2 uResolution;
 uniform vec2 uCamera;
 uniform float uZoom;
@@ -47,6 +49,7 @@ out float vEmphasis;
 out float vPulseStart;
 out vec4 vBloom;
 out vec4 vFeedback;
+out vec3 vArc;
 const float PI = 3.14159265;
 const float BLOSSOM = 0.62;   // scale-settle window (s)
 const float HOVER_DUR = 0.28; // hover feedback ease (ease-soft)
@@ -69,6 +72,7 @@ void main() {
   vPulseStart = aPulseStart;
   vBloom = aBloom;
   vFeedback = aFeedback;
+  vArc = aArc;
   // scale settle: a finite 1->peak->1 bump while a node blooms (motion only)
   float settle = 1.0;
   if (uMotion > 0.5 && aBloom.x > -900.0) {
@@ -105,7 +109,9 @@ in float vEmphasis;
 in float vPulseStart;
 in vec4 vBloom;
 in vec4 vFeedback;
+in vec3 vArc;
 uniform float uPadding;
+uniform float uZoom;
 uniform float uTime;
 uniform float uMotion;
 uniform vec4 uGlow[${NC}];
@@ -135,10 +141,20 @@ const float PULSE_CYCLE = 1.4;   // one crest per cycle -> two crests, slightly 
 const float PULSE_CREST1 = 1.5;  // first crest (boosted for legibility)
 const float PULSE_CREST2 = 1.15; // second crest (decaying)
 const float HOVER_DUR = 0.28;    // hover feedback ease (matches vertex)
+const float ARC_R = 0.98;        // progress-arc radius: outside the body, inside the crown/halo
+const float ARC_W = 0.04;        // arc + track line width (~2px) with a soft edge
+const float ARC_EASE = 0.28;     // fraction-change ease (280ms == --ease-standard)
+const float ARC_TRACK_A = 0.18;  // faint full-circle track behind the sweep
 float feedbackEase(float start, float target, float now, float dur) {
   float t = clamp((now - start) / max(dur, 0.001), 0.0, 1.0);
   float e = t * t * (3.0 - 2.0 * t);
   return mix(1.0 - target, target, e);
+}
+// straight-alpha source-over: composite a translucent (sc, sa) onto (dc, da) so the
+// track reads at its true .18 -- the crown idiom would square small alphas to near nothing.
+vec4 over(vec3 sc, float sa, vec3 dc, float da) {
+  float a = sa + da * (1.0 - sa);
+  return vec4(a > 0.0 ? (sc * sa + dc * da * (1.0 - sa)) / a : dc, a);
 }
 void main() {
   vec2 nodeUv = (vUv - 0.5) * uPadding + 0.5;
@@ -263,6 +279,32 @@ void main() {
     alpha = max(alpha, dashA);
   }
 
+  // ---- progress arc: a kind-hued gauge on nodes with sub-tasks (never on complete) ----
+  // An information layer orthogonal to tier: a thin ~2px ring just outside the body with a
+  // faint full-circle track behind it, sweeping from 12 o'clock clockwise across the fraction.
+  // Locked dims to a .32, complete draws nothing (the halo owns that radius), and it fades
+  // out below 60% zoom where the 2px would alias to noise.
+  if (vArc.y >= 0.0 && tier != 3) {
+    float frac = vArc.y;
+    if (uMotion > 0.5) {
+      float et = clamp((uTime - vArc.z) / ARC_EASE, 0.0, 1.0);
+      frac = mix(vArc.x, vArc.y, et * et * (3.0 - 2.0 * et)); // ease-standard on fraction changes
+    }
+    frac = clamp(frac, 0.0, 1.0);
+    float veil = (tier == 0 ? 0.32 : 1.0) * smoothstep(0.5, 0.6, uZoom); // locked dims; <60% zoom fades
+
+    float radial = dist - ARC_R;
+    float s = fract(atan(centered.y, centered.x) / TAU + 0.25); // 0 at 12 o'clock, rising clockwise
+    float tang = (s > frac ? min(s - frac, 1.0 - s) : 0.0) * TAU * ARC_R; // past the sweep: arc-length to nearer round cap
+
+    float trackA = (1.0 - smoothstep(0.0, ARC_W, abs(radial))) * ARC_TRACK_A * veil;
+    vec4 t = over(base, trackA, color, alpha);
+    float fillA = (1.0 - smoothstep(0.0, ARC_W, sqrt(radial * radial + tang * tang))) * step(0.0005, frac) * veil;
+    vec4 f = over(base, fillA, t.rgb, t.a);
+    color = f.rgb;
+    alpha = f.a;
+  }
+
   // ---- cycle dim: nodes a connect-drag can't target read as faint ghosts ----
   if (vFaded > 0.5) alpha *= 0.3;
 
@@ -333,6 +375,7 @@ export class NodeBatch {
     this.pulseBuffer = this.attribBuffer(10, 1, null, 1, gl.DYNAMIC_DRAW);
     this.bloomBuffer = this.attribBuffer(11, 4, null, 1, gl.DYNAMIC_DRAW);
     this.feedbackBuffer = this.attribBuffer(12, 4, null, 1, gl.DYNAMIC_DRAW);
+    this.arcBuffer = this.attribBuffer(13, 3, null, 1, gl.DYNAMIC_DRAW);
 
     gl.bindVertexArray(null);
   }
@@ -380,6 +423,8 @@ export class NodeBatch {
       this.feedback[i * 4] = BLOOM_NONE;     // hoverStart sentinel
       this.feedback[i * 4 + 2] = BLOOM_NONE; // pressStart sentinel
     }
+    this.arc = new Float32Array(count * 3); // (fromFraction, targetFraction, easeStart) per node
+    for (let i = 0; i < count; i++) this.arc[i * 3 + 1] = ARC_NONE; // target sentinel: no sub-tasks
 
     renderNodes.forEach((node, i) => {
       this.idToIndex.set(node.id, i);
@@ -405,6 +450,7 @@ export class NodeBatch {
     this.upload(this.pulseBuffer, this.pulseStarts);
     this.upload(this.bloomBuffer, this.bloom);
     this.upload(this.feedbackBuffer, this.feedback);
+    this.upload(this.arcBuffer, this.arc);
   }
 
   upload(buffer, data) {
@@ -482,6 +528,43 @@ export class NodeBatch {
       changed = true;
     }
     if (changed) this.upload(this.tierBuffer, this.tiers);
+  }
+
+  // Set one node's progress arc. A fraction in [0,1] eases from the resting value over 280ms
+  // (the shader snaps under reduced motion); a fresh arc snaps in (from == target, no grow).
+  // fraction null/absent/< 0 clears it to the no-arc sentinel. Mirrors setColor's GPU sub-update.
+  setArc(id, fraction, atSeconds) {
+    if (!this.arc) return;
+    const i = this.idToIndex.get(id);
+    if (i === undefined) return;
+    this.writeArc(i, fraction, atSeconds);
+    const gl = this.gl;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.arcBuffer);
+    gl.bufferSubData(gl.ARRAY_BUFFER, i * 12, this.arc, i * 3, 3);
+  }
+
+  // Bulk arc push: nodes in the map take their fraction, every other node clears — so a node
+  // that lost its sub-tasks loses its arc without the caller tracking removals. One buffer
+  // upload, like setStates; runs on workspace-data change, never per frame.
+  setArcs(map, atSeconds) {
+    if (!this.arc) return;
+    for (const [id, i] of this.idToIndex) this.writeArc(i, map.get(id), atSeconds);
+    this.upload(this.arcBuffer, this.arc);
+  }
+
+  writeArc(i, fraction, atSeconds) {
+    const base = i * 3;
+    if (fraction == null || fraction < 0) {
+      this.arc[base] = 0;
+      this.arc[base + 1] = ARC_NONE;
+      this.arc[base + 2] = atSeconds;
+      return;
+    }
+    const target = Math.max(0, Math.min(1, fraction));
+    const prevTarget = this.arc[base + 1];
+    this.arc[base] = prevTarget >= 0 ? prevTarget : target; // a changed arc eases; a fresh one snaps
+    this.arc[base + 1] = target;
+    this.arc[base + 2] = atSeconds;
   }
 
   setSelected(id) {
@@ -584,7 +667,7 @@ export class NodeBatch {
     const gl = this.gl;
     gl.deleteProgram(this.program);
     gl.deleteVertexArray(this.vao);
-    [this.quadBuffer, this.offsetBuffer, this.colorBuffer, this.glowSeedBuffer, this.selectedBuffer, this.iconCellBuffer, this.tierBuffer, this.formBuffer, this.fadedBuffer, this.emphasisBuffer, this.pulseBuffer, this.bloomBuffer, this.feedbackBuffer]
+    [this.quadBuffer, this.offsetBuffer, this.colorBuffer, this.glowSeedBuffer, this.selectedBuffer, this.iconCellBuffer, this.tierBuffer, this.formBuffer, this.fadedBuffer, this.emphasisBuffer, this.pulseBuffer, this.bloomBuffer, this.feedbackBuffer, this.arcBuffer]
       .forEach((b) => gl.deleteBuffer(b));
   }
 }

@@ -120,5 +120,17 @@ export const roadmapTree = {
     { id: 'step-state-block', label: 'StepPanel state chip + menu', icon: 'clipboard-check', color: 'terracotta', status: 'complete', prerequisites: ['activity-feed', 'ember-state'] },
     { id: 'progress-timestamps', label: 'Started / completed times', icon: 'flag', color: 'terracotta', status: 'complete', prerequisites: ['step-state-block'] },
     { id: 'durable-progress', label: 'Durable progress store', icon: 'archive', color: 'brick', status: 'complete', prerequisites: ['persistence', 'step-state-block'] },
+
+    // ---- node workspace initiative (F13) — a node becomes the surface you work from ----
+    // The StepPanel grows a body: a sub-task checklist, a markdown note, and resource links.
+    // The glyph wears a thin kind-hued progress arc that closes as sub-tasks complete —
+    // orthogonal to tier, hidden at complete — and closing it IS the completion: the gauge
+    // you fill dissolves into the halo you earn (auto-complete reuses the F1 bloom). Canonical
+    // spec: explorations/node-workspace.html (F13). These deeds are the running log (per CLAUDE.md).
+    { id: 'workspace-checklist', label: 'Sub-task checklist', icon: 'clipboard-check', color: 'terracotta', status: 'complete', prerequisites: ['step-state-block'] },
+    { id: 'workspace-note-links', label: 'Note + links drawer', icon: 'pencil', color: 'terracotta', status: 'complete', prerequisites: ['workspace-checklist'] },
+    { id: 'progress-arc', label: 'Sub-task progress arc', icon: 'thermometer', color: 'gold', status: 'complete', prerequisites: ['state-tiers', 'workspace-checklist'] },
+    { id: 'auto-complete', label: 'Checklist auto-complete', icon: 'sparkles', color: 'plum', status: 'complete', prerequisites: ['progress-arc', 'kindle-beat'] },
+    { id: 'workspace-store', label: 'Durable node workspaces', icon: 'archive', color: 'brick', status: 'complete', prerequisites: ['durable-progress', 'workspace-checklist'] },
   ],
 };

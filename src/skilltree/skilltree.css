@@ -1036,6 +1036,7 @@
   .st-dock-tenant,
   .st-event--new,
   .st-ticker-item,
+  .st-ws-add-menu,
   .st-activity-chip--ping {
     animation: none;
   }
@@ -1043,4 +1044,378 @@
   .st-toast {
     animation: wm-fade-in var(--duration-base) var(--ease-soft);
   }
+}
+
+/* ---- Step panel: a pinned head (header + state) over a scrolling workspace body.
+   The panel is content-sized up to 70vh; past that only the body scrolls. ---- */
+.st-step-pinned {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  flex: none;
+}
+.st-step-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* ---- Workspace body (F13): the "+ Add to this step" bootstrap. It offers only the
+   sections a node is still missing, and disappears once all three exist. ---- */
+.st-ws-add {
+  position: relative;
+}
+.st-ws-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: -4px;
+  padding: 6px 4px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+.st-ws-add-btn:hover {
+  color: var(--text-secondary);
+}
+.st-ws-add-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  min-width: 184px;
+  padding: var(--space-1);
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  animation: wm-fade-in-up var(--duration-fast) var(--ease-soft);
+}
+.st-ws-add-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+.st-ws-add-item:hover {
+  background: var(--surface-hover);
+}
+.st-ws-add-ico {
+  display: inline-flex;
+  color: var(--text-tertiary);
+}
+
+/* ---- Checklist (§2): round kind-hued checkboxes on a single/double-click grammar ---- */
+.st-check-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+.st-check-head .st-step-heading {
+  margin-bottom: 0;
+}
+.st-check-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+.st-check-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.st-check-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px 6px;
+  margin: 0 -6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+.st-check-row:hover {
+  background: var(--surface-hover);
+}
+.st-check-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid var(--chk-ring, var(--border-strong));
+  background: var(--surface-card);
+  transition: background var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard);
+}
+.st-check-box--done {
+  background: var(--chk-base, var(--color-brand));
+  border-color: var(--chk-base, var(--color-brand));
+}
+.st-check-label {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+.st-check-label--done {
+  color: var(--text-tertiary);
+}
+.st-check-del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard);
+}
+.st-check-row:hover .st-check-del {
+  opacity: 1;
+}
+.st-check-del:hover {
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+}
+.st-check-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0 0 2px;
+  border: 0;
+  border-bottom: 1.5px solid var(--accent-terracotta-400);
+  background: none;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  outline: none;
+}
+.st-check-add {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 2px 0 0 -6px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard);
+}
+.st-check-add:hover {
+  color: var(--text-secondary);
+  background: var(--surface-hover);
+}
+
+/* ---- Note (§5.1): rendered markdown at rest, a bordered box while editing ---- */
+.st-note-body {
+  padding: 4px 6px;
+  margin: 0 -6px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  color: var(--text-secondary);
+  cursor: text;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+.st-note-body:hover {
+  background: var(--surface-hover);
+}
+.st-note-body p {
+  margin: 0 0 6px;
+}
+.st-note-body p:last-child {
+  margin-bottom: 0;
+}
+.st-note-body ul {
+  margin: 0 0 6px;
+  padding-left: 18px;
+}
+.st-note-body li {
+  margin: 1px 0;
+}
+.st-note-body a {
+  color: var(--color-brand-hover);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.st-note-body strong {
+  font-weight: 800;
+  color: var(--text-primary);
+}
+.st-note-body em {
+  font-style: italic;
+}
+.st-note-edit {
+  width: 100%;
+  min-height: 84px;
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-3);
+  border: 1.5px solid var(--accent-terracotta-400);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  box-shadow: var(--focus-ring);
+  resize: vertical;
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  color: var(--text-primary);
+  outline: none;
+}
+.st-note-edit::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* ---- Links (§5.2): a flat list of letter-tiled rows; row click opens in a new tab ---- */
+.st-links {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.st-link-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px;
+  margin: 0 -6px;
+  border-radius: var(--radius-md);
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+.st-link-row:hover {
+  background: var(--surface-hover);
+}
+.st-link-open {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+}
+.st-link-go {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+.st-link-row:hover .st-link-go {
+  opacity: 1;
+}
+.st-link-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--text-sm);
+}
+.st-link-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.st-link-title {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.st-link-domain {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.st-link-del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard);
+}
+.st-link-row:hover .st-link-del {
+  opacity: 1;
+}
+.st-link-del:hover {
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+}
+.st-link-add {
+  margin-top: 2px;
+}
+.st-link-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-3);
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  background: none;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+.st-link-input:focus {
+  border-style: solid;
+  border-color: var(--accent-terracotta-400);
+}
+.st-link-input::placeholder {
+  color: var(--text-tertiary);
 }

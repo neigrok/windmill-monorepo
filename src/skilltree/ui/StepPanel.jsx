@@ -7,8 +7,12 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Card, Button, IconButton, Icon } from '../../components';
+import { NodeWorkspace } from '../../components/tree/NodeWorkspace.jsx';
 import { EventRow } from '../activity/EventRow.jsx';
 import { NODE_COLORS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../theme.js';
+
+const EMPTY_WORKSPACE = { subtasks: [], note: '', links: [] };
+const noop = () => {};
 
 const CHIP_LABEL = { available: 'Not started', active: 'In progress', complete: 'Complete', locked: 'Locked' };
 
@@ -58,7 +62,7 @@ function TimestampLine({ state, startedAt, completedAt, now }) {
   return <div className="st-state-time" title={title}>{text}</div>;
 }
 
-export function StepPanel({ node, state, prerequisites, startedAt, completedAt, history = [], autoFocusName, onRename, onPreviewKind, onRestoreKind, onSetKind, onStart, onMarkComplete, onSetState, onReveal, onDelete, onPreviewDeleteCost, onClearDeleteCost, onClose }) {
+export function StepPanel({ node, state, prerequisites, startedAt, completedAt, history = [], workspace = EMPTY_WORKSPACE, autoFocusName, onRename, onPreviewKind, onRestoreKind, onSetKind, onStart, onMarkComplete, onSetState, onReveal, onDelete, onPreviewDeleteCost, onClearDeleteCost, onClose, onAddSubtask = noop, onToggleSubtask = noop, onEditSubtask = noop, onDeleteSubtask = noop, onSetNote = noop, onAddLink = noop, onDeleteLink = noop }) {
   const [editingName, setEditingName] = useState(!!autoFocusName);
   const [draft, setDraft] = useState(node?.label ?? '');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -122,7 +126,8 @@ export function StepPanel({ node, state, prerequisites, startedAt, completedAt, 
   };
 
   return (
-    <Card style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 'var(--space-5)', overflowY: 'auto' }}>
+    <Card style={{ maxHeight: '70vh', display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
+      <div className="st-step-pinned">
       <div className="st-step-header">
         <div className="st-step-identity">
           <span className="st-step-glyph">
@@ -226,25 +231,21 @@ export function StepPanel({ node, state, prerequisites, startedAt, completedAt, 
           </>
         )}
       </div>
-
-      <div>
-        <div className="st-step-heading">Kind</div>
-        <div className="st-step-kinds">
-          {NODE_COLOR_NAMES.map((kind) => (
-            <button
-              key={kind}
-              type="button"
-              className={`st-step-swatch ${kind === currentKind ? 'st-step-swatch--current' : ''}`}
-              style={{ background: NODE_COLORS[kind].base }}
-              title={kind}
-              aria-label={`Set kind to ${kind}`}
-              onPointerEnter={() => onPreviewKind(node.id, kind)}
-              onPointerLeave={() => onRestoreKind(node.id)}
-              onClick={() => onSetKind(node.id, kind)}
-            />
-          ))}
-        </div>
       </div>
+
+      <div className="st-step-scroll">
+      <NodeWorkspace
+        nodeId={node.id}
+        workspace={workspace}
+        hue={hue}
+        onAddSubtask={onAddSubtask}
+        onToggleSubtask={onToggleSubtask}
+        onEditSubtask={onEditSubtask}
+        onDeleteSubtask={onDeleteSubtask}
+        onSetNote={onSetNote}
+        onAddLink={onAddLink}
+        onDeleteLink={onDeleteLink}
+      />
 
       <div>
         <div className="st-step-heading">Prerequisites</div>
@@ -291,6 +292,25 @@ export function StepPanel({ node, state, prerequisites, startedAt, completedAt, 
         )}
       </div>
 
+      <div>
+        <div className="st-step-heading">Kind</div>
+        <div className="st-step-kinds">
+          {NODE_COLOR_NAMES.map((kind) => (
+            <button
+              key={kind}
+              type="button"
+              className={`st-step-swatch ${kind === currentKind ? 'st-step-swatch--current' : ''}`}
+              style={{ background: NODE_COLORS[kind].base }}
+              title={kind}
+              aria-label={`Set kind to ${kind}`}
+              onPointerEnter={() => onPreviewKind(node.id, kind)}
+              onPointerLeave={() => onRestoreKind(node.id)}
+              onClick={() => onSetKind(node.id, kind)}
+            />
+          ))}
+        </div>
+      </div>
+
       <div className="st-step-danger" style={{ marginTop: 'auto' }}>
         <button
           type="button"
@@ -302,6 +322,7 @@ export function StepPanel({ node, state, prerequisites, startedAt, completedAt, 
           <Icon name="trash-2" size={16} />
           Delete step
         </button>
+      </div>
       </div>
     </Card>
   );
