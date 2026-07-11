@@ -30,6 +30,11 @@ TreeData TreeRoom::snapshot() const {
   return graph_.toTreeData(id_, title_);
 }
 
+std::vector<NodeId> TreeRoom::prerequisitesOf(const NodeId& node) const {
+  std::optional<NodeSpec> view = graph_.nodeView(node);
+  return view ? std::move(view->prerequisites) : std::vector<NodeId>{};
+}
+
 GraphState TreeRoom::exportState() const {
   return graph_.exportState();
 }

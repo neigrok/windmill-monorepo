@@ -18,6 +18,7 @@ add_library(windmill_application
   application/TreeRoom.cpp
   application/RoomRegistry.cpp
   application/ProgressService.cpp
+  application/ActivityFeed.cpp
   application/UndoService.cpp)
 target_link_libraries(windmill_application PUBLIC windmill_domain)
 
@@ -33,6 +34,7 @@ add_executable(windmill_domain_tests
   test/application/TreeRoomTest.cpp
   test/application/RoomRegistryTest.cpp
   test/application/ProgressServiceTest.cpp
+  test/application/ActivityFeedTest.cpp
   test/application/UndoServiceTest.cpp)
 target_link_libraries(windmill_domain_tests PRIVATE windmill_application)
 
@@ -53,6 +55,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     adapters/postgres/PgOpLog.cpp
     adapters/http/HttpApi.cpp
     adapters/ws/WsPresenceBus.cpp
+    adapters/ws/PresenceHub.cpp
     adapters/ws/Collab.cpp
     adapters/ws/TreeSocket.cpp)
   target_link_libraries(windmill_adapters PUBLIC windmill_application Drogon::Drogon libpqxx::pqxx)

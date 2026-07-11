@@ -72,3 +72,4 @@ roadmap loads and saves from the server.
 | PUT | `/v1/trees/:id` | `TreeData` → `{ seq, data }` (whole-document write) |
 | GET | `/v1/trees/:id/progress` | → `{ completed[], inProgress[] }` (fixed `dev` user) |
 | GET | `/v1/trees/:id/diagnostics` | → `{ cycles[], dangling[], selfEdges[], smells[] }` |
+| GET | `/v1/trees/:id/activity` | `?since=&limit=` → `{ events[] }` (human feed from `tree_ops`) |

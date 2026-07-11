@@ -1,9 +1,10 @@
 #pragma once
 
 #include "domain/Ids.h"
-#include "domain/SkillTree.h"
 #include "domain/Tree.h"
 #include "ports/ProgressRepository.h"
+
+#include <vector>
 
 namespace wm {
 
@@ -16,13 +17,15 @@ struct ProgressOutcome {
 };
 
 // Writes a user's private progress overlay. P2 (active/complete exclusivity) is
-// structural — one status per node. P1 is advised, never enforced.
+// structural — one status per node. P1 is advised, never enforced. The advisory check
+// reads only the node's prerequisites (from the loose graph's live edges), so progress
+// never depends on the tree being a valid DAG (§3 — progress never blocks on collaborators).
 class ProgressService {
 public:
   explicit ProgressService(ProgressRepository& repo);
 
-  ProgressOutcome setStatus(const SkillTree& tree, const TreeId& treeId, const UserId& user,
-                            const NodeId& node, ProgressStatus status, const Hlc& at);
+  ProgressOutcome setStatus(const std::vector<NodeId>& prerequisites, const TreeId& treeId,
+                            const UserId& user, const NodeId& node, ProgressStatus status, const Hlc& at);
   Progress progressOf(const TreeId& treeId, const UserId& user);
 
 private:

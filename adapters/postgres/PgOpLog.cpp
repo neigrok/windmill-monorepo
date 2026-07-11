@@ -42,7 +42,8 @@ std::vector<AppliedOp> PgOpLog::since(const TreeId& tree, Seq afterSeq) const {
   pqxx::connection conn{connString_};
   pqxx::work txn{conn};
   pqxx::result rows = txn.exec_params(
-      "SELECT seq, actor_id, op_id, kind, payload::text, hlc FROM tree_ops "
+      "SELECT seq, actor_id, op_id, kind, payload::text, hlc, "
+      "(extract(epoch from created_at) * 1000)::bigint AS created_ms FROM tree_ops "
       "WHERE tree_id = $1 AND seq > $2 ORDER BY seq",
       tree.str(), static_cast<long long>(afterSeq));
 
@@ -56,6 +57,7 @@ std::vector<AppliedOp> PgOpLog::since(const TreeId& tree, Seq afterSeq) const {
     op.command = std::move(*command);
     op.hlc = hlcFromText(row["hlc"].as<std::string>());
     op.actor = UserId{row["actor_id"].as<std::string>()};
+    op.createdAtMs = static_cast<std::uint64_t>(row["created_ms"].as<long long>());
     ops.push_back(std::move(op));
   }
   return ops;

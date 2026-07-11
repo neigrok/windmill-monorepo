@@ -48,6 +48,10 @@ public:
   TreeDiagnostics diagnose() const;
   TreeData snapshot() const;
   GraphState exportState() const;
+
+  // The node's live prerequisites (incoming DAG edges), for the progress advisory check.
+  // Works on any graph, clean or not; empty if the node is absent.
+  std::vector<NodeId> prerequisitesOf(const NodeId& node) const;
   const std::string& title() const { return title_; }
   Seq head() const { return head_; }
 

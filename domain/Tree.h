@@ -60,6 +60,13 @@ inline std::optional<NodeColor> parseColor(std::string_view name) {
   return std::nullopt;
 }
 
+inline std::optional<ProgressStatus> parseProgressStatus(std::string_view name) {
+  if (name == "active")   return ProgressStatus::active;
+  if (name == "complete") return ProgressStatus::complete;
+  if (name == "none")     return ProgressStatus::none;
+  return std::nullopt;
+}
+
 struct Vec2 {
   double x = 0;
   double y = 0;

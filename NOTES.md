@@ -81,6 +81,64 @@ map unknown color strings to a rejected/flagged value.
 - [ ] Frontend save path (PUT) would need CORS preflight/OPTIONS fixed — Drogon's
       built-in OPTIONS handling currently reports only `OPTIONS` in allow-methods. Load
       (GET) is a simple request and works; revisit when the frontend writes over HTTP.
+- [x] **Progress write-path (Phase 2 edge)** — the "should work but doesn't" is closed.
+      A `{t:'progress'}` socket frame now records the caller's private overlay and echoes
+      to their *other* sessions (not collaborators, §6). Path: `Collab::progress` →
+      `ProgressService` → `PgProgressRepository`, written as the fixed `dev` user (the same
+      user HTTP `GET /progress` reads back), so a mark survives reload. **ProgressService
+      was decoupled from `SkillTree`**: its advisory P1 check now takes the node's
+      prerequisites (from `TreeRoom::prerequisitesOf` → `LooseGraph::nodeView`, live edges),
+      so progress works on an unclean/cyclic graph — honoring §3 "progress never blocks on
+      collaborators." Frontend: `CollabClient.sendProgress`/`onProgress`, `handleStart`/
+      `handleMarkComplete` emit the frame, `applyRemoteProgress` folds echoes into the two
+      id sets. **`HttpTreeRepository.loadProgress` now overlays server progress on the
+      document's authoring seeds instead of replacing them** — so marking one node no longer
+      wipes the ~47 seeded "deed" completions on reload. Verified: (1) raw two-client WS —
+      write persists, echoes to the second session, sender excluded, `none` clears the row;
+      (2) real Postgres row under `dev` + HTTP read-back matches; (3) in-browser, the real
+      `loadProgress` overlaid a socket-written `presence→complete` (47→48) with `renderer`
+      (a seed) still complete. 51/51 domain+app tests green.
+      Note — the frontend gained a parallel `ProgressStore` (localStorage) in the same
+      window; the two layers compose cleanly: `loadProgress` (seed + server overlay) is the
+      baseline, the local store wins when present (same-origin tabs share it), and the
+      server path is the cross-session backing + the live `onProgress` echo. Full
+      cross-device coherence (a live echo persisting into another device's local store) is
+      a Phase-1 reconciliation, not a Phase-0 need.
+
+- [x] **Presence (Phase 2 edge, full-stack).** Class C presence (§5) landed as a
+      self-contained `PresenceHub` (adapters/ws): each participant's latest cursor/selection
+      is buffered and flushed to the tree's *other* participants at 20 Hz (one
+      `getLoop()->runEvery(0.05)` timer, latest-wins per actor, deltas only — §12), so a
+      60 Hz cursor stream costs ≤ 20 frames/sec per peer. Join/leave are announced as `peer`
+      frames (with an assigned profile — one palette colour + "Guest N" per actor until
+      accounts land) and the newcomer gets the current roster + live cursors replayed.
+      `Collab` now routes `presence` → `hub.update`, `subscribe` → `hub.join`, close →
+      `hub.leave` (replacing the raw relay). Frontend: `CollabClient.sendPresence`
+      (trailing-throttled ~25 Hz) / `onPresence` / `onPeer`, and a **new isolated
+      `presence/PresenceLayer.jsx`** — a DOM overlay that projects each peer's world cursor
+      to screen on its own rAF loop (never through React) and forwards our pointer as world
+      coords; `SkillTreeView` only mounts it + fills a `peersRef` from the frames.
+      Verified: raw two-client WS — bidirectional peer join/leave, 30 rapid moves coalesced
+      to ~4–5 frames at 20 Hz, latest cursor+selection carried; live browser tabs registered
+      cursors on the server (send path). **Not yet visually confirmed:** remote-cursor
+      *rendering* in a foreground tab — the local browser session was churning tabs and
+      background tabs pause rAF, so the overlay's draw loop slept during automated checks
+      (a test artifact, not a logic bug — worth a 30-sec two-tab glance to confirm).
+
+- [x] **Activity feed (Phase 4).** `GET /v1/trees/:id/activity?since=&limit=` → `{events[]}`,
+      a human feed projected from `tree_ops`. `application/ActivityFeed.{h,cpp}` is a **pure
+      function** `activityFeed(current, ops, limit)`: it maps each op to a verb
+      (added/renamed/recolored/removed/linked/unlinked/rerouted/tidied — position nudges
+      dropped), denormalizes the subject's current label/kind, humanizes the actor
+      ("You"/"Guest N"/tree), and — when the graph is clean — annotates a cross-branch edge
+      via `TrunkTree.edgeKind` (§9). Each event ships a ready `summary` sentence so an
+      un-updated UI still renders. The Action (`HttpApi::getActivity`) loads the room
+      snapshot + `OpLog::since` and calls the projection — repos-in, domain-shapes, boundary
+      serializes (CLAUDE.md's Action→domain→persist shape). Needed `AppliedOp.createdAtMs`
+      (a real wall-clock stamp: the HLC's `physicalMs` is a tick counter, not time), which
+      `PgOpLog::since` now reads from `created_at`. Verified live against the roadmap's 7
+      ops (verbs/actors/timestamps, `since`/`limit` cursoring, 404/400) + 2 pure unit tests
+      (53/53 green). The frontend `ActivityFeed` UI is ready to fetch this.
 
 ## CRDT semantics decisions (domain)
 
@@ -133,6 +191,29 @@ map unknown color strings to a rejected/flagged value.
 - `TreeRoom::submit` returns `Applied{op, inverse}`: the inverse is computed against the
   pre-merge state and stacked by `UndoService`. Undo resubmits it as a fresh op with a
   later HLC, so it always wins (and always applies — never rejected).
+- **Application services should lean on the loose graph, not the validated `SkillTree`,
+  unless they genuinely need a DAG.** `ProgressService` used to take a whole `SkillTree`
+  just to read one node's prerequisites for the advisory check — which also made it throw
+  on a cyclic tree, contradicting §3 (progress must never block on graph validity). It now
+  takes the node's live prerequisites directly (a `std::vector<NodeId>` the room derives
+  from `LooseGraph::nodeView`). Rule of thumb for the seam: reach for `SkillTree` only when
+  you need ranks/ancestry/trunk on a *clean* graph; for everything a loose graph can answer
+  (a node's live prerequisites, present ids, edges), pass that in and stay validity-agnostic.
+- **Presence is its own hub, not more `WsPresenceBus`.** Op fanout (the `PresenceBus`
+  port) and Class C presence look similar — both fan frames to a tree's subscribers — but
+  they differ in shape: ops are ordered/durable and broadcast immediately; presence is
+  ephemeral, coalesced on a timer, and carries peer lifecycle. Folding presence into
+  `WsPresenceBus` would give one class two clocks (immediate vs 20 Hz) and two state models.
+  `PresenceHub` owns its own per-tree participant map so the bus stays a pure, immediate
+  fan-out. The small duplication (both track conns per tree) is worth the single
+  responsibility each keeps. The 20 Hz cadence is one `EventLoop::runEvery` timer draining
+  every tree — coalescing lives at the transport edge, never in the domain.
+- **One identity for one user across transports.** HTTP `getProgress` and the socket
+  progress writer must agree on *who* the caller is or a mark never reads back. Today that
+  is one injected `devUser`, shared by `HttpApi` and `Collab` from `main`. Phase 1 swaps
+  the fixed id for the token's user at both seams — and the "echo to the same user's other
+  sessions" broadcast (today: every other subscriber, since all are `dev`) narrows to
+  connections whose session user matches the author's.
 - **Persistence fidelity gap (temporary).** `RoomRegistry::evict` saves
   `TreeRoom::snapshot()` = `toTreeData()` (the present projection), and `open` reseeds a
   `LooseGraph` with a genesis HLC. This round-trips present nodes + live edges (cycles
