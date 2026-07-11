@@ -90,6 +90,6 @@ export const roadmapTree = {
     { id: 'reduced-motion', label: 'Reduced-motion fallbacks', icon: 'shield', color: 'plum', status: 'complete', prerequisites: ['motion-tokens'] },
     { id: 'ceremony-director', label: 'Ceremony director', icon: 'compass', color: 'plum', status: 'complete', prerequisites: ['travel-beat', 'camera-ease', 'toast-beat'] },
     { id: 'yield-to-input', label: 'Motion yields to interaction', icon: 'move', color: 'plum', status: 'complete', prerequisites: ['ceremony-director'] },
-    { id: 'motion-visual-qa', label: 'Ceremony visual QA', icon: 'sun', color: 'plum', status: 'active', prerequisites: ['ceremony-director', 'crown-pulse'] },
+    { id: 'motion-visual-qa', label: 'Ceremony visual QA', icon: 'sun', color: 'plum', status: 'complete', prerequisites: ['ceremony-director', 'crown-pulse'] },
   ],
 };
