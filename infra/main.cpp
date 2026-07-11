@@ -6,6 +6,7 @@
 #include "adapters/ws/TreeSocket.h"
 #include "adapters/ws/WsPresenceBus.h"
 #include "application/RoomRegistry.h"
+#include "application/UndoService.h"
 
 #include <drogon/drogon.h>
 
@@ -27,7 +28,8 @@ int main() {
   auto oplog = std::make_shared<PgOpLog>(connString);
   auto bus = std::make_shared<WsPresenceBus>();
   auto registry = std::make_shared<RoomRegistry>(*trees, *oplog, *bus);
-  setCollab(std::make_shared<Collab>(*registry, *oplog, *bus));
+  auto undos = std::make_shared<UndoService>();
+  setCollab(std::make_shared<Collab>(*registry, *oplog, *bus, *undos));
   linkTreeSocket();
 
   auto api = std::make_shared<HttpApi>(registry, trees, progress, genesis, UserId{std::string("dev")});

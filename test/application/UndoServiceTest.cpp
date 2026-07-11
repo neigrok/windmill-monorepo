@@ -4,56 +4,78 @@
 #include "test/testing.h"
 
 #include <string>
+#include <variant>
 
 using namespace wm;
 using namespace wm::fake;
 
 namespace {
-
 std::string labelOf(const TreeData& data, const NodeId& id) {
   for (const NodeSpec& node : data.nodes) {
     if (node.id == id) return node.label;
   }
   return "";
 }
-
 }
 
-TEST(undo_stack_records_and_pops_lifo) {
-  UndoService undo;
-  undo.record(uid(), {RenameNode{nid("a"), "first"}});
-  undo.record(uid(), {RenameNode{nid("a"), "second"}});
-  CHECK_EQ(undo.depth(uid()), 2u);
+TEST(undo_take_is_lifo) {
+  UndoService undos;
+  undos.record("k", {RenameNode{nid("a"), "first"}});
+  undos.record("k", {RenameNode{nid("a"), "second"}});
 
-  auto top = undo.pop(uid());
+  auto top = undos.takeUndo("k");
   CHECK(top.has_value());
-  CHECK_EQ(top->size(), 1u);
-  CHECK_EQ(undo.depth(uid()), 1u);
+  CHECK_EQ(std::get<RenameNode>((*top)[0]).label, std::string("second"));
+  auto next = undos.takeUndo("k");
+  CHECK_EQ(std::get<RenameNode>((*next)[0]).label, std::string("first"));
+  CHECK_FALSE(undos.takeUndo("k").has_value());
 }
 
-TEST(undo_ignores_empty_inverse) {
-  UndoService undo;
-  undo.record(uid(), {});
-  CHECK_EQ(undo.depth(uid()), 0u);
-  CHECK_FALSE(undo.pop(uid()).has_value());
+TEST(record_clears_redo_trail) {
+  UndoService undos;
+  undos.pushRedo("k", {AddEdge{nid("a"), nid("b")}});
+  undos.record("k", {RenameNode{nid("a"), "x"}});  // a fresh edit invalidates redo
+  CHECK_FALSE(undos.takeRedo("k").has_value());
 }
 
-TEST(undo_restores_prior_label_through_the_room) {
+TEST(undo_keys_are_independent) {
+  UndoService undos;
+  undos.record("tree1\nuser", {RenameNode{nid("a"), "x"}});
+  CHECK_FALSE(undos.takeUndo("tree2\nuser").has_value());
+  CHECK(undos.takeUndo("tree1\nuser").has_value());
+}
+
+TEST(empty_inverse_not_recorded) {
+  UndoService undos;
+  undos.record("k", {});
+  CHECK_FALSE(undos.takeUndo("k").has_value());
+}
+
+TEST(undo_then_redo_through_the_room) {
   FakeOpLog log;
   FakeBus bus;
   TreeRoom room(tid(), "T", LooseGraph{}, 0, log, bus);
-  UndoService undo;
+  UndoService undos;
 
   room.submit(Incoming{"c1", createNode("x"), at(1), uid()});
   auto renamed = room.submit(Incoming{"r1", RenameNode{nid("x"), "Y"}, at(2), uid()});
-  undo.record(uid(), renamed->inverse);
+  undos.record("k", renamed->inverse);
   CHECK_EQ(labelOf(room.snapshot(), nid("x")), std::string("Y"));
 
-  auto inverse = undo.pop(uid());
-  CHECK(inverse.has_value());
-  int step = 0;
-  for (const Command& command : *inverse) {
-    room.submit(Incoming{"u" + std::to_string(step++), command, at(3), uid()});
+  // undo: replay the inverse, stash the counter-inverse for redo
+  auto undoGroup = undos.takeUndo("k");
+  CHECK(undoGroup.has_value());
+  std::vector<Command> redo;
+  for (const Command& cmd : *undoGroup) {
+    auto applied = room.submit(Incoming{"u1", cmd, at(3), uid()});
+    redo.insert(redo.begin(), applied->inverse.begin(), applied->inverse.end());
   }
+  undos.pushRedo("k", std::move(redo));
   CHECK_EQ(labelOf(room.snapshot(), nid("x")), std::string("x"));
+
+  // redo: replay the counter-inverse
+  auto redoGroup = undos.takeRedo("k");
+  CHECK(redoGroup.has_value());
+  for (const Command& cmd : *redoGroup) room.submit(Incoming{"rd1", cmd, at(4), uid()});
+  CHECK_EQ(labelOf(room.snapshot(), nid("x")), std::string("Y"));
 }

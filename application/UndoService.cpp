@@ -2,22 +2,44 @@
 
 namespace wm {
 
-void UndoService::record(const UserId& user, std::vector<Command> inverse) {
-  if (inverse.empty()) return;
-  stacks_[user].push_back(std::move(inverse));
-}
-
-std::optional<std::vector<Command>> UndoService::pop(const UserId& user) {
-  auto it = stacks_.find(user);
-  if (it == stacks_.end() || it->second.empty()) return std::nullopt;
+namespace {
+std::optional<std::vector<Command>> takeTop(std::map<std::string, std::vector<std::vector<Command>>>& stacks,
+                                            const std::string& key) {
+  auto it = stacks.find(key);
+  if (it == stacks.end() || it->second.empty()) return std::nullopt;
   std::vector<Command> top = std::move(it->second.back());
   it->second.pop_back();
   return top;
 }
+}
 
-std::size_t UndoService::depth(const UserId& user) const {
-  auto it = stacks_.find(user);
-  return it == stacks_.end() ? 0 : it->second.size();
+void UndoService::record(const std::string& key, std::vector<Command> inverse) {
+  if (inverse.empty()) return;
+  std::lock_guard<std::mutex> lock(mutex_);
+  undo_[key].push_back(std::move(inverse));
+  redo_[key].clear();  // a fresh edit invalidates the redo trail
+}
+
+std::optional<std::vector<Command>> UndoService::takeUndo(const std::string& key) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return takeTop(undo_, key);
+}
+
+std::optional<std::vector<Command>> UndoService::takeRedo(const std::string& key) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return takeTop(redo_, key);
+}
+
+void UndoService::pushUndo(const std::string& key, std::vector<Command> group) {
+  if (group.empty()) return;
+  std::lock_guard<std::mutex> lock(mutex_);
+  undo_[key].push_back(std::move(group));
+}
+
+void UndoService::pushRedo(const std::string& key, std::vector<Command> group) {
+  if (group.empty()) return;
+  std::lock_guard<std::mutex> lock(mutex_);
+  redo_[key].push_back(std::move(group));
 }
 
 }
