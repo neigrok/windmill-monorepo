@@ -351,12 +351,25 @@ export function SkillTreeView() {
   const deleteNodeAt = useCallback((id) => {
     const editor = editorRef.current;
     if (!editor || !id) return;
-    const node = editor.treeData.nodes.find((n) => n.id === id); // snapshot before it's gone
-    // Not synced over the socket yet: this splices children up to grandparents, but the
-    // backend's DeleteNode is a plain tombstone — the two must be aligned first.
-    editor.commit(deleteNode(editor.treeData, id));
+    const before = editor.treeData;
+    const node = before.nodes.find((n) => n.id === id); // snapshot before it's gone
+
+    // The app splices orphaned children up to the deleted node's parents; the backend's
+    // DeleteNode is a plain tombstone. Send the delete plus the re-tether edges as
+    // primitive ops so both sides converge on the same spliced result.
+    const grandparents = node ? node.prerequisites : [];
+    const retether = [];
+    for (const child of before.nodes) {
+      if (!child.prerequisites.includes(id)) continue;
+      if (child.prerequisites.some((p) => p !== id)) continue; // keeps another parent, no re-tether
+      for (const g of grandparents) if (g !== child.id) retether.push({ from: g, to: child.id });
+    }
+
+    editor.commit(deleteNode(before, id));
     if (selectedIdRef.current === id) setSelectedId(null);
     syncStructure();
+    collabRef.current?.send('DeleteNode', { id });
+    retether.forEach((edge) => collabRef.current?.send('AddEdge', edge));
     showToast('Step deleted', { action: { label: 'Undo', run: undo } });
     emit({ verb: 'removed', nodeId: id, label: node?.label, kind: node?.color });
   }, [syncStructure, emit, showToast, undo]);

@@ -46,11 +46,12 @@ loose-graph render path is still future work.)
 ## In-app editing over the socket (write-path)
 
 In-app edits now also send a `cmd` over the socket, so two tabs genuinely co-edit: a
-create, rename, recolor, reposition, connect, reconnect, drop-edge, or tidy in one tab
-merges on the backend and appears in the others. `CollabClient` tags each sent op and
-skips its own echo, so an author never double-applies its own edit. Edits still commit
-to `localStorage` too, as a per-browser fallback.
+create, rename, recolor, reposition, connect, reconnect, drop-edge, tidy, or **delete**
+in one tab merges on the backend and appears in the others. `CollabClient` tags each
+sent op and skips its own echo, so an author never double-applies its own edit. Edits
+still commit to `localStorage` too, as a per-browser fallback.
 
-**Delete is not synced yet**: the app's delete splices children up to grandparents, but
-the backend's `DeleteNode` is a plain tombstone — the two must be aligned before delete
-can ride the socket. Until then a delete stays local.
+Delete is aligned across the split semantics: the app splices orphaned children up to
+grandparents, while the backend's `DeleteNode` is a plain tombstone — so a delete sends
+`DeleteNode` **plus** the re-tether `AddEdge`s, and both sides converge on the same
+spliced result. (Undo of a delete is still local-only; syncing undo/redo is separate.)
