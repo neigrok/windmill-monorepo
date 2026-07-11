@@ -1,7 +1,9 @@
 // Dragging one end of a branch to a node (design editing-spec §03–§04). A dashed
 // ghost follows the cursor from the pinned end; the node under it gets an olive
 // ring when it's a valid target, or a brick ring + "would create a loop" tip when
-// dropping there would make a cycle. Every node a drop on which would close a
+// dropping there would make a cycle. A drop that's valid but costly — crossing
+// into another branch, or already implied by an existing path — keeps working but
+// shows an amber cost ring with a hint tip. Every node a drop on which would close a
 // loop is collected up front and faded via onFadeNodes for the whole drag (§3.1);
 // the same set is the cyclic predicate, so a faded node can never take the drop.
 // Two entry points share the gesture: `start` pulls a brand-new edge from a rim
@@ -40,7 +42,6 @@ export class ConnectGesture {
 
     this.tip = document.createElement('div');
     this.tip.className = 'st-connect-tip';
-    this.tip.textContent = 'This would create a loop';
     container.appendChild(this.tip);
   }
 
@@ -58,6 +59,7 @@ export class ConnectGesture {
       anchorId: sourceId,
       parents: this.parents,
       cycleNodes: this.reachable(sourceId, this.parents),
+      sourceDescendants: this.reachable(sourceId, this.childrenMap(this.parents)),
       resolve: (hit) => ({ from: sourceId, to: hit }),
     });
   }
@@ -119,8 +121,24 @@ export class ConnectGesture {
       ex = (node.x - cam.x) * cam.zoom + cam.viewportWidth / 2;
       ey = (node.y - cam.y) * cam.zoom + cam.viewportHeight / 2;
       const rim = NODE_RADIUS * cam.zoom;
-      this.showRing(ex, ey, rim, valid ? 'valid' : 'invalid');
-      if (cyclic) this.showTip(ex, ey, rim); else this.hideTip();
+      if (cyclic) {
+        this.showRing(ex, ey, rim, 'invalid');
+        this.showTip(ex, ey, rim, 'This would create a loop');
+      } else if (valid) {
+        const sameBranch = this.nodesById.get(from).branch === this.nodesById.get(to).branch;
+        const redundant = this.active.mode === 'create' && this.active.sourceDescendants && this.active.sourceDescendants.has(to);
+        const crossBranch = !sameBranch;
+        if (redundant || crossBranch) {
+          this.showRing(ex, ey, rim, 'cost');
+          this.showTip(ex, ey, rim, redundant ? 'Already implied' : 'Links across areas');
+        } else {
+          this.showRing(ex, ey, rim, 'valid');
+          this.hideTip();
+        }
+      } else {
+        this.showRing(ex, ey, rim, 'invalid');
+        this.hideTip();
+      }
     } else {
       this.hideRing();
       this.hideTip();
@@ -199,7 +217,8 @@ export class ConnectGesture {
 
   hideRing() { this.ring.classList.remove('st-connect-ring--on'); }
 
-  showTip(x, y, rim) {
+  showTip(x, y, rim, message) {
+    this.tip.textContent = message;
     this.tip.classList.add('st-connect-tip--on');
     this.tip.style.transform = `translate(${x}px, ${y + rim + 12}px) translate(-50%, 0)`;
   }

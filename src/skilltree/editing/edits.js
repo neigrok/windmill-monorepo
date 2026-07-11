@@ -83,3 +83,28 @@ export function deleteNode(treeData, id) {
     });
   return { ...treeData, nodes };
 }
+
+// Drop prerequisites that are already implied transitively: if another parent of
+// a node depends on this one through any chain, listing it directly adds nothing.
+// Reachability is identical before and after, so it's a semantics-preserving tidy.
+export function transitiveReduction(treeData) {
+  const prereqsOf = new Map(treeData.nodes.map((node) => [node.id, node.prerequisites]));
+  const memo = new Map();
+  const ancestorsOf = (id) => {
+    if (memo.has(id)) return memo.get(id);
+    const ancestors = new Set();
+    memo.set(id, ancestors);
+    for (const prereqId of prereqsOf.get(id) ?? []) {
+      ancestors.add(prereqId);
+      for (const ancestorId of ancestorsOf(prereqId)) ancestors.add(ancestorId);
+    }
+    return ancestors;
+  };
+  const nodes = treeData.nodes.map((node) => {
+    const prerequisites = node.prerequisites.filter(
+      (prereqId) => !node.prerequisites.some(
+        (otherId) => otherId !== prereqId && ancestorsOf(otherId).has(prereqId)));
+    return prerequisites.length === node.prerequisites.length ? node : { ...node, prerequisites };
+  });
+  return { ...treeData, nodes };
+}

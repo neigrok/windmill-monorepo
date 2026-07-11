@@ -6,20 +6,22 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './skilltree.css';
 import { ControlBar } from './ui/ControlBar.jsx';
+import { TidinessBadge } from './ui/TidinessBadge.jsx';
 import { StepPanel } from './ui/StepPanel.jsx';
 import { Minimap } from './ui/Minimap.jsx';
 import { SkillTree } from './model/SkillTree.js';
+import { TreeHealth } from './model/TreeHealth.js';
 import { UnlockRules } from './model/UnlockRules.js';
-import { WorkerLayoutEngine } from './layout/WorkerLayoutEngine.js';
+import { RadialLayoutEngine } from './layout/RadialLayoutEngine.js';
 import { applyNudges } from './layout/applyNudges.js';
 import { MockTreeRepository } from './mock/MockTreeRepository.js';
 import { TreeStore } from './persistence/TreeStore.js';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
 import { TreeEditor } from './editing/TreeEditor.js';
-import { repositionNode, addChildNode, renameNode, deleteNode, addEdge, removeEdge, reconnectEdge, setNodeColor } from './editing/edits.js';
+import { repositionNode, addChildNode, renameNode, deleteNode, addEdge, removeEdge, reconnectEdge, setNodeColor, transitiveReduction } from './editing/edits.js';
 import { NODE_SIZE } from './theme.js';
 
-const layoutEngine = new WorkerLayoutEngine();
+const layoutEngine = new RadialLayoutEngine();
 const treeStore = new TreeStore();
 const EMPTY_BOUNDS = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 const CHILD_DROP = NODE_SIZE * 2.6; // world units a new child spawns below its parent
@@ -121,7 +123,15 @@ export function SkillTreeView() {
     // spread successive new children beside each other rather than stacking
     const placed = editor.treeData.nodes.filter((n) => n.position && n.prerequisites.includes(parentId)).length;
     const id = crypto.randomUUID?.() ?? `n-${Date.now()}`;
-    const params = { id, label: '', icon: NEW_NODE_ICON, color: parent.color, parentId, x: parent.x + placed * SIBLING_GAP, y: parent.y + CHILD_DROP };
+    // born in the parent's kind (same branch) and pushed radially outward from the
+    // center, so a new step lands cleanly in its area rather than crossing others
+    const dist = Math.hypot(parent.x, parent.y);
+    const outX = dist < 1 ? 0 : parent.x / dist;
+    const outY = dist < 1 ? 1 : parent.y / dist;
+    const spread = placed * SIBLING_GAP;
+    const x = parent.x + outX * CHILD_DROP - outY * spread;
+    const y = parent.y + outY * CHILD_DROP + outX * spread;
+    const params = { id, label: '', icon: NEW_NODE_ICON, color: parent.color, parentId, x, y };
     editor.commit(addChildNode(editor.treeData, params));
     syncStructure();
     scene.select(id);
@@ -168,6 +178,17 @@ export function SkillTreeView() {
     const editor = editorRef.current;
     if (!editor || !id) return;
     if (editor.commit(setNodeColor(editor.treeData, id, kind))) syncStructure();
+  }, [syncStructure]);
+
+  // One-click tidy: drop transitively-implied dependencies in one undoable step.
+  // Only offered when there's redundancy to remove, so the commit is never a no-op.
+  const handleTidy = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    if (editor.commit(transitiveReduction(editor.treeData))) {
+      syncStructure();
+      setToast({ message: 'Tidied — dropped redundant links' });
+    }
   }, [syncStructure]);
 
   // Construct the scene once; React only ever drives it through the methods below.
@@ -306,6 +327,9 @@ export function SkillTreeView() {
     return new Map(tree.nodes.map((node) => [node.id, node]));
   }, [tree]);
 
+  // Graph tidiness — cross-area coupling + redundancy → a score the user nudges up.
+  const health = useMemo(() => (tree ? TreeHealth.assess(tree) : null), [tree]);
+
   const selectedNode = selectedId ? nodesById.get(selectedId) ?? null : null;
   const selectedState = selectedId ? states.get(selectedId) ?? 'locked' : null;
 
@@ -355,7 +379,11 @@ export function SkillTreeView() {
         onFitToView={handleFitToView}
         canReset={hasLocalEdits}
         onResetEdits={handleResetEdits}
+        canTidy={!!health && health.redundant > 0}
+        onTidy={handleTidy}
       />
+
+      {datasetSize === 'demo' && <TidinessBadge health={health} />}
 
       <Minimap
         nodes={renderModel?.nodes ?? []}

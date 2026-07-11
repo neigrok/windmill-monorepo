@@ -6,6 +6,19 @@
 // from the dependency graph by UnlockRules, so the saturated "available" nodes
 // are exactly what's unlocked to build next.
 
+// How to add a node and keep the tree tidy (the Tidiness badge scores this):
+//   1. Give it ONE primary prerequisite in its own area (same `color`) — that's its
+//      trunk, and it's what seats the node in its branch. Area seeds have `[]`.
+//   2. Add a cross-area prerequisite only for a capability you genuinely can't build
+//      without, and point it at the NEAREST such node. Each one draws as a faded chord
+//      and costs tidiness — keep them few. (Here: 10, all real cross-area handoffs.)
+//   3. Never list a prerequisite another prerequisite already implies. If A needs B and
+//      B needs C, don't also put C on A — it's a redundant edge. The Tidy button strips
+//      these; e.g. `connect` dropped `domain` because `edit-mode` already reaches it.
+//   4. Keep in-degree low: 1 prereq ideal, 2 when a real cross-area dep exists; 3+ is a
+//      smell — split the node or re-parent to a nearer ancestor.
+// The connect gesture flags cross-area/redundant links live as you draw them.
+
 export const roadmapTree = {
   id: 'windmill-roadmap',
   title: 'Product Roadmap',
@@ -21,7 +34,7 @@ export const roadmapTree = {
     // ---- domain / data / layout (brick) ----
     { id: 'domain', label: 'DAG domain + validation', icon: 'git-branch-plus', color: 'brick', status: 'complete', prerequisites: ['product'] },
     { id: 'layout-dagre', label: 'Layered layout', icon: 'layout-grid', color: 'brick', status: 'complete', prerequisites: ['domain'] },
-    { id: 'radial-layout', label: 'Radial layout', icon: 'compass', color: 'brick', status: 'available', prerequisites: ['domain', 'layout-dagre'] },
+    { id: 'radial-layout', label: 'Radial layout engine', icon: 'compass', color: 'brick', status: 'complete', prerequisites: ['layout-dagre', 'trunk-skeleton'] },
     { id: 'command-layer', label: 'Command + undo stack', icon: 'clipboard-check', color: 'brick', status: 'complete', prerequisites: ['domain'] },
     { id: 'persistence', label: 'Save & load', icon: 'archive', color: 'brick', status: 'complete', prerequisites: ['command-layer'] },
 
@@ -41,13 +54,25 @@ export const roadmapTree = {
     // ---- editing features (terracotta) — the incoming spec ----
     { id: 'edit-mode', label: 'Always-editable mode', icon: 'pencil', color: 'terracotta', status: 'complete', prerequisites: ['edit-affordances', 'command-layer'] },
     { id: 'create-node', label: 'Create node', icon: 'plus', color: 'terracotta', status: 'complete', prerequisites: ['edit-mode', 'bud-state'] },
-    { id: 'connect', label: 'Connect + cycle guard', icon: 'plug', color: 'terracotta', status: 'complete', prerequisites: ['edit-mode', 'domain'] },
+    { id: 'connect', label: 'Connect + cycle guard', icon: 'plug', color: 'terracotta', status: 'complete', prerequisites: ['edit-mode'] },
     { id: 'reconnect', label: 'Reconnect edge', icon: 'wifi', color: 'terracotta', status: 'complete', prerequisites: ['connect'] },
     { id: 'delete-edge', label: 'Delete edge', icon: 'x', color: 'terracotta', status: 'complete', prerequisites: ['connect', 'bud-state'] },
     { id: 'delete-node', label: 'Delete node + splice', icon: 'trash-2', color: 'terracotta', status: 'complete', prerequisites: ['create-node'] },
     { id: 'reorder', label: 'Move / reorder', icon: 'grid-3x3', color: 'terracotta', status: 'locked', prerequisites: ['radial-layout', 'edit-mode'] },
     { id: 'rename', label: 'Rename inline', icon: 'ruler', color: 'terracotta', status: 'complete', prerequisites: ['edit-mode'] },
-    { id: 'kind-picker', label: 'Kind picker', icon: 'sun', color: 'terracotta', status: 'complete', prerequisites: ['edit-mode', 'color-kind'] },
+    { id: 'kind-picker', label: 'Kind picker', icon: 'sun', color: 'terracotta', status: 'complete', prerequisites: ['edit-mode'] },
     { id: 'undo-redo', label: 'Undo / redo (⌘Z)', icon: 'flag', color: 'terracotta', status: 'complete', prerequisites: ['command-layer'] },
+
+    // ---- radial constraints initiative — keep any user's DAG clean & beautiful ----
+    // Working theory: elect one trunk parent per node → radial sectors by branch →
+    // demote/measure cross-branch links so mess reads as visible cost, not chaos.
+    // These nodes double as the running task log for the initiative (per CLAUDE.md).
+    { id: 'trunk-skeleton', label: 'Trunk skeleton pass', icon: 'anchor', color: 'brick', status: 'complete', prerequisites: ['domain'] },
+    { id: 'edge-kinds', label: 'Trunk / link / chord edges', icon: 'fan', color: 'gold', status: 'complete', prerequisites: ['trunk-skeleton', 'edge-trim'] },
+    { id: 'tree-health', label: 'Tidiness metrics', icon: 'thermometer', color: 'brick', status: 'complete', prerequisites: ['trunk-skeleton'] },
+    { id: 'tidiness-badge', label: 'Tidiness score badge', icon: 'star', color: 'gold', status: 'complete', prerequisites: ['tree-health'] },
+    { id: 'edit-cost-hints', label: 'Cross-boundary cost hints', icon: 'flame', color: 'terracotta', status: 'complete', prerequisites: ['connect', 'tree-health'] },
+    { id: 'tidy-action', label: 'One-click tidy', icon: 'spray-can', color: 'terracotta', status: 'complete', prerequisites: ['tree-health', 'command-layer'] },
+    { id: 'clean-create', label: 'Clean-by-default create', icon: 'feather', color: 'terracotta', status: 'complete', prerequisites: ['create-node', 'trunk-skeleton'] },
   ],
 };

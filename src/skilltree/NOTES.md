@@ -402,3 +402,38 @@ reverts the name; an unnamed bud persists as a bud form).
   (`NODE_SIZE*2` vs `NODE_SIZE*0.65`).
 - Canvas clears opaque to the cream background; the CSS radial-gradient behind it is
   hidden. Could make the canvas alpha-blended to let it show through.
+
+## Radial constraints initiative — keep any DAG clean (trunk → radial → tidiness)
+
+Goal: lay out an arbitrary user DAG so it reads like a skill tree (areas consolidate,
+edges stay low, an obvious center) AND nudge users toward cleaner, less cross-coupled
+roadmaps. Thesis: make beauty and cleanliness the same axis — mess renders as visible
+cost, not chaos, so users self-correct.
+
+- **`model/TrunkTree.js`** — pure spanning-arborescence pass. Elects ONE trunk parent
+  per node (same-kind preferred, else shallowest), derives `branchOf` (a branch = a
+  maximal same-colour trunk run, cut at the centre or any colour change), `trunkDepth`,
+  `leafCount`, and `edgeKind` (trunk / in-branch / cross-branch). Key fix during build:
+  cutting branches only at the centre collapsed everything into 2 sectors — cutting at
+  every colour change is what makes affinity sectors real.
+- **`layout/RadialLayoutEngine.js`** — radial tidy tree over the trunk: radius = trunk
+  depth, wedges split by leaf count. We tried promoting every branch to its own ring-1
+  spoke (a forced mandala) — it read *more radial but clumpier*, so we reverted to the
+  depth-keyed layout. Lesson: honour the graph's real fan-out; don't coerce a mandala.
+- **Root emphasis via design, not layout** — a per-instance `emphasis` attribute in
+  `NodeBatch`: the root renders ~1.55× larger, always breathes, and wears a crown ring.
+  That gave the "obvious centre" without the clumpy spokes. Emphasis flags all roots
+  (`prerequisites.length === 0`).
+- **Edge demotion** — `ConnectorBatch` draws trunk bold, in-branch thin, cross-branch a
+  faded chord (per-vertex `aKind` + width). Cross-area coupling literally recedes.
+- **`model/TreeHealth.js`** — pure metrics: crossBranch, redundant (transitive-implied,
+  O(V²) guarded above 1500 nodes), avgInDegree → a 0..100 tidiness score (cross-coupling
+  weighted heavier than redundancy). Roadmap scores 83.
+- **Push-toward-clean UX** — `TidinessBadge` (the score you nudge up), connect-gesture
+  **cost hints** (amber ring + "Links across areas" / "Already implied", non-blocking),
+  one-click **Tidy** (`transitiveReduction` in edits.js, gated on redundant>0), and
+  clean-by-default create (new nodes inherit the parent's kind + spawn radially outward).
+  Verified live: Tidy took the roadmap 83→87, redundant 3→0.
+- **Follow-ups**: huge (5k) crowds at outer rings under pure radial (ring spacing /
+  angular padding needed); cost-hint tip still uses the brick colour (could go amber to
+  match its ring); root visual is a first pass (user will refine).

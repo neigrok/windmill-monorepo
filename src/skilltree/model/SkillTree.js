@@ -3,6 +3,7 @@
 // Pure — no WebGL, no React.
 
 import { NODE_SIZE, DEFAULT_NODE_COLOR, nodeForm } from '../theme.js';
+import { TrunkTree } from './TrunkTree.js';
 
 function hashToUnit(id) {
   let hash = 2166136261;
@@ -42,12 +43,14 @@ export class SkillTree {
 
     this.orderedIds = this.sortTopologically();
     this.rankById = this.computeRanks();
+    this.trunkTree = new TrunkTree(this);
   }
 
   get id() { return this.treeId; }
   get title() { return this.treeTitle; }
   get nodes() { return this.allNodes; }
   get edges() { return this.allEdges; }
+  get trunk() { return this.trunkTree; }
 
   roots() {
     return this.allNodes.filter((node) => node.prerequisites.length === 0);
@@ -102,10 +105,12 @@ export class SkillTree {
         state: states.get(node.id) ?? 'locked',
         form: nodeForm(node.label, node.prerequisites.length, this.childrenIndex.get(node.id).length),
         glowSeed: hashToUnit(node.id),
+        branch: this.trunkTree.branchOf(node.id),
+        emphasis: node.prerequisites.length === 0 ? 1 : 0,
       };
     });
 
-    const renderEdges = this.allEdges.map((edge) => ({ from: edge.from, to: edge.to }));
+    const renderEdges = this.allEdges.map((edge) => ({ from: edge.from, to: edge.to, kind: this.trunkTree.edgeKind(edge.from, edge.to) }));
 
     const xs = renderNodes.map((node) => node.x);
     const ys = renderNodes.map((node) => node.y);

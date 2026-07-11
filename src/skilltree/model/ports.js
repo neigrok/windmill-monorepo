@@ -37,10 +37,13 @@
  * @property {number} layer                z-band for parallax (0 = back)
  * @property {NodeState} state             progress → brightness/glow envelope
  * @property {number} glowSeed             stable 0..1 per node; decorrelates pulse phase
+ * @property {string} branch               the top-level trunk branch (sector) this node belongs to
+ * @property {number} emphasis             1 for a root (the tree's heart) → larger + crowned, else 0
  *
  * @typedef {Object} RenderEdge            a branch; its look follows its source node
  * @property {string} from
  * @property {string} to
+ * @property {'trunk'|'in-branch'|'cross-branch'} kind  trunk = primary parent edge; else in/cross the sector boundary
  *
  * @typedef {Object} RenderModel
  * @property {RenderNode[]} nodes

@@ -9,6 +9,8 @@ import { NODE_COLORS, NODE_COLOR_NAMES, isDone, CONNECTOR, NODE_SIZE } from '../
 
 const SEGMENTS = 14;
 const WIDTH = 4;
+const KIND_HALF_WIDTH = { trunk: 2.6, 'in-branch': 1.6, 'cross-branch': 1.3 };
+const KIND_CODE = { trunk: 0, 'in-branch': 1, 'cross-branch': 2 };
 const BEND_FACTOR = 0.18;
 const GROW_DURATION = 0.5;
 const ALREADY_GROWN = -1000;
@@ -29,6 +31,7 @@ layout(location=2) in float aActive;
 layout(location=3) in float aGrowStart;
 layout(location=4) in float aColor;
 layout(location=5) in float aHover;
+layout(location=6) in float aKind;
 uniform vec2 uResolution;
 uniform vec2 uCamera;
 uniform float uZoom;
@@ -37,12 +40,14 @@ out float vAlongT;
 out float vGrowStart;
 out float vColor;
 out float vHover;
+out float vKind;
 void main() {
   vActive = aActive;
   vAlongT = aAlongT;
   vGrowStart = aGrowStart;
   vColor = aColor;
   vHover = aHover;
+  vKind = aKind;
   vec2 screen = (aPos - uCamera) * uZoom;
   vec2 clip = vec2(screen.x / (uResolution.x * 0.5), -screen.y / (uResolution.y * 0.5));
   gl_Position = vec4(clip, 0.0, 1.0);
@@ -55,6 +60,7 @@ in float vAlongT;
 in float vGrowStart;
 in float vColor;
 in float vHover;
+in float vKind;
 uniform float uTime;
 uniform float uGrowDuration;
 uniform float uMotion;
@@ -72,6 +78,9 @@ void main() {
 
   vec3 color = mix(dim, hue, lit) + hue * lit * 0.16;
   float alpha = mix(0.6, 0.95, lit);
+  float deemph = vKind < 0.5 ? 1.0 : (vKind < 1.5 ? 0.7 : 0.4); // non-trunk edges recede
+  color = mix(color, dim, (1.0 - deemph) * 0.6);
+  alpha *= deemph;
   color = mix(color, uColorHot, vHover); // hover deepens the line to the hot hue
   alpha = mix(alpha, 0.95, vHover);
   fragColor = vec4(color, alpha);
@@ -130,11 +139,10 @@ function colorIndex(name) {
 // the positions depend on the endpoints, so both setModel (bulk) and moveNode
 // (a single node's incident edges) go through here; the along/active/color
 // attributes are constant under a move and written once.
-function writeEdgePositions(positions, vertexStart, fx, fy, tx, ty) {
+function writeEdgePositions(positions, vertexStart, fx, fy, tx, ty, halfWidth) {
   const { cx, cy } = controlPoint(fx, fy, tx, ty);
   const [t0, t1] = trimRange(fx, fy, cx, cy, tx, ty);
   const span = t1 - t0;
-  const halfWidth = WIDTH / 2;
   for (let i = 0; i <= SEGMENTS; i++) {
     const t = t0 + span * (i / SEGMENTS);
     const omt = 1 - t;
@@ -174,6 +182,7 @@ export class ConnectorBatch {
     this.growBuffer = this.attrib(3, 1, gl.DYNAMIC_DRAW);
     this.colorBuffer = this.attrib(4, 1, gl.STATIC_DRAW);
     this.hoverBuffer = this.attrib(5, 1, gl.DYNAMIC_DRAW);
+    this.kindBuffer = this.attrib(6, 1);
     this.indexBuffer = gl.createBuffer();
     gl.bindVertexArray(null);
   }
@@ -196,6 +205,7 @@ export class ConnectorBatch {
     this.positions = new Float32Array(vertexTotal * 2);
     const along = new Float32Array(vertexTotal);
     const colors = new Float32Array(vertexTotal);
+    const kinds = new Float32Array(vertexTotal);
     this.active = new Float32Array(vertexTotal);
     this.grow = new Float32Array(vertexTotal).fill(ALREADY_GROWN);
     this.hover = new Float32Array(vertexTotal);
@@ -212,14 +222,17 @@ export class ConnectorBatch {
       const vertexStart = e * VERTS_PER_EDGE;
       const active = isDone(from.state) ? 1 : 0;
       const colorIdx = colorIndex(from.color);
+      const halfWidth = KIND_HALF_WIDTH[edge.kind] ?? KIND_HALF_WIDTH.trunk;
+      const code = KIND_CODE[edge.kind] ?? 0;
 
-      writeEdgePositions(this.positions, vertexStart, from.x, from.y, to.x, to.y);
+      writeEdgePositions(this.positions, vertexStart, from.x, from.y, to.x, to.y, halfWidth);
       for (let i = 0; i <= SEGMENTS; i++) {
         const v = vertexStart + i * 2;
         const local = i / SEGMENTS;
         along[v] = local; along[v + 1] = local;
         this.active[v] = active; this.active[v + 1] = active;
         colors[v] = colorIdx; colors[v + 1] = colorIdx;
+        kinds[v] = code; kinds[v + 1] = code;
       }
       for (let i = 0; i < SEGMENTS; i++) {
         const a = vertexStart + i * 2;
@@ -232,7 +245,7 @@ export class ConnectorBatch {
         this.edgesByNode.get(nid).push(e);
       }
       this.edgeIndex.set(`${edge.from}→${edge.to}`, e);
-      return { from: edge.from, to: edge.to, active, vertexStart };
+      return { from: edge.from, to: edge.to, active, vertexStart, halfWidth };
     });
 
     this.indexCount = indices.length;
@@ -240,6 +253,7 @@ export class ConnectorBatch {
     this.uploadStatic(this.posBuffer, this.positions);
     this.uploadStatic(this.alongBuffer, along);
     this.uploadStatic(this.colorBuffer, colors);
+    this.uploadStatic(this.kindBuffer, kinds);
     this.uploadDynamic(this.activeBuffer, this.active);
     this.uploadDynamic(this.growBuffer, this.grow);
     this.uploadDynamic(this.hoverBuffer, this.hover);
@@ -263,7 +277,7 @@ export class ConnectorBatch {
       const edge = this.edges[e];
       const from = this.nodePos.get(edge.from);
       const to = this.nodePos.get(edge.to);
-      writeEdgePositions(this.positions, edge.vertexStart, from.x, from.y, to.x, to.y);
+      writeEdgePositions(this.positions, edge.vertexStart, from.x, from.y, to.x, to.y, edge.halfWidth);
       const start = edge.vertexStart * 2;
       gl.bufferSubData(gl.ARRAY_BUFFER, start * 4, this.positions, start, VERTS_PER_EDGE * 2);
     }
@@ -332,6 +346,6 @@ export class ConnectorBatch {
     const gl = this.gl;
     gl.deleteProgram(this.program);
     gl.deleteVertexArray(this.vao);
-    [this.posBuffer, this.alongBuffer, this.activeBuffer, this.growBuffer, this.colorBuffer, this.hoverBuffer, this.indexBuffer].forEach((b) => gl.deleteBuffer(b));
+    [this.posBuffer, this.alongBuffer, this.activeBuffer, this.growBuffer, this.colorBuffer, this.hoverBuffer, this.kindBuffer, this.indexBuffer].forEach((b) => gl.deleteBuffer(b));
   }
 }

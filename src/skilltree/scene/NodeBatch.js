@@ -23,6 +23,7 @@ layout(location=5) in float aIconCell;
 layout(location=6) in float aTier;
 layout(location=7) in float aForm;
 layout(location=8) in float aFaded;
+layout(location=9) in float aEmphasis;
 uniform vec2 uResolution;
 uniform vec2 uCamera;
 uniform float uZoom;
@@ -36,6 +37,7 @@ out float vSelected;
 out float vIconCell;
 out float vForm;
 out float vFaded;
+out float vEmphasis;
 void main() {
   vUv = aQuad + 0.5;
   vColor = aColor;
@@ -45,7 +47,8 @@ void main() {
   vIconCell = aIconCell;
   vForm = aForm;
   vFaded = aFaded;
-  float size = uNodeSize * (1.0 + aSelected * 0.14) * uPadding;
+  vEmphasis = aEmphasis;
+  float size = uNodeSize * (1.0 + aSelected * 0.14 + aEmphasis * 0.55) * uPadding;
   vec2 world = aOffset + aQuad * size;
   vec2 screen = (world - uCamera) * uZoom;
   vec2 clip = vec2(screen.x / (uResolution.x * 0.5), -screen.y / (uResolution.y * 0.5));
@@ -62,6 +65,7 @@ in float vSelected;
 in float vIconCell;
 in float vForm;
 in float vFaded;
+in float vEmphasis;
 uniform float uPadding;
 uniform float uTime;
 uniform float uGlowSpeed;
@@ -124,6 +128,7 @@ void main() {
   float strength = 0.0;
   if (tier == 2) strength = pulse;
   if (tier >= 1) strength = max(strength, vSelected);
+  strength = max(strength, vEmphasis * (0.7 + 0.3 * pulse)); // the heart always breathes
   float glowFalloff = smoothstep(1.6, 0.1, dist);
   float glowAmt = glow.a * strength * glowFalloff * 1.7;
   if (vFaded > 0.5) glowAmt = 0.0; // a faded ghost carries no halo
@@ -135,6 +140,12 @@ void main() {
   vec3 color = body * bodyMask + glow.rgb * glowAmt;
   color = color * (1.0 - outerA) + base * outerA;
   float alpha = max(max(bodyMask, glowAmt), outerA);
+
+  // ---- root crown: an emphasized node wears a bright ring beyond its body ----
+  float crownBand = 1.0 - smoothstep(0.0, 0.05, abs(dist - 1.32));
+  float crownA = crownBand * vEmphasis * 0.85;
+  color = color * (1.0 - crownA) + mix(ring, vec3(1.0), 0.25) * crownA;
+  alpha = max(alpha, crownA);
 
   // ---- structural form: a dashed ring on buds (nascent) and unlinked strays ----
   int form = int(vForm + 0.5); // 0 linked, 1 bud, 2 unlinked
@@ -213,6 +224,7 @@ export class NodeBatch {
     this.tierBuffer = this.attribBuffer(6, 1, null, 1, gl.DYNAMIC_DRAW);
     this.formBuffer = this.attribBuffer(7, 1, null, 1, gl.DYNAMIC_DRAW);
     this.fadedBuffer = this.attribBuffer(8, 1, null, 1, gl.DYNAMIC_DRAW);
+    this.emphasisBuffer = this.attribBuffer(9, 1, null, 1, gl.DYNAMIC_DRAW);
 
     gl.bindVertexArray(null);
   }
@@ -249,6 +261,7 @@ export class NodeBatch {
     this.tiers = new Float32Array(count);
     const forms = new Float32Array(count);
     this.faded = new Float32Array(count);
+    const emphasis = new Float32Array(count);
 
     renderNodes.forEach((node, i) => {
       this.idToIndex.set(node.id, i);
@@ -259,6 +272,7 @@ export class NodeBatch {
       iconCells[i] = iconAtlas ? iconAtlas.cellFor(node.icon) : -1;
       this.tiers[i] = nodeTier(node.state);
       forms[i] = node.form ?? 0;
+      emphasis[i] = node.emphasis ?? 0;
     });
 
     this.upload(this.offsetBuffer, this.offsets);
@@ -269,6 +283,7 @@ export class NodeBatch {
     this.upload(this.tierBuffer, this.tiers);
     this.upload(this.formBuffer, forms);
     this.upload(this.fadedBuffer, this.faded);
+    this.upload(this.emphasisBuffer, emphasis);
   }
 
   upload(buffer, data) {
@@ -372,7 +387,7 @@ export class NodeBatch {
     const gl = this.gl;
     gl.deleteProgram(this.program);
     gl.deleteVertexArray(this.vao);
-    [this.quadBuffer, this.offsetBuffer, this.colorBuffer, this.glowSeedBuffer, this.selectedBuffer, this.iconCellBuffer, this.tierBuffer, this.formBuffer, this.fadedBuffer]
+    [this.quadBuffer, this.offsetBuffer, this.colorBuffer, this.glowSeedBuffer, this.selectedBuffer, this.iconCellBuffer, this.tierBuffer, this.formBuffer, this.fadedBuffer, this.emphasisBuffer]
       .forEach((b) => gl.deleteBuffer(b));
   }
 }
