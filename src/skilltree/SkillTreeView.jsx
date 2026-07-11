@@ -247,6 +247,7 @@ export function SkillTreeView() {
     editor.commit(repositionNode(editor.treeData, id, x, y));
     setRenderModel((model) => (model ? { ...model } : model));
     persistEdits();
+    collabRef.current?.send('RepositionNode', { id, x, y });
   }, [persistEdits]);
 
   const undo = useCallback(() => { if (editorRef.current?.undo()) syncStructure(); }, [syncStructure]);
@@ -262,6 +263,7 @@ export function SkillTreeView() {
     const wasNamed = node.label.trim() !== ''; // naming a fresh bud is part of the add, not a rename
     editor.commit(renameNode(editor.treeData, id, label));
     syncStructure();
+    collabRef.current?.send('RenameNode', { id, label });
     if (wasNamed) emit({ verb: 'renamed', nodeId: id, label, kind: node.color });
   }, [syncStructure, emit]);
 
@@ -287,6 +289,7 @@ export function SkillTreeView() {
     const params = { id, label: '', icon: NEW_NODE_ICON, color: parent.color, parentId, x, y };
     editor.commit(addChildNode(editor.treeData, params));
     syncStructure();
+    collabRef.current?.send('CreateNode', params);
     scene.select(id);
     setSelectedId(id);
     setAutoFocusNameId(id);
@@ -298,14 +301,20 @@ export function SkillTreeView() {
   const handleConnect = useCallback((sourceId, targetId) => {
     const editor = editorRef.current;
     if (!editor) return;
-    if (editor.commit(addEdge(editor.treeData, sourceId, targetId))) syncStructure();
+    if (editor.commit(addEdge(editor.treeData, sourceId, targetId))) {
+      syncStructure();
+      collabRef.current?.send('AddEdge', { from: sourceId, to: targetId });
+    }
   }, [syncStructure]);
 
   // Midpoint × on a branch → drop the edge (silent, one step; ⌘Z restores).
   const handleDeleteEdge = useCallback((sourceId, targetId) => {
     const editor = editorRef.current;
     if (!editor) return;
-    if (editor.commit(removeEdge(editor.treeData, sourceId, targetId))) syncStructure();
+    if (editor.commit(removeEdge(editor.treeData, sourceId, targetId))) {
+      syncStructure();
+      collabRef.current?.send('RemoveEdge', { from: sourceId, to: targetId });
+    }
   }, [syncStructure]);
 
   // Drag an edge endpoint to a new node → re-aim it in one undoable step. The
@@ -313,7 +322,10 @@ export function SkillTreeView() {
   const handleReconnect = useCallback((oldFrom, oldTo, newFrom, newTo) => {
     const editor = editorRef.current;
     if (!editor) return;
-    if (editor.commit(reconnectEdge(editor.treeData, oldFrom, oldTo, newFrom, newTo))) syncStructure();
+    if (editor.commit(reconnectEdge(editor.treeData, oldFrom, oldTo, newFrom, newTo))) {
+      syncStructure();
+      collabRef.current?.send('ReconnectEdge', { oldFrom, oldTo, newFrom, newTo });
+    }
   }, [syncStructure]);
 
   // Delete a node; its children splice up to the deleted node's parents (one
@@ -322,6 +334,8 @@ export function SkillTreeView() {
     const editor = editorRef.current;
     if (!editor || !id) return;
     const node = editor.treeData.nodes.find((n) => n.id === id); // snapshot before it's gone
+    // Not synced over the socket yet: this splices children up to grandparents, but the
+    // backend's DeleteNode is a plain tombstone — the two must be aligned first.
     editor.commit(deleteNode(editor.treeData, id));
     if (selectedIdRef.current === id) setSelectedId(null);
     syncStructure();
@@ -333,7 +347,10 @@ export function SkillTreeView() {
   const handleSetKind = useCallback((id, kind) => {
     const editor = editorRef.current;
     if (!editor || !id) return;
-    if (editor.commit(setNodeColor(editor.treeData, id, kind))) syncStructure();
+    if (editor.commit(setNodeColor(editor.treeData, id, kind))) {
+      syncStructure();
+      collabRef.current?.send('SetNodeColor', { id, color: kind });
+    }
   }, [syncStructure]);
 
   // One-click tidy: drop transitively-implied dependencies in one undoable step.
@@ -343,6 +360,7 @@ export function SkillTreeView() {
     if (!editor) return;
     if (editor.commit(transitiveReduction(editor.treeData))) {
       syncStructure();
+      collabRef.current?.send('TransitiveReduction', {});
       showToast('Tidied — dropped redundant links', { action: { label: 'Undo', run: undo } });
     }
   }, [syncStructure, showToast, undo]);

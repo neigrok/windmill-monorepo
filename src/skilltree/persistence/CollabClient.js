@@ -11,6 +11,7 @@ export class CollabClient {
     this.lastSeq = lastSeq;
     this.ws = null;
     this.opHandler = null;
+    this.sent = new Set(); // opIds we authored — their echoes are already applied locally
     this.closed = false;
   }
 
@@ -31,6 +32,7 @@ export class CollabClient {
       // carry the deltas we render live.
       if (frame.t === 'op') {
         this.lastSeq = frame.seq;
+        if (frame.opId && this.sent.has(frame.opId)) return; // our own edit, already applied
         this.opHandler?.(frame);
       }
     });
@@ -40,6 +42,7 @@ export class CollabClient {
   send(kind, payload) {
     if (this.ws?.readyState !== WebSocket.OPEN) return;
     const opId = crypto.randomUUID?.() ?? `op-${Date.now()}-${Math.random()}`;
+    this.sent.add(opId);
     this.ws.send(JSON.stringify({ t: 'cmd', treeId: this.treeId, opId, kind, payload }));
   }
 

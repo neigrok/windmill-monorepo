@@ -43,10 +43,14 @@ appears in the app without a reload. (An op that would leave the graph invalid, 
 remote cycle, is swallowed and the view holds its last valid render; a proper
 loose-graph render path is still future work.)
 
-## In-app editing vs. persisting a deed
+## In-app editing over the socket (write-path)
 
-The editor's own create/connect/rename gestures still commit to `localStorage` via
-`TreeStore` — a per-browser overlay, **not** the server — so treat in-app edits as a
-local preview. The **write-path** (in-app edits → a `cmd` over the socket) is the next
-step; until then, author shared deeds on the server (the backend `dogfood.md` recipe)
-and watch them arrive live.
+In-app edits now also send a `cmd` over the socket, so two tabs genuinely co-edit: a
+create, rename, recolor, reposition, connect, reconnect, drop-edge, or tidy in one tab
+merges on the backend and appears in the others. `CollabClient` tags each sent op and
+skips its own echo, so an author never double-applies its own edit. Edits still commit
+to `localStorage` too, as a per-browser fallback.
+
+**Delete is not synced yet**: the app's delete splices children up to grandparents, but
+the backend's `DeleteNode` is a plain tombstone — the two must be aligned before delete
+can ride the socket. Until then a delete stays local.
