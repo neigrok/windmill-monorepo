@@ -326,3 +326,27 @@ pass; the full project (server + mcp) builds green.
   local room on delete. Also added `DELETE` to the CORS preflight `Allow-Methods` — the shared
   choke point advertises the whole verb set, so a missing verb silently fails the browser's
   real request.
+- **MCP folded into `windmill_server` (one RoomRegistry per tree).** The standalone
+  `windmill_mcp_http` process was a *second* authority for every tree: its own `RoomRegistry` over the
+  shared Postgres, a `NullPresenceBus`, and `seq` minted from its own in-memory `++head_`. So an agent's
+  edits advanced the MCP process's room while the API process kept serving its pinned room (stale reads),
+  and — worse — the two minted colliding seqs against `tree_ops`' `primary key (tree_id, seq)`: the
+  moment the web edited an MCP-touched tree (or vice-versa) the INSERT hit the PK and threw. SPEC §11's
+  "one writer per tree" was broken by the process split. Fix: mount the Streamable-HTTP endpoint +
+  `RoadmapTools` inside `main.cpp`, sharing the server's `RoomRegistry`/`ProgressService`/`TreeRegistry`/
+  `OAuthService` and its real `WsPresenceBus` — MCP edits now run through the same room (one head/seq) and
+  fan out live to socket subscribers. `RoadmapTools` reuses the existing `SystemClock`; the resource
+  audience stays `WINDMILL_MCP_PUBLIC_URL` (DOMAIN_MCP) so existing OAuth connections are unaffected; the
+  API CORS preflight/post-handling skip `/mcp`, which keeps its own MCP-header preflight + `Mcp-Session-Id`
+  expose. Deploy: `DOMAIN_MCP` proxies to `server:8080`, the `mcp` compose service is retired
+  (`windmill_mcp_http` still builds for local/standalone). Verified end-to-end: MCP `create_node` then
+  `GET /v1/trees/:id` in one process reflects the write. The op-log PK meant no durable corruption — the
+  collisions were rejected, not written — which is why a server reload heals a stale room.
+- **Still open (scale-out): single-authority breaks again across >1 server replica.** The fix restores one
+  room per tree only while a single `windmill_server` runs; two replicas behind a load balancer reintroduce
+  the same collision. Durable fix: DB-authoritative `seq` (a per-tree sequence / advisory-locked
+  `max(seq)+1`, never a cached `head_`) + a real cross-process bus (Redis/NATS) behind `PresenceBus` so
+  resident rooms replay remote ops (dedup by the existing `unique (tree_id, op_id)`), plus sticky per-tree
+  routing. Guardrail worth adding first: make `TreeRoom::submit` persist-then-apply (or roll back the
+  `merge`/`++head_` when `append` throws) and treat a seq conflict as "I'm behind → replay + retry",
+  turning today's hard error into self-healing.

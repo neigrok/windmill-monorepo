@@ -55,6 +55,11 @@ services:
       WINDMILL_COOKIE_DOMAIN: ${DOMAIN_APP}
       # This host is the OAuth authorization server (issuer) for the MCP resource server.
       WINDMILL_API_URL: https://${DOMAIN_API}
+      # MCP (Streamable-HTTP) is served in-process by this same binary; DOMAIN_MCP proxies here.
+      # The token audience stays the MCP host so existing OAuth connections keep working.
+      WINDMILL_MCP_PUBLIC_URL: https://${DOMAIN_MCP}
+      WINDMILL_MCP_ALLOWED_ORIGINS: ${WINDMILL_MCP_ALLOWED_ORIGINS:-}
+      WINDMILL_MCP_TOKEN: ${WINDMILL_MCP_TOKEN:-}
     command: ["windmill_server"]
     healthcheck:
       test: ["CMD-SHELL", "curl -s -o /dev/null http://localhost:8080/ || exit 1"]
@@ -63,37 +68,15 @@ services:
       retries: 6
       start_period: 10s
 
-  mcp:
-    image: ghcr.io/neigrok/windmill-backend:${IMAGE_TAG:-latest}
-    restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
-    environment:
-      DATABASE_URL: postgresql://windmill:${POSTGRES_PASSWORD}@db:5432/windmill
-      PORT: "8090"
-      WINDMILL_MCP_ALLOWED_ORIGINS: ${WINDMILL_MCP_ALLOWED_ORIGINS:-}
-      WINDMILL_MCP_TOKEN: ${WINDMILL_MCP_TOKEN:-}
-      # OAuth resource-server identity: this host is the token audience; the API host is its
-      # authorization server. Both derive from the domains — no extra secrets.
-      WINDMILL_MCP_PUBLIC_URL: https://${DOMAIN_MCP}
-      WINDMILL_OAUTH_ISSUER: https://${DOMAIN_API}
-    command: ["windmill_mcp_http"]
-    healthcheck:
-      test: ["CMD-SHELL", "curl -s -o /dev/null http://localhost:8090/ || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 6
-      start_period: 10s
+  # The standalone `mcp` service is retired: windmill_server now serves REST, the collab socket,
+  # and MCP from one process against a single RoomRegistry, so an agent's edits and the web reader
+  # share the same live room. (The windmill_mcp_http binary still builds for local/standalone use.)
 
   caddy:
     image: caddy:2
     restart: unless-stopped
     depends_on:
       - server
-      - mcp
     ports:
       - "80:80"
       - "443:443"

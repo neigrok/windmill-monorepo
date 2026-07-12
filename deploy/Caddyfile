@@ -1,5 +1,6 @@
 # Automatic HTTPS via Let's Encrypt. Caddy proxies WebSockets transparently, so the
-# collab socket on windmill_server needs no extra config. Two hostnames, two upstreams.
+# collab socket on windmill_server needs no extra config. The API and MCP hostnames both
+# proxy to windmill_server (MCP is mounted in-process); the app hostname is a static site.
 #
 # Single-host alternative (one domain, path-routed) — replace the two blocks below with:
 #   {$DOMAIN_API} {
@@ -30,6 +31,9 @@
 	reverse_proxy server:8080
 }
 
+# MCP is now served in-process by windmill_server (one RoomRegistry for REST + socket + MCP),
+# so this hostname proxies to the same upstream as the API. The token audience stays the MCP
+# host (WINDMILL_MCP_PUBLIC_URL), so existing OAuth connections are unaffected.
 {$DOMAIN_MCP} {
 	import cloudflare_only
 	header {
@@ -37,7 +41,7 @@
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "no-referrer"
 	}
-	reverse_proxy mcp:8090
+	reverse_proxy server:8080
 }
 
 # The frontend (windmill repo) is a static Vite SPA rsync'd into ./web by its own deploy

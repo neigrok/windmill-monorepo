@@ -6,6 +6,9 @@
 #include "adapters/http/OAuthApi.h"
 #include "adapters/http/RateLimiter.h"
 #include "adapters/http/TreeRegistryApi.h"
+#include "adapters/mcp/McpHttpEndpoint.h"
+#include "adapters/mcp/McpServer.h"
+#include "adapters/mcp/RoadmapTools.h"
 #include "adapters/postgres/PgAuthRepository.h"
 #include "adapters/postgres/PgOAuthRepository.h"
 #include "adapters/postgres/PgOpLog.h"
@@ -85,6 +88,37 @@ int main() {
   auto treeRegistry = std::make_shared<TreeRegistry>(*trees, *progress, *tokens, genesis);
   auto registryApi = std::make_shared<TreeRegistryApi>(treeRegistry, authService);
 
+  // MCP (Streamable-HTTP) mounted in this same process — the whole point of this change: agent
+  // edits run through the very same RoomRegistry as REST and the socket, so a tree has exactly
+  // one live room (one head/seq, no cross-process collisions) and every MCP edit fans out to WS
+  // subscribers through the shared WsPresenceBus. The resource server validates the OAuth access
+  // tokens this host issues, audience-bound to the MCP resource URL (still served under DOMAIN_MCP
+  // via Caddy). Defaults keep it working with no extra env: the audience falls back to this host.
+  const char* mcpPathEnv = std::getenv("WINDMILL_MCP_PATH");
+  const std::string mcpPath = mcpPathEnv ? mcpPathEnv : "/mcp";
+  const char* mcpUserEnv = std::getenv("WINDMILL_MCP_USER");
+  const UserId mcpFallbackUser{std::string(mcpUserEnv ? mcpUserEnv : "dev")};
+  const char* mcpPublicEnv = std::getenv("WINDMILL_MCP_PUBLIC_URL");
+  const std::string mcpPublicUrl = mcpPublicEnv ? mcpPublicEnv : apiBaseUrl;
+  const std::string mcpResource = mcpPublicUrl + mcpPath;
+  const std::string mcpResourceMetadataUrl = mcpPublicUrl + "/.well-known/oauth-protected-resource";
+  const char* mcpTokenEnv = std::getenv("WINDMILL_MCP_TOKEN");
+  const std::string mcpToken = mcpTokenEnv ? mcpTokenEnv : "";  // shared bearer fallback for CI/agents
+  const char* mcpOriginsEnv = std::getenv("WINDMILL_MCP_ALLOWED_ORIGINS");
+  const std::set<std::string> mcpOrigins = parseOriginList(mcpOriginsEnv ? mcpOriginsEnv : "");
+
+  auto mcpTools = std::make_shared<RoadmapTools>(*registry, *progressService, *systemClock, *treeRegistry);
+  McpAuth mcpAuth{oauthService.get(), mcpResource, mcpResourceMetadataUrl, mcpToken, mcpFallbackUser};
+  ServerInfo mcpInfo{
+      "windmill", "0.1.0",
+      "Windmill roadmaps are RPG-style skill trees: nodes are skills/milestones, and a "
+      "prerequisite edge points from a required node to the node it unlocks. Use get_tree and "
+      "get_diagnostics to inspect, the edit tools (create_node, connect, …) to author, and "
+      "set_progress to mark a node active or complete. Edits are never rejected — a cycle or a "
+      "detached node is surfaced by get_diagnostics, not refused."};
+  auto mcpServer = std::make_shared<McpServer>(*mcpTools, std::move(mcpInfo));
+  auto mcpEndpoint = std::make_shared<McpHttpEndpoint>(*mcpServer, mcpOrigins, mcpAuth);
+
   // The origins allowed to send credentialed (cookie-bearing) requests. The app itself is
   // always trusted; WINDMILL_ALLOWED_ORIGINS adds more, comma-separated. Anything else gets
   // no CORS grant, so a hostile page cannot drive /v1/auth/verify with the victim's cookies.
@@ -128,8 +162,9 @@ int main() {
   // any origin and advertising only OPTIONS in Allow-Methods, so the browser refuses the real POST).
   // It must be a *sync* advice: only that hook short-circuits on its return value. A pre-routing
   // lambda of this shape binds to the void(req) observer overload instead, so its response is dropped.
-  app.registerSyncAdvice([writeCors](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
+  app.registerSyncAdvice([writeCors, mcpPath](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
     if (req->method() != drogon::Options) return nullptr;  // real requests are dressed on the way out
+    if (req->path() == mcpPath) return nullptr;            // the MCP endpoint answers its own preflight
     auto resp = drogon::HttpResponse::newHttpResponse();
     resp->setStatusCode(drogon::k204NoContent);
     writeCors(req, resp);
@@ -175,7 +210,24 @@ int main() {
   // Real responses carry the credentialed grant on the way out; preflight is answered above at
   // the sync join point, so no per-route OPTIONS handler is needed anywhere.
   app.registerPostHandlingAdvice(
-      [writeCors](const drogon::HttpRequestPtr& req, const drogon::HttpResponsePtr& resp) { writeCors(req, resp); });
+      [writeCors, mcpPath](const drogon::HttpRequestPtr& req, const drogon::HttpResponsePtr& resp) {
+        if (req->path() == mcpPath) return;  // MCP responses carry their own origin policy (below)
+        writeCors(req, resp);
+      });
+
+  // MCP CORS for browser-based clients: reflect an allowed Origin and expose the session-id header
+  // the transport mints. Non-browser clients (the common case) send no Origin and are gated only by
+  // the endpoint's own DNS-rebind Origin check — token auth, not cookies, so no Allow-Credentials.
+  app.registerPostHandlingAdvice(
+      [mcpOrigins, mcpPath](const drogon::HttpRequestPtr& req, const drogon::HttpResponsePtr& resp) {
+        if (req->path() != mcpPath) return;
+        const std::string origin = req->getHeader("Origin");
+        if (origin.empty()) return;
+        if (!mcpOrigins.count("*") && !mcpOrigins.count(origin)) return;
+        resp->addHeader("Access-Control-Allow-Origin", mcpOrigins.count("*") ? "*" : origin);
+        resp->addHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
+        resp->addHeader("Vary", "Origin");
+      });
 
   app.registerHandler(
       "/v1/auth/magic-link",
@@ -280,6 +332,51 @@ int main() {
       "/v1/trees/{id}/activity",
       [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
         api->getActivity(req, std::move(cb), id);
+      },
+      {drogon::Get});
+
+  // MCP Streamable-HTTP transport: one path, three verbs (POST a JSON-RPC message, GET a would-be
+  // SSE stream — 405 here, DELETE ends a session), plus its own OPTIONS preflight advertising the
+  // MCP headers the generic API preflight above deliberately skips.
+  app.registerHandler(
+      mcpPath,
+      [mcpEndpoint](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { mcpEndpoint->handlePost(req, std::move(cb)); },
+      {drogon::Post});
+  app.registerHandler(
+      mcpPath,
+      [mcpEndpoint](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { mcpEndpoint->handleGet(req, std::move(cb)); },
+      {drogon::Get});
+  app.registerHandler(
+      mcpPath,
+      [mcpEndpoint](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { mcpEndpoint->handleDelete(req, std::move(cb)); },
+      {drogon::Delete});
+  app.registerHandler(
+      mcpPath,
+      [](const drogon::HttpRequestPtr&, HttpCallback&& cb) {
+        auto resp = drogon::HttpResponse::newHttpResponse();
+        resp->setStatusCode(drogon::k204NoContent);
+        resp->addHeader("Access-Control-Allow-Methods", "POST, GET, DELETE, OPTIONS");
+        resp->addHeader("Access-Control-Allow-Headers",
+                        "content-type, mcp-session-id, mcp-protocol-version, authorization");
+        resp->addHeader("Access-Control-Max-Age", "86400");
+        cb(resp);
+      },
+      {drogon::Options});
+
+  // OAuth Protected Resource Metadata (RFC 9728): where an MCP client discovers this host's
+  // authorization server after a 401 challenge. Public, unauthenticated.
+  app.registerHandler(
+      "/.well-known/oauth-protected-resource",
+      [mcpResource, apiBaseUrl](const drogon::HttpRequestPtr&, HttpCallback&& cb) {
+        Json::Value metadata(Json::objectValue);
+        metadata["resource"] = mcpResource;
+        Json::Value servers(Json::arrayValue);
+        servers.append(apiBaseUrl);
+        metadata["authorization_servers"] = servers;
+        Json::Value methods(Json::arrayValue);
+        methods.append("header");
+        metadata["bearer_methods_supported"] = methods;
+        cb(drogon::HttpResponse::newHttpJsonResponse(metadata));
       },
       {drogon::Get});
 

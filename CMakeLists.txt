@@ -83,23 +83,26 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     adapters/ws/TreeSocket.cpp)
   target_link_libraries(windmill_adapters PUBLIC windmill_application Drogon::Drogon libpqxx::pqxx OpenSSL::Crypto)
 
-  add_executable(windmill_server infra/main.cpp)
-  target_link_libraries(windmill_server PRIVATE windmill_adapters)
-  message(STATUS "windmill_server enabled (Drogon + libpqxx found)")
-
   # MCP adapter (SPEC §11 boundary): a first-class edge onto the same application core, so
   # an AI agent authors roadmaps through the rooms exactly as HTTP/WS clients do. The engine
   # (McpServer) is transport-agnostic; stdio and Streamable-HTTP are two thin transports.
+  # Defined before windmill_server so the server can mount the HTTP transport in-process —
+  # one RoomRegistry for REST, the socket, and MCP (a tree has a single live room).
   add_library(windmill_mcp_lib
     adapters/mcp/McpServer.cpp
     adapters/mcp/RoadmapTools.cpp
     adapters/mcp/McpHttpEndpoint.cpp)
   target_link_libraries(windmill_mcp_lib PUBLIC windmill_adapters)
 
+  # One process serves REST, the collab socket, AND MCP over the same rooms.
+  add_executable(windmill_server infra/main.cpp)
+  target_link_libraries(windmill_server PRIVATE windmill_mcp_lib)
+  message(STATUS "windmill_server enabled (Drogon + libpqxx found)")
+
   add_executable(windmill_mcp infra/mcp_main.cpp)               # stdio transport (local hosts)
   target_link_libraries(windmill_mcp PRIVATE windmill_mcp_lib)
 
-  add_executable(windmill_mcp_http infra/mcp_http_main.cpp)     # Streamable-HTTP transport (deploy)
+  add_executable(windmill_mcp_http infra/mcp_http_main.cpp)     # standalone HTTP transport (legacy; now folded into windmill_server)
   target_link_libraries(windmill_mcp_http PRIVATE windmill_mcp_lib)
 
   add_executable(windmill_mcp_tests
