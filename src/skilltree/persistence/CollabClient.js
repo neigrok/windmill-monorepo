@@ -2,9 +2,9 @@
 // streams authoritative op frames as they land. Read-path for now: it surfaces remote
 // ops so the view can apply them; `send` is here for a future write-path.
 
-// The socket lives on the same origin as the API: swap the http(s) scheme for ws(s).
-const API_BASE = import.meta.env?.VITE_API_BASE_URL;
-const DEFAULT_URL = API_BASE ? `${API_BASE.replace(/^http/, 'ws')}/v1/socket` : 'ws://localhost:8088/v1/socket';
+import { socketUrl } from '../apiBase.js';
+
+const DEFAULT_URL = socketUrl();
 
 export class CollabClient {
   constructor({ url = DEFAULT_URL, treeId, lastSeq = 0 } = {}) {

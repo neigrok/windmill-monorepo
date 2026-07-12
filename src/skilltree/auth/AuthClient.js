@@ -3,7 +3,7 @@
 // AuthError whose `code` maps straight to the copy in auth.md §7. A dead server is
 // never a crash — requestMagicLink/verifyToken report `unreachable`, fetchMe goes null.
 
-const API_BASE = import.meta.env?.VITE_API_BASE_URL ?? 'http://localhost:8088';
+import { API_BASE } from '../apiBase.js';
 
 export class AuthError extends Error {
   constructor(message, { code, detail, status }) {

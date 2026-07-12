@@ -3,11 +3,10 @@
 // MockTreeRepository, so it drops straight into the load pipeline.
 
 import { TreeRepository } from '../model/ports.js';
-
-const DEFAULT_BASE_URL = import.meta.env?.VITE_API_BASE_URL ?? 'http://localhost:8088';
+import { API_BASE } from '../apiBase.js';
 
 export class HttpTreeRepository extends TreeRepository {
-  constructor({ baseUrl = DEFAULT_BASE_URL, treeId } = {}) {
+  constructor({ baseUrl = API_BASE, treeId } = {}) {
     super();
     if (!treeId) throw new Error('HttpTreeRepository requires a treeId — there is no default roadmap');
     this.baseUrl = baseUrl;

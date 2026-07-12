@@ -9,8 +9,7 @@
 // surfaces as an AuthError the birth canvas turns into a sign-in prompt.
 
 import { AuthError } from '../auth/AuthClient.js';
-
-const API_BASE = import.meta.env?.VITE_API_BASE_URL ?? 'http://localhost:8088';
+import { API_BASE } from '../apiBase.js';
 
 // One row per owned roadmap: { id, title, done, total, updatedAt }. Missing fields are
 // the backend's to fill; the switcher renders whatever it gets and skips the rest.

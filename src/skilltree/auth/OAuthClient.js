@@ -6,8 +6,7 @@
 // brick it is everywhere else, and every failure carries a `code` the screen maps to copy.
 
 import { AuthError } from './AuthClient.js';
-
-const API_BASE = import.meta.env?.VITE_API_BASE_URL ?? 'http://localhost:8088';
+import { API_BASE } from '../apiBase.js';
 
 // The registered client behind a client_id, so the screen renders a name Windmill
 // vouches for — never attacker-supplied text from the URL. 404 is an unknown app.
