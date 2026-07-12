@@ -135,11 +135,12 @@ int main() {
 
   // Abuse ceilings, enforced at the sync join point so the 429 actually short-circuits — a
   // pre-routing advice returning a response binds to the observer overload and is dropped (see
-  // CORS above). The limiter keys on the real client IP Caddy records in X-Forwarded-For;
-  // internal traffic (health checks, no XFF) is never limited. The magic-link path additionally
-  // rides a tight per-client bucket and a global send ceiling that protects the Resend quota.
+  // CORS above). The limiter keys on the real visitor IP (CF-Connecting-IP behind Cloudflare, see
+  // clientIp); internal traffic (no proxy header) is never limited. The magic-link path adds a
+  // per-client bucket loose enough for shared NAT, plus a global send ceiling — the real guard on
+  // the Resend quota — that no single client can lift.
   auto apiLimiter = std::make_shared<RateLimiter>(25.0, 50.0);          // ~25 req/s/client, burst 50
-  auto magicPerIp = std::make_shared<RateLimiter>(10.0 / 600.0, 10.0);  // ~10 links / 10 min / client
+  auto magicPerIp = std::make_shared<RateLimiter>(30.0 / 600.0, 30.0);  // ~30 links / 10 min / client
   auto magicGlobal = std::make_shared<RateLimiter>(0.5, 60.0);          // global email send ceiling
   app.registerSyncAdvice(
       [apiLimiter, magicPerIp, magicGlobal, writeCors](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {

@@ -57,11 +57,16 @@ private:
   std::unordered_map<std::string, Bucket> buckets_;
 };
 
-// The real client IP as the proxy recorded it: the LAST entry in X-Forwarded-For. Caddy
-// appends the peer it actually observed, so a client-prepended forgery sits to its left and
-// is ignored. Empty means no proxy header at all — internal traffic (health checks, sibling
-// services on the compose network), which callers leave unlimited.
+// The real client IP. Behind Cloudflare that is CF-Connecting-IP: the edge sets it to the
+// original visitor and overwrites any client-sent copy, so we trust it first. This assumes the
+// origin only accepts ingress from Cloudflare (the VPS firewall should allow only CF ranges);
+// otherwise a direct hit could forge it — acceptable for a best-effort limiter. Absent that
+// header, fall back to the LAST X-Forwarded-For entry, the peer the proxy actually observed, so
+// a client-prepended forgery sits to its left and is ignored. Empty means no proxy header at all
+// — internal traffic (health checks, sibling services on the compose network), left unlimited.
 inline std::string clientIp(const drogon::HttpRequestPtr& request) {
+  const std::string& connecting = request->getHeader("cf-connecting-ip");
+  if (!connecting.empty()) return connecting;
   const std::string& forwarded = request->getHeader("x-forwarded-for");
   if (forwarded.empty()) return "";
   const std::size_t last = forwarded.find_last_of(',');
