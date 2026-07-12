@@ -3,7 +3,7 @@
   From:      Windmill <reminders@windmill.works>
   Reply-To:  hello@windmill.works
   Subject:   {{ready_count}} steps are ready · {{tree_name}}
-  Preheader: Your frontier moved — a few steps just came within reach.
+  Preheader: Your frontier is waiting — finish one and the next branch unlocks.
   Plain-text pair: reminder.txt
 
   Template variables:
@@ -43,7 +43,7 @@
 </head>
 <body class="wm-canvas" bgcolor="#F9F5EB" style="margin:0; padding:0; background:#F9F5EB; color-scheme:only light;">
 <div style="display:none; font-size:1px; line-height:1px; max-height:0; max-width:0; opacity:0; overflow:hidden; mso-hide:all;">
-  Your frontier moved &mdash; a few steps just came within reach.&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;
+  Your frontier is waiting &mdash; finish one and the next branch unlocks.&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;
 </div>
 <center role="article" aria-roledescription="email" lang="en" class="wm-canvas" style="width:100%; background:#F9F5EB;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="wm-canvas" bgcolor="#F9F5EB" style="background:#F9F5EB; width:100%; min-width:100%;">
@@ -68,14 +68,14 @@
               </tr>
               <tr>
                 <td align="center" class="wm-p" style="font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:16px; line-height:1.55; color:#6F5F45; padding-bottom:24px;">
-                  A few steps on <strong style="color:inherit;">{{tree_name}}</strong> just came within reach. Whenever you have a minute, they&rsquo;re ready for you.
+                  {{ready_count}} steps on <strong style="color:inherit;">{{tree_name}}</strong> are ready whenever you are.
                 </td>
               </tr>
 
               <!-- sunken frontier panel -->
               <tr>
                 <td>
-                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="wm-sunken" bgcolor="#FBF7EE" style="background:#FBF7EE; border:1px solid #EFE6D2; border-radius:16px;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="wm-sunken" bgcolor="#F9F5EB" style="background:#F9F5EB; border:1px solid #F1EADA; border-radius:16px;">
                     <tr>
                       <td class="wm-sunken-pad" style="padding:20px 22px;">
                         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -104,7 +104,7 @@
                                 </tr>
                               </table>
                             </td>
-                            <td align="right" class="wm-ready wm-step-b" style="padding:11px 0; border-top:1px solid #F1EADA; font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:12.5px; font-weight:700; color:#5F8460; letter-spacing:0.3px; text-transform:uppercase;">
+                            <td align="right" class="wm-ready wm-step-b" style="padding:11px 0; border-top:1px solid #F1EADA; font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:13px; color:#92805F;">
                               ready
                             </td>
                           </tr>
@@ -136,8 +136,8 @@
         <!-- footer: reminders always carry the pause link -->
         <tr>
           <td align="center" class="wm-mut" style="padding:22px 12px 0; font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:12.5px; line-height:1.6; color:#92805F;">
-            You get these because reminders are on for this tree.<br>
-            <a href="{{settings_url}}" class="wm-link" style="color:#9D5330; text-decoration:underline;">Pause reminders</a> &middot; Manage in settings<br>
+            You get this once a week, only while a tree has steps ready.<br>
+            <a href="{{settings_url}}" class="wm-link" style="color:#9D5330; text-decoration:underline;">Pause reminders</a> &middot; <a href="{{settings_url}}" class="wm-link" style="color:#9D5330; text-decoration:underline;">Manage in settings</a><br>
             Windmill &middot; <a href="https://windmill.works" class="wm-link" style="color:#9D5330; text-decoration:none;">windmill.works</a>
           </td>
         </tr>
