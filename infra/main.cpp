@@ -104,27 +104,29 @@ int main() {
 
   auto& app = drogon::app();
 
-  // CORS preflight, answered ahead of routing. This must run before the router, because
-  // Drogon's built-in OPTIONS responder otherwise replies for us — reflecting any origin and
-  // advertising only OPTIONS in Allow-Methods, so the browser refuses the real POST it was
-  // checking. The session cookie is credentialed, so Allow-Credentials only ever rides an
-  // allow-listed Origin; unlisted origins get the grant without it and the browser drops them.
-  app.registerPreRoutingAdvice(
-      [allowedOrigins](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
-        if (req->method() != drogon::Options) return nullptr;  // real requests are dressed on the way out
-        auto resp = drogon::HttpResponse::newHttpResponse();
-        resp->setStatusCode(drogon::k204NoContent);
-        const std::string& origin = req->getHeader("origin");
-        if (!origin.empty() && allowedOrigins.count(origin)) {
-          resp->addHeader("Access-Control-Allow-Origin", origin);
-          resp->addHeader("Access-Control-Allow-Credentials", "true");
-        }
-        resp->addHeader("Vary", "Origin");
-        resp->addHeader("Access-Control-Allow-Methods", "GET, PUT, POST, OPTIONS");
-        resp->addHeader("Access-Control-Allow-Headers", "content-type, authorization");
-        resp->addHeader("Access-Control-Max-Age", "600");
-        return resp;
-      });
+  // CORS preflight, answered at the sync join point — the earliest hook, ahead of routing and
+  // of Drogon's built-in "is OPTIONS? -> 200" responder (which would otherwise reply first,
+  // reflecting any origin and advertising only OPTIONS in Allow-Methods, so the browser refuses
+  // the real POST). It must be a *sync* advice: only that hook short-circuits on its return
+  // value. A pre-routing lambda of this shape binds to the void(req) observer overload instead,
+  // so its response is silently discarded. The session cookie is credentialed, so Allow-
+  // Credentials only ever rides an allow-listed Origin; unlisted origins get the grant without
+  // it and the browser drops them.
+  app.registerSyncAdvice([allowedOrigins](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
+    if (req->method() != drogon::Options) return nullptr;  // real requests are dressed on the way out
+    auto resp = drogon::HttpResponse::newHttpResponse();
+    resp->setStatusCode(drogon::k204NoContent);
+    const std::string& origin = req->getHeader("origin");
+    if (!origin.empty() && allowedOrigins.count(origin)) {
+      resp->addHeader("Access-Control-Allow-Origin", origin);
+      resp->addHeader("Access-Control-Allow-Credentials", "true");
+    }
+    resp->addHeader("Vary", "Origin");
+    resp->addHeader("Access-Control-Allow-Methods", "GET, PUT, POST, OPTIONS");
+    resp->addHeader("Access-Control-Allow-Headers", "content-type, authorization");
+    resp->addHeader("Access-Control-Max-Age", "600");
+    return resp;
+  });
 
   // Abuse ceilings, enforced before routing (and in front of any future auth filter). The
   // limiter keys on the real client IP Caddy records in X-Forwarded-For; internal traffic
