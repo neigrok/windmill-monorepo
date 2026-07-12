@@ -296,3 +296,24 @@ pass; the full project (server + mcp) builds green.
   has none*. We deliberately omit it so the `magic-link` template owns its subject — the
   operator must give that template a default subject. Flagged in `AUTH.md`; the 502 body
   reveals it on the first real send if missed.
+- **Tree registry (list + delete), one Action behind two edges.** `GET /v1/trees` +
+  `DELETE /v1/trees/:id`, and the same over MCP (`list_trees` / `delete_tree`). Because HTTP and
+  MCP need the identical orchestration, it lives once in `application/TreeRegistry` (load owned
+  trees + progress overlays → domain, or load + owner-check → soft-delete); the two adapters are
+  thin translators. The pure per-row math (`total`/`done`/`dominantKind`) is `domain/TreeSummary`,
+  unit-tested with no Drogon. Each repo owns its own table — `TreeRepository::listOwnedBy` reads
+  `trees`, `ProgressRepository::overlaysFor` reads `node_progress` — and the *domain* owns the two
+  rules that can't live in SQL: recency = `max(structural, caller's last progress mark)`, and the
+  ordering (SQL can't sort a computed key). `dominantKind` is computed over the raw projected
+  `TreeData`, never `SkillTree`, so an invalid loose graph (cycle/dangling) still summarizes.
+- **Registry reads bypass the rooms on purpose.** Existing tree reads go through the live room to
+  reflect unsaved edits; a glanceable list of many owned trees reads straight from the repository
+  instead — opening a room per listed tree would thrash the hot editor caches, and `updatedAt` is
+  defined off the persisted stamp, so an unsaved in-flight edit legitimately shouldn't move a row.
+- **Delete is a soft-delete with no room eviction (v1 limit).** `deleted_at` + the
+  `deleted_at IS NULL` filter on every read is the authority; `save`'s upsert never clears it, so
+  no resurrection. But a room already resident in memory (any process) stays editable until it
+  idle-evicts, persisting to an invisible row. Acceptable for now; a later refinement can evict the
+  local room on delete. Also added `DELETE` to the CORS preflight `Allow-Methods` — the shared
+  choke point advertises the whole verb set, so a missing verb silently fails the browser's
+  real request.

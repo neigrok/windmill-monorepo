@@ -30,6 +30,26 @@ Progress PgProgressRepository::load(const TreeId& tree, const UserId& user) {
   return progress;
 }
 
+std::map<TreeId, ProgressDigest> PgProgressRepository::overlaysFor(const UserId& user) {
+  pqxx::work txn{pgThreadConnection(connString_)};
+  pqxx::result rows = txn.exec_params(
+      "SELECT tree_id, node_id, status, (extract(epoch from updated_at) * 1000)::bigint AS updated_ms "
+      "FROM node_progress WHERE user_id = $1",
+      user.str());
+
+  std::map<TreeId, ProgressDigest> overlays;
+  for (const auto& row : rows) {
+    ProgressDigest& digest = overlays[TreeId{row["tree_id"].as<std::string>()}];
+    NodeId node{row["node_id"].as<std::string>()};
+    std::string status = row["status"].as<std::string>();
+    if (status == "complete") digest.overlay.completed.insert(node);
+    else if (status == "active") digest.overlay.inProgress.insert(node);
+    auto markedAt = static_cast<std::uint64_t>(row["updated_ms"].as<long long>());
+    if (markedAt > digest.lastMarkedAt) digest.lastMarkedAt = markedAt;
+  }
+  return overlays;
+}
+
 void PgProgressRepository::setStatus(const TreeId& tree, const UserId& user, const NodeId& node,
                                      ProgressStatus status, const Hlc& at) {
   pqxx::work txn{pgThreadConnection(connString_)};

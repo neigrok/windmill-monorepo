@@ -10,6 +10,7 @@
 #include "application/OAuthService.h"
 #include "application/ProgressService.h"
 #include "application/RoomRegistry.h"
+#include "application/TreeRegistry.h"
 #include "ports/Clock.h"
 #include "ports/PresenceBus.h"
 
@@ -77,8 +78,9 @@ int main() {
   auto bus = std::make_shared<NullPresenceBus>();
   auto registry = std::make_shared<RoomRegistry>(*trees, *oplog, *bus);
   auto progress = std::make_shared<ProgressService>(*progressRepo);
+  auto treeRegistry = std::make_shared<TreeRegistry>(*trees, *progressRepo);
   auto clock = std::make_shared<SystemClock>();
-  auto tools = std::make_shared<RoadmapTools>(*registry, *progress, *clock);
+  auto tools = std::make_shared<RoadmapTools>(*registry, *progress, *clock, *treeRegistry);
 
   // The resource server validates per-user OAuth access tokens (issued by the API host); the
   // shared token, if set, stays a fallback that acts as the configured user.

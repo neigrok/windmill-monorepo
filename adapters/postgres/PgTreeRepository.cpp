@@ -2,6 +2,7 @@
 
 #include "adapters/json/TreeJson.h"
 #include "adapters/postgres/PgConnection.h"
+#include "domain/LooseGraph.h"
 
 #include <pqxx/pqxx>
 
@@ -46,6 +47,31 @@ void PgTreeRepository::save(const TreeId& tree, const GraphState& state, const L
       "ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, head_seq = EXCLUDED.head_seq, "
       "document = EXCLUDED.document, updated_at = now()",
       tree.str(), title, static_cast<long long>(head), document);
+  txn.commit();
+}
+
+std::vector<OwnedTree> PgTreeRepository::listOwnedBy(const UserId& owner) {
+  pqxx::work txn{pgThreadConnection(connString_)};
+  pqxx::result rows = txn.exec_params(
+      "SELECT id, title, document::text, (extract(epoch from updated_at) * 1000)::bigint AS updated_ms "
+      "FROM trees WHERE owner_id = $1::uuid AND deleted_at IS NULL",
+      owner.str());
+
+  std::vector<OwnedTree> owned;
+  owned.reserve(rows.size());
+  for (const auto& row : rows) {
+    TreeId id{row["id"].as<std::string>()};
+    std::string title = row["title"].as<std::string>();
+    GraphState state = graphStateFromJson(parse(row["document"].as<std::string>()));
+    TreeData data = LooseGraph(state).toTreeData(id, title);  // project present nodes + their colors
+    owned.push_back(OwnedTree{std::move(data), static_cast<std::uint64_t>(row["updated_ms"].as<long long>())});
+  }
+  return owned;
+}
+
+void PgTreeRepository::softDelete(const TreeId& tree) {
+  pqxx::work txn{pgThreadConnection(connString_)};
+  txn.exec_params("UPDATE trees SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL", tree.str());
   txn.commit();
 }
 

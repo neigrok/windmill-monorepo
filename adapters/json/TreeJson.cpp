@@ -70,6 +70,17 @@ Json::Value toJson(const TreeData& data) {
   return root;
 }
 
+Json::Value toJson(const TreeSummary& summary) {
+  Json::Value row(Json::objectValue);
+  row["id"] = summary.id.str();
+  row["title"] = summary.title;
+  row["total"] = summary.stats.total;
+  row["done"] = summary.stats.done;
+  row["updatedAt"] = static_cast<Json::Int64>(summary.updatedAt);
+  if (summary.stats.dominantKind) row["dominantKind"] = std::string(toString(*summary.stats.dominantKind));
+  return row;
+}
+
 Json::Value toJson(const Progress& progress) {
   Json::Value root(Json::objectValue);
   Json::Value completed(Json::arrayValue);

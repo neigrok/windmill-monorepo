@@ -215,10 +215,30 @@ ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, cons
   return ToolResult::json(out);
 }
 
+ToolResult listRegistry(TreeRegistry& registry, const UserId& caller) {
+  Json::Value trees(Json::arrayValue);
+  for (const TreeSummary& summary : registry.list(caller)) trees.append(toJson(summary));
+  Json::Value out(Json::objectValue);
+  out["trees"] = trees;
+  return ToolResult::json(out);
+}
+
+ToolResult removeTree(TreeRegistry& registry, const TreeId& tree, const UserId& caller) {
+  TreeRegistry::Removal outcome = registry.remove(tree, caller);
+  if (outcome == TreeRegistry::Removal::notFound) return ToolResult::failure("no such tree");
+  if (outcome == TreeRegistry::Removal::notOwner)
+    return ToolResult::failure("this tree belongs to another account");
+  Json::Value out(Json::objectValue);
+  out["deleted"] = true;
+  out["id"] = tree.str();
+  return ToolResult::json(out);
+}
+
 }  // namespace
 
-RoadmapTools::RoadmapTools(RoomRegistry& registry, ProgressService& progress, Clock& clock)
-    : registry_(registry), progress_(progress), clock_(clock) {}
+RoadmapTools::RoadmapTools(RoomRegistry& registry, ProgressService& progress, Clock& clock,
+                           TreeRegistry& treeRegistry)
+    : registry_(registry), progress_(progress), clock_(clock), treeRegistry_(treeRegistry) {}
 
 Hlc RoadmapTools::nextStamp(const UserId& caller) {
   std::lock_guard<std::mutex> lock(stampMutex_);
@@ -236,6 +256,21 @@ Json::Value RoadmapTools::listTools() const {
   const char* treeId = "The roadmap (tree) id.";
   Json::Value tools(Json::arrayValue);
 
+  {
+    tools.append(tool("list_trees",
+        "List the roadmaps you own — one row each: id, title, total node count, how many you have "
+        "completed, when it last moved (updatedAt, epoch ms), and its dominant hue (dominantKind), "
+        "newest activity first. Takes no arguments. Use it to discover the treeId the other tools need.",
+        Json::Value(Json::objectValue), {}));
+  }
+  {
+    Json::Value p(Json::objectValue);
+    p["treeId"] = str(treeId);
+    tools.append(tool("delete_tree",
+        "Delete a roadmap you own — a soft-delete: it stops appearing in list_trees and can no longer "
+        "be read. Only the owner may delete; someone else's tree is refused.",
+        p, {"treeId"}));
+  }
   {
     Json::Value p(Json::objectValue);
     p["treeId"] = str(treeId);
@@ -424,9 +459,12 @@ Json::Value RoadmapTools::listTools() const {
 }
 
 ToolResult RoadmapTools::callTool(const std::string& name, const Json::Value& arguments, const UserId& caller) {
+  if (name == "list_trees") return listRegistry(treeRegistry_, caller);  // registry-wide: no treeId
+
   TreeId tree{arguments.get("treeId", "").asString()};
   if (tree.empty()) return ToolResult::failure("missing required argument: treeId");
 
+  if (name == "delete_tree")     return removeTree(treeRegistry_, tree, caller);
   if (name == "get_tree")        return readTree(registry_, tree);
   if (name == "get_diagnostics") return readDiagnostics(registry_, tree);
   if (name == "get_health")      return readHealth(registry_, tree);

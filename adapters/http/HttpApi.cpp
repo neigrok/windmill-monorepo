@@ -1,5 +1,6 @@
 #include "adapters/http/HttpApi.h"
 
+#include "adapters/http/Caller.h"
 #include "adapters/json/TreeJson.h"
 #include "application/ActivityFeed.h"
 #include "application/TreeRoom.h"
@@ -32,14 +33,7 @@ HttpApi::HttpApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRep
       ops_(std::move(ops)), genesis_(std::move(genesis)), auth_(std::move(auth)) {}
 
 std::optional<UserId> HttpApi::callerOf(const drogon::HttpRequestPtr& req) const {
-  std::string secret = req->getCookie("wm_session");
-  if (secret.empty()) {
-    std::string authorization = req->getHeader("authorization");
-    if (authorization.rfind("Bearer ", 0) == 0) secret = authorization.substr(7);
-  }
-  std::optional<User> user = auth_->authenticate(secret);
-  if (!user) return std::nullopt;
-  return user->id;
+  return wm::callerOf(req, *auth_);
 }
 
 void HttpApi::getTree(const drogon::HttpRequestPtr&, HttpCallback&& callback, const std::string& treeId) {

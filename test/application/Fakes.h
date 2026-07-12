@@ -2,14 +2,17 @@
 
 #include "domain/Command.h"
 #include "domain/Ids.h"
+#include "domain/LooseGraph.h"
 #include "domain/Tree.h"
 #include "ports/OpLog.h"
 #include "ports/PresenceBus.h"
 #include "ports/ProgressRepository.h"
 #include "ports/TreeRepository.h"
 
+#include <cstdint>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -37,7 +40,10 @@ struct FakeBus : PresenceBus {
 struct FakeTreeRepository : TreeRepository {
   std::map<std::string, StoredTree> byId;
   std::map<std::string, std::string> forkedFrom;
+  std::map<std::string, std::uint64_t> updatedAt;  // epoch ms per tree, for registry ordering
+  std::set<std::string> deletedIds;
   std::optional<StoredTree> load(const TreeId& tree) override {
+    if (deletedIds.count(tree.str())) return std::nullopt;
     auto it = byId.find(tree.str());
     if (it == byId.end()) return std::nullopt;
     return it->second;
@@ -50,6 +56,18 @@ struct FakeTreeRepository : TreeRepository {
     if (it != byId.end()) { owner = it->second.owner; visibility = it->second.visibility; }
     byId[tree.str()] = StoredTree{state, legend, title, head, owner, visibility};
   }
+  std::vector<OwnedTree> listOwnedBy(const UserId& owner) override {
+    std::vector<OwnedTree> owned;
+    for (const auto& [id, stored] : byId) {
+      if (deletedIds.count(id)) continue;
+      if (!stored.owner || *stored.owner != owner) continue;
+      TreeData data = LooseGraph(stored.state).toTreeData(TreeId{id}, stored.title);
+      std::uint64_t ms = updatedAt.count(id) ? updatedAt.at(id) : 0;
+      owned.push_back(OwnedTree{std::move(data), ms});
+    }
+    return owned;
+  }
+  void softDelete(const TreeId& tree) override { deletedIds.insert(tree.str()); }
   void claim(const TreeId& tree, const UserId& owner) override {
     auto it = byId.find(tree.str());
     if (it != byId.end() && !it->second.owner) it->second.owner = owner;
@@ -86,6 +104,21 @@ struct FakeProgressRepository : ProgressRepository {
     std::string k = key(tree, user, node);
     auto it = byKey.find(k);
     if (it == byKey.end() || at > it->second.at) byKey[k] = Entry{status, at};
+  }
+
+  std::map<TreeId, ProgressDigest> overlaysFor(const UserId& user) override {
+    std::map<TreeId, ProgressDigest> overlays;
+    for (const auto& [k, entry] : byKey) {
+      std::size_t firstNl = k.find('\n');
+      std::size_t secondNl = k.find('\n', firstNl + 1);
+      if (k.substr(firstNl + 1, secondNl - firstNl - 1) != user.str()) continue;
+      ProgressDigest& digest = overlays[TreeId{k.substr(0, firstNl)}];
+      NodeId node{k.substr(secondNl + 1)};
+      if (entry.status == ProgressStatus::complete) digest.overlay.completed.insert(node);
+      else if (entry.status == ProgressStatus::active) digest.overlay.inProgress.insert(node);
+      if (entry.at.physicalMs > digest.lastMarkedAt) digest.lastMarkedAt = entry.at.physicalMs;
+    }
+    return overlays;
   }
 };
 

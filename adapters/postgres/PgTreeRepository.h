@@ -15,6 +15,8 @@ public:
   std::optional<StoredTree> load(const TreeId& tree) override;
   void save(const TreeId& tree, const GraphState& state, const LegendState& legend,
             const std::string& title, Seq head) override;
+  std::vector<OwnedTree> listOwnedBy(const UserId& owner) override;
+  void softDelete(const TreeId& tree) override;
   void claim(const TreeId& tree, const UserId& owner) override;
   void fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
             const LegendState& legend, const std::string& title, const UserId& owner) override;

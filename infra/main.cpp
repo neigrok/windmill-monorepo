@@ -5,6 +5,7 @@
 #include "adapters/http/HttpApi.h"
 #include "adapters/http/OAuthApi.h"
 #include "adapters/http/RateLimiter.h"
+#include "adapters/http/TreeRegistryApi.h"
 #include "adapters/postgres/PgAuthRepository.h"
 #include "adapters/postgres/PgOAuthRepository.h"
 #include "adapters/postgres/PgOpLog.h"
@@ -18,6 +19,7 @@
 #include "application/OAuthService.h"
 #include "application/ProgressService.h"
 #include "application/RoomRegistry.h"
+#include "application/TreeRegistry.h"
 #include "application/UndoService.h"
 
 #include <drogon/drogon.h>
@@ -79,6 +81,10 @@ int main() {
 
   auto api = std::make_shared<HttpApi>(registry, trees, progress, oplog, genesis, authService);
 
+  // The per-user tree registry (list + delete): a repo-direct read model, not through the room.
+  auto treeRegistry = std::make_shared<TreeRegistry>(*trees, *progress);
+  auto registryApi = std::make_shared<TreeRegistryApi>(treeRegistry, authService);
+
   // The origins allowed to send credentialed (cookie-bearing) requests. The app itself is
   // always trusted; WINDMILL_ALLOWED_ORIGINS adds more, comma-separated. Anything else gets
   // no CORS grant, so a hostile page cannot drive /v1/auth/verify with the victim's cookies.
@@ -127,7 +133,7 @@ int main() {
     auto resp = drogon::HttpResponse::newHttpResponse();
     resp->setStatusCode(drogon::k204NoContent);
     writeCors(req, resp);
-    resp->addHeader("Access-Control-Allow-Methods", "GET, PUT, POST, OPTIONS");
+    resp->addHeader("Access-Control-Allow-Methods", "GET, PUT, POST, DELETE, OPTIONS");
     resp->addHeader("Access-Control-Allow-Headers", "content-type, authorization");
     resp->addHeader("Access-Control-Max-Age", "600");
     return resp;
@@ -222,6 +228,18 @@ int main() {
       [oauthApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { oauthApi->decision(req, std::move(cb)); },
       {drogon::Post});
 
+  app.registerHandler(
+      "/v1/trees",
+      [registryApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        registryApi->listTrees(req, std::move(cb));
+      },
+      {drogon::Get});
+  app.registerHandler(
+      "/v1/trees/{id}",
+      [registryApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        registryApi->deleteTree(req, std::move(cb), id);
+      },
+      {drogon::Delete});
   app.registerHandler(
       "/v1/trees/{id}",
       [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {

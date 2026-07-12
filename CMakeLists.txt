@@ -13,6 +13,7 @@ add_library(windmill_domain
   domain/TrunkTree.cpp
   domain/UnlockRules.cpp
   domain/TreeHealth.cpp
+  domain/TreeSummary.cpp
   domain/Auth.cpp
   domain/OAuth.cpp)
 target_include_directories(windmill_domain PUBLIC ${CMAKE_SOURCE_DIR})
@@ -24,7 +25,8 @@ add_library(windmill_application
   application/ActivityFeed.cpp
   application/UndoService.cpp
   application/AuthService.cpp
-  application/OAuthService.cpp)
+  application/OAuthService.cpp
+  application/TreeRegistry.cpp)
 target_link_libraries(windmill_application PUBLIC windmill_domain)
 
 add_executable(windmill_domain_tests
@@ -37,6 +39,8 @@ add_executable(windmill_domain_tests
   test/domain/TrunkTreeTest.cpp
   test/domain/UnlockRulesTest.cpp
   test/domain/TreeHealthTest.cpp
+  test/domain/TreeSummaryTest.cpp
+  test/application/TreeRegistryTest.cpp
   test/application/TreeRoomTest.cpp
   test/application/RoomRegistryTest.cpp
   test/application/ProgressServiceTest.cpp
@@ -69,6 +73,8 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     adapters/http/HttpApi.cpp
     adapters/http/AuthApi.cpp
     adapters/http/OAuthApi.cpp
+    adapters/http/Caller.cpp
+    adapters/http/TreeRegistryApi.cpp
     adapters/crypto/OpenSslTokenGenerator.cpp
     adapters/email/ResendEmailSender.cpp
     adapters/ws/WsPresenceBus.cpp

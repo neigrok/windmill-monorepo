@@ -6,6 +6,7 @@
 #include "adapters/postgres/PgTreeRepository.h"
 #include "application/ProgressService.h"
 #include "application/RoomRegistry.h"
+#include "application/TreeRegistry.h"
 #include "ports/Clock.h"
 #include "ports/PresenceBus.h"
 
@@ -68,9 +69,10 @@ int main() {
   NullPresenceBus bus;
   RoomRegistry registry(trees, oplog, bus);
   ProgressService progress(progressRepo);
+  TreeRegistry treeRegistry(trees, progressRepo);
   SystemClock clock;
 
-  RoadmapTools tools(registry, progress, clock);
+  RoadmapTools tools(registry, progress, clock, treeRegistry);
   ServerInfo info{
       "windmill", "0.1.0",
       "Windmill roadmaps are RPG-style skill trees: nodes are skills/milestones, and a "

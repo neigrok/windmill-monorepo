@@ -52,6 +52,9 @@ create table if not exists trees (
   updated_at  timestamptz not null default now()
 );
 
+-- the registry list: a caller's live (not soft-deleted) trees, keyed by owner
+create index if not exists trees_owner on trees (owner_id) where deleted_at is null;
+
 -- append-only op log: activity, undo, reconnect replay (Phase 2)
 create table if not exists tree_ops (
   tree_id    text not null,

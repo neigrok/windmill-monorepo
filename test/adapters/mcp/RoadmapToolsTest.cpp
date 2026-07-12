@@ -27,10 +27,13 @@ struct Harness {
   StepClock clock;
   RoomRegistry registry{trees, ops, bus};
   ProgressService progress{progressRepo};
+  TreeRegistry treeRegistry{trees, progressRepo};
   UserId caller = uid("agent");
-  RoadmapTools tools{registry, progress, clock};
+  RoadmapTools tools{registry, progress, clock, treeRegistry};
 
-  Harness() { trees.byId["t"] = StoredTree{LooseGraph().exportState(), LegendState{}, "Test Roadmap", 0}; }
+  Harness() {
+    trees.byId["t"] = StoredTree{LooseGraph().exportState(), LegendState{}, "Test Roadmap", 0, caller};
+  }
 
   ToolResult call(const char* name, Json::Value args) {
     args["treeId"] = "t";
@@ -219,4 +222,37 @@ TEST(mcp_remove_kind_rejected_while_a_node_wears_its_hue) {
   h.call("add_kind", k);
 
   CHECK(h.call("remove_kind", with("id", "infra")).isError);  // sky is in use
+}
+
+TEST(mcp_list_trees_returns_the_callers_owned_rows) {
+  Harness h;  // "t" is owned by the caller
+  h.call("create_node", with("label", "A"));
+  h.call("create_node", with("label", "B"));
+
+  ToolResult listed = h.tools.callTool("list_trees", Json::Value(Json::objectValue), h.caller);
+  CHECK_FALSE(listed.isError);
+  const Json::Value& trees = listed.structured["trees"];
+  CHECK_EQ(trees.size(), 1u);
+  CHECK_EQ(trees[0]["id"].asString(), std::string("t"));
+  CHECK_EQ(trees[0]["title"].asString(), std::string("Test Roadmap"));
+  CHECK_EQ(trees[0]["total"].asInt(), 2);
+  CHECK_EQ(trees[0]["done"].asInt(), 0);
+}
+
+TEST(mcp_delete_tree_soft_deletes_and_drops_it_from_the_list) {
+  Harness h;
+  ToolResult deleted = h.call("delete_tree", Json::Value(Json::objectValue));  // caller owns "t"
+  CHECK_FALSE(deleted.isError);
+  CHECK(deleted.structured["deleted"].asBool());
+
+  ToolResult listed = h.tools.callTool("list_trees", Json::Value(Json::objectValue), h.caller);
+  CHECK_EQ(listed.structured["trees"].size(), 0u);
+}
+
+TEST(mcp_delete_tree_refuses_a_tree_you_dont_own_and_an_unknown_one) {
+  Harness h;
+  h.trees.byId["other"] = StoredTree{LooseGraph().exportState(), LegendState{}, "Other", 0, uid("someone")};
+
+  CHECK(h.tools.callTool("delete_tree", with("treeId", "other"), h.caller).isError);  // not the owner
+  CHECK(h.tools.callTool("delete_tree", with("treeId", "ghost"), h.caller).isError);  // no such tree
 }
