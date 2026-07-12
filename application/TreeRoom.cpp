@@ -2,9 +2,10 @@
 
 namespace wm {
 
-TreeRoom::TreeRoom(TreeId id, std::string title, LooseGraph graph, Legend legend, Seq head, OpLog& ops, PresenceBus& bus)
+TreeRoom::TreeRoom(TreeId id, std::string title, LooseGraph graph, Legend legend, Seq head,
+                   std::optional<UserId> owner, OpLog& ops, PresenceBus& bus)
     : id_(std::move(id)), title_(std::move(title)), graph_(std::move(graph)), legend_(std::move(legend)),
-      head_(head), ops_(ops), bus_(bus) {}
+      head_(head), owner_(std::move(owner)), ops_(ops), bus_(bus) {}
 
 std::optional<Applied> TreeRoom::submit(const Incoming& incoming) {
   if (!appliedOpIds_.insert(incoming.opId).second) return std::nullopt;

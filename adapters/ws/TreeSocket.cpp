@@ -4,8 +4,8 @@
 
 namespace wm {
 
-void TreeSocket::handleNewConnection(const drogon::HttpRequestPtr&, const drogon::WebSocketConnectionPtr& conn) {
-  if (collab()) collab()->onOpen(conn);
+void TreeSocket::handleNewConnection(const drogon::HttpRequestPtr& req, const drogon::WebSocketConnectionPtr& conn) {
+  if (collab()) collab()->onOpen(req, conn);
 }
 
 void TreeSocket::handleNewMessage(const drogon::WebSocketConnectionPtr& conn, std::string&& message,

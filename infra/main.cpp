@@ -30,7 +30,6 @@ int main() {
   const char* url = std::getenv("DATABASE_URL");
   std::string connString = url ? url : "postgresql://localhost/windmill";
   const Hlc genesis{1, 0, "genesis"};
-  const UserId devUser{std::string("dev")};  // one fixed user until accounts land (Phase 1)
 
   auto trees = std::make_shared<PgTreeRepository>(connString);
   auto progress = std::make_shared<PgProgressRepository>(connString);
@@ -42,14 +41,10 @@ int main() {
   auto registry = std::make_shared<RoomRegistry>(*trees, *oplog, *bus);
   auto undos = std::make_shared<UndoService>();
   auto presence = std::make_shared<PresenceHub>();
-  // The socket writes progress as `devUser`, the same user HTTP reads it back as.
-  setCollab(std::make_shared<Collab>(*registry, *oplog, *bus, *undos, *progressService, devUser, *presence));
-  linkTreeSocket();
-
-  auto api = std::make_shared<HttpApi>(registry, trees, progress, oplog, genesis, devUser);
 
   // Passwordless auth (guidelines/auth.md). The magic link points at the app; the session
-  // rides in an HttpOnly cookie whose Secure flag and Domain follow the deployment.
+  // rides in an HttpOnly cookie whose Secure flag and Domain follow the deployment. The
+  // service is built first because the socket and the REST API both resolve callers with it.
   const char* appUrlEnv = std::getenv("WINDMILL_APP_URL");
   std::string appBaseUrl = appUrlEnv ? appUrlEnv : "http://localhost:5183";
   const char* resendKey = std::getenv("RESEND_API_KEY");
@@ -65,6 +60,13 @@ int main() {
   auto systemClock = std::make_shared<SystemClock>();
   auto authService = std::make_shared<AuthService>(*authRepo, *emailSender, *tokens, *systemClock, appBaseUrl);
   auto authApi = std::make_shared<AuthApi>(authService, secureCookies, cookieDomain);
+
+  // The socket authenticates each connection at its upgrade and writes progress as that
+  // user; anonymous connections may view but not edit.
+  setCollab(std::make_shared<Collab>(*registry, *oplog, *bus, *undos, *progressService, *authService, *presence));
+  linkTreeSocket();
+
+  auto api = std::make_shared<HttpApi>(registry, trees, progress, oplog, genesis, authService);
 
   // The origins allowed to send credentialed (cookie-bearing) requests. The app itself is
   // always trusted; WINDMILL_ALLOWED_ORIGINS adds more, comma-separated. Anything else gets

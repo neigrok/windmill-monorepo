@@ -44,7 +44,7 @@ void PresenceHub::join(const drogon::WebSocketConnectionPtr& conn, const TreeId&
   // trade, sees no peers. Bounds both membership and per-flush cost on a crowded tree.
   if (members.size() >= kMaxMembersPerTree) return;
 
-  UserId actor = conn->getContextRef<UserId>();
+  UserId actor = conn->getContextRef<Principal>().user;
   Member self{actor, nameOf(actor), colorOf(actor), std::nullopt, std::nullopt, false};
 
   // Tell the newcomer who is already here (roster + any live cursor), and tell everyone

@@ -21,7 +21,8 @@ PgTreeRepository::PgTreeRepository(std::string connString) : connString_(std::mo
 std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
   pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result rows = txn.exec_params(
-      "SELECT title, head_seq, document::text FROM trees WHERE id = $1 AND deleted_at IS NULL",
+      "SELECT title, head_seq, document::text, owner_id::text, visibility "
+      "FROM trees WHERE id = $1 AND deleted_at IS NULL",
       tree.str());
   if (rows.empty()) return std::nullopt;
 
@@ -29,8 +30,11 @@ std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
   Json::Value document = parse(row["document"].as<std::string>());
   GraphState state = graphStateFromJson(document);
   LegendState legend = legendStateFromJson(document["kinds"]);
+  std::optional<UserId> owner;
+  if (!row["owner_id"].is_null()) owner = UserId{row["owner_id"].as<std::string>()};
   return StoredTree{std::move(state), std::move(legend), row["title"].as<std::string>(),
-                    static_cast<Seq>(row["head_seq"].as<long long>())};
+                    static_cast<Seq>(row["head_seq"].as<long long>()), std::move(owner),
+                    row["visibility"].as<std::string>()};
 }
 
 void PgTreeRepository::save(const TreeId& tree, const GraphState& state, const LegendState& legend,
@@ -45,13 +49,21 @@ void PgTreeRepository::save(const TreeId& tree, const GraphState& state, const L
   txn.commit();
 }
 
+void PgTreeRepository::claim(const TreeId& tree, const UserId& owner) {
+  pqxx::work txn{pgThreadConnection(connString_)};
+  txn.exec_params("UPDATE trees SET owner_id = $2::uuid WHERE id = $1 AND owner_id IS NULL",
+                  tree.str(), owner.str());
+  txn.commit();
+}
+
 void PgTreeRepository::fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
-                           const LegendState& legend, const std::string& title) {
+                           const LegendState& legend, const std::string& title, const UserId& owner) {
   std::string document = documentText(state, legend);
   pqxx::work txn{pgThreadConnection(connString_)};
   txn.exec_params(
-      "INSERT INTO trees (id, title, head_seq, forked_from, document) VALUES ($1, $2, 0, $3, $4::jsonb)",
-      newTree.str(), title, source.str(), document);
+      "INSERT INTO trees (id, title, head_seq, forked_from, owner_id, document) "
+      "VALUES ($1, $2, 0, $3, $4::uuid, $5::jsonb)",
+      newTree.str(), title, source.str(), owner.str(), document);
   txn.commit();
 }
 

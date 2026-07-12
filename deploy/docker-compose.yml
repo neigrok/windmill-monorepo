@@ -73,6 +73,7 @@ services:
       DATABASE_URL: postgresql://windmill:${POSTGRES_PASSWORD}@db:5432/windmill
       PORT: "8090"
       WINDMILL_MCP_ALLOWED_ORIGINS: ${WINDMILL_MCP_ALLOWED_ORIGINS:-}
+      WINDMILL_MCP_TOKEN: ${WINDMILL_MCP_TOKEN:-}
     command: ["windmill_mcp_http"]
     healthcheck:
       test: ["CMD-SHELL", "curl -s -o /dev/null http://localhost:8090/ || exit 1"]

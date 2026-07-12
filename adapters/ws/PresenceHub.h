@@ -16,6 +16,15 @@
 
 namespace wm {
 
+// What a socket connection is, resolved once at the upgrade and stored in its context: the
+// acting user (a real account id when authenticated, a synthetic guest id otherwise) and
+// whether it is authenticated. Anonymous connections may read and show presence; only
+// authenticated ones may write.
+struct Principal {
+  UserId user;
+  bool authenticated = false;
+};
+
 // Class C presence (§5): ephemeral cursor/selection, never persisted, never in the op
 // log. Each participant's latest state is buffered and flushed to the tree's other
 // participants at ≤ 20 Hz (latest-wins per actor, deltas only — §12), so a 60 Hz cursor

@@ -54,7 +54,7 @@ TEST(empty_inverse_not_recorded) {
 TEST(undo_then_redo_through_the_room) {
   FakeOpLog log;
   FakeBus bus;
-  TreeRoom room(tid(), "T", LooseGraph{}, Legend{}, 0, log, bus);
+  TreeRoom room(tid(), "T", LooseGraph{}, Legend{}, 0, std::nullopt, log, bus);
   UndoService undos;
 
   room.submit(Incoming{"c1", createNode("x"), at(1), uid()});

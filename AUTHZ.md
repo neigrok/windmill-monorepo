@@ -1,8 +1,30 @@
 # Authz wiring — enforcing the session on the data plane
 
 `AUTH.md` gave us **identity** (magic link → `wm_session`). This is the **enforcement** counterpart:
-wiring that session onto the tree / WebSocket / MCP surfaces so a caller can only touch what they're
-allowed to. It closes the two findings the audit left open once auth landed:
+the session is now wired onto the tree / WebSocket / MCP surfaces.
+
+## Status: implemented
+
+Model — **public read, sign-in to edit**:
+- **Reads** (`GET` tree/progress/diagnostics/activity, WS `subscribe`/presence) are open to anyone;
+  the progress overlay is per-user when a session is present, empty otherwise.
+- **Writes** (`PUT`, `POST …/fork`, WS `cmd`/`undo`/`redo`/`progress`) require a session: anonymous
+  callers get `401`. A tree is owned by its first authenticated writer (claimed on first write / on
+  create / on fork); afterwards only the owner may write, others get `403`. Legacy unowned trees stay
+  editable by any signed-in user until one claims them.
+- **MCP-HTTP** (`/mcp`) is gated by a shared bearer token (`WINDMILL_MCP_TOKEN`): no/invalid token →
+  `401`; a valid token acts as the configured `WINDMILL_MCP_USER`. Empty token leaves it open with a
+  loud startup warning.
+
+**Operator action:** set a GitHub **secret** `WINDMILL_MCP_TOKEN` (e.g. `openssl rand -hex 32`) so
+prod enforces MCP auth; agents then send `Authorization: Bearer <token>`. Until it's set, `/mcp` stays
+open (the container logs a warning). Optional follow-ups: orgs/roles tenancy (only per-user ownership
+is wired), a private-visibility toggle (all trees are public-read today), and a polished "sign in to
+edit" prompt in the app (the `wm-edit-forbidden` window event is the hook).
+
+---
+
+The design detail below records the seams and reasoning behind the two findings this closed:
 
 - **#1 — no authz on the data plane.** `HttpApi` still runs as the fixed `devUser`
   (`infra/main.cpp:41`), the socket mints an anonymous `u<N>` per connection

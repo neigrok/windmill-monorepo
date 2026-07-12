@@ -47,6 +47,15 @@ std::string redactDbUrl(const std::string& url) {
   if (scheme == std::string::npos || at == std::string::npos || at < scheme) return url;
   return url.substr(0, scheme + 3) + "***@" + url.substr(at + 1);
 }
+
+// Constant-time equality for the shared token, so a mismatch's position can't be timed.
+bool secretEqual(const std::string& a, const std::string& b) {
+  if (a.size() != b.size()) return false;
+  unsigned char diff = 0;
+  for (std::size_t i = 0; i < a.size(); ++i)
+    diff |= static_cast<unsigned char>(a[i]) ^ static_cast<unsigned char>(b[i]);
+  return diff == 0;
+}
 }
 
 int main() {
@@ -58,6 +67,7 @@ int main() {
   const int port = std::atoi(env("PORT", "8090").c_str());
   const int threads = std::atoi(env("WINDMILL_MCP_THREADS", "8").c_str());
   const std::string path = env("WINDMILL_MCP_PATH", "/mcp");
+  const std::string mcpToken = env("WINDMILL_MCP_TOKEN", "");  // shared bearer; empty leaves /mcp open
   const std::set<std::string> origins = parseOriginList(env("WINDMILL_MCP_ALLOWED_ORIGINS", ""));
 
   auto trees = std::make_shared<PgTreeRepository>(connString);
@@ -81,18 +91,32 @@ int main() {
 
   auto& app = drogon::app();
 
-  // Per-client abuse ceiling on the public MCP surface, keyed on Caddy's X-Forwarded-For.
-  // Internal traffic (health checks, no XFF) is never limited.
+  // The public MCP surface is gated before routing: a per-client rate ceiling keyed on
+  // Caddy's X-Forwarded-For, then a shared bearer token on the MCP path itself (when one is
+  // configured). Health checks (/healthz) and CORS preflight skip both.
   auto mcpLimiter = std::make_shared<RateLimiter>(20.0, 40.0);  // ~20 req/s/client, burst 40
   app.registerPreRoutingAdvice(
-      [mcpLimiter](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
+      [mcpLimiter, mcpToken, path](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
         if (req->method() == drogon::Options) return nullptr;
         const std::string ip = clientIp(req);
-        if (ip.empty() || mcpLimiter->allow(ip)) return nullptr;
-        auto resp = drogon::HttpResponse::newHttpResponse();
-        resp->setStatusCode(drogon::k429TooManyRequests);
-        resp->setBody("rate limited");
-        return resp;
+        if (!ip.empty() && !mcpLimiter->allow(ip)) {
+          auto resp = drogon::HttpResponse::newHttpResponse();
+          resp->setStatusCode(drogon::k429TooManyRequests);
+          resp->setBody("rate limited");
+          return resp;
+        }
+        if (!mcpToken.empty() && req->path() == path) {
+          const std::string authorization = req->getHeader("authorization");
+          const std::string presented =
+              authorization.rfind("Bearer ", 0) == 0 ? authorization.substr(7) : "";
+          if (!secretEqual(presented, mcpToken)) {
+            auto resp = drogon::HttpResponse::newHttpResponse();
+            resp->setStatusCode(drogon::k401Unauthorized);
+            resp->setBody("unauthorized");
+            return resp;
+          }
+        }
+        return nullptr;
       });
 
   // CORS for browser-based MCP clients: reflect an allowed Origin and expose the session id.
@@ -147,8 +171,11 @@ int main() {
       },
       {drogon::Get});
 
+  if (mcpToken.empty())
+    LOG_WARN << "WINDMILL_MCP_TOKEN unset — " << path << " is unauthenticated; set it to gate the tools";
   LOG_INFO << "windmill-mcp-http listening on " << host << ":" << port << path
-           << " (db=" << redactDbUrl(connString) << ", user=" << caller.str() << ")";
+           << " (db=" << redactDbUrl(connString) << ", user=" << caller.str()
+           << ", auth=" << (mcpToken.empty() ? "open" : "bearer") << ")";
   app.setClientMaxBodySize(2 * 1024 * 1024);
   app.setClientMaxMemoryBodySize(1 * 1024 * 1024);
   app.setMaxConnectionNum(20000);

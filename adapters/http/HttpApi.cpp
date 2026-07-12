@@ -26,9 +26,21 @@ drogon::HttpResponsePtr error(drogon::HttpStatusCode code, const std::string& me
 }
 
 HttpApi::HttpApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
-                 std::shared_ptr<ProgressRepository> progress, std::shared_ptr<OpLog> ops, Hlc genesis, UserId caller)
+                 std::shared_ptr<ProgressRepository> progress, std::shared_ptr<OpLog> ops, Hlc genesis,
+                 std::shared_ptr<AuthService> auth)
     : registry_(std::move(registry)), trees_(std::move(trees)), progress_(std::move(progress)),
-      ops_(std::move(ops)), genesis_(std::move(genesis)), caller_(std::move(caller)) {}
+      ops_(std::move(ops)), genesis_(std::move(genesis)), auth_(std::move(auth)) {}
+
+std::optional<UserId> HttpApi::callerOf(const drogon::HttpRequestPtr& req) const {
+  std::string secret = req->getCookie("wm_session");
+  if (secret.empty()) {
+    std::string authorization = req->getHeader("authorization");
+    if (authorization.rfind("Bearer ", 0) == 0) secret = authorization.substr(7);
+  }
+  std::optional<User> user = auth_->authenticate(secret);
+  if (!user) return std::nullopt;
+  return user->id;
+}
 
 void HttpApi::getTree(const drogon::HttpRequestPtr&, HttpCallback&& callback, const std::string& treeId) {
   Json::Value body(Json::objectValue);
@@ -62,6 +74,11 @@ void HttpApi::getDiagnostics(const drogon::HttpRequestPtr&, HttpCallback&& callb
 }
 
 void HttpApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
+  std::optional<UserId> caller = callerOf(req);
+  if (!caller) {
+    callback(error(drogon::k401Unauthorized, "sign in to edit"));
+    return;
+  }
   std::shared_ptr<Json::Value> json = req->getJsonObject();
   if (!json) {
     callback(error(drogon::k400BadRequest, "invalid json body"));
@@ -72,17 +89,27 @@ void HttpApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
 
   Seq head = 0;
   LegendState legend;
+  bool forbidden = false;
   {
     std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
-    registry_->evict(TreeId{treeId});  // drop any live room so the next open reloads this write
     std::optional<StoredTree> existing = trees_->load(TreeId{treeId});
-    head = existing ? existing->head : 0;
-    // The legend is part of the document: honour a posted one; otherwise seed the three
-    // defaults for a brand-new tree, or keep the existing legend on an overwrite.
-    if (!data.kinds.empty()) legend = Legend(data.kinds, genesis_).exportState();
-    else if (existing) legend = existing->legend;
-    else legend = Legend::seededDefaults(genesis_).exportState();
-    trees_->save(TreeId{treeId}, state, legend, data.title, head);
+    if (existing && existing->owner && *existing->owner != *caller) {
+      forbidden = true;  // someone else's tree — refuse the overwrite
+    } else {
+      registry_->evict(TreeId{treeId});  // drop any live room so the next open reloads this write
+      head = existing ? existing->head : 0;
+      // The legend is part of the document: honour a posted one; otherwise seed the three
+      // defaults for a brand-new tree, or keep the existing legend on an overwrite.
+      if (!data.kinds.empty()) legend = Legend(data.kinds, genesis_).exportState();
+      else if (existing) legend = existing->legend;
+      else legend = Legend::seededDefaults(genesis_).exportState();
+      trees_->save(TreeId{treeId}, state, legend, data.title, head);
+      trees_->claim(TreeId{treeId}, *caller);  // first writer becomes the owner
+    }
+  }
+  if (forbidden) {
+    callback(error(drogon::k403Forbidden, "this tree belongs to another account"));
+    return;
   }
 
   data.kinds = Legend(legend).kinds();  // reflect the authoritative legend back to the client
@@ -93,6 +120,11 @@ void HttpApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
 }
 
 void HttpApi::forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
+  std::optional<UserId> caller = callerOf(req);
+  if (!caller) {
+    callback(error(drogon::k401Unauthorized, "sign in to fork"));
+    return;
+  }
   std::shared_ptr<Json::Value> json = req->getJsonObject();
   std::string newId = json ? json->get("id", "").asString() : "";
   if (newId.empty()) {
@@ -130,7 +162,7 @@ void HttpApi::forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
   {
     std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{newId}));
     if (trees_->load(TreeId{newId})) conflict = true;
-    else trees_->fork(TreeId{newId}, TreeId{treeId}, state, legend, forkTitle);
+    else trees_->fork(TreeId{newId}, TreeId{treeId}, state, legend, forkTitle, *caller);
   }
   if (conflict) {
     callback(error(drogon::k409Conflict, "a tree with that id already exists"));
@@ -145,8 +177,9 @@ void HttpApi::forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
   callback(jsonResponse(body, drogon::k201Created));
 }
 
-void HttpApi::getProgress(const drogon::HttpRequestPtr&, HttpCallback&& callback, const std::string& treeId) {
-  Progress progress = progress_->load(TreeId{treeId}, caller_);
+void HttpApi::getProgress(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
+  std::optional<UserId> caller = callerOf(req);  // the overlay is private per user
+  Progress progress = caller ? progress_->load(TreeId{treeId}, *caller) : Progress{};
   callback(jsonResponse(toJson(progress)));
 }
 

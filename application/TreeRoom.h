@@ -38,7 +38,8 @@ struct Applied {
 // read model (diagnose()).
 class TreeRoom {
 public:
-  TreeRoom(TreeId id, std::string title, LooseGraph graph, Legend legend, Seq head, OpLog& ops, PresenceBus& bus);
+  TreeRoom(TreeId id, std::string title, LooseGraph graph, Legend legend, Seq head,
+           std::optional<UserId> owner, OpLog& ops, PresenceBus& bus);
 
   std::optional<Applied> submit(const Incoming& incoming);
 
@@ -62,12 +63,18 @@ public:
   const std::string& title() const { return title_; }
   Seq head() const { return head_; }
 
+  // Authorization: who owns this tree (empty until claimed), and the first-writer claim
+  // that fills it. Reads are public; writes require the owner (or claim an unowned tree).
+  const std::optional<UserId>& owner() const { return owner_; }
+  void claim(const UserId& user) { if (!owner_) owner_ = user; }
+
 private:
   TreeId id_;
   std::string title_;
   LooseGraph graph_;
   Legend legend_;
   Seq head_;
+  std::optional<UserId> owner_;
   std::set<std::string> appliedOpIds_;
   OpLog& ops_;
   PresenceBus& bus_;

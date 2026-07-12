@@ -2,11 +2,13 @@
 
 #include "adapters/ws/PresenceHub.h"
 #include "adapters/ws/WsPresenceBus.h"
+#include "application/AuthService.h"
 #include "application/ProgressService.h"
 #include "application/RoomRegistry.h"
 #include "application/UndoService.h"
 #include "ports/OpLog.h"
 
+#include <drogon/HttpRequest.h>
 #include <drogon/WebSocketConnection.h>
 
 #include <atomic>
@@ -26,9 +28,9 @@ namespace wm {
 class Collab {
 public:
   Collab(RoomRegistry& registry, OpLog& ops, WsPresenceBus& bus, UndoService& undos,
-         ProgressService& progress, UserId progressUser, PresenceHub& presence);
+         ProgressService& progress, AuthService& auth, PresenceHub& presence);
 
-  void onOpen(const drogon::WebSocketConnectionPtr& conn);
+  void onOpen(const drogon::HttpRequestPtr& req, const drogon::WebSocketConnectionPtr& conn);
   void onMessage(const drogon::WebSocketConnectionPtr& conn, const std::string& text);
   void onClose(const drogon::WebSocketConnectionPtr& conn);
 
@@ -44,7 +46,7 @@ private:
   WsPresenceBus& bus_;
   UndoService& undos_;
   ProgressService& progress_;
-  UserId progressUser_;  // fixed `dev` today; the authenticated user once accounts land (Phase 1)
+  AuthService& auth_;  // resolves the wm_session cookie / bearer at the socket upgrade
   PresenceHub& presence_;
   std::atomic<std::uint64_t> tick_{1};  // first command HLC sorts after the genesis seed
   std::atomic<std::uint64_t> actorSeq_{0};

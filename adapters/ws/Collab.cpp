@@ -4,6 +4,8 @@
 #include "adapters/json/TreeJson.h"
 #include "application/TreeRoom.h"
 
+#include <optional>
+
 #include <trantor/utils/Logger.h>
 
 namespace wm {
@@ -14,8 +16,12 @@ constexpr Seq kSnapshotEvery = 25;  // persist full state every N ops to bound t
 constexpr double kWsRatePerSec = 50.0;  // sustained frames/sec per connection
 constexpr double kWsBurst = 100.0;      // short-burst allowance
 
+const Principal& principalOf(const drogon::WebSocketConnectionPtr& conn) {
+  return conn->getContextRef<Principal>();
+}
+
 UserId actorOf(const drogon::WebSocketConnectionPtr& conn) {
-  return conn->getContextRef<UserId>();
+  return principalOf(conn).user;
 }
 
 // Undo is per author, per tree.
@@ -32,12 +38,23 @@ void setCollab(std::shared_ptr<Collab> collab) { g_collab = std::move(collab); }
 Collab* collab() { return g_collab.get(); }
 
 Collab::Collab(RoomRegistry& registry, OpLog& ops, WsPresenceBus& bus, UndoService& undos,
-               ProgressService& progress, UserId progressUser, PresenceHub& presence)
+               ProgressService& progress, AuthService& auth, PresenceHub& presence)
     : registry_(registry), ops_(ops), bus_(bus), undos_(undos), progress_(progress),
-      progressUser_(std::move(progressUser)), presence_(presence) {}
+      auth_(auth), presence_(presence) {}
 
-void Collab::onOpen(const drogon::WebSocketConnectionPtr& conn) {
-  conn->setContext(std::make_shared<UserId>("u" + std::to_string(++actorSeq_)));
+void Collab::onOpen(const drogon::HttpRequestPtr& req, const drogon::WebSocketConnectionPtr& conn) {
+  // Resolve the session at the upgrade (frames carry no cookie): an authenticated user may
+  // write; anyone else joins as a read-only guest.
+  std::string secret = req->getCookie("wm_session");
+  if (secret.empty()) {
+    std::string authorization = req->getHeader("authorization");
+    if (authorization.rfind("Bearer ", 0) == 0) secret = authorization.substr(7);
+  }
+  std::optional<User> user = auth_.authenticate(secret);
+  Principal principal = user ? Principal{user->id, true}
+                             : Principal{UserId{"u" + std::to_string(++actorSeq_)}, false};
+  conn->setContext(std::make_shared<Principal>(std::move(principal)));
+
   std::lock_guard<std::mutex> lock(wsMutex_);
   wsRate_[conn.get()] = WsRate{kWsBurst, std::chrono::steady_clock::now()};
 }
@@ -124,22 +141,38 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
 }
 
 void Collab::command(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, const Json::Value& frame) {
+  const Principal& principal = principalOf(conn);
+  if (!principal.authenticated) {
+    Json::Value reject(Json::objectValue);
+    reject["t"] = "reject";
+    reject["treeId"] = treeId;
+    reject["opId"] = frame.get("opId", "").asString();
+    reject["reason"] = "sign in to edit";
+    send(conn, reject);
+    return;
+  }
+
   std::optional<Command> command = commandFromJson(frame.get("kind", "").asString(), frame["payload"]);
   if (!command) return;
 
   std::string opId = frame.get("opId", "").asString();
-  Hlc hlc{++tick_, 0, actorOf(conn).str()};
-  Incoming incoming{opId, std::move(*command), hlc, actorOf(conn)};
+  Hlc hlc{++tick_, 0, principal.user.str()};
+  Incoming incoming{opId, std::move(*command), hlc, principal.user};
 
   std::optional<Applied> applied;
   std::optional<std::string> rejected;
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     TreeRoom& room = registry_.open(TreeId{treeId});
-    rejected = room.validate(incoming.command);  // legend invariants (§F6); graph ops always pass
-    if (!rejected) {
-      applied = room.submit(incoming);
-      if (applied && applied->op.seq % kSnapshotEvery == 0) registry_.persist(TreeId{treeId});
+    if (room.owner() && *room.owner() != principal.user) {
+      rejected = "this tree belongs to another account";
+    } else {
+      rejected = room.validate(incoming.command);  // legend invariants (§F6); graph ops always pass
+      if (!rejected) {
+        applied = room.submit(incoming);
+        if (!room.owner()) registry_.claim(TreeId{treeId}, principal.user);  // first writer claims it
+        if (applied && applied->op.seq % kSnapshotEvery == 0) registry_.persist(TreeId{treeId});
+      }
     }
   }
   if (rejected) {
@@ -167,9 +200,11 @@ void Collab::command(const drogon::WebSocketConnectionPtr& conn, const std::stri
 // the shared op log. Record it (advisory prerequisite check against the loose graph, never
 // rejected), then echo only to the same user's other sessions — not to collaborators.
 void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, const Json::Value& frame) {
+  const Principal& principal = principalOf(conn);
+  if (!principal.authenticated) return;  // progress is a private per-account overlay
+
   NodeId node{frame.get("nodeId", "").asString()};
-  std::string statusText = frame.get("status", "").asString();
-  std::optional<ProgressStatus> status = parseProgressStatus(statusText);
+  std::optional<ProgressStatus> status = parseProgressStatus(frame.get("status", "").asString());
   if (node.empty() || !status) return;
 
   std::vector<NodeId> prerequisites;
@@ -182,23 +217,16 @@ void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::str
     }
   }
 
-  Hlc hlc{++tick_, 0, actorOf(conn).str()};
-  progress_.setStatus(prerequisites, TreeId{treeId}, progressUser_, node, *status, hlc);
-
-  // Echo to the author's *other* sessions so a second tab stays in sync. In today's
-  // single-user phase every session is `dev`, so every other subscriber is one of the
-  // author's sessions; Phase 1 narrows this to connections sharing the author's user id.
-  Json::Value echo(Json::objectValue);
-  echo["t"] = "progress";
-  echo["treeId"] = treeId;
-  echo["nodeId"] = node.str();
-  echo["status"] = statusText;
-  bus_.broadcastRaw(TreeId{treeId}, dump(echo), conn);
+  Hlc hlc{++tick_, 0, principal.user.str()};
+  progress_.setStatus(prerequisites, TreeId{treeId}, principal.user, node, *status, hlc);
+  // Not broadcast: a user's progress is private to them, so it never rides the tree's
+  // shared bus. A second tab of the same user refetches it on load.
 }
 
 // Collaborative undo/redo: replay the top inverse group as fresh ops (which broadcast
 // like any edit), and stash the resulting counter-inverse on the opposite stack.
 void Collab::undoRedo(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, bool isUndo) {
+  if (!principalOf(conn).authenticated) return;  // only a signed-in author has a stack to replay
   std::string key = undoKey(treeId, conn);
   std::optional<std::vector<Command>> group = isUndo ? undos_.takeUndo(key) : undos_.takeRedo(key);
   if (!group) return;

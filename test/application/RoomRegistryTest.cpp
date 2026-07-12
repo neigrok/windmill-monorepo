@@ -82,6 +82,27 @@ TEST(registry_persist_snapshots_full_state_without_evicting) {
   CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);
 }
 
+TEST(registry_claim_sets_owner_once_and_is_durable) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  repo.byId["t"] = oneNodeTree();  // unowned
+  RoomRegistry registry(repo, log, bus);
+
+  TreeRoom& room = registry.open(tid());
+  CHECK_FALSE(room.owner().has_value());
+
+  registry.claim(tid(), UserId{"alice"});
+  CHECK(room.owner().has_value());
+  CHECK_EQ(*room.owner(), UserId{"alice"});           // the live room's cache is updated
+  CHECK(repo.byId["t"].owner.has_value());
+  CHECK_EQ(*repo.byId["t"].owner, UserId{"alice"});   // and it is persisted
+
+  registry.claim(tid(), UserId{"bob"});               // a second claim never overrides an owner
+  CHECK_EQ(*room.owner(), UserId{"alice"});
+  CHECK_EQ(*repo.byId["t"].owner, UserId{"alice"});
+}
+
 TEST(registry_evict_persists_and_closes) {
   FakeTreeRepository repo;
   FakeOpLog log;

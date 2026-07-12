@@ -15,8 +15,9 @@ public:
   std::optional<StoredTree> load(const TreeId& tree) override;
   void save(const TreeId& tree, const GraphState& state, const LegendState& legend,
             const std::string& title, Seq head) override;
+  void claim(const TreeId& tree, const UserId& owner) override;
   void fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
-            const LegendState& legend, const std::string& title) override;
+            const LegendState& legend, const std::string& title, const UserId& owner) override;
 
 private:
   std::string connString_;

@@ -8,7 +8,7 @@ using namespace wm::fake;
 namespace {
 
 TreeRoom makeRoom(FakeOpLog& log, FakeBus& bus) {
-  return TreeRoom(tid(), "Title", LooseGraph{}, Legend{}, 0, log, bus);
+  return TreeRoom(tid(), "Title", LooseGraph{}, Legend{}, 0, std::nullopt, log, bus);
 }
 
 Incoming in(const char* opId, Command command, std::uint64_t ms) {

@@ -22,6 +22,7 @@ public:
   TreeRoom& open(const TreeId& id);
   void evict(const TreeId& id);
   void persist(const TreeId& id);  // snapshot a live room's full state without evicting
+  void claim(const TreeId& id, const UserId& owner);  // first-writer ownership, durable + in-room
   bool isOpen(const TreeId& id) const;
 
   // The per-tree strand: one writer per tree (§11). Every caller that touches a room —

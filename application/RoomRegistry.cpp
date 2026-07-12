@@ -24,7 +24,7 @@ TreeRoom& RoomRegistry::open(const TreeId& id) {
   LooseGraph graph(stored->state);  // full CRDT state — lossless
   Legend legend(stored->legend);    // empty for legacy trees; the client derives then
   auto room = std::make_unique<TreeRoom>(id, stored->title, std::move(graph), std::move(legend),
-                                         stored->head, ops_, bus_);
+                                         stored->head, stored->owner, ops_, bus_);
   // The document is a snapshot at stored->head; replay the op-log tail to reach the
   // true current state (and the true head), so new ops never collide on seq.
   for (const AppliedOp& op : ops_.since(id, stored->head)) room->replay(op);
@@ -60,6 +60,13 @@ void RoomRegistry::persist(const TreeId& id) {
     head = it->second->head();
   }
   repo_.save(id, state, legend, title, head);  // I/O outside the map lock
+}
+
+void RoomRegistry::claim(const TreeId& id, const UserId& owner) {
+  repo_.claim(id, owner);  // durable, and a no-op if the tree already has an owner
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto it = rooms_.find(id);
+  if (it != rooms_.end()) it->second->claim(owner);  // keep the live room's cache in step
 }
 
 bool RoomRegistry::isOpen(const TreeId& id) const {

@@ -44,11 +44,19 @@ struct FakeTreeRepository : TreeRepository {
   }
   void save(const TreeId& tree, const GraphState& state, const LegendState& legend,
             const std::string& title, Seq head) override {
-    byId[tree.str()] = StoredTree{state, legend, title, head};
+    std::optional<UserId> owner;
+    std::string visibility = "public";
+    auto it = byId.find(tree.str());
+    if (it != byId.end()) { owner = it->second.owner; visibility = it->second.visibility; }
+    byId[tree.str()] = StoredTree{state, legend, title, head, owner, visibility};
+  }
+  void claim(const TreeId& tree, const UserId& owner) override {
+    auto it = byId.find(tree.str());
+    if (it != byId.end() && !it->second.owner) it->second.owner = owner;
   }
   void fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
-            const LegendState& legend, const std::string& title) override {
-    byId[newTree.str()] = StoredTree{state, legend, title, 0};
+            const LegendState& legend, const std::string& title, const UserId& owner) override {
+    byId[newTree.str()] = StoredTree{state, legend, title, 0, owner, "public"};
     forkedFrom[newTree.str()] = source.str();
   }
 };
