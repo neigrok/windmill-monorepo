@@ -90,7 +90,7 @@ const goldDot = {
   height: '12px',
   borderRadius: 'var(--radius-full)',
   background: 'var(--accent-gold-500)',
-  ['--ember-rgb']: '196, 151, 47',
+  ['--nd-glow']: 'var(--kind-gold-glow)',
   animation: 'wm-ember var(--duration-glow) var(--ease-glow) infinite',
 };
 

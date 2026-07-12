@@ -6,47 +6,44 @@
   --duration-fast: 150ms;
   --duration-base: 280ms;
   --duration-slow: 480ms;
-  --duration-beat: 320ms;
   --duration-glow: 2400ms;
+  /* ceremony cadence — one depth ring per beat (guidelines/motion-language.md) */
+  --duration-beat: 320ms;
 }
 
+/* Toast enter beat (motion-language.md §toast): 280ms ease-soft in. */
 @keyframes wm-fade-in-up {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes wm-pulse-glow {
-  0%, 100% { box-shadow: 0 0 0 4px rgba(188, 108, 66, 0.18), 0 0 18px rgba(188, 108, 66, 0.28); }
-  50% { box-shadow: 0 0 0 6px rgba(188, 108, 66, 0.28), 0 0 32px rgba(188, 108, 66, 0.45); }
+/* Crown/pulse waveform (motion-language.md §crown/pulse): colour-agnostic,
+   reads the per-node glow colour from --nd-glow. Infinite use is reserved for
+   the crowned root (2400ms ease-glow); everything else breathes finitely.
+   (The old fixed-colour wm-pulse-glow / wm-pulse-glow-olive were retired —
+   this waveform replaced them.) */
+@keyframes wm-pulse-node {
+  0%, 100% { box-shadow: 0 0 0 3px var(--nd-glow), 0 0 16px var(--nd-glow); }
+  50%      { box-shadow: 0 0 0 5px var(--nd-glow), 0 0 34px var(--nd-glow); }
 }
 
-@keyframes wm-pulse-glow-gold {
-  0%, 100% { box-shadow: 0 0 0 4px rgba(196, 151, 47, 0.18), 0 0 18px rgba(196, 151, 47, 0.28); }
-  50% { box-shadow: 0 0 0 6px rgba(196, 151, 47, 0.28), 0 0 32px rgba(196, 151, 47, 0.45); }
-}
-
-@keyframes wm-pulse-glow-olive {
-  0%, 100% { box-shadow: 0 0 0 4px rgba(125, 140, 67, 0.18), 0 0 18px rgba(125, 140, 67, 0.28); }
-  50% { box-shadow: 0 0 0 6px rgba(125, 140, 67, 0.28), 0 0 32px rgba(125, 140, 67, 0.45); }
-}
-
-/* In-progress "ember": a soft glow breathing on the 2400ms crown clock, α .14 ↔ .30.
-   Kind-agnostic — set --ember-rgb to a kind's triple; defaults to olive (available's hue). */
+/* Ember — the in-progress breath (F1). Same 2400ms clock as the crown, in
+   phase; amplitude peaks BELOW a complete node's resting halo, and there is
+   no ring offset — the halo is earned at complete. Colour-agnostic via
+   --nd-glow. Use: `wm-ember var(--duration-glow) var(--ease-glow) infinite`.
+   Reduced motion: freeze at mid-breath (static face: --glow-ember, shadows.css). */
 @keyframes wm-ember {
-  0%, 100% { box-shadow: 0 0 0 3px rgba(var(--ember-rgb, 125, 140, 67), 0.14), 0 0 16px rgba(var(--ember-rgb, 125, 140, 67), 0.14); }
-  50% { box-shadow: 0 0 0 4px rgba(var(--ember-rgb, 125, 140, 67), 0.22), 0 0 26px rgba(var(--ember-rgb, 125, 140, 67), 0.30); }
+  0%, 100% { box-shadow: 0 0 6px 0 color-mix(in srgb, var(--nd-glow) 28%, transparent), 0 0 13px 2px color-mix(in srgb, var(--nd-glow) 12%, transparent); }
+  50%      { box-shadow: 0 0 9px 1px color-mix(in srgb, var(--nd-glow) 60%, transparent), 0 0 18px 3px color-mix(in srgb, var(--nd-glow) 26%, transparent); }
 }
 
-/* Reduced motion: freeze the ember at mid-amplitude (α .22) rather than breathing. */
+/* Reduced motion: freeze the ember at its static mid-breath face (--glow-ember).
+   Canon SkillNode also guards this via JS noMotion; this keeps DOM consumers that
+   apply wm-ember unconditionally (AuthLanding / SignInDialog) reduced-motion-safe. */
 @media (prefers-reduced-motion: reduce) {
   @keyframes wm-ember {
-    0%, 100% { box-shadow: 0 0 0 4px rgba(var(--ember-rgb, 125, 140, 67), 0.18), 0 0 22px rgba(var(--ember-rgb, 125, 140, 67), 0.22); }
+    0%, 100% { box-shadow: var(--glow-ember); }
   }
-}
-
-@keyframes wm-grow-path {
-  from { stroke-dashoffset: var(--path-length, 300); }
-  to { stroke-dashoffset: 0; }
 }
 
 @keyframes wm-shimmer {
@@ -60,20 +57,23 @@
   100% { transform: scale(1); }
 }
 
+/* Bloom — a node igniting to `complete` (motion-language.md §bloom).
+   DOM approximation of the two-phase ignite+blossom; the renderer follows the
+   full spec. Use: `wm-bloom 560ms var(--ease-soft) 1`, with --nd-glow set. */
 @keyframes wm-bloom {
-  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(188, 108, 66, 0); }
-  55% { transform: scale(1.045); box-shadow: 0 0 0 6px rgba(188, 108, 66, 0.40), 0 0 32px rgba(188, 108, 66, 0.40); } /* overshoot radius ×1.25, α.40 */
-  100% { transform: scale(1); box-shadow: 0 0 0 4px rgba(188, 108, 66, 0.28), 0 0 18px rgba(188, 108, 66, 0.28); } /* rest α.28 */
+  0%   { transform: scale(1); box-shadow: 0 0 0 0 transparent; filter: saturate(0.6) brightness(0.97); }
+  30%  { filter: none; }
+  55%  { transform: scale(1.045); box-shadow: 0 0 0 5px var(--nd-glow), 0 0 40px var(--nd-glow); }
+  100% { transform: scale(1); box-shadow: 0 0 0 3px var(--nd-glow), 0 0 16px var(--nd-glow); }
 }
 
+/* Pulse ×2, decaying — the finite attention beat that marks a new frontier
+   (motion-language.md §crown/pulse). Two double-time cycles inside one run.
+   Use: `wm-pulse-echo 2400ms var(--ease-glow) 1` — never infinite. */
 @keyframes wm-pulse-echo {
-  0%, 100% { box-shadow: 0 0 0 4px rgba(188, 108, 66, 0.28), 0 0 18px rgba(188, 108, 66, 0.28); } /* rest α.28 */
-  25% { box-shadow: 0 0 0 7px rgba(188, 108, 66, 0.42), 0 0 32px rgba(188, 108, 66, 0.42); } /* crest 1: radius +3px, α.42 */
-  50% { box-shadow: 0 0 0 4px rgba(188, 108, 66, 0.28), 0 0 18px rgba(188, 108, 66, 0.28); } /* mid rest α.28 */
-  75% { box-shadow: 0 0 0 5.5px rgba(188, 108, 66, 0.34), 0 0 26px rgba(188, 108, 66, 0.34); } /* crest 2: radius +1.5px, α.34 */
-}
-
-@keyframes wm-pulse-node {
-  0%, 100% { box-shadow: 0 0 0 4px rgba(188, 108, 66, 0.28), 0 0 18px rgba(188, 108, 66, 0.28); } /* rest α.28 */
-  50% { box-shadow: 0 0 0 6px rgba(188, 108, 66, 0.40), 0 0 28px rgba(188, 108, 66, 0.40); } /* crest α.40 */
+  0%, 100% { box-shadow: 0 0 0 3px var(--nd-glow), 0 0 16px var(--nd-glow); }
+  20%      { box-shadow: 0 0 0 6px var(--nd-glow), 0 0 40px var(--nd-glow); }
+  46%      { box-shadow: 0 0 0 3px var(--nd-glow), 0 0 16px var(--nd-glow); }
+  66%      { box-shadow: 0 0 0 4.5px var(--nd-glow), 0 0 28px var(--nd-glow); }
+  88%      { box-shadow: 0 0 0 3px var(--nd-glow), 0 0 16px var(--nd-glow); }
 }
