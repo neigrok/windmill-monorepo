@@ -50,6 +50,16 @@ void PgTreeRepository::save(const TreeId& tree, const GraphState& state, const L
   txn.commit();
 }
 
+void PgTreeRepository::create(const TreeId& tree, const GraphState& state, const LegendState& legend,
+                              const std::string& title, const UserId& owner) {
+  std::string document = documentText(state, legend);
+  pqxx::work txn{pgThreadConnection(connString_)};
+  txn.exec_params(
+      "INSERT INTO trees (id, title, head_seq, owner_id, document) VALUES ($1, $2, 0, $3::uuid, $4::jsonb)",
+      tree.str(), title, owner.str(), document);
+  txn.commit();
+}
+
 std::vector<OwnedTree> PgTreeRepository::listOwnedBy(const UserId& owner) {
   pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result rows = txn.exec_params(

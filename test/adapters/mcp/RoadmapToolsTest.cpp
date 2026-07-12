@@ -4,6 +4,7 @@
 #include "application/RoomRegistry.h"
 #include "domain/LooseGraph.h"
 #include "ports/Clock.h"
+#include "test/application/AuthFakes.h"
 #include "test/application/Fakes.h"
 #include "test/testing.h"
 
@@ -25,9 +26,10 @@ struct Harness {
   FakeBus bus;
   FakeProgressRepository progressRepo;
   StepClock clock;
+  FakeTokens tokens;
   RoomRegistry registry{trees, ops, bus};
   ProgressService progress{progressRepo};
-  TreeRegistry treeRegistry{trees, progressRepo};
+  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}};
   UserId caller = uid("agent");
   RoadmapTools tools{registry, progress, clock, treeRegistry};
 
@@ -222,6 +224,20 @@ TEST(mcp_remove_kind_rejected_while_a_node_wears_its_hue) {
   h.call("add_kind", k);
 
   CHECK(h.call("remove_kind", with("id", "infra")).isError);  // sky is in use
+}
+
+TEST(mcp_create_tree_plants_an_owned_roadmap_and_lists_it) {
+  Harness h;
+  ToolResult created = h.tools.callTool("create_tree", with("title", "Sailing"), h.caller);
+  CHECK_FALSE(created.isError);
+  std::string newId = created.structured["treeId"].asString();
+  CHECK_FALSE(newId.empty());
+
+  ToolResult listed = h.tools.callTool("list_trees", Json::Value(Json::objectValue), h.caller);
+  bool found = false;
+  for (const Json::Value& row : listed.structured["trees"])
+    if (row["id"].asString() == newId) { found = true; CHECK_EQ(row["title"].asString(), std::string("Sailing")); }
+  CHECK(found);
 }
 
 TEST(mcp_list_trees_returns_the_callers_owned_rows) {

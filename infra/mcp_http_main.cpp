@@ -78,7 +78,9 @@ int main() {
   auto bus = std::make_shared<NullPresenceBus>();
   auto registry = std::make_shared<RoomRegistry>(*trees, *oplog, *bus);
   auto progress = std::make_shared<ProgressService>(*progressRepo);
-  auto treeRegistry = std::make_shared<TreeRegistry>(*trees, *progressRepo);
+  auto registryTokens = std::make_shared<OpenSslTokenGenerator>();
+  const Hlc genesis{1, 0, "genesis"};
+  auto treeRegistry = std::make_shared<TreeRegistry>(*trees, *progressRepo, *registryTokens, genesis);
   auto clock = std::make_shared<SystemClock>();
   auto tools = std::make_shared<RoadmapTools>(*registry, *progress, *clock, *treeRegistry);
 

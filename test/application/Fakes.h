@@ -56,6 +56,10 @@ struct FakeTreeRepository : TreeRepository {
     if (it != byId.end()) { owner = it->second.owner; visibility = it->second.visibility; }
     byId[tree.str()] = StoredTree{state, legend, title, head, owner, visibility};
   }
+  void create(const TreeId& tree, const GraphState& state, const LegendState& legend,
+              const std::string& title, const UserId& owner) override {
+    byId[tree.str()] = StoredTree{state, legend, title, 0, owner};
+  }
   std::vector<OwnedTree> listOwnedBy(const UserId& owner) override {
     std::vector<OwnedTree> owned;
     for (const auto& [id, stored] : byId) {

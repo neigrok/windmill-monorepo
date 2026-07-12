@@ -25,6 +25,24 @@ drogon::HttpResponsePtr error(drogon::HttpStatusCode code, const std::string& me
 TreeRegistryApi::TreeRegistryApi(std::shared_ptr<TreeRegistry> registry, std::shared_ptr<AuthService> auth)
     : registry_(std::move(registry)), auth_(std::move(auth)) {}
 
+void TreeRegistryApi::createTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    callback(error(drogon::k401Unauthorized, "sign in to plant a roadmap"));
+    return;
+  }
+  std::shared_ptr<Json::Value> json = req->getJsonObject();
+  if (json && !json->get("fromQuest", "").asString().empty()) {
+    callback(error(drogon::k501NotImplemented, "quest planting is not available yet"));  // /v1/quests unbuilt
+    return;
+  }
+  std::string title = json ? json->get("title", "").asString() : "";
+  TreeId id = registry_->create(*caller, title);
+  Json::Value body(Json::objectValue);
+  body["treeId"] = id.str();
+  callback(jsonResponse(body));
+}
+
 void TreeRegistryApi::listTrees(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {

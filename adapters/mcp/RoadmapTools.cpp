@@ -215,6 +215,12 @@ ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, cons
   return ToolResult::json(out);
 }
 
+ToolResult createTree(TreeRegistry& registry, const UserId& caller, const std::string& title) {
+  Json::Value out(Json::objectValue);
+  out["treeId"] = registry.create(caller, title).str();
+  return ToolResult::json(out);
+}
+
 ToolResult listRegistry(TreeRegistry& registry, const UserId& caller) {
   Json::Value trees(Json::arrayValue);
   for (const TreeSummary& summary : registry.list(caller)) trees.append(toJson(summary));
@@ -256,6 +262,15 @@ Json::Value RoadmapTools::listTools() const {
   const char* treeId = "The roadmap (tree) id.";
   Json::Value tools(Json::arrayValue);
 
+  {
+    Json::Value p(Json::objectValue);
+    p["title"] = str("Optional name for the new roadmap.");
+    tools.append(tool("create_tree",
+        "Create a new empty roadmap that you own, seeded with the default legend "
+        "(Build/Learn/Milestone). Optionally name it with `title`. Returns the new treeId — pass it "
+        "to the other tools to start authoring.",
+        p, {}));
+  }
   {
     tools.append(tool("list_trees",
         "List the roadmaps you own — one row each: id, title, total node count, how many you have "
@@ -459,6 +474,8 @@ Json::Value RoadmapTools::listTools() const {
 }
 
 ToolResult RoadmapTools::callTool(const std::string& name, const Json::Value& arguments, const UserId& caller) {
+  if (name == "create_tree")
+    return createTree(treeRegistry_, caller, arguments.get("title", "").asString());  // no treeId
   if (name == "list_trees") return listRegistry(treeRegistry_, caller);  // registry-wide: no treeId
 
   TreeId tree{arguments.get("treeId", "").asString()};

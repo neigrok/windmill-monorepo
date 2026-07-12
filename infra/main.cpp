@@ -81,8 +81,8 @@ int main() {
 
   auto api = std::make_shared<HttpApi>(registry, trees, progress, oplog, genesis, authService);
 
-  // The per-user tree registry (list + delete): a repo-direct read model, not through the room.
-  auto treeRegistry = std::make_shared<TreeRegistry>(*trees, *progress);
+  // The per-user tree registry (create + list + delete): a repo-direct read model, not through the room.
+  auto treeRegistry = std::make_shared<TreeRegistry>(*trees, *progress, *tokens, genesis);
   auto registryApi = std::make_shared<TreeRegistryApi>(treeRegistry, authService);
 
   // The origins allowed to send credentialed (cookie-bearing) requests. The app itself is
@@ -228,6 +228,12 @@ int main() {
       [oauthApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { oauthApi->decision(req, std::move(cb)); },
       {drogon::Post});
 
+  app.registerHandler(
+      "/v1/trees",
+      [registryApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        registryApi->createTree(req, std::move(cb));
+      },
+      {drogon::Post});
   app.registerHandler(
       "/v1/trees",
       [registryApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {

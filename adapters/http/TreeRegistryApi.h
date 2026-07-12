@@ -21,6 +21,7 @@ class TreeRegistryApi {
 public:
   TreeRegistryApi(std::shared_ptr<TreeRegistry> registry, std::shared_ptr<AuthService> auth);
 
+  void createTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback);                      // POST   /v1/trees
   void listTrees(const drogon::HttpRequestPtr& req, HttpCallback&& callback);                       // GET    /v1/trees
   void deleteTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);  // DELETE /v1/trees/:id
 

@@ -306,6 +306,15 @@ pass; the full project (server + mcp) builds green.
   rules that can't live in SQL: recency = `max(structural, caller's last progress mark)`, and the
   ordering (SQL can't sort a computed key). `dominantKind` is computed over the raw projected
   `TreeData`, never `SkillTree`, so an invalid loose graph (cycle/dangling) still summarizes.
+- **`POST /v1/trees` (create) completes the trio — the 405 was the tell.** The frontend's birth
+  canvas plants via `POST /v1/trees {blank,title}` → `200 {treeId}`, but this backend only ever
+  created trees via `PUT /v1/trees/{id}` (client-chosen id); create was assumed to "already exist"
+  per the frontend contract. Adding `GET /v1/trees` registered the path, so the missing POST flipped
+  404→405 and surfaced the gap. Create lives in the same `TreeRegistry` Action (mints a `t_…` id via
+  the CSPRNG `TokenGenerator`, seeds the default legend, inserts owner-set), exposed as
+  `POST /v1/trees` and MCP `create_tree`. `fromQuest` → 501 until the quest catalog (`/v1/quests`,
+  F5) exists. Lesson: a documented contract "living in the frontend docs" is not the same as a
+  handler existing — a registered sibling route turns the omission from a 404 into a louder 405.
 - **Registry reads bypass the rooms on purpose.** Existing tree reads go through the live room to
   reflect unsaved edits; a glanceable list of many owned trees reads straight from the repository
   instead — opening a room per listed tree would thrash the hot editor caches, and `updatedAt` is

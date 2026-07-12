@@ -36,6 +36,10 @@ struct TreeRepository {
   virtual std::optional<StoredTree> load(const TreeId& tree) = 0;
   virtual void save(const TreeId& tree, const GraphState& state, const LegendState& legend,
                     const std::string& title, Seq head) = 0;
+  // Insert a brand-new tree owned by `owner` — a fresh id, its starting document (graph +
+  // legend) and title. Fails loudly on an id collision (never overwrites an existing tree).
+  virtual void create(const TreeId& tree, const GraphState& state, const LegendState& legend,
+                      const std::string& title, const UserId& owner) = 0;
   // The trees a user owns, newest-touched excluded from ordering here (the domain orders).
   // Soft-deleted trees are never returned.
   virtual std::vector<OwnedTree> listOwnedBy(const UserId& owner) = 0;

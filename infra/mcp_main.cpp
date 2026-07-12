@@ -1,3 +1,4 @@
+#include "adapters/crypto/OpenSslTokenGenerator.h"
 #include "adapters/json/TreeJson.h"
 #include "adapters/mcp/McpServer.h"
 #include "adapters/mcp/RoadmapTools.h"
@@ -69,7 +70,9 @@ int main() {
   NullPresenceBus bus;
   RoomRegistry registry(trees, oplog, bus);
   ProgressService progress(progressRepo);
-  TreeRegistry treeRegistry(trees, progressRepo);
+  OpenSslTokenGenerator registryTokens;
+  const Hlc genesis{1, 0, "genesis"};
+  TreeRegistry treeRegistry(trees, progressRepo, registryTokens, genesis);
   SystemClock clock;
 
   RoadmapTools tools(registry, progress, clock, treeRegistry);
