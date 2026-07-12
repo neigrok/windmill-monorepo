@@ -1,0 +1,117 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: cicd-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  # Build the builder stage only — it compiles everything and runs ctest, so a red
+  # suite fails here. Runs on every push and PR; shares the buildx layer cache with the
+  # image build below, so main doesn't recompile from scratch.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build + test (builder stage)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: build
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Build the slim runtime image and publish it to GHCR, tagged by commit SHA (+ latest).
+  build-and-push:
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Ship it: copy compose + Caddyfile to the VPS, render .env from secrets/vars, then
+  # pull the new image and roll the stack. Migrations run as a compose one-shot.
+  deploy:
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy deploy assets to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          port: ${{ secrets.SSH_PORT }}
+          key: ${{ secrets.SSH_KEY }}
+          source: "deploy/docker-compose.yml,deploy/Caddyfile"
+          target: "windmill"
+          strip_components: 1
+
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          DOMAIN_API: ${{ vars.DOMAIN_API }}
+          DOMAIN_MCP: ${{ vars.DOMAIN_MCP }}
+          DOMAIN_APP: ${{ vars.DOMAIN_APP }}
+          ACME_EMAIL: ${{ vars.ACME_EMAIL }}
+          MCP_ORIGINS: ${{ vars.WINDMILL_MCP_ALLOWED_ORIGINS }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          port: ${{ secrets.SSH_PORT }}
+          key: ${{ secrets.SSH_KEY }}
+          envs: IMAGE_TAG,POSTGRES_PASSWORD,DOMAIN_API,DOMAIN_MCP,DOMAIN_APP,ACME_EMAIL,MCP_ORIGINS,GHCR_USER,GHCR_TOKEN
+          script: |
+            set -euo pipefail
+            cd ~/windmill
+            mkdir -p web            # the frontend rsyncs here; create it as us before Caddy mounts it
+            umask 077
+            cat > .env <<EOF
+            IMAGE_TAG=${IMAGE_TAG}
+            POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+            DOMAIN_API=${DOMAIN_API}
+            DOMAIN_MCP=${DOMAIN_MCP}
+            DOMAIN_APP=${DOMAIN_APP}
+            ACME_EMAIL=${ACME_EMAIL}
+            WINDMILL_MCP_ALLOWED_ORIGINS=${MCP_ORIGINS}
+            EOF
+            echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
+            docker compose pull
+            docker compose up -d --remove-orphans
+            docker image prune -f

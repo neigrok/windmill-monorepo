@@ -1,0 +1,29 @@
+# Automatic HTTPS via Let's Encrypt. Caddy proxies WebSockets transparently, so the
+# collab socket on windmill_server needs no extra config. Two hostnames, two upstreams.
+#
+# Single-host alternative (one domain, path-routed) — replace the two blocks below with:
+#   {$DOMAIN_API} {
+#       handle /mcp* { reverse_proxy mcp:8090 }
+#       handle       { reverse_proxy server:8080 }
+#   }
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN_API} {
+	reverse_proxy server:8080
+}
+
+{$DOMAIN_MCP} {
+	reverse_proxy mcp:8090
+}
+
+# The frontend (windmill repo) is a static Vite SPA rsync'd into ./web by its own deploy
+# workflow; Caddy serves it here. Hash-routed, so try_files is just a safety net.
+{$DOMAIN_APP} {
+	encode gzip zstd
+	root * /srv/windmill-web
+	try_files {path} /index.html
+	file_server
+}

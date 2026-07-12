@@ -1,0 +1,100 @@
+# Windmill backend, one VPS. Postgres holds the data, a one-shot applies the schema,
+# the two service binaries run from the same published image, and Caddy terminates TLS
+# and reverse-proxies both. Only Caddy is exposed to the internet; everything else talks
+# over the private compose network by service name.
+#
+# Values come from ./.env (rendered by the deploy workflow from GitHub secrets/vars).
+
+name: windmill
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: windmill
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: windmill
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U windmill -d windmill"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    image: ghcr.io/neigrok/windmill-backend:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGCONNECT_TIMEOUT: "10"
+    command: >
+      psql "postgresql://windmill:${POSTGRES_PASSWORD}@db:5432/windmill"
+      -v ON_ERROR_STOP=1 -f /app/db/schema.sql
+
+  server:
+    image: ghcr.io/neigrok/windmill-backend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql://windmill:${POSTGRES_PASSWORD}@db:5432/windmill
+      PORT: "8080"
+    command: ["windmill_server"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -o /dev/null http://localhost:8080/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  mcp:
+    image: ghcr.io/neigrok/windmill-backend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql://windmill:${POSTGRES_PASSWORD}@db:5432/windmill
+      PORT: "8090"
+      WINDMILL_MCP_ALLOWED_ORIGINS: ${WINDMILL_MCP_ALLOWED_ORIGINS:-}
+    command: ["windmill_mcp_http"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -o /dev/null http://localhost:8090/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - server
+      - mcp
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN_API: ${DOMAIN_API}
+      DOMAIN_MCP: ${DOMAIN_MCP}
+      DOMAIN_APP: ${DOMAIN_APP:-app.localhost}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./web:/srv/windmill-web:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
