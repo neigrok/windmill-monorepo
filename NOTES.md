@@ -257,3 +257,42 @@ map unknown color strings to a rejected/flagged value.
   edges — so resurrection-after-reload won't revive a deleted node's edges. The real
   Postgres adapter must persist the full CRDT state (stamps + tombstones), not the
   projection. Fine for the pure/in-memory phase; flagged for the adapter phase.
+
+## Auth — passwordless magic links (X6)
+
+Implemented the whole auth layer per the design system's `guidelines/auth.md`: one door
+keyed by email, 15-minute single-use links, 90-day rolling sessions, Resend for delivery.
+Contract + wiring in `AUTH.md`. All 91 unit cases + an 8-check end-to-end (real Postgres)
+pass; the full project (server + mcp) builds green.
+
+- **The design doc overrode the SPEC, not the other way round.** `SPEC §10` said email +
+  password + Argon2; `auth.md` says "passwords never exist". The newer, more specific
+  document won — `users` lost `password_hash`/`handle`, and `SPEC §10` now carries a
+  supersession banner pointing at `AUTH.md`. When two sources disagree, the one closest to
+  the decision (and the one the operator handed us a key for) is the source of truth.
+- **Auth is thin domain, honest about it.** The temptation was to manufacture domain logic;
+  the honest shape is a small `domain/Auth` (email parsing, verdict, expiry math, rate
+  predicate, value types) with the *mechanisms* — randomness, hashing, SQL, HTTP, SMTP — all
+  at the edge behind ports (`TokenGenerator`, `AuthRepository`, `EmailSender`, `Clock`).
+  `AuthService` reads as a fail-fast pipeline with zero policy of its own. Don't inflate a
+  layer to look busy.
+- **The single-use guarantee lives at the row, not the read.** First cut did `findLink`
+  (check consumed) then `consumeLink` (void) — a TOCTOU race where two concurrent verifies
+  both mint a session. The fix is the atomic `UPDATE ... WHERE consumed_ms IS NULL` *reporting
+  whether it won* (`affected_rows == 1`); the service only proceeds when it did. Any
+  "check-then-act" on a shared row wants the act to be the check.
+- **Credentialed CORS must be an allowlist, never a reflection.** Echoing any `Origin` +
+  `Allow-Credentials: true` (needed for the cookie) turns every site into a trusted origin —
+  a login-CSRF gift. The allowlist is built from `WINDMILL_APP_URL` (+ `WINDMILL_ALLOWED_ORIGINS`);
+  unlisted origins simply get no grant. Cookie is HttpOnly + SameSite=Lax, `Secure`/`Domain`
+  following the deployment.
+- **Parallelized with a workflow, kept the core coherent.** Authored the headers + domain +
+  service + tests myself (the coherence backbone), then fanned out the four boundary adapters
+  (crypto/postgres/http/email) + a Resend-API research stage + an adversarial security review
+  across a workflow. The review caught both the race and the CORS hole. Interfaces are the
+  synchronization points; distinct files per agent means zero conflicts.
+- **The one unverifiable edge: the Resend template subject.** Sending with a template, the
+  payload's `subject` overrides the template's default and is *required only if the template
+  has none*. We deliberately omit it so the `magic-link` template owns its subject — the
+  operator must give that template a default subject. Flagged in `AUTH.md`; the 502 body
+  reveals it on the first real send if missed.

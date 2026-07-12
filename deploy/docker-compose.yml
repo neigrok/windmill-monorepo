@@ -47,6 +47,12 @@ services:
       DATABASE_URL: postgresql://windmill:${POSTGRES_PASSWORD}@db:5432/windmill
       PORT: "8080"
       RESEND_API_KEY: ${RESEND_API_KEY:-}
+      # Verified Resend sender; defaults to Resend's shared test sender until the domain is set up.
+      RESEND_FROM: ${RESEND_FROM:-Windmill <onboarding@resend.dev>}
+      # Magic links point at the app; the session cookie is scoped to the registrable domain
+      # so api.<app> and <app> share it. Both derive from DOMAIN_APP — no extra secrets.
+      WINDMILL_APP_URL: https://${DOMAIN_APP}
+      WINDMILL_COOKIE_DOMAIN: ${DOMAIN_APP}
     command: ["windmill_server"]
     healthcheck:
       test: ["CMD-SHELL", "curl -s -o /dev/null http://localhost:8080/ || exit 1"]

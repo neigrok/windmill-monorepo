@@ -1,4 +1,9 @@
+#include "adapters/clock/SystemClock.h"
+#include "adapters/crypto/OpenSslTokenGenerator.h"
+#include "adapters/email/ResendEmailSender.h"
+#include "adapters/http/AuthApi.h"
 #include "adapters/http/HttpApi.h"
+#include "adapters/postgres/PgAuthRepository.h"
 #include "adapters/postgres/PgOpLog.h"
 #include "adapters/postgres/PgProgressRepository.h"
 #include "adapters/postgres/PgTreeRepository.h"
@@ -6,6 +11,7 @@
 #include "adapters/ws/PresenceHub.h"
 #include "adapters/ws/TreeSocket.h"
 #include "adapters/ws/WsPresenceBus.h"
+#include "application/AuthService.h"
 #include "application/ProgressService.h"
 #include "application/RoomRegistry.h"
 #include "application/UndoService.h"
@@ -14,6 +20,7 @@
 
 #include <cstdlib>
 #include <memory>
+#include <set>
 #include <string>
 
 int main() {
@@ -40,6 +47,47 @@ int main() {
 
   auto api = std::make_shared<HttpApi>(registry, trees, progress, oplog, genesis, devUser);
 
+  // Passwordless auth (guidelines/auth.md). The magic link points at the app; the session
+  // rides in an HttpOnly cookie whose Secure flag and Domain follow the deployment.
+  const char* appUrlEnv = std::getenv("WINDMILL_APP_URL");
+  std::string appBaseUrl = appUrlEnv ? appUrlEnv : "http://localhost:5183";
+  const char* resendKey = std::getenv("RESEND_API_KEY");
+  const char* resendFrom = std::getenv("RESEND_FROM");
+  const char* cookieDomainEnv = std::getenv("WINDMILL_COOKIE_DOMAIN");
+  std::string cookieDomain = cookieDomainEnv ? cookieDomainEnv : "";
+  bool secureCookies = appBaseUrl.rfind("https://", 0) == 0;
+
+  auto authRepo = std::make_shared<PgAuthRepository>(connString);
+  auto emailSender = std::make_shared<ResendEmailSender>(
+      resendKey ? resendKey : "", resendFrom ? resendFrom : "Windmill <login@windmill.works>");
+  auto tokens = std::make_shared<OpenSslTokenGenerator>();
+  auto systemClock = std::make_shared<SystemClock>();
+  auto authService = std::make_shared<AuthService>(*authRepo, *emailSender, *tokens, *systemClock, appBaseUrl);
+  auto authApi = std::make_shared<AuthApi>(authService, secureCookies, cookieDomain);
+
+  // The origins allowed to send credentialed (cookie-bearing) requests. The app itself is
+  // always trusted; WINDMILL_ALLOWED_ORIGINS adds more, comma-separated. Anything else gets
+  // no CORS grant, so a hostile page cannot drive /v1/auth/verify with the victim's cookies.
+  std::set<std::string> allowedOrigins;
+  std::string appOrigin = appBaseUrl;
+  while (!appOrigin.empty() && appOrigin.back() == '/') appOrigin.pop_back();
+  allowedOrigins.insert(appOrigin);
+  if (const char* extra = std::getenv("WINDMILL_ALLOWED_ORIGINS")) {
+    std::string list = extra;
+    std::size_t start = 0;
+    while (start <= list.size()) {
+      std::size_t comma = list.find(',', start);
+      std::string origin = list.substr(start, comma - start);
+      while (!origin.empty() && (origin.front() == ' ' || origin.back() == ' ' || origin.back() == '/')) {
+        if (origin.front() == ' ') origin.erase(0, 1);
+        else origin.pop_back();
+      }
+      if (!origin.empty()) allowedOrigins.insert(origin);
+      if (comma == std::string::npos) break;
+      start = comma + 1;
+    }
+  }
+
   auto& app = drogon::app();
 
   // Presence coalescing: flush buffered cursors/selections to subscribers at 20 Hz (§12),
@@ -48,12 +96,20 @@ int main() {
     drogon::app().getLoop()->runEvery(0.05, [presence]() { presence->flush(); });
   });
 
-  // Dev CORS: the frontend dev server is a different origin. Permissive for now.
+  // CORS: the session cookie is credentialed, so only an allow-listed Origin is echoed back
+  // with Allow-Credentials — never a reflect-any-origin (that would let any site drive a
+  // credentialed /v1/auth/verify). Unlisted origins get the method/header grant but no
+  // credentials, so their cross-site cookie writes are refused by the browser.
   app.registerPostHandlingAdvice(
-      [](const drogon::HttpRequestPtr&, const drogon::HttpResponsePtr& resp) {
-        resp->addHeader("Access-Control-Allow-Origin", "*");
+      [allowedOrigins](const drogon::HttpRequestPtr& req, const drogon::HttpResponsePtr& resp) {
+        const std::string& origin = req->getHeader("origin");
+        if (!origin.empty() && allowedOrigins.count(origin)) {
+          resp->addHeader("Access-Control-Allow-Origin", origin);
+          resp->addHeader("Access-Control-Allow-Credentials", "true");
+        }
+        resp->addHeader("Vary", "Origin");
         resp->addHeader("Access-Control-Allow-Methods", "GET, PUT, POST, OPTIONS");
-        resp->addHeader("Access-Control-Allow-Headers", "content-type");
+        resp->addHeader("Access-Control-Allow-Headers", "content-type, authorization");
       });
   auto preflight = [](const drogon::HttpRequestPtr&, HttpCallback&& cb, const std::string&) {
     auto resp = drogon::HttpResponse::newHttpResponse();
@@ -65,6 +121,39 @@ int main() {
   app.registerHandler("/v1/trees/{id}/progress", preflight, {drogon::Options});
   app.registerHandler("/v1/trees/{id}/diagnostics", preflight, {drogon::Options});
   app.registerHandler("/v1/trees/{id}/activity", preflight, {drogon::Options});
+
+  auto authPreflight = [](const drogon::HttpRequestPtr&, HttpCallback&& cb) {
+    auto resp = drogon::HttpResponse::newHttpResponse();
+    resp->setStatusCode(drogon::k204NoContent);
+    cb(resp);
+  };
+  app.registerHandler("/v1/auth/magic-link", authPreflight, {drogon::Options});
+  app.registerHandler("/v1/auth/verify", authPreflight, {drogon::Options});
+  app.registerHandler("/v1/auth/logout", authPreflight, {drogon::Options});
+  app.registerHandler("/v1/me", authPreflight, {drogon::Options});
+
+  app.registerHandler(
+      "/v1/auth/magic-link",
+      [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        authApi->requestLink(req, std::move(cb));
+      },
+      {drogon::Post});
+  app.registerHandler(
+      "/v1/auth/verify",
+      [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        authApi->verify(req, std::move(cb));
+      },
+      {drogon::Post});
+  app.registerHandler(
+      "/v1/auth/logout",
+      [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        authApi->logout(req, std::move(cb));
+      },
+      {drogon::Post});
+  app.registerHandler(
+      "/v1/me",
+      [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->me(req, std::move(cb)); },
+      {drogon::Get});
 
   app.registerHandler(
       "/v1/trees/{id}",

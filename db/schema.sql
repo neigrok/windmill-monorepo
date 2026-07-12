@@ -7,14 +7,21 @@
 
 create extension if not exists citext;
 
--- identity & orgs (Phase 1+)
+-- identity & orgs (Phase 1+). Auth is passwordless magic links (guidelines/auth.md):
+-- "passwords never exist", so users carry no password_hash and no handle — an editable
+-- name seeded from the email is the whole profile in v1.
 create table if not exists users (
-  id            uuid primary key,
-  email         citext unique not null,
-  handle        text unique not null,
-  password_hash text not null,
-  created_at    timestamptz not null default now()
+  id         uuid primary key,
+  email      citext unique not null,
+  name       text not null default '',
+  created_at timestamptz not null default now()
 );
+
+-- Converge an older users table (email+password) onto the passwordless shape. Safe to
+-- re-run: the columns only change on the first apply.
+alter table users add column if not exists name text not null default '';
+alter table users drop column if exists password_hash;
+alter table users drop column if exists handle;
 
 create table if not exists orgs (
   id         uuid primary key,
@@ -69,3 +76,27 @@ create table if not exists node_progress (
   updated_at timestamptz not null default now(),
   primary key (tree_id, user_id, node_id)
 );
+
+-- passwordless sign-in (guidelines/auth.md). A magic link is addressed by the digest of
+-- its secret (the raw token is never at rest); it works once and lasts 15 minutes.
+-- Lifetimes the domain owns are stored as epoch-millisecond bigints so no timezone maths
+-- sits between the code and the row. consumed_ms is null until the link is spent.
+create table if not exists magic_links (
+  token_hash  text primary key,
+  email       citext not null,
+  created_ms  bigint not null,
+  expires_ms  bigint not null,
+  consumed_ms bigint,
+  created_at  timestamptz not null default now()
+);
+-- the rate-limit query: unspent links for an email within the recent window
+create index if not exists magic_links_email_created on magic_links (email, created_ms);
+
+-- 90-day rolling sessions, one row per device, keyed by the digest of the cookie secret.
+create table if not exists sessions (
+  token_hash text primary key,
+  user_id    uuid not null references users(id) on delete cascade,
+  expires_ms bigint not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists sessions_user on sessions (user_id);

@@ -565,10 +565,17 @@ Design notes:
 
 ## 10. Authentication & authorization
 
-**Authentication.** Email + password, hashed with **Argon2id** (libsodium). On login
-issue a short-lived **JWT access token** (~15 min) + a rotating **refresh token**
-(persisted, revocable). The WebSocket presents the access token at connect. OAuth /
-SSO is a later addition behind the same `TokenIssuer` port.
+> **Superseded by the design system's `guidelines/auth.md` (X6) and implemented per
+> `AUTH.md`.** Authentication is now **passwordless magic links** — "passwords never
+> exist". The email+password/JWT sketch below is retained only for its authorization
+> model (roles, enforcement points), which still holds. See `AUTH.md` for the live
+> method set, endpoints, sessions, and schema.
+
+**Authentication (historical sketch — replaced by magic links).** Email + password,
+hashed with **Argon2id** (libsodium). On login issue a short-lived **JWT access token**
+(~15 min) + a rotating **refresh token** (persisted, revocable). The WebSocket presents
+the access token at connect. OAuth / SSO is a later addition behind the same
+`TokenIssuer` port.
 
 **Authorization.** A caller's **effective role** on a tree is the maximum of:
 
