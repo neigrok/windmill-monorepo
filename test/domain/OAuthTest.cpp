@@ -4,10 +4,19 @@
 
 using namespace wm;
 
-TEST(oauth_redirect_registered_is_exact_match_only) {
-  std::vector<std::string> registered = {"https://app.example/cb", "http://localhost:7777/callback"};
+TEST(oauth_redirect_registered_exact_https_port_agnostic_loopback) {
+  std::vector<std::string> registered = {"https://app.example/cb", "http://localhost:7777/callback",
+                                         "http://127.0.0.1:8888/cb"};
   CHECK(redirectRegistered(registered, "https://app.example/cb"));
   CHECK(redirectRegistered(registered, "http://localhost:7777/callback"));
+  // Loopback matches ignoring the port (RFC 8252 §7.3) — the ephemeral-port case that MCP hits.
+  CHECK(redirectRegistered(registered, "http://localhost:63264/callback"));
+  CHECK(redirectRegistered(registered, "http://localhost/callback"));  // no port at all
+  CHECK(redirectRegistered(registered, "http://127.0.0.1:1234/cb"));
+  // ...but only when host and path still match.
+  CHECK_FALSE(redirectRegistered(registered, "http://localhost:63264/other"));    // wrong path
+  CHECK_FALSE(redirectRegistered(registered, "http://127.0.0.1:1234/callback"));  // wrong path for that host
+  // https stays exact — no port/path/host slack, the open-redirect defense.
   CHECK_FALSE(redirectRegistered(registered, "https://app.example/cb/extra"));
   CHECK_FALSE(redirectRegistered(registered, "https://app.example"));
   CHECK_FALSE(redirectRegistered(registered, "https://evil.example/cb"));

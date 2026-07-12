@@ -367,3 +367,10 @@ pass; the full project (server + mcp) builds green.
   mcp upstream) produced a Cloudflare 502 (origin unreachable for that host) while the app/api hosts
   kept working. Fix: `docker compose up -d --force-recreate --no-deps caddy` every deploy. Diagnosed
   from the 502 being a CF error page (no `via: Caddy` header) vs the working host's `via: 1.1 Caddy`.
+- **OAuth: allow any port on loopback redirect URIs (RFC 8252 §7.3).** `redirectRegistered` did a
+  strict exact match, but native/MCP clients (Claude included) bind a fresh ephemeral
+  `http://localhost:<port>/callback` each flow — so a client registered once and then reused with a new
+  port got `400 invalid client_id or redirect_uri` at `/oauth/authorize`. Relax the match for loopback
+  http only: compare scheme+host+path, port-agnostic (`withoutLoopbackPort`); https stays exact — the
+  open-redirect defense is untouched. Surfaced when the MCP endpoint moved to `windmill.works` and the
+  MCP client's cached client (registered against an old ephemeral port) no longer matched.

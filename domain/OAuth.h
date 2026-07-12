@@ -20,8 +20,9 @@ inline UnixMs codeExpiry(UnixMs now) { return now + OAuthPolicy::codeLifetimeMs;
 inline UnixMs accessExpiry(UnixMs now) { return now + OAuthPolicy::accessLifetimeMs; }
 inline UnixMs refreshExpiry(UnixMs now) { return now + OAuthPolicy::refreshLifetimeMs; }
 
-// A redirect URI is honoured only when it exactly matches one the client registered — the
-// open-redirect defense (OAuth 2.1 §7.12); no prefix or wildcard matching.
+// A redirect URI is honoured only when it matches one the client registered: exact for https —
+// the open-redirect defense (OAuth 2.1 §7.12), no prefix or wildcard — but port-agnostic for
+// loopback http, so a native/MCP client may use a fresh ephemeral port each flow (RFC 8252 §7.3).
 bool redirectRegistered(const std::vector<std::string>& registered, const std::string& uri);
 
 // A redirect URI may be registered only over HTTPS or to loopback http (OAuth 2.1 §1.5).
