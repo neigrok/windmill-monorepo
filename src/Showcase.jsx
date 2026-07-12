@@ -33,11 +33,11 @@ import { ShareStats } from './skilltree/share/ShareStats.js';
 const NODE_SIZE = 56;
 
 const TREE_NODES = [
-  { id: 'root', cx: 320, cy: 240, state: 'complete', label: 'Plan & measure', icon: 'ruler' },
-  { id: 'furniture', cx: 150, cy: 135, state: 'available', label: 'Pick furniture', icon: 'sofa' },
-  { id: 'palette', cx: 165, cy: 360, state: 'active', label: 'Choose palette', icon: 'palette' },
-  { id: 'plants', cx: 495, cy: 150, state: 'available', label: 'Add plants', icon: 'sprout' },
-  { id: 'shelves', cx: 515, cy: 350, state: 'locked', label: 'Style shelves', icon: 'lock' },
+  { id: 'root', cx: 320, cy: 240, state: 'complete', kind: 'terracotta', label: 'Plan & measure', icon: 'ruler' },
+  { id: 'furniture', cx: 150, cy: 135, state: 'available', kind: 'olive', label: 'Pick furniture', icon: 'sofa' },
+  { id: 'palette', cx: 165, cy: 360, state: 'active', kind: 'plum', label: 'Choose palette', icon: 'palette' },
+  { id: 'plants', cx: 495, cy: 150, state: 'available', kind: 'sky', label: 'Add plants', icon: 'sprout' },
+  { id: 'shelves', cx: 515, cy: 350, state: 'locked', kind: 'gold', label: 'Style shelves', icon: 'lock' },
 ];
 
 // [from, to, active?] — a branch is "grown" (active) once its parent is complete.
@@ -52,7 +52,9 @@ function nodeCenter(n) {
   return { x: n.cx, y: n.cy };
 }
 function nodeTopLeft(n) {
-  return { left: n.cx - NODE_SIZE / 2 - 20, top: n.cy - NODE_SIZE / 2 - 12 };
+  // Flat canon node: circle center sits at (size/2 + 20, size/2) from the wrapper's
+  // top-left (no stem gap above), so we back that out to align with the connector.
+  return { left: n.cx - NODE_SIZE / 2 - 20, top: n.cy - NODE_SIZE / 2 };
 }
 
 function SkillTreeDemo() {
@@ -75,6 +77,7 @@ function SkillTreeDemo() {
           <SkillNode
             label={n.label}
             state={n.state}
+            kind={n.kind}
             size={NODE_SIZE}
             icon={<Icon name={n.icon} size={Math.round(NODE_SIZE * 0.4)} color="currentColor" />}
           />

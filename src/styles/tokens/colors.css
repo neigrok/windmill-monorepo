@@ -52,6 +52,14 @@
   --accent-sky-500: #5F8494;
   --accent-sky-600: #4A6875;
 
+  /* ---- Accent: Plum (fig — a fifth node kind / decorative purple) ---- */
+  --accent-plum-50: #F2E9EF;
+  --accent-plum-100: #E6D2E2;
+  --accent-plum-200: #D3ABC9;
+  --accent-plum-400: #A8699E;
+  --accent-plum-500: #8D4F83;
+  --accent-plum-600: #6F3B67;
+
   /* ---- Surfaces ---- */
   --surface-canvas: var(--neutral-50);
   --surface-card: var(--neutral-0);
@@ -89,25 +97,34 @@
   --color-brand-active: var(--accent-terracotta-700);
   --color-brand-soft: var(--accent-terracotta-50);
 
-  /* ---- Skill-tree fruit states: bud → olive → ripening gold → ripe terracotta ---- */
-  --node-locked-fill: var(--neutral-100);
-  --node-locked-border: var(--neutral-300);
-  --node-locked-icon: var(--neutral-400);
+  /* ---- Node KINDS: color by category, independent of tier.
+     A node's colour comes from its kind; its tier (locked / available /
+     active / complete) is treatment only — see components/tree/SkillNode.
+     (The old --node-<tier>-* single-hue exemplar ramp was retired Jul 12 —
+     kinds + treatments are the only node color API.) ---- */
+  --kind-terracotta:      var(--accent-terracotta-500);
+  --kind-terracotta-soft: var(--accent-terracotta-200);
+  --kind-terracotta-glow: rgba(188, 108, 66, 0.5);
 
-  --node-available-fill: var(--neutral-0);
-  --node-available-border: var(--accent-olive-500);
-  --node-available-icon: var(--accent-olive-600);
-  --node-available-glow: rgba(125, 140, 67, 0.45);
+  --kind-olive:      var(--accent-olive-500);
+  --kind-olive-soft: var(--accent-olive-200);
+  --kind-olive-glow: rgba(125, 140, 67, 0.5);
 
-  --node-active-fill: var(--accent-gold-50);
-  --node-active-border: var(--accent-gold-500);
-  --node-active-icon: var(--accent-gold-600);
-  --node-active-glow: rgba(196, 151, 47, 0.42);
+  --kind-gold:      var(--accent-gold-500);
+  --kind-gold-soft: var(--accent-gold-200);
+  --kind-gold-glow: rgba(196, 151, 47, 0.5);
 
-  --node-complete-fill: var(--accent-terracotta-500);
-  --node-complete-border: var(--accent-terracotta-600);
-  --node-complete-icon: #FFFFFF;
-  --node-complete-glow: rgba(188, 108, 66, 0.5);
+  --kind-brick:      var(--accent-brick-500);
+  --kind-brick-soft: var(--accent-brick-200);
+  --kind-brick-glow: rgba(168, 78, 53, 0.5);
+
+  --kind-sky:      var(--accent-sky-500);
+  --kind-sky-soft: var(--accent-sky-200);
+  --kind-sky-glow: rgba(95, 132, 148, 0.5);
+
+  --kind-plum:      var(--accent-plum-500);
+  --kind-plum-soft: var(--accent-plum-200);
+  --kind-plum-glow: rgba(141, 79, 131, 0.5);
 
   --connector-inactive: var(--neutral-300);
   --connector-active: var(--color-bark);
@@ -119,4 +136,108 @@
   --color-leaf: var(--accent-olive-500);
   --color-leaf-light: var(--accent-olive-400);
   --color-leaf-vein: var(--accent-olive-600);
+}
+
+/* ============================================================
+   DARK THEME — "night sky" skill tree
+   ------------------------------------------------------------
+   Scope: set data-theme="dark" on <html> for the whole app,
+   or on any element to darken just that subtree (used by the
+   side-by-side specimen cards). Light is the default; nothing
+   here fires unless data-theme="dark" is present.
+
+   The neutral ramp is re-authored (NOT a linear inversion):
+   low indices stay deep warm surfaces, high indices become
+   warm off-whites for text — so surface/text semantic tokens
+   that reference the ramp keep working. Accents shift toward
+   their lighter, brighter steps so nodes and CTAs glow against
+   the near-black canvas, exactly like a game skill grid.
+   ============================================================ */
+[data-theme="dark"] {
+  /* ---- Neutrals: warm brown-black surfaces → warm cream text ---- */
+  --neutral-0:   #17120B;  /* elevated card base */
+  --neutral-25:  #14100A;
+  --neutral-50:  #0D0B07;  /* canvas — the near-black backdrop */
+  --neutral-100: #221B12;  /* raised: hover, chips, badges */
+  --neutral-200: #2E2618;  /* pressed / subtle borders */
+  --neutral-300: #3C3223;  /* default borders, dull node body */
+  --neutral-400: #574A35;  /* strong borders, locked node icon */
+  --neutral-500: #8A785A;  /* tertiary text */
+  --neutral-600: #AE9A75;  /* secondary text */
+  --neutral-700: #CDBC97;
+  --neutral-800: #E6DAC1;
+  --neutral-900: #F4EEDF;  /* primary text — warm near-white */
+
+  /* ---- Surfaces ---- */
+  --surface-canvas: var(--neutral-50);
+  --surface-card: var(--neutral-0);
+  --surface-sunken: #0A0805;           /* recessed, darker than canvas */
+  --surface-hover: var(--neutral-100);
+  --surface-overlay: rgba(4, 3, 1, 0.68);
+  --surface-inverse: var(--neutral-900);
+
+  /* ---- Borders ---- */
+  --border-subtle: var(--neutral-200);
+  --border-default: var(--neutral-300);
+  --border-strong: var(--neutral-400);
+
+  /* ---- Text ---- */
+  --text-primary: var(--neutral-900);
+  --text-secondary: var(--neutral-600);
+  --text-tertiary: var(--neutral-500);
+  --text-on-accent: #1B1408;           /* dark ink on bright accent fills */
+  --text-link: var(--accent-terracotta-400);
+  --text-link-hover: #E7A87B;
+
+  /* ---- Semantic: brighter accents, translucent tinted backgrounds ---- */
+  --color-success: var(--accent-olive-400);
+  --color-success-bg: rgba(154, 168, 89, 0.15);
+  --color-warning: var(--accent-gold-400);
+  --color-warning-bg: rgba(217, 176, 76, 0.15);
+  --color-danger: var(--accent-brick-400);
+  --color-danger-bg: rgba(191, 106, 80, 0.16);
+  --color-info: var(--accent-sky-400);
+  --color-info-bg: rgba(127, 160, 174, 0.15);
+
+  /* ---- Brand primary ---- */
+  --color-brand: var(--accent-terracotta-500);
+  --color-brand-hover: var(--accent-terracotta-400);
+  --color-brand-active: var(--accent-terracotta-600);
+  --color-brand-soft: rgba(188, 108, 66, 0.18);
+
+  /* ---- Node kinds: brighter bases + stronger glows so they pop on black ---- */
+  --kind-terracotta:      var(--accent-terracotta-400);
+  --kind-terracotta-soft: var(--accent-terracotta-200);
+  --kind-terracotta-glow: rgba(208, 138, 94, 0.8);
+
+  --kind-olive:      var(--accent-olive-400);
+  --kind-olive-soft: var(--accent-olive-200);
+  --kind-olive-glow: rgba(154, 168, 89, 0.8);
+
+  --kind-gold:      var(--accent-gold-400);
+  --kind-gold-soft: var(--accent-gold-200);
+  --kind-gold-glow: rgba(217, 176, 76, 0.8);
+
+  --kind-brick:      var(--accent-brick-400);
+  --kind-brick-soft: var(--accent-brick-200);
+  --kind-brick-glow: rgba(191, 106, 80, 0.8);
+
+  --kind-sky:      var(--accent-sky-400);
+  --kind-sky-soft: var(--accent-sky-200);
+  --kind-sky-glow: rgba(127, 160, 174, 0.8);
+
+  --kind-plum:      var(--accent-plum-400);
+  --kind-plum-soft: var(--accent-plum-200);
+  --kind-plum-glow: rgba(168, 105, 158, 0.8);
+
+  --connector-inactive: #33291B;
+  --connector-active: var(--color-bark);
+
+  /* ---- Nature motif: lit ember branches so active paths glow orange ---- */
+  --color-bark: #C07C43;
+  --color-bark-dry: var(--neutral-300);
+  --color-bark-shadow: #8A5228;
+  --color-leaf: var(--accent-olive-400);
+  --color-leaf-light: var(--accent-olive-200);
+  --color-leaf-vein: var(--accent-olive-500);
 }
