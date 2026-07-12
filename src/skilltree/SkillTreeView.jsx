@@ -6,6 +6,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './skilltree.css';
 import { ControlBar } from './ui/ControlBar.jsx';
+import { TreeSwitcher } from './ui/TreeSwitcher.jsx';
 import { TidinessBadge } from './ui/TidinessBadge.jsx';
 import { StepPanel } from './ui/StepPanel.jsx';
 import { Minimap } from './ui/Minimap.jsx';
@@ -30,6 +31,7 @@ import { RadialLayoutEngine } from './layout/RadialLayoutEngine.js';
 import { applyNudges } from './layout/applyNudges.js';
 import { MockTreeRepository } from './mock/MockTreeRepository.js';
 import { HttpTreeRepository } from './persistence/HttpTreeRepository.js';
+import { listTrees } from './persistence/TreeRegistry.js';
 import { CollabClient } from './persistence/CollabClient.js';
 import { PresenceLayer } from './presence/PresenceLayer.jsx';
 import { TreeStore } from './persistence/TreeStore.js';
@@ -55,7 +57,7 @@ const CHILD_DROP = NODE_SIZE * 2.6; // world units a new child spawns below its 
 const SIBLING_GAP = NODE_SIZE * 1.8; // horizontal spread between successive new children
 const NEW_NODE_ICON = 'sparkles';
 
-export function SkillTreeView({ openSignInSignal = 0 }) {
+export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   const { breakpoint, readOnly } = useViewMode();
   const { user, status, signOut } = useAuth(); // the account seat's source of truth (X6)
   const canvasRef = useRef(null);
@@ -90,6 +92,7 @@ export function SkillTreeView({ openSignInSignal = 0 }) {
 
   const [datasetSize, setDatasetSize] = useState('demo');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false); // the routed tree couldn't load (offline / gone)
   const [tree, setTree] = useState(null);
   const [renderModel, setRenderModel] = useState(null);
   const [completed, setCompleted] = useState(() => new Set());
@@ -692,14 +695,15 @@ export function SkillTreeView({ openSignInSignal = 0 }) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setLoadError(false);
     setSelectedId(null);
 
     async function loadTree() {
-      // The dogfood roadmap comes from the backend; the throwaway 5k perf tree is
-      // generated client-side, so it stays on the mock repository.
+      // The routed tree comes from the backend, per treeId; the throwaway 5k perf tree
+      // is generated client-side, so it stays on the mock repository.
       const repo = datasetSize === 'huge'
         ? new MockTreeRepository({ size: 'huge' })
-        : new HttpTreeRepository();
+        : new HttpTreeRepository({ treeId });
       const seed = await repo.loadTree();
       // Overlay any locally-saved edits on the seed (dogfood roadmap only); a
       // changed seed invalidates them inside the store, so code wins over state.
@@ -806,13 +810,18 @@ export function SkillTreeView({ openSignInSignal = 0 }) {
       }
     }
 
-    loadTree();
+    loadTree().catch((err) => {
+      if (cancelled) return;
+      console.warn('[tree] load failed', treeId, err);
+      setLoadError(true);
+      setLoading(false);
+    });
     return () => {
       cancelled = true;
       collabRef.current?.close();
       collabRef.current = null;
     };
-  }, [datasetSize, reloadKey]);
+  }, [datasetSize, reloadKey, treeId]);
 
   // Single source of truth for node state — every completion ripples through here.
   const states = useMemo(() => {
@@ -1118,6 +1127,13 @@ export function SkillTreeView({ openSignInSignal = 0 }) {
       ) : (
         <ControlBar
           title={tree?.title}
+          titleSlot={
+            <TreeSwitcher
+              current={{ id: treeId, title: tree?.title, done: shareStats?.done, total: shareStats?.total, dominantKind: shareStats?.dominantKind }}
+              listTrees={listTrees}
+              onNew={() => { window.location.hash = '#/app/new'; }}
+            />
+          }
           datasetSize={datasetSize}
           onDatasetSizeChange={setDatasetSize}
           onZoomIn={handleZoomIn}
@@ -1292,7 +1308,8 @@ export function SkillTreeView({ openSignInSignal = 0 }) {
         stats={shareStats}
       />
 
-      {loading && <div className="st-loading">Planting the tree…</div>}
+      {loading && !loadError && <div className="st-loading">Planting the tree…</div>}
+      {loadError && <div className="st-loading">Couldn’t load this roadmap. It may have moved, or the server is unreachable.</div>}
     </div>
   );
 }

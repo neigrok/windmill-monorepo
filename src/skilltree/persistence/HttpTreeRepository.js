@@ -5,11 +5,11 @@
 import { TreeRepository } from '../model/ports.js';
 
 const DEFAULT_BASE_URL = import.meta.env?.VITE_API_BASE_URL ?? 'http://localhost:8088';
-const DEFAULT_TREE_ID = 'windmill-roadmap';
 
 export class HttpTreeRepository extends TreeRepository {
-  constructor({ baseUrl = DEFAULT_BASE_URL, treeId = DEFAULT_TREE_ID } = {}) {
+  constructor({ baseUrl = DEFAULT_BASE_URL, treeId } = {}) {
     super();
+    if (!treeId) throw new Error('HttpTreeRepository requires a treeId — there is no default roadmap');
     this.baseUrl = baseUrl;
     this.treeId = treeId;
   }

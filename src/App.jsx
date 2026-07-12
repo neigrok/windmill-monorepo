@@ -7,7 +7,7 @@ import { verifyToken } from './skilltree/auth/AuthClient.js';
 // Both routes are lazy so the entry chunk is just React + the router: the
 // heavy WebGL skill-tree route and the design-system showcase each load
 // on demand, and the first paint below shows instantly while they stream in.
-const SkillTreeView = lazy(() => import('./skilltree').then((m) => ({ default: m.SkillTreeView })));
+const SkillTreeApp = lazy(() => import('./skilltree').then((m) => ({ default: m.SkillTreeApp })));
 const Showcase = lazy(() => import('./Showcase.jsx'));
 const Marketing = lazy(() => import('./marketing/Marketing.jsx'));
 
@@ -77,13 +77,25 @@ function AppRoutes() {
   const isApp = route.startsWith('#/app') || route.startsWith('#/t/')
     || new URLSearchParams(window.location.search).has('view');
 
+  const target = appTarget(route);
+
   return (
     <Suspense fallback={<RouteFallback />}>
       {route === '#/showcase' ? <Showcase />
-        : isApp ? <SkillTreeView openSignInSignal={openSignInSignal} />
+        : isApp ? <SkillTreeApp treeId={target.treeId} birth={target.birth} openSignInSignal={openSignInSignal} />
         : <Marketing />}
     </Suspense>
   );
+}
+
+// Which tree the #/app family names: #/app/:id opens it, #/app/new is the birth canvas,
+// #/t/:id is the read-only share, and bare #/app resolves against the registry.
+function appTarget(route) {
+  const hash = route.split('?')[0];
+  if (hash.startsWith('#/t/')) return { treeId: hash.slice('#/t/'.length) || null, birth: false };
+  if (hash === '#/app/new') return { treeId: null, birth: true };
+  if (hash.startsWith('#/app/')) return { treeId: hash.slice('#/app/'.length) || null, birth: false };
+  return { treeId: null, birth: false };
 }
 
 export default function App() {

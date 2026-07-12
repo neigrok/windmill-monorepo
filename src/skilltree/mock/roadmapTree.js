@@ -208,5 +208,22 @@ export const roadmapTree = {
     // Canonical spec: explorations/mcp-connect.html (F17) + guidelines/mcp-connect.md. Running log.
     { id: 'oauth-consent-client', label: 'OAuth consent API client', icon: 'plug', color: 'brick', status: 'complete', prerequisites: ['auth-client'] },
     { id: 'oauth-consent', label: 'MCP OAuth consent · #/oauth/authorize', icon: 'shield', color: 'terracotta', status: 'complete', prerequisites: ['oauth-consent-client', 'sign-in-door'] },
+
+    // ---- tree creation initiative (F1·F2) — a logged-in user plants their own roadmap ----
+    // The app goes multi-tree: the hardcoded 'windmill-roadmap' default is gone; #/app/:treeId
+    // opens a specific tree, #/app/new is the birth canvas, and bare #/app resolves against the
+    // registry (GET /v1/trees) — newest owned tree, or the birth canvas when you own none. The
+    // TreeSwitcher lives on the brand plaque (the one home for "which tree am I in"): YOURS list +
+    // the New tree bud row; switching is navigation, a plain hash swap. New-tree birth (F1·F2 §6) is
+    // one bud + one name typed in place; ↵ plants via POST /v1/trees {blank,title} and the app opens
+    // the returned tree, where its real first arrival plays. Signed-in only — ↵ while signed out opens
+    // the X6 door and replays. The registry list degrades to the current tree alone when unavailable.
+    // Deferred (own specs): paste-a-plan (F3), starter-quests shelf (F5), delete dialog, coach-mark,
+    // the WebGL bud-wake ceremony. Canonical: explorations/progress-and-tree-registry.html (F1·F2),
+    // guidelines/starter-quests.md (F5), guidelines/paste-import.md (F3). Running log per CLAUDE.md.
+    { id: 'tree-registry-client', label: 'Tree registry client · list + create', icon: 'library', color: 'brick', status: 'complete', prerequisites: ['auth-client', 'persistence'] },
+    { id: 'per-tree-routing', label: 'Per-tree routing · #/app/:treeId', icon: 'git-branch-plus', color: 'sky', status: 'complete', prerequisites: ['tree-registry-client', 'site-root'] },
+    { id: 'tree-switcher', label: 'TreeSwitcher · the plaque menu', icon: 'layers', color: 'gold', status: 'complete', prerequisites: ['per-tree-routing', 'account-seat'] },
+    { id: 'new-tree-birth', label: 'New-tree birth · one bud, one name', icon: 'sprout', color: 'terracotta', status: 'active', prerequisites: ['tree-switcher', 'sign-in-door'] },
   ],
 };

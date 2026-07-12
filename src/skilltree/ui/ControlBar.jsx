@@ -9,7 +9,7 @@ const DATASET_OPTIONS = [
   { value: 'huge', label: 'Huge (5k)' },
 ];
 
-export function ControlBar({ title, datasetSize, onDatasetSizeChange, onZoomIn, onZoomOut, onFitToView, canReset, onResetEdits, canTidy, onTidy, onShare, showActivity, activityOpen, activityUnread, activityPing, onToggleActivity }) {
+export function ControlBar({ title, titleSlot, datasetSize, onDatasetSizeChange, onZoomIn, onZoomOut, onFitToView, canReset, onResetEdits, canTidy, onTidy, onShare, showActivity, activityOpen, activityUnread, activityPing, onToggleActivity }) {
   return (
     <div className="st-topbar">
       <div className="st-brand">
@@ -17,11 +17,11 @@ export function ControlBar({ title, datasetSize, onDatasetSizeChange, onZoomIn, 
           <span className="st-brand-mark">
             <Icon name="sprout" size={18} />
           </span>
-          <div className="st-brand-text">
-            <span className="st-brand-name">Windmill</span>
-            {title && <span className="st-brand-title">{title}</span>}
-          </div>
+          <span className="st-brand-name">Windmill</span>
         </a>
+        {/* The tree identity plaque (F1·F2): the TreeSwitcher docks here when given,
+            else the static title. It's the one home for "which tree am I in". */}
+        {titleSlot ?? (title && <span className="st-brand-title" style={{ marginLeft: 'var(--space-2)' }}>{title}</span>)}
         <Tooltip label="Component showcase" side="bottom">
           <a className="st-showcase-link" href="#/showcase">
             <Icon name="external-link" size={14} />
