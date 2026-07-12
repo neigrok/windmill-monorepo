@@ -2,6 +2,7 @@ import React, { Suspense, lazy } from 'react';
 import AuthProvider, { useAuth } from './skilltree/auth/AuthProvider.jsx';
 import { AuthLanding } from './skilltree/auth/AuthLanding.jsx';
 import { OAuthConsent } from './skilltree/auth/OAuthConsent.jsx';
+import { ConnectPage } from './skilltree/connect/ConnectPage.jsx';
 import { verifyToken } from './skilltree/auth/AuthClient.js';
 import Marketing from './marketing/Marketing.jsx';
 
@@ -73,6 +74,12 @@ function AppRoutes() {
   // resolve in place (AuthProvider flips the tab), preserving the URL for the decision.
   if (route.startsWith('#/oauth/authorize')) {
     return <OAuthConsent />;
+  }
+
+  // The connect surface (F17) — where a signed-in user points Claude / Cursor / Codex at the
+  // hosted MCP server. Account business, its own stable URL; the tree canvas never learns of MCP.
+  if (route.startsWith('#/connect')) {
+    return <ConnectPage />;
   }
 
   const isApp = route.startsWith('#/app') || route.startsWith('#/t/')

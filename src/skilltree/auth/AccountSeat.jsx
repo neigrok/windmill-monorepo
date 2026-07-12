@@ -15,7 +15,7 @@ const prefersReducedMotion = () =>
 
 const SEAT = 36;
 
-export function AccountSeat({ user, status, onSignIn, onSignOut, onSettings, expired = false }) {
+export function AccountSeat({ user, status, onSignIn, onSignOut, onSettings, onConnect, expired = false }) {
   const [open, setOpen] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [claim, setClaim] = useState(null); // null | 'syncing' | 'synced' | 'fading'
@@ -203,6 +203,7 @@ export function AccountSeat({ user, status, onSignIn, onSignOut, onSettings, exp
                   {user.email}
                 </div>
               </div>
+              {onConnect && <MenuRow label="Connect your LLM tools" onSelect={() => choose(onConnect)} />}
               <MenuRow label="Account settings" onSelect={() => choose(onSettings)} />
               <MenuRow label="Sign out" onSelect={() => choose(onSignOut)} />
             </>
