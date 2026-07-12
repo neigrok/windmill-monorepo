@@ -32,6 +32,7 @@ struct SystemClock : Clock {
 // fanout is a no-op here.
 struct NullPresenceBus : PresenceBus {
   void broadcastOp(const TreeId&, const AppliedOp&) override {}
+  void broadcastProgress(const TreeId&, const UserId&, const NodeId&, ProgressStatus) override {}
 };
 
 // Strip any `user:password@` credentials before a connection string reaches a log line.
@@ -75,7 +76,7 @@ int main() {
   TreeRegistry treeRegistry(trees, progressRepo, registryTokens, genesis);
   SystemClock clock;
 
-  RoadmapTools tools(registry, progress, clock, treeRegistry);
+  RoadmapTools tools(registry, progress, clock, treeRegistry, bus);
   ServerInfo info{
       "windmill", "0.1.0",
       "Windmill roadmaps are RPG-style skill trees: nodes are skills/milestones, and a "

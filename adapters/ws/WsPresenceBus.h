@@ -15,10 +15,14 @@ namespace wm {
 // In-process for now; a Redis/NATS bus makes this cross-instance later (§4).
 class WsPresenceBus : public PresenceBus {
 public:
-  void subscribe(const TreeId& tree, const drogon::WebSocketConnectionPtr& conn);
+  // `user` is the connection's authenticated account (empty for anonymous viewers), remembered
+  // so a private progress frame can be fanned out to just that user's own sessions.
+  void subscribe(const TreeId& tree, const drogon::WebSocketConnectionPtr& conn, const UserId& user);
   void drop(const drogon::WebSocketConnectionPtr& conn);
 
   void broadcastOp(const TreeId& tree, const AppliedOp& op) override;
+  void broadcastProgress(const TreeId& tree, const UserId& user, const NodeId& node,
+                         ProgressStatus status) override;
   void broadcastRaw(const TreeId& tree, const std::string& text, const drogon::WebSocketConnectionPtr& except);
 
 private:
@@ -26,6 +30,7 @@ private:
 
   mutable std::mutex mutex_;
   std::map<std::string, std::set<drogon::WebSocketConnectionPtr>> subscribers_;
+  std::map<drogon::WebSocketConnectionPtr, std::string> connUser_;  // conn -> account id (empty = anon)
 };
 
 }

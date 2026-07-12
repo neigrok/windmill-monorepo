@@ -190,8 +190,8 @@ ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::stri
   });
 }
 
-ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, const TreeId& tree,
-                         const Json::Value& args, const Hlc& hlc, const UserId& user) {
+ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, PresenceBus& bus,
+                         const TreeId& tree, const Json::Value& args, const Hlc& hlc, const UserId& user) {
   NodeId node{args.get("nodeId", "").asString()};
   std::optional<ProgressStatus> status = parseProgressStatus(args.get("status", "").asString());
   if (node.empty() || !status)
@@ -208,6 +208,7 @@ ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, cons
   }
 
   ProgressOutcome outcome = progress.setStatus(prerequisites, tree, user, node, *status, hlc);
+  bus.broadcastProgress(tree, user, node, *status);  // reflect it live in the caller's web sessions
   Json::Value out(Json::objectValue);
   out["nodeId"] = node.str();
   out["status"] = args.get("status", "").asString();
@@ -245,8 +246,8 @@ ToolResult removeTree(TreeRegistry& registry, const TreeId& tree, const UserId& 
 }  // namespace
 
 RoadmapTools::RoadmapTools(RoomRegistry& registry, ProgressService& progress, Clock& clock,
-                           TreeRegistry& treeRegistry)
-    : registry_(registry), progress_(progress), clock_(clock), treeRegistry_(treeRegistry) {}
+                           TreeRegistry& treeRegistry, PresenceBus& bus)
+    : registry_(registry), progress_(progress), clock_(clock), treeRegistry_(treeRegistry), bus_(bus) {}
 
 Hlc RoadmapTools::nextStamp(const UserId& caller) {
   std::lock_guard<std::mutex> lock(stampMutex_);
@@ -489,7 +490,7 @@ ToolResult RoadmapTools::callTool(const std::string& name, const Json::Value& ar
   if (name == "get_health")      return readHealth(registry_, tree);
   if (name == "get_progress")    return readProgress(progress_, tree, caller);
   if (name == "set_progress")
-    return writeProgress(registry_, progress_, tree, arguments, nextStamp(caller), caller);
+    return writeProgress(registry_, progress_, bus_, tree, arguments, nextStamp(caller), caller);
 
   if (std::optional<std::string> kind = commandKindFor(name))
     return applyEdit(registry_, tree, *kind, arguments, nextStamp(caller), caller, name == "create_node");

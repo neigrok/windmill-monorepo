@@ -33,8 +33,19 @@ struct FakeOpLog : OpLog {
 };
 
 struct FakeBus : PresenceBus {
+  struct ProgressBroadcast {
+    std::string tree;
+    std::string user;
+    std::string node;
+    ProgressStatus status;
+  };
   std::vector<AppliedOp> broadcasts;
+  std::vector<ProgressBroadcast> progressBroadcasts;
   void broadcastOp(const TreeId&, const AppliedOp& op) override { broadcasts.push_back(op); }
+  void broadcastProgress(const TreeId& tree, const UserId& user, const NodeId& node,
+                         ProgressStatus status) override {
+    progressBroadcasts.push_back({tree.str(), user.str(), node.str(), status});
+  }
 };
 
 struct FakeTreeRepository : TreeRepository {

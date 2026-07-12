@@ -101,7 +101,7 @@ void Collab::onMessage(const drogon::WebSocketConnectionPtr& conn, const std::st
 }
 
 void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, Seq lastSeq) {
-  bus_.subscribe(TreeId{treeId}, conn);
+  bus_.subscribe(TreeId{treeId}, conn, principalOf(conn).user);
   presence_.join(conn, TreeId{treeId});
 
   Seq head = 0;
@@ -219,8 +219,9 @@ void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::str
 
   Hlc hlc{++tick_, 0, principal.user.str()};
   progress_.setStatus(prerequisites, TreeId{treeId}, principal.user, node, *status, hlc);
-  // Not broadcast: a user's progress is private to them, so it never rides the tree's
-  // shared bus. A second tab of the same user refetches it on load.
+  // Echo to this user's own other sessions (their other tabs, a browser watching an agent's
+  // MCP edits) — never to collaborators, since progress is a private per-account overlay.
+  bus_.broadcastProgress(TreeId{treeId}, principal.user, node, *status);
 }
 
 // Collaborative undo/redo: replay the top inverse group as fresh ops (which broadcast

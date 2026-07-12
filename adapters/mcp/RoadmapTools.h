@@ -6,6 +6,7 @@
 #include "application/TreeRegistry.h"
 #include "domain/Ids.h"
 #include "ports/Clock.h"
+#include "ports/PresenceBus.h"
 
 #include <cstdint>
 #include <mutex>
@@ -20,7 +21,8 @@ namespace wm {
 // tie-break counter and tests stay deterministic.
 class RoadmapTools : public ToolHost {
 public:
-  RoadmapTools(RoomRegistry& registry, ProgressService& progress, Clock& clock, TreeRegistry& treeRegistry);
+  RoadmapTools(RoomRegistry& registry, ProgressService& progress, Clock& clock, TreeRegistry& treeRegistry,
+               PresenceBus& bus);
 
   Json::Value listTools() const override;
   ToolResult callTool(const std::string& name, const Json::Value& arguments, const UserId& caller) override;
@@ -32,6 +34,7 @@ private:
   ProgressService& progress_;
   Clock& clock_;
   TreeRegistry& treeRegistry_;  // the caller's roadmap list + delete, repo-direct (no room)
+  PresenceBus& bus_;            // to echo a progress change to the caller's live web sessions
   std::mutex stampMutex_;  // one HLC stream shared across concurrent HTTP worker threads
   std::uint64_t lastMs_ = 0;
   std::uint32_t counter_ = 0;

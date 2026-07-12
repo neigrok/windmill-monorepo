@@ -31,7 +31,7 @@ struct Harness {
   ProgressService progress{progressRepo};
   TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}};
   UserId caller = uid("agent");
-  RoadmapTools tools{registry, progress, clock, treeRegistry};
+  RoadmapTools tools{registry, progress, clock, treeRegistry, bus};
 
   Harness() {
     trees.byId["t"] = StoredTree{LooseGraph().exportState(), LegendState{}, "Test Roadmap", 0, caller};
@@ -140,6 +140,13 @@ TEST(mcp_set_progress_records_and_flags_unmet_prerequisites) {
 
   ToolResult progress = h.call("get_progress", Json::Value(Json::objectValue));
   CHECK_EQ(progress.structured["completed"].size(), 2u);
+
+  // Each set_progress echoes to the caller's live web sessions — here three marks (b, a, b).
+  CHECK_EQ(h.bus.progressBroadcasts.size(), 3u);
+  const FakeBus::ProgressBroadcast& last = h.bus.progressBroadcasts.back();
+  CHECK_EQ(last.node, std::string("b"));
+  CHECK_EQ(last.user, h.caller.str());
+  CHECK(last.status == ProgressStatus::complete);
 }
 
 TEST(mcp_get_health_needs_a_valid_dag) {

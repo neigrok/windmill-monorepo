@@ -374,3 +374,14 @@ pass; the full project (server + mcp) builds green.
   http only: compare scheme+host+path, port-agnostic (`withoutLoopbackPort`); https stays exact — the
   open-redirect defense is untouched. Surfaced when the MCP endpoint moved to `windmill.works` and the
   MCP client's cached client (registered against an old ephemeral port) no longer matched.
+- **Progress now broadcasts live to the author's own sessions (WS).** A progress change was recorded
+  but never pushed over the socket — a browser only saw an MCP (or other-tab) progress change on
+  reload, which read as "the DAG doesn't update live." Added
+  `PresenceBus::broadcastProgress(tree, user, node, status)`: `WsPresenceBus` now remembers each
+  connection's account (`subscribe(tree, conn, user)`) and fans a `{t:"progress"}` frame only to that
+  user's *own* connections — never collaborators (progress is a private overlay). Both write paths call
+  it: the WS `progress` handler and the MCP `set_progress` (RoadmapTools gains a `PresenceBus&`).
+  Frontend: `CollabClient.onProgress` + `SkillTreeView` applies the frame through the same
+  `handleSetState` a local mark takes (idempotent — skips the ceremony when already in that state).
+  Not yet symmetric: the browser still doesn't *send* progress to the server (localStorage only), so a
+  browser→server progress-write path is a separate follow-up (today only MCP/WS writes reach the DB).

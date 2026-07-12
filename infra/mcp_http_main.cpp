@@ -37,6 +37,7 @@ struct SystemClock : Clock {
 // here, so op fanout is a no-op; durability (and web visibility on reload) is the database.
 struct NullPresenceBus : PresenceBus {
   void broadcastOp(const TreeId&, const AppliedOp&) override {}
+  void broadcastProgress(const TreeId&, const UserId&, const NodeId&, ProgressStatus) override {}
 };
 
 std::string env(const char* key, const std::string& fallback) {
@@ -82,7 +83,7 @@ int main() {
   const Hlc genesis{1, 0, "genesis"};
   auto treeRegistry = std::make_shared<TreeRegistry>(*trees, *progressRepo, *registryTokens, genesis);
   auto clock = std::make_shared<SystemClock>();
-  auto tools = std::make_shared<RoadmapTools>(*registry, *progress, *clock, *treeRegistry);
+  auto tools = std::make_shared<RoadmapTools>(*registry, *progress, *clock, *treeRegistry, *bus);
 
   // The resource server validates per-user OAuth access tokens (issued by the API host); the
   // shared token, if set, stays a fallback that acts as the configured user.

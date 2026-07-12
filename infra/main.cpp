@@ -107,7 +107,7 @@ int main() {
   const char* mcpOriginsEnv = std::getenv("WINDMILL_MCP_ALLOWED_ORIGINS");
   const std::set<std::string> mcpOrigins = parseOriginList(mcpOriginsEnv ? mcpOriginsEnv : "");
 
-  auto mcpTools = std::make_shared<RoadmapTools>(*registry, *progressService, *systemClock, *treeRegistry);
+  auto mcpTools = std::make_shared<RoadmapTools>(*registry, *progressService, *systemClock, *treeRegistry, *bus);
   McpAuth mcpAuth{oauthService.get(), mcpResource, mcpResourceMetadataUrl, mcpToken, mcpFallbackUser};
   ServerInfo mcpInfo{
       "windmill", "0.1.0",

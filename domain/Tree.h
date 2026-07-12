@@ -67,6 +67,15 @@ inline std::optional<ProgressStatus> parseProgressStatus(std::string_view name) 
   return std::nullopt;
 }
 
+inline const char* progressStatusName(ProgressStatus status) {
+  switch (status) {
+    case ProgressStatus::active:   return "active";
+    case ProgressStatus::complete: return "complete";
+    case ProgressStatus::none:     return "none";
+  }
+  return "none";
+}
+
 struct Vec2 {
   double x = 0;
   double y = 0;
