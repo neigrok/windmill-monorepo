@@ -14,9 +14,6 @@ export function ControlBar({ title, titleSlot, datasetSize, onDatasetSizeChange,
     <div className="st-topbar">
       <div className="st-brand">
         <a className="st-brand-home" href="#/" aria-label="Windmill — home">
-          <span className="st-brand-mark">
-            <Icon name="sprout" size={18} />
-          </span>
           <span className="st-brand-name">Windmill</span>
         </a>
         {/* The tree identity plaque (F1·F2): the TreeSwitcher docks here when given,

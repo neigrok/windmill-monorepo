@@ -86,7 +86,6 @@ export function SignInDialog({ open, onClose, onSend }) {
   return (
     <Dialog open={open} onClose={onClose} width={400}>
       <div style={wordmark}>
-        <Icon name="sprout" size={16} color="var(--accent-gold-600)" />
         <span>Windmill</span>
       </div>
 
