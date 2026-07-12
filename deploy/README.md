@@ -36,8 +36,8 @@ CI builds one Docker image and ships it to a single VPS that runs the whole stac
    sudo usermod -aG docker "$USER"   # log out/in so the deploy user can run docker
    ```
 2. **Open the firewall**: inbound `22`, `80`, `443`.
-3. **DNS**: point `DOMAIN_API` and `DOMAIN_MCP` (A records) at the VPS IP. Certs won't
-   issue until this resolves.
+3. **DNS**: point `DOMAIN_APP` (and the transitional `DOMAIN_API`, if still used) A records
+   at the VPS IP. Certs won't issue until this resolves.
 4. **Authorize the CI key**: append the deploy public key to
    `~/.ssh/authorized_keys` for the SSH user.
 
@@ -59,9 +59,8 @@ That's all — the deploy job creates `~/windmill/` and everything under it.
 
 | Variable | Value |
 | --- | --- |
-| `DOMAIN_API` | e.g. `api.example.com` |
-| `DOMAIN_MCP` | e.g. `mcp.example.com` |
-| `DOMAIN_APP` | the frontend's hostname, e.g. `example.com` |
+| `DOMAIN_APP` | the single origin (SPA + path-routed backend), e.g. `example.com` |
+| `DOMAIN_API` | transitional alias for the old API host, e.g. `api.example.com` (retire once unused) |
 | `ACME_EMAIL` | Let's Encrypt contact address |
 | `WINDMILL_MCP_ALLOWED_ORIGINS` | comma-separated Origins, or empty for all |
 

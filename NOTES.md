@@ -350,3 +350,20 @@ pass; the full project (server + mcp) builds green.
   routing. Guardrail worth adding first: make `TreeRoom::submit` persist-then-apply (or roll back the
   `merge`/`++head_` when `append` throws) and treat a seq conflict as "I'm behind → replay + retry",
   turning today's hard error into self-healing.
+- **Single origin: collapse the api./mcp. subdomains into the app host, path-routed.** A private,
+  frontend-facing API doesn't need its own hostname. Caddy now serves the SPA at `$DOMAIN_APP` and
+  path-routes `/v1`, `/mcp`, `/oauth` and the OAuth well-knowns to windmill_server on the same origin —
+  so app↔API is same-origin and the cross-origin CORS machinery in `main.cpp` becomes vestigial (kept
+  for now; trim once the transitional alias is gone). `WINDMILL_API_URL` (OAuth issuer + default MCP
+  resource audience) moves to the app origin; the `mcp.` subdomain is retired (MCP lives at `/mcp`).
+  Staged so nothing flag-days: `$DOMAIN_API` is kept as an alias to the same server until the frontend
+  build is flipped to a same-origin base and redeployed, then it too can be retired (DNS + Caddy block).
+  Frontend side: `VITE_API_BASE_URL=""` (same-origin relative fetch), and `CollabClient` derives the
+  `ws(s)://` socket URL from `window.location` when the base is empty.
+- **Deploy bug this surfaced: single-file Caddyfile bind mount + scp = stale config.** scp replaces
+  `~/windmill/Caddyfile` with a NEW inode; a running caddy container (bind-mounted to the old inode)
+  never sees it, and neither `docker compose restart` nor `caddy reload` helps — only recreating the
+  container re-binds the file. `up -d` left caddy unchanged, so the first routing change (retiring the
+  mcp upstream) produced a Cloudflare 502 (origin unreachable for that host) while the app/api hosts
+  kept working. Fix: `docker compose up -d --force-recreate --no-deps caddy` every deploy. Diagnosed
+  from the 502 being a CF error page (no `via: Caddy` header) vs the working host's `via: 1.1 Caddy`.

@@ -49,15 +49,12 @@ services:
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       # Verified Resend sender; defaults to Resend's shared test sender until the domain is set up.
       RESEND_FROM: ${RESEND_FROM:-Windmill <onboarding@resend.dev>}
-      # Magic links point at the app; the session cookie is scoped to the registrable domain
-      # so api.<app> and <app> share it. Both derive from DOMAIN_APP — no extra secrets.
+      # Magic links point at the app; the session cookie is first-party on the single origin.
       WINDMILL_APP_URL: https://${DOMAIN_APP}
       WINDMILL_COOKIE_DOMAIN: ${DOMAIN_APP}
-      # This host is the OAuth authorization server (issuer) for the MCP resource server.
-      WINDMILL_API_URL: https://${DOMAIN_API}
-      # MCP (Streamable-HTTP) is served in-process by this same binary; DOMAIN_MCP proxies here.
-      # The token audience stays the MCP host so existing OAuth connections keep working.
-      WINDMILL_MCP_PUBLIC_URL: https://${DOMAIN_MCP}
+      # Single origin: the app IS the API host. This is the OAuth issuer and, by default, the MCP
+      # resource audience — windmill_server serves REST + socket + /mcp in-process on this host.
+      WINDMILL_API_URL: https://${DOMAIN_APP}
       WINDMILL_MCP_ALLOWED_ORIGINS: ${WINDMILL_MCP_ALLOWED_ORIGINS:-}
       WINDMILL_MCP_TOKEN: ${WINDMILL_MCP_TOKEN:-}
     command: ["windmill_server"]
@@ -82,7 +79,6 @@ services:
       - "443:443"
     environment:
       DOMAIN_API: ${DOMAIN_API}
-      DOMAIN_MCP: ${DOMAIN_MCP}
       DOMAIN_APP: ${DOMAIN_APP:-app.localhost}
       ACME_EMAIL: ${ACME_EMAIL}
       # Cloudflare edge ranges, rendered into .env by the deploy workflow. Allow-all default so a

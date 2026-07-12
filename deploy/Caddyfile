@@ -1,13 +1,9 @@
-# Automatic HTTPS via Let's Encrypt. Caddy proxies WebSockets transparently, so the
-# collab socket on windmill_server needs no extra config. The API and MCP hostnames both
-# proxy to windmill_server (MCP is mounted in-process); the app hostname is a static site.
-#
-# Single-host alternative (one domain, path-routed) — replace the two blocks below with:
-#   {$DOMAIN_API} {
-#       handle /mcp* { reverse_proxy mcp:8090 }
-#       handle       { reverse_proxy server:8080 }
-#   }
-
+# Automatic HTTPS via Let's Encrypt. Caddy proxies WebSockets transparently, so the collab
+# socket needs no extra config. Single origin: the app and its own backend share $DOMAIN_APP —
+# the SPA is served statically and /v1, /mcp, /oauth and the OAuth well-knowns are path-routed
+# to windmill_server (REST + collab socket + MCP, one process). $DOMAIN_API is kept as a
+# transitional alias while the deployed frontend build is flipped to same-origin; retire it
+# once nothing points at it.
 {
 	email {$ACME_EMAIL}
 }
@@ -21,31 +17,9 @@
 	respond @not_cloudflare 403
 }
 
-{$DOMAIN_API} {
-	import cloudflare_only
-	header {
-		Strict-Transport-Security "max-age=31536000; includeSubDomains"
-		X-Content-Type-Options "nosniff"
-		Referrer-Policy "no-referrer"
-	}
-	reverse_proxy server:8080
-}
-
-# MCP is now served in-process by windmill_server (one RoomRegistry for REST + socket + MCP),
-# so this hostname proxies to the same upstream as the API. The token audience stays the MCP
-# host (WINDMILL_MCP_PUBLIC_URL), so existing OAuth connections are unaffected.
-{$DOMAIN_MCP} {
-	import cloudflare_only
-	header {
-		Strict-Transport-Security "max-age=31536000; includeSubDomains"
-		X-Content-Type-Options "nosniff"
-		Referrer-Policy "no-referrer"
-	}
-	reverse_proxy server:8080
-}
-
-# The frontend (windmill repo) is a static Vite SPA rsync'd into ./web by its own deploy
-# workflow; Caddy serves it here. Hash-routed, so try_files is just a safety net.
+# The single origin: static SPA + same-origin backend (so there is no CORS between them). The
+# frontend (windmill repo) is a Vite SPA rsync'd into ./web by its own deploy; everything under
+# the backend paths is reverse-proxied to windmill_server on the same host.
 {$DOMAIN_APP} {
 	import cloudflare_only
 	header {
@@ -55,8 +29,30 @@
 		X-Frame-Options "DENY"
 		Content-Security-Policy "frame-ancestors 'none'"
 	}
-	encode gzip zstd
-	root * /srv/windmill-web
-	try_files {path} /index.html
-	file_server
+
+	# The app's own backend: REST + /v1/socket (WebSocket), MCP, the OAuth authorization-server
+	# endpoints, and the OAuth discovery documents. Hash-routed SPA otherwise (try_files is a net).
+	@backend path /v1/* /mcp /mcp/* /oauth/* /.well-known/oauth-authorization-server /.well-known/oauth-protected-resource
+	handle @backend {
+		reverse_proxy server:8080
+	}
+	handle {
+		encode gzip zstd
+		root * /srv/windmill-web
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+# Transitional alias: the previous separate API hostname, still proxying to the same server so
+# the currently-deployed frontend build keeps working until it is rebuilt same-origin. Retire
+# once no client references it. (The old mcp.$DOMAIN subdomain is gone — MCP lives at /mcp now.)
+{$DOMAIN_API} {
+	import cloudflare_only
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+	}
+	reverse_proxy server:8080
 }

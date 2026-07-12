@@ -95,7 +95,6 @@ jobs:
           CF_IPS_CSV: ${{ steps.cfips.outputs.csv }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           DOMAIN_API: ${{ vars.DOMAIN_API }}
-          DOMAIN_MCP: ${{ vars.DOMAIN_MCP }}
           DOMAIN_APP: ${{ vars.DOMAIN_APP }}
           ACME_EMAIL: ${{ vars.ACME_EMAIL }}
           MCP_ORIGINS: ${{ vars.WINDMILL_MCP_ALLOWED_ORIGINS }}
@@ -108,7 +107,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           port: ${{ secrets.SSH_PORT }}
           key: ${{ secrets.SSH_KEY }}
-          envs: IMAGE_TAG,POSTGRES_PASSWORD,DOMAIN_API,DOMAIN_MCP,DOMAIN_APP,ACME_EMAIL,MCP_ORIGINS,RESEND_API_KEY,WINDMILL_MCP_TOKEN,GHCR_USER,GHCR_TOKEN,CF_IPS_CSV
+          envs: IMAGE_TAG,POSTGRES_PASSWORD,DOMAIN_API,DOMAIN_APP,ACME_EMAIL,MCP_ORIGINS,RESEND_API_KEY,WINDMILL_MCP_TOKEN,GHCR_USER,GHCR_TOKEN,CF_IPS_CSV
           script: |
             set -euo pipefail
             cd ~/windmill
@@ -123,7 +122,6 @@ jobs:
             IMAGE_TAG=${IMAGE_TAG}
             POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
             DOMAIN_API=${DOMAIN_API}
-            DOMAIN_MCP=${DOMAIN_MCP}
             DOMAIN_APP=${DOMAIN_APP}
             ACME_EMAIL=${ACME_EMAIL}
             CF_IPS=${CF_IPS}
@@ -134,8 +132,9 @@ jobs:
             echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
             docker compose pull
             docker compose up -d --remove-orphans
-            # Caddy reads its Caddyfile once at container start; a bind-mounted change doesn't
-            # auto-reload, and `up -d` won't recreate an otherwise-unchanged caddy container — so
-            # reload it explicitly to pick up routing/upstream changes (e.g. DOMAIN_MCP → server).
-            docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile 2>/dev/null || docker compose restart caddy
+            # The Caddyfile is a single-file bind mount; scp replaces it with a NEW inode, which a
+            # running container keeps missing (even across `restart` or `caddy reload`) — only
+            # recreating the container re-binds the mount. Force-recreate caddy so Caddyfile routing
+            # changes actually take effect on deploy.
+            docker compose up -d --force-recreate --no-deps caddy
             docker image prune -f
