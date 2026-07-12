@@ -181,5 +181,15 @@ export const roadmapTree = {
     // docs/backend/landing-and-quests.md (quest catalog + tree creation). Running log per CLAUDE.md.
     { id: 'landing-scenes', label: 'Live tree scenes · the moat', icon: 'sparkles', color: 'sky', status: 'complete', prerequisites: ['renderer', 'bloom-beat'] },
     { id: 'landing-page', label: 'Marketing landing · #/welcome', icon: 'external-link', color: 'gold', status: 'complete', prerequisites: ['landing-scenes', 'share-frame', 'sign-in-door'] },
+
+    // ---- transactional email initiative (X7) — the shell that survives Gmail ----
+    // Table-based, inline-CSS templates for the mail service (Resend), living in /emails. Warm
+    // night-sky dark mode, brand-font stacks as the contract, hidden preheaders, plain-text twins.
+    // Sign-in + first-time sign-up magic links carry X6's {{magic_link}}; the frontier reminder
+    // loops over ready steps. Domain moved to windmill.works across app + mail. Docs: emails/README.md.
+    { id: 'email-shell', label: 'Email shell · warm, dark-aware', icon: 'frame', color: 'gold', status: 'complete', prerequisites: ['share-palette'] },
+    { id: 'email-magic-link', label: 'Magic-link mail · sign-in + signup', icon: 'external-link', color: 'terracotta', status: 'complete', prerequisites: ['email-shell', 'auth-landing'] },
+    { id: 'email-reminder', label: 'Frontier reminder mail', icon: 'flag', color: 'brick', status: 'complete', prerequisites: ['email-shell', 'durable-progress'] },
+    { id: 'domain-works', label: 'Domain · windmill.works', icon: 'server', color: 'sky', status: 'complete', prerequisites: ['email-magic-link'] },
   ],
 };

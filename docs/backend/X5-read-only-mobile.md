@@ -10,7 +10,7 @@ Spec: `explorations/read-only-mobile.html` (X5) in the Claude Design project.
 ## Tasks
 
 1. **Public read-only tree route.** A public, no-auth endpoint that serves a tree for viewing
-   at `windmill.app/t/:treeId` (the frontend renders it read-only): structure, names, kinds
+   at `windmill.works/t/:treeId` (the frontend renders it read-only): structure, names, kinds
    (+ the F6 legend), descriptions, and progress. `GET /v1/trees/:id` may already serve most
    of this — ensure it's public-safe and returns the legend + descriptions. The hosted route
    itself (`/t/:id`) is client-rendered; the backend just needs the data to be publicly fetchable.

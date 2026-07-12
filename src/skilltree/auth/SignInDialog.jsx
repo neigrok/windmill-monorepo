@@ -145,7 +145,7 @@ export function SignInDialog({ open, onClose, onSend }) {
         <div style={column}>
           <div style={brickHead}>
             <Icon name="wifi" size={18} color="var(--color-danger)" />
-            <h2 style={brickTitle}>Can't reach windmill.app</h2>
+            <h2 style={brickTitle}>Can't reach windmill.works</h2>
           </div>
           <p style={panelBody}>Your trees are safe on this device.</p>
           <div style={panelActions}>

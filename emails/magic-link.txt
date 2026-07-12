@@ -1,0 +1,18 @@
+WINDMILL
+
+Tap to sign in
+--------------
+
+This link signs you in to Windmill on this device.
+No password — the link is the key.
+
+{{magic_link}}
+
+It works once and lasts 15 minutes.
+
+Didn't ask for this? You can ignore it — nothing changes
+until the link is used.
+
+--
+Sent because this address was entered at windmill.works.
+Windmill · https://windmill.works

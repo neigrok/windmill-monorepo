@@ -1,0 +1,20 @@
+WINDMILL
+
+Your frontier is waiting
+------------------------
+
+A few steps on {{tree_name}} just came within reach.
+Whenever you have a minute, they're ready for you.
+
+{{tree_name}} — {{done}}/{{total}} done
+{{#each ready_steps}}
+  • {{label}} (ready)
+{{/each}}
+
+Open your tree:
+{{tree_url}}
+
+--
+You get these because reminders are on for this tree.
+Pause reminders: {{settings_url}}
+Windmill · https://windmill.works

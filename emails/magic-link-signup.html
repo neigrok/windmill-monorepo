@@ -1,0 +1,138 @@
+<!--
+  Windmill transactional email — magic link (FIRST-TIME SIGN-UP) · X7
+  From:      Windmill <sign-in@windmill.works>
+  Subject:   Welcome to Windmill — your sign-in link
+  Preheader: One tap creates your account. No password — works once, lasts 15 minutes.
+  Plain-text pair: magic-link-signup.txt
+
+  Template variable: {{magic_link}} (button href + raw fallback). Same shell as
+  magic-link.html; only the wording differs (one door, X6 §1: "your account is created
+  the first time"). The server picks sign-in vs sign-up by whether the address is new.
+  See guidelines/email.md / emails/README.md.
+-->
+<!DOCTYPE html>
+<html lang="en" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>Welcome to Windmill — your sign-in link</title>
+<!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]-->
+<style>
+  html, body { margin: 0 !important; padding: 0 !important; }
+  body { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+  table { border-collapse: collapse !important; }
+  img { border: 0; line-height: 100%; }
+  @media (max-width: 560px) {
+    .wm-card-pad { padding: 30px 24px !important; }
+  }
+  @media (prefers-color-scheme: dark) {
+    body, .wm-canvas { background: #0D0B07 !important; }
+    .wm-card { background: #17120B !important; border-color: #2E2618 !important; }
+    .wm-h { color: #F4EEDF !important; }
+    .wm-p { color: #AE9A75 !important; }
+    .wm-mut { color: #8A785A !important; }
+    .wm-link { color: #D08A5E !important; }
+    .wm-div { border-color: #221B12 !important; }
+    .wm-wordmark { color: #D08A5E !important; }
+  }
+  html.wm-dark-preview body, html.wm-dark-preview .wm-canvas { background: #0D0B07 !important; }
+  html.wm-dark-preview .wm-card { background: #17120B !important; border-color: #2E2618 !important; }
+  html.wm-dark-preview .wm-h { color: #F4EEDF !important; }
+  html.wm-dark-preview .wm-p { color: #AE9A75 !important; }
+  html.wm-dark-preview .wm-mut { color: #8A785A !important; }
+  html.wm-dark-preview .wm-link { color: #D08A5E !important; }
+  html.wm-dark-preview .wm-div { border-color: #221B12 !important; }
+  html.wm-dark-preview .wm-wordmark { color: #D08A5E !important; }
+</style>
+</head>
+<body class="wm-canvas" bgcolor="#F9F5EB" style="margin:0; padding:0; background:#F9F5EB;">
+<div style="display:none; font-size:1px; line-height:1px; max-height:0; max-width:0; opacity:0; overflow:hidden; mso-hide:all;">
+  One tap creates your account. No password &mdash; works once, lasts 15 minutes.&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;
+</div>
+<center role="article" aria-roledescription="email" lang="en" class="wm-canvas" style="width:100%; background:#F9F5EB;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="wm-canvas" bgcolor="#F9F5EB">
+  <tr>
+    <td align="center" style="padding:36px 16px 48px;">
+      <table role="presentation" width="520" cellpadding="0" cellspacing="0" border="0" style="width:520px; max-width:100%;">
+
+        <tr>
+          <td align="center" class="wm-wordmark" style="padding:6px 0 22px; font-family:'Baloo 2','Trebuchet MS','Segoe UI',sans-serif; font-size:23px; font-weight:700; color:#BC6C42; letter-spacing:-0.2px;">
+            Windmill
+          </td>
+        </tr>
+
+        <tr>
+          <td class="wm-card wm-card-pad" bgcolor="#FFFFFF" style="background:#FFFFFF; border:1px solid #E5D9C0; border-radius:24px; padding:38px 44px 34px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td align="center" class="wm-h" style="font-family:'Baloo 2','Trebuchet MS','Segoe UI',sans-serif; font-size:27px; font-weight:700; line-height:1.2; color:#211B13; padding-bottom:12px;">
+                  Welcome &mdash; this way in
+                </td>
+              </tr>
+              <tr>
+                <td align="center" class="wm-p" style="font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:16px; line-height:1.55; color:#6F5F45;">
+                  You&rsquo;re new here, so this link creates your account and signs you in. Same door every visit after &mdash; no password, ever.
+                </td>
+              </tr>
+
+              <tr>
+                <td align="center" style="padding:28px 0 12px;">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
+                    <tr>
+                      <td align="center" bgcolor="#BC6C42" style="border-radius:999px; mso-padding-alt:15px 38px;">
+                        <a href="{{magic_link}}" style="display:inline-block; padding:15px 38px; font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:16px; font-weight:800; line-height:1; color:#FFFFFF; text-decoration:none; border-radius:999px;">
+                          Create my account
+                        </a>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+              <tr>
+                <td align="center" class="wm-mut" style="font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:13.5px; line-height:1.5; color:#92805F; padding-bottom:26px;">
+                  It works once and lasts 15 minutes.
+                </td>
+              </tr>
+
+              <tr>
+                <td class="wm-div" style="border-top:1px solid #F1EADA; padding-top:22px;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td class="wm-mut" style="font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:13.5px; line-height:1.5; color:#92805F; padding-bottom:6px;">
+                        Button not working? Paste this into your browser:
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="font-family:'JetBrains Mono','SFMono-Regular',Consolas,'Courier New',monospace; font-size:13px; line-height:1.6; word-break:break-all;">
+                        <a href="{{magic_link}}" class="wm-link" style="color:#9D5330; text-decoration:underline;">{{magic_link}}</a>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="wm-mut" style="font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:13.5px; line-height:1.55; color:#92805F; padding-top:20px;">
+                        Didn&rsquo;t sign up? You can ignore this &mdash; no account is created until the link is used.
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <tr>
+          <td align="center" class="wm-mut" style="padding:22px 12px 0; font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:12.5px; line-height:1.6; color:#92805F;">
+            Sent because this address was entered at windmill.works.<br>
+            Windmill &middot; <a href="https://windmill.works" class="wm-link" style="color:#9D5330; text-decoration:none;">windmill.works</a>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
+</center>
+</body>
+</html>

@@ -1,0 +1,176 @@
+<!--
+  Windmill transactional email — frontier reminder · X7
+  From:      Windmill <reminders@windmill.works>
+  Reply-To:  hello@windmill.works
+  Subject:   {{ready_count}} steps are ready · {{tree_name}}
+  Preheader: Your frontier moved — a few steps just came within reach.
+  Plain-text pair: reminder.txt
+
+  Template variables:
+    {{tree_name}}    display name of the tree            e.g. "Frontend path"
+    {{tree_url}}     deep link to the tree               e.g. https://windmill.works/t/frontend-path
+    {{done}} {{total}}  progress counters                e.g. 9 / 24
+    {{ready_count}}  number of newly-ready steps (subject line)
+    {{settings_url}} pause-reminders link                e.g. https://windmill.works/settings
+    {{#each ready_steps}} { {{label}}, {{color}} }  the ready rows (dot color is a hex string)
+
+  If your engine can't iterate (plain {{var}} substitution only), swap the {{#each}}
+  block for three fixed rows using {{step_1_label}}/{{step_1_color}} … — see emails/README.md.
+  Unlike the auth mail, reminders ALWAYS carry the pause/settings link (guidelines/email.md).
+-->
+<!DOCTYPE html>
+<html lang="en" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>Your frontier is waiting</title>
+<!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]-->
+<style>
+  html, body { margin: 0 !important; padding: 0 !important; }
+  body { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+  table { border-collapse: collapse !important; }
+  img { border: 0; line-height: 100%; }
+  @media (max-width: 560px) {
+    .wm-card-pad { padding: 30px 24px !important; }
+    .wm-sunken-pad { padding: 18px 18px !important; }
+  }
+  @media (prefers-color-scheme: dark) {
+    body, .wm-canvas { background: #0D0B07 !important; }
+    .wm-card { background: #17120B !important; border-color: #2E2618 !important; }
+    .wm-h { color: #F4EEDF !important; }
+    .wm-p { color: #AE9A75 !important; }
+    .wm-mut { color: #8A785A !important; }
+    .wm-link { color: #D08A5E !important; }
+    .wm-div { border-color: #221B12 !important; }
+    .wm-wordmark { color: #D08A5E !important; }
+    .wm-sunken { background: #100C06 !important; border-color: #251D12 !important; }
+    .wm-step { color: #E7DFCC !important; }
+    .wm-step-b { border-color: #241C11 !important; }
+    .wm-ready { color: #8FB08A !important; }
+    .wm-counter { color: #AE9A75 !important; }
+  }
+  html.wm-dark-preview body, html.wm-dark-preview .wm-canvas { background: #0D0B07 !important; }
+  html.wm-dark-preview .wm-card { background: #17120B !important; border-color: #2E2618 !important; }
+  html.wm-dark-preview .wm-h { color: #F4EEDF !important; }
+  html.wm-dark-preview .wm-p { color: #AE9A75 !important; }
+  html.wm-dark-preview .wm-mut { color: #8A785A !important; }
+  html.wm-dark-preview .wm-link { color: #D08A5E !important; }
+  html.wm-dark-preview .wm-div { border-color: #221B12 !important; }
+  html.wm-dark-preview .wm-wordmark { color: #D08A5E !important; }
+  html.wm-dark-preview .wm-sunken { background: #100C06 !important; border-color: #251D12 !important; }
+  html.wm-dark-preview .wm-step { color: #E7DFCC !important; }
+  html.wm-dark-preview .wm-step-b { border-color: #241C11 !important; }
+  html.wm-dark-preview .wm-ready { color: #8FB08A !important; }
+  html.wm-dark-preview .wm-counter { color: #AE9A75 !important; }
+</style>
+</head>
+<body class="wm-canvas" bgcolor="#F9F5EB" style="margin:0; padding:0; background:#F9F5EB;">
+<div style="display:none; font-size:1px; line-height:1px; max-height:0; max-width:0; opacity:0; overflow:hidden; mso-hide:all;">
+  Your frontier moved &mdash; a few steps just came within reach.&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;
+</div>
+<center role="article" aria-roledescription="email" lang="en" class="wm-canvas" style="width:100%; background:#F9F5EB;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="wm-canvas" bgcolor="#F9F5EB">
+  <tr>
+    <td align="center" style="padding:36px 16px 48px;">
+      <table role="presentation" width="520" cellpadding="0" cellspacing="0" border="0" style="width:520px; max-width:100%;">
+
+        <tr>
+          <td align="center" class="wm-wordmark" style="padding:6px 0 22px; font-family:'Baloo 2','Trebuchet MS','Segoe UI',sans-serif; font-size:23px; font-weight:700; color:#BC6C42; letter-spacing:-0.2px;">
+            Windmill
+          </td>
+        </tr>
+
+        <tr>
+          <td class="wm-card wm-card-pad" bgcolor="#FFFFFF" style="background:#FFFFFF; border:1px solid #E5D9C0; border-radius:24px; padding:38px 44px 34px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td align="center" class="wm-h" style="font-family:'Baloo 2','Trebuchet MS','Segoe UI',sans-serif; font-size:27px; font-weight:700; line-height:1.2; color:#211B13; padding-bottom:12px;">
+                  Your frontier is waiting
+                </td>
+              </tr>
+              <tr>
+                <td align="center" class="wm-p" style="font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:16px; line-height:1.55; color:#6F5F45; padding-bottom:24px;">
+                  A few steps on <strong style="color:inherit;">{{tree_name}}</strong> just came within reach. Whenever you have a minute, they&rsquo;re ready for you.
+                </td>
+              </tr>
+
+              <!-- sunken frontier panel -->
+              <tr>
+                <td>
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="wm-sunken" bgcolor="#FBF7EE" style="background:#FBF7EE; border:1px solid #EFE6D2; border-radius:16px;">
+                    <tr>
+                      <td class="wm-sunken-pad" style="padding:20px 22px;">
+                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                          <tr>
+                            <td class="wm-step" style="font-family:'Baloo 2','Trebuchet MS','Segoe UI',sans-serif; font-size:16px; font-weight:700; color:#2C2416;">
+                              {{tree_name}}
+                            </td>
+                            <td align="right" class="wm-counter" style="font-family:'JetBrains Mono','SFMono-Regular',Consolas,'Courier New',monospace; font-size:13px; color:#6F5F45; white-space:nowrap;">
+                              {{done}}/{{total}} done
+                            </td>
+                          </tr>
+                        </table>
+
+                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:14px;">
+                          {{#each ready_steps}}
+                          <tr>
+                            <td class="wm-step-b" style="padding:11px 0; border-top:1px solid #F1EADA;">
+                              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                                <tr>
+                                  <td width="10" style="width:10px;">
+                                    <div style="width:8px; height:8px; border-radius:999px; background:{{color}};">&nbsp;</div>
+                                  </td>
+                                  <td class="wm-step" style="padding-left:12px; font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:15px; font-weight:600; color:#2C2416;">
+                                    {{label}}
+                                  </td>
+                                </tr>
+                              </table>
+                            </td>
+                            <td align="right" class="wm-ready wm-step-b" style="padding:11px 0; border-top:1px solid #F1EADA; font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:12.5px; font-weight:700; color:#5F8460; letter-spacing:0.3px; text-transform:uppercase;">
+                              ready
+                            </td>
+                          </tr>
+                          {{/each}}
+                        </table>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+
+              <tr>
+                <td align="center" style="padding:28px 0 6px;">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
+                    <tr>
+                      <td align="center" bgcolor="#BC6C42" style="border-radius:999px; mso-padding-alt:15px 38px;">
+                        <a href="{{tree_url}}" style="display:inline-block; padding:15px 38px; font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:16px; font-weight:800; line-height:1; color:#FFFFFF; text-decoration:none; border-radius:999px;">
+                          Open your tree
+                        </a>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- footer: reminders always carry the pause link -->
+        <tr>
+          <td align="center" class="wm-mut" style="padding:22px 12px 0; font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:12.5px; line-height:1.6; color:#92805F;">
+            You get these because reminders are on for this tree.<br>
+            <a href="{{settings_url}}" class="wm-link" style="color:#9D5330; text-decoration:underline;">Pause reminders</a> &middot; Manage in settings<br>
+            Windmill &middot; <a href="https://windmill.works" class="wm-link" style="color:#9D5330; text-decoration:none;">windmill.works</a>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
+</center>
+</body>
+</html>

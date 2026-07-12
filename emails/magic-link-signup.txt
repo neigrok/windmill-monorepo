@@ -1,0 +1,19 @@
+WINDMILL
+
+Welcome — this way in
+---------------------
+
+You're new here, so this link creates your account and
+signs you in. Same door every visit after — no password,
+ever.
+
+{{magic_link}}
+
+It works once and lasts 15 minutes.
+
+Didn't sign up? You can ignore this — no account is
+created until the link is used.
+
+--
+Sent because this address was entered at windmill.works.
+Windmill · https://windmill.works
