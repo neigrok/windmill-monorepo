@@ -1,0 +1,15 @@
+{
+  "name": "Windmill — Any goal, as a skill tree",
+  "short_name": "Windmill",
+  "description": "Turn any goal or learning roadmap into an animated RPG skill tree. Finish a step, unlock the next branch.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F9F5EB",
+  "theme_color": "#F9F5EB",
+  "lang": "en",
+  "categories": ["productivity", "education", "lifestyle"],
+  "icons": [
+    { "src": "/favicon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any" }
+  ]
+}

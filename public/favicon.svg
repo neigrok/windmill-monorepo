@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Windmill">
+  <rect width="32" height="32" rx="7" fill="#F9F5EB"/>
+  <g fill="none" stroke="#211B13" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M16 24 L16 16"/>
+    <path d="M16 16 L9 9"/>
+    <path d="M16 16 L23 9"/>
+  </g>
+  <circle cx="16" cy="16" r="1.9" fill="#211B13"/>
+  <circle cx="16" cy="24" r="3.4" fill="#BC6C42"/>
+  <circle cx="9"  cy="9"  r="3.2" fill="#C4972F"/>
+  <circle cx="23" cy="9"  r="3.2" fill="#5F8494"/>
+</svg>

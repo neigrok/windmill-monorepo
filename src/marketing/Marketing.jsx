@@ -21,7 +21,7 @@ const ICONS = {
 };
 function Icon({ name, size = 18 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
       {ICONS[name]}
     </svg>
   );
@@ -46,12 +46,18 @@ function Nav({ onLogin }) {
 
 function HeroBand() {
   const ref = useRef(null);
+  // Defer the WebGL hero off the critical path so building its DOM/SVG doesn't
+  // compete with first input (INP). The self-play loop is already gated by an
+  // IntersectionObserver + document.hidden inside treeScenes.
   useEffect(() => {
-    const ctrl = mountHero(ref.current);
-    ctrl.setAutoplay(true);
-    return undefined;
+    const el = ref.current;
+    const start = () => { mountHero(el).setAutoplay(true); };
+    const id = 'requestIdleCallback' in window
+      ? requestIdleCallback(start, { timeout: 500 })
+      : setTimeout(start, 200);
+    return () => { ('cancelIdleCallback' in window) ? cancelIdleCallback(id) : clearTimeout(id); };
   }, []);
-  return <div className="heroBleed"><div ref={ref}></div></div>;
+  return <div className="heroBleed" aria-hidden="true"><div ref={ref}></div></div>;
 }
 
 function Hero() {
@@ -81,7 +87,7 @@ function Hero() {
 function BeatStage({ kind }) {
   const ref = useRef(null);
   useEffect(() => { mountBeat(ref.current, kind); }, [kind]);
-  return <div className="beatStage" title="Click to replay"><div ref={ref}></div></div>;
+  return <div className="beatStage" title="Click to replay" aria-hidden="true"><div ref={ref}></div></div>;
 }
 
 function HowItWorks() {
@@ -101,7 +107,7 @@ function HowItWorks() {
             <BeatStage kind={b.kind} />
             <div>
               <div className="beatNum">{b.num}</div>
-              <div className="beatTitle">{b.title}</div>
+              <h3 className="beatTitle">{b.title}</h3>
               <p className="beatCopy">{b.copy}</p>
             </div>
           </div>
@@ -114,7 +120,7 @@ function HowItWorks() {
 function QuestThumb({ quest }) {
   const ref = useRef(null);
   useEffect(() => { mountThumb(ref.current, quest); }, [quest]);
-  return <div className="questThumb"><div ref={ref}></div></div>;
+  return <div className="questThumb" aria-hidden="true"><div ref={ref}></div></div>;
 }
 
 function Paths() {
@@ -166,7 +172,9 @@ function Story() {
   ];
   return (
     <section className="wrap" style={{ paddingTop: 96 }}>
-      <div className="trio" style={{ marginTop: 0 }}>
+      <div className="eyebrow">Why Windmill</div>
+      <h2 className="sectionTitle">Made to share, and to sync</h2>
+      <div className="trio" style={{ marginTop: 24 }}>
         {items.map(it => (
           <div key={it.title} className="trioItem">
             <div className="trioIcon"><Icon name={it.icon} size={22} /></div>
@@ -214,12 +222,15 @@ export default function Marketing() {
   const [signInOpen, setSignInOpen] = useState(false);
   return (
     <div className="wm-landing" style={{ fontFamily: 'var(--font-body)' }}>
+      <a href="#main" className="skip-link">Skip to content</a>
       <Nav onLogin={() => setSignInOpen(true)} />
-      <Hero />
-      <HowItWorks />
-      <Paths />
-      <Story />
-      <CtaBand />
+      <main id="main">
+        <Hero />
+        <HowItWorks />
+        <Paths />
+        <Story />
+        <CtaBand />
+      </main>
       <Footer />
       <SignInDialog open={signInOpen} onClose={() => setSignInOpen(false)} onSend={requestMagicLink} />
     </div>

@@ -1,0 +1,12 @@
+# https://windmill.works/robots.txt
+# Windmill is a single-page app: the only crawlable URL is the root.
+# Hash routes (#/app, #/t/:id, #/showcase, #/welcome) are URL fragments,
+# never sent to the server, so there is nothing per-route to allow or block.
+
+User-agent: *
+Allow: /
+
+# Do NOT disallow /assets/ — crawlers must fetch the JS/CSS bundles to
+# render the client-side landing page. Blocking them would hide all content.
+
+Sitemap: https://windmill.works/sitemap.xml

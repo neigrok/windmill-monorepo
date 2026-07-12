@@ -3,13 +3,14 @@ import AuthProvider, { useAuth } from './skilltree/auth/AuthProvider.jsx';
 import { AuthLanding } from './skilltree/auth/AuthLanding.jsx';
 import { OAuthConsent } from './skilltree/auth/OAuthConsent.jsx';
 import { verifyToken } from './skilltree/auth/AuthClient.js';
+import Marketing from './marketing/Marketing.jsx';
 
-// Both routes are lazy so the entry chunk is just React + the router: the
-// heavy WebGL skill-tree route and the design-system showcase each load
-// on demand, and the first paint below shows instantly while they stream in.
+// Marketing is the site root and our one crawlable/indexable URL, so it ships
+// eagerly with the entry chunk — the landing paints in a single download (best
+// LCP) instead of paying a lazy round-trip. The heavy WebGL skill-tree route and
+// the design-system showcase stay lazy: they load on demand while the fallback shows.
 const SkillTreeApp = lazy(() => import('./skilltree').then((m) => ({ default: m.SkillTreeApp })));
 const Showcase = lazy(() => import('./Showcase.jsx'));
-const Marketing = lazy(() => import('./marketing/Marketing.jsx'));
 
 function useHashRoute() {
   const [hash, setHash] = React.useState(() => window.location.hash);

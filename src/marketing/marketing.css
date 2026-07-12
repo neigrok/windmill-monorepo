@@ -52,6 +52,10 @@ path.eb { transition: opacity 280ms var(--ease-standard), stroke 280ms var(--eas
 
 /* ---- hero band: the live moat ---- */
 .heroBleed { margin: 44px calc(50% - 50vw) 0; }
+/* Reserve the exact height fit() assigns at runtime (HH=560, s=clamp(w/980,.60,1.08),
+   full-bleed width ≈ 100vw → 560*57.14% of vw) so the band doesn't collapse from 0
+   before JS mounts it. Matches wrap.style.height in treeScenes, so mounting = no shift (CLS). */
+.heroBleed > div { height: clamp(336px, 57.14vw, 605px); }
 .heroWrap { position: relative; overflow: hidden; }
 .heroStage { position: absolute; left: 50%; top: 0; transform-origin: top center; }
 .labels-off .ndlabel { opacity: 0; }   /* X5 §5: labels hide below 0.8× — zoomed out, the tree reads as fruit */
@@ -155,4 +159,18 @@ path.eb { transition: opacity 280ms var(--ease-standard), stroke 280ms var(--eas
   html { scroll-behavior: auto; }
   .nd--crown, .nd--wake, .nd--blossom, .nd--echo, .fcta--echo { animation: none !important; }
   .nd--crown { box-shadow: 0 0 0 5px rgba(var(--g),.28), 0 0 26px 5px rgba(var(--g),.28) !important; }
+}
+
+/* ---- accessibility helpers ---- */
+.skip-link {
+  position: absolute; left: 8px; top: -48px;
+  padding: 10px 16px; border-radius: var(--radius-md);
+  background: var(--surface-card); color: var(--text-primary);
+  font-family: var(--font-body); font-weight: 700; z-index: 1000;
+  transition: top .15s ease;
+}
+.skip-link:focus { top: 8px; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }

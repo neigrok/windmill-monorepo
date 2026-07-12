@@ -159,6 +159,7 @@ export function mountHero(wrap) {
   el('div', 'wmk', wrap, 'Windmill');
   const fcta = el('a', 'fcta', wrap, FORK_IC + '<span>Fork this tree</span>');
   fcta.href = '#/t/demo';
+  fcta.tabIndex = -1;   // hero is aria-hidden; keep this injected link out of the tab order (the visible "Try the live demo" CTA covers it)
   const toast = el('div', 'toastp', wrap, 'Step unlocked: Rig the mast · <b>2 steps opened</b>');
   const ct = plq.querySelector('.ct');
 
