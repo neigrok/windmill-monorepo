@@ -15,6 +15,7 @@ export class CollabClient {
     this.opHandler = null;
     this.presenceHandler = null;
     this.peerHandler = null;
+    this.progressHandler = null;
     this.presence = null; // latest un-sent presence, coalesced by the throttle
     this.presenceTimer = null;
     this.sent = new Set(); // opIds we authored — their echoes are already applied locally
@@ -38,6 +39,14 @@ export class CollabClient {
     return this;
   }
 
+  // This account's own progress change from another session (another tab, or an agent's MCP
+  // edit): `{ nodeId, status }` where status is active | complete | none. Private to the user —
+  // the server only echoes it to their own connections, never to collaborators.
+  onProgress(handler) {
+    this.progressHandler = handler;
+    return this;
+  }
+
   connect() {
     this.ws = new WebSocket(this.url);
     this.ws.addEventListener('open', () => {
@@ -56,6 +65,8 @@ export class CollabClient {
         this.presenceHandler?.(frame); // the server never echoes our own cursor back to us
       } else if (frame.t === 'peer') {
         this.peerHandler?.(frame);
+      } else if (frame.t === 'progress') {
+        this.progressHandler?.(frame); // this account's own progress, from another session
       } else if (frame.t === 'reject') {
         // The server refused an op — a legend invariant (hue taken, ≤6 kinds, in-use
         // removal), a bounds cap, or authorization (not signed in / not your tree). Auth

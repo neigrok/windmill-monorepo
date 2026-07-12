@@ -78,6 +78,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   const collabRef = useRef(null); // live socket to windmill-backend (dogfood roadmap only)
   const peersRef = useRef(new Map()); // actor -> { name, color, cursor, selection } for the presence overlay
   const applyRemoteOpRef = useRef(null); // always points at the latest applyRemoteOp
+  const applyRemoteProgressRef = useRef(null); // latest applyRemoteProgress (this account's own overlay)
   const invalidRef = useRef(false); // whether the last render fell back to the loose-graph path
   const selectedIdRef = useRef(null);
   const toastTimersRef = useRef([]); // pending hold→leave→unmount timers for the active toast
@@ -806,6 +807,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
               peersRef.current.set(frame.actor, { name: frame.profile?.name, color: frame.profile?.color, cursor: null, selection: null });
             }
           })
+          .onProgress((frame) => applyRemoteProgressRef.current?.(frame))
           .connect();
       }
     }
@@ -979,6 +981,22 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
     setCompletedAt(nextCompletedAt);
     persistProgress({ completed: nextCompleted, inProgress: nextInProgress, startedAt: nextStartedAt, completedAt: nextCompletedAt });
   }
+
+  // A remote progress frame — this account's own change from another session or an MCP edit —
+  // reflected live through the same apply path a local mark takes. Idempotent: skip when the node
+  // already holds that state so an echo doesn't replay the completion ceremony.
+  applyRemoteProgressRef.current = (frame) => {
+    const id = frame?.nodeId;
+    if (!id || !nodesById.has(id)) return;
+    const target = frame.status === 'complete' ? 'complete'
+      : frame.status === 'active' ? 'inprogress'
+      : frame.status === 'none' ? 'notstarted' : null;
+    if (!target) return;
+    if (target === 'complete' && completed.has(id)) return;
+    if (target === 'inprogress' && inProgress.has(id)) return;
+    if (target === 'notstarted' && !completed.has(id) && !inProgress.has(id)) return;
+    handleSetState(id, target);
+  };
 
   // Any workspace change on a node calls off a pending auto-complete for it (§4) —
   // an uncheck, a note edit, a link, all count as "the user is still working".
