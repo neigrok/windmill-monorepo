@@ -15,14 +15,16 @@ export class HttpTreeRepository extends TreeRepository {
   }
 
   async loadTree() {
-    const response = await fetch(`${this.baseUrl}/v1/trees/${this.treeId}`);
+    const response = await fetch(`${this.baseUrl}/v1/trees/${this.treeId}`, { credentials: 'include' });
     if (!response.ok) throw new Error(`loadTree ${this.treeId}: HTTP ${response.status}`);
     const body = await response.json();
     return body.data;
   }
 
   async loadProgress(treeData) {
-    const response = await fetch(`${this.baseUrl}/v1/trees/${this.treeId}/progress`);
+    // Credentialed so the server returns *this* signed-in user's overlay (anonymous falls
+    // back to the document's authoring seeds below).
+    const response = await fetch(`${this.baseUrl}/v1/trees/${this.treeId}/progress`, { credentials: 'include' });
     const server = response.ok ? await response.json() : { completed: [], inProgress: [] };
     if (server.completed.length > 0 || server.inProgress.length > 0) {
       return { completed: new Set(server.completed), inProgress: new Set(server.inProgress) };
@@ -41,7 +43,7 @@ export class HttpTreeRepository extends TreeRepository {
   // a real timestamp — including edits by collaborators the local feed never saw. `since`
   // is a seq cursor for catch-up; 0 = the whole tail (capped at `limit`).
   async loadActivity({ since = 0, limit = 200 } = {}) {
-    const response = await fetch(`${this.baseUrl}/v1/trees/${this.treeId}/activity?since=${since}&limit=${limit}`);
+    const response = await fetch(`${this.baseUrl}/v1/trees/${this.treeId}/activity?since=${since}&limit=${limit}`, { credentials: 'include' });
     if (!response.ok) return [];
     const body = await response.json();
     return body.events ?? [];

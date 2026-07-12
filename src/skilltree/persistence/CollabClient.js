@@ -57,9 +57,14 @@ export class CollabClient {
       } else if (frame.t === 'peer') {
         this.peerHandler?.(frame);
       } else if (frame.t === 'reject') {
-        // The server refused an op (e.g. a legend invariant: hue taken, ≤6 kinds, in-use
-        // removal). Our client guards mirror these, so this is rare; surface it for now.
-        console.warn('[collab] op rejected', frame.opId, '—', frame.reason);
+        // The server refused an op — a legend invariant (hue taken, ≤6 kinds, in-use
+        // removal), a bounds cap, or authorization (not signed in / not your tree). Auth
+        // rejects fire a window event so the app can prompt sign-in; the rest just warn.
+        const authReject = frame.reason === 'sign in to edit' ||
+          frame.reason === 'this tree belongs to another account';
+        if (authReject) window.dispatchEvent(new CustomEvent('wm-edit-forbidden', { detail: frame.reason }));
+        else console.warn('[collab] op rejected', frame.opId, '—', frame.reason);
+        this.rejectHandler?.(frame);
       }
     });
     return this;
