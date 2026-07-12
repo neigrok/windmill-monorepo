@@ -104,40 +104,46 @@ int main() {
 
   auto& app = drogon::app();
 
-  // CORS preflight, answered at the sync join point — the earliest hook, ahead of routing and
-  // of Drogon's built-in "is OPTIONS? -> 200" responder (which would otherwise reply first,
-  // reflecting any origin and advertising only OPTIONS in Allow-Methods, so the browser refuses
-  // the real POST). It must be a *sync* advice: only that hook short-circuits on its return
-  // value. A pre-routing lambda of this shape binds to the void(req) observer overload instead,
-  // so its response is silently discarded. The session cookie is credentialed, so Allow-
-  // Credentials only ever rides an allow-listed Origin; unlisted origins get the grant without
-  // it and the browser drops them.
-  app.registerSyncAdvice([allowedOrigins](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
-    if (req->method() != drogon::Options) return nullptr;  // real requests are dressed on the way out
-    auto resp = drogon::HttpResponse::newHttpResponse();
-    resp->setStatusCode(drogon::k204NoContent);
+  // One CORS policy for every response the server mints early. The session cookie is credentialed,
+  // so Allow-Credentials only ever rides an allow-listed Origin — never a reflect-any-origin, which
+  // would let a hostile page drive a credentialed /v1/auth/verify with the victim's cookies.
+  // Unlisted origins get no grant, so the browser drops their cross-site reads.
+  auto writeCors = [allowedOrigins](const drogon::HttpRequestPtr& req, const drogon::HttpResponsePtr& resp) {
     const std::string& origin = req->getHeader("origin");
     if (!origin.empty() && allowedOrigins.count(origin)) {
       resp->addHeader("Access-Control-Allow-Origin", origin);
       resp->addHeader("Access-Control-Allow-Credentials", "true");
     }
     resp->addHeader("Vary", "Origin");
+  };
+
+  // CORS preflight, answered at the sync join point — the earliest hook, ahead of routing and of
+  // Drogon's built-in "is OPTIONS? -> 200" responder (which would otherwise reply first, reflecting
+  // any origin and advertising only OPTIONS in Allow-Methods, so the browser refuses the real POST).
+  // It must be a *sync* advice: only that hook short-circuits on its return value. A pre-routing
+  // lambda of this shape binds to the void(req) observer overload instead, so its response is dropped.
+  app.registerSyncAdvice([writeCors](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
+    if (req->method() != drogon::Options) return nullptr;  // real requests are dressed on the way out
+    auto resp = drogon::HttpResponse::newHttpResponse();
+    resp->setStatusCode(drogon::k204NoContent);
+    writeCors(req, resp);
     resp->addHeader("Access-Control-Allow-Methods", "GET, PUT, POST, OPTIONS");
     resp->addHeader("Access-Control-Allow-Headers", "content-type, authorization");
     resp->addHeader("Access-Control-Max-Age", "600");
     return resp;
   });
 
-  // Abuse ceilings, enforced before routing (and in front of any future auth filter). The
-  // limiter keys on the real client IP Caddy records in X-Forwarded-For; internal traffic
-  // (health checks, no XFF) is never limited. The magic-link path additionally rides a
-  // tight per-client bucket and a global send ceiling that protects the Resend quota.
+  // Abuse ceilings, enforced at the sync join point so the 429 actually short-circuits — a
+  // pre-routing advice returning a response binds to the observer overload and is dropped (see
+  // CORS above). The limiter keys on the real client IP Caddy records in X-Forwarded-For;
+  // internal traffic (health checks, no XFF) is never limited. The magic-link path additionally
+  // rides a tight per-client bucket and a global send ceiling that protects the Resend quota.
   auto apiLimiter = std::make_shared<RateLimiter>(25.0, 50.0);          // ~25 req/s/client, burst 50
   auto magicPerIp = std::make_shared<RateLimiter>(10.0 / 600.0, 10.0);  // ~10 links / 10 min / client
   auto magicGlobal = std::make_shared<RateLimiter>(0.5, 60.0);          // global email send ceiling
-  app.registerPreRoutingAdvice(
-      [apiLimiter, magicPerIp, magicGlobal](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
-        if (req->method() == drogon::Options) return nullptr;  // never limit CORS preflight
+  app.registerSyncAdvice(
+      [apiLimiter, magicPerIp, magicGlobal, writeCors](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
+        if (req->method() == drogon::Options) return nullptr;  // preflight already answered above
         const std::string ip = clientIp(req);
         if (ip.empty()) return nullptr;  // internal / health-check traffic
         bool ok = apiLimiter->allow(ip);
@@ -149,6 +155,7 @@ int main() {
         body["code"] = "rate_limited";
         auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
         resp->setStatusCode(drogon::k429TooManyRequests);
+        writeCors(req, resp);  // short-circuits post-handling, so dress the 429 for CORS here
         return resp;
       });
 
@@ -158,41 +165,10 @@ int main() {
     drogon::app().getLoop()->runEvery(0.05, [presence]() { presence->flush(); });
   });
 
-  // CORS: the session cookie is credentialed, so only an allow-listed Origin is echoed back
-  // with Allow-Credentials — never a reflect-any-origin (that would let any site drive a
-  // credentialed /v1/auth/verify). Unlisted origins get the method/header grant but no
-  // credentials, so their cross-site cookie writes are refused by the browser.
+  // Real responses carry the credentialed grant on the way out; preflight is answered above at
+  // the sync join point, so no per-route OPTIONS handler is needed anywhere.
   app.registerPostHandlingAdvice(
-      [allowedOrigins](const drogon::HttpRequestPtr& req, const drogon::HttpResponsePtr& resp) {
-        const std::string& origin = req->getHeader("origin");
-        if (!origin.empty() && allowedOrigins.count(origin)) {
-          resp->addHeader("Access-Control-Allow-Origin", origin);
-          resp->addHeader("Access-Control-Allow-Credentials", "true");
-        }
-        resp->addHeader("Vary", "Origin");
-        resp->addHeader("Access-Control-Allow-Methods", "GET, PUT, POST, OPTIONS");
-        resp->addHeader("Access-Control-Allow-Headers", "content-type, authorization");
-      });
-  auto preflight = [](const drogon::HttpRequestPtr&, HttpCallback&& cb, const std::string&) {
-    auto resp = drogon::HttpResponse::newHttpResponse();
-    resp->setStatusCode(drogon::k204NoContent);
-    cb(resp);
-  };
-  app.registerHandler("/v1/trees/{id}", preflight, {drogon::Options});
-  app.registerHandler("/v1/trees/{id}/fork", preflight, {drogon::Options});
-  app.registerHandler("/v1/trees/{id}/progress", preflight, {drogon::Options});
-  app.registerHandler("/v1/trees/{id}/diagnostics", preflight, {drogon::Options});
-  app.registerHandler("/v1/trees/{id}/activity", preflight, {drogon::Options});
-
-  auto authPreflight = [](const drogon::HttpRequestPtr&, HttpCallback&& cb) {
-    auto resp = drogon::HttpResponse::newHttpResponse();
-    resp->setStatusCode(drogon::k204NoContent);
-    cb(resp);
-  };
-  app.registerHandler("/v1/auth/magic-link", authPreflight, {drogon::Options});
-  app.registerHandler("/v1/auth/verify", authPreflight, {drogon::Options});
-  app.registerHandler("/v1/auth/logout", authPreflight, {drogon::Options});
-  app.registerHandler("/v1/me", authPreflight, {drogon::Options});
+      [writeCors](const drogon::HttpRequestPtr& req, const drogon::HttpResponsePtr& resp) { writeCors(req, resp); });
 
   app.registerHandler(
       "/v1/auth/magic-link",
@@ -217,11 +193,9 @@ int main() {
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->me(req, std::move(cb)); },
       {drogon::Get});
 
-  // OAuth authorization server. Discovery/register/authorize/token are driven by the MCP
-  // client; the consent-facing endpoints (client info + decision) are called by the app,
-  // so they get the credentialed-CORS preflight.
-  app.registerHandler("/v1/oauth/client", authPreflight, {drogon::Options});
-  app.registerHandler("/v1/oauth/decision", authPreflight, {drogon::Options});
+  // OAuth authorization server. Discovery/register/authorize/token are driven by the MCP client;
+  // the consent-facing endpoints (client info + decision) are called by the app, and their
+  // preflight is covered by the shared CORS policy above.
   app.registerHandler(
       "/.well-known/oauth-authorization-server",
       [oauthApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { oauthApi->metadata(req, std::move(cb)); },
