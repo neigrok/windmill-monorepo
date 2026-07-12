@@ -11,7 +11,17 @@
 	email {$ACME_EMAIL}
 }
 
+# Refuse origin traffic that didn't arrive through Cloudflare, so the rate limiter's trust in
+# CF-Connecting-IP can't be forged by hitting the VPS directly. CF_IPS is Cloudflare's current
+# edge list, fetched from api.cloudflare.com at deploy time and injected as an env var (never
+# hardcoded). It defaults to allow-all, so a failed fetch fails open rather than locking us out.
+(cloudflare_only) {
+	@not_cloudflare not remote_ip {$CF_IPS}
+	respond @not_cloudflare 403
+}
+
 {$DOMAIN_API} {
+	import cloudflare_only
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
@@ -21,6 +31,7 @@
 }
 
 {$DOMAIN_MCP} {
+	import cloudflare_only
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
@@ -32,6 +43,7 @@
 # The frontend (windmill repo) is a static Vite SPA rsync'd into ./web by its own deploy
 # workflow; Caddy serves it here. Hash-routed, so try_files is just a safety net.
 {$DOMAIN_APP} {
+	import cloudflare_only
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"

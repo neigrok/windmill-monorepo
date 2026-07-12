@@ -104,6 +104,11 @@ jobs:
             cd ~/windmill
             mkdir -p web            # the frontend rsyncs here; create it as us before Caddy mounts it
             umask 077
+            # Cloudflare's current edge ranges, so Caddy can refuse non-CF origin traffic (the rate
+            # limiter trusts CF-Connecting-IP). Fetched fresh each deploy, never hardcoded; the
+            # `|| true` plus the empty-check fail open to allow-all so an API hiccup can't lock ingress.
+            CF_IPS="$(curl -fsS --max-time 20 https://api.cloudflare.com/client/v4/ips | grep -oE '[0-9a-fA-F.:]+/[0-9]{1,3}' | tr '\n' ' ' || true)"
+            if [ -z "${CF_IPS}" ]; then CF_IPS="0.0.0.0/0 ::/0"; echo "WARNING: Cloudflare IP fetch failed; origin left open"; fi
             cat > .env <<EOF
             IMAGE_TAG=${IMAGE_TAG}
             POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -111,6 +116,7 @@ jobs:
             DOMAIN_MCP=${DOMAIN_MCP}
             DOMAIN_APP=${DOMAIN_APP}
             ACME_EMAIL=${ACME_EMAIL}
+            CF_IPS=${CF_IPS}
             WINDMILL_MCP_ALLOWED_ORIGINS=${MCP_ORIGINS}
             RESEND_API_KEY=${RESEND_API_KEY}
             WINDMILL_MCP_TOKEN=${WINDMILL_MCP_TOKEN}

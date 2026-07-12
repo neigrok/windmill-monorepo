@@ -102,6 +102,9 @@ services:
       DOMAIN_MCP: ${DOMAIN_MCP}
       DOMAIN_APP: ${DOMAIN_APP:-app.localhost}
       ACME_EMAIL: ${ACME_EMAIL}
+      # Cloudflare edge ranges, rendered into .env by the deploy workflow. Allow-all default so a
+      # missing value fails open (Caddy refuses to start on an empty remote_ip matcher otherwise).
+      CF_IPS: "${CF_IPS:-0.0.0.0/0 ::/0}"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./web:/srv/windmill-web:ro
