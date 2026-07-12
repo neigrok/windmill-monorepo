@@ -79,10 +79,20 @@ jobs:
           target: "windmill"
           strip_components: 1
 
+      # Fetch Cloudflare's edge ranges here on the runner (the VPS has no curl), comma-separated so
+      # the SSH action can pass them without tripping on spaces. Empty on failure -> the VPS fails open.
+      - name: Fetch Cloudflare IP ranges
+        id: cfips
+        run: |
+          CSV="$(curl -fsS --max-time 20 https://api.cloudflare.com/client/v4/ips \
+            | grep -oE '[0-9a-fA-F.:]+/[0-9]{1,3}' | paste -sd, - || true)"
+          echo "csv=${CSV}" >> "$GITHUB_OUTPUT"
+
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.0.3
         env:
           IMAGE_TAG: ${{ github.sha }}
+          CF_IPS_CSV: ${{ steps.cfips.outputs.csv }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           DOMAIN_API: ${{ vars.DOMAIN_API }}
           DOMAIN_MCP: ${{ vars.DOMAIN_MCP }}
@@ -98,17 +108,17 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           port: ${{ secrets.SSH_PORT }}
           key: ${{ secrets.SSH_KEY }}
-          envs: IMAGE_TAG,POSTGRES_PASSWORD,DOMAIN_API,DOMAIN_MCP,DOMAIN_APP,ACME_EMAIL,MCP_ORIGINS,RESEND_API_KEY,WINDMILL_MCP_TOKEN,GHCR_USER,GHCR_TOKEN
+          envs: IMAGE_TAG,POSTGRES_PASSWORD,DOMAIN_API,DOMAIN_MCP,DOMAIN_APP,ACME_EMAIL,MCP_ORIGINS,RESEND_API_KEY,WINDMILL_MCP_TOKEN,GHCR_USER,GHCR_TOKEN,CF_IPS_CSV
           script: |
             set -euo pipefail
             cd ~/windmill
             mkdir -p web            # the frontend rsyncs here; create it as us before Caddy mounts it
             umask 077
-            # Cloudflare's current edge ranges, so Caddy can refuse non-CF origin traffic (the rate
-            # limiter trusts CF-Connecting-IP). Fetched fresh each deploy, never hardcoded; the
-            # `|| true` plus the empty-check fail open to allow-all so an API hiccup can't lock ingress.
-            CF_IPS="$(curl -fsS --max-time 20 https://api.cloudflare.com/client/v4/ips | grep -oE '[0-9a-fA-F.:]+/[0-9]{1,3}' | tr '\n' ' ' || true)"
-            if [ -z "${CF_IPS}" ]; then CF_IPS="0.0.0.0/0 ::/0"; echo "WARNING: Cloudflare IP fetch failed; origin left open"; fi
+            # Cloudflare's edge ranges arrive comma-separated from the runner (the VPS has no curl);
+            # expand to the space-separated form Caddy's remote_ip wants. Fail open to allow-all if
+            # the list is empty, so a fetch miss can't lock ingress out.
+            CF_IPS="$(printf '%s' "${CF_IPS_CSV:-}" | tr ',' ' ')"
+            if [ -z "${CF_IPS}" ]; then CF_IPS="0.0.0.0/0 ::/0"; echo "WARNING: no Cloudflare IPs supplied; origin left open"; fi
             cat > .env <<EOF
             IMAGE_TAG=${IMAGE_TAG}
             POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
