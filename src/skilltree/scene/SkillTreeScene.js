@@ -26,6 +26,11 @@ const EDGE_PICK_RADIUS = 12; // screen px tolerance for hovering a branch
 const MAX_FRAME_DELTA = 0.1;
 const ICON_ZOOM_START = 0.5;
 const ICON_ZOOM_FULL = 1.1;
+// First paint (and manual fit) must not zoom in past the point where a lone / near-empty tree
+// balloons: cap so the emphasised root reads at its birth-preview size (~46px) instead of
+// fit-to-filling the viewport. Root disc = base disc (NODE_SIZE * 0.84) × emphasis (1.55, see
+// NodeBatch `aEmphasis`); 46 / that ≈ 0.63. Larger trees fit below this cap, so they're untouched.
+const FIT_MAX_ZOOM = 46 / (NODE_SIZE * 0.84 * 1.55);
 const ARRIVAL_MAX = 120; // above this a fresh model paints at rest — no plant cascade (the 5k perf tree)
 
 function hexRgb(hex) {
@@ -371,7 +376,7 @@ export class SkillTreeScene {
 
   fitToView() {
     if (!this.renderModel) return;
-    this.camera.fitToView(this.renderModel.bounds, this.camera.viewportWidth, this.camera.viewportHeight);
+    this.camera.fitToView(this.renderModel.bounds, this.camera.viewportWidth, this.camera.viewportHeight, 0.9, FIT_MAX_ZOOM);
   }
 
   focusNode(id) {

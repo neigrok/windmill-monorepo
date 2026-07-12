@@ -218,13 +218,15 @@ export class Camera2D {
     this.dirty = true;
   }
 
-  fitToView(bounds, widthPx, heightPx, padding = 0.9) {
+  fitToView(bounds, widthPx, heightPx, padding = 0.9, maxZoom = MAX_ZOOM) {
     const boundsWidth = Math.max(bounds.maxX - bounds.minX, 1);
     const boundsHeight = Math.max(bounds.maxY - bounds.minY, 1);
     this.glide = null;
     this.velocityX = 0;
     this.velocityY = 0;
-    this.zoom = clamp(Math.min(widthPx / boundsWidth, heightPx / boundsHeight) * padding, MIN_ZOOM, MAX_ZOOM);
+    // A tiny tree (bounds ~ a point) would otherwise fit-to-fill and balloon its nodes; maxZoom
+    // caps that so a near-empty tree opens at a natural node size. Big trees fit well below it.
+    this.zoom = clamp(Math.min(widthPx / boundsWidth, heightPx / boundsHeight) * padding, MIN_ZOOM, maxZoom);
     this.x = (bounds.minX + bounds.maxX) / 2;
     this.y = (bounds.minY + bounds.maxY) / 2;
     this.dirty = true;
