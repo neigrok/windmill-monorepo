@@ -8,6 +8,7 @@ import { verifyToken } from './skilltree/auth/AuthClient.js';
 // on demand, and the first paint below shows instantly while they stream in.
 const SkillTreeView = lazy(() => import('./skilltree').then((m) => ({ default: m.SkillTreeView })));
 const Showcase = lazy(() => import('./Showcase.jsx'));
+const Marketing = lazy(() => import('./marketing/Marketing.jsx'));
 
 function useHashRoute() {
   const [hash, setHash] = React.useState(() => window.location.hash);
@@ -62,7 +63,9 @@ function AppRoutes() {
 
   return (
     <Suspense fallback={<RouteFallback />}>
-      {route === '#/showcase' ? <Showcase /> : <SkillTreeView openSignInSignal={openSignInSignal} />}
+      {route.startsWith('#/welcome') ? <Marketing />
+        : route === '#/showcase' ? <Showcase />
+        : <SkillTreeView openSignInSignal={openSignInSignal} />}
     </Suspense>
   );
 }

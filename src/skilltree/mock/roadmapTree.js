@@ -172,5 +172,14 @@ export const roadmapTree = {
     { id: 'sign-in-door', label: 'One door · email me a link', icon: 'external-link', color: 'terracotta', status: 'complete', prerequisites: ['auth-session', 'fork-door'] },
     { id: 'auth-landing', label: 'Magic-link landing · #/auth', icon: 'wifi', color: 'sky', status: 'complete', prerequisites: ['sign-in-door'] },
     { id: 'account-seat', label: 'Account seat · claim beat', icon: 'gem', color: 'gold', status: 'complete', prerequisites: ['auth-session', 'crown-pulse'] },
+
+    // ---- marketing landing initiative — any goal, as a skill tree ----
+    // The public landing page (ui_kits/marketing): a live self-playing demo tree in the hero, three
+    // how-it-works beats, developer quest thumbnails, the story trio (share / MCP / everywhere), and
+    // CTAs into the app + the X6 sign-in door. A small DOM scene engine (treeScenes) renders the live
+    // moat without spinning up the WebGL app. Route #/welcome. Backend contract for the CTAs:
+    // docs/backend/landing-and-quests.md (quest catalog + tree creation). Running log per CLAUDE.md.
+    { id: 'landing-scenes', label: 'Live tree scenes · the moat', icon: 'sparkles', color: 'sky', status: 'complete', prerequisites: ['renderer', 'bloom-beat'] },
+    { id: 'landing-page', label: 'Marketing landing · #/welcome', icon: 'external-link', color: 'gold', status: 'complete', prerequisites: ['landing-scenes', 'share-frame', 'sign-in-door'] },
   ],
 };
