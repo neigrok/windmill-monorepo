@@ -13,7 +13,7 @@ import { requestMagicLink } from '../auth/AuthClient.js';
 import { SignInDialog } from '../auth/SignInDialog.jsx';
 import { Avatar } from '../../components';
 
-const MCP_URL = 'https://mcp.windmill.works/mcp';
+const MCP_URL = 'https://windmill.works/mcp';
 const JSON_TEXT = `{\n  "mcpServers": {\n    "windmill": { "url": "${MCP_URL}" }\n  }\n}`;
 const JSON_COPY = `{ "mcpServers": { "windmill": { "url": "${MCP_URL}" } } }`;
 
