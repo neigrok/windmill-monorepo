@@ -12,6 +12,7 @@ import { useAuth } from '../auth/AuthProvider.jsx';
 import { requestMagicLink } from '../auth/AuthClient.js';
 import { SignInDialog } from '../auth/SignInDialog.jsx';
 import { createTree } from '../persistence/TreeRegistry.js';
+import { DEFAULT_KINDS } from '../model/Legend.js';
 
 const reduced = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -34,7 +35,12 @@ export function NewTreeBirth() {
     setPhase('planting');
     try {
       const title = name.trim();
-      const { treeId } = await createTree({ blank: true, ...(title ? { title } : {}) });
+      // Plant the named bud as the tree's first node — its root — so the new tree opens on the
+      // very node you just named rather than an empty canvas (F1·F2 §6: naming the root names the
+      // tree). It's born in the default 'Build' kind; the server seeds the matching legend.
+      const rootId = crypto.randomUUID?.() ?? `n-${Date.now()}`;
+      const root = { id: rootId, label: title, icon: 'sparkles', color: DEFAULT_KINDS[0].hue, prerequisites: [] };
+      const { treeId } = await createTree({ ...(title ? { title } : {}), nodes: [root] });
       window.location.hash = `#/app/${treeId}`;
     } catch (err) {
       if (err.code === 'unauthenticated') { pending.current = true; setSignInOpen(true); setPhase('naming'); }

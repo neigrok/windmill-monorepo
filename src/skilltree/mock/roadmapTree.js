@@ -218,6 +218,10 @@ export const roadmapTree = {
     // one bud + one name typed in place; ↵ plants via POST /v1/trees {blank,title} and the app opens
     // the returned tree, where its real first arrival plays. Signed-in only — ↵ while signed out opens
     // the X6 door and replays. The registry list degrades to the current tree alone when unavailable.
+    // Birth seeds the first node: ↵ sends the named bud as the initial node in the create body —
+    // POST /v1/trees takes the starting TreeData ({title, nodes?, kinds?}) and the backend seeds it,
+    // so a planted tree opens on its root rather than an empty canvas (BE + FE done). Same door later
+    // carries paste-a-plan (F3) and quest templates (F5) — a whole initial tree in one create.
     // Deferred (own specs): paste-a-plan (F3), starter-quests shelf (F5), delete dialog, coach-mark,
     // the WebGL bud-wake ceremony. Canonical: explorations/progress-and-tree-registry.html (F1·F2),
     // guidelines/starter-quests.md (F5), guidelines/paste-import.md (F3). Running log per CLAUDE.md.
@@ -225,5 +229,6 @@ export const roadmapTree = {
     { id: 'per-tree-routing', label: 'Per-tree routing · #/app/:treeId', icon: 'git-branch-plus', color: 'sky', status: 'complete', prerequisites: ['tree-registry-client', 'site-root'] },
     { id: 'tree-switcher', label: 'TreeSwitcher · the plaque menu', icon: 'layers', color: 'gold', status: 'complete', prerequisites: ['per-tree-routing', 'account-seat'] },
     { id: 'new-tree-birth', label: 'New-tree birth · one bud, one name', icon: 'sprout', color: 'terracotta', status: 'active', prerequisites: ['tree-switcher', 'sign-in-door'] },
+    { id: 'birth-seeds-first-node', label: 'Birth seeds the first node · POST /v1/trees { title, nodes }', icon: 'leaf', color: 'olive', status: 'complete', prerequisites: ['new-tree-birth'] },
   ],
 };

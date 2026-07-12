@@ -25,8 +25,9 @@ export async function listTrees() {
   }
 }
 
-// Plant a roadmap in the caller's registry → { treeId }. `blank` makes an empty tree
-// with the default legend; `title` names it; `fromQuest` clones a starter template.
+// Plant a roadmap in the caller's registry → { treeId }. `request` is the starting TreeData:
+// `title` names it, and `nodes`/`kinds` seed its structure + legend (the birth sends one root
+// node); omit them for an empty tree with the default legend. `fromQuest` clones a starter template.
 export async function createTree(request) {
   let response;
   try {
