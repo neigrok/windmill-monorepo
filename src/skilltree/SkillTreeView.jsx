@@ -9,6 +9,10 @@ import { ControlBar } from './ui/ControlBar.jsx';
 import { TidinessBadge } from './ui/TidinessBadge.jsx';
 import { StepPanel } from './ui/StepPanel.jsx';
 import { Minimap } from './ui/Minimap.jsx';
+import { useViewMode } from './ui/useViewMode.js';
+import { MobileChrome } from './ui/mobile/MobileChrome.jsx';
+import { BottomSheet } from './ui/mobile/BottomSheet.jsx';
+import { ForkDoor } from './ui/mobile/ForkDoor.jsx';
 import { ShareDialog } from './share/ShareDialog.jsx';
 import { ShareStats } from './share/ShareStats.js';
 import { ActivityFeed } from './activity/ActivityFeed.jsx';
@@ -48,9 +52,11 @@ const SIBLING_GAP = NODE_SIZE * 1.8; // horizontal spread between successive new
 const NEW_NODE_ICON = 'sparkles';
 
 export function SkillTreeView() {
+  const { breakpoint, readOnly } = useViewMode();
   const canvasRef = useRef(null);
   const rootRef = useRef(null);
   const sceneRef = useRef(null);
+  const readOnlyRef = useRef(readOnly); // the scene is built once; it reads the fresh mode without a rebuild
   const progressRef = useRef({ completed: new Set(), inProgress: new Set() });
   const editorRef = useRef(null);
   const rawLayoutRef = useRef(new Map());
@@ -108,6 +114,9 @@ export function SkillTreeView() {
   const [hasLocalEdits, setHasLocalEdits] = useState(false); // local edits overlaid on the authored seed
   const [reloadKey, setReloadKey] = useState(0); // bump to re-run the load pipeline (e.g. after reset)
   const [shareOpen, setShareOpen] = useState(false); // the Share dialog (export postcard preview)
+  const [forkOpen, setForkOpen] = useState(false); // the fork "door" (read-only — the page's one verb)
+  const [panning, setPanning] = useState(false); // the scene is being panned; mobile chrome yields (§chrome)
+  const [recenterAvailable, setRecenterAvailable] = useState(false); // the tree left the safe frame — offer Recenter
 
   // Save the edited tree over its seed. Only the dogfood roadmap persists — the
   // huge perf tree is a throwaway. Every structural edit, undo/redo, and move
@@ -170,6 +179,13 @@ export function SkillTreeView() {
     toastTimersRef.current.forEach(clearTimeout);
     toastTimersRef.current = [];
     setToast(null);
+  }, []);
+
+  // The scene reports pan start/stop (§chrome yields): mobile chrome fades while
+  // panning, and the first pan means the tree has left the safe frame — offer Recenter.
+  const handlePanStateChange = useCallback((isPanning) => {
+    setPanning(isPanning);
+    if (isPanning) setRecenterAvailable(true);
   }, []);
 
   // Record one activity event and play its arrival: the node pulses on the graph
@@ -569,8 +585,21 @@ export function SkillTreeView() {
   }, [syncStructure, showToast, undo]);
 
   // Construct the scene once; React only ever drives it through the methods below.
+  // Read-only omits every edit callback so no gesture can mutate the tree, and passes
+  // `readOnly` so the scene suppresses its own affordances (X5 shared contract).
   useEffect(() => {
+    const editing = readOnlyRef.current ? {} : {
+      onNodeMoveEnd: handleNodeMoved,
+      onCreateChild: handleCreateChild,
+      onConnectNodes: handleConnect,
+      onDeleteNode: deleteNodeAt,
+      onSetKind: handleSetKind,
+      onDeleteEdge: handleDeleteEdge,
+      onReconnectEdge: handleReconnect,
+    };
     const nextScene = new SkillTreeScene(canvasRef.current, {
+      readOnly: readOnlyRef.current,
+      onPanStateChange: handlePanStateChange,
       onNodePick: (id) => {
         if (id) { setSelectedId(id); return; }
         // Empty-canvas click: close details (the feed returns iff it was open),
@@ -579,14 +608,8 @@ export function SkillTreeView() {
         else { setFeedOpen(false); setPinned(false); }
       },
       onNodeHover: (id) => setHoveredId(id),
-      onNodeMoveEnd: handleNodeMoved,
-      onCreateChild: handleCreateChild,
-      onConnectNodes: handleConnect,
-      onDeleteNode: deleteNodeAt,
-      onSetKind: handleSetKind,
-      onDeleteEdge: handleDeleteEdge,
-      onReconnectEdge: handleReconnect,
       onCeremonyToast: (message, options) => showToast(message, options),
+      ...editing,
     });
     sceneRef.current = nextScene;
     setScene(nextScene);
@@ -601,12 +624,12 @@ export function SkillTreeView() {
       sceneRef.current = null;
       setScene(null);
     };
-  }, [handleNodeMoved, handleCreateChild, handleConnect, deleteNodeAt, handleSetKind, handleDeleteEdge, handleReconnect, showToast]);
+  }, [handleNodeMoved, handleCreateChild, handleConnect, deleteNodeAt, handleSetKind, handleDeleteEdge, handleReconnect, showToast, handlePanStateChange]);
 
   // Keyboard: ⌘Z / ⇧⌘Z history, ⌫ / Delete removes the selection, Esc deselects.
   useEffect(() => {
     const onKey = (event) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
+      if (!readOnlyRef.current && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
         event.preventDefault();
         if (event.shiftKey) redo();
         else undo();
@@ -630,7 +653,7 @@ export function SkillTreeView() {
         toggleActivity();
         return;
       }
-      if (event.key === 'Backspace' || event.key === 'Delete') {
+      if (!readOnlyRef.current && (event.key === 'Backspace' || event.key === 'Delete')) {
         const el = document.activeElement;
         if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
         if (selectedIdRef.current) { event.preventDefault(); deleteSelected(); return; }
@@ -814,6 +837,7 @@ export function SkillTreeView() {
   useEffect(() => { legendRef.current = legend; }, [legend]);
   useEffect(() => { legendOpenRef.current = legendOpen; }, [legendOpen]);
   useEffect(() => { highlightedKindIdRef.current = highlightedKindId; }, [highlightedKindId]);
+  useEffect(() => { readOnlyRef.current = readOnly; }, [readOnly]);
 
   // The feed is the visible dock tenant when summoned/pinned and no step is
   // selected. Whenever it becomes visible, mark everything read (with a catch-up flash).
@@ -847,6 +871,15 @@ export function SkillTreeView() {
       complete: states.get(id) === 'complete',
     }));
   }, [selectedNode, nodesById, states]);
+
+  // What completing this step opens up — the node's children, mirroring the
+  // prerequisites shape. The read-only StepPanel shows these in place of editing.
+  const unlocks = useMemo(() => {
+    if (!selectedNode || !tree) return [];
+    return tree.nodes
+      .filter((node) => node.prerequisites.includes(selectedNode.id))
+      .map((node) => ({ id: node.id, label: node.label, complete: states.get(node.id) === 'complete' }));
+  }, [selectedNode, tree, states]);
 
   // Begin work on a step: mark it in-progress and stamp its start (once). The kindle
   // beat is deliberately quiet — the emit is silent (log only, no pulse/ticker) and the
@@ -1018,38 +1051,82 @@ export function SkillTreeView() {
     setBounds(scene.getBounds());
   }
 
+  // Recenter (read-only chrome): frame the whole tree and clear the "left the safe
+  // frame" flag, so the chip retires until the next pan.
+  function handleRecenter() {
+    handleFitToView();
+    setRecenterAvailable(false);
+  }
+
+  // Fork is the read-only page's one verb. Submit is stubbed here — the real fork is
+  // a backend task (X5); ForkDoor shows its own "check your email" sent state.
+  function handleForkSubmit() {}
+
   function handlePanTo(x, y) {
     sceneRef.current?.panTo(x, y);
   }
 
+  // The selected step, rendered read-only: no editing controls, but its unlocks,
+  // prerequisites and history. Shared by the phone sheet and the tablet/desktop panel.
+  const readOnlyDetail = selectedNode && (
+    <StepPanel
+      readOnly
+      node={selectedNode}
+      state={selectedState}
+      prerequisites={prerequisites}
+      unlocks={unlocks}
+      startedAt={startedAt[selectedId]}
+      completedAt={completedAt[selectedId]}
+      history={selectedHistory}
+      workspace={workspaceByNode[selectedId] ?? emptyWorkspace()}
+      kinds={legend}
+      onReveal={handleRevealNode}
+      onClose={() => setSelectedId(null)}
+    />
+  );
+
   return (
-    <div className="st-root" ref={rootRef}>
+    <div className={`st-root ${panning ? 'panning' : ''}`} ref={rootRef}>
       <canvas ref={canvasRef} className={`st-canvas ${hoveredId ? 'st-canvas--hover' : ''}`} />
 
-      {showActivity && (
+      {showActivity && !readOnly && (
         <PresenceLayer peersRef={peersRef} scene={scene} canvasRef={canvasRef} collabRef={collabRef} selection={selectedId} />
       )}
 
-      <ControlBar
-        title={tree?.title}
-        datasetSize={datasetSize}
-        onDatasetSizeChange={setDatasetSize}
-        onZoomIn={handleZoomIn}
-        onZoomOut={handleZoomOut}
-        onFitToView={handleFitToView}
-        canReset={hasLocalEdits}
-        onResetEdits={handleResetEdits}
-        canTidy={!!health && health.redundant > 0}
-        onTidy={handleTidy}
-        onShare={() => setShareOpen(true)}
-        showActivity={showActivity}
-        activityOpen={feedVisible}
-        activityUnread={unreadCount}
-        activityPing={activityPing}
-        onToggleActivity={toggleActivity}
-      />
+      {readOnly ? (
+        <MobileChrome
+          title={tree?.title}
+          progress={{ done: shareStats?.done ?? 0, total: shareStats?.total ?? 0 }}
+          author={tree?.author}
+          dominantKind={shareStats?.dominantKind}
+          onFork={() => setForkOpen(true)}
+          onRecenter={handleRecenter}
+          showRecenter={recenterAvailable}
+          tablet={breakpoint === 'tablet'}
+          panelOpen={!!selectedNode}
+        />
+      ) : (
+        <ControlBar
+          title={tree?.title}
+          datasetSize={datasetSize}
+          onDatasetSizeChange={setDatasetSize}
+          onZoomIn={handleZoomIn}
+          onZoomOut={handleZoomOut}
+          onFitToView={handleFitToView}
+          canReset={hasLocalEdits}
+          onResetEdits={handleResetEdits}
+          canTidy={!!health && health.redundant > 0}
+          onTidy={handleTidy}
+          onShare={() => setShareOpen(true)}
+          showActivity={showActivity}
+          activityOpen={feedVisible}
+          activityUnread={unreadCount}
+          activityPing={activityPing}
+          onToggleActivity={toggleActivity}
+        />
+      )}
 
-      {datasetSize === 'demo' && <TidinessBadge health={health} />}
+      {datasetSize === 'demo' && !readOnly && <TidinessBadge health={health} />}
 
       <Minimap
         nodes={renderModel?.nodes ?? []}
@@ -1061,78 +1138,101 @@ export function SkillTreeView() {
 
       {/* The color key (F6): the legend is the editor. It mounts once two hues are in
           use, or when the picker's "+" forces it open on a still-one-kind tree. Screen-
-          space, bottom-left, lifted clear of the minimap in that same corner. */}
+          space, bottom-left, lifted clear of the minimap in that same corner. Read-only
+          drops the edit callbacks, so KindLegend renders as a plain key. */}
       {(inUse >= 2 || legendForceOpen) && (
-        <div style={{ position: 'absolute', left: 'var(--space-6)', bottom: 'calc(var(--space-6) + 196px)', zIndex: 16 }}>
+        <div className="st-legend-dock" style={{ position: 'absolute', left: 'var(--space-6)', bottom: 'calc(var(--space-6) + 196px)', zIndex: 16 }}>
           <KindLegend
             kinds={legendWithCounts}
             defaultOpen={legendOpen}
             onOpenChange={onLegendOpenChange}
             selectedId={highlightedKindId}
             onHighlight={onHighlightKind}
-            onRename={onRenameKind}
-            onRecolor={onRecolorKind}
-            onAdd={onAddKind}
-            onRemove={onRemoveKind}
-            onDescribe={onDescribeKind}
+            {...(readOnly ? {} : {
+              onRename: onRenameKind,
+              onRecolor: onRecolorKind,
+              onAdd: onAddKind,
+              onRemove: onRemoveKind,
+              onDescribe: onDescribeKind,
+            })}
           />
         </div>
       )}
 
-      <aside className={`st-detail-panel ${selectedNode || feedVisible ? 'st-detail-panel--open' : ''}`}>
-        {/* One dock, two tenants (design A′/A″): the feed is summoned over the canvas
-            edge; selecting a fruit swaps in its details. Key toggle replays the swap. */}
-        <div className="st-dock-tenant" key={selectedNode ? selectedNode.id : 'activity'}>
-          {selectedNode ? (
-            <StepPanel
-              node={selectedNode}
-              state={selectedState}
-              prerequisites={prerequisites}
-              startedAt={startedAt[selectedId]}
-              completedAt={completedAt[selectedId]}
-              history={selectedHistory}
-              workspace={workspaceByNode[selectedId] ?? emptyWorkspace()}
-              autoFocusName={selectedId !== null && selectedId === autoFocusNameId}
-              onRename={handleRename}
-              onAddSubtask={onAddSubtask}
-              onToggleSubtask={onToggleSubtask}
-              onEditSubtask={onEditSubtask}
-              onDeleteSubtask={onDeleteSubtask}
-              onSetNote={onSetNote}
-              onAddLink={onAddLink}
-              onDeleteLink={onDeleteLink}
-              onPreviewKind={(id, kind) => sceneRef.current?.previewKind(id, kind)}
-              onRestoreKind={(id) => sceneRef.current?.restoreKind(id)}
-              onSetKind={handleSetKind}
-              kinds={legend}
-              onOpenLegend={openLegendFromPicker}
-              onStart={handleStart}
-              onMarkComplete={handleMarkComplete}
-              onSetState={handleSetState}
-              onReveal={handleRevealNode}
-              onDelete={deleteNodeAt}
-              onPreviewDeleteCost={(id) => sceneRef.current?.previewDeleteCost(id)}
-              onClearDeleteCost={() => sceneRef.current?.clearDeleteCost()}
-              onClose={() => setSelectedId(null)}
-            />
-          ) : feedVisible ? (
-            <ActivityFeed
-              groups={activityGroups}
-              count={logRef.current.size}
-              nodesById={nodesById}
-              now={Date.now()}
-              hoveredId={hoveredId}
-              newIds={newEventIds}
-              pinned={pinned}
-              onTogglePin={togglePin}
-              onClose={closeActivity}
-              onHoverNode={handleRowHover}
-              onLeaveNode={handleRowLeave}
-              onRevealNode={handleRevealNode}
-            />
-          ) : null}
-        </div>
-      </aside>
+      {!readOnly && (
+        <aside className={`st-detail-panel ${selectedNode || feedVisible ? 'st-detail-panel--open' : ''}`}>
+          {/* One dock, two tenants (design A′/A″): the feed is summoned over the canvas
+              edge; selecting a fruit swaps in its details. Key toggle replays the swap. */}
+          <div className="st-dock-tenant" key={selectedNode ? selectedNode.id : 'activity'}>
+            {selectedNode ? (
+              <StepPanel
+                node={selectedNode}
+                state={selectedState}
+                prerequisites={prerequisites}
+                startedAt={startedAt[selectedId]}
+                completedAt={completedAt[selectedId]}
+                history={selectedHistory}
+                workspace={workspaceByNode[selectedId] ?? emptyWorkspace()}
+                autoFocusName={selectedId !== null && selectedId === autoFocusNameId}
+                onRename={handleRename}
+                onAddSubtask={onAddSubtask}
+                onToggleSubtask={onToggleSubtask}
+                onEditSubtask={onEditSubtask}
+                onDeleteSubtask={onDeleteSubtask}
+                onSetNote={onSetNote}
+                onAddLink={onAddLink}
+                onDeleteLink={onDeleteLink}
+                onPreviewKind={(id, kind) => sceneRef.current?.previewKind(id, kind)}
+                onRestoreKind={(id) => sceneRef.current?.restoreKind(id)}
+                onSetKind={handleSetKind}
+                kinds={legend}
+                onOpenLegend={openLegendFromPicker}
+                onStart={handleStart}
+                onMarkComplete={handleMarkComplete}
+                onSetState={handleSetState}
+                onReveal={handleRevealNode}
+                onDelete={deleteNodeAt}
+                onPreviewDeleteCost={(id) => sceneRef.current?.previewDeleteCost(id)}
+                onClearDeleteCost={() => sceneRef.current?.clearDeleteCost()}
+                onClose={() => setSelectedId(null)}
+              />
+            ) : feedVisible ? (
+              <ActivityFeed
+                groups={activityGroups}
+                count={logRef.current.size}
+                nodesById={nodesById}
+                now={Date.now()}
+                hoveredId={hoveredId}
+                newIds={newEventIds}
+                pinned={pinned}
+                onTogglePin={togglePin}
+                onClose={closeActivity}
+                onHoverNode={handleRowHover}
+                onLeaveNode={handleRowLeave}
+                onRevealNode={handleRevealNode}
+              />
+            ) : null}
+          </div>
+        </aside>
+      )}
+
+      {readOnly && breakpoint === 'phone' && (
+        <BottomSheet open={!!selectedNode} onDismiss={() => setSelectedId(null)}>
+          {readOnlyDetail}
+        </BottomSheet>
+      )}
+
+      {readOnly && breakpoint !== 'phone' && (
+        <aside className={`st-detail-panel ${breakpoint === 'tablet' ? 'st-detail-panel--tablet' : ''} ${selectedNode ? 'st-detail-panel--open' : ''}`}>
+          <div className="st-dock-tenant" key={selectedNode ? selectedNode.id : 'empty'}>
+            {readOnlyDetail}
+          </div>
+        </aside>
+      )}
+
+      {readOnly && (
+        <ForkDoor open={forkOpen} tablet={breakpoint === 'tablet'} stepCount={shareStats?.total} onClose={() => setForkOpen(false)} onSubmit={handleForkSubmit} />
+      )}
 
       {toast && (
         <div className={`st-toast ${toast.leaving ? 'is-leaving' : ''}`} role="status" key={toast.key}>

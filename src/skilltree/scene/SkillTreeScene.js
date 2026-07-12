@@ -16,10 +16,12 @@ import { HoverLabel } from './HoverLabel.js';
 import { EdgeChrome } from './EdgeChrome.js';
 import { createTextureFromCanvas } from './glcore.js';
 import { InputController } from './input/InputController.js';
-import { MoveTool } from './input/tools.js';
+import { MoveTool, ReadOnlyTool } from './input/tools.js';
 
 const SPATIAL_CELL_SIZE = NODE_SIZE * 2;
 const PICK_RADIUS = NODE_SIZE * 0.65;
+const TOUCH_HIT_RADIUS = 22; // read-only pick floor: a ≥44px hit disc so small nodes stay tappable
+const PAN_SETTLE_MS = 200; // quiet after the last pan before the chrome is signalled back
 const EDGE_PICK_RADIUS = 12; // screen px tolerance for hovering a branch
 const MAX_FRAME_DELTA = 0.1;
 const ICON_ZOOM_START = 0.5;
@@ -35,6 +37,7 @@ export class SkillTreeScene {
   constructor(canvas, options = {}) {
     this.canvas = canvas;
     this.options = options;
+    this.readOnly = !!options.readOnly; // a shared/mobile viewer: no editing chrome, pan-only
 
     const gl = canvas.getContext('webgl2', { antialias: true, alpha: false, premultipliedAlpha: false });
     if (!gl) throw new Error('WebGL2 is not available');
@@ -49,19 +52,26 @@ export class SkillTreeScene {
     this.labelOverlay = new LabelOverlay(canvas);
     this.iconOverlay = new IconOverlay(canvas);
     this.hoverLabel = new HoverLabel(canvas);
-    this.affordanceLayer = new AffordanceLayer(canvas, {
-      camera: this.camera,
-      pick: (x, y) => this.pick(x, y),
-      onCreate: (id) => this.options.onCreateChild && this.options.onCreateChild(id),
-      onConnect: (sourceId, targetId) => this.options.onConnectNodes && this.options.onConnectNodes(sourceId, targetId),
-      onReconnect: (oldFrom, oldTo, newFrom, newTo) => this.options.onReconnectEdge && this.options.onReconnectEdge(oldFrom, oldTo, newFrom, newTo),
-      onFadeNodes: (ids) => this.nodeBatch.setFaded(ids),
-      onRestoreNodes: () => this.nodeBatch.clearFaded(),
-    });
-    this.edgeChrome = new EdgeChrome(canvas, {
-      onDeleteEdge: (from, to) => { this.selectEdge(null); if (this.options.onDeleteEdge) this.options.onDeleteEdge(from, to); },
-      onReconnectStart: (edge, end, event) => this.affordanceLayer.connectGesture.startReconnect(edge, end, event),
-    });
+    // The editing chrome — ghost buds/connect ports and edge edit handles — only mounts
+    // for the editor. A read-only scene still renders, picks, selects, pans and zooms;
+    // it just never grows the affordances, so every call into them is guarded below.
+    this.affordanceLayer = null;
+    this.edgeChrome = null;
+    if (!this.readOnly) {
+      this.affordanceLayer = new AffordanceLayer(canvas, {
+        camera: this.camera,
+        pick: (x, y) => this.pick(x, y),
+        onCreate: (id) => this.options.onCreateChild && this.options.onCreateChild(id),
+        onConnect: (sourceId, targetId) => this.options.onConnectNodes && this.options.onConnectNodes(sourceId, targetId),
+        onReconnect: (oldFrom, oldTo, newFrom, newTo) => this.options.onReconnectEdge && this.options.onReconnectEdge(oldFrom, oldTo, newFrom, newTo),
+        onFadeNodes: (ids) => this.nodeBatch.setFaded(ids),
+        onRestoreNodes: () => this.nodeBatch.clearFaded(),
+      });
+      this.edgeChrome = new EdgeChrome(canvas, {
+        onDeleteEdge: (from, to) => { this.selectEdge(null); if (this.options.onDeleteEdge) this.options.onDeleteEdge(from, to); },
+        onReconnectStart: (edge, end, event) => this.affordanceLayer.connectGesture.startReconnect(edge, end, event),
+      });
+    }
 
     this.motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     this.motion = this.motionQuery.matches ? 0 : 1;
@@ -80,6 +90,8 @@ export class SkillTreeScene {
     this.lastArcs = new Map(); // last workspace arc fractions — re-applied across model rebuilds
 
     this.viewportListeners = new Set();
+    this.panning = false; // debounced pan-gesture state reported via onPanStateChange
+    this.panSettleTimer = null;
     this.running = false;
     this.elapsedSeconds = 0;
     this.lastFrameTime = null;
@@ -113,9 +125,11 @@ export class SkillTreeScene {
       moveNode: (id, x, y) => this.moveNode(id, x, y),
       endMove: (id) => this.endMove(id),
       onInteract: () => this.director.yieldToInput(),
+      onPan: () => this.reportPan(),
       press: (id) => this.setPress(id),
     };
-    this.input = new InputController(canvas, this.toolContext, new MoveTool(this.toolContext));
+    const tool = this.readOnly ? new ReadOnlyTool(this.toolContext) : new MoveTool(this.toolContext);
+    this.input = new InputController(canvas, this.toolContext, tool);
 
     this.resize();
     this.input.bind();
@@ -157,9 +171,9 @@ export class SkillTreeScene {
       ? renderModel.edges.find((edge) => edge.from === selectedEdge.from && edge.to === selectedEdge.to) ?? null
       : null;
     this.nodeBatch.setSelected(this.hoveredId ?? this.selectedId);
-    this.affordanceLayer.setSelected(this.selectedId);
+    this.affordanceLayer?.setSelected(this.selectedId);
     this.hoverLabel.setHovered(this.hoveredId);
-    this.edgeChrome.setSelectedEdge(this.selectedEdge);
+    this.edgeChrome?.setSelectedEdge(this.selectedEdge);
     this.overlaysDirty = true;
   }
 
@@ -176,8 +190,9 @@ export class SkillTreeScene {
     this.labelOverlay.setModel(renderModel, this.spatialGrid);
     this.iconOverlay.setModel(renderModel, this.spatialGrid);
     this.hoverLabel.setModel(renderModel);
-    this.affordanceLayer.setModel(renderModel);
-    this.edgeChrome.setModel(renderModel);
+    this.affordanceLayer?.setModel(renderModel);
+    this.edgeChrome?.setModel(renderModel);
+    if (this.readOnly) this.camera.setPanBounds(renderModel.bounds); // soft-clamp the touch pan to the tree
   }
 
   // Push re-derived node states to the scene. The first push (a fresh model) paints
@@ -370,6 +385,20 @@ export class SkillTreeScene {
   panTo(x, y) { this.camera.panTo(x, y); }
   zoomBy(factor) { this.camera.zoomBy(factor); }
 
+  // A pan gesture is underway: tell the shell so it can fade the editing chrome (WS-A),
+  // then restore it a short quiet after the finger settles. Debounced — one `true` on
+  // the first move of a gesture, one `false` ~200ms after the last. No-op in the editor
+  // (no onPanStateChange passed), so any tool's pan can call this freely.
+  reportPan() {
+    if (!this.options.onPanStateChange) return;
+    if (!this.panning) { this.panning = true; this.options.onPanStateChange(true); }
+    clearTimeout(this.panSettleTimer);
+    this.panSettleTimer = setTimeout(() => {
+      this.panning = false;
+      this.options.onPanStateChange(false);
+    }, PAN_SETTLE_MS);
+  }
+
   // ---- activity feed hooks (design: event-log-options) -----------------
 
   // A live event landed on this node: fire its one-shot arrival pulse.
@@ -452,14 +481,15 @@ export class SkillTreeScene {
     this.stop();
     this.director.cancel();
     this.input.unbind();
+    clearTimeout(this.panSettleTimer);
     this.motionQuery.removeEventListener('change', this.applyMotion);
     this.nodeBatch.dispose();
     this.connectorBatch.dispose();
     this.labelOverlay.dispose();
     this.iconOverlay.dispose();
     this.hoverLabel.dispose();
-    this.affordanceLayer.dispose();
-    this.edgeChrome.dispose();
+    this.affordanceLayer?.dispose();
+    this.edgeChrome?.dispose();
     if (this.iconTexture) this.gl.deleteTexture(this.iconTexture);
   }
 
@@ -477,8 +507,8 @@ export class SkillTreeScene {
       this.labelOverlay.update(this.camera);
       this.iconOverlay.update(this.camera);
       this.hoverLabel.update(this.camera);
-      this.affordanceLayer.update(this.camera);
-      this.edgeChrome.update(this.camera);
+      this.affordanceLayer?.update(this.camera);
+      this.edgeChrome?.update(this.camera);
       this.overlaysDirty = false;
     }
     if (moved) this.viewportListeners.forEach((listener) => listener(this.getViewport()));
@@ -533,7 +563,7 @@ export class SkillTreeScene {
   setSelection(id) {
     if (id === this.selectedId) return;
     this.selectedId = id;
-    this.affordanceLayer.setSelected(id);
+    this.affordanceLayer?.setSelected(id);
     this.overlaysDirty = true;
     this.refreshHighlight();
   }
@@ -541,7 +571,7 @@ export class SkillTreeScene {
   selectEdge(edge) {
     if (edge && this.selectedId !== null) this.select(null); // safe: its selectEdge(null) recursion stops on the falsy edge
     this.selectedEdge = edge ?? null;
-    this.edgeChrome.setSelectedEdge(this.selectedEdge);
+    this.edgeChrome?.setSelectedEdge(this.selectedEdge);
     this.overlaysDirty = true;
   }
 
@@ -574,7 +604,10 @@ export class SkillTreeScene {
   pick(x, y) {
     if (!this.spatialGrid) return null;
     const world = this.camera.screenToWorld(x, y);
-    return this.spatialGrid.nearest(world.x, world.y, PICK_RADIUS);
+    // Read-only touch: floor the pick disc at ≥44px on screen so small nodes stay
+    // tappable, regardless of how far the tree is zoomed out.
+    const radius = this.readOnly ? Math.max(PICK_RADIUS, TOUCH_HIT_RADIUS / this.camera.zoom) : PICK_RADIUS;
+    return this.spatialGrid.nearest(world.x, world.y, radius);
   }
 
   // Nearest branch to the cursor within EDGE_PICK_RADIUS (straight-segment

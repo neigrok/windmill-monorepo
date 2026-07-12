@@ -147,5 +147,17 @@ export const roadmapTree = {
     { id: 'kind-highlight', label: 'Highlight by kind', icon: 'sun', color: 'olive', status: 'complete', prerequisites: ['kind-legend', 'edit-affordances'] },
     { id: 'legend-store', label: 'Durable per-tree legend', icon: 'archive', color: 'brick', status: 'complete', prerequisites: ['legend-editor', 'persistence'] },
     { id: 'legend-backend', label: 'Server-authoritative legend', icon: 'server', color: 'brick', status: 'complete', prerequisites: ['legend-store'] },
+
+    // ---- read-only & mobile initiative (X5) — a shared tree, first-class on a phone ----
+    // The responsive read-only surface: phone bottom-sheet, tablet side-panel, desktop; editing
+    // chrome absent (not disabled), keyed off a ?view param + auto on small screens. Mobile chrome
+    // (kind rule, plaque, wordmark, Fork CTA, Recenter) replaces the ControlBar; the StepPanel
+    // re-docks as a sheet; touch grammar adds one-finger pan, pinch, double-tap. Fork/gallery/
+    // hosted routing are backend tasks (docs/backend/X5-read-only-mobile.md); full dark theme is a
+    // follow-up. Canonical spec: explorations/read-only-mobile.html (X5). Running log per CLAUDE.md.
+    { id: 'view-mode', label: 'Read-only mode + breakpoints', icon: 'shield', color: 'sky', status: 'complete', prerequisites: ['renderer', 'edit-mode'] },
+    { id: 'touch-grammar', label: 'Touch pan / pinch / double-tap', icon: 'move', color: 'olive', status: 'complete', prerequisites: ['camera', 'view-mode'] },
+    { id: 'mobile-chrome', label: 'Mobile chrome + bottom sheet', icon: 'layout-grid', color: 'gold', status: 'complete', prerequisites: ['view-mode', 'share-frame'] },
+    { id: 'fork-door', label: 'Fork door · one verb (UI)', icon: 'git-branch-plus', color: 'terracotta', status: 'active', prerequisites: ['mobile-chrome'] },
   ],
 };

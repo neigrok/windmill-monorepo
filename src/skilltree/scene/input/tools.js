@@ -18,6 +18,7 @@ export class Tool {
   onPointerMove() {} // a free pointer moving with no button (hover)
   onPointerUp() {}
   onPointerLeave() {}
+  onPointerCancel() {} // a competing gesture (a pinch) took over — drop any in-progress drag
   onDoubleClick() {}
 }
 
@@ -40,7 +41,7 @@ export class NavigateTool extends Tool {
     const now = performance.now();
     const dt = Math.max(now - this.drag.lastTime, 1);
     if (!this.drag.moved && Math.hypot(pos.x - this.drag.startX, pos.y - this.drag.startY) > DRAG_THRESHOLD_PX) this.drag.moved = true;
-    if (this.drag.moved) this.ctx.camera.pan(dx, dy);
+    if (this.drag.moved) { this.ctx.camera.pan(dx, dy); this.ctx.onPan?.(); } // signal the pan so the shell can fade its chrome
     this.drag.vx = this.drag.vx * 0.7 + (dx / dt) * 0.3;
     this.drag.vy = this.drag.vy * 0.7 + (dy / dt) * 0.3;
     this.drag.lastX = pos.x;
@@ -72,6 +73,10 @@ export class NavigateTool extends Tool {
   onPointerLeave() {
     this.ctx.hover(null);
     this.ctx.hoverEdge(null);
+  }
+
+  onPointerCancel() {
+    this.drag = null;
   }
 
   onDoubleClick(pos) {
@@ -130,4 +135,33 @@ export class MoveTool extends NavigateTool {
     }
     super.onPointerUp(pos, event);
   }
+
+  onPointerCancel() {
+    this.node = null;
+    super.onPointerCancel();
+  }
+}
+
+// ReadOnlyTool is the shared-tree viewer: one finger pans (it never grabs a node), a
+// tap selects the node under it (else clears), and there's no inertia fling and no edge
+// selection — the pan stays a strict 1:1 finger drive so the camera's soft-clamp at the
+// tree bounds reads cleanly. Hover is node-only (a touch device emits no free-pointer
+// moves, so there's no hover on phones; a desktop ?view still gets a light highlight).
+export class ReadOnlyTool extends NavigateTool {
+  onPointerMove(pos) {
+    const now = performance.now();
+    if (now - this.lastHoverAt < HOVER_THROTTLE_MS) return;
+    this.lastHoverAt = now;
+    this.ctx.hover(this.ctx.pick(pos.x, pos.y));
+  }
+
+  onPointerUp(pos) {
+    if (!this.drag) return;
+    const moved = this.drag.moved;
+    this.drag = null;
+    if (moved) return; // a pan settles in place — no fling
+    this.ctx.select(this.ctx.pick(pos.x, pos.y)); // a tap selects the node under it, else clears
+  }
+
+  onDoubleClick() {} // touch double-tap zoom lives in the InputController; no node-select here
 }

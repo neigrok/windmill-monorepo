@@ -3,6 +3,9 @@
 // exact inverse of screenToWorld, so pointer picking stays pixel-accurate.
 const MIN_ZOOM = 0.006;
 const MAX_ZOOM = 6;
+const PINCH_MIN_ZOOM = 0.5; // the touch pinch range (§S3) — tighter than the wheel's
+const PINCH_MAX_ZOOM = 2.5;
+const PAN_SLACK = 80; // px the read-only pan may drift past the tree bounds before it stalls
 const WHEEL_ZOOM_SPEED = 0.0016;
 const INERTIA_FRICTION = 3.2;
 const INERTIA_STOP_SPEED = 2;
@@ -19,6 +22,15 @@ const ZOOM_MATCH_EPSILON = 0.02; // zooms within 2% count as "no change"
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+// Soft boundary: inside [min,max] the value passes through 1:1; past an edge it eases
+// toward at most `slack` beyond, asymptotically — a heavier world near the clamp with
+// no rubber-band bounce (the derivative is 1 at the edge, tapering to 0 far outside).
+function softClamp(value, min, max, slack) {
+  if (value < min) return min - slack * (1 - Math.exp((value - min) / slack));
+  if (value > max) return max + slack * (1 - Math.exp((max - value) / slack));
+  return value;
 }
 
 // Cubic-bezier sampler for a CSS timing token: solves x(t)=x by Newton (bisection
@@ -88,6 +100,7 @@ export class Camera2D {
     this.velocityX = 0;
     this.velocityY = 0;
     this.glide = null; // an in-flight eased reveal, or null
+    this.panBounds = null; // read-only soft-clamp bounds, or null for free pan
     this.dirty = true;
   }
 
@@ -106,9 +119,24 @@ export class Camera2D {
 
   pan(dxPx, dyPx) {
     this.glide = null;
-    this.x -= dxPx / this.zoom;
-    this.y -= dyPx / this.zoom;
+    const x = this.x - dxPx / this.zoom;
+    const y = this.y - dyPx / this.zoom;
+    if (this.panBounds) {
+      const slack = PAN_SLACK / this.zoom;
+      this.x = softClamp(x, this.panBounds.minX, this.panBounds.maxX, slack);
+      this.y = softClamp(y, this.panBounds.minY, this.panBounds.maxY, slack);
+    } else {
+      this.x = x;
+      this.y = y;
+    }
     this.dirty = true;
+  }
+
+  // Read-only touch pan is soft-clamped to the tree: pass the model bounds here and
+  // pan() lets the camera drift at most PAN_SLACK px past them, the world getting
+  // heavier the further out (never bouncing back). Null restores the free editor pan.
+  setPanBounds(bounds) {
+    this.panBounds = bounds;
   }
 
   panTo(x, y) {
@@ -153,6 +181,27 @@ export class Camera2D {
 
   zoomAt(pxX, pxY, wheelDeltaY) {
     this.zoomAroundPoint(pxX, pxY, Math.exp(-wheelDeltaY * WHEEL_ZOOM_SPEED));
+  }
+
+  // Pinch zoom: multiply the zoom by `factor` (the live finger-spread ratio) anchored
+  // at a screen point, clamped to the touch range. Mirrors zoomAt but takes a factor
+  // instead of a wheel delta; finger-driven, so it never eases.
+  zoomAtScale(pxX, pxY, factor) {
+    this.glide = null;
+    const before = this.screenToWorld(pxX, pxY);
+    this.zoom = clamp(this.zoom * factor, PINCH_MIN_ZOOM, PINCH_MAX_ZOOM);
+    const after = this.screenToWorld(pxX, pxY);
+    this.x += before.x - after.x;
+    this.y += before.y - after.y;
+    this.dirty = true;
+  }
+
+  // A fresh grab cancels any in-flight glide/inertia in place — the finger takes over
+  // at once (the user always wins). Halts the tween without moving the camera.
+  stopMotion() {
+    this.glide = null;
+    this.velocityX = 0;
+    this.velocityY = 0;
   }
 
   zoomBy(factor) {

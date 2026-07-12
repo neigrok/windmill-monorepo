@@ -50,6 +50,11 @@ function absoluteTime(at) {
   return `${MONTHS[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()} · ${hour}:${minute} ${meridiem}`;
 }
 
+function shortDate(at) {
+  const date = new Date(at);
+  return `${MONTHS[date.getMonth()]} ${date.getDate()}`;
+}
+
 function cap(hue) {
   return hue.charAt(0).toUpperCase() + hue.slice(1);
 }
@@ -66,7 +71,15 @@ function TimestampLine({ state, startedAt, completedAt, now }) {
   return <div className="st-state-time" title={title}>{text}</div>;
 }
 
-export function StepPanel({ node, state, prerequisites, startedAt, completedAt, history = [], workspace = EMPTY_WORKSPACE, kinds = [], onOpenLegend = noop, autoFocusName, onRename, onPreviewKind, onRestoreKind, onSetKind, onStart, onMarkComplete, onSetState, onReveal, onDelete, onPreviewDeleteCost, onClearDeleteCost, onClose, onAddSubtask = noop, onToggleSubtask = noop, onEditSubtask = noop, onDeleteSubtask = noop, onSetNote = noop, onAddLink = noop, onDeleteLink = noop }) {
+// One dock, two reads: the shared/mobile viewer gets the compact read-only detail
+// (no editing chrome at all), everyone else gets the full editor below. Split so the
+// dispatcher itself holds no hooks — each read owns its own, called unconditionally.
+export function StepPanel(props) {
+  if (props.readOnly) return <ReadOnlyStep {...props} />;
+  return <EditorStep {...props} />;
+}
+
+function EditorStep({ node, state, prerequisites, startedAt, completedAt, history = [], workspace = EMPTY_WORKSPACE, kinds = [], onOpenLegend = noop, autoFocusName, onRename, onPreviewKind, onRestoreKind, onSetKind, onStart, onMarkComplete, onSetState, onReveal, onDelete, onPreviewDeleteCost, onClearDeleteCost, onClose, onAddSubtask = noop, onToggleSubtask = noop, onEditSubtask = noop, onDeleteSubtask = noop, onSetNote = noop, onAddLink = noop, onDeleteLink = noop }) {
   const [editingName, setEditingName] = useState(!!autoFocusName);
   const [draft, setDraft] = useState(node?.label ?? '');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -339,5 +352,117 @@ export function StepPanel({ node, state, prerequisites, startedAt, completedAt, 
       </div>
       </div>
     </Card>
+  );
+}
+
+// The read-only detail (§S2): the same content and order as the editor — identity,
+// state, description, branch, needs, unlocks — with every control stripped out. A
+// shared or phone viewer reads it; it never edits.
+const RO_DOT = { width: 9, height: 9, borderRadius: '50%', flexShrink: 0 };
+
+function readOnlyDescription(node, workspace) {
+  if (node.description) return node.description;
+  const note = workspace?.note?.trim();
+  if (!note) return null;
+  return note.split('\n')[0];
+}
+
+function ReadOnlyStep({ node, state, prerequisites = [], unlocks = [], completedAt, workspace = EMPTY_WORKSPACE, kinds = [], onClose = noop }) {
+  if (!node) return null;
+
+  const currentKind = node.color ?? DEFAULT_NODE_COLOR;
+  const hue = NODE_COLORS[currentKind] ?? NODE_COLORS[DEFAULT_NODE_COLOR];
+  const branchLabel = kinds.find((kind) => kind.hue === currentKind)?.label || cap(currentKind);
+  const description = readOnlyDescription(node, workspace);
+  const blocker = prerequisites.find((prerequisite) => !prerequisite.complete)?.label;
+
+  return (
+    <Card style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+      <div className="st-step-header">
+        <div className="st-step-identity">
+          <span className="st-step-glyph">
+            <Icon name={node.icon} size={20} />
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', minWidth: 0, flex: 1 }}>
+            <span style={{ ...RO_DOT, background: hue.base }} aria-hidden />
+            <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 'var(--text-xl)', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {node.label || 'Unnamed step'}
+            </span>
+          </div>
+        </div>
+        <IconButton icon={<Icon name="x" />} label="Close" size="sm" onClick={onClose} />
+      </div>
+
+      <div><ReadOnlyStateChip state={state} hue={hue} completedAt={completedAt} /></div>
+
+      {description && (
+        <div style={{ fontSize: 'var(--text-sm)', lineHeight: 1.5, color: 'var(--text-secondary)' }}>{description}</div>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-secondary)' }}>
+        <span style={{ ...RO_DOT, background: hue.base }} aria-hidden />
+        {branchLabel}
+      </div>
+
+      {state === 'locked' && blocker && (
+        <div style={{ padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', background: 'var(--surface-sunken)', fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)' }}>
+          Finish <strong style={{ color: 'var(--text-secondary)' }}>{blocker}</strong> to unlock this step
+        </div>
+      )}
+
+      <ReadOnlyRelations title="Needs" items={prerequisites} empty="None — this is a starting point." />
+      <ReadOnlyRelations title="Unlocks" items={unlocks} empty="Nothing yet — this is a leaf." />
+    </Card>
+  );
+}
+
+function ReadOnlyStateChip({ state, hue, completedAt }) {
+  const base = { display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)', padding: '4px 11px', borderRadius: 'var(--radius-full)', fontSize: 'var(--text-sm)', fontWeight: 700, whiteSpace: 'nowrap' };
+  if (state === 'complete') {
+    return (
+      <span style={{ ...base, background: hue.base, border: `1px solid ${hue.ring}`, color: '#fff' }}>
+        <Icon name="check" size={13} color="#fff" />
+        {completedAt ? `Done · ${shortDate(completedAt)}` : 'Done'}
+      </span>
+    );
+  }
+  if (state === 'locked') {
+    return (
+      <span style={{ ...base, background: 'var(--surface-sunken)', border: '1px solid var(--border-subtle)', color: 'var(--text-tertiary)' }}>
+        <Icon name="lock" size={12} color="var(--text-tertiary)" />
+        Locked
+      </span>
+    );
+  }
+  return (
+    <span style={{ ...base, background: 'transparent', border: `1.5px solid ${hue.ring}`, color: hue.ring }}>
+      <span style={{ width: 8, height: 8, borderRadius: '50%', boxShadow: `inset 0 0 0 2px ${hue.ring}`, flexShrink: 0 }} aria-hidden />
+      Ready
+    </span>
+  );
+}
+
+function ReadOnlyRelations({ title, items, empty }) {
+  return (
+    <div>
+      <div className="st-step-heading">{title}</div>
+      {items.length === 0 ? (
+        <div className="st-step-empty">{empty}</div>
+      ) : (
+        <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+          {items.map((item) => (
+            <li key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--text-sm)', fontWeight: 600, color: item.complete ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>
+              <span style={{ ...RO_DOT, width: 8, height: 8, background: item.complete ? 'var(--color-success)' : 'transparent', boxShadow: item.complete ? 'none' : 'inset 0 0 0 2px var(--text-tertiary)' }} aria-hidden />
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</span>
+              {item.complete && (
+                <span style={{ fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--text-tertiary)' }}>
+                  {item.completedAt ? `done ${shortDate(item.completedAt)}` : 'done'}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

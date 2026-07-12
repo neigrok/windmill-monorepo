@@ -1437,3 +1437,52 @@
 .st-link-input::placeholder {
   color: var(--text-tertiary);
 }
+
+/* ============================================================================
+   X5 — Read-only & mobile: the responsive reflow around the read-only shell.
+   The mobile chrome (WS-B, `.st-mobile-chrome`) self-positions in screen space;
+   here we give it the panning fade, the tablet side panel, and the phone hides.
+   ============================================================================ */
+
+/* Chrome yields while panning (§chrome): the mobile chrome fades to a whisper so
+   the tree reads clean under the finger, then eases back ~200ms after the pan. */
+.st-mobile-chrome {
+  transition: opacity 200ms var(--ease-soft);
+}
+.st-root.panning .st-mobile-chrome {
+  opacity: 0.35;
+}
+
+/* Tablet node detail (§S7): a 320px card docked top-right, capped at 70% height
+   with its own inner scroll — the desktop dock, tightened for the narrower frame. */
+.st-detail-panel--tablet {
+  top: 104px;
+  right: 16px;
+  bottom: auto;
+  width: 320px;
+  max-height: 70%;
+}
+
+/* Small screens: the minimap retires — Recenter is the nav aid now — and on tablet
+   the Fork pill owns the bottom-left corner. */
+@media (max-width: 1023px) {
+  .st-minimap {
+    display: none;
+  }
+}
+
+/* Phone (§breakpoints <744): full-bleed canvas, desktop chrome gone; only the
+   mobile chrome and the bottom sheet remain. */
+@media (max-width: 743px) {
+  .st-topbar,
+  .st-tidiness,
+  .st-legend-dock {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .st-mobile-chrome {
+    transition: none;
+  }
+}
