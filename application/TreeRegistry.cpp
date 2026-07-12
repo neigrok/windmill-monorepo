@@ -2,6 +2,7 @@
 
 #include "domain/GraphState.h"
 #include "domain/Legend.h"
+#include "domain/LooseGraph.h"
 
 #include <map>
 #include <optional>
@@ -13,11 +14,13 @@ TreeRegistry::TreeRegistry(TreeRepository& trees, ProgressRepository& progress, 
                            Hlc genesis)
     : trees_(trees), progress_(progress), tokens_(tokens), genesis_(std::move(genesis)) {}
 
-TreeId TreeRegistry::create(const UserId& owner, const std::string& title) {
+TreeId TreeRegistry::create(const UserId& owner, const TreeData& initial) {
   TreeId id{"t_" + tokens_.mint().digest.substr(0, 16)};  // server-minted, unguessable, URL-safe
-  GraphState empty;
-  LegendState legend = Legend::seededDefaults(genesis_).exportState();  // Build/Learn/Milestone (F6)
-  trees_.create(id, empty, legend, title, owner);
+  GraphState state = LooseGraph(initial, genesis_).exportState();  // seed the starting nodes/edges
+  // Honour a posted legend; otherwise a blank tree is born with the three defaults (F6).
+  LegendState legend = initial.kinds.empty() ? Legend::seededDefaults(genesis_).exportState()
+                                             : Legend(initial.kinds, genesis_).exportState();
+  trees_.create(id, state, legend, initial.title, owner);
   return id;
 }
 

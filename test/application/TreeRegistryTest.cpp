@@ -20,6 +20,13 @@ static NodeSpec spec(const char* id, NodeColor color, std::vector<NodeId> prereq
   return node;
 }
 
+static TreeData treeData(const char* title, std::vector<NodeSpec> nodes) {
+  TreeData data;
+  data.title = title;
+  data.nodes = std::move(nodes);
+  return data;
+}
+
 static void seed(FakeTreeRepository& trees, const char* id, const UserId& owner,
                  std::uint64_t updatedAt, std::vector<NodeSpec> nodes) {
   TreeData data;
@@ -38,8 +45,8 @@ TEST(create_plants_an_owned_empty_tree_that_shows_up_in_the_list) {
   UserId me = uid("me");
   TreeRegistry registry(trees, progress, tokens, Hlc{1, 0, "genesis"});
 
-  TreeId first = registry.create(me, "Kitchen garden");
-  TreeId second = registry.create(me, "");
+  TreeId first = registry.create(me, treeData("Kitchen garden", {}));
+  TreeId second = registry.create(me, treeData("", {}));
   CHECK_FALSE(first.empty());
   CHECK_FALSE(second == first);  // each plant mints a distinct id
 
@@ -54,6 +61,24 @@ TEST(create_plants_an_owned_empty_tree_that_shows_up_in_the_list) {
     CHECK_EQ(row.stats.done, 0);
   }
   CHECK(found);
+}
+
+TEST(create_accepts_an_initial_tree_document) {
+  FakeTreeRepository trees;
+  FakeProgressRepository progress;
+  FakeTokens tokens;
+  UserId me = uid("me");
+  TreeRegistry registry(trees, progress, tokens, Hlc{1, 0, "genesis"});
+
+  TreeId id = registry.create(me, treeData("Frontend",
+      {spec("html", NodeColor::olive), spec("css", NodeColor::olive, {nid("html")})}));
+
+  std::vector<TreeSummary> rows = registry.list(me);
+  CHECK_EQ(rows.size(), 1u);
+  CHECK_EQ(rows[0].id, id);
+  CHECK_EQ(rows[0].title, std::string("Frontend"));
+  CHECK_EQ(rows[0].stats.total, 2);  // the posted nodes are planted with the tree
+  CHECK_EQ(rows[0].stats.dominantKind, NodeColor::olive);
 }
 
 TEST(list_orders_owned_trees_newest_first_and_excludes_other_owners) {

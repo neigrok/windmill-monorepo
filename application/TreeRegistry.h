@@ -19,8 +19,9 @@ class TreeRegistry {
 public:
   TreeRegistry(TreeRepository& trees, ProgressRepository& progress, TokenGenerator& tokens, Hlc genesis);
 
-  // Plant a fresh empty roadmap owned by `owner`, seeded with the default legend; returns its id.
-  TreeId create(const UserId& owner, const std::string& title);
+  // Plant a fresh roadmap owned by `owner` from `initial` — its title and any starting nodes +
+  // legend kinds (all empty for a blank tree, which gets the default legend). Returns the minted id.
+  TreeId create(const UserId& owner, const TreeData& initial);
 
   std::vector<TreeSummary> list(const UserId& owner);
 

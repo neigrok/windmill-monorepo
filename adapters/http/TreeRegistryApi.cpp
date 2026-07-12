@@ -36,8 +36,10 @@ void TreeRegistryApi::createTree(const drogon::HttpRequestPtr& req, HttpCallback
     callback(error(drogon::k501NotImplemented, "quest planting is not available yet"));  // /v1/quests unbuilt
     return;
   }
-  std::string title = json ? json->get("title", "").asString() : "";
-  TreeId id = registry_->create(*caller, title);
+  // The body carries the starting document — title, and any initial nodes + legend kinds (the same
+  // TreeData wire shape a PUT takes). A bare `{title}`/`{blank:true}` has no nodes, so it's empty.
+  TreeData initial = json ? treeFromJson(*json, TreeId{}) : TreeData{};
+  TreeId id = registry_->create(*caller, initial);
   Json::Value body(Json::objectValue);
   body["treeId"] = id.str();
   callback(jsonResponse(body));

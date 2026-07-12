@@ -216,8 +216,10 @@ ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, cons
 }
 
 ToolResult createTree(TreeRegistry& registry, const UserId& caller, const std::string& title) {
+  TreeData initial;
+  initial.title = title;  // an agent plants a blank tree, then authors it with the edit tools
   Json::Value out(Json::objectValue);
-  out["treeId"] = registry.create(caller, title).str();
+  out["treeId"] = registry.create(caller, initial).str();
   return ToolResult::json(out);
 }
 
