@@ -11,7 +11,7 @@ namespace {
 StoredTree oneNodeTree() {
   LooseGraph graph;
   graph.createNode(nid("seed"), "Seed", "icon", NodeColor::sky, std::nullopt, at(1));
-  return StoredTree{graph.exportState(), "Seeded", 7};
+  return StoredTree{graph.exportState(), LegendState{}, "Seeded", 7};
 }
 
 std::size_t nodeCount(const GraphState& state) {
@@ -53,7 +53,7 @@ TEST(registry_replays_op_log_tail_on_open) {
   FakeTreeRepository repo;
   FakeOpLog log;
   FakeBus bus;
-  repo.byId["t"] = StoredTree{GraphState{}, "Empty", 0};  // snapshot is empty at head 0
+  repo.byId["t"] = StoredTree{GraphState{}, LegendState{}, "Empty", 0};  // snapshot is empty at head 0
   log.byTree["t"] = {
     AppliedOp{1, "o1", createNode("a"), at(1), uid()},
     AppliedOp{2, "o2", createNode("b"), at(2), uid()},

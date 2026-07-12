@@ -11,6 +11,7 @@ template <class... Ts>
 overloaded(Ts...) -> overloaded<Ts...>;
 
 NodeId id(const Json::Value& payload, const char* key) { return NodeId{payload[key].asString()}; }
+KindId kindId(const Json::Value& payload, const char* key) { return KindId{payload[key].asString()}; }
 }
 
 std::optional<Command> commandFromJson(const std::string& kind, const Json::Value& payload) {
@@ -38,6 +39,24 @@ std::optional<Command> commandFromJson(const std::string& kind, const Json::Valu
     return ReconnectEdge{id(payload, "oldFrom"), id(payload, "oldTo"), id(payload, "newFrom"), id(payload, "newTo")};
   if (kind == "DeleteNode") return DeleteNode{id(payload, "id")};
   if (kind == "TransitiveReduction") return TransitiveReduction{};
+  if (kind == "RenameKind") return RenameKind{kindId(payload, "id"), payload["label"].asString()};
+  if (kind == "DescribeKind") return DescribeKind{kindId(payload, "id"), payload["description"].asString()};
+  if (kind == "AddKind") {
+    auto hue = parseColor(payload["hue"].asString());
+    if (!hue) return std::nullopt;
+    return AddKind{kindId(payload, "id"), *hue};
+  }
+  if (kind == "RemoveKind") return RemoveKind{kindId(payload, "id")};
+  if (kind == "ReorderKinds") {
+    std::vector<KindId> order;
+    for (const Json::Value& member : payload["order"]) order.push_back(KindId{member.asString()});
+    return ReorderKinds{std::move(order)};
+  }
+  if (kind == "RecolorKind") {
+    auto hue = parseColor(payload["hue"].asString());
+    if (!hue) return std::nullopt;
+    return RecolorKind{kindId(payload, "id"), *hue};
+  }
   return std::nullopt;
 }
 
@@ -52,6 +71,12 @@ std::string commandKind(const Command& command) {
     [](const ReconnectEdge&) { return std::string("ReconnectEdge"); },
     [](const DeleteNode&) { return std::string("DeleteNode"); },
     [](const TransitiveReduction&) { return std::string("TransitiveReduction"); },
+    [](const RenameKind&) { return std::string("RenameKind"); },
+    [](const DescribeKind&) { return std::string("DescribeKind"); },
+    [](const AddKind&) { return std::string("AddKind"); },
+    [](const RemoveKind&) { return std::string("RemoveKind"); },
+    [](const ReorderKinds&) { return std::string("ReorderKinds"); },
+    [](const RecolorKind&) { return std::string("RecolorKind"); },
   }, command);
 }
 
@@ -77,6 +102,16 @@ Json::Value commandPayload(const Command& command) {
     },
     [&](const DeleteNode& c) { p["id"] = c.id.str(); },
     [&](const TransitiveReduction&) {},
+    [&](const RenameKind& c) { p["id"] = c.id.str(); p["label"] = c.label; },
+    [&](const DescribeKind& c) { p["id"] = c.id.str(); p["description"] = c.description; },
+    [&](const AddKind& c) { p["id"] = c.id.str(); p["hue"] = std::string(toString(c.hue)); },
+    [&](const RemoveKind& c) { p["id"] = c.id.str(); },
+    [&](const ReorderKinds& c) {
+      Json::Value order(Json::arrayValue);
+      for (const KindId& id : c.order) order.append(id.str());
+      p["order"] = order;
+    },
+    [&](const RecolorKind& c) { p["id"] = c.id.str(); p["hue"] = std::string(toString(c.hue)); },
   }, command);
   return p;
 }

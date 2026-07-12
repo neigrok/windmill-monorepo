@@ -36,13 +36,20 @@ struct FakeBus : PresenceBus {
 
 struct FakeTreeRepository : TreeRepository {
   std::map<std::string, StoredTree> byId;
+  std::map<std::string, std::string> forkedFrom;
   std::optional<StoredTree> load(const TreeId& tree) override {
     auto it = byId.find(tree.str());
     if (it == byId.end()) return std::nullopt;
     return it->second;
   }
-  void save(const TreeId& tree, const GraphState& state, const std::string& title, Seq head) override {
-    byId[tree.str()] = StoredTree{state, title, head};
+  void save(const TreeId& tree, const GraphState& state, const LegendState& legend,
+            const std::string& title, Seq head) override {
+    byId[tree.str()] = StoredTree{state, legend, title, head};
+  }
+  void fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
+            const LegendState& legend, const std::string& title) override {
+    byId[newTree.str()] = StoredTree{state, legend, title, 0};
+    forkedFrom[newTree.str()] = source.str();
   }
 };
 

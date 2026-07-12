@@ -68,8 +68,9 @@ roadmap loads and saves from the server.
 
 | Method | Path | Body / result |
 | --- | --- | --- |
-| GET | `/v1/trees/:id` | → `{ seq, data }` |
-| PUT | `/v1/trees/:id` | `TreeData` → `{ seq, data }` (whole-document write) |
+| GET | `/v1/trees/:id` | → `{ seq, data }` (`data.kinds` = the legend, F6) |
+| PUT | `/v1/trees/:id` | `TreeData` → `{ seq, data }` (whole-document write; seeds the default legend on a new tree) |
+| POST | `/v1/trees/:id/fork` | `{ id, title? }` → `{ seq, data }` (copies the document — nodes, edges, kinds — verbatim) |
 | GET | `/v1/trees/:id/progress` | → `{ completed[], inProgress[] }` (fixed `dev` user) |
 | GET | `/v1/trees/:id/diagnostics` | → `{ cycles[], dangling[], selfEdges[], smells[] }` |
 | GET | `/v1/trees/:id/activity` | `?since=&limit=` → `{ events[] }` (human feed from `tree_ops`) |

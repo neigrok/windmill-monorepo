@@ -1,5 +1,6 @@
 #pragma once
 
+#include "domain/Crdt.h"
 #include "domain/GraphState.h"
 #include "domain/Ids.h"
 #include "domain/Tree.h"
@@ -10,31 +11,6 @@
 #include <vector>
 
 namespace wm {
-
-// A last-writer-wins register: the value carried by the highest HLC stamp wins.
-template <typename T>
-struct Lww {
-  T value{};
-  Hlc stamp{};
-
-  void merge(T incoming, const Hlc& at) {
-    if (at > stamp) {
-      value = std::move(incoming);
-      stamp = at;
-    }
-  }
-};
-
-// A single element of an add-biased LWW-element-set: present iff it was added and no
-// strictly-later remove has cancelled it (a tie between add and remove favours add).
-struct ElementSet {
-  Hlc addedAt{};
-  Hlc removedAt{};
-
-  void add(const Hlc& at) { if (at > addedAt) addedAt = at; }
-  void remove(const Hlc& at) { if (at > removedAt) removedAt = at; }
-  bool present() const { return addedAt.isSet() && !(removedAt > addedAt); }
-};
 
 struct NodeRecord {
   ElementSet life;
@@ -66,6 +42,11 @@ public:
   bool hasNode(const NodeId& id) const;
   bool edgePresent(const NodeId& from, const NodeId& to) const;
   std::optional<NodeSpec> nodeView(const NodeId& id) const;
+
+  // Present nodes currently painted `color` — the repaint set for a RecolorKind, and
+  // (via hueInUse) the in-use guard that blocks removing a kind whose hue is still worn.
+  std::vector<NodeId> nodesWithColor(NodeColor color) const;
+  bool hueInUse(NodeColor color) const;
 
   std::vector<NodeId> presentNodeIds() const;
   std::vector<Edge> presentEdges() const;

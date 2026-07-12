@@ -3,6 +3,7 @@
 #include "adapters/json/TreeJson.h"
 #include "application/ActivityFeed.h"
 #include "application/TreeRoom.h"
+#include "domain/Legend.h"
 #include "domain/LooseGraph.h"
 
 #include <algorithm>
@@ -70,18 +71,78 @@ void HttpApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
   GraphState state = LooseGraph(data, genesis_).exportState();  // seed full state from the posted tree
 
   Seq head = 0;
+  LegendState legend;
   {
     std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
     registry_->evict(TreeId{treeId});  // drop any live room so the next open reloads this write
     std::optional<StoredTree> existing = trees_->load(TreeId{treeId});
     head = existing ? existing->head : 0;
-    trees_->save(TreeId{treeId}, state, data.title, head);
+    // The legend is part of the document: honour a posted one; otherwise seed the three
+    // defaults for a brand-new tree, or keep the existing legend on an overwrite.
+    if (!data.kinds.empty()) legend = Legend(data.kinds, genesis_).exportState();
+    else if (existing) legend = existing->legend;
+    else legend = Legend::seededDefaults(genesis_).exportState();
+    trees_->save(TreeId{treeId}, state, legend, data.title, head);
   }
 
+  data.kinds = Legend(legend).kinds();  // reflect the authoritative legend back to the client
   Json::Value body(Json::objectValue);
   body["seq"] = static_cast<Json::Int64>(head);
   body["data"] = toJson(data);
   callback(jsonResponse(body));
+}
+
+void HttpApi::forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
+  std::shared_ptr<Json::Value> json = req->getJsonObject();
+  std::string newId = json ? json->get("id", "").asString() : "";
+  if (newId.empty()) {
+    callback(error(drogon::k400BadRequest, "fork requires a target id"));
+    return;
+  }
+
+  // Copy the source's *current* authoritative state (live edits folded in), not just its
+  // last snapshot — so the fork is a faithful duplicate the instant it is taken.
+  TreeData data;
+  GraphState state;
+  LegendState legend;
+  std::string title;
+  bool found = true;
+  {
+    std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
+    try {
+      TreeRoom& room = registry_->open(TreeId{treeId});
+      data = room.snapshot();
+      state = room.exportState();
+      legend = room.exportLegend();
+      title = room.title();
+    } catch (const std::exception&) {
+      found = false;
+    }
+  }
+  if (!found) {
+    callback(error(drogon::k404NotFound, "no such tree"));
+    return;
+  }
+
+  std::string forkTitle = (json && json->isMember("title")) ? json->get("title", "").asString() : title;
+
+  bool conflict = false;
+  {
+    std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{newId}));
+    if (trees_->load(TreeId{newId})) conflict = true;
+    else trees_->fork(TreeId{newId}, TreeId{treeId}, state, legend, forkTitle);
+  }
+  if (conflict) {
+    callback(error(drogon::k409Conflict, "a tree with that id already exists"));
+    return;
+  }
+
+  data.id = TreeId{newId};
+  data.title = forkTitle;
+  Json::Value body(Json::objectValue);
+  body["seq"] = static_cast<Json::Int64>(0);
+  body["data"] = toJson(data);  // includes the copied kinds, verbatim
+  callback(jsonResponse(body, drogon::k201Created));
 }
 
 void HttpApi::getProgress(const drogon::HttpRequestPtr&, HttpCallback&& callback, const std::string& treeId) {

@@ -102,11 +102,24 @@ void Collab::command(const drogon::WebSocketConnectionPtr& conn, const std::stri
   Incoming incoming{opId, std::move(*command), hlc, actorOf(conn)};
 
   std::optional<Applied> applied;
+  std::optional<std::string> rejected;
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     TreeRoom& room = registry_.open(TreeId{treeId});
-    applied = room.submit(incoming);
-    if (applied && applied->op.seq % kSnapshotEvery == 0) registry_.persist(TreeId{treeId});
+    rejected = room.validate(incoming.command);  // legend invariants (§F6); graph ops always pass
+    if (!rejected) {
+      applied = room.submit(incoming);
+      if (applied && applied->op.seq % kSnapshotEvery == 0) registry_.persist(TreeId{treeId});
+    }
+  }
+  if (rejected) {
+    Json::Value reject(Json::objectValue);
+    reject["t"] = "reject";
+    reject["treeId"] = treeId;
+    reject["opId"] = opId;
+    reject["reason"] = *rejected;
+    send(conn, reject);
+    return;
   }
   if (!applied) return;
 

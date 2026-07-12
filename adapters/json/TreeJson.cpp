@@ -56,6 +56,17 @@ Json::Value toJson(const TreeData& data) {
     nodes.append(n);
   }
   root["nodes"] = nodes;
+
+  Json::Value kinds(Json::arrayValue);
+  for (const Kind& kind : data.kinds) {
+    Json::Value k(Json::objectValue);
+    k["id"] = kind.id.str();
+    k["hue"] = std::string(toString(kind.hue));
+    k["label"] = kind.label;
+    k["description"] = kind.description;
+    kinds.append(k);
+  }
+  root["kinds"] = kinds;
   return root;
 }
 
@@ -121,6 +132,15 @@ TreeData treeFromJson(const Json::Value& root, const TreeId& id) {
     }
     if (n.isMember("status") && n["status"].isString()) node.status = n["status"].asString();
     data.nodes.push_back(std::move(node));
+  }
+
+  for (const Json::Value& k : root["kinds"]) {
+    Kind kind;
+    kind.id = KindId{k["id"].asString()};
+    kind.hue = parseColor(k.get("hue", "terracotta").asString()).value_or(NodeColor::terracotta);
+    kind.label = k.get("label", "").asString();
+    kind.description = k.get("description", "").asString();
+    data.kinds.push_back(std::move(kind));
   }
   return data;
 }
@@ -193,6 +213,46 @@ GraphState graphStateFromJson(const Json::Value& root) {
     edge.addedAt = hlcFromText(e.get("addedAt", "").asString());
     edge.removedAt = hlcFromText(e.get("removedAt", "").asString());
     state.edges.push_back(std::move(edge));
+  }
+  return state;
+}
+
+Json::Value toJson(const LegendState& legend) {
+  Json::Value kinds(Json::arrayValue);
+  for (const KindStateEntry& kind : legend.kinds) {
+    Json::Value k(Json::objectValue);
+    k["id"] = kind.id.str();
+    k["createdAt"] = hlcText(kind.createdAt);
+    k["deletedAt"] = hlcText(kind.deletedAt);
+    k["hue"] = std::string(toString(kind.hue));
+    k["hueAt"] = hlcText(kind.hueAt);
+    k["label"] = kind.label;
+    k["labelAt"] = hlcText(kind.labelAt);
+    k["description"] = kind.description;
+    k["descriptionAt"] = hlcText(kind.descriptionAt);
+    k["rank"] = kind.rank;
+    k["rankAt"] = hlcText(kind.rankAt);
+    kinds.append(k);
+  }
+  return kinds;
+}
+
+LegendState legendStateFromJson(const Json::Value& kinds) {
+  LegendState state;
+  for (const Json::Value& k : kinds) {
+    KindStateEntry kind;
+    kind.id = KindId{k["id"].asString()};
+    kind.createdAt = hlcFromText(k.get("createdAt", "").asString());
+    kind.deletedAt = hlcFromText(k.get("deletedAt", "").asString());
+    kind.hue = parseColor(k.get("hue", "terracotta").asString()).value_or(NodeColor::terracotta);
+    kind.hueAt = hlcFromText(k.get("hueAt", "").asString());
+    kind.label = k.get("label", "").asString();
+    kind.labelAt = hlcFromText(k.get("labelAt", "").asString());
+    kind.description = k.get("description", "").asString();
+    kind.descriptionAt = hlcFromText(k.get("descriptionAt", "").asString());
+    kind.rank = k.get("rank", 0.0).asDouble();
+    kind.rankAt = hlcFromText(k.get("rankAt", "").asString());
+    state.kinds.push_back(std::move(kind));
   }
   return state;
 }

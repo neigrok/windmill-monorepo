@@ -16,7 +16,9 @@ TreeRoom& RoomRegistry::open(const TreeId& id) {
   if (!stored) throw std::runtime_error("no such tree \"" + id.str() + "\"");
 
   LooseGraph graph(stored->state);  // full CRDT state — lossless
-  auto room = std::make_unique<TreeRoom>(id, stored->title, std::move(graph), stored->head, ops_, bus_);
+  Legend legend(stored->legend);    // empty for legacy trees; the client derives then
+  auto room = std::make_unique<TreeRoom>(id, stored->title, std::move(graph), std::move(legend),
+                                         stored->head, ops_, bus_);
   // The document is a snapshot at stored->head; replay the op-log tail to reach the
   // true current state (and the true head), so new ops never collide on seq.
   for (const AppliedOp& op : ops_.since(id, stored->head)) room->replay(op);
@@ -29,12 +31,13 @@ void RoomRegistry::evict(const TreeId& id) {
   std::lock_guard<std::mutex> lock(mutex_);
   auto it = rooms_.find(id);
   if (it == rooms_.end()) return;
-  repo_.save(id, it->second->exportState(), it->second->title(), it->second->head());
+  repo_.save(id, it->second->exportState(), it->second->exportLegend(), it->second->title(), it->second->head());
   rooms_.erase(it);
 }
 
 void RoomRegistry::persist(const TreeId& id) {
   GraphState state;
+  LegendState legend;
   std::string title;
   Seq head = 0;
   {
@@ -42,10 +45,11 @@ void RoomRegistry::persist(const TreeId& id) {
     auto it = rooms_.find(id);
     if (it == rooms_.end()) return;
     state = it->second->exportState();
+    legend = it->second->exportLegend();
     title = it->second->title();
     head = it->second->head();
   }
-  repo_.save(id, state, title, head);  // I/O outside the map lock
+  repo_.save(id, state, legend, title, head);  // I/O outside the map lock
 }
 
 bool RoomRegistry::isOpen(const TreeId& id) const {

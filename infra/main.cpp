@@ -61,6 +61,7 @@ int main() {
     cb(resp);
   };
   app.registerHandler("/v1/trees/{id}", preflight, {drogon::Options});
+  app.registerHandler("/v1/trees/{id}/fork", preflight, {drogon::Options});
   app.registerHandler("/v1/trees/{id}/progress", preflight, {drogon::Options});
   app.registerHandler("/v1/trees/{id}/diagnostics", preflight, {drogon::Options});
   app.registerHandler("/v1/trees/{id}/activity", preflight, {drogon::Options});
@@ -77,6 +78,12 @@ int main() {
         api->putTree(req, std::move(cb), id);
       },
       {drogon::Put});
+  app.registerHandler(
+      "/v1/trees/{id}/fork",
+      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        api->forkTree(req, std::move(cb), id);
+      },
+      {drogon::Post});
   app.registerHandler(
       "/v1/trees/{id}/progress",
       [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {

@@ -82,6 +82,21 @@ std::vector<ActivityEvent> activityFeed(const TreeData& current, const std::vect
       event.summary = "rerouted " + link(c->newFrom, c->newTo) + crossBranch(c->newFrom, c->newTo);
     } else if (std::get_if<TransitiveReduction>(&command)) {
       event.verb = "tidied"; event.summary = "tidied redundant links";
+    } else if (auto* c = std::get_if<AddKind>(&command)) {
+      event.verb = "added-kind"; event.kind = std::string(toString(c->hue));
+      event.summary = "added a " + event.kind + " kind";
+    } else if (auto* c = std::get_if<RenameKind>(&command)) {
+      event.verb = "renamed-kind"; event.label = c->label;
+      event.summary = "renamed a kind to " + named(c->label);
+    } else if (std::get_if<DescribeKind>(&command)) {
+      event.verb = "described-kind"; event.summary = "described a kind";
+    } else if (std::get_if<RemoveKind>(&command)) {
+      event.verb = "removed-kind"; event.summary = "removed a kind";
+    } else if (std::get_if<ReorderKinds>(&command)) {
+      event.verb = "reordered-kinds"; event.summary = "reordered the legend";
+    } else if (auto* c = std::get_if<RecolorKind>(&command)) {
+      event.verb = "recolored-kind"; event.kind = std::string(toString(c->hue));
+      event.summary = "recolored a kind " + event.kind;
     } else {
       continue;  // RepositionNode: a nudge is not a feed-worthy deed
     }

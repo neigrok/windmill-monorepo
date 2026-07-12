@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_library(windmill_domain
   domain/LooseGraph.cpp
+  domain/Legend.cpp
   domain/Command.cpp
   domain/TreeDiagnostics.cpp
   domain/SkillTree.cpp
@@ -25,6 +26,7 @@ target_link_libraries(windmill_application PUBLIC windmill_domain)
 add_executable(windmill_domain_tests
   test/main.cpp
   test/domain/LooseGraphTest.cpp
+  test/domain/LegendTest.cpp
   test/domain/CommandTest.cpp
   test/domain/TreeDiagnosticsTest.cpp
   test/domain/SkillTreeTest.cpp
@@ -63,6 +65,29 @@ if(Drogon_FOUND AND libpqxx_FOUND)
   add_executable(windmill_server infra/main.cpp)
   target_link_libraries(windmill_server PRIVATE windmill_adapters)
   message(STATUS "windmill_server enabled (Drogon + libpqxx found)")
+
+  # MCP adapter (SPEC §11 boundary): a first-class edge onto the same application core, so
+  # an AI agent authors roadmaps through the rooms exactly as HTTP/WS clients do. The engine
+  # (McpServer) is transport-agnostic; stdio and Streamable-HTTP are two thin transports.
+  add_library(windmill_mcp_lib
+    adapters/mcp/McpServer.cpp
+    adapters/mcp/RoadmapTools.cpp
+    adapters/mcp/McpHttpEndpoint.cpp)
+  target_link_libraries(windmill_mcp_lib PUBLIC windmill_adapters)
+
+  add_executable(windmill_mcp infra/mcp_main.cpp)               # stdio transport (local hosts)
+  target_link_libraries(windmill_mcp PRIVATE windmill_mcp_lib)
+
+  add_executable(windmill_mcp_http infra/mcp_http_main.cpp)     # Streamable-HTTP transport (deploy)
+  target_link_libraries(windmill_mcp_http PRIVATE windmill_mcp_lib)
+
+  add_executable(windmill_mcp_tests
+    test/main.cpp
+    test/adapters/mcp/McpServerTest.cpp
+    test/adapters/mcp/RoadmapToolsTest.cpp
+    test/adapters/mcp/McpHttpEndpointTest.cpp)
+  target_link_libraries(windmill_mcp_tests PRIVATE windmill_mcp_lib)
+  add_test(NAME mcp COMMAND windmill_mcp_tests)
 else()
   message(STATUS "Drogon/libpqxx not found — building core + tests only; run 'brew install drogon libpqxx' to enable windmill_server")
 endif()

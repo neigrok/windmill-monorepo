@@ -25,10 +25,12 @@ private:
 struct TreeTag;
 struct NodeTag;
 struct UserTag;
+struct KindTag;
 
 using TreeId = Id<TreeTag>;
 using NodeId = Id<NodeTag>;
 using UserId = Id<UserTag>;
+using KindId = Id<KindTag>;
 
 using Seq = std::uint64_t;
 

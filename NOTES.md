@@ -153,6 +153,42 @@ map unknown color strings to a rejected/flagged value.
   (present in the set but filtered from the derived DAG view when an endpoint is absent),
   so undo-recreate revives them for free and add-wins resurrection works.
 
+## Color legend (F6) — design decisions
+
+- **The legend is a sibling CRDT, not folded into `LooseGraph`.** `domain/Legend.h`
+  holds `Legend` (an add-biased element-set of kinds, each field an LWW register, plus a
+  `rank` register for order) alongside the graph. `TreeRoom` owns both `graph_` and
+  `legend_`; `merge`/`invert`/`validate` take *both*, because `RecolorKind` is the one
+  command that spans them (swap a kind's hue **and** repaint every node wearing the old
+  hue). Keeping `LooseGraph` pure (topology only) and `Legend` pure (the ordered kinds)
+  earns each module one reason to exist; the coupling lives only in the command layer that
+  already coordinates everything. `Lww`/`ElementSet` moved to `domain/Crdt.h` so both
+  aggregates share the primitives without one depending on the other.
+- **Legend commands are validated at the edge — a deliberate break from "never reject".**
+  Graph validity (cycle-freedom) is a cross-client property no one can check alone, so the
+  graph merges everything and *detects* problems in a read model. Legend invariants (hue
+  unique, ≤6 kinds, no in-use removal, label ≤24 / description ≤80) are **locally decidable
+  on the authoritative state**, so `validate(graph, legend, cmd)` runs at each write edge
+  (`Collab::command`, MCP `applyEdit`) and refuses with a `reject` frame / tool error. The
+  domain `merge` stays unconditional LWW — validity is enforced *before* admission, never
+  inside merge — so server-driven undo/redo (trusted, replays inverses) bypasses it safely.
+- **`RecolorKind` is atomic and cleanly self-inverting.** Because a free hue is never worn
+  by a node (RemoveKind is blocked while in use, so hue↔kind stays 1:1), recoloring to a
+  free hue repaints exactly the old-hue nodes, and the inverse is just `RecolorKind{id,
+  oldHue}`. No compound repaint list, no orphan-node edge case. (RemoveKind's inverse *is*
+  compound — AddKind + Rename + Describe + a full ReorderKinds — to restore the kind to its
+  original slot; ranks are LWW doubles so the replayed reorder wins on a fresh HLC.)
+- **Legacy trees return `kinds: []`; the client derives.** The backend seeds the three
+  defaults only on genuine tree *creation* (first PUT of an id); a PUT without kinds to an
+  existing tree preserves its legend. No server-side derive-on-read — spec permits `[]`,
+  and it sidesteps the instability where deriving from node colors shifts as nodes get
+  repainted. The client's `deriveLegend` already handles `[]`.
+- **Fork copies the document verbatim.** `POST /v1/trees/:id/fork` snapshots the source
+  room's *current* graph+legend (live edits folded in), writes them under the new id with
+  `forked_from` provenance and a fresh op log (head 0). Because the legend lives inside the
+  persisted document (`{nodes, edges, kinds}`), the meaning travels with the colors for
+  free — any future copy path inherits this.
+
 ## Adapter caveats to verify after `brew install drogon libpqxx`
 
 - **Unverified against a compiler.** The adapter code targets the libpqxx 7 / Drogon /

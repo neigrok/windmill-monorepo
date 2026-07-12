@@ -129,10 +129,11 @@ TEST(merge_is_order_independent) {
     {AddEdge{nid("a"), nid("b")}, at(7)},
   };
 
+  Legend legend;
   LooseGraph forward;
-  for (auto it = ops.begin(); it != ops.end(); ++it) merge(forward, it->first, it->second);
+  for (auto it = ops.begin(); it != ops.end(); ++it) merge(forward, legend, it->first, it->second);
   LooseGraph reversed;
-  for (auto it = ops.rbegin(); it != ops.rend(); ++it) merge(reversed, it->first, it->second);
+  for (auto it = ops.rbegin(); it != ops.rend(); ++it) merge(reversed, legend, it->first, it->second);
 
   CHECK(forward.presentNodeIds() == reversed.presentNodeIds());
   CHECK(forward.liveEdges() == reversed.liveEdges());

@@ -93,10 +93,21 @@ struct NodeSpec {
   std::optional<std::string> status;
 };
 
+// A legend entry: a named, described hue. A node's `color` field *is* its kind — it
+// holds the hue — so there is no node→kind foreign key. The legend names and orders the
+// hues; order is generation priority (§F6). `label`/`description` may be empty.
+struct Kind {
+  KindId id;
+  NodeColor hue = NodeColor::terracotta;
+  std::string label;
+  std::string description;
+};
+
 struct TreeData {
   TreeId id;
   std::string title;
   std::vector<NodeSpec> nodes;
+  std::vector<Kind> kinds;
 };
 
 // A user's progress over one tree: the two id sets the client already tracks.

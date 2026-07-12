@@ -93,6 +93,21 @@ std::optional<NodeSpec> LooseGraph::nodeView(const NodeId& id) const {
   return spec;
 }
 
+std::vector<NodeId> LooseGraph::nodesWithColor(NodeColor color) const {
+  std::vector<NodeId> ids;
+  for (const auto& [id, record] : nodes_) {
+    if (record.life.present() && record.color.value == color) ids.push_back(id);
+  }
+  return ids;
+}
+
+bool LooseGraph::hueInUse(NodeColor color) const {
+  for (const auto& [id, record] : nodes_) {
+    if (record.life.present() && record.color.value == color) return true;
+  }
+  return false;
+}
+
 std::vector<NodeId> LooseGraph::presentNodeIds() const {
   std::vector<NodeId> ids;
   for (const auto& [id, record] : nodes_) {
