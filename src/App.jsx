@@ -1,4 +1,7 @@
 import React, { Suspense, lazy } from 'react';
+import AuthProvider, { useAuth } from './skilltree/auth/AuthProvider.jsx';
+import { AuthLanding } from './skilltree/auth/AuthLanding.jsx';
+import { verifyToken } from './skilltree/auth/AuthClient.js';
 
 // Both routes are lazy so the entry chunk is just React + the router: the
 // heavy WebGL skill-tree route and the design-system showcase each load
@@ -38,12 +41,36 @@ function RouteFallback() {
   );
 }
 
-export default function App() {
+// The router lives inside AuthProvider so #/auth's success can claim the session
+// through useAuth. The magic link lands on #/auth?token=… (token in the fragment);
+// AuthLanding verifies it, signs us in, and drops us back on the tree. An expired
+// link bumps a one-shot signal that opens the sign-in door once the tree is back.
+function AppRoutes() {
   const route = useHashRoute();
-  const View = route === '#/showcase' ? Showcase : SkillTreeView;
+  const { signIn } = useAuth();
+  const [openSignInSignal, setOpenSignInSignal] = React.useState(0);
+
+  if (route.startsWith('#/auth')) {
+    return (
+      <AuthLanding
+        onVerify={verifyToken}
+        onSignedIn={(user) => { signIn(user); window.location.hash = ''; }}
+        onOpenDoor={() => { setOpenSignInSignal((n) => n + 1); window.location.hash = ''; }}
+      />
+    );
+  }
+
   return (
     <Suspense fallback={<RouteFallback />}>
-      <View />
+      {route === '#/showcase' ? <Showcase /> : <SkillTreeView openSignInSignal={openSignInSignal} />}
     </Suspense>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppRoutes />
+    </AuthProvider>
   );
 }

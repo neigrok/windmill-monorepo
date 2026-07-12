@@ -7,6 +7,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Button, Input, Dialog } from '../../../components';
+import { requestMagicLink } from '../../auth/AuthClient.js';
 
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -41,6 +42,10 @@ export function ForkDoor({ open, tablet = false, onClose, onSubmit, stepCount = 
   if (!open) return null;
 
   const submit = () => {
+    // Fire the one-door magic link (X6, same door as the desktop seat). A failure never
+    // blocks the sent state — the worst case ends in a next step, and the backend
+    // completes the fork once the link is claimed (X5).
+    requestMagicLink(email).catch(() => {});
     setSent(true);
     onSubmit?.();
   };

@@ -159,5 +159,18 @@ export const roadmapTree = {
     { id: 'touch-grammar', label: 'Touch pan / pinch / double-tap', icon: 'move', color: 'olive', status: 'complete', prerequisites: ['camera', 'view-mode'] },
     { id: 'mobile-chrome', label: 'Mobile chrome + bottom sheet', icon: 'layout-grid', color: 'gold', status: 'complete', prerequisites: ['view-mode', 'share-frame'] },
     { id: 'fork-door', label: 'Fork door · one verb (UI)', icon: 'git-branch-plus', color: 'terracotta', status: 'active', prerequisites: ['mobile-chrome'] },
+
+    // ---- auth initiative (X6) — claiming, not gating ----
+    // Passwordless magic-link auth: one door keyed by email, 15-min single-use links, 90-day
+    // rolling sessions. Signing in claims your roadmaps; signed-out never blocks building —
+    // "the worst case of auth is the product's normal signed-out state". The account seat is the
+    // only unprompted mention of sign-in; the fork door shares the one door; every failure ends
+    // in a next step (gold, never a wall — only "can't reach" is a brick). Backend contract: the
+    // X6 magic-link service. Canonical spec: guidelines/auth.md. Running log per CLAUDE.md.
+    { id: 'auth-client', label: 'Magic-link API client', icon: 'plug', color: 'brick', status: 'complete', prerequisites: ['persistence'] },
+    { id: 'auth-session', label: 'Session provider · the seat', icon: 'shield', color: 'brick', status: 'complete', prerequisites: ['auth-client'] },
+    { id: 'sign-in-door', label: 'One door · email me a link', icon: 'external-link', color: 'terracotta', status: 'complete', prerequisites: ['auth-session', 'fork-door'] },
+    { id: 'auth-landing', label: 'Magic-link landing · #/auth', icon: 'wifi', color: 'sky', status: 'complete', prerequisites: ['sign-in-door'] },
+    { id: 'account-seat', label: 'Account seat · claim beat', icon: 'gem', color: 'gold', status: 'complete', prerequisites: ['auth-session', 'crown-pulse'] },
   ],
 };

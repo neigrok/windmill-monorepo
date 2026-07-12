@@ -13,6 +13,10 @@ import { useViewMode } from './ui/useViewMode.js';
 import { MobileChrome } from './ui/mobile/MobileChrome.jsx';
 import { BottomSheet } from './ui/mobile/BottomSheet.jsx';
 import { ForkDoor } from './ui/mobile/ForkDoor.jsx';
+import { useAuth } from './auth/AuthProvider.jsx';
+import { AccountSeat } from './auth/AccountSeat.jsx';
+import { SignInDialog } from './auth/SignInDialog.jsx';
+import { requestMagicLink } from './auth/AuthClient.js';
 import { ShareDialog } from './share/ShareDialog.jsx';
 import { ShareStats } from './share/ShareStats.js';
 import { ActivityFeed } from './activity/ActivityFeed.jsx';
@@ -51,8 +55,9 @@ const CHILD_DROP = NODE_SIZE * 2.6; // world units a new child spawns below its 
 const SIBLING_GAP = NODE_SIZE * 1.8; // horizontal spread between successive new children
 const NEW_NODE_ICON = 'sparkles';
 
-export function SkillTreeView() {
+export function SkillTreeView({ openSignInSignal = 0 }) {
   const { breakpoint, readOnly } = useViewMode();
+  const { user, status, signOut } = useAuth(); // the account seat's source of truth (X6)
   const canvasRef = useRef(null);
   const rootRef = useRef(null);
   const sceneRef = useRef(null);
@@ -115,6 +120,7 @@ export function SkillTreeView() {
   const [reloadKey, setReloadKey] = useState(0); // bump to re-run the load pipeline (e.g. after reset)
   const [shareOpen, setShareOpen] = useState(false); // the Share dialog (export postcard preview)
   const [forkOpen, setForkOpen] = useState(false); // the fork "door" (read-only — the page's one verb)
+  const [signInOpen, setSignInOpen] = useState(false); // the one sign-in door (X6) — opened by the seat or an expired landing
   const [panning, setPanning] = useState(false); // the scene is being panned; mobile chrome yields (§chrome)
   const [recenterAvailable, setRecenterAvailable] = useState(false); // the tree left the safe frame — offer Recenter
 
@@ -839,6 +845,10 @@ export function SkillTreeView() {
   useEffect(() => { highlightedKindIdRef.current = highlightedKindId; }, [highlightedKindId]);
   useEffect(() => { readOnlyRef.current = readOnly; }, [readOnly]);
 
+  // An expired magic-link landing routes back here and bumps this signal to summon
+  // the sign-in door — the same one door the seat opens. Zero is the resting value.
+  useEffect(() => { if (openSignInSignal > 0) setSignInOpen(true); }, [openSignInSignal]);
+
   // The feed is the visible dock tenant when summoned/pinned and no step is
   // selected. Whenever it becomes visible, mark everything read (with a catch-up flash).
   const feedVisible = showActivity && (feedOpen || pinned) && !selectedId;
@@ -1126,6 +1136,22 @@ export function SkillTreeView() {
         />
       )}
 
+      {/* The account seat (X6) — a desktop/editor concern this pass. It sits a row
+          below the control cluster in the top-right so it never collides with it, and
+          below the detail panel's z so an open panel covers it just like it covers the
+          control bar (z 20 < seat 24 < panel 25). */}
+      {!readOnly && (
+        <div style={{ position: 'absolute', top: 'calc(var(--space-6) + 52px)', right: 'var(--space-6)', zIndex: 24 }}>
+          <AccountSeat
+            user={user}
+            status={status}
+            onSignIn={() => setSignInOpen(true)}
+            onSignOut={signOut}
+            onSettings={() => {}}
+          />
+        </div>
+      )}
+
       {datasetSize === 'demo' && !readOnly && <TidinessBadge health={health} />}
 
       <Minimap
@@ -1255,6 +1281,8 @@ export function SkillTreeView() {
           ))}
         </div>
       )}
+
+      <SignInDialog open={signInOpen} onClose={() => setSignInOpen(false)} onSend={requestMagicLink} />
 
       <ShareDialog
         open={shareOpen}
