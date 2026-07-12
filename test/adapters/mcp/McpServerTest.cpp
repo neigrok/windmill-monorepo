@@ -17,7 +17,7 @@ struct FakeHost : ToolHost {
     return tools;
   }
 
-  ToolResult callTool(const std::string& name, const Json::Value& arguments) override {
+  ToolResult callTool(const std::string& name, const Json::Value& arguments, const UserId&) override {
     lastName = name;
     lastArgs = arguments;
     if (name == "boom") return ToolResult::failure("boom failed");

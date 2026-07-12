@@ -94,8 +94,34 @@ std::set<std::string> parseOriginList(const std::string& csv) {
   return origins;
 }
 
-McpHttpEndpoint::McpHttpEndpoint(McpServer& server, std::set<std::string> allowedOrigins)
-    : server_(server), allowedOrigins_(std::move(allowedOrigins)) {}
+namespace {
+// Constant-time compare for the shared fallback token, so a mismatch can't be timed.
+bool secretEqual(const std::string& a, const std::string& b) {
+  if (a.size() != b.size()) return false;
+  unsigned char diff = 0;
+  for (std::size_t i = 0; i < a.size(); ++i)
+    diff |= static_cast<unsigned char>(a[i]) ^ static_cast<unsigned char>(b[i]);
+  return diff == 0;
+}
+}
+
+McpHttpEndpoint::McpHttpEndpoint(McpServer& server, std::set<std::string> allowedOrigins, McpAuth auth)
+    : server_(server), allowedOrigins_(std::move(allowedOrigins)), auth_(std::move(auth)) {}
+
+std::optional<UserId> McpHttpEndpoint::resolveCaller(const drogon::HttpRequestPtr& request) const {
+  const bool authConfigured = auth_.oauth != nullptr || !auth_.fallbackToken.empty();
+  if (!authConfigured) return auth_.fallbackUser;  // no auth wired (local/stdio, tests): the default caller
+
+  const std::string authorization = request->getHeader("authorization");
+  if (authorization.rfind("Bearer ", 0) != 0) return std::nullopt;
+  const std::string bearer = authorization.substr(7);
+  if (bearer.empty()) return std::nullopt;
+
+  if (auth_.oauth)
+    if (std::optional<UserId> user = auth_.oauth->resolveAccessToken(bearer, auth_.resource)) return user;
+  if (!auth_.fallbackToken.empty() && secretEqual(bearer, auth_.fallbackToken)) return auth_.fallbackUser;
+  return std::nullopt;
+}
 
 std::string McpHttpEndpoint::openSession() {
   std::lock_guard<std::mutex> lock(mutex_);
@@ -111,6 +137,16 @@ std::string McpHttpEndpoint::openSession() {
 void McpHttpEndpoint::handlePost(const drogon::HttpRequestPtr& request, McpHttpCallback&& callback) {
   if (!originAllowed(allowedOrigins_, request->getHeader("Origin"))) {
     callback(rpcError(-32600, "origin not allowed", drogon::k403Forbidden));
+    return;
+  }
+
+  std::optional<UserId> caller = resolveCaller(request);
+  if (!caller) {
+    // Per the MCP Authorization spec: challenge with the resource-metadata URL so the
+    // client can discover the authorization server and obtain a token.
+    auto challenge = rpcError(-32001, "authorization required", drogon::k401Unauthorized);
+    challenge->addHeader("WWW-Authenticate", "Bearer resource_metadata=\"" + auth_.resourceMetadataUrl + "\"");
+    callback(challenge);
     return;
   }
 
@@ -139,7 +175,7 @@ void McpHttpEndpoint::handlePost(const drogon::HttpRequestPtr& request, McpHttpC
     it->second = SessionClock::now() + kSessionTtl;  // sliding: activity refreshes the window
   }
 
-  std::optional<Json::Value> reply = server_.handle(message);
+  std::optional<Json::Value> reply = server_.handle(message, *caller);
   if (!reply) {  // a notification/response needs no answer
     auto accepted = drogon::HttpResponse::newHttpResponse();
     accepted->setStatusCode(drogon::k202Accepted);

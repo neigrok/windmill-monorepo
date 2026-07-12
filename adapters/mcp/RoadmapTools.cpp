@@ -158,6 +158,8 @@ ToolResult readProgress(ProgressService& progress, const TreeId& tree, const Use
 ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::string& kind,
                      Json::Value payload, const Hlc& hlc, const UserId& actor, bool mintId) {
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
+    if (room.owner() && *room.owner() != actor)
+      return ToolResult::failure("this tree belongs to another account");
     if (mintId && payload.get("id", "").asString().empty()) {
       std::set<std::string> present;
       for (const NodeSpec& node : room.snapshot().nodes) present.insert(node.id.str());
@@ -173,6 +175,7 @@ ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::stri
 
     std::string opId = "mcp-" + std::to_string(hlc.physicalMs) + "-" + std::to_string(hlc.counter);
     std::optional<Applied> applied = room.submit(Incoming{opId, std::move(*command), hlc, actor});
+    if (!room.owner()) registry.claim(tree, actor);  // first authenticated writer claims the tree
     registry.persist(tree);  // flush trees.document so the web reader sees this edit
 
     Json::Value out(Json::objectValue);
@@ -214,11 +217,10 @@ ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, cons
 
 }  // namespace
 
-RoadmapTools::RoadmapTools(RoomRegistry& registry, ProgressService& progress, Clock& clock,
-                           UserId caller)
-    : registry_(registry), progress_(progress), clock_(clock), caller_(std::move(caller)) {}
+RoadmapTools::RoadmapTools(RoomRegistry& registry, ProgressService& progress, Clock& clock)
+    : registry_(registry), progress_(progress), clock_(clock) {}
 
-Hlc RoadmapTools::nextStamp() {
+Hlc RoadmapTools::nextStamp(const UserId& caller) {
   std::lock_guard<std::mutex> lock(stampMutex_);
   std::uint64_t ms = clock_.nowMs();
   if (ms > lastMs_) {
@@ -227,7 +229,7 @@ Hlc RoadmapTools::nextStamp() {
   } else {
     ++counter_;
   }
-  return Hlc{lastMs_, counter_, caller_.str()};
+  return Hlc{lastMs_, counter_, caller.str()};
 }
 
 Json::Value RoadmapTools::listTools() const {
@@ -421,19 +423,19 @@ Json::Value RoadmapTools::listTools() const {
   return tools;
 }
 
-ToolResult RoadmapTools::callTool(const std::string& name, const Json::Value& arguments) {
+ToolResult RoadmapTools::callTool(const std::string& name, const Json::Value& arguments, const UserId& caller) {
   TreeId tree{arguments.get("treeId", "").asString()};
   if (tree.empty()) return ToolResult::failure("missing required argument: treeId");
 
   if (name == "get_tree")        return readTree(registry_, tree);
   if (name == "get_diagnostics") return readDiagnostics(registry_, tree);
   if (name == "get_health")      return readHealth(registry_, tree);
-  if (name == "get_progress")    return readProgress(progress_, tree, caller_);
+  if (name == "get_progress")    return readProgress(progress_, tree, caller);
   if (name == "set_progress")
-    return writeProgress(registry_, progress_, tree, arguments, nextStamp(), caller_);
+    return writeProgress(registry_, progress_, tree, arguments, nextStamp(caller), caller);
 
   if (std::optional<std::string> kind = commandKindFor(name))
-    return applyEdit(registry_, tree, *kind, arguments, nextStamp(), caller_, name == "create_node");
+    return applyEdit(registry_, tree, *kind, arguments, nextStamp(caller), caller, name == "create_node");
 
   return ToolResult::failure("unknown tool: " + name);
 }

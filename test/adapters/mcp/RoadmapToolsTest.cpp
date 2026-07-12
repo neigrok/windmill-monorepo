@@ -27,13 +27,14 @@ struct Harness {
   StepClock clock;
   RoomRegistry registry{trees, ops, bus};
   ProgressService progress{progressRepo};
-  RoadmapTools tools{registry, progress, clock, uid("agent")};
+  UserId caller = uid("agent");
+  RoadmapTools tools{registry, progress, clock};
 
   Harness() { trees.byId["t"] = StoredTree{LooseGraph().exportState(), LegendState{}, "Test Roadmap", 0}; }
 
   ToolResult call(const char* name, Json::Value args) {
     args["treeId"] = "t";
-    return tools.callTool(name, args);
+    return tools.callTool(name, args, caller);
   }
 };
 
@@ -158,8 +159,8 @@ TEST(mcp_get_health_needs_a_valid_dag) {
 TEST(mcp_unknown_tool_and_missing_tree_id_are_errors) {
   Harness h;
   CHECK(h.call("frobnicate", Json::Value(Json::objectValue)).isError);
-  CHECK(h.tools.callTool("get_tree", Json::Value(Json::objectValue)).isError);  // no treeId
-  CHECK(h.tools.callTool("get_tree", with("treeId", "nope")).isError);          // unknown tree
+  CHECK(h.tools.callTool("get_tree", Json::Value(Json::objectValue), h.caller).isError);  // no treeId
+  CHECK(h.tools.callTool("get_tree", with("treeId", "nope"), h.caller).isError);          // unknown tree
 }
 
 TEST(mcp_add_kind_shows_in_legend_and_rejects_a_taken_hue) {

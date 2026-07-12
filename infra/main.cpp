@@ -3,8 +3,10 @@
 #include "adapters/email/ResendEmailSender.h"
 #include "adapters/http/AuthApi.h"
 #include "adapters/http/HttpApi.h"
+#include "adapters/http/OAuthApi.h"
 #include "adapters/http/RateLimiter.h"
 #include "adapters/postgres/PgAuthRepository.h"
+#include "adapters/postgres/PgOAuthRepository.h"
 #include "adapters/postgres/PgOpLog.h"
 #include "adapters/postgres/PgProgressRepository.h"
 #include "adapters/postgres/PgTreeRepository.h"
@@ -13,6 +15,7 @@
 #include "adapters/ws/TreeSocket.h"
 #include "adapters/ws/WsPresenceBus.h"
 #include "application/AuthService.h"
+#include "application/OAuthService.h"
 #include "application/ProgressService.h"
 #include "application/RoomRegistry.h"
 #include "application/UndoService.h"
@@ -61,6 +64,14 @@ int main() {
   auto authService = std::make_shared<AuthService>(*authRepo, *emailSender, *tokens, *systemClock, appBaseUrl);
   auto authApi = std::make_shared<AuthApi>(authService, secureCookies, cookieDomain);
 
+  // OAuth 2.1 authorization server for the MCP resource server. This API host is the issuer;
+  // the consent screen is a frontend route the /authorize redirect hands off to.
+  const char* apiUrlEnv = std::getenv("WINDMILL_API_URL");
+  std::string apiBaseUrl = apiUrlEnv ? apiUrlEnv : "http://localhost:8088";
+  auto oauthRepo = std::make_shared<PgOAuthRepository>(connString);
+  auto oauthService = std::make_shared<OAuthService>(*oauthRepo, *tokens, *systemClock);
+  auto oauthApi = std::make_shared<OAuthApi>(oauthService, authService, apiBaseUrl, appBaseUrl, "/#/oauth/authorize");
+
   // The socket authenticates each connection at its upgrade and writes progress as that
   // user; anonymous connections may view but not edit.
   setCollab(std::make_shared<Collab>(*registry, *oplog, *bus, *undos, *progressService, *authService, *presence));
@@ -92,6 +103,28 @@ int main() {
   }
 
   auto& app = drogon::app();
+
+  // CORS preflight, answered ahead of routing. This must run before the router, because
+  // Drogon's built-in OPTIONS responder otherwise replies for us — reflecting any origin and
+  // advertising only OPTIONS in Allow-Methods, so the browser refuses the real POST it was
+  // checking. The session cookie is credentialed, so Allow-Credentials only ever rides an
+  // allow-listed Origin; unlisted origins get the grant without it and the browser drops them.
+  app.registerPreRoutingAdvice(
+      [allowedOrigins](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
+        if (req->method() != drogon::Options) return nullptr;  // real requests are dressed on the way out
+        auto resp = drogon::HttpResponse::newHttpResponse();
+        resp->setStatusCode(drogon::k204NoContent);
+        const std::string& origin = req->getHeader("origin");
+        if (!origin.empty() && allowedOrigins.count(origin)) {
+          resp->addHeader("Access-Control-Allow-Origin", origin);
+          resp->addHeader("Access-Control-Allow-Credentials", "true");
+        }
+        resp->addHeader("Vary", "Origin");
+        resp->addHeader("Access-Control-Allow-Methods", "GET, PUT, POST, OPTIONS");
+        resp->addHeader("Access-Control-Allow-Headers", "content-type, authorization");
+        resp->addHeader("Access-Control-Max-Age", "600");
+        return resp;
+      });
 
   // Abuse ceilings, enforced before routing (and in front of any future auth filter). The
   // limiter keys on the real client IP Caddy records in X-Forwarded-For; internal traffic
@@ -181,6 +214,36 @@ int main() {
       "/v1/me",
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->me(req, std::move(cb)); },
       {drogon::Get});
+
+  // OAuth authorization server. Discovery/register/authorize/token are driven by the MCP
+  // client; the consent-facing endpoints (client info + decision) are called by the app,
+  // so they get the credentialed-CORS preflight.
+  app.registerHandler("/v1/oauth/client", authPreflight, {drogon::Options});
+  app.registerHandler("/v1/oauth/decision", authPreflight, {drogon::Options});
+  app.registerHandler(
+      "/.well-known/oauth-authorization-server",
+      [oauthApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { oauthApi->metadata(req, std::move(cb)); },
+      {drogon::Get});
+  app.registerHandler(
+      "/oauth/register",
+      [oauthApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { oauthApi->registerClient(req, std::move(cb)); },
+      {drogon::Post});
+  app.registerHandler(
+      "/oauth/authorize",
+      [oauthApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { oauthApi->authorize(req, std::move(cb)); },
+      {drogon::Get});
+  app.registerHandler(
+      "/oauth/token",
+      [oauthApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { oauthApi->token(req, std::move(cb)); },
+      {drogon::Post});
+  app.registerHandler(
+      "/v1/oauth/client",
+      [oauthApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { oauthApi->clientInfo(req, std::move(cb)); },
+      {drogon::Get});
+  app.registerHandler(
+      "/v1/oauth/decision",
+      [oauthApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { oauthApi->decision(req, std::move(cb)); },
+      {drogon::Post});
 
   app.registerHandler(
       "/v1/trees/{id}",

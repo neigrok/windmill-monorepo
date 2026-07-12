@@ -19,18 +19,17 @@ namespace wm {
 // tie-break counter and tests stay deterministic.
 class RoadmapTools : public ToolHost {
 public:
-  RoadmapTools(RoomRegistry& registry, ProgressService& progress, Clock& clock, UserId caller);
+  RoadmapTools(RoomRegistry& registry, ProgressService& progress, Clock& clock);
 
   Json::Value listTools() const override;
-  ToolResult callTool(const std::string& name, const Json::Value& arguments) override;
+  ToolResult callTool(const std::string& name, const Json::Value& arguments, const UserId& caller) override;
 
 private:
-  Hlc nextStamp();  // wall-clock ms + a per-ms counter so back-to-back edits strictly order
+  Hlc nextStamp(const UserId& caller);  // wall-clock ms + a per-ms counter, stamped by the caller
 
   RoomRegistry& registry_;
   ProgressService& progress_;
   Clock& clock_;
-  UserId caller_;
   std::mutex stampMutex_;  // one HLC stream shared across concurrent HTTP worker threads
   std::uint64_t lastMs_ = 0;
   std::uint32_t counter_ = 0;

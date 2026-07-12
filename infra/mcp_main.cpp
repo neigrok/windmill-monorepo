@@ -70,7 +70,7 @@ int main() {
   ProgressService progress(progressRepo);
   SystemClock clock;
 
-  RoadmapTools tools(registry, progress, clock, caller);
+  RoadmapTools tools(registry, progress, clock);
   ServerInfo info{
       "windmill", "0.1.0",
       "Windmill roadmaps are RPG-style skill trees: nodes are skills/milestones, and a "
@@ -91,7 +91,7 @@ int main() {
       reply(parseError());
       continue;
     }
-    if (std::optional<Json::Value> response = server.handle(message)) reply(*response);
+    if (std::optional<Json::Value> response = server.handle(message, caller)) reply(*response);
   }
   return 0;
 }

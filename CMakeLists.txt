@@ -13,7 +13,8 @@ add_library(windmill_domain
   domain/TrunkTree.cpp
   domain/UnlockRules.cpp
   domain/TreeHealth.cpp
-  domain/Auth.cpp)
+  domain/Auth.cpp
+  domain/OAuth.cpp)
 target_include_directories(windmill_domain PUBLIC ${CMAKE_SOURCE_DIR})
 
 add_library(windmill_application
@@ -22,7 +23,8 @@ add_library(windmill_application
   application/ProgressService.cpp
   application/ActivityFeed.cpp
   application/UndoService.cpp
-  application/AuthService.cpp)
+  application/AuthService.cpp
+  application/OAuthService.cpp)
 target_link_libraries(windmill_application PUBLIC windmill_domain)
 
 add_executable(windmill_domain_tests
@@ -41,7 +43,9 @@ add_executable(windmill_domain_tests
   test/application/ActivityFeedTest.cpp
   test/application/UndoServiceTest.cpp
   test/domain/AuthTest.cpp
-  test/application/AuthServiceTest.cpp)
+  test/application/AuthServiceTest.cpp
+  test/domain/OAuthTest.cpp
+  test/application/OAuthServiceTest.cpp)
 target_link_libraries(windmill_domain_tests PRIVATE windmill_application)
 
 enable_testing()
@@ -61,8 +65,10 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     adapters/postgres/PgProgressRepository.cpp
     adapters/postgres/PgOpLog.cpp
     adapters/postgres/PgAuthRepository.cpp
+    adapters/postgres/PgOAuthRepository.cpp
     adapters/http/HttpApi.cpp
     adapters/http/AuthApi.cpp
+    adapters/http/OAuthApi.cpp
     adapters/crypto/OpenSslTokenGenerator.cpp
     adapters/email/ResendEmailSender.cpp
     adapters/ws/WsPresenceBus.cpp

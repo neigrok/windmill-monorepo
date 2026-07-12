@@ -32,6 +32,9 @@ struct FakeTokens : TokenGenerator {
   std::string digestOf(const std::string& secret) override {
     return secret.empty() ? "" : "d" + secret.substr(1);
   }
+  std::string s256Challenge(const std::string& verifier) override {
+    return "c:" + verifier;  // deterministic, invertible for the PKCE assertions
+  }
 };
 
 struct FakeEmail : EmailSender {

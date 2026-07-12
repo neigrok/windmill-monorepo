@@ -8,7 +8,7 @@ namespace {
 
 struct FakeHost : ToolHost {
   Json::Value listTools() const override { return Json::Value(Json::arrayValue); }
-  ToolResult callTool(const std::string&, const Json::Value&) override {
+  ToolResult callTool(const std::string&, const Json::Value&, const UserId&) override {
     Json::Value ok(Json::objectValue);
     ok["ok"] = true;
     return ToolResult::json(ok);

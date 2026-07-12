@@ -55,7 +55,7 @@ ToolResult ToolResult::failure(const std::string& message) {
 
 McpServer::McpServer(ToolHost& tools, ServerInfo info) : tools_(tools), info_(std::move(info)) {}
 
-std::optional<Json::Value> McpServer::handle(const Json::Value& message) {
+std::optional<Json::Value> McpServer::handle(const Json::Value& message, const UserId& caller) {
   if (!message.isObject()) return wm::failure(Json::nullValue, -32600, "invalid request");
 
   const bool isNotification = !message.isMember("id");
@@ -96,7 +96,7 @@ std::optional<Json::Value> McpServer::handle(const Json::Value& message) {
     const Json::Value arguments =
         params.isMember("arguments") ? params["arguments"] : Json::Value(Json::objectValue);
 
-    ToolResult outcome = tools_.callTool(name, arguments);
+    ToolResult outcome = tools_.callTool(name, arguments, caller);
     Json::Value payload(Json::objectValue);
     payload["content"] = outcome.content;
     payload["isError"] = outcome.isError;

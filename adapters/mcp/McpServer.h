@@ -1,5 +1,7 @@
 #pragma once
 
+#include "domain/Ids.h"
+
 #include <json/json.h>
 
 #include <optional>
@@ -27,7 +29,9 @@ struct ToolResult {
 struct ToolHost {
   virtual ~ToolHost() = default;
   virtual Json::Value listTools() const = 0;  // the `tools/list` "tools" array
-  virtual ToolResult callTool(const std::string& name, const Json::Value& arguments) = 0;
+  // `caller` is the authenticated account the transport resolved for this request (an OAuth
+  // token's user over HTTP, the configured user over stdio) — every edit acts as them.
+  virtual ToolResult callTool(const std::string& name, const Json::Value& arguments, const UserId& caller) = 0;
 };
 
 // Identifies the server in the initialize handshake.
@@ -44,7 +48,7 @@ class McpServer {
 public:
   McpServer(ToolHost& tools, ServerInfo info);
 
-  std::optional<Json::Value> handle(const Json::Value& message);
+  std::optional<Json::Value> handle(const Json::Value& message, const UserId& caller = UserId{});
 
 private:
   ToolHost& tools_;

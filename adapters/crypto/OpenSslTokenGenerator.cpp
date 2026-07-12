@@ -31,4 +31,11 @@ std::string OpenSslTokenGenerator::digestOf(const std::string& secret) {
   return hex;
 }
 
+// PKCE S256: base64url, unpadded, of the verifier's SHA-256 — the RFC 7636 challenge form.
+std::string OpenSslTokenGenerator::s256Challenge(const std::string& verifier) {
+  std::array<unsigned char, SHA256_DIGEST_LENGTH> hash{};
+  SHA256(reinterpret_cast<const unsigned char*>(verifier.data()), verifier.size(), hash.data());
+  return drogon::utils::base64Encode(hash.data(), hash.size(), true, false);
+}
+
 }

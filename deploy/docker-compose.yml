@@ -53,6 +53,8 @@ services:
       # so api.<app> and <app> share it. Both derive from DOMAIN_APP — no extra secrets.
       WINDMILL_APP_URL: https://${DOMAIN_APP}
       WINDMILL_COOKIE_DOMAIN: ${DOMAIN_APP}
+      # This host is the OAuth authorization server (issuer) for the MCP resource server.
+      WINDMILL_API_URL: https://${DOMAIN_API}
     command: ["windmill_server"]
     healthcheck:
       test: ["CMD-SHELL", "curl -s -o /dev/null http://localhost:8080/ || exit 1"]
@@ -74,6 +76,10 @@ services:
       PORT: "8090"
       WINDMILL_MCP_ALLOWED_ORIGINS: ${WINDMILL_MCP_ALLOWED_ORIGINS:-}
       WINDMILL_MCP_TOKEN: ${WINDMILL_MCP_TOKEN:-}
+      # OAuth resource-server identity: this host is the token audience; the API host is its
+      # authorization server. Both derive from the domains — no extra secrets.
+      WINDMILL_MCP_PUBLIC_URL: https://${DOMAIN_MCP}
+      WINDMILL_OAUTH_ISSUER: https://${DOMAIN_API}
     command: ["windmill_mcp_http"]
     healthcheck:
       test: ["CMD-SHELL", "curl -s -o /dev/null http://localhost:8090/ || exit 1"]

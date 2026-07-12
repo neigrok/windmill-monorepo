@@ -100,3 +100,39 @@ create table if not exists sessions (
   created_at timestamptz not null default now()
 );
 create index if not exists sessions_user on sessions (user_id);
+
+-- OAuth 2.1 authorization for the MCP resource server (MCP Authorization spec, 2025-06-18).
+-- Dynamically-registered public clients, single-use PKCE-bound authorization codes, and
+-- audience-bound opaque access/refresh tokens — only the digest of each secret is at rest.
+create table if not exists oauth_clients (
+  client_id     text primary key,
+  redirect_uris text[] not null,
+  client_name   text not null default '',
+  created_at    timestamptz not null default now()
+);
+
+create table if not exists oauth_codes (
+  code_hash      text primary key,      -- digest of the authorization code
+  client_id      text not null,
+  user_id        uuid not null references users(id) on delete cascade,
+  redirect_uri   text not null,         -- must match the one the token request presents
+  code_challenge text not null,         -- PKCE S256 challenge
+  resource       text not null,         -- audience the eventual token is bound to
+  scope          text not null default '',
+  expires_ms     bigint not null,
+  created_at     timestamptz not null default now()
+);
+
+create table if not exists oauth_tokens (
+  token_hash         text primary key,  -- digest of the access token
+  refresh_hash       text unique,       -- digest of the rotating refresh token
+  client_id          text not null,
+  user_id            uuid not null references users(id) on delete cascade,
+  resource           text not null,     -- audience: the MCP server this token is valid for
+  scope              text not null default '',
+  expires_ms         bigint not null,   -- access-token expiry
+  refresh_expires_ms bigint,            -- refresh-token expiry
+  created_at         timestamptz not null default now()
+);
+create index if not exists oauth_tokens_user on oauth_tokens (user_id);
+create index if not exists oauth_tokens_refresh on oauth_tokens (refresh_hash);
