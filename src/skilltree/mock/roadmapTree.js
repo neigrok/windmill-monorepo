@@ -193,5 +193,20 @@ export const roadmapTree = {
     { id: 'email-magic-link', label: 'Magic-link mail · sign-in + signup', icon: 'external-link', color: 'terracotta', status: 'complete', prerequisites: ['email-shell', 'auth-landing'] },
     { id: 'email-reminder', label: 'Frontier reminder mail', icon: 'flag', color: 'brick', status: 'complete', prerequisites: ['email-shell', 'durable-progress'] },
     { id: 'domain-works', label: 'Domain · windmill.works', icon: 'server', color: 'sky', status: 'complete', prerequisites: ['email-magic-link'] },
+
+    // ---- MCP connect initiative (F17) — connect your LLM tools over OAuth ----
+    // Windmill speaks MCP from a hosted server; F17 designs the doors around it. The backend is a full
+    // OAuth 2.1 authorization server — the frontend owns exactly ONE screen: the consent route at
+    // #/oauth/authorize, where the user reads who's asking (a server-verified client, never raw URL
+    // text) and takes one Allow/Cancel, then the browser follows the backend's returned redirect back
+    // to the tool. No token, code, or PKCE secret touches the client. Sign-in resolves in place —
+    // AuthProvider flips the tab — so the consent params never leave the URL. Reconciled with the
+    // design mock: the Allow bloom plays optimistically over the decision round-trip; the unknown-app /
+    // mismatched-redirect / expired states the mock never drew render in the calm register (only
+    // "can't reach" is a brick, per auth.md). The other F17 surfaces (connect workbench, connections
+    // list, verify seat, first-build ceremony) are separate deliverables and need their own contracts.
+    // Canonical spec: explorations/mcp-connect.html (F17) + guidelines/mcp-connect.md. Running log.
+    { id: 'oauth-consent-client', label: 'OAuth consent API client', icon: 'plug', color: 'brick', status: 'complete', prerequisites: ['auth-client'] },
+    { id: 'oauth-consent', label: 'MCP OAuth consent · #/oauth/authorize', icon: 'shield', color: 'terracotta', status: 'complete', prerequisites: ['oauth-consent-client', 'sign-in-door'] },
   ],
 };

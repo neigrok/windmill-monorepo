@@ -1,6 +1,7 @@
 import React, { Suspense, lazy } from 'react';
 import AuthProvider, { useAuth } from './skilltree/auth/AuthProvider.jsx';
 import { AuthLanding } from './skilltree/auth/AuthLanding.jsx';
+import { OAuthConsent } from './skilltree/auth/OAuthConsent.jsx';
 import { verifyToken } from './skilltree/auth/AuthClient.js';
 
 // Both routes are lazy so the entry chunk is just React + the router: the
@@ -63,6 +64,14 @@ function AppRoutes() {
         onOpenDoor={() => { setOpenSignInSignal((n) => n + 1); window.location.hash = '#/app'; }}
       />
     );
+  }
+
+  // The MCP OAuth consent screen — the backend's /oauth/authorize redirects the browser
+  // here with the PKCE params in the hash. Kept off #/auth on purpose: that path lands on
+  // #/app, which would drop the consent params; this route stays put and lets sign-in
+  // resolve in place (AuthProvider flips the tab), preserving the URL for the decision.
+  if (route.startsWith('#/oauth/authorize')) {
+    return <OAuthConsent />;
   }
 
   const isApp = route.startsWith('#/app') || route.startsWith('#/t/')
