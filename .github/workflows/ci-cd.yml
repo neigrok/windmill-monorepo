@@ -89,6 +89,7 @@ jobs:
           DOMAIN_APP: ${{ vars.DOMAIN_APP }}
           ACME_EMAIL: ${{ vars.ACME_EMAIL }}
           MCP_ORIGINS: ${{ vars.WINDMILL_MCP_ALLOWED_ORIGINS }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -96,7 +97,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           port: ${{ secrets.SSH_PORT }}
           key: ${{ secrets.SSH_KEY }}
-          envs: IMAGE_TAG,POSTGRES_PASSWORD,DOMAIN_API,DOMAIN_MCP,DOMAIN_APP,ACME_EMAIL,MCP_ORIGINS,GHCR_USER,GHCR_TOKEN
+          envs: IMAGE_TAG,POSTGRES_PASSWORD,DOMAIN_API,DOMAIN_MCP,DOMAIN_APP,ACME_EMAIL,MCP_ORIGINS,RESEND_API_KEY,GHCR_USER,GHCR_TOKEN
           script: |
             set -euo pipefail
             cd ~/windmill
@@ -110,6 +111,7 @@ jobs:
             DOMAIN_APP=${DOMAIN_APP}
             ACME_EMAIL=${ACME_EMAIL}
             WINDMILL_MCP_ALLOWED_ORIGINS=${MCP_ORIGINS}
+            RESEND_API_KEY=${RESEND_API_KEY}
             EOF
             echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
             docker compose pull
