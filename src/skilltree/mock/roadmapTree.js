@@ -137,11 +137,15 @@ export const roadmapTree = {
     // Each tree names its hues in a small on-canvas key that is also its editor: rename,
     // recolor (swap a kind's hue, repaint its steps), add/remove, describe. Clicking a row
     // highlights that kind (the rest of the tree dims). The key is the palette contract that
-    // generation (F17) and paste-import (F3) will fill against. Canonical spec:
-    // explorations/color-legend.html (F6). These deeds are the running log (per CLAUDE.md).
+    // generation (F17) and paste-import (F3) will fill against. The legend now lives on the
+    // backend: seeded on tree creation, served in the tree payload, edited through legend
+    // collab ops (validated server-side), copied on fork, and exposed as MCP tools — the
+    // client store became a cache. Canonical spec: explorations/color-legend.html (F6).
+    // These deeds are the running log (per CLAUDE.md).
     { id: 'kind-legend', label: 'On-canvas color key', icon: 'palette', color: 'gold', status: 'complete', prerequisites: ['color-kind', 'kind-picker'] },
     { id: 'legend-editor', label: 'Legend editor · name & recolor', icon: 'pencil', color: 'terracotta', status: 'complete', prerequisites: ['kind-legend'] },
     { id: 'kind-highlight', label: 'Highlight by kind', icon: 'sun', color: 'olive', status: 'complete', prerequisites: ['kind-legend', 'edit-affordances'] },
     { id: 'legend-store', label: 'Durable per-tree legend', icon: 'archive', color: 'brick', status: 'complete', prerequisites: ['legend-editor', 'persistence'] },
+    { id: 'legend-backend', label: 'Server-authoritative legend', icon: 'server', color: 'brick', status: 'complete', prerequisites: ['legend-store'] },
   ],
 };

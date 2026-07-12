@@ -73,17 +73,36 @@ export function describeKind(legend, id, description) {
 }
 
 // Append an unlabeled kind for a free hue (count 0 until steps use it). A no-op if
-// the hue is already taken or the palette is full (hue null).
-export function addKind(legend, hue) {
+// the hue is already taken or the palette is full (hue null). `id` is minted locally
+// for a fresh add, or passed through when applying an authoritative AddKind op whose
+// id the server (or a collaborator) already chose.
+export function addKind(legend, hue, id) {
   if (!hue) return legend;
   if (legend.some((kind) => kind.hue === hue)) return legend;
-  return [...legend, unlabeledKind(hue)];
+  return [...legend, unlabeledKind(hue, id)];
 }
 
 // Drop a kind from the legend. Callers only remove kinds no node wears (count 0);
 // the count guard lives at the call site, which knows the current nodes.
 export function removeKind(legend, id) {
   return legend.filter((kind) => kind.id !== id);
+}
+
+// Reorder the legend to match `order` (a list of kind ids). Ids absent from `order`
+// keep their relative position at the end. Legend order is generation priority.
+export function reorderKinds(legend, order) {
+  const byId = new Map(legend.map((kind) => [kind.id, kind]));
+  const seen = new Set();
+  const ordered = [];
+  for (const id of order) {
+    const kind = byId.get(id);
+    if (kind && !seen.has(id)) {
+      ordered.push(kind);
+      seen.add(id);
+    }
+  }
+  for (const kind of legend) if (!seen.has(kind.id)) ordered.push(kind);
+  return ordered;
 }
 
 // Swap a kind's hue to a free one, returning the old and new hues so the caller can
@@ -104,8 +123,8 @@ function inUseHues(nodes) {
   return NODE_COLOR_NAMES.filter((hue) => used.has(hue));
 }
 
-function unlabeledKind(hue) {
-  return { id: newId(), hue, label: '', description: '' };
+function unlabeledKind(hue, id = newId()) {
+  return { id, hue, label: '', description: '' };
 }
 
 function newId() {

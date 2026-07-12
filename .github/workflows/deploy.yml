@@ -1,0 +1,47 @@
+name: Deploy
+
+# Static Vite build → rsync to the VPS. The Caddy running for windmill-backend serves
+# ~/windmill/web at $DOMAIN_APP, so a deploy is just "build the assets and swap them in".
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - run: npm ci
+
+      # The backend base URL is baked in at build time; the socket URL is derived from it
+      # in the browser. Unset locally falls back to http://localhost:8088 for `npm run dev`.
+      - name: Build
+        run: npm run build
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+
+      - name: Rsync dist to the VPS
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$SSH_KEY" > deploy_key
+          chmod 600 deploy_key
+          SSH="ssh -i deploy_key -p ${SSH_PORT:-22} -o StrictHostKeyChecking=accept-new"
+          $SSH "$SSH_USER@$SSH_HOST" 'mkdir -p ~/windmill/web'
+          rsync -az --delete -e "$SSH" dist/ "$SSH_USER@$SSH_HOST:windmill/web/"

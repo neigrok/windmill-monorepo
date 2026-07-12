@@ -29,7 +29,7 @@ import { ProgressStore } from './persistence/ProgressStore.js';
 import { WorkspaceStore } from './persistence/WorkspaceStore.js';
 import { LegendStore } from './persistence/LegendStore.js';
 import { emptyWorkspace, arcFraction, addSubtask, toggleSubtask, editSubtask, deleteSubtask, setNote, addLink, deleteLink } from './model/NodeWorkspace.js';
-import { deriveLegend, withCounts, inUseCount, freeHue, renameKind, describeKind, addKind, removeKind, recolorKind } from './model/Legend.js';
+import { deriveLegend, withCounts, inUseCount, freeHue, renameKind, describeKind, addKind, removeKind, recolorKind, reorderKinds } from './model/Legend.js';
 import { KindLegend } from '../components/tree/KindLegend.jsx';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
 import { TreeEditor } from './editing/TreeEditor.js';
@@ -73,6 +73,7 @@ export function SkillTreeView() {
   const pendingCompleteRef = useRef(new Map()); // nodeId → auto-complete timer awaiting its held breath
   const completeStepRef = useRef(null); // always points at the latest completeStep (for the deferred beat)
   const legendRef = useRef([]); // the current ordered kinds; the fresh read for legend ops + persistence
+  const commitLegendRef = useRef(null); // latest commitLegend, so applyRemoteOp (defined earlier) can reach it
   const legendOpenRef = useRef(true); // mirrors legendOpen so persistence reads it without a dep churn
   const highlightedKindIdRef = useRef(null); // mirrors the highlighted kind for the Esc/toggle checks
 
@@ -315,6 +316,22 @@ export function SkillTreeView() {
       case 'RepositionNode': next = repositionNode(data, p.id, p.x, p.y); break;
       case 'DeleteNode': next = deleteNode(data, p.id); break;
       case 'TransitiveReduction': next = transitiveReduction(data); break;
+      // Legend ops (F6) carry no treeData change (except RecolorKind, which repaints the
+      // nodes wearing the old hue — the server did the same atomically). They update the
+      // ordered kinds through the same commit seam a local legend edit uses.
+      case 'RenameKind': commitLegendRef.current?.(renameKind(legendRef.current, p.id, p.label)); return;
+      case 'DescribeKind': commitLegendRef.current?.(describeKind(legendRef.current, p.id, p.description)); return;
+      case 'AddKind': commitLegendRef.current?.(addKind(legendRef.current, p.hue, p.id)); return;
+      case 'RemoveKind': commitLegendRef.current?.(removeKind(legendRef.current, p.id)); return;
+      case 'ReorderKinds': commitLegendRef.current?.(reorderKinds(legendRef.current, p.order)); return;
+      case 'RecolorKind': {
+        const oldHue = legendRef.current.find((kind) => kind.id === p.id)?.hue;
+        let repainted = data;
+        if (oldHue) for (const node of data.nodes.filter((n) => n.color === oldHue)) repainted = setNodeColor(repainted, node.id, p.hue);
+        if (repainted !== data && editor.commit(repainted)) syncStructure();
+        commitLegendRef.current?.(legendRef.current.map((kind) => (kind.id === p.id ? { ...kind, hue: p.hue } : kind)));
+        return;
+      }
       default: return;
     }
     console.log('[collab] applying op', op.seq, op.kind, op.payload);
@@ -470,10 +487,26 @@ export function SkillTreeView() {
     setLegend(kinds);
     persistLegend(kinds, legendOpenRef.current);
   }, [persistLegend]);
+  commitLegendRef.current = commitLegend; // let applyRemoteOp (defined earlier) reach the latest
 
-  const onRenameKind = useCallback((id, label) => commitLegend(renameKind(legendRef.current, id, label)), [commitLegend]);
-  const onDescribeKind = useCallback((id, description) => commitLegend(describeKind(legendRef.current, id, description)), [commitLegend]);
-  const onAddKind = useCallback((hue) => commitLegend(addKind(legendRef.current, hue ?? freeHue(legendRef.current))), [commitLegend]);
+  // Each legend edit commits locally (optimistic) and, on the live roadmap, sends its op
+  // to the backend — the authority for the legend (F6). The echo of our own op is skipped
+  // by CollabClient; a collaborator's op arrives through applyRemoteOp.
+  const onRenameKind = useCallback((id, label) => {
+    commitLegend(renameKind(legendRef.current, id, label));
+    collabRef.current?.send('RenameKind', { id, label: legendRef.current.find((k) => k.id === id)?.label ?? label });
+  }, [commitLegend]);
+  const onDescribeKind = useCallback((id, description) => {
+    commitLegend(describeKind(legendRef.current, id, description));
+    collabRef.current?.send('DescribeKind', { id, description: legendRef.current.find((k) => k.id === id)?.description ?? description });
+  }, [commitLegend]);
+  const onAddKind = useCallback((hue) => {
+    const next = addKind(legendRef.current, hue ?? freeHue(legendRef.current));
+    if (next === legendRef.current) return; // hue taken or palette full — nothing added
+    commitLegend(next);
+    const added = next[next.length - 1];
+    collabRef.current?.send('AddKind', { id: added.id, hue: added.hue });
+  }, [commitLegend]);
 
   // Remove is offered only for a kind no node wears; guard here against a stale click,
   // reading the editor's live nodes (the freshest source of every node's hue).
@@ -482,23 +515,22 @@ export function SkillTreeView() {
     const target = withCounts(legendRef.current, nodes).find((kind) => kind.id === id);
     if (!target || target.count > 0) return;
     commitLegend(removeKind(legendRef.current, id));
+    collabRef.current?.send('RemoveKind', { id });
   }, [commitLegend]);
 
-  // Recolor a kind = swap its hue AND repaint every node of the old hue to the new,
-  // live, reusing the per-node SetNodeColor edit path (one syncStructure closes it),
-  // then persist the updated legend. A no-op swap (hue taken) leaves the nodes alone.
+  // Recolor a kind = swap its hue AND repaint every node of the old hue to the new. On the
+  // live roadmap this is one atomic RecolorKind op (the server repaints too); locally we
+  // apply the same effect optimistically. A no-op swap (hue taken) leaves the nodes alone.
   const onRecolorKind = useCallback((id, targetHue) => {
     const editor = editorRef.current;
     if (!editor) return;
     const { legend: nextLegend, oldHue, newHue } = recolorKind(legendRef.current, id, targetHue);
     if (!newHue) return;
     const repainted = editor.treeData.nodes.filter((node) => node.color === oldHue);
-    for (const node of repainted) {
-      editor.commit(setNodeColor(editor.treeData, node.id, newHue));
-      collabRef.current?.send('SetNodeColor', { id: node.id, color: newHue });
-    }
+    for (const node of repainted) editor.commit(setNodeColor(editor.treeData, node.id, newHue));
     if (repainted.length > 0) syncStructure();
     commitLegend(nextLegend);
+    collabRef.current?.send('RecolorKind', { id, hue: newHue });
   }, [commitLegend, syncStructure]);
 
   // A legend row spotlights its kind on the graph (WS-C's scene.highlightKind, called
@@ -664,11 +696,12 @@ export function SkillTreeView() {
       // the throwaway perf tree keeps none. The arc feed reads this hydrated map below.
       const savedWorkspace = datasetSize === 'demo' ? workspaceStore.load(seed.id) : null;
       const workspaceMap = savedWorkspace ?? {};
-      // The color legend (F6) overlays the same way: a saved legend wins (reconciled so
-      // every in-use hue still has an entry), else it's derived from the hues in use — or
-      // the three defaults for a fresh, empty tree. Open/collapsed is remembered too.
+      // The color legend (F6) is served by the backend for the live roadmap (its `kinds`,
+      // reconciled so every in-use hue still has an entry); the mock perf tree derives it
+      // from the hues in use. Open/collapsed stays a local UI preference in localStorage.
       const savedLegend = datasetSize === 'demo' ? legendStore.load(seed.id) : null;
-      const legendKinds = deriveLegend(nextTree.nodes, savedLegend?.kinds ?? null);
+      const backendKinds = datasetSize === 'demo' ? (seed.kinds ?? null) : null;
+      const legendKinds = deriveLegend(nextTree.nodes, backendKinds);
       const states = UnlockRules.derive(nextTree, progress);
       const rawLayout = await layoutEngine.layout(nextTree);
       const positions = applyNudges(rawLayout, nextTree);
