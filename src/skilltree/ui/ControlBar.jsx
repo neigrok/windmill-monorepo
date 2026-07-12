@@ -1,5 +1,5 @@
-// Top overlay bar: the Windmill wordmark + a way back to the component
-// showcase on the left, dataset size + camera controls on the right.
+// Top overlay bar: the Windmill wordmark (links home to the landing root) + a way
+// back to the component showcase on the left, dataset size + camera controls on the right.
 
 import React from 'react';
 import { IconButton, Tabs, Tooltip, Icon } from '../../components';
@@ -13,13 +13,15 @@ export function ControlBar({ title, datasetSize, onDatasetSizeChange, onZoomIn, 
   return (
     <div className="st-topbar">
       <div className="st-brand">
-        <span className="st-brand-mark">
-          <Icon name="sprout" size={18} />
-        </span>
-        <div className="st-brand-text">
-          <span className="st-brand-name">Windmill</span>
-          {title && <span className="st-brand-title">{title}</span>}
-        </div>
+        <a className="st-brand-home" href="#/" aria-label="Windmill — home">
+          <span className="st-brand-mark">
+            <Icon name="sprout" size={18} />
+          </span>
+          <div className="st-brand-text">
+            <span className="st-brand-name">Windmill</span>
+            {title && <span className="st-brand-title">{title}</span>}
+          </div>
+        </a>
         <Tooltip label="Component showcase" side="bottom">
           <a className="st-showcase-link" href="#/showcase">
             <Icon name="external-link" size={14} />

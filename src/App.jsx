@@ -44,8 +44,12 @@ function RouteFallback() {
 
 // The router lives inside AuthProvider so #/auth's success can claim the session
 // through useAuth. The magic link lands on #/auth?token=… (token in the fragment);
-// AuthLanding verifies it, signs us in, and drops us back on the tree. An expired
-// link bumps a one-shot signal that opens the sign-in door once the tree is back.
+// AuthLanding verifies it, signs us in, and drops us into the app at #/app. An expired
+// link bumps a one-shot signal that opens the sign-in door once the app is back.
+//
+// The marketing landing is the site root. The app (editor + read-only share) lives at
+// #/app, the #/t/… share hash, or any ?view URL; #/showcase is the design system;
+// everything else — root and the #/welcome alias — is the landing.
 function AppRoutes() {
   const route = useHashRoute();
   const { signIn } = useAuth();
@@ -55,17 +59,20 @@ function AppRoutes() {
     return (
       <AuthLanding
         onVerify={verifyToken}
-        onSignedIn={(user) => { signIn(user); window.location.hash = ''; }}
-        onOpenDoor={() => { setOpenSignInSignal((n) => n + 1); window.location.hash = ''; }}
+        onSignedIn={(user) => { signIn(user); window.location.hash = '#/app'; }}
+        onOpenDoor={() => { setOpenSignInSignal((n) => n + 1); window.location.hash = '#/app'; }}
       />
     );
   }
 
+  const isApp = route.startsWith('#/app') || route.startsWith('#/t/')
+    || new URLSearchParams(window.location.search).has('view');
+
   return (
     <Suspense fallback={<RouteFallback />}>
-      {route.startsWith('#/welcome') ? <Marketing />
-        : route === '#/showcase' ? <Showcase />
-        : <SkillTreeView openSignInSignal={openSignInSignal} />}
+      {route === '#/showcase' ? <Showcase />
+        : isApp ? <SkillTreeView openSignInSignal={openSignInSignal} />
+        : <Marketing />}
     </Suspense>
   );
 }

@@ -1,8 +1,9 @@
 // The marketing landing page (ported from the design system's ui_kits/marketing/index.html).
 // The live moat — a self-playing demo tree, three how-it-works beats, developer quest
 // thumbnails — comes from treeScenes.js; the rest reuses the app's Button/Badge. The
-// design-time tweaks panel is dropped; the "Any goal" headline is fixed. CTAs point at the
-// real app (Start → #/, Try the demo → the read-only #/t/demo) and the X6 sign-in door.
+// design-time tweaks panel is dropped; the "Any goal" headline is fixed. The landing is the
+// site root; CTAs point at the app (Start → #/app, Try the demo → the read-only #/t/demo) and
+// the X6 sign-in door.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Badge } from '../components';
@@ -29,7 +30,7 @@ function Icon({ name, size = 18 }) {
 function Nav({ onLogin }) {
   return (
     <header className="wrap" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 24, paddingBottom: 24 }}>
-      <a href="#/welcome" style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 22, color: 'var(--text-primary)' }}>Windmill</a>
+      <a href="#/" style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 22, color: 'var(--text-primary)' }}>Windmill</a>
       <nav className="navlinks">
         <a href="#how">How it works</a>
         <a href="#paths">Paths</a>
@@ -37,7 +38,7 @@ function Nav({ onLogin }) {
       </nav>
       <div style={{ display: 'flex', gap: 10 }}>
         <Button variant="ghost" size="sm" onClick={onLogin}>Log in</Button>
-        <a href="#/"><Button variant="primary" size="sm">Start your tree</Button></a>
+        <a href="#/app"><Button variant="primary" size="sm">Start your tree</Button></a>
       </div>
     </header>
   );
@@ -65,7 +66,7 @@ function Hero() {
           Redecorating a room, learning to bake, training for a 10k, or planning a side project — Windmill turns any plan into a living tree. Finish one step and watch the next branch unlock.
         </p>
         <div style={{ display: 'flex', gap: 12, marginTop: 32, flexWrap: 'wrap', justifyContent: 'center' }}>
-          <a href="#/"><Button variant="primary" size="lg">Start your tree</Button></a>
+          <a href="#/app"><Button variant="primary" size="lg">Start your tree</Button></a>
           <a href="#/t/demo"><Button variant="secondary" size="lg">Try the live demo</Button></a>
         </div>
         <div style={{ fontFamily: 'var(--font-body)', fontSize: 13.5, color: 'var(--text-tertiary)', marginTop: 14 }}>
@@ -130,7 +131,7 @@ function Paths() {
       <p className="sectionSub">Authored learning trees with real prerequisite logic — ownership gates lifetimes, fundamentals gate frameworks. Pick one and it’s yours to grow.</p>
       <div className="paths">
         {quests.map(q => (
-          <a key={q.id} className="questCard" href="#/">
+          <a key={q.id} className="questCard" href="#/app">
             <div className="questRule" style={{ background: q.rule }}></div>
             <QuestThumb quest={q.id} />
             <div className="questMeta">
@@ -146,7 +147,7 @@ function Paths() {
         ))}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 16, marginTop: 20, flexWrap: 'wrap' }}>
-        <a href="#/" style={{ fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 15 }}>
+        <a href="#/app" style={{ fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 15 }}>
           Browse all nine starter quests →
         </a>
         <div style={{ fontFamily: 'var(--font-body)', fontSize: 12.5, color: 'var(--text-tertiary)' }}>
@@ -185,7 +186,7 @@ function CtaBand() {
         <h2 className="sectionTitle" style={{ margin: 0 }}>Plant your first tree</h2>
         <p className="sectionSub" style={{ maxWidth: 460 }}>It takes about a minute, and the first branch unlocks tonight.</p>
         <div style={{ display: 'flex', gap: 12, marginTop: 20, flexWrap: 'wrap', justifyContent: 'center' }}>
-          <a href="#/"><Button variant="primary" size="lg">Start your tree</Button></a>
+          <a href="#/app"><Button variant="primary" size="lg">Start your tree</Button></a>
           <a href="#/t/demo"><Button variant="ghost" size="lg">Try the live demo</Button></a>
         </div>
       </div>

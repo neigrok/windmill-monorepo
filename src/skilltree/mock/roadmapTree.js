@@ -177,10 +177,12 @@ export const roadmapTree = {
     // The public landing page (ui_kits/marketing): a live self-playing demo tree in the hero, three
     // how-it-works beats, developer quest thumbnails, the story trio (share / MCP / everywhere), and
     // CTAs into the app + the X6 sign-in door. A small DOM scene engine (treeScenes) renders the live
-    // moat without spinning up the WebGL app. Route #/welcome. Backend contract for the CTAs:
-    // docs/backend/landing-and-quests.md (quest catalog + tree creation). Running log per CLAUDE.md.
+    // moat without spinning up the WebGL app. The landing is the site root (#/); the app editor
+    // moved to #/app, with #/t/… and ?view still routing to the read-only app. Backend contract for
+    // the CTAs: docs/backend/landing-and-quests.md (quest catalog + tree creation). Running log.
     { id: 'landing-scenes', label: 'Live tree scenes · the moat', icon: 'sparkles', color: 'sky', status: 'complete', prerequisites: ['renderer', 'bloom-beat'] },
-    { id: 'landing-page', label: 'Marketing landing · #/welcome', icon: 'external-link', color: 'gold', status: 'complete', prerequisites: ['landing-scenes', 'share-frame', 'sign-in-door'] },
+    { id: 'landing-page', label: 'Marketing landing · the root', icon: 'external-link', color: 'gold', status: 'complete', prerequisites: ['landing-scenes', 'share-frame', 'sign-in-door'] },
+    { id: 'site-root', label: 'Landing is the root · app at #/app', icon: 'git-branch-plus', color: 'terracotta', status: 'complete', prerequisites: ['landing-page', 'view-mode'] },
 
     // ---- transactional email initiative (X7) — the shell that survives Gmail ----
     // Table-based, inline-CSS templates for the mail service (Resend), living in /emails. Warm
