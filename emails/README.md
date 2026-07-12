@@ -61,14 +61,16 @@ backend send empty strings for unused slots. The iterating form is preferred.
 
 ## Dark mode
 
-Clients that honour `prefers-color-scheme` get the warm night palette from the
-`@media (prefers-color-scheme: dark)` block (canvas `#0D0B07`, card `#17120B`, text
-`#F4EEDF`). `!important` is required there — it's the only way to beat the inline
-styles that older clients need. The button stays terracotta `#BC6C42` in both modes.
+These mails are **light-only** by design. Each declares `<meta name="color-scheme"
+content="light">`, its `supported-color-schemes` twin, and `color-scheme: only light`
+on the root/body. That tells Apple Mail and iOS Mail to render the designed light
+palette even when the device is in dark mode — without it they auto-invert, which
+muddied the white card to beige and flipped the white button text to dark.
 
-The duplicate `html.wm-dark-preview` rules are a browser-preview hook only (open the
-file locally and add the class to `<html>` to see dark mode). Real clients ignore it;
-it's harmless to ship, but you can delete those lines before uploading if you prefer.
+There is deliberately no `@media (prefers-color-scheme: dark)` block: Gmail and Outlook
+ignore it and apply their own transform anyway, so one consistent light treatment is
+the reliable choice for a transactional mail. If a warm-night dark variant is ever
+wanted back, it must be paired with the color-scheme signal set to `light dark`.
 
 ## Logo
 

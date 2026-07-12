@@ -14,8 +14,8 @@
   brand fonts never load in email — the stacks below are the fallback contract. No logo
   file exists (readme policy): the wordmark is real text, which is also the images-off
   fallback. When a mark ships, swap in <img src="https://windmill.works/email/logo.png"
-  alt="Windmill"> in the header. `wm-dark-preview` on <html> is a browser-preview hook
-  only — email clients use the prefers-color-scheme block; the class is harmless to ship.
+  alt="Windmill"> in the header. This mail is light-only: color-scheme is pinned to
+  'light' so Apple Mail / iOS Mail render the designed palette instead of auto-darkening.
 -->
 <!DOCTYPE html>
 <html lang="en" xmlns:o="urn:schemas-microsoft-com:office:office">
@@ -23,11 +23,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
-<meta name="color-scheme" content="light dark">
-<meta name="supported-color-schemes" content="light dark">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
 <title>Your sign-in link</title>
 <!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]-->
 <style>
+  /* Light-only: Apple Mail / iOS Mail must not auto-darken this transactional mail. */
+  :root, body { color-scheme: only light; }
   html, body { margin: 0 !important; padding: 0 !important; }
   body { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
   table { border-collapse: collapse !important; }
@@ -35,37 +37,19 @@
   @media (max-width: 560px) {
     .wm-card-pad { padding: 30px 24px !important; }
   }
-  /* ---- email dark mode: warm night sky, never cold gray ---- */
-  @media (prefers-color-scheme: dark) {
-    body, .wm-canvas { background: #0D0B07 !important; }
-    .wm-card { background: #17120B !important; border-color: #2E2618 !important; }
-    .wm-h { color: #F4EEDF !important; }
-    .wm-p { color: #AE9A75 !important; }
-    .wm-mut { color: #8A785A !important; }
-    .wm-link { color: #D08A5E !important; }
-    .wm-div { border-color: #221B12 !important; }
-    .wm-wordmark { color: #D08A5E !important; }
-  }
-  html.wm-dark-preview body, html.wm-dark-preview .wm-canvas { background: #0D0B07 !important; }
-  html.wm-dark-preview .wm-card { background: #17120B !important; border-color: #2E2618 !important; }
-  html.wm-dark-preview .wm-h { color: #F4EEDF !important; }
-  html.wm-dark-preview .wm-p { color: #AE9A75 !important; }
-  html.wm-dark-preview .wm-mut { color: #8A785A !important; }
-  html.wm-dark-preview .wm-link { color: #D08A5E !important; }
-  html.wm-dark-preview .wm-div { border-color: #221B12 !important; }
-  html.wm-dark-preview .wm-wordmark { color: #D08A5E !important; }
 </style>
 </head>
-<body class="wm-canvas" bgcolor="#F9F5EB" style="margin:0; padding:0; background:#F9F5EB;">
+<body class="wm-canvas" bgcolor="#F9F5EB" style="margin:0; padding:0; background:#F9F5EB; color-scheme:only light;">
 <!-- preheader (hidden) -->
 <div style="display:none; font-size:1px; line-height:1px; max-height:0; max-width:0; opacity:0; overflow:hidden; mso-hide:all;">
   Works once and lasts 15 minutes &mdash; tap and you&rsquo;re in.&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;
 </div>
 <center role="article" aria-roledescription="email" lang="en" class="wm-canvas" style="width:100%; background:#F9F5EB;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="wm-canvas" bgcolor="#F9F5EB">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="wm-canvas" bgcolor="#F9F5EB" style="background:#F9F5EB; width:100%; min-width:100%;">
   <tr>
     <td align="center" style="padding:36px 16px 48px;">
-      <table role="presentation" width="520" cellpadding="0" cellspacing="0" border="0" style="width:520px; max-width:100%;">
+      <!--[if mso]><table role="presentation" align="center" width="520" cellpadding="0" cellspacing="0" border="0"><tr><td width="520"><![endif]-->
+      <table role="presentation" width="520" align="center" cellpadding="0" cellspacing="0" border="0" style="width:520px; max-width:100%; margin:0 auto;">
 
         <!-- header: the wordmark (text = the alt fallback) -->
         <tr>
@@ -94,7 +78,7 @@
                 <td align="center" style="padding:28px 0 12px;">
                   <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
                     <tr>
-                      <td align="center" bgcolor="#BC6C42" style="border-radius:999px; mso-padding-alt:15px 38px;">
+                      <td align="center" bgcolor="#BC6C42" style="background:#BC6C42; border-radius:999px; mso-padding-alt:15px 38px;">
                         <a href="{{{magic_link}}}" style="display:inline-block; padding:15px 38px; font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:16px; font-weight:800; line-height:1; color:#FFFFFF; text-decoration:none; border-radius:999px;">
                           Sign in to Windmill
                         </a>
@@ -144,6 +128,7 @@
         </tr>
 
       </table>
+      <!--[if mso]></td></tr></table><![endif]-->
     </td>
   </tr>
 </table>
