@@ -96,6 +96,31 @@ TEST(mcp_http_disallowed_origin_is_forbidden) {
   CHECK_EQ(allowed->getStatusCode(), drogon::k200OK);
 }
 
+TEST(mcp_http_session_ids_are_random_128_bit_hex) {
+  FakeHost host;
+  McpServer server(host, ServerInfo{"windmill", "0.1.0", ""});
+  McpHttpEndpoint endpoint(server, {});
+
+  std::string a = sendPost(endpoint, post(kInit))->getHeader("Mcp-Session-Id");
+  std::string b = sendPost(endpoint, post(kInit))->getHeader("Mcp-Session-Id");
+  CHECK_EQ(a.size(), static_cast<std::size_t>(32));  // 16 CSPRNG bytes -> 32 hex chars
+  CHECK(a != b);
+  CHECK(a.find_first_not_of("0123456789abcdef") == std::string::npos);
+}
+
+TEST(mcp_http_deeply_nested_body_is_a_clean_parse_error_not_a_crash) {
+  FakeHost host;
+  McpServer server(host, ServerInfo{"windmill", "0.1.0", ""});
+  McpHttpEndpoint endpoint(server, {});
+
+  // jsoncpp throws once nesting passes its stack limit; the endpoint must answer a parse
+  // error rather than let the exception escape the handler.
+  std::string bomb(20000, '[');
+  drogon::HttpResponsePtr response = sendPost(endpoint, post(bomb));
+  CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
+  CHECK(response->getBody().find("parse error") != std::string::npos);
+}
+
 TEST(mcp_http_get_is_method_not_allowed) {
   FakeHost host;
   McpServer server(host, ServerInfo{"windmill", "0.1.0", ""});

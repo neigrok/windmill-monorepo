@@ -73,12 +73,12 @@ TreeDiagnostics TreeDiagnostics::assess(const LooseGraph& graph) {
     }
   }
 
-  for (const auto& id : ids) {
-    auto node = graph.nodeView(id);
-    if (!node) continue;
-    if (node->label.size() > maxLabel) report.smells.push_back(Smell{id, "label-too-long"});
-    if (node->icon.empty()) report.smells.push_back(Smell{id, "empty-icon"});
-    if (node->prerequisites.size() > inDegreeSmell) report.smells.push_back(Smell{id, "high-in-degree"});
+  // Smells read one linear projection; nodeView per node would rescan every live edge (O(V*E)).
+  const TreeData projection = graph.toTreeData(TreeId{}, {});
+  for (const auto& node : projection.nodes) {
+    if (node.label.size() > maxLabel) report.smells.push_back(Smell{node.id, "label-too-long"});
+    if (node.icon.empty()) report.smells.push_back(Smell{node.id, "empty-icon"});
+    if (node.prerequisites.size() > inDegreeSmell) report.smells.push_back(Smell{node.id, "high-in-degree"});
   }
 
   return report;

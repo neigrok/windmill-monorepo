@@ -21,6 +21,7 @@ public:
   std::optional<std::vector<Command>> takeRedo(const std::string& key);
   void pushUndo(const std::string& key, std::vector<Command> group);
   void pushRedo(const std::string& key, std::vector<Command> group);
+  void forgetActor(const std::string& actor);  // drop every stack a departed connection left behind
 
 private:
   mutable std::mutex mutex_;

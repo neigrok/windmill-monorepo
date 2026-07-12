@@ -3,6 +3,7 @@
 #include "adapters/email/ResendEmailSender.h"
 #include "adapters/http/AuthApi.h"
 #include "adapters/http/HttpApi.h"
+#include "adapters/http/RateLimiter.h"
 #include "adapters/postgres/PgAuthRepository.h"
 #include "adapters/postgres/PgOpLog.h"
 #include "adapters/postgres/PgProgressRepository.h"
@@ -89,6 +90,30 @@ int main() {
   }
 
   auto& app = drogon::app();
+
+  // Abuse ceilings, enforced before routing (and in front of any future auth filter). The
+  // limiter keys on the real client IP Caddy records in X-Forwarded-For; internal traffic
+  // (health checks, no XFF) is never limited. The magic-link path additionally rides a
+  // tight per-client bucket and a global send ceiling that protects the Resend quota.
+  auto apiLimiter = std::make_shared<RateLimiter>(25.0, 50.0);          // ~25 req/s/client, burst 50
+  auto magicPerIp = std::make_shared<RateLimiter>(10.0 / 600.0, 10.0);  // ~10 links / 10 min / client
+  auto magicGlobal = std::make_shared<RateLimiter>(0.5, 60.0);          // global email send ceiling
+  app.registerPreRoutingAdvice(
+      [apiLimiter, magicPerIp, magicGlobal](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
+        if (req->method() == drogon::Options) return nullptr;  // never limit CORS preflight
+        const std::string ip = clientIp(req);
+        if (ip.empty()) return nullptr;  // internal / health-check traffic
+        bool ok = apiLimiter->allow(ip);
+        if (ok && req->path() == "/v1/auth/magic-link")
+          ok = magicGlobal->allow("global") && magicPerIp->allow(ip);
+        if (ok) return nullptr;
+        Json::Value body(Json::objectValue);
+        body["error"] = "rate limited";
+        body["code"] = "rate_limited";
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
+        resp->setStatusCode(drogon::k429TooManyRequests);
+        return resp;
+      });
 
   // Presence coalescing: flush buffered cursors/selections to subscribers at 20 Hz (§12),
   // once the event loop is up. One timer drains every tree, latest-wins per actor.
@@ -195,6 +220,9 @@ int main() {
   const char* portEnv = std::getenv("PORT");
   int port = portEnv ? std::atoi(portEnv) : 8080;
   LOG_INFO << "windmill-backend listening on :" << port;
+  app.setClientMaxBodySize(8 * 1024 * 1024);         // backstop cap; a full PUT document can be large
+  app.setClientMaxMemoryBodySize(1 * 1024 * 1024);
+  app.setMaxConnectionNum(20000);                    // global socket ceiling (all arrive via Caddy)
   app.addListener("0.0.0.0", port).setThreadNum(4).run();
   return 0;
 }

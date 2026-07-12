@@ -1,5 +1,7 @@
 #include "adapters/postgres/PgProgressRepository.h"
 
+#include "adapters/postgres/PgConnection.h"
+
 #include <pqxx/pqxx>
 
 namespace wm {
@@ -13,8 +15,7 @@ std::string hlcText(const Hlc& at) {
 PgProgressRepository::PgProgressRepository(std::string connString) : connString_(std::move(connString)) {}
 
 Progress PgProgressRepository::load(const TreeId& tree, const UserId& user) {
-  pqxx::connection conn{connString_};
-  pqxx::work txn{conn};
+  pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result rows = txn.exec_params(
       "SELECT node_id, status FROM node_progress WHERE tree_id = $1 AND user_id = $2",
       tree.str(), user.str());
@@ -31,8 +32,7 @@ Progress PgProgressRepository::load(const TreeId& tree, const UserId& user) {
 
 void PgProgressRepository::setStatus(const TreeId& tree, const UserId& user, const NodeId& node,
                                      ProgressStatus status, const Hlc& at) {
-  pqxx::connection conn{connString_};
-  pqxx::work txn{conn};
+  pqxx::work txn{pgThreadConnection(connString_)};
 
   if (status == ProgressStatus::none) {
     txn.exec_params("DELETE FROM node_progress WHERE tree_id = $1 AND user_id = $2 AND node_id = $3",

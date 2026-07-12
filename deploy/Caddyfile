@@ -12,16 +12,33 @@
 }
 
 {$DOMAIN_API} {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+	}
 	reverse_proxy server:8080
 }
 
 {$DOMAIN_MCP} {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+	}
 	reverse_proxy mcp:8090
 }
 
 # The frontend (windmill repo) is a static Vite SPA rsync'd into ./web by its own deploy
 # workflow; Caddy serves it here. Hash-routed, so try_files is just a safety net.
 {$DOMAIN_APP} {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		X-Frame-Options "DENY"
+		Content-Security-Policy "frame-ancestors 'none'"
+	}
 	encode gzip zstd
 	root * /srv/windmill-web
 	try_files {path} /index.html

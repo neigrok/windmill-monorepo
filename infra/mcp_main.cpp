@@ -32,6 +32,14 @@ struct NullPresenceBus : PresenceBus {
   void broadcastOp(const TreeId&, const AppliedOp&) override {}
 };
 
+// Strip any `user:password@` credentials before a connection string reaches a log line.
+std::string redactDbUrl(const std::string& url) {
+  const std::size_t scheme = url.find("://");
+  const std::size_t at = url.find('@');
+  if (scheme == std::string::npos || at == std::string::npos || at < scheme) return url;
+  return url.substr(0, scheme + 3) + "***@" + url.substr(at + 1);
+}
+
 void reply(const Json::Value& frame) { std::cout << dump(frame) << "\n" << std::flush; }
 
 Json::Value parseError() {
@@ -73,7 +81,7 @@ int main() {
   McpServer server(tools, std::move(info));
 
   // stdout is the protocol channel — everything else goes to stderr.
-  std::cerr << "windmill-mcp ready (stdio; db=" << connString << ", user=" << caller.str() << ")\n";
+  std::cerr << "windmill-mcp ready (stdio; db=" << redactDbUrl(connString) << ", user=" << caller.str() << ")\n";
 
   std::string line;
   while (std::getline(std::cin, line)) {

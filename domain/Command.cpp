@@ -1,5 +1,6 @@
 #include "domain/Command.h"
 
+#include <cmath>
 #include <cstddef>
 
 namespace wm {
@@ -124,7 +125,51 @@ std::vector<Command> invert(const LooseGraph& graph, const Legend& legend, const
 }
 
 std::optional<std::string> validate(const LooseGraph& graph, const Legend& legend, const Command& command) {
+  auto idBounds = [](const NodeId& id) -> std::optional<std::string> {
+    if (id.empty()) return "node id is empty";
+    if (id.str().size() > kMaxIdLength) return "node id is too long (max 128 characters)";
+    return std::nullopt;
+  };
   return std::visit(overloaded{
+    [&](const CreateNode& c) -> std::optional<std::string> {
+      if (auto bad = idBounds(c.id)) return bad;
+      if (c.label.size() > kMaxNodeLabelLength) return "label is too long (max 200 characters)";
+      if (c.icon.size() > kMaxIconLength) return "icon is too long (max 64 characters)";
+      if (c.position && !(std::isfinite(c.position->x) && std::isfinite(c.position->y)))
+        return "position is not finite";
+      if (!graph.hasNode(c.id) && graph.presentNodeIds().size() >= kMaxNodes)
+        return "tree is at node capacity";
+      return std::nullopt;
+    },
+    [&](const RenameNode& c) -> std::optional<std::string> {
+      if (auto bad = idBounds(c.id)) return bad;
+      if (c.label.size() > kMaxNodeLabelLength) return "label is too long (max 200 characters)";
+      return std::nullopt;
+    },
+    [&](const RepositionNode& c) -> std::optional<std::string> {
+      if (auto bad = idBounds(c.id)) return bad;
+      if (!(std::isfinite(c.position.x) && std::isfinite(c.position.y))) return "position is not finite";
+      return std::nullopt;
+    },
+    [&](const SetNodeColor& c) -> std::optional<std::string> { return idBounds(c.id); },
+    [&](const DeleteNode& c) -> std::optional<std::string> { return idBounds(c.id); },
+    [&](const AddEdge& c) -> std::optional<std::string> {
+      if (auto bad = idBounds(c.from)) return bad;
+      if (auto bad = idBounds(c.to)) return bad;
+      if (!graph.edgePresent(c.from, c.to) && graph.presentEdges().size() >= kMaxEdges)
+        return "tree is at edge capacity";
+      return std::nullopt;
+    },
+    [&](const RemoveEdge& c) -> std::optional<std::string> {
+      if (auto bad = idBounds(c.from)) return bad;
+      return idBounds(c.to);
+    },
+    [&](const ReconnectEdge& c) -> std::optional<std::string> {
+      if (auto bad = idBounds(c.oldFrom)) return bad;
+      if (auto bad = idBounds(c.oldTo)) return bad;
+      if (auto bad = idBounds(c.newFrom)) return bad;
+      return idBounds(c.newTo);
+    },
     [&](const RenameKind& c) -> std::optional<std::string> {
       if (!legend.has(c.id)) return "no such kind";
       if (c.label.size() > kMaxLabelLength) return "label is too long (max 24 characters)";

@@ -3,6 +3,8 @@
 #include "domain/LooseGraph.h"
 #include "test/testing.h"
 
+#include <limits>
+
 using namespace wm;
 
 static NodeId nid(const char* s) { return NodeId{std::string(s)}; }
@@ -187,4 +189,44 @@ TEST(validate_length_caps_and_recolor_hue_uniqueness) {
   CHECK(validate(g, legend, Command{RecolorKind{kid("build"), NodeColor::olive}}).has_value());  // taken
   CHECK_FALSE(validate(g, legend, Command{RecolorKind{kid("build"), NodeColor::sky}}).has_value());  // free
   CHECK_FALSE(validate(g, legend, Command{RecolorKind{kid("build"), NodeColor::terracotta}}).has_value());  // its own hue
+}
+
+TEST(validate_rejects_over_long_node_label) {
+  LooseGraph g = seeded();
+  Legend legend;
+  CHECK_EQ(validate(g, legend, Command{RenameNode{nid("a"), std::string(kMaxNodeLabelLength + 1, 'x')}}),
+           std::optional<std::string>("label is too long (max 200 characters)"));
+  CHECK_FALSE(validate(g, legend, Command{RenameNode{nid("a"), std::string(kMaxNodeLabelLength, 'x')}}).has_value());
+}
+
+TEST(validate_rejects_non_finite_reposition) {
+  LooseGraph g = seeded();
+  Legend legend;
+  double inf = std::numeric_limits<double>::infinity();
+  double nan = std::numeric_limits<double>::quiet_NaN();
+  CHECK_EQ(validate(g, legend, Command{RepositionNode{nid("a"), Vec2{inf, 0}}}),
+           std::optional<std::string>("position is not finite"));
+  CHECK_EQ(validate(g, legend, Command{RepositionNode{nid("a"), Vec2{0, nan}}}),
+           std::optional<std::string>("position is not finite"));
+  CHECK_FALSE(validate(g, legend, Command{RepositionNode{nid("a"), Vec2{1.5, -2.5}}}).has_value());
+}
+
+TEST(validate_rejects_new_create_at_node_capacity) {
+  LooseGraph g;
+  Legend legend;
+  for (std::size_t i = 0; i < kMaxNodes; ++i) {
+    g.createNode(nid(("n" + std::to_string(i)).c_str()), "L", "i", NodeColor::sky, std::nullopt, at(1));
+  }
+  CHECK_EQ(g.presentNodeIds().size(), kMaxNodes);
+  CHECK_EQ(validate(g, legend, Command{CreateNode{nid("overflow"), "L", "i"}}),
+           std::optional<std::string>("tree is at node capacity"));
+  CHECK_FALSE(validate(g, legend, Command{CreateNode{nid("n0"), "L", "i"}}).has_value());  // existing node, not new
+}
+
+TEST(validate_admits_normal_create_and_add_edge) {
+  LooseGraph g = seeded();
+  Legend legend;
+  Command create = CreateNode{nid("c"), "C", "icon", NodeColor::sky, std::nullopt, Vec2{1.5, -2.5}};
+  CHECK_FALSE(validate(g, legend, create).has_value());
+  CHECK_FALSE(validate(g, legend, Command{AddEdge{nid("a"), nid("b")}}).has_value());
 }

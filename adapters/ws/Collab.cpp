@@ -4,11 +4,15 @@
 #include "adapters/json/TreeJson.h"
 #include "application/TreeRoom.h"
 
+#include <trantor/utils/Logger.h>
+
 namespace wm {
 
 namespace {
 std::shared_ptr<Collab> g_collab;
 constexpr Seq kSnapshotEvery = 25;  // persist full state every N ops to bound tail replay
+constexpr double kWsRatePerSec = 50.0;  // sustained frames/sec per connection
+constexpr double kWsBurst = 100.0;      // short-burst allowance
 
 UserId actorOf(const drogon::WebSocketConnectionPtr& conn) {
   return conn->getContextRef<UserId>();
@@ -34,23 +38,49 @@ Collab::Collab(RoomRegistry& registry, OpLog& ops, WsPresenceBus& bus, UndoServi
 
 void Collab::onOpen(const drogon::WebSocketConnectionPtr& conn) {
   conn->setContext(std::make_shared<UserId>("u" + std::to_string(++actorSeq_)));
+  std::lock_guard<std::mutex> lock(wsMutex_);
+  wsRate_[conn.get()] = WsRate{kWsBurst, std::chrono::steady_clock::now()};
 }
 
 void Collab::onClose(const drogon::WebSocketConnectionPtr& conn) {
   presence_.leave(conn);
   bus_.drop(conn);
+  undos_.forgetActor(actorOf(conn).str());  // reclaim this connection's undo/redo stacks
+  std::lock_guard<std::mutex> lock(wsMutex_);
+  wsRate_.erase(conn.get());
+}
+
+bool Collab::overRate(const drogon::WebSocketConnectionPtr& conn) {
+  const auto now = std::chrono::steady_clock::now();
+  std::lock_guard<std::mutex> lock(wsMutex_);
+  WsRate& rate = wsRate_[conn.get()];
+  if (rate.seen == std::chrono::steady_clock::time_point{}) rate.tokens = kWsBurst;
+  else rate.tokens = std::min(kWsBurst, rate.tokens + std::chrono::duration<double>(now - rate.seen).count() * kWsRatePerSec);
+  rate.seen = now;
+  if (rate.tokens < 1.0) return true;
+  rate.tokens -= 1.0;
+  return false;
 }
 
 void Collab::onMessage(const drogon::WebSocketConnectionPtr& conn, const std::string& text) {
-  Json::Value frame = parse(text);
-  std::string type = frame.get("t", "").asString();
-  std::string treeId = frame.get("treeId", "").asString();
-  if (type == "subscribe") return subscribe(conn, treeId, frame.get("lastSeq", 0).asUInt64());
-  if (type == "cmd") return command(conn, treeId, frame);
-  if (type == "progress") return progress(conn, treeId, frame);
-  if (type == "undo") return undoRedo(conn, treeId, true);
-  if (type == "redo") return undoRedo(conn, treeId, false);
-  if (type == "presence") { presence_.update(conn, TreeId{treeId}, frame); return; }
+  if (overRate(conn)) return;  // a flooding connection's frames are dropped, cheaply, before parse
+  // Drogon does not wrap WS callbacks: an exception escaping here aborts the whole
+  // process (trantor rethrows on its IO thread). Any malformed frame — wrong JSON types,
+  // an unknown tree, over-nested payload — must degrade to a dropped message, never a crash.
+  try {
+    Json::Value frame = parse(text);
+    if (!frame.isObject()) return;
+    std::string type = frame.get("t", "").asString();
+    std::string treeId = frame.get("treeId", "").asString();
+    if (type == "subscribe") return subscribe(conn, treeId, frame.get("lastSeq", 0).asUInt64());
+    if (type == "cmd") return command(conn, treeId, frame);
+    if (type == "progress") return progress(conn, treeId, frame);
+    if (type == "undo") return undoRedo(conn, treeId, true);
+    if (type == "redo") return undoRedo(conn, treeId, false);
+    if (type == "presence") { presence_.update(conn, TreeId{treeId}, frame); return; }
+  } catch (const std::exception& error) {
+    LOG_ERROR << "dropped malformed ws frame: " << error.what();
+  }
 }
 
 void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, Seq lastSeq) {

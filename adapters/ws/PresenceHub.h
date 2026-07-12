@@ -7,6 +7,7 @@
 
 #include <json/json.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <mutex>
@@ -29,6 +30,9 @@ public:
   void flush();  // driven by a 20 Hz timer; sends each moved participant's latest state
 
 private:
+  // Cap fan-out on a crowded tree: past this many members a newcomer is not tracked.
+  static constexpr std::size_t kMaxMembersPerTree = 200;
+
   struct Member {
     UserId actor;
     std::string name;

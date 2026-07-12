@@ -10,11 +10,13 @@
 #include <drogon/WebSocketConnection.h>
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 
 namespace wm {
 
@@ -35,6 +37,7 @@ private:
   void command(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, const Json::Value& frame);
   void progress(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, const Json::Value& frame);
   void undoRedo(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, bool isUndo);
+  bool overRate(const drogon::WebSocketConnectionPtr& conn);  // per-connection message-rate gate
 
   RoomRegistry& registry_;
   OpLog& ops_;
@@ -45,6 +48,12 @@ private:
   PresenceHub& presence_;
   std::atomic<std::uint64_t> tick_{1};  // first command HLC sorts after the genesis seed
   std::atomic<std::uint64_t> actorSeq_{0};
+
+  // Per-connection message-rate bucket, so one socket can't flood the write path. Keyed by
+  // the connection pointer; created on open, erased on close.
+  struct WsRate { double tokens; std::chrono::steady_clock::time_point seen; };
+  std::mutex wsMutex_;
+  std::unordered_map<const void*, WsRate> wsRate_;
 };
 
 void setCollab(std::shared_ptr<Collab> collab);

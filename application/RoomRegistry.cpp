@@ -1,5 +1,6 @@
 #include "application/RoomRegistry.h"
 
+#include <functional>
 #include <stdexcept>
 
 namespace wm {
@@ -8,10 +9,15 @@ RoomRegistry::RoomRegistry(TreeRepository& repo, OpLog& ops, PresenceBus& bus)
     : repo_(repo), ops_(ops), bus_(bus) {}
 
 TreeRoom& RoomRegistry::open(const TreeId& id) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  auto existing = rooms_.find(id);
-  if (existing != rooms_.end()) return *existing->second;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto existing = rooms_.find(id);
+    if (existing != rooms_.end()) return *existing->second;
+  }
 
+  // Load + replay outside the registry lock so one cold/large tree's open can't freeze
+  // every other tree's room operations. open(id) always runs under strandFor(id), so no
+  // second thread builds the same id concurrently; the re-check below covers the general case.
   std::optional<StoredTree> stored = repo_.load(id);
   if (!stored) throw std::runtime_error("no such tree \"" + id.str() + "\"");
 
@@ -22,6 +28,10 @@ TreeRoom& RoomRegistry::open(const TreeId& id) {
   // The document is a snapshot at stored->head; replay the op-log tail to reach the
   // true current state (and the true head), so new ops never collide on seq.
   for (const AppliedOp& op : ops_.since(id, stored->head)) room->replay(op);
+
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto existing = rooms_.find(id);
+  if (existing != rooms_.end()) return *existing->second;  // another thread won the race
   TreeRoom& ref = *room;
   rooms_.emplace(id, std::move(room));
   return ref;
@@ -58,10 +68,7 @@ bool RoomRegistry::isOpen(const TreeId& id) const {
 }
 
 std::mutex& RoomRegistry::strandFor(const TreeId& id) {
-  std::lock_guard<std::mutex> lock(strandsMutex_);
-  std::unique_ptr<std::mutex>& strand = strands_[id];
-  if (!strand) strand = std::make_unique<std::mutex>();
-  return *strand;
+  return strands_[std::hash<std::string>{}(id.str()) % kStrandStripes];
 }
 
 }

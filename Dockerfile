@@ -77,5 +77,10 @@ COPY --from=build /src/db/schema.sql            /app/db/schema.sql
 WORKDIR /app
 EXPOSE 8080 8090
 
+# Drop root: the binaries and schema are world-readable/executable, curl (healthcheck)
+# needs no privilege, and psql runs in the separate migrate service — nothing here does.
+RUN useradd --system --uid 10001 --user-group windmill
+USER windmill
+
 # Default to the web server; the mcp service overrides `command` in compose.
 CMD ["windmill_server"]

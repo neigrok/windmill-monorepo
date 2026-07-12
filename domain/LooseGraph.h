@@ -5,6 +5,7 @@
 #include "domain/Ids.h"
 #include "domain/Tree.h"
 
+#include <cstddef>
 #include <map>
 #include <optional>
 #include <string>
@@ -57,6 +58,8 @@ public:
   GraphState exportState() const;
 
 private:
+  static constexpr std::size_t kMaxReductionNodes = 1500;  // reduction is optional cleanup; skip above this
+
   std::map<NodeId, NodeRecord> nodes_;
   std::map<Edge, ElementSet> edges_;
 };

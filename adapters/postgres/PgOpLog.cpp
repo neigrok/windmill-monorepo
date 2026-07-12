@@ -2,12 +2,15 @@
 
 #include "adapters/json/CommandJson.h"
 #include "adapters/json/TreeJson.h"
+#include "adapters/postgres/PgConnection.h"
 
 #include <pqxx/pqxx>
 
 namespace wm {
 
 namespace {
+constexpr int kOpReadLimit = 10000;  // cap one replay read so a giant op log can't be slurped whole
+
 std::string hlcText(const Hlc& at) {
   return std::to_string(at.physicalMs) + ":" + std::to_string(at.counter) + ":" + at.actor;
 }
@@ -28,8 +31,7 @@ PgOpLog::PgOpLog(std::string connString) : connString_(std::move(connString)) {}
 
 void PgOpLog::append(const TreeId& tree, const AppliedOp& op) {
   std::string payload = dump(commandPayload(op.command));
-  pqxx::connection conn{connString_};
-  pqxx::work txn{conn};
+  pqxx::work txn{pgThreadConnection(connString_)};
   txn.exec_params(
       "INSERT INTO tree_ops (tree_id, seq, actor_id, op_id, kind, payload, hlc) "
       "VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7) ON CONFLICT (tree_id, op_id) DO NOTHING",
@@ -39,13 +41,12 @@ void PgOpLog::append(const TreeId& tree, const AppliedOp& op) {
 }
 
 std::vector<AppliedOp> PgOpLog::since(const TreeId& tree, Seq afterSeq) const {
-  pqxx::connection conn{connString_};
-  pqxx::work txn{conn};
+  pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result rows = txn.exec_params(
       "SELECT seq, actor_id, op_id, kind, payload::text, hlc, "
       "(extract(epoch from created_at) * 1000)::bigint AS created_ms FROM tree_ops "
-      "WHERE tree_id = $1 AND seq > $2 ORDER BY seq",
-      tree.str(), static_cast<long long>(afterSeq));
+      "WHERE tree_id = $1 AND seq > $2 ORDER BY seq LIMIT $3",
+      tree.str(), static_cast<long long>(afterSeq), kOpReadLimit);
 
   std::vector<AppliedOp> ops;
   for (const auto& row : rows) {

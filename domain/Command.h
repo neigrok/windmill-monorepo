@@ -5,12 +5,21 @@
 #include "domain/LooseGraph.h"
 #include "domain/Tree.h"
 
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <variant>
 #include <vector>
 
 namespace wm {
+
+// Admission bounds for graph commands, enforced by validate() at the edge; legend caps
+// (kMaxKinds etc.) live with the legend cases in Command.cpp.
+constexpr std::size_t kMaxIdLength = 128;         // node / tree id length in bytes
+constexpr std::size_t kMaxNodeLabelLength = 200;  // node display-label length in bytes
+constexpr std::size_t kMaxIconLength = 64;        // node icon token length in bytes
+constexpr std::size_t kMaxNodes = 10000;          // present nodes admitted per tree
+constexpr std::size_t kMaxEdges = 20000;          // present edges admitted per tree
 
 struct RenameNode { NodeId id; std::string label; };
 struct SetNodeColor { NodeId id; NodeColor color; };

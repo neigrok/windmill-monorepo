@@ -1,3 +1,4 @@
+#include "adapters/http/RateLimiter.h"
 #include "adapters/mcp/McpHttpEndpoint.h"
 #include "adapters/mcp/McpServer.h"
 #include "adapters/mcp/RoadmapTools.h"
@@ -38,6 +39,14 @@ std::string env(const char* key, const std::string& fallback) {
   const char* value = std::getenv(key);
   return value ? std::string(value) : fallback;
 }
+
+// Strip any `user:password@` credentials before a connection string reaches a log line.
+std::string redactDbUrl(const std::string& url) {
+  const std::size_t scheme = url.find("://");
+  const std::size_t at = url.find('@');
+  if (scheme == std::string::npos || at == std::string::npos || at < scheme) return url;
+  return url.substr(0, scheme + 3) + "***@" + url.substr(at + 1);
+}
 }
 
 int main() {
@@ -71,6 +80,20 @@ int main() {
   auto endpoint = std::make_shared<McpHttpEndpoint>(*server, origins);
 
   auto& app = drogon::app();
+
+  // Per-client abuse ceiling on the public MCP surface, keyed on Caddy's X-Forwarded-For.
+  // Internal traffic (health checks, no XFF) is never limited.
+  auto mcpLimiter = std::make_shared<RateLimiter>(20.0, 40.0);  // ~20 req/s/client, burst 40
+  app.registerPreRoutingAdvice(
+      [mcpLimiter](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
+        if (req->method() == drogon::Options) return nullptr;
+        const std::string ip = clientIp(req);
+        if (ip.empty() || mcpLimiter->allow(ip)) return nullptr;
+        auto resp = drogon::HttpResponse::newHttpResponse();
+        resp->setStatusCode(drogon::k429TooManyRequests);
+        resp->setBody("rate limited");
+        return resp;
+      });
 
   // CORS for browser-based MCP clients: reflect an allowed Origin and expose the session id.
   app.registerPostHandlingAdvice(
@@ -125,7 +148,10 @@ int main() {
       {drogon::Get});
 
   LOG_INFO << "windmill-mcp-http listening on " << host << ":" << port << path
-           << " (db=" << connString << ", user=" << caller.str() << ")";
+           << " (db=" << redactDbUrl(connString) << ", user=" << caller.str() << ")";
+  app.setClientMaxBodySize(2 * 1024 * 1024);
+  app.setClientMaxMemoryBodySize(1 * 1024 * 1024);
+  app.setMaxConnectionNum(20000);
   app.addListener(host, port).setThreadNum(threads).run();
   return 0;
 }

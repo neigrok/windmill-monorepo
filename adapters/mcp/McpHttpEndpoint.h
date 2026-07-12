@@ -5,9 +5,10 @@
 #include <drogon/HttpRequest.h>
 #include <drogon/HttpResponse.h>
 
+#include <chrono>
 #include <functional>
+#include <map>
 #include <mutex>
-#include <random>
 #include <set>
 #include <string>
 
@@ -40,8 +41,7 @@ private:
   McpServer& server_;
   std::set<std::string> allowedOrigins_;
   mutable std::mutex mutex_;
-  std::set<std::string> sessions_;
-  std::mt19937_64 rng_;
+  std::map<std::string, std::chrono::steady_clock::time_point> sessions_;  // id -> sliding expiry
 };
 
 }

@@ -2,6 +2,7 @@
 
 #include "adapters/json/TreeJson.h"
 
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -30,8 +31,8 @@ std::string colorOf(const UserId& actor) {
   return kPalette[seatOf(actor) % kPalette.size()];
 }
 
-void sendTo(const drogon::WebSocketConnectionPtr& conn, const Json::Value& frame) {
-  if (conn->connected()) conn->send(dump(frame));
+void sendTo(const drogon::WebSocketConnectionPtr& conn, const std::string& payload) {
+  if (conn->connected()) conn->send(payload);
 }
 }
 
@@ -39,15 +40,21 @@ void PresenceHub::join(const drogon::WebSocketConnectionPtr& conn, const TreeId&
   std::lock_guard<std::mutex> lock(mutex_);
   auto& members = byTree_[tree.str()];
 
+  // Past the cap a newcomer is neither tracked nor announced: it adds no fan-out and, in
+  // trade, sees no peers. Bounds both membership and per-flush cost on a crowded tree.
+  if (members.size() >= kMaxMembersPerTree) return;
+
   UserId actor = conn->getContextRef<UserId>();
   Member self{actor, nameOf(actor), colorOf(actor), std::nullopt, std::nullopt, false};
 
   // Tell the newcomer who is already here (roster + any live cursor), and tell everyone
-  // else the newcomer arrived. Presence frames then keep every cursor current.
+  // else the newcomer arrived. The arrival frame is one broadcast, so serialize it once
+  // and reuse the buffer; the roster frames are distinct and dumped in place.
+  std::string arrival = dump(peerFrame(tree.str(), self, "join"));
   for (const auto& [other, member] : members) {
-    sendTo(conn, peerFrame(tree.str(), member, "join"));
-    if (member.cursor || member.selection) sendTo(conn, presenceFrame(tree.str(), member));
-    sendTo(other, peerFrame(tree.str(), self, "join"));
+    sendTo(conn, dump(peerFrame(tree.str(), member, "join")));
+    if (member.cursor || member.selection) sendTo(conn, dump(presenceFrame(tree.str(), member)));
+    sendTo(other, arrival);
   }
   members.emplace(conn, std::move(self));
 }
@@ -75,27 +82,28 @@ void PresenceHub::leave(const drogon::WebSocketConnectionPtr& conn) {
   for (auto& [tree, members] : byTree_) {
     auto it = members.find(conn);
     if (it == members.end()) continue;
-    Json::Value gone = peerFrame(tree, it->second, "leave");
+    std::string gone = dump(peerFrame(tree, it->second, "leave"));
     members.erase(it);
     for (const auto& [other, _] : members) sendTo(other, gone);
   }
 }
 
 void PresenceHub::flush() {
-  std::vector<std::pair<drogon::WebSocketConnectionPtr, Json::Value>> outbox;
+  std::vector<std::pair<drogon::WebSocketConnectionPtr, std::shared_ptr<std::string>>> outbox;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     for (auto& [tree, members] : byTree_) {
       for (auto& [conn, member] : members) {
         if (!member.moved) continue;
         member.moved = false;
-        Json::Value frame = presenceFrame(tree, member);
+        // Serialize the moved actor's frame once, then hand the same buffer to every peer.
+        auto frame = std::make_shared<std::string>(dump(presenceFrame(tree, member)));
         for (const auto& [other, _] : members)
           if (other != conn) outbox.emplace_back(other, frame);
       }
     }
   }
-  for (const auto& [conn, frame] : outbox) sendTo(conn, frame);
+  for (const auto& [conn, frame] : outbox) sendTo(conn, *frame);
 }
 
 Json::Value PresenceHub::presenceFrame(const std::string& tree, const Member& member) const {

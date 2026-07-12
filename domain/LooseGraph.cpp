@@ -135,6 +135,8 @@ std::vector<Edge> LooseGraph::liveEdges() const {
 }
 
 std::vector<Edge> LooseGraph::redundantEdges() const {
+  if (presentNodeIds().size() > kMaxReductionNodes) return {};  // bound the superlinear reachability
+
   std::map<NodeId, std::vector<NodeId>> parents;
   for (const auto& edge : liveEdges()) parents[edge.to].push_back(edge.from);
 

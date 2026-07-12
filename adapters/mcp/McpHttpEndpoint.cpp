@@ -1,12 +1,34 @@
 #include "adapters/mcp/McpHttpEndpoint.h"
 
+#include <openssl/rand.h>
+
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <string_view>
+#include <vector>
 
 namespace wm {
 
 namespace {
+
+using SessionClock = std::chrono::steady_clock;
+constexpr auto kSessionTtl = std::chrono::minutes(30);  // idle timeout, refreshed on each use
+constexpr std::size_t kMaxSessions = 10000;             // backstop bound on the session table
+
+// A CSPRNG session id: 16 bytes of OpenSSL entropy as lowercase hex (128 unguessable bits).
+std::string mintSessionId() {
+  std::vector<unsigned char> bytes(16);
+  if (RAND_bytes(bytes.data(), static_cast<int>(bytes.size())) != 1)
+    throw std::runtime_error("session entropy unavailable");
+  static constexpr char digits[] = "0123456789abcdef";
+  std::string hex(bytes.size() * 2, '0');
+  for (std::size_t i = 0; i < bytes.size(); ++i) {
+    hex[2 * i] = digits[bytes[i] >> 4];
+    hex[2 * i + 1] = digits[bytes[i] & 0x0F];
+  }
+  return hex;
+}
 
 drogon::HttpResponsePtr jsonResponse(const Json::Value& body, drogon::HttpStatusCode code) {
   auto response = drogon::HttpResponse::newHttpJsonResponse(body);
@@ -36,14 +58,20 @@ bool originAllowed(const std::set<std::string>& allowed, const std::string& orig
 // Accept whatever the client labelled its body as: prefer Drogon's parse, fall back to a
 // raw parse so a missing/loose Content-Type still works.
 Json::Value parseBody(const drogon::HttpRequestPtr& request) {
-  if (std::shared_ptr<Json::Value> parsed = request->getJsonObject()) return *parsed;
-  Json::Value root;
-  std::string_view raw = request->getBody();
-  Json::CharReaderBuilder builder;
-  std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
-  std::string errors;
-  reader->parse(raw.data(), raw.data() + raw.size(), &root, &errors);
-  return root;
+  // Both Drogon's getJsonObject and a manual parse throw on an over-nested body; keep the
+  // whole thing a null value so handlePost answers a clean parse error, never a 500/crash.
+  try {
+    if (std::shared_ptr<Json::Value> parsed = request->getJsonObject()) return *parsed;
+    Json::Value root;
+    std::string_view raw = request->getBody();
+    Json::CharReaderBuilder builder;
+    std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
+    std::string errors;
+    reader->parse(raw.data(), raw.data() + raw.size(), &root, &errors);
+    return root;
+  } catch (const std::exception&) {
+    return Json::Value(Json::nullValue);
+  }
 }
 
 std::string trim(const std::string& value) {
@@ -67,14 +95,16 @@ std::set<std::string> parseOriginList(const std::string& csv) {
 }
 
 McpHttpEndpoint::McpHttpEndpoint(McpServer& server, std::set<std::string> allowedOrigins)
-    : server_(server), allowedOrigins_(std::move(allowedOrigins)), rng_(std::random_device{}()) {}
+    : server_(server), allowedOrigins_(std::move(allowedOrigins)) {}
 
 std::string McpHttpEndpoint::openSession() {
   std::lock_guard<std::mutex> lock(mutex_);
-  std::stringstream id;
-  id << std::hex << rng_() << rng_();  // 128 unguessable bits
-  std::string session = id.str();
-  sessions_.insert(session);
+  const auto now = SessionClock::now();
+  for (auto it = sessions_.begin(); it != sessions_.end();)  // reap the lapsed before minting
+    it = it->second < now ? sessions_.erase(it) : std::next(it);
+  if (sessions_.size() >= kMaxSessions) sessions_.clear();  // backstop: shed the table under abuse
+  std::string session = mintSessionId();
+  sessions_[session] = now + kSessionTtl;
   return session;
 }
 
@@ -100,10 +130,13 @@ void McpHttpEndpoint::handlePost(const drogon::HttpRequestPtr& request, McpHttpC
       return;
     }
     std::lock_guard<std::mutex> lock(mutex_);
-    if (!sessions_.count(sessionId)) {
+    auto it = sessions_.find(sessionId);
+    if (it == sessions_.end() || it->second < SessionClock::now()) {
+      if (it != sessions_.end()) sessions_.erase(it);
       callback(rpcError(-32001, "unknown or expired session", drogon::k404NotFound));
       return;
     }
+    it->second = SessionClock::now() + kSessionTtl;  // sliding: activity refreshes the window
   }
 
   std::optional<Json::Value> reply = server_.handle(message);

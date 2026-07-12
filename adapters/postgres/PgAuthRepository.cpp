@@ -1,5 +1,7 @@
 #include "adapters/postgres/PgAuthRepository.h"
 
+#include "adapters/postgres/PgConnection.h"
+
 #include <pqxx/pqxx>
 
 namespace wm {
@@ -7,8 +9,7 @@ namespace wm {
 PgAuthRepository::PgAuthRepository(std::string connString) : connString_(std::move(connString)) {}
 
 std::optional<User> PgAuthRepository::findUserByEmail(const Email& email) {
-  pqxx::connection conn{connString_};
-  pqxx::work txn{conn};
+  pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result rows = txn.exec_params(
       "SELECT id::text, email::text, name FROM users WHERE email = $1", email.value);
   if (rows.empty()) return std::nullopt;
@@ -19,8 +20,7 @@ std::optional<User> PgAuthRepository::findUserByEmail(const Email& email) {
 }
 
 std::optional<User> PgAuthRepository::findUserById(const UserId& id) {
-  pqxx::connection conn{connString_};
-  pqxx::work txn{conn};
+  pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result rows = txn.exec_params(
       "SELECT id::text, email::text, name FROM users WHERE id = $1::uuid", id.str());
   if (rows.empty()) return std::nullopt;
@@ -31,8 +31,7 @@ std::optional<User> PgAuthRepository::findUserById(const UserId& id) {
 }
 
 User PgAuthRepository::createUser(const Email& email, const std::string& name) {
-  pqxx::connection conn{connString_};
-  pqxx::work txn{conn};
+  pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result rows = txn.exec_params(
       "INSERT INTO users (id, email, name) VALUES (gen_random_uuid(), $1, $2) "
       "RETURNING id::text, email::text, name",
@@ -46,8 +45,7 @@ User PgAuthRepository::createUser(const Email& email, const std::string& name) {
 
 void PgAuthRepository::insertLink(const std::string& digest, const Email& email, UnixMs createdAt,
                                   UnixMs expiresAt) {
-  pqxx::connection conn{connString_};
-  pqxx::work txn{conn};
+  pqxx::work txn{pgThreadConnection(connString_)};
   txn.exec_params(
       "INSERT INTO magic_links (token_hash, email, created_ms, expires_ms) "
       "VALUES ($1, $2, $3, $4)",
@@ -56,8 +54,7 @@ void PgAuthRepository::insertLink(const std::string& digest, const Email& email,
 }
 
 int PgAuthRepository::countRecentLinks(const Email& email, UnixMs since) {
-  pqxx::connection conn{connString_};
-  pqxx::work txn{conn};
+  pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result rows = txn.exec_params(
       "SELECT count(*) FROM magic_links "
       "WHERE email = $1 AND consumed_ms IS NULL AND created_ms >= $2",
@@ -66,8 +63,7 @@ int PgAuthRepository::countRecentLinks(const Email& email, UnixMs since) {
 }
 
 std::optional<StoredLink> PgAuthRepository::findLink(const std::string& digest) {
-  pqxx::connection conn{connString_};
-  pqxx::work txn{conn};
+  pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result rows = txn.exec_params(
       "SELECT email::text, consumed_ms, expires_ms FROM magic_links WHERE token_hash = $1", digest);
   if (rows.empty()) return std::nullopt;
@@ -78,8 +74,7 @@ std::optional<StoredLink> PgAuthRepository::findLink(const std::string& digest) 
 }
 
 bool PgAuthRepository::consumeLink(const std::string& digest, UnixMs at) {
-  pqxx::connection conn{connString_};
-  pqxx::work txn{conn};
+  pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result result = txn.exec_params(
       "UPDATE magic_links SET consumed_ms = $2 WHERE token_hash = $1 AND consumed_ms IS NULL",
       digest, static_cast<long long>(at));
@@ -88,8 +83,7 @@ bool PgAuthRepository::consumeLink(const std::string& digest, UnixMs at) {
 }
 
 void PgAuthRepository::insertSession(const std::string& digest, const UserId& user, UnixMs expiresAt) {
-  pqxx::connection conn{connString_};
-  pqxx::work txn{conn};
+  pqxx::work txn{pgThreadConnection(connString_)};
   txn.exec_params(
       "INSERT INTO sessions (token_hash, user_id, expires_ms) VALUES ($1, $2::uuid, $3)",
       digest, user.str(), static_cast<long long>(expiresAt));
@@ -97,8 +91,7 @@ void PgAuthRepository::insertSession(const std::string& digest, const UserId& us
 }
 
 std::optional<StoredSession> PgAuthRepository::findSession(const std::string& digest) {
-  pqxx::connection conn{connString_};
-  pqxx::work txn{conn};
+  pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result rows = txn.exec_params(
       "SELECT user_id::text, expires_ms FROM sessions WHERE token_hash = $1", digest);
   if (rows.empty()) return std::nullopt;
@@ -109,16 +102,14 @@ std::optional<StoredSession> PgAuthRepository::findSession(const std::string& di
 }
 
 void PgAuthRepository::refreshSession(const std::string& digest, UnixMs expiresAt) {
-  pqxx::connection conn{connString_};
-  pqxx::work txn{conn};
+  pqxx::work txn{pgThreadConnection(connString_)};
   txn.exec_params("UPDATE sessions SET expires_ms = $2 WHERE token_hash = $1", digest,
                   static_cast<long long>(expiresAt));
   txn.commit();
 }
 
 void PgAuthRepository::deleteSession(const std::string& digest) {
-  pqxx::connection conn{connString_};
-  pqxx::work txn{conn};
+  pqxx::work txn{pgThreadConnection(connString_)};
   txn.exec_params("DELETE FROM sessions WHERE token_hash = $1", digest);
   txn.commit();
 }
