@@ -32,12 +32,13 @@ RUN apt-get update \
 WORKDIR /src
 COPY . .
 
-# Configure once, then build the two service binaries plus both test suites. The guard
+# Configure once, then build the two service binaries plus every test suite. The guard
 # in CMakeLists only defines these targets when Drogon + libpqxx are found, so a failed
-# dependency resolution surfaces as "unknown target" here, not a silent skip.
+# dependency resolution surfaces as "unknown target" here, not a silent skip. Every suite
+# ctest registers must be listed, or ctest fails on a missing executable, not a red test.
 RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
  && cmake --build build -j"$(nproc)" \
-      --target windmill_server windmill_mcp_http windmill_domain_tests windmill_mcp_tests
+      --target windmill_server windmill_mcp_http windmill_domain_tests windmill_mcp_tests windmill_adapters_tests
 
 # Tests are self-contained (in-memory fakes, no database) — run them in the build so a
 # red suite fails the image, and a PR that only builds this stage still gets tested.
