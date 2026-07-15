@@ -25,17 +25,20 @@ struct NodeStateEntry {
   Hlc positionAt;
   std::optional<std::string> status;
   Hlc statusAt;
+  bool operator==(const NodeStateEntry&) const = default;
 };
 
 struct EdgeStateEntry {
   Edge edge;
   Hlc addedAt;
   Hlc removedAt;
+  bool operator==(const EdgeStateEntry&) const = default;
 };
 
 struct GraphState {
   std::vector<NodeStateEntry> nodes;
   std::vector<EdgeStateEntry> edges;
+  bool operator==(const GraphState&) const = default;
 };
 
 }

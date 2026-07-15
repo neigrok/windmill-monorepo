@@ -13,20 +13,10 @@ Json::Value edgeJson(const Edge& edge) {
   return value;
 }
 
-std::string hlcText(const Hlc& at) {
-  return std::to_string(at.physicalMs) + ":" + std::to_string(at.counter) + ":" + at.actor;
-}
-
-Hlc hlcFromText(const std::string& text) {
-  Hlc hlc;
-  auto first = text.find(':');
-  auto second = text.find(':', first + 1);
-  if (first == std::string::npos || second == std::string::npos) return hlc;
-  hlc.physicalMs = std::stoull(text.substr(0, first));
-  hlc.counter = static_cast<std::uint32_t>(std::stoul(text.substr(first + 1, second - first - 1)));
-  hlc.actor = text.substr(second + 1);
-  return hlc;
-}
+// The stamp codec is shared with the op log and the subgraph wire (domain/Ids.h): the
+// document and the wire speak one stamp format.
+std::string hlcText(const Hlc& at) { return toString(at); }
+Hlc hlcFromText(const std::string& text) { return parseHlc(text); }
 }
 
 Json::Value toJson(const TreeData& data) {
@@ -119,6 +109,10 @@ Json::Value toJson(const TreeDiagnostics& diagnostics) {
     smells.append(value);
   }
   root["smells"] = smells;
+
+  Json::Value maskedWork(Json::arrayValue);
+  for (const NodeId& node : diagnostics.maskedWork) maskedWork.append(node.str());
+  root["maskedWork"] = maskedWork;
 
   return root;
 }

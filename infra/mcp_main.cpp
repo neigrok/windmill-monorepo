@@ -31,7 +31,7 @@ struct SystemClock : Clock {
 // server picks up an agent's edits on its next room load / reconnect replay — so op
 // fanout is a no-op here.
 struct NullPresenceBus : PresenceBus {
-  void broadcastOp(const TreeId&, const AppliedOp&) override {}
+  void broadcastSubgraph(const TreeId&, Seq, const Subgraph&) override {}
   void broadcastProgress(const TreeId&, const UserId&, const NodeId&, ProgressStatus) override {}
 };
 

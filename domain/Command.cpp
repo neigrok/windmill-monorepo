@@ -49,81 +49,6 @@ void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc&
   }, command);
 }
 
-std::vector<Command> invert(const LooseGraph& graph, const Legend& legend, const Command& command) {
-  return std::visit(overloaded{
-    [&](const RenameNode& c) -> std::vector<Command> {
-      auto node = graph.nodeView(c.id);
-      if (!node) return {};
-      return {RenameNode{c.id, node->label}};
-    },
-    [&](const SetNodeColor& c) -> std::vector<Command> {
-      auto node = graph.nodeView(c.id);
-      if (!node) return {};
-      return {SetNodeColor{c.id, node->color}};
-    },
-    [&](const RepositionNode& c) -> std::vector<Command> {
-      auto node = graph.nodeView(c.id);
-      if (!node || !node->position) return {};
-      return {RepositionNode{c.id, *node->position}};
-    },
-    [&](const CreateNode& c) -> std::vector<Command> {
-      return {DeleteNode{c.id}};
-    },
-    [&](const AddEdge& c) -> std::vector<Command> {
-      if (graph.edgePresent(c.from, c.to)) return {};
-      return {RemoveEdge{c.from, c.to}};
-    },
-    [&](const RemoveEdge& c) -> std::vector<Command> {
-      if (!graph.edgePresent(c.from, c.to)) return {};
-      return {AddEdge{c.from, c.to}};
-    },
-    [&](const ReconnectEdge& c) -> std::vector<Command> {
-      return {ReconnectEdge{c.newFrom, c.newTo, c.oldFrom, c.oldTo}};
-    },
-    [&](const DeleteNode& c) -> std::vector<Command> {
-      auto node = graph.nodeView(c.id);
-      if (!node) return {};
-      return {CreateNode{node->id, node->label, node->icon, node->color, std::nullopt, node->position}};
-    },
-    [&](const TransitiveReduction&) -> std::vector<Command> {
-      std::vector<Command> inverse;
-      for (const auto& edge : graph.redundantEdges()) inverse.push_back(AddEdge{edge.from, edge.to});
-      return inverse;
-    },
-    [&](const RenameKind& c) -> std::vector<Command> {
-      auto kind = legend.view(c.id);
-      if (!kind) return {};
-      return {RenameKind{c.id, kind->label}};
-    },
-    [&](const DescribeKind& c) -> std::vector<Command> {
-      auto kind = legend.view(c.id);
-      if (!kind) return {};
-      return {DescribeKind{c.id, kind->description}};
-    },
-    [&](const AddKind& c) -> std::vector<Command> {
-      if (legend.has(c.id)) return {};
-      return {RemoveKind{c.id}};
-    },
-    [&](const RemoveKind& c) -> std::vector<Command> {
-      auto kind = legend.view(c.id);
-      if (!kind) return {};
-      std::vector<Command> inverse{AddKind{c.id, kind->hue}};
-      if (!kind->label.empty()) inverse.push_back(RenameKind{c.id, kind->label});
-      if (!kind->description.empty()) inverse.push_back(DescribeKind{c.id, kind->description});
-      inverse.push_back(ReorderKinds{legend.orderedIds()});  // restore the kind to its slot
-      return inverse;
-    },
-    [&](const ReorderKinds&) -> std::vector<Command> {
-      return {ReorderKinds{legend.orderedIds()}};
-    },
-    [&](const RecolorKind& c) -> std::vector<Command> {
-      std::optional<NodeColor> old = legend.hueOf(c.id);
-      if (!old || *old == c.hue) return {};
-      return {RecolorKind{c.id, *old}};
-    },
-  }, command);
-}
-
 std::optional<std::string> validate(const LooseGraph& graph, const Legend& legend, const Command& command) {
   auto idBounds = [](const NodeId& id) -> std::optional<std::string> {
     if (id.empty()) return "node id is empty";
@@ -200,6 +125,32 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
     },
     [&](const auto&) -> std::optional<std::string> { return std::nullopt; },
   }, command);
+}
+
+std::optional<Command> headline(const GraphState& graph, const LegendState& legend) {
+  for (const NodeStateEntry& n : graph.nodes)
+    if (n.createdAt.isSet()) return CreateNode{n.id, n.label, n.icon, n.color, std::nullopt, n.position};
+  for (const NodeStateEntry& n : graph.nodes)
+    if (n.deletedAt.isSet()) return DeleteNode{n.id};
+  for (const KindStateEntry& k : legend.kinds)
+    if (k.createdAt.isSet()) return AddKind{k.id, k.hue};
+  for (const KindStateEntry& k : legend.kinds)
+    if (k.hueAt.isSet()) return RecolorKind{k.id, k.hue};
+  for (const KindStateEntry& k : legend.kinds)
+    if (k.labelAt.isSet()) return RenameKind{k.id, k.label};
+  for (const KindStateEntry& k : legend.kinds)
+    if (k.descriptionAt.isSet()) return DescribeKind{k.id, k.description};
+  for (const KindStateEntry& k : legend.kinds)
+    if (k.rankAt.isSet()) return ReorderKinds{};
+  for (const NodeStateEntry& n : graph.nodes)
+    if (n.labelAt.isSet()) return RenameNode{n.id, n.label};
+  for (const NodeStateEntry& n : graph.nodes)
+    if (n.colorAt.isSet()) return SetNodeColor{n.id, n.color};
+  for (const EdgeStateEntry& e : graph.edges)
+    if (e.addedAt.isSet()) return AddEdge{e.edge.from, e.edge.to};
+  for (const EdgeStateEntry& e : graph.edges)
+    if (e.removedAt.isSet()) return RemoveEdge{e.edge.from, e.edge.to};
+  return std::nullopt;
 }
 
 }

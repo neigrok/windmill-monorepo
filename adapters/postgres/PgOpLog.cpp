@@ -10,21 +10,6 @@ namespace wm {
 
 namespace {
 constexpr int kOpReadLimit = 10000;  // cap one replay read so a giant op log can't be slurped whole
-
-std::string hlcText(const Hlc& at) {
-  return std::to_string(at.physicalMs) + ":" + std::to_string(at.counter) + ":" + at.actor;
-}
-
-Hlc hlcFromText(const std::string& text) {
-  Hlc hlc;
-  auto first = text.find(':');
-  auto second = text.find(':', first + 1);
-  if (first == std::string::npos || second == std::string::npos) return hlc;
-  hlc.physicalMs = std::stoull(text.substr(0, first));
-  hlc.counter = static_cast<std::uint32_t>(std::stoul(text.substr(first + 1, second - first - 1)));
-  hlc.actor = text.substr(second + 1);
-  return hlc;
-}
 }
 
 PgOpLog::PgOpLog(std::string connString) : connString_(std::move(connString)) {}
@@ -36,7 +21,7 @@ void PgOpLog::append(const TreeId& tree, const AppliedOp& op) {
       "INSERT INTO tree_ops (tree_id, seq, actor_id, op_id, kind, payload, hlc) "
       "VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7) ON CONFLICT (tree_id, op_id) DO NOTHING",
       tree.str(), static_cast<long long>(op.seq), op.actor.str(), op.opId,
-      commandKind(op.command), payload, hlcText(op.hlc));
+      commandKind(op.command), payload, toString(op.hlc));
   txn.commit();
 }
 
@@ -56,7 +41,7 @@ std::vector<AppliedOp> PgOpLog::since(const TreeId& tree, Seq afterSeq) const {
     op.seq = static_cast<Seq>(row["seq"].as<long long>());
     op.opId = row["op_id"].as<std::string>();
     op.command = std::move(*command);
-    op.hlc = hlcFromText(row["hlc"].as<std::string>());
+    op.hlc = parseHlc(row["hlc"].as<std::string>());
     op.actor = UserId{row["actor_id"].as<std::string>()};
     op.createdAtMs = static_cast<std::uint64_t>(row["created_ms"].as<long long>());
     ops.push_back(std::move(op));

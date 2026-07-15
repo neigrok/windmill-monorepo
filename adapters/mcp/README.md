@@ -115,8 +115,10 @@ When accounts land (Phase 1) this becomes the authenticated caller — see below
   room owner) — or fold the MCP endpoint into `windmill_server` to share one RoomRegistry.
 - **Blocking DB in the event loop.** Repositories are connection-per-request (synchronous
   libpqxx), matching the existing HTTP server. Add a pool / async before high load.
-- **Clock skew.** MCP stamps HLCs from wall-clock ms; the web `Collab` uses a logical tick,
-  so cross-writer LWW is biased toward the agent's latest edit. A shared clock is the §12 fix.
+- **Clock.** MCP and the web `Collab` now share one HLC domain: every write is stamped by
+  the tree's room clock (`TreeRoom::nextStamp`, wall time from the Clock port), so an agent's
+  edit and a socket edit are directly comparable and can never collide on a stamp. Clients
+  will stamp their own writes in a later step (see `GRAPH_SYNC_DESIGN.md`).
 
 ## Next
 

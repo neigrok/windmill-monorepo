@@ -36,7 +36,7 @@ struct SystemClock : Clock {
 // One process, its own RoomRegistry against the shared Postgres — no live WS subscribers
 // here, so op fanout is a no-op; durability (and web visibility on reload) is the database.
 struct NullPresenceBus : PresenceBus {
-  void broadcastOp(const TreeId&, const AppliedOp&) override {}
+  void broadcastSubgraph(const TreeId&, Seq, const Subgraph&) override {}
   void broadcastProgress(const TreeId&, const UserId&, const NodeId&, ProgressStatus) override {}
 };
 

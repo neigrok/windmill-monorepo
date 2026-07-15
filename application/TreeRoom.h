@@ -16,32 +16,33 @@
 
 namespace wm {
 
-// One editor's command as it reaches the room: the idempotency id, the command, its
-// HLC, and who issued it.
-struct Incoming {
-  std::string opId;
-  Command command;
-  Hlc hlc;
-  UserId actor;
-};
-
-// The outcome of a merged command: the op to log/broadcast, plus the inverse computed
-// against the pre-merge state (empty for a no-op) so the actor's undo stack can hold it.
-struct Applied {
-  AppliedOp op;
-  std::vector<Command> inverse;
-};
-
-// The authority for one tree. Runs on a single strand (supplied by infra), so its
-// state is mutated by one thread at a time. It merges every command — never rejects —
-// assigns the next seq, persists to the op log, and broadcasts. Validity is a separate
-// read model (diagnose()).
+// The authority for one tree. Runs on a single strand (supplied by infra), so its state is
+// mutated by one thread at a time. It joins every subgraph — never rejects — assigns the next
+// seq, and broadcasts. Validity is a separate read model (diagnose()).
 class TreeRoom {
 public:
   TreeRoom(TreeId id, std::string title, LooseGraph graph, Legend legend, Seq head,
            std::optional<UserId> owner, OpLog& ops, PresenceBus& bus);
 
-  std::optional<Applied> submit(const Incoming& incoming);
+  // Join a client-authored subgraph frame: dedupe on its frameId, fold its stamps into the
+  // clock (so a later server mint stays ahead), join its graph + legend into the lattice,
+  // assign the next seq, log its headline deed for the activity feed under `actor`, and
+  // broadcast it verbatim. Returns the assigned seq, or nullopt if the frame was a duplicate.
+  // No inverse is computed — undo is client-owned in the subgraph model. The server never
+  // re-stamps the client's writes; it joins them as they are.
+  std::optional<Seq> joinSubgraph(const Subgraph& incoming, const UserId& actor);
+
+  // Server-origin edit (MCP tools, where the server is the author): stamp the command from
+  // the room clock, apply it, log it for the activity feed, and broadcast the writes it
+  // produced as one subgraph — so an agent's edit reaches every socket the same way a
+  // client's does. The frameId is minted from the (unique) stamp. Returns the assigned seq.
+  Seq applyCommand(const Command& command, std::uint64_t nowMs, const UserId& actor);
+
+  // The next HLC stamp for this tree, minted under the caller's strand from the room's own
+  // clock. One clock per tree means every write — from a socket, an MCP tool, or an undo —
+  // shares a single causal domain, so no two writes can ever collide on a stamp. `nowMs` is
+  // wall time from the Clock port; the clock folds it with everything it has already seen.
+  Hlc nextStamp(std::uint64_t nowMs);
 
   // Why a client command would be refused, or nullopt if it is admissible. Graph commands
   // are always admissible; legend commands may not be (§F6 validation). Checked at the
@@ -78,6 +79,7 @@ private:
   std::set<std::string> appliedOpIds_;
   OpLog& ops_;
   PresenceBus& bus_;
+  HlcClock clock_;
 };
 
 }

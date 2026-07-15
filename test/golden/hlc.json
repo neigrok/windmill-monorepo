@@ -1,0 +1,20 @@
+{
+  "compare": [
+    { "name": "counter breaks a physical-ms tie", "a": "100:0:x", "b": "100:1:x", "expect": "lt" },
+    { "name": "actor breaks a counter tie", "a": "100:0:x", "b": "100:0:y", "expect": "lt" },
+    { "name": "physical ms dominates counter", "a": "200:0:x", "b": "100:9:x", "expect": "gt" },
+    { "name": "identical stamps are equal", "a": "100:3:x", "b": "100:3:x", "expect": "eq" },
+    { "name": "any real stamp beats the sentinel", "a": "1:0:", "b": "0:0:", "expect": "gt" }
+  ],
+  "sentinel": [
+    { "name": "all-zero empty actor is unset", "text": "0:0:", "isSet": false },
+    { "name": "nonzero ms is set", "text": "1:0:", "isSet": true },
+    { "name": "nonzero counter is set", "text": "0:1:", "isSet": true },
+    { "name": "nonempty actor is set", "text": "0:0:a", "isSet": true }
+  ],
+  "codec": [
+    { "name": "full stamp", "text": "1770000000123:7:u_42#r_8f31c2" },
+    { "name": "sentinel", "text": "0:0:" },
+    { "name": "actor containing a hash", "text": "5:2:u_1#r_ab" }
+  ]
+}

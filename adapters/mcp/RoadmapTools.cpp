@@ -156,7 +156,7 @@ ToolResult readProgress(ProgressService& progress, const TreeId& tree, const Use
 }
 
 ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::string& kind,
-                     Json::Value payload, const Hlc& hlc, const UserId& actor, bool mintId) {
+                     Json::Value payload, Clock& clock, const UserId& actor, bool mintId) {
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
     if (room.owner() && *room.owner() != actor)
       return ToolResult::failure("this tree belongs to another account");
@@ -173,17 +173,13 @@ ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::stri
     if (!command) return ToolResult::failure("invalid arguments for " + kind);
     if (std::optional<std::string> reason = room.validate(*command)) return ToolResult::failure(*reason);
 
-    std::string opId = "mcp-" + std::to_string(hlc.physicalMs) + "-" + std::to_string(hlc.counter);
-    std::optional<Applied> applied = room.submit(Incoming{opId, std::move(*command), hlc, actor});
+    Seq seq = room.applyCommand(*command, clock.nowMs(), actor);
     if (!room.owner()) registry.claim(tree, actor);  // first authenticated writer claims the tree
     registry.persist(tree);  // flush trees.document so the web reader sees this edit
 
     Json::Value out(Json::objectValue);
-    out["applied"] = applied.has_value();
-    if (applied) {
-      out["seq"] = static_cast<Json::Int64>(applied->op.seq);
-      out["opId"] = opId;
-    }
+    out["applied"] = true;
+    out["seq"] = static_cast<Json::Int64>(seq);
     out["diagnosticsClean"] = room.diagnose().clean();
     if (payload.isMember("id")) out["id"] = payload["id"];
     return ToolResult::json(out);
@@ -191,17 +187,20 @@ ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::stri
 }
 
 ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, PresenceBus& bus,
-                         const TreeId& tree, const Json::Value& args, const Hlc& hlc, const UserId& user) {
+                         const TreeId& tree, const Json::Value& args, Clock& clock, const UserId& user) {
   NodeId node{args.get("nodeId", "").asString()};
   std::optional<ProgressStatus> status = parseProgressStatus(args.get("status", "").asString());
   if (node.empty() || !status)
     return ToolResult::failure("set_progress needs nodeId and status in {active, complete, none}");
 
   std::vector<NodeId> prerequisites;
+  Hlc hlc;
   {
     std::lock_guard<std::mutex> lock(registry.strandFor(tree));
     try {
-      prerequisites = registry.open(tree).prerequisitesOf(node);
+      TreeRoom& room = registry.open(tree);
+      prerequisites = room.prerequisitesOf(node);
+      hlc = room.nextStamp(clock.nowMs());  // progress shares the tree's clock so its LWW stays comparable
     } catch (const std::exception& error) {
       return ToolResult::failure(error.what());
     }
@@ -248,18 +247,6 @@ ToolResult removeTree(TreeRegistry& registry, const TreeId& tree, const UserId& 
 RoadmapTools::RoadmapTools(RoomRegistry& registry, ProgressService& progress, Clock& clock,
                            TreeRegistry& treeRegistry, PresenceBus& bus)
     : registry_(registry), progress_(progress), clock_(clock), treeRegistry_(treeRegistry), bus_(bus) {}
-
-Hlc RoadmapTools::nextStamp(const UserId& caller) {
-  std::lock_guard<std::mutex> lock(stampMutex_);
-  std::uint64_t ms = clock_.nowMs();
-  if (ms > lastMs_) {
-    lastMs_ = ms;
-    counter_ = 0;
-  } else {
-    ++counter_;
-  }
-  return Hlc{lastMs_, counter_, caller.str()};
-}
 
 Json::Value RoadmapTools::listTools() const {
   const char* treeId = "The roadmap (tree) id.";
@@ -490,10 +477,10 @@ ToolResult RoadmapTools::callTool(const std::string& name, const Json::Value& ar
   if (name == "get_health")      return readHealth(registry_, tree);
   if (name == "get_progress")    return readProgress(progress_, tree, caller);
   if (name == "set_progress")
-    return writeProgress(registry_, progress_, bus_, tree, arguments, nextStamp(caller), caller);
+    return writeProgress(registry_, progress_, bus_, tree, arguments, clock_, caller);
 
   if (std::optional<std::string> kind = commandKindFor(name))
-    return applyEdit(registry_, tree, *kind, arguments, nextStamp(caller), caller, name == "create_node");
+    return applyEdit(registry_, tree, *kind, arguments, clock_, caller, name == "create_node");
 
   return ToolResult::failure("unknown tool: " + name);
 }

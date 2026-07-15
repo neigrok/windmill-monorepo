@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_library(windmill_domain
   domain/LooseGraph.cpp
   domain/Legend.cpp
+  domain/Subgraph.cpp
   domain/Command.cpp
   domain/TreeDiagnostics.cpp
   domain/SkillTree.cpp
@@ -23,7 +24,6 @@ add_library(windmill_application
   application/RoomRegistry.cpp
   application/ProgressService.cpp
   application/ActivityFeed.cpp
-  application/UndoService.cpp
   application/AuthService.cpp
   application/OAuthService.cpp
   application/TreeRegistry.cpp)
@@ -33,6 +33,7 @@ add_executable(windmill_domain_tests
   test/main.cpp
   test/domain/LooseGraphTest.cpp
   test/domain/LegendTest.cpp
+  test/domain/SubgraphTest.cpp
   test/domain/CommandTest.cpp
   test/domain/TreeDiagnosticsTest.cpp
   test/domain/SkillTreeTest.cpp
@@ -45,7 +46,6 @@ add_executable(windmill_domain_tests
   test/application/RoomRegistryTest.cpp
   test/application/ProgressServiceTest.cpp
   test/application/ActivityFeedTest.cpp
-  test/application/UndoServiceTest.cpp
   test/domain/AuthTest.cpp
   test/application/AuthServiceTest.cpp
   test/domain/OAuthTest.cpp
@@ -64,6 +64,7 @@ find_package(OpenSSL QUIET)  # magic-link token entropy + digests (adapters/cryp
 if(Drogon_FOUND AND libpqxx_FOUND)
   add_library(windmill_adapters
     adapters/json/TreeJson.cpp
+    adapters/json/SubgraphJson.cpp
     adapters/json/CommandJson.cpp
     adapters/postgres/PgTreeRepository.cpp
     adapters/postgres/PgProgressRepository.cpp
@@ -112,6 +113,12 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/adapters/mcp/McpHttpEndpointTest.cpp)
   target_link_libraries(windmill_mcp_tests PRIVATE windmill_mcp_lib)
   add_test(NAME mcp COMMAND windmill_mcp_tests)
+
+  add_executable(windmill_adapters_tests
+    test/main.cpp
+    test/adapters/json/SubgraphJsonTest.cpp)
+  target_link_libraries(windmill_adapters_tests PRIVATE windmill_adapters)
+  add_test(NAME adapters COMMAND windmill_adapters_tests)
 else()
   message(STATUS "Drogon/libpqxx not found — building core + tests only; run 'brew install drogon libpqxx' to enable windmill_server")
 endif()

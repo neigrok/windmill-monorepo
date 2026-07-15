@@ -26,10 +26,12 @@ struct KindStateEntry {
   Hlc descriptionAt;
   double rank = 0;
   Hlc rankAt;
+  bool operator==(const KindStateEntry&) const = default;
 };
 
 struct LegendState {
   std::vector<KindStateEntry> kinds;
+  bool operator==(const LegendState&) const = default;
 };
 
 // The ordered legend of one tree, kept under the same CRDT discipline as LooseGraph: an
@@ -42,6 +44,10 @@ public:
   Legend() = default;
   explicit Legend(const LegendState& state);
   Legend(const std::vector<Kind>& kinds, const Hlc& at);
+
+  // Fold a partial legend state in, under the same element-set + LWW discipline as
+  // LooseGraph::join. The legend converges by the same lattice laws the graph does.
+  void join(const LegendState& state);
 
   // Build's terracotta, Learn's olive, Milestone's gold — the three a new tree is born
   // with, in that order (§F6). Never all six.

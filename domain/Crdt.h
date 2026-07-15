@@ -18,6 +18,8 @@ struct Lww {
       stamp = at;
     }
   }
+
+  bool operator==(const Lww&) const = default;
 };
 
 // A single element of an add-biased LWW-element-set: present iff it was added and no

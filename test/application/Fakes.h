@@ -39,9 +39,16 @@ struct FakeBus : PresenceBus {
     std::string node;
     ProgressStatus status;
   };
-  std::vector<AppliedOp> broadcasts;
+  struct SubgraphBroadcast {
+    std::string tree;
+    Seq seq;
+    Subgraph subgraph;
+  };
   std::vector<ProgressBroadcast> progressBroadcasts;
-  void broadcastOp(const TreeId&, const AppliedOp& op) override { broadcasts.push_back(op); }
+  std::vector<SubgraphBroadcast> subgraphBroadcasts;
+  void broadcastSubgraph(const TreeId& tree, Seq seq, const Subgraph& subgraph) override {
+    subgraphBroadcasts.push_back({tree.str(), seq, subgraph});
+  }
   void broadcastProgress(const TreeId& tree, const UserId& user, const NodeId& node,
                          ProgressStatus status) override {
     progressBroadcasts.push_back({tree.str(), user.str(), node.str(), status});

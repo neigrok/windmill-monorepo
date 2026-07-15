@@ -69,16 +69,24 @@ create table if not exists tree_ops (
   unique (tree_id, op_id)
 );
 
--- per-user private progress overlay (LWW)
+-- per-user private progress overlay, a last-writer-wins register per node. `status` is a
+-- stamped value including 'none' (a clear is a value, never a row delete) so a clear converges
+-- across a user's devices and a stale mark can't resurrect it. `stamp_ms`/`stamp_counter` are
+-- the HLC split out for a numeric LWW comparison — the room clock mints a unique (ms, counter)
+-- per write, so the pair totally orders every write to a tree; the actor tiebreak is moot.
 create table if not exists node_progress (
-  tree_id    text not null,
-  user_id    text not null,
-  node_id    text not null,
-  status     text not null,
-  hlc        text not null default '',
-  updated_at timestamptz not null default now(),
+  tree_id       text not null,
+  user_id       text not null,
+  node_id       text not null,
+  status        text not null,
+  hlc           text not null default '',
+  stamp_ms      bigint not null default 0,
+  stamp_counter bigint not null default 0,
+  updated_at    timestamptz not null default now(),
   primary key (tree_id, user_id, node_id)
 );
+alter table node_progress add column if not exists stamp_ms bigint not null default 0;
+alter table node_progress add column if not exists stamp_counter bigint not null default 0;
 
 -- passwordless sign-in (guidelines/auth.md). A magic link is addressed by the digest of
 -- its secret (the raw token is never at rest); it works once and lasts 15 minutes.

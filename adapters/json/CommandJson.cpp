@@ -116,16 +116,4 @@ Json::Value commandPayload(const Command& command) {
   return p;
 }
 
-Json::Value opFrame(const AppliedOp& op) {
-  Json::Value frame(Json::objectValue);
-  frame["t"] = "op";
-  frame["seq"] = static_cast<Json::Int64>(op.seq);
-  frame["opId"] = op.opId;  // lets an author recognize and skip the echo of its own op
-  frame["actor"] = op.actor.str();
-  frame["kind"] = commandKind(op.command);
-  frame["payload"] = commandPayload(op.command);
-  frame["hlc"] = std::to_string(op.hlc.physicalMs) + ":" + std::to_string(op.hlc.counter) + ":" + op.hlc.actor;
-  return frame;
-}
-
 }

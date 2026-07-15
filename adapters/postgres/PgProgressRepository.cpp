@@ -54,20 +54,17 @@ void PgProgressRepository::setStatus(const TreeId& tree, const UserId& user, con
                                      ProgressStatus status, const Hlc& at) {
   pqxx::work txn{pgThreadConnection(connString_)};
 
-  if (status == ProgressStatus::none) {
-    txn.exec_params("DELETE FROM node_progress WHERE tree_id = $1 AND user_id = $2 AND node_id = $3",
-                    tree.str(), user.str(), node.str());
-    txn.commit();
-    return;
-  }
-
-  std::string label = status == ProgressStatus::complete ? "complete" : "active";
+  // A clear ('none') is a stamped value, not a row delete — so it converges like any status and
+  // a stale mark can never resurrect the node. The upsert is true last-writer-wins: it only
+  // takes effect when the incoming stamp strictly beats the stored one.
   txn.exec_params(
-      "INSERT INTO node_progress (tree_id, user_id, node_id, status, hlc, updated_at) "
-      "VALUES ($1, $2, $3, $4, $5, now()) "
-      "ON CONFLICT (tree_id, user_id, node_id) DO UPDATE SET status = EXCLUDED.status, "
-      "hlc = EXCLUDED.hlc, updated_at = now()",
-      tree.str(), user.str(), node.str(), label, hlcText(at));
+      "INSERT INTO node_progress (tree_id, user_id, node_id, status, hlc, stamp_ms, stamp_counter, updated_at) "
+      "VALUES ($1, $2, $3, $4, $5, $6, $7, now()) "
+      "ON CONFLICT (tree_id, user_id, node_id) DO UPDATE SET status = EXCLUDED.status, hlc = EXCLUDED.hlc, "
+      "stamp_ms = EXCLUDED.stamp_ms, stamp_counter = EXCLUDED.stamp_counter, updated_at = now() "
+      "WHERE (EXCLUDED.stamp_ms, EXCLUDED.stamp_counter) > (node_progress.stamp_ms, node_progress.stamp_counter)",
+      tree.str(), user.str(), node.str(), progressStatusName(status), hlcText(at),
+      static_cast<long long>(at.physicalMs), static_cast<long long>(at.counter));
   txn.commit();
 }
 

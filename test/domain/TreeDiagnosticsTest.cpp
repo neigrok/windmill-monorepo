@@ -45,6 +45,32 @@ TEST(dangling_edge_detected) {
   CHECK_FALSE(report.clean());
 }
 
+TEST(masked_work_flags_a_tombstoned_parent_with_a_live_child) {
+  // The phone deletes "parent"; the laptop, concurrently, builds a child under it.
+  LooseGraph g;
+  put(g, "parent");
+  g.deleteNode(nid("parent"), at(10));           // the delete stands
+  g.createNode(nid("child"), "Child", "x", NodeColor::gold, std::nullopt, at(20));
+  g.addEdge(nid("parent"), nid("child"), at(21)); // a live child hangs off the tombstone
+
+  auto report = TreeDiagnostics::assess(g);
+  CHECK_EQ(report.maskedWork.size(), 1u);
+  CHECK_EQ(report.maskedWork[0], nid("parent"));
+
+  // Resurrecting the parent clears the masked-work signal — the child is re-connected.
+  g.createNode(nid("parent"), "Parent", "x", NodeColor::sky, std::nullopt, at(30));
+  CHECK_EQ(TreeDiagnostics::assess(g).maskedWork.size(), 0u);
+}
+
+TEST(a_plain_deleted_leaf_is_not_masked_work) {
+  LooseGraph g;
+  put(g, "a");
+  put(g, "b");
+  g.addEdge(nid("a"), nid("b"), at(2));
+  g.deleteNode(nid("b"), at(3));  // a deleted CHILD (no live children of its own) is not masked work
+  CHECK_EQ(TreeDiagnostics::assess(g).maskedWork.size(), 0u);
+}
+
 TEST(cycle_detected_with_members) {
   LooseGraph g;
   put(g, "a");

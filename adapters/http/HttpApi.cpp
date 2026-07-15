@@ -1,6 +1,7 @@
 #include "adapters/http/HttpApi.h"
 
 #include "adapters/http/Caller.h"
+#include "adapters/json/SubgraphJson.h"
 #include "adapters/json/TreeJson.h"
 #include "application/ActivityFeed.h"
 #include "application/TreeRoom.h"
@@ -44,7 +45,15 @@ void HttpApi::getTree(const drogon::HttpRequestPtr&, HttpCallback&& callback, co
     try {
       TreeRoom& room = registry_->open(TreeId{treeId});
       body["seq"] = static_cast<Json::Int64>(room.head());
-      body["data"] = toJson(room.snapshot());
+      body["data"] = toJson(room.snapshot());  // projected TreeData for the first paint
+      Subgraph state;                           // the stamped lattice the client builds its TreeLattice from
+      state.treeId = TreeId{treeId};
+      state.frameId = "snapshot-" + std::to_string(room.head());
+      state.actor = "srv";
+      state.intent = SubgraphIntent::graft;
+      state.graph = room.exportState();
+      state.legend = room.exportLegend();
+      body["state"] = toJson(state);
     } catch (const std::exception&) {
       found = false;
     }

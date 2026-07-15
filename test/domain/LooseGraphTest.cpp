@@ -118,6 +118,100 @@ TEST(export_import_preserves_tombstones_and_inert_edges) {
   CHECK_EQ(reloaded.liveEdges().size(), 1u);  // edge revived — lossless
 }
 
+TEST(join_folds_a_partial_state_without_touching_others) {
+  LooseGraph base;
+  base.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+
+  LooseGraph addition;
+  addition.createNode(nid("b"), "B", "x", NodeColor::gold, std::nullopt, at(2));
+  addition.addEdge(nid("a"), nid("b"), at(3));
+
+  base.join(addition.exportState());
+  CHECK(base.hasNode(nid("a")));
+  CHECK(base.hasNode(nid("b")));
+  CHECK(base.edgePresent(nid("a"), nid("b")));
+  CHECK_EQ(base.nodeView(nid("a"))->label, std::string("A"));
+}
+
+TEST(join_is_idempotent) {
+  LooseGraph source;
+  source.createNode(nid("a"), "A", "x", NodeColor::sky, Vec2{1, 2}, at(1));
+  source.createNode(nid("b"), "B", "x", NodeColor::gold, std::nullopt, at(2));
+  source.addEdge(nid("a"), nid("b"), at(3));
+  source.deleteNode(nid("b"), at(4));
+  GraphState state = source.exportState();
+
+  LooseGraph once;
+  once.join(state);
+  LooseGraph twice;
+  twice.join(state);
+  twice.join(state);
+  CHECK(once.exportState() == twice.exportState());
+}
+
+TEST(join_is_commutative_over_full_states) {
+  LooseGraph left;
+  left.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  left.setLabel(nid("a"), "A-late", at(9));
+
+  LooseGraph right;
+  right.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(2));
+  right.setLabel(nid("a"), "A-early", at(5));
+  right.createNode(nid("b"), "B", "x", NodeColor::gold, std::nullopt, at(3));
+
+  LooseGraph leftFirst;
+  leftFirst.join(left.exportState());
+  leftFirst.join(right.exportState());
+
+  LooseGraph rightFirst;
+  rightFirst.join(right.exportState());
+  rightFirst.join(left.exportState());
+
+  CHECK(leftFirst.exportState() == rightFirst.exportState());
+  CHECK_EQ(leftFirst.nodeView(nid("a"))->label, std::string("A-late"));  // highest stamp wins either way
+}
+
+TEST(join_keeps_more_add_beats_concurrent_remove) {
+  LooseGraph seed;
+  seed.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  seed.createNode(nid("b"), "B", "x", NodeColor::sky, std::nullopt, at(1));
+  GraphState shared = seed.exportState();
+
+  Hlc concurrent{5, 0, "a"};  // an identical stamp on both sides — the tie the add must win
+  LooseGraph adder(shared);
+  adder.addEdge(nid("a"), nid("b"), concurrent);
+  LooseGraph remover(shared);
+  remover.removeEdge(nid("a"), nid("b"), concurrent);
+
+  LooseGraph converged(shared);
+  converged.join(adder.exportState());
+  converged.join(remover.exportState());
+  CHECK(converged.edgePresent(nid("a"), nid("b")));  // add-biased element set keeps the edge
+}
+
+TEST(join_lets_a_deleted_nodes_offline_children_survive) {
+  LooseGraph shared;
+  shared.createNode(nid("parent"), "Parent", "x", NodeColor::sky, std::nullopt, at(1));
+  GraphState base = shared.exportState();
+
+  LooseGraph phone(base);      // the phone deletes the parent
+  phone.deleteNode(nid("parent"), at(10));
+
+  LooseGraph laptop(base);     // the laptop, offline, builds children under it
+  laptop.createNode(nid("child"), "Child", "x", NodeColor::gold, std::nullopt, at(20));
+  laptop.addEdge(nid("parent"), nid("child"), at(21));
+
+  LooseGraph converged(base);
+  converged.join(phone.exportState());
+  converged.join(laptop.exportState());
+
+  CHECK_FALSE(converged.hasNode(nid("parent")));       // the delete stands
+  CHECK(converged.hasNode(nid("child")));              // but the child's work is not lost
+  CHECK_EQ(converged.presentEdges().size(), 1u);       // the edge is latent, ready to resurrect
+  converged.createNode(nid("parent"), "Parent", "x", NodeColor::sky, std::nullopt, at(30));
+  CHECK(converged.edgePresent(nid("parent"), nid("child")));  // one re-add brings the subtree back
+}
+
 TEST(merge_is_order_independent) {
   std::vector<std::pair<Command, Hlc>> ops = {
     {CreateNode{nid("a"), "A", "x", NodeColor::sky, std::nullopt, std::nullopt}, at(1)},

@@ -30,6 +30,13 @@ public:
   LooseGraph(const TreeData& seed, const Hlc& at);
   explicit LooseGraph(const GraphState& state);
 
+  // Fold a partial state into this one, entry by entry, field by field: the same
+  // element-set and LWW merges a command takes, applied to serialized records. Absence at
+  // every granularity — a missing entry, a missing field, the unset stamp — means "no
+  // information", so joining a subgraph delta only ever adds. Commutative, associative,
+  // idempotent; the one convergence primitive the whole sync framework rides on.
+  void join(const GraphState& state);
+
   void createNode(const NodeId& id, const std::string& label, const std::string& icon,
                   NodeColor color, const std::optional<Vec2>& position, const Hlc& at,
                   const std::optional<std::string>& status = std::nullopt);
@@ -41,6 +48,9 @@ public:
   void removeEdge(const NodeId& from, const NodeId& to, const Hlc& at);
 
   bool hasNode(const NodeId& id) const;
+  // A node that was created and then deleted — its record and every field survive, so it can
+  // be resurrected. Distinct from a never-seen id (a pure dangling reference), which cannot.
+  bool isTombstoned(const NodeId& id) const;
   bool edgePresent(const NodeId& from, const NodeId& to) const;
   std::optional<NodeSpec> nodeView(const NodeId& id) const;
 

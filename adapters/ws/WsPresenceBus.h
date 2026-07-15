@@ -20,7 +20,7 @@ public:
   void subscribe(const TreeId& tree, const drogon::WebSocketConnectionPtr& conn, const UserId& user);
   void drop(const drogon::WebSocketConnectionPtr& conn);
 
-  void broadcastOp(const TreeId& tree, const AppliedOp& op) override;
+  void broadcastSubgraph(const TreeId& tree, Seq seq, const Subgraph& subgraph) override;
   void broadcastProgress(const TreeId& tree, const UserId& user, const NodeId& node,
                          ProgressStatus status) override;
   void broadcastRaw(const TreeId& tree, const std::string& text, const drogon::WebSocketConnectionPtr& except);

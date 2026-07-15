@@ -91,3 +91,44 @@ TEST(empty_legend_reports_empty) {
   CHECK_EQ(legend.size(), 0u);
   CHECK_EQ(legend.kinds().size(), 0u);
 }
+
+TEST(join_folds_a_partial_legend_and_is_commutative) {
+  Legend seeded = Legend::seededDefaults(at(1));
+
+  Legend renamed(seeded.exportState());
+  renamed.setLabel(kid("build"), "Make", at(9));
+
+  Legend added(seeded.exportState());
+  added.addKind(kid("infra"), NodeColor::sky, at(5));
+
+  Legend renamedFirst(seeded.exportState());
+  renamedFirst.join(renamed.exportState());
+  renamedFirst.join(added.exportState());
+
+  Legend addedFirst(seeded.exportState());
+  addedFirst.join(added.exportState());
+  addedFirst.join(renamed.exportState());
+
+  CHECK(renamedFirst.exportState() == addedFirst.exportState());
+  CHECK_EQ(renamedFirst.view(kid("build"))->label, std::string("Make"));
+  CHECK(renamedFirst.has(kid("infra")));
+}
+
+TEST(join_keeps_more_a_concurrent_edit_survives_a_delete_and_a_re_add_resurrects_it) {
+  Legend seeded = Legend::seededDefaults(at(1));
+
+  Legend remover(seeded.exportState());
+  remover.removeKind(kid("learn"), at(5, "a"));       // one replica removes the kind
+
+  Legend editor(seeded.exportState());
+  editor.setLabel(kid("learn"), "Study", at(5, "b")); // another, concurrently, relabels it
+
+  Legend converged(seeded.exportState());
+  converged.join(remover.exportState());
+  converged.join(editor.exportState());
+  CHECK_FALSE(converged.has(kid("learn")));           // the delete stands (a field edit is not a re-add)
+
+  converged.addKind(kid("learn"), NodeColor::olive, at(6, "a"));  // a strictly-later re-add wins
+  CHECK(converged.has(kid("learn")));
+  CHECK_EQ(converged.view(kid("learn"))->label, std::string("Study"));  // the latent edit resurrects with it
+}

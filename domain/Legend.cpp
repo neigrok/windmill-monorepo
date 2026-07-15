@@ -29,6 +29,18 @@ Legend::Legend(const std::vector<Kind>& kinds, const Hlc& at) {
   }
 }
 
+void Legend::join(const LegendState& state) {
+  for (const KindStateEntry& kind : state.kinds) {
+    KindRecord& record = kinds_[kind.id];
+    record.life.add(kind.createdAt);
+    record.life.remove(kind.deletedAt);
+    record.hue.merge(kind.hue, kind.hueAt);
+    record.label.merge(kind.label, kind.labelAt);
+    record.description.merge(kind.description, kind.descriptionAt);
+    record.rank.merge(kind.rank, kind.rankAt);
+  }
+}
+
 Legend Legend::seededDefaults(const Hlc& at) {
   return Legend({{KindId{"build"}, NodeColor::terracotta, "Build", "Things you make"},
                  {KindId{"learn"}, NodeColor::olive, "Learn", "Things you figure out"},

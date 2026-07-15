@@ -15,6 +15,7 @@ TreeDiagnostics TreeDiagnostics::assess(const LooseGraph& graph) {
   for (int i = 0; i < static_cast<int>(ids.size()); ++i) index[ids[i]] = i;
 
   std::vector<std::vector<int>> adjacency(ids.size());
+  std::set<NodeId> masked;
   for (const auto& edge : graph.presentEdges()) {
     if (edge.from == edge.to) {
       report.selfEdges.push_back(edge);
@@ -22,10 +23,13 @@ TreeDiagnostics TreeDiagnostics::assess(const LooseGraph& graph) {
     }
     if (!present.count(edge.from) || !present.count(edge.to)) {
       report.dangling.push_back(edge);
+      // A live child hanging off a tombstoned parent is masked work — the parent can be resurrected.
+      if (present.count(edge.to) && graph.isTombstoned(edge.from)) masked.insert(edge.from);
       continue;
     }
     adjacency[index[edge.from]].push_back(index[edge.to]);
   }
+  report.maskedWork.assign(masked.begin(), masked.end());
 
   // Iterative Tarjan: every strongly-connected component of size > 1 is a cycle.
   const int n = static_cast<int>(ids.size());

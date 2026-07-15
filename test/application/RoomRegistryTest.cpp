@@ -74,7 +74,7 @@ TEST(registry_persist_snapshots_full_state_without_evicting) {
   RoomRegistry registry(repo, log, bus);
 
   TreeRoom& room = registry.open(tid());
-  room.submit(Incoming{"c1", createNode("added"), at(10), uid()});
+  room.applyCommand(createNode("added"), 10, uid());
   registry.persist(tid());
 
   CHECK(registry.isOpen(tid()));                       // still live
@@ -111,7 +111,7 @@ TEST(registry_evict_persists_and_closes) {
   RoomRegistry registry(repo, log, bus);
 
   TreeRoom& room = registry.open(tid());
-  room.submit(Incoming{"c1", createNode("added"), at(10), uid()});
+  room.applyCommand(createNode("added"), 10, uid());
   registry.evict(tid());
 
   CHECK_FALSE(registry.isOpen(tid()));

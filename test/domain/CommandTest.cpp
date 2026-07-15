@@ -19,53 +19,6 @@ static LooseGraph seeded() {
   return g;
 }
 
-TEST(invert_rename_restores_prior_label) {
-  LooseGraph g = seeded();
-  Legend legend;
-  Command rename = RenameNode{nid("b"), "renamed"};
-  auto inverse = invert(g, legend, rename);
-  merge(g, legend, rename, at(5));
-  CHECK_EQ(g.nodeView(nid("b"))->label, std::string("renamed"));
-  CHECK_EQ(inverse.size(), 1u);
-  merge(g, legend, inverse[0], at(6));
-  CHECK_EQ(g.nodeView(nid("b"))->label, std::string("B"));
-}
-
-TEST(invert_add_edge_that_existed_is_noop) {
-  LooseGraph g = seeded();
-  Legend legend;
-  auto inverse = invert(g, legend, Command{AddEdge{nid("a"), nid("b")}});
-  CHECK_EQ(inverse.size(), 0u);
-}
-
-TEST(invert_add_edge_removes_new_edge) {
-  LooseGraph g = seeded();
-  Legend legend;
-  g.createNode(nid("c"), "C", "x", NodeColor::sky, std::nullopt, at(1));
-  Command add = AddEdge{nid("a"), nid("c")};
-  auto inverse = invert(g, legend, add);
-  merge(g, legend, add, at(5));
-  CHECK(g.edgePresent(nid("a"), nid("c")));
-  CHECK_EQ(inverse.size(), 1u);
-  merge(g, legend, inverse[0], at(6));
-  CHECK_FALSE(g.edgePresent(nid("a"), nid("c")));
-}
-
-TEST(invert_delete_recreates_node_with_fields) {
-  LooseGraph g = seeded();
-  Legend legend;
-  Command del = DeleteNode{nid("b")};
-  auto inverse = invert(g, legend, del);
-  merge(g, legend, del, at(5));
-  CHECK_FALSE(g.hasNode(nid("b")));
-  CHECK_EQ(inverse.size(), 1u);
-  merge(g, legend, inverse[0], at(6));
-  CHECK(g.hasNode(nid("b")));
-  CHECK_EQ(g.nodeView(nid("b"))->label, std::string("B"));
-  CHECK_EQ(g.nodeView(nid("b"))->color, NodeColor::gold);
-  CHECK_EQ(g.liveEdges().size(), 1u);
-}
-
 TEST(transitive_reduction_drops_redundant_edge) {
   LooseGraph g;
   Legend legend;
@@ -80,16 +33,10 @@ TEST(transitive_reduction_drops_redundant_edge) {
   CHECK_EQ(redundant.size(), 1u);
   CHECK_EQ(redundant[0], (Edge{nid("a"), nid("c")}));
 
-  Command tidy = TransitiveReduction{};
-  auto inverse = invert(g, legend, tidy);
-  merge(g, legend, tidy, at(5));
+  merge(g, legend, Command{TransitiveReduction{}}, at(5));
   CHECK_FALSE(g.edgePresent(nid("a"), nid("c")));
   CHECK(g.edgePresent(nid("a"), nid("b")));
   CHECK(g.edgePresent(nid("b"), nid("c")));
-
-  CHECK_EQ(inverse.size(), 1u);
-  merge(g, legend, inverse[0], at(6));
-  CHECK(g.edgePresent(nid("a"), nid("c")));
 }
 
 TEST(recolor_kind_swaps_hue_and_repaints_nodes) {
@@ -99,55 +46,12 @@ TEST(recolor_kind_swaps_hue_and_repaints_nodes) {
   g.createNode(nid("c"), "C", "x", NodeColor::gold, std::nullopt, at(1));
   Legend legend({{kid("learn"), NodeColor::olive, "Learn", ""}}, at(1));
 
-  Command recolor = RecolorKind{kid("learn"), NodeColor::sky};
-  auto inverse = invert(g, legend, recolor);
-  merge(g, legend, recolor, at(5));
+  merge(g, legend, Command{RecolorKind{kid("learn"), NodeColor::sky}}, at(5));
 
   CHECK_EQ(legend.hueOf(kid("learn")).value(), NodeColor::sky);
   CHECK_EQ(g.nodeView(nid("a"))->color, NodeColor::sky);   // olive nodes repainted
   CHECK_EQ(g.nodeView(nid("b"))->color, NodeColor::sky);
   CHECK_EQ(g.nodeView(nid("c"))->color, NodeColor::gold);  // gold untouched
-
-  CHECK_EQ(inverse.size(), 1u);
-  merge(g, legend, inverse[0], at(6));
-  CHECK_EQ(legend.hueOf(kid("learn")).value(), NodeColor::olive);
-  CHECK_EQ(g.nodeView(nid("a"))->color, NodeColor::olive);  // fully restored
-  CHECK_EQ(g.nodeView(nid("b"))->color, NodeColor::olive);
-}
-
-TEST(invert_add_kind_removes_it) {
-  LooseGraph g;
-  Legend legend;
-  Command add = AddKind{kid("sky"), NodeColor::sky};
-  auto inverse = invert(g, legend, add);
-  merge(g, legend, add, at(5));
-  CHECK(legend.has(kid("sky")));
-  CHECK_EQ(inverse.size(), 1u);
-  merge(g, legend, inverse[0], at(6));
-  CHECK_FALSE(legend.has(kid("sky")));
-}
-
-TEST(invert_remove_kind_restores_hue_label_and_order) {
-  Legend legend({{kid("build"), NodeColor::terracotta, "Build", "Things you make"},
-                 {kid("learn"), NodeColor::olive, "Learn", "Things you figure out"},
-                 {kid("milestone"), NodeColor::gold, "Milestone", "Moments that matter"}},
-                at(1));
-  LooseGraph g;  // no nodes wear olive, so learn is removable
-
-  Command remove = RemoveKind{kid("learn")};
-  auto inverse = invert(g, legend, remove);
-  merge(g, legend, remove, at(5));
-  CHECK_FALSE(legend.has(kid("learn")));
-
-  // Server-driven undo replays each inverse op with a strictly-increasing HLC.
-  std::uint64_t tick = 6;
-  for (const Command& cmd : inverse) merge(g, legend, cmd, at(tick++));
-  auto restored = legend.view(kid("learn"));
-  CHECK(restored.has_value());
-  CHECK_EQ(restored->hue, NodeColor::olive);
-  CHECK_EQ(restored->label, std::string("Learn"));
-  CHECK_EQ(restored->description, std::string("Things you figure out"));
-  CHECK_EQ(legend.orderedIds()[1], kid("learn"));  // back in its middle slot
 }
 
 TEST(validate_passes_graph_commands_always) {
@@ -229,4 +133,91 @@ TEST(validate_admits_normal_create_and_add_edge) {
   Command create = CreateNode{nid("c"), "C", "icon", NodeColor::sky, std::nullopt, Vec2{1.5, -2.5}};
   CHECK_FALSE(validate(g, legend, create).has_value());
   CHECK_FALSE(validate(g, legend, Command{AddEdge{nid("a"), nid("b")}}).has_value());
+}
+
+namespace {
+NodeStateEntry nodeWrite(const char* id) { NodeStateEntry n; n.id = nid(id); return n; }
+KindStateEntry kindWrite(const char* id) { KindStateEntry k; k.id = kid(id); return k; }
+}
+
+TEST(headline_create_wins_over_the_parent_edge_it_drags_in) {
+  GraphState g;
+  NodeStateEntry n = nodeWrite("a");
+  n.label = "A"; n.createdAt = at(1); n.color = NodeColor::sky; n.colorAt = at(1);
+  g.nodes.push_back(n);
+  EdgeStateEntry e; e.edge = Edge{nid("p"), nid("a")}; e.addedAt = at(1);
+  g.edges.push_back(e);
+
+  std::optional<Command> deed = headline(g, LegendState{});
+  const CreateNode* c = deed ? std::get_if<CreateNode>(&*deed) : nullptr;
+  CHECK(c != nullptr);
+  CHECK_EQ(c->id, nid("a"));
+  CHECK_EQ(c->label, std::string("A"));
+}
+
+TEST(headline_delete_wins_over_the_spliced_edges) {
+  GraphState g;
+  NodeStateEntry n = nodeWrite("a");
+  n.deletedAt = at(2);
+  g.nodes.push_back(n);
+  EdgeStateEntry gone; gone.edge = Edge{nid("p"), nid("a")}; gone.removedAt = at(2);
+  EdgeStateEntry bypass; bypass.edge = Edge{nid("p"), nid("c")}; bypass.addedAt = at(2);
+  g.edges.push_back(gone);
+  g.edges.push_back(bypass);
+
+  std::optional<Command> deed = headline(g, LegendState{});
+  const DeleteNode* c = deed ? std::get_if<DeleteNode>(&*deed) : nullptr;
+  CHECK(c != nullptr);
+  CHECK_EQ(c->id, nid("a"));
+}
+
+TEST(headline_recolor_kind_wins_over_the_node_colors_it_fans_out) {
+  GraphState g;
+  NodeStateEntry n = nodeWrite("a");
+  n.color = NodeColor::sky; n.colorAt = at(3);
+  g.nodes.push_back(n);
+  LegendState legend;
+  KindStateEntry k = kindWrite("learn");
+  k.hue = NodeColor::sky; k.hueAt = at(3);
+  legend.kinds.push_back(k);
+
+  std::optional<Command> deed = headline(g, legend);
+  const RecolorKind* c = deed ? std::get_if<RecolorKind>(&*deed) : nullptr;
+  CHECK(c != nullptr);
+  CHECK_EQ(c->id, kid("learn"));
+  CHECK_EQ(c->hue, NodeColor::sky);
+}
+
+TEST(headline_reads_rename_relabel_and_edges) {
+  GraphState rename;
+  NodeStateEntry r = nodeWrite("a"); r.label = "New"; r.labelAt = at(4);
+  rename.nodes.push_back(r);
+  std::optional<Command> renameDeed = headline(rename, LegendState{});
+  const RenameNode* renamed = renameDeed ? std::get_if<RenameNode>(&*renameDeed) : nullptr;
+  CHECK(renamed != nullptr);
+  CHECK_EQ(renamed->label, std::string("New"));
+
+  GraphState link;
+  EdgeStateEntry added; added.edge = Edge{nid("a"), nid("b")}; added.addedAt = at(4);
+  link.edges.push_back(added);
+  std::optional<Command> linkDeed = headline(link, LegendState{});
+  const AddEdge* linked = linkDeed ? std::get_if<AddEdge>(&*linkDeed) : nullptr;
+  CHECK(linked != nullptr);
+  CHECK_EQ(linked->from, nid("a"));
+  CHECK_EQ(linked->to, nid("b"));
+
+  GraphState unlink;
+  EdgeStateEntry removed; removed.edge = Edge{nid("a"), nid("b")}; removed.removedAt = at(4);
+  unlink.edges.push_back(removed);
+  std::optional<Command> unlinkDeed = headline(unlink, LegendState{});
+  CHECK(unlinkDeed.has_value());
+  CHECK(std::get_if<RemoveEdge>(&*unlinkDeed) != nullptr);
+}
+
+TEST(headline_is_empty_for_a_nudge_or_an_empty_frame) {
+  GraphState moved;
+  NodeStateEntry m = nodeWrite("a"); m.position = Vec2{1, 2}; m.positionAt = at(5);
+  moved.nodes.push_back(m);
+  CHECK_FALSE(headline(moved, LegendState{}).has_value());  // a reposition is not feed-worthy
+  CHECK_FALSE(headline(GraphState{}, LegendState{}).has_value());
 }

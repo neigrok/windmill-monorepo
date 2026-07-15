@@ -54,14 +54,19 @@ using Command = std::variant<RenameNode, SetNodeColor, RepositionNode, CreateNod
 
 void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc& at);
 
-// The inverse of a command, evaluated against the state *before* it merged. A no-op
-// command (e.g. re-adding an edge that already existed) inverts to an empty sequence.
-std::vector<Command> invert(const LooseGraph& graph, const Legend& legend, const Command& command);
-
 // Server-authoritative validation, checked at the edge before a command is admitted to
 // the log. Graph commands are never rejected (nullopt); legend commands may be, because
 // their invariants — hue uniqueness, ≤6 kinds, no in-use removal, length caps — are
 // locally decidable on the authoritative state. The string is a human-readable reason.
 std::optional<std::string> validate(const LooseGraph& graph, const Legend& legend, const Command& command);
+
+// The single feed-worthy deed a subgraph delta represents — the coarse inverse of merge(),
+// read off which lattice fields the frame sets. A client authors in subgraphs, not commands
+// (§ "only lattice effects cross a replica boundary"), so the activity feed reconstructs the
+// headline here from the effects, then renders it through the one command-based feed vocabulary
+// the agent path already uses. Salience order: a node's own life, then legend deeds (which fan
+// out to node fields), then a node's fields, then edges. A position-only or empty frame is a
+// nudge, not a deed — nullopt.
+std::optional<Command> headline(const GraphState& graph, const LegendState& legend);
 
 }

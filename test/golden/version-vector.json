@@ -1,0 +1,10 @@
+{
+  "cases": [
+    { "name": "covers a lower stamp from a known actor", "marks": ["5:0:a", "9:0:b"], "query": "3:0:a", "covers": true },
+    { "name": "covers the exact mark", "marks": ["5:0:a"], "query": "5:0:a", "covers": true },
+    { "name": "does not cover a higher stamp", "marks": ["5:0:a"], "query": "6:0:a", "covers": false },
+    { "name": "does not cover an unseen actor", "marks": ["5:0:a"], "query": "1:0:c", "covers": false },
+    { "name": "the unset sentinel is always covered", "marks": [], "query": "0:0:", "covers": true },
+    { "name": "a later mark for the same actor wins", "marks": ["2:0:a", "5:0:a"], "query": "4:0:a", "covers": true }
+  ]
+}

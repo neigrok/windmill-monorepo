@@ -23,7 +23,6 @@
 #include "application/ProgressService.h"
 #include "application/RoomRegistry.h"
 #include "application/TreeRegistry.h"
-#include "application/UndoService.h"
 
 #include <drogon/drogon.h>
 
@@ -47,7 +46,6 @@ int main() {
   auto oplog = std::make_shared<PgOpLog>(connString);
   auto bus = std::make_shared<WsPresenceBus>();
   auto registry = std::make_shared<RoomRegistry>(*trees, *oplog, *bus);
-  auto undos = std::make_shared<UndoService>();
   auto presence = std::make_shared<PresenceHub>();
 
   // Passwordless auth (guidelines/auth.md). The magic link points at the app; the session
@@ -79,7 +77,7 @@ int main() {
 
   // The socket authenticates each connection at its upgrade and writes progress as that
   // user; anonymous connections may view but not edit.
-  setCollab(std::make_shared<Collab>(*registry, *oplog, *bus, *undos, *progressService, *authService, *presence));
+  setCollab(std::make_shared<Collab>(*registry, *oplog, *bus, *progressService, *authService, *presence, *systemClock));
   linkTreeSocket();
 
   auto api = std::make_shared<HttpApi>(registry, trees, progress, oplog, genesis, authService);

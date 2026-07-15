@@ -31,6 +31,24 @@ LooseGraph::LooseGraph(const GraphState& state) {
   }
 }
 
+void LooseGraph::join(const GraphState& state) {
+  for (const auto& node : state.nodes) {
+    NodeRecord& record = nodes_[node.id];
+    record.life.add(node.createdAt);
+    record.life.remove(node.deletedAt);
+    record.label.merge(node.label, node.labelAt);
+    record.icon.merge(node.icon, node.iconAt);
+    record.color.merge(node.color, node.colorAt);
+    record.position.merge(node.position, node.positionAt);
+    record.status.merge(node.status, node.statusAt);
+  }
+  for (const auto& edge : state.edges) {
+    ElementSet& element = edges_[edge.edge];
+    element.add(edge.addedAt);
+    element.remove(edge.removedAt);
+  }
+}
+
 void LooseGraph::createNode(const NodeId& id, const std::string& label, const std::string& icon,
                             NodeColor color, const std::optional<Vec2>& position, const Hlc& at,
                             const std::optional<std::string>& status) {
@@ -70,6 +88,11 @@ void LooseGraph::removeEdge(const NodeId& from, const NodeId& to, const Hlc& at)
 bool LooseGraph::hasNode(const NodeId& id) const {
   auto it = nodes_.find(id);
   return it != nodes_.end() && it->second.life.present();
+}
+
+bool LooseGraph::isTombstoned(const NodeId& id) const {
+  auto it = nodes_.find(id);
+  return it != nodes_.end() && it->second.life.addedAt.isSet() && !it->second.life.present();
 }
 
 bool LooseGraph::edgePresent(const NodeId& from, const NodeId& to) const {
