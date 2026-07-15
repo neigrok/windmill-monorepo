@@ -230,5 +230,86 @@ export const roadmapTree = {
     { id: 'tree-switcher', label: 'TreeSwitcher · the plaque menu', icon: 'layers', color: 'gold', status: 'complete', prerequisites: ['per-tree-routing', 'account-seat'] },
     { id: 'new-tree-birth', label: 'New-tree birth · one bud, one name', icon: 'sprout', color: 'terracotta', status: 'active', prerequisites: ['tree-switcher', 'sign-in-door'] },
     { id: 'birth-seeds-first-node', label: 'Birth seeds the first node · POST /v1/trees { title, nodes }', icon: 'leaf', color: 'olive', status: 'complete', prerequisites: ['new-tree-birth'] },
+
+    // ---- graph sync initiative (the Subgraph framework) — offline-capable, convergent sync ----
+    // One noun (Subgraph = a partial, stamped slice of a tree's lattice) and one verb (join) carry
+    // every sync scenario: a live edit, an offline flush, a reconnect delta, a fresh-device bootstrap,
+    // a device-to-device graft. The backend already persists the lossless stamped state (GraphState +
+    // LegendState); the framework puts that shape on the wire and finishes the CRDT the frontend never
+    // had. Conflict bias is "keep more, lose less": a remove masks, never destroys, so offline work
+    // under a concurrently-deleted node survives and resurrects. Canonical spec: GRAPH_SYNC_DESIGN.md.
+    // Running log per CLAUDE.md:
+    //  · Step 1 (done): the lattice primitive, dark. LooseGraph::join / Legend::join (fold a partial
+    //    GraphState/LegendState, field by field), Subgraph + VersionVector + deltaBetween/frontier,
+    //    HlcClock + shared stamp codec in Ids.h (PgOpLog now shares it). Proven by C++ property tests
+    //    (join is commutative/idempotent; add-beats-concurrent-remove; two divergent replicas
+    //    reconcile in one delta exchange) + a language-neutral golden-vector corpus (test/golden,
+    //    runnable via `node run.mjs`, the contract the future sync/lattice.js must match). Frontend
+    //    model/looseGraph.js → renderableGraph.js (resolves the collision with the backend CRDT).
+    //  · Step 2 (done): server clock epoch. The fake `++tick_` Lamport clock is gone; every
+    //    server-minted write — socket, MCP tool, undo — now stamps from ONE wall-clock HLC per
+    //    tree, owned by the room (`TreeRoom::nextStamp`, actor "srv"), which observes the loaded
+    //    document + op-log tail so a fresh mint always dominates (restart-safe). MCP's hand-rolled
+    //    clock + mutex retired; WS and MCP finally share one comparable HLC domain (no more agent
+    //    edits sorting after everything). Proven by TreeRoom clock tests (monotone; dominates
+    //    replayed + loaded stamps).
+    //  · Step 3 (in progress): lattice-is-truth cutover, as a tested ladder. Done so far —
+    //    3.1: the `SubgraphJson` wire codec (the one envelope as JSON; retired TreeJson's 3rd copy
+    //    of the stamp codec); 3.2: `TreeRoom::joinSubgraph` + a `broadcastSubgraph` bus method (dedupe
+    //    on frameId, observe client stamps, join, seq, broadcast verbatim — no server inverse, undo is
+    //    client-owned). 3.3: Collab speaks subgraph/subgraphAck (skew clamp; state-as-subgraph on
+    //    subscribe), MCP through TreeRoom::applyCommand (server-origin materialize → broadcasts a
+    //    subgraph), getTree returns stamped state. 3.4: frontend sync/ package (lattice.js TreeLattice +
+    //    HlcClock + codec, materialize.js, SyncSession.js with client-owned undo); SkillTreeView's ~15
+    //    send sites → dispatch, applyRemoteOp → one onTreeChanged; client actor r_<nonce> per tab. 3.5:
+    //    CollabClient.js + edits.js deleted. VERIFIED by driving the running app: HTTP+WS bootstrap,
+    //    app-authored edits reaching the server, reconnect reconciliation, undo/redo through the wire.
+    //    (Fix found while driving: a lattice node can lack a layout position — MCP/collaborator creates —
+    //    so syncStructure now seats uncovered nodes near a parent.)
+    //  · Step 4 (done): durable offline. sync/lattice.js gained VersionVector/frontier/deltaSince (mirrors the
+    //    backend); sync/SyncStore.js (IndexedDB, multi-tab-safe read-join-put in one transaction); SyncSession
+    //    got phases (offline→syncing→live), an inFlight map, seq-gap detection, graft-replaces-coverage-vector,
+    //    the derived flush (lattice.deltaSince = the outbox), coalesced saves, backoff reconnect. Backend:
+    //    Collab persists before ack. Plan was hardened by a 5-agent adversarial red-team (found 4 fatal bugs:
+    //    seq-gap poison, multi-tab clobber, ungated sends, ack-not-durable — all fixed). VERIFIED by driving:
+    //    offline edit → IndexedDB → survives reload → flushes on reconnect; seq-gap dropped; two-tab merge keeps
+    //    both. Retired TreeStore for structure.
+    //  · Step 5 (done): two-way anti-entropy. Subscribe now sends the client's coverage vector; the server
+    //    replies with deltaBetween(state, clientVector) + coverage (one intent:'delta' frame), not the full
+    //    state. Reconnect is O(delta). Verified by driving (raw WS): fresh client → full state, caught-up →
+    //    empty delta, one-behind → just the missing node. Client receiveState adopts the delta's coverage.
+    //  · Step 6 (core done): stewardship. "Keep more, lose less" made recoverable — masked-live-work
+    //    detection (a node deleted while a subtree of live children hangs off it, from a delete-vs-build
+    //    race) + a ResurrectNode gesture (re-adds only the life; preserved fields return, the receive rule
+    //    dominates the tombstone, the child re-connects) + a one-click Restore toast. Backend
+    //    TreeDiagnostics.maskedWork + isTombstoned; client TreeLattice.maskedWork(). Verified by driving.
+    //    Deferred within Step 6: deterministic legend-breach projection, storage-at-risk hint, grouped
+    //    offline-session feed entries, cap advisories.
+    //  · Step 7 (core done): private overlays. node_progress is now a proper per-user LWW register — a
+    //    clear ('none') is a stamped value (no more row DELETE, so it converges and a stale mark can't
+    //    resurrect it), and the upsert is true last-writer-wins (stamp_ms/stamp_counter compared). Proven
+    //    via SQL (stale rejected, newer stored as 'none') + the C++ path. Deferred: the full offline-durable
+    //    progress mini-lattice (reconnect catch-up, no localStorage shadow) — the client overlay gets the
+    //    TreeLattice treatment as a follow-up; workspaces ride the same change.
+    //  · Step 8 (core done): device-to-device by file. SyncSession.exportGraft() writes the whole lattice
+    //    as one .windmill graft (tombstones ride along — deletions sync by AirDrop); importGraft merges a
+    //    same-tree file verbatim (a device catching up) or, for a different tree, gifts it in as fresh
+    //    restamped nodes with remapped ids (foreign stamps never enter this tree's coverage). Export/Import
+    //    buttons on the ControlBar. Verified by driving (tombstone travels, idempotent same-tree merge,
+    //    cross-tree gift restamped by the local actor + synced). Deferred: WebRTC live sync, kind mapping.
+    //  · The sync framework (Steps 1–8) is complete: one subgraph, one join, client-stamped, offline-durable,
+    //    two-way convergent, self-healing, private-overlay-correct, portable. Cleanup rungs remain (op-log
+    //    for subgraph activity feed, retire dead submit/invert/UndoService, deferred Step-6/7/8 UX bits).
+    { id: 'sync-lattice', label: 'Subgraph lattice · join / delta / frontier', icon: 'git-merge', color: 'brick', status: 'complete', prerequisites: ['persistence'] },
+    { id: 'sync-server-clock', label: 'One HLC domain · room-owned clock', icon: 'clock', color: 'brick', status: 'complete', prerequisites: ['sync-lattice'] },
+    { id: 'sync-wire-codec', label: 'Subgraph wire · codec + join path', icon: 'git-merge', color: 'brick', status: 'complete', prerequisites: ['sync-server-clock'] },
+    { id: 'sync-cutover', label: 'Lattice is truth · client stamps, subgraph wire', icon: 'git-merge', color: 'brick', status: 'complete', prerequisites: ['sync-wire-codec'] },
+    { id: 'sync-offline', label: 'Durable offline · IndexedDB outbox', icon: 'archive', color: 'brick', status: 'complete', prerequisites: ['sync-cutover'] },
+    { id: 'sync-antientropy', label: 'Two-way anti-entropy · O(delta) reconnect', icon: 'git-merge', color: 'brick', status: 'complete', prerequisites: ['sync-offline'] },
+    { id: 'sync-stewardship', label: 'Keep more · resurrect masked work', icon: 'sprout', color: 'brick', status: 'complete', prerequisites: ['sync-antientropy'] },
+    { id: 'sync-progress-lww', label: 'Progress LWW · clears converge', icon: 'check-circle', color: 'brick', status: 'complete', prerequisites: ['sync-stewardship'] },
+    { id: 'sync-d2d', label: 'Device-to-device · .windmill file', icon: 'download', color: 'brick', status: 'complete', prerequisites: ['sync-progress-lww'] },
+    { id: 'sync-cleanup', label: 'Retire command-broadcast path · subgraph is the only wire', icon: 'trash-2', color: 'brick', status: 'complete', prerequisites: ['sync-d2d'] },
+    { id: 'sync-feed', label: 'Activity feed · browser edits projected from the lattice', icon: 'activity', color: 'brick', status: 'complete', prerequisites: ['sync-cleanup'] },
   ],
 };

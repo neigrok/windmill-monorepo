@@ -24,7 +24,7 @@ import { ActivityFeed } from './activity/ActivityFeed.jsx';
 import { ActivityLog, ActivityEvent } from './activity/ActivityLog.js';
 import { ActorAvatar, EventSentence } from './activity/grammar.jsx';
 import { SkillTree } from './model/SkillTree.js';
-import { makeRenderable } from './model/looseGraph.js';
+import { makeRenderable } from './model/renderableGraph.js';
 import { TreeHealth } from './model/TreeHealth.js';
 import { UnlockRules } from './model/UnlockRules.js';
 import { RadialLayoutEngine } from './layout/RadialLayoutEngine.js';
@@ -32,22 +32,19 @@ import { applyNudges } from './layout/applyNudges.js';
 import { MockTreeRepository } from './mock/MockTreeRepository.js';
 import { HttpTreeRepository } from './persistence/HttpTreeRepository.js';
 import { listTrees } from './persistence/TreeRegistry.js';
-import { CollabClient } from './persistence/CollabClient.js';
+import { SyncSession } from './sync/SyncSession.js';
 import { PresenceLayer } from './presence/PresenceLayer.jsx';
-import { TreeStore } from './persistence/TreeStore.js';
 import { ProgressStore } from './persistence/ProgressStore.js';
 import { WorkspaceStore } from './persistence/WorkspaceStore.js';
 import { LegendStore } from './persistence/LegendStore.js';
 import { emptyWorkspace, arcFraction, addSubtask, toggleSubtask, editSubtask, deleteSubtask, setNote, addLink, deleteLink } from './model/NodeWorkspace.js';
-import { deriveLegend, withCounts, inUseCount, freeHue, renameKind, describeKind, addKind, removeKind, recolorKind, reorderKinds } from './model/Legend.js';
+import { deriveLegend, withCounts, inUseCount, freeHue, addKind, recolorKind } from './model/Legend.js';
 import { KindLegend } from '../components/tree/KindLegend.jsx';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
 import { TreeEditor } from './editing/TreeEditor.js';
-import { repositionNode, addChildNode, renameNode, deleteNode, addEdge, removeEdge, reconnectEdge, setNodeColor, transitiveReduction } from './editing/edits.js';
 import { NODE_SIZE } from './theme.js';
 
 const layoutEngine = new RadialLayoutEngine();
-const treeStore = new TreeStore();
 const progressStore = new ProgressStore();
 const workspaceStore = new WorkspaceStore();
 const legendStore = new LegendStore();
@@ -77,7 +74,8 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   const datasetSizeRef = useRef('demo');
   const collabRef = useRef(null); // live socket to windmill-backend (dogfood roadmap only)
   const peersRef = useRef(new Map()); // actor -> { name, color, cursor, selection } for the presence overlay
-  const applyRemoteOpRef = useRef(null); // always points at the latest applyRemoteOp
+  const onTreeChangedRef = useRef(null); // always points at the latest onTreeChanged
+  const maskedShownRef = useRef(''); // the masked-work set last surfaced, so we prompt once per change
   const applyRemoteProgressRef = useRef(null); // latest applyRemoteProgress (this account's own overlay)
   const invalidRef = useRef(false); // whether the last render fell back to the loose-graph path
   const selectedIdRef = useRef(null);
@@ -131,12 +129,9 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   // Save the edited tree over its seed. Only the dogfood roadmap persists — the
   // huge perf tree is a throwaway. Every structural edit, undo/redo, and move
   // funnels here, so the browser always reloads the latest edit.
-  const persistEdits = useCallback(() => {
-    const editor = editorRef.current;
-    if (!editor || !seedRef.current || datasetSizeRef.current !== 'demo') return;
-    treeStore.save(seedRef.current, editor.treeData);
-    setHasLocalEdits(true);
-  }, []);
+  // Structure durability now lives in the lattice (SyncSession persists it to IndexedDB), so
+  // this no longer writes to TreeStore; kept as the seam syncStructure calls after a re-render.
+  const persistEdits = useCallback(() => {}, []);
 
   // Durable progress: save the user's completions, in-progress steps, and the
   // timestamps of those actions so they survive a reload. Same dataset guard as
@@ -268,7 +263,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   // including the user's durable progress and its timestamps for this tree.
   const handleResetEdits = useCallback(() => {
     if (seedRef.current) {
-      treeStore.clear(seedRef.current.id);
+      collabRef.current?.clearDurable?.();  // drop the durable lattice for this tree
       progressStore.clear(seedRef.current.id);
       workspaceStore.clear(seedRef.current.id);
       legendStore.clear(seedRef.current.id);
@@ -299,6 +294,15 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
     }
 
     const positions = applyNudges(rawLayoutRef.current, nextTree);
+    // A node the cached layout doesn't cover — a collaborator's create with no shared
+    // coordinate, or an agent's MCP-created node — still needs a spot to render. Seat it just
+    // below its first placed parent (or at the origin), so the projection is never crashing-
+    // incomplete; a drag pins it for real, and a fresh load lays the whole tree out properly.
+    for (const node of nextTree.allNodes) {
+      if (positions.has(node.id)) continue;
+      const parent = node.prerequisites.map((p) => positions.get(p)).find(Boolean);
+      positions.set(node.id, parent ? { x: parent.x, y: parent.y + 80 } : { x: 0, y: 0 });
+    }
     const nextStates = UnlockRules.derive(nextTree, { completed: completedRef.current, inProgress: inProgressRef.current });
     const model = nextTree.toRenderModel(positions, nextStates);
     sceneNow.applyModel(model);
@@ -317,75 +321,43 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
     invalidRef.current = invalid;
   }, [persistEdits, showToast]);
 
-  // Apply an authoritative op frame from the backend to the local tree, then re-render
-  // through the same seam a local edit uses. If the op leaves the graph invalid (e.g. a
-  // remote cycle), syncStructure renders the loose-graph projection and surfaces it.
-  const applyRemoteOp = useCallback((op) => {
+  // The lattice changed — from a dispatched local gesture or a joined remote frame; both
+  // land here. The projection becomes the editor's present, the scene re-renders through the
+  // same seam, and the legend is re-derived from the lattice's kinds. One path for every
+  // edit. If a concurrent edit left a cycle, syncStructure surfaces the loose projection.
+  const onTreeChanged = useCallback((treeData) => {
     const editor = editorRef.current;
     if (!editor) return;
-    const data = editor.treeData;
-    const p = op.payload || {};
-    let next = null;
-    switch (op.kind) {
-      case 'CreateNode':
-        next = { ...data, nodes: [...data.nodes, {
-          id: p.id, label: p.label, icon: p.icon, color: p.color,
-          prerequisites: p.parentId ? [p.parentId] : [],
-          position: (p.x != null && p.y != null) ? { x: p.x, y: p.y } : undefined,
-        }] };
-        break;
-      case 'AddEdge': next = addEdge(data, p.from, p.to); break;
-      case 'RemoveEdge': next = removeEdge(data, p.from, p.to); break;
-      case 'ReconnectEdge': next = reconnectEdge(data, p.oldFrom, p.oldTo, p.newFrom, p.newTo); break;
-      case 'RenameNode': next = renameNode(data, p.id, p.label); break;
-      case 'SetNodeColor': next = setNodeColor(data, p.id, p.color); break;
-      case 'RepositionNode': next = repositionNode(data, p.id, p.x, p.y); break;
-      case 'DeleteNode': next = deleteNode(data, p.id); break;
-      case 'TransitiveReduction': next = transitiveReduction(data); break;
-      // Legend ops (F6) carry no treeData change (except RecolorKind, which repaints the
-      // nodes wearing the old hue — the server did the same atomically). They update the
-      // ordered kinds through the same commit seam a local legend edit uses.
-      case 'RenameKind': commitLegendRef.current?.(renameKind(legendRef.current, p.id, p.label)); return;
-      case 'DescribeKind': commitLegendRef.current?.(describeKind(legendRef.current, p.id, p.description)); return;
-      case 'AddKind': commitLegendRef.current?.(addKind(legendRef.current, p.hue, p.id)); return;
-      case 'RemoveKind': commitLegendRef.current?.(removeKind(legendRef.current, p.id)); return;
-      case 'ReorderKinds': commitLegendRef.current?.(reorderKinds(legendRef.current, p.order)); return;
-      case 'RecolorKind': {
-        const oldHue = legendRef.current.find((kind) => kind.id === p.id)?.hue;
-        let repainted = data;
-        if (oldHue) for (const node of data.nodes.filter((n) => n.color === oldHue)) repainted = setNodeColor(repainted, node.id, p.hue);
-        if (repainted !== data && editor.commit(repainted)) syncStructure();
-        commitLegendRef.current?.(legendRef.current.map((kind) => (kind.id === p.id ? { ...kind, hue: p.hue } : kind)));
-        return;
-      }
-      default: return;
+    editor.present = treeData;
+    syncStructure();
+    commitLegendRef.current?.(deriveLegend(treeData.nodes, treeData.kinds));
+
+    // "Keep more, lose less": when a concurrent delete raced a build, the work is kept but
+    // masked under the tombstoned parent. Surface it once, with one-click resurrection.
+    const masked = collabRef.current?.maskedWork?.() ?? [];
+    const key = masked.map((m) => m.id).sort().join(',');
+    if (masked.length && key !== maskedShownRef.current) {
+      maskedShownRef.current = key;
+      const count = masked.reduce((sum, m) => sum + m.children.length, 0);
+      showToast(`${count} step${count === 1 ? '' : 's'} kept under a deleted node`, {
+        action: { label: 'Restore', run: () => masked.forEach((m) => collabRef.current?.dispatch({ kind: 'ResurrectNode', id: m.id })) },
+      });
+    } else if (!masked.length) {
+      maskedShownRef.current = '';
     }
-    console.log('[collab] applying op', op.seq, op.kind, op.payload);
-    if (editor.commit(next)) syncStructure();
-  }, [syncStructure]);
-  applyRemoteOpRef.current = applyRemoteOp;
+  }, [syncStructure, showToast]);
+  onTreeChangedRef.current = onTreeChanged;
 
-  // A node was dragged to a new spot: record it as one edit. The scene is already
-  // showing the new position, so only history + the minimap need updating.
+  // A node was dragged to a new spot: dispatch it as one gesture. The scene already shows
+  // the new position; the dispatch joins the write, re-renders, and syncs it.
   const handleNodeMoved = useCallback((id, x, y) => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    editor.commit(repositionNode(editor.treeData, id, x, y));
-    setRenderModel((model) => (model ? { ...model } : model));
-    persistEdits();
-    collabRef.current?.send('RepositionNode', { id, x, y });
-  }, [persistEdits]);
+    collabRef.current?.dispatch({ kind: 'RepositionNode', id, x, y });
+  }, []);
 
-  // On the live roadmap, undo/redo is server-driven (per author) so it stays in sync;
-  // the throwaway perf tree falls back to the local editor history.
-  const undo = useCallback(() => {
-    if (collabRef.current) { collabRef.current.undo(); return; }
-    if (editorRef.current?.undo()) syncStructure();
-  }, [syncStructure]);
-  const redo = useCallback(() => {
-    if (collabRef.current) { collabRef.current.redo(); return; }
-    if (editorRef.current?.redo()) syncStructure();
-  }, [syncStructure]);
+  // Undo/redo is client-owned: the session replays a gesture's inverse as a fresh gesture,
+  // which joins and broadcasts like any edit, so it stays in sync across collaborators.
+  const undo = useCallback(() => collabRef.current?.undo(), []);
+  const redo = useCallback(() => collabRef.current?.redo(), []);
 
   // The panel's name field committed (Enter/blur): one history step, and only
   // if the label actually changed.
@@ -395,11 +367,9 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
     const node = editor.treeData.nodes.find((n) => n.id === id);
     if (!node || node.label === label) return;
     const wasNamed = node.label.trim() !== ''; // naming a fresh bud is part of the add, not a rename
-    editor.commit(renameNode(editor.treeData, id, label));
-    syncStructure();
-    collabRef.current?.send('RenameNode', { id, label });
+    collabRef.current?.dispatch({ kind: 'RenameNode', id, label });
     if (wasNamed) emit({ verb: 'renamed', nodeId: id, label, kind: node.color });
-  }, [syncStructure, emit]);
+  }, [emit]);
 
   // Plus clicked: create + commit an unnamed bud (saved even unnamed), select it,
   // and flag the step panel to focus its name field so typing flows straight in.
@@ -421,9 +391,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
     const x = parent.x + outX * CHILD_DROP - outY * spread;
     const y = parent.y + outY * CHILD_DROP + outX * spread;
     const params = { id, label: '', icon: NEW_NODE_ICON, color: parent.color, parentId, x, y };
-    editor.commit(addChildNode(editor.treeData, params));
-    syncStructure();
-    collabRef.current?.send('CreateNode', params);
+    collabRef.current?.dispatch({ kind: 'CreateNode', ...params });
     scene.select(id);
     setSelectedId(id);
     setAutoFocusNameId(id);
@@ -433,72 +401,39 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   // Drag from a port to a node → add a dependency (one history step). The gesture
   // already blocked cycles before the drop.
   const handleConnect = useCallback((sourceId, targetId) => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    if (editor.commit(addEdge(editor.treeData, sourceId, targetId))) {
-      syncStructure();
-      collabRef.current?.send('AddEdge', { from: sourceId, to: targetId });
-    }
-  }, [syncStructure]);
+    collabRef.current?.dispatch({ kind: 'AddEdge', from: sourceId, to: targetId });
+  }, []);
 
   // Midpoint × on a branch → drop the edge (silent, one step; ⌘Z restores).
   const handleDeleteEdge = useCallback((sourceId, targetId) => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    if (editor.commit(removeEdge(editor.treeData, sourceId, targetId))) {
-      syncStructure();
-      collabRef.current?.send('RemoveEdge', { from: sourceId, to: targetId });
-    }
-  }, [syncStructure]);
+    collabRef.current?.dispatch({ kind: 'RemoveEdge', from: sourceId, to: targetId });
+  }, []);
 
   // Drag an edge endpoint to a new node → re-aim it in one undoable step. The
   // gesture already blocked cycles and dropping back on the original end.
   const handleReconnect = useCallback((oldFrom, oldTo, newFrom, newTo) => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    if (editor.commit(reconnectEdge(editor.treeData, oldFrom, oldTo, newFrom, newTo))) {
-      syncStructure();
-      collabRef.current?.send('ReconnectEdge', { oldFrom, oldTo, newFrom, newTo });
-    }
-  }, [syncStructure]);
+    collabRef.current?.dispatch({ kind: 'ReconnectEdge', oldFrom, oldTo, newFrom, newTo });
+  }, []);
 
   // Delete a node; its children splice up to the deleted node's parents (one
   // history step). The one destructive edit that earns a toast.
   const deleteNodeAt = useCallback((id) => {
     const editor = editorRef.current;
     if (!editor || !id) return;
-    const before = editor.treeData;
-    const node = before.nodes.find((n) => n.id === id); // snapshot before it's gone
-
-    // The app splices orphaned children up to the deleted node's parents; the backend's
-    // DeleteNode is a plain tombstone. Send the delete plus the re-tether edges as
-    // primitive ops so both sides converge on the same spliced result.
-    const grandparents = node ? node.prerequisites : [];
-    const retether = [];
-    for (const child of before.nodes) {
-      if (!child.prerequisites.includes(id)) continue;
-      if (child.prerequisites.some((p) => p !== id)) continue; // keeps another parent, no re-tether
-      for (const g of grandparents) if (g !== child.id) retether.push({ from: g, to: child.id });
-    }
-
-    editor.commit(deleteNode(before, id));
+    const node = editor.treeData.nodes.find((n) => n.id === id); // snapshot before it's gone
+    // The DeleteNode gesture is atomic: the tombstone AND the children's splice-up to the
+    // deleted node's parents ride one frame, so every peer converges on the same spliced tree.
+    collabRef.current?.dispatch({ kind: 'DeleteNode', id });
     if (selectedIdRef.current === id) setSelectedId(null);
-    syncStructure();
-    collabRef.current?.send('DeleteNode', { id });
-    retether.forEach((edge) => collabRef.current?.send('AddEdge', edge));
     showToast('Step deleted', { action: { label: 'Undo', run: undo } });
     emit({ verb: 'removed', nodeId: id, label: node?.label, kind: node?.color });
-  }, [syncStructure, emit, showToast, undo]);
+  }, [emit, showToast, undo]);
   const deleteSelected = useCallback(() => deleteNodeAt(selectedIdRef.current), [deleteNodeAt]);
 
   const handleSetKind = useCallback((id, kind) => {
-    const editor = editorRef.current;
-    if (!editor || !id) return;
-    if (editor.commit(setNodeColor(editor.treeData, id, kind))) {
-      syncStructure();
-      collabRef.current?.send('SetNodeColor', { id, color: kind });
-    }
-  }, [syncStructure]);
+    if (!id) return;
+    collabRef.current?.dispatch({ kind: 'SetNodeColor', id, color: kind });
+  }, []);
 
   // The legend (F6): every kind edit funnels through one seam — update the fresh ref,
   // set state, and persist — mirroring commitWorkspace. Persistence is demo-only, the
@@ -515,24 +450,21 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   }, [persistLegend]);
   commitLegendRef.current = commitLegend; // let applyRemoteOp (defined earlier) reach the latest
 
-  // Each legend edit commits locally (optimistic) and, on the live roadmap, sends its op
-  // to the backend — the authority for the legend (F6). The echo of our own op is skipped
-  // by CollabClient; a collaborator's op arrives through applyRemoteOp.
+  // Each legend edit is dispatched as one gesture; the lattice is the authority for the
+  // legend (F6) as for everything else, and onTreeChanged re-derives the displayed kinds
+  // from it — for our own edit and a collaborator's alike.
   const onRenameKind = useCallback((id, label) => {
-    commitLegend(renameKind(legendRef.current, id, label));
-    collabRef.current?.send('RenameKind', { id, label: legendRef.current.find((k) => k.id === id)?.label ?? label });
-  }, [commitLegend]);
+    collabRef.current?.dispatch({ kind: 'RenameKind', id, label });
+  }, []);
   const onDescribeKind = useCallback((id, description) => {
-    commitLegend(describeKind(legendRef.current, id, description));
-    collabRef.current?.send('DescribeKind', { id, description: legendRef.current.find((k) => k.id === id)?.description ?? description });
-  }, [commitLegend]);
+    collabRef.current?.dispatch({ kind: 'DescribeKind', id, description });
+  }, []);
   const onAddKind = useCallback((hue) => {
     const next = addKind(legendRef.current, hue ?? freeHue(legendRef.current));
     if (next === legendRef.current) return; // hue taken or palette full — nothing added
-    commitLegend(next);
     const added = next[next.length - 1];
-    collabRef.current?.send('AddKind', { id: added.id, hue: added.hue });
-  }, [commitLegend]);
+    collabRef.current?.dispatch({ kind: 'AddKind', id: added.id, hue: added.hue });
+  }, []);
 
   // Remove is offered only for a kind no node wears; guard here against a stale click,
   // reading the editor's live nodes (the freshest source of every node's hue).
@@ -540,24 +472,17 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
     const nodes = editorRef.current?.treeData.nodes ?? [];
     const target = withCounts(legendRef.current, nodes).find((kind) => kind.id === id);
     if (!target || target.count > 0) return;
-    commitLegend(removeKind(legendRef.current, id));
-    collabRef.current?.send('RemoveKind', { id });
-  }, [commitLegend]);
+    collabRef.current?.dispatch({ kind: 'RemoveKind', id });
+  }, []);
 
-  // Recolor a kind = swap its hue AND repaint every node of the old hue to the new. On the
-  // live roadmap this is one atomic RecolorKind op (the server repaints too); locally we
-  // apply the same effect optimistically. A no-op swap (hue taken) leaves the nodes alone.
+  // Recolor a kind = swap its hue AND repaint every node of the old hue to the new — one
+  // atomic RecolorKind gesture (materialize computes the fan-out; every peer repaints the
+  // same set). A no-op swap (hue taken) leaves the nodes alone.
   const onRecolorKind = useCallback((id, targetHue) => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    const { legend: nextLegend, oldHue, newHue } = recolorKind(legendRef.current, id, targetHue);
+    const { newHue } = recolorKind(legendRef.current, id, targetHue);
     if (!newHue) return;
-    const repainted = editor.treeData.nodes.filter((node) => node.color === oldHue);
-    for (const node of repainted) editor.commit(setNodeColor(editor.treeData, node.id, newHue));
-    if (repainted.length > 0) syncStructure();
-    commitLegend(nextLegend);
-    collabRef.current?.send('RecolorKind', { id, hue: newHue });
-  }, [commitLegend, syncStructure]);
+    collabRef.current?.dispatch({ kind: 'RecolorKind', id, hue: newHue });
+  }, []);
 
   // A legend row spotlights its kind on the graph (WS-C's scene.highlightKind, called
   // defensively — a sibling adds it). Clicking the lit row again clears it. We track the
@@ -584,15 +509,42 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
 
   // One-click tidy: drop transitively-implied dependencies in one undoable step.
   // Only offered when there's redundancy to remove, so the commit is never a no-op.
+  // Device-to-device by file: export the tree as one `.windmill` graft (tombstones ride along),
+  // and import one — the same tree merges (a device catching up), a different tree is gifted in
+  // as a fresh, restamped subtree. Both reuse the lattice `join` — no new protocol.
+  const handleExportTree = useCallback(() => {
+    const doc = collabRef.current?.exportGraft?.();
+    if (!doc) return;
+    const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${(seedRef.current?.title || doc.treeId || 'tree').replace(/[^a-z0-9-]+/gi, '-').toLowerCase()}.windmill`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const handleImportTree = useCallback(() => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.windmill,application/json';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        const doc = JSON.parse(await file.text());
+        const result = collabRef.current?.importGraft?.(doc);
+        if (!result?.ok) { showToast(result?.reason ?? 'could not import that file'); return; }
+        showToast(result.mode === 'gifted' ? `Gifted in ${result.count} step${result.count === 1 ? '' : 's'}` : 'Merged the imported tree');
+      } catch { showToast('could not read that file'); }
+    };
+    input.click();
+  }, [showToast]);
+
   const handleTidy = useCallback(() => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    if (editor.commit(transitiveReduction(editor.treeData))) {
-      syncStructure();
-      collabRef.current?.send('TransitiveReduction', {});
-      showToast('Tidied — dropped redundant links', { action: { label: 'Undo', run: undo } });
-    }
-  }, [syncStructure, showToast, undo]);
+    collabRef.current?.dispatch({ kind: 'TransitiveReduction' });
+    showToast('Tidied — dropped redundant links', { action: { label: 'Undo', run: undo } });
+  }, [showToast, undo]);
 
   // Construct the scene once; React only ever drives it through the methods below.
   // Read-only omits every edit callback so no gesture can mutate the tree, and passes
@@ -706,11 +658,10 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
         ? new MockTreeRepository({ size: 'huge' })
         : new HttpTreeRepository({ treeId });
       const seed = await repo.loadTree();
-      // Overlay any locally-saved edits on the seed (dogfood roadmap only); a
-      // changed seed invalidates them inside the store, so code wins over state.
-      const persisted = datasetSize === 'demo' ? treeStore.load(seed) : null;
-      const treeData = persisted ?? seed;
-      if (!cancelled) setHasLocalEdits(!!persisted);
+      // The HTTP seed is only the first paint; the durable structure is the lattice — loaded
+      // from IndexedDB (offline) and reconciled with the server on subscribe by the SyncSession.
+      const treeData = seed;
+      if (!cancelled) setHasLocalEdits(false);
       const nextTree = new SkillTree(treeData);
       const progress = await repo.loadProgress(treeData);
       // The authoritative structural history from the op log (demo only) — merged into the
@@ -790,26 +741,27 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
       setBounds(scene.getBounds());
       setLoading(false);
 
-      // Go live: subscribe to the backend and apply authoritative ops as they land, so
-      // an edit made anywhere shows up here. Dogfood roadmap only.
+      // Every edit runs through a SyncSession: the lattice is truth, TreeData its projection.
+      // The dogfood roadmap goes live over the socket (a joined frame reaches every peer); the
+      // throwaway perf tree seeds a local-only lattice so its edits still work offline.
       collabRef.current?.close();
       peersRef.current.clear();
-      if (datasetSize === 'demo') {
-        collabRef.current = new CollabClient({ treeId: seed.id })
-          .onOp((op) => applyRemoteOpRef.current?.(op))
-          .onPresence((frame) => peersRef.current.set(frame.actor, {
-            name: frame.profile?.name, color: frame.profile?.color,
-            cursor: frame.cursor ?? null, selection: frame.selection ?? null,
-          }))
-          .onPeer((frame) => {
-            if (frame.event === 'leave') { peersRef.current.delete(frame.actor); return; }
-            if (!peersRef.current.has(frame.actor)) {
-              peersRef.current.set(frame.actor, { name: frame.profile?.name, color: frame.profile?.color, cursor: null, selection: null });
-            }
-          })
-          .onProgress((frame) => applyRemoteProgressRef.current?.(frame))
-          .connect();
-      }
+      const session = new SyncSession({ treeId: seed.id })
+        .onTreeChanged((data) => onTreeChangedRef.current?.(data))
+        .onPresence((frame) => peersRef.current.set(frame.actor, {
+          name: frame.profile?.name, color: frame.profile?.color,
+          cursor: frame.cursor ?? null, selection: frame.selection ?? null,
+        }))
+        .onPeer((frame) => {
+          if (frame.event === 'leave') { peersRef.current.delete(frame.actor); return; }
+          if (!peersRef.current.has(frame.actor)) {
+            peersRef.current.set(frame.actor, { name: frame.profile?.name, color: frame.profile?.color, cursor: null, selection: null });
+          }
+        })
+        .onProgress((frame) => applyRemoteProgressRef.current?.(frame));
+      collabRef.current = session;
+      if (datasetSize === 'demo') session.start();  // load durable lattice from IndexedDB, then connect
+      else session.seed(treeData);                  // local-only lattice for the perf tree
     }
 
     loadTree().catch((err) => {
@@ -1162,6 +1114,8 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
           canTidy={!!health && health.redundant > 0}
           onTidy={handleTidy}
           onShare={() => setShareOpen(true)}
+          onExport={datasetSize === 'demo' ? handleExportTree : undefined}
+          onImport={datasetSize === 'demo' ? handleImportTree : undefined}
           showActivity={showActivity}
           activityOpen={feedVisible}
           activityUnread={unreadCount}
