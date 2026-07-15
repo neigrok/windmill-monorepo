@@ -1,15 +1,10 @@
 // Top overlay bar: the Windmill wordmark (links home to the landing root) + a way
-// back to the component showcase on the left, dataset size + camera controls on the right.
+// back to the component showcase on the left, camera controls on the right.
 
 import React from 'react';
-import { IconButton, Tabs, Tooltip, Icon } from '../../components';
+import { IconButton, Tooltip, Icon } from '../../components';
 
-const DATASET_OPTIONS = [
-  { value: 'demo', label: 'Demo' },
-  { value: 'huge', label: 'Huge (5k)' },
-];
-
-export function ControlBar({ title, titleSlot, datasetSize, onDatasetSizeChange, onZoomIn, onZoomOut, onFitToView, canReset, onResetEdits, canTidy, onTidy, onShare, onExport, onImport, showActivity, activityOpen, activityUnread, activityPing, onToggleActivity }) {
+export function ControlBar({ title, titleSlot, onZoomIn, onZoomOut, onFitToView, canReset, onResetEdits, canTidy, onTidy, onShare, onExport, onImport, activityOpen, activityUnread, activityPing, onToggleActivity }) {
   return (
     <div className="st-topbar">
       <div className="st-brand">
@@ -27,20 +22,18 @@ export function ControlBar({ title, titleSlot, datasetSize, onDatasetSizeChange,
       </div>
 
       <div className="st-controls">
-        {showActivity && (
-          <Tooltip label="Activity (A)" side="bottom">
-            <button
-              type="button"
-              className={`st-activity-chip ${activityOpen ? 'st-activity-chip--on' : ''} ${activityPing ? 'st-activity-chip--ping' : ''}`}
-              onClick={onToggleActivity}
-              aria-pressed={activityOpen}
-            >
-              <Icon name="bell" size={14} />
-              <span>Activity</span>
-              {activityUnread > 0 && <span className="st-activity-chip-badge">{activityUnread}</span>}
-            </button>
-          </Tooltip>
-        )}
+        <Tooltip label="Activity (A)" side="bottom">
+          <button
+            type="button"
+            className={`st-activity-chip ${activityOpen ? 'st-activity-chip--on' : ''} ${activityPing ? 'st-activity-chip--ping' : ''}`}
+            onClick={onToggleActivity}
+            aria-pressed={activityOpen}
+          >
+            <Icon name="bell" size={14} />
+            <span>Activity</span>
+            {activityUnread > 0 && <span className="st-activity-chip-badge">{activityUnread}</span>}
+          </button>
+        </Tooltip>
         <Tooltip label="Share roadmap" side="bottom">
           <IconButton icon={<Icon name="image" />} label="Share roadmap" size="sm" onClick={onShare} />
         </Tooltip>
@@ -64,7 +57,6 @@ export function ControlBar({ title, titleSlot, datasetSize, onDatasetSizeChange,
             <IconButton icon={<Icon name="rotate-ccw" />} label="Reset edits" size="sm" onClick={onResetEdits} />
           </Tooltip>
         )}
-        <Tabs tabs={DATASET_OPTIONS} value={datasetSize} onChange={onDatasetSizeChange} />
         <div className="st-zoom-group">
           <Tooltip label="Zoom out" side="bottom">
             <IconButton icon={<Icon name="zoom-out" />} label="Zoom out" size="sm" onClick={onZoomOut} />

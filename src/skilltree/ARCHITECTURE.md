@@ -47,7 +47,7 @@ or React layers. Layout runs off the main thread, so `layout.layout(tree)` is aw
 Positions are in **world units** where a node is `NODE_SIZE` (56) units in diameter.
 Everything in `model/` is pure JS — no WebGL, no React.
 
-## `model/` + `mock/`  (pure JS)
+## `model/`  (pure JS)
 
 - `model/SkillTree.js` — `class SkillTree`. Constructor validates the DAG (throws on
   duplicate id, dangling prereq, or cycle), indexes `nodesById` + `childrenIndex`,
@@ -64,15 +64,6 @@ Everything in `model/` is pure JS — no WebGL, no React.
   y, maxRadius)` → id | null (scans the 3×3 neighborhood, so keep `cellSize ≥ pickRadius`);
   `within(minX, minY, maxX, maxY)` → id[] for LOD label selection; `move(id, x, y)`
   re-buckets a node after a live drag so picking follows it.
-- `mock/MockTreeRepository.js` — `class MockTreeRepository extends TreeRepository`;
-  `{ size: 'demo' | 'huge' }`. `loadTree()` → the roadmap tree or a generated
-  5,000-node one; `loadProgress()` honors the roadmap's per-node `status`
-  (`complete`/`active`; the rest derive via UnlockRules), or completes the root +
-  3 rings for the status-less perf tree.
-- `mock/roadmapTree.js` — `roadmapTree`: Windmill's own roadmap as a Windmill tree
-  (dogfood). Nodes are real product increments, `color` = area, `status` = progress.
-- `mock/generateBigTree.js` — `generateBigTree(count = 5000)` → a wide, layered `TreeData`
-  with occasional cross-links (real diamonds), deterministic so perf runs reproduce.
 
 ## `layout/`
 

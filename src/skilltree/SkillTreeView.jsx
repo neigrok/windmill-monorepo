@@ -29,7 +29,6 @@ import { TreeHealth } from './model/TreeHealth.js';
 import { UnlockRules } from './model/UnlockRules.js';
 import { RadialLayoutEngine } from './layout/RadialLayoutEngine.js';
 import { applyNudges } from './layout/applyNudges.js';
-import { MockTreeRepository } from './mock/MockTreeRepository.js';
 import { HttpTreeRepository } from './persistence/HttpTreeRepository.js';
 import { listTrees } from './persistence/TreeRegistry.js';
 import { SyncSession } from './sync/SyncSession.js';
@@ -70,8 +69,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   const feedOpenRef = useRef(false); // mirrors feedOpen for emit's synchronous "is the feed being watched?" check
   const pinnedRef = useRef(false);
   const unseenIdsRef = useRef(new Set()); // events that arrived while the feed wasn't visible
-  const seedRef = useRef(null); // authored tree for the current dataset (persistence baseline)
-  const datasetSizeRef = useRef('demo');
+  const seedRef = useRef(null); // the authored seed for the current tree (persistence baseline)
   const collabRef = useRef(null); // live socket to windmill-backend (dogfood roadmap only)
   const peersRef = useRef(new Map()); // actor -> { name, color, cursor, selection } for the presence overlay
   const onTreeChangedRef = useRef(null); // always points at the latest onTreeChanged
@@ -89,7 +87,6 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   const legendOpenRef = useRef(true); // mirrors legendOpen so persistence reads it without a dep churn
   const highlightedKindIdRef = useRef(null); // mirrors the highlighted kind for the Esc/toggle checks
 
-  const [datasetSize, setDatasetSize] = useState('demo');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false); // the routed tree couldn't load (offline / gone)
   const [tree, setTree] = useState(null);
@@ -117,7 +114,6 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   const [unreadCount, setUnreadCount] = useState(0); // events since the feed was last opened
   const [activityPing, setActivityPing] = useState(false); // transient chip pulse on a fresh arrival
 
-  const showActivity = datasetSize === 'demo'; // the feed only rides on the dogfood roadmap
   const [hasLocalEdits, setHasLocalEdits] = useState(false); // local edits overlaid on the authored seed
   const [reloadKey, setReloadKey] = useState(0); // bump to re-run the load pipeline (e.g. after reset)
   const [shareOpen, setShareOpen] = useState(false); // the Share dialog (export postcard preview)
@@ -135,18 +131,16 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
 
   // Durable progress: save the user's completions, in-progress steps, and the
   // timestamps of those actions so they survive a reload. Same dataset guard as
-  // persistEdits — only the dogfood roadmap persists; the perf tree is a throwaway.
-  // Callers pass the freshly-computed next values, since state setters are async.
+  // persistEdits — callers pass the freshly-computed next values, since state setters are async.
   const persistProgress = useCallback((next) => {
-    if (!seedRef.current || datasetSizeRef.current !== 'demo') return;
+    if (!seedRef.current) return;
     progressStore.save(seedRef.current.id, next);
   }, []);
 
-  // Durable per-node workspaces (F13): same dataset guard as progress — only the
-  // dogfood roadmap persists; the perf tree is a throwaway. Callers pass the
-  // freshly-computed map, since the state setter is async.
+  // Durable per-node workspaces (F13): callers pass the freshly-computed map, since
+  // the state setter is async.
   const persistWorkspace = useCallback((byNode) => {
-    if (!seedRef.current || datasetSizeRef.current !== 'demo') return;
+    if (!seedRef.current) return;
     workspaceStore.save(seedRef.current.id, byNode);
   }, []);
 
@@ -436,10 +430,9 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   }, []);
 
   // The legend (F6): every kind edit funnels through one seam — update the fresh ref,
-  // set state, and persist — mirroring commitWorkspace. Persistence is demo-only, the
-  // same throwaway-tree guard as progress/workspace; the open flag rides in the payload.
+  // set state, and persist — mirroring commitWorkspace; the open flag rides in the payload.
   const persistLegend = useCallback((kinds, open) => {
-    if (!seedRef.current || datasetSizeRef.current !== 'demo') return;
+    if (!seedRef.current) return;
     legendStore.save(seedRef.current.id, { kinds, open });
   }, []);
 
@@ -652,11 +645,8 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
     setSelectedId(null);
 
     async function loadTree() {
-      // The routed tree comes from the backend, per treeId; the throwaway 5k perf tree
-      // is generated client-side, so it stays on the mock repository.
-      const repo = datasetSize === 'huge'
-        ? new MockTreeRepository({ size: 'huge' })
-        : new HttpTreeRepository({ treeId });
+      // The routed tree comes from the backend, per treeId.
+      const repo = new HttpTreeRepository({ treeId });
       const seed = await repo.loadTree();
       // The HTTP seed is only the first paint; the durable structure is the lattice — loaded
       // from IndexedDB (offline) and reconciled with the server on subscribe by the SyncSession.
@@ -664,28 +654,27 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
       if (!cancelled) setHasLocalEdits(false);
       const nextTree = new SkillTree(treeData);
       const progress = await repo.loadProgress(treeData);
-      // The authoritative structural history from the op log (demo only) — merged into the
-      // resting feed below so a collaborator's edits show up, not just this browser's.
-      const serverActivity = datasetSize === 'demo' ? await repo.loadActivity({ limit: 200 }) : [];
+      // The authoritative structural history from the op log — merged into the resting
+      // feed below so a collaborator's edits show up, not just this browser's.
+      const serverActivity = await repo.loadActivity({ limit: 200 });
       // Durable progress overlays the repo/seed baseline: a user's saved completions
       // win (they already fold in whatever seed state existed when saved), so marking
       // — or un-marking — a step sticks across reloads. No saved progress → seed as today.
-      const savedProgress = datasetSize === 'demo' ? progressStore.load(seed.id) : null;
+      const savedProgress = progressStore.load(seed.id);
       if (savedProgress) {
         progress.completed = new Set(savedProgress.completed);
         progress.inProgress = new Set(savedProgress.inProgress);
       }
       const startedAtMap = savedProgress?.startedAt ?? {};
       const completedAtMap = savedProgress?.completedAt ?? {};
-      // Per-node workspaces overlay the same way — saved sub-tasks/notes/links win, and
-      // the throwaway perf tree keeps none. The arc feed reads this hydrated map below.
-      const savedWorkspace = datasetSize === 'demo' ? workspaceStore.load(seed.id) : null;
+      // Per-node workspaces overlay the same way — saved sub-tasks/notes/links win.
+      // The arc feed reads this hydrated map below.
+      const savedWorkspace = workspaceStore.load(seed.id);
       const workspaceMap = savedWorkspace ?? {};
-      // The color legend (F6) is served by the backend for the live roadmap (its `kinds`,
-      // reconciled so every in-use hue still has an entry); the mock perf tree derives it
-      // from the hues in use. Open/collapsed stays a local UI preference in localStorage.
-      const savedLegend = datasetSize === 'demo' ? legendStore.load(seed.id) : null;
-      const backendKinds = datasetSize === 'demo' ? (seed.kinds ?? null) : null;
+      // The color legend (F6) is served by the backend (its `kinds`, reconciled so every
+      // in-use hue still has an entry). Open/collapsed stays a local UI preference in localStorage.
+      const savedLegend = legendStore.load(seed.id);
+      const backendKinds = seed.kinds ?? null;
       const legendKinds = deriveLegend(nextTree.nodes, backendKinds);
       const states = UnlockRules.derive(nextTree, progress);
       const rawLayout = await layoutEngine.layout(nextTree);
@@ -700,20 +689,14 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
       editorRef.current = new TreeEditor(treeData);
       rawLayoutRef.current = rawLayout;
       seedRef.current = seed;
-      datasetSizeRef.current = datasetSize;
       progressRef.current = progress;
       completedRef.current = new Set(progress.completed);
       inProgressRef.current = new Set(progress.inProgress);
       // Seed the resting feed from the roadmap's build history (the completed deeds) and
-      // fold in the server's structural op history, oldest-first (demo only; the 5k perf
-      // tree is a throwaway with no story to tell).
-      if (datasetSize === 'demo') {
-        const built = ActivityLog.fromTree(nextTree, states, Date.now()).events;
-        const fromServer = serverActivity.map((event) => new ActivityEvent({ ...event, actor: event.actor || null }));
-        logRef.current = new ActivityLog([...built, ...fromServer].sort((a, b) => a.at - b.at));
-      } else {
-        logRef.current = new ActivityLog();
-      }
+      // fold in the server's structural op history, oldest-first.
+      const built = ActivityLog.fromTree(nextTree, states, Date.now()).events;
+      const fromServer = serverActivity.map((event) => new ActivityEvent({ ...event, actor: event.actor || null }));
+      logRef.current = new ActivityLog([...built, ...fromServer].sort((a, b) => a.at - b.at));
       setTree(nextTree);
       setRenderModel(model);
       setCompleted(new Set(progress.completed));
@@ -742,8 +725,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
       setLoading(false);
 
       // Every edit runs through a SyncSession: the lattice is truth, TreeData its projection.
-      // The dogfood roadmap goes live over the socket (a joined frame reaches every peer); the
-      // throwaway perf tree seeds a local-only lattice so its edits still work offline.
+      // The roadmap goes live over the socket (a joined frame reaches every peer).
       collabRef.current?.close();
       peersRef.current.clear();
       const session = new SyncSession({ treeId: seed.id })
@@ -760,8 +742,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
         })
         .onProgress((frame) => applyRemoteProgressRef.current?.(frame));
       collabRef.current = session;
-      if (datasetSize === 'demo') session.start();  // load durable lattice from IndexedDB, then connect
-      else session.seed(treeData);                  // local-only lattice for the perf tree
+      session.start();  // load durable lattice from IndexedDB, then connect
     }
 
     loadTree().catch((err) => {
@@ -775,7 +756,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
       collabRef.current?.close();
       collabRef.current = null;
     };
-  }, [datasetSize, reloadKey, treeId]);
+  }, [reloadKey, treeId]);
 
   // Single source of truth for node state — every completion ripples through here.
   const states = useMemo(() => {
@@ -814,7 +795,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
 
   // The feed is the visible dock tenant when summoned/pinned and no step is
   // selected. Whenever it becomes visible, mark everything read (with a catch-up flash).
-  const feedVisible = showActivity && (feedOpen || pinned) && !selectedId;
+  const feedVisible = (feedOpen || pinned) && !selectedId;
   useEffect(() => { if (feedVisible) markRead(); }, [feedVisible, markRead]);
 
   const nodesById = useMemo(() => {
@@ -1078,7 +1059,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
     <div className={`st-root ${panning ? 'panning' : ''}`} ref={rootRef}>
       <canvas ref={canvasRef} className={`st-canvas ${hoveredId ? 'st-canvas--hover' : ''}`} />
 
-      {showActivity && !readOnly && (
+      {!readOnly && (
         <PresenceLayer peersRef={peersRef} scene={scene} canvasRef={canvasRef} collabRef={collabRef} selection={selectedId} />
       )}
 
@@ -1104,8 +1085,6 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
               onNew={() => { window.location.hash = '#/app/new'; }}
             />
           }
-          datasetSize={datasetSize}
-          onDatasetSizeChange={setDatasetSize}
           onZoomIn={handleZoomIn}
           onZoomOut={handleZoomOut}
           onFitToView={handleFitToView}
@@ -1114,9 +1093,8 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
           canTidy={!!health && health.redundant > 0}
           onTidy={handleTidy}
           onShare={() => setShareOpen(true)}
-          onExport={datasetSize === 'demo' ? handleExportTree : undefined}
-          onImport={datasetSize === 'demo' ? handleImportTree : undefined}
-          showActivity={showActivity}
+          onExport={handleExportTree}
+          onImport={handleImportTree}
           activityOpen={feedVisible}
           activityUnread={unreadCount}
           activityPing={activityPing}
@@ -1141,7 +1119,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
         </div>
       )}
 
-      {datasetSize === 'demo' && !readOnly && <TidinessBadge health={health} />}
+      {!readOnly && <TidinessBadge health={health} />}
 
       <Minimap
         nodes={renderModel?.nodes ?? []}

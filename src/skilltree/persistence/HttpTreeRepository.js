@@ -1,6 +1,6 @@
-// The real TreeRepository: loads the authored tree and this user's progress from the
-// windmill-backend server. Same port (and same loadProgress(treeData) shape) as
-// MockTreeRepository, so it drops straight into the load pipeline.
+// The TreeRepository: loads the authored tree and this user's progress from the
+// windmill-backend server, per treeId. Implements the `TreeRepository` port
+// (loadTree / loadProgress / loadActivity) that the load pipeline drives.
 
 import { TreeRepository } from '../model/ports.js';
 import { API_BASE } from '../apiBase.js';
