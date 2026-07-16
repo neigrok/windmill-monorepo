@@ -1,5 +1,6 @@
 import React from 'react';
 import { Button } from '../../components';
+import { track } from '../../telemetry/beacon.js';
 
 // The magic-link URL is ${APP}/#/auth?token=<secret> — the token rides in the
 // fragment's query part (location.hash), never location.search, so we split the
@@ -28,7 +29,12 @@ export function AuthLanding({ onVerify, onSignedIn, onExpired, onOpenDoor }) {
 
     let active = true;
     onVerify(token)
-      .then(({ user, forkedTree }) => { if (active) onSignedIn(user, forkedTree); })
+      .then(({ user, forkedTree }) => {
+        if (!active) return;
+        track('sign_in', { forked: !!forkedTree });
+        if (forkedTree) track('fork_claim', { mode: 'email' });
+        onSignedIn(user, forkedTree);
+      })
       .catch(() => {
         if (!active) return;
         setStatus('expired');

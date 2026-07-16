@@ -13,6 +13,7 @@ import { requestMagicLink } from '../auth/AuthClient.js';
 import { SignInDialog } from '../auth/SignInDialog.jsx';
 import { createTree } from '../persistence/TreeRegistry.js';
 import { DEFAULT_KINDS } from '../model/Legend.js';
+import { track } from '../../telemetry/beacon.js';
 
 const reduced = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -41,6 +42,7 @@ export function NewTreeBirth() {
       const rootId = crypto.randomUUID?.() ?? `n-${Date.now()}`;
       const root = { id: rootId, label: title, icon: 'sparkles', color: DEFAULT_KINDS[0].hue, prerequisites: [] };
       const { treeId } = await createTree({ ...(title ? { title } : {}), nodes: [root] });
+      track('birth');
       window.location.hash = `#/app/${treeId}`;
     } catch (err) {
       if (err.code === 'unauthenticated') { pending.current = true; setSignInOpen(true); setPhase('naming'); }

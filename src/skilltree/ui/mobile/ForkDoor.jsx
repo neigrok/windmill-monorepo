@@ -9,6 +9,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Button, Input, Dialog } from '../../../components';
 import { requestMagicLink } from '../../auth/AuthClient.js';
 import { forkTree } from '../../persistence/TreeRegistry.js';
+import { track } from '../../../telemetry/beacon.js';
 
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -68,6 +69,7 @@ export function ForkDoor({ open, tablet = false, treeId, signedIn = false, onClo
     if (inflight.current) return;
     inflight.current = true;
     setPhase('sending');
+    track('fork_attempt', { mode: 'email' });
     try {
       await requestMagicLink(address, { forkOf: treeId });
       setPhase('sent');
@@ -90,8 +92,10 @@ export function ForkDoor({ open, tablet = false, treeId, signedIn = false, onClo
     if (busy) return;
     setBusy(true);
     setForkError(null);
+    track('fork_attempt', { mode: 'instant' });
     forkTree(treeId)
       .then(({ treeId: forkedId }) => {
+        track('fork_claim', { mode: 'instant' });
         // A fork crosses the read-only → editor boundary; land in the copy on a clean
         // page load so the scene is born in editor mode, not retrofitted into it.
         window.location.hash = `#/app/${forkedId}`;

@@ -18,6 +18,7 @@ import { EdgeChrome } from './EdgeChrome.js';
 import { createTextureFromCanvas } from './glcore.js';
 import { InputController } from './input/InputController.js';
 import { MoveTool, ReadOnlyTool } from './input/tools.js';
+import { track } from '../../telemetry/beacon.js';
 
 const SPATIAL_CELL_SIZE = NODE_SIZE * 2;
 const PICK_RADIUS = NODE_SIZE * 0.65;
@@ -53,7 +54,10 @@ export class SkillTreeScene {
     this.readOnly = !!options.readOnly; // a shared/mobile viewer: no editing chrome, pan-only
 
     const gl = canvas.getContext('webgl2', { antialias: true, alpha: false, premultipliedAlpha: false });
-    if (!gl) throw new Error('WebGL2 is not available');
+    if (!gl) {
+      track('webgl_init_fail');
+      throw new Error('WebGL2 is not available');
+    }
     this.gl = gl;
     gl.enable(gl.BLEND);
     gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);

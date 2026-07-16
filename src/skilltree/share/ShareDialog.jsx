@@ -8,6 +8,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Dialog, Button, Tabs } from '../../components';
 import { ShareFrame, SHARE_SIZES, shareSize } from './ShareFrame.js';
 import { renderShareCanvas, canvasToPngBlob } from './exportImage.js';
+import { track } from '../../telemetry/beacon.js';
 
 const SIZE_TABS = SHARE_SIZES.map((size) => ({ value: size.id, label: size.label }));
 const THEME_TABS = [{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }];
@@ -73,11 +74,13 @@ export function ShareDialog({ open, onClose, model, title, stats }) {
 
   async function handleDownload() {
     if (!model) return;
+    track('share_export');
     downloadBlob(await exportBlob(2), fileName(title));
   }
 
   async function handleCopy() {
     if (!model) return;
+    track('share_export');
     const blob = await exportBlob(2);
     try {
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);

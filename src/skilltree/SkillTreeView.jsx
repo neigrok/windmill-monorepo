@@ -43,6 +43,7 @@ import { KindLegend } from '../components/tree/KindLegend.jsx';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
 import { TreeEditor } from './editing/TreeEditor.js';
 import { NODE_SIZE } from './theme.js';
+import { track } from '../telemetry/beacon.js';
 
 const layoutEngine = new RadialLayoutEngine();
 const progressStore = new ProgressStore();
@@ -53,6 +54,7 @@ const EMPTY_BOUNDS = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 const CHILD_DROP = NODE_SIZE * 2.6; // world units a new child spawns below its parent
 const SIBLING_GAP = NODE_SIZE * 1.8; // horizontal spread between successive new children
 const NEW_NODE_ICON = 'sparkles';
+const DEMO_TREE_ID = 't_9e407a96b5330ebe';
 
 export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   const { breakpoint, readOnly, shared } = useViewMode();
@@ -756,6 +758,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
       unseenIdsRef.current = new Set();
       setBounds(scene.getBounds());
       setLoading(false);
+      if (shared && seed.id === DEMO_TREE_ID) track('demo_open', { treeId: seed.id });
 
       // Every edit runs through a SyncSession: the lattice is truth, TreeData its projection.
       // The roadmap goes live over the socket (a joined frame reaches every peer).

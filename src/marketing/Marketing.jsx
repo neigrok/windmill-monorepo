@@ -9,6 +9,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Button, Badge } from '../components';
 import { SignInDialog } from '../skilltree/auth/SignInDialog.jsx';
 import { requestMagicLink } from '../skilltree/auth/AuthClient.js';
+import { useAuth } from '../skilltree/auth/AuthProvider.jsx';
+import { track } from '../telemetry/beacon.js';
 import { mountHero, mountBeat, mountThumb } from './treeScenes.js';
 import './marketing.css';
 
@@ -220,6 +222,13 @@ function Footer() {
 
 export default function Marketing() {
   const [signInOpen, setSignInOpen] = useState(false);
+  const { status } = useAuth();
+  const landed = useRef(false);
+  useEffect(() => {
+    if (status === 'loading' || landed.current) return;
+    landed.current = true;
+    track('land', { signedIn: status === 'signed-in' });
+  }, [status]);
   return (
     <div className="wm-landing" style={{ fontFamily: 'var(--font-body)' }}>
       <a href="#main" className="skip-link">Skip to content</a>
