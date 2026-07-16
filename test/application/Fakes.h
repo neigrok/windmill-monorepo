@@ -138,6 +138,7 @@ struct FakeProgressRepository : ProgressRepository {
       NodeId node{k.substr(prefix.size())};
       if (entry.status == ProgressStatus::complete) progress.completed.insert(node);
       else if (entry.status == ProgressStatus::active) progress.inProgress.insert(node);
+      else if (entry.status == ProgressStatus::none) progress.cleared.insert(node);
     }
     return progress;
   }

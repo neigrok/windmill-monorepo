@@ -102,8 +102,11 @@ Json::Value toJson(const Progress& progress) {
   for (const NodeId& id : progress.completed) completed.append(id.str());
   Json::Value inProgress(Json::arrayValue);
   for (const NodeId& id : progress.inProgress) inProgress.append(id.str());
+  Json::Value cleared(Json::arrayValue);
+  for (const NodeId& id : progress.cleared) cleared.append(id.str());
   root["completed"] = completed;
   root["inProgress"] = inProgress;
+  root["cleared"] = cleared;
   return root;
 }
 

@@ -195,7 +195,18 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
 // rejected), then echo only to the same user's other sessions — not to collaborators.
 void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, const Json::Value& frame) {
   const Principal& principal = principalOf(conn);
-  if (!principal.authenticated) return;  // progress is a private per-account overlay
+  if (!principal.authenticated) {
+    // Progress is a private per-account overlay — but a silent drop would lose a lapsed
+    // session's marks invisibly. Echo the mark back in the reject so the client can requeue.
+    Json::Value reject(Json::objectValue);
+    reject["t"] = "reject";
+    reject["treeId"] = treeId;
+    reject["nodeId"] = frame.get("nodeId", "").asString();
+    reject["status"] = frame.get("status", "").asString();
+    reject["reason"] = "sign in to track progress";
+    send(conn, reject);
+    return;
+  }
 
   NodeId node{frame.get("nodeId", "").asString()};
   std::optional<ProgressStatus> status = parseProgressStatus(frame.get("status", "").asString());

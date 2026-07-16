@@ -130,10 +130,13 @@ struct TreeData {
   std::vector<Kind> kinds;
 };
 
-// A user's progress over one tree: the two id sets the client already tracks.
+// A user's progress over one tree: the two id sets the client already tracks, plus the
+// cleared tombstones — visible so a client's reconcile can tell "cleared" from "never
+// marked" and never resurrects a clear with a stale local mark.
 struct Progress {
   std::set<NodeId> completed;
   std::set<NodeId> inProgress;
+  std::set<NodeId> cleared;
 };
 
 }

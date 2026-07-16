@@ -46,3 +46,37 @@ TEST(progress_none_clears_the_entry) {
   CHECK_EQ(progress.inProgress.count(nid("a")), 0u);
   CHECK_EQ(progress.completed.count(nid("a")), 0u);
 }
+
+TEST(progress_clear_persists_as_a_tombstone_row) {
+  FakeProgressRepository repo;
+  ProgressService service(repo);
+
+  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, at(1));
+  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::none, at(2));
+
+  auto entry = repo.byKey.find(FakeProgressRepository::key(tid(), uid(), nid("a")));
+  CHECK(entry != repo.byKey.end());  // the clear is a stored LWW value, not a row delete
+  CHECK_EQ(entry->second.status, ProgressStatus::none);
+  CHECK_EQ(entry->second.at, at(2));
+
+  // And the tombstone is VISIBLE on load — a client's reconcile must be able to tell
+  // "cleared" from "never marked", or it resurrects the clear with a stale local mark.
+  Progress loaded = repo.load(tid(), uid());
+  CHECK(loaded.completed.empty());
+  CHECK(loaded.inProgress.empty());
+  CHECK_EQ(loaded.cleared.size(), 1u);
+  CHECK(loaded.cleared.count(nid("a")) == 1);
+}
+
+TEST(progress_stale_mark_cannot_resurrect_a_cleared_node) {
+  FakeProgressRepository repo;
+  ProgressService service(repo);
+
+  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, at(1));
+  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::none, at(3));
+  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, at(2));  // stale replay
+
+  Progress progress = service.progressOf(tid(), uid());
+  CHECK_EQ(progress.completed.count(nid("a")), 0u);
+  CHECK_EQ(progress.inProgress.count(nid("a")), 0u);
+}

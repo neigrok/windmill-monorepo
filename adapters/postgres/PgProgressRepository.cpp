@@ -26,6 +26,7 @@ Progress PgProgressRepository::load(const TreeId& tree, const UserId& user) {
     std::string status = row["status"].as<std::string>();
     if (status == "complete") progress.completed.insert(node);
     else if (status == "active") progress.inProgress.insert(node);
+    else if (status == "none") progress.cleared.insert(node);
   }
   return progress;
 }
