@@ -58,6 +58,7 @@ export class SyncSession {
     this.presenceHandler = null;
     this.peerHandler = null;
     this.progressHandler = null;
+    this.liveHandler = null;
     this.presence = null;
     this.presenceTimer = null;
     this.closed = false;
@@ -67,6 +68,7 @@ export class SyncSession {
   onPresence(handler) { this.presenceHandler = handler; return this; }
   onPeer(handler) { this.peerHandler = handler; return this; }
   onProgress(handler) { this.progressHandler = handler; return this; }
+  onLive(handler) { this.liveHandler = handler; return this; }
 
   // Seed a local-only lattice from projected TreeData (the perf tree): every field takes a
   // genesis stamp, so any later edit dominates it. No socket, no IndexedDB.
@@ -172,6 +174,7 @@ export class SyncSession {
     this.flush();
     this.phase = 'live';
     this.backoffMs = 500;
+    this.liveHandler?.();  // each graft is a fresh baseline — the view reconciles progress off it
   }
 
   // A live broadcast (ours echoed back, a collaborator's, or an MCP edit). Dense-seq gated;
@@ -339,6 +342,13 @@ export class SyncSession {
       return e;
     });
     return { nodes, edges, kinds };
+  }
+
+  // Progress rides the socket but not the lattice: no outbox, no ack — an offline mark
+  // reaches the server via the view's reconciliation on the next graft.
+  sendProgress(nodeId, status) {
+    if (this.phase !== 'live' || this.ws?.readyState !== WebSocket.OPEN) return;
+    this.ws.send(JSON.stringify({ t: 'progress', treeId: this.treeId, nodeId, status }));
   }
 
   sendPresence(cursor, selection) {

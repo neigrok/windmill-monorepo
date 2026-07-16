@@ -2,7 +2,7 @@
 // The live moat — a self-playing demo tree, three how-it-works beats, developer quest
 // thumbnails — comes from treeScenes.js; the rest reuses the app's Button/Badge. The
 // design-time tweaks panel is dropped; the "Any goal" headline is fixed. The landing is the
-// site root; CTAs point at the app (Start → #/app, Try the demo → the read-only #/t/demo) and
+// site root; CTAs point at the app (Start → #/app, Try the demo → the read-only hosted demo tree) and
 // the X6 sign-in door.
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -73,7 +73,7 @@ function Hero() {
         </p>
         <div style={{ display: 'flex', gap: 12, marginTop: 32, flexWrap: 'wrap', justifyContent: 'center' }}>
           <a href="#/app"><Button variant="primary" size="lg">Start your tree</Button></a>
-          <a href="#/t/demo"><Button variant="secondary" size="lg">Try the live demo</Button></a>
+          <a href="#/t/t_9e407a96b5330ebe"><Button variant="secondary" size="lg">Try the live demo</Button></a>
         </div>
         <div style={{ fontFamily: 'var(--font-body)', fontSize: 13.5, color: 'var(--text-tertiary)', marginTop: 14 }}>
           No account needed — your first tree lives in your browser.
@@ -195,7 +195,7 @@ function CtaBand() {
         <p className="sectionSub" style={{ maxWidth: 460 }}>It takes about a minute, and the first branch unlocks tonight.</p>
         <div style={{ display: 'flex', gap: 12, marginTop: 20, flexWrap: 'wrap', justifyContent: 'center' }}>
           <a href="#/app"><Button variant="primary" size="lg">Start your tree</Button></a>
-          <a href="#/t/demo"><Button variant="ghost" size="lg">Try the live demo</Button></a>
+          <a href="#/t/t_9e407a96b5330ebe"><Button variant="ghost" size="lg">Try the live demo</Button></a>
         </div>
       </div>
     </section>

@@ -24,9 +24,17 @@ export class HttpTreeRepository extends TreeRepository {
     // Credentialed so the server returns *this* signed-in user's overlay (anonymous falls
     // back to the document's authoring seeds below).
     const response = await fetch(`${this.baseUrl}/v1/trees/${this.treeId}/progress`, { credentials: 'include' });
-    const server = response.ok ? await response.json() : { completed: [], inProgress: [] };
-    if (server.completed.length > 0 || server.inProgress.length > 0) {
-      return { completed: new Set(server.completed), inProgress: new Set(server.inProgress) };
+    const server = response.ok ? await response.json() : { completed: [], inProgress: [], cleared: [] };
+    if (server.completed.length > 0 || server.inProgress.length > 0 || (server.cleared?.length ?? 0) > 0) {
+      // `server: true` marks this as the account's real overlay — the load pipeline lets
+      // it win over stale localStorage. `cleared` carries the tombstones so a cleared
+      // node is never mistaken for a never-marked one.
+      return {
+        completed: new Set(server.completed),
+        inProgress: new Set(server.inProgress),
+        cleared: new Set(server.cleared ?? []),
+        server: true,
+      };
     }
 
     // No per-user progress on the server yet — fall back to the document's authoring
@@ -34,6 +42,7 @@ export class HttpTreeRepository extends TreeRepository {
     return {
       completed: new Set(treeData.nodes.filter((node) => node.status === 'complete').map((node) => node.id)),
       inProgress: new Set(treeData.nodes.filter((node) => node.status === 'active').map((node) => node.id)),
+      server: false,
     };
   }
 
