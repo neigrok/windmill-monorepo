@@ -1,6 +1,8 @@
 // Elects one "trunk" (primary) parent per node — a spanning arborescence over
 // the DAG — and derives each node's sector: branch root, trunk depth, leaf
 // weight. Same-kind parents win; ties go to the shallowest, then smallest id.
+// Trunk children keep id order, so a layout over the trunk is stable no matter
+// how the underlying node list happens to be ordered (HTTP load vs lattice).
 // A branch starts wherever the trunk crosses a color boundary or hangs off the
 // center, so sectors are affinity runs (topological runs when uncolored).
 // Pure — no WebGL, no React.
@@ -45,6 +47,8 @@ export class TrunkTree {
       this.branchRootById.set(id, cutsBranch ? id : this.branchRootById.get(elected.id));
       this.trunkChildrenById.get(elected.id).push(id);
     }
+
+    for (const children of this.trunkChildrenById.values()) children.sort();
 
     for (const id of [...order].reverse()) {
       const children = this.trunkChildrenById.get(id);

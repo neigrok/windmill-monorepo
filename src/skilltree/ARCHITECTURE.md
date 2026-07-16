@@ -7,8 +7,8 @@ nodes, 2 GPU draw calls** (one instanced node draw + one connector draw; labels 
 pooled DOM), with pan/zoom, hover, and click-to-complete.
 
 The renderer began on three.js and was rewritten in raw WebGL2 — the reasons and
-the lesson live in `NOTES.md`. Three.js and troika were removed; the only runtime
-dep the feature pulls in is `@dagrejs/dagre` (layout), at the boundary.
+the lesson live in `NOTES.md`. Three.js, troika, and later dagre were all removed;
+the feature has no runtime deps beyond React (layout is the hand-rolled radial engine).
 
 ## The pipeline (this is the whole app, top to bottom)
 
@@ -67,12 +67,11 @@ Everything in `model/` is pure JS — no WebGL, no React.
 
 ## `layout/`
 
-- `layout/WorkerLayoutEngine.js` — `class WorkerLayoutEngine extends LayoutEngine`. The
-  engine the app uses: posts the tree to `layout/dagre.worker.js` and resolves a
-  `Map<id, Vec2>`, so a 5k layout never blocks the main thread.
-- `layout/DagreLayoutEngine.js` — `class DagreLayoutEngine extends LayoutEngine`. The
-  synchronous `@dagrejs/dagre` layout (top-to-bottom, `nodesep ~ NODE_SIZE*1.6`,
-  `ranksep ~ NODE_SIZE*2.4`); it runs inside the worker.
+- `layout/RadialLayoutEngine.js` — `class RadialLayoutEngine extends LayoutEngine`. The
+  one engine: each node sits on the ring for its trunk depth, centered in an angular
+  wedge split among trunk children by subtree leaf count. Synchronous and deterministic
+  (trunk children are id-ordered), so load and live emissions project identical pixels —
+  SkillTreeView re-runs it inline whenever the node/edge signature changes.
 - `layout/applyNudges.js` — `applyNudges(positions, tree)` → a new `Map` where any node
   with a `position` override replaces the computed coordinate. Pure, returns a copy.
 
@@ -235,8 +234,8 @@ or the scene's selected edge → `removeEdge`). Keys: ⌘Z/⇧⌘Z → `undo`/`r
 
 ## Conventions (from CLAUDE.md — honor these)
 - Optimize for the reader. Express functions as top-to-bottom fail-fast pipelines.
-- Domain layer is pure and dependency-light; WebGL and dagre live only at the boundary.
+- Domain layer is pure and dependency-light; WebGL lives only at the boundary.
 - Constructors on entities (not factory helpers). Early returns over assign-then-return.
 - No underscore-prefixed private helpers; no docstrings / multiline prose comments.
 - Don't create sub-40-line files without a strong reason; group kin (all shapes in ports.js).
-- Plain JS/JSX only (no TypeScript). The only feature runtime dep is `@dagrejs/dagre`.
+- Plain JS/JSX only (no TypeScript). No feature runtime deps beyond React.

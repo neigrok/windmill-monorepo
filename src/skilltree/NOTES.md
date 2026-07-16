@@ -221,8 +221,12 @@ and `pointer-events` flip to `auto` only while shown.
 Select a node, ⌫/Delete removes it (editing-spec §06). `edits.deleteNode` is a compound
 transform → **one** history step: the node is dropped and any child that loses its *only*
 parent is spliced up to the deleted node's parents (children with other parents just drop this
-one; re-tether targets are ancestors so it stays a DAG). `syncStructure` doesn't re-layout, so
-"nothing else moves" (§6.2) — the spliced edges just span the gap. Node deletion is the one
+one; re-tether targets are ancestors so it stays a DAG). *(Superseded: `syncStructure` now
+re-runs the layout engine whenever the node/edge signature changes — the live path and a fresh
+load are one pipeline, so MCP/collaborator creates land laid-out instead of clumped. "Nothing
+else moves" survives only for content edits — rename, progress, drag; structural edits reflow,
+and the planned settle tween (dogfood: layout-settle-motion) will animate that reflow.)*
+The spliced edges just span the gap. Node deletion is the one
 destructive edit that earns a **toast** ("Step deleted · Undo", bottom-center, 6s, gold Undo
 that calls `undo()`); everything else relies on being visible + ⌘Z. The ⌫ handler ignores
 key events while an input is focused. Verified headless: delete splices children up, toast
@@ -392,8 +396,10 @@ reverts the name; an unnamed bud persists as a bud form).
   Not visible in testing, but a stable nodeId→slot matching (keep in-view assignments,
   only reslot on enter/leave) would remove any residual shimmer and drop the per-frame
   sort — and would let both overlays share one query instead of two.
-- **Web-Worker layout** — dagre runs off the main thread (`WorkerLayoutEngine` +
-  `layout/dagre.worker.js`); the 5k toggle doesn't freeze the UI.
+- **Web-Worker layout** — *(retired: dagre and the worker engine were deleted once the
+  radial engine became the only one; it's synchronous, and the live path re-lays inline
+  on every structural change. Resurrect a worker only if a measured tree makes inline
+  layout janky.)*
 - **Code-split** — routes are `React.lazy`; entry chunk is ~3 kB.
 - **Reduced-motion** — a `uMotion` uniform freezes the pulse / snaps growth.
 - **Re-validate 5k perf** on the new renderer (draw-call count is inherently 2 —

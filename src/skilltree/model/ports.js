@@ -62,7 +62,8 @@ export class TreeRepository {
 }
 
 export class LayoutEngine {
-  // layout(tree) -> Map<id, Vec2>, or a Promise of one (the worker engine is async).
+  // layout(tree) -> Map<id, Vec2>, synchronously — the live path re-lays on every
+  // structural change, so an engine must be cheap enough to run inline.
   layout(tree) {
     throw new Error('LayoutEngine.layout not implemented');
   }

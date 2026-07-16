@@ -37,7 +37,7 @@ export class RadialLayoutEngine extends LayoutEngine {
       return positions;
     }
 
-    const roots = tree.roots();
+    const roots = [...tree.roots()].sort((a, b) => (a.id < b.id ? -1 : 1));
     const totalLeaves = roots.reduce((sum, root) => sum + trunk.leafCountOf(root.id), 0);
     let cursor = 0;
     for (const root of roots) {

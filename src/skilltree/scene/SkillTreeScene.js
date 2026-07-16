@@ -12,6 +12,7 @@ import { ConnectorBatch } from './ConnectorBatch.js';
 import { IconAtlas } from './IconAtlas.js';
 import { LabelOverlay, IconOverlay, ICON_DOM_START, ICON_DOM_FULL } from './NodeOverlay.js';
 import { AffordanceLayer } from './AffordanceLayer.js';
+import { ArrivalChevron } from './ArrivalChevron.js';
 import { HoverLabel } from './HoverLabel.js';
 import { EdgeChrome } from './EdgeChrome.js';
 import { createTextureFromCanvas } from './glcore.js';
@@ -32,6 +33,13 @@ const ICON_ZOOM_FULL = 1.1;
 // NodeBatch `aEmphasis`); 46 / that ≈ 0.63. Larger trees fit below this cap, so they're untouched.
 const FIT_MAX_ZOOM = 46 / (NODE_SIZE * 0.84 * 1.55);
 const ARRIVAL_MAX = 120; // above this a fresh model paints at rest — no plant cascade (the 5k perf tree)
+const SETTLE_MS = 520; // a displaced node's glide to its new seat after a live relayout
+const SETTLE_MIN_DELTA = 2; // world units — sub-pixel layout drift snaps silently instead of shimmering
+const SETTLE_STAGGER_MS = 120; // glides ripple outward from the change, not all at once
+const AUTO_FRAME_IDLE_S = 2; // quiet this long (and nothing selected) before an auto-frame may fire
+const AUTO_FRAME_EXPIRY_S = 10; // an arrival the user stayed busy through never auto-frames late
+const AUTO_FRAME_MAX_ZOOM_OUT = 0.82; // one burst breathes the view out at most ~18%
+const AUTO_FRAME_PAD = NODE_SIZE * 2; // world-space margin around framed arrivals
 
 function hexRgb(hex) {
   const n = parseInt(hex.slice(1), 16);
@@ -117,6 +125,18 @@ export class SkillTreeScene {
     this.nodeStates = new Map(); // last states pushed — the diff baseline
     this.pendingSummary = null; // the toast the next ceremony speaks (set by the shell)
     this.pendingHasAction = false;
+    this.settle = null; // in-flight layout glide: { startAt, moves } (see beginSettle)
+    this.pendingFrame = null; // off-screen arrivals awaiting an idle auto-frame: { nodes, at }
+    this.lastInputAt = 0; // when the pointer last touched the canvas — the idle gate reads this
+    this.notePointer = () => { this.lastInputAt = this.elapsedSeconds; };
+    canvas.addEventListener('pointermove', this.notePointer, { passive: true });
+    this.arrivalChevron = new ArrivalChevron(canvas, {
+      onReveal: (x, y) => {
+        this.pendingFrame = null; // the user chose to look — no auto-frame on top
+        this.director.yieldToInput();
+        this.camera.glideTo(x, y);
+      },
+    });
 
     this.toolContext = {
       camera: this.camera,
@@ -129,7 +149,12 @@ export class SkillTreeScene {
       hoverEdge: (edge) => this.hoverEdge(edge),
       moveNode: (id, x, y) => this.moveNode(id, x, y),
       endMove: (id) => this.endMove(id),
-      onInteract: () => this.director.yieldToInput(),
+      onInteract: () => {
+        this.lastInputAt = this.elapsedSeconds;
+        this.pendingFrame = null; // a grab is intent — never auto-frame over it
+        this.director.yieldToInput();
+        this.finishSettle();
+      },
       onPan: () => this.reportPan(),
       press: (id) => this.setPress(id),
     };
@@ -146,6 +171,9 @@ export class SkillTreeScene {
   // dataset swaps.
   setModel(renderModel) {
     this.director.cancel();
+    this.settle = null; // a fresh dataset has nowhere to glide from
+    this.pendingFrame = null;
+    this.arrivalChevron.clear();
     this.nodeStates = new Map(); // a fresh dataset re-baselines: the next applyStates plants or paints
     this.lastArcs = new Map();   // and drops any arcs the previous dataset carried
     this.installModel(renderModel);
@@ -166,6 +194,7 @@ export class SkillTreeScene {
   // edge survives only if the new model still carries it. The edit layer produces
   // the new model and hands it here; live single-node drags use moveNode instead.
   applyModel(renderModel) {
+    const previous = this.nodesById;
     const selected = this.selectedId;
     const hovered = this.hoveredId;
     const selectedEdge = this.selectedEdge;
@@ -180,6 +209,97 @@ export class SkillTreeScene {
     this.hoverLabel.setHovered(this.hoveredId);
     this.edgeChrome?.setSelectedEdge(this.selectedEdge);
     this.overlaysDirty = true;
+    const arrivals = renderModel.nodes.filter((node) => !previous.has(node.id));
+    this.beginSettle(previous, arrivals);
+    this.noteArrivals(arrivals);
+  }
+
+  // A re-derived model can carry a whole fresh layout (a live create/connect re-lays
+  // the tree — see SkillTreeView's layoutPositions). Rather than teleport, every
+  // displaced node glides from where it currently stands to its new seat — an
+  // in-flight settle retargets smoothly because the old node objects hold their
+  // mid-glide coordinates. Glides start staggered, nearest-to-the-change first, so
+  // the motion reads as the new work pushing the tree open. Brand-new nodes don't
+  // glide in: their arrival pulse is the activity feed's beat.
+  beginSettle(previous, arrivals) {
+    this.settle = null;
+    if (this.motion === 0) return;
+    const moves = [];
+    for (const node of this.renderModel.nodes) {
+      const before = previous.get(node.id);
+      if (!before) continue;
+      if (Math.hypot(node.x - before.x, node.y - before.y) < SETTLE_MIN_DELTA) continue;
+      moves.push({ id: node.id, fromX: before.x, fromY: before.y, toX: node.x, toY: node.y, delayMs: 0 });
+    }
+    if (moves.length === 0) return;
+
+    const anchor = centroid(arrivals.length > 0 ? arrivals : moves.map((move) => ({ x: move.toX, y: move.toY })));
+    moves.sort((a, b) => Math.hypot(a.toX - anchor.x, a.toY - anchor.y) - Math.hypot(b.toX - anchor.x, b.toY - anchor.y));
+    moves.forEach((move, index) => { move.delayMs = (SETTLE_STAGGER_MS * index) / Math.max(1, moves.length - 1); });
+
+    for (const move of moves) this.moveNode(move.id, move.fromX, move.fromY); // hold the old seat until each glide starts
+    this.settle = { startAt: this.elapsedSeconds, moves };
+  }
+
+  advanceSettle() {
+    const elapsedMs = (this.elapsedSeconds - this.settle.startAt) * 1000;
+    let settling = false;
+    for (const move of this.settle.moves) {
+      const t = (elapsedMs - move.delayMs) / SETTLE_MS;
+      if (t < 0) { settling = true; continue; }
+      const eased = t >= 1 ? 1 : easeInOutCubic(t);
+      this.moveNode(move.id, move.fromX + (move.toX - move.fromX) * eased, move.fromY + (move.toY - move.fromY) * eased);
+      if (t < 1) settling = true;
+    }
+    if (!settling) this.settle = null;
+  }
+
+  // The user grabbed the canvas mid-settle: land every glide now so the world is
+  // steady under their cursor — the same yield-to-input contract the ceremonies keep.
+  finishSettle() {
+    if (!this.settle) return;
+    for (const move of this.settle.moves) this.moveNode(move.id, move.toX, move.toY);
+    this.settle = null;
+  }
+
+  // Births outside the viewport never yank the camera (burst-camera): the chevron
+  // points the way at the viewport edge, and the arrivals are remembered so a
+  // strictly idle viewer gets one gentle auto-frame once the settle has landed.
+  noteArrivals(arrivals) {
+    if (arrivals.length === 0) return;
+    const viewport = this.camera.getViewport();
+    const offscreen = arrivals.filter((node) =>
+      node.x < viewport.minX || node.x > viewport.maxX || node.y < viewport.minY || node.y > viewport.maxY);
+    if (offscreen.length === 0) return;
+    this.arrivalChevron.announce(offscreen);
+    this.pendingFrame = { nodes: offscreen, at: this.elapsedSeconds };
+  }
+
+  // The auto-frame fires only for a viewer who is plainly just watching: motion on,
+  // nothing selected, pointer quiet, no settle or glide in flight — and then it takes
+  // one capped breath outward toward the arrivals rather than fitting them by force.
+  // A busy user ages the pending frame out instead; the chevron alone points the way.
+  maybeAutoFrame() {
+    if (this.elapsedSeconds - this.pendingFrame.at > AUTO_FRAME_EXPIRY_S) { this.pendingFrame = null; return; }
+    if (this.settle || this.camera.isGliding()) return;
+    if (this.motion === 0 || this.selectedId !== null) return;
+    if (this.elapsedSeconds - this.lastInputAt < AUTO_FRAME_IDLE_S) return;
+
+    const viewport = this.camera.getViewport();
+    let minX = viewport.minX;
+    let maxX = viewport.maxX;
+    let minY = viewport.minY;
+    let maxY = viewport.maxY;
+    for (const node of this.pendingFrame.nodes) {
+      minX = Math.min(minX, node.x - AUTO_FRAME_PAD);
+      maxX = Math.max(maxX, node.x + AUTO_FRAME_PAD);
+      minY = Math.min(minY, node.y - AUTO_FRAME_PAD);
+      maxY = Math.max(maxY, node.y + AUTO_FRAME_PAD);
+    }
+    const required = Math.min(this.camera.viewportWidth / (maxX - minX), this.camera.viewportHeight / (maxY - minY));
+    const zoom = Math.min(Math.max(required, this.camera.zoom * AUTO_FRAME_MAX_ZOOM_OUT), this.camera.zoom);
+    this.camera.glideTo((minX + maxX) / 2, (minY + maxY) / 2, zoom);
+    this.pendingFrame = null;
   }
 
   installModel(renderModel) {
@@ -488,11 +608,13 @@ export class SkillTreeScene {
     this.input.unbind();
     clearTimeout(this.panSettleTimer);
     this.motionQuery.removeEventListener('change', this.applyMotion);
+    this.canvas.removeEventListener('pointermove', this.notePointer);
     this.nodeBatch.dispose();
     this.connectorBatch.dispose();
     this.labelOverlay.dispose();
     this.iconOverlay.dispose();
     this.hoverLabel.dispose();
+    this.arrivalChevron.dispose();
     this.affordanceLayer?.dispose();
     this.edgeChrome?.dispose();
     if (this.iconTexture) this.gl.deleteTexture(this.iconTexture);
@@ -506,12 +628,15 @@ export class SkillTreeScene {
     const dt = Math.min((now - this.lastFrameTime) / 1000, MAX_FRAME_DELTA);
     this.lastFrameTime = now;
     this.elapsedSeconds += dt;
+    if (this.settle) this.advanceSettle();
+    if (this.pendingFrame) this.maybeAutoFrame();
 
     const moved = this.camera.update(dt);
     if (moved || this.overlaysDirty) {
       this.labelOverlay.update(this.camera);
       this.iconOverlay.update(this.camera);
       this.hoverLabel.update(this.camera);
+      this.arrivalChevron.update(this.camera);
       this.affordanceLayer?.update(this.camera);
       this.edgeChrome?.update(this.camera);
       this.overlaysDirty = false;
@@ -636,6 +761,17 @@ export class SkillTreeScene {
 function smoothstep(x, edge0, edge1) {
   const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
   return t * t * (3 - 2 * t);
+}
+
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
+}
+
+function centroid(points) {
+  let x = 0;
+  let y = 0;
+  for (const point of points) { x += point.x; y += point.y; }
+  return { x: x / points.length, y: y / points.length };
 }
 
 function distanceToSegment(px, py, ax, ay, bx, by) {

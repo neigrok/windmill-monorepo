@@ -62,7 +62,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   const readOnlyRef = useRef(readOnly); // the scene is built once; it reads the fresh mode without a rebuild
   const progressRef = useRef({ completed: new Set(), inProgress: new Set() });
   const editorRef = useRef(null);
-  const rawLayoutRef = useRef(new Map());
+  const layoutCacheRef = useRef({ signature: '', raw: new Map() });
   const completedRef = useRef(new Set());
   const inProgressRef = useRef(new Set());
   const logRef = useRef(new ActivityLog());
@@ -270,6 +270,22 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   // Re-derive the whole render model from the editor's current TreeData and apply
   // it to the scene preserving the view. The seam every structural edit + undo/redo
   // funnels through; constructing a SkillTree here also re-validates the DAG.
+  // Positions are a projection of structure: whenever the node/edge signature changes —
+  // a create, connect, or delete, local or remote alike — the engine lays the whole tree
+  // out afresh, exactly as a page load would. Content-only updates (rename, progress,
+  // drag) reuse the cached layout so nothing else moves, and hand-placed nodes win over
+  // the engine either way via nudges.
+  const layoutPositions = useCallback((nextTree) => {
+    const signature = nextTree.allNodes
+      .map((node) => `${node.id}<${[...node.prerequisites].sort().join(',')}`)
+      .sort()
+      .join('|');
+    if (layoutCacheRef.current.signature !== signature) {
+      layoutCacheRef.current = { signature, raw: layoutEngine.layout(nextTree) };
+    }
+    return applyNudges(layoutCacheRef.current.raw, nextTree);
+  }, []);
+
   const syncStructure = useCallback(() => {
     const editor = editorRef.current;
     const sceneNow = sceneRef.current;
@@ -287,16 +303,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
       cycles = renderable.cycles;
     }
 
-    const positions = applyNudges(rawLayoutRef.current, nextTree);
-    // A node the cached layout doesn't cover — a collaborator's create with no shared
-    // coordinate, or an agent's MCP-created node — still needs a spot to render. Seat it just
-    // below its first placed parent (or at the origin), so the projection is never crashing-
-    // incomplete; a drag pins it for real, and a fresh load lays the whole tree out properly.
-    for (const node of nextTree.allNodes) {
-      if (positions.has(node.id)) continue;
-      const parent = node.prerequisites.map((p) => positions.get(p)).find(Boolean);
-      positions.set(node.id, parent ? { x: parent.x, y: parent.y + 80 } : { x: 0, y: 0 });
-    }
+    const positions = layoutPositions(nextTree);
     const nextStates = UnlockRules.derive(nextTree, { completed: completedRef.current, inProgress: inProgressRef.current });
     const model = nextTree.toRenderModel(positions, nextStates);
     sceneNow.applyModel(model);
@@ -313,7 +320,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
       showToast(`Cycle: ${[...ring, ring[0]].map(labelOf).join(' → ')} — remove a link to fix it`);
     }
     invalidRef.current = invalid;
-  }, [persistEdits, showToast]);
+  }, [layoutPositions, persistEdits, showToast]);
 
   // The lattice changed — from a dispatched local gesture or a joined remote frame; both
   // land here. The projection becomes the editor's present, the scene re-renders through the
@@ -677,8 +684,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
       const backendKinds = seed.kinds ?? null;
       const legendKinds = deriveLegend(nextTree.nodes, backendKinds);
       const states = UnlockRules.derive(nextTree, progress);
-      const rawLayout = await layoutEngine.layout(nextTree);
-      const positions = applyNudges(rawLayout, nextTree);
+      const positions = layoutPositions(nextTree);
       const model = nextTree.toRenderModel(positions, states);
       if (cancelled) return;
 
@@ -687,7 +693,6 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
       scene.fitToView();
 
       editorRef.current = new TreeEditor(treeData);
-      rawLayoutRef.current = rawLayout;
       seedRef.current = seed;
       progressRef.current = progress;
       completedRef.current = new Set(progress.completed);
