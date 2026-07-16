@@ -90,6 +90,25 @@ TEST(complete_link_reuses_the_existing_account_on_a_later_sign_in) {
   CHECK_EQ(h.repo.usersById.size(), 1u);
 }
 
+TEST(a_pending_fork_rides_the_link_from_request_to_completion) {
+  Harness h;
+  CHECK(h.service.requestLink("sam@example.com", "t_source") == AuthService::RequestResult::sent);
+  CHECK_EQ(h.repo.findLink("d1")->forkSource, std::string("t_source"));
+
+  AuthService::Completion done = h.service.completeLink("s1");
+  CHECK(done.verdict == LinkVerdict::valid);
+  CHECK(done.signedIn.has_value());
+  CHECK_EQ(done.forkSource, std::string("t_source"));
+}
+
+TEST(a_plain_link_completes_with_no_pending_fork) {
+  Harness h;
+  h.service.requestLink("sam@example.com");
+  AuthService::Completion done = h.service.completeLink("s1");
+  CHECK(done.verdict == LinkVerdict::valid);
+  CHECK_EQ(done.forkSource, std::string(""));
+}
+
 TEST(complete_link_is_single_use) {
   Harness h;
   h.service.requestLink("sam@example.com");
@@ -110,7 +129,7 @@ TEST(complete_link_loses_the_race_when_a_concurrent_verify_already_spent_it) {
   FakeTokens tokens;
   FakeClock clock;
   AuthService service{repo, email, tokens, clock, "https://windmill.works"};
-  repo.insertLink("d1", Email{"sam@example.com"}, clock.now, clock.now + AuthPolicy::linkLifetimeMs);
+  repo.insertLink("d1", Email{"sam@example.com"}, clock.now, clock.now + AuthPolicy::linkLifetimeMs, "");
 
   AuthService::Completion done = service.completeLink("s1");  // digestOf("s1") == "d1"
   CHECK(done.verdict == LinkVerdict::alreadyUsed);

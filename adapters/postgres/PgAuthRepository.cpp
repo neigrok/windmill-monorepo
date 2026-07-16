@@ -44,12 +44,13 @@ User PgAuthRepository::createUser(const Email& email, const std::string& name) {
 }
 
 void PgAuthRepository::insertLink(const std::string& digest, const Email& email, UnixMs createdAt,
-                                  UnixMs expiresAt) {
+                                  UnixMs expiresAt, const std::string& forkSource) {
   pqxx::work txn{pgThreadConnection(connString_)};
   txn.exec_params(
-      "INSERT INTO magic_links (token_hash, email, created_ms, expires_ms) "
-      "VALUES ($1, $2, $3, $4)",
-      digest, email.value, static_cast<long long>(createdAt), static_cast<long long>(expiresAt));
+      "INSERT INTO magic_links (token_hash, email, created_ms, expires_ms, fork_source) "
+      "VALUES ($1, $2, $3, $4, nullif($5, ''))",
+      digest, email.value, static_cast<long long>(createdAt), static_cast<long long>(expiresAt),
+      forkSource);
   txn.commit();
 }
 
@@ -65,12 +66,14 @@ int PgAuthRepository::countRecentLinks(const Email& email, UnixMs since) {
 std::optional<StoredLink> PgAuthRepository::findLink(const std::string& digest) {
   pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result rows = txn.exec_params(
-      "SELECT email::text, consumed_ms, expires_ms FROM magic_links WHERE token_hash = $1", digest);
+      "SELECT email::text, consumed_ms, expires_ms, coalesce(fork_source, '') AS fork_source "
+      "FROM magic_links WHERE token_hash = $1", digest);
   if (rows.empty()) return std::nullopt;
 
   const auto& row = rows[0];
   return StoredLink{Email{row["email"].as<std::string>()}, !row["consumed_ms"].is_null(),
-                    static_cast<UnixMs>(row["expires_ms"].as<long long>())};
+                    static_cast<UnixMs>(row["expires_ms"].as<long long>()),
+                    row["fork_source"].as<std::string>()};
 }
 
 bool PgAuthRepository::consumeLink(const std::string& digest, UnixMs at) {

@@ -1,0 +1,102 @@
+#include "application/ForkService.h"
+
+#include "application/RoomRegistry.h"
+#include "domain/LooseGraph.h"
+#include "test/application/AuthFakes.h"
+#include "test/application/Fakes.h"
+#include "test/testing.h"
+
+#include <string>
+
+using namespace wm;
+using namespace wm::fake;
+
+namespace {
+struct Harness {
+  FakeTreeRepository trees;
+  FakeOpLog ops;
+  FakeBus bus;
+  FakeTokens tokens;
+  RoomRegistry rooms{trees, ops, bus};
+  ForkService service{rooms, trees, tokens};
+
+  void seedSource(const char* id, const char* title) {
+    TreeData data;
+    data.id = TreeId{std::string(id)};
+    data.title = title;
+    NodeSpec root;
+    root.id = nid("root");
+    root.label = "Root";
+    NodeSpec leaf;
+    leaf.id = nid("leaf");
+    leaf.label = "Leaf";
+    leaf.prerequisites = {nid("root")};
+    root.status = "complete";  // authoring seed — a fork must start unlit
+    data.nodes = {root, leaf};
+    GraphState state = LooseGraph(data, Hlc{1, 0, "seed"}).exportState();
+    trees.byId[id] = StoredTree{state, LegendState{}, title, 0, uid("owner")};
+  }
+};
+}
+
+TEST(fork_mints_an_id_and_inherits_the_title_when_given_neither) {
+  Harness h;
+  h.seedSource("t_src", "Learn to sail");
+
+  ForkService::Result result = h.service.fork(TreeId{"t_src"}, "", "", uid("me"));
+  CHECK(result.outcome == ForkService::Outcome::forked);
+  CHECK_EQ(result.data.id.str(), std::string("t_d1"));        // "t_" + the minted digest
+  CHECK_EQ(result.data.title, std::string("Learn to sail"));  // empty title means inherit
+  CHECK_EQ(result.data.nodes.size(), 2u);
+  CHECK_EQ(h.trees.forkedFrom["t_d1"], std::string("t_src"));
+  CHECK(h.trees.byId.count("t_d1") == 1);
+  CHECK(*h.trees.byId["t_d1"].owner == uid("me"));
+}
+
+TEST(fork_clears_the_source_status_seeds) {
+  Harness h;
+  h.seedSource("t_src", "Learn to sail");
+
+  ForkService::Result result = h.service.fork(TreeId{"t_src"}, "", "", uid("me"));
+  CHECK(result.outcome == ForkService::Outcome::forked);
+  for (const NodeSpec& node : result.data.nodes) CHECK_FALSE(node.status.has_value());
+  for (const NodeStateEntry& node : h.trees.byId["t_d1"].state.nodes) {
+    CHECK_FALSE(node.status.has_value());
+    CHECK_FALSE(node.statusAt.isSet());
+  }
+  // The source keeps its seed untouched.
+  bool sourceSeedSurvives = false;
+  for (const NodeStateEntry& node : h.trees.byId["t_src"].state.nodes) {
+    if (node.status.has_value() && *node.status == "complete") sourceSeedSurvives = true;
+  }
+  CHECK(sourceSeedSurvives);
+}
+
+TEST(fork_honours_a_requested_id_and_title) {
+  Harness h;
+  h.seedSource("t_src", "Learn to sail");
+
+  ForkService::Result result = h.service.fork(TreeId{"t_src"}, "t_copy", "My sail plan", uid("me"));
+  CHECK(result.outcome == ForkService::Outcome::forked);
+  CHECK_EQ(result.data.id.str(), std::string("t_copy"));
+  CHECK_EQ(result.data.title, std::string("My sail plan"));
+  CHECK_EQ(h.trees.forkedFrom["t_copy"], std::string("t_src"));
+}
+
+TEST(fork_reports_a_conflict_when_the_requested_id_is_taken) {
+  Harness h;
+  h.seedSource("t_src", "Learn to sail");
+  h.seedSource("t_taken", "Already here");
+
+  ForkService::Result result = h.service.fork(TreeId{"t_src"}, "t_taken", "", uid("me"));
+  CHECK(result.outcome == ForkService::Outcome::conflict);
+  CHECK_EQ(h.trees.byId["t_taken"].title, std::string("Already here"));  // untouched
+  CHECK(h.trees.forkedFrom.count("t_taken") == 0);
+}
+
+TEST(fork_reports_a_missing_source) {
+  Harness h;
+  ForkService::Result result = h.service.fork(TreeId{"t_ghost"}, "", "", uid("me"));
+  CHECK(result.outcome == ForkService::Outcome::noSource);
+  CHECK(h.trees.byId.empty());
+}

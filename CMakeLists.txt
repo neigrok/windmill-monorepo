@@ -26,6 +26,7 @@ add_library(windmill_application
   application/ProgressService.cpp
   application/ActivityFeed.cpp
   application/AuthService.cpp
+  application/ForkService.cpp
   application/OAuthService.cpp
   application/TreeRegistry.cpp)
 target_link_libraries(windmill_application PUBLIC windmill_domain)
@@ -44,6 +45,7 @@ add_executable(windmill_domain_tests
   test/domain/TreeHealthTest.cpp
   test/domain/TreeSummaryTest.cpp
   test/application/TreeRegistryTest.cpp
+  test/application/ForkServiceTest.cpp
   test/application/TreeRoomTest.cpp
   test/application/RoomRegistryTest.cpp
   test/application/ProgressServiceTest.cpp

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "application/AuthService.h"
+#include "application/ForkService.h"
 #include "application/RoomRegistry.h"
 #include "domain/Ids.h"
 #include "ports/OpLog.h"
@@ -24,7 +25,7 @@ class HttpApi {
 public:
   HttpApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
           std::shared_ptr<ProgressRepository> progress, std::shared_ptr<OpLog> ops, Hlc genesis,
-          std::shared_ptr<AuthService> auth);
+          std::shared_ptr<AuthService> auth, std::shared_ptr<ForkService> fork);
 
   void getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);
   void putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);
@@ -44,6 +45,7 @@ private:
   std::shared_ptr<OpLog> ops_;
   Hlc genesis_;
   std::shared_ptr<AuthService> auth_;
+  std::shared_ptr<ForkService> fork_;
 };
 
 }

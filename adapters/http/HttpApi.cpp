@@ -29,9 +29,9 @@ drogon::HttpResponsePtr error(drogon::HttpStatusCode code, const std::string& me
 
 HttpApi::HttpApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
                  std::shared_ptr<ProgressRepository> progress, std::shared_ptr<OpLog> ops, Hlc genesis,
-                 std::shared_ptr<AuthService> auth)
+                 std::shared_ptr<AuthService> auth, std::shared_ptr<ForkService> fork)
     : registry_(std::move(registry)), trees_(std::move(trees)), progress_(std::move(progress)),
-      ops_(std::move(ops)), genesis_(std::move(genesis)), auth_(std::move(auth)) {}
+      ops_(std::move(ops)), genesis_(std::move(genesis)), auth_(std::move(auth)), fork_(std::move(fork)) {}
 
 std::optional<UserId> HttpApi::callerOf(const drogon::HttpRequestPtr& req) const {
   return wm::callerOf(req, *auth_);
@@ -129,54 +129,22 @@ void HttpApi::forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
     return;
   }
   std::shared_ptr<Json::Value> json = req->getJsonObject();
-  std::string newId = json ? json->get("id", "").asString() : "";
-  if (newId.empty()) {
-    callback(error(drogon::k400BadRequest, "fork requires a target id"));
-    return;
-  }
+  std::string newId = json ? json->get("id", "").asString() : "";      // optional — minted when absent
+  std::string title = json ? json->get("title", "").asString() : "";   // optional — inherited when absent
 
-  // Copy the source's *current* authoritative state (live edits folded in), not just its
-  // last snapshot — so the fork is a faithful duplicate the instant it is taken.
-  TreeData data;
-  GraphState state;
-  LegendState legend;
-  std::string title;
-  bool found = true;
-  {
-    std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
-    try {
-      TreeRoom& room = registry_->open(TreeId{treeId});
-      data = room.snapshot();
-      state = room.exportState();
-      legend = room.exportLegend();
-      title = room.title();
-    } catch (const std::exception&) {
-      found = false;
-    }
-  }
-  if (!found) {
+  ForkService::Result forked = fork_->fork(TreeId{treeId}, newId, title, *caller);
+  if (forked.outcome == ForkService::Outcome::noSource) {
     callback(error(drogon::k404NotFound, "no such tree"));
     return;
   }
-
-  std::string forkTitle = (json && json->isMember("title")) ? json->get("title", "").asString() : title;
-
-  bool conflict = false;
-  {
-    std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{newId}));
-    if (trees_->load(TreeId{newId})) conflict = true;
-    else trees_->fork(TreeId{newId}, TreeId{treeId}, state, legend, forkTitle, *caller);
-  }
-  if (conflict) {
+  if (forked.outcome == ForkService::Outcome::conflict) {
     callback(error(drogon::k409Conflict, "a tree with that id already exists"));
     return;
   }
 
-  data.id = TreeId{newId};
-  data.title = forkTitle;
   Json::Value body(Json::objectValue);
   body["seq"] = static_cast<Json::Int64>(0);
-  body["data"] = toJson(data);  // includes the copied kinds, verbatim
+  body["data"] = toJson(forked.data);  // includes the copied kinds, verbatim
   callback(jsonResponse(body, drogon::k201Created));
 }
 

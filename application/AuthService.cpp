@@ -6,7 +6,7 @@ AuthService::AuthService(AuthRepository& repo, EmailSender& email, TokenGenerato
                          std::string appBaseUrl)
     : repo_(repo), email_(email), tokens_(tokens), clock_(clock), appBaseUrl_(std::move(appBaseUrl)) {}
 
-AuthService::RequestResult AuthService::requestLink(const std::string& rawEmail) {
+AuthService::RequestResult AuthService::requestLink(const std::string& rawEmail, const std::string& forkSource) {
   std::optional<Email> email = parseEmail(rawEmail);
   if (!email) return RequestResult::invalidEmail;
 
@@ -15,7 +15,7 @@ AuthService::RequestResult AuthService::requestLink(const std::string& rawEmail)
     return RequestResult::rateLimited;
 
   const MintedToken link = tokens_.mint();
-  repo_.insertLink(link.digest, *email, now, linkExpiry(now));
+  repo_.insertLink(link.digest, *email, now, linkExpiry(now), forkSource);
   email_.sendMagicLink(*email, appBaseUrl_ + "/#/auth?token=" + link.secret);
   return RequestResult::sent;
 }
@@ -27,18 +27,18 @@ AuthService::Completion AuthService::completeLink(const std::string& linkSecret)
   const std::optional<StoredLink> link = repo_.findLink(digest);
   const LinkVerdict verdict = verifyLink(link.has_value(), link && link->consumed,
                                          link ? link->expiresAt : 0, now);
-  if (verdict != LinkVerdict::valid) return {verdict, std::nullopt};
+  if (verdict != LinkVerdict::valid) return {verdict, std::nullopt, ""};
 
   // Spend it atomically before minting anything. If a concurrent verify already won the
   // row, we lost the race — treat it exactly as an already-used link, no session.
-  if (!repo_.consumeLink(digest, now)) return {LinkVerdict::alreadyUsed, std::nullopt};
+  if (!repo_.consumeLink(digest, now)) return {LinkVerdict::alreadyUsed, std::nullopt, ""};
 
   const std::optional<User> existing = repo_.findUserByEmail(link->email);
   const User user = existing ? *existing : repo_.createUser(link->email, nameFromEmail(link->email));
 
   const MintedToken session = tokens_.mint();
   repo_.insertSession(session.digest, user.id, sessionExpiry(now));
-  return {verdict, SignedIn{user, session.secret}};
+  return {verdict, SignedIn{user, session.secret}, link->forkSource};
 }
 
 std::optional<User> AuthService::authenticate(const std::string& sessionSecret) {

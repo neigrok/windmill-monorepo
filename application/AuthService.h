@@ -21,7 +21,7 @@ public:
               std::string appBaseUrl);
 
   enum class RequestResult { sent, invalidEmail, rateLimited };
-  RequestResult requestLink(const std::string& rawEmail);
+  RequestResult requestLink(const std::string& rawEmail, const std::string& forkSource = "");
 
   // On a valid link: the account (created here on first sign-in) and a fresh session secret
   // to hand back as the cookie. On any other verdict: the verdict alone, no session.
@@ -32,6 +32,7 @@ public:
   struct Completion {
     LinkVerdict verdict;
     std::optional<SignedIn> signedIn;
+    std::string forkSource;  // the pending fork the link carried; empty for a plain sign-in
   };
   Completion completeLink(const std::string& linkSecret);
 

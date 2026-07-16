@@ -160,6 +160,8 @@ create table if not exists magic_links (
 );
 -- the rate-limit query: unspent links for an email within the recent window
 create index if not exists magic_links_email_created on magic_links (email, created_ms);
+-- a pending fork may ride the link: the tree to copy into whatever account verify signs in
+alter table magic_links add column if not exists fork_source text;
 
 -- 90-day rolling sessions, one row per device, keyed by the digest of the cookie secret.
 create table if not exists sessions (

@@ -19,6 +19,7 @@
 #include "adapters/ws/TreeSocket.h"
 #include "adapters/ws/WsPresenceBus.h"
 #include "application/AuthService.h"
+#include "application/ForkService.h"
 #include "application/OAuthService.h"
 #include "application/ProgressService.h"
 #include "application/RoomRegistry.h"
@@ -65,7 +66,8 @@ int main() {
   auto tokens = std::make_shared<OpenSslTokenGenerator>();
   auto systemClock = std::make_shared<SystemClock>();
   auto authService = std::make_shared<AuthService>(*authRepo, *emailSender, *tokens, *systemClock, appBaseUrl);
-  auto authApi = std::make_shared<AuthApi>(authService, secureCookies, cookieDomain);
+  auto forkService = std::make_shared<ForkService>(*registry, *trees, *tokens);
+  auto authApi = std::make_shared<AuthApi>(authService, forkService, secureCookies, cookieDomain);
 
   // OAuth 2.1 authorization server for the MCP resource server. This API host is the issuer;
   // the consent screen is a frontend route the /authorize redirect hands off to.
@@ -80,7 +82,7 @@ int main() {
   setCollab(std::make_shared<Collab>(*registry, *oplog, *bus, *progressService, *authService, *presence, *systemClock));
   linkTreeSocket();
 
-  auto api = std::make_shared<HttpApi>(registry, trees, progress, oplog, genesis, authService);
+  auto api = std::make_shared<HttpApi>(registry, trees, progress, oplog, genesis, authService, forkService);
 
   // The per-user tree registry (create + list + delete): a repo-direct read model, not through the room.
   auto treeRegistry = std::make_shared<TreeRegistry>(*trees, *progress, *tokens, genesis);

@@ -14,6 +14,7 @@ struct StoredLink {
   Email email;
   bool consumed = false;
   UnixMs expiresAt = 0;
+  std::string forkSource;  // tree to fork into the account this link signs in; empty = plain link
 };
 
 // A live session as stored: whose it is and when it lapses (rolled forward on each use).
@@ -32,7 +33,7 @@ struct AuthRepository {
   virtual User createUser(const Email& email, const std::string& name) = 0;
 
   virtual void insertLink(const std::string& digest, const Email& email, UnixMs createdAt,
-                          UnixMs expiresAt) = 0;
+                          UnixMs expiresAt, const std::string& forkSource) = 0;
   virtual int countRecentLinks(const Email& email, UnixMs since) = 0;
   virtual std::optional<StoredLink> findLink(const std::string& digest) = 0;
   // Spend the link atomically. Returns true only for the caller that actually flipped it

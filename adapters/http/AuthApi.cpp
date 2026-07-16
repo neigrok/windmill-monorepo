@@ -18,8 +18,10 @@ drogon::HttpResponsePtr error(drogon::HttpStatusCode code, const std::string& me
 }
 }
 
-AuthApi::AuthApi(std::shared_ptr<AuthService> auth, bool secureCookies, std::string cookieDomain)
-    : auth_(std::move(auth)), secureCookies_(secureCookies), cookieDomain_(std::move(cookieDomain)) {}
+AuthApi::AuthApi(std::shared_ptr<AuthService> auth, std::shared_ptr<ForkService> fork, bool secureCookies,
+                 std::string cookieDomain)
+    : auth_(std::move(auth)), fork_(std::move(fork)), secureCookies_(secureCookies),
+      cookieDomain_(std::move(cookieDomain)) {}
 
 void AuthApi::requestLink(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
   // One door in: parse the address, defer the verdict to the service, translate to the doc's copy.
@@ -33,9 +35,12 @@ void AuthApi::requestLink(const drogon::HttpRequestPtr& req, HttpCallback&& call
     return;
   }
 
+  std::string forkOf = json ? json->get("forkOf", "").asString() : "";
+  if (forkOf.size() > 64) forkOf.clear();  // a tree id, not a payload — drop junk quietly
+
   AuthService::RequestResult result;
   try {
-    result = auth_->requestLink(email);
+    result = auth_->requestLink(email, forkOf);
   } catch (const std::exception&) {
     Json::Value body(Json::objectValue);
     body["error"] = "Can't reach windmill.works";
@@ -94,6 +99,20 @@ void AuthApi::verify(const drogon::HttpRequestPtr& req, HttpCallback&& callback)
 
   Json::Value body(Json::objectValue);
   body["user"] = userJson;
+
+  // A pending fork rides the link: execute it into the fresh session. Failure degrades to
+  // a plain sign-in — the fork never blocks the door — but the link is already spent, so a
+  // dropped fork is unrecoverable and must at least leave a trace in the log.
+  if (!completion.forkSource.empty()) {
+    try {
+      ForkService::Result forked = fork_->fork(TreeId{completion.forkSource}, "", "", signedIn.user.id);
+      if (forked.outcome == ForkService::Outcome::forked) body["forkedTree"] = forked.data.id.str();
+      else LOG_WARN << "pending fork of " << completion.forkSource << " dropped: source missing or id taken";
+    } catch (const std::exception& e) {
+      LOG_ERROR << "pending fork of " << completion.forkSource << " failed: " << e.what();
+    }
+  }
+
   auto response = jsonResponse(body);
 
   drogon::Cookie cookie("wm_session", signedIn.sessionSecret);

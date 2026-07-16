@@ -60,6 +60,7 @@ struct FakeAuthRepository : AuthRepository {
     UnixMs createdAt;
     UnixMs expiresAt;
     std::optional<UnixMs> consumedAt;
+    std::string forkSource;
   };
   std::map<std::string, LinkRow> links;           // digest -> row
   std::map<std::string, StoredSession> sessions;  // digest -> session
@@ -85,8 +86,8 @@ struct FakeAuthRepository : AuthRepository {
   }
 
   void insertLink(const std::string& digest, const Email& email, UnixMs createdAt,
-                  UnixMs expiresAt) override {
-    links[digest] = LinkRow{email, createdAt, expiresAt, std::nullopt};
+                  UnixMs expiresAt, const std::string& forkSource) override {
+    links[digest] = LinkRow{email, createdAt, expiresAt, std::nullopt, forkSource};
   }
   int countRecentLinks(const Email& email, UnixMs since) override {
     int count = 0;
@@ -98,7 +99,8 @@ struct FakeAuthRepository : AuthRepository {
   std::optional<StoredLink> findLink(const std::string& digest) override {
     auto it = links.find(digest);
     if (it == links.end()) return std::nullopt;
-    return StoredLink{it->second.email, it->second.consumedAt.has_value(), it->second.expiresAt};
+    return StoredLink{it->second.email, it->second.consumedAt.has_value(), it->second.expiresAt,
+                      it->second.forkSource};
   }
   bool consumeLink(const std::string& digest, UnixMs at) override {
     auto it = links.find(digest);

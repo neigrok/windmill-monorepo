@@ -1,6 +1,7 @@
 #pragma once
 
 #include "application/AuthService.h"
+#include "application/ForkService.h"
 
 #include <drogon/HttpRequest.h>
 #include <drogon/HttpResponse.h>
@@ -18,7 +19,8 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // token is also honoured for API and test callers. Every reply uses the doc's exact copy.
 class AuthApi {
 public:
-  AuthApi(std::shared_ptr<AuthService> auth, bool secureCookies, std::string cookieDomain);
+  AuthApi(std::shared_ptr<AuthService> auth, std::shared_ptr<ForkService> fork, bool secureCookies,
+          std::string cookieDomain);
 
   void requestLink(const drogon::HttpRequestPtr& req, HttpCallback&& callback);  // POST /v1/auth/magic-link
   void verify(const drogon::HttpRequestPtr& req, HttpCallback&& callback);       // POST /v1/auth/verify
@@ -27,6 +29,7 @@ public:
 
 private:
   std::shared_ptr<AuthService> auth_;
+  std::shared_ptr<ForkService> fork_;
   bool secureCookies_;
   std::string cookieDomain_;
 };

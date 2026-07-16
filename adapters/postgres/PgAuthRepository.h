@@ -17,8 +17,8 @@ public:
   std::optional<User> findUserById(const UserId& id) override;
   User createUser(const Email& email, const std::string& name) override;
 
-  void insertLink(const std::string& digest, const Email& email, UnixMs createdAt,
-                  UnixMs expiresAt) override;
+  void insertLink(const std::string& digest, const Email& email, UnixMs createdAt, UnixMs expiresAt,
+                  const std::string& forkSource) override;
   int countRecentLinks(const Email& email, UnixMs since) override;
   std::optional<StoredLink> findLink(const std::string& digest) override;
   bool consumeLink(const std::string& digest, UnixMs at) override;
