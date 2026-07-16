@@ -2,6 +2,7 @@
 #include "adapters/crypto/OpenSslTokenGenerator.h"
 #include "adapters/email/ResendEmailSender.h"
 #include "adapters/http/AuthApi.h"
+#include "adapters/http/EventsApi.h"
 #include "adapters/http/HttpApi.h"
 #include "adapters/http/OAuthApi.h"
 #include "adapters/http/RateLimiter.h"
@@ -10,6 +11,7 @@
 #include "adapters/mcp/McpServer.h"
 #include "adapters/mcp/RoadmapTools.h"
 #include "adapters/postgres/PgAuthRepository.h"
+#include "adapters/postgres/PgEventRepository.h"
 #include "adapters/postgres/PgOAuthRepository.h"
 #include "adapters/postgres/PgOpLog.h"
 #include "adapters/postgres/PgProgressRepository.h"
@@ -87,6 +89,11 @@ int main() {
   // The per-user tree registry (create + list + delete): a repo-direct read model, not through the room.
   auto treeRegistry = std::make_shared<TreeRegistry>(*trees, *progress, *tokens, genesis);
   auto registryApi = std::make_shared<TreeRegistryApi>(treeRegistry, authService);
+
+  // Funnel telemetry (event-spine): ghosts and signed-in users alike beacon here; the
+  // general per-IP apiLimiter below covers this route like every other.
+  auto eventRepo = std::make_shared<PgEventRepository>(connString);
+  auto eventsApi = std::make_shared<EventsApi>(eventRepo, authService);
 
   // MCP (Streamable-HTTP) mounted in this same process — the whole point of this change: agent
   // edits run through the very same RoomRegistry as REST and the socket, so a tree has exactly
@@ -334,6 +341,11 @@ int main() {
         api->getActivity(req, std::move(cb), id);
       },
       {drogon::Get});
+
+  app.registerHandler(
+      "/v1/events",
+      [eventsApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { eventsApi->ingest(req, std::move(cb)); },
+      {drogon::Post});
 
   // MCP Streamable-HTTP transport: one path, three verbs (POST a JSON-RPC message, GET a would-be
   // SSE stream — 405 here, DELETE ends a session), plus its own OPTIONS preflight advertising the

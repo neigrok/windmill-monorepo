@@ -207,3 +207,18 @@ create table if not exists oauth_tokens (
 );
 create index if not exists oauth_tokens_user on oauth_tokens (user_id);
 create index if not exists oauth_tokens_refresh on oauth_tokens (refresh_hash);
+
+-- first-party funnel telemetry (event-spine): an append-only stream of beacon events.
+-- session_key is the client-minted per-browser id; user_id is resolved server-side from
+-- the wm_session cookie / Bearer token — never trusted from the body, null for a ghost.
+create table if not exists events (
+  id          bigserial primary key,
+  ts          timestamptz not null default now(),
+  client_ms   bigint,
+  session_key text,
+  user_id     uuid,
+  name        text not null,
+  props       jsonb
+);
+-- the funnel query: one event name over a time window
+create index if not exists events_name_ts on events (name, ts);

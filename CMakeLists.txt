@@ -75,8 +75,10 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     adapters/postgres/PgOpLog.cpp
     adapters/postgres/PgAuthRepository.cpp
     adapters/postgres/PgOAuthRepository.cpp
+    adapters/postgres/PgEventRepository.cpp
     adapters/http/HttpApi.cpp
     adapters/http/AuthApi.cpp
+    adapters/http/EventsApi.cpp
     adapters/http/OAuthApi.cpp
     adapters/http/Caller.cpp
     adapters/http/TreeRegistryApi.cpp
@@ -121,7 +123,8 @@ if(Drogon_FOUND AND libpqxx_FOUND)
   add_executable(windmill_adapters_tests
     test/main.cpp
     test/adapters/json/SubgraphJsonTest.cpp
-    test/adapters/json/TreeJsonTest.cpp)
+    test/adapters/json/TreeJsonTest.cpp
+    test/adapters/http/EventsApiTest.cpp)
   target_link_libraries(windmill_adapters_tests PRIVATE windmill_adapters)
   add_test(NAME adapters COMMAND windmill_adapters_tests)
 else()
