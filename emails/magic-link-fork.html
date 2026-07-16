@@ -1,0 +1,142 @@
+<!--
+  Windmill transactional email — magic link, FORK VARIANT · X7 + F4/X5 fork
+  From:      Windmill <sign-in@windmill.works>
+  Subject:   Your sign-in link — and your copy of "{{tree_title}}"
+  Preheader: One tap signs you in and plants a copy of {{tree_title}} in your trees.
+  Plain-text pair: magic-link-fork.txt
+  Resend template id: magic-link-fork · variables: magic_link, tree_title, tree_meta
+  tree_title/tree_meta stay escaped ({{ }}) — titles are user-controlled; only the
+  server-minted magic_link may use raw {{{ }}} (hrefs would corrupt under escaping).
+  Same shell as magic-link.html; the ONLY additions are the tree strip and the
+  disclosure. Rule (briefs #6 / X7): the email must say plainly what the click
+  does — it signs you in AND plants the copy. Auth mail: never an unsubscribe.
+  The pending fork waits server-side behind the link (X5 §7) — ignoring this
+  email costs nothing.
+-->
+<!DOCTYPE html>
+<html lang="en" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+<title>Your sign-in link — and your copy of {{tree_title}}</title>
+<!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]-->
+<style>
+  html, body { margin: 0 !important; padding: 0 !important; }
+  body { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+  table { border-collapse: collapse !important; }
+  img { border: 0; line-height: 100%; }
+  @media (max-width: 560px) {
+    .wm-card-pad { padding: 30px 24px !important; }
+  }
+</style>
+</head>
+<body class="wm-canvas" bgcolor="#F9F5EB" style="margin:0; padding:0; background:#F9F5EB;">
+<div style="display:none; font-size:1px; line-height:1px; max-height:0; max-width:0; opacity:0; overflow:hidden; mso-hide:all;">
+  One tap signs you in and plants a copy of {{tree_title}} in your trees.&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;
+</div>
+<center role="article" aria-roledescription="email" lang="en" class="wm-canvas" style="width:100%; background:#F9F5EB;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="wm-canvas" bgcolor="#F9F5EB">
+  <tr>
+    <td align="center" style="padding:36px 16px 48px;">
+      <table role="presentation" width="520" cellpadding="0" cellspacing="0" border="0" style="width:520px; max-width:100%;">
+
+        <!-- header: the wordmark (text = the alt fallback) -->
+        <tr>
+          <td align="center" class="wm-wordmark" style="padding:6px 0 22px; font-family:'Baloo 2','Trebuchet MS','Segoe UI',sans-serif; font-size:23px; font-weight:700; color:#BC6C42; letter-spacing:-0.2px;">
+            Windmill
+          </td>
+        </tr>
+
+        <!-- the card -->
+        <tr>
+          <td class="wm-card wm-card-pad" bgcolor="#FFFFFF" style="background:#FFFFFF; border:1px solid #E5D9C0; border-radius:24px; padding:38px 44px 34px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td align="center" class="wm-h" style="font-family:'Baloo 2','Trebuchet MS','Segoe UI',sans-serif; font-size:27px; font-weight:700; line-height:1.2; color:#211B13; padding-bottom:12px;">
+                  Plant your copy of {{tree_title}}
+                </td>
+              </tr>
+              <tr>
+                <td align="center" class="wm-p" style="font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:16px; line-height:1.55; color:#6F5F45;">
+                  This link does two things: it signs you in to Windmill <strong style="color:#211B13;">and</strong> plants a copy of &ldquo;{{tree_title}}&rdquo; in your trees &mdash; progress cleared, yours to grow.
+                </td>
+              </tr>
+
+              <!-- the tree, concretely -->
+              <tr>
+                <td align="center" style="padding:20px 0 0;">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" bgcolor="#F9F5EB" style="background:#F9F5EB; border:1px solid #F1EADA; border-radius:14px;">
+                    <tr>
+                      <td style="padding:11px 18px; font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:14px; line-height:1.4; color:#6F5F45;">
+                        <span style="display:inline-block; width:10px; height:10px; border-radius:10px; background:#C4972F;">&nbsp;</span>&nbsp;
+                        <strong style="color:#211B13;">{{tree_title}}</strong> &nbsp;&middot;&nbsp; {{tree_meta}}
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+
+              <!-- the one button -->
+              <tr>
+                <td align="center" style="padding:26px 0 12px;">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
+                    <tr>
+                      <td align="center" bgcolor="#BC6C42" style="border-radius:999px; mso-padding-alt:15px 38px;">
+                        <a href="{{{magic_link}}}" style="display:inline-block; padding:15px 38px; font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:16px; font-weight:800; line-height:1; color:#FFFFFF; text-decoration:none; border-radius:999px;">
+                          Sign in &amp; plant the copy
+                        </a>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+              <tr>
+                <td align="center" class="wm-mut" style="font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:13.5px; line-height:1.5; color:#92805F; padding-bottom:26px;">
+                  It works once and lasts 15 minutes. The copy waits for you &mdash; nothing is planted until you tap.
+                </td>
+              </tr>
+
+              <!-- raw fallback URL -->
+              <tr>
+                <td class="wm-div" style="border-top:1px solid #F1EADA; padding-top:22px;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td class="wm-mut" style="font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:13.5px; line-height:1.5; color:#92805F; padding-bottom:6px;">
+                        Button not working? Paste this into your browser:
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="font-family:'JetBrains Mono','SFMono-Regular',Consolas,'Courier New',monospace; font-size:13px; line-height:1.6; word-break:break-all;">
+                        <a href="{{{magic_link}}}" class="wm-link" style="color:#9D5330; text-decoration:underline;">{{{magic_link}}}</a>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="wm-mut" style="font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:13.5px; line-height:1.55; color:#92805F; padding-top:20px;">
+                        Didn&rsquo;t ask to fork this tree? You can ignore this email &mdash; nothing happens until the link is used.
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- footer: auth mail never carries unsubscribe -->
+        <tr>
+          <td align="center" class="wm-mut" style="padding:22px 12px 0; font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:12.5px; line-height:1.6; color:#92805F;">
+            Sent because this address asked to fork a tree at windmill.works.<br>
+            Windmill &middot; <a href="https://windmill.works" class="wm-link" style="color:#9D5330; text-decoration:none;">windmill.works</a>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
+</center>
+</body>
+</html>

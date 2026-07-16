@@ -1,5 +1,5 @@
-// Top overlay bar: the Windmill wordmark (links home to the landing root) + a way
-// back to the component showcase on the left, camera controls on the right.
+// Top overlay bar: the Windmill wordmark (links home to the landing root) on the
+// left, camera controls on the right.
 
 import React from 'react';
 import { IconButton, Tooltip, Icon } from '../../components';
@@ -14,11 +14,6 @@ export function ControlBar({ title, titleSlot, onZoomIn, onZoomOut, onFitToView,
         {/* The tree identity plaque (F1·F2): the TreeSwitcher docks here when given,
             else the static title. It's the one home for "which tree am I in". */}
         {titleSlot ?? (title && <span className="st-brand-title" style={{ marginLeft: 'var(--space-2)' }}>{title}</span>)}
-        <Tooltip label="Component showcase" side="bottom">
-          <a className="st-showcase-link" href="#/showcase">
-            <Icon name="external-link" size={14} />
-          </a>
-        </Tooltip>
       </div>
 
       <div className="st-controls">

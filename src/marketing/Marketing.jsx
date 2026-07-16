@@ -63,7 +63,7 @@ function Nav({ status, user, newest, treeCount, linkSent, onLogin, onResumeLink,
       <nav className="navlinks">
         <a href="#how">How it works</a>
         <a href="#paths">Paths</a>
-        <a href="#">Changelog</a>
+        <a href="/changelog.html">Changelog</a>
       </nav>
       <div style={{ display: 'flex', gap: 10 }}>
         <NavCluster
@@ -235,7 +235,7 @@ function BeatStage({ kind }) {
 
 function HowItWorks() {
   const beats = [
-    { kind: 'plant', num: '01', title: 'Map your plan', copy: 'Paste a list, pick a starter quest, or plant steps by hand. Depth becomes dependency — your plan arrives as a tree.' },
+    { kind: 'plant', num: '01', title: 'Map your plan', copy: 'Plant steps by hand — your plan arrives as a tree. Starter quests and paste-a-list are growing in.' },
     { kind: 'finish', num: '02', title: 'Finish a step', copy: 'Mark it done and the fruit ripens — progress you can see from across the room.' },
     { kind: 'unlock', num: '03', title: 'Watch it unlock', copy: 'Light travels the branch. Whatever depended on that step wakes up, ready for you.' },
   ];
@@ -353,9 +353,9 @@ function Footer() {
         © 2026
       </div>
       <div style={{ display: 'flex', gap: 24, fontSize: 14, fontFamily: 'var(--font-body)' }}>
-        <a href="#" style={{ color: 'var(--text-tertiary)' }}>Privacy</a>
-        <a href="#" style={{ color: 'var(--text-tertiary)' }}>Terms</a>
-        <a href="#" style={{ color: 'var(--text-tertiary)' }}>Twitter</a>
+        <a href="/privacy.html" style={{ color: 'var(--text-tertiary)' }}>Privacy</a>
+        <a href="/terms.html" style={{ color: 'var(--text-tertiary)' }}>Terms</a>
+        <a href="/changelog.html" style={{ color: 'var(--text-tertiary)' }}>Changelog</a>
       </div>
     </footer>
   );

@@ -37,7 +37,7 @@
   animation: wm-fade-in-up var(--duration-base) var(--ease-soft);
 }
 
-/* ---- Top bar: brand + showcase link (left), dataset + camera controls (right) ---- */
+/* ---- Top bar: brand (left), dataset + camera controls (right) ---- */
 .st-topbar {
   position: absolute;
   inset: 0 0 auto 0;
@@ -101,22 +101,6 @@
   font-size: var(--text-xs);
   color: var(--text-tertiary);
 }
-.st-showcase-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  margin-left: var(--space-1);
-  border-radius: var(--radius-full);
-  color: var(--text-secondary);
-  transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
-}
-.st-showcase-link:hover {
-  background: var(--surface-hover);
-  color: var(--color-brand-hover);
-}
-
 .st-controls {
   display: flex;
   align-items: center;
