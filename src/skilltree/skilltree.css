@@ -1493,6 +1493,19 @@
 .st-mobile-chrome {
   transition: opacity 200ms var(--ease-soft);
 }
+
+/* The wordmark chip is a real link home (§06): hover surface + focus ring. */
+.st-wordmark-link {
+  background: var(--surface-card);
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+.st-wordmark-link:hover {
+  background: var(--surface-hover);
+}
+.st-wordmark-link:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
 .st-root.panning .st-mobile-chrome {
   opacity: 0.35;
 }

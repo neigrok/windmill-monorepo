@@ -23,7 +23,9 @@ export function SkillTreeApp({ treeId, birth, openSignInSignal }) {
 
   if (birth) return <NewTreeBirth />;
   if (!treeId) return <Resolving />;
-  return <SkillTreeView treeId={treeId} openSignInSignal={openSignInSignal} />;
+  // A different tree is a different world: keying by treeId lets demotion, lapse,
+  // fork state, and the scene's mode die with the old tree instead of leaking across.
+  return <SkillTreeView key={treeId} treeId={treeId} openSignInSignal={openSignInSignal} />;
 }
 
 export default SkillTreeApp;

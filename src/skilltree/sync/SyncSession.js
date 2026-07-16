@@ -211,13 +211,22 @@ export class SyncSession {
   }
 
   receiveReject(frame) {
-    const authReject = frame.reason === 'sign in to edit' || frame.reason === 'this tree belongs to another account';
-    if (authReject) { window.dispatchEvent(new CustomEvent('wm-edit-forbidden', { detail: frame.reason })); this.durabilityAtRisk = true; }
-    else console.warn('[sync] frame rejected —', frame.reason);
     if (frame.frameId) this.inFlight.delete(frame.frameId);
+    const forbidden = frame.reason === 'sign in to edit'
+      || frame.reason === 'sign in to track progress'
+      || frame.reason === 'this tree belongs to another account';
+    if (!forbidden) { console.warn('[sync] frame rejected —', frame.reason); return; }
+    if (frame.reason !== 'sign in to track progress') this.durabilityAtRisk = true; // banked edits stranded until the capability returns
+    window.dispatchEvent(new CustomEvent('wm-edit-forbidden', { detail: frame.reason }));
   }
 
   emitTree() { this.treeHandler?.(this.lattice.toTreeData()); }
+
+  // How much of the bank the server does not hold — what the honesty chrome counts.
+  pendingEditCount() {
+    const pending = this.lattice.deltaSince(this.ackedServerVector);
+    return pending.nodes.length + pending.edges.length + pending.kinds.length + (pending.title ? 1 : 0);
+  }
 
   // Everything the server does not yet cover — the offline outbox, derived not queued.
   flush() {

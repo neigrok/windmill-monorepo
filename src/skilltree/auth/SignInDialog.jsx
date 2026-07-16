@@ -9,7 +9,7 @@ import { Dialog, Input, Button, Icon } from '../../components';
 
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export function SignInDialog({ open, onClose, onSend }) {
+export function SignInDialog({ open, onClose, onSend, resume = null }) {
   const [email, setEmail] = React.useState('');
   const [phase, setPhase] = React.useState('idle'); // idle | sending | wait | error
   const [errorCode, setErrorCode] = React.useState(null); // rate_limited | unreachable
@@ -21,18 +21,29 @@ export function SignInDialog({ open, onClose, onSend }) {
   const sendGate = React.useRef(null);
   const resendGate = React.useRef(null);
 
-  // Reset the machine every time the door opens fresh.
+  // Reset the machine every time the door opens fresh — unless a `resume` record
+  // ({ email, at }) rides in: then the door reopens on its wait panel, with the
+  // Resend gate carried over from when that link actually went out.
   React.useEffect(() => {
     if (!open) return;
-    setEmail('');
-    setPhase('idle');
     setErrorCode(null);
     setShowSending(false);
     setTypo(false);
-    setCanResend(false);
     inflight.current = false;
     clearTimeout(sendGate.current);
     clearTimeout(resendGate.current);
+    if (resume?.email && resume?.at) {
+      setEmail(resume.email);
+      setPhase('wait');
+      const remaining = resume.at + 30000 - Date.now();
+      if (remaining <= 0) { setCanResend(true); return; }
+      setCanResend(false);
+      resendGate.current = setTimeout(() => setCanResend(true), remaining);
+      return;
+    }
+    setEmail('');
+    setPhase('idle');
+    setCanResend(false);
   }, [open]);
 
   React.useEffect(() => () => {

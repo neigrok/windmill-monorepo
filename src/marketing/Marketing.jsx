@@ -8,11 +8,38 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Badge } from '../components';
 import { SignInDialog } from '../skilltree/auth/SignInDialog.jsx';
-import { requestMagicLink } from '../skilltree/auth/AuthClient.js';
+import { requestMagicLink, pendingMagicLink } from '../skilltree/auth/AuthClient.js';
 import { useAuth } from '../skilltree/auth/AuthProvider.jsx';
+import { AccountSeat } from '../skilltree/auth/AccountSeat.jsx';
+import { listTrees } from '../skilltree/persistence/TreeRegistry.js';
 import { track } from '../telemetry/beacon.js';
 import { mountHero, mountBeat, mountThumb } from './treeScenes.js';
 import './marketing.css';
+
+// The six kind hues marketing.css bridges to :root — the fact line's dot reads them.
+const KIND_DOT = {
+  terracotta: 'var(--kind-terracotta)',
+  olive: 'var(--kind-olive)',
+  gold: 'var(--kind-gold)',
+  brick: 'var(--kind-brick)',
+  sky: 'var(--kind-sky)',
+  plum: 'var(--kind-plum)',
+};
+
+function tendedAgo(updatedAt) {
+  if (updatedAt == null) return null;
+  const then = typeof updatedAt === 'number' ? updatedAt : Date.parse(updatedAt);
+  if (Number.isNaN(then)) return null;
+  const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins === 1 ? '1 minute ago' : `${mins} minutes ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return hrs === 1 ? '1 hour ago' : `${hrs} hours ago`;
+  const days = Math.round(hrs / 24);
+  if (days < 7) return days === 1 ? '1 day ago' : `${days} days ago`;
+  const weeks = Math.round(days / 7);
+  return weeks === 1 ? '1 week ago' : `${weeks} weeks ago`;
+}
 
 // The three story-trio glyphs aren't in the app's Icon registry, so they ride as small
 // inline lucide-style SVGs (git-fork, bot, monitor-smartphone).
@@ -29,7 +56,7 @@ function Icon({ name, size = 18 }) {
   );
 }
 
-function Nav({ onLogin }) {
+function Nav({ status, user, newest, treeCount, linkSent, onLogin, onResumeLink, onSignOut, onMyTrees }) {
   return (
     <header className="wrap" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 24, paddingBottom: 24 }}>
       <a href="#/" style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 22, color: 'var(--text-primary)' }}>Windmill</a>
@@ -39,10 +66,100 @@ function Nav({ onLogin }) {
         <a href="#">Changelog</a>
       </nav>
       <div style={{ display: 'flex', gap: 10 }}>
-        <Button variant="ghost" size="sm" onClick={onLogin}>Log in</Button>
-        <a href="#/app"><Button variant="primary" size="sm">Start your tree</Button></a>
+        <NavCluster
+          status={status}
+          user={user}
+          newest={newest}
+          treeCount={treeCount}
+          linkSent={linkSent}
+          onLogin={onLogin}
+          onResumeLink={onResumeLink}
+          onSignOut={onSignOut}
+          onMyTrees={onMyTrees}
+        />
       </div>
     </header>
+  );
+}
+
+// The nav's right cluster — the one place the signed-in front door changes (§03).
+// Signed out it is today's pair, byte for byte; while auth resolves — or while a fresh
+// sign-in is still waiting on the registry — the Log in slot keeps its exact box but
+// stays invisible so no face flashes or jumps. The four real faces render only from
+// resolved data: a signed-in nav never claims zero trees before the registry answers.
+function NavCluster({ status, user, newest, treeCount, linkSent, onLogin, onResumeLink, onSignOut, onMyTrees }) {
+  const resolving = status === 'loading' || (status === 'signed-in' && treeCount === null);
+  if (status === 'signed-in' && user && !resolving) {
+    return (
+      <>
+        {newest
+          ? <a href={`#/app/${newest.id}`}><Button variant="primary" size="sm">My trees</Button></a>
+          : <a href="#/app"><Button variant="primary" size="sm">Start your tree</Button></a>}
+        <span style={{ display: 'flex', alignItems: 'center' }}>
+          <AccountSeat
+            user={user}
+            status={status}
+            size={28}
+            treeCount={treeCount}
+            onMyTrees={onMyTrees}
+            onSettings={() => {}}
+            onSignOut={onSignOut}
+            footer="Signing out keeps your trees on this device."
+          />
+        </span>
+      </>
+    );
+  }
+  return (
+    <>
+      {resolving && (
+        <span style={{ visibility: 'hidden' }} aria-hidden="true"><Button variant="ghost" size="sm">Log in</Button></span>
+      )}
+      {status === 'ghost' && (linkSent
+        ? <LinkSentChip onClick={onResumeLink} />
+        : <Button variant="ghost" size="sm" onClick={onLogin}>Log in</Button>)}
+      <a href="#/app"><Button variant="primary" size="sm">Start your tree</Button></a>
+    </>
+  );
+}
+
+// Lives exactly where Log in lived — same slot, same size class (§02.2). Clicking it
+// reopens the sign-in door on its wait panel — the ceremony resumes; it never resends by itself.
+function LinkSentChip({ onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '8px 14px',
+        border: '1px solid var(--border-subtle)',
+        borderRadius: 'var(--radius-full)',
+        background: 'var(--surface-card)',
+        boxShadow: 'var(--shadow-xs)',
+        cursor: 'pointer',
+        fontFamily: 'var(--font-body)',
+        fontWeight: 600,
+        fontSize: 'var(--text-sm)',
+        color: 'var(--text-secondary)',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <span
+        aria-hidden="true"
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: 'var(--radius-full)',
+          background: 'var(--accent-gold-500)',
+          ['--nd-glow']: 'var(--kind-gold-glow)',
+          animation: 'wm-ember var(--duration-glow) var(--ease-glow) infinite',
+        }}
+      />
+      Link sent — check your email
+    </button>
   );
 }
 
@@ -62,7 +179,12 @@ function HeroBand() {
   return <div className="heroBleed" aria-hidden="true"><div ref={ref}></div></div>;
 }
 
-function Hero() {
+function Hero({ resume }) {
+  const name = resume ? (resume.title?.trim() || 'Untitled roadmap') : null;
+  // Cut by code points, not code units — a surrogate pair (emoji) must never split.
+  const chars = name ? Array.from(name) : [];
+  const shortName = chars.length > 18 ? `${chars.slice(0, 17).join('').trimEnd()}…` : name;
+  const tended = resume ? tendedAgo(resume.updatedAt) : null;
   return (
     <section>
       <div className="wrap" style={{ paddingTop: 40, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -73,13 +195,32 @@ function Hero() {
         <p style={{ fontFamily: 'var(--font-body)', fontSize: 'clamp(16px, 2vw, 20px)', lineHeight: 1.5, color: 'var(--text-secondary)', maxWidth: 620, margin: 0, textWrap: 'pretty' }}>
           Redecorating a room, learning to bake, training for a 10k, or planning a side project — Windmill turns any plan into a living tree. Finish one step and watch the next branch unlock.
         </p>
-        <div style={{ display: 'flex', gap: 12, marginTop: 32, flexWrap: 'wrap', justifyContent: 'center' }}>
-          <a href="#/app"><Button variant="primary" size="lg">Start your tree</Button></a>
-          <a href="#/t/t_9e407a96b5330ebe"><Button variant="secondary" size="lg">Try the live demo</Button></a>
-        </div>
-        <div style={{ fontFamily: 'var(--font-body)', fontSize: 13.5, color: 'var(--text-tertiary)', marginTop: 14 }}>
-          No account needed — your first tree lives in your browser.
-        </div>
+        {resume ? (
+          <>
+            <div style={{ display: 'flex', gap: 12, marginTop: 32, flexWrap: 'wrap', justifyContent: 'center' }}>
+              <a href={`#/app/${resume.id}`}><Button variant="primary" size="lg">Resume {shortName}</Button></a>
+              <a href={`#/app/${resume.id}`}><Button variant="ghost" size="lg">My trees</Button></a>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 8, fontFamily: 'var(--font-body)', fontSize: 13.5, color: 'var(--text-tertiary)', marginTop: 14 }}>
+              <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: '50%', flex: 'none', background: KIND_DOT[resume.dominantKind] ?? KIND_DOT.terracotta }} />
+              <span>
+                {name}{' · '}
+                <span style={{ fontFamily: 'var(--font-mono)' }}>{`${resume.done ?? 0}/${resume.total ?? 0}`}</span>
+                {' done'}{tended ? ` · last tended ${tended}` : ''}
+              </span>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ display: 'flex', gap: 12, marginTop: 32, flexWrap: 'wrap', justifyContent: 'center' }}>
+              <a href="#/app"><Button variant="primary" size="lg">Start your tree</Button></a>
+              <a href="#/t/t_9e407a96b5330ebe"><Button variant="secondary" size="lg">Try the live demo</Button></a>
+            </div>
+            <div style={{ fontFamily: 'var(--font-body)', fontSize: 13.5, color: 'var(--text-tertiary)', marginTop: 14 }}>
+              No account needed — your first tree lives in your browser.
+            </div>
+          </>
+        )}
       </div>
       <HeroBand />
     </section>
@@ -189,14 +330,14 @@ function Story() {
   );
 }
 
-function CtaBand() {
+function CtaBand({ planted }) {
   return (
     <section className="wrap" style={{ paddingTop: 96 }}>
       <div className="ctaBand">
-        <h2 className="sectionTitle" style={{ margin: 0 }}>Plant your first tree</h2>
+        <h2 className="sectionTitle" style={{ margin: 0 }}>{planted ? 'Plant another tree' : 'Plant your first tree'}</h2>
         <p className="sectionSub" style={{ maxWidth: 460 }}>It takes about a minute, and the first branch unlocks tonight.</p>
         <div style={{ display: 'flex', gap: 12, marginTop: 20, flexWrap: 'wrap', justifyContent: 'center' }}>
-          <a href="#/app"><Button variant="primary" size="lg">Start your tree</Button></a>
+          <a href={planted ? '#/app/new' : '#/app'}><Button variant="primary" size="lg">Start your tree</Button></a>
           <a href="#/t/t_9e407a96b5330ebe"><Button variant="ghost" size="lg">Try the live demo</Button></a>
         </div>
       </div>
@@ -222,26 +363,65 @@ function Footer() {
 
 export default function Marketing() {
   const [signInOpen, setSignInOpen] = useState(false);
-  const { status } = useAuth();
+  const [signInResume, setSignInResume] = useState(null); // the chip reopens the door on its wait panel; Log in opens fresh
+  const { user, status, signOut } = useAuth();
+  const [trees, setTrees] = useState(null); // null until the registry answers; [] doubles as the honest fallback
+  const [pendingLink, setPendingLink] = useState(pendingMagicLink);
   const landed = useRef(false);
+
   useEffect(() => {
     if (status === 'loading' || landed.current) return;
     landed.current = true;
     track('land', { signedIn: status === 'signed-in' });
   }, [status]);
+
+  // Every status flip re-reads the link-sent record (sign-out clears it), and a fresh
+  // signed-in status is the one moment the registry gets asked who owns what.
+  useEffect(() => {
+    setPendingLink(pendingMagicLink());
+    if (status !== 'signed-in') { setTrees(null); return undefined; }
+    let cancelled = false;
+    listTrees().then((rows) => { if (!cancelled) setTrees(rows); });
+    return () => { cancelled = true; };
+  }, [status]);
+
+  // The chip expires with the link: when the record's 15 minutes lapse, quietly re-read.
+  useEffect(() => {
+    if (!pendingLink) return undefined;
+    const timer = setTimeout(() => setPendingLink(pendingMagicLink()), Math.max(0, pendingLink.expiresAt - Date.now()) + 250);
+    return () => clearTimeout(timer);
+  }, [pendingLink]);
+
+  const newest = status === 'signed-in' && trees?.length ? trees[0] : null;
+  const sendLink = async (email) => {
+    const result = await requestMagicLink(email);
+    setPendingLink(pendingMagicLink());
+    return result;
+  };
+
   return (
     <div className="wm-landing" style={{ fontFamily: 'var(--font-body)' }}>
       <a href="#main" className="skip-link">Skip to content</a>
-      <Nav onLogin={() => setSignInOpen(true)} />
+      <Nav
+        status={status}
+        user={user}
+        newest={newest}
+        treeCount={trees ? trees.length : null}
+        linkSent={Boolean(pendingLink)}
+        onLogin={() => { setSignInResume(null); setSignInOpen(true); }}
+        onResumeLink={() => { setSignInResume(pendingMagicLink()); setSignInOpen(true); }}
+        onSignOut={signOut}
+        onMyTrees={() => { window.location.hash = newest ? `#/app/${newest.id}` : '#/app'; }}
+      />
       <main id="main">
-        <Hero />
+        <Hero resume={newest} />
         <HowItWorks />
         <Paths />
         <Story />
-        <CtaBand />
+        <CtaBand planted={Boolean(newest)} />
       </main>
       <Footer />
-      <SignInDialog open={signInOpen} onClose={() => setSignInOpen(false)} onSend={requestMagicLink} />
+      <SignInDialog open={signInOpen} resume={signInResume} onClose={() => setSignInOpen(false)} onSend={sendLink} />
     </div>
   );
 }

@@ -25,11 +25,16 @@ export default function AuthProvider({ children }) {
     statusRef.current = status;
   }, [status]);
 
+  // fetchMe's three answers: a user → signed-in, null (a real 401) → ghost, undefined
+  // (a blip — server error or unreachable) → keep the current status untouched and let
+  // the next nudge retry. The one exception is boot: 'loading' has to resolve, and a
+  // ghost still works offline, so an unreachable server at boot settles there.
   const refresh = useCallback(async () => {
     const me = await fetchMe();
+    if (me === undefined && statusRef.current !== 'loading') return undefined;
     setUser(me ?? null);
     setStatus(me ? 'signed-in' : 'ghost');
-    return me;
+    return me ?? null;
   }, []);
 
   const signIn = useCallback((nextUser) => {
@@ -58,6 +63,13 @@ export default function AuthProvider({ children }) {
     const onFocus = () => refresh();
     window.addEventListener('focus', onFocus);
 
+    // A lapse is noticed on refocus too, not only on a rejected write (honesty moments):
+    // a tab returning to view re-checks a signed-in session so the chrome never lies stale.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && statusRef.current === 'signed-in') refresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
     const poll = setInterval(() => {
       if (statusRef.current === 'ghost') refresh();
     }, POLL_INTERVAL_MS);
@@ -66,6 +78,7 @@ export default function AuthProvider({ children }) {
       channel?.close();
       channelRef.current = null;
       window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisible);
       clearInterval(poll);
     };
   }, [refresh]);

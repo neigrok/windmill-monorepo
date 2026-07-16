@@ -139,8 +139,11 @@ export function MobileChrome({
         )}
       </div>
 
-      {/* Wordmark chip — the static brand exit, terracotta always */}
-      <span
+      {/* Wordmark chip — the way home (§06): a real link on every read-only surface */}
+      <a
+        className="st-wordmark-link"
+        href="#/"
+        aria-label="Windmill — home"
         style={{
           position: 'absolute',
           top: `calc(${SAFE_TOP} + 8px)`,
@@ -150,18 +153,19 @@ export function MobileChrome({
           height: 30,
           padding: '0 12px',
           borderRadius: 'var(--radius-full)',
-          background: 'var(--surface-card)',
           border: '1px solid var(--border-subtle)',
           boxShadow: 'var(--shadow-sm)',
           fontFamily: 'var(--font-display)',
           fontWeight: 700,
           fontSize: 13,
           color: 'var(--color-brand)',
+          textDecoration: 'none',
+          pointerEvents: 'auto',
           animation: appear,
         }}
       >
         Windmill
-      </span>
+      </a>
 
       {/* Fork CTA — the share page's one verb; absent on your own trees */}
       {onFork && (

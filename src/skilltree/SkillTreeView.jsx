@@ -11,6 +11,7 @@ import { TidinessBadge } from './ui/TidinessBadge.jsx';
 import { StepPanel } from './ui/StepPanel.jsx';
 import { Minimap } from './ui/Minimap.jsx';
 import { useViewMode } from './ui/useViewMode.js';
+import { StatusChip, VisitorNotice } from './ui/HonestyChrome.jsx';
 import { MobileChrome } from './ui/mobile/MobileChrome.jsx';
 import { BottomSheet } from './ui/mobile/BottomSheet.jsx';
 import { ForkDoor } from './ui/mobile/ForkDoor.jsx';
@@ -57,8 +58,16 @@ const NEW_NODE_ICON = 'sparkles';
 const DEMO_TREE_ID = 't_9e407a96b5330ebe';
 
 export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
-  const { breakpoint, readOnly, shared } = useViewMode();
-  const { user, status, signOut } = useAuth(); // the account seat's source of truth (X6)
+  const { breakpoint, readOnly: viewReadOnly, shared } = useViewMode();
+  const { user, status, signOut, refresh } = useAuth(); // the account seat's source of truth (X6)
+
+  // The honesty split (share-hardening): an owner's lapsed sign-in never downgrades —
+  // saves stay on this device and only the chrome tells the truth (lapsed). A visitor
+  // on a tree that isn't theirs gets the true downgrade (demotion) into read-only.
+  const [lapsed, setLapsed] = useState(false); // owner lapse: chip persists until re-auth
+  const [demotion, setDemotion] = useState(null); // visitor downgrade: { edits, cardOpen } | null
+  const readOnly = viewReadOnly || !!demotion;
+
   const canvasRef = useRef(null);
   const rootRef = useRef(null);
   const sceneRef = useRef(null);
@@ -80,6 +89,8 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   const applyRemoteProgressRef = useRef(null); // latest applyRemoteProgress (this account's own overlay)
   const reconcileProgressRef = useRef(null); // latest reconcileProgress — runs after each subscribe graft
   const prevAuthRef = useRef(status);
+  const suspectRef = useRef(false); // a rejected write cast doubt on the session; refresh() is verifying
+  const demotedRef = useRef(false); // the demotion fires once per session, ever
 
   // Auth transitions re-anchor the wire. The socket's principal is fixed at the upgrade,
   // so a mid-session sign-in or sign-out must reconnect to match the seat; a boot-time
@@ -88,6 +99,13 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
     const prev = prevAuthRef.current;
     prevAuthRef.current = status;
     if (prev === status) return;
+    if (status === 'signed-in') {
+      // A demoted visitor signing in is the owner coming home — cross the read-only →
+      // editor boundary on a clean page load (ForkDoor's proven escape): the scene is
+      // reborn in editor mode and the outbox flushes the banked edits on subscribe.
+      if (demotedRef.current) { window.location.reload(); return; }
+      setLapsed(false); // re-auth: the chip clears; the reconnect flushes the bank
+    }
     if (prev === 'loading' && status === 'signed-in') {
       reconcileProgressRef.current?.();
       return;
@@ -96,8 +114,72 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
       collabRef.current?.forceReconnect();
       return;
     }
-    if (prev === 'signed-in') collabRef.current?.forceReconnect();
+    if (prev === 'signed-in') {
+      // The chip speaks only when a rejected write's suspicion is confirmed by the
+      // sign-out; a voluntary sign-out carries no suspicion and shows no chip.
+      if (suspectRef.current) { suspectRef.current = false; setLapsed(true); }
+      collabRef.current?.forceReconnect();
+    }
   }, [status]);
+
+  // A rejected write is the truth arriving (honesty moments). Owner lapse: editing never
+  // stops — re-check the session so the seat honestly goes ghost, and let the chip speak.
+  // Visitor: the true downgrade — the scene retires its edit chrome in place (waiting out
+  // a mid-keystroke moment), and the notice card counts the edits banked on this device.
+  useEffect(() => {
+    let idleTimer = null;
+    let waiting = false;
+    let lastActivityAt = 0;
+    const noteActivity = () => { lastActivityAt = Date.now(); };
+    const stopWaiting = () => {
+      window.removeEventListener('keydown', noteActivity, true);
+      window.removeEventListener('pointerdown', noteActivity, true);
+    };
+    // The wave waits for your hands — a focused field or an active canvas drag defers
+    // the downgrade — but only while the hands are moving: 400ms of stillness means a
+    // parked cursor, and the truth lands anyway (the lie-window stays bounded).
+    const demote = () => {
+      waiting = false;
+      if (demotedRef.current) { stopWaiting(); return; }
+      const el = document.activeElement;
+      const handsBusy = (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA'))
+        || (sceneRef.current?.isPointerActive?.() ?? false);
+      const idle = Date.now() - lastActivityAt >= 400;
+      if (handsBusy && !idle) {
+        waiting = true;
+        window.addEventListener('keydown', noteActivity, true);
+        window.addEventListener('pointerdown', noteActivity, true);
+        idleTimer = setTimeout(demote, 400);
+        return;
+      }
+      stopWaiting();
+      demotedRef.current = true;
+      sceneRef.current?.setReadOnly?.();
+      setDemotion({ edits: collabRef.current?.pendingEditCount?.() ?? 0, cardOpen: true });
+    };
+    const onForbidden = (event) => {
+      if (event.detail === 'this tree belongs to another account') {
+        if (demotedRef.current || waiting) return;
+        lastActivityAt = Date.now(); // the rejected gesture itself counts as activity
+        demote();
+        return;
+      }
+      // 'sign in to edit' / 'sign in to track progress' — suspicion, not verdict: re-check
+      // the session and let the auth transition (or its absence) decide whether the chip speaks.
+      if (suspectRef.current) return;
+      suspectRef.current = true;
+      refresh().then((me) => {
+        const stillSignedIn = me !== undefined ? !!me : prevAuthRef.current === 'signed-in';
+        if (stillSignedIn) suspectRef.current = false; // false alarm — future rejects re-check
+      });
+    };
+    window.addEventListener('wm-edit-forbidden', onForbidden);
+    return () => {
+      window.removeEventListener('wm-edit-forbidden', onForbidden);
+      stopWaiting();
+      clearTimeout(idleTimer);
+    };
+  }, [refresh]);
   const invalidRef = useRef(false); // whether the last render fell back to the loose-graph path
   const selectedIdRef = useRef(null);
   const toastTimersRef = useRef([]); // pending hold→leave→unmount timers for the active toast
@@ -1138,7 +1220,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
           progress={{ done: shareStats?.done ?? 0, total: shareStats?.total ?? 0 }}
           author={tree?.author}
           dominantKind={shareStats?.dominantKind}
-          onFork={shared ? () => setForkOpen(true) : undefined}
+          onFork={(shared || !!demotion) && !demotion?.cardOpen ? () => setForkOpen(true) : undefined}
           onRecenter={handleRecenter}
           showRecenter={recenterAvailable}
           tablet={breakpoint === 'tablet'}
@@ -1176,10 +1258,12 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
           below the detail panel's z so an open panel covers it just like it covers the
           control bar (z 20 < seat 24 < panel 25). */}
       {!readOnly && (
-        <div style={{ position: 'absolute', top: 'calc(var(--space-6) + 52px)', right: 'var(--space-6)', zIndex: 24 }}>
+        <div style={{ position: 'absolute', top: 'calc(var(--space-6) + 52px)', right: 'var(--space-6)', zIndex: 24, display: 'flex', alignItems: 'center', gap: 8 }}>
+          {lapsed && status !== 'signed-in' && <StatusChip>Signed out — saved on this device</StatusChip>}
           <AccountSeat
             user={user}
             status={status}
+            expired={lapsed}
             onSignIn={() => setSignInOpen(true)}
             onSignOut={signOut}
             onConnect={() => { window.location.hash = '#/connect'; }}
@@ -1292,7 +1376,29 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
         </aside>
       )}
 
-      {shared && (
+      {/* The visitor's honesty chrome: the notice card first, then — dismissed ≠
+          forgotten — the read-only chip persists; the Fork pill stays one click away. */}
+      {demotion && !demotion.cardOpen && (
+        <div style={{ position: 'absolute', top: 'calc(max(env(safe-area-inset-top, 0px), 44px) + 8px)', left: '50%', transform: 'translateX(-50%)', zIndex: 21 }}>
+          <StatusChip>
+            {demotion.edits > 0
+              ? `Read-only · ${demotion.edits} change${demotion.edits === 1 ? '' : 's'} kept here`
+              : 'Read-only'}
+          </StatusChip>
+        </div>
+      )}
+
+      {demotion?.cardOpen && (
+        <VisitorNotice
+          edits={demotion.edits}
+          author={tree?.author}
+          onFork={() => { setDemotion((d) => d && { ...d, cardOpen: false }); setForkOpen(true); }}
+          onDismiss={() => setDemotion((d) => d && { ...d, cardOpen: false })}
+          onSignIn={() => setSignInOpen(true)}
+        />
+      )}
+
+      {(shared || !!demotion) && (
         <ForkDoor open={forkOpen} tablet={breakpoint === 'tablet'} treeId={treeId} signedIn={status === 'signed-in'} stepCount={shareStats?.total} onClose={() => setForkOpen(false)} />
       )}
 

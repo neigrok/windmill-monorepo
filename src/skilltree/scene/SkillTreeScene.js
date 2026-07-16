@@ -218,6 +218,34 @@ export class SkillTreeScene {
     this.noteArrivals(arrivals);
   }
 
+  // The cheapest honest signal that a pointer gesture (drag, pan, connect) is mid-flight —
+  // the demote wait reads it so a downgrade never lands under a moving hand.
+  isPointerActive() {
+    return this.input.activePointerId !== null;
+  }
+
+  // The visitor downgrade (honesty moments): retire editing in place — the viewer tool
+  // takes the pointer, the edit chrome fades out over one 280ms wave and is disposed,
+  // and the camera never moves. Rendering, picking, panning all continue untouched.
+  setReadOnly() {
+    if (this.readOnly) return;
+    this.readOnly = true;
+    this.input.setTool(new ReadOnlyTool(this.toolContext));
+    this.selectEdge(null);
+    this.hoverEdge(null);
+    this.affordanceLayer?.clear();
+    const retiring = [this.affordanceLayer, this.edgeChrome].filter(Boolean);
+    this.affordanceLayer = null;
+    this.edgeChrome = null;
+    for (const layer of retiring) {
+      layer.container.style.transition = 'opacity 280ms var(--ease-standard)';
+      layer.container.style.opacity = '0';
+      layer.container.style.pointerEvents = 'none';
+      setTimeout(() => layer.dispose(), 280);
+    }
+    if (this.renderModel) this.camera.setPanBounds(this.renderModel.bounds);
+  }
+
   // A re-derived model can carry a whole fresh layout (a live create/connect re-lays
   // the tree — see SkillTreeView's layoutPositions). Rather than teleport, every
   // displaced node glides from where it currently stands to its new seat — an

@@ -13,9 +13,7 @@ import { Avatar } from '../../components';
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-const SEAT = 36;
-
-export function AccountSeat({ user, status, onSignIn, onSignOut, onSettings, onConnect, expired = false }) {
+export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSettings, onConnect, onMyTrees, treeCount = null, footer, expired = false }) {
   const [open, setOpen] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [claim, setClaim] = useState(null); // null | 'syncing' | 'synced' | 'fading'
@@ -120,8 +118,8 @@ export function AccountSeat({ user, status, onSignIn, onSignOut, onSettings, onC
         onPointerCancel={() => setPressed(false)}
         style={{
           position: 'relative',
-          width: SEAT,
-          height: SEAT,
+          width: size,
+          height: size,
           padding: 0,
           border: 'none',
           borderRadius: 'var(--radius-full)',
@@ -166,7 +164,7 @@ export function AccountSeat({ user, status, onSignIn, onSignOut, onSettings, onC
               animation: woke && !reduced ? 'wm-seat-wake var(--duration-slow) var(--ease-soft)' : 'none',
             }}
           >
-            <Avatar name={name} size={SEAT} />
+            <Avatar name={name} size={size} />
           </span>
         )}
       </button>
@@ -193,19 +191,28 @@ export function AccountSeat({ user, status, onSignIn, onSignOut, onSettings, onC
         >
           {signedIn ? (
             <>
-              <div style={{ padding: '8px 10px 10px', borderBottom: '1px solid var(--border-subtle)', marginBottom: 4 }}>
-                {user.name?.trim() && (
-                  <div style={{ fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {user.name.trim()}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px 10px', borderBottom: '1px solid var(--border-subtle)', marginBottom: 4 }}>
+                <Avatar name={name} size={28} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {user.name?.trim() && (
+                    <div style={{ fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {user.name.trim()}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {user.email}
                   </div>
-                )}
-                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {user.email}
                 </div>
               </div>
+              {onMyTrees && <MenuRow label="My trees" detail={treeCount != null ? String(treeCount) : null} onSelect={() => choose(onMyTrees)} />}
               {onConnect && <MenuRow label="Connect your LLM tools" onSelect={() => choose(onConnect)} />}
               <MenuRow label="Account settings" onSelect={() => choose(onSettings)} />
               <MenuRow label="Sign out" onSelect={() => choose(onSignOut)} />
+              {footer && (
+                <div style={{ padding: '8px 10px 4px', marginTop: 4, borderTop: '1px solid var(--border-subtle)', fontSize: 'var(--text-xs)', lineHeight: 1.4, color: 'var(--text-tertiary)' }}>
+                  {footer}
+                </div>
+              )}
             </>
           ) : (
             <>
@@ -223,7 +230,7 @@ export function AccountSeat({ user, status, onSignIn, onSignOut, onSettings, onC
   );
 }
 
-function MenuRow({ label, onSelect }) {
+function MenuRow({ label, detail = null, onSelect }) {
   return (
     <button
       type="button"
@@ -232,7 +239,10 @@ function MenuRow({ label, onSelect }) {
       onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-hover)'; }}
       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
       style={{
-        display: 'block',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
         width: '100%',
         padding: '8px 10px',
         border: 'none',
@@ -247,6 +257,9 @@ function MenuRow({ label, onSelect }) {
       }}
     >
       {label}
+      {detail != null && (
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>{detail}</span>
+      )}
     </button>
   );
 }

@@ -18,6 +18,7 @@ export class SkillTree {
   constructor(treeData) {
     this.treeId = treeData.id;
     this.treeTitle = treeData.title;
+    this.treeAuthor = treeData.author ?? null;
     this.allNodes = treeData.nodes;
 
     this.nodesById = new Map();
@@ -48,6 +49,7 @@ export class SkillTree {
 
   get id() { return this.treeId; }
   get title() { return this.treeTitle; }
+  get author() { return this.treeAuthor; }
   get nodes() { return this.allNodes; }
   get edges() { return this.allEdges; }
   get trunk() { return this.trunkTree; }
