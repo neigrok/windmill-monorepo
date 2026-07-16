@@ -25,6 +25,10 @@ struct NodeStateEntry {
   Hlc positionAt;
   std::optional<std::string> status;
   Hlc statusAt;
+  std::string description;
+  Hlc descriptionAt;
+  std::vector<Link> links;
+  Hlc linksAt;
   bool operator==(const NodeStateEntry&) const = default;
 };
 

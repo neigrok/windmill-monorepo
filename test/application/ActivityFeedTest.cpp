@@ -32,7 +32,7 @@ AppliedOp op(Seq seq, Command command, const char* actor, std::uint64_t at) {
 
 std::vector<AppliedOp> log() {
   return {
-      op(1, CreateNode{nid("renderer"), "WebGL2 renderer", "zap", NodeColor::sky, std::nullopt, std::nullopt}, "u5", 1000),
+      op(1, CreateNode{nid("renderer"), "WebGL2 renderer", "zap", NodeColor::sky, {}, std::nullopt}, "u5", 1000),
       op(2, RenameNode{nid("renderer"), "Renderer"}, "dev", 2000),
       op(3, RepositionNode{nid("renderer"), Vec2{9, 9}}, "u5", 3000),  // a nudge — omitted from the feed
       op(4, AddEdge{nid("product"), nid("renderer")}, "u5", 4000),

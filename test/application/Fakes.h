@@ -9,6 +9,7 @@
 #include "ports/ProgressRepository.h"
 #include "ports/TreeRepository.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -60,6 +61,9 @@ struct FakeTreeRepository : TreeRepository {
   std::map<std::string, std::string> forkedFrom;
   std::map<std::string, std::uint64_t> updatedAt;  // epoch ms per tree, for registry ordering
   std::set<std::string> deletedIds;
+  // One entry per save call: how many node rows the slice carried — the sparse-persistence
+  // assertions read this (a one-node edit must save one node, not the tree).
+  std::vector<std::size_t> savedNodeCounts;
   std::optional<StoredTree> load(const TreeId& tree) override {
     if (deletedIds.count(tree.str())) return std::nullopt;
     auto it = byId.find(tree.str());
@@ -68,11 +72,28 @@ struct FakeTreeRepository : TreeRepository {
   }
   void save(const TreeId& tree, const GraphState& state, const LegendState& legend,
             const std::string& title, Seq head) override {
-    std::optional<UserId> owner;
-    std::string visibility = "public";
-    auto it = byId.find(tree.str());
-    if (it != byId.end()) { owner = it->second.owner; visibility = it->second.visibility; }
-    byId[tree.str()] = StoredTree{state, legend, title, head, owner, visibility};
+    savedNodeCounts.push_back(state.nodes.size());
+    StoredTree& stored = byId[tree.str()];  // upsert semantics: merge the slice, keep the rest
+    for (const NodeStateEntry& node : state.nodes) {
+      auto match = std::find_if(stored.state.nodes.begin(), stored.state.nodes.end(),
+                                [&](const NodeStateEntry& n) { return n.id == node.id; });
+      if (match != stored.state.nodes.end()) *match = node;
+      else stored.state.nodes.push_back(node);
+    }
+    for (const EdgeStateEntry& edge : state.edges) {
+      auto match = std::find_if(stored.state.edges.begin(), stored.state.edges.end(),
+                                [&](const EdgeStateEntry& e) { return e.edge == edge.edge; });
+      if (match != stored.state.edges.end()) *match = edge;
+      else stored.state.edges.push_back(edge);
+    }
+    for (const KindStateEntry& kind : legend.kinds) {
+      auto match = std::find_if(stored.legend.kinds.begin(), stored.legend.kinds.end(),
+                                [&](const KindStateEntry& k) { return k.id == kind.id; });
+      if (match != stored.legend.kinds.end()) *match = kind;
+      else stored.legend.kinds.push_back(kind);
+    }
+    stored.title = title;
+    stored.head = head;
   }
   void create(const TreeId& tree, const GraphState& state, const LegendState& legend,
               const std::string& title, const UserId& owner) override {
@@ -150,7 +171,7 @@ inline UserId uid(const char* s = "u") { return UserId{std::string(s)}; }
 inline Hlc at(std::uint64_t ms, const char* actor = "u") { return Hlc{ms, 0, actor}; }
 
 inline Command createNode(const char* id) {
-  return CreateNode{nid(id), id, "icon", NodeColor::sky, std::nullopt, std::nullopt};
+  return CreateNode{nid(id), id, "icon", NodeColor::sky, {}, std::nullopt};
 }
 
 }

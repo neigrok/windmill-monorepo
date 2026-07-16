@@ -13,6 +13,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <utility>
 
 namespace wm {
 
@@ -38,6 +39,12 @@ public:
   // client's does. The frameId is minted from the (unique) stamp. Returns the assigned seq.
   Seq applyCommand(const Command& command, std::uint64_t nowMs, const UserId& actor);
 
+  // Graft a whole tree slice in as one frame: stamp every node/edge/kind from the room clock
+  // (so the import dominates by-id on collision — an upsert), join it, log one headline deed,
+  // and broadcast it. Nodes/edges/kinds already present are overwritten; new ones are added;
+  // nothing is removed. An empty `kinds` leaves the legend untouched. Returns the assigned seq.
+  Seq importTree(const TreeData& incoming, std::uint64_t nowMs, const UserId& actor);
+
   // The next HLC stamp for this tree, minted under the caller's strand from the room's own
   // clock. One clock per tree means every write — from a socket, an MCP tool, or an undo —
   // shares a single causal domain, so no two writes can ever collide on a stamp. `nowMs` is
@@ -58,9 +65,18 @@ public:
   GraphState exportState() const;
   LegendState exportLegend() const;
 
+  // Sparse persistence: every write marks the entries it touched, and dirtyState() exports
+  // just those — the slice a save upserts, instead of the whole tree. replay() can't know
+  // its footprint cheaply, so it flips the room to all-dirty and the next save writes the
+  // full state. markClean() after a successful save; the caller holds the strand throughout,
+  // so no write can slip in between export and clean.
+  std::pair<GraphState, LegendState> dirtyState() const;
+  void markClean();
+
   // The node's live prerequisites (incoming DAG edges), for the progress advisory check.
   // Works on any graph, clean or not; empty if the node is absent.
   std::vector<NodeId> prerequisitesOf(const NodeId& node) const;
+  bool hasNode(const NodeId& node) const;  // present (created, not tombstoned) — gates progress writes
   const std::string& title() const { return title_; }
   Seq head() const { return head_; }
 
@@ -70,6 +86,8 @@ public:
   void claim(const UserId& user) { if (!owner_) owner_ = user; }
 
 private:
+  void markDirty(const GraphState& graph, const LegendState& legend);
+
   TreeId id_;
   std::string title_;
   LooseGraph graph_;
@@ -80,6 +98,10 @@ private:
   OpLog& ops_;
   PresenceBus& bus_;
   HlcClock clock_;
+  std::set<NodeId> dirtyNodes_;
+  std::set<Edge> dirtyEdges_;
+  std::set<KindId> dirtyKinds_;
+  bool allDirty_ = false;  // replayed op tail: footprint unknown, save everything once
 };
 
 }

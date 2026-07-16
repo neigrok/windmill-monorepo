@@ -1,5 +1,6 @@
 #include "adapters/json/CommandJson.h"
 
+#include "adapters/json/TreeJson.h"
 #include "domain/Tree.h"
 
 namespace wm {
@@ -29,8 +30,21 @@ std::optional<Command> commandFromJson(const std::string& kind, const Json::Valu
     command.label = payload["label"].asString();
     command.icon = payload["icon"].asString();
     command.color = parseColor(payload.get("color", "terracotta").asString()).value_or(NodeColor::terracotta);
-    if (payload.isMember("parentId") && payload["parentId"].isString()) command.parent = NodeId{payload["parentId"].asString()};
+    if (payload.isMember("parentId") && payload["parentId"].isString())
+      command.prerequisites.push_back(NodeId{payload["parentId"].asString()});
+    for (const Json::Value& prereq : payload["prerequisites"])
+      if (prereq.isString()) command.prerequisites.push_back(NodeId{prereq.asString()});
     if (payload.isMember("x") && payload.isMember("y")) command.position = Vec2{payload["x"].asDouble(), payload["y"].asDouble()};
+    command.description = payload.get("description", "").asString();
+    if (payload.isMember("links")) command.links = linksFromJson(payload["links"]);
+    return command;
+  }
+  if (kind == "AnnotateNode") {
+    AnnotateNode command;
+    command.id = id(payload, "id");
+    if (payload.isMember("description") && payload["description"].isString())
+      command.description = payload["description"].asString();
+    if (payload.isMember("links")) command.links = linksFromJson(payload["links"]);
     return command;
   }
   if (kind == "AddEdge") return AddEdge{id(payload, "from"), id(payload, "to")};
@@ -39,12 +53,14 @@ std::optional<Command> commandFromJson(const std::string& kind, const Json::Valu
     return ReconnectEdge{id(payload, "oldFrom"), id(payload, "oldTo"), id(payload, "newFrom"), id(payload, "newTo")};
   if (kind == "DeleteNode") return DeleteNode{id(payload, "id")};
   if (kind == "TransitiveReduction") return TransitiveReduction{};
+  if (kind == "PruneDangling") return PruneDangling{};
   if (kind == "RenameKind") return RenameKind{kindId(payload, "id"), payload["label"].asString()};
   if (kind == "DescribeKind") return DescribeKind{kindId(payload, "id"), payload["description"].asString()};
   if (kind == "AddKind") {
     auto hue = parseColor(payload["hue"].asString());
     if (!hue) return std::nullopt;
-    return AddKind{kindId(payload, "id"), *hue};
+    return AddKind{kindId(payload, "id"), *hue, payload.get("label", "").asString(),
+                   payload.get("description", "").asString()};
   }
   if (kind == "RemoveKind") return RemoveKind{kindId(payload, "id")};
   if (kind == "ReorderKinds") {
@@ -66,11 +82,13 @@ std::string commandKind(const Command& command) {
     [](const SetNodeColor&) { return std::string("SetNodeColor"); },
     [](const RepositionNode&) { return std::string("RepositionNode"); },
     [](const CreateNode&) { return std::string("CreateNode"); },
+    [](const AnnotateNode&) { return std::string("AnnotateNode"); },
     [](const AddEdge&) { return std::string("AddEdge"); },
     [](const RemoveEdge&) { return std::string("RemoveEdge"); },
     [](const ReconnectEdge&) { return std::string("ReconnectEdge"); },
     [](const DeleteNode&) { return std::string("DeleteNode"); },
     [](const TransitiveReduction&) { return std::string("TransitiveReduction"); },
+    [](const PruneDangling&) { return std::string("PruneDangling"); },
     [](const RenameKind&) { return std::string("RenameKind"); },
     [](const DescribeKind&) { return std::string("DescribeKind"); },
     [](const AddKind&) { return std::string("AddKind"); },
@@ -91,8 +109,19 @@ Json::Value commandPayload(const Command& command) {
       p["label"] = c.label;
       p["icon"] = c.icon;
       p["color"] = std::string(toString(c.color));
-      if (c.parent) p["parentId"] = c.parent->str();
+      if (!c.prerequisites.empty()) {
+        Json::Value prerequisites(Json::arrayValue);
+        for (const NodeId& prereq : c.prerequisites) prerequisites.append(prereq.str());
+        p["prerequisites"] = prerequisites;
+      }
       if (c.position) { p["x"] = c.position->x; p["y"] = c.position->y; }
+      if (!c.description.empty()) p["description"] = c.description;
+      if (!c.links.empty()) p["links"] = linksToJson(c.links);
+    },
+    [&](const AnnotateNode& c) {
+      p["id"] = c.id.str();
+      if (c.description) p["description"] = *c.description;
+      if (c.links) p["links"] = linksToJson(*c.links);
     },
     [&](const AddEdge& c) { p["from"] = c.from.str(); p["to"] = c.to.str(); },
     [&](const RemoveEdge& c) { p["from"] = c.from.str(); p["to"] = c.to.str(); },
@@ -102,9 +131,15 @@ Json::Value commandPayload(const Command& command) {
     },
     [&](const DeleteNode& c) { p["id"] = c.id.str(); },
     [&](const TransitiveReduction&) {},
+    [&](const PruneDangling&) {},
     [&](const RenameKind& c) { p["id"] = c.id.str(); p["label"] = c.label; },
     [&](const DescribeKind& c) { p["id"] = c.id.str(); p["description"] = c.description; },
-    [&](const AddKind& c) { p["id"] = c.id.str(); p["hue"] = std::string(toString(c.hue)); },
+    [&](const AddKind& c) {
+      p["id"] = c.id.str();
+      p["hue"] = std::string(toString(c.hue));
+      if (!c.label.empty()) p["label"] = c.label;
+      if (!c.description.empty()) p["description"] = c.description;
+    },
     [&](const RemoveKind& c) { p["id"] = c.id.str(); },
     [&](const ReorderKinds& c) {
       Json::Value order(Json::arrayValue);

@@ -70,6 +70,8 @@ public:
   std::vector<KindId> orderedIds() const;
 
   LegendState exportState() const;
+  // One kind's full CRDT state, for sparse persistence. nullopt for a never-seen id.
+  std::optional<KindStateEntry> exportKind(const KindId& id) const;
 
 private:
   struct KindRecord {

@@ -3,6 +3,7 @@
 #include "adapters/json/CommandJson.h"
 #include "adapters/json/TreeJson.h"
 #include "application/TreeRoom.h"
+#include "domain/NodeQuery.h"
 #include "domain/SkillTree.h"
 #include "domain/TreeHealth.h"
 
@@ -11,6 +12,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace wm {
@@ -33,6 +35,13 @@ Json::Value num(const char* description) {
   return property;
 }
 
+Json::Value boolean(const char* description) {
+  Json::Value property(Json::objectValue);
+  property["type"] = "boolean";
+  property["description"] = description;
+  return property;
+}
+
 Json::Value enumStr(const char* description, std::vector<const char*> values) {
   Json::Value property = str(description);
   Json::Value allowed(Json::arrayValue);
@@ -45,6 +54,24 @@ Json::Value strArray(const char* description) {
   Json::Value property(Json::objectValue);
   property["type"] = "array";
   property["items"] = str("");
+  property["description"] = description;
+  return property;
+}
+
+Json::Value linkArray(const char* description) {
+  Json::Value link(Json::objectValue);
+  link["type"] = "object";
+  Json::Value fields(Json::objectValue);
+  fields["url"] = str("The link target (href).");
+  fields["label"] = str("Optional display text (defaults to the url).");
+  link["properties"] = fields;
+  Json::Value required(Json::arrayValue);
+  required.append("url");
+  link["required"] = required;
+
+  Json::Value property(Json::objectValue);
+  property["type"] = "array";
+  property["items"] = link;
   property["description"] = description;
   return property;
 }
@@ -87,6 +114,7 @@ std::string slugify(const std::string& label) {
 
 std::optional<std::string> commandKindFor(const std::string& tool) {
   if (tool == "create_node")    return "CreateNode";
+  if (tool == "annotate_node")  return "AnnotateNode";
   if (tool == "rename_node")    return "RenameNode";
   if (tool == "set_node_color") return "SetNodeColor";
   if (tool == "move_node")      return "RepositionNode";
@@ -155,6 +183,26 @@ ToolResult readProgress(ProgressService& progress, const TreeId& tree, const Use
   return ToolResult::json(toJson(progress.progressOf(tree, user)));
 }
 
+ToolResult findNodes(RoomRegistry& registry, const TreeId& tree, const Json::Value& args) {
+  return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
+    NodeFilter filter;
+    if (args.isMember("color") && args["color"].isString()) {
+      filter.color = parseColor(args["color"].asString());
+      if (!filter.color) return ToolResult::failure("unknown color: " + args["color"].asString());
+    }
+    if (args.isMember("kind") && args["kind"].isString() && !args["kind"].asString().empty())
+      filter.kind = KindId{args["kind"].asString()};
+    filter.query = args.get("query", "").asString();
+
+    Json::Value nodes(Json::arrayValue);
+    for (const NodeSpec& node : selectNodes(room.snapshot(), filter)) nodes.append(nodeToJson(node));
+    Json::Value out(Json::objectValue);
+    out["count"] = nodes.size();
+    out["nodes"] = nodes;
+    return ToolResult::json(out);
+  });
+}
+
 ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::string& kind,
                      Json::Value payload, Clock& clock, const UserId& actor, bool mintId) {
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
@@ -186,33 +234,167 @@ ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::stri
   });
 }
 
-ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, PresenceBus& bus,
-                         const TreeId& tree, const Json::Value& args, Clock& clock, const UserId& user) {
-  NodeId node{args.get("nodeId", "").asString()};
-  std::optional<ProgressStatus> status = parseProgressStatus(args.get("status", "").asString());
-  if (node.empty() || !status)
-    return ToolResult::failure("set_progress needs nodeId and status in {active, complete, none}");
-
-  std::vector<NodeId> prerequisites;
-  Hlc hlc;
+// The shared write path for both set_progress and an import's carried progress. Under the
+// strand it rejects (or, for a best-effort import, drops) unknown node ids, reads each node's
+// prerequisites, and mints one clock stamp per mark; then applies the batch order-safe (§9)
+// and echoes each mark to the caller's live sessions. Fills `results` with a row per applied
+// mark; returns a failure message only when an unknown id is rejected.
+std::optional<std::string> applyProgressBatch(
+    RoomRegistry& registry, ProgressService& progress, PresenceBus& bus, const TreeId& tree,
+    Clock& clock, const UserId& user, const std::vector<std::pair<NodeId, ProgressStatus>>& requested,
+    bool rejectUnknown, Json::Value& results) {
+  std::vector<ProgressMark> marks;
   {
     std::lock_guard<std::mutex> lock(registry.strandFor(tree));
-    try {
-      TreeRoom& room = registry.open(tree);
-      prerequisites = room.prerequisitesOf(node);
-      hlc = room.nextStamp(clock.nowMs());  // progress shares the tree's clock so its LWW stays comparable
-    } catch (const std::exception& error) {
-      return ToolResult::failure(error.what());
+    TreeRoom& room = registry.open(tree);
+    std::string unknown;
+    for (const auto& [node, status] : requested) {
+      if (!room.hasNode(node)) { if (!unknown.empty()) unknown += ", "; unknown += node.str(); continue; }
+      marks.push_back({node, status, room.prerequisitesOf(node), room.nextStamp(clock.nowMs())});
     }
+    if (rejectUnknown && !unknown.empty()) return "no such node(s): " + unknown;
   }
 
-  ProgressOutcome outcome = progress.setStatus(prerequisites, tree, user, node, *status, hlc);
-  bus.broadcastProgress(tree, user, node, *status);  // reflect it live in the caller's web sessions
-  Json::Value out(Json::objectValue);
-  out["nodeId"] = node.str();
-  out["status"] = args.get("status", "").asString();
-  out["prerequisitesMet"] = outcome.prerequisitesMet;
-  return ToolResult::json(out);
+  std::vector<ProgressOutcome> outcomes = progress.setStatuses(tree, user, marks);
+  results = Json::Value(Json::arrayValue);
+  for (std::size_t i = 0; i < marks.size(); ++i) {
+    bus.broadcastProgress(tree, user, marks[i].node, marks[i].status);  // live in the caller's web sessions
+    Json::Value row(Json::objectValue);
+    row["nodeId"] = marks[i].node.str();
+    row["status"] = progressStatusName(outcomes[i].status);
+    row["prerequisitesMet"] = outcomes[i].prerequisitesMet;
+    results.append(row);
+  }
+  return std::nullopt;
+}
+
+ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, PresenceBus& bus,
+                         const TreeId& tree, const Json::Value& args, Clock& clock, const UserId& user) {
+  bool bulk = args.isMember("updates") && args["updates"].isArray();
+  std::vector<std::pair<NodeId, ProgressStatus>> requested;
+  if (bulk) {
+    for (const Json::Value& u : args["updates"]) {
+      NodeId node{u.get("nodeId", "").asString()};
+      std::optional<ProgressStatus> status = parseProgressStatus(u.get("status", "").asString());
+      if (node.empty() || !status)
+        return ToolResult::failure("each update needs nodeId and status in {active, complete, none}");
+      requested.emplace_back(node, *status);
+    }
+  } else {
+    NodeId node{args.get("nodeId", "").asString()};
+    std::optional<ProgressStatus> status = parseProgressStatus(args.get("status", "").asString());
+    if (node.empty() || !status)
+      return ToolResult::failure("set_progress needs nodeId and status in {active, complete, none}, or an updates[] batch");
+    requested.emplace_back(node, *status);
+  }
+  if (requested.empty()) return ToolResult::failure("set_progress had nothing to do");
+
+  Json::Value results;
+  try {
+    if (std::optional<std::string> error =
+            applyProgressBatch(registry, progress, bus, tree, clock, user, requested, true, results))
+      return ToolResult::failure(*error);
+  } catch (const std::exception& error) {
+    return ToolResult::failure(error.what());
+  }
+  if (bulk) {
+    Json::Value out(Json::objectValue);
+    out["results"] = results;
+    return ToolResult::json(out);
+  }
+  return ToolResult::json(results[0]);  // a singular call keeps its flat {nodeId, status, prerequisitesMet}
+}
+
+ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, PresenceBus& bus,
+                          const TreeId& tree, const Json::Value& args, Clock& clock, const UserId& actor) {
+  TreeData incoming = treeFromJson(args, tree);  // the get_tree shape: title?, nodes[], kinds[]
+  bool dryRun = (args["dryRun"].isBool() && args["dryRun"].asBool()) ||
+                (args["dryRun"].isString() && args["dryRun"].asString() == "true");
+
+  ToolResult grafted = withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
+    if (room.owner() && *room.owner() != actor)
+      return ToolResult::failure("this tree belongs to another account");
+
+    TreeData current = room.snapshot();  // collision = an incoming id already present (an upsert overwrites it)
+    std::set<std::string> presentNodes, presentKinds;
+    for (const NodeSpec& n : current.nodes) presentNodes.insert(n.id.str());
+    for (const Kind& k : current.kinds) presentKinds.insert(k.id.str());
+
+    Json::Value nodeCollisions(Json::arrayValue), kindCollisions(Json::arrayValue);
+    for (const NodeSpec& n : incoming.nodes)
+      if (presentNodes.count(n.id.str())) nodeCollisions.append(n.id.str());
+    for (const Kind& k : incoming.kinds)
+      if (presentKinds.count(k.id.str())) kindCollisions.append(k.id.str());
+
+    Json::Value out(Json::objectValue);
+    out["nodes"] = static_cast<int>(incoming.nodes.size());
+    out["kinds"] = static_cast<int>(incoming.kinds.size());
+    out["nodeCollisions"] = nodeCollisions;
+    out["kindCollisions"] = kindCollisions;
+    out["newNodes"] = static_cast<int>(incoming.nodes.size()) - nodeCollisions.size();
+    out["newKinds"] = static_cast<int>(incoming.kinds.size()) - kindCollisions.size();
+    if (dryRun) {  // report what would collide, change nothing (§7 dry-run)
+      out["dryRun"] = true;
+      return ToolResult::json(out);
+    }
+
+    Seq seq = room.importTree(incoming, clock.nowMs(), actor);
+    if (!room.owner()) registry.claim(tree, actor);  // first authenticated writer claims the tree
+    registry.persist(tree);
+    out["imported"] = true;
+    out["seq"] = static_cast<Json::Int64>(seq);
+    out["diagnosticsClean"] = room.diagnose().clean();
+    return ToolResult::json(out);
+  });
+  if (grafted.isError || dryRun || !(args.isMember("progress") && args["progress"].isArray()))
+    return grafted;
+
+  std::vector<std::pair<NodeId, ProgressStatus>> requested;  // carried progress, applied over the imported nodes
+  for (const Json::Value& u : args["progress"]) {
+    NodeId node{u.get("nodeId", "").asString()};
+    std::optional<ProgressStatus> status = parseProgressStatus(u.get("status", "").asString());
+    if (!node.empty() && status) requested.emplace_back(node, *status);
+  }
+  if (!requested.empty()) {
+    Json::Value results;
+    applyProgressBatch(registry, progress, bus, tree, clock, actor, requested, false, results);  // skip unknowns
+    grafted.structured["progress"] = results;
+    return ToolResult::json(grafted.structured);
+  }
+  return grafted;
+}
+
+ToolResult pruneTree(RoomRegistry& registry, ProgressService& progress, const TreeId& tree,
+                     Clock& clock, const UserId& actor) {
+  ToolResult cleaned = withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
+    if (room.owner() && *room.owner() != actor)
+      return ToolResult::failure("this tree belongs to another account");
+
+    TreeDiagnostics before = room.diagnose();
+    int prunedEdges = static_cast<int>(before.dangling.size() + before.selfEdges.size());
+
+    // Orphaned overlay rows: the caller's progress on nodes no longer in the tree — cleared to none.
+    Progress overlay = progress.progressOf(tree, actor);
+    std::vector<NodeId> orphans;
+    for (const NodeId& node : overlay.completed) if (!room.hasNode(node)) orphans.push_back(node);
+    for (const NodeId& node : overlay.inProgress) if (!room.hasNode(node)) orphans.push_back(node);
+
+    Seq seq = room.head();
+    if (prunedEdges > 0) {
+      seq = room.applyCommand(PruneDangling{}, clock.nowMs(), actor);
+      registry.persist(tree);
+    }
+    for (const NodeId& node : orphans)
+      progress.setStatus({}, tree, actor, node, ProgressStatus::none, room.nextStamp(clock.nowMs()));
+
+    Json::Value out(Json::objectValue);
+    out["prunedEdges"] = prunedEdges;
+    out["prunedProgress"] = static_cast<int>(orphans.size());
+    out["seq"] = static_cast<Json::Int64>(seq);
+    out["diagnosticsClean"] = room.diagnose().clean();
+    return ToolResult::json(out);
+  });
+  return cleaned;
 }
 
 ToolResult createTree(TreeRegistry& registry, const UserId& caller, const std::string& title) {
@@ -315,18 +497,46 @@ Json::Value RoadmapTools::listTools() const {
   {
     Json::Value p(Json::objectValue);
     p["treeId"] = str(treeId);
+    p["color"] = enumStr("Optional hue to match — a node's color is its kind.",
+                         {"terracotta", "olive", "gold", "brick", "sky", "plum"});
+    p["kind"] = str("Optional legend kind id — matches nodes wearing that kind's hue.");
+    p["query"] = str("Optional case-insensitive substring matched against each node's label and description.");
+    tools.append(tool("find_nodes",
+        "Search a roadmap's nodes. Every filter you set must match (AND): `color` or `kind` pin a hue, "
+        "`query` is a case-insensitive substring over label + description. Omit all filters to list every "
+        "node. Returns the matching nodes (same shape as get_tree) and a count.",
+        p, {"treeId"}));
+  }
+  {
+    Json::Value p(Json::objectValue);
+    p["treeId"] = str(treeId);
     p["label"] = str("The node's display label.");
     p["icon"] = str("Optional icon name/emoji.");
     p["color"] = enumStr("Optional branch color (default terracotta).",
                          {"terracotta", "olive", "gold", "brick", "sky", "plum"});
-    p["parentId"] = str("Optional prerequisite: an existing node that unlocks this one.");
+    p["prerequisites"] = strArray("Optional ids of existing nodes that unlock this one — one edge per id.");
+    p["parentId"] = str("Optional single prerequisite (a convenience alias folded into prerequisites).");
     p["x"] = num("Optional canvas x.");
     p["y"] = num("Optional canvas y.");
+    p["description"] = str("Optional annotation body — notes about the node.");
+    p["links"] = linkArray("Optional external references (docs, PRs, designs).");
     p["id"] = str("Optional explicit id; minted from the label if omitted.");
     tools.append(tool("create_node",
-        "Add a node to the roadmap. Only `label` is required; icon, color, position (x,y) and a "
-        "parentId (a prerequisite that unlocks this node) are optional. Returns the node id.",
+        "Add a node to the roadmap. Only `label` is required; icon, color, position (x,y), a set of "
+        "`prerequisites` (nodes that unlock this one), a `description`, and `links` are optional. "
+        "Returns the node id.",
         p, {"treeId", "label"}));
+  }
+  {
+    Json::Value p(Json::objectValue);
+    p["treeId"] = str(treeId);
+    p["id"] = str("The node id.");
+    p["description"] = str("The annotation body (omit to leave it unchanged).");
+    p["links"] = linkArray("The node's external references — replaces the existing set (omit to leave unchanged).");
+    tools.append(tool("annotate_node",
+        "Set a node's free annotation: its `description` and/or `links`. Each field is optional — an "
+        "omitted field is left untouched; `links` replaces the whole set when given.",
+        p, {"treeId", "id"}));
   }
   {
     Json::Value p(Json::objectValue);
@@ -403,10 +613,12 @@ Json::Value RoadmapTools::listTools() const {
     p["treeId"] = str(treeId);
     p["id"] = str("The kind id (stable, unique within the tree's legend).");
     p["hue"] = enumStr("The kind's hue — unique per kind; at most 6 kinds per tree.", kHues);
+    p["label"] = str("Optional label (≤24 chars) — set inline so the kind lands in one op.");
+    p["description"] = str("Optional description (≤80 chars) — the generator's sorting brief.");
     tools.append(tool("add_kind",
         "Add a legend kind: a named, described hue. The hue must be free (unique per kind) and the "
-        "legend must have fewer than 6 kinds. Label/description start empty — set them with "
-        "rename_kind / describe_kind.",
+        "legend must have fewer than 6 kinds. `label` and `description` may be set inline, or later "
+        "with rename_kind / describe_kind.",
         p, {"treeId", "id", "hue"}));
   }
   {
@@ -450,14 +662,60 @@ Json::Value RoadmapTools::listTools() const {
         p, {"treeId", "id", "hue"}));
   }
   {
+    Json::Value update(Json::objectValue);
+    update["type"] = "object";
+    Json::Value updateFields(Json::objectValue);
+    updateFields["nodeId"] = str("The node id.");
+    updateFields["status"] = enumStr("active, complete, or none (clear).", {"active", "complete", "none"});
+    update["properties"] = updateFields;
+    Json::Value updateRequired(Json::arrayValue);
+    updateRequired.append("nodeId");
+    updateRequired.append("status");
+    update["required"] = updateRequired;
+
     Json::Value p(Json::objectValue);
     p["treeId"] = str(treeId);
-    p["nodeId"] = str("The node id.");
+    p["nodeId"] = str("The node id (singular form).");
     p["status"] = enumStr("active, complete, or none (clear).", {"active", "complete", "none"});
+    Json::Value updates(Json::objectValue);
+    updates["type"] = "array";
+    updates["items"] = update;
+    updates["description"] = "Bulk form: a list of {nodeId, status}. Resolves order internally, so completing "
+                             "a subtree out of dependency order no longer misreports prerequisitesMet.";
+    p["updates"] = updates;
     tools.append(tool("set_progress",
-        "Set the caller's progress on a node. Advisory only — marking complete with unmet "
-        "prerequisites still records and reports prerequisitesMet:false.",
-        p, {"treeId", "nodeId", "status"}));
+        "Set the caller's progress. Pass a single `nodeId`+`status`, or a bulk `updates` list. Unknown "
+        "node ids are rejected (no orphan rows). Advisory only — marking complete with unmet "
+        "prerequisites still records and reports prerequisitesMet:false, judged against the committed "
+        "batch (not each write's instant).",
+        p, {"treeId"}));
+  }
+  {
+    Json::Value p(Json::objectValue);
+    p["treeId"] = str(treeId);
+    p["nodes"] = strArray("The nodes to import — each {id, label, icon?, color?, prerequisites?, "
+                          "description?, links?}, the same shape get_tree returns.");
+    p["kinds"] = strArray("Optional legend kinds — each {id, hue, label?, description?}. Omit to leave "
+                          "the legend untouched.");
+    p["progress"] = strArray("Optional carried progress — a list of {nodeId, status} applied over the "
+                             "imported nodes (unknown ids skipped).");
+    p["dryRun"] = boolean("If true, report collisions and change nothing.");
+    tools.append(tool("import_subgraph",
+        "Bulk-apply a whole roadmap slice in one op — the shape get_tree returns ({title?, nodes[], "
+        "kinds[]}, plus optional progress[]). Upsert by id: an incoming id already present is "
+        "overwritten (reported in nodeCollisions/kindCollisions), a new id is added; nothing is removed. "
+        "Pass dryRun to preview the collisions first. This collapses hundreds of create/connect calls "
+        "into one.",
+        p, {"treeId", "nodes"}));
+  }
+  {
+    Json::Value p(Json::objectValue);
+    p["treeId"] = str(treeId);
+    tools.append(tool("prune",
+        "Garbage-collect the roadmap: drop dangling and self edges (edges no valid DAG keeps) in one "
+        "op, and clear the caller's progress rows for nodes no longer in the tree. Returns how many of "
+        "each it removed.",
+        p, {"treeId"}));
   }
 
   return tools;
@@ -476,8 +734,13 @@ ToolResult RoadmapTools::callTool(const std::string& name, const Json::Value& ar
   if (name == "get_diagnostics") return readDiagnostics(registry_, tree);
   if (name == "get_health")      return readHealth(registry_, tree);
   if (name == "get_progress")    return readProgress(progress_, tree, caller);
+  if (name == "find_nodes")      return findNodes(registry_, tree, arguments);
   if (name == "set_progress")
     return writeProgress(registry_, progress_, bus_, tree, arguments, clock_, caller);
+  if (name == "import_subgraph")
+    return importSubgraph(registry_, progress_, bus_, tree, arguments, clock_, caller);
+  if (name == "prune")
+    return pruneTree(registry_, progress_, tree, clock_, caller);
 
   if (std::optional<std::string> kind = commandKindFor(name))
     return applyEdit(registry_, tree, *kind, arguments, clock_, caller, name == "create_node");

@@ -50,4 +50,4 @@ Keep a running log of such observations in .md file and execute ones you find mo
 
 If you seek for an advice, you can spin up an agent that has no access to the code, so he can give you unbiased advice on architecture or ideas
 
-Keep the running log of product progress in the Windmill dogfood tree (id t_9362d9bc883e0a1e) via the windmill MCP — create/connect nodes for new work and set_progress as it lands; inspect with get_tree/get_diagnostics. (Replaces the old src/skilltree/mock/roadmapTree.js log, now dumped into the tree.)
+Keep the running log of product progress in the Windmill dogfood tree (id t_9362d9bc883e0a1e) via the windmill MCP — create/connect nodes for new work and set_progress as it lands; inspect with get_tree/get_diagnostics. Every node you plant carries a description — a sentence or two on what the work is and why — passed inline to create_node, or backfilled with annotate_node. (Replaces the old src/skilltree/mock/roadmapTree.js log, now dumped into the tree.)

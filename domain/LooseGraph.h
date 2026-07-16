@@ -20,6 +20,8 @@ struct NodeRecord {
   Lww<NodeColor> color;
   Lww<std::optional<Vec2>> position;
   Lww<std::optional<std::string>> status;  // opaque authoring seed, round-tripped
+  Lww<std::string> description;            // free annotation body
+  Lww<std::vector<Link>> links;            // external references, the list as one register
 };
 
 // The authoritative, possibly-invalid state of one tree. Every command merges into it;
@@ -44,6 +46,8 @@ public:
   void setLabel(const NodeId& id, const std::string& label, const Hlc& at);
   void setColor(const NodeId& id, NodeColor color, const Hlc& at);
   void setPosition(const NodeId& id, const Vec2& position, const Hlc& at);
+  void setDescription(const NodeId& id, const std::string& description, const Hlc& at);
+  void setLinks(const NodeId& id, const std::vector<Link>& links, const Hlc& at);
   void addEdge(const NodeId& from, const NodeId& to, const Hlc& at);
   void removeEdge(const NodeId& from, const NodeId& to, const Hlc& at);
 
@@ -63,9 +67,16 @@ public:
   std::vector<Edge> presentEdges() const;
   std::vector<Edge> liveEdges() const;
   std::vector<Edge> redundantEdges() const;
+  // Present edges no valid DAG keeps: a self-edge, or one whose endpoint is absent (never
+  // created, or tombstoned). The prune set — removing them leaves the live graph unchanged.
+  std::vector<Edge> danglingEdges() const;
 
   TreeData toTreeData(const TreeId& id, const std::string& title) const;
   GraphState exportState() const;
+  // One entry's full CRDT state, for sparse persistence: a save writes only the entries a
+  // write touched, and these read them out one by one. nullopt for a never-seen key.
+  std::optional<NodeStateEntry> exportNode(const NodeId& id) const;
+  std::optional<EdgeStateEntry> exportEdge(const Edge& edge) const;
 
 private:
   static constexpr std::size_t kMaxReductionNodes = 1500;  // reduction is optional cleanup; skip above this

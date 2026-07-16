@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <stdexcept>
+#include <tuple>
 
 namespace wm {
 
@@ -41,11 +42,13 @@ void RoomRegistry::evict(const TreeId& id) {
   std::lock_guard<std::mutex> lock(mutex_);
   auto it = rooms_.find(id);
   if (it == rooms_.end()) return;
-  repo_.save(id, it->second->exportState(), it->second->exportLegend(), it->second->title(), it->second->head());
+  auto [state, legend] = it->second->dirtyState();
+  repo_.save(id, state, legend, it->second->title(), it->second->head());
   rooms_.erase(it);
 }
 
 void RoomRegistry::persist(const TreeId& id) {
+  TreeRoom* room = nullptr;
   GraphState state;
   LegendState legend;
   std::string title;
@@ -54,12 +57,15 @@ void RoomRegistry::persist(const TreeId& id) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = rooms_.find(id);
     if (it == rooms_.end()) return;
-    state = it->second->exportState();
-    legend = it->second->exportLegend();
-    title = it->second->title();
-    head = it->second->head();
+    room = it->second.get();
+    std::tie(state, legend) = room->dirtyState();  // only what changed since the last save
+    title = room->title();
+    head = room->head();
   }
-  repo_.save(id, state, legend, title, head);  // I/O outside the map lock
+  // I/O outside the map lock. The caller holds the tree's strand, so the room can neither
+  // take new writes nor be evicted between the export above and the markClean below.
+  repo_.save(id, state, legend, title, head);
+  room->markClean();
 }
 
 void RoomRegistry::claim(const TreeId& id, const UserId& owner) {

@@ -6,8 +6,10 @@
 
 namespace wm {
 
-// Stores each tree as a single jsonb document row. A connection is opened per call —
-// simple and correct for Phase 0; a pool is the obvious later optimization.
+// Stores a tree's lattice as per-entry rows (tree_nodes / tree_edges / tree_kinds), so a
+// save upserts only the slice it is given — never the whole tree through MVCC. Legacy
+// document-blob trees are backfilled into rows on first load. A connection is opened per
+// call — simple and correct for Phase 0; a pool is the obvious later optimization.
 class PgTreeRepository : public TreeRepository {
 public:
   explicit PgTreeRepository(std::string connString);

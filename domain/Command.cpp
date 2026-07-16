@@ -23,7 +23,13 @@ void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc&
     [&](const RepositionNode& c) { graph.setPosition(c.id, c.position, at); },
     [&](const CreateNode& c) {
       graph.createNode(c.id, c.label, c.icon, c.color, c.position, at);
-      if (c.parent) graph.addEdge(*c.parent, c.id, at);
+      if (!c.description.empty()) graph.setDescription(c.id, c.description, at);
+      if (!c.links.empty()) graph.setLinks(c.id, c.links, at);
+      for (const NodeId& prereq : c.prerequisites) graph.addEdge(prereq, c.id, at);
+    },
+    [&](const AnnotateNode& c) {
+      if (c.description) graph.setDescription(c.id, *c.description, at);
+      if (c.links) graph.setLinks(c.id, *c.links, at);
     },
     [&](const AddEdge& c) { graph.addEdge(c.from, c.to, at); },
     [&](const RemoveEdge& c) { graph.removeEdge(c.from, c.to, at); },
@@ -35,9 +41,16 @@ void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc&
     [&](const TransitiveReduction&) {
       for (const auto& edge : graph.redundantEdges()) graph.removeEdge(edge.from, edge.to, at);
     },
+    [&](const PruneDangling&) {
+      for (const auto& edge : graph.danglingEdges()) graph.removeEdge(edge.from, edge.to, at);
+    },
     [&](const RenameKind& c) { legend.setLabel(c.id, c.label, at); },
     [&](const DescribeKind& c) { legend.setDescription(c.id, c.description, at); },
-    [&](const AddKind& c) { legend.addKind(c.id, c.hue, at); },
+    [&](const AddKind& c) {
+      legend.addKind(c.id, c.hue, at);
+      if (!c.label.empty()) legend.setLabel(c.id, c.label, at);
+      if (!c.description.empty()) legend.setDescription(c.id, c.description, at);
+    },
     [&](const RemoveKind& c) { legend.removeKind(c.id, at); },
     [&](const ReorderKinds& c) { legend.reorder(c.order, at); },
     [&](const RecolorKind& c) {
@@ -55,16 +68,33 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
     if (id.str().size() > kMaxIdLength) return "node id is too long (max 128 characters)";
     return std::nullopt;
   };
+  auto annotationBounds = [](const std::string* description,
+                             const std::vector<Link>* links) -> std::optional<std::string> {
+    if (description && description->size() > kMaxNodeDescriptionLength)
+      return "description is too long (max 4000 characters)";
+    if (!links) return std::nullopt;
+    if (links->size() > kMaxNodeLinks) return "too many links (max 32)";
+    for (const Link& link : *links) {
+      if (link.url.size() > kMaxLinkUrlLength) return "a link url is too long (max 2048 characters)";
+      if (link.label.size() > kMaxLinkLabelLength) return "a link label is too long (max 200 characters)";
+    }
+    return std::nullopt;
+  };
   return std::visit(overloaded{
     [&](const CreateNode& c) -> std::optional<std::string> {
       if (auto bad = idBounds(c.id)) return bad;
       if (c.label.size() > kMaxNodeLabelLength) return "label is too long (max 200 characters)";
       if (c.icon.size() > kMaxIconLength) return "icon is too long (max 64 characters)";
+      if (auto bad = annotationBounds(&c.description, &c.links)) return bad;
       if (c.position && !(std::isfinite(c.position->x) && std::isfinite(c.position->y)))
         return "position is not finite";
       if (!graph.hasNode(c.id) && graph.presentNodeIds().size() >= kMaxNodes)
         return "tree is at node capacity";
       return std::nullopt;
+    },
+    [&](const AnnotateNode& c) -> std::optional<std::string> {
+      if (auto bad = idBounds(c.id)) return bad;
+      return annotationBounds(c.description ? &*c.description : nullptr, c.links ? &*c.links : nullptr);
     },
     [&](const RenameNode& c) -> std::optional<std::string> {
       if (auto bad = idBounds(c.id)) return bad;
@@ -109,6 +139,8 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
       if (legend.has(c.id)) return "kind already exists";
       if (legend.size() >= kMaxKinds) return "the legend is full (max 6 kinds)";
       if (legend.ownerOf(c.hue)) return "that hue already belongs to another kind";
+      if (c.label.size() > kMaxLabelLength) return "label is too long (max 24 characters)";
+      if (c.description.size() > kMaxDescriptionLength) return "description is too long (max 80 characters)";
       return std::nullopt;
     },
     [&](const RemoveKind& c) -> std::optional<std::string> {
@@ -129,7 +161,7 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
 
 std::optional<Command> headline(const GraphState& graph, const LegendState& legend) {
   for (const NodeStateEntry& n : graph.nodes)
-    if (n.createdAt.isSet()) return CreateNode{n.id, n.label, n.icon, n.color, std::nullopt, n.position};
+    if (n.createdAt.isSet()) return CreateNode{n.id, n.label, n.icon, n.color, {}, n.position, n.description, n.links};
   for (const NodeStateEntry& n : graph.nodes)
     if (n.deletedAt.isSet()) return DeleteNode{n.id};
   for (const KindStateEntry& k : legend.kinds)
@@ -146,6 +178,11 @@ std::optional<Command> headline(const GraphState& graph, const LegendState& lege
     if (n.labelAt.isSet()) return RenameNode{n.id, n.label};
   for (const NodeStateEntry& n : graph.nodes)
     if (n.colorAt.isSet()) return SetNodeColor{n.id, n.color};
+  for (const NodeStateEntry& n : graph.nodes)
+    if (n.descriptionAt.isSet() || n.linksAt.isSet())
+      return AnnotateNode{n.id,
+                          n.descriptionAt.isSet() ? std::optional<std::string>(n.description) : std::nullopt,
+                          n.linksAt.isSet() ? std::optional<std::vector<Link>>(n.links) : std::nullopt};
   for (const EdgeStateEntry& e : graph.edges)
     if (e.addedAt.isSet()) return AddEdge{e.edge.from, e.edge.to};
   for (const EdgeStateEntry& e : graph.edges)

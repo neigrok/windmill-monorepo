@@ -41,22 +41,46 @@ transports wrap it; both speak JSON-RPC 2.0, protocol version `2025-06-18`:
   - The `Origin` header is validated (DNS-rebinding protection); `/healthz` is a liveness
     probe. No server→client streaming is used because every tool is synchronous.
 
-## Tools (14)
+## Tools
 
 | | Tool | Effect |
 | --- | --- | --- |
-| read | `get_tree` | title + nodes + prerequisite edges + current seq |
+| registry | `create_tree` · `list_trees` · `delete_tree` | plant / discover / soft-delete a roadmap you own |
+| read | `get_tree` | title + nodes (label, icon, color, position, description, links) + edges + seq |
 | read | `get_diagnostics` | cycles / dangling / self-edges / smells |
 | read | `get_health` | tidiness metrics + 0–100 score (needs a valid DAG) |
 | read | `get_progress` | the caller's completed / in-progress node ids |
-| edit | `create_node` | add a node (mints a slug id from the label if none given) |
+| read | `find_nodes` | search nodes by `color`/`kind` and/or a `query` substring (label + description) |
+| edit | `create_node` | add a node — `prerequisites[]`, `description`, `links` all optional |
+| edit | `annotate_node` | set a node's `description` and/or `links` |
 | edit | `rename_node` · `set_node_color` · `move_node` | Class A content edits |
 | edit | `connect` · `disconnect` · `reconnect` | prerequisite-edge edits |
-| edit | `delete_node` · `tidy` | tombstone / transitive reduction |
-| write | `set_progress` | per-user overlay: active / complete / none |
+| edit | `delete_node` · `tidy` · `prune` | tombstone / transitive reduction / GC dangling edges + orphan progress |
+| edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame |
+| legend | `add_kind` (inline label+description) · `rename_kind` · `describe_kind` · `remove_kind` · `reorder_kinds` · `recolor_kind` | the legend |
+| write | `set_progress` | per-user overlay: single `nodeId`+`status`, or a bulk `updates[]` (order-safe) |
 
-Every tool takes `treeId`. Edits return `{applied, seq, opId, diagnosticsClean}` so the agent
-learns immediately whether its change kept the graph valid (nothing is ever rejected).
+Every tree-scoped tool takes `treeId`. Edits return `{applied, seq, diagnosticsClean}` so the
+agent learns immediately whether its change kept the graph valid (nothing is ever rejected).
+
+### Bulk & ergonomics
+
+- **`import_subgraph`** takes the exact JSON `get_tree` returns (`{title?, nodes[], kinds[]}`,
+  plus an optional `progress[]`) and applies it in **one** op via the subgraph CRDT graft path.
+  It is **upsert by id**: an incoming id already present is overwritten and reported in
+  `nodeCollisions`/`kindCollisions`; a new id is added; nothing is removed. Pass `dryRun: true`
+  to preview the collisions and change nothing. This collapses hundreds of `create_node` +
+  `connect` + `set_progress` calls into a single call.
+- **`set_progress`** accepts a bulk `updates[]` and evaluates the `prerequisitesMet` advisory
+  against the **committed batch**, so completing a subtree out of dependency order no longer
+  misreports. Unknown node ids are rejected, so no orphan overlay rows are ever created.
+- **`prune`** GCs a tree: it drops dangling/self edges in one op and clears the caller's
+  progress rows for nodes no longer in the tree.
+- **`add_kind`** seeds `label` + `description` inline, so a legend entry lands in one op.
+- **`find_nodes`** searches without pulling the whole tree: `color` or `kind` pins a hue
+  (a node's color *is* its kind), `query` is a case-insensitive substring over label +
+  description, and every set filter must match (AND). Backed by the pure `selectNodes`
+  read-model (`domain/NodeQuery`).
 
 ## Build
 

@@ -89,9 +89,18 @@ struct Edge {
   auto operator<=>(const Edge&) const = default;
 };
 
+// An external reference hung off a node — a doc, a PR, a design. `label` is the display
+// text (empty = show the url); `url` is the href.
+struct Link {
+  std::string label;
+  std::string url;
+  bool operator==(const Link&) const = default;
+};
+
 // The wire/persist shape of a node: `from -> id` edges live as `prerequisites`.
 // `status` is an opaque authoring-time seed (§2) the server round-trips but never acts
-// on — runtime status is the per-user Progress overlay.
+// on — runtime status is the per-user Progress overlay. `description` and `links` are the
+// node's free annotation: a body of notes and a set of external references.
 struct NodeSpec {
   NodeId id;
   std::string label;
@@ -100,6 +109,8 @@ struct NodeSpec {
   std::vector<NodeId> prerequisites;
   std::optional<Vec2> position;
   std::optional<std::string> status;
+  std::string description;
+  std::vector<Link> links;
 };
 
 // A legend entry: a named, described hue. A node's `color` field *is* its kind — it

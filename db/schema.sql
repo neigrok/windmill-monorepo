@@ -1,6 +1,7 @@
--- Windmill backend schema. The tree document (trees.document jsonb) is the source of
--- truth; tree_ops is append-only history. Phase 0 uses trees + node_progress only;
--- the rest is created ahead for later phases.
+-- Windmill backend schema. A tree's lattice lives as per-entry rows (tree_nodes /
+-- tree_edges / tree_kinds) so an edit writes only the rows it touched; tree_ops is
+-- append-only history. trees.document is the legacy whole-tree jsonb snapshot, read only
+-- to backfill rows on a tree's first post-migration open.
 --
 -- Ids are text, matching the domain's string ids (node ids like "renderer", tree slugs
 -- like "windmill-roadmap"). Server-minted uuid ids + slugs arrive with accounts (§13).
@@ -37,7 +38,9 @@ create table if not exists org_members (
   primary key (org_id, user_id)
 );
 
--- trees: the document IS the source of truth (loose-graph state; Phase 0 = projected TreeData)
+-- trees: title, ownership and the snapshot head. `document` is the legacy jsonb blob —
+-- superseded by the per-entry tables below; kept until every tree's rows are backfilled,
+-- then droppable.
 create table if not exists trees (
   id          text primary key,
   org_id      uuid,
@@ -54,6 +57,61 @@ create table if not exists trees (
 
 -- the registry list: a caller's live (not soft-deleted) trees, keyed by owner
 create index if not exists trees_owner on trees (owner_id) where deleted_at is null;
+
+-- The tree lattice, one row per CRDT entry. An edit upserts only the rows it touched —
+-- the old whole-document write pushed the entire tree (descriptions can be KBs per node)
+-- through MVCC/TOAST/WAL on every single edit. Rows are never deleted by a save: the
+-- lattice is entry-grow-only (a delete is a tombstone stamp), so saves are pure upserts.
+-- Stamps are the canonical HLC text ("physicalMs:counter:actor", '' = unset); they are
+-- never compared in SQL — `present` is computed by the writer for read-side projections.
+create table if not exists tree_nodes (
+  tree_id         text not null,
+  node_id         text not null,
+  created_hlc     text not null default '',
+  deleted_hlc     text not null default '',
+  label           text not null default '',
+  label_hlc       text not null default '',
+  icon            text not null default '',
+  icon_hlc        text not null default '',
+  color           text not null default 'terracotta',
+  color_hlc       text not null default '',
+  pos_x           double precision,
+  pos_y           double precision,
+  pos_hlc         text not null default '',
+  status          text,
+  status_hlc      text not null default '',
+  description     text not null default '',
+  description_hlc text not null default '',
+  links           jsonb not null default '[]'::jsonb,
+  links_hlc       text not null default '',
+  present         boolean not null default false,
+  primary key (tree_id, node_id)
+);
+
+create table if not exists tree_edges (
+  tree_id     text not null,
+  from_id     text not null,
+  to_id       text not null,
+  added_hlc   text not null default '',
+  removed_hlc text not null default '',
+  primary key (tree_id, from_id, to_id)
+);
+
+create table if not exists tree_kinds (
+  tree_id         text not null,
+  kind_id         text not null,
+  created_hlc     text not null default '',
+  deleted_hlc     text not null default '',
+  hue             text not null default 'terracotta',
+  hue_hlc         text not null default '',
+  label           text not null default '',
+  label_hlc       text not null default '',
+  description     text not null default '',
+  description_hlc text not null default '',
+  rank            double precision not null default 0,
+  rank_hlc        text not null default '',
+  primary key (tree_id, kind_id)
+);
 
 -- append-only op log: activity, undo, reconnect replay (Phase 2)
 create table if not exists tree_ops (

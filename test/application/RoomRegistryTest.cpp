@@ -82,6 +82,28 @@ TEST(registry_persist_snapshots_full_state_without_evicting) {
   CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);
 }
 
+TEST(registry_persist_saves_only_the_dirty_slice_and_never_clobbers_the_rest) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  repo.byId["t"] = oneNodeTree();  // "seed" already stored
+  RoomRegistry registry(repo, log, bus);
+
+  TreeRoom& room = registry.open(tid());
+  room.applyCommand(createNode("added"), 10, uid());
+  registry.persist(tid());
+  CHECK_EQ(repo.savedNodeCounts.back(), 1u);       // the slice carried only "added"
+  CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);   // upsert kept "seed" alongside it
+
+  registry.persist(tid());                         // nothing dirtied since
+  CHECK_EQ(repo.savedNodeCounts.back(), 0u);       // an empty slice — just title/head
+  CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);
+
+  room.applyCommand(RenameNode{nid("added"), "Renamed"}, 11, uid());
+  registry.persist(tid());
+  CHECK_EQ(repo.savedNodeCounts.back(), 1u);       // only the renamed node again
+}
+
 TEST(registry_claim_sets_owner_once_and_is_durable) {
   FakeTreeRepository repo;
   FakeOpLog log;

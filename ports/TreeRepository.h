@@ -34,6 +34,11 @@ struct OwnedTree {
 struct TreeRepository {
   virtual ~TreeRepository() = default;
   virtual std::optional<StoredTree> load(const TreeId& tree) = 0;
+  // Upsert a slice of the tree's lattice: every entry given replaces its stored row (the
+  // caller — the room — is the single authority, so its values are always current), plus
+  // title and head. A sparse slice is the norm (just the entries dirtied since the last
+  // save); entries absent from the slice are left untouched, and a save never deletes a
+  // row — the lattice is entry-grow-only (a delete is a tombstone stamp on its entry).
   virtual void save(const TreeId& tree, const GraphState& state, const LegendState& legend,
                     const std::string& title, Seq head) = 0;
   // Insert a brand-new tree owned by `owner` — a fresh id, its starting document (graph +

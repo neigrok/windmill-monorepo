@@ -49,6 +49,22 @@ Json::Value with(const char* key, const char* value) {
   return args;
 }
 
+Json::Value node(const char* id, const char* label) {
+  Json::Value n(Json::objectValue);
+  n["id"] = id;
+  n["label"] = label;
+  return n;
+}
+
+Json::Value mark(const char* nodeId, const char* status) {
+  Json::Value m(Json::objectValue);
+  m["nodeId"] = nodeId;
+  m["status"] = status;
+  return m;
+}
+
+const Json::Value kNoArgs(Json::objectValue);
+
 }
 
 TEST(mcp_create_node_mints_a_slug_id_and_get_tree_shows_it) {
@@ -278,4 +294,262 @@ TEST(mcp_delete_tree_refuses_a_tree_you_dont_own_and_an_unknown_one) {
 
   CHECK(h.tools.callTool("delete_tree", with("treeId", "other"), h.caller).isError);  // not the owner
   CHECK(h.tools.callTool("delete_tree", with("treeId", "ghost"), h.caller).isError);  // no such tree
+}
+
+TEST(mcp_create_node_wires_prerequisites_description_and_links) {
+  Harness h;
+  h.call("create_node", node("a", "A"));
+  h.call("create_node", node("b", "B"));
+
+  Json::Value c(Json::objectValue);
+  c["id"] = "c";
+  c["label"] = "C";
+  Json::Value prereqs(Json::arrayValue);
+  prereqs.append("a");
+  prereqs.append("b");
+  c["prerequisites"] = prereqs;
+  c["description"] = "the payoff node";
+  Json::Value links(Json::arrayValue);
+  Json::Value link(Json::objectValue);
+  link["url"] = "https://spec";
+  link["label"] = "Spec";
+  links.append(link);
+  c["links"] = links;
+  CHECK_FALSE(h.call("create_node", c).isError);
+
+  ToolResult got = h.call("get_tree", kNoArgs);
+  const Json::Value& nodes = got.structured["tree"]["nodes"];
+  const Json::Value* cNode = nullptr;
+  for (const Json::Value& n : nodes) if (n["id"].asString() == "c") cNode = &n;
+  CHECK(cNode != nullptr);
+  CHECK_EQ((*cNode)["prerequisites"].size(), 2u);
+  CHECK_EQ((*cNode)["description"].asString(), std::string("the payoff node"));
+  CHECK_EQ((*cNode)["links"].size(), 1u);
+  CHECK_EQ((*cNode)["links"][0]["url"].asString(), std::string("https://spec"));
+  CHECK_EQ((*cNode)["links"][0]["label"].asString(), std::string("Spec"));
+}
+
+TEST(mcp_annotate_node_sets_and_leaves_untouched_fields_alone) {
+  Harness h;
+  h.call("create_node", node("a", "A"));
+
+  Json::Value describe(Json::objectValue);
+  describe["id"] = "a";
+  describe["description"] = "first pass";
+  CHECK_FALSE(h.call("annotate_node", describe).isError);
+
+  Json::Value linkOnly(Json::objectValue);
+  linkOnly["id"] = "a";
+  Json::Value links(Json::arrayValue);
+  links.append("https://only-a-url");  // a bare-string link is accepted
+  linkOnly["links"] = links;
+  CHECK_FALSE(h.call("annotate_node", linkOnly).isError);
+
+  ToolResult got = h.call("get_tree", kNoArgs);
+  const Json::Value& a = got.structured["tree"]["nodes"][0];
+  CHECK_EQ(a["description"].asString(), std::string("first pass"));  // survived the links-only update
+  CHECK_EQ(a["links"].size(), 1u);
+  CHECK_EQ(a["links"][0]["url"].asString(), std::string("https://only-a-url"));
+}
+
+TEST(mcp_add_kind_seeds_label_and_description_inline) {
+  Harness h;
+  Json::Value k(Json::objectValue);
+  k["id"] = "infra";
+  k["hue"] = "sky";
+  k["label"] = "Infra";
+  k["description"] = "platform work";
+  CHECK_FALSE(h.call("add_kind", k).isError);
+
+  ToolResult got = h.call("get_tree", kNoArgs);
+  const Json::Value& kind = got.structured["tree"]["kinds"][0];
+  CHECK_EQ(kind["label"].asString(), std::string("Infra"));
+  CHECK_EQ(kind["description"].asString(), std::string("platform work"));
+}
+
+TEST(mcp_import_subgraph_bulk_upserts_and_reports_collisions) {
+  Harness h;
+  h.call("create_node", node("a", "Old A"));  // will collide with the import
+
+  Json::Value nodeB = node("b", "B");
+  Json::Value prereqs(Json::arrayValue);
+  prereqs.append("a");
+  nodeB["prerequisites"] = prereqs;
+  Json::Value nodes(Json::arrayValue);
+  nodes.append(node("a", "New A"));
+  nodes.append(nodeB);
+  Json::Value args(Json::objectValue);
+  args["nodes"] = nodes;
+
+  ToolResult imported = h.call("import_subgraph", args);
+  CHECK_FALSE(imported.isError);
+  CHECK(imported.structured["imported"].asBool());
+  CHECK_EQ(imported.structured["nodes"].asInt(), 2);
+  CHECK_EQ(imported.structured["newNodes"].asInt(), 1);
+  CHECK_EQ(imported.structured["nodeCollisions"].size(), 1u);
+  CHECK_EQ(imported.structured["nodeCollisions"][0].asString(), std::string("a"));
+  CHECK(imported.structured["diagnosticsClean"].asBool());
+
+  ToolResult got = h.call("get_tree", kNoArgs);
+  const Json::Value& nodesOut = got.structured["tree"]["nodes"];
+  CHECK_EQ(nodesOut.size(), 2u);
+  for (const Json::Value& n : nodesOut) {
+    if (n["id"].asString() == "a") CHECK_EQ(n["label"].asString(), std::string("New A"));  // upserted
+    if (n["id"].asString() == "b") CHECK_EQ(n["prerequisites"][0].asString(), std::string("a"));
+  }
+}
+
+TEST(mcp_import_subgraph_dry_run_reports_without_applying) {
+  Harness h;
+  h.call("create_node", node("a", "A"));
+
+  Json::Value nodes(Json::arrayValue);
+  nodes.append(node("a", "shadow"));
+  nodes.append(node("c", "C"));
+  Json::Value args(Json::objectValue);
+  args["nodes"] = nodes;
+  args["dryRun"] = true;
+
+  ToolResult preview = h.call("import_subgraph", args);
+  CHECK_FALSE(preview.isError);
+  CHECK(preview.structured["dryRun"].asBool());
+  CHECK_EQ(preview.structured["newNodes"].asInt(), 1);
+  CHECK_EQ(preview.structured["nodeCollisions"].size(), 1u);
+  CHECK_FALSE(preview.structured.isMember("imported"));
+
+  ToolResult got = h.call("get_tree", kNoArgs);  // nothing changed
+  CHECK_EQ(got.structured["tree"]["nodes"].size(), 1u);
+  CHECK_EQ(got.structured["tree"]["nodes"][0]["label"].asString(), std::string("A"));
+}
+
+TEST(mcp_import_subgraph_applies_carried_progress_order_safe) {
+  Harness h;
+  Json::Value nodeB = node("b", "B");
+  Json::Value prereqs(Json::arrayValue);
+  prereqs.append("a");
+  nodeB["prerequisites"] = prereqs;
+  Json::Value nodes(Json::arrayValue);
+  nodes.append(node("a", "A"));
+  nodes.append(nodeB);
+
+  Json::Value progress(Json::arrayValue);
+  progress.append(mark("b", "complete"));  // b listed before its prerequisite a
+  progress.append(mark("a", "complete"));
+
+  Json::Value args(Json::objectValue);
+  args["nodes"] = nodes;
+  args["progress"] = progress;
+
+  ToolResult imported = h.call("import_subgraph", args);
+  CHECK_FALSE(imported.isError);
+  CHECK_EQ(imported.structured["progress"].size(), 2u);
+  for (const Json::Value& row : imported.structured["progress"])
+    if (row["nodeId"].asString() == "b") CHECK(row["prerequisitesMet"].asBool());  // judged on final state
+
+  ToolResult prog = h.call("get_progress", kNoArgs);
+  CHECK_EQ(prog.structured["completed"].size(), 2u);
+}
+
+TEST(mcp_set_progress_bulk_is_order_safe_and_reports_each) {
+  Harness h;
+  h.call("create_node", node("a", "A"));
+  Json::Value nodeB = node("b", "B");
+  nodeB["parentId"] = "a";
+  h.call("create_node", nodeB);
+
+  Json::Value updates(Json::arrayValue);
+  updates.append(mark("b", "complete"));  // out of dependency order
+  updates.append(mark("a", "complete"));
+  Json::Value args(Json::objectValue);
+  args["updates"] = updates;
+
+  ToolResult res = h.call("set_progress", args);
+  CHECK_FALSE(res.isError);
+  CHECK_EQ(res.structured["results"].size(), 2u);
+  for (const Json::Value& row : res.structured["results"])
+    if (row["nodeId"].asString() == "b") CHECK(row["prerequisitesMet"].asBool());  // §9: not misreported false
+}
+
+TEST(mcp_set_progress_rejects_an_unknown_node) {
+  Harness h;
+  CHECK(h.call("set_progress", mark("ghost", "complete")).isError);  // no orphan overlay row is born
+
+  Json::Value updates(Json::arrayValue);
+  updates.append(mark("ghost", "active"));
+  Json::Value args(Json::objectValue);
+  args["updates"] = updates;
+  CHECK(h.call("set_progress", args).isError);  // the batch form rejects it too
+}
+
+TEST(mcp_find_nodes_filters_by_color_kind_and_substring) {
+  Harness h;
+  Json::Value renderer = node("renderer", "WebGL2 Renderer");
+  renderer["color"] = "sky";
+  renderer["description"] = "hand-rolled GL";
+  h.call("create_node", renderer);
+  Json::Value camera = node("camera", "Pan & Zoom");
+  camera["color"] = "sky";
+  h.call("create_node", camera);
+  Json::Value domain = node("domain", "DAG Domain");
+  domain["color"] = "brick";
+  h.call("create_node", domain);
+  Json::Value kind(Json::objectValue);
+  kind["id"] = "frontend";
+  kind["hue"] = "sky";
+  h.call("add_kind", kind);
+
+  ToolResult byColor = h.call("find_nodes", with("color", "sky"));
+  CHECK_FALSE(byColor.isError);
+  CHECK_EQ(byColor.structured["count"].asInt(), 2);
+  CHECK_EQ(byColor.structured["nodes"].size(), 2u);
+
+  ToolResult byKind = h.call("find_nodes", with("kind", "frontend"));  // frontend → sky
+  CHECK_EQ(byKind.structured["count"].asInt(), 2);
+
+  ToolResult byQuery = h.call("find_nodes", with("query", "webgl"));  // case-insensitive over label
+  CHECK_EQ(byQuery.structured["count"].asInt(), 1);
+  CHECK_EQ(byQuery.structured["nodes"][0]["id"].asString(), std::string("renderer"));
+
+  ToolResult byDescription = h.call("find_nodes", with("query", "hand-rolled"));
+  CHECK_EQ(byDescription.structured["count"].asInt(), 1);
+  CHECK_EQ(byDescription.structured["nodes"][0]["id"].asString(), std::string("renderer"));
+
+  Json::Value combined(Json::objectValue);
+  combined["color"] = "sky";
+  combined["query"] = "zoom";
+  ToolResult both = h.call("find_nodes", combined);  // AND: sky and matches "zoom"
+  CHECK_EQ(both.structured["count"].asInt(), 1);
+  CHECK_EQ(both.structured["nodes"][0]["id"].asString(), std::string("camera"));
+
+  CHECK(h.call("find_nodes", with("color", "chartreuse")).isError);  // unknown color rejected
+}
+
+TEST(mcp_prune_clears_dangling_edges_and_orphan_progress) {
+  Harness h;
+  h.call("create_node", node("a", "A"));
+  h.call("create_node", node("b", "B"));
+  Json::Value edge(Json::objectValue);
+  edge["from"] = "a";
+  edge["to"] = "b";
+  h.call("connect", edge);
+  Json::Value toGhost(Json::objectValue);
+  toGhost["from"] = "a";
+  toGhost["to"] = "ghost";  // an edge to a node that does not exist
+  h.call("connect", toGhost);
+
+  h.call("set_progress", mark("a", "complete"));
+  h.call("set_progress", mark("b", "active"));
+  h.call("delete_node", with("id", "b"));  // b's overlay row and the a->b edge are now orphaned
+
+  ToolResult pruned = h.call("prune", kNoArgs);
+  CHECK_FALSE(pruned.isError);
+  CHECK_EQ(pruned.structured["prunedEdges"].asInt(), 2);     // a->ghost dangling + a->b (b tombstoned)
+  CHECK_EQ(pruned.structured["prunedProgress"].asInt(), 1);  // b's orphaned overlay row
+  CHECK(pruned.structured["diagnosticsClean"].asBool());
+
+  ToolResult diag = h.call("get_diagnostics", kNoArgs);
+  CHECK(diag.structured["dangling"].empty());
+  ToolResult prog = h.call("get_progress", kNoArgs);
+  CHECK_EQ(prog.structured["completed"].size(), 1u);  // a remains; b's row gone
+  CHECK(prog.structured["inProgress"].empty());
 }

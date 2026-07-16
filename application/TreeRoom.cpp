@@ -32,6 +32,7 @@ std::optional<Seq> TreeRoom::joinSubgraph(const Subgraph& incoming, const UserId
   }
   graph_.join(incoming.graph);
   legend_.join(incoming.legend);
+  markDirty(incoming.graph, incoming.legend);
   ++head_;
   // Record the headline deed so a browser edit reaches the activity feed exactly as an agent's
   // does — one op per frame at the seq the frame just took, keyed on the frameId so a re-gossip
@@ -56,8 +57,21 @@ Seq TreeRoom::applyCommand(const Command& command, std::uint64_t nowMs, const Us
   produced.frameId = frameId;
   produced.actor = stamp.actor;
   produced.intent = SubgraphIntent::live;
+  markDirty(produced.graph, produced.legend);  // the broadcast delta is exactly the write's footprint
   bus_.broadcastSubgraph(id_, op.seq, produced);
   return op.seq;
+}
+
+Seq TreeRoom::importTree(const TreeData& incoming, std::uint64_t nowMs, const UserId& actor) {
+  Hlc at = clock_.tick(nowMs);  // one dominating stamp for the whole graft — an upsert by id
+  Subgraph frame;
+  frame.treeId = id_;
+  frame.frameId = "srv-import-" + toString(at);
+  frame.actor = at.actor;
+  frame.intent = SubgraphIntent::graft;  // state joined for its own sake — an import (§ Subgraph)
+  frame.graph = LooseGraph(incoming, at).exportState();
+  if (!incoming.kinds.empty()) frame.legend = Legend(incoming.kinds, at).exportState();
+  return joinSubgraph(frame, actor).value_or(head_);
 }
 
 std::optional<std::string> TreeRoom::validate(const Command& command) const {
@@ -69,6 +83,33 @@ void TreeRoom::replay(const AppliedOp& op) {
   clock_.observe(op.hlc);  // the op-log tail advances the clock past every stamp it replays
   merge(graph_, legend_, op.command, op.hlc);
   head_ = op.seq;
+  allDirty_ = true;  // the snapshot is behind the log; the next save writes the full state
+}
+
+void TreeRoom::markDirty(const GraphState& graph, const LegendState& legend) {
+  for (const NodeStateEntry& node : graph.nodes) dirtyNodes_.insert(node.id);
+  for (const EdgeStateEntry& edge : graph.edges) dirtyEdges_.insert(edge.edge);
+  for (const KindStateEntry& kind : legend.kinds) dirtyKinds_.insert(kind.id);
+}
+
+std::pair<GraphState, LegendState> TreeRoom::dirtyState() const {
+  if (allDirty_) return {graph_.exportState(), legend_.exportState()};
+  GraphState graph;
+  LegendState legend;
+  for (const NodeId& id : dirtyNodes_)
+    if (std::optional<NodeStateEntry> entry = graph_.exportNode(id)) graph.nodes.push_back(std::move(*entry));
+  for (const Edge& edge : dirtyEdges_)
+    if (std::optional<EdgeStateEntry> entry = graph_.exportEdge(edge)) graph.edges.push_back(std::move(*entry));
+  for (const KindId& id : dirtyKinds_)
+    if (std::optional<KindStateEntry> entry = legend_.exportKind(id)) legend.kinds.push_back(std::move(*entry));
+  return {std::move(graph), std::move(legend)};
+}
+
+void TreeRoom::markClean() {
+  dirtyNodes_.clear();
+  dirtyEdges_.clear();
+  dirtyKinds_.clear();
+  allDirty_ = false;
 }
 
 TreeDiagnostics TreeRoom::diagnose() const {
@@ -84,6 +125,10 @@ TreeData TreeRoom::snapshot() const {
 std::vector<NodeId> TreeRoom::prerequisitesOf(const NodeId& node) const {
   std::optional<NodeSpec> view = graph_.nodeView(node);
   return view ? std::move(view->prerequisites) : std::vector<NodeId>{};
+}
+
+bool TreeRoom::hasNode(const NodeId& node) const {
+  return graph_.hasNode(node);
 }
 
 GraphState TreeRoom::exportState() const {

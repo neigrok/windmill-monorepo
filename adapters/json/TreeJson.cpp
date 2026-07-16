@@ -19,32 +19,57 @@ std::string hlcText(const Hlc& at) { return toString(at); }
 Hlc hlcFromText(const std::string& text) { return parseHlc(text); }
 }
 
+Json::Value linksToJson(const std::vector<Link>& links) {
+  Json::Value array(Json::arrayValue);
+  for (const Link& link : links) {
+    Json::Value value(Json::objectValue);
+    value["url"] = link.url;
+    if (!link.label.empty()) value["label"] = link.label;
+    array.append(value);
+  }
+  return array;
+}
+
+std::vector<Link> linksFromJson(const Json::Value& array) {
+  std::vector<Link> links;
+  if (!array.isArray()) return links;
+  for (const Json::Value& value : array) {
+    if (value.isString()) links.push_back(Link{"", value.asString()});
+    else if (value.isObject()) links.push_back(Link{value.get("label", "").asString(), value.get("url", "").asString()});
+  }
+  return links;
+}
+
+Json::Value nodeToJson(const NodeSpec& node) {
+  Json::Value n(Json::objectValue);
+  n["id"] = node.id.str();
+  n["label"] = node.label;
+  n["icon"] = node.icon;
+  n["color"] = std::string(toString(node.color));
+
+  Json::Value prerequisites(Json::arrayValue);
+  for (const NodeId& prereq : node.prerequisites) prerequisites.append(prereq.str());
+  n["prerequisites"] = prerequisites;
+
+  if (node.position) {
+    Json::Value position(Json::objectValue);
+    position["x"] = node.position->x;
+    position["y"] = node.position->y;
+    n["position"] = position;
+  }
+  if (node.status) n["status"] = *node.status;
+  if (!node.description.empty()) n["description"] = node.description;
+  if (!node.links.empty()) n["links"] = linksToJson(node.links);
+  return n;
+}
+
 Json::Value toJson(const TreeData& data) {
   Json::Value root(Json::objectValue);
   root["id"] = data.id.str();
   root["title"] = data.title;
 
   Json::Value nodes(Json::arrayValue);
-  for (const NodeSpec& node : data.nodes) {
-    Json::Value n(Json::objectValue);
-    n["id"] = node.id.str();
-    n["label"] = node.label;
-    n["icon"] = node.icon;
-    n["color"] = std::string(toString(node.color));
-
-    Json::Value prerequisites(Json::arrayValue);
-    for (const NodeId& prereq : node.prerequisites) prerequisites.append(prereq.str());
-    n["prerequisites"] = prerequisites;
-
-    if (node.position) {
-      Json::Value position(Json::objectValue);
-      position["x"] = node.position->x;
-      position["y"] = node.position->y;
-      n["position"] = position;
-    }
-    if (node.status) n["status"] = *node.status;
-    nodes.append(n);
-  }
+  for (const NodeSpec& node : data.nodes) nodes.append(nodeToJson(node));
   root["nodes"] = nodes;
 
   Json::Value kinds(Json::arrayValue);
@@ -136,6 +161,8 @@ TreeData treeFromJson(const Json::Value& root, const TreeId& id) {
       node.position = position;
     }
     if (n.isMember("status") && n["status"].isString()) node.status = n["status"].asString();
+    node.description = n.get("description", "").asString();
+    if (n.isMember("links")) node.links = linksFromJson(n["links"]);
     data.nodes.push_back(std::move(node));
   }
 
@@ -173,6 +200,10 @@ Json::Value toJson(const GraphState& state) {
     n["positionAt"] = hlcText(node.positionAt);
     if (node.status) n["status"] = *node.status;
     n["statusAt"] = hlcText(node.statusAt);
+    n["description"] = node.description;
+    n["descriptionAt"] = hlcText(node.descriptionAt);
+    n["links"] = linksToJson(node.links);
+    n["linksAt"] = hlcText(node.linksAt);
     nodes.append(n);
   }
   root["nodes"] = nodes;
@@ -210,6 +241,10 @@ GraphState graphStateFromJson(const Json::Value& root) {
     node.positionAt = hlcFromText(n.get("positionAt", "").asString());
     if (n.isMember("status") && n["status"].isString()) node.status = n["status"].asString();
     node.statusAt = hlcFromText(n.get("statusAt", "").asString());
+    node.description = n.get("description", "").asString();
+    node.descriptionAt = hlcFromText(n.get("descriptionAt", "").asString());
+    if (n.isMember("links")) node.links = linksFromJson(n["links"]);
+    node.linksAt = hlcFromText(n.get("linksAt", "").asString());
     state.nodes.push_back(std::move(node));
   }
   for (const Json::Value& e : root["edges"]) {

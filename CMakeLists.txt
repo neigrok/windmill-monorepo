@@ -9,6 +9,7 @@ add_library(windmill_domain
   domain/Legend.cpp
   domain/Subgraph.cpp
   domain/Command.cpp
+  domain/NodeQuery.cpp
   domain/TreeDiagnostics.cpp
   domain/SkillTree.cpp
   domain/TrunkTree.cpp
@@ -35,6 +36,7 @@ add_executable(windmill_domain_tests
   test/domain/LegendTest.cpp
   test/domain/SubgraphTest.cpp
   test/domain/CommandTest.cpp
+  test/domain/NodeQueryTest.cpp
   test/domain/TreeDiagnosticsTest.cpp
   test/domain/SkillTreeTest.cpp
   test/domain/TrunkTreeTest.cpp
@@ -116,7 +118,8 @@ if(Drogon_FOUND AND libpqxx_FOUND)
 
   add_executable(windmill_adapters_tests
     test/main.cpp
-    test/adapters/json/SubgraphJsonTest.cpp)
+    test/adapters/json/SubgraphJsonTest.cpp
+    test/adapters/json/TreeJsonTest.cpp)
   target_link_libraries(windmill_adapters_tests PRIVATE windmill_adapters)
   add_test(NAME adapters COMMAND windmill_adapters_tests)
 else()

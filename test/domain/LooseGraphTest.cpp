@@ -88,6 +88,24 @@ TEST(status_seed_round_trips_through_projection) {
   CHECK_EQ(*view->status, std::string("complete"));
 }
 
+TEST(description_and_links_round_trip_and_merge_by_lww) {
+  LooseGraph g;
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  g.setDescription(nid("a"), "first", at(2));
+  g.setLinks(nid("a"), {Link{"Doc", "https://d"}, Link{"", "https://e"}}, at(2));
+
+  LooseGraph reloaded(g.exportState());  // full-state round-trip carries both fields + stamps
+  NodeSpec view = *reloaded.nodeView(nid("a"));
+  CHECK_EQ(view.description, std::string("first"));
+  CHECK_EQ(view.links.size(), 2u);
+  CHECK_EQ(view.links[1].url, std::string("https://e"));
+
+  reloaded.setDescription(nid("a"), "stale", at(1));  // an older stamp loses
+  CHECK_EQ(reloaded.nodeView(nid("a"))->description, std::string("first"));
+  reloaded.setDescription(nid("a"), "newer", at(3));  // a later stamp wins
+  CHECK_EQ(reloaded.nodeView(nid("a"))->description, std::string("newer"));
+}
+
 TEST(export_import_round_trips_full_state) {
   LooseGraph g;
   g.createNode(nid("a"), "A", "x", NodeColor::sky, Vec2{1, 2}, at(1));
@@ -214,8 +232,8 @@ TEST(join_lets_a_deleted_nodes_offline_children_survive) {
 
 TEST(merge_is_order_independent) {
   std::vector<std::pair<Command, Hlc>> ops = {
-    {CreateNode{nid("a"), "A", "x", NodeColor::sky, std::nullopt, std::nullopt}, at(1)},
-    {CreateNode{nid("b"), "B", "x", NodeColor::gold, nid("a"), std::nullopt}, at(2)},
+    {CreateNode{nid("a"), "A", "x", NodeColor::sky, {}, std::nullopt}, at(1)},
+    {CreateNode{nid("b"), "B", "x", NodeColor::gold, {nid("a")}, std::nullopt}, at(2)},
     {RenameNode{nid("b"), "B2"}, at(4)},
     {RenameNode{nid("b"), "stale"}, at(3)},
     {AddEdge{nid("a"), nid("b")}, at(5)},

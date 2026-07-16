@@ -1,0 +1,44 @@
+#include "adapters/json/TreeJson.h"
+
+#include "domain/LooseGraph.h"
+#include "test/testing.h"
+
+using namespace wm;
+
+static NodeId nid(const char* s) { return NodeId{std::string(s)}; }
+static Hlc at(std::uint64_t ms, const char* actor = "u") { return Hlc{ms, 0, actor}; }
+
+TEST(node_description_and_links_survive_the_document_codec) {
+  TreeData data;
+  data.id = TreeId{"t"};
+  NodeSpec node;
+  node.id = nid("a");
+  node.label = "A";
+  node.description = "notes";
+  node.links = {Link{"Doc", "https://d"}, Link{"", "https://e"}};
+  data.nodes.push_back(node);
+
+  TreeData back = treeFromJson(parse(dump(toJson(data))), TreeId{"t"});
+  CHECK_EQ(back.nodes.size(), 1u);
+  CHECK_EQ(back.nodes[0].description, std::string("notes"));
+  CHECK_EQ(back.nodes[0].links.size(), 2u);
+  CHECK_EQ(back.nodes[0].links[0], (Link{"Doc", "https://d"}));
+  CHECK_EQ(back.nodes[0].links[1].url, std::string("https://e"));
+}
+
+TEST(a_bare_url_string_parses_as_a_labelless_link) {
+  std::vector<Link> links = linksFromJson(parse("[\"https://x\", {\"url\": \"https://y\", \"label\": \"Y\"}]"));
+  CHECK_EQ(links.size(), 2u);
+  CHECK_EQ(links[0], (Link{"", "https://x"}));
+  CHECK_EQ(links[1], (Link{"Y", "https://y"}));
+}
+
+TEST(graph_state_round_trips_description_and_links_with_stamps) {
+  LooseGraph g;
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  g.setDescription(nid("a"), "body", at(2));
+  g.setLinks(nid("a"), {Link{"PR", "https://p"}}, at(3));
+
+  GraphState reloaded = graphStateFromJson(parse(dump(toJson(g.exportState()))));
+  CHECK(reloaded == g.exportState());  // full lattice, stamps included — the persistence gate
+}

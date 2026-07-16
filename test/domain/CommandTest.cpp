@@ -130,7 +130,7 @@ TEST(validate_rejects_new_create_at_node_capacity) {
 TEST(validate_admits_normal_create_and_add_edge) {
   LooseGraph g = seeded();
   Legend legend;
-  Command create = CreateNode{nid("c"), "C", "icon", NodeColor::sky, std::nullopt, Vec2{1.5, -2.5}};
+  Command create = CreateNode{nid("c"), "C", "icon", NodeColor::sky, {}, Vec2{1.5, -2.5}};
   CHECK_FALSE(validate(g, legend, create).has_value());
   CHECK_FALSE(validate(g, legend, Command{AddEdge{nid("a"), nid("b")}}).has_value());
 }
@@ -220,4 +220,96 @@ TEST(headline_is_empty_for_a_nudge_or_an_empty_frame) {
   moved.nodes.push_back(m);
   CHECK_FALSE(headline(moved, LegendState{}).has_value());  // a reposition is not feed-worthy
   CHECK_FALSE(headline(GraphState{}, LegendState{}).has_value());
+}
+
+TEST(create_node_wires_every_prerequisite_and_seeds_annotation) {
+  LooseGraph g;
+  Legend legend;
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("b"), "B", "x", NodeColor::sky, std::nullopt, at(1));
+  merge(g, legend, Command{CreateNode{nid("c"), "C", "x", NodeColor::sky, {nid("a"), nid("b")},
+                                      std::nullopt, "notes", {Link{"Doc", "https://d"}}}}, at(2));
+
+  CHECK(g.edgePresent(nid("a"), nid("c")));
+  CHECK(g.edgePresent(nid("b"), nid("c")));
+  NodeSpec view = *g.nodeView(nid("c"));
+  CHECK_EQ(view.description, std::string("notes"));
+  CHECK_EQ(view.links.size(), 1u);
+  CHECK_EQ(view.links[0], (Link{"Doc", "https://d"}));
+}
+
+TEST(annotate_node_sets_only_the_fields_it_carries) {
+  LooseGraph g;
+  Legend legend;
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  merge(g, legend, Command{AnnotateNode{nid("a"), std::string("body"), std::nullopt}}, at(2));
+  merge(g, legend, Command{AnnotateNode{nid("a"), std::nullopt, std::vector<Link>{Link{"", "u"}}}}, at(3));
+
+  NodeSpec view = *g.nodeView(nid("a"));
+  CHECK_EQ(view.description, std::string("body"));  // set at at(2), untouched by the links-only frame
+  CHECK_EQ(view.links.size(), 1u);
+  CHECK_EQ(view.links[0].url, std::string("u"));
+
+  merge(g, legend, Command{AnnotateNode{nid("a"), std::string("newer"), std::nullopt}}, at(4));
+  CHECK_EQ(g.nodeView(nid("a"))->description, std::string("newer"));
+  CHECK_EQ(g.nodeView(nid("a"))->links.size(), 1u);  // links register untouched
+}
+
+TEST(annotate_and_create_bounds_are_enforced) {
+  LooseGraph g;
+  Legend legend;
+  std::vector<Link> tooMany(kMaxNodeLinks + 1, Link{"", "u"});
+  CHECK_EQ(validate(g, legend, Command{AnnotateNode{nid("a"), std::nullopt, tooMany}}),
+           std::optional<std::string>("too many links (max 32)"));
+  CHECK_EQ(validate(g, legend, Command{AnnotateNode{nid("a"), std::string(kMaxNodeDescriptionLength + 1, 'x'),
+                                                    std::nullopt}}),
+           std::optional<std::string>("description is too long (max 4000 characters)"));
+  CHECK_FALSE(validate(g, legend, Command{AnnotateNode{nid("a"), std::string("ok"),
+                                                       std::vector<Link>{Link{"L", "u"}}}}).has_value());
+}
+
+TEST(add_kind_seeds_label_and_description_inline) {
+  LooseGraph g;
+  Legend legend;
+  merge(g, legend, Command{AddKind{kid("infra"), NodeColor::sky, "Infra", "platform work"}}, at(1));
+
+  Kind kind = *legend.view(kid("infra"));
+  CHECK_EQ(kind.hue, NodeColor::sky);
+  CHECK_EQ(kind.label, std::string("Infra"));
+  CHECK_EQ(kind.description, std::string("platform work"));
+
+  CHECK_EQ(validate(g, legend, Command{AddKind{kid("x"), NodeColor::gold, std::string(25, 'x'), ""}}),
+           std::optional<std::string>("label is too long (max 24 characters)"));
+}
+
+TEST(prune_dangling_drops_self_and_missing_endpoint_edges_only) {
+  LooseGraph g;
+  Legend legend;
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("b"), "B", "x", NodeColor::sky, std::nullopt, at(1));
+  g.addEdge(nid("a"), nid("b"), at(2));   // live
+  g.addEdge(nid("a"), nid("a"), at(2));   // self
+  g.addEdge(nid("a"), nid("ghost"), at(2));  // missing endpoint
+
+  std::vector<Edge> dangling = g.danglingEdges();
+  CHECK_EQ(dangling.size(), 2u);
+
+  merge(g, legend, Command{PruneDangling{}}, at(3));
+  CHECK(g.edgePresent(nid("a"), nid("b")));            // live edge kept
+  CHECK_FALSE(g.edgePresent(nid("a"), nid("a")));      // self dropped
+  CHECK_FALSE(g.edgePresent(nid("a"), nid("ghost")));  // dangling dropped
+}
+
+TEST(headline_reads_an_annotation_frame) {
+  GraphState g;
+  NodeStateEntry n = nodeWrite("a");
+  n.description = "hello"; n.descriptionAt = at(4);
+  g.nodes.push_back(n);
+
+  std::optional<Command> deed = headline(g, LegendState{});
+  const AnnotateNode* c = deed ? std::get_if<AnnotateNode>(&*deed) : nullptr;
+  CHECK(c != nullptr);
+  CHECK(c->description.has_value());
+  CHECK_EQ(*c->description, std::string("hello"));
+  CHECK_FALSE(c->links.has_value());
 }

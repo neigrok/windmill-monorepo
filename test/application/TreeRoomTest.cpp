@@ -238,7 +238,7 @@ TEST(room_recolor_kind_repaints_nodes) {
   FakeBus bus;
   TreeRoom room = makeRoom(log, bus);
 
-  apply(room, CreateNode{nid("a"), "A", "i", NodeColor::olive, std::nullopt, std::nullopt}, 1);
+  apply(room, CreateNode{nid("a"), "A", "i", NodeColor::olive, {}, std::nullopt}, 1);
   apply(room, AddKind{KindId{"learn"}, NodeColor::olive}, 2);
   apply(room, RecolorKind{KindId{"learn"}, NodeColor::brick}, 3);
 
@@ -246,4 +246,47 @@ TEST(room_recolor_kind_repaints_nodes) {
   CHECK_EQ(snapshot.nodes.size(), 1u);
   CHECK_EQ(snapshot.nodes[0].color, NodeColor::brick);   // node followed its kind
   CHECK_EQ(snapshot.kinds[0].hue, NodeColor::brick);
+}
+
+TEST(room_tracks_exactly_the_dirty_entries_and_cleans_after_save) {
+  FakeOpLog log;
+  FakeBus bus;
+  TreeRoom room = makeRoom(log, bus);
+  apply(room, createNode("a"), 1);
+  apply(room, createNode("b"), 2);
+  room.markClean();  // as if a save just landed
+
+  apply(room, RenameNode{nid("b"), "B2"}, 3);  // touch one node only
+  auto [graph, legend] = room.dirtyState();
+  CHECK_EQ(graph.nodes.size(), 1u);            // just b — not the whole tree
+  CHECK_EQ(graph.nodes[0].id, nid("b"));
+  CHECK_EQ(graph.nodes[0].label, std::string("B2"));
+  CHECK_EQ(graph.edges.size(), 0u);
+  CHECK_EQ(legend.kinds.size(), 0u);
+
+  apply(room, AddEdge{nid("a"), nid("b")}, 4);
+  auto [withEdge, legendStill] = room.dirtyState();
+  CHECK_EQ(withEdge.nodes.size(), 1u);         // b still pending
+  CHECK_EQ(withEdge.edges.size(), 1u);         // plus the new edge
+  CHECK_EQ(withEdge.edges[0].edge, (Edge{nid("a"), nid("b")}));
+  CHECK_EQ(legendStill.kinds.size(), 0u);
+
+  room.markClean();
+  auto [cleanGraph, cleanLegend] = room.dirtyState();
+  CHECK_EQ(cleanGraph.nodes.size(), 0u);
+  CHECK_EQ(cleanGraph.edges.size(), 0u);
+  CHECK_EQ(cleanLegend.kinds.size(), 0u);
+}
+
+TEST(room_replay_flips_to_all_dirty_so_the_next_save_writes_everything) {
+  FakeOpLog log;
+  FakeBus bus;
+  TreeRoom room = makeRoom(log, bus);
+  apply(room, createNode("a"), 1);
+  room.markClean();
+
+  room.replay(AppliedOp{2, "r1", createNode("z"), at(5), uid()});  // footprint unknown to the room
+  auto [graph, legend] = room.dirtyState();
+  CHECK_EQ(graph.nodes.size(), 2u);  // full state, a included
+  CHECK_EQ(legend.kinds.size(), 0u);
 }

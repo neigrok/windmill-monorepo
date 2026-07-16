@@ -148,22 +148,27 @@ std::vector<KindId> Legend::orderedIds() const {
 
 LegendState Legend::exportState() const {
   LegendState state;
-  for (const auto& [id, record] : kinds_) {
-    KindStateEntry entry;
-    entry.id = id;
-    entry.createdAt = record.life.addedAt;
-    entry.deletedAt = record.life.removedAt;
-    entry.hue = record.hue.value;
-    entry.hueAt = record.hue.stamp;
-    entry.label = record.label.value;
-    entry.labelAt = record.label.stamp;
-    entry.description = record.description.value;
-    entry.descriptionAt = record.description.stamp;
-    entry.rank = record.rank.value;
-    entry.rankAt = record.rank.stamp;
-    state.kinds.push_back(std::move(entry));
-  }
+  for (const auto& [id, record] : kinds_) state.kinds.push_back(*exportKind(id));
   return state;
+}
+
+std::optional<KindStateEntry> Legend::exportKind(const KindId& id) const {
+  auto it = kinds_.find(id);
+  if (it == kinds_.end()) return std::nullopt;
+  const KindRecord& record = it->second;
+  KindStateEntry entry;
+  entry.id = id;
+  entry.createdAt = record.life.addedAt;
+  entry.deletedAt = record.life.removedAt;
+  entry.hue = record.hue.value;
+  entry.hueAt = record.hue.stamp;
+  entry.label = record.label.value;
+  entry.labelAt = record.label.stamp;
+  entry.description = record.description.value;
+  entry.descriptionAt = record.description.stamp;
+  entry.rank = record.rank.value;
+  entry.rankAt = record.rank.stamp;
+  return entry;
 }
 
 }

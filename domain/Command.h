@@ -15,11 +15,15 @@ namespace wm {
 
 // Admission bounds for graph commands, enforced by validate() at the edge; legend caps
 // (kMaxKinds etc.) live with the legend cases in Command.cpp.
-constexpr std::size_t kMaxIdLength = 128;         // node / tree id length in bytes
-constexpr std::size_t kMaxNodeLabelLength = 200;  // node display-label length in bytes
-constexpr std::size_t kMaxIconLength = 64;        // node icon token length in bytes
-constexpr std::size_t kMaxNodes = 10000;          // present nodes admitted per tree
-constexpr std::size_t kMaxEdges = 20000;          // present edges admitted per tree
+constexpr std::size_t kMaxIdLength = 128;               // node / tree id length in bytes
+constexpr std::size_t kMaxNodeLabelLength = 200;        // node display-label length in bytes
+constexpr std::size_t kMaxIconLength = 64;              // node icon token length in bytes
+constexpr std::size_t kMaxNodeDescriptionLength = 4000; // node annotation body length in bytes
+constexpr std::size_t kMaxNodeLinks = 32;               // external references per node
+constexpr std::size_t kMaxLinkLabelLength = 200;        // a link's display-text length in bytes
+constexpr std::size_t kMaxLinkUrlLength = 2048;         // a link's url length in bytes
+constexpr std::size_t kMaxNodes = 10000;                // present nodes admitted per tree
+constexpr std::size_t kMaxEdges = 20000;                // present edges admitted per tree
 
 struct RenameNode { NodeId id; std::string label; };
 struct SetNodeColor { NodeId id; NodeColor color; };
@@ -29,28 +33,43 @@ struct CreateNode {
   std::string label;
   std::string icon;
   NodeColor color = NodeColor::terracotta;
-  std::optional<NodeId> parent;
+  std::vector<NodeId> prerequisites;
   std::optional<Vec2> position;
+  std::string description;
+  std::vector<Link> links;
+};
+// Set a node's free annotation. Each field is optional: a nullopt leaves that register
+// untouched, so description and links can be set together or one at a time.
+struct AnnotateNode {
+  NodeId id;
+  std::optional<std::string> description;
+  std::optional<std::vector<Link>> links;
 };
 struct AddEdge { NodeId from; NodeId to; };
 struct RemoveEdge { NodeId from; NodeId to; };
 struct ReconnectEdge { NodeId oldFrom; NodeId oldTo; NodeId newFrom; NodeId newTo; };
 struct DeleteNode { NodeId id; };
 struct TransitiveReduction {};
+// Drop every edge no valid DAG keeps — self-edges and edges to/from an absent node — in one
+// op. The GC twin of TransitiveReduction: a semantics-preserving cleanup of the loose graph.
+struct PruneDangling {};
 
 // Legend (§F6) commands. They ride the same op log / undo / broadcast machinery as the
 // node/edge commands. RecolorKind is atomic: it swaps a kind's hue *and* repaints every
 // node wearing the old hue, in one op and one undo step.
 struct RenameKind { KindId id; std::string label; };
 struct DescribeKind { KindId id; std::string description; };
-struct AddKind { KindId id; NodeColor hue; };
+// A kind's label and description may be seeded inline at creation, so a legend entry lands
+// in one op instead of add + rename + describe.
+struct AddKind { KindId id; NodeColor hue; std::string label; std::string description; };
 struct RemoveKind { KindId id; };
 struct ReorderKinds { std::vector<KindId> order; };
 struct RecolorKind { KindId id; NodeColor hue; };
 
-using Command = std::variant<RenameNode, SetNodeColor, RepositionNode, CreateNode,
+using Command = std::variant<RenameNode, SetNodeColor, RepositionNode, CreateNode, AnnotateNode,
                              AddEdge, RemoveEdge, ReconnectEdge, DeleteNode, TransitiveReduction,
-                             RenameKind, DescribeKind, AddKind, RemoveKind, ReorderKinds, RecolorKind>;
+                             PruneDangling, RenameKind, DescribeKind, AddKind, RemoveKind,
+                             ReorderKinds, RecolorKind>;
 
 void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc& at);
 
