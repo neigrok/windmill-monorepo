@@ -78,6 +78,8 @@ function newNode() {
     color: { v: 'terracotta', at: { ...UNSET } },
     position: { v: null, at: { ...UNSET } },
     status: { v: null, at: { ...UNSET } },
+    description: { v: '', at: { ...UNSET } },
+    links: { v: [], at: { ...UNSET } },
   };
 }
 
@@ -198,6 +200,14 @@ export class TreeLattice {
       const position = n.position && typeof n.position === 'object' ? { x: n.position.x, y: n.position.y } : null;
       mergeLww(record.position, position, fold(parseHlc(n.positionAt)));
       mergeLww(record.status, n.status ?? null, fold(parseHlc(n.statusAt)));
+      mergeLww(record.description, typeof n.description === 'string' ? n.description : '', fold(parseHlc(n.descriptionAt)));
+      // Mirrors the backend's linksFromJson: bare strings become url-only links, other shapes drop.
+      const links = Array.isArray(n.links) ? n.links.flatMap((l) => {
+        if (typeof l === 'string') return [{ url: l, label: '' }];
+        if (l && typeof l === 'object') return [{ url: typeof l.url === 'string' ? l.url : '', label: typeof l.label === 'string' ? l.label : '' }];
+        return [];
+      }) : [];
+      mergeLww(record.links, links, fold(parseHlc(n.linksAt)));
     }
     for (const e of frame.edges ?? []) {
       const record = this.edgeRecord(e.from, e.to);
@@ -227,7 +237,7 @@ export class TreeLattice {
   seedClock(clock) {
     for (const record of this.nodes.values()) {
       for (const reg of [record.life.addedAt, record.life.removedAt, record.label.at, record.icon.at,
-        record.color.at, record.position.at, record.status.at]) clock.observe(reg);
+        record.color.at, record.position.at, record.status.at, record.description.at, record.links.at]) clock.observe(reg);
     }
     for (const record of this.edges.values()) { clock.observe(record.addedAt); clock.observe(record.removedAt); }
     for (const record of this.kinds.values()) {
@@ -307,7 +317,7 @@ export class TreeLattice {
     const vector = new VersionVector();
     for (const record of this.nodes.values()) {
       for (const at of [record.life.addedAt, record.life.removedAt, record.label.at, record.icon.at,
-        record.color.at, record.position.at, record.status.at]) vector.observe(at);
+        record.color.at, record.position.at, record.status.at, record.description.at, record.links.at]) vector.observe(at);
     }
     for (const record of this.edges.values()) { vector.observe(record.addedAt); vector.observe(record.removedAt); }
     for (const record of this.kinds.values()) {
@@ -332,6 +342,8 @@ export class TreeLattice {
       emitField(entry, 'color', 'colorAt', record.color.v, record.color.at, vector);
       emitField(entry, 'position', 'positionAt', record.position.v, record.position.at, vector);
       emitField(entry, 'status', 'statusAt', record.status.v, record.status.at, vector);
+      emitField(entry, 'description', 'descriptionAt', record.description.v, record.description.at, vector);
+      emitField(entry, 'links', 'linksAt', record.links.v, record.links.at, vector);
       if (Object.keys(entry).length > 1) nodes.push(entry);
     }
     const edges = [];
@@ -383,6 +395,8 @@ export class TreeLattice {
         prerequisites: parentsOf.get(id) ?? [],
         position: record.position.v ? { ...record.position.v } : undefined,
         status: record.status.v ?? undefined,
+        description: record.description.v || undefined,
+        links: record.links.v.length ? record.links.v.map((l) => ({ ...l })) : undefined,
       });
     }
     return { id: this.treeId, title: this.title, nodes, kinds: this.orderedKinds() };

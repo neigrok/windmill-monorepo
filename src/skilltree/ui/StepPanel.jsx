@@ -7,7 +7,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Card, Button, IconButton, Icon } from '../../components';
-import { NodeWorkspace } from '../../components/tree/NodeWorkspace.jsx';
+import { NodeWorkspace, LinkRow, SAFE_URL } from '../../components/tree/NodeWorkspace.jsx';
 import { EventRow } from '../activity/EventRow.jsx';
 import { NODE_COLORS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../theme.js';
 
@@ -57,6 +57,44 @@ function shortDate(at) {
 
 function cap(hue) {
   return hue.charAt(0).toUpperCase() + hue.slice(1);
+}
+
+// The node's shared annotation: authored intent that travels with the tree, distinct from the per-user workspace.
+function NodeAnnotation({ description, links = [] }) {
+  const [expanded, setExpanded] = useState(false);
+  const [overflows, setOverflows] = useState(false);
+  const bodyRef = useRef(null);
+
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (el) setOverflows(el.scrollHeight > el.clientHeight + 1);
+  }, [description, expanded]);
+
+  const safeLinks = links.filter((link) => SAFE_URL.test(link.url));
+  if (!description && safeLinks.length === 0) return null;
+
+  return (
+    <div className="st-step-annotation">
+      <div>
+        <div className="st-step-heading">About</div>
+        {description && (
+          <div ref={bodyRef} className={`st-annotation-body${expanded ? '' : ' st-annotation-body--clamped'}`}>{description}</div>
+        )}
+        {(overflows || expanded) && (
+          <button type="button" className="st-annotation-more" onClick={() => setExpanded((open) => !open)}>
+            {expanded ? 'Show less' : 'Show more'}
+          </button>
+        )}
+      </div>
+      {safeLinks.length > 0 && (
+        <div className="st-links">
+          {safeLinks.map((link, index) => (
+            <LinkRow key={`${index}-${link.url}`} url={link.url} title={link.label} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // One line, most-recent event visible; hover reveals the absolute time(s) of both.
@@ -252,6 +290,8 @@ function EditorStep({ node, state, prerequisites, startedAt, completedAt, histor
       </div>
 
       <div className="st-step-scroll">
+      <NodeAnnotation description={node.description} links={node.links} />
+
       <NodeWorkspace
         nodeId={node.id}
         workspace={workspace}
@@ -356,16 +396,9 @@ function EditorStep({ node, state, prerequisites, startedAt, completedAt, histor
 }
 
 // The read-only detail (§S2): the same content and order as the editor — identity,
-// state, description, branch, needs, unlocks — with every control stripped out. A
+// state, annotation, branch, needs, unlocks — with every control stripped out. A
 // shared or phone viewer reads it; it never edits.
 const RO_DOT = { width: 9, height: 9, borderRadius: '50%', flexShrink: 0 };
-
-function readOnlyDescription(node, workspace) {
-  if (node.description) return node.description;
-  const note = workspace?.note?.trim();
-  if (!note) return null;
-  return note.split('\n')[0];
-}
 
 function ReadOnlyStep({ node, state, prerequisites = [], unlocks = [], completedAt, workspace = EMPTY_WORKSPACE, kinds = [], onClose = noop }) {
   if (!node) return null;
@@ -373,11 +406,12 @@ function ReadOnlyStep({ node, state, prerequisites = [], unlocks = [], completed
   const currentKind = node.color ?? DEFAULT_NODE_COLOR;
   const hue = NODE_COLORS[currentKind] ?? NODE_COLORS[DEFAULT_NODE_COLOR];
   const branchLabel = kinds.find((kind) => kind.hue === currentKind)?.label || cap(currentKind);
-  const description = readOnlyDescription(node, workspace);
+  const noteLine = node.description ? null : workspace?.note?.trim().split('\n')[0] || null;
   const blocker = prerequisites.find((prerequisite) => !prerequisite.complete)?.label;
 
   return (
-    <Card style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+    <Card style={{ maxHeight: '70vh', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+      <div className="st-step-pinned">
       <div className="st-step-header">
         <div className="st-step-identity">
           <span className="st-step-glyph">
@@ -394,9 +428,13 @@ function ReadOnlyStep({ node, state, prerequisites = [], unlocks = [], completed
       </div>
 
       <div><ReadOnlyStateChip state={state} hue={hue} completedAt={completedAt} /></div>
+      </div>
 
-      {description && (
-        <div style={{ fontSize: 'var(--text-sm)', lineHeight: 1.5, color: 'var(--text-secondary)' }}>{description}</div>
+      <div className="st-step-scroll">
+      <NodeAnnotation description={node.description} links={node.links} />
+
+      {noteLine && (
+        <div style={{ fontSize: 'var(--text-sm)', lineHeight: 1.5, color: 'var(--text-secondary)' }}>{noteLine}</div>
       )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-secondary)' }}>
@@ -412,6 +450,7 @@ function ReadOnlyStep({ node, state, prerequisites = [], unlocks = [], completed
 
       <ReadOnlyRelations title="Needs" items={prerequisites} empty="None — this is a starting point." />
       <ReadOnlyRelations title="Unlocks" items={unlocks} empty="Nothing yet — this is a leaf." />
+      </div>
     </Card>
   );
 }

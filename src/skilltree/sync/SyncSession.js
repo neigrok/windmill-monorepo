@@ -78,6 +78,8 @@ export class SyncSession {
       color: n.color ?? 'terracotta', colorAt: genesis,
       ...(n.position ? { position: n.position, positionAt: genesis } : {}),
       ...(n.status ? { status: n.status, statusAt: genesis } : {}),
+      ...(n.description ? { description: n.description, descriptionAt: genesis } : {}),
+      ...(n.links?.length ? { links: n.links, linksAt: genesis } : {}),
     }));
     const edges = [];
     for (const n of treeData.nodes) for (const p of n.prerequisites ?? []) edges.push({ from: p, to: n.id, addedAt: genesis });
@@ -289,6 +291,8 @@ export class SyncSession {
       if ('colorAt' in n) inv.color = record ? record.color.v : 'terracotta';
       if ('positionAt' in n) inv.position = record ? record.position.v : null;
       if ('statusAt' in n) inv.status = record ? record.status.v : null;
+      if ('descriptionAt' in n) inv.description = record ? record.description.v : '';
+      if ('linksAt' in n) inv.links = record ? record.links.v : [];
       return inv;
     });
     const edges = (writes.edges ?? []).map((e) => (
@@ -318,6 +322,8 @@ export class SyncSession {
       if ('color' in n) { e.color = n.color; e.colorAt = s; }
       if ('position' in n) { e.position = n.position; e.positionAt = s; }
       if ('status' in n) { e.status = n.status; e.statusAt = s; }
+      if ('description' in n) { e.description = n.description; e.descriptionAt = s; }
+      if ('links' in n) { e.links = n.links; e.linksAt = s; }
       return e;
     });
     const edges = (inverse.edges ?? []).map((x) => (
@@ -379,7 +385,7 @@ export class SyncSession {
     const remap = new Map();
     for (const n of data.nodes) remap.set(n.id, `gift-${crypto.randomUUID?.().slice(0, 8) ?? Date.now()}`);
     for (const n of data.nodes) {
-      this.dispatch({ kind: 'CreateNode', id: remap.get(n.id), label: n.label, icon: n.icon, color: n.color, x: n.position?.x, y: n.position?.y });
+      this.dispatch({ kind: 'CreateNode', id: remap.get(n.id), label: n.label, icon: n.icon, color: n.color, x: n.position?.x, y: n.position?.y, description: n.description, links: n.links });
     }
     for (const n of data.nodes) for (const p of n.prerequisites) {
       if (remap.has(p)) this.dispatch({ kind: 'AddEdge', from: remap.get(p), to: remap.get(n.id) });

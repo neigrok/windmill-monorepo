@@ -1269,6 +1269,40 @@
   background: var(--surface-hover);
 }
 
+/* ---- Annotation: the node's shared description + links, read-only authored intent ---- */
+.st-step-annotation {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.st-annotation-body {
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-line;
+  overflow-wrap: break-word;
+}
+.st-annotation-body--clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+  overflow: hidden;
+}
+.st-annotation-more {
+  margin-top: var(--space-1);
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+.st-annotation-more:hover {
+  color: var(--text-secondary);
+}
+
 /* ---- Note (§5.1): rendered markdown at rest, a bordered box while editing ---- */
 .st-note-body {
   padding: 4px 6px;

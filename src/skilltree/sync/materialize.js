@@ -16,6 +16,8 @@ function node(id, at, fields) {
   if ('color' in fields) { entry.color = fields.color; entry.colorAt = s; }
   if ('position' in fields) { entry.position = fields.position; entry.positionAt = s; }
   if ('status' in fields) { entry.status = fields.status; entry.statusAt = s; }
+  if ('description' in fields) { entry.description = fields.description; entry.descriptionAt = s; }
+  if ('links' in fields) { entry.links = fields.links; entry.linksAt = s; }
   return entry;
 }
 
@@ -72,7 +74,7 @@ export function materialize(gesture, lattice, clock) {
 
   switch (g.kind) {
     case 'CreateNode': {
-      nodes.push(node(g.id, at, { created: true, label: g.label ?? '', icon: g.icon ?? '', color: g.color ?? 'terracotta', position: g.x != null && g.y != null ? { x: g.x, y: g.y } : null }));
+      nodes.push(node(g.id, at, { created: true, label: g.label ?? '', icon: g.icon ?? '', color: g.color ?? 'terracotta', position: g.x != null && g.y != null ? { x: g.x, y: g.y } : null, ...(g.description ? { description: g.description } : {}), ...(g.links?.length ? { links: g.links } : {}) }));
       if (g.parentId) edges.push(addEdge(g.parentId, g.id, at));
       break;
     }

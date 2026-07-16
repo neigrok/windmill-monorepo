@@ -12,7 +12,30 @@ import { Checklist } from './Checklist.jsx';
 // The small note dialect: bold **…**, italic *…*, [text](url) links, and "- " lists.
 // Headings/tables/images are out. React escapes all text for us; we only need to keep
 // link hrefs to safe schemes so a note can't smuggle in a javascript: URL.
-const SAFE_URL = /^(https?:|mailto:)/i;
+export const SAFE_URL = /^(https?:|mailto:)/i;
+
+// One link row, two homes: the workspace's editable list (with onDelete) and the
+// read-only annotation links in StepPanel.
+export function LinkRow({ url, title, domain, onDelete }) {
+  const host = domain || url.replace(/^\w+:\/\//, '').replace(/[/?#].*$/, '');
+  return (
+    <div className="st-link-row">
+      <a className="st-link-open" href={url} target="_blank" rel="noopener noreferrer">
+        <span className="st-link-tile">{(host.charAt(0) || '?').toUpperCase()}</span>
+        <span className="st-link-main">
+          <span className="st-link-title">{title || host}</span>
+          <span className="st-link-domain">{host}</span>
+        </span>
+        <span className="st-link-go"><Icon name="external-link" size={14} /></span>
+      </a>
+      {onDelete && (
+        <button type="button" className="st-link-del" aria-label="Remove link" onClick={onDelete}>
+          <Icon name="x" size={13} />
+        </button>
+      )}
+    </div>
+  );
+}
 
 function renderInline(text, key) {
   const nodes = [];
@@ -180,29 +203,9 @@ export function NodeWorkspace({ nodeId, workspace, hue, onAddSubtask, onToggleSu
         <div>
           <div className="st-step-heading">Links</div>
           <div className="st-links">
-            {links.map((link) => {
-              const domain = link.domain || link.url.replace(/^\w+:\/\//, '');
-              return (
-                <div key={link.id} className="st-link-row">
-                  <a className="st-link-open" href={link.url} target="_blank" rel="noopener noreferrer">
-                    <span className="st-link-tile">{(domain.charAt(0) || '?').toUpperCase()}</span>
-                    <span className="st-link-main">
-                      <span className="st-link-title">{link.title || domain}</span>
-                      <span className="st-link-domain">{domain}</span>
-                    </span>
-                    <span className="st-link-go"><Icon name="external-link" size={14} /></span>
-                  </a>
-                  <button
-                    type="button"
-                    className="st-link-del"
-                    aria-label="Remove link"
-                    onClick={() => onDeleteLink(nodeId, link.id)}
-                  >
-                    <Icon name="x" size={13} />
-                  </button>
-                </div>
-              );
-            })}
+            {links.map((link) => (
+              <LinkRow key={link.id} url={link.url} title={link.title} domain={link.domain} onDelete={() => onDeleteLink(nodeId, link.id)} />
+            ))}
             <div className="st-link-add">
               <input
                 autoFocus={linkAdding}
