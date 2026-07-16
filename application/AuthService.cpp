@@ -6,7 +6,8 @@ AuthService::AuthService(AuthRepository& repo, EmailSender& email, TokenGenerato
                          std::string appBaseUrl)
     : repo_(repo), email_(email), tokens_(tokens), clock_(clock), appBaseUrl_(std::move(appBaseUrl)) {}
 
-AuthService::RequestResult AuthService::requestLink(const std::string& rawEmail, const std::string& forkSource) {
+AuthService::RequestResult AuthService::requestLink(const std::string& rawEmail, const std::string& forkSource,
+                                                    const std::optional<ForkDescription>& forkedTree) {
   std::optional<Email> email = parseEmail(rawEmail);
   if (!email) return RequestResult::invalidEmail;
 
@@ -16,7 +17,15 @@ AuthService::RequestResult AuthService::requestLink(const std::string& rawEmail,
 
   const MintedToken link = tokens_.mint();
   repo_.insertLink(link.digest, *email, now, linkExpiry(now), forkSource);
-  email_.sendMagicLink(*email, appBaseUrl_ + "/#/auth?token=" + link.secret);
+
+  const std::string url = appBaseUrl_ + "/#/auth?token=" + link.secret;
+  if (!forkedTree) {
+    email_.sendMagicLink(*email, url);
+    return RequestResult::sent;
+  }
+  const std::string meta =
+      forkedTree->steps == 1 ? "1 step" : std::to_string(forkedTree->steps) + " steps";
+  email_.sendForkLink(*email, url, forkedTree->title, meta);
   return RequestResult::sent;
 }
 

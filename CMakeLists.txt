@@ -124,7 +124,8 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/main.cpp
     test/adapters/json/SubgraphJsonTest.cpp
     test/adapters/json/TreeJsonTest.cpp
-    test/adapters/http/EventsApiTest.cpp)
+    test/adapters/http/EventsApiTest.cpp
+    test/adapters/email/ResendEmailSenderTest.cpp)
   target_link_libraries(windmill_adapters_tests PRIVATE windmill_adapters)
   add_test(NAME adapters COMMAND windmill_adapters_tests)
 else()

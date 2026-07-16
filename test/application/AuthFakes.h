@@ -41,16 +41,26 @@ struct FakeEmail : EmailSender {
   struct Sent {
     Email to;
     std::string url;
+    std::string templateId;
+    std::string treeTitle;
+    std::string treeMeta;
   };
   std::vector<Sent> sent;
   bool failNext = false;
 
   void sendMagicLink(const Email& to, const std::string& url) override {
+    deliver({to, url, "magic-link", "", ""});
+  }
+  void sendForkLink(const Email& to, const std::string& url, const std::string& treeTitle,
+                    const std::string& treeMeta) override {
+    deliver({to, url, "magic-link-fork", treeTitle, treeMeta});
+  }
+  void deliver(Sent mail) {
     if (failNext) {
       failNext = false;
       throw std::runtime_error("can't reach the mail provider");
     }
-    sent.push_back({to, url});
+    sent.push_back(std::move(mail));
   }
 };
 

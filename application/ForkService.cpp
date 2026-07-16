@@ -53,4 +53,14 @@ ForkService::Result ForkService::fork(const TreeId& source, const std::string& r
   return {Outcome::forked, std::move(data)};
 }
 
+std::optional<ForkService::Description> ForkService::describe(const TreeId& source) {
+  std::lock_guard<std::mutex> lock(registry_.strandFor(source));
+  try {
+    TreeRoom& room = registry_.open(source);
+    return Description{room.title(), room.snapshot().nodes.size()};
+  } catch (const std::exception&) {
+    return std::nullopt;
+  }
+}
+
 }

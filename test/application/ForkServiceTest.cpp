@@ -100,3 +100,18 @@ TEST(fork_reports_a_missing_source) {
   CHECK(result.outcome == ForkService::Outcome::noSource);
   CHECK(h.trees.byId.empty());
 }
+
+TEST(describe_names_a_live_source_with_its_step_count) {
+  Harness h;
+  h.seedSource("t_src", "Learn to sail");
+
+  std::optional<ForkService::Description> described = h.service.describe(TreeId{"t_src"});
+  CHECK(described.has_value());
+  CHECK_EQ(described->title, std::string("Learn to sail"));
+  CHECK_EQ(described->steps, 2u);
+}
+
+TEST(describe_declines_a_vanished_source) {
+  Harness h;
+  CHECK_FALSE(h.service.describe(TreeId{"t_ghost"}).has_value());
+}

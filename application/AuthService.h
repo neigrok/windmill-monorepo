@@ -6,6 +6,7 @@
 #include "ports/EmailSender.h"
 #include "ports/TokenGenerator.h"
 
+#include <cstddef>
 #include <optional>
 #include <string>
 
@@ -21,7 +22,17 @@ public:
               std::string appBaseUrl);
 
   enum class RequestResult { sent, invalidEmail, rateLimited };
-  RequestResult requestLink(const std::string& rawEmail, const std::string& forkSource = "");
+
+  // When the link carries a fork, the caller resolves the source tree's face up front (the
+  // auth pipeline holds no tree dependency) and passes it here; the mail then uses the fork
+  // template that names the tree. A fork whose source couldn't be read arrives undescribed
+  // and falls back to the plain template — the mail never names a tree it can't see.
+  struct ForkDescription {
+    std::string title;
+    std::size_t steps = 0;
+  };
+  RequestResult requestLink(const std::string& rawEmail, const std::string& forkSource = "",
+                            const std::optional<ForkDescription>& forkedTree = std::nullopt);
 
   // On a valid link: the account (created here on first sign-in) and a fresh session secret
   // to hand back as the cookie. On any other verdict: the verdict alone, no session.

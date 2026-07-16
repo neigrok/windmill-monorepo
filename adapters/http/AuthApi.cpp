@@ -38,9 +38,18 @@ void AuthApi::requestLink(const drogon::HttpRequestPtr& req, HttpCallback&& call
   std::string forkOf = json ? json->get("forkOf", "").asString() : "";
   if (forkOf.size() > 64) forkOf.clear();  // a tree id, not a payload — drop junk quietly
 
+  // A fork mail must name the tree it plants, so resolve the source's face here — the auth
+  // pipeline stays tree-free. A source we can't read stays undescribed: the mail falls back
+  // to the plain template rather than promise a tree it can't name.
+  std::optional<AuthService::ForkDescription> forkedTree;
+  if (!forkOf.empty()) {
+    if (std::optional<ForkService::Description> source = fork_->describe(TreeId{forkOf}))
+      forkedTree = AuthService::ForkDescription{source->title, source->steps};
+  }
+
   AuthService::RequestResult result;
   try {
-    result = auth_->requestLink(email, forkOf);
+    result = auth_->requestLink(email, forkOf, forkedTree);
   } catch (const std::exception&) {
     Json::Value body(Json::objectValue);
     body["error"] = "Can't reach windmill.works";

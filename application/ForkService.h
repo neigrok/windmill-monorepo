@@ -4,6 +4,8 @@
 #include "ports/TokenGenerator.h"
 #include "ports/TreeRepository.h"
 
+#include <cstddef>
+#include <optional>
 #include <string>
 
 namespace wm {
@@ -23,6 +25,15 @@ public:
   // requestedId and requestedTitle may be empty: the id is then server-minted, the title inherited.
   Result fork(const TreeId& source, const std::string& requestedId, const std::string& requestedTitle,
               const UserId& owner);
+
+  // The source's live face — title and step count — for mail that must name the tree it
+  // will plant. Reads the room's current state under its strand; a source that can't be
+  // opened yields nullopt so the caller can degrade to copy that promises nothing.
+  struct Description {
+    std::string title;
+    std::size_t steps = 0;
+  };
+  std::optional<Description> describe(const TreeId& source);
 
 private:
   RoomRegistry& registry_;
