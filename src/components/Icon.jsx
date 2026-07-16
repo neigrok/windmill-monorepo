@@ -71,6 +71,7 @@ import {
   Bell,
   Pin,
   RotateCcw,
+  ArrowRight,
 } from 'lucide-react';
 
 /**
@@ -155,6 +156,7 @@ const REGISTRY = {
   bell: Bell,
   pin: Pin,
   'rotate-ccw': RotateCcw,
+  'arrow-right': ArrowRight,
 };
 
 export function Icon({ name, size = 16, strokeWidth = 2, color = 'currentColor', style }) {

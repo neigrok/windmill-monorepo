@@ -654,6 +654,11 @@
   border-radius: var(--radius-full);
   padding: 1px 7px;
 }
+/* The stacked dock's second section head: ACTIVITY follows NEXT UP (whats-next-panel §01) */
+.st-activity-head--section {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
 .st-activity-live {
   width: 6px;
   height: 6px;
@@ -782,6 +787,147 @@
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--text-tertiary);
+}
+
+/* ---- Next up: the dock's senior tenant (design: whats-next-panel) — up to three
+   ready rows + an in-place expander leading the activity feed ---- */
+.st-nextup {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--space-2);
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.st-nextup-rows {
+  display: flex;
+  flex-direction: column;
+}
+.st-nextup-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  text-align: left;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+.st-nextup-row:hover {
+  background: var(--surface-hover);
+}
+.st-nextup-disc {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+}
+.st-nextup-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.st-nextup-name {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.st-nextup-sub {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+.st-nextup-fly {
+  flex: none;
+  color: var(--text-tertiary);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+.st-nextup-row:hover .st-nextup-fly,
+.st-nextup-row:focus-visible .st-nextup-fly {
+  opacity: 1;
+}
+.st-nextup-more {
+  align-self: flex-start;
+  margin: 0 var(--space-2) var(--space-2);
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+.st-nextup-more:hover {
+  color: var(--text-secondary);
+}
+
+/* The two empty states (whats-next-panel §05): all done — crown, mono tally, two
+   quiet links — and nothing-unlocked with its ember blockers. Never a dead end. */
+.st-nextup--empty {
+  padding: var(--space-2) var(--space-4) var(--space-3);
+  gap: 2px;
+}
+.st-nextup--empty .st-nextup-rows {
+  margin: var(--space-1) calc(-1 * var(--space-2)) 0;
+}
+.st-nextup-crown {
+  margin-bottom: var(--space-1);
+  color: var(--accent-gold-500);
+}
+.st-nextup-line {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.st-nextup-tally {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+.st-nextup-hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+.st-nextup-links {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+.st-nextup-links button,
+.st-nextup-links a {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+.st-nextup-links button:hover,
+.st-nextup-links a:hover {
+  color: var(--color-brand-hover);
 }
 
 /* ---- Step panel: the state block — correction chip + menu, the one forward

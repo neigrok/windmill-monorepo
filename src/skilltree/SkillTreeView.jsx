@@ -22,6 +22,7 @@ import { requestMagicLink } from './auth/AuthClient.js';
 import { ShareDialog } from './share/ShareDialog.jsx';
 import { ShareStats } from './share/ShareStats.js';
 import { ActivityFeed } from './activity/ActivityFeed.jsx';
+import { NextUp, planNextUp, considerAutoOpen } from './ui/NextUp.jsx';
 import { ActivityLog, ActivityEvent } from './activity/ActivityLog.js';
 import { ActorAvatar, EventSentence } from './activity/grammar.jsx';
 import { SkillTree } from './model/SkillTree.js';
@@ -51,6 +52,8 @@ const progressStore = new ProgressStore();
 const workspaceStore = new WorkspaceStore();
 const legendStore = new LegendStore();
 const AUTO_COMPLETE_HOLD = 600; // held breath before auto-completing: arc-close 280 + hold 320 (§4)
+const NEXT_UP_SELECT_MS = 540; // ~90% of the camera's default 600ms glide — the dock swaps as the fly settles
+const NEXT_UP_ENTER_MS = 600; // auto-open waits for the fit-to-view camera to still (whats-next-panel §04)
 const EMPTY_BOUNDS = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 const CHILD_DROP = NODE_SIZE * 2.6; // world units a new child spawns below its parent
 const SIBLING_GAP = NODE_SIZE * 1.8; // horizontal spread between successive new children
@@ -205,7 +208,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   const [legendOpen, setLegendOpen] = useState(true); // whether the key is expanded, remembered per tree
   const [legendForceOpen, setLegendForceOpen] = useState(false); // the picker's "+" summoned the key on a 1-kind tree
   const [highlightedKindId, setHighlightedKindId] = useState(null); // a legend row is spotlighting its kind on the graph
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedId, commitSelectedId] = useState(null);
   const [hoveredId, setHoveredId] = useState(null);
   const [bounds, setBounds] = useState(EMPTY_BOUNDS);
   const [scene, setScene] = useState(null);
@@ -218,6 +221,23 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   const [pinned, setPinned] = useState(false); // …or pinned to stay docked (= option A)
   const [unreadCount, setUnreadCount] = useState(0); // events since the feed was last opened
   const [activityPing, setActivityPing] = useState(false); // transient chip pulse on a fresh arrival
+
+  // A Next-up tap selects on a delay (the 540ms glide). Anything that changes the
+  // picture before it lands — a newer tap, a selection by other means, dismissing the
+  // feed, a reload — bumps the epoch and strands the pending timer (X1). setSelectedId
+  // is the cancelling wrapper every ordinary path calls; only the glide's own timeout
+  // reaches commitSelectedId, after proving its captured epoch is still current.
+  const nextUpSelectRef = useRef({ epoch: 0, timer: null });
+  const cancelNextUpSelect = useCallback(() => {
+    const pending = nextUpSelectRef.current;
+    pending.epoch += 1;
+    window.clearTimeout(pending.timer);
+    pending.timer = null;
+  }, []);
+  const setSelectedId = useCallback((id) => {
+    cancelNextUpSelect();
+    commitSelectedId(id);
+  }, [cancelNextUpSelect]);
 
   const [hasLocalEdits, setHasLocalEdits] = useState(false); // local edits overlaid on the authored seed
   const [reloadKey, setReloadKey] = useState(0); // bump to re-run the load pipeline (e.g. after reset)
@@ -351,11 +371,11 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   // visible tenant. Opening deselects so the feed (not a step's details) shows.
   const toggleActivity = useCallback(() => {
     const visibleAsFeed = (feedOpenRef.current || pinnedRef.current) && !selectedIdRef.current;
-    if (visibleAsFeed) { setFeedOpen(false); setPinned(false); }
+    if (visibleAsFeed) { cancelNextUpSelect(); setFeedOpen(false); setPinned(false); }
     else { setFeedOpen(true); setSelectedId(null); }
-  }, []);
+  }, [cancelNextUpSelect, setSelectedId]);
 
-  const closeActivity = useCallback(() => { setFeedOpen(false); setPinned(false); }, []);
+  const closeActivity = useCallback(() => { cancelNextUpSelect(); setFeedOpen(false); setPinned(false); }, [cancelNextUpSelect]);
   const togglePin = useCallback(() => setPinned((value) => !value), []);
 
   // Discard local edits and reload the authored seed fresh (clears history too),
@@ -672,7 +692,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
         // Empty-canvas click: close details (the feed returns iff it was open),
         // or dismiss the feed itself when nothing was selected (design A″).
         if (selectedIdRef.current) setSelectedId(null);
-        else { setFeedOpen(false); setPinned(false); }
+        else { cancelNextUpSelect(); setFeedOpen(false); setPinned(false); }
       },
       onNodeHover: (id) => setHoveredId(id),
       onCeremonyToast: (message, options) => showToast(message, options),
@@ -752,6 +772,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   // Re-runs whenever the dataset toggle swaps demo ↔ huge.
   useEffect(() => {
     let cancelled = false;
+    let autoOpenTimer = null;
     setLoading(true);
     setLoadError(false);
     setSelectedId(null);
@@ -842,6 +863,25 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
       setLoading(false);
       if (shared && seed.id === DEMO_TREE_ID) track('demo_open', { treeId: seed.id });
 
+      // The return visit (whats-next-panel §04): stamp this open, and — first open in
+      // ≥12h, ≥1 step ready, ≥12 steps, at most once a day, owner views only — summon
+      // the dock after the fit-to-view camera stills. Focus never moves on auto-open;
+      // closing it keeps it closed for the session (this fires once per load at most).
+      // The daily budget burns via commit() only when the open actually fires (X6) —
+      // a fire-time decline (selection, open feed, a mid-glide demotion) costs nothing.
+      if (!readOnlyRef.current) {
+        let readyNow = 0;
+        for (const state of states.values()) if (state === 'available') readyNow += 1;
+        const autoOpen = considerAutoOpen({ treeId: seed.id, readyCount: readyNow, stepCount: nextTree.nodes.length });
+        if (autoOpen.open) {
+          autoOpenTimer = setTimeout(() => {
+            if (readOnlyRef.current || selectedIdRef.current || feedOpenRef.current || pinnedRef.current) return;
+            autoOpen.commit();
+            setFeedOpen(true);
+          }, NEXT_UP_ENTER_MS);
+        }
+      }
+
       // Every edit runs through a SyncSession: the lattice is truth, TreeData its projection.
       // The roadmap goes live over the socket (a joined frame reaches every peer).
       collabRef.current?.close();
@@ -872,6 +912,8 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
     });
     return () => {
       cancelled = true;
+      clearTimeout(autoOpenTimer);
+      cancelNextUpSelect(); // unmount / reload strands any pending Next-up select (X1)
       collabRef.current?.close();
       collabRef.current = null;
     };
@@ -917,6 +959,25 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   const feedVisible = (feedOpen || pinned) && !selectedId;
   useEffect(() => { if (feedVisible) markRead(); }, [feedVisible, markRead]);
 
+  // NEXT UP is ranked once per open and frozen in the ref — stable in-session,
+  // re-ranked on the next summon, never reshuffled underfoot (whats-next-panel §03.2).
+  // Computed synchronously on the opening render so the section never pops in late.
+  // Rows whose live state drifts off their tier retire in place (X5), and the count
+  // pill reads the live readyCount below — only the ranking itself stays frozen.
+  const nextUpPlanRef = useRef(null);
+  if (!feedVisible || !tree) nextUpPlanRef.current = null;
+  else if (nextUpPlanRef.current === null) nextUpPlanRef.current = planNextUp(tree, states);
+  const nextUpPlan = nextUpPlanRef.current;
+
+  // The chip's standing offer: how many steps are ready right now, always live —
+  // gated exactly like the section's mount rule (X3): a lone bud offers nothing.
+  const readyCount = useMemo(() => {
+    if (!tree || tree.nodes.length <= 1) return 0;
+    let count = 0;
+    for (const state of states.values()) if (state === 'available') count += 1;
+    return count;
+  }, [tree, states]);
+
   const nodesById = useMemo(() => {
     if (!tree) return new Map();
     return new Map(tree.nodes.map((node) => [node.id, node]));
@@ -932,6 +993,35 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   const handleRowHover = useCallback((id) => sceneRef.current?.spotlightNode(id), []);
   const handleRowLeave = useCallback(() => sceneRef.current?.spotlightNode(null), []);
   const handleRevealNode = useCallback((id) => sceneRef.current?.revealNode(id), []);
+
+  // A Next-up tap commits (whats-next-panel §01): the camera flies, and near settle
+  // the dock swaps to that step's workspace by selecting it. The delayed select proves
+  // its tap epoch is still current before landing (X1), and the spotlight is cleared at
+  // both ends — on the tap (the row unmounts, its mouseleave never fires) and again at
+  // the swap, in case hover drifted across rows during the glide (X2).
+  const handleNextUpOpen = useCallback((id) => {
+    cancelNextUpSelect(); // a newer tap supersedes any pending one
+    const pending = nextUpSelectRef.current;
+    const epoch = pending.epoch;
+    sceneRef.current?.spotlightNode(null);
+    sceneRef.current?.revealNode(id);
+    pending.timer = window.setTimeout(() => {
+      pending.timer = null;
+      if (pending.epoch !== epoch) return;
+      sceneRef.current?.spotlightNode(null);
+      commitSelectedId(id);
+    }, NEXT_UP_SELECT_MS);
+  }, [cancelNextUpSelect]);
+
+  // "Add a step" (the all-done empty state) reuses the existing create affordance:
+  // grow a bud from the tree's newest frontier leaf, selected with its name focused.
+  const handleNextUpAddStep = useCallback(() => {
+    const nodes = editorRef.current?.treeData.nodes ?? [];
+    if (nodes.length === 0) return;
+    const parents = new Set(nodes.flatMap((node) => node.prerequisites));
+    const anchor = [...nodes].reverse().find((node) => !parents.has(node.id)) ?? nodes[nodes.length - 1];
+    handleCreateChild(anchor.id);
+  }, [handleCreateChild]);
 
   const selectedNode = selectedId ? nodesById.get(selectedId) ?? null : null;
   const selectedState = selectedId ? states.get(selectedId) ?? 'locked' : null;
@@ -1249,6 +1339,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
           activityOpen={feedVisible}
           activityUnread={unreadCount}
           activityPing={activityPing}
+          readyCount={readyCount}
           onToggleActivity={toggleActivity}
         />
       )}
@@ -1356,6 +1447,18 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
                 onHoverNode={handleRowHover}
                 onLeaveNode={handleRowLeave}
                 onRevealNode={handleRevealNode}
+                readyPill={nextUpPlan?.mount ? (nextUpPlan.mode === 'allDone' ? nextUpPlan.pill : `${readyCount} ready`) : null}
+                nextUp={nextUpPlan?.mount ? (
+                  <NextUp
+                    plan={nextUpPlan}
+                    nodesById={nodesById}
+                    states={states}
+                    onHoverNode={handleRowHover}
+                    onLeaveNode={handleRowLeave}
+                    onOpenStep={handleNextUpOpen}
+                    onAddStep={handleNextUpAddStep}
+                  />
+                ) : null}
               />
             ) : null}
           </div>

@@ -4,7 +4,7 @@
 import React from 'react';
 import { IconButton, Tooltip, Icon } from '../../components';
 
-export function ControlBar({ title, titleSlot, onZoomIn, onZoomOut, onFitToView, canReset, onResetEdits, canTidy, onTidy, onShare, onExport, onImport, activityOpen, activityUnread, activityPing, onToggleActivity }) {
+export function ControlBar({ title, titleSlot, onZoomIn, onZoomOut, onFitToView, canReset, onResetEdits, canTidy, onTidy, onShare, onExport, onImport, activityOpen, activityUnread, activityPing, readyCount = 0, onToggleActivity }) {
   return (
     <div className="st-topbar">
       <div className="st-brand">
@@ -22,7 +22,9 @@ export function ControlBar({ title, titleSlot, onZoomIn, onZoomOut, onFitToView,
       </div>
 
       <div className="st-controls">
-        <Tooltip label="Activity (A)" side="bottom">
+        {/* The standing offer (whats-next-panel): "Next · N" while steps are ready,
+            the plain Activity chip at zero; the unseen-activity badge rides along. */}
+        <Tooltip label={readyCount > 0 ? 'What’s next (A)' : 'Activity (A)'} side="bottom">
           <button
             type="button"
             className={`st-activity-chip ${activityOpen ? 'st-activity-chip--on' : ''} ${activityPing ? 'st-activity-chip--ping' : ''}`}
@@ -30,7 +32,7 @@ export function ControlBar({ title, titleSlot, onZoomIn, onZoomOut, onFitToView,
             aria-pressed={activityOpen}
           >
             <Icon name="bell" size={14} />
-            <span>Activity</span>
+            <span>{readyCount > 0 ? `Next · ${readyCount}` : 'Activity'}</span>
             {activityUnread > 0 && <span className="st-activity-chip-badge">{activityUnread}</span>}
           </button>
         </Tooltip>
