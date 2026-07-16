@@ -28,7 +28,7 @@ export function AuthLanding({ onVerify, onSignedIn, onExpired, onOpenDoor }) {
 
     let active = true;
     onVerify(token)
-      .then(({ user }) => { if (active) onSignedIn(user); })
+      .then(({ user, forkedTree }) => { if (active) onSignedIn(user, forkedTree); })
       .catch(() => {
         if (!active) return;
         setStatus('expired');

@@ -1,21 +1,28 @@
-// The fork "door" (X5 §S4) — the one place the page's single verb resolves. On phone
-// it rises as a bottom-edge sheet over a scrim; on tablet it is the app's centered
-// Dialog. Either way the content is identical: an invitation, an email field, and one
-// button. Submitting is stubbed — it swaps to a "check your email" state and tells the
-// parent via `onSubmit` (the parent may toast); it touches no network. The X4 "one
-// door": no sign-up, the email decides, and a signed-in actor forks instantly.
+// The fork "door" (X5 §S4) — the one place the share page's single verb resolves. On
+// phone it rises as a bottom-edge sheet over a scrim; on tablet it is the app's centered
+// Dialog. The X4 "one door": a signed-in visitor forks instantly — one button, straight
+// into the copy — and signed out the email decides: the magic link carries the pending
+// fork and the backend completes it when the link is claimed. Held to the SignInDialog
+// standard: validated address, guarded sends, every failure ends in a next step.
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Button, Input, Dialog } from '../../../components';
 import { requestMagicLink } from '../../auth/AuthClient.js';
+import { forkTree } from '../../persistence/TreeRegistry.js';
+
+const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-export function ForkDoor({ open, tablet = false, onClose, onSubmit, stepCount = null }) {
+export function ForkDoor({ open, tablet = false, treeId, signedIn = false, onClose, onSubmit, stepCount = null }) {
   const [email, setEmail] = useState('');
-  const [sent, setSent] = useState(false);
+  const [phase, setPhase] = useState('idle'); // idle | sending | sent | rate_limited | unreachable
+  const [typo, setTypo] = useState(false);
   const [shown, setShown] = useState(false);
+  const [busy, setBusy] = useState(false); // the signed-in fork in flight — navigation is coming
+  const [forkError, setForkError] = useState(null); // 'unauthenticated' | 'failed'
+  const inflight = useRef(false);
 
   const reduced = prefersReducedMotion();
 
@@ -24,34 +31,87 @@ export function ForkDoor({ open, tablet = false, onClose, onSubmit, stepCount = 
       setShown(false);
       return undefined;
     }
-    setSent(false);
     setEmail('');
+    setPhase('idle');
+    setTypo(false);
+    setBusy(false);
+    setForkError(null);
+    inflight.current = false;
     const raf = requestAnimationFrame(() => setShown(true));
     return () => cancelAnimationFrame(raf);
   }, [open]);
 
+  // Never dismiss mid-fork: the fork is already committed server-side and the
+  // navigation lands in a beat — closing here would teleport the user later.
+  const close = () => {
+    if (!busy) onClose?.();
+  };
+
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (e) => {
-      if (e.key === 'Escape') onClose?.();
+      if (e.key === 'Escape') close();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open, onClose, busy]);
 
   if (!open) return null;
 
-  const submit = () => {
-    // Fire the one-door magic link (X6, same door as the desktop seat). A failure never
-    // blocks the sent state — the worst case ends in a next step, and the backend
-    // completes the fork once the link is claimed (X5).
-    requestMagicLink(email).catch(() => {});
-    setSent(true);
-    onSubmit?.();
-  };
+  async function submitEmail(e) {
+    e?.preventDefault();
+    const address = email.trim();
+    if (!EMAIL_SHAPE.test(address)) {
+      setTypo(true);
+      return;
+    }
+    if (inflight.current) return;
+    inflight.current = true;
+    setPhase('sending');
+    try {
+      await requestMagicLink(address, { forkOf: treeId });
+      setPhase('sent');
+      onSubmit?.();
+    } catch (err) {
+      if (err?.code === 'invalid_email') {
+        setPhase('idle');
+        setTypo(true);
+      } else if (err?.code === 'rate_limited') {
+        setPhase('rate_limited');
+      } else {
+        setPhase('unreachable');
+      }
+    } finally {
+      inflight.current = false;
+    }
+  }
+
+  function submitFork() {
+    if (busy) return;
+    setBusy(true);
+    setForkError(null);
+    forkTree(treeId)
+      .then(({ treeId: forkedId }) => {
+        // A fork crosses the read-only → editor boundary; land in the copy on a clean
+        // page load so the scene is born in editor mode, not retrofitted into it.
+        window.location.hash = `#/app/${forkedId}`;
+        window.location.reload();
+      })
+      .catch((err) => {
+        setBusy(false);
+        setForkError(err?.code === 'unauthenticated' ? 'unauthenticated' : 'failed');
+      });
+  }
+
+  function backToForm() {
+    setPhase('idle');
+    setTypo(false);
+  }
 
   const stepsPhrase = stepCount ? `all ${stepCount} steps` : 'every step';
-  const content = sent ? (
+  const instantFork = signedIn && forkError !== 'unauthenticated';
+
+  const content = phase === 'sent' ? (
     <div style={{ textAlign: 'center' }}>
       <div
         style={{
@@ -81,37 +141,84 @@ export function ForkDoor({ open, tablet = false, onClose, onSubmit, stepCount = 
       </div>
       <h2 style={{ ...TITLE_STYLE, marginTop: 14 }}>Check your email</h2>
       <p style={{ ...COPY_STYLE, textAlign: 'center' }}>
-        The link finishes the fork — it'll be waiting in your gallery.
+        We sent a link to {email.trim()}. It works once, lasts 15 minutes, and finishes the fork — the copy lands in your trees.
       </p>
+      <div style={{ display: 'grid', justifyContent: 'center', marginTop: 14 }}>
+        <Button variant="ghost" size="sm" onClick={backToForm}>Use a different email</Button>
+      </div>
     </div>
-  ) : (
+  ) : phase === 'rate_limited' ? (
+    <div>
+      <h2 style={TITLE_STYLE}>That's a few links in a row</h2>
+      <p style={COPY_STYLE}>
+        Check your spam folder first — or try again in 10 minutes. Only the newest link carries this fork.
+      </p>
+      <div style={{ display: 'grid', marginTop: 14 }}>
+        <Button variant="ghost" size="sm" onClick={backToForm}>Use a different email</Button>
+      </div>
+    </div>
+  ) : phase === 'unreachable' ? (
+    <div>
+      <h2 style={TITLE_STYLE}>Can't reach windmill.works</h2>
+      <p style={COPY_STYLE}>Nothing was sent — try again in a moment.</p>
+      <div style={{ display: 'grid', marginTop: 14 }}>
+        <Button variant="ghost" size="sm" onClick={backToForm}>Back</Button>
+      </div>
+    </div>
+  ) : instantFork ? (
     <div>
       <h2 style={TITLE_STYLE}>Make it yours</h2>
       <p style={COPY_STYLE}>
-        Forking plants a copy of {stepsPhrase} in your gallery — progress cleared, yours to grow.
+        Forking plants a copy of {stepsPhrase} in your trees — progress cleared, yours to grow.
       </p>
+      <div style={{ display: 'grid', marginTop: 18 }}>
+        <Button variant="primary" size="lg" onClick={submitFork} disabled={busy}>
+          {busy ? 'Forking…' : 'Fork this tree'}
+        </Button>
+      </div>
+      {forkError === 'failed' && (
+        <p style={FINE_PRINT_STYLE}>Couldn't fork just now — try again in a moment.</p>
+      )}
+    </div>
+  ) : (
+    <form onSubmit={submitEmail}>
+      <h2 style={TITLE_STYLE}>Make it yours</h2>
+      <p style={COPY_STYLE}>
+        Forking plants a copy of {stepsPhrase} in your trees — progress cleared, yours to grow.
+      </p>
+      {forkError === 'unauthenticated' && (
+        <p style={{ ...FINE_PRINT_STYLE, color: 'var(--text-secondary)' }}>
+          Your session expired — the email door still works.
+        </p>
+      )}
       <div style={{ marginTop: 18 }}>
         <Input
           type="email"
           placeholder="you@anywhere.com"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            if (typo) setTypo(false);
+          }}
         />
       </div>
+      {typo && (
+        <p style={FINE_PRINT_STYLE}>That address looks unfinished — check the ending.</p>
+      )}
       <div style={{ display: 'grid', marginTop: 14 }}>
-        <Button variant="primary" size="lg" onClick={submit}>
-          Email me a link
+        <Button type="submit" variant="primary" size="lg" disabled={phase === 'sending'}>
+          {phase === 'sending' ? 'Sending…' : 'Email me a link'}
         </Button>
       </div>
       <p style={FINE_PRINT_STYLE}>
-        One door — no sign-up, the email decides. Already signed in? The fork is instant.
+        One door — no sign-up, the email decides. The link lands the fork in your trees.
       </p>
-    </div>
+    </form>
   );
 
   if (tablet) {
     return (
-      <Dialog open={open} onClose={onClose} width={420}>
+      <Dialog open={open} onClose={close} width={420}>
         {content}
       </Dialog>
     );
@@ -119,7 +226,7 @@ export function ForkDoor({ open, tablet = false, onClose, onSubmit, stepCount = 
 
   return (
     <div
-      onClick={onClose}
+      onClick={close}
       style={{
         position: 'fixed',
         inset: 0,

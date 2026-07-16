@@ -44,3 +44,26 @@ export async function createTree(request) {
   const body = await response.json().catch(() => ({}));
   throw new AuthError(body.error ?? 'Could not plant the roadmap', { code: body.code, status: response.status });
 }
+
+// Fork a shared roadmap into the caller's registry → { treeId }. The server mints the new
+// id and copies the source's live state; progress starts cleared.
+export async function forkTree(sourceId) {
+  let response;
+  try {
+    response = await fetch(`${API_BASE}/v1/trees/${sourceId}/fork`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+      credentials: 'include',
+    });
+  } catch {
+    throw new AuthError('Network request failed', { code: 'unreachable', status: 0 });
+  }
+  if (response.ok) {
+    const body = await response.json();
+    return { treeId: body.data.id };
+  }
+  if (response.status === 401) throw new AuthError('Sign in to fork', { code: 'unauthenticated', status: 401 });
+  const body = await response.json().catch(() => ({}));
+  throw new AuthError(body.error ?? 'Could not fork the roadmap', { code: body.code, status: response.status });
+}

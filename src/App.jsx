@@ -62,7 +62,7 @@ function AppRoutes() {
     return (
       <AuthLanding
         onVerify={verifyToken}
-        onSignedIn={(user) => { signIn(user); window.location.hash = '#/app'; }}
+        onSignedIn={(user, forkedTree) => { signIn(user); window.location.hash = forkedTree ? `#/app/${forkedTree}` : '#/app'; }}
         onOpenDoor={() => { setOpenSignInSignal((n) => n + 1); window.location.hash = '#/app'; }}
       />
     );

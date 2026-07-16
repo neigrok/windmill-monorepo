@@ -54,7 +54,7 @@ const SIBLING_GAP = NODE_SIZE * 1.8; // horizontal spread between successive new
 const NEW_NODE_ICON = 'sparkles';
 
 export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
-  const { breakpoint, readOnly } = useViewMode();
+  const { breakpoint, readOnly, shared } = useViewMode();
   const { user, status, signOut } = useAuth(); // the account seat's source of truth (X6)
   const canvasRef = useRef(null);
   const rootRef = useRef(null);
@@ -1033,10 +1033,6 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
     setRecenterAvailable(false);
   }
 
-  // Fork is the read-only page's one verb. Submit is stubbed here — the real fork is
-  // a backend task (X5); ForkDoor shows its own "check your email" sent state.
-  function handleForkSubmit() {}
-
   function handlePanTo(x, y) {
     sceneRef.current?.panTo(x, y);
   }
@@ -1074,7 +1070,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
           progress={{ done: shareStats?.done ?? 0, total: shareStats?.total ?? 0 }}
           author={tree?.author}
           dominantKind={shareStats?.dominantKind}
-          onFork={() => setForkOpen(true)}
+          onFork={shared ? () => setForkOpen(true) : undefined}
           onRecenter={handleRecenter}
           showRecenter={recenterAvailable}
           tablet={breakpoint === 'tablet'}
@@ -1228,8 +1224,8 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
         </aside>
       )}
 
-      {readOnly && (
-        <ForkDoor open={forkOpen} tablet={breakpoint === 'tablet'} stepCount={shareStats?.total} onClose={() => setForkOpen(false)} onSubmit={handleForkSubmit} />
+      {shared && (
+        <ForkDoor open={forkOpen} tablet={breakpoint === 'tablet'} treeId={treeId} signedIn={status === 'signed-in'} stepCount={shareStats?.total} onClose={() => setForkOpen(false)} />
       )}
 
       {toast && (

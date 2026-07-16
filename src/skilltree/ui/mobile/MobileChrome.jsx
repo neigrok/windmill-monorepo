@@ -163,7 +163,8 @@ export function MobileChrome({
         Windmill
       </span>
 
-      {/* Fork CTA — the page's one verb */}
+      {/* Fork CTA — the share page's one verb; absent on your own trees */}
+      {onFork && (
       <button
         type="button"
         onClick={onFork}
@@ -199,6 +200,7 @@ export function MobileChrome({
         <Icon name="git-branch-plus" size={18} />
         Fork this tree
       </button>
+      )}
 
       {/* Recenter chip — a 36px pill in a 44px touch target, only when off-center */}
       {showRecenter && (

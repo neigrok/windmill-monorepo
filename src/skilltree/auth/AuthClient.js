@@ -15,8 +15,8 @@ export class AuthError extends Error {
   }
 }
 
-export async function requestMagicLink(email) {
-  const response = await send('/v1/auth/magic-link', { email });
+export async function requestMagicLink(email, { forkOf } = {}) {
+  const response = await send('/v1/auth/magic-link', forkOf ? { email, forkOf } : { email });
   if (response.ok) return response.json();
   throw await errorFrom(response);
 }
@@ -25,7 +25,7 @@ export async function verifyToken(token) {
   const response = await send('/v1/auth/verify', { token });
   if (response.ok) {
     const body = await response.json();
-    return { user: body.user };
+    return { user: body.user, forkedTree: body.forkedTree };
   }
   throw await errorFrom(response);
 }
