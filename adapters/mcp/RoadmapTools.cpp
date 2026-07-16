@@ -223,7 +223,7 @@ ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::stri
 
     Seq seq = room.applyCommand(*command, clock.nowMs(), actor);
     if (!room.owner()) registry.claim(tree, actor);  // first authenticated writer claims the tree
-    registry.persist(tree);  // flush trees.document so the web reader sees this edit
+    registry.persist(tree);  // flush the dirty rows so the web reader sees this edit
 
     Json::Value out(Json::objectValue);
     out["applied"] = true;
