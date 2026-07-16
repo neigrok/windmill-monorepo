@@ -1,12 +1,13 @@
 <!--
   Windmill transactional email — magic link, FORK VARIANT · X7 + F4/X5 fork
   From:      Windmill <sign-in@windmill.works>
-  Subject:   Your sign-in link — and your copy of "{{tree_title}}"
-  Preheader: One tap signs you in and plants a copy of {{tree_title}} in your trees.
+  Subject:   Your sign-in link — and your copy of "{{{tree_title}}}"
+  Preheader: One tap signs you in and plants a copy of {{{tree_title}}} in your trees.
   Plain-text pair: magic-link-fork.txt
   Resend template id: magic-link-fork · variables: magic_link, tree_title, tree_meta
-  tree_title/tree_meta stay escaped ({{ }}) — titles are user-controlled; only the
-  server-minted magic_link may use raw {{{ }}} (hrefs would corrupt under escaping).
+  Resend contract: variables are ALWAYS triple-brace {{{ }}} and substitute raw —
+  there is no escaping tier. tree_title is user-controlled, so the SENDER sanitizes
+  it (ResendEmailSender strips markup) before it becomes a variable. Light-only mail.
   Same shell as magic-link.html; the ONLY additions are the tree strip and the
   disclosure. Rule (briefs #6 / X7): the email must say plainly what the click
   does — it signs you in AND plants the copy. Auth mail: never an unsubscribe.
@@ -21,7 +22,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="color-scheme" content="light">
 <meta name="supported-color-schemes" content="light">
-<title>Your sign-in link — and your copy of {{tree_title}}</title>
+<title>Your sign-in link — and your copy of {{{tree_title}}}</title>
 <!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]-->
 <style>
   html, body { margin: 0 !important; padding: 0 !important; }
@@ -35,7 +36,7 @@
 </head>
 <body class="wm-canvas" bgcolor="#F9F5EB" style="margin:0; padding:0; background:#F9F5EB;">
 <div style="display:none; font-size:1px; line-height:1px; max-height:0; max-width:0; opacity:0; overflow:hidden; mso-hide:all;">
-  One tap signs you in and plants a copy of {{tree_title}} in your trees.&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;
+  One tap signs you in and plants a copy of {{{tree_title}}} in your trees.&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;
 </div>
 <center role="article" aria-roledescription="email" lang="en" class="wm-canvas" style="width:100%; background:#F9F5EB;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="wm-canvas" bgcolor="#F9F5EB">
@@ -56,12 +57,12 @@
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
               <tr>
                 <td align="center" class="wm-h" style="font-family:'Baloo 2','Trebuchet MS','Segoe UI',sans-serif; font-size:27px; font-weight:700; line-height:1.2; color:#211B13; padding-bottom:12px;">
-                  Plant your copy of {{tree_title}}
+                  Plant your copy of {{{tree_title}}}
                 </td>
               </tr>
               <tr>
                 <td align="center" class="wm-p" style="font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:16px; line-height:1.55; color:#6F5F45;">
-                  This link does two things: it signs you in to Windmill <strong style="color:#211B13;">and</strong> plants a copy of &ldquo;{{tree_title}}&rdquo; in your trees &mdash; progress cleared, yours to grow.
+                  This link does two things: it signs you in to Windmill <strong style="color:#211B13;">and</strong> plants a copy of &ldquo;{{{tree_title}}}&rdquo; in your trees &mdash; progress cleared, yours to grow.
                 </td>
               </tr>
 
@@ -72,7 +73,7 @@
                     <tr>
                       <td style="padding:11px 18px; font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:14px; line-height:1.4; color:#6F5F45;">
                         <span style="display:inline-block; width:10px; height:10px; border-radius:10px; background:#C4972F;">&nbsp;</span>&nbsp;
-                        <strong style="color:#211B13;">{{tree_title}}</strong> &nbsp;&middot;&nbsp; {{tree_meta}}
+                        <strong style="color:#211B13;">{{{tree_title}}}</strong> &nbsp;&middot;&nbsp; {{{tree_meta}}}
                       </td>
                     </tr>
                   </table>

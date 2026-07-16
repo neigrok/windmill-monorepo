@@ -6,7 +6,7 @@ Tap to sign in
 This link signs you in to Windmill on this device.
 No password — the link is the key.
 
-{{magic_link}}
+{{{magic_link}}}
 
 It works once and lasts 15 minutes.
 

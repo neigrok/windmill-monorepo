@@ -1,14 +1,14 @@
 WINDMILL
 
-PLANT YOUR COPY OF {{tree_title}}
+PLANT YOUR COPY OF {{{tree_title}}}
 
 This link does two things: it signs you in to Windmill AND plants a
-copy of "{{tree_title}}" in your trees -- progress cleared, yours to grow.
+copy of "{{{tree_title}}}" in your trees -- progress cleared, yours to grow.
 
-  {{tree_title}} · {{tree_meta}}
+  {{{tree_title}}} · {{{tree_meta}}}
 
 Sign in & plant the copy:
-{{magic_link}}
+{{{magic_link}}}
 
 It works once and lasts 15 minutes. The copy waits for you -- nothing
 is planted until you tap.
