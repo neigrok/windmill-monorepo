@@ -2,11 +2,13 @@
 #include "adapters/crypto/OpenSslTokenGenerator.h"
 #include "adapters/email/ResendEmailSender.h"
 #include "adapters/http/AuthApi.h"
+#include "adapters/http/ComposeApi.h"
 #include "adapters/http/EventsApi.h"
 #include "adapters/http/HttpApi.h"
 #include "adapters/http/OAuthApi.h"
 #include "adapters/http/RateLimiter.h"
 #include "adapters/http/TreeRegistryApi.h"
+#include "adapters/llm/AnthropicComposer.h"
 #include "adapters/mcp/McpHttpEndpoint.h"
 #include "adapters/mcp/McpServer.h"
 #include "adapters/mcp/RoadmapTools.h"
@@ -95,6 +97,13 @@ int main() {
   // general per-IP apiLimiter below covers this route like every other.
   auto eventRepo = std::make_shared<PgEventRepository>(connString);
   auto eventsApi = std::make_shared<EventsApi>(eventRepo, authService);
+
+  // Paste-import escalation (F3): the model rewrites arbitrary prose into the paste grammar
+  // and the client re-parses it deterministically — text in, text out, never a door into the
+  // tree. No ANTHROPIC_API_KEY → the route answers 503 and the client hides the handle.
+  const char* anthropicKey = std::getenv("ANTHROPIC_API_KEY");
+  auto composer = std::make_shared<AnthropicComposer>(anthropicKey ? anthropicKey : "");
+  auto composeApi = std::make_shared<ComposeApi>(composer);
 
   // MCP (Streamable-HTTP) mounted in this same process — the whole point of this change: agent
   // edits run through the very same RoomRegistry as REST and the socket, so a tree has exactly
@@ -187,18 +196,26 @@ int main() {
   // CORS above). The limiter keys on the real visitor IP (CF-Connecting-IP behind Cloudflare, see
   // clientIp); internal traffic (no proxy header) is never limited. The magic-link path adds a
   // per-client bucket loose enough for shared NAT, plus a global send ceiling — the real guard on
-  // the Resend quota — that no single client can lift.
+  // the Resend quota — that no single client can lift. Compose gets the same pair of buckets: the
+  // per-IP one keeps a single paster honest, the global one is the real guard on the LLM spend.
   auto apiLimiter = std::make_shared<RateLimiter>(25.0, 50.0);          // ~25 req/s/client, burst 50
   auto magicPerIp = std::make_shared<RateLimiter>(30.0 / 600.0, 30.0);  // ~30 links / 10 min / client
   auto magicGlobal = std::make_shared<RateLimiter>(0.5, 60.0);          // global email send ceiling
+  auto composePerIp = std::make_shared<RateLimiter>(10.0 / 600.0, 5.0);  // ~10 plans / 10 min / client
+  auto composeGlobal = std::make_shared<RateLimiter>(0.5, 20.0);         // global LLM spend ceiling
   app.registerSyncAdvice(
-      [apiLimiter, magicPerIp, magicGlobal, writeCors](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
+      [apiLimiter, magicPerIp, magicGlobal, composePerIp, composeGlobal,
+       writeCors](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
         if (req->method() == drogon::Options) return nullptr;  // preflight already answered above
         const std::string ip = clientIp(req);
         if (ip.empty()) return nullptr;  // internal / health-check traffic
+        // Per-IP before global, so a hammering client is denied out of its own bucket and
+        // never drains the shared ceiling for everyone else.
         bool ok = apiLimiter->allow(ip);
         if (ok && req->path() == "/v1/auth/magic-link")
-          ok = magicGlobal->allow("global") && magicPerIp->allow(ip);
+          ok = magicPerIp->allow(ip) && magicGlobal->allow("global");
+        if (ok && req->path() == "/v1/compose")
+          ok = composePerIp->allow(ip) && composeGlobal->allow("global");
         if (ok) return nullptr;
         Json::Value body(Json::objectValue);
         body["error"] = "rate limited";
@@ -352,6 +369,13 @@ int main() {
   app.registerHandler(
       "/v1/events",
       [eventsApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { eventsApi->ingest(req, std::move(cb)); },
+      {drogon::Post});
+
+  // Paste-import escalation: anonymous allowed (the birth canvas has no account); abuse is
+  // the compose rate-limit pair above. CORS rides the shared policy like every other route.
+  app.registerHandler(
+      "/v1/compose",
+      [composeApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { composeApi->compose(req, std::move(cb)); },
       {drogon::Post});
 
   // MCP Streamable-HTTP transport: one path, three verbs (POST a JSON-RPC message, GET a would-be

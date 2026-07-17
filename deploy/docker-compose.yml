@@ -49,6 +49,9 @@ services:
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       # Verified Resend sender; defaults to Resend's shared test sender until the domain is set up.
       RESEND_FROM: ${RESEND_FROM:-Windmill <onboarding@resend.dev>}
+      # Paste-import LLM escalation (/v1/compose). Empty → the route answers 503 compose-unavailable
+      # and the client hides the handle.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       # Magic links point at the app; the session cookie is first-party on the single origin.
       WINDMILL_APP_URL: https://${DOMAIN_APP}
       WINDMILL_COOKIE_DOMAIN: ${DOMAIN_APP}

@@ -79,11 +79,13 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     adapters/http/HttpApi.cpp
     adapters/http/AuthApi.cpp
     adapters/http/EventsApi.cpp
+    adapters/http/ComposeApi.cpp
     adapters/http/OAuthApi.cpp
     adapters/http/Caller.cpp
     adapters/http/TreeRegistryApi.cpp
     adapters/crypto/OpenSslTokenGenerator.cpp
     adapters/email/ResendEmailSender.cpp
+    adapters/llm/AnthropicComposer.cpp
     adapters/ws/WsPresenceBus.cpp
     adapters/ws/PresenceHub.cpp
     adapters/ws/Collab.cpp
@@ -125,9 +127,12 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/adapters/json/SubgraphJsonTest.cpp
     test/adapters/json/TreeJsonTest.cpp
     test/adapters/http/EventsApiTest.cpp
+    test/adapters/http/ComposeApiTest.cpp
+    test/adapters/http/RateLimiterTest.cpp
     test/adapters/http/HttpApiTest.cpp
     test/adapters/http/TreeRegistryApiTest.cpp
-    test/adapters/email/ResendEmailSenderTest.cpp)
+    test/adapters/email/ResendEmailSenderTest.cpp
+    test/adapters/llm/AnthropicComposerTest.cpp)
   target_link_libraries(windmill_adapters_tests PRIVATE windmill_adapters)
   add_test(NAME adapters COMMAND windmill_adapters_tests)
 else()
