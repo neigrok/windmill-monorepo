@@ -112,6 +112,27 @@ export async function renameTree(treeId, title) {
   throw new AuthError(body.error ?? 'Could not rename the roadmap', { code: body.code, status: response.status });
 }
 
+// Set a roadmap's visibility (PATCH /v1/trees/:id, 204). 'private' ⇒ owner-only reads;
+// 'unlisted'/'public' ⇒ anyone with the link. The Share flip rides this so a copied link
+// actually resolves for its recipient. A non-owner's stray call harmlessly 403s.
+export async function setVisibility(treeId, visibility) {
+  let response;
+  try {
+    response = await fetch(`${API_BASE}/v1/trees/${treeId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ visibility }),
+      credentials: 'include',
+    });
+  } catch {
+    throw new AuthError('Network request failed', { code: 'unreachable', status: 0 });
+  }
+  if (response.ok) return;
+  if (response.status === 401) throw new AuthError('Sign in to change visibility', { code: 'unauthenticated', status: 401 });
+  const body = await response.json().catch(() => ({}));
+  throw new AuthError(body.error ?? 'Could not change visibility', { code: body.code, status: response.status });
+}
+
 // Retire a roadmap (DELETE /v1/trees/:id, 204 — a soft delete; it leaves every list).
 export async function deleteTree(treeId) {
   let response;

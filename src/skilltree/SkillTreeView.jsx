@@ -293,6 +293,8 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   const [hasLocalEdits, setHasLocalEdits] = useState(false); // local edits overlaid on the authored seed
   const [reloadKey, setReloadKey] = useState(0); // bump to re-run the load pipeline (e.g. after reset)
   const [shareOpen, setShareOpen] = useState(false); // the Share dialog (export postcard preview)
+  const [treeVisibility, setTreeVisibility] = useState(null); // server stance on this tree: 'private'|'unlisted'|'public'|null
+  const [treeMine, setTreeMine] = useState(false); // is the signed-in caller this tree's owner
   const [forkOpen, setForkOpen] = useState(false); // the fork "door" (read-only — the page's one verb)
   const [signInOpen, setSignInOpen] = useState(false); // the one sign-in door (X6) — opened by the seat or an expired landing
   const [panning, setPanning] = useState(false); // the scene is being panned; mobile chrome yields (§chrome)
@@ -897,6 +899,8 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     setLoading(true);
     setLoadError(false);
     setSelectedId(null);
+    setTreeVisibility(null); // the stance is unknown until the server answers — never claim a stale one
+    setTreeMine(false);
 
     async function loadTree() {
       // The routed tree comes from the backend, per treeId — but the server is only the
@@ -991,6 +995,8 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       logRef.current = new ActivityLog([...built, ...fromServer].sort((a, b) => a.at - b.at));
       setTree(nextTree);
       setRenderModel(model);
+      setTreeVisibility(seed.visibility ?? null); // the server's stance rides the seed; the blob fallback carries none
+      setTreeMine(seed.mine ?? false);
       setCompleted(new Set(progress.completed));
       setInProgress(new Set(progress.inProgress));
       setStartedAt(startedAtMap);
@@ -1742,6 +1748,8 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
         model={renderModel}
         title={tree?.title}
         stats={shareStats}
+        visibility={treeVisibility}
+        mine={treeMine}
       />
 
       {loading && !loadError && <div className="st-loading">Planting the tree…</div>}
