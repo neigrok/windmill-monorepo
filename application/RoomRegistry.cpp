@@ -25,7 +25,7 @@ TreeRoom& RoomRegistry::open(const TreeId& id) {
   LooseGraph graph(stored->state);  // full CRDT state — lossless
   Legend legend(stored->legend);    // empty for legacy trees; the client derives then
   auto room = std::make_unique<TreeRoom>(id, stored->title, std::move(graph), std::move(legend),
-                                         stored->head, stored->owner, ops_, bus_);
+                                         stored->head, stored->owner, stored->visibility, ops_, bus_);
   // The document is a snapshot at stored->head; replay the op-log tail to reach the
   // true current state (and the true head), so new ops never collide on seq.
   for (const AppliedOp& op : ops_.since(id, stored->head)) room->replay(op);
@@ -91,6 +91,15 @@ void RoomRegistry::claim(const TreeId& id, const UserId& owner) {
   std::lock_guard<std::mutex> lock(mutex_);
   auto it = rooms_.find(id);
   if (it != rooms_.end()) it->second->claim(owner);  // keep the live room's cache in step
+}
+
+void RoomRegistry::setVisibility(const TreeId& id, Visibility visibility) {
+  repo_.setVisibility(id, visibility);  // durable
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto it = rooms_.find(id);
+  // Mirror the claim seam: a just-shared live room's read gate flips immediately, so the
+  // freshly-shared tree stops 404-ing at once — not only after eviction and reload.
+  if (it != rooms_.end()) it->second->setVisibility(visibility);
 }
 
 bool RoomRegistry::isOpen(const TreeId& id) const {

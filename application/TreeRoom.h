@@ -1,5 +1,6 @@
 #pragma once
 
+#include "domain/Access.h"
 #include "domain/Command.h"
 #include "domain/Crdt.h"
 #include "domain/Ids.h"
@@ -30,7 +31,7 @@ public:
   static constexpr std::string_view kServerActor{"srv"};
 
   TreeRoom(TreeId id, Lww<std::string> title, LooseGraph graph, Legend legend, Seq head,
-           std::optional<UserId> owner, OpLog& ops, PresenceBus& bus);
+           std::optional<UserId> owner, Visibility visibility, OpLog& ops, PresenceBus& bus);
 
   // Join a client-authored subgraph frame: dedupe on its frameId, fold its stamps into the
   // clock (so a later server mint stays ahead), join its graph + legend + title register
@@ -95,9 +96,12 @@ public:
   Seq head() const { return head_; }
 
   // Authorization: who owns this tree (empty until claimed), and the first-writer claim
-  // that fills it. Reads are public; writes require the owner (or claim an unowned tree).
+  // that fills it. Writes require the owner (or claim an unowned tree); reads are gated by
+  // visibility() — a private tree is owner-only, unlisted/public readable by id (canRead).
   const std::optional<UserId>& owner() const { return owner_; }
   void claim(const UserId& user) { if (!owner_) owner_ = user; }
+  Visibility visibility() const { return visibility_; }
+  void setVisibility(Visibility visibility) { visibility_ = visibility; }
 
 private:
   void markDirty(const GraphState& graph, const LegendState& legend);
@@ -108,6 +112,7 @@ private:
   Legend legend_;
   Seq head_;
   std::optional<UserId> owner_;
+  Visibility visibility_;
   std::set<std::string> appliedOpIds_;
   OpLog& ops_;
   PresenceBus& bus_;

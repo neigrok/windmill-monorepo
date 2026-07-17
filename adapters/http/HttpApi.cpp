@@ -5,6 +5,7 @@
 #include "adapters/json/TreeJson.h"
 #include "application/ActivityFeed.h"
 #include "application/TreeRoom.h"
+#include "domain/Access.h"
 #include "domain/Legend.h"
 #include "domain/LooseGraph.h"
 
@@ -39,23 +40,34 @@ std::optional<UserId> HttpApi::callerOf(const drogon::HttpRequestPtr& req) const
   return wm::callerOf(req, *auth_);
 }
 
-void HttpApi::getTree(const drogon::HttpRequestPtr&, HttpCallback&& callback, const std::string& treeId) {
+void HttpApi::getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
+  std::optional<UserId> caller = callerOf(req);
   Json::Value body(Json::objectValue);
   bool found = true;
   {
     std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
     try {
       TreeRoom& room = registry_->open(TreeId{treeId});
-      body["seq"] = static_cast<Json::Int64>(room.head());
-      body["data"] = toJson(room.snapshot());  // projected TreeData for the first paint
-      Subgraph state;                           // the stamped lattice the client builds its TreeLattice from
-      state.treeId = TreeId{treeId};
-      state.frameId = "snapshot-" + std::to_string(room.head());
-      state.actor = "srv";
-      state.intent = SubgraphIntent::graft;
-      state.graph = room.exportState();
-      state.legend = room.exportLegend();
-      body["state"] = toJson(state);
+      const std::optional<UserId>& owner = room.owner();
+      // A private tree the caller can't read is 404 — body byte-identical to an absent tree,
+      // so an id can't be probed for existence (reuse the found→404 branch below).
+      if (!canRead(caller, owner, room.visibility())) {
+        found = false;
+      } else {
+        body["seq"] = static_cast<Json::Int64>(room.head());
+        body["data"] = toJson(room.snapshot());  // projected TreeData for the first paint
+        Subgraph state;                           // the stamped lattice the client builds its TreeLattice from
+        state.treeId = TreeId{treeId};
+        state.frameId = "snapshot-" + std::to_string(room.head());
+        state.actor = "srv";
+        state.intent = SubgraphIntent::graft;
+        state.graph = room.exportState();
+        state.legend = room.exportLegend();
+        body["state"] = toJson(state);
+        // The share flip reads these: the current visibility, and whether the caller owns it.
+        body["visibility"] = toString(room.visibility());
+        body["mine"] = caller && owner && *caller == *owner;
+      }
     } catch (const std::exception&) {
       found = false;
     }
@@ -63,14 +75,16 @@ void HttpApi::getTree(const drogon::HttpRequestPtr&, HttpCallback&& callback, co
   callback(found ? jsonResponse(body) : error(drogon::k404NotFound, "no such tree"));
 }
 
-void HttpApi::getDiagnostics(const drogon::HttpRequestPtr&, HttpCallback&& callback, const std::string& treeId) {
+void HttpApi::getDiagnostics(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
+  std::optional<UserId> caller = callerOf(req);
   Json::Value body;
   bool found = true;
   {
     std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
     try {
       TreeRoom& room = registry_->open(TreeId{treeId});
-      body = toJson(room.diagnose());
+      if (!canRead(caller, room.owner(), room.visibility())) found = false;  // structure is a read — gate it
+      else body = toJson(room.diagnose());
     } catch (const std::exception&) {
       found = false;
     }
@@ -180,12 +194,15 @@ void HttpApi::getActivity(const drogon::HttpRequestPtr& req, HttpCallback&& call
     return;
   }
 
+  std::optional<UserId> caller = callerOf(req);
   TreeData current;
   bool found = true;
   {
     std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
     try {
-      current = registry_->open(TreeId{treeId}).snapshot();
+      TreeRoom& room = registry_->open(TreeId{treeId});
+      if (!canRead(caller, room.owner(), room.visibility())) found = false;  // the feed exposes structure too
+      else current = room.snapshot();
     } catch (const std::exception&) {
       found = false;
     }

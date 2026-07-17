@@ -1,8 +1,10 @@
 #include "application/ForkService.h"
 
 #include "application/TreeRoom.h"
+#include "domain/Access.h"
 
 #include <mutex>
+#include <optional>
 #include <utility>
 
 namespace wm {
@@ -22,6 +24,10 @@ ForkService::Result ForkService::fork(const TreeId& source, const std::string& r
     std::lock_guard<std::mutex> lock(registry_.strandFor(source));
     try {
       TreeRoom& room = registry_.open(source);
+      // Forking copies the whole document — a read. A source the forker can't read is
+      // indistinguishable from an absent one: noSource → 404, no existence leak.
+      if (!canRead(std::optional<UserId>(owner), room.owner(), room.visibility()))
+        return {Outcome::noSource, {}};
       data = room.snapshot();
       state = room.exportState();
       legend = room.exportLegend();
@@ -61,6 +67,10 @@ std::optional<ForkService::Description> ForkService::describe(const TreeId& sour
   std::lock_guard<std::mutex> lock(registry_.strandFor(source));
   try {
     TreeRoom& room = registry_.open(source);
+    // The one caller (the magic-link fork invite) is unauthenticated, so a source is named
+    // only when it is readable by id — an unlisted or public tree. A private tree stays
+    // undescribed, so its title and shape never ride an email addressed by a stranger.
+    if (!canRead(std::nullopt, room.owner(), room.visibility())) return std::nullopt;
     return Description{room.title().value, room.snapshot().nodes.size()};
   } catch (const std::exception&) {
     return std::nullopt;

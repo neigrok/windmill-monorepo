@@ -2,6 +2,7 @@
 
 #include "adapters/http/Caller.h"
 #include "adapters/json/TreeJson.h"
+#include "domain/Access.h"
 
 #include <optional>
 #include <utility>
@@ -77,14 +78,39 @@ void TreeRegistryApi::listTrees(const drogon::HttpRequestPtr& req, HttpCallback&
   callback(jsonResponse(body));
 }
 
-void TreeRegistryApi::renameTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback,
-                                 const std::string& treeId) {
+void TreeRegistryApi::patchTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback,
+                                const std::string& treeId) {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
-    callback(error(drogon::k401Unauthorized, "sign in to rename a tree"));
+    callback(error(drogon::k401Unauthorized, "sign in to edit a tree"));
     return;
   }
   std::shared_ptr<Json::Value> json = req->getJsonObject();
+
+  // The share seam rides the same PATCH as rename: a {visibility} body reshares the tree,
+  // a {title} body renames it. One authenticated, owner-gated edit either way.
+  if (json && json->isMember("visibility")) {
+    const std::string requested = (*json)["visibility"].asString();
+    if (requested != "private" && requested != "unlisted" && requested != "public") {
+      callback(error(drogon::k400BadRequest, "visibility must be private, unlisted, or public"));
+      return;
+    }
+    TreeRegistry::VisibilityChange outcome =
+        registry_->setVisibility(TreeId{treeId}, *caller, parseVisibility(requested));
+    if (outcome == TreeRegistry::VisibilityChange::notFound) {
+      callback(error(drogon::k404NotFound, "no such tree"));
+      return;
+    }
+    if (outcome == TreeRegistry::VisibilityChange::notOwner) {
+      callback(error(drogon::k403Forbidden, "this tree belongs to another account"));
+      return;
+    }
+    auto response = drogon::HttpResponse::newHttpResponse();
+    response->setStatusCode(drogon::k204NoContent);
+    callback(response);
+    return;
+  }
+
   const std::string title = json ? json->get("title", "").asString() : "";
   TreeRegistry::Renaming outcome = registry_->rename(TreeId{treeId}, *caller, title);
   if (outcome == TreeRegistry::Renaming::blankTitle) {

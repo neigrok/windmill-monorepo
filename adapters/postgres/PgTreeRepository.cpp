@@ -178,7 +178,7 @@ std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
   Lww<std::string> title{row["title"].as<std::string>(), parseHlc(row["title_hlc"].as<std::string>())};
   return StoredTree{std::move(state), std::move(legend), std::move(title),
                     static_cast<Seq>(row["head_seq"].as<long long>()), std::move(owner),
-                    row["visibility"].as<std::string>()};
+                    parseVisibility(row["visibility"].as<std::string>())};
 }
 
 void PgTreeRepository::save(const TreeId& tree, const GraphState& state, const LegendState& legend,
@@ -274,6 +274,14 @@ void PgTreeRepository::claim(const TreeId& tree, const UserId& owner) {
   pqxx::work txn{pgThreadConnection(connString_)};
   txn.exec_params("UPDATE trees SET owner_id = $2::uuid WHERE id = $1 AND owner_id IS NULL",
                   tree.str(), owner.str());
+  txn.commit();
+}
+
+void PgTreeRepository::setVisibility(const TreeId& tree, Visibility visibility) {
+  pqxx::work txn{pgThreadConnection(connString_)};
+  txn.exec_params("UPDATE trees SET visibility = $2, updated_at = now() "
+                  "WHERE id = $1 AND deleted_at IS NULL",
+                  tree.str(), toString(visibility));
   txn.commit();
 }
 

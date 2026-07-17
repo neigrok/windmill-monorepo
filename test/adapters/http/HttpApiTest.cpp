@@ -31,13 +31,17 @@ struct Harness {
   std::shared_ptr<ForkService> fork = std::make_shared<ForkService>(*rooms, *trees, tokens);
   HttpApi api{rooms, trees, progress, ops, Hlc{1, 0, "genesis"}, auth, fork};
 
-  UserId signIn(const std::string& sessionSecret) {
-    User user = authRepo.createUser(Email{"sam@example.com"}, "sam");
+  UserId signIn(const std::string& sessionSecret, const std::string& email = "sam@example.com") {
+    User user = authRepo.createUser(Email{email}, "sam");
     authRepo.insertSession(tokens.digestOf(sessionSecret), user.id, clock.now + 1'000'000, "", "", clock.now);
     return user.id;
   }
 
+  // A shared (unlisted) source, forkable and readable by anyone with the id.
   void seedSource(const char* id, const char* title) {
+    seed(id, title, UserId{"owner"}, Visibility::unlisted);
+  }
+  void seed(const char* id, const char* title, const UserId& owner, Visibility visibility) {
     TreeData data;
     data.id = TreeId{std::string(id)};
     data.title = title;
@@ -46,9 +50,34 @@ struct Harness {
     root.label = "Root";
     data.nodes = {root};
     GraphState state = LooseGraph(data, Hlc{1, 0, "seed"}).exportState();
-    trees->byId[id] = StoredTree{state, LegendState{}, {title, {}}, 0, UserId{"owner"}};
+    trees->byId[id] = StoredTree{state, LegendState{}, {title, {}}, 0, owner, visibility};
   }
 };
+
+drogon::HttpRequestPtr getRequest(const std::string& session) {
+  auto request = drogon::HttpRequest::newHttpRequest();
+  request->setMethod(drogon::Get);
+  if (!session.empty()) request->addCookie("wm_session", session);
+  return request;
+}
+
+drogon::HttpResponsePtr sendGetTree(HttpApi& api, const std::string& session, const std::string& id) {
+  drogon::HttpResponsePtr captured;
+  api.getTree(getRequest(session), [&](const drogon::HttpResponsePtr& r) { captured = r; }, id);
+  return captured;
+}
+
+drogon::HttpResponsePtr sendGetDiagnostics(HttpApi& api, const std::string& session, const std::string& id) {
+  drogon::HttpResponsePtr captured;
+  api.getDiagnostics(getRequest(session), [&](const drogon::HttpResponsePtr& r) { captured = r; }, id);
+  return captured;
+}
+
+drogon::HttpResponsePtr sendGetActivity(HttpApi& api, const std::string& session, const std::string& id) {
+  drogon::HttpResponsePtr captured;
+  api.getActivity(getRequest(session), [&](const drogon::HttpResponsePtr& r) { captured = r; }, id);
+  return captured;
+}
 
 drogon::HttpRequestPtr forkRequest(const Json::Value& body, const std::string& session) {
   auto request = drogon::HttpRequest::newHttpRequest();
@@ -125,4 +154,125 @@ TEST(fork_without_an_id_still_mints_one) {
   CHECK_EQ(response->getStatusCode(), drogon::k201Created);
   CHECK_EQ(bodyOf(response)["data"]["id"].asString(), std::string("t_d1"));
   CHECK_EQ(h.trees->forkedFrom["t_d1"], std::string("t_src"));
+}
+
+// ---- read enforcement (tree-visibility) --------------------------------------------------
+
+TEST(get_tree_owner_reads_a_private_tree_with_mine_true) {
+  Harness h;
+  UserId me = h.signIn("s-me");
+  h.seed("t_priv", "My private plan", me, Visibility::private_);
+
+  drogon::HttpResponsePtr response = sendGetTree(h.api, "s-me", "t_priv");
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  Json::Value body = bodyOf(response);
+  CHECK_EQ(body["visibility"].asString(), std::string("private"));
+  CHECK(body["mine"].asBool());
+  CHECK(body.isMember("data"));
+  CHECK(body.isMember("state"));
+  CHECK_EQ(body["seq"].asInt64(), 0);
+}
+
+TEST(get_tree_private_denial_is_404_byte_identical_to_absent) {
+  Harness h;
+  h.signIn("s-other", "other@example.com");  // a signed-in non-owner (u1)
+  h.seed("t_priv", "Secret", UserId{"owner"}, Visibility::private_);
+
+  drogon::HttpResponsePtr anon = sendGetTree(h.api, "", "t_priv");
+  drogon::HttpResponsePtr nonOwner = sendGetTree(h.api, "s-other", "t_priv");
+  drogon::HttpResponsePtr absent = sendGetTree(h.api, "s-other", "t_ghost");
+
+  CHECK_EQ(anon->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(nonOwner->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(absent->getStatusCode(), drogon::k404NotFound);
+  // No existence leak: a private-denied read is indistinguishable from a missing tree.
+  const std::string absentBody = dump(bodyOf(absent));
+  CHECK_EQ(dump(bodyOf(anon)), absentBody);
+  CHECK_EQ(dump(bodyOf(nonOwner)), absentBody);
+  CHECK_EQ(absentBody, std::string(R"({"error":"no such tree"})"));
+}
+
+TEST(get_tree_unlisted_is_readable_by_anyone_but_not_mine_for_a_stranger) {
+  Harness h;
+  h.seed("t_shared", "Shared plan", UserId{"owner"}, Visibility::unlisted);
+
+  drogon::HttpResponsePtr anon = sendGetTree(h.api, "", "t_shared");
+  CHECK_EQ(anon->getStatusCode(), drogon::k200OK);
+  Json::Value body = bodyOf(anon);
+  CHECK_EQ(body["visibility"].asString(), std::string("unlisted"));
+  CHECK_FALSE(body["mine"].asBool());  // an anonymous reader owns nothing
+}
+
+TEST(get_tree_public_is_world_readable) {
+  Harness h;
+  h.seed("t_demo", "The demo", UserId{"owner"}, Visibility::public_);
+
+  drogon::HttpResponsePtr anon = sendGetTree(h.api, "", "t_demo");
+  CHECK_EQ(anon->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(bodyOf(anon)["visibility"].asString(), std::string("public"));
+}
+
+TEST(get_diagnostics_private_denial_is_404_byte_identical_to_absent) {
+  Harness h;
+  UserId me = h.signIn("s-me");
+  h.seed("t_mine", "Mine", me, Visibility::private_);
+  h.seed("t_priv", "Secret", UserId{"owner"}, Visibility::private_);
+
+  CHECK_EQ(sendGetDiagnostics(h.api, "s-me", "t_mine")->getStatusCode(), drogon::k200OK);  // owner reads
+  drogon::HttpResponsePtr anon = sendGetDiagnostics(h.api, "", "t_priv");
+  drogon::HttpResponsePtr absent = sendGetDiagnostics(h.api, "", "t_ghost");
+  CHECK_EQ(anon->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(absent->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(dump(bodyOf(anon)), dump(bodyOf(absent)));
+}
+
+TEST(get_diagnostics_unlisted_is_readable_by_anyone) {
+  Harness h;
+  h.seed("t_shared", "Shared", UserId{"owner"}, Visibility::unlisted);
+  CHECK_EQ(sendGetDiagnostics(h.api, "", "t_shared")->getStatusCode(), drogon::k200OK);
+}
+
+TEST(get_activity_private_denial_is_404_byte_identical_to_absent) {
+  Harness h;
+  UserId me = h.signIn("s-me");
+  h.seed("t_mine", "Mine", me, Visibility::private_);
+  h.seed("t_priv", "Secret", UserId{"owner"}, Visibility::private_);
+
+  CHECK_EQ(sendGetActivity(h.api, "s-me", "t_mine")->getStatusCode(), drogon::k200OK);  // owner reads
+  drogon::HttpResponsePtr anon = sendGetActivity(h.api, "", "t_priv");
+  drogon::HttpResponsePtr absent = sendGetActivity(h.api, "", "t_ghost");
+  CHECK_EQ(anon->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(absent->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(dump(bodyOf(anon)), dump(bodyOf(absent)));
+}
+
+TEST(get_activity_unlisted_is_readable_by_anyone) {
+  Harness h;
+  h.seed("t_shared", "Shared", UserId{"owner"}, Visibility::unlisted);
+  CHECK_EQ(sendGetActivity(h.api, "", "t_shared")->getStatusCode(), drogon::k200OK);
+}
+
+TEST(fork_of_a_private_source_you_dont_own_is_404_like_absent) {
+  Harness h;
+  h.signIn("s-me");
+  h.seed("t_priv", "Someone's private plan", UserId{"owner"}, Visibility::private_);
+
+  drogon::HttpResponsePtr denied = sendFork(h.api, forkRequest(Json::Value(Json::objectValue), "s-me"), "t_priv");
+  drogon::HttpResponsePtr absent = sendFork(h.api, forkRequest(Json::Value(Json::objectValue), "s-me"), "t_ghost");
+
+  CHECK_EQ(denied->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(absent->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(dump(bodyOf(denied)), dump(bodyOf(absent)));  // no existence leak through the fork endpoint
+  CHECK(h.trees->forkedFrom.empty());
+}
+
+TEST(fork_of_your_own_private_source_succeeds) {
+  Harness h;
+  UserId me = h.signIn("s-me");
+  h.seed("t_priv", "My private plan", me, Visibility::private_);
+
+  drogon::HttpResponsePtr response = sendFork(h.api, forkRequest(Json::Value(Json::objectValue), "s-me"), "t_priv");
+  CHECK_EQ(response->getStatusCode(), drogon::k201Created);
+  CHECK_EQ(h.trees->forkedFrom["t_d1"], std::string("t_priv"));
 }

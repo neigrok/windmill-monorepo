@@ -331,6 +331,45 @@ TEST(a_renames_stamp_survives_eviction_and_an_older_stamped_write_after_reload_l
   CHECK(s.trees.byId["t"].title == (Lww<std::string>{"Renamed again", Hlc{1'700'000'000'000, 1, "srv"}}));
 }
 
+TEST(set_visibility_reshares_an_owned_tree_and_the_column_reflects_it) {
+  Setup s;
+  UserId me = uid("me");
+  seed(s.trees, "t", me, 100, {spec("a", NodeColor::sky)});
+  CHECK(s.trees.byId["t"].visibility == Visibility::private_);  // born private
+
+  CHECK(s.registry.setVisibility(tid("t"), me, Visibility::unlisted) ==
+        TreeRegistry::VisibilityChange::changed);
+  CHECK(s.trees.byId["t"].visibility == Visibility::unlisted);
+
+  CHECK(s.registry.setVisibility(tid("t"), me, Visibility::private_) ==
+        TreeRegistry::VisibilityChange::changed);
+  CHECK(s.trees.byId["t"].visibility == Visibility::private_);  // and back again
+}
+
+TEST(set_visibility_refuses_a_non_owner_and_an_unknown_tree) {
+  Setup s;
+  seed(s.trees, "t", uid("owner"), 100, {spec("a", NodeColor::sky)});
+
+  CHECK(s.registry.setVisibility(tid("t"), uid("intruder"), Visibility::public_) ==
+        TreeRegistry::VisibilityChange::notOwner);
+  CHECK(s.registry.setVisibility(tid("ghost"), uid("owner"), Visibility::public_) ==
+        TreeRegistry::VisibilityChange::notFound);
+  CHECK(s.trees.byId["t"].visibility == Visibility::private_);  // the refusals left it alone
+}
+
+TEST(set_visibility_flips_a_live_rooms_cache_at_once) {
+  Setup s;
+  UserId me = uid("me");
+  seed(s.trees, "t", me, 100, {spec("a", NodeColor::sky)});
+  TreeRoom& room = s.rooms.open(tid("t"));
+  CHECK(room.visibility() == Visibility::private_);
+
+  CHECK(s.registry.setVisibility(tid("t"), me, Visibility::unlisted) ==
+        TreeRegistry::VisibilityChange::changed);
+  CHECK(room.visibility() == Visibility::unlisted);          // the just-shared live room stops 404-ing at once
+  CHECK(s.trees.byId["t"].visibility == Visibility::unlisted);  // and it is durable
+}
+
 TEST(a_stale_rooms_save_cannot_revert_a_newer_persisted_rename) {
   Setup s;
   UserId me = uid("me");

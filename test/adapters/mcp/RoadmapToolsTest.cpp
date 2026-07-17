@@ -524,6 +524,53 @@ TEST(mcp_find_nodes_filters_by_color_kind_and_substring) {
   CHECK(h.call("find_nodes", with("color", "chartreuse")).isError);  // unknown color rejected
 }
 
+TEST(mcp_read_tools_deny_a_private_tree_you_dont_own) {
+  Harness h;  // "t" is the caller's own (private) tree
+  h.trees.byId["priv"] =
+      StoredTree{LooseGraph().exportState(), LegendState{}, {"Theirs", {}}, 0, uid("someone"), Visibility::private_};
+
+  // Every read tool denies a private tree the caller can't read with the EXACT message an
+  // absent tree returns — byte-identical, so the id is no existence oracle on this surface.
+  const std::vector<const char*> reads = {"get_tree", "get_diagnostics", "get_health", "find_nodes"};
+  for (const char* name : reads) {
+    ToolResult denied = h.tools.callTool(name, with("treeId", "priv"), h.caller);
+    ToolResult absent = h.tools.callTool(name, with("treeId", "nope"), h.caller);
+    CHECK(denied.isError);
+    CHECK(absent.isError);
+    CHECK_EQ(denied.content[0]["text"].asString(), std::string("no such tree \"priv\""));
+    CHECK_EQ(absent.content[0]["text"].asString(), std::string("no such tree \"nope\""));
+  }
+
+  // set_progress must not become a node-id/prerequisite oracle on that same private tree:
+  // it denies exactly as absent does (per-user overlay or not, private stays owner-only).
+  const auto progArgs = [](const char* tree) {
+    Json::Value a(Json::objectValue);
+    a["treeId"] = tree; a["nodeId"] = "anything"; a["status"] = "complete";
+    return a;
+  };
+  ToolResult progDenied = h.tools.callTool("set_progress", progArgs("priv"), h.caller);
+  ToolResult progAbsent = h.tools.callTool("set_progress", progArgs("nope"), h.caller);
+  CHECK(progDenied.isError);
+  CHECK_EQ(progDenied.content[0]["text"].asString(), std::string("no such tree \"priv\""));
+  CHECK_EQ(progAbsent.content[0]["text"].asString(), std::string("no such tree \"nope\""));
+}
+
+TEST(mcp_read_tools_allow_an_unlisted_tree_by_a_stranger) {
+  Harness h;
+  h.trees.byId["shared"] =
+      StoredTree{LooseGraph().exportState(), LegendState{}, {"Shared", {}}, 0, uid("someone"), Visibility::unlisted};
+
+  CHECK_FALSE(h.tools.callTool("get_tree", with("treeId", "shared"), h.caller).isError);
+  CHECK_FALSE(h.tools.callTool("get_diagnostics", with("treeId", "shared"), h.caller).isError);
+  CHECK_FALSE(h.tools.callTool("find_nodes", with("treeId", "shared"), h.caller).isError);
+}
+
+TEST(mcp_read_tools_allow_your_own_private_tree) {
+  Harness h;  // "t" is owned by the caller and private by default
+  CHECK_FALSE(h.call("get_tree", Json::Value(Json::objectValue)).isError);
+  CHECK_FALSE(h.call("get_diagnostics", Json::Value(Json::objectValue)).isError);
+}
+
 TEST(mcp_prune_clears_dangling_edges_and_orphan_progress) {
   Harness h;
   h.call("create_node", node("a", "A"));

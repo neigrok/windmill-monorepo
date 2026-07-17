@@ -20,7 +20,11 @@ struct Harness {
   RoomRegistry rooms{trees, ops, bus};
   ForkService service{rooms, trees, tokens};
 
+  // A shared (unlisted) source, forkable by anyone with the id — the everyday fork scenario.
   void seedSource(const char* id, const char* title) {
+    seedSource(id, title, uid("owner"), Visibility::unlisted);
+  }
+  void seedSource(const char* id, const char* title, const UserId& owner, Visibility visibility) {
     TreeData data;
     data.id = TreeId{std::string(id)};
     data.title = title;
@@ -34,7 +38,7 @@ struct Harness {
     root.status = "complete";  // authoring seed — a fork must start unlit
     data.nodes = {root, leaf};
     GraphState state = LooseGraph(data, Hlc{1, 0, "seed"}).exportState();
-    trees.byId[id] = StoredTree{state, LegendState{}, {title, {}}, 0, uid("owner")};
+    trees.byId[id] = StoredTree{state, LegendState{}, {title, {}}, 0, owner, visibility};
   }
 };
 }
@@ -113,6 +117,38 @@ TEST(fork_reports_a_missing_source) {
   CHECK(h.trees.byId.empty());
 }
 
+TEST(fork_of_a_private_source_you_dont_own_is_a_missing_source) {
+  Harness h;
+  h.seedSource("t_priv", "Someone's private plan", uid("owner"), Visibility::private_);
+
+  // Copying the whole document is a read; a private source you can't read is 404, byte-for-byte
+  // indistinguishable from a source that isn't there — no id enumeration.
+  ForkService::Result result = h.service.fork(TreeId{"t_priv"}, "", "", uid("me"));
+  CHECK(result.outcome == ForkService::Outcome::noSource);
+  CHECK(h.trees.byId.size() == 1u);  // only the source — nothing was forked
+  CHECK(h.trees.forkedFrom.empty());
+}
+
+TEST(fork_of_your_own_private_source_succeeds) {
+  Harness h;
+  h.seedSource("t_priv", "My private plan", uid("me"), Visibility::private_);
+
+  ForkService::Result result = h.service.fork(TreeId{"t_priv"}, "", "", uid("me"));
+  CHECK(result.outcome == ForkService::Outcome::forked);
+  CHECK_EQ(h.trees.forkedFrom["t_d1"], std::string("t_priv"));
+  CHECK(*h.trees.byId["t_d1"].owner == uid("me"));
+}
+
+TEST(fork_of_an_unlisted_source_by_a_stranger_succeeds) {
+  Harness h;
+  h.seedSource("t_shared", "A shared plan", uid("owner"), Visibility::unlisted);
+
+  ForkService::Result result = h.service.fork(TreeId{"t_shared"}, "", "", uid("stranger"));
+  CHECK(result.outcome == ForkService::Outcome::forked);
+  CHECK_EQ(h.trees.forkedFrom["t_d1"], std::string("t_shared"));
+  CHECK(*h.trees.byId["t_d1"].owner == uid("stranger"));
+}
+
 TEST(describe_names_a_live_source_with_its_step_count) {
   Harness h;
   h.seedSource("t_src", "Learn to sail");
@@ -126,4 +162,12 @@ TEST(describe_names_a_live_source_with_its_step_count) {
 TEST(describe_declines_a_vanished_source) {
   Harness h;
   CHECK_FALSE(h.service.describe(TreeId{"t_ghost"}).has_value());
+}
+
+TEST(describe_declines_a_private_source_so_it_never_names_a_strangers_tree) {
+  Harness h;
+  h.seedSource("t_priv", "Secret plan", uid("owner"), Visibility::private_);
+  // The fork-invite mail is unauthenticated: a private source stays undescribed so its title
+  // and step count never ride an email addressed by someone who can't read it.
+  CHECK_FALSE(h.service.describe(TreeId{"t_priv"}).has_value());
 }

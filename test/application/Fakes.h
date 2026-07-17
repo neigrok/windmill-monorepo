@@ -126,11 +126,17 @@ struct FakeTreeRepository : TreeRepository {
     auto it = byId.find(tree.str());
     if (it != byId.end() && !it->second.owner) it->second.owner = owner;
   }
+  void setVisibility(const TreeId& tree, Visibility visibility) override {
+    auto it = byId.find(tree.str());
+    if (it == byId.end() || deletedIds.count(tree.str())) return;  // guarded like the real column write
+    it->second.visibility = visibility;
+  }
   void fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
             const LegendState& legend, const std::string& title, const UserId& owner) override {
     if (byId.count(newTree.str())) throw DuplicateTree{};  // the same unique index as create
     // A fork's title starts stampless — its own baseline, like create; a later rename stamps it.
-    byId[newTree.str()] = StoredTree{state, legend, {title, {}}, 0, owner, "public"};
+    // Born private (the column default), like every fresh tree.
+    byId[newTree.str()] = StoredTree{state, legend, {title, {}}, 0, owner};
     forkedFrom[newTree.str()] = source.str();
   }
 };

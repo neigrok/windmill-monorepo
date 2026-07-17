@@ -23,6 +23,7 @@ public:
   void evict(const TreeId& id);
   void persist(const TreeId& id);  // snapshot a live room's full state without evicting
   void claim(const TreeId& id, const UserId& owner);  // first-writer ownership, durable + in-room
+  void setVisibility(const TreeId& id, Visibility visibility);  // share seam, durable + in-room
   bool isOpen(const TreeId& id) const;
 
   // Retitle, room-coherently: a live room takes the op through its lattice — stamped from

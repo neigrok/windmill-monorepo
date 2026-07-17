@@ -22,7 +22,7 @@ public:
 
   void createTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback);                      // POST   /v1/trees
   void listTrees(const drogon::HttpRequestPtr& req, HttpCallback&& callback);                       // GET    /v1/trees
-  void renameTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);  // PATCH  /v1/trees/:id
+  void patchTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);   // PATCH  /v1/trees/:id — {title} and/or {visibility}
   void deleteTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);  // DELETE /v1/trees/:id
 
 private:

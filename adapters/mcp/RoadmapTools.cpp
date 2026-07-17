@@ -3,6 +3,7 @@
 #include "adapters/json/CommandJson.h"
 #include "adapters/json/TreeJson.h"
 #include "application/TreeRoom.h"
+#include "domain/Access.h"
 #include "domain/NodeQuery.h"
 #include "domain/SkillTree.h"
 #include "domain/TreeHealth.h"
@@ -11,6 +12,7 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -144,8 +146,11 @@ ToolResult withRoom(RoomRegistry& registry, const TreeId& tree, Fn&& fn) {
   }
 }
 
-ToolResult readTree(RoomRegistry& registry, const TreeId& tree) {
-  return withRoom(registry, tree, [&](TreeRoom& room) {
+ToolResult readTree(RoomRegistry& registry, const TreeId& tree, const std::optional<UserId>& caller) {
+  return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
+    // Byte-identical to the absent message (RoomRegistry::open throws the same) — a private
+    // tree must be indistinguishable from one that does not exist, or the id is an oracle.
+    if (!canRead(caller, room.owner(), room.visibility())) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     Json::Value out(Json::objectValue);
     out["seq"] = static_cast<Json::Int64>(room.head());
     out["tree"] = toJson(room.snapshot());
@@ -153,13 +158,20 @@ ToolResult readTree(RoomRegistry& registry, const TreeId& tree) {
   });
 }
 
-ToolResult readDiagnostics(RoomRegistry& registry, const TreeId& tree) {
-  return withRoom(registry, tree,
-                  [&](TreeRoom& room) { return ToolResult::json(toJson(room.diagnose())); });
+ToolResult readDiagnostics(RoomRegistry& registry, const TreeId& tree, const std::optional<UserId>& caller) {
+  return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
+    // Byte-identical to the absent message (RoomRegistry::open throws the same) — a private
+    // tree must be indistinguishable from one that does not exist, or the id is an oracle.
+    if (!canRead(caller, room.owner(), room.visibility())) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
+    return ToolResult::json(toJson(room.diagnose()));
+  });
 }
 
-ToolResult readHealth(RoomRegistry& registry, const TreeId& tree) {
+ToolResult readHealth(RoomRegistry& registry, const TreeId& tree, const std::optional<UserId>& caller) {
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
+    // Byte-identical to the absent message (RoomRegistry::open throws the same) — a private
+    // tree must be indistinguishable from one that does not exist, or the id is an oracle.
+    if (!canRead(caller, room.owner(), room.visibility())) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     if (!room.diagnose().clean())
       return ToolResult::failure(
           "tree has cycles/dangling/self-edges; health needs a valid DAG — call get_diagnostics");
@@ -183,8 +195,12 @@ ToolResult readProgress(ProgressService& progress, const TreeId& tree, const Use
   return ToolResult::json(toJson(progress.progressOf(tree, user)));
 }
 
-ToolResult findNodes(RoomRegistry& registry, const TreeId& tree, const Json::Value& args) {
+ToolResult findNodes(RoomRegistry& registry, const TreeId& tree, const Json::Value& args,
+                     const std::optional<UserId>& caller) {
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
+    // Byte-identical to the absent message (RoomRegistry::open throws the same) — a private
+    // tree must be indistinguishable from one that does not exist, or the id is an oracle.
+    if (!canRead(caller, room.owner(), room.visibility())) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     NodeFilter filter;
     if (args.isMember("color") && args["color"].isString()) {
       filter.color = parseColor(args["color"].asString());
@@ -247,6 +263,11 @@ std::optional<std::string> applyProgressBatch(
   {
     std::lock_guard<std::mutex> lock(registry.strandFor(tree));
     TreeRoom& room = registry.open(tree);
+    // Progress is a per-user overlay, not an edit — so it isn't owner-gated — but marking a
+    // node against someone else's PRIVATE tree would confirm which node ids exist (and their
+    // prerequisite shape). Deny it exactly as an absent tree does: private ⇒ owner-only.
+    if (!canRead(user, room.owner(), room.visibility()))
+      throw std::runtime_error("no such tree \"" + tree.str() + "\"");
     std::string unknown;
     for (const auto& [node, status] : requested) {
       if (!room.hasNode(node)) { if (!unknown.empty()) unknown += ", "; unknown += node.str(); continue; }
@@ -312,6 +333,10 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
                 (args["dryRun"].isString() && args["dryRun"].asString() == "true");
 
   ToolResult grafted = withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
+    // A read gate before the write gate: an UNOWNED private tree is claimable by first-write,
+    // but its dry-run collision list would leak its node/kind ids to a non-reader first.
+    if (!canRead(actor, room.owner(), room.visibility()))
+      return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     if (room.owner() && *room.owner() != actor)
       return ToolResult::failure("this tree belongs to another account");
 
@@ -729,12 +754,16 @@ ToolResult RoadmapTools::callTool(const std::string& name, const Json::Value& ar
   TreeId tree{arguments.get("treeId", "").asString()};
   if (tree.empty()) return ToolResult::failure("missing required argument: treeId");
 
+  // The MCP caller is an authenticated account (an OAuth token's user over HTTP, the
+  // configured user over stdio); an empty id reads as anonymous for the read gate.
+  std::optional<UserId> reader = caller.empty() ? std::nullopt : std::optional<UserId>(caller);
+
   if (name == "delete_tree")     return removeTree(treeRegistry_, tree, caller);
-  if (name == "get_tree")        return readTree(registry_, tree);
-  if (name == "get_diagnostics") return readDiagnostics(registry_, tree);
-  if (name == "get_health")      return readHealth(registry_, tree);
+  if (name == "get_tree")        return readTree(registry_, tree, reader);
+  if (name == "get_diagnostics") return readDiagnostics(registry_, tree, reader);
+  if (name == "get_health")      return readHealth(registry_, tree, reader);
   if (name == "get_progress")    return readProgress(progress_, tree, caller);
-  if (name == "find_nodes")      return findNodes(registry_, tree, arguments);
+  if (name == "find_nodes")      return findNodes(registry_, tree, arguments, reader);
   if (name == "set_progress")
     return writeProgress(registry_, progress_, bus_, tree, arguments, clock_, caller);
   if (name == "import_subgraph")

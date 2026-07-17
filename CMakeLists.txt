@@ -33,6 +33,7 @@ target_link_libraries(windmill_application PUBLIC windmill_domain)
 
 add_executable(windmill_domain_tests
   test/main.cpp
+  test/domain/AccessTest.cpp
   test/domain/LooseGraphTest.cpp
   test/domain/LegendTest.cpp
   test/domain/SubgraphTest.cpp
@@ -131,6 +132,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/adapters/http/RateLimiterTest.cpp
     test/adapters/http/HttpApiTest.cpp
     test/adapters/http/TreeRegistryApiTest.cpp
+    test/adapters/ws/CollabTest.cpp
     test/adapters/email/ResendEmailSenderTest.cpp
     test/adapters/llm/AnthropicComposerTest.cpp)
   target_link_libraries(windmill_adapters_tests PRIVATE windmill_adapters)

@@ -44,6 +44,11 @@ public:
   enum class Renaming { renamed, notFound, notOwner, blankTitle };
   Renaming rename(const TreeId& tree, const UserId& caller, const std::string& title);
 
+  // Reshare an owned tree: owner check → set its read visibility through RoomRegistry (durable
+  // column write, plus the live room's cache so a just-shared tree stops 404-ing at once).
+  enum class VisibilityChange { changed, notFound, notOwner };
+  VisibilityChange setVisibility(const TreeId& tree, const UserId& caller, Visibility visibility);
+
 private:
   TreeRepository& trees_;
   ProgressRepository& progress_;

@@ -69,6 +69,29 @@ Json::Value claim(const std::string& id, const std::string& title) {
 
 Json::Value bodyOf(const drogon::HttpResponsePtr& response) { return *response->getJsonObject(); }
 
+drogon::HttpRequestPtr patch(const Json::Value& body, const std::string& session = "") {
+  auto request = drogon::HttpRequest::newHttpRequest();
+  request->setMethod(drogon::Patch);
+  request->setPath("/v1/trees/t");
+  request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+  request->setBody(dump(body));
+  if (!session.empty()) request->addCookie("wm_session", session);
+  return request;
+}
+
+drogon::HttpResponsePtr sendPatch(TreeRegistryApi& api, const drogon::HttpRequestPtr& request,
+                                  const std::string& id) {
+  drogon::HttpResponsePtr captured;
+  api.patchTree(request, [&](const drogon::HttpResponsePtr& response) { captured = response; }, id);
+  return captured;
+}
+
+Json::Value shareTo(const char* visibility) {
+  Json::Value body(Json::objectValue);
+  body["visibility"] = visibility;
+  return body;
+}
+
 }
 
 TEST(create_without_an_id_mints_one_and_reports_existed_false) {
@@ -178,4 +201,60 @@ TEST(create_with_an_id_still_requires_a_session) {
   CHECK_EQ(response->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"sign in to plant a roadmap"})"));
   CHECK(h.trees.byId.empty());
+}
+
+// ---- PATCH visibility (the share seam) ---------------------------------------------------
+
+TEST(patch_visibility_owner_flip_returns_204_and_reshares) {
+  Harness h;
+  UserId me = h.signIn("s-live", "sam@example.com");
+  h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Mine", {}}, 0, me};  // born private
+
+  drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("unlisted"), "s-live"), "t");
+
+  CHECK_EQ(response->getStatusCode(), drogon::k204NoContent);
+  CHECK(h.trees.byId["t"].visibility == Visibility::unlisted);
+}
+
+TEST(patch_visibility_rejects_an_unknown_value_with_400) {
+  Harness h;
+  UserId me = h.signIn("s-live", "sam@example.com");
+  h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Mine", {}}, 0, me};
+
+  drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("world-readable"), "s-live"), "t");
+
+  CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
+  CHECK_EQ(dump(bodyOf(response)),
+           std::string(R"({"error":"visibility must be private, unlisted, or public"})"));
+  CHECK(h.trees.byId["t"].visibility == Visibility::private_);  // untouched
+}
+
+TEST(patch_visibility_refuses_a_non_owner_with_403) {
+  Harness h;
+  h.signIn("s-live", "sam@example.com");  // u1 — not the owner
+  h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Theirs", {}}, 0, uid("owner")};
+
+  drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("public"), "s-live"), "t");
+
+  CHECK_EQ(response->getStatusCode(), drogon::k403Forbidden);
+  CHECK(h.trees.byId["t"].visibility == Visibility::private_);
+}
+
+TEST(patch_visibility_without_a_session_is_401) {
+  Harness h;
+  h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"X", {}}, 0, uid("owner")};
+
+  drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("unlisted")), "t");
+
+  CHECK_EQ(response->getStatusCode(), drogon::k401Unauthorized);
+  CHECK(h.trees.byId["t"].visibility == Visibility::private_);
+}
+
+TEST(patch_visibility_of_an_absent_tree_is_404) {
+  Harness h;
+  h.signIn("s-live", "sam@example.com");
+
+  drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("unlisted"), "s-live"), "t_ghost");
+
+  CHECK_EQ(response->getStatusCode(), drogon::k404NotFound);
 }

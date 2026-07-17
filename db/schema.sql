@@ -64,6 +64,16 @@ create table if not exists trees (
 alter table trees add column if not exists title_hlc text not null default '';
 alter table trees add column if not exists title_ms bigint not null default 0;
 alter table trees add column if not exists title_counter bigint not null default 0;
+-- visibility gates every read (domain/Access.h): 'private' is owner-only, 'unlisted'/'public'
+-- are readable by anyone holding the id. Private-by-default (fail-closed) — converge a tree
+-- table that predates the column onto the private default.
+alter table trees add column if not exists visibility text not null default 'private';
+
+-- Data pin (idempotent, re-applied each deploy): the playable demo tree is read anonymously
+-- from #/demo over both HTTP and WS, so it must be public — without this, read enforcement
+-- 404s the demo for every anon visitor. Only this one id is pinned; the dogfood tree
+-- (t_9362d9bc883e0a1e) stays private, safe because the MCP principal owns it.
+update trees set visibility = 'public' where id = 't_9e407a96b5330ebe';
 
 -- the registry list: a caller's live (not soft-deleted) trees, keyed by owner
 create index if not exists trees_owner on trees (owner_id) where deleted_at is null;

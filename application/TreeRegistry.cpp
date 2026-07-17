@@ -105,4 +105,16 @@ TreeRegistry::Renaming TreeRegistry::rename(const TreeId& tree, const UserId& ca
   return Renaming::renamed;
 }
 
+TreeRegistry::VisibilityChange TreeRegistry::setVisibility(const TreeId& tree, const UserId& caller,
+                                                           Visibility visibility) {
+  // The strand serializes the reshare against the tree's socket frames, so the owner check
+  // and the visibility flip form one uninterrupted step, exactly like rename.
+  std::lock_guard<std::mutex> strand(rooms_.strandFor(tree));
+  std::optional<StoredTree> stored = trees_.load(tree);
+  if (!stored) return VisibilityChange::notFound;
+  if (!stored->owner || *stored->owner != caller) return VisibilityChange::notOwner;
+  rooms_.setVisibility(tree, visibility);
+  return VisibilityChange::changed;
+}
+
 }

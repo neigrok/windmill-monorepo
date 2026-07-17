@@ -3,8 +3,10 @@
 #include "adapters/json/SubgraphJson.h"
 #include "adapters/json/TreeJson.h"
 #include "application/TreeRoom.h"
+#include "domain/Access.h"
 
 #include <optional>
+#include <stdexcept>
 
 #include <trantor/utils/Logger.h>
 
@@ -97,8 +99,11 @@ void Collab::onMessage(const drogon::WebSocketConnectionPtr& conn, const std::st
 // sends an empty vector, so the delta is the whole state; a returning one gets just the gap.
 // Two-way anti-entropy: the client flushes its own delta back (§6), and both frontiers meet.
 void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, const Json::Value& request) {
-  bus_.subscribe(TreeId{treeId}, conn, principalOf(conn).user);
-  presence_.join(conn, TreeId{treeId});
+  const Principal& principal = principalOf(conn);
+  // An anonymous connection (a synthetic guest) reads as no caller — never as its guest id;
+  // canRead then denies every private tree, and admits unlisted/public by id.
+  std::optional<UserId> caller =
+      principal.authenticated ? std::optional<UserId>(principal.user) : std::nullopt;
 
   VersionVector clientVector = versionVectorFromJson(request["vector"]);
   Json::Value frame;
@@ -106,6 +111,16 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     try {
       TreeRoom& room = registry_.open(TreeId{treeId});
+      // Gate the read BEFORE joining the bus or presence: an unreadable caller must never be
+      // subscribed, or it would receive every later live broadcast. A private-denied read is
+      // rejected with the same "no such tree" the open-failure path sends — no existence leak.
+      if (!canRead(caller, room.owner(), room.visibility()))
+        throw std::runtime_error("no such tree \"" + treeId + "\"");
+      // Readable: join the bus + presence under the strand, so no edit broadcast can slip
+      // between the delta computed here and the subscription taking effect.
+      bus_.subscribe(TreeId{treeId}, conn, principal.user);
+      presence_.join(conn, TreeId{treeId});
+
       Subgraph delta = deltaBetween(room.exportState(), room.exportLegend(), clientVector);
       delta.treeId = TreeId{treeId};
       delta.frameId = "delta-" + std::to_string(room.head());
@@ -226,6 +241,9 @@ void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::str
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     try {
       TreeRoom& room = registry_.open(TreeId{treeId});
+      // Progress on someone else's private tree would confirm it exists — deny it exactly
+      // as an absent tree does (silent return), so the socket is no existence oracle.
+      if (!canRead(principal.user, room.owner(), room.visibility())) return;
       prerequisites = room.prerequisitesOf(node);
       hlc = room.nextStamp(clock_.nowMs());  // progress shares the tree's clock so its LWW stays comparable
     } catch (const std::exception&) {

@@ -367,7 +367,7 @@ int main() {
   app.registerHandler(
       "/v1/trees/{id}",
       [registryApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
-        registryApi->renameTree(req, std::move(cb), id);
+        registryApi->patchTree(req, std::move(cb), id);
       },
       {drogon::Patch});
   app.registerHandler(
