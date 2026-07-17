@@ -25,7 +25,7 @@ const SETTLE_CAP = 760; // never wait past the 720ms camera cap + slack
 const CADENCE = 320;       // one depth ring enters this long after the previous
 const CADENCE_FLOOR = 160; // compress no tighter than this when a deep tree won't fit
 const CEREMONY_MAX = 2400; // structural budget, first ignite -> last settle
-const TWEEN_MAX = 24;      // a wider ring drops the blossom overshoot and plain-cross-fades
+const ARRIVAL_REST_MAX = 400; // past this many nodes the rings are skipped — one cross-fade, toast intact
 
 export class CeremonyDirector {
   constructor(deps) {
@@ -144,9 +144,12 @@ export class CeremonyDirector {
   // and fit the camera; here each depth ring wakes on the 320ms cadence (light travels
   // the edges into it), the root's crown ignites first, and one toast plants the tree.
   // A deep tree compresses the cadence to a floor; rings past the budget join the last.
+  // Reduced motion and trees past the sanity ceiling take the one-beat cross-fade
+  // instead — the pre-dimmed tree settles to rest and the toast still speaks.
   arrival(plan) {
     this.live = { changeset: arrivalChangeset(plan), spoken: false };
-    if (this.motion() === 0) { this.playReduced(this.live.changeset); return; }
+    const planted = plan.rings.reduce((sum, ring) => sum + ring.length, 0);
+    if (this.motion() === 0 || planted > ARRIVAL_REST_MAX) { this.playReduced(this.live.changeset); return; }
 
     const rings = plan.rings;
     let cadence = CADENCE;
@@ -156,8 +159,9 @@ export class CeremonyDirector {
 
     rings.forEach((ring, depth) => {
       const at = Math.min(depth, lastAnimated) * cadence; // rings past the budget join the last beat
-      const blossomOK = ring.length <= TWEEN_MAX;
-      for (const node of ring) this.schedule(at + jitter(node.id), () => this.nodes.igniteNode(node.id, this.clock(), node.tier, { blossom: blossomOK && node.tier === TIER_COMPLETE }));
+      // Arrived-complete steps wake DIRECTLY into their complete rest — imported history
+      // is shown, never replayed (paste-import §04). Live completions keep their bloom.
+      for (const node of ring) this.schedule(at + jitter(node.id), () => this.nodes.igniteNode(node.id, this.clock(), node.tier, { blossom: false }));
       for (const e of plan.litEdgesByRing[depth]) this.schedule(at, () => this.edges.travel(e.from, e.to, this.clock(), {}));
       lastSettle = Math.max(lastSettle, at + BLOSSOM);
     });

@@ -1696,3 +1696,330 @@
     transition: none;
   }
 }
+
+/* ---- Paste-import composer (F3): borrows the StepPanel dock seat on the birth canvas.
+   The bud dims but never leaves; Esc hands the seat back with the draft kept. ---- */
+.birth-composer {
+  position: absolute;
+  top: var(--space-6);
+  right: var(--space-6);
+  bottom: var(--space-6);
+  z-index: 25;
+  width: 360px;
+  max-width: calc(100vw - var(--space-8));
+}
+
+.pc {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+  font-family: var(--font-body);
+  animation: wm-fade-in-up var(--duration-base) var(--ease-soft);
+}
+
+.pc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-4) var(--space-2);
+}
+.pc-title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--text-base);
+  color: var(--text-primary);
+}
+.pc-close {
+  display: inline-flex;
+  padding: 4px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.pc-close:hover {
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+}
+
+/* The well: a mirror div in flow gives the height and the per-line offsets; the
+   textarea overlays it 1:1; the gutter paints the parse at those offsets. All three
+   scroll together inside .pc-well. */
+.pc-well {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border-top: 1px solid var(--border-subtle);
+}
+.pc-well-inner {
+  position: relative;
+  min-height: 100%;
+}
+.pc-mirror,
+.pc-text {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: 22px;
+  padding: 10px 12px 18px 30px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.pc-mirror {
+  visibility: hidden;
+  min-height: 120px;
+}
+.pc-text {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: var(--text-primary);
+}
+.pc-text::placeholder {
+  color: var(--text-tertiary);
+}
+.pc-gutter {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.pc-glyph {
+  position: absolute;
+  left: 6px;
+  width: 18px;
+  text-align: center;
+  pointer-events: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 22px;
+  color: var(--text-tertiary);
+}
+.pc-glyph--done {
+  color: var(--accent-olive-600);
+}
+.pc-glyph--note,
+.pc-glyph--liberty {
+  color: var(--accent-gold-600);
+}
+
+.pc-name {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.pc-name input {
+  padding: 6px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.pc-legend {
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+.pc-legend-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.pc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.pc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.pc-chip i {
+  width: 9px;
+  height: 9px;
+  border-radius: var(--radius-full);
+}
+.pc-quiet {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  padding: 2px 4px;
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.pc-quiet:hover {
+  color: var(--text-secondary);
+}
+.pc-legend-editor {
+  margin-top: var(--space-2);
+}
+
+.pc-foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+.pc-foot-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-height: 22px;
+}
+.pc-readout {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.pc-imperfect {
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--accent-gold-500) 14%, transparent);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--accent-gold-600);
+}
+.pc-ai {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: none;
+  padding: 0;
+  text-align: left;
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--accent-gold-600);
+  cursor: pointer;
+}
+.pc-ai:disabled {
+  cursor: default;
+}
+.pc-ai-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--accent-gold-500);
+  --nd-glow: var(--kind-gold-glow);
+  animation: wm-ember var(--duration-glow) var(--ease-glow) infinite;
+}
+.pc-plant {
+  width: 100%;
+  gap: var(--space-2);
+}
+.pc-kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  opacity: 0.75;
+}
+
+/* Phone/tablet: the composer rides the X5 sheet — the 216px peek shows title,
+   readout, chip and Plant; the well and legend live in the expanded reach. */
+.pc--sheet {
+  height: auto;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  animation: none;
+  overflow: visible;
+}
+.pc--sheet .pc-head {
+  padding: var(--space-1) 0 var(--space-2);
+}
+.pc--sheet .pc-foot {
+  padding: 0 0 var(--space-3);
+  border-top: none;
+}
+.pc--sheet .pc-well {
+  flex: none;
+  max-height: 30vh;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+.pc--sheet .pc-name,
+.pc--sheet .pc-legend {
+  padding-left: 0;
+  padding-right: 0;
+  border-top: none;
+}
+
+/* The ghost skeleton (F3 §02): dashed kind-tinted buds on dormant edges, growing on
+   the birth stage beside the text. Structural only — and cut on phone. */
+.birth-ghost-stage {
+  position: absolute;
+  top: 72px;
+  left: var(--space-6);
+  right: calc(360px + var(--space-6) * 2);
+  bottom: 72px;
+  z-index: 5;
+  pointer-events: none;
+}
+.birth-ghost-stage--wide {
+  right: var(--space-6);
+  bottom: 45vh;
+}
+.birth-ghost {
+  width: 100%;
+  height: 100%;
+}
+.birth-ghost-piece {
+  animation: birth-ghost-in 150ms var(--ease-soft) backwards;
+}
+@keyframes birth-ghost-in {
+  from { opacity: 0; }
+}
+
+/* A text file over the canvas: the same door, a subtle dashed welcome. */
+.birth-drop-hint {
+  position: absolute;
+  inset: var(--space-4);
+  z-index: 30;
+  border: 2px dashed var(--accent-terracotta-400);
+  border-radius: var(--radius-xl);
+  pointer-events: none;
+  animation: wm-fade-in-up var(--duration-fast) var(--ease-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc,
+  .birth-ghost-piece,
+  .birth-drop-hint {
+    animation: none;
+  }
+}

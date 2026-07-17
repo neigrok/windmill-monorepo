@@ -33,7 +33,6 @@ const ICON_ZOOM_FULL = 1.1;
 // fit-to-filling the viewport. Root disc = base disc (NODE_SIZE * 0.84) × emphasis (1.55, see
 // NodeBatch `aEmphasis`); 46 / that ≈ 0.63. Larger trees fit below this cap, so they're untouched.
 const FIT_MAX_ZOOM = 46 / (NODE_SIZE * 0.84 * 1.55);
-const ARRIVAL_MAX = 120; // above this a fresh model paints at rest — no plant cascade (the 5k perf tree)
 const SETTLE_MS = 520; // a displaced node's glide to its new seat after a live relayout
 const SETTLE_MIN_DELTA = 2; // world units — sub-pixel layout drift snaps silently instead of shimmering
 const SETTLE_STAGGER_MS = 120; // glides ripple outward from the change, not all at once
@@ -447,10 +446,12 @@ export class SkillTreeScene {
 
   // ---- arrival cascade (#3) --------------------------------------------
 
-  // A fresh model plants itself only when it's small enough to read and motion is on;
-  // the huge perf tree and reduced motion paint at rest instead.
+  // A fresh model plants itself whenever there's a roadmap to read — two nodes or
+  // more. Big pastes compress rather than vanish, and reduced motion still arrives:
+  // the director decides between the ring cascade and the one-beat cross-fade, and
+  // the toast speaks either way.
   arrivalLikely() {
-    return this.motion === 1 && !!this.renderModel && this.renderModel.nodes.length >= 2 && this.renderModel.nodes.length <= ARRIVAL_MAX;
+    return !!this.renderModel && this.renderModel.nodes.length >= 2;
   }
 
   shouldAnimateArrival(statesMap) {
@@ -495,7 +496,10 @@ export class SkillTreeScene {
     for (const edge of this.renderModel.edges) {
       if ((statesMap.get(edge.from) ?? 'locked') === 'complete') litEdgesByRing[depth.get(edge.from) ?? 0].push({ from: edge.from, to: edge.to });
     }
-    return { rings, litEdgesByRing, summary: `Roadmap planted · ${nodes.length} steps` };
+    let done = 0;
+    for (const state of statesMap.values()) if (state === 'complete') done += 1;
+    const summary = `Roadmap planted · ${nodes.length} steps${done > 0 ? ` · ${done} already done` : ''}`;
+    return { rings, litEdgesByRing, summary };
   }
 
   // Live reposition of one node: cheap per-instance GPU writes for the node and

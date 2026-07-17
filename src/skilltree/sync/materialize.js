@@ -78,6 +78,24 @@ export function materialize(gesture, lattice, clock) {
       if (g.parentId) edges.push(addEdge(g.parentId, g.id, at));
       break;
     }
+    // A pasted plan (paste-import F3): the whole parsed subgraph lands as one gesture —
+    // every write under this one stamp, one persist, one undo entry.
+    case 'ImportSubgraph': {
+      for (const n of g.nodes) {
+        nodes.push(node(n.id, at, {
+          created: true,
+          label: n.label ?? '',
+          icon: n.icon ?? '',
+          color: n.color ?? 'terracotta',
+          position: n.position ?? null,
+          ...(n.status ? { status: n.status } : {}),
+          ...(n.description ? { description: n.description } : {}),
+          ...(n.links?.length ? { links: n.links } : {}),
+        }));
+      }
+      for (const e of g.edges) edges.push(addEdge(e.from, e.to, at));
+      break;
+    }
     case 'ResurrectNode': nodes.push(node(g.id, at, { created: true })); break;  // re-add life only; the tombstoned fields survive
     case 'RenameNode': nodes.push(node(g.id, at, { label: g.label })); break;
     case 'SetNodeColor': nodes.push(node(g.id, at, { color: g.color })); break;
