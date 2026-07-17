@@ -10,11 +10,13 @@ PgAuthRepository::PgAuthRepository(std::string connString) : connString_(std::mo
 
 namespace {
 // A users row → User, carrying the soft-close stamp (null deleted_at → a live account).
-User userFrom(const pqxx::row_ref& row) {
+// `const auto&` (as sibling repos do) — pqxx names the row type differently across
+// versions (row vs row_ref); deducing it keeps the build portable macOS↔Linux.
+User userFrom(const auto& row) {
   std::optional<UnixMs> deletedAt;
-  if (!row["deleted_ms"].is_null()) deletedAt = static_cast<UnixMs>(row["deleted_ms"].as<long long>());
-  return User{UserId{row["id"].as<std::string>()}, Email{row["email"].as<std::string>()},
-              row["name"].as<std::string>(), deletedAt};
+  if (!row["deleted_ms"].is_null()) deletedAt = static_cast<UnixMs>(row["deleted_ms"].template as<long long>());
+  return User{UserId{row["id"].template as<std::string>()}, Email{row["email"].template as<std::string>()},
+              row["name"].template as<std::string>(), deletedAt};
 }
 const char* kUserColumns =
     "id::text, email::text, name, (extract(epoch from deleted_at) * 1000)::bigint AS deleted_ms";
