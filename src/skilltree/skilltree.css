@@ -1913,10 +1913,108 @@
   font-weight: 700;
   color: var(--accent-gold-600);
 }
-.pc-ai {
+/* The shape zone: one gold voice for the AI escalation — a quiet handle + honesty
+   disclosure at rest, a live status while writing, and outcomes that always say where
+   the text is. No red, ever; the well's own preview is the confirmation. */
+.pc-shape {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.pc-shape-idle {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pc-shape-offer {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.pc-shape-line {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--accent-gold-600);
+}
+.pc-shape-do {
+  flex-shrink: 0;
+  border: 1px solid color-mix(in srgb, var(--accent-gold-500) 40%, transparent);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--accent-gold-500) 12%, transparent);
+  padding: 4px 14px;
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  font-weight: 800;
+  color: var(--accent-gold-600);
+  cursor: pointer;
+}
+.pc-shape-do:hover {
+  background: color-mix(in srgb, var(--accent-gold-500) 20%, transparent);
+}
+.pc-shape-do:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.pc-shape-honesty {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+.pc-shape-note {
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+.pc-shape-more {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-tertiary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.pc-shape-more:hover {
+  color: var(--text-secondary);
+}
+.pc-shape-detail {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+.pc-shape-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pc-shape-writing {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--accent-gold-600);
+}
+.pc-shape-cancel {
+  margin-left: auto;
+  border: none;
+  background: none;
+  padding: 2px 4px;
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.pc-shape-cancel:hover {
+  color: var(--text-secondary);
+}
+.pc-shape-done {
+  align-self: flex-start;
   border: none;
   background: none;
   padding: 0;
@@ -1927,7 +2025,60 @@
   color: var(--accent-gold-600);
   cursor: pointer;
 }
-.pc-ai:disabled {
+.pc-shape-degrade {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pc-shape-degrade-line {
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.pc-shape-doors {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.pc-shape-undo {
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.pc-shape-undo:hover {
+  color: var(--text-secondary);
+}
+.pc-shape-kept {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.pc-shape-kept::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--accent-olive-600);
+}
+.pc-shape-kept:hover {
+  color: var(--text-secondary);
+}
+.pc-shape-kept:disabled {
   cursor: default;
 }
 .pc-ai-dot {
@@ -1977,6 +2128,24 @@
   padding-left: 0;
   padding-right: 0;
   border-top: none;
+}
+/* The shape zone rides the sheet: rows may wrap to one column and every tappable door
+   grows to a 44px touch target. */
+.pc--sheet .pc-shape-offer,
+.pc--sheet .pc-shape-status,
+.pc--sheet .pc-shape-doors {
+  flex-wrap: wrap;
+  row-gap: var(--space-1);
+}
+.pc--sheet .pc-shape-do,
+.pc--sheet .pc-shape-cancel,
+.pc--sheet .pc-shape-more,
+.pc--sheet .pc-shape-done,
+.pc--sheet .pc-shape-undo,
+.pc--sheet .pc-shape-kept {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
 }
 
 /* The ghost skeleton (F3 §02): dashed kind-tinted buds on dormant edges, growing on

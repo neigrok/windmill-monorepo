@@ -18,13 +18,22 @@ const AI_RESET_MS = 5000;
 const SHAPE_TIMEOUT_MS = 90000;  // the server's stream deadline; the abort tears the reader down
 const COMPOSE_TEXT_MAX_BYTES = 10240; // the server's cap — over it the handle never offers
 const AI_COPY = {
-  idle: 'Looks like prose — shape it with AI',
-  shaping: 'Shaping…',
-  undo: 'Undo AI shaping',
-  rate: 'A few in a row — try again in a minute',
+  handle: 'Looks like notes — shape it into a plan',
+  shape: 'Shape',
+  honesty: 'Sends your text to an AI model to draft the steps — only when you tap.',
+  more: 'What’s sent?',
+  less: 'Hide',
+  detail: 'Shaping sends the text in this box to a third-party AI model to draft a plan. It runs only when you tap Shape. Windmill doesn’t store the text or the result.',
+  shaping: 'Shaping your plan…',
+  cancel: 'Cancel',
+  kept: 'Your text — kept',
+  undo: 'Shaped into a plan · undo to go back',
+  stopped: 'Couldn’t finish shaping — here’s what arrived. Your text is safe, one undo away.',
+  rate: 'That’s a few in a row. Give it a minute and the shape offer comes back — your text is right here, untouched.',
+  fail: 'Couldn’t reach the model just now. Your text is exactly as you left it.',
   long: 'Too long to shape',
-  fail: 'Couldn’t shape it — your text is untouched',
-  stopped: 'Shaping stopped — undo to get your text back',
+  retry: 'Try again',
+  undoDoor: 'Undo',
 };
 
 // A 503 compose-unavailable hides the handle for the whole session, without a message.
@@ -35,6 +44,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
   const [legendOpen, setLegendOpen] = useState(false);
   const [glyphTops, setGlyphTops] = useState([]);
   const [ai, setAi] = useState({ phase: 'idle', prior: null });
+  const [honestyOpen, setHonestyOpen] = useState(false);
   const [aiHidden, setAiHidden] = useState(() => composeUnavailable);
   const mirrorRef = useRef(null);
   const textRef = useRef(null);
@@ -173,20 +183,15 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
   // server, or any pre-stream error) walks the buffered road; a stream that breaks
   // before its first word gets one buffered retry. The pre-shape text taken here is
   // the undo slot either way — even when the stream stops mid-plan.
-  async function shape() {
-    if (ai.phase === 'undo' || ai.phase === 'stopped') {
-      onTextChange(ai.prior);
-      setAi({ phase: 'idle', prior: null });
-      return;
-    }
-    if (ai.phase !== 'idle') return;
-    const prior = text;
+  async function shape(source = text) {
+    if (ai.phase === 'shaping') return;
+    const prior = source;
     const gen = ++shapeGen.current;
     const controller = new AbortController();
     shapeAbort.current = controller;
     streamedText.current = null;
     const deadline = setTimeout(() => controller.abort(), SHAPE_TIMEOUT_MS);
-    setAi({ phase: 'shaping', prior: null });
+    setAi({ phase: 'shaping', prior });
 
     const compose = (stream) => fetch(`${API_BASE}/v1/compose`, {
       method: 'POST',
@@ -285,6 +290,28 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
     }
   }
 
+  // The original is one tap away the whole time: while shaping, restore aborts the stream
+  // and hands the words back; after (undo / a stopped partial), it just swaps the text in.
+  const restore = () => {
+    if (ai.phase === 'shaping') {
+      shapeGen.current += 1;
+      shapeAbort.current?.abort();
+      streamedText.current = null;
+    }
+    clearTimeout(aiTimer.current);
+    if (ai.prior !== null) onTextChange(ai.prior);
+    setAi({ phase: 'idle', prior: null });
+  };
+
+  // Try again re-fires the shape from the ORIGINAL notes — the stopped partial keeps them in
+  // ai.prior, a pre-stream fail never touched the well — and shape's generation bump retires
+  // whatever the last attempt left in flight.
+  const tryAgain = () => {
+    const source = ai.phase === 'stopped' ? ai.prior : text;
+    clearTimeout(aiTimer.current);
+    shape(source);
+  };
+
   const readout = [`${parse.readout.steps} step${parse.readout.steps === 1 ? '' : 's'}`];
   if (parse.readout.branches > 0) readout.push(`${parse.readout.branches} branch${parse.readout.branches === 1 ? '' : 'es'}`);
   if (parse.readout.done > 0) readout.push(`${parse.readout.done} already done`);
@@ -376,6 +403,67 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
     </div>
   );
 
+  // The shape zone wears one face per phase: the idle handle carries the offer line, the
+  // Shape door and the honesty disclosure (the tap is the consent); shaping shows the live
+  // status + Cancel; the outcomes read back where the text is and offer Try again / undo.
+  // The kept strip rides shaping and the after-states — the words are never gone.
+  const keptVisible = ai.phase === 'shaping' || ai.phase === 'undo' || ai.phase === 'stopped';
+  const shapeZone = aiVisible && (
+    <div className="pc-shape">
+      {ai.phase === 'idle' && (
+        <div className="pc-shape-idle">
+          <div className="pc-shape-offer">
+            <span className="pc-shape-line">{AI_COPY.handle}</span>
+            <button type="button" className="pc-shape-do" onClick={() => shape()} disabled={planting}>{AI_COPY.shape}</button>
+          </div>
+          <div className="pc-shape-honesty">
+            <span className="pc-shape-note">{AI_COPY.honesty}</span>
+            <button type="button" className="pc-shape-more" aria-expanded={honestyOpen} onClick={() => setHonestyOpen((open) => !open)}>
+              {honestyOpen ? AI_COPY.less : AI_COPY.more}
+            </button>
+          </div>
+          {honestyOpen && <p className="pc-shape-detail">{AI_COPY.detail}</p>}
+        </div>
+      )}
+
+      {ai.phase === 'shaping' && (
+        <div className="pc-shape-status">
+          <span className="pc-ai-dot" />
+          <span className="pc-shape-writing">{AI_COPY.shaping}</span>
+          <button type="button" className="pc-shape-cancel" onClick={restore}>{AI_COPY.cancel}</button>
+        </div>
+      )}
+
+      {ai.phase === 'undo' && (
+        <button type="button" className="pc-shape-done" onClick={restore}>{AI_COPY.undo}</button>
+      )}
+
+      {ai.phase === 'stopped' && (
+        <div className="pc-shape-degrade">
+          <span className="pc-shape-degrade-line">{AI_COPY.stopped}</span>
+          <div className="pc-shape-doors">
+            <button type="button" className="pc-shape-do" onClick={tryAgain} disabled={planting}>{AI_COPY.retry}</button>
+            <button type="button" className="pc-shape-undo" onClick={restore}>{AI_COPY.undoDoor}</button>
+          </div>
+        </div>
+      )}
+
+      {ai.phase === 'fail' && (
+        <div className="pc-shape-degrade">
+          <span className="pc-shape-degrade-line">{AI_COPY.fail}</span>
+          <button type="button" className="pc-shape-do" onClick={tryAgain} disabled={planting}>{AI_COPY.retry}</button>
+        </div>
+      )}
+
+      {ai.phase === 'rate' && <span className="pc-shape-degrade-line">{AI_COPY.rate}</span>}
+      {ai.phase === 'long' && <span className="pc-shape-degrade-line">{AI_COPY.long}</span>}
+
+      {keptVisible && (
+        <button type="button" className="pc-shape-kept" onClick={restore} disabled={planting}>{AI_COPY.kept}</button>
+      )}
+    </div>
+  );
+
   const foot = (
     <footer className="pc-foot">
       {(hasText || chip.length > 0) && (
@@ -384,12 +472,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
           {chip.length > 0 && <span className="pc-imperfect">{chip.join(' · ')}</span>}
         </div>
       )}
-      {aiVisible && (
-        <button type="button" className="pc-ai" onClick={shape} disabled={planting || (ai.phase !== 'idle' && ai.phase !== 'undo' && ai.phase !== 'stopped')}>
-          {ai.phase === 'shaping' && <span className="pc-ai-dot" />}
-          {AI_COPY[ai.phase]}
-        </button>
-      )}
+      {shapeZone}
       <button type="button" className="birth-plant pc-plant" disabled={!hasText || planting} onClick={plant}>
         {planting ? 'Planting…' : 'Plant'}
         {!planting && <kbd className="pc-kbd">⌘↵</kbd>}
