@@ -79,7 +79,11 @@ export function materialize(gesture, lattice, clock) {
       break;
     }
     // A pasted plan (paste-import F3): the whole parsed subgraph lands as one gesture —
-    // every write under this one stamp, one persist, one undo entry.
+    // every write under this one stamp, one persist, one undo entry. Append mode also
+    // carries the plan's new kinds (g.kinds), so the graft's added legend rides the same
+    // stamp — one undo removes nodes, edges AND kinds together. Each kind is born fully
+    // (hue + label + description) in a single created write; ranks step past the last so
+    // they land in order. AddKind repaints nothing (nodes carry their hue as a string).
     case 'ImportSubgraph': {
       for (const n of g.nodes) {
         nodes.push(node(n.id, at, {
@@ -94,6 +98,10 @@ export function materialize(gesture, lattice, clock) {
         }));
       }
       for (const e of g.edges) edges.push(addEdge(e.from, e.to, at));
+      const baseRank = lattice.nextRank();
+      (g.kinds ?? []).forEach((k, i) => kinds.push(kind(k.id, at, {
+        created: true, hue: k.hue, label: k.label ?? '', description: k.description ?? '', rank: baseRank + i,
+      })));
       break;
     }
     case 'ResurrectNode': nodes.push(node(g.id, at, { created: true })); break;  // re-add life only; the tombstoned fields survive

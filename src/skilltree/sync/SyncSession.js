@@ -416,6 +416,10 @@ export class SyncSession {
 
   maskedWork() { return this.lattice.maskedWork(); }
 
+  // The ids a paste graft must reserve against collision — present AND tombstoned, so a
+  // colliding slug never resurrects a deleted node (F3 §01).
+  knownNodeIds() { return this.lattice.knownNodeIds(); }
+
   // Device-to-device by file (the `.windmill` sneakernet): the whole lattice as one graft
   // document. Tombstones ride along, so even deletions travel by AirDrop/QR/disk.
   exportGraft() {

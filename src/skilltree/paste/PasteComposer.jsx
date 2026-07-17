@@ -39,7 +39,7 @@ const AI_COPY = {
 // A 503 compose-unavailable hides the handle for the whole session, without a message.
 let composeUnavailable = false;
 
-export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse, budName, planting, onClose, onPlant, sheet = false }) {
+export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse, budName, planting, onClose, onPlant, sheet = false, append = false }) {
   const [name, setName] = useState(budName ?? '');
   const [legendOpen, setLegendOpen] = useState(false);
   const [glyphTops, setGlyphTops] = useState([]);
@@ -135,6 +135,12 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
 
   function plant() {
     if (planting || !hasText) return;
+    // Append hands the raw parse to the parent, which owns the graft transform — there is
+    // no name gate (a headless list attaches directly; append never forces a wrapper name).
+    if (append) {
+      onPlant(parse);
+      return;
+    }
     if (parse.missingRoot && name.trim() === '') {
       nameRef.current?.focus();
       return;
@@ -326,7 +332,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
 
   const head = (
     <header className="pc-head">
-      <h2 className="pc-title">Paste a plan</h2>
+      <h2 className="pc-title">{append ? 'Add to this tree' : 'Paste a plan'}</h2>
       <button type="button" className="pc-close" onClick={onClose} aria-label="Close">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
       </button>
@@ -366,7 +372,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
     </div>
   );
 
-  const nameField = parse.missingRoot && hasText && (
+  const nameField = !append && parse.missingRoot && hasText && (
     <label className="pc-name">
       <span>Give it a name to plant</span>
       <input ref={nameRef} value={name} onChange={(event) => setName(event.target.value)} aria-label="Give it a name to plant" />
@@ -474,7 +480,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
       )}
       {shapeZone}
       <button type="button" className="birth-plant pc-plant" disabled={!hasText || planting} onClick={plant}>
-        {planting ? 'Planting…' : 'Plant'}
+        {planting ? (append ? 'Adding…' : 'Planting…') : (append ? 'Add to tree' : 'Plant')}
         {!planting && <kbd className="pc-kbd">⌘↵</kbd>}
       </button>
     </footer>

@@ -252,6 +252,11 @@ export class TreeLattice {
     return !!record && lifePresent(record.life);
   }
 
+  // Every id the lattice has a record for — present AND tombstoned. A `created` write
+  // re-lives a tombstone (its old fields and edges survive the delete, see maskedWork),
+  // so a graft must reserve these ids against collision, not just the present ones.
+  knownNodeIds() { return [...this.nodes.keys()]; }
+
   edgePresent(from, to) {
     const record = this.edges.get(edgeKey(from, to));
     return !!record && lifePresent(record);

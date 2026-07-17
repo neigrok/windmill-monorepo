@@ -48,6 +48,9 @@ import { PlaceStore } from './persistence/PlaceStore.js';
 import { emptyWorkspace, arcFraction, addSubtask, toggleSubtask, editSubtask, deleteSubtask, setNote, addLink, deleteLink } from './model/NodeWorkspace.js';
 import { deriveLegend, withCounts, inUseCount, freeHue, addKind, recolorKind } from './model/Legend.js';
 import { KindLegend } from '../components/tree/KindLegend.jsx';
+import { PasteComposer } from './paste/PasteComposer.jsx';
+import { parsePlan } from './paste/planGrammar.js';
+import { graftPlan } from './paste/graftPlan.js';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
 import { TreeEditor } from './editing/TreeEditor.js';
 import { NODE_SIZE } from './theme.js';
@@ -245,6 +248,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   const commitLegendRef = useRef(null); // latest commitLegend, so applyRemoteOp (defined earlier) can reach it
   const legendOpenRef = useRef(true); // mirrors legendOpen so persistence reads it without a dep churn
   const highlightedKindIdRef = useRef(null); // mirrors the highlighted kind for the Esc/toggle checks
+  const composerOpenRef = useRef(false); // mirrors composerOpen for the capture-phase ⌘V guard
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false); // the routed tree couldn't load (offline / gone)
@@ -259,6 +263,12 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   const [legendOpen, setLegendOpen] = useState(true); // whether the key is expanded, remembered per tree
   const [legendForceOpen, setLegendForceOpen] = useState(false); // the picker's "+" summoned the key on a 1-kind tree
   const [highlightedKindId, setHighlightedKindId] = useState(null); // a legend row is spotlighting its kind on the graph
+  // paste append-mode (F3 §01): ⌘V on the editor opens the same composer to graft a plan
+  // under the current selection. The draft text survives Esc; the draft legend seeds from
+  // the live legend on open so headings reuse the tree's own kinds.
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [draftKinds, setDraftKinds] = useState([]);
   const [selectedId, commitSelectedId] = useState(null);
   const [hoveredId, setHoveredId] = useState(null);
   const [bounds, setBounds] = useState(EMPTY_BOUNDS);
@@ -765,6 +775,46 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     showToast('Tidied — dropped redundant links', { action: { label: 'Undo', run: undo } });
   }, [showToast, undo]);
 
+  // The composer's "Add to tree" (paste append-mode, F3 §01): the raw parse becomes a
+  // graft under the current selection — the tree's root when nothing is selected, or when
+  // the selection was deleted mid-compose. graftPlan shapes it (id-collision remap,
+  // attach/dissolve, adds-only legend) and the whole subgraph rides ONE ImportSubgraph
+  // gesture — one wire frame, one undo entry. onTreeChanged re-lays-out synchronously, so
+  // the grafted nodes are already seated when we pulse them. Silent 'added' events let
+  // history record the graft without N tickers; one summary toast speaks with an Undo.
+  const graftImported = useCallback((parse) => {
+    const editor = editorRef.current;
+    const collab = collabRef.current;
+    if (!editor || !collab) return;
+    const nodes = editor.treeData.nodes;
+    const selected = selectedIdRef.current;
+    const anchored = selected && nodes.some((node) => node.id === selected);
+    // Target: the selection, else a root (a prereq-less node). An empty or rootless tree has
+    // neither — the graft then lands at root level (null target), so a paste into nothing
+    // plants the tree rather than vanishing and stranding the composer.
+    const targetId = (anchored ? selected : nodes.find((node) => node.prerequisites.length === 0)?.id) ?? null;
+
+    const graft = graftPlan({
+      parse,
+      targetId,
+      reservedNodeIds: collab.knownNodeIds(),  // present AND tombstoned — never resurrect a deleted node
+      liveKinds: legendRef.current,
+    });
+    if (graft.nodes.length === 0) { setComposerOpen(false); return; }
+
+    collab.dispatch({ kind: 'ImportSubgraph', nodes: graft.nodes, edges: graft.edges, kinds: graft.kinds });
+
+    for (const grafted of graft.nodes) {
+      emit({ verb: 'added', nodeId: grafted.id, label: grafted.label, kind: grafted.color }, { silent: true });
+      sceneRef.current?.pulseNode(grafted.id);
+    }
+    const count = graft.nodes.length;
+    const targetLabel = targetId ? (nodes.find((node) => node.id === targetId)?.label || 'the tree') : null;
+    const where = targetLabel ? ` under “${targetLabel}”` : '';
+    showToast(`Added ${count} step${count === 1 ? '' : 's'}${where}`, { action: { label: 'Undo', run: undo } });
+    setComposerOpen(false);
+  }, [emit, showToast, undo]);
+
   // Construct the scene once; React only ever drives it through the methods below.
   // Read-only omits every edit callback so no gesture can mutate the tree, and passes
   // `readOnly` so the scene suppresses its own affordances (X5 shared contract).
@@ -852,6 +902,29 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [undo, redo, deleteSelected, handleDeleteEdge, toggleActivity, closeActivity]);
+
+  // paste append-mode (F3 §01): raw ⌘V on the editor opens the composer already filled and
+  // parsed, grafting under the current selection. Capture-phase, with three guards so it
+  // never steals a legitimate paste — read-only/shared/demo trees don't graft, the
+  // composer's own textarea pastes stay ordinary, and a paste while typing in any field
+  // (a label, note, legend or switcher input) pastes normally. Canvas focus = activeElement
+  // is the body/canvas, so a genuine canvas ⌘V falls through to the graft.
+  useEffect(() => {
+    const onPaste = (event) => {
+      if (readOnlyRef.current) return;
+      if (composerOpenRef.current) return;
+      const el = document.activeElement;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+      const pasted = event.clipboardData?.getData('text/plain') ?? '';
+      if (pasted.trim() === '') return;
+      event.preventDefault();
+      setDraftKinds(legendRef.current);
+      setDraft(pasted);
+      setComposerOpen(true);
+    };
+    window.addEventListener('paste', onPaste, true);
+    return () => window.removeEventListener('paste', onPaste, true);
+  }, []);
 
   useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
 
@@ -1113,6 +1186,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   useEffect(() => { legendOpenRef.current = legendOpen; }, [legendOpen]);
   useEffect(() => { highlightedKindIdRef.current = highlightedKindId; }, [highlightedKindId]);
   useEffect(() => { readOnlyRef.current = readOnly; }, [readOnly]);
+  useEffect(() => { composerOpenRef.current = composerOpen; }, [composerOpen]);
 
   // An expired magic-link landing routes back here and bumps this signal to summon
   // the sign-in door — the same one door the seat opens. Zero is the resting value.
@@ -1472,6 +1546,29 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     sceneRef.current?.panTo(x, y);
   }
 
+  // The paste composer, append mode (F3 §01): parsed live off the draft against the tree's
+  // own legend, with bindOnly so an unmatched heading mints a fresh hue rather than
+  // renaming an existing kind. It takes the top-priority dock seat while open — the
+  // selection persists underneath as the graft target. Editor-only, so desktop-only (the
+  // read-only guard on the ⌘V door already keeps it off shares, demos and small screens).
+  const composerParse = useMemo(
+    () => (composerOpen ? parsePlan(draft, draftKinds, { bindOnly: true }) : null),
+    [composerOpen, draft, draftKinds],
+  );
+  const composer = composerOpen && composerParse && (
+    <PasteComposer
+      append
+      text={draft}
+      onTextChange={setDraft}
+      kinds={draftKinds}
+      onKindsChange={setDraftKinds}
+      parse={composerParse}
+      planting={false}
+      onClose={() => setComposerOpen(false)}
+      onPlant={graftImported}
+    />
+  );
+
   // The selected step, rendered read-only: no editing controls, but its unlocks,
   // prerequisites and history. Shared by the phone sheet and the tablet/desktop panel.
   const readOnlyDetail = selectedNode && (
@@ -1599,11 +1696,13 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       )}
 
       {!readOnly && (
-        <aside className={`st-detail-panel ${selectedNode || feedVisible ? 'st-detail-panel--open' : ''}`}>
-          {/* One dock, two tenants (design A′/A″): the feed is summoned over the canvas
-              edge; selecting a fruit swaps in its details. Key toggle replays the swap. */}
-          <div className="st-dock-tenant" key={selectedNode ? selectedNode.id : 'activity'}>
-            {selectedNode ? (
+        <aside className={`st-detail-panel ${composerOpen || selectedNode || feedVisible ? 'st-detail-panel--open' : ''}`}>
+          {/* One dock, now three tenants: the paste composer takes the top seat while open
+              (append mode, F3) with the selection persisting underneath as the graft target;
+              otherwise the feed is summoned over the canvas edge, and selecting a fruit
+              swaps in its details. The key toggle replays the swap on every change. */}
+          <div className="st-dock-tenant" key={composerOpen ? 'composer' : selectedNode ? selectedNode.id : 'activity'}>
+            {composerOpen ? composer : selectedNode ? (
               <StepPanel
                 node={selectedNode}
                 state={selectedState}

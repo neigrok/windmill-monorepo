@@ -12,10 +12,14 @@ const PLAN_HUES = ['terracotta', 'olive', 'gold', 'brick', 'sky', 'plum'];
 const ROOT_LABEL_MAX = 200;
 const KIND_LABEL_MAX = 24;
 
-export function parsePlan(text, existingKinds = []) {
+// `bindOnly` (append mode, F3 §01): a heading that matches no existing kind mints a
+// fresh hue instead of relabeling the next unclaimed one. Harmless at birth (the
+// throwaway defaults) but destructive on a real tree — it would rename the user's own
+// "Research" kind — so append passes bindOnly:true. Birth callers pass nothing.
+export function parsePlan(text, existingKinds = [], { bindOnly = false } = {}) {
   const lines = scanLines(text);
   const root = takeRoot(lines);
-  const grove = growNodes(lines, root, existingKinds);
+  const grove = growNodes(lines, root, existingKinds, bindOnly);
   return assemble(root, grove, lines);
 }
 
@@ -76,7 +80,7 @@ function takeRoot(lines) {
 // in order and relabels it; then it mints free hues; past six it cycles — all
 // deterministic, so the same text always paints the same legend.
 class KindBook {
-  constructor(existingKinds) {
+  constructor(existingKinds, bindOnly = false) {
     this.kinds = existingKinds.map((kind) => ({
       id: kind.id,
       hue: kind.hue,
@@ -86,6 +90,7 @@ class KindBook {
     }));
     this.claimed = new Set();
     this.overflow = 0;
+    this.bindOnly = bindOnly; // append: never relabel an existing kind, only bind or mint
   }
 
   firstHue() {
@@ -99,13 +104,15 @@ class KindBook {
       this.claimed.add(bound.id);
       return bound;
     }
-    const starter = this.kinds.find((kind) => kind.source === 'existing' && !this.claimed.has(kind.id));
-    if (starter) {
-      starter.label = label.slice(0, KIND_LABEL_MAX);
-      starter.description = '';
-      starter.source = 'relabeled';
-      this.claimed.add(starter.id);
-      return starter;
+    if (!this.bindOnly) {
+      const starter = this.kinds.find((kind) => kind.source === 'existing' && !this.claimed.has(kind.id));
+      if (starter) {
+        starter.label = label.slice(0, KIND_LABEL_MAX);
+        starter.description = '';
+        starter.source = 'relabeled';
+        this.claimed.add(starter.id);
+        return starter;
+      }
     }
     const taken = new Set(this.kinds.map((kind) => kind.hue));
     const hue = PLAN_HUES.find((candidate) => !taken.has(candidate));
@@ -131,8 +138,8 @@ class KindBook {
 
 // Rules 2–7 in one ordered walk. Draft nodes carry an index-parent; `marks` is the
 // gutter's raw material, one per line that spoke.
-function growNodes(lines, root, existingKinds) {
-  const book = new KindBook(existingKinds);
+function growNodes(lines, root, existingKinds, bindOnly = false) {
+  const book = new KindBook(existingKinds, bindOnly);
   const nodes = [{ role: 'root', label: root.title, hue: book.firstHue(), parent: -1, checked: false, notes: [], links: [], line: root.line }];
   const marks = lines.map(() => null);
   if (root.line >= 0) marks[root.line] = { node: 0, glyph: '◉', liberties: [] };

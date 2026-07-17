@@ -151,6 +151,31 @@ test('a heading matching an existing kind binds case-insensitively — no relabe
   assert.equal(parsed.nodes.find((n) => n.id === 'moment').color, 'gold');
 });
 
+test('bindOnly (append): an unmatched heading mints a fresh hue, never relabeling an existing kind', () => {
+  // Birth mode relabels the next unclaimed existing kind — fine on throwaway defaults.
+  const birth = parsePlan('Plan\n## Deploy\n- ship', KINDS);
+  assert.equal(birth.kinds[0].label, 'Deploy');
+  assert.equal(birth.kinds[0].source, 'relabeled');
+
+  // Append mode must never rename the user's real kinds: "Build" stays "Build", and the
+  // unmatched "Deploy" mints the first free palette hue instead.
+  const append = parsePlan('Plan\n## Deploy\n- ship', KINDS, { bindOnly: true });
+  assert.deepStrictEqual(append.kinds, [
+    { id: 'build', hue: 'terracotta', label: 'Build', description: 'Things you make', source: 'existing' },
+    { id: 'learn', hue: 'olive', label: 'Learn', description: 'Things you figure out', source: 'existing' },
+    { id: 'milestone', hue: 'gold', label: 'Milestone', description: 'Moments that matter', source: 'existing' },
+    { id: 'deploy', hue: 'brick', label: 'Deploy', description: '', source: 'added' },
+  ]);
+  assert.equal(append.nodes.find((n) => n.id === 'ship').color, 'brick');
+});
+
+test('bindOnly still binds a heading that matches an existing kind, case-insensitively', () => {
+  const append = parsePlan('Plan\n## build\n- thing\n## MILESTONE\n- moment', KINDS, { bindOnly: true });
+  assert.equal(append.nodes.find((n) => n.id === 'thing').color, 'terracotta');
+  assert.equal(append.nodes.find((n) => n.id === 'moment').color, 'gold');
+  assert.deepStrictEqual(append.kinds.map((k) => k.source), ['existing', 'existing', 'existing']);
+});
+
 test('seven branches: three takeovers, three minted hues, then a deterministic cycle', () => {
   const doc = ['Root', ...[1, 2, 3, 4, 5, 6, 7].map((n) => `## B${n}\n- s${n}`)].join('\n');
   const parsed = parsePlan(doc, KINDS);
