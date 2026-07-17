@@ -14,6 +14,9 @@ struct OAuthPolicy {
   static constexpr UnixMs codeLifetimeMs = 10ull * 60 * 1000;
   static constexpr UnixMs accessLifetimeMs = 60ull * 60 * 1000;
   static constexpr UnixMs refreshLifetimeMs = 30ull * 24 * 60 * 60 * 1000;
+  // The settings §2 grant's last-used stamp is only advanced past this interval, so a busy
+  // client resolving tokens on the hot path does not write on every call.
+  static constexpr UnixMs grantTouchThrottleMs = 60ull * 1000;
 };
 
 inline UnixMs codeExpiry(UnixMs now) { return now + OAuthPolicy::codeLifetimeMs; }

@@ -32,14 +32,16 @@ struct Harness {
   FakeEmail email;
   FakeTokens tokens;
   FakeClock clock;
+  FakeOAuthRepository oauthRepo;
+  OAuthService oauth{oauthRepo, tokens, clock};
   std::shared_ptr<AuthService> auth =
-      std::make_shared<AuthService>(authRepo, email, tokens, clock, "https://windmill.works");
+      std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, "https://windmill.works");
   std::shared_ptr<FakeEventRepository> repo = std::make_shared<FakeEventRepository>();
   EventsApi api{repo, auth};
 
   UserId signIn(const std::string& sessionSecret) {
     User user = authRepo.createUser(Email{"sam@example.com"}, "sam");
-    authRepo.insertSession(tokens.digestOf(sessionSecret), user.id, clock.now + 1'000'000);
+    authRepo.insertSession(tokens.digestOf(sessionSecret), user.id, clock.now + 1'000'000, "", "", clock.now);
     return user.id;
   }
 };

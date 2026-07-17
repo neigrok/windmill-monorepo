@@ -210,4 +210,39 @@ void OAuthApi::token(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   cb(response);
 }
 
+void OAuthApi::listGrants(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+  // Settings §2 connected tools: the caller's grants, separate from their browser sessions.
+  std::optional<UserId> caller = callerOf(req);
+  if (!caller) {
+    cb(oauthError("login_required", "sign in to see your connected tools", drogon::k401Unauthorized));
+    return;
+  }
+  Json::Value list(Json::arrayValue);
+  for (const GrantView& grant : oauth_->listGrants(*caller)) {
+    Json::Value row(Json::objectValue);
+    row["clientId"] = grant.clientId;
+    row["name"] = grant.clientName;
+    row["grantedMs"] = static_cast<Json::Int64>(grant.grantedMs);
+    row["lastUsedMs"] = static_cast<Json::Int64>(grant.lastUsedMs);
+    list.append(row);
+  }
+  Json::Value body(Json::objectValue);
+  body["grants"] = list;
+  cb(jsonResponse(body));
+}
+
+void OAuthApi::disconnectGrant(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                               const std::string& clientId) {
+  // Settings §2 disconnect: drop this tool's access immediately; its content is untouched.
+  std::optional<UserId> caller = callerOf(req);
+  if (!caller) {
+    cb(oauthError("login_required", "sign in to disconnect a tool", drogon::k401Unauthorized));
+    return;
+  }
+  oauth_->disconnect(*caller, clientId);  // idempotent — a stale clientId is still a clean 204
+  auto response = drogon::HttpResponse::newHttpResponse();
+  response->setStatusCode(drogon::k204NoContent);
+  cb(response);
+}
+
 }

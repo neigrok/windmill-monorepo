@@ -129,4 +129,64 @@ std::optional<StoredToken> PgOAuthRepository::takeRefreshToken(const std::string
                      static_cast<UnixMs>(row["expires_ms"].as<long long>())};
 }
 
+void PgOAuthRepository::recordGrant(const UserId& user, const std::string& clientId, UnixMs now) {
+  // granted_ms is set once and kept as the earliest; last_used_ms advances to now.
+  pqxx::work txn{pgThreadConnection(connString_)};
+  txn.exec_params(
+      "INSERT INTO oauth_grants (user_id, client_id, granted_ms, last_used_ms) "
+      "VALUES ($1::uuid, $2, $3, $3) "
+      "ON CONFLICT (user_id, client_id) DO UPDATE SET "
+      "granted_ms = least(oauth_grants.granted_ms, excluded.granted_ms), "
+      "last_used_ms = excluded.last_used_ms",
+      user.str(), clientId, static_cast<long long>(now));
+  txn.commit();
+}
+
+void PgOAuthRepository::touchGrantUsed(const UserId& user, const std::string& clientId, UnixMs now,
+                                       UnixMs minIntervalMs) {
+  // A no-op inside the throttle window, so a busy client does not write on every token check.
+  pqxx::work txn{pgThreadConnection(connString_)};
+  txn.exec_params(
+      "UPDATE oauth_grants SET last_used_ms = $3 "
+      "WHERE user_id = $1::uuid AND client_id = $2 AND $3 - last_used_ms > $4",
+      user.str(), clientId, static_cast<long long>(now), static_cast<long long>(minIntervalMs));
+  txn.commit();
+}
+
+std::vector<GrantView> PgOAuthRepository::listGrants(const UserId& user) {
+  pqxx::work txn{pgThreadConnection(connString_)};
+  pqxx::result rows = txn.exec_params(
+      "SELECT g.client_id, coalesce(c.client_name, '') AS client_name, g.granted_ms, g.last_used_ms "
+      "FROM oauth_grants g LEFT JOIN oauth_clients c ON c.client_id = g.client_id "
+      "WHERE g.user_id = $1::uuid ORDER BY g.last_used_ms DESC, g.granted_ms DESC",
+      user.str());
+
+  std::vector<GrantView> grants;
+  grants.reserve(rows.size());
+  for (const auto& row : rows)
+    grants.push_back(GrantView{row["client_id"].as<std::string>(), row["client_name"].as<std::string>(),
+                               static_cast<UnixMs>(row["granted_ms"].as<long long>()),
+                               static_cast<UnixMs>(row["last_used_ms"].as<long long>())});
+  return grants;
+}
+
+void PgOAuthRepository::revokeGrant(const UserId& user, const std::string& clientId) {
+  pqxx::work txn{pgThreadConnection(connString_)};
+  txn.exec_params("DELETE FROM oauth_tokens WHERE user_id = $1::uuid AND client_id = $2",
+                  user.str(), clientId);
+  txn.exec_params("DELETE FROM oauth_codes WHERE user_id = $1::uuid AND client_id = $2",
+                  user.str(), clientId);
+  txn.exec_params("DELETE FROM oauth_grants WHERE user_id = $1::uuid AND client_id = $2",
+                  user.str(), clientId);
+  txn.commit();
+}
+
+void PgOAuthRepository::revokeAllGrants(const UserId& user) {
+  pqxx::work txn{pgThreadConnection(connString_)};
+  txn.exec_params("DELETE FROM oauth_tokens WHERE user_id = $1::uuid", user.str());
+  txn.exec_params("DELETE FROM oauth_codes WHERE user_id = $1::uuid", user.str());
+  txn.exec_params("DELETE FROM oauth_grants WHERE user_id = $1::uuid", user.str());
+  txn.commit();
+}
+
 }

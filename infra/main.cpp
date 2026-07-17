@@ -71,16 +71,19 @@ int main() {
       resendKey ? resendKey : "", resendFrom ? resendFrom : "Windmill <login@windmill.works>");
   auto tokens = std::make_shared<OpenSslTokenGenerator>();
   auto systemClock = std::make_shared<SystemClock>();
-  auto authService = std::make_shared<AuthService>(*authRepo, *emailSender, *tokens, *systemClock, appBaseUrl);
-  auto forkService = std::make_shared<ForkService>(*registry, *trees, *tokens);
-  auto authApi = std::make_shared<AuthApi>(authService, forkService, secureCookies, cookieDomain);
 
-  // OAuth 2.1 authorization server for the MCP resource server. This API host is the issuer;
-  // the consent screen is a frontend route the /authorize redirect hands off to.
+  // OAuth is built first: closing an account (AuthService) delegates tool teardown to it, so
+  // the auth service holds a reference to it. This API host is the issuer; the consent screen
+  // is a frontend route the /authorize redirect hands off to.
   const char* apiUrlEnv = std::getenv("WINDMILL_API_URL");
   std::string apiBaseUrl = apiUrlEnv ? apiUrlEnv : "http://localhost:8088";
   auto oauthRepo = std::make_shared<PgOAuthRepository>(connString);
   auto oauthService = std::make_shared<OAuthService>(*oauthRepo, *tokens, *systemClock);
+
+  auto authService =
+      std::make_shared<AuthService>(*authRepo, *emailSender, *tokens, *systemClock, *oauthService, appBaseUrl);
+  auto forkService = std::make_shared<ForkService>(*registry, *trees, *tokens);
+  auto authApi = std::make_shared<AuthApi>(authService, forkService, secureCookies, cookieDomain);
   auto oauthApi = std::make_shared<OAuthApi>(oauthService, authService, apiBaseUrl, appBaseUrl, "/#/oauth/authorize");
 
   // The socket authenticates each connection at its upgrade and writes progress as that
@@ -284,6 +287,30 @@ int main() {
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->me(req, std::move(cb)); },
       {drogon::Get});
 
+  // Settings §5 account surface: profile edit, sessions & devices, and the §4 soft close.
+  app.registerHandler(
+      "/v1/me",
+      [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->patchMe(req, std::move(cb)); },
+      {drogon::Patch});
+  app.registerHandler(
+      "/v1/me",
+      [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->deleteMe(req, std::move(cb)); },
+      {drogon::Delete});
+  app.registerHandler(
+      "/v1/sessions",
+      [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->listSessions(req, std::move(cb)); },
+      {drogon::Get});
+  app.registerHandler(
+      "/v1/sessions",
+      [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->signOutEverywhere(req, std::move(cb)); },
+      {drogon::Delete});
+  app.registerHandler(
+      "/v1/sessions/{id}",
+      [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        authApi->revokeSession(req, std::move(cb), id);
+      },
+      {drogon::Delete});
+
   // OAuth authorization server. Discovery/register/authorize/token are driven by the MCP client;
   // the consent-facing endpoints (client info + decision) are called by the app, and their
   // preflight is covered by the shared CORS policy above.
@@ -311,6 +338,19 @@ int main() {
       "/v1/oauth/decision",
       [oauthApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { oauthApi->decision(req, std::move(cb)); },
       {drogon::Post});
+
+  // Settings §2 connected tools: list a user's OAuth grants and disconnect one — separate
+  // from the browser-session list above, so pulling a tool never signs a device out.
+  app.registerHandler(
+      "/v1/oauth/grants",
+      [oauthApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { oauthApi->listGrants(req, std::move(cb)); },
+      {drogon::Get});
+  app.registerHandler(
+      "/v1/oauth/grants/{clientId}",
+      [oauthApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& clientId) {
+        oauthApi->disconnectGrant(req, std::move(cb), clientId);
+      },
+      {drogon::Delete});
 
   app.registerHandler(
       "/v1/trees",

@@ -24,15 +24,17 @@ struct Harness {
   RoomRegistry rooms{trees, ops, bus};
   FakeAuthRepository authRepo;
   FakeEmail email;
+  FakeOAuthRepository oauthRepo;
+  OAuthService oauth{oauthRepo, tokens, clock};
   std::shared_ptr<AuthService> auth =
-      std::make_shared<AuthService>(authRepo, email, tokens, clock, "https://windmill.works");
+      std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, "https://windmill.works");
   std::shared_ptr<TreeRegistry> registry =
       std::make_shared<TreeRegistry>(trees, progress, tokens, Hlc{1, 0, "genesis"}, rooms, clock);
   TreeRegistryApi api{registry, auth};
 
   UserId signIn(const std::string& sessionSecret, const std::string& address) {
     User user = authRepo.createUser(Email{address}, "sam");
-    authRepo.insertSession(tokens.digestOf(sessionSecret), user.id, clock.now + 1'000'000);
+    authRepo.insertSession(tokens.digestOf(sessionSecret), user.id, clock.now + 1'000'000, "", "", clock.now);
     return user.id;
   }
 };

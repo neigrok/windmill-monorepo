@@ -182,6 +182,33 @@ create table if not exists sessions (
 );
 create index if not exists sessions_user on sessions (user_id);
 
+-- settings §5: session metadata (device/place/last-active) the "Sessions & devices" list
+-- shows. `id` is the public per-session handle the revoke endpoint addresses (the digest
+-- stays server-side); user_agent/ip are stored raw (the client formats device/place, the
+-- server never geo-resolves); last_seen_ms rolls forward on every authenticated use, so a
+-- row minted before this column existed reads 0 and the list coalesces it to created_at.
+alter table sessions add column if not exists id uuid not null default gen_random_uuid();
+alter table sessions add column if not exists user_agent text not null default '';
+alter table sessions add column if not exists last_seen_ms bigint not null default 0;
+alter table sessions add column if not exists ip text not null default '';
+create unique index if not exists sessions_id on sessions (id);
+
+-- settings §4 delete: a soft close with a 30-day grace. `deleted_at` stamps the request;
+-- the account fully closes 30 days later. A within-grace magic-link sign-in clears it (the
+-- undo), and authenticate refuses any session whose user carries it.
+alter table users add column if not exists deleted_at timestamptz;
+
+-- settings §2 connected tools: the per-user, per-client authorization record the grants
+-- list reads. granted_ms is stable (set once, kept as the earliest); last_used_ms advances
+-- as the client's tokens act — both live here, not on the rotation-prone oauth_tokens rows.
+create table if not exists oauth_grants (
+  user_id      uuid not null references users(id) on delete cascade,
+  client_id    text not null,
+  granted_ms   bigint not null,
+  last_used_ms bigint not null default 0,
+  primary key (user_id, client_id)
+);
+
 -- OAuth 2.1 authorization for the MCP resource server (MCP Authorization spec, 2025-06-18).
 -- Dynamically-registered public clients, single-use PKCE-bound authorization codes, and
 -- audience-bound opaque access/refresh tokens — only the digest of each secret is at rest.

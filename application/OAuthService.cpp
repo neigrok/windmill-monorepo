@@ -55,6 +55,8 @@ OAuthService::TokenResult OAuthService::exchangeCode(const std::string& code, co
   // The token stays bound to the resource the code was issued for; a token request that
   // repeats it must match, but an omitted one falls back to that binding.
   if (!resource.empty() && !audienceMatches(resource, stored->resource)) return {GrantError::badResource, std::nullopt};
+  // Consent → token: record the grant (settings §2), keyed apart from the rotating token rows.
+  repo_.recordGrant(stored->user, stored->clientId, now);
   return {GrantError::ok, mintPair(stored->clientId, stored->user, stored->resource, stored->scope, now)};
 }
 
@@ -69,11 +71,21 @@ OAuthService::TokenResult OAuthService::refresh(const std::string& refreshToken,
 std::optional<UserId> OAuthService::resolveAccessToken(const std::string& accessToken,
                                                        const std::string& serverResource) {
   if (accessToken.empty()) return std::nullopt;
+  const UnixMs now = clock_.nowMs();
   const std::optional<StoredToken> token = repo_.findAccessToken(tokens_.digestOf(accessToken));
-  if (!token || token->expiresAt <= clock_.nowMs()) return std::nullopt;
+  if (!token || token->expiresAt <= now) return std::nullopt;
   if (!audienceMatches(token->resource, serverResource)) return std::nullopt;
+  repo_.touchGrantUsed(token->user, token->clientId, now, OAuthPolicy::grantTouchThrottleMs);
   return token->user;
 }
+
+std::vector<GrantView> OAuthService::listGrants(const UserId& user) { return repo_.listGrants(user); }
+
+void OAuthService::disconnect(const UserId& user, const std::string& clientId) {
+  repo_.revokeGrant(user, clientId);
+}
+
+void OAuthService::disconnectAll(const UserId& user) { repo_.revokeAllGrants(user); }
 
 OAuthService::Tokens OAuthService::mintPair(const std::string& clientId, const UserId& user,
                                             const std::string& resource, const std::string& scope, UnixMs now) {

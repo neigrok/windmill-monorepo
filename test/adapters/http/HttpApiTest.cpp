@@ -24,14 +24,16 @@ struct Harness {
   FakeAuthRepository authRepo;
   FakeEmail email;
   std::shared_ptr<RoomRegistry> rooms = std::make_shared<RoomRegistry>(*trees, *ops, bus);
+  FakeOAuthRepository oauthRepo;
+  OAuthService oauth{oauthRepo, tokens, clock};
   std::shared_ptr<AuthService> auth =
-      std::make_shared<AuthService>(authRepo, email, tokens, clock, "https://windmill.works");
+      std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, "https://windmill.works");
   std::shared_ptr<ForkService> fork = std::make_shared<ForkService>(*rooms, *trees, tokens);
   HttpApi api{rooms, trees, progress, ops, Hlc{1, 0, "genesis"}, auth, fork};
 
   UserId signIn(const std::string& sessionSecret) {
     User user = authRepo.createUser(Email{"sam@example.com"}, "sam");
-    authRepo.insertSession(tokens.digestOf(sessionSecret), user.id, clock.now + 1'000'000);
+    authRepo.insertSession(tokens.digestOf(sessionSecret), user.id, clock.now + 1'000'000, "", "", clock.now);
     return user.id;
   }
 

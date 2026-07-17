@@ -3,59 +3,16 @@
 #include "test/application/AuthFakes.h"
 #include "test/testing.h"
 
-#include <map>
-
 using namespace wm;
+using wm::fake::FakeOAuthRepository;
 
 namespace {
-
-struct FakeOAuthRepo : OAuthRepository {
-  std::map<std::string, OAuthClient> clients;
-  std::map<std::string, StoredCode> codes;
-  std::map<std::string, StoredToken> access;
-  struct Refresh { StoredToken grant; UnixMs expiresAt; };
-  std::map<std::string, Refresh> refresh;
-
-  void registerClient(const OAuthClient& client) override { clients[client.clientId] = client; }
-  std::optional<OAuthClient> findClient(const std::string& id) override {
-    auto it = clients.find(id);
-    if (it == clients.end()) return std::nullopt;
-    return it->second;
-  }
-  void insertCode(const std::string& digest, const StoredCode& code) override { codes[digest] = code; }
-  std::optional<StoredCode> takeCode(const std::string& digest) override {
-    auto it = codes.find(digest);
-    if (it == codes.end()) return std::nullopt;
-    StoredCode code = it->second;
-    codes.erase(it);
-    return code;
-  }
-  void insertToken(const std::string& accessDigest, const std::string& refreshDigest,
-                   const StoredToken& token, UnixMs refreshExpiresAt) override {
-    access[accessDigest] = token;
-    refresh[refreshDigest] = Refresh{token, refreshExpiresAt};
-  }
-  std::optional<StoredToken> findAccessToken(const std::string& digest) override {
-    auto it = access.find(digest);
-    if (it == access.end()) return std::nullopt;
-    return it->second;
-  }
-  std::optional<StoredToken> takeRefreshToken(const std::string& digest, UnixMs now) override {
-    auto it = refresh.find(digest);
-    if (it == refresh.end() || it->second.expiresAt <= now) return std::nullopt;
-    StoredToken grant = it->second.grant;
-    refresh.erase(it);
-    return grant;
-  }
-};
-
 const std::string kResource = "https://mcp.example.com/mcp";
 const std::string kRedirect = "https://app.example/cb";
-
 }
 
 TEST(oauth_full_authorization_code_flow_with_pkce) {
-  FakeOAuthRepo repo;
+  FakeOAuthRepository repo;
   fake::FakeTokens tokens;
   fake::FakeClock clock;
   OAuthService svc(repo, tokens, clock);
@@ -88,7 +45,7 @@ TEST(oauth_full_authorization_code_flow_with_pkce) {
 }
 
 TEST(oauth_token_exchange_rejects_wrong_pkce_verifier) {
-  FakeOAuthRepo repo;
+  FakeOAuthRepository repo;
   fake::FakeTokens tokens;
   fake::FakeClock clock;
   OAuthService svc(repo, tokens, clock);
@@ -100,7 +57,7 @@ TEST(oauth_token_exchange_rejects_wrong_pkce_verifier) {
 }
 
 TEST(oauth_rejects_audience_and_redirect_mismatch) {
-  FakeOAuthRepo repo;
+  FakeOAuthRepository repo;
   fake::FakeTokens tokens;
   fake::FakeClock clock;
   OAuthService svc(repo, tokens, clock);
@@ -119,7 +76,7 @@ TEST(oauth_rejects_audience_and_redirect_mismatch) {
 }
 
 TEST(oauth_registration_and_authorize_guards) {
-  FakeOAuthRepo repo;
+  FakeOAuthRepository repo;
   fake::FakeTokens tokens;
   fake::FakeClock clock;
   OAuthService svc(repo, tokens, clock);
@@ -132,4 +89,84 @@ TEST(oauth_registration_and_authorize_guards) {
   CHECK(svc.checkAuthorize("nope", kRedirect, "c", "S256").error == OAuthService::AuthorizeError::unknownClient);
   CHECK(svc.checkAuthorize(client->clientId, "https://other/cb", "c", "S256").error == OAuthService::AuthorizeError::badRedirect);
   CHECK(svc.checkAuthorize(client->clientId, kRedirect, "c", "plain").error == OAuthService::AuthorizeError::unsupportedChallenge);
+}
+
+TEST(oauth_grant_is_recorded_on_exchange_and_listed_with_the_client_name) {
+  FakeOAuthRepository repo;
+  fake::FakeTokens tokens;
+  fake::FakeClock clock;
+  OAuthService svc(repo, tokens, clock);
+
+  const std::string verifier = "v";
+  const std::string challenge = tokens.s256Challenge(verifier);
+  std::optional<OAuthClient> client = svc.registerClient({kRedirect}, "Claude");
+
+  const UnixMs grantedAt = clock.now;
+  std::string code = svc.issueCode(client->clientId, kRedirect, challenge, kResource, "", UserId{"u1"});
+  CHECK(svc.exchangeCode(code, client->clientId, kRedirect, verifier, kResource).error == OAuthService::GrantError::ok);
+
+  std::vector<GrantView> grants = svc.listGrants(UserId{"u1"});
+  CHECK_EQ(grants.size(), 1u);
+  CHECK_EQ(grants[0].clientId, client->clientId);
+  CHECK_EQ(grants[0].clientName, std::string("Claude"));
+  CHECK_EQ(grants[0].grantedMs, grantedAt);
+  CHECK_EQ(grants[0].lastUsedMs, grantedAt);
+
+  // Grants are per-user: another account sees none of this one's.
+  CHECK_EQ(svc.listGrants(UserId{"u2"}).size(), 0u);
+}
+
+TEST(oauth_grant_date_is_stable_across_refresh_rotation_and_last_used_advances) {
+  FakeOAuthRepository repo;
+  fake::FakeTokens tokens;
+  fake::FakeClock clock;
+  OAuthService svc(repo, tokens, clock);
+
+  const std::string verifier = "v";
+  const std::string challenge = tokens.s256Challenge(verifier);
+  std::optional<OAuthClient> client = svc.registerClient({kRedirect}, "Claude");
+
+  const UnixMs grantedAt = clock.now;
+  std::string code = svc.issueCode(client->clientId, kRedirect, challenge, kResource, "", UserId{"u1"});
+  OAuthService::TokenResult granted = svc.exchangeCode(code, client->clientId, kRedirect, verifier, kResource);
+
+  // A resolve inside the throttle window leaves last-used exactly where the grant set it.
+  CHECK(svc.resolveAccessToken(granted.tokens->accessToken, kResource).has_value());
+  CHECK_EQ(svc.listGrants(UserId{"u1"})[0].lastUsedMs, grantedAt);
+
+  // Time passes and the client rotates its token — granted stays put, no second grant row.
+  clock.now += OAuthPolicy::grantTouchThrottleMs + 1;
+  const UnixMs usedAt = clock.now;
+  OAuthService::TokenResult rotated = svc.refresh(granted.tokens->refreshToken, client->clientId);
+  CHECK(rotated.error == OAuthService::GrantError::ok);
+
+  // The rotated token now acts: last-used advances past the throttle; granted is unchanged.
+  CHECK(svc.resolveAccessToken(rotated.tokens->accessToken, kResource).has_value());
+  std::vector<GrantView> grants = svc.listGrants(UserId{"u1"});
+  CHECK_EQ(grants.size(), 1u);
+  CHECK_EQ(grants[0].grantedMs, grantedAt);
+  CHECK_EQ(grants[0].lastUsedMs, usedAt);
+}
+
+TEST(oauth_disconnect_drops_the_grant_and_kills_the_token) {
+  FakeOAuthRepository repo;
+  fake::FakeTokens tokens;
+  fake::FakeClock clock;
+  OAuthService svc(repo, tokens, clock);
+
+  const std::string verifier = "v";
+  const std::string challenge = tokens.s256Challenge(verifier);
+  std::optional<OAuthClient> client = svc.registerClient({kRedirect}, "Claude");
+  std::string code = svc.issueCode(client->clientId, kRedirect, challenge, kResource, "", UserId{"u1"});
+  OAuthService::TokenResult granted = svc.exchangeCode(code, client->clientId, kRedirect, verifier, kResource);
+  CHECK(svc.resolveAccessToken(granted.tokens->accessToken, kResource).has_value());
+  CHECK_EQ(svc.listGrants(UserId{"u1"}).size(), 1u);
+
+  svc.disconnect(UserId{"u1"}, client->clientId);
+
+  // The grant is gone, and the next call with the tool's token is refused (a 401 at the edge).
+  CHECK_EQ(svc.listGrants(UserId{"u1"}).size(), 0u);
+  CHECK_FALSE(svc.resolveAccessToken(granted.tokens->accessToken, kResource).has_value());
+  // Its refresh token is dead too, so it cannot mint a fresh one.
+  CHECK(svc.refresh(granted.tokens->refreshToken, client->clientId).error == OAuthService::GrantError::invalidGrant);
 }

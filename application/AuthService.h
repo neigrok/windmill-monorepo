@@ -1,5 +1,6 @@
 #pragma once
 
+#include "application/OAuthService.h"
 #include "domain/Auth.h"
 #include "ports/AuthRepository.h"
 #include "ports/Clock.h"
@@ -9,17 +10,39 @@
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace wm {
 
-// Drives the magic-link lifecycle (guidelines/auth.md). Each method is a fail-fast
-// pipeline: load through the repository, defer every decision to the Auth domain, persist
-// the result, send the email. The service holds no policy of its own — lifetimes, limits,
-// and verdicts all live in domain/Auth.
+// What the request tells us about the device behind a session: its user-agent and IP, raw.
+// Threaded into a new session at sign-in and healed onto an existing row on each use; empty
+// fields leave the stored values untouched.
+struct SessionContext {
+  std::string userAgent;
+  std::string ip;
+};
+
+// One row of the settings §5 sessions list, dressed for the API: the private digest is gone
+// and `current` marks the caller's own session. lastSeenMs is already coalesced.
+struct SessionView {
+  std::string id;
+  std::string userAgent;
+  UnixMs lastSeenMs = 0;
+  UnixMs createdMs = 0;
+  std::string ip;
+  bool current = false;
+};
+
+// Drives the magic-link lifecycle (guidelines/auth.md) and the settings §5 account surface
+// (profile, sessions, close). Each method is a fail-fast pipeline: load through the
+// repository, defer every decision to the Auth domain, persist the result. The service holds
+// no policy of its own — lifetimes, limits, the name cap, and the close grace live in
+// domain/Auth. Closing an account is where auth meets OAuth: it delegates the tool teardown
+// to OAuthService, so a close leaves no live access anywhere.
 class AuthService {
 public:
   AuthService(AuthRepository& repo, EmailSender& email, TokenGenerator& tokens, Clock& clock,
-              std::string appBaseUrl);
+              OAuthService& oauth, std::string appBaseUrl);
 
   enum class RequestResult { sent, invalidEmail, rateLimited };
 
@@ -45,17 +68,43 @@ public:
     std::optional<SignedIn> signedIn;
     std::string forkSource;  // the pending fork the link carried; empty for a plain sign-in
   };
-  Completion completeLink(const std::string& linkSecret);
+  // The load-bearing revival point: a within-grace sign-in clears the close before the
+  // session is minted, so signing in is the undo. The new session is born with the device's
+  // metadata (ctx).
+  Completion completeLink(const std::string& linkSecret, const SessionContext& ctx = {});
 
-  // Resolve a session secret to its user, rolling the 90-day window forward on each use.
-  std::optional<User> authenticate(const std::string& sessionSecret);
+  // Resolve a session secret to its user, rolling the 90-day window forward on each use and
+  // healing the row's metadata from ctx. A closed account is refused (nullopt) even if a
+  // stale session row somehow survives — defense in depth behind the close's session sweep.
+  std::optional<User> authenticate(const std::string& sessionSecret, const SessionContext& ctx = {});
   void signOut(const std::string& sessionSecret);
+
+  // Settings §5 profile: rename the account. nullopt is a blank or over-cap name (a 400); the
+  // updated user otherwise.
+  std::optional<User> updateName(const UserId& userId, const std::string& rawName);
+
+  // Settings §5 sessions: the user's live sessions, the caller's own flagged `current`.
+  std::vector<SessionView> listSessions(const UserId& userId, const std::string& currentSecret);
+
+  // Revoke one session by id. `revokedCurrent` tells the edge to also clear the cookie;
+  // `notFound` is a foreign or unknown id (a 404).
+  enum class RevokeOutcome { revoked, revokedCurrent, notFound };
+  RevokeOutcome revokeSession(const UserId& userId, const std::string& sessionId,
+                              const std::string& currentSecret);
+
+  // "Sign out everywhere": every session but the caller's own current one.
+  void signOutEverywhere(const UserId& userId, const std::string& currentSecret);
+
+  // Settings §4 close: stamp the soft close, drop every session, disconnect every tool.
+  // Returns the instant the account finally closes (the 30-day grace's end).
+  UnixMs closeAccount(const UserId& userId);
 
 private:
   AuthRepository& repo_;
   EmailSender& email_;
   TokenGenerator& tokens_;
   Clock& clock_;
+  OAuthService& oauth_;
   std::string appBaseUrl_;
 };
 

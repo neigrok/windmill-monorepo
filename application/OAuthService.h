@@ -58,8 +58,15 @@ public:
   TokenResult refresh(const std::string& refreshToken, const std::string& clientId);
 
   // Resource-server validation: the account a valid, unexpired, audience-matching access
-  // token acts as, or nullopt.
+  // token acts as, or nullopt. A resolved token also advances its grant's last-used stamp
+  // (throttled), so the settings §2 list shows honest recent activity.
   std::optional<UserId> resolveAccessToken(const std::string& accessToken, const std::string& serverResource);
+
+  // The settings §2 "Connected tools" surface: list a user's grants, disconnect one tool
+  // (drops its tokens+codes+grant), and disconnect them all (account close).
+  std::vector<GrantView> listGrants(const UserId& user);
+  void disconnect(const UserId& user, const std::string& clientId);
+  void disconnectAll(const UserId& user);
 
 private:
   // Shared by exchangeCode and refresh: mint + persist a fresh access/refresh pair.

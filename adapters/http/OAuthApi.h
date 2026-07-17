@@ -30,6 +30,9 @@ public:
   void authorize(const drogon::HttpRequestPtr& req, HttpCallback&& cb);       // GET  /oauth/authorize
   void decision(const drogon::HttpRequestPtr& req, HttpCallback&& cb);        // POST /v1/oauth/decision
   void token(const drogon::HttpRequestPtr& req, HttpCallback&& cb);           // POST /oauth/token
+  void listGrants(const drogon::HttpRequestPtr& req, HttpCallback&& cb);      // GET    /v1/oauth/grants
+  void disconnectGrant(const drogon::HttpRequestPtr& req, HttpCallback&& cb,  // DELETE /v1/oauth/grants/{clientId}
+                       const std::string& clientId);
 
 private:
   std::optional<UserId> callerOf(const drogon::HttpRequestPtr& req) const;

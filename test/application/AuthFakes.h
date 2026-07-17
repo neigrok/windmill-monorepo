@@ -3,12 +3,15 @@
 #include "ports/AuthRepository.h"
 #include "ports/Clock.h"
 #include "ports/EmailSender.h"
+#include "ports/OAuthRepository.h"
 #include "ports/TokenGenerator.h"
 
+#include <algorithm>
 #include <map>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace wm::fake {
@@ -72,11 +75,23 @@ struct FakeAuthRepository : AuthRepository {
     std::optional<UnixMs> consumedAt;
     std::string forkSource;
   };
-  std::map<std::string, LinkRow> links;           // digest -> row
-  std::map<std::string, StoredSession> sessions;  // digest -> session
-  std::map<std::string, User> usersByEmail;       // email  -> user
-  std::map<std::string, User> usersById;          // id     -> user
+  // A session row as the real table carries it: keyed by its digest, with the public id, the
+  // device metadata, and the recency stamps the §5 list reads.
+  struct SessionRecord {
+    std::string id;
+    UserId user;
+    UnixMs expiresAt = 0;
+    std::string userAgent;
+    UnixMs lastSeenMs = 0;
+    UnixMs createdAtMs = 0;
+    std::string ip;
+  };
+  std::map<std::string, LinkRow> links;             // digest -> row
+  std::map<std::string, SessionRecord> sessions;    // digest -> record
+  std::map<std::string, User> usersByEmail;         // email  -> user
+  std::map<std::string, User> usersById;            // id     -> user
   int nextUserId = 0;
+  int nextSessionId = 0;
 
   std::optional<User> findUserByEmail(const Email& email) override {
     auto it = usersByEmail.find(email.value);
@@ -89,11 +104,19 @@ struct FakeAuthRepository : AuthRepository {
     return it->second;
   }
   User createUser(const Email& email, const std::string& name) override {
-    User user{UserId{"u" + std::to_string(++nextUserId)}, email, name};
+    User user{UserId{"u" + std::to_string(++nextUserId)}, email, name, std::nullopt};
     usersByEmail[email.value] = user;
     usersById[user.id.str()] = user;
     return user;
   }
+  void updateName(const UserId& userId, const std::string& name) override {
+    auto it = usersById.find(userId.str());
+    if (it == usersById.end()) return;
+    it->second.name = name;
+    usersByEmail[it->second.email.value].name = name;
+  }
+  void markUserDeleted(const UserId& userId, UnixMs now) override { setDeleted(userId, now); }
+  void reviveUser(const UserId& userId) override { setDeleted(userId, std::nullopt); }
 
   void insertLink(const std::string& digest, const Email& email, UnixMs createdAt,
                   UnixMs expiresAt, const std::string& forkSource) override {
@@ -119,19 +142,168 @@ struct FakeAuthRepository : AuthRepository {
     return true;
   }
 
-  void insertSession(const std::string& digest, const UserId& user, UnixMs expiresAt) override {
-    sessions[digest] = StoredSession{user, expiresAt};
+  void insertSession(const std::string& digest, const UserId& user, UnixMs expiresAt,
+                     const std::string& userAgent, const std::string& ip, UnixMs seenAt) override {
+    sessions[digest] = SessionRecord{"sess" + std::to_string(++nextSessionId), user, expiresAt,
+                                     userAgent, seenAt, seenAt, ip};
   }
   std::optional<StoredSession> findSession(const std::string& digest) override {
     auto it = sessions.find(digest);
     if (it == sessions.end()) return std::nullopt;
-    return it->second;
+    return StoredSession{it->second.user, it->second.expiresAt};
   }
-  void refreshSession(const std::string& digest, UnixMs expiresAt) override {
+  void refreshSession(const std::string& digest, UnixMs expiresAt, UnixMs seenAt,
+                      const std::string& userAgent, const std::string& ip) override {
     auto it = sessions.find(digest);
-    if (it != sessions.end()) it->second.expiresAt = expiresAt;
+    if (it == sessions.end()) return;
+    it->second.expiresAt = expiresAt;
+    it->second.lastSeenMs = seenAt;
+    if (!userAgent.empty()) it->second.userAgent = userAgent;  // heal only when the request carries it
+    if (!ip.empty()) it->second.ip = ip;
   }
   void deleteSession(const std::string& digest) override { sessions.erase(digest); }
+
+  std::vector<SessionRow> listSessions(const UserId& userId) override {
+    std::vector<SessionRow> out;
+    for (const auto& [digest, record] : sessions) {
+      if (!(record.user == userId)) continue;
+      out.push_back(SessionRow{record.id, digest, record.userAgent, record.lastSeenMs,
+                               record.createdAtMs, record.ip});
+    }
+    return out;
+  }
+  std::optional<std::string> revokeSession(const UserId& userId, const std::string& sessionId) override {
+    for (auto it = sessions.begin(); it != sessions.end(); ++it) {
+      if (it->second.id == sessionId && it->second.user == userId) {
+        std::string digest = it->first;
+        sessions.erase(it);
+        return digest;
+      }
+    }
+    return std::nullopt;
+  }
+  void revokeSessionsExcept(const UserId& userId, const std::string& keepDigest) override {
+    for (auto it = sessions.begin(); it != sessions.end();) {
+      if (it->second.user == userId && it->first != keepDigest) it = sessions.erase(it);
+      else ++it;
+    }
+  }
+  void revokeAllSessions(const UserId& userId) override {
+    for (auto it = sessions.begin(); it != sessions.end();) {
+      if (it->second.user == userId) it = sessions.erase(it);
+      else ++it;
+    }
+  }
+
+  void setDeleted(const UserId& userId, std::optional<UnixMs> at) {
+    auto it = usersById.find(userId.str());
+    if (it == usersById.end()) return;
+    it->second.deletedAt = at;
+    usersByEmail[it->second.email.value].deletedAt = at;
+  }
+};
+
+// The OAuth repository as a fake, shared by the OAuth service tests and the account-close
+// tests. Grants live apart from the rotation-prone token rows, exactly as the real table does.
+struct FakeOAuthRepository : OAuthRepository {
+  std::map<std::string, OAuthClient> clients;
+  std::map<std::string, StoredCode> codes;
+  std::map<std::string, StoredToken> access;
+  struct Refresh { StoredToken grant; UnixMs expiresAt; };
+  std::map<std::string, Refresh> refresh;
+  struct GrantRow { UnixMs grantedMs = 0; UnixMs lastUsedMs = 0; };
+  std::map<std::pair<std::string, std::string>, GrantRow> grants;  // (userId, clientId) -> row
+
+  void registerClient(const OAuthClient& client) override { clients[client.clientId] = client; }
+  std::optional<OAuthClient> findClient(const std::string& id) override {
+    auto it = clients.find(id);
+    if (it == clients.end()) return std::nullopt;
+    return it->second;
+  }
+  void insertCode(const std::string& digest, const StoredCode& code) override { codes[digest] = code; }
+  std::optional<StoredCode> takeCode(const std::string& digest) override {
+    auto it = codes.find(digest);
+    if (it == codes.end()) return std::nullopt;
+    StoredCode code = it->second;
+    codes.erase(it);
+    return code;
+  }
+  void insertToken(const std::string& accessDigest, const std::string& refreshDigest,
+                   const StoredToken& token, UnixMs refreshExpiresAt) override {
+    access[accessDigest] = token;
+    refresh[refreshDigest] = Refresh{token, refreshExpiresAt};
+  }
+  std::optional<StoredToken> findAccessToken(const std::string& digest) override {
+    auto it = access.find(digest);
+    if (it == access.end()) return std::nullopt;
+    return it->second;
+  }
+  std::optional<StoredToken> takeRefreshToken(const std::string& digest, UnixMs now) override {
+    auto it = refresh.find(digest);
+    if (it == refresh.end() || it->second.expiresAt <= now) return std::nullopt;
+    StoredToken grant = it->second.grant;
+    refresh.erase(it);
+    return grant;
+  }
+
+  void recordGrant(const UserId& user, const std::string& clientId, UnixMs now) override {
+    auto key = std::make_pair(user.str(), clientId);
+    auto it = grants.find(key);
+    if (it == grants.end()) {
+      grants[key] = GrantRow{now, now};
+      return;
+    }
+    it->second.grantedMs = std::min(it->second.grantedMs, now);  // set once, kept as the earliest
+    it->second.lastUsedMs = now;
+  }
+  void touchGrantUsed(const UserId& user, const std::string& clientId, UnixMs now,
+                      UnixMs minIntervalMs) override {
+    auto it = grants.find({user.str(), clientId});
+    if (it != grants.end() && now - it->second.lastUsedMs > minIntervalMs) it->second.lastUsedMs = now;
+  }
+  std::vector<GrantView> listGrants(const UserId& user) override {
+    std::vector<GrantView> out;
+    for (const auto& [key, row] : grants) {
+      if (key.first != user.str()) continue;
+      std::string name;
+      auto c = clients.find(key.second);
+      if (c != clients.end()) name = c->second.name;
+      out.push_back(GrantView{key.second, name, row.grantedMs, row.lastUsedMs});
+    }
+    return out;
+  }
+  void revokeGrant(const UserId& user, const std::string& clientId) override {
+    grants.erase({user.str(), clientId});
+    eraseTokens([&](const StoredToken& t) { return t.user == user && t.clientId == clientId; });
+    eraseCodes([&](const StoredCode& c) { return c.user == user && c.clientId == clientId; });
+  }
+  void revokeAllGrants(const UserId& user) override {
+    for (auto it = grants.begin(); it != grants.end();) {
+      if (it->first.first == user.str()) it = grants.erase(it);
+      else ++it;
+    }
+    eraseTokens([&](const StoredToken& t) { return t.user == user; });
+    eraseCodes([&](const StoredCode& c) { return c.user == user; });
+  }
+
+  template <typename Pred>
+  void eraseTokens(Pred match) {
+    for (auto it = access.begin(); it != access.end();) {
+      if (match(it->second)) it = access.erase(it);
+      else ++it;
+    }
+    for (auto it = refresh.begin(); it != refresh.end();) {
+      if (match(it->second.grant)) it = refresh.erase(it);
+      else ++it;
+    }
+  }
+  template <typename Pred>
+  void eraseCodes(Pred match) {
+    for (auto it = codes.begin(); it != codes.end();) {
+      if (match(it->second)) it = codes.erase(it);
+      else ++it;
+    }
+  }
 };
 
 }

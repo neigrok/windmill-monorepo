@@ -40,6 +40,16 @@ struct StoredToken {
   UnixMs expiresAt = 0;
 };
 
+// One row of the settings §2 "Connected tools" list: a client the user has authorized, its
+// display name (from the registered client), when the grant was first made, and when its
+// tokens last acted. granted/last-used live on oauth_grants, stable across token rotation.
+struct GrantView {
+  std::string clientId;
+  std::string clientName;
+  UnixMs grantedMs = 0;
+  UnixMs lastUsedMs = 0;
+};
+
 // Persistence for OAuth clients, authorization codes, and tokens — one connection per call,
 // mirroring the other Postgres repositories; digests, not secrets, are the keys throughout.
 struct OAuthRepository {
@@ -59,6 +69,19 @@ struct OAuthRepository {
   // Rotate a refresh token: atomically consume the presented one (if unexpired) and return
   // its grant so a fresh access+refresh pair can be minted (OAuth 2.1 §4.3.1 rotation).
   virtual std::optional<StoredToken> takeRefreshToken(const std::string& refreshDigest, UnixMs now) = 0;
+
+  // The settings §2 grant record, kept apart from the rotation-prone token rows. recordGrant
+  // upserts on first token issue: granted_ms is set once and kept as the earliest, last_used
+  // advances. touchGrantUsed advances last_used on the token's hot path, but only past the
+  // throttle so a busy client does not write on every call.
+  virtual void recordGrant(const UserId& user, const std::string& clientId, UnixMs now) = 0;
+  virtual void touchGrantUsed(const UserId& user, const std::string& clientId, UnixMs now,
+                              UnixMs minIntervalMs) = 0;
+  virtual std::vector<GrantView> listGrants(const UserId& user) = 0;
+  // Disconnect one tool: drop its tokens, codes, and grant for this user (never its content).
+  virtual void revokeGrant(const UserId& user, const std::string& clientId) = 0;
+  // Account close: disconnect every tool the user has connected.
+  virtual void revokeAllGrants(const UserId& user) = 0;
 };
 
 }

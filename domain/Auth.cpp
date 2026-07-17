@@ -30,6 +30,15 @@ std::string nameFromEmail(const Email& email) {
   return email.value.substr(0, email.value.find('@'));
 }
 
+std::optional<std::string> parseName(const std::string& raw) {
+  const std::size_t begin = raw.find_first_not_of(" \t\r\n");
+  if (begin == std::string::npos) return std::nullopt;  // blank once trimmed
+  const std::size_t end = raw.find_last_not_of(" \t\r\n");
+  std::string trimmed = raw.substr(begin, end - begin + 1);
+  if (!nameWithinLimit(trimmed)) return std::nullopt;
+  return trimmed;
+}
+
 LinkVerdict verifyLink(bool found, bool consumed, UnixMs expiresAt, UnixMs now) {
   if (!found) return LinkVerdict::unknown;
   if (consumed) return LinkVerdict::alreadyUsed;

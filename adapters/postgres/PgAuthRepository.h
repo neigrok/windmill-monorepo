@@ -16,6 +16,9 @@ public:
   std::optional<User> findUserByEmail(const Email& email) override;
   std::optional<User> findUserById(const UserId& id) override;
   User createUser(const Email& email, const std::string& name) override;
+  void updateName(const UserId& userId, const std::string& name) override;
+  void markUserDeleted(const UserId& userId, UnixMs now) override;
+  void reviveUser(const UserId& userId) override;
 
   void insertLink(const std::string& digest, const Email& email, UnixMs createdAt, UnixMs expiresAt,
                   const std::string& forkSource) override;
@@ -23,10 +26,17 @@ public:
   std::optional<StoredLink> findLink(const std::string& digest) override;
   bool consumeLink(const std::string& digest, UnixMs at) override;
 
-  void insertSession(const std::string& digest, const UserId& user, UnixMs expiresAt) override;
+  void insertSession(const std::string& digest, const UserId& user, UnixMs expiresAt,
+                     const std::string& userAgent, const std::string& ip, UnixMs seenAt) override;
   std::optional<StoredSession> findSession(const std::string& digest) override;
-  void refreshSession(const std::string& digest, UnixMs expiresAt) override;
+  void refreshSession(const std::string& digest, UnixMs expiresAt, UnixMs seenAt,
+                      const std::string& userAgent, const std::string& ip) override;
   void deleteSession(const std::string& digest) override;
+
+  std::vector<SessionRow> listSessions(const UserId& userId) override;
+  std::optional<std::string> revokeSession(const UserId& userId, const std::string& sessionId) override;
+  void revokeSessionsExcept(const UserId& userId, const std::string& keepDigest) override;
+  void revokeAllSessions(const UserId& userId) override;
 
 private:
   std::string connString_;
