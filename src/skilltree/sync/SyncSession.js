@@ -34,12 +34,12 @@ function frameFrontier(writes) {
 }
 
 export class SyncSession {
-  constructor({ url = DEFAULT_URL, treeId } = {}) {
+  constructor({ url = DEFAULT_URL, treeId, title = '' } = {}) {
     this.url = url;
     this.treeId = treeId;
     this.actor = replicaActor();
     this.clock = new HlcClock(this.actor);
-    this.lattice = new TreeLattice(treeId);
+    this.lattice = new TreeLattice(treeId, title);  // the doc title is the stampless baseline; any stamped rename dominates
     this.store = new SyncStore();
     this.ackedServerVector = new VersionVector();  // in-memory; what the server is known to hold
     this.inFlight = new Map();                      // frameId -> VersionVector of that sent frame
@@ -61,6 +61,7 @@ export class SyncSession {
     this.liveHandler = null;
     this.presence = null;
     this.presenceTimer = null;
+    this.pagehide = null;
     this.closed = false;
   }
 
@@ -109,7 +110,10 @@ export class SyncSession {
       this.emitTree();
     }
     this.store.requestPersistent().then((granted) => { if (!granted) this.durabilityAtRisk = true; });
-    if (typeof window !== 'undefined') window.addEventListener('pagehide', () => this.persistNow());
+    if (typeof window !== 'undefined') {
+      this.pagehide = () => this.persistNow();
+      window.addEventListener('pagehide', this.pagehide);
+    }
     this.connect();
     return this;
   }
@@ -245,6 +249,20 @@ export class SyncSession {
     this.apply(writes);
   }
 
+  // Rename the tree: one stamped write to the title register, joined + persisted + sent like
+  // any field change (LWW against concurrent renames; banked in the outbox while offline).
+  // Not a canvas gesture, so it stays out of the undo journal. Returns whether the session
+  // took the write — before the durable lattice loads it can't, and the caller must PATCH
+  // instead so the rename is never silently lost.
+  renameTree(title) {
+    if (!this.ready) return false;
+    const next = title.trim();
+    if (!next || next === this.lattice.title) return true;
+    const at = this.clock.tick(Date.now());
+    this.apply({ nodes: [], edges: [], kinds: [], title: { v: next, at: hlcText(at) } });
+    return true;
+  }
+
   undo() { this.replay(this.undoStack, this.redoStack); }
   redo() { this.replay(this.redoStack, this.undoStack); }
 
@@ -277,8 +295,10 @@ export class SyncSession {
   }
 
   // Persist the whole lattice + lastSeq atomically. Snapshot is synchronous (before any await);
-  // a save failure degrades durability honestly but never blocks liveness.
+  // a save failure degrades durability honestly but never blocks liveness. A closed session
+  // never writes — deleting a tree relies on the blob staying gone.
   persistNow() {
+    if (this.closed) return;
     clearTimeout(this.saveTimer);
     this.saveTimer = null;
     const value = { frame: this.lattice.toFrame(), lastSeq: this.lastSeq };
@@ -416,6 +436,10 @@ export class SyncSession {
 
   close() {
     this.closed = true;
+    if (this.pagehide) {
+      window.removeEventListener('pagehide', this.pagehide);
+      this.pagehide = null;
+    }
     clearTimeout(this.presenceTimer);
     clearTimeout(this.reconnectTimer);
     clearTimeout(this.saveTimer);

@@ -33,7 +33,7 @@ import { RadialLayoutEngine } from './layout/RadialLayoutEngine.js';
 import { applyNudges } from './layout/applyNudges.js';
 import { HttpTreeRepository } from './persistence/HttpTreeRepository.js';
 import { API_BASE } from './apiBase.js';
-import { listTrees } from './persistence/TreeRegistry.js';
+import { listTrees, renameTree, deleteTree } from './persistence/TreeRegistry.js';
 import { SyncSession } from './sync/SyncSession.js';
 import { PresenceLayer } from './presence/PresenceLayer.jsx';
 import { ProgressStore } from './persistence/ProgressStore.js';
@@ -480,6 +480,38 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
     collabRef.current?.dispatch({ kind: 'RepositionNode', id, x, y });
   }, []);
 
+  // The browser tab follows the tree's name; the switcher previews each keystroke of an
+  // in-flight rename through the same format, so the tab is live while the field is.
+  const pageTitle = tree?.title?.trim();
+  useEffect(() => {
+    document.title = pageTitle ? `${pageTitle} — Windmill` : 'Windmill';
+    return () => { document.title = 'Windmill'; };
+  }, [pageTitle]);
+  const previewTreeTitle = useCallback((id, title) => {
+    if (id !== treeId) return;
+    document.title = `${title.trim() || 'Untitled roadmap'} — Windmill`;
+  }, [treeId]);
+
+  // A switcher rename committed. The open tree's title lives in its lattice — one stamped
+  // register write that flushes, broadcasts, and persists like any field change. When the
+  // session can't take it yet (durable lattice still loading), or the row is another tree
+  // with no session here, the registry's PATCH is the door; its promise escapes so the
+  // switcher can restore truth when the server refuses.
+  const handleRenameTree = useCallback((id, title) => {
+    if (id === treeId && collabRef.current?.renameTree(title)) return undefined;
+    return renameTree(id, title);
+  }, [treeId]);
+
+  // A switcher delete confirmed: soft-delete server-side. When it was the open tree, the
+  // session closes first — its pagehide flush would otherwise resurrect the blob — and
+  // then the local lattice blob goes too (the switcher navigates off it next).
+  const handleDeleteTree = useCallback(async (id) => {
+    await deleteTree(id);
+    if (id !== treeId) return;
+    collabRef.current?.close();
+    collabRef.current?.clearDurable();
+  }, [treeId]);
+
   // Undo/redo is client-owned: the session replays a gesture's inverse as a fresh gesture,
   // which joins and broadcasts like any edit, so it stays in sync across collaborators.
   const undo = useCallback(() => collabRef.current?.undo(), []);
@@ -886,7 +918,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
       // The roadmap goes live over the socket (a joined frame reaches every peer).
       collabRef.current?.close();
       peersRef.current.clear();
-      const session = new SyncSession({ treeId: seed.id })
+      const session = new SyncSession({ treeId: seed.id, title: seed.title })
         .onTreeChanged((data) => onTreeChangedRef.current?.(data))
         .onPresence((frame) => peersRef.current.set(frame.actor, {
           name: frame.profile?.name, color: frame.profile?.color,
@@ -1324,6 +1356,9 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
               current={{ id: treeId, title: tree?.title, done: shareStats?.done, total: shareStats?.total, dominantKind: shareStats?.dominantKind }}
               listTrees={listTrees}
               onNew={() => { window.location.hash = '#/app/new'; }}
+              onRename={handleRenameTree}
+              onPreviewTitle={previewTreeTitle}
+              onDelete={handleDeleteTree}
             />
           }
           onZoomIn={handleZoomIn}

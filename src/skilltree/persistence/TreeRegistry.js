@@ -45,6 +45,44 @@ export async function createTree(request) {
   throw new AuthError(body.error ?? 'Could not plant the roadmap', { code: body.code, status: response.status });
 }
 
+// Retitle a roadmap in the caller's registry (PATCH /v1/trees/:id, 204). The server trims,
+// refuses a blank (a tree always has a name), and — when the tree's room is live — routes
+// the title through it so every subscriber sees the rename on their socket.
+export async function renameTree(treeId, title) {
+  let response;
+  try {
+    response = await fetch(`${API_BASE}/v1/trees/${treeId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title }),
+      credentials: 'include',
+    });
+  } catch {
+    throw new AuthError('Network request failed', { code: 'unreachable', status: 0 });
+  }
+  if (response.ok) return;
+  if (response.status === 401) throw new AuthError('Sign in to rename a roadmap', { code: 'unauthenticated', status: 401 });
+  const body = await response.json().catch(() => ({}));
+  throw new AuthError(body.error ?? 'Could not rename the roadmap', { code: body.code, status: response.status });
+}
+
+// Retire a roadmap (DELETE /v1/trees/:id, 204 — a soft delete; it leaves every list).
+export async function deleteTree(treeId) {
+  let response;
+  try {
+    response = await fetch(`${API_BASE}/v1/trees/${treeId}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+  } catch {
+    throw new AuthError('Network request failed', { code: 'unreachable', status: 0 });
+  }
+  if (response.ok) return;
+  if (response.status === 401) throw new AuthError('Sign in to delete a roadmap', { code: 'unauthenticated', status: 401 });
+  const body = await response.json().catch(() => ({}));
+  throw new AuthError(body.error ?? 'Could not delete the roadmap', { code: body.code, status: response.status });
+}
+
 // Fork a shared roadmap into the caller's registry → { treeId }. The server mints the new
 // id and copies the source's live state; progress starts cleared.
 export async function forkTree(sourceId) {
