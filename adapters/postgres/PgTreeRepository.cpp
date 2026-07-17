@@ -208,8 +208,12 @@ void PgTreeRepository::save(const TreeId& tree, const GraphState& state, const L
 void PgTreeRepository::create(const TreeId& tree, const GraphState& state, const LegendState& legend,
                               const std::string& title, const UserId& owner) {
   pqxx::work txn{pgThreadConnection(connString_)};
-  txn.exec_params("INSERT INTO trees (id, title, head_seq, owner_id) VALUES ($1, $2, 0, $3::uuid)",
-                  tree.str(), title, owner.str());
+  try {
+    txn.exec_params("INSERT INTO trees (id, title, head_seq, owner_id) VALUES ($1, $2, 0, $3::uuid)",
+                    tree.str(), title, owner.str());
+  } catch (const pqxx::unique_violation&) {
+    throw DuplicateTree{};  // the unique index arbitrates cross-process races (the MCP binary shares this DB)
+  }
   upsertSlice(txn, tree, state, legend);
   txn.commit();
 }
@@ -276,9 +280,13 @@ void PgTreeRepository::claim(const TreeId& tree, const UserId& owner) {
 void PgTreeRepository::fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
                            const LegendState& legend, const std::string& title, const UserId& owner) {
   pqxx::work txn{pgThreadConnection(connString_)};
-  txn.exec_params(
-      "INSERT INTO trees (id, title, head_seq, forked_from, owner_id) VALUES ($1, $2, 0, $3, $4::uuid)",
-      newTree.str(), title, source.str(), owner.str());
+  try {
+    txn.exec_params(
+        "INSERT INTO trees (id, title, head_seq, forked_from, owner_id) VALUES ($1, $2, 0, $3, $4::uuid)",
+        newTree.str(), title, source.str(), owner.str());
+  } catch (const pqxx::unique_violation&) {
+    throw DuplicateTree{};
+  }
   upsertSlice(txn, newTree, state, legend);
   txn.commit();
 }

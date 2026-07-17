@@ -94,6 +94,18 @@ TEST(fork_reports_a_conflict_when_the_requested_id_is_taken) {
   CHECK(h.trees.forkedFrom.count("t_taken") == 0);
 }
 
+TEST(fork_reports_a_conflict_when_the_requested_id_is_soft_deleted) {
+  Harness h;
+  h.seedSource("t_src", "Learn to sail");
+  h.seedSource("t_gone", "Retired");
+  h.trees.softDelete(TreeId{"t_gone"});
+
+  // load can't see the deleted row, so the insert runs — the unique index refuses it.
+  ForkService::Result result = h.service.fork(TreeId{"t_src"}, "t_gone", "", uid("me"));
+  CHECK(result.outcome == ForkService::Outcome::conflict);
+  CHECK(h.trees.forkedFrom.count("t_gone") == 0);
+}
+
 TEST(fork_reports_a_missing_source) {
   Harness h;
   ForkService::Result result = h.service.fork(TreeId{"t_ghost"}, "", "", uid("me"));

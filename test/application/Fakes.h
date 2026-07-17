@@ -101,6 +101,8 @@ struct FakeTreeRepository : TreeRepository {
   }
   void create(const TreeId& tree, const GraphState& state, const LegendState& legend,
               const std::string& title, const UserId& owner) override {
+    // The unique index Postgres enforces: a soft-deleted row still holds its id.
+    if (byId.count(tree.str())) throw DuplicateTree{};
     byId[tree.str()] = StoredTree{state, legend, {title, {}}, 0, owner};
   }
   std::vector<OwnedTree> listOwnedBy(const UserId& owner) override {
@@ -126,6 +128,7 @@ struct FakeTreeRepository : TreeRepository {
   }
   void fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
             const LegendState& legend, const std::string& title, const UserId& owner) override {
+    if (byId.count(newTree.str())) throw DuplicateTree{};  // the same unique index as create
     // A fork's title starts stampless — its own baseline, like create; a later rename stamps it.
     byId[newTree.str()] = StoredTree{state, legend, {title, {}}, 0, owner, "public"};
     forkedFrom[newTree.str()] = source.str();

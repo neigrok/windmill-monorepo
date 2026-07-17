@@ -15,10 +15,12 @@ drogon::HttpResponsePtr jsonResponse(const Json::Value& body, drogon::HttpStatus
   return response;
 }
 
-drogon::HttpResponsePtr error(drogon::HttpStatusCode code, const std::string& message) {
+drogon::HttpResponsePtr error(drogon::HttpStatusCode status, const std::string& message,
+                              const char* code = nullptr) {
   Json::Value body(Json::objectValue);
   body["error"] = message;
-  return jsonResponse(body, code);
+  if (code) body["code"] = code;  // the machine-readable vocabulary: "bad-id", "id-taken"
+  return jsonResponse(body, status);
 }
 }
 
@@ -36,12 +38,33 @@ void TreeRegistryApi::createTree(const drogon::HttpRequestPtr& req, HttpCallback
     callback(error(drogon::k501NotImplemented, "quest planting is not available yet"));  // /v1/quests unbuilt
     return;
   }
+  // An optional client-minted id (the anon-first claim seam) rides the body; it must match
+  // the server's own mint shape exactly, or the claim is refused before any work happens.
+  const std::string requestedId = json ? json->get("id", "").asString() : "";
+  if (!requestedId.empty() && !wellFormedTreeId(requestedId)) {
+    callback(error(drogon::k400BadRequest, "id must be t_ followed by 16 lowercase hex characters", "bad-id"));
+    return;
+  }
   // The body carries the starting document — title, and any initial nodes + legend kinds (the same
   // TreeData wire shape a PUT takes). A bare `{title}`/`{blank:true}` has no nodes, so it's empty.
   TreeData initial = json ? treeFromJson(*json, TreeId{}) : TreeData{};
-  TreeId id = registry_->create(*caller, initial);
+
+  if (requestedId.empty()) {
+    Json::Value body(Json::objectValue);
+    body["treeId"] = registry_->create(*caller, initial).str();
+    body["existed"] = false;
+    callback(jsonResponse(body));
+    return;
+  }
+
+  TreeRegistry::Creation outcome = registry_->create(*caller, TreeId{requestedId}, initial);
+  if (outcome == TreeRegistry::Creation::taken) {
+    callback(error(drogon::k409Conflict, "that id already names another tree", "id-taken"));
+    return;
+  }
   Json::Value body(Json::objectValue);
-  body["treeId"] = id.str();
+  body["treeId"] = requestedId;
+  body["existed"] = outcome == TreeRegistry::Creation::existedYours;
   callback(jsonResponse(body));
 }
 

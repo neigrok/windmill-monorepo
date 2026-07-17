@@ -90,6 +90,78 @@ TEST(create_accepts_an_initial_tree_document) {
   CHECK_EQ(rows[0].stats.dominantKind, NodeColor::olive);
 }
 
+TEST(create_with_a_requested_id_plants_an_empty_tree_with_the_default_legend_at_genesis) {
+  Setup s;
+  UserId me = uid("me");
+
+  TreeRegistry::Creation outcome =
+      s.registry.create(me, TreeId{"t_00c0ffee00c0ffee"}, treeData("Learn woodworking", {}));
+
+  CHECK(outcome == TreeRegistry::Creation::created);
+  const StoredTree& stored = s.trees.byId["t_00c0ffee00c0ffee"];
+  CHECK(stored.owner == std::optional<UserId>(me));
+  CHECK(stored.title == (Lww<std::string>{"Learn woodworking", Hlc{}}));  // the stampless create baseline
+  CHECK_EQ(stored.head, static_cast<Seq>(0));
+  CHECK(stored.state == GraphState{});  // a claim-create posts no nodes — the client's CRDT flush brings them
+
+  // The genesis pin: the client seeds these same three kinds at '1:0:genesis' locally, and the
+  // two legends must be byte-equal so the claim flush joins with zero duplication.
+  const Hlc genesis{1, 0, "genesis"};
+  LegendState expected;
+  expected.kinds.push_back(KindStateEntry{KindId{"build"}, genesis, Hlc{}, NodeColor::terracotta,
+                                          genesis, "Build", genesis, "Things you make", genesis, 0, genesis});
+  expected.kinds.push_back(KindStateEntry{KindId{"learn"}, genesis, Hlc{}, NodeColor::olive,
+                                          genesis, "Learn", genesis, "Things you figure out", genesis, 1, genesis});
+  expected.kinds.push_back(KindStateEntry{KindId{"milestone"}, genesis, Hlc{}, NodeColor::gold,
+                                          genesis, "Milestone", genesis, "Moments that matter", genesis, 2, genesis});
+  CHECK(stored.legend == expected);
+}
+
+TEST(create_with_the_same_id_by_its_owner_resumes_without_touching_the_row) {
+  Setup s;
+  UserId me = uid("me");
+  CHECK(s.registry.create(me, TreeId{"t_00c0ffee00c0ffee"}, treeData("Original title", {})) ==
+        TreeRegistry::Creation::created);
+  StoredTree before = s.trees.byId["t_00c0ffee00c0ffee"];
+
+  TreeRegistry::Creation outcome =
+      s.registry.create(me, TreeId{"t_00c0ffee00c0ffee"}, treeData("Different title", {}));
+
+  CHECK(outcome == TreeRegistry::Creation::existedYours);
+  CHECK(s.trees.byId["t_00c0ffee00c0ffee"] == before);  // title, owner, state, head — all untouched
+}
+
+TEST(create_with_an_id_that_is_not_yours_is_taken_and_leaves_the_row_alone) {
+  Setup s;
+  CHECK(s.registry.create(uid("owner"), TreeId{"t_00c0ffee00c0ffee"}, treeData("Theirs", {})) ==
+        TreeRegistry::Creation::created);
+  StoredTree before = s.trees.byId["t_00c0ffee00c0ffee"];
+
+  CHECK(s.registry.create(uid("intruder"), TreeId{"t_00c0ffee00c0ffee"}, treeData("Mine now", {})) ==
+        TreeRegistry::Creation::taken);
+  CHECK(s.trees.byId["t_00c0ffee00c0ffee"] == before);
+
+  // An unclaimed tree (born ownerless via PUT) is nobody's to resume either.
+  s.trees.byId["t_deadbeefdeadbeef"] = StoredTree{GraphState{}, LegendState{}, {"Unclaimed", {}}, 0, std::nullopt};
+  CHECK(s.registry.create(uid("intruder"), TreeId{"t_deadbeefdeadbeef"}, treeData("Claim it", {})) ==
+        TreeRegistry::Creation::taken);
+  CHECK(s.trees.byId["t_deadbeefdeadbeef"].owner == std::nullopt);
+}
+
+TEST(create_with_a_soft_deleted_id_is_taken_even_for_its_old_owner) {
+  Setup s;
+  UserId me = uid("me");
+  CHECK(s.registry.create(me, TreeId{"t_00c0ffee00c0ffee"}, treeData("Gone soon", {})) ==
+        TreeRegistry::Creation::created);
+  CHECK(s.registry.remove(TreeId{"t_00c0ffee00c0ffee"}, me) == TreeRegistry::Removal::deleted);
+
+  // load can't see the deleted row, so the insert runs — the unique index refuses it, the
+  // reload still sees nothing, and the claim reads taken (the client remaps its local id).
+  CHECK(s.registry.create(me, TreeId{"t_00c0ffee00c0ffee"}, treeData("Again", {})) ==
+        TreeRegistry::Creation::taken);
+  CHECK_EQ(s.registry.list(me).size(), 0u);
+}
+
 TEST(list_orders_owned_trees_newest_first_and_excludes_other_owners) {
   Setup s;
   UserId me = uid("me");

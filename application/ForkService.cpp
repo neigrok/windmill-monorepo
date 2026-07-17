@@ -45,7 +45,11 @@ ForkService::Result ForkService::fork(const TreeId& source, const std::string& r
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(newId));
     if (trees_.load(newId)) return {Outcome::conflict, {}};
-    trees_.fork(newId, source, state, legend, forkTitle, owner);
+    try {
+      trees_.fork(newId, source, state, legend, forkTitle, owner);
+    } catch (const DuplicateTree&) {
+      return {Outcome::conflict, {}};  // a soft-deleted row still holds the id, invisible to load
+    }
   }
 
   data.id = newId;

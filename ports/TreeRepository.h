@@ -7,11 +7,19 @@
 #include "domain/Tree.h"
 
 #include <cstdint>
+#include <exception>
 #include <optional>
 #include <string>
 #include <vector>
 
 namespace wm {
+
+// The id-collision refusal create() and fork() raise: a row already holds the id — possibly
+// soft-deleted (a delete hides a tree from load, but its row keeps the id). The unique index
+// arbitrates cross-process races; callers reload to classify what they hit.
+struct DuplicateTree : std::exception {
+  const char* what() const noexcept override { return "a tree with that id already exists"; }
+};
 
 // A stored tree: its full loose-graph CRDT state, its legend CRDT state, the title register
 // (an unset stamp means the create-time baseline, never renamed), the seq of the last op
@@ -24,6 +32,7 @@ struct StoredTree {
   Seq head = 0;
   std::optional<UserId> owner;
   std::string visibility = "public";
+  bool operator==(const StoredTree&) const = default;
 };
 
 // One row of a caller's registry: the projected present document and when the tree last
@@ -47,7 +56,7 @@ struct TreeRepository {
   virtual void save(const TreeId& tree, const GraphState& state, const LegendState& legend,
                     const Lww<std::string>& title, Seq head) = 0;
   // Insert a brand-new tree owned by `owner` — a fresh id, its starting document (graph +
-  // legend) and title. Fails loudly on an id collision (never overwrites an existing tree).
+  // legend) and title. Throws DuplicateTree on an id collision (never overwrites a tree).
   virtual void create(const TreeId& tree, const GraphState& state, const LegendState& legend,
                       const std::string& title, const UserId& owner) = 0;
   // The trees a user owns, newest-touched excluded from ordering here (the domain orders).
@@ -65,6 +74,7 @@ struct TreeRepository {
   virtual void claim(const TreeId& tree, const UserId& owner) = 0;
   // Create `newTree` as a verbatim copy of `source`'s document (nodes, edges and legend
   // kinds), recording provenance and its owner. The copy starts a fresh op log at head 0.
+  // Throws DuplicateTree on an id collision, exactly as create does.
   virtual void fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
                     const LegendState& legend, const std::string& title, const UserId& owner) = 0;
 };

@@ -28,6 +28,12 @@ public:
   // legend kinds (all empty for a blank tree, which gets the default legend). Returns the minted id.
   TreeId create(const UserId& owner, const TreeData& initial);
 
+  // The claim seam: plant under a client-minted id, create-if-absent under the tree's strand.
+  // `existedYours` is the idempotent resume — the caller already owns the id, the row is left
+  // untouched. `taken` covers another account's tree, an unclaimed one, and a soft-deleted id.
+  enum class Creation { created, existedYours, taken };
+  Creation create(const UserId& owner, const TreeId& id, const TreeData& initial);
+
   std::vector<TreeSummary> list(const UserId& owner);
 
   enum class Removal { deleted, notFound, notOwner };

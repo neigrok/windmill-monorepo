@@ -20,10 +20,12 @@ drogon::HttpResponsePtr jsonResponse(const Json::Value& body, drogon::HttpStatus
   return response;
 }
 
-drogon::HttpResponsePtr error(drogon::HttpStatusCode code, const std::string& message) {
+drogon::HttpResponsePtr error(drogon::HttpStatusCode status, const std::string& message,
+                              const char* code = nullptr) {
   Json::Value body(Json::objectValue);
   body["error"] = message;
-  return jsonResponse(body, code);
+  if (code) body["code"] = code;  // the machine-readable vocabulary: "bad-id", "id-taken"
+  return jsonResponse(body, status);
 }
 }
 
@@ -140,6 +142,10 @@ void HttpApi::forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
   std::shared_ptr<Json::Value> json = req->getJsonObject();
   std::string newId = json ? json->get("id", "").asString() : "";      // optional — minted when absent
   std::string title = json ? json->get("title", "").asString() : "";   // optional — inherited when absent
+  if (!newId.empty() && !wellFormedTreeId(newId)) {
+    callback(error(drogon::k400BadRequest, "id must be t_ followed by 16 lowercase hex characters", "bad-id"));
+    return;
+  }
 
   ForkService::Result forked = fork_->fork(TreeId{treeId}, newId, title, *caller);
   if (forked.outcome == ForkService::Outcome::noSource) {

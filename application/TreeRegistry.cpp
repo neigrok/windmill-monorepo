@@ -18,12 +18,33 @@ TreeRegistry::TreeRegistry(TreeRepository& trees, ProgressRepository& progress, 
 
 TreeId TreeRegistry::create(const UserId& owner, const TreeData& initial) {
   TreeId id{"t_" + tokens_.mint().digest.substr(0, 16)};  // server-minted, unguessable, URL-safe
+  if (create(owner, id, initial) != Creation::created) throw DuplicateTree{};  // a fresh mint colliding means the RNG is broken
+  return id;
+}
+
+TreeRegistry::Creation TreeRegistry::create(const UserId& owner, const TreeId& id, const TreeData& initial) {
+  std::lock_guard<std::mutex> strand(rooms_.strandFor(id));
+  std::optional<StoredTree> stored = trees_.load(id);
+  if (stored) {
+    if (stored->owner && *stored->owner == owner) return Creation::existedYours;  // idempotent resume — the row stays untouched
+    return Creation::taken;
+  }
+
   GraphState state = LooseGraph(initial, genesis_).exportState();  // seed the starting nodes/edges
   // Honour a posted legend; otherwise a blank tree is born with the three defaults (F6).
   LegendState legend = initial.kinds.empty() ? Legend::seededDefaults(genesis_).exportState()
                                              : Legend(initial.kinds, genesis_).exportState();
-  trees_.create(id, state, legend, initial.title, owner);
-  return id;
+  try {
+    trees_.create(id, state, legend, initial.title, owner);
+  } catch (const DuplicateTree&) {
+    // Lost a cross-process insert race (the standalone MCP binary shares this DB), or the id
+    // names a soft-deleted tree — its row outlives the delete, invisible to load. Reload to
+    // classify: only a live row the caller owns reads as a resume.
+    std::optional<StoredTree> raced = trees_.load(id);
+    if (raced && raced->owner && *raced->owner == owner) return Creation::existedYours;
+    return Creation::taken;
+  }
+  return Creation::created;
 }
 
 std::vector<TreeSummary> TreeRegistry::list(const UserId& owner) {

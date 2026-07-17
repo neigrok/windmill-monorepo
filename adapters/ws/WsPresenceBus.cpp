@@ -29,6 +29,10 @@ std::set<drogon::WebSocketConnectionPtr> WsPresenceBus::subscribersOf(const Tree
 void WsPresenceBus::broadcastSubgraph(const TreeId& tree, Seq seq, const Subgraph& subgraph) {
   Json::Value frame = toJson(subgraph);
   frame["seq"] = static_cast<Json::Int64>(seq);  // the room's broadcast order, stamped on the verbatim frame
+  // A broadcast is a live delta by definition, whatever intent the frame arrived with.
+  // Echoing a client's 'flush' intent made every subscriber (the sender included) treat
+  // the echo as a re-baselining graft — wiping its coverage and re-flushing forever.
+  frame["intent"] = "live";
   std::string text = dump(frame);
   for (const auto& conn : subscribersOf(tree)) {
     if (conn->connected()) conn->send(text);
