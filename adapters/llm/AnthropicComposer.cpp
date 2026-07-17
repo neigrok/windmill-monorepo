@@ -83,7 +83,6 @@ void AnthropicComposer::compose(const std::string& text,
   Json::Value body(Json::objectValue);
   body["model"] = "claude-sonnet-5";
   body["max_tokens"] = 2000;
-  body["temperature"] = 0;
   body["system"] = kSystemPrompt;
   body["messages"] = Json::Value(Json::arrayValue);
   body["messages"].append(message);
@@ -114,9 +113,19 @@ void AnthropicComposer::compose(const std::string& text,
         }
 
         std::shared_ptr<Json::Value> reply = resp->getJsonObject();
-        if (!reply || !(*reply)["content"].isArray() || (*reply)["content"].empty() ||
-            !(*reply)["content"][0]["text"].isString()) {
+        if (!reply || !(*reply)["content"].isArray() || (*reply)["content"].empty()) {
           LOG_ERROR << "compose upstream returned an unreadable reply";
+          done(std::nullopt);
+          return;
+        }
+
+        // Sonnet-class models lead with a thinking block; the plan is the first TEXT block.
+        std::string raw;
+        for (const Json::Value& block : (*reply)["content"]) {
+          if (block["text"].isString()) { raw = block["text"].asString(); break; }
+        }
+        if (raw.empty()) {
+          LOG_ERROR << "compose upstream returned no text block";
           done(std::nullopt);
           return;
         }
@@ -131,14 +140,14 @@ void AnthropicComposer::compose(const std::string& text,
           return;
         }
 
-        const std::string plan = strippedPlan((*reply)["content"][0]["text"].asString());
+        const std::string plan = strippedPlan(raw);
         if (plan.empty()) {
           done(std::nullopt);
           return;
         }
         done(plan);
       },
-      20.0);
+      40.0);  // Sonnet thinks before it writes; the call holds no handler thread, so give it room
 }
 
 }
