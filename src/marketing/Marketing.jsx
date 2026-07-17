@@ -102,7 +102,7 @@ function NavCluster({ status, user, newest, treeCount, linkSent, onLogin, onResu
             size={28}
             treeCount={treeCount}
             onMyTrees={onMyTrees}
-            onSettings={() => {}}
+            onSettings={() => { window.location.hash = '#/settings'; }}
             onSignOut={onSignOut}
             footer="Signing out keeps your trees on this device."
           />

@@ -28,9 +28,37 @@ export async function postDecision(decision) {
   throw await errorFrom(response);
 }
 
+// The LLM grants this account has handed out (X6 §5 · settings §02). GET /v1/oauth/grants →
+// one row per client: { clientId, name, grantedMs, lastUsedMs }. Separate from browser
+// sessions on purpose — pulling a tool's key never signs a device out. A 401 is a lapsed
+// session mid-visit.
+export async function listGrants() {
+  const response = await get('/v1/oauth/grants');
+  if (response.ok) return (await response.json()).grants ?? [];
+  if (response.status === 401) throw new AuthError('Session lapsed', { code: 'unauthenticated', status: 401 });
+  throw await errorFrom(response);
+}
+
+// DELETE /v1/oauth/grants/{clientId} → 204. Disconnect acts immediately; revoking never
+// touches content the tool created.
+export async function revokeGrant(clientId) {
+  const response = await del(`/v1/oauth/grants/${encodeURIComponent(clientId)}`);
+  if (response.ok) return;
+  if (response.status === 401) throw new AuthError('Session lapsed', { code: 'unauthenticated', status: 401 });
+  throw await errorFrom(response);
+}
+
 async function get(path) {
   try {
     return await fetch(`${API_BASE}${path}`, { credentials: 'include' });
+  } catch {
+    throw new AuthError('Network request failed', { code: 'unreachable', status: 0 });
+  }
+}
+
+async function del(path) {
+  try {
+    return await fetch(`${API_BASE}${path}`, { method: 'DELETE', credentials: 'include' });
   } catch {
     throw new AuthError('Network request failed', { code: 'unreachable', status: 0 });
   }

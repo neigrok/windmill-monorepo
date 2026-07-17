@@ -5,7 +5,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parsePlan } from '../../../src/skilltree/paste/planGrammar.js';
+import { parsePlan, serializePlan } from '../../../src/skilltree/paste/planGrammar.js';
+import shipV1 from '../../../src/skilltree/quests/roster/shipV1.js';
 
 const KINDS = [
   { id: 'build', hue: 'terracotta', label: 'Build', description: 'Things you make' },
@@ -283,6 +284,97 @@ test('gutter-line bijection: exactly one entry per input line', () => {
     const parsed = parsePlan(doc, KINDS);
     assert.equal(parsed.gutter.length, doc.split(/\r\n|\r|\n/).length, JSON.stringify(doc));
   }
+});
+
+test('serializePlan round-trips a parsePlan document — nodes and kinds land identically', () => {
+  const parsed = parsePlan(FLAGSHIP, KINDS);
+  const markdown = serializePlan({ title: parsed.title, nodes: parsed.nodes }, parsed.kinds, null);
+
+  assert.equal(markdown, [
+    '# Learn WebGL',
+    '## Basics',
+    '- [x] Read the spec',
+    '- Draw a triangle',
+    '  - Understand shaders',
+    '## Projects',
+    '- Particle system',
+    '  - Terrain renderer',
+    '    Just a stray thought',
+  ].join('\n'));
+
+  const reparsed = parsePlan(markdown, KINDS);
+  assert.deepStrictEqual(reparsed.nodes, parsed.nodes);
+  assert.deepStrictEqual(reparsed.kinds, parsed.kinds);
+});
+
+test('serializePlan completion source: a live progress overlay wins over the document seed', () => {
+  const parsed = parsePlan(FLAGSHIP, KINDS); // seed marks "Read the spec" complete
+  const treeData = { title: parsed.title, nodes: parsed.nodes };
+
+  const seeded = serializePlan(treeData, parsed.kinds, null);
+  assert.match(seeded, /- \[x\] Read the spec/);
+  assert.match(seeded, /^- Draw a triangle$/m);
+
+  const overlaid = serializePlan(treeData, parsed.kinds, new Set(['draw-a-triangle']));
+  assert.match(overlaid, /^- Read the spec$/m);
+  assert.match(overlaid, /- \[x\] Draw a triangle/);
+
+  // The Progress `{ completed }` shape resolves the same as a bare Set.
+  const asProgress = serializePlan(treeData, parsed.kinds, { completed: new Set(['draw-a-triangle']) });
+  assert.equal(asProgress, overlaid);
+});
+
+test('serializePlan is best-effort on a multi-parent DAG — primary parent indents, the rest become notes', () => {
+  const markdown = serializePlan(shipV1, shipV1.kinds, null);
+  const back = parsePlan(markdown, shipV1.kinds);
+  const find = (label) => back.nodes.find((node) => node.label === label);
+
+  // Colours are grouped under `## <kind label>` headings.
+  assert.ok(markdown.includes('## Polish'), markdown);
+  assert.ok(markdown.includes('## Launch'), markdown);
+  assert.equal(find('Dogfood it for a week').color, 'sky');
+  assert.equal(find('Run a friendly beta').color, 'gold');
+
+  // prerequisites[0] survives as the indent parent, even across a two-parent node.
+  assert.deepStrictEqual(find('Build the walking skeleton').prerequisites, [find('Pick a boring stack and deploy it').id]);
+  assert.deepStrictEqual(find('Launch it where your people are').prerequisites, [find('Run a friendly beta').id]);
+  assert.deepStrictEqual(find('Ship the first fix release').prerequisites, [find('Launch it where your people are').id]);
+
+  // Extra prerequisites are preserved as a `needs also` note reparsed into the description.
+  assert.match(find('Build the walking skeleton').description, /needs also: Sketch the core flow on paper/);
+  assert.match(find('Launch it where your people are').description, /needs also: Make the landing page, Wire up analytics and feedback/);
+  assert.match(find('Run a friendly beta').description, /needs also: Smooth the first-run experience, Handle failure gracefully/);
+
+  // A cross-kind primary parent can't be indented under (wrong section), so it too rides as a note.
+  assert.match(find('Dogfood it for a week').description, /needs also: Make the core feature real/);
+  assert.match(find('Wire up analytics and feedback').description, /needs also: Make the core feature real/);
+});
+
+test('serializePlan emits the url string from { url, label } link objects, never [object Object]', () => {
+  // The live app carries node.links as { url, label } objects (lattice + TreeJson), not the
+  // bare strings parsePlan produces. Export must emit the url, or every link in the archive
+  // becomes the literal "[object Object]".
+  const tree = {
+    title: 'Reading list',
+    nodes: [
+      { id: 'root', label: 'Learn rendering', color: 'terracotta', prerequisites: [],
+        links: [{ url: 'https://webgl.org/spec', label: 'the spec' }] },
+      { id: 'child', label: 'Draw a triangle', color: 'terracotta', prerequisites: ['root'],
+        links: [{ url: 'https://example.com/tri', label: 'tutorial' }, 'https://bare.example/x'] },
+    ],
+  };
+  const kinds = [{ id: 'build', hue: 'terracotta', label: 'Build', description: '' }];
+  const markdown = serializePlan(tree, kinds, null);
+
+  assert.ok(!markdown.includes('[object Object]'), markdown);
+  assert.ok(markdown.includes('https://webgl.org/spec'), markdown);
+  assert.ok(markdown.includes('https://example.com/tri'), markdown);
+  assert.ok(markdown.includes('https://bare.example/x'), markdown);
+
+  // and the bare urls round-trip back into link entries
+  const back = parsePlan(markdown, kinds);
+  const child = back.nodes.find((node) => node.label === 'Draw a triangle');
+  assert.deepStrictEqual(child.links, ['https://example.com/tri', 'https://bare.example/x']);
 });
 
 test('every prerequisite references an emitted id, single-parented', () => {

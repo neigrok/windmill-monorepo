@@ -3,6 +3,7 @@ import AuthProvider, { useAuth } from './skilltree/auth/AuthProvider.jsx';
 import { AuthLanding } from './skilltree/auth/AuthLanding.jsx';
 import { OAuthConsent } from './skilltree/auth/OAuthConsent.jsx';
 import { ConnectPage } from './skilltree/connect/ConnectPage.jsx';
+import { SettingsPage } from './skilltree/settings/SettingsPage.jsx';
 import { verifyToken } from './skilltree/auth/AuthClient.js';
 import { PlaceStore } from './skilltree/persistence/PlaceStore.js';
 import Marketing from './marketing/Marketing.jsx';
@@ -81,6 +82,13 @@ function AppRoutes() {
   // hosted MCP server. Account business, its own stable URL; the tree canvas never learns of MCP.
   if (route.startsWith('#/connect')) {
     return <ConnectPage />;
+  }
+
+  // The settings home (X6 §5) — the signed-in account surface: profile, connected tools,
+  // sessions, and data. Its own stable URL, plain chrome shared with /connect; the tree
+  // canvas never learns of it.
+  if (route.startsWith('#/settings')) {
+    return <SettingsPage />;
   }
 
   const isApp = route.startsWith('#/app') || route.startsWith('#/t/')

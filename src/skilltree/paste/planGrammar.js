@@ -261,3 +261,123 @@ function assemble(root, grove, lines) {
 function slug(label) {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '');
 }
+
+// serializePlan (F3, the inverse) — a TreeData back into plan-grammar markdown, the
+// packing side of the settings "export your data" feature. It is BEST-EFFORT by
+// construction, because the grammar it targets is strictly single-parent and colours a
+// node by its enclosing `## section`, never per node. A general DAG therefore cannot
+// round-trip, and the losses are deliberate and named:
+//   • prerequisites[0] becomes the indent parent; every EXTRA prerequisite — and a
+//     primary parent in another colour section that can't be indented under — is kept
+//     as a `needs also: <label>, …` note. That note reparses harmlessly into the
+//     node's description: a cross/multi edge preserved as prose, not as an edge.
+//   • nodes are grouped by colour under `## <kind label>` headings, so kind
+//     DESCRIPTIONS are lost on re-parse — parsePlan blanks a relabelled/added kind's
+//     description (source 'relabeled'/'added' carry description '').
+// What survives exactly: labels, single-parent prerequisite shape, node colours, and
+// completion marks. Completion follows the app's own rule (HttpTreeRepository.loadProgress):
+// the live per-user `progress` overlay wins when supplied; otherwise the document's own
+// `status: 'complete'` seed answers.
+//   • a link's label is NOT preserved: the grammar's only link syntax is a bare URL line
+//     (parsePlan's URL rule is `^https?://\S+$`), so export emits the url and drops the label.
+
+// The app carries links as { url, label } objects; parsePlan produces bare url strings.
+// Normalize to the url string so a link never stringifies to "[object Object]" in the export.
+const linkUrl = (link) => (typeof link === 'string' ? link : link?.url ?? '');
+export function serializePlan(treeData, kinds, progress) {
+  const nodes = treeData.nodes ?? [];
+  const title = treeData.title ?? '';
+  if (nodes.length === 0) return `# ${title}`;
+
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const kindByHue = new Map((kinds ?? []).map((kind) => [kind.hue, kind]));
+  const completed = completedNodeIds(treeData, progress);
+  const root = nodes.find((node) => node.prerequisites.length === 0) ?? nodes[0];
+
+  // Partition the non-root nodes by colour, in first-appearance order — each colour is
+  // one `## section`, except the root's own colour, which stays loose (emitted under the
+  // root before any heading) unless a branch node names it. This mirrors the grammar,
+  // where pre-heading steps hang off the root and every heading owns exactly one colour.
+  const order = [];
+  const byColor = new Map();
+  for (const node of nodes) {
+    if (node === root) continue;
+    if (!byColor.has(node.color)) { byColor.set(node.color, []); order.push(node.color); }
+    byColor.get(node.color).push(node);
+  }
+
+  const branchNode = (color) => {
+    const kind = kindByHue.get(color);
+    if (!kind) return null;
+    return (byColor.get(color) ?? []).find((node) => node.prerequisites[0] === root.id && node.label === kind.label) ?? null;
+  };
+  const looseColor = byColor.has(root.color) && branchNode(root.color) === null ? root.color : null;
+
+  const out = [`# ${title}`];
+  if (root.description) for (const line of String(root.description).split('\n')) out.push(line);
+  if (root.links) for (const link of root.links) { const url = linkUrl(link); if (url) out.push(url); }
+
+  if (looseColor !== null) renderForest(byColor.get(looseColor), root.id, completed, byId, out);
+
+  for (const color of order) {
+    if (color === looseColor) continue;
+    const heading = branchNode(color);
+    const kind = kindByHue.get(color);
+    out.push(`## ${heading ? heading.label : kind ? kind.label : color}`);
+    const content = heading ? byColor.get(color).filter((node) => node !== heading) : byColor.get(color);
+    renderForest(content, heading ? heading.id : null, completed, byId, out);
+  }
+
+  return out.join('\n');
+}
+
+// The app's honest completion source: a live `progress` overlay (a Set, an array, or a
+// Progress `{ completed }`) wins outright; with none, the document's seed statuses answer.
+function completedNodeIds(treeData, progress) {
+  if (progress == null) return new Set(treeData.nodes.filter((node) => node.status === 'complete').map((node) => node.id));
+  if (progress instanceof Set) return progress;
+  if (Array.isArray(progress)) return new Set(progress);
+  if (progress.completed) return progress.completed instanceof Set ? progress.completed : new Set(progress.completed);
+  return new Set();
+}
+
+// Emit one colour section as nested list items: prerequisites[0] is the indent parent
+// when it lives in this same section, otherwise the node sits at the top (its container —
+// the branch node or the root — becomes its reparsed parent). Notes ride under each step:
+// its description, then the `needs also` line for the edges indentation can't carry, then
+// bare-URL links.
+function renderForest(content, containerId, completed, byId, out) {
+  const contentIds = new Set(content.map((node) => node.id));
+  const childrenOf = new Map();
+  const roots = [];
+  for (const node of content) {
+    const parent = node.prerequisites[0];
+    if (parent !== undefined && contentIds.has(parent)) {
+      if (!childrenOf.has(parent)) childrenOf.set(parent, []);
+      childrenOf.get(parent).push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+
+  const walk = (node, depth) => {
+    const box = completed.has(node.id) ? '[x] ' : '';
+    out.push(`${'  '.repeat(depth)}- ${box}${node.label}`);
+    const noteIndent = '  '.repeat(depth + 1);
+    if (node.description) for (const line of String(node.description).split('\n')) out.push(noteIndent + line);
+    const also = strandedPrereqs(node, contentIds, containerId, byId);
+    if (also) out.push(noteIndent + also);
+    if (node.links) for (const link of node.links) { const url = linkUrl(link); if (url) out.push(noteIndent + url); }
+    for (const child of childrenOf.get(node.id) ?? []) walk(child, depth + 1);
+  };
+  for (const node of roots) walk(node, 0);
+}
+
+// The crux of the lossiness: every prerequisite that indentation can't express — the
+// extras beyond the first, and a primary parent that lives outside this section — kept as
+// a plain note that reparses into the description rather than vanishing.
+function strandedPrereqs(node, contentIds, containerId, byId) {
+  const stranded = node.prerequisites.filter((id, index) => !(index === 0 && (contentIds.has(id) || id === containerId)));
+  if (stranded.length === 0) return null;
+  return `needs also: ${stranded.map((id) => byId.get(id)?.label ?? id).join(', ')}`;
+}

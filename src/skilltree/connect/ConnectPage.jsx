@@ -11,7 +11,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { requestMagicLink } from '../auth/AuthClient.js';
 import { SignInDialog } from '../auth/SignInDialog.jsx';
-import { Avatar } from '../../components';
+import { AccountChrome } from '../account/AccountChrome.jsx';
 
 const MCP_URL = 'https://windmill.works/mcp';
 const JSON_TEXT = `{\n  "mcpServers": {\n    "windmill": { "url": "${MCP_URL}" }\n  }\n}`;
@@ -76,7 +76,6 @@ export function ConnectPage() {
   const [copied, setCopied] = useState(false);
   const [signInOpen, setSignInOpen] = useState(false);
   const client = CLIENTS[active];
-  const name = signedIn ? (user.name?.trim() || user.email) : '';
 
   // Copy is the sign-in gate: connecting needs an account, so a signed-out Copy opens the
   // door instead of copying (§2). Signed in, it copies and flips to olive "Copied" for 1.4s.
@@ -88,13 +87,9 @@ export function ConnectPage() {
   };
 
   return (
-    <div style={shell}>
-      <style>{CSS}</style>
-      <div style={card}>
-        <div style={head}>
-          <span style={mark}>Windmill</span>
-          {signedIn ? <Avatar name={name} size={22} /> : <a href="#/app" style={backLink}>Back to Windmill</a>}
-        </div>
+    <>
+      <AccountChrome>
+        <style>{CSS}</style>
 
         <h1 style={title}>Connect your LLM tools</h1>
         <p style={sub}>Claude, Cursor, or Codex can plant and tend your roadmaps. Pick your tool, paste one snippet — your browser handles the rest.</p>
@@ -143,10 +138,10 @@ export function ConnectPage() {
             </span>
           ))}
         </div>
-      </div>
+      </AccountChrome>
 
       <SignInDialog open={signInOpen} onClose={() => setSignInOpen(false)} onSend={requestMagicLink} />
-    </div>
+    </>
   );
 }
 
@@ -154,19 +149,6 @@ export default ConnectPage;
 
 // ---- style ---------------------------------------------------------------
 
-const shell = {
-  position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-  padding: 'var(--space-4)', overflow: 'auto',
-  background: 'var(--surface-canvas)', fontFamily: 'var(--font-body)', color: 'var(--text-primary)',
-};
-const card = {
-  width: 460, maxWidth: '100%', boxSizing: 'border-box', background: 'var(--surface-card)',
-  border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-lg)',
-  padding: '18px 20px 18px',
-};
-const head = { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 };
-const mark = { fontFamily: 'var(--font-display)', fontSize: '14px', fontWeight: 800, flex: 1 };
-const backLink = { fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-link)', textDecoration: 'none' };
 const title = { fontFamily: 'var(--font-display)', fontSize: '19px', fontWeight: 700, lineHeight: 1.25, margin: '4px 0 2px' };
 const sub = { fontSize: 'var(--text-xs)', lineHeight: 1.5, color: 'var(--text-secondary)', margin: '0 0 12px' };
 const steps = { display: 'flex', flexDirection: 'column', gap: 4, marginTop: 10 };

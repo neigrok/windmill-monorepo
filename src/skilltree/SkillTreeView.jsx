@@ -1496,7 +1496,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
             onSignIn={() => setSignInOpen(true)}
             onSignOut={signOut}
             onConnect={() => { window.location.hash = '#/connect'; }}
-            onSettings={() => {}}
+            onSettings={() => { window.location.hash = '#/settings'; }}
           />
         </div>
       )}
