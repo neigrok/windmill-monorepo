@@ -16,6 +16,10 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // pasted text and get back a markdown plan in the paste grammar. Every outcome is a typed
 // code the client branches on — empty / too-long / compose-unavailable / compose-failed —
 // and abuse is handled by the shared rate-limit ceilings in infra/main.cpp, not here.
+// With {"stream": true} the same guards apply, then the reply is an SSE stream instead:
+// one `delta` event per model text delta, closed by `done` on a clean finish or `fail`
+// on upstream error, timeout, or truncation — mid-stream failures too, since by then the
+// 200 is already on the wire.
 class ComposeApi {
 public:
   explicit ComposeApi(std::shared_ptr<PlanComposer> composer);

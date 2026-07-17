@@ -31,6 +31,8 @@
 
 #include <drogon/drogon.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <memory>
 #include <set>
@@ -210,11 +212,16 @@ int main() {
         const std::string ip = clientIp(req);
         if (ip.empty()) return nullptr;  // internal / health-check traffic
         // Per-IP before global, so a hammering client is denied out of its own bucket and
-        // never drains the shared ceiling for everyone else.
+        // never drains the shared ceiling for everyone else. Drogon ROUTES paths
+        // case-insensitively while path() preserves the request's casing — compare
+        // lowercased, or /V1/Compose walks straight past the spend ceilings.
+        std::string path = req->path();
+        std::transform(path.begin(), path.end(), path.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
         bool ok = apiLimiter->allow(ip);
-        if (ok && req->path() == "/v1/auth/magic-link")
+        if (ok && path == "/v1/auth/magic-link")
           ok = magicPerIp->allow(ip) && magicGlobal->allow("global");
-        if (ok && req->path() == "/v1/compose")
+        if (ok && path == "/v1/compose")
           ok = composePerIp->allow(ip) && composeGlobal->allow("global");
         if (ok) return nullptr;
         Json::Value body(Json::objectValue);

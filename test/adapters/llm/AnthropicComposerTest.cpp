@@ -3,10 +3,45 @@
 #include "test/testing.h"
 
 #include <optional>
+#include <sstream>
 #include <string>
 #include <utility>
+#include <vector>
 
 using namespace wm;
+
+namespace {
+
+struct ParsedStream {
+  std::vector<std::string> deltas;
+  int doneCalls = 0;
+  bool ok = false;
+  AnthropicStreamParser parser{
+      [this](const std::string& delta) { deltas.push_back(delta); },
+      [this](bool clean) { ++doneCalls; ok = clean; }};
+
+  void feedBytewise(const std::string& wire) {
+    for (const char c : wire) parser.feed(&c, 1);
+  }
+};
+
+std::string chunk(const std::string& data) {
+  std::ostringstream out;
+  out << std::hex << data.size() << "\r\n" << data << "\r\n";
+  return out.str();
+}
+
+std::string sse(const std::string& event, const std::string& data) {
+  return "event: " + event + "\ndata: " + data + "\n\n";
+}
+
+constexpr const char* kStreamHeaders =
+    "HTTP/1.1 200 OK\r\n"
+    "Content-Type: text/event-stream; charset=utf-8\r\n"
+    "Transfer-Encoding: chunked\r\n"
+    "\r\n";
+
+}
 
 TEST(stripped_plan_leaves_a_clean_plan_untouched) {
   const std::string plan = "# Learn to sail\n\n## Basics\n- [x] Read the theory\n1. Rig the boat";
@@ -49,4 +84,111 @@ TEST(anthropic_composer_without_a_key_is_unconfigured_and_never_calls_upstream) 
 TEST(anthropic_composer_with_a_key_reports_configured) {
   AnthropicComposer composer{"sk-ant-test"};
   CHECK(composer.configured());
+}
+
+TEST(anthropic_composer_stream_without_a_key_fails_without_calling_upstream) {
+  AnthropicComposer composer{""};
+  ParsedStream observed;
+  composer.composeStream(
+      "anything", [&](const std::string& delta) { observed.deltas.push_back(delta); },
+      [&](bool clean) { ++observed.doneCalls; observed.ok = clean; });
+  CHECK_EQ(observed.doneCalls, 1);
+  CHECK_FALSE(observed.ok);
+  CHECK_EQ(observed.deltas.size(), 0u);
+}
+
+TEST(stream_parser_forwards_text_deltas_and_finishes_clean_on_end_turn) {
+  ParsedStream observed;
+  const std::string wire =
+      std::string(kStreamHeaders) +
+      chunk(sse("message_start", R"({"type":"message_start","message":{"id":"msg_1"}})")) +
+      chunk(sse("content_block_start",
+                R"({"type":"content_block_start","index":0,"content_block":{"type":"thinking"}})")) +
+      chunk(sse("content_block_delta",
+                R"({"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"hmm"}})")) +
+      chunk(sse("content_block_delta",
+                R"({"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"# Learn to sail\n"}})")) +
+      chunk(": keepalive\n\n") +
+      chunk(sse("content_block_delta",
+                R"({"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"- Rig the boat"}})")) +
+      chunk(sse("message_delta", R"({"type":"message_delta","delta":{"stop_reason":"end_turn"}})")) +
+      chunk(sse("message_stop", R"({"type":"message_stop"})")) +
+      "0\r\n\r\n";
+
+  observed.feedBytewise(wire);  // one byte at a time: every split point is exercised
+
+  CHECK_EQ(observed.deltas.size(), 2u);
+  CHECK_EQ(observed.deltas[0], std::string("# Learn to sail\n"));
+  CHECK_EQ(observed.deltas[1], std::string("- Rig the boat"));
+  CHECK_EQ(observed.doneCalls, 1);
+  CHECK(observed.ok);
+  CHECK(observed.parser.done());
+}
+
+TEST(stream_parser_fails_on_a_truncating_stop_reason_after_the_deltas) {
+  ParsedStream observed;
+  observed.feedBytewise(
+      std::string(kStreamHeaders) +
+      chunk(sse("content_block_delta",
+                R"({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"# Half a"}})")) +
+      chunk(sse("message_delta", R"({"type":"message_delta","delta":{"stop_reason":"max_tokens"}})")) +
+      chunk(sse("message_stop", R"({"type":"message_stop"})")));
+
+  CHECK_EQ(observed.deltas.size(), 1u);
+  CHECK_EQ(observed.deltas[0], std::string("# Half a"));
+  CHECK_EQ(observed.doneCalls, 1);
+  CHECK_FALSE(observed.ok);
+}
+
+TEST(stream_parser_fails_on_a_non_200_status) {
+  ParsedStream observed;
+  observed.feedBytewise("HTTP/1.1 429 Too Many Requests\r\ncontent-type: application/json\r\n\r\n");
+
+  CHECK_EQ(observed.doneCalls, 1);
+  CHECK_FALSE(observed.ok);
+  CHECK_EQ(observed.deltas.size(), 0u);
+
+  observed.parser.finish();  // the close that follows must not double-report
+  CHECK_EQ(observed.doneCalls, 1);
+}
+
+TEST(stream_parser_fails_on_an_upstream_error_event) {
+  ParsedStream observed;
+  observed.feedBytewise(
+      std::string(kStreamHeaders) +
+      chunk(sse("error", R"({"type":"error","error":{"type":"overloaded_error"}})")));
+
+  CHECK_EQ(observed.doneCalls, 1);
+  CHECK_FALSE(observed.ok);
+}
+
+TEST(stream_parser_fails_when_the_connection_closes_before_message_stop) {
+  ParsedStream observed;
+  observed.feedBytewise(
+      std::string(kStreamHeaders) +
+      chunk(sse("content_block_delta",
+                R"({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"# Learn"}})")));
+  CHECK_EQ(observed.doneCalls, 0);
+
+  observed.parser.finish();
+
+  CHECK_EQ(observed.deltas.size(), 1u);
+  CHECK_EQ(observed.deltas[0], std::string("# Learn"));
+  CHECK_EQ(observed.doneCalls, 1);
+  CHECK_FALSE(observed.ok);
+}
+
+TEST(stream_parser_handles_a_plain_unchunked_body_too) {
+  ParsedStream observed;
+  observed.feedBytewise(
+      "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\r\n" +
+      sse("content_block_delta",
+          R"({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"# Plan"}})") +
+      sse("message_delta", R"({"type":"message_delta","delta":{"stop_reason":"end_turn"}})") +
+      sse("message_stop", R"({"type":"message_stop"})"));
+
+  CHECK_EQ(observed.deltas.size(), 1u);
+  CHECK_EQ(observed.deltas[0], std::string("# Plan"));
+  CHECK_EQ(observed.doneCalls, 1);
+  CHECK(observed.ok);
 }
