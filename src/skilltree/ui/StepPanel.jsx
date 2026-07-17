@@ -400,7 +400,7 @@ function EditorStep({ node, state, prerequisites, startedAt, completedAt, histor
 // shared or phone viewer reads it; it never edits.
 const RO_DOT = { width: 9, height: 9, borderRadius: '50%', flexShrink: 0 };
 
-function ReadOnlyStep({ node, state, prerequisites = [], unlocks = [], completedAt, workspace = EMPTY_WORKSPACE, kinds = [], onClose = noop }) {
+function ReadOnlyStep({ node, state, prerequisites = [], unlocks = [], completedAt, workspace = EMPTY_WORKSPACE, kinds = [], onMarkComplete, onClose = noop }) {
   if (!node) return null;
 
   const currentKind = node.color ?? DEFAULT_NODE_COLOR;
@@ -427,7 +427,16 @@ function ReadOnlyStep({ node, state, prerequisites = [], unlocks = [], completed
         <IconButton icon={<Icon name="x" />} label="Close" size="sm" onClick={onClose} />
       </div>
 
-      <div><ReadOnlyStateChip state={state} hue={hue} completedAt={completedAt} /></div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+        <ReadOnlyStateChip state={state} hue={hue} completedAt={completedAt} />
+        {/* Complete-only (F4 §03): the demo's one write — mark the ready step done. Passed
+            only in the demo, so a plain read-only share never offers it. */}
+        {onMarkComplete && state === 'available' && (
+          <Button variant="primary" size="sm" onClick={() => onMarkComplete(node.id)} icon={<Icon name="check" />}>
+            Mark it done
+          </Button>
+        )}
+      </div>
       </div>
 
       <div className="st-step-scroll">

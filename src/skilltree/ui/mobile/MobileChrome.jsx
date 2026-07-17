@@ -17,8 +17,10 @@ export function MobileChrome({
   title,
   progress = { done: 0, total: 0 },
   author,
+  byline = null,
   dominantKind,
   onFork,
+  ctaEcho = false,
   onRecenter,
   showRecenter = false,
   tablet = false,
@@ -98,41 +100,48 @@ export function MobileChrome({
           </span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span
-            style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: 12,
-              fontVariantNumeric: 'tabular-nums',
-              color: 'var(--text-secondary)',
-            }}
-          >
-            {done}/{total}
+        {byline ? (
+          // The demo plaque (F4 §07): one honest byline in place of the count + bar.
+          <span style={{ fontFamily: 'var(--font-body)', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
+            {byline}
           </span>
-          <span
-            style={{
-              flex: 1,
-              maxWidth: 96,
-              height: 6,
-              borderRadius: 'var(--radius-full)',
-              background: 'var(--surface-sunken)',
-              overflow: 'hidden',
-            }}
-          >
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span
               style={{
-                display: 'block',
-                height: '100%',
-                width: `${pct}%`,
-                borderRadius: 'var(--radius-full)',
-                background: `linear-gradient(90deg, ${c.soft}, ${c.base})`,
-                transition: 'width var(--duration-base) var(--ease-soft)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 12,
+                fontVariantNumeric: 'tabular-nums',
+                color: 'var(--text-secondary)',
               }}
-            />
-          </span>
-        </div>
+            >
+              {done}/{total}
+            </span>
+            <span
+              style={{
+                flex: 1,
+                maxWidth: 96,
+                height: 6,
+                borderRadius: 'var(--radius-full)',
+                background: 'var(--surface-sunken)',
+                overflow: 'hidden',
+              }}
+            >
+              <span
+                style={{
+                  display: 'block',
+                  height: '100%',
+                  width: `${pct}%`,
+                  borderRadius: 'var(--radius-full)',
+                  background: `linear-gradient(90deg, ${c.soft}, ${c.base})`,
+                  transition: 'width var(--duration-base) var(--ease-soft)',
+                }}
+              />
+            </span>
+          </div>
+        )}
 
-        {author && (
+        {author && !byline && (
           <span style={{ fontFamily: 'var(--font-body)', fontSize: 11, color: 'var(--text-tertiary)' }}>
             {author}
           </span>
@@ -171,6 +180,7 @@ export function MobileChrome({
       {onFork && (
       <button
         type="button"
+        className={ctaEcho ? 'wm-cta-echo' : undefined}
         onClick={onFork}
         onPointerDown={() => setPressed(true)}
         onPointerUp={() => setPressed(false)}

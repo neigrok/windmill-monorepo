@@ -52,6 +52,8 @@ import { SkillTreeScene } from './scene/SkillTreeScene.js';
 import { TreeEditor } from './editing/TreeEditor.js';
 import { NODE_SIZE } from './theme.js';
 import { track } from '../telemetry/beacon.js';
+import { CoachChip } from './demo/CoachChip.jsx';
+import { DEMO_TREE_ID, DEMO_STAGED_COMPLETED, COACHED_NODE_ID, COACH_DONE_KEY, FORKED_FROM_DEMO_KEY, DEMO_COPY, coachEligible } from './demo/demoStage.js';
 
 const layoutEngine = new RadialLayoutEngine();
 const progressStore = new ProgressStore();
@@ -67,20 +69,21 @@ const EMPTY_BOUNDS = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 const CHILD_DROP = NODE_SIZE * 2.6; // world units a new child spawns below its parent
 const SIBLING_GAP = NODE_SIZE * 1.8; // horizontal spread between successive new children
 const NEW_NODE_ICON = 'sparkles';
-const DEMO_TREE_ID = 't_9e407a96b5330ebe';
 const PLANTED_QUEST_KEY = 'windmill:planted-quest'; // the shelf's one-shot note (F5 §04): this arrival is a quest
+const CTA_ECHO_DELAY = 1500; // §04: ~when the unlock toast has settled + 120ms — the Fork CTA takes the pulse once
 
-function consumePlantedQuest() {
+// The one-shot session notes both consume the same way: read, clear, answer.
+function consumeSessionFlag(key) {
   try {
-    if (sessionStorage.getItem(PLANTED_QUEST_KEY) !== '1') return false;
-    sessionStorage.removeItem(PLANTED_QUEST_KEY);
+    if (sessionStorage.getItem(key) !== '1') return false;
+    sessionStorage.removeItem(key);
     return true;
   } catch {
     return false;
   }
 }
 
-export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
+export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   const { breakpoint, readOnly: viewReadOnly, shared } = useViewMode();
   const { user, status, signOut, refresh } = useAuth(); // the account seat's source of truth (X6)
 
@@ -229,6 +232,9 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   }, [refresh]);
   const invalidRef = useRef(false); // whether the last render fell back to the loose-graph path
   const plantedQuestRef = useRef(null); // consumed once on mount; survives StrictMode's double effect
+  const forkedFromDemoRef = useRef(null); // the fork-from-demo note, consumed once (F4 §05)
+  const demoRef = useRef(demo); // the scene is built once; the write seams read the fresh demo mode without a rebuild
+  useEffect(() => { demoRef.current = demo; }, [demo]);
   const selectedIdRef = useRef(null);
   const toastTimersRef = useRef([]); // pending hold→leave→unmount timers for the active toast
   const toastKeyRef = useRef(0); // monotonic key so a replacing toast remounts and re-enters
@@ -291,6 +297,9 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   const [signInOpen, setSignInOpen] = useState(false); // the one sign-in door (X6) — opened by the seat or an expired landing
   const [panning, setPanning] = useState(false); // the scene is being panned; mobile chrome yields (§chrome)
   const [recenterAvailable, setRecenterAvailable] = useState(false); // the tree left the safe frame — offer Recenter
+  const [coachAllowed, setCoachAllowed] = useState(false); // the demo coach may mount — a stranger who hasn't seen it (F4 §03)
+  const [demoCompletions, setDemoCompletions] = useState(0); // marks made this demo session — any one retires the coach
+  const [ctaEcho, setCtaEcho] = useState(false); // the Fork CTA takes the pulse once, after the unlock toast (§04)
 
   // Save the edited tree over its seed. Only the dogfood roadmap persists — the
   // huge perf tree is a throwaway. Every structural edit, undo/redo, and move
@@ -303,6 +312,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   // timestamps of those actions so they survive a reload. Same dataset guard as
   // persistEdits — callers pass the freshly-computed next values, since state setters are async.
   const persistProgress = useCallback((next) => {
+    if (demoRef.current) return; // the demo plays against an in-memory overlay — never localStorage (F4 invariant)
     if (!seedRef.current) return;
     progressStore.save(seedRef.current.id, next);
   }, []);
@@ -781,8 +791,12 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
       ...editing,
     });
     // A quest plant left its one-shot note: this arrival announces a Quest, not a Roadmap.
-    if (plantedQuestRef.current === null) plantedQuestRef.current = consumePlantedQuest();
+    if (plantedQuestRef.current === null) plantedQuestRef.current = consumeSessionFlag(PLANTED_QUEST_KEY);
     if (plantedQuestRef.current) nextScene.setArrivalNoun('Quest');
+    // A fork from the demo left its note (F4 §05): the fresh copy's re-plant toasts
+    // "Forked — 17 steps planted" — now you're the actor (the demo suppress rides loadTree).
+    if (forkedFromDemoRef.current === null) forkedFromDemoRef.current = consumeSessionFlag(FORKED_FROM_DEMO_KEY);
+    if (forkedFromDemoRef.current) nextScene.setArrivalSummary(DEMO_COPY.forkToast);
     sceneRef.current = nextScene;
     setScene(nextScene);
     nextScene.start();
@@ -905,7 +919,14 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
       const treeData = seed;
       if (!cancelled) setHasLocalEdits(false);
       const nextTree = new SkillTree(treeData);
-      const progress = await repo.loadProgress(treeData);
+      // The demo plays against an in-memory overlay seeded to the staged 6/17 (F4 §01):
+      // it never reads the server's progress nor the seed's authored statuses (which mark
+      // rigging complete + tacking active — both wrong for the beat), and never merges
+      // saved localStorage progress. Every visitor gets the same staged state; a reload
+      // resets it, so the coached step is always ready.
+      const progress = demo
+        ? { completed: new Set(DEMO_STAGED_COMPLETED), inProgress: new Set(), server: false }
+        : await repo.loadProgress(treeData);
       // The authoritative structural history from the op log — merged into the resting
       // feed below so a collaborator's edits show up, not just this browser's.
       const serverActivity = await repo.loadActivity({ limit: 200 });
@@ -914,8 +935,8 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
       // (they're the reconcile's pending pushes), but server rows — including cleared
       // tombstones — win, so a mark cleared on another device dies here instead of being
       // resurrected. Without a server overlay (ghosts, fresh accounts), saved local
-      // progress wins wholesale, exactly as before.
-      const savedProgress = progressStore.load(seed.id);
+      // progress wins wholesale, exactly as before. The demo reads no saved progress.
+      const savedProgress = demo ? null : progressStore.load(seed.id);
       if (savedProgress && progress.server) {
         const known = new Set([...progress.completed, ...progress.inProgress, ...(progress.cleared ?? [])]);
         for (const id of savedProgress.completed) if (!known.has(id)) progress.completed.add(id);
@@ -942,6 +963,9 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
 
       const scene = sceneRef.current;
       scene.setModel(model);
+      // The demo load replays the arrival with NO toast (F4 §01): visitors watch the tree
+      // grow; toasts speak to actors. The bloom still plays — only its summary is muted.
+      if (demo) scene.suppressArrivalToast();
       // The returning tab becomes the old place (anon-first-tree F6): when the last-place
       // ledger names this tree, its saved camera replaces the fit and its selection is
       // restored below. Editor views only — a share view never reads or writes the ledger.
@@ -1051,7 +1075,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
       collabRef.current?.close();
       collabRef.current = null;
     };
-  }, [reloadKey, treeId]);
+  }, [reloadKey, treeId, demo]);
 
   // Single source of truth for node state — every completion ripples through here.
   const states = useMemo(() => {
@@ -1087,6 +1111,21 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   // An expired magic-link landing routes back here and bumps this signal to summon
   // the sign-in door — the same one door the seat opens. Zero is the resting value.
   useEffect(() => { if (openSignInSignal > 0) setSignInOpen(true); }, [openSignInSignal]);
+
+  // The coach's eligibility (F4 §03): a stranger who hasn't seen it. The once-ever note
+  // and the signed-out case resolve synchronously; a signed-in visitor is a stranger only
+  // with no trees of their own — a tree-owner is never coached, so we wait on that check.
+  useEffect(() => {
+    if (!demo || status === 'loading') return undefined;
+    let coachDone = false;
+    try { coachDone = !!localStorage.getItem(COACH_DONE_KEY); } catch { /* private mode */ }
+    if (status !== 'signed-in') { setCoachAllowed(coachEligible({ coachDone, signedIn: false, ownsTrees: false })); return undefined; }
+    let cancelled = false;
+    listAllTrees()
+      .then((trees) => { if (!cancelled) setCoachAllowed(coachEligible({ coachDone, signedIn: true, ownsTrees: trees.length > 0 })); })
+      .catch(() => { if (!cancelled) setCoachAllowed(false); });
+    return () => { cancelled = true; };
+  }, [demo, status]);
 
   // The feed is the visible dock tenant when summoned/pinned and no step is
   // selected. Whenever it becomes visible, mark everything read (with a catch-up flash).
@@ -1182,6 +1221,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   // the server over the socket; ghosts stay localStorage-only. Offline sends no-op — the
   // reconciliation below carries those marks up on the next graft.
   function pushProgress(nodeId, wireStatus) {
+    if (demoRef.current) return; // BEFORE the signed-in gate: a signed-in visitor never writes the demo tree's progress (F4 invariant)
     if (status !== 'signed-in') return;
     collabRef.current?.sendProgress(nodeId, wireStatus);
   }
@@ -1228,9 +1268,23 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
       }
     }
     // The summary is the ceremony's closing beat: hand it to the scene, which speaks
-    // it once the bloom/travel/pulse have settled (§2 toast — last), not up front.
+    // it once the bloom/travel/pulse have settled (§2 toast — last), not up front. In the
+    // demo, completing the coached step speaks the canon unlock line (F4 §04) verbatim.
     const label = node?.label?.trim() || 'Step';
-    sceneRef.current?.announceCeremony(opened > 0 ? `Step completed: ${label} · ${opened} more opened` : `Step completed: ${label}`);
+    const summary = demo && id === COACHED_NODE_ID
+      ? DEMO_COPY.unlockToast
+      : (opened > 0 ? `Step completed: ${label} · ${opened} more opened` : `Step completed: ${label}`);
+    sceneRef.current?.announceCeremony(summary);
+
+    if (demo) {
+      setDemoCompletions((count) => count + 1); // any completion retires the coach (§03)
+      // The handoff (§04): +120ms after the unlock toast settles, the Fork CTA takes the
+      // pulse waveform once — skipped under reduced motion, where the toast carries the invite.
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (id === COACHED_NODE_ID && !reduced) {
+        setTimeout(() => { setCtaEcho(true); setTimeout(() => setCtaEcho(false), 2600); }, CTA_ECHO_DELAY);
+      }
+    }
   }
 
   completeStepRef.current = completeStep; // the auto-complete timer fires the freshest one
@@ -1273,6 +1327,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   // reflected live through the same apply path a local mark takes. Idempotent: skip when the node
   // already holds that state so an echo doesn't replay the completion ceremony.
   applyRemoteProgressRef.current = (frame) => {
+    if (demoRef.current) return; // the demo overlay is session-local, sealed inbound too — no wire frame touches it
     const id = frame?.nodeId;
     if (!id || !nodesById.has(id)) return;
     const target = frame.status === 'complete' ? 'complete'
@@ -1426,6 +1481,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
       workspace={workspaceByNode[selectedId] ?? emptyWorkspace()}
       kinds={legend}
       onReveal={handleRevealNode}
+      onMarkComplete={demo ? handleMarkComplete : undefined}
       onClose={() => setSelectedId(null)}
     />
   );
@@ -1443,6 +1499,8 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
           title={tree?.title}
           progress={{ done: shareStats?.done ?? 0, total: shareStats?.total ?? 0 }}
           author={tree?.author}
+          byline={demo ? `${DEMO_COPY.plaqueByline} · ${shareStats?.done ?? 0}/${shareStats?.total ?? 0} done` : undefined}
+          ctaEcho={ctaEcho}
           dominantKind={shareStats?.dominantKind}
           onFork={(shared || !!demotion) && !demotion?.cardOpen ? () => setForkOpen(true) : undefined}
           onRecenter={handleRecenter}
@@ -1640,7 +1698,18 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
       )}
 
       {(shared || !!demotion) && (
-        <ForkDoor open={forkOpen} tablet={breakpoint === 'tablet'} treeId={treeId} signedIn={status === 'signed-in'} stepCount={shareStats?.total} onClose={() => setForkOpen(false)} />
+        <ForkDoor open={forkOpen} tablet={breakpoint === 'tablet'} treeId={treeId} signedIn={status === 'signed-in'} demo={demo} stepCount={shareStats?.total} onClose={() => setForkOpen(false)} />
+      )}
+
+      {/* The coach (F4 §02) — the one temporary element the demo adds: it points at the
+          single ready step, once ever per human, and retires on ✕/Esc/any completion/fork. */}
+      {demo && coachAllowed && scene && (
+        <CoachChip
+          scene={scene}
+          nodeId={COACHED_NODE_ID}
+          onMarkDone={() => completeStep(COACHED_NODE_ID)}
+          completionCount={demoCompletions}
+        />
       )}
 
       {toast && (

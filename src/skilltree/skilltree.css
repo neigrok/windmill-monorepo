@@ -2023,3 +2023,41 @@
     animation: none;
   }
 }
+
+/* ---- The playable demo (F4) ------------------------------------------------
+   The coach chip: a StepPanel-grade card with an arrow tab pointing back at the
+   ready node. The card is vertically centred on the node (translateY(-50%)), so
+   the arrow at the card's mid-height lines up with the node. The tab flips sides
+   when the card would run off-screen. */
+.wm-coach-arrow {
+  position: absolute;
+  top: 50%;
+  width: 0;
+  height: 0;
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+  transform: translateY(-50%);
+}
+.wm-coach--left .wm-coach-arrow {
+  left: -8px;
+  border-right: 8px solid var(--wm-coach-arrow);
+}
+.wm-coach--right .wm-coach-arrow {
+  right: -8px;
+  border-left: 8px solid var(--wm-coach-arrow);
+}
+
+/* The Fork CTA echo (§04): +120ms after the unlock toast settles the button takes
+   the pulse waveform once — the handoff from node → toast → button. */
+.wm-cta-echo {
+  animation: wm-cta-echo var(--duration-glow) var(--ease-glow) 1;
+}
+@keyframes wm-cta-echo {
+  0%, 100% { box-shadow: var(--shadow-md); }
+  50% { box-shadow: var(--shadow-md), 0 0 0 7px var(--color-brand-soft); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wm-cta-echo {
+    animation: none;
+  }
+}

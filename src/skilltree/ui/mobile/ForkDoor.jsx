@@ -9,6 +9,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Button, Input, Dialog } from '../../../components';
 import { requestMagicLink } from '../../auth/AuthClient.js';
 import { forkTree } from '../../persistence/TreeRegistry.js';
+import { FORKED_FROM_DEMO_KEY } from '../../demo/demoStage.js';
 import { track } from '../../../telemetry/beacon.js';
 
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -16,7 +17,7 @@ const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-export function ForkDoor({ open, tablet = false, treeId, signedIn = false, onClose, onSubmit, stepCount = null }) {
+export function ForkDoor({ open, tablet = false, treeId, signedIn = false, demo = false, onClose, onSubmit, stepCount = null }) {
   const [email, setEmail] = useState('');
   const [phase, setPhase] = useState('idle'); // idle | sending | sent | rate_limited | unreachable
   const [typo, setTypo] = useState(false);
@@ -96,6 +97,9 @@ export function ForkDoor({ open, tablet = false, treeId, signedIn = false, onClo
     forkTree(treeId)
       .then(({ treeId: forkedId }) => {
         track('fork_claim', { mode: 'instant' });
+        // Forking from the demo (F4 §05): leave a one-shot note so the fresh copy's arrival
+        // re-plant speaks "Forked — 17 steps planted" — now you're the actor, so it toasts.
+        if (demo) { try { sessionStorage.setItem(FORKED_FROM_DEMO_KEY, '1'); } catch { /* ignore */ } }
         // A fork crosses the read-only → editor boundary; land in the copy on a clean
         // page load so the scene is born in editor mode, not retrofitted into it.
         window.location.hash = `#/app/${forkedId}`;

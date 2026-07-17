@@ -1,7 +1,8 @@
 // The view mode (X5): the current breakpoint from the window width, and whether
 // the app is read-only. Small screens default to read-only — editing stays on
-// desktop — and a `?view` query param or a `#/t/…` share hash forces read-only
-// on any width. Desktop with no share param is the editor, unchanged.
+// desktop — and a `?view` query param, a `#/t/…` share hash, or the `#/demo`
+// playable route (F4) forces read-only on any width. Desktop with no share param
+// is the editor, unchanged.
 
 import { useEffect, useState } from 'react';
 
@@ -17,7 +18,7 @@ function breakpointFor(width) {
 function isShared() {
   if (typeof window === 'undefined') return false;
   const shared = new URLSearchParams(window.location.search).has('view');
-  return shared || window.location.hash.startsWith('#/t/');
+  return shared || window.location.hash.startsWith('#/t/') || window.location.hash.startsWith('#/demo');
 }
 
 function readViewMode() {

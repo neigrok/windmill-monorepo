@@ -127,6 +127,8 @@ export class SkillTreeScene {
     });
     this.nodeStates = new Map(); // last states pushed — the diff baseline
     this.arrivalNoun = 'Roadmap'; // what the arrival toast says was planted (the quest shelf flips it)
+    this.arrivalSummaryOverride = null; // a fixed arrival toast line (the fork re-plant sets it), or null for the default
+    this.arrivalToastSuppressed = false; // the demo load suppresses the arrival toast — visitors watch, toasts are for actors
     this.pendingSummary = null; // the toast the next ceremony speaks (set by the shell)
     this.pendingHasAction = false;
     this.settle = null; // in-flight layout glide: { startAt, moves } (see beginSettle)
@@ -499,7 +501,12 @@ export class SkillTreeScene {
     }
     let done = 0;
     for (const state of statesMap.values()) if (state === 'complete') done += 1;
-    const summary = `${this.arrivalNoun} planted · ${nodes.length} steps${done > 0 ? ` · ${done} already done` : ''}`;
+    const defaultSummary = `${this.arrivalNoun} planted · ${nodes.length} steps${done > 0 ? ` · ${done} already done` : ''}`;
+    const summary = this.arrivalToastSuppressed ? null : (this.arrivalSummaryOverride ?? defaultSummary);
+    // One-shot intentions: this arrival consumed them, so the NEXT arrival on a reused
+    // scene (a same-id demo→share flip never remounts) starts from the honest default.
+    this.arrivalToastSuppressed = false;
+    this.arrivalSummaryOverride = null;
     return { rings, litEdgesByRing, summary };
   }
 
@@ -508,6 +515,12 @@ export class SkillTreeScene {
   setArrivalNoun(noun) {
     this.arrivalNoun = noun;
   }
+
+  // The fork re-plant (F4 §05) hands the arrival its own toast line ("Forked — 17 steps
+  // planted") before the fresh copy blooms in; the demo load suppresses the toast entirely
+  // (visitors watch the tree grow — toasts speak to actors). Both are read by buildArrivalPlan.
+  setArrivalSummary(text) { this.arrivalSummaryOverride = text; }
+  suppressArrivalToast() { this.arrivalToastSuppressed = true; }
 
   // Live reposition of one node: cheap per-instance GPU writes for the node and
   // its incident edges, plus a spatial re-bucket. Overlays follow next frame.
@@ -626,6 +639,19 @@ export class SkillTreeScene {
 
   getBounds() { return this.renderModel ? this.renderModel.bounds : { minX: 0, minY: 0, maxX: 0, maxY: 0 }; }
   getViewport() { return this.camera.getViewport(); }
+
+  // World → screen pixels (the NodeOverlay placement formula), so a DOM overlay — the
+  // coach chip — can anchor itself to a node and follow it across pan/zoom.
+  projectToScreen(worldX, worldY) {
+    return {
+      x: (worldX - this.camera.x) * this.camera.zoom + this.camera.viewportWidth / 2,
+      y: (worldY - this.camera.y) * this.camera.zoom + this.camera.viewportHeight / 2,
+    };
+  }
+
+  // The camera's eased settle (0..1) of any in-flight reveal — the coach waits for 90%
+  // before it mounts, so the chip lands as the pre-ease stills, not mid-glide.
+  settleProgress() { return this.camera.settleProgress(); }
 
   resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);

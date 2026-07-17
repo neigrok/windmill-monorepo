@@ -6,6 +6,7 @@ import { ConnectPage } from './skilltree/connect/ConnectPage.jsx';
 import { SettingsPage } from './skilltree/settings/SettingsPage.jsx';
 import { verifyToken } from './skilltree/auth/AuthClient.js';
 import { PlaceStore } from './skilltree/persistence/PlaceStore.js';
+import { DEMO_TREE_ID } from './skilltree/demo/demoStage.js';
 import Marketing from './marketing/Marketing.jsx';
 
 // Marketing is the site root and our one crawlable/indexable URL, so it ships
@@ -91,7 +92,7 @@ function AppRoutes() {
     return <SettingsPage />;
   }
 
-  const isApp = route.startsWith('#/app') || route.startsWith('#/t/')
+  const isApp = route.startsWith('#/app') || route.startsWith('#/t/') || route.startsWith('#/demo')
     || new URLSearchParams(window.location.search).has('view');
 
   const target = appTarget(route);
@@ -99,7 +100,7 @@ function AppRoutes() {
   return (
     <Suspense fallback={<RouteFallback />}>
       {route === '#/showcase' ? <Showcase />
-        : isApp ? <SkillTreeApp treeId={target.treeId} birth={target.birth} start={target.start} openSignInSignal={openSignInSignal} />
+        : isApp ? <SkillTreeApp treeId={target.treeId} birth={target.birth} start={target.start} demo={target.demo} openSignInSignal={openSignInSignal} />
         : <Marketing />}
     </Suspense>
   );
@@ -115,15 +116,17 @@ function landingHash(forkedTree) {
 }
 
 // Which tree the #/app family names: #/app/:id opens it, #/app/new is the birth canvas,
-// #/app/start is the quest shelf (F5), #/t/:id is the read-only share, and bare #/app
-// resolves against the registry.
+// #/app/start is the quest shelf (F5), #/t/:id is the read-only share, #/demo is the
+// playable "Learn to sail" demo (F4 — complete-only, session-local, coached), and bare
+// #/app resolves against the registry.
 function appTarget(route) {
   const hash = route.split('?')[0];
-  if (hash.startsWith('#/t/')) return { treeId: hash.slice('#/t/'.length) || null, birth: false, start: false };
-  if (hash === '#/app/new') return { treeId: null, birth: true, start: false };
-  if (hash === '#/app/start') return { treeId: null, birth: false, start: true };
-  if (hash.startsWith('#/app/')) return { treeId: hash.slice('#/app/'.length) || null, birth: false, start: false };
-  return { treeId: null, birth: false, start: false };
+  if (hash.startsWith('#/demo')) return { treeId: DEMO_TREE_ID, birth: false, start: false, demo: true };
+  if (hash.startsWith('#/t/')) return { treeId: hash.slice('#/t/'.length) || null, birth: false, start: false, demo: false };
+  if (hash === '#/app/new') return { treeId: null, birth: true, start: false, demo: false };
+  if (hash === '#/app/start') return { treeId: null, birth: false, start: true, demo: false };
+  if (hash.startsWith('#/app/')) return { treeId: hash.slice('#/app/'.length) || null, birth: false, start: false, demo: false };
+  return { treeId: null, birth: false, start: false, demo: false };
 }
 
 export default function App() {

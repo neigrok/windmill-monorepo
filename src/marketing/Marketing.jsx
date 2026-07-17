@@ -214,7 +214,7 @@ function Hero({ resume }) {
           <>
             <div style={{ display: 'flex', gap: 12, marginTop: 32, flexWrap: 'wrap', justifyContent: 'center' }}>
               <a href="#/app"><Button variant="primary" size="lg">Start your tree</Button></a>
-              <a href="#/t/t_9e407a96b5330ebe"><Button variant="secondary" size="lg">Try the live demo</Button></a>
+              <a href="#/demo"><Button variant="secondary" size="lg">Try the live demo</Button></a>
             </div>
             <div style={{ fontFamily: 'var(--font-body)', fontSize: 13.5, color: 'var(--text-tertiary)', marginTop: 14 }}>
               No account needed — your first tree lives in your browser.
@@ -338,7 +338,7 @@ function CtaBand({ planted }) {
         <p className="sectionSub" style={{ maxWidth: 460 }}>It takes about a minute, and the first branch unlocks tonight.</p>
         <div style={{ display: 'flex', gap: 12, marginTop: 20, flexWrap: 'wrap', justifyContent: 'center' }}>
           <a href={planted ? '#/app/new' : '#/app'}><Button variant="primary" size="lg">Start your tree</Button></a>
-          <a href="#/t/t_9e407a96b5330ebe"><Button variant="ghost" size="lg">Try the live demo</Button></a>
+          <a href="#/demo"><Button variant="ghost" size="lg">Try the live demo</Button></a>
         </div>
       </div>
     </section>
