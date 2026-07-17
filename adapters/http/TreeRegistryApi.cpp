@@ -34,10 +34,6 @@ void TreeRegistryApi::createTree(const drogon::HttpRequestPtr& req, HttpCallback
     return;
   }
   std::shared_ptr<Json::Value> json = req->getJsonObject();
-  if (json && !json->get("fromQuest", "").asString().empty()) {
-    callback(error(drogon::k501NotImplemented, "quest planting is not available yet"));  // /v1/quests unbuilt
-    return;
-  }
   // An optional client-minted id (the anon-first claim seam) rides the body; it must match
   // the server's own mint shape exactly, or the claim is refused before any work happens.
   const std::string requestedId = json ? json->get("id", "").asString() : "";

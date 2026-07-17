@@ -68,7 +68,7 @@ roadmap loads and saves from the server.
 
 | Method | Path | Body / result |
 | --- | --- | --- |
-| POST | `/v1/trees` | `{ title?, nodes?, kinds?, fromQuest? }` → `200 { treeId }` (plant a new owned roadmap; body is the starting `TreeData` — send `nodes`/`kinds` to seed an initial tree, or none for a blank tree with the default legend; 401 signed out; `fromQuest` → 501 until `/v1/quests` exists) |
+| POST | `/v1/trees` | `{ title?, nodes?, kinds? }` → `200 { treeId }` (plant a new owned roadmap; body is the starting `TreeData` — send `nodes`/`kinds` to seed an initial tree, or none for a blank tree with the default legend; 401 signed out; quest plants are ordinary full-body creates — the F5 catalog ships with the client) |
 | GET | `/v1/trees` | → `{ trees[] }` (the caller's owned roadmaps, newest-first: `{ id, title, total, done, updatedAt, dominantKind? }`; 401 if signed out) |
 | DELETE | `/v1/trees/:id` | → `204` (owner-only soft-delete; 403 someone else's, 404 unknown, 401 signed out) |
 | GET | `/v1/trees/:id` | → `{ seq, data }` (`data.kinds` = the legend, F6) |
