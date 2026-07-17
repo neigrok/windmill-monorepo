@@ -8,6 +8,11 @@
 // ↵/blur commits, esc restores, a whitespace-only commit restores the old name
 // under a gold flash (a tree always has a name) — and delete confirms inline in the row,
 // never a dialog. Mutations are injected (onRename/onDelete) like listTrees is.
+//
+// Rows now come from the union list (anon-first-tree F3) and wear a tag — "on this
+// device" for unclaimed local trees, "synced" for the rest — that flips in a 150ms
+// cross-fade as a claim lands (wm-tree-claimed). Edits route by that tag, never by
+// presence in the server list: a local row's pencil/trash reach only the local seams.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from '../../components';
@@ -23,6 +28,21 @@ const KIND_HUE = {
 
 function hueOf(kind) {
   return KIND_HUE[kind] ?? KIND_HUE.terracotta;
+}
+
+// Which seam a row's pencil/trash reach (anon-first-tree F3): server rows edit through
+// the registry (PATCH/DELETE); unclaimed device rows edit the local seams and must never
+// see the server; a device row already claimed but not currently vouched for (signed
+// out) offers neither. The merged-in current row (offline, someone else's tree) has no
+// origin and gets no editor either — exactly the old rule, by tag instead of by list.
+function seamOf(tree) {
+  if (tree.origin === 'device') return tree.claimed ? null : 'local';
+  return tree.origin === 'server' ? 'server' : null;
+}
+
+function tagOf(tree) {
+  if (!tree.origin) return null;
+  return tree.origin === 'device' && !tree.claimed ? 'on this device' : 'synced';
 }
 
 function agoFrom(updatedAt) {
@@ -100,6 +120,17 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
     setFlashId(null);
   }, [open]);
 
+  // A claim landing while the menu is open flips that row's tag in place —
+  // "on this device" → "synced", one 150ms cross-fade (anon-first-tree §02).
+  useEffect(() => {
+    if (!open) return undefined;
+    const onClaimed = (event) => setTrees((prev) => (Array.isArray(prev)
+      ? prev.map((row) => (row.id === event.detail?.treeId ? { ...row, claimed: true } : row))
+      : prev));
+    window.addEventListener('wm-tree-claimed', onClaimed);
+    return () => window.removeEventListener('wm-tree-claimed', onClaimed);
+  }, [open]);
+
   useEffect(() => {
     if (editingId != null) inputRef.current?.select(); // the name arrives pre-selected
   }, [editingId]);
@@ -116,9 +147,6 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
 
   // The current tree always shows, even before the list resolves or if it never does.
   const rows = mergeCurrent(trees, current);
-  // Rename/delete appear only on rows the registry vouches for — your trees. The merged-in
-  // current row (offline, signed out, someone else's tree) gets neither.
-  const ownedIds = new Set((Array.isArray(trees) ? trees : []).map((t) => t.id));
 
   const go = (id) => {
     setOpen(false);
@@ -147,8 +175,10 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
     if (next === before.trim()) return void onPreviewTitle?.(id, before);
     setTrees((prev) => (Array.isArray(prev) ? prev.map((r) => (r.id === id ? { ...r, title: next } : r)) : prev));
     // Optimism with a receipt: if the rename is refused (offline, signed out, not yours),
-    // the plaque falls back to truth and the rows re-read the registry.
-    Promise.resolve(onRename?.(id, next)).catch(() => {
+    // the plaque falls back to truth and the rows re-read the registry. Local rows route
+    // to the local seams by tag — they never PATCH the server.
+    const seam = seamOf(rows.find((r) => r.id === id) ?? {});
+    Promise.resolve(onRename?.(id, next, { local: seam === 'local' })).catch(() => {
       onPreviewTitle?.(id, before);
       listTrees().then((fresh) => setTrees(fresh));
     });
@@ -165,7 +195,7 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
 
   const confirmDelete = async (t) => {
     setConfirmId(null);
-    try { await onDelete?.(t.id); } catch { return; } // a refusal leaves the row standing
+    try { await onDelete?.(t.id, { local: seamOf(t) === 'local' }); } catch { return; } // a refusal leaves the row standing
     const remaining = (Array.isArray(trees) ? trees : []).filter((r) => r.id !== t.id);
     setTrees(remaining);
     if (t.id !== current?.id) return;
@@ -207,7 +237,7 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
           <div style={groupLabel}>YOURS</div>
           {rows.map((t) => {
             const isCurrent = t.id === current?.id;
-            const owned = ownedIds.has(t.id);
+            const editable = seamOf(t) !== null;
             const editing = editingId === t.id;
             const confirming = confirmId === t.id;
             const rowTitle = t.title?.trim() || 'Untitled roadmap';
@@ -221,12 +251,12 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
                     return;
                   }
                   if (editing || confirming) return;
-                  if (!owned) return void go(t.id); // no editor behind this row — navigate instantly
+                  if (!editable) return void go(t.id); // no editor behind this row — navigate instantly
                   if (e.detail > 1) return void clearTimeout(goTimerRef.current); // second click of a double-click
                   clearTimeout(goTimerRef.current);
                   goTimerRef.current = setTimeout(() => go(t.id), 220); // a beat of patience keeps the double-click door open
                 }}
-                onDoubleClick={() => { if (owned && !editing && !confirming) startEdit(t); }}
+                onDoubleClick={() => { if (editable && !editing && !confirming) startEdit(t); }}
                 onKeyDown={(e) => {
                   if (e.target !== e.currentTarget) return;
                   if ((e.key === 'Enter' || e.key === ' ') && !editing && !confirming) { e.preventDefault(); go(t.id); }
@@ -265,10 +295,10 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
                 ) : (
                   <span style={rowText}>
                     <span style={rowName} title={t.title?.trim() || undefined}>{rowTitle}</span>
-                    <span style={rowMeta}>{readout(t)}</span>
+                    <RowMeta tree={t} />
                   </span>
                 )}
-                {owned && !editing && !confirming && (
+                {editable && !editing && !confirming && (
                   <span style={{
                     display: 'inline-flex', gap: 2, flex: 'none',
                     opacity: hoverId === t.id ? 1 : 0,
@@ -324,6 +354,19 @@ function readout(t) {
   const ago = agoFrom(t.updatedAt);
   const count = t.total != null ? `${t.done ?? 0} of ${t.total}` : null;
   return [count, ago].filter(Boolean).join(' · ');
+}
+
+// The row's second line: progress + recency, then the registry tag. The tag span is
+// keyed by its text so a live flip remounts it into the 150ms cross-fade.
+function RowMeta({ tree }) {
+  const meta = readout(tree);
+  const tag = tagOf(tree);
+  return (
+    <span style={rowMeta}>
+      {meta}
+      {tag && <span key={tag} className="st-switcher-tag">{meta ? ' · ' : ''}{tag}</span>}
+    </span>
+  );
 }
 
 function Caret({ shown }) {

@@ -1,20 +1,21 @@
 // The app entry router (F1·F2): resolves "which tree" for the #/app family before the
 // heavy tree view mounts. #/app/:treeId opens that tree; #/app/new is the birth canvas;
-// bare #/app resolves against the registry — newest tree if you own any, else birth. All
-// three live in the same lazy chunk as SkillTreeView, so App only parses the hash.
+// bare #/app resolves against the union of the account's trees and this device's local
+// ones (anon-first-tree F3) — newest first, birth when both are empty. All three live
+// in the same lazy chunk as SkillTreeView, so App only parses the hash.
 
 import React, { useEffect } from 'react';
 import { SkillTreeView } from './SkillTreeView.jsx';
 import { NewTreeBirth } from './ui/NewTreeBirth.jsx';
-import { listTrees } from './persistence/TreeRegistry.js';
+import { listAllTrees } from './persistence/TreeRegistry.js';
 
 export function SkillTreeApp({ treeId, birth, openSignInSignal }) {
-  // Bare #/app has no tree named: send it to the newest owned tree, or to the birth
-  // canvas when the registry is empty or can't answer. Runs only while unresolved.
+  // Bare #/app has no tree named: send it to the newest tree of the union — server or
+  // local — or to the birth canvas when there is none. Runs only while unresolved.
   useEffect(() => {
     if (birth || treeId) return undefined;
     let cancelled = false;
-    listTrees().then((trees) => {
+    listAllTrees().then((trees) => {
       if (cancelled) return;
       window.location.hash = trees.length > 0 ? `#/app/${trees[0].id}` : '#/app/new';
     });

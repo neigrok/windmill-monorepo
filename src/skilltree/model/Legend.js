@@ -16,6 +16,11 @@ const LABEL_MAX = 24; // one or two words, sentence-case (F6 §data model)
 const DESCRIPTION_MAX = 80; // a plain-text sorting brief, optional
 
 // A new/empty tree is born with these three, in order — never all six (F6 §2).
+// PINNED to the backend (Legend::seededDefaults + Hlc{1,0,"genesis"}): a local-born
+// tree's claim converges with the server's empty tree ONLY while both sides seed
+// byte-equal legends at the same stamp. vite.config.js refuses to build on drift;
+// the backend pin is TreeRegistryTest's genesis case. Change BOTH sides together.
+export const GENESIS_STAMP = '1:0:genesis';
 export const DEFAULT_KINDS = [
   { id: 'build', hue: 'terracotta', label: 'Build', description: 'Things you make' },
   { id: 'learn', hue: 'olive', label: 'Learn', description: 'Things you figure out' },

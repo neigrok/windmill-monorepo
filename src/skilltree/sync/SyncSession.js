@@ -19,6 +19,8 @@ import { socketUrl } from '../apiBase.js';
 import { HlcClock, TreeLattice, VersionVector, hlcText, parseHlc, compareHlc } from './lattice.js';
 import { materialize } from './materialize.js';
 import { SyncStore } from './SyncStore.js';
+import { LocalTreeRegistry } from '../persistence/LocalTreeRegistry.js';
+import { GENESIS_STAMP } from '../model/Legend.js';
 
 const DEFAULT_URL = socketUrl();
 const MAX_BACKOFF_MS = 8000;
@@ -34,13 +36,14 @@ function frameFrontier(writes) {
 }
 
 export class SyncSession {
-  constructor({ url = DEFAULT_URL, treeId, title = '' } = {}) {
+  constructor({ url = DEFAULT_URL, treeId, title = '', registry = new LocalTreeRegistry() } = {}) {
     this.url = url;
     this.treeId = treeId;
     this.actor = replicaActor();
     this.clock = new HlcClock(this.actor);
     this.lattice = new TreeLattice(treeId, title);  // the doc title is the stampless baseline; any stamped rename dominates
     this.store = new SyncStore();
+    this.registry = registry;                       // the device-tree index persistNow keeps fresh; null for read-only views
     this.ackedServerVector = new VersionVector();  // in-memory; what the server is known to hold
     this.inFlight = new Map();                      // frameId -> VersionVector of that sent frame
     this.ws = null;
@@ -59,6 +62,7 @@ export class SyncSession {
     this.peerHandler = null;
     this.progressHandler = null;
     this.liveHandler = null;
+    this.drainedHandler = null;
     this.presence = null;
     this.presenceTimer = null;
     this.pagehide = null;
@@ -70,11 +74,12 @@ export class SyncSession {
   onPeer(handler) { this.peerHandler = handler; return this; }
   onProgress(handler) { this.progressHandler = handler; return this; }
   onLive(handler) { this.liveHandler = handler; return this; }
+  onDrained(handler) { this.drainedHandler = handler; return this; }
 
   // Seed a local-only lattice from projected TreeData (the perf tree): every field takes a
   // genesis stamp, so any later edit dominates it. No socket, no IndexedDB.
   seed(treeData) {
-    const genesis = '1:0:genesis';
+    const genesis = GENESIS_STAMP;
     const nodes = treeData.nodes.map((n) => ({
       id: n.id, createdAt: genesis,
       label: n.label ?? '', labelAt: genesis, icon: n.icon ?? '', iconAt: genesis,
@@ -151,7 +156,11 @@ export class SyncSession {
   }
 
   receive(frame) {
-    if (frame.t === 'subgraph') return frame.intent === 'live' ? this.receiveLive(frame) : this.receiveState(frame);
+    // Only the subscribe reply ('delta') may re-baseline coverage. Everything else on the
+    // broadcast channel — 'live', an echoed 'flush', an import 'graft' — is a seq'd delta:
+    // re-baselining on one would REPLACE coverage with that frame's own frontier, uncovering
+    // everything else and re-flushing it forever (the echo ping-pong).
+    if (frame.t === 'subgraph') return frame.intent === 'delta' ? this.receiveState(frame) : this.receiveLive(frame);
     if (frame.t === 'subgraphAck') return this.receiveAck(frame);
     if (frame.t === 'skew') return this.receiveSkew(frame);
     if (frame.t === 'presence') return void this.presenceHandler?.(frame);
@@ -179,6 +188,7 @@ export class SyncSession {
     this.phase = 'live';
     this.backoffMs = 500;
     this.liveHandler?.();  // each graft is a fresh baseline — the view reconciles progress off it
+    this.noteDrained();    // an empty flush means the server already covers everything
   }
 
   // A live broadcast (ours echoed back, a collaborator's, or an MCP edit). Dense-seq gated;
@@ -199,7 +209,15 @@ export class SyncSession {
 
   receiveAck(frame) {
     const vector = this.inFlight.get(frame.frameId);
-    if (vector) { this.ackedServerVector.join(vector); this.inFlight.delete(frame.frameId); }
+    if (vector) { this.ackedServerVector.join(vector); this.inFlight.delete(frame.frameId); this.noteDrained(); }
+  }
+
+  // The claim sequence (anon-first-tree F4) waits on this: fired whenever the wire goes
+  // idle with full coverage — live, nothing pending, nothing in flight.
+  noteDrained() {
+    if (this.phase !== 'live' || this.inFlight.size > 0) return;
+    if (this.pendingEditCount() > 0) return;
+    this.drainedHandler?.();
   }
 
   receiveSkew(frame) {
@@ -296,13 +314,16 @@ export class SyncSession {
 
   // Persist the whole lattice + lastSeq atomically. Snapshot is synchronous (before any await);
   // a save failure degrades durability honestly but never blocks liveness. A closed session
-  // never writes — deleting a tree relies on the blob staying gone.
+  // never writes — deleting a tree relies on the blob staying gone. The device-tree index is
+  // touched alongside, so every persisting tree lists in the switcher — signed out included.
+  // Returns the save's settle, for callers that must be durable before navigating.
   persistNow() {
-    if (this.closed) return;
+    if (this.closed) return Promise.resolve();
     clearTimeout(this.saveTimer);
     this.saveTimer = null;
     const value = { frame: this.lattice.toFrame(), lastSeq: this.lastSeq };
-    this.store.save(this.treeId, value).catch(() => { this.durabilityAtRisk = true; });
+    this.registry?.touch(this.treeId, this.lattice.title);
+    return this.store.save(this.treeId, value).catch(() => { this.durabilityAtRisk = true; });
   }
 
   // Coalesced save for the receive path — received content is already server-durable, so lagging

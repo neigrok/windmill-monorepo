@@ -4,6 +4,7 @@ import { AuthLanding } from './skilltree/auth/AuthLanding.jsx';
 import { OAuthConsent } from './skilltree/auth/OAuthConsent.jsx';
 import { ConnectPage } from './skilltree/connect/ConnectPage.jsx';
 import { verifyToken } from './skilltree/auth/AuthClient.js';
+import { PlaceStore } from './skilltree/persistence/PlaceStore.js';
 import Marketing from './marketing/Marketing.jsx';
 
 // Marketing is the site root and our one crawlable/indexable URL, so it ships
@@ -62,7 +63,7 @@ function AppRoutes() {
     return (
       <AuthLanding
         onVerify={verifyToken}
-        onSignedIn={(user, forkedTree) => { signIn(user); window.location.hash = forkedTree ? `#/app/${forkedTree}` : '#/app'; }}
+        onSignedIn={(user, forkedTree) => { signIn(user); window.location.hash = landingHash(forkedTree); }}
         onOpenDoor={() => { setOpenSignInSignal((n) => n + 1); window.location.hash = '#/app'; }}
       />
     );
@@ -94,6 +95,15 @@ function AppRoutes() {
         : <Marketing />}
     </Suspense>
   );
+}
+
+// The magic-link landing returns to work, not to a lobby (anon-first-tree F6): a fork
+// goes to the fork; otherwise the last place this device stood re-opens — same tree,
+// zoom and selection restored by the view. Bare #/app remains the no-history fallback.
+function landingHash(forkedTree) {
+  if (forkedTree) return `#/app/${forkedTree}`;
+  const place = new PlaceStore().load();
+  return place?.treeId ? `#/app/${place.treeId}` : '#/app';
 }
 
 // Which tree the #/app family names: #/app/:id opens it, #/app/new is the birth canvas,

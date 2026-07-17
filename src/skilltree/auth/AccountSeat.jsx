@@ -13,31 +13,65 @@ import { Avatar } from '../../components';
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSettings, onConnect, onMyTrees, treeCount = null, footer, expired = false }) {
+export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSettings, onConnect, onMyTrees, treeCount = null, footer, expired = false, claimBusy }) {
   const [open, setOpen] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [claim, setClaim] = useState(null); // null | 'syncing' | 'synced' | 'fading'
   const [woke, setWoke] = useState(false);
   const rootRef = useRef(null);
   const prevStatus = useRef(status);
+  const beatStartRef = useRef(0);
+  const claimBusyRef = useRef(claimBusy);
+  claimBusyRef.current = claimBusy;
 
   const reduced = prefersReducedMotion();
   const signedIn = status === 'signed-in' && Boolean(user);
   const name = signedIn ? (user.name?.trim() || user.email) : '';
 
   // The claim beat fires only on a live ghost→signed-in flip — never on a page reload
-  // that resolves loading→signed-in, so a returning session stays silent.
+  // that resolves loading→signed-in, so a returning session stays silent. Without a
+  // claimBusy prop the chip runs on its own clock (today's timers); with one
+  // (anon-first-tree F5) the gold "Syncing your trees…" holds until the claim run
+  // reports done — the effect below takes over.
   useEffect(() => {
     const woken = prevStatus.current === 'ghost' && status === 'signed-in';
     prevStatus.current = status;
     if (!woken) return undefined;
     setWoke(true);
     setClaim('syncing');
+    beatStartRef.current = Date.now();
+    const settle = setTimeout(() => setWoke(false), 520);
+    if (claimBusyRef.current !== undefined) return () => clearTimeout(settle);
     const toSynced = setTimeout(() => setClaim('synced'), 1200);
     const toFading = setTimeout(() => setClaim('fading'), 2100);
     const toSilent = setTimeout(() => setClaim(null), 2550);
-    const settle = setTimeout(() => setWoke(false), 520);
     return () => [toSynced, toFading, toSilent, settle].forEach(clearTimeout);
+  }, [status]);
+
+  // claimBusy released while the chip is gold: give the syncing line its minimum beat,
+  // then "Synced" (olive) holds 1.5s and fades to silence. A re-armed claimBusy cancels
+  // the countdown and the gold line simply keeps breathing.
+  useEffect(() => {
+    if (claimBusy === undefined || claimBusy === true || claim !== 'syncing') return undefined;
+    const wait = Math.max(0, 1200 - (Date.now() - beatStartRef.current));
+    if (claimBusy === 'incomplete') {
+      // Some trees stayed unclaimed (server unreachable mid-run): never say "Synced" —
+      // the gold line just fades; the registry tags keep telling the truth and the next
+      // boot retries silently.
+      const toFading = setTimeout(() => setClaim('fading'), wait);
+      const toSilent = setTimeout(() => setClaim(null), wait + 450);
+      return () => [toFading, toSilent].forEach(clearTimeout);
+    }
+    const toSynced = setTimeout(() => setClaim('synced'), wait);
+    const toFading = setTimeout(() => setClaim('fading'), wait + 1500);
+    const toSilent = setTimeout(() => setClaim(null), wait + 1950);
+    return () => [toSynced, toFading, toSilent].forEach(clearTimeout);
+  }, [claimBusy, claim]);
+
+  // Sign-out mid-claim: the chip must not survive into the ghost seat and later flash
+  // "Synced" at nobody — any departure from signed-in silences it.
+  useEffect(() => {
+    if (status !== 'signed-in') setClaim(null);
   }, [status]);
 
   // Esc and click-away dismiss the menu — the seat is never a wall.
@@ -62,6 +96,7 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
       <style>{`
         @keyframes wm-seat-wake { 0% { transform: scale(1); } 45% { transform: scale(1.02); } 100% { transform: scale(1); } }
         @keyframes wm-seat-breathe { 0%, 100% { opacity: 0.6; transform: scale(0.9); } 50% { opacity: 1; transform: scale(1.12); } }
+        @keyframes wm-seat-chip-fade { from { opacity: 0; } to { opacity: 1; } }
       `}</style>
 
       {/* Claim chip — floats to the left of the seat so its arrival never nudges it */}
@@ -87,8 +122,11 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
             fontWeight: 600,
             color: claim === 'syncing' ? 'var(--accent-gold-600)' : 'var(--accent-olive-600)',
             opacity: claim === 'fading' ? 0 : 1,
-            transition: 'opacity var(--duration-base) var(--ease-soft)',
-            animation: reduced ? 'none' : 'wm-fade-in-up var(--duration-fast) var(--ease-soft)',
+            // Reduced motion keeps the chip's story in 150ms cross-fades — no rise, no scale.
+            transition: `opacity ${reduced ? 'var(--duration-fast)' : 'var(--duration-base)'} var(--ease-soft)`,
+            animation: reduced
+              ? 'wm-seat-chip-fade var(--duration-fast) var(--ease-soft)'
+              : 'wm-fade-in-up var(--duration-fast) var(--ease-soft)',
             pointerEvents: 'none',
           }}
         >

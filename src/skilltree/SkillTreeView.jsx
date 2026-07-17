@@ -33,12 +33,18 @@ import { RadialLayoutEngine } from './layout/RadialLayoutEngine.js';
 import { applyNudges } from './layout/applyNudges.js';
 import { HttpTreeRepository } from './persistence/HttpTreeRepository.js';
 import { API_BASE } from './apiBase.js';
-import { listTrees, renameTree, deleteTree } from './persistence/TreeRegistry.js';
+import { listAllTrees, renameTree, deleteTree } from './persistence/TreeRegistry.js';
 import { SyncSession } from './sync/SyncSession.js';
+import { SyncStore } from './sync/SyncStore.js';
+import { TreeLattice } from './sync/lattice.js';
+import { claimLocalTrees } from './sync/claimLocalTrees.js';
+import { renameLocalTree, deleteLocalTree } from './sync/localTrees.js';
 import { PresenceLayer } from './presence/PresenceLayer.jsx';
 import { ProgressStore } from './persistence/ProgressStore.js';
 import { WorkspaceStore } from './persistence/WorkspaceStore.js';
 import { LegendStore } from './persistence/LegendStore.js';
+import { LocalTreeRegistry } from './persistence/LocalTreeRegistry.js';
+import { PlaceStore } from './persistence/PlaceStore.js';
 import { emptyWorkspace, arcFraction, addSubtask, toggleSubtask, editSubtask, deleteSubtask, setNote, addLink, deleteLink } from './model/NodeWorkspace.js';
 import { deriveLegend, withCounts, inUseCount, freeHue, addKind, recolorKind } from './model/Legend.js';
 import { KindLegend } from '../components/tree/KindLegend.jsx';
@@ -51,6 +57,9 @@ const layoutEngine = new RadialLayoutEngine();
 const progressStore = new ProgressStore();
 const workspaceStore = new WorkspaceStore();
 const legendStore = new LegendStore();
+const syncStore = new SyncStore();
+const deviceTrees = new LocalTreeRegistry();
+const placeStore = new PlaceStore();
 const AUTO_COMPLETE_HOLD = 600; // held breath before auto-completing: arc-close 280 + hold 320 (§4)
 const NEXT_UP_SELECT_MS = 540; // ~90% of the camera's default 600ms glide — the dock swaps as the fly settles
 const NEXT_UP_ENTER_MS = 600; // auto-open waits for the fit-to-view camera to still (whats-next-panel §04)
@@ -69,6 +78,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   // on a tree that isn't theirs gets the true downgrade (demotion) into read-only.
   const [lapsed, setLapsed] = useState(false); // owner lapse: chip persists until re-auth
   const [demotion, setDemotion] = useState(null); // visitor downgrade: { edits, cardOpen } | null
+  const [claimBusy, setClaimBusy] = useState(false); // a narrated claim run is in flight (the seat chip holds gold)
   const readOnly = viewReadOnly || !!demotion;
 
   const canvasRef = useRef(null);
@@ -94,6 +104,27 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   const prevAuthRef = useRef(status);
   const suspectRef = useRef(false); // a rejected write cast doubt on the session; refresh() is verifying
   const demotedRef = useRef(false); // the demotion fires once per session, ever
+  const claimRunRef = useRef(false); // at most one claim pass in flight; the registry is the durable state
+
+  // The claim (anon-first-tree F4): adopt this device's unclaimed local trees. All the
+  // durable state lives in the LocalTreeRegistry, so a run is fire-and-forget — a reload
+  // mid-claim loses nothing, the next trigger re-runs the sequence. Only a live
+  // ghost→signed-in flip narrates (the seat chip, F5); boot resumes stay silent.
+  const kickClaim = useCallback((narrated) => {
+    if (claimRunRef.current) return;
+    claimRunRef.current = true;
+    if (narrated) setClaimBusy(true);
+    claimLocalTrees({ openTreeId: treeId, openSession: () => collabRef.current })
+      .then((result) => { if (narrated) setClaimBusy(result.claimed < result.pending ? 'incomplete' : false); })
+      .catch(() => { if (narrated) setClaimBusy('incomplete'); })
+      .finally(() => { claimRunRef.current = false; });
+  }, [treeId]);
+
+  // A tab born signed-in — the magic-link landing's fresh tab, or a reload that lost a
+  // mid-flight claim — still resumes whatever the device index holds unclaimed.
+  useEffect(() => {
+    if (prevAuthRef.current === 'signed-in') kickClaim(false);
+  }, [kickClaim]);
 
   // Auth transitions re-anchor the wire. The socket's principal is fixed at the upgrade,
   // so a mid-session sign-in or sign-out must reconnect to match the seat; a boot-time
@@ -111,10 +142,12 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
     }
     if (prev === 'loading' && status === 'signed-in') {
       reconcileProgressRef.current?.();
+      kickClaim(false); // silent resume of unfinished claims (anon-first-tree F4 boot trigger)
       return;
     }
     if (prev === 'ghost' && status === 'signed-in') {
       collabRef.current?.forceReconnect();
+      kickClaim(true); // the live claim — the seat chip narrates while it runs
       return;
     }
     if (prev === 'signed-in') {
@@ -123,7 +156,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
       if (suspectRef.current) { suspectRef.current = false; setLapsed(true); }
       collabRef.current?.forceReconnect();
     }
-  }, [status]);
+  }, [status, kickClaim]);
 
   // A rejected write is the truth arriving (honesty moments). Owner lapse: editing never
   // stops — re-check the session so the seat honestly goes ghost, and let the chip speak.
@@ -493,23 +526,28 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   }, [treeId]);
 
   // A switcher rename committed. The open tree's title lives in its lattice — one stamped
-  // register write that flushes, broadcasts, and persists like any field change. When the
-  // session can't take it yet (durable lattice still loading), or the row is another tree
-  // with no session here, the registry's PATCH is the door; its promise escapes so the
-  // switcher can restore truth when the server refuses.
-  const handleRenameTree = useCallback((id, title) => {
+  // register write that flushes, broadcasts, and persists like any field change (the device
+  // index follows via the session's touch). Other rows route by their tag (anon-first-tree
+  // F3): a local row renames the blob + device index and never PATCHes the server; a server
+  // row goes through the registry, its promise escaping so the switcher can restore truth
+  // when the server refuses.
+  const handleRenameTree = useCallback((id, title, { local = false } = {}) => {
     if (id === treeId && collabRef.current?.renameTree(title)) return undefined;
+    if (local) return renameLocalTree(id, title);
     return renameTree(id, title);
   }, [treeId]);
 
-  // A switcher delete confirmed: soft-delete server-side. When it was the open tree, the
-  // session closes first — its pagehide flush would otherwise resurrect the blob — and
-  // then the local lattice blob goes too (the switcher navigates off it next).
-  const handleDeleteTree = useCallback(async (id) => {
-    await deleteTree(id);
-    if (id !== treeId) return;
-    collabRef.current?.close();
-    collabRef.current?.clearDurable();
+  // A switcher delete confirmed. Local rows never see the server — blob, per-tree stores,
+  // and device index all clear here; server rows soft-delete server-side. When it was the
+  // open tree, the session closes first — its pagehide flush would otherwise resurrect the
+  // blob (the switcher navigates off it next).
+  const handleDeleteTree = useCallback(async (id, { local = false } = {}) => {
+    if (id === treeId) collabRef.current?.close();
+    if (!local) await deleteTree(id);
+    // Server rows hold device residue too — a touch()-born index entry, the blob, the
+    // last-place slot. Clearing it all here is what keeps a deleted tree from zombieing
+    // the switcher union or dead-ending the next magic-link landing.
+    await deleteLocalTree(id);
   }, [treeId]);
 
   // Undo/redo is client-owned: the session replays a gesture's inverse as a fresh gesture,
@@ -791,6 +829,28 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   // canvas click. The scene guards a same-id call, so canvas-driven picks no-op here.
   useEffect(() => { sceneRef.current?.setSelection(selectedId); }, [selectedId]);
 
+  // The last-place ledger (anon-first-tree F6): as the camera settles, remember where
+  // this tree was left — the magic-link landing's fresh tab and bare #/app both re-open
+  // it here. Editor views only.
+  useEffect(() => {
+    if (!scene || viewReadOnly) return undefined;
+    let timer = null;
+    const unsubscribe = scene.subscribeViewport(() => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (!seedRef.current) return; // a tree that never loaded must not become the last place
+        placeStore.save({ treeId, camera: scene.getViewpoint(), selectedId: selectedIdRef.current });
+      }, 400);
+    });
+    return () => { clearTimeout(timer); unsubscribe(); };
+  }, [scene, treeId, viewReadOnly]);
+
+  // Selection changes stamp the ledger too, so a new tab restores the open step.
+  useEffect(() => {
+    if (viewReadOnly || loading || !seedRef.current) return;
+    placeStore.save({ treeId, camera: sceneRef.current?.getViewpoint?.() ?? null, selectedId });
+  }, [selectedId, loading, treeId, viewReadOnly]);
+
   // The autofocus flag is for the bud's first appearance only — once the
   // selection moves elsewhere, re-selecting it later must not steal focus.
   useEffect(() => {
@@ -810,10 +870,22 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
     setSelectedId(null);
 
     async function loadTree() {
-      // The routed tree comes from the backend, per treeId.
+      // The routed tree comes from the backend, per treeId — but the server is only the
+      // first answer. A tree it doesn't know (local-born, or the server is unreachable)
+      // projects from the durable lattice blob instead (anon-first-tree F2); loadError
+      // means BOTH had nothing. The title baseline comes from the device index; a stamped
+      // rename inside the blob dominates it on join.
       const repo = new HttpTreeRepository({ treeId });
-      const seed = await repo.loadTree();
-      // The HTTP seed is only the first paint; the durable structure is the lattice — loaded
+      let seed = null;
+      try { seed = await repo.loadTree(); } catch { /* fall through to the blob */ }
+      if (!seed) {
+        const saved = await syncStore.load(treeId).catch(() => null);
+        if (!saved?.frame) throw new Error(`tree ${treeId}: unknown to the server and absent locally`);
+        const lattice = new TreeLattice(treeId, deviceTrees.get(treeId)?.title ?? '');
+        lattice.join(saved.frame);
+        seed = lattice.toTreeData();
+      }
+      // The seed is only the first paint; the durable structure is the lattice — loaded
       // from IndexedDB (offline) and reconciled with the server on subscribe by the SyncSession.
       const treeData = seed;
       if (!cancelled) setHasLocalEdits(false);
@@ -855,7 +927,18 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
 
       const scene = sceneRef.current;
       scene.setModel(model);
-      scene.fitToView();
+      // The returning tab becomes the old place (anon-first-tree F6): when the last-place
+      // ledger names this tree, its saved camera replaces the fit and its selection is
+      // restored below. Editor views only — a share view never reads or writes the ledger.
+      const place = viewReadOnly ? null : placeStore.load();
+      const returning = place?.treeId === seed.id ? place : null;
+      const savedCamera = returning?.camera
+        && [returning.camera.x, returning.camera.y, returning.camera.zoom].every(Number.isFinite)
+        ? returning.camera : null;
+      if (savedCamera) scene.restoreViewpoint(savedCamera);
+      else scene.fitToView();
+      const restoredSelection = returning?.selectedId && treeData.nodes.some((n) => n.id === returning.selectedId)
+        ? returning.selectedId : null;
 
       editorRef.current = new TreeEditor(treeData);
       seedRef.current = seed;
@@ -892,6 +975,8 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
       setActivityPing(false);
       unseenIdsRef.current = new Set();
       setBounds(scene.getBounds());
+      if (restoredSelection) setSelectedId(restoredSelection);
+      if (!viewReadOnly) placeStore.save({ treeId: seed.id, camera: scene.getViewpoint(), selectedId: restoredSelection });
       setLoading(false);
       if (shared && seed.id === DEMO_TREE_ID) track('demo_open', { treeId: seed.id });
 
@@ -915,10 +1000,12 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
       }
 
       // Every edit runs through a SyncSession: the lattice is truth, TreeData its projection.
-      // The roadmap goes live over the socket (a joined frame reaches every peer).
+      // The roadmap goes live over the socket (a joined frame reaches every peer). Read-only
+      // views (shares, small screens) never enter the device index — a visited tree is not a
+      // borne one, and the claim path must never adopt it.
       collabRef.current?.close();
       peersRef.current.clear();
-      const session = new SyncSession({ treeId: seed.id, title: seed.title })
+      const session = new SyncSession({ treeId: seed.id, title: seed.title, registry: viewReadOnly ? null : deviceTrees })
         .onTreeChanged((data) => onTreeChangedRef.current?.(data))
         .onPresence((frame) => peersRef.current.set(frame.actor, {
           name: frame.profile?.name, color: frame.profile?.color,
@@ -1354,7 +1441,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
           titleSlot={
             <TreeSwitcher
               current={{ id: treeId, title: tree?.title, done: shareStats?.done, total: shareStats?.total, dominantKind: shareStats?.dominantKind }}
-              listTrees={listTrees}
+              listTrees={listAllTrees}
               onNew={() => { window.location.hash = '#/app/new'; }}
               onRename={handleRenameTree}
               onPreviewTitle={previewTreeTitle}
@@ -1390,6 +1477,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
             user={user}
             status={status}
             expired={lapsed}
+            claimBusy={claimBusy}
             onSignIn={() => setSignInOpen(true)}
             onSignOut={signOut}
             onConnect={() => { window.location.hash = '#/connect'; }}

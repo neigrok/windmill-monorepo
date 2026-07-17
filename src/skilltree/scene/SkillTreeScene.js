@@ -531,6 +531,11 @@ export class SkillTreeScene {
     this.camera.fitToView(this.renderModel.bounds, this.camera.viewportWidth, this.camera.viewportHeight, 0.9, FIT_MAX_ZOOM);
   }
 
+  // The last-place ledger's camera half (anon-first-tree F6): a plain center+zoom
+  // snapshot out, a teleport back in — a returning tab stands where the last one stood.
+  getViewpoint() { return { x: this.camera.x, y: this.camera.y, zoom: this.camera.zoom }; }
+  restoreViewpoint({ x, y, zoom }) { this.camera.restore(x, y, zoom); }
+
   focusNode(id) {
     const node = this.nodesById.get(id);
     if (!node) return;

@@ -1,17 +1,14 @@
 // New-tree birth (F1·F2 §6) — one bud, one name. Not a dialog: a single bud waits at
 // canvas center, the name is typed in place, and ↵ plants it. The name is the
-// confirmation — no toast. Committing calls the registry (POST /v1/trees) and the app
-// navigates into the freshly-planted tree, where its real first arrival plays.
-//
-// Reconciled with the backend: planting is signed-in only, so ↵ while signed out opens
-// the one sign-in door (X6) and replays once the tab flips. The full WebGL bud-wake
-// ceremony is a follow-up; this is the faithful DOM birth — bud, in-place name, plaque.
+// confirmation — no toast. Signed in, the registry (POST /v1/trees) plants it; signed
+// out, the tree is born locally (anon-first-tree §01) — client-minted id, lattice-born,
+// IndexedDB-persisted — and the editor opens exactly the same. No sign-in door here:
+// the seat menu stays the product's only unprompted mention of sign-in.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthProvider.jsx';
-import { requestMagicLink } from '../auth/AuthClient.js';
-import { SignInDialog } from '../auth/SignInDialog.jsx';
 import { createTree } from '../persistence/TreeRegistry.js';
+import { bearLocalTree } from '../sync/localTrees.js';
 import { DEFAULT_KINDS } from '../model/Legend.js';
 import { track } from '../../telemetry/beacon.js';
 
@@ -22,41 +19,39 @@ export function NewTreeBirth() {
   const { status } = useAuth();
   const [name, setName] = useState('');
   const [phase, setPhase] = useState('naming'); // naming | planting | error
-  const [signInOpen, setSignInOpen] = useState(false);
   const inputRef = useRef(null);
-  const pending = useRef(false); // a plant waiting on sign-in
-
-  const signedIn = status === 'signed-in';
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
   async function plant() {
     if (phase === 'planting') return;
-    if (!signedIn) { pending.current = true; setSignInOpen(true); return; }
     setPhase('planting');
+    const title = name.trim();
     try {
-      const title = name.trim();
-      // Plant the named bud as the tree's first node — its root — so the new tree opens on the
-      // very node you just named rather than an empty canvas (F1·F2 §6: naming the root names the
-      // tree). It's born in the default 'Build' kind; the server seeds the matching legend.
-      const rootId = crypto.randomUUID?.() ?? `n-${Date.now()}`;
-      const root = { id: rootId, label: title, icon: 'sparkles', color: DEFAULT_KINDS[0].hue, prerequisites: [] };
-      const { treeId } = await createTree({ ...(title ? { title } : {}), nodes: [root] });
-      track('birth');
-      window.location.hash = `#/app/${treeId}`;
+      if (status === 'signed-in') {
+        // Plant the named bud as the tree's first node — its root — so the new tree opens on the
+        // very node you just named rather than an empty canvas (F1·F2 §6: naming the root names the
+        // tree). It's born in the default 'Build' kind; the server seeds the matching legend.
+        const rootId = crypto.randomUUID?.() ?? `n-${Date.now()}`;
+        const root = { id: rootId, label: title, icon: 'sparkles', color: DEFAULT_KINDS[0].hue, prerequisites: [] };
+        const { treeId } = await createTree({ ...(title ? { title } : {}), nodes: [root] });
+        track('birth');
+        window.location.hash = `#/app/${treeId}`;
+        return;
+      }
+      window.location.hash = `#/app/${await plantLocally(title)}`;
     } catch (err) {
-      if (err.code === 'unauthenticated') { pending.current = true; setSignInOpen(true); setPhase('naming'); }
-      else setPhase('error');
+      // A signed-in plant the server refuses for want of a session falls back to the
+      // local birth — the worst case of auth is the product's normal signed-out state.
+      if (err.code === 'unauthenticated' || err.code === 'unreachable') {
+        try {
+          window.location.hash = `#/app/${await plantLocally(title)}`;
+          return;
+        } catch { /* the local soil failed too — fall through to the error face */ }
+      }
+      setPhase('error');
     }
   }
-
-  // Sign-in resolves in another tab; AuthProvider flips this one. Close the door and,
-  // if a plant was waiting, run it now — the typed name is still in state.
-  useEffect(() => {
-    if (!signedIn) return;
-    setSignInOpen(false);
-    if (pending.current) { pending.current = false; plant(); }
-  }, [signedIn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onKeyDown = (e) => {
     if (e.key === 'Enter') { e.preventDefault(); plant(); }
@@ -106,13 +101,18 @@ export function NewTreeBirth() {
           </>
         )}
       </div>
-
-      <SignInDialog open={signInOpen} onClose={() => setSignInOpen(false)} onSend={requestMagicLink} />
     </div>
   );
 }
 
 export default NewTreeBirth;
+
+// The signed-out plant: born on this device, claimed by whichever account signs in later.
+async function plantLocally(title) {
+  const treeId = await bearLocalTree({ title });
+  track('birth', { local: true });
+  return treeId;
+}
 
 const shell = { position: 'fixed', inset: 0, background: 'var(--surface-canvas)', fontFamily: 'var(--font-body)', color: 'var(--text-primary)' };
 const plaque = { position: 'absolute', top: 'var(--space-6)', left: 'var(--space-6)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)', padding: 'var(--space-2) var(--space-3)', background: 'color-mix(in srgb, var(--surface-card) 88%, transparent)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-full)', boxShadow: 'var(--shadow-sm)' };

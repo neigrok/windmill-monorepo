@@ -10,6 +10,7 @@
 
 import { AuthError } from '../auth/AuthClient.js';
 import { API_BASE } from '../apiBase.js';
+import { LocalTreeRegistry } from './LocalTreeRegistry.js';
 
 // One row per owned roadmap: { id, title, done, total, updatedAt }. Missing fields are
 // the backend's to fill; the switcher renders whatever it gets and skips the rest.
@@ -24,9 +25,54 @@ export async function listTrees() {
   }
 }
 
-// Plant a roadmap in the caller's registry → { treeId }. `request` is the starting TreeData:
-// `title` names it, and `nodes`/`kinds` seed its structure + legend (the birth sends one root
-// node); omit them for an empty tree with the default legend. `fromQuest` clones a starter template.
+// The switcher's one list (anon-first-tree F3): the account's server trees united with
+// this device's own. Dedupe by id — the server row wins (its counts are live, and a
+// just-claimed tree keeps its flipped device entry only for signed-out listing). Rows
+// carry their origin so the switcher can tag them and route their edits: 'server' rows
+// PATCH/DELETE the registry, 'device' rows only ever touch local seams.
+export async function listAllTrees() {
+  const server = await fetchServerList();
+  const registry = new LocalTreeRegistry();
+  const serverIds = new Set(server.rows.map((tree) => tree.id));
+  if (server.authoritative) {
+    // The server just vouched for the whole account list: a CLAIMED device entry it no
+    // longer names is a tree deleted elsewhere or never this account's — prune it, or
+    // it zombies the union forever with a "synced" tag and no affordance to remove.
+    // Unclaimed entries are local-born and waiting to claim; those always stay.
+    registry.list().filter((tree) => tree.claimed && !serverIds.has(tree.id))
+      .forEach((tree) => registry.remove(tree.id));
+  }
+  const device = registry.list().filter((tree) => !serverIds.has(tree.id));
+  return [
+    ...server.rows.map((tree) => ({ ...tree, origin: 'server' })),
+    ...device.map((tree) => ({ ...tree, origin: 'device' })),
+  ].sort((a, b) => timestampOf(b.updatedAt) - timestampOf(a.updatedAt));
+}
+
+// The union needs to know whether an empty server list MEANS anything: a 200 is the
+// account's true (possibly empty) list; a 401 or a dead network vouches for nothing.
+async function fetchServerList() {
+  try {
+    const response = await fetch(`${API_BASE}/v1/trees`, { credentials: 'include' });
+    if (!response.ok) return { rows: [], authoritative: false };
+    const body = await response.json();
+    return { rows: body.trees ?? [], authoritative: true };
+  } catch {
+    return { rows: [], authoritative: false };
+  }
+}
+
+function timestampOf(updatedAt) {
+  if (typeof updatedAt === 'number') return updatedAt;
+  const parsed = Date.parse(updatedAt ?? '');
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+// Plant a roadmap in the caller's registry → { treeId, existed }. `request` is the starting
+// TreeData: `title` names it, and `nodes`/`kinds` seed its structure + legend (the birth sends
+// one root node); omit them for an empty tree with the default legend. The claim path passes a
+// client-minted `id` (t_ + 16 hex) the server keeps — `existed: true` is its idempotent resume,
+// 409 { code: 'id-taken' } its remap signal. `fromQuest` clones a starter template.
 export async function createTree(request) {
   let response;
   try {

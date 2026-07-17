@@ -218,6 +218,18 @@ export class Camera2D {
     this.dirty = true;
   }
 
+  // Rehydrate a saved viewpoint (PlaceStore): a teleport, no glide — the tab opens
+  // already standing where the last one stood.
+  restore(x, y, zoom) {
+    this.glide = null;
+    this.velocityX = 0;
+    this.velocityY = 0;
+    this.x = x;
+    this.y = y;
+    this.zoom = clamp(zoom, MIN_ZOOM, MAX_ZOOM);
+    this.dirty = true;
+  }
+
   fitToView(bounds, widthPx, heightPx, padding = 0.9, maxZoom = MAX_ZOOM) {
     const boundsWidth = Math.max(bounds.maxX - bounds.minX, 1);
     const boundsHeight = Math.max(bounds.maxY - bounds.minY, 1);

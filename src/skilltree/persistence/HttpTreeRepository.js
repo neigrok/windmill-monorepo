@@ -21,10 +21,13 @@ export class HttpTreeRepository extends TreeRepository {
   }
 
   async loadProgress(treeData) {
-    // Credentialed so the server returns *this* signed-in user's overlay (anonymous falls
-    // back to the document's authoring seeds below).
-    const response = await fetch(`${this.baseUrl}/v1/trees/${this.treeId}/progress`, { credentials: 'include' });
-    const server = response.ok ? await response.json() : { completed: [], inProgress: [], cleared: [] };
+    // Credentialed so the server returns *this* signed-in user's overlay (anonymous and
+    // offline/local-born trees both fall back to the document's authoring seeds below).
+    let response = null;
+    try {
+      response = await fetch(`${this.baseUrl}/v1/trees/${this.treeId}/progress`, { credentials: 'include' });
+    } catch { /* unreachable — the seed statuses answer */ }
+    const server = response?.ok ? await response.json() : { completed: [], inProgress: [], cleared: [] };
     if (server.completed.length > 0 || server.inProgress.length > 0 || (server.cleared?.length ?? 0) > 0) {
       // `server: true` marks this as the account's real overlay — the load pipeline lets
       // it win over stale localStorage. `cleared` carries the tombstones so a cleared
@@ -51,7 +54,12 @@ export class HttpTreeRepository extends TreeRepository {
   // a real timestamp — including edits by collaborators the local feed never saw. `since`
   // is a seq cursor for catch-up; 0 = the whole tail (capped at `limit`).
   async loadActivity({ since = 0, limit = 200 } = {}) {
-    const response = await fetch(`${this.baseUrl}/v1/trees/${this.treeId}/activity?since=${since}&limit=${limit}`, { credentials: 'include' });
+    let response;
+    try {
+      response = await fetch(`${this.baseUrl}/v1/trees/${this.treeId}/activity?since=${since}&limit=${limit}`, { credentials: 'include' });
+    } catch {
+      return []; // unreachable — the local feed still tells its story
+    }
     if (!response.ok) return [];
     const body = await response.json();
     return body.events ?? [];

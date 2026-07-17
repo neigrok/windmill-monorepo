@@ -115,6 +115,15 @@
     animation: none;
   }
 }
+/* A registry tag flipping ("on this device" → "synced") lands as one 150ms cross-fade —
+   deliberately the same beat under reduced motion (anon-first-tree §02). */
+.st-switcher-tag {
+  animation: wm-switcher-tag 150ms var(--ease-soft);
+}
+@keyframes wm-switcher-tag {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
 .st-controls {
   display: flex;
   align-items: center;
