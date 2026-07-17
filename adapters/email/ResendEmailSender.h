@@ -5,6 +5,7 @@
 #include <json/json.h>
 #include <trantor/net/EventLoopThread.h>
 
+#include <functional>
 #include <string>
 
 namespace wm {
@@ -17,18 +18,21 @@ std::string emailSafeTitle(const std::string& title);
 
 // Sends Windmill's mail through Resend's HTTP API: the 'magic-link' template for a plain
 // sign-in, 'magic-link-fork' when the link also plants a copy of a tree. Owns a private
-// event-loop thread so the outbound HTTPS call runs off — and never deadlocks — the
-// server's request loops.
+// event-loop thread that carries the outbound HTTPS call, so the server's request loops are
+// never parked waiting on Resend; done fires from that loop with the send outcome.
 class ResendEmailSender : public EmailSender {
 public:
   ResendEmailSender(std::string apiKey, std::string from);
 
-  void sendMagicLink(const Email& to, const std::string& magicLinkUrl) override;
+  void sendMagicLink(const Email& to, const std::string& magicLinkUrl,
+                     std::function<void(bool)> done) override;
   void sendForkLink(const Email& to, const std::string& magicLinkUrl,
-                    const std::string& treeTitle, const std::string& treeMeta) override;
+                    const std::string& treeTitle, const std::string& treeMeta,
+                    std::function<void(bool)> done) override;
 
 private:
-  void send(const Email& to, const std::string& templateId, const Json::Value& variables);
+  void send(const Email& to, const std::string& templateId, const Json::Value& variables,
+            std::function<void(bool)> done);
 
   std::string apiKey_;
   std::string from_;

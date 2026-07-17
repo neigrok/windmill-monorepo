@@ -98,35 +98,37 @@ void AuthApi::requestLink(const drogon::HttpRequestPtr& req, HttpCallback&& call
       forkedTree = AuthService::ForkDescription{source->title, source->steps};
   }
 
-  AuthService::RequestResult result;
-  try {
-    result = auth_->requestLink(email, forkOf, forkedTree);
-  } catch (const std::exception&) {
+  // The send is async, so the verdict rides back through the callback — fired inline for
+  // invalid / rate-limited, or off the sender's loop once the Resend call settles. The
+  // handler thread is freed the instant this returns; the drogon callback carries the reply.
+  auth_->requestLink(email, forkOf, forkedTree,
+                     [callback = std::move(callback)](AuthService::RequestResult result) {
+    if (result == AuthService::RequestResult::sent) {
+      Json::Value body(Json::objectValue);
+      body["status"] = "sent";
+      callback(jsonResponse(body));
+      return;
+    }
+    if (result == AuthService::RequestResult::invalidEmail) {
+      Json::Value body(Json::objectValue);
+      body["error"] = "That address looks unfinished — check the ending.";
+      body["code"] = "invalid_email";
+      callback(jsonResponse(body, drogon::k400BadRequest));
+      return;
+    }
+    if (result == AuthService::RequestResult::rateLimited) {
+      Json::Value body(Json::objectValue);
+      body["error"] = "That's a few links in a row. Check your spam folder first — or try again in 10 minutes.";
+      body["code"] = "rate_limited";
+      callback(jsonResponse(body, drogon::k429TooManyRequests));
+      return;
+    }
     Json::Value body(Json::objectValue);
     body["error"] = "Can't reach windmill.works";
     body["detail"] = "Your trees are safe on this device.";
     body["code"] = "unreachable";
     callback(jsonResponse(body, drogon::k502BadGateway));
-    return;
-  }
-
-  if (result == AuthService::RequestResult::sent) {
-    Json::Value body(Json::objectValue);
-    body["status"] = "sent";
-    callback(jsonResponse(body));
-    return;
-  }
-  if (result == AuthService::RequestResult::invalidEmail) {
-    Json::Value body(Json::objectValue);
-    body["error"] = "That address looks unfinished — check the ending.";
-    body["code"] = "invalid_email";
-    callback(jsonResponse(body, drogon::k400BadRequest));
-    return;
-  }
-  Json::Value body(Json::objectValue);
-  body["error"] = "That's a few links in a row. Check your spam folder first — or try again in 10 minutes.";
-  body["code"] = "rate_limited";
-  callback(jsonResponse(body, drogon::k429TooManyRequests));
+  });
 }
 
 void AuthApi::verify(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {

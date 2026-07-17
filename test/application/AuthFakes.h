@@ -7,9 +7,9 @@
 #include "ports/TokenGenerator.h"
 
 #include <algorithm>
+#include <functional>
 #include <map>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -51,19 +51,25 @@ struct FakeEmail : EmailSender {
   std::vector<Sent> sent;
   bool failNext = false;
 
-  void sendMagicLink(const Email& to, const std::string& url) override {
-    deliver({to, url, "magic-link", "", ""});
+  void sendMagicLink(const Email& to, const std::string& url,
+                     std::function<void(bool)> done) override {
+    deliver({to, url, "magic-link", "", ""}, std::move(done));
   }
   void sendForkLink(const Email& to, const std::string& url, const std::string& treeTitle,
-                    const std::string& treeMeta) override {
-    deliver({to, url, "magic-link-fork", treeTitle, treeMeta});
+                    const std::string& treeMeta, std::function<void(bool)> done) override {
+    deliver({to, url, "magic-link-fork", treeTitle, treeMeta}, std::move(done));
   }
-  void deliver(Sent mail) {
+  // Async like the real sender, but resolves inline: a failed send records nothing and
+  // reports false (the caller inserted the link row already, so it survives the failure),
+  // a good one records the mail and reports true.
+  void deliver(Sent mail, std::function<void(bool)> done) {
     if (failNext) {
       failNext = false;
-      throw std::runtime_error("can't reach the mail provider");
+      done(false);
+      return;
     }
     sent.push_back(std::move(mail));
+    done(true);
   }
 };
 

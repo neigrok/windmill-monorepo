@@ -8,6 +8,7 @@
 #include "ports/TokenGenerator.h"
 
 #include <cstddef>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -44,7 +45,7 @@ public:
   AuthService(AuthRepository& repo, EmailSender& email, TokenGenerator& tokens, Clock& clock,
               OAuthService& oauth, std::string appBaseUrl);
 
-  enum class RequestResult { sent, invalidEmail, rateLimited };
+  enum class RequestResult { sent, invalidEmail, rateLimited, unreachable };
 
   // When the link carries a fork, the caller resolves the source tree's face up front (the
   // auth pipeline holds no tree dependency) and passes it here; the mail then uses the fork
@@ -54,8 +55,16 @@ public:
     std::string title;
     std::size_t steps = 0;
   };
-  RequestResult requestLink(const std::string& rawEmail, const std::string& forkSource = "",
-                            const std::optional<ForkDescription>& forkedTree = std::nullopt);
+  // Asynchronous, so the slow Resend send never parks the calling handler thread. The sync
+  // work runs first and fast — parse, rate-limit, mint, insert the link row — then only the
+  // send is deferred. done fires exactly once with the verdict: invalidEmail / rateLimited
+  // resolve inline before any send; sent or unreachable waits on the send's completion (which
+  // may fire on the sender's loop thread). An unreachable send still leaves the link row
+  // inserted, so a Resend hiccup loses no link — a retry mints a fresh one and the first
+  // still opens the door for its 15-minute life.
+  void requestLink(const std::string& rawEmail, const std::string& forkSource,
+                   const std::optional<ForkDescription>& forkedTree,
+                   std::function<void(RequestResult)> done);
 
   // On a valid link: the account (created here on first sign-in) and a fresh session secret
   // to hand back as the cookie. On any other verdict: the verdict alone, no session.

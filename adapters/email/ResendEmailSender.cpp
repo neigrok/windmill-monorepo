@@ -4,7 +4,9 @@
 #include <drogon/HttpRequest.h>
 #include <drogon/HttpResponse.h>
 
-#include <stdexcept>
+#include <trantor/utils/Logger.h>
+
+#include <utility>
 
 namespace wm {
 
@@ -21,24 +23,29 @@ ResendEmailSender::ResendEmailSender(std::string apiKey, std::string from)
   loop_.run();
 }
 
-void ResendEmailSender::sendMagicLink(const Email& to, const std::string& magicLinkUrl) {
+void ResendEmailSender::sendMagicLink(const Email& to, const std::string& magicLinkUrl,
+                                      std::function<void(bool)> done) {
   Json::Value variables(Json::objectValue);
   variables["magic_link"] = magicLinkUrl;
-  send(to, "magic-link", variables);
+  send(to, "magic-link", variables, std::move(done));
 }
 
 void ResendEmailSender::sendForkLink(const Email& to, const std::string& magicLinkUrl,
-                                     const std::string& treeTitle, const std::string& treeMeta) {
+                                     const std::string& treeTitle, const std::string& treeMeta,
+                                     std::function<void(bool)> done) {
   Json::Value variables(Json::objectValue);
   variables["magic_link"] = magicLinkUrl;
   variables["tree_title"] = emailSafeTitle(treeTitle);
   variables["tree_meta"] = treeMeta;
-  send(to, "magic-link-fork", variables);
+  send(to, "magic-link-fork", variables, std::move(done));
 }
 
 void ResendEmailSender::send(const Email& to, const std::string& templateId,
-                             const Json::Value& variables) {
-  if (apiKey_.empty()) throw std::runtime_error("RESEND_API_KEY not configured");
+                             const Json::Value& variables, std::function<void(bool)> done) {
+  if (apiKey_.empty()) {
+    done(false);
+    return;
+  }
 
   Json::Value body;
   body["from"] = from_;
@@ -59,12 +66,22 @@ void ResendEmailSender::send(const Email& to, const std::string& templateId,
   req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
   req->setBody(payload);
 
-  auto [result, resp] = client->sendRequest(req, 10.0);
-  const int status = resp ? static_cast<int>(resp->getStatusCode()) : 0;
-  if (result != drogon::ReqResult::Ok || status < 200 || status >= 300) {  // accept any 2xx
-    const std::string detail = resp ? std::string(resp->getBody()) : std::string("no response");
-    throw std::runtime_error("Resend send failed (status " + std::to_string(status) + "): " + detail);
-  }
+  // The async overload runs the whole call on the private loop and answers on it, so the
+  // calling handler thread is freed the instant this returns. client rides in the callback
+  // to outlive the send; done carries the 2xx verdict back to the edge.
+  client->sendRequest(
+      req,
+      [client, done = std::move(done)](drogon::ReqResult result, const drogon::HttpResponsePtr& resp) {
+        const int status = resp ? static_cast<int>(resp->getStatusCode()) : 0;
+        if (result != drogon::ReqResult::Ok || status < 200 || status >= 300) {  // accept any 2xx
+          const std::string detail = resp ? std::string(resp->getBody()) : std::string("no response");
+          LOG_ERROR << "Resend send failed (status " << status << "): " << detail;
+          done(false);
+          return;
+        }
+        done(true);
+      },
+      10.0);
 }
 
 }

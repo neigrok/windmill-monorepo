@@ -7,27 +7,38 @@ AuthService::AuthService(AuthRepository& repo, EmailSender& email, TokenGenerato
     : repo_(repo), email_(email), tokens_(tokens), clock_(clock), oauth_(oauth),
       appBaseUrl_(std::move(appBaseUrl)) {}
 
-AuthService::RequestResult AuthService::requestLink(const std::string& rawEmail, const std::string& forkSource,
-                                                    const std::optional<ForkDescription>& forkedTree) {
+void AuthService::requestLink(const std::string& rawEmail, const std::string& forkSource,
+                              const std::optional<ForkDescription>& forkedTree,
+                              std::function<void(RequestResult)> done) {
   std::optional<Email> email = parseEmail(rawEmail);
-  if (!email) return RequestResult::invalidEmail;
+  if (!email) {
+    done(RequestResult::invalidEmail);
+    return;
+  }
 
   const UnixMs now = clock_.nowMs();
-  if (!withinRateLimit(repo_.countRecentLinks(*email, now - AuthPolicy::rateWindowMs)))
-    return RequestResult::rateLimited;
+  if (!withinRateLimit(repo_.countRecentLinks(*email, now - AuthPolicy::rateWindowMs))) {
+    done(RequestResult::rateLimited);
+    return;
+  }
 
   const MintedToken link = tokens_.mint();
   repo_.insertLink(link.digest, *email, now, linkExpiry(now), forkSource);
 
+  // The link row is already persisted; only the slow send is deferred. Its outcome is the
+  // last verdict — a 2xx is sent, a failure is unreachable — but the link stands either way,
+  // so an unreachable send is still a usable link the user can reach on a retry.
   const std::string url = appBaseUrl_ + "/#/auth?token=" + link.secret;
+  auto resolve = [done = std::move(done)](bool ok) {
+    done(ok ? RequestResult::sent : RequestResult::unreachable);
+  };
   if (!forkedTree) {
-    email_.sendMagicLink(*email, url);
-    return RequestResult::sent;
+    email_.sendMagicLink(*email, url, std::move(resolve));
+    return;
   }
   const std::string meta =
       forkedTree->steps == 1 ? "1 step" : std::to_string(forkedTree->steps) + " steps";
-  email_.sendForkLink(*email, url, forkedTree->title, meta);
-  return RequestResult::sent;
+  email_.sendForkLink(*email, url, forkedTree->title, meta, std::move(resolve));
 }
 
 AuthService::Completion AuthService::completeLink(const std::string& linkSecret, const SessionContext& ctx) {
