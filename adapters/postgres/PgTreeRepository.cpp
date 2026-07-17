@@ -154,7 +154,7 @@ PgTreeRepository::PgTreeRepository(std::string connString) : connString_(std::mo
 std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
   pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result rows = txn.exec_params(
-      "SELECT title, head_seq, document::text, owner_id::text, visibility "
+      "SELECT title, title_hlc, head_seq, document::text, owner_id::text, visibility "
       "FROM trees WHERE id = $1 AND deleted_at IS NULL",
       tree.str());
   if (rows.empty()) return std::nullopt;
@@ -175,19 +175,32 @@ std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
 
   std::optional<UserId> owner;
   if (!row["owner_id"].is_null()) owner = UserId{row["owner_id"].as<std::string>()};
-  return StoredTree{std::move(state), std::move(legend), row["title"].as<std::string>(),
+  Lww<std::string> title{row["title"].as<std::string>(), parseHlc(row["title_hlc"].as<std::string>())};
+  return StoredTree{std::move(state), std::move(legend), std::move(title),
                     static_cast<Seq>(row["head_seq"].as<long long>()), std::move(owner),
                     row["visibility"].as<std::string>()};
 }
 
 void PgTreeRepository::save(const TreeId& tree, const GraphState& state, const LegendState& legend,
-                            const std::string& title, Seq head) {
+                            const Lww<std::string>& title, Seq head) {
   pqxx::work txn{pgThreadConnection(connString_)};
   txn.exec_params(
-      "INSERT INTO trees (id, title, head_seq) VALUES ($1, $2, $3) "
-      "ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, head_seq = EXCLUDED.head_seq, "
-      "updated_at = now()",
-      tree.str(), title, static_cast<long long>(head));
+      "INSERT INTO trees (id, title, title_hlc, title_ms, title_counter, head_seq) "
+      "VALUES ($1, $2, $3, $4, $5, $6) "
+      "ON CONFLICT (id) DO UPDATE SET head_seq = EXCLUDED.head_seq, updated_at = now()",
+      tree.str(), title.value, toString(title.stamp),
+      static_cast<long long>(title.stamp.physicalMs), static_cast<long long>(title.stamp.counter),
+      static_cast<long long>(head));
+  // The title register is LWW at the column: it lands only under a dominating stamp, so a
+  // stale room cache in another process can never revert a newer rename. (ms, counter) order
+  // numerically; a tie falls to the canonical text under byte order (COLLATE "C") — its
+  // numeric prefix is equal whenever ms and counter are, so that is exactly the actor tiebreak.
+  txn.exec_params(
+      "UPDATE trees SET title = $2, title_hlc = $3, title_ms = $4, title_counter = $5 "
+      "WHERE id = $1 AND ($4::bigint, $5::bigint, $3::text COLLATE \"C\") "
+      "> (title_ms, title_counter, title_hlc COLLATE \"C\")",
+      tree.str(), title.value, toString(title.stamp),
+      static_cast<long long>(title.stamp.physicalMs), static_cast<long long>(title.stamp.counter));
   upsertSlice(txn, tree, state, legend);  // only the dirty slice — never the whole tree
   txn.commit();
 }
@@ -238,6 +251,18 @@ std::vector<OwnedTree> PgTreeRepository::listOwnedBy(const UserId& owner) {
 void PgTreeRepository::softDelete(const TreeId& tree) {
   pqxx::work txn{pgThreadConnection(connString_)};
   txn.exec_params("UPDATE trees SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL", tree.str());
+  txn.commit();
+}
+
+void PgTreeRepository::rename(const TreeId& tree, const Lww<std::string>& title) {
+  pqxx::work txn{pgThreadConnection(connString_)};
+  txn.exec_params(  // the same LWW guard as save(): only a dominating stamp lands
+      "UPDATE trees SET title = $2, title_hlc = $3, title_ms = $4, title_counter = $5, "
+      "updated_at = now() WHERE id = $1 AND deleted_at IS NULL "
+      "AND ($4::bigint, $5::bigint, $3::text COLLATE \"C\") "
+      "> (title_ms, title_counter, title_hlc COLLATE \"C\")",
+      tree.str(), title.value, toString(title.stamp),
+      static_cast<long long>(title.stamp.physicalMs), static_cast<long long>(title.stamp.counter));
   txn.commit();
 }
 

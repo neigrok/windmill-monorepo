@@ -8,7 +8,7 @@ using namespace wm::fake;
 namespace {
 
 TreeRoom makeRoom(FakeOpLog& log, FakeBus& bus) {
-  return TreeRoom(tid(), "Title", LooseGraph{}, Legend{}, 0, std::nullopt, log, bus);
+  return TreeRoom(tid(), {"Title", {}}, LooseGraph{}, Legend{}, 0, std::nullopt, log, bus);
 }
 
 // A server-origin edit (the MCP path): stamp it, apply it, log it, broadcast the delta.
@@ -61,7 +61,7 @@ TEST(room_next_stamp_dominates_the_loaded_document_state) {
   loaded.createNode(nid("seed"), "S", "i", NodeColor::sky, std::nullopt, old);
   FakeOpLog log;
   FakeBus bus;
-  TreeRoom room(tid(), "T", std::move(loaded), Legend{}, 0, std::nullopt, log, bus);
+  TreeRoom room(tid(), {"T", {}}, std::move(loaded), Legend{}, 0, std::nullopt, log, bus);
 
   Hlc next = room.nextStamp(10);  // wall clock behind the persisted stamp
   CHECK(next > old);              // the constructor folded the loaded document's frontier

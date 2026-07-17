@@ -38,22 +38,32 @@ create table if not exists org_members (
   primary key (org_id, user_id)
 );
 
--- trees: title, ownership and the snapshot head. `document` is the legacy jsonb blob —
--- superseded by the per-entry tables below; kept until every tree's rows are backfilled,
--- then droppable.
+-- trees: title, ownership and the snapshot head. The title is an LWW register: `title_hlc`
+-- is its stamp in canonical HLC text ('' = unset, the create-time baseline), and
+-- `title_ms`/`title_counter` are the stamp's numeric split (the node_progress idiom) so the
+-- write can be LWW-guarded in SQL — a save or rename lands a title only under a dominating
+-- stamp, so a stale room cache in another process can never revert a newer rename.
+-- `document` is the legacy jsonb blob — superseded by the per-entry tables below; kept
+-- until every tree's rows are backfilled, then droppable.
 create table if not exists trees (
-  id          text primary key,
-  org_id      uuid,
-  owner_id    uuid,
-  title       text not null default '',
-  visibility  text not null default 'private',
-  head_seq    bigint not null default 0,
-  forked_from text,
-  document    jsonb not null default '{"nodes":[]}'::jsonb,
-  deleted_at  timestamptz,
-  created_at  timestamptz not null default now(),
-  updated_at  timestamptz not null default now()
+  id            text primary key,
+  org_id        uuid,
+  owner_id      uuid,
+  title         text not null default '',
+  title_hlc     text not null default '',
+  title_ms      bigint not null default 0,
+  title_counter bigint not null default 0,
+  visibility    text not null default 'private',
+  head_seq      bigint not null default 0,
+  forked_from   text,
+  document      jsonb not null default '{"nodes":[]}'::jsonb,
+  deleted_at    timestamptz,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
 );
+alter table trees add column if not exists title_hlc text not null default '';
+alter table trees add column if not exists title_ms bigint not null default 0;
+alter table trees add column if not exists title_counter bigint not null default 0;
 
 -- the registry list: a caller's live (not soft-deleted) trees, keyed by owner
 create index if not exists trees_owner on trees (owner_id) where deleted_at is null;

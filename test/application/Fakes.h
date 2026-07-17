@@ -71,8 +71,9 @@ struct FakeTreeRepository : TreeRepository {
     return it->second;
   }
   void save(const TreeId& tree, const GraphState& state, const LegendState& legend,
-            const std::string& title, Seq head) override {
+            const Lww<std::string>& title, Seq head) override {
     savedNodeCounts.push_back(state.nodes.size());
+    const bool fresh = byId.count(tree.str()) == 0;
     StoredTree& stored = byId[tree.str()];  // upsert semantics: merge the slice, keep the rest
     for (const NodeStateEntry& node : state.nodes) {
       auto match = std::find_if(stored.state.nodes.begin(), stored.state.nodes.end(),
@@ -92,32 +93,41 @@ struct FakeTreeRepository : TreeRepository {
       if (match != stored.legend.kinds.end()) *match = kind;
       else stored.legend.kinds.push_back(kind);
     }
-    stored.title = title;
+    // The title register lands only under a dominating stamp — the rule PgTreeRepository
+    // enforces in SQL on the trees row; only Postgres carries the byte-order tiebreak
+    // collation, the fake mirrors the same order through Hlc's own comparison.
+    if (fresh || title.stamp > stored.title.stamp) stored.title = title;
     stored.head = head;
   }
   void create(const TreeId& tree, const GraphState& state, const LegendState& legend,
               const std::string& title, const UserId& owner) override {
-    byId[tree.str()] = StoredTree{state, legend, title, 0, owner};
+    byId[tree.str()] = StoredTree{state, legend, {title, {}}, 0, owner};
   }
   std::vector<OwnedTree> listOwnedBy(const UserId& owner) override {
     std::vector<OwnedTree> owned;
     for (const auto& [id, stored] : byId) {
       if (deletedIds.count(id)) continue;
       if (!stored.owner || *stored.owner != owner) continue;
-      TreeData data = LooseGraph(stored.state).toTreeData(TreeId{id}, stored.title);
+      TreeData data = LooseGraph(stored.state).toTreeData(TreeId{id}, stored.title.value);
       std::uint64_t ms = updatedAt.count(id) ? updatedAt.at(id) : 0;
       owned.push_back(OwnedTree{std::move(data), ms});
     }
     return owned;
   }
   void softDelete(const TreeId& tree) override { deletedIds.insert(tree.str()); }
+  void rename(const TreeId& tree, const Lww<std::string>& title) override {
+    auto it = byId.find(tree.str());
+    if (it == byId.end() || deletedIds.count(tree.str())) return;
+    if (title.stamp > it->second.title.stamp) it->second.title = title;  // the same LWW guard as save
+  }
   void claim(const TreeId& tree, const UserId& owner) override {
     auto it = byId.find(tree.str());
     if (it != byId.end() && !it->second.owner) it->second.owner = owner;
   }
   void fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
             const LegendState& legend, const std::string& title, const UserId& owner) override {
-    byId[newTree.str()] = StoredTree{state, legend, title, 0, owner, "public"};
+    // A fork's title starts stampless — its own baseline, like create; a later rename stamps it.
+    byId[newTree.str()] = StoredTree{state, legend, {title, {}}, 0, owner, "public"};
     forkedFrom[newTree.str()] = source.str();
   }
 };

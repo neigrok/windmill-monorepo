@@ -1,5 +1,6 @@
 #pragma once
 
+#include "domain/Crdt.h"
 #include "domain/GraphState.h"
 #include "domain/Ids.h"
 #include "domain/Legend.h"
@@ -12,13 +13,14 @@
 
 namespace wm {
 
-// A stored tree: its full loose-graph CRDT state, its legend CRDT state, title, the seq of
-// the last op folded into the snapshot, and its authorization facts — the owner (empty
-// until claimed) and visibility (public trees are world-readable).
+// A stored tree: its full loose-graph CRDT state, its legend CRDT state, the title register
+// (an unset stamp means the create-time baseline, never renamed), the seq of the last op
+// folded into the snapshot, and its authorization facts — the owner (empty until claimed)
+// and visibility (public trees are world-readable).
 struct StoredTree {
   GraphState state;
   LegendState legend;
-  std::string title;
+  Lww<std::string> title;
   Seq head = 0;
   std::optional<UserId> owner;
   std::string visibility = "public";
@@ -36,11 +38,14 @@ struct TreeRepository {
   virtual std::optional<StoredTree> load(const TreeId& tree) = 0;
   // Upsert a slice of the tree's lattice: every entry given replaces its stored row (the
   // caller — the room — is the single authority, so its values are always current), plus
-  // title and head. A sparse slice is the norm (just the entries dirtied since the last
-  // save); entries absent from the slice are left untouched, and a save never deletes a
-  // row — the lattice is entry-grow-only (a delete is a tombstone stamp on its entry).
+  // the title register and head. A sparse slice is the norm (just the entries dirtied since
+  // the last save); entries absent from the slice are left untouched, and a save never
+  // deletes a row — the lattice is entry-grow-only (a delete is a tombstone stamp on its
+  // entry). The title is the one guarded field: it lands only under a stamp dominating the
+  // stored one — LWW at the column — so a second process's stale room cache (the standalone
+  // MCP binary, a dev run sharing the DB) can never revert a newer rename.
   virtual void save(const TreeId& tree, const GraphState& state, const LegendState& legend,
-                    const std::string& title, Seq head) = 0;
+                    const Lww<std::string>& title, Seq head) = 0;
   // Insert a brand-new tree owned by `owner` — a fresh id, its starting document (graph +
   // legend) and title. Fails loudly on an id collision (never overwrites an existing tree).
   virtual void create(const TreeId& tree, const GraphState& state, const LegendState& legend,
@@ -50,6 +55,11 @@ struct TreeRepository {
   virtual std::vector<OwnedTree> listOwnedBy(const UserId& owner) = 0;
   // Retire a tree by stamping deleted_at; every read filters it out afterwards.
   virtual void softDelete(const TreeId& tree) = 0;
+  // Write the title register (and touch updated_at). The closed-room seam only — a live
+  // room's title reaches the column through save(); RoomRegistry::rename picks the seam.
+  // Guarded like save: the write lands only under a dominating stamp, so the caller mints
+  // one past the register it just loaded.
+  virtual void rename(const TreeId& tree, const Lww<std::string>& title) = 0;
   // Assign an owner, but only to a tree that has none — the first authenticated writer
   // claims it; a claim never overrides an existing owner.
   virtual void claim(const TreeId& tree, const UserId& owner) = 0;

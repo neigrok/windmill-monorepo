@@ -110,6 +110,11 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
       delta.treeId = TreeId{treeId};
       delta.frameId = "delta-" + std::to_string(room.head());
       delta.actor = "srv";
+      // A renamed tree's title register rides the delta like any field the client lacks
+      // (unset stamps — never-renamed titles — carry nothing to cover, so they stay home),
+      // and the stated coverage owns the stamp so the client never flushes it back.
+      if (!clientVector.covers(room.title().stamp)) delta.title = room.title();
+      if (delta.coverage) delta.coverage->observe(room.title().stamp);
       frame = toJson(delta);
       frame["seq"] = static_cast<Json::Int64>(room.head());
     } catch (const std::exception& error) {
@@ -145,9 +150,12 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   incoming.treeId = TreeId{treeId};
 
   // Skew clamp: a frame stamped past now + 5min is refused whole and non-lossily — the client
-  // keeps its lattice intact, folds serverNow into its clock, and retries.
+  // keeps its lattice intact, folds serverNow into its clock, and retries. The title register
+  // rides the same clamp — a runaway stamp must not own the name for years.
   std::uint64_t nowMs = clock_.nowMs();
-  for (const auto& [actor, mark] : frontier(incoming.graph, incoming.legend).marks) {
+  VersionVector front = frontier(incoming.graph, incoming.legend);
+  if (incoming.title) front.observe(incoming.title->stamp);
+  for (const auto& [actor, mark] : front.marks) {
     if (mark.physicalMs > nowMs + kMaxSkewMs) {
       Json::Value skew(Json::objectValue);
       skew["t"] = "skew";

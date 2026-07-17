@@ -73,8 +73,8 @@ int main() {
   ProgressService progress(progressRepo);
   OpenSslTokenGenerator registryTokens;
   const Hlc genesis{1, 0, "genesis"};
-  TreeRegistry treeRegistry(trees, progressRepo, registryTokens, genesis);
   SystemClock clock;
+  TreeRegistry treeRegistry(trees, progressRepo, registryTokens, genesis, registry, clock);
 
   RoadmapTools tools(registry, progress, clock, treeRegistry, bus);
   ServerInfo info{

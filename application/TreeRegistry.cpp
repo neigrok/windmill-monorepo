@@ -5,14 +5,16 @@
 #include "domain/LooseGraph.h"
 
 #include <map>
+#include <mutex>
 #include <optional>
 #include <utility>
 
 namespace wm {
 
 TreeRegistry::TreeRegistry(TreeRepository& trees, ProgressRepository& progress, TokenGenerator& tokens,
-                           Hlc genesis)
-    : trees_(trees), progress_(progress), tokens_(tokens), genesis_(std::move(genesis)) {}
+                           Hlc genesis, RoomRegistry& rooms, Clock& clock)
+    : trees_(trees), progress_(progress), tokens_(tokens), genesis_(std::move(genesis)),
+      rooms_(rooms), clock_(clock) {}
 
 TreeId TreeRegistry::create(const UserId& owner, const TreeData& initial) {
   TreeId id{"t_" + tokens_.mint().digest.substr(0, 16)};  // server-minted, unguessable, URL-safe
@@ -50,6 +52,36 @@ TreeRegistry::Removal TreeRegistry::remove(const TreeId& tree, const UserId& cal
   if (!stored->owner || *stored->owner != caller) return Removal::notOwner;
   trees_.softDelete(tree);
   return Removal::deleted;
+}
+
+TreeRegistry::Renaming TreeRegistry::rename(const TreeId& tree, const UserId& caller,
+                                            const std::string& title) {
+  const std::size_t start = title.find_first_not_of(" \t\r\n");
+  if (start == std::string::npos) return Renaming::blankTitle;
+  std::string trimmed = title.substr(start, title.find_last_not_of(" \t\r\n") - start + 1);
+
+  // A name, not a payload: an 8MB body would otherwise ride every broadcast, save, and
+  // listing. Truncate — never reject — to 200 characters, counted as UTF-8 codepoints so
+  // the cut can never split a sequence.
+  constexpr std::size_t kMaxTitleChars = 200;
+  std::size_t seen = 0;
+  for (std::size_t i = 0; i < trimmed.size(); ++i) {
+    if ((static_cast<unsigned char>(trimmed[i]) & 0xC0) == 0x80) continue;  // continuation byte
+    if (seen == kMaxTitleChars) {
+      trimmed.resize(i);
+      break;
+    }
+    ++seen;
+  }
+
+  // The strand serializes the rename against the tree's socket frames, so the owner check,
+  // the room's title op, and its persist form one uninterrupted step.
+  std::lock_guard<std::mutex> strand(rooms_.strandFor(tree));
+  std::optional<StoredTree> stored = trees_.load(tree);
+  if (!stored) return Renaming::notFound;
+  if (!stored->owner || *stored->owner != caller) return Renaming::notOwner;
+  rooms_.rename(tree, trimmed, clock_.nowMs(), stored->title.stamp);
+  return Renaming::renamed;
 }
 
 }

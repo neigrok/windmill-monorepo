@@ -106,7 +106,16 @@ void HttpApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
       if (!data.kinds.empty()) legend = Legend(data.kinds, genesis_).exportState();
       else if (existing) legend = existing->legend;
       else legend = Legend::seededDefaults(genesis_).exportState();
-      trees_->save(TreeId{treeId}, state, legend, data.title, head);
+      // The posted document is the new baseline, title included. A brand-new tree's title
+      // starts stampless (the create-time baseline); an overwrite mints past the stored
+      // register so it clears the repository's LWW guard — an overwrite means what it says.
+      Lww<std::string> title{data.title, Hlc{}};
+      if (existing) {
+        HlcClock mint{std::string{TreeRoom::kServerActor}};
+        mint.observe(existing->title.stamp);
+        title.stamp = mint.tick(0);
+      }
+      trees_->save(TreeId{treeId}, state, legend, title, head);
       trees_->claim(TreeId{treeId}, *caller);  // first writer becomes the owner
     }
   }

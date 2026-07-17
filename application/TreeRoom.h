@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/Command.h"
+#include "domain/Crdt.h"
 #include "domain/Ids.h"
 #include "domain/Legend.h"
 #include "domain/LooseGraph.h"
@@ -13,6 +14,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace wm {
@@ -22,16 +24,26 @@ namespace wm {
 // seq, and broadcasts. Validity is a separate read model (diagnose()).
 class TreeRoom {
 public:
-  TreeRoom(TreeId id, std::string title, LooseGraph graph, Legend legend, Seq head,
+  // The actor that stamps every server-minted write. Authorship lives in AppliedOp.actor;
+  // the HLC actor only breaks ties and keys the version vector, so one stable server
+  // identity is exactly right. (A multi-instance deploy would qualify it per instance.)
+  static constexpr std::string_view kServerActor{"srv"};
+
+  TreeRoom(TreeId id, Lww<std::string> title, LooseGraph graph, Legend legend, Seq head,
            std::optional<UserId> owner, OpLog& ops, PresenceBus& bus);
 
   // Join a client-authored subgraph frame: dedupe on its frameId, fold its stamps into the
-  // clock (so a later server mint stays ahead), join its graph + legend into the lattice,
-  // assign the next seq, log its headline deed for the activity feed under `actor`, and
-  // broadcast it verbatim. Returns the assigned seq, or nullopt if the frame was a duplicate.
-  // No inverse is computed — undo is client-owned in the subgraph model. The server never
-  // re-stamps the client's writes; it joins them as they are.
+  // clock (so a later server mint stays ahead), join its graph + legend + title register
+  // into the lattice, assign the next seq, log its headline deed for the activity feed under
+  // `actor`, and broadcast it verbatim. Returns the assigned seq, or nullopt if the frame was
+  // a duplicate. No inverse is computed — undo is client-owned in the subgraph model. The
+  // server never re-stamps the client's writes; it joins them as they are.
   std::optional<Seq> joinSubgraph(const Subgraph& incoming, const UserId& actor);
+
+  // Server-origin rename: stamp a title register write from the room clock and join it as
+  // one title-only frame — so it broadcasts to every live subscriber and LWW-merges against
+  // any concurrent client rename, exactly like every other field write. Returns the seq.
+  Seq rename(const std::string& title, std::uint64_t nowMs);
 
   // Server-origin edit (MCP tools, where the server is the author): stamp the command from
   // the room clock, apply it, log it for the activity feed, and broadcast the writes it
@@ -77,7 +89,9 @@ public:
   // Works on any graph, clean or not; empty if the node is absent.
   std::vector<NodeId> prerequisitesOf(const NodeId& node) const;
   bool hasNode(const NodeId& node) const;  // present (created, not tombstoned) — gates progress writes
-  const std::string& title() const { return title_; }
+  // The title register: its value, plus the stamp of the rename that set it (unset means
+  // the create-time baseline — the tree was never renamed).
+  const Lww<std::string>& title() const { return title_; }
   Seq head() const { return head_; }
 
   // Authorization: who owns this tree (empty until claimed), and the first-writer claim
@@ -89,7 +103,7 @@ private:
   void markDirty(const GraphState& graph, const LegendState& legend);
 
   TreeId id_;
-  std::string title_;
+  Lww<std::string> title_;  // the title register, stamp persisted with the tree row
   LooseGraph graph_;
   Legend legend_;
   Seq head_;

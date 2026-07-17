@@ -51,7 +51,7 @@ void RoomRegistry::persist(const TreeId& id) {
   TreeRoom* room = nullptr;
   GraphState state;
   LegendState legend;
-  std::string title;
+  Lww<std::string> title;
   Seq head = 0;
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -66,6 +66,24 @@ void RoomRegistry::persist(const TreeId& id) {
   // take new writes nor be evicted between the export above and the markClean below.
   repo_.save(id, state, legend, title, head);
   room->markClean();
+}
+
+void RoomRegistry::rename(const TreeId& id, const std::string& title, std::uint64_t nowMs,
+                          const Hlc& persistedStamp) {
+  TreeRoom* room = nullptr;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = rooms_.find(id);
+    if (it != rooms_.end()) room = it->second.get();
+  }
+  if (!room) {
+    HlcClock clock{std::string{TreeRoom::kServerActor}};
+    clock.observe(persistedStamp);  // the receive rule: the mint always dominates the row
+    repo_.rename(id, Lww<std::string>{title, clock.tick(nowMs)});
+    return;
+  }
+  room->rename(title, nowMs);  // joins + broadcasts under the caller-held strand
+  persist(id);                 // durable before the response, like the socket's ack
 }
 
 void RoomRegistry::claim(const TreeId& id, const UserId& owner) {

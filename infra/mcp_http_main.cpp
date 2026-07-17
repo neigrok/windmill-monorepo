@@ -81,8 +81,8 @@ int main() {
   auto progress = std::make_shared<ProgressService>(*progressRepo);
   auto registryTokens = std::make_shared<OpenSslTokenGenerator>();
   const Hlc genesis{1, 0, "genesis"};
-  auto treeRegistry = std::make_shared<TreeRegistry>(*trees, *progressRepo, *registryTokens, genesis);
   auto clock = std::make_shared<SystemClock>();
+  auto treeRegistry = std::make_shared<TreeRegistry>(*trees, *progressRepo, *registryTokens, genesis, *registry, *clock);
   auto tools = std::make_shared<RoadmapTools>(*registry, *progress, *clock, *treeRegistry, *bus);
 
   // The resource server validates per-user OAuth access tokens (issued by the API host); the

@@ -4,18 +4,17 @@
 
 namespace wm {
 
-// The actor that stamps every server-minted write. Authorship lives in AppliedOp.actor; the
-// HLC actor only breaks ties and keys the version vector, so one stable server identity is
-// exactly right. (A multi-instance deploy would qualify it per instance.)
-TreeRoom::TreeRoom(TreeId id, std::string title, LooseGraph graph, Legend legend, Seq head,
+TreeRoom::TreeRoom(TreeId id, Lww<std::string> title, LooseGraph graph, Legend legend, Seq head,
                    std::optional<UserId> owner, OpLog& ops, PresenceBus& bus)
     : id_(std::move(id)), title_(std::move(title)), graph_(std::move(graph)), legend_(std::move(legend)),
-      head_(head), owner_(std::move(owner)), ops_(ops), bus_(bus), clock_("srv") {
-  // Fold every stamp the loaded document already carries, so a fresh mint after restart is
-  // always ahead of anything persisted — the receive rule, applied at load.
+      head_(head), owner_(std::move(owner)), ops_(ops), bus_(bus), clock_(std::string{kServerActor}) {
+  // Fold every stamp the loaded document already carries — the graph frontier and the title
+  // register — so a fresh mint after restart is always ahead of anything persisted: the
+  // receive rule, applied at load.
   for (const auto& [actor, mark] : frontier(graph_.exportState(), legend_.exportState()).marks) {
     clock_.observe(mark);
   }
+  clock_.observe(title_.stamp);
 }
 
 Hlc TreeRoom::nextStamp(std::uint64_t nowMs) {
@@ -30,6 +29,11 @@ std::optional<Seq> TreeRoom::joinSubgraph(const Subgraph& incoming, const UserId
     clock_.observe(mark);
     if (stamp < mark) stamp = mark;  // the frame's causal position, for the feed op
   }
+  if (incoming.title) {
+    clock_.observe(incoming.title->stamp);
+    if (stamp < incoming.title->stamp) stamp = incoming.title->stamp;
+    title_.merge(incoming.title->value, incoming.title->stamp);  // the title joins the lattice
+  }
   graph_.join(incoming.graph);
   legend_.join(incoming.legend);
   markDirty(incoming.graph, incoming.legend);
@@ -41,6 +45,17 @@ std::optional<Seq> TreeRoom::joinSubgraph(const Subgraph& incoming, const UserId
     ops_.append(id_, AppliedOp{head_, incoming.frameId, *deed, stamp, actor});
   bus_.broadcastSubgraph(id_, head_, incoming);
   return head_;
+}
+
+Seq TreeRoom::rename(const std::string& title, std::uint64_t nowMs) {
+  Hlc stamp = clock_.tick(nowMs);
+  Subgraph frame;
+  frame.treeId = id_;
+  frame.frameId = "srv-rename-" + toString(stamp);
+  frame.actor = stamp.actor;
+  frame.intent = SubgraphIntent::live;
+  frame.title = Lww<std::string>{title, stamp};
+  return joinSubgraph(frame, UserId{stamp.actor}).value_or(head_);
 }
 
 Seq TreeRoom::applyCommand(const Command& command, std::uint64_t nowMs, const UserId& actor) {
@@ -117,7 +132,7 @@ TreeDiagnostics TreeRoom::diagnose() const {
 }
 
 TreeData TreeRoom::snapshot() const {
-  TreeData data = graph_.toTreeData(id_, title_);
+  TreeData data = graph_.toTreeData(id_, title_.value);
   data.kinds = legend_.kinds();
   return data;
 }

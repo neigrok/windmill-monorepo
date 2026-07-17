@@ -25,7 +25,7 @@ ForkService::Result ForkService::fork(const TreeId& source, const std::string& r
       data = room.snapshot();
       state = room.exportState();
       legend = room.exportLegend();
-      title = room.title();
+      title = room.title().value;
     } catch (const std::exception&) {
       return {Outcome::noSource, {}};
     }
@@ -57,7 +57,7 @@ std::optional<ForkService::Description> ForkService::describe(const TreeId& sour
   std::lock_guard<std::mutex> lock(registry_.strandFor(source));
   try {
     TreeRoom& room = registry_.open(source);
-    return Description{room.title(), room.snapshot().nodes.size()};
+    return Description{room.title().value, room.snapshot().nodes.size()};
   } catch (const std::exception&) {
     return std::nullopt;
   }

@@ -34,7 +34,7 @@ struct Harness {
     root.status = "complete";  // authoring seed — a fork must start unlit
     data.nodes = {root, leaf};
     GraphState state = LooseGraph(data, Hlc{1, 0, "seed"}).exportState();
-    trees.byId[id] = StoredTree{state, LegendState{}, title, 0, uid("owner")};
+    trees.byId[id] = StoredTree{state, LegendState{}, {title, {}}, 0, uid("owner")};
   }
 };
 }
@@ -90,7 +90,7 @@ TEST(fork_reports_a_conflict_when_the_requested_id_is_taken) {
 
   ForkService::Result result = h.service.fork(TreeId{"t_src"}, "t_taken", "", uid("me"));
   CHECK(result.outcome == ForkService::Outcome::conflict);
-  CHECK_EQ(h.trees.byId["t_taken"].title, std::string("Already here"));  // untouched
+  CHECK_EQ(h.trees.byId["t_taken"].title.value, std::string("Already here"));  // untouched
   CHECK(h.trees.forkedFrom.count("t_taken") == 0);
 }
 

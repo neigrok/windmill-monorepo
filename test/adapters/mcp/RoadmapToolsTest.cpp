@@ -29,12 +29,12 @@ struct Harness {
   FakeTokens tokens;
   RoomRegistry registry{trees, ops, bus};
   ProgressService progress{progressRepo};
-  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}};
+  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
   UserId caller = uid("agent");
   RoadmapTools tools{registry, progress, clock, treeRegistry, bus};
 
   Harness() {
-    trees.byId["t"] = StoredTree{LooseGraph().exportState(), LegendState{}, "Test Roadmap", 0, caller};
+    trees.byId["t"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Test Roadmap", {}}, 0, caller};
   }
 
   ToolResult call(const char* name, Json::Value args) {
@@ -290,7 +290,7 @@ TEST(mcp_delete_tree_soft_deletes_and_drops_it_from_the_list) {
 
 TEST(mcp_delete_tree_refuses_a_tree_you_dont_own_and_an_unknown_one) {
   Harness h;
-  h.trees.byId["other"] = StoredTree{LooseGraph().exportState(), LegendState{}, "Other", 0, uid("someone")};
+  h.trees.byId["other"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Other", {}}, 0, uid("someone")};
 
   CHECK(h.tools.callTool("delete_tree", with("treeId", "other"), h.caller).isError);  // not the owner
   CHECK(h.tools.callTool("delete_tree", with("treeId", "ghost"), h.caller).isError);  // no such tree

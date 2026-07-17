@@ -25,6 +25,13 @@ public:
   void claim(const TreeId& id, const UserId& owner);  // first-writer ownership, durable + in-room
   bool isOpen(const TreeId& id) const;
 
+  // Retitle, room-coherently: a live room takes the op through its lattice — stamped from
+  // the room clock, broadcast to every subscriber, then persisted. A closed tree has no
+  // live lattice, so the write goes straight to the column, stamped past `persistedStamp`
+  // (the register the caller just loaded) by the receive rule — so it always dominates the
+  // stored title and clears the repository's LWW guard. Caller holds the strand.
+  void rename(const TreeId& id, const std::string& title, std::uint64_t nowMs, const Hlc& persistedStamp);
+
   // The per-tree strand: one writer per tree (§11). Every caller that touches a room —
   // socket commands, HTTP reads, eviction — must hold this while doing so. Striped over a
   // fixed lock array (not a per-id map) so an attacker naming endless tree ids can't grow

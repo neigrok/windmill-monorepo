@@ -58,6 +58,33 @@ void TreeRegistryApi::listTrees(const drogon::HttpRequestPtr& req, HttpCallback&
   callback(jsonResponse(body));
 }
 
+void TreeRegistryApi::renameTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback,
+                                 const std::string& treeId) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    callback(error(drogon::k401Unauthorized, "sign in to rename a tree"));
+    return;
+  }
+  std::shared_ptr<Json::Value> json = req->getJsonObject();
+  const std::string title = json ? json->get("title", "").asString() : "";
+  TreeRegistry::Renaming outcome = registry_->rename(TreeId{treeId}, *caller, title);
+  if (outcome == TreeRegistry::Renaming::blankTitle) {
+    callback(error(drogon::k400BadRequest, "a tree always has a name"));
+    return;
+  }
+  if (outcome == TreeRegistry::Renaming::notFound) {
+    callback(error(drogon::k404NotFound, "no such tree"));
+    return;
+  }
+  if (outcome == TreeRegistry::Renaming::notOwner) {
+    callback(error(drogon::k403Forbidden, "this tree belongs to another account"));
+    return;
+  }
+  auto response = drogon::HttpResponse::newHttpResponse();
+  response->setStatusCode(drogon::k204NoContent);
+  callback(response);
+}
+
 void TreeRegistryApi::deleteTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback,
                                  const std::string& treeId) {
   std::optional<UserId> caller = callerOf(req, *auth_);

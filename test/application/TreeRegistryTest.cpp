@@ -1,6 +1,8 @@
 #include "application/TreeRegistry.h"
 
+#include "application/RoomRegistry.h"
 #include "domain/LooseGraph.h"
+#include "domain/Subgraph.h"
 #include "test/application/AuthFakes.h"
 #include "test/application/Fakes.h"
 #include "test/testing.h"
@@ -10,6 +12,19 @@
 
 using namespace wm;
 using namespace wm::fake;
+
+// The registry with its collaborators: fake repos underneath, a real RoomRegistry so the
+// rename tests exercise the live-room seam exactly as production does.
+struct Setup {
+  FakeTreeRepository trees;
+  FakeProgressRepository progress;
+  FakeTokens tokens;
+  FakeOpLog ops;
+  FakeBus bus;
+  FakeClock clock;
+  RoomRegistry rooms{trees, ops, bus};
+  TreeRegistry registry{trees, progress, tokens, Hlc{1, 0, "genesis"}, rooms, clock};
+};
 
 static NodeSpec spec(const char* id, NodeColor color, std::vector<NodeId> prereqs = {}) {
   NodeSpec node;
@@ -34,23 +49,20 @@ static void seed(FakeTreeRepository& trees, const char* id, const UserId& owner,
   data.title = id;
   data.nodes = std::move(nodes);
   GraphState state = LooseGraph(data, Hlc{1, 0, "seed"}).exportState();
-  trees.byId[id] = StoredTree{state, LegendState{}, data.title, 0, owner};
+  trees.byId[id] = StoredTree{state, LegendState{}, {data.title, {}}, 0, owner};
   trees.updatedAt[id] = updatedAt;
 }
 
 TEST(create_plants_an_owned_empty_tree_that_shows_up_in_the_list) {
-  FakeTreeRepository trees;
-  FakeProgressRepository progress;
-  FakeTokens tokens;
+  Setup s;
   UserId me = uid("me");
-  TreeRegistry registry(trees, progress, tokens, Hlc{1, 0, "genesis"});
 
-  TreeId first = registry.create(me, treeData("Kitchen garden", {}));
-  TreeId second = registry.create(me, treeData("", {}));
+  TreeId first = s.registry.create(me, treeData("Kitchen garden", {}));
+  TreeId second = s.registry.create(me, treeData("", {}));
   CHECK_FALSE(first.empty());
   CHECK_FALSE(second == first);  // each plant mints a distinct id
 
-  std::vector<TreeSummary> rows = registry.list(me);
+  std::vector<TreeSummary> rows = s.registry.list(me);
   CHECK_EQ(rows.size(), 2u);
   bool found = false;
   for (const TreeSummary& row : rows) {
@@ -64,16 +76,13 @@ TEST(create_plants_an_owned_empty_tree_that_shows_up_in_the_list) {
 }
 
 TEST(create_accepts_an_initial_tree_document) {
-  FakeTreeRepository trees;
-  FakeProgressRepository progress;
-  FakeTokens tokens;
+  Setup s;
   UserId me = uid("me");
-  TreeRegistry registry(trees, progress, tokens, Hlc{1, 0, "genesis"});
 
-  TreeId id = registry.create(me, treeData("Frontend",
+  TreeId id = s.registry.create(me, treeData("Frontend",
       {spec("html", NodeColor::olive), spec("css", NodeColor::olive, {nid("html")})}));
 
-  std::vector<TreeSummary> rows = registry.list(me);
+  std::vector<TreeSummary> rows = s.registry.list(me);
   CHECK_EQ(rows.size(), 1u);
   CHECK_EQ(rows[0].id, id);
   CHECK_EQ(rows[0].title, std::string("Frontend"));
@@ -82,17 +91,14 @@ TEST(create_accepts_an_initial_tree_document) {
 }
 
 TEST(list_orders_owned_trees_newest_first_and_excludes_other_owners) {
-  FakeTreeRepository trees;
-  FakeProgressRepository progress;
-  FakeTokens tokens;
+  Setup s;
   UserId me = uid("me");
-  seed(trees, "old", me, 100, {spec("a", NodeColor::olive), spec("b", NodeColor::olive)});
-  seed(trees, "fresh", me, 300, {spec("x", NodeColor::sky)});
-  seed(trees, "notmine", uid("other"), 999, {spec("z", NodeColor::gold)});
-  progress.setStatus(tid("old"), me, nid("a"), ProgressStatus::complete, at(150, "me"));
+  seed(s.trees, "old", me, 100, {spec("a", NodeColor::olive), spec("b", NodeColor::olive)});
+  seed(s.trees, "fresh", me, 300, {spec("x", NodeColor::sky)});
+  seed(s.trees, "notmine", uid("other"), 999, {spec("z", NodeColor::gold)});
+  s.progress.setStatus(tid("old"), me, nid("a"), ProgressStatus::complete, at(150, "me"));
 
-  TreeRegistry registry(trees, progress, tokens, Hlc{1, 0, "genesis"});
-  std::vector<TreeSummary> rows = registry.list(me);
+  std::vector<TreeSummary> rows = s.registry.list(me);
 
   CHECK_EQ(rows.size(), 2u);
   CHECK_EQ(rows[0].id, TreeId{std::string("fresh")});
@@ -108,26 +114,166 @@ TEST(list_orders_owned_trees_newest_first_and_excludes_other_owners) {
 }
 
 TEST(remove_soft_deletes_an_owned_tree_and_it_leaves_the_list) {
-  FakeTreeRepository trees;
-  FakeProgressRepository progress;
-  FakeTokens tokens;
+  Setup s;
   UserId me = uid("me");
-  seed(trees, "t", me, 100, {spec("a", NodeColor::sky)});
-  TreeRegistry registry(trees, progress, tokens, Hlc{1, 0, "genesis"});
+  seed(s.trees, "t", me, 100, {spec("a", NodeColor::sky)});
 
-  CHECK_EQ(registry.list(me).size(), 1u);
-  CHECK(registry.remove(tid("t"), me) == TreeRegistry::Removal::deleted);
-  CHECK_EQ(registry.list(me).size(), 0u);
+  CHECK_EQ(s.registry.list(me).size(), 1u);
+  CHECK(s.registry.remove(tid("t"), me) == TreeRegistry::Removal::deleted);
+  CHECK_EQ(s.registry.list(me).size(), 0u);
 }
 
 TEST(remove_refuses_a_non_owner_and_an_unknown_tree) {
-  FakeTreeRepository trees;
-  FakeProgressRepository progress;
-  FakeTokens tokens;
-  seed(trees, "t", uid("owner"), 100, {spec("a", NodeColor::sky)});
-  TreeRegistry registry(trees, progress, tokens, Hlc{1, 0, "genesis"});
+  Setup s;
+  seed(s.trees, "t", uid("owner"), 100, {spec("a", NodeColor::sky)});
 
-  CHECK(registry.remove(tid("t"), uid("intruder")) == TreeRegistry::Removal::notOwner);
-  CHECK(registry.remove(tid("ghost"), uid("owner")) == TreeRegistry::Removal::notFound);
-  CHECK_EQ(registry.list(uid("owner")).size(), 1u);  // the refusal left it intact
+  CHECK(s.registry.remove(tid("t"), uid("intruder")) == TreeRegistry::Removal::notOwner);
+  CHECK(s.registry.remove(tid("ghost"), uid("owner")) == TreeRegistry::Removal::notFound);
+  CHECK_EQ(s.registry.list(uid("owner")).size(), 1u);  // the refusal left it intact
+}
+
+TEST(rename_retitles_an_owned_tree_trimmed_and_the_list_shows_it) {
+  Setup s;
+  UserId me = uid("me");
+  seed(s.trees, "t", me, 100, {spec("a", NodeColor::sky)});
+
+  CHECK(s.registry.rename(tid("t"), me, "  Autumn plans  ") == TreeRegistry::Renaming::renamed);
+
+  // A closed tree takes the column write, freshly stamped past the (unset) stored register.
+  CHECK(s.trees.byId["t"].title == (Lww<std::string>{"Autumn plans", Hlc{1'700'000'000'000, 0, "srv"}}));
+  std::vector<TreeSummary> rows = s.registry.list(me);
+  CHECK_EQ(rows.size(), 1u);
+  CHECK_EQ(rows[0].title, std::string("Autumn plans"));
+  CHECK_EQ(s.bus.subgraphBroadcasts.size(), 0u);  // no room was live — nothing to broadcast
+}
+
+TEST(rename_refuses_a_non_owner_and_an_unknown_tree) {
+  Setup s;
+  seed(s.trees, "t", uid("owner"), 100, {spec("a", NodeColor::sky)});
+
+  CHECK(s.registry.rename(tid("t"), uid("intruder"), "Mine now") == TreeRegistry::Renaming::notOwner);
+  CHECK(s.registry.rename(tid("ghost"), uid("owner"), "Anything") == TreeRegistry::Renaming::notFound);
+  CHECK_EQ(s.trees.byId["t"].title.value, std::string("t"));  // the refusals left the name alone
+}
+
+TEST(rename_refuses_a_blank_title_because_a_tree_always_has_a_name) {
+  Setup s;
+  UserId me = uid("me");
+  seed(s.trees, "t", me, 100, {spec("a", NodeColor::sky)});
+
+  CHECK(s.registry.rename(tid("t"), me, "") == TreeRegistry::Renaming::blankTitle);
+  CHECK(s.registry.rename(tid("t"), me, "   \t\n") == TreeRegistry::Renaming::blankTitle);
+  CHECK_EQ(s.trees.byId["t"].title.value, std::string("t"));
+}
+
+TEST(rename_truncates_a_marathon_title_to_two_hundred_characters) {
+  Setup s;
+  UserId me = uid("me");
+  seed(s.trees, "t", me, 100, {spec("a", NodeColor::sky)});
+
+  CHECK(s.registry.rename(tid("t"), me, "  " + std::string(5000, 'x') + "  ") == TreeRegistry::Renaming::renamed);
+  CHECK_EQ(s.trees.byId["t"].title.value, std::string(200, 'x'));
+
+  std::string accented;  // 300 two-byte codepoints: the cap counts characters, not bytes
+  for (int i = 0; i < 300; ++i) accented += "é";
+  CHECK(s.registry.rename(tid("t"), me, accented) == TreeRegistry::Renaming::renamed);
+  std::string expected;
+  for (int i = 0; i < 200; ++i) expected += "é";
+  CHECK_EQ(s.trees.byId["t"].title.value, expected);
+}
+
+TEST(rename_of_a_live_tree_flows_through_the_room_and_reaches_subscribers) {
+  Setup s;
+  UserId me = uid("me");
+  seed(s.trees, "t", me, 100, {spec("a", NodeColor::sky)});
+  TreeRoom& room = s.rooms.open(tid("t"));
+
+  CHECK(s.registry.rename(tid("t"), me, "Second wind") == TreeRegistry::Renaming::renamed);
+
+  const Lww<std::string> renamed{"Second wind", Hlc{1'700'000'000'000, 0, "srv"}};
+  CHECK(room.title() == renamed);             // the live room followed, stamped by its clock
+  CHECK(s.trees.byId["t"].title == renamed);  // persisted through the room's save, stamp included
+  CHECK_EQ(s.bus.subgraphBroadcasts.size(), 1u);
+  const FakeBus::SubgraphBroadcast& broadcast = s.bus.subgraphBroadcasts[0];
+  CHECK_EQ(broadcast.tree, std::string("t"));
+  CHECK_EQ(broadcast.seq, room.head());  // a title frame takes a seq like any joined frame
+  CHECK(broadcast.subgraph.title.has_value());
+  CHECK(*broadcast.subgraph.title == renamed);
+  CHECK(broadcast.subgraph.graph.nodes.empty());  // a title-only frame carries no graph
+  CHECK(broadcast.subgraph.legend.kinds.empty());
+}
+
+TEST(a_joined_frame_carrying_a_title_register_renames_by_last_writer_wins) {
+  Setup s;
+  UserId me = uid("me");
+  seed(s.trees, "t", me, 100, {spec("a", NodeColor::sky)});
+  TreeRoom& room = s.rooms.open(tid("t"));
+
+  Subgraph fresh;
+  fresh.treeId = tid("t");
+  fresh.frameId = "f-fresh";
+  fresh.actor = "r_a";
+  fresh.title = Lww<std::string>{"Client name", Hlc{2000, 0, "r_a"}};
+  room.joinSubgraph(fresh, me);
+  CHECK(room.title() == (Lww<std::string>{"Client name", Hlc{2000, 0, "r_a"}}));
+
+  Subgraph stale;
+  stale.treeId = tid("t");
+  stale.frameId = "f-stale";
+  stale.actor = "r_b";
+  stale.title = Lww<std::string>{"Older name", Hlc{1500, 0, "r_b"}};
+  room.joinSubgraph(stale, me);
+  CHECK(room.title() == (Lww<std::string>{"Client name", Hlc{2000, 0, "r_a"}}));  // the earlier stamp lost
+}
+
+TEST(a_renames_stamp_survives_eviction_and_an_older_stamped_write_after_reload_loses) {
+  Setup s;
+  UserId me = uid("me");
+  seed(s.trees, "t", me, 100, {spec("a", NodeColor::sky)});
+  s.rooms.open(tid("t"));
+  CHECK(s.registry.rename(tid("t"), me, "Renamed live") == TreeRegistry::Renaming::renamed);
+  const Lww<std::string> renamed{"Renamed live", Hlc{1'700'000'000'000, 0, "srv"}};
+  CHECK(s.trees.byId["t"].title == renamed);
+
+  s.rooms.evict(tid("t"));
+  CHECK_FALSE(s.rooms.isOpen(tid("t")));
+  CHECK(s.trees.byId["t"].title == renamed);  // the stamp rode the flush, not just the value
+
+  TreeRoom& reloaded = s.rooms.open(tid("t"));
+  CHECK(reloaded.title() == renamed);  // the register is seeded from the persisted stamp
+
+  Subgraph stale;  // the F2 replay: an older-stamped rename arriving only after the restart
+  stale.treeId = tid("t");
+  stale.frameId = "f-stale";
+  stale.actor = "r_b";
+  stale.title = Lww<std::string>{"Older name", Hlc{1'699'999'999'000, 0, "r_b"}};
+  reloaded.joinSubgraph(stale, me);
+  CHECK(reloaded.title() == renamed);  // LWW held across the restart — not arrival order
+  s.rooms.persist(tid("t"));
+  CHECK(s.trees.byId["t"].title == renamed);
+
+  // And the reloaded clock stands on the persisted stamp: with wall time frozen at the same
+  // millisecond, a fresh rename still mints strictly past the old register (counter bumps).
+  CHECK(s.registry.rename(tid("t"), me, "Renamed again") == TreeRegistry::Renaming::renamed);
+  CHECK(reloaded.title() == (Lww<std::string>{"Renamed again", Hlc{1'700'000'000'000, 1, "srv"}}));
+  CHECK(s.trees.byId["t"].title == (Lww<std::string>{"Renamed again", Hlc{1'700'000'000'000, 1, "srv"}}));
+}
+
+TEST(a_stale_rooms_save_cannot_revert_a_newer_persisted_rename) {
+  Setup s;
+  UserId me = uid("me");
+  seed(s.trees, "t", me, 100, {spec("a", NodeColor::sky)});
+  s.rooms.open(tid("t"));
+  CHECK(s.registry.rename(tid("t"), me, "First name") == TreeRegistry::Renaming::renamed);
+
+  // A second process renames behind this room's back: the stored register is now newer than
+  // the room's cache. The F1 guard — in production the SQL conditional on the trees row in
+  // PgTreeRepository, mirrored by the fake — must let the flush land everything but the title.
+  const Lww<std::string> newer{"Newer name", Hlc{1'700'000'060'000, 0, "srv"}};
+  s.trees.byId["t"].title = newer;
+
+  s.rooms.persist(tid("t"));  // the stale cache flushes its title alongside its slice
+
+  CHECK(s.trees.byId["t"].title == newer);                 // the newer rename survived
+  CHECK_EQ(s.trees.byId["t"].head, static_cast<Seq>(1));   // the rest of the save still landed
 }

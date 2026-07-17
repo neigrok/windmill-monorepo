@@ -86,8 +86,9 @@ int main() {
 
   auto api = std::make_shared<HttpApi>(registry, trees, progress, oplog, genesis, authService, forkService);
 
-  // The per-user tree registry (create + list + delete): a repo-direct read model, not through the room.
-  auto treeRegistry = std::make_shared<TreeRegistry>(*trees, *progress, *tokens, genesis);
+  // The per-user tree registry (create + list + rename + delete). Reads are repo-direct;
+  // rename goes through RoomRegistry so a live room's title stays coherent with the column.
+  auto treeRegistry = std::make_shared<TreeRegistry>(*trees, *progress, *tokens, genesis, *registry, *systemClock);
   auto registryApi = std::make_shared<TreeRegistryApi>(treeRegistry, authService);
 
   // Funnel telemetry (event-spine): ghosts and signed-in users alike beacon here; the
@@ -175,7 +176,7 @@ int main() {
     auto resp = drogon::HttpResponse::newHttpResponse();
     resp->setStatusCode(drogon::k204NoContent);
     writeCors(req, resp);
-    resp->addHeader("Access-Control-Allow-Methods", "GET, PUT, POST, DELETE, OPTIONS");
+    resp->addHeader("Access-Control-Allow-Methods", "GET, PUT, PATCH, POST, DELETE, OPTIONS");
     resp->addHeader("Access-Control-Allow-Headers", "content-type, authorization");
     resp->addHeader("Access-Control-Max-Age", "600");
     return resp;
@@ -299,6 +300,12 @@ int main() {
         registryApi->listTrees(req, std::move(cb));
       },
       {drogon::Get});
+  app.registerHandler(
+      "/v1/trees/{id}",
+      [registryApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        registryApi->renameTree(req, std::move(cb), id);
+      },
+      {drogon::Patch});
   app.registerHandler(
       "/v1/trees/{id}",
       [registryApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
