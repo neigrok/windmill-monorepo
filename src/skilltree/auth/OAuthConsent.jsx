@@ -179,7 +179,7 @@ function ConsentCard({ user, client, redirectHost, onAllow, onCancel, onNotYou }
         <button type="button" className="wm-oc-btn wm-oc-btn--allow" onClick={onAllow}>Allow</button>
       </div>
 
-      {redirectHost && <p style={foot}>Allowing sends you back to {redirectHost}. Only grant access to tools you trust — revoking access arrives with account settings.</p>}
+      {redirectHost && <p style={foot}>Allowing sends you back to {redirectHost}. Only grant access to tools you trust — disconnect anytime in account settings.</p>}
     </Card>
   );
 }

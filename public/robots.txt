@@ -1,8 +1,9 @@
 # https://windmill.works/robots.txt
-# Windmill is a single-page app plus a few static pages (privacy, terms,
-# changelog). Hash routes (#/app, #/t/:id, #/showcase, #/welcome) are URL
-# fragments, never sent to the server, so there is nothing per-route to
-# allow or block.
+# Windmill is a single-page app plus a few static pages (connect, privacy,
+# terms, changelog). connect.html is the crawlable MCP works-with page; the
+# interactive workbench lives at the #/connect hash route. Hash routes
+# (#/app, #/t/:id, #/connect, #/showcase, #/welcome) are URL fragments, never
+# sent to the server, so there is nothing per-route to allow or block.
 
 User-agent: *
 Allow: /

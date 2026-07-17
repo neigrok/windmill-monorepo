@@ -41,11 +41,10 @@ function tendedAgo(updatedAt) {
   return weeks === 1 ? '1 week ago' : `${weeks} weeks ago`;
 }
 
-// The three story-trio glyphs aren't in the app's Icon registry, so they ride as small
-// inline lucide-style SVGs (git-fork, bot, monitor-smartphone).
+// The story-trio glyphs aren't in the app's Icon registry, so they ride as small
+// inline lucide-style SVGs (git-fork, monitor-smartphone).
 const ICONS = {
   'git-fork': <><circle cx="12" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><circle cx="18" cy="6" r="3" /><path d="M18 9v1a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V9" /><path d="M12 12v3" /></>,
-  bot: <><path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2M20 14h2M15 13v2M9 13v2" /></>,
   'monitor-smartphone': <><path d="M18 8V5a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h8" /><path d="M10 19v-3.96 3.15M7 19h5" /><rect width="6" height="10" x="16" y="12" rx="2" /></>,
 };
 function Icon({ name, size = 18 }) {
@@ -63,6 +62,7 @@ function Nav({ status, user, newest, treeCount, linkSent, onLogin, onResumeLink,
       <nav className="navlinks">
         <a href="#how">How it works</a>
         <a href="#paths">Paths</a>
+        <a href="#/connect">Connect</a>
         <a href="/changelog.html">Changelog</a>
       </nav>
       <div style={{ display: 'flex', gap: 10 }}>
@@ -307,17 +307,60 @@ function Paths() {
   );
 }
 
+// The MCP surface as a first-class landing beat (F17). Client names — never invented logos —
+// carry the identity; the five verbs each wear their node hue; the promise replaces any key,
+// and the can't-line draws the trust boundary. Calm copy+layout, no WebGL. CTA → the workbench.
+function AiTools() {
+  const clients = ['Claude Desktop', 'Claude Code', 'Cursor', 'Codex', 'any MCP client'];
+  const verbs = [
+    { label: 'plant a roadmap', kind: 'terracotta' },
+    { label: 'add & connect steps', kind: 'olive' },
+    { label: 'paint with the legend', kind: 'gold' },
+    { label: 'mark progress', kind: 'plum' },
+    { label: 'read roadmaps', kind: 'sky' },
+  ];
+  return (
+    <section className="wrap" style={{ paddingTop: 96 }}>
+      <div className="eyebrow">Build with your AI tools</div>
+      <h2 className="sectionTitle">Your agent tends the tree with you</h2>
+      <p className="sectionSub">Claude, Cursor, or Codex can plant and tend your roadmaps. Pick your tool, paste one snippet — your browser handles the rest.</p>
+      <div className="aiPanel">
+        <div className="aiCol">
+          <div className="aiLabel">Works with</div>
+          <div className="aiClients">
+            {clients.map(c => <span key={c} className="aiClient">{c}</span>)}
+          </div>
+          <p className="aiPromise">First connect opens your browser to approve — no keys to paste.</p>
+          <p className="aiCant">It can’t share roadmaps, delete them, or see your chats.</p>
+          <div className="aiCta">
+            <a href="#/connect"><Button variant="primary" size="lg">Connect your tools</Button></a>
+          </div>
+        </div>
+        <div className="aiCol">
+          <div className="aiLabel">Once connected it can</div>
+          <div className="aiVerbs">
+            {verbs.map(v => (
+              <span key={v.label} className="aiVerb">
+                <i style={{ background: KIND_DOT[v.kind] }} aria-hidden="true" />{v.label}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function Story() {
   const items = [
     { icon: 'git-fork', title: 'Share a tree', copy: 'Every tree is a page. Send the link or post the picture — anyone can fork a copy and grow their own.' },
-    { icon: 'bot', title: 'Build it with your tools', copy: 'Windmill speaks MCP, so Claude, Cursor, or any agent can plant and tend a tree with you.' },
     { icon: 'monitor-smartphone', title: 'Everywhere you are', copy: 'Sign in once and your trees follow — check a step off on your phone, tend the branches at your desk.' },
   ];
   return (
     <section className="wrap" style={{ paddingTop: 96 }}>
       <div className="eyebrow">Why Windmill</div>
       <h2 className="sectionTitle">Made to share, and to sync</h2>
-      <div className="trio" style={{ marginTop: 24 }}>
+      <div className="trio" style={{ marginTop: 24, gridTemplateColumns: 'repeat(2, 1fr)' }}>
         {items.map(it => (
           <div key={it.title} className="trioItem">
             <div className="trioIcon"><Icon name={it.icon} size={22} /></div>
@@ -353,6 +396,7 @@ function Footer() {
         © 2026
       </div>
       <div style={{ display: 'flex', gap: 24, fontSize: 14, fontFamily: 'var(--font-body)' }}>
+        <a href="/connect.html" style={{ color: 'var(--text-tertiary)' }}>Connect your AI tools</a>
         <a href="/privacy.html" style={{ color: 'var(--text-tertiary)' }}>Privacy</a>
         <a href="/terms.html" style={{ color: 'var(--text-tertiary)' }}>Terms</a>
         <a href="/changelog.html" style={{ color: 'var(--text-tertiary)' }}>Changelog</a>
@@ -417,6 +461,7 @@ export default function Marketing() {
         <Hero resume={newest} />
         <HowItWorks />
         <Paths />
+        <AiTools />
         <Story />
         <CtaBand planted={Boolean(newest)} />
       </main>

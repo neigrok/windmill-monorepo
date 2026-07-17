@@ -130,6 +130,25 @@ path.eb { transition: opacity 280ms var(--ease-standard), stroke 280ms var(--eas
 .trioTitle { font-family: var(--font-display); font-weight: 700; font-size: 19px; color: var(--text-primary); margin: 0; }
 .trioCopy { font-family: var(--font-body); font-size: 15px; line-height: 1.5; color: var(--text-secondary); margin: 0; }
 
+/* ---- build with your AI tools (F17) — names carry identity, no logos ---- */
+.aiPanel { margin-top: 40px; background: var(--surface-card); border: 1px solid var(--border-subtle);
+           border-radius: var(--radius-2xl); box-shadow: var(--shadow-sm); padding: 36px 40px;
+           display: grid; grid-template-columns: 1.05fr 1fr; gap: 44px; align-items: start; }
+.aiCol { min-width: 0; }
+.aiLabel { font-family: var(--font-body); font-size: 11px; font-weight: 800; letter-spacing: .07em;
+           text-transform: uppercase; color: var(--text-tertiary); margin: 0 0 14px; }
+.aiClients { display: flex; flex-wrap: wrap; gap: 8px; }
+.aiClient { font-family: var(--font-body); font-size: 14px; font-weight: 700; color: var(--text-secondary);
+            background: var(--surface-canvas); border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-full); padding: 7px 15px; white-space: nowrap; }
+.aiVerbs { display: flex; flex-direction: column; gap: 11px; }
+.aiVerb { display: inline-flex; align-items: center; gap: 11px; font-family: var(--font-body);
+          font-size: 15px; font-weight: 700; color: var(--text-primary); }
+.aiVerb i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.aiPromise { font-family: var(--font-body); font-size: 15px; line-height: 1.55; color: var(--text-secondary); margin: 22px 0 0; }
+.aiCant { font-family: var(--font-body); font-size: 14px; line-height: 1.5; color: var(--text-tertiary); margin: 8px 0 0; }
+.aiCta { margin-top: 24px; }
+
 .ctaBand { background: var(--color-brand-soft); border-radius: var(--radius-2xl); padding: 56px 40px; text-align: center;
            display: flex; flex-direction: column; align-items: center; gap: 8px; }
 
@@ -150,7 +169,8 @@ path.eb { transition: opacity 280ms var(--ease-standard), stroke 280ms var(--eas
   .navlinks { display: none; }
   .beat { flex-direction: column; align-items: stretch; }
   .paths { grid-template-columns: 1fr; }
-  .trio { grid-template-columns: 1fr; gap: 32px; }
+  .trio { grid-template-columns: 1fr !important; gap: 32px; }
+  .aiPanel { grid-template-columns: 1fr; gap: 28px; padding: 28px 24px; }
   .sectionTitle { font-size: 30px; }
   .plq .tn { font-size: 13px; }
   .ctaBand { padding: 40px 24px; }
