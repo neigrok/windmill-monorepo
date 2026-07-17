@@ -99,6 +99,7 @@ jobs:
           ACME_EMAIL: ${{ vars.ACME_EMAIL }}
           MCP_ORIGINS: ${{ vars.WINDMILL_MCP_ALLOWED_ORIGINS }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           WINDMILL_MCP_TOKEN: ${{ secrets.WINDMILL_MCP_TOKEN }}
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -107,7 +108,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           port: ${{ secrets.SSH_PORT }}
           key: ${{ secrets.SSH_KEY }}
-          envs: IMAGE_TAG,POSTGRES_PASSWORD,DOMAIN_API,DOMAIN_APP,ACME_EMAIL,MCP_ORIGINS,RESEND_API_KEY,WINDMILL_MCP_TOKEN,GHCR_USER,GHCR_TOKEN,CF_IPS_CSV
+          envs: IMAGE_TAG,POSTGRES_PASSWORD,DOMAIN_API,DOMAIN_APP,ACME_EMAIL,MCP_ORIGINS,RESEND_API_KEY,ANTHROPIC_API_KEY,WINDMILL_MCP_TOKEN,GHCR_USER,GHCR_TOKEN,CF_IPS_CSV
           script: |
             set -euo pipefail
             cd ~/windmill
@@ -127,6 +128,7 @@ jobs:
             CF_IPS=${CF_IPS}
             WINDMILL_MCP_ALLOWED_ORIGINS=${MCP_ORIGINS}
             RESEND_API_KEY=${RESEND_API_KEY}
+            ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
             WINDMILL_MCP_TOKEN=${WINDMILL_MCP_TOKEN}
             EOF
             echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin

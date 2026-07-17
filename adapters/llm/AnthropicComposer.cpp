@@ -81,7 +81,7 @@ void AnthropicComposer::compose(const std::string& text,
   message["role"] = "user";
   message["content"] = text;
   Json::Value body(Json::objectValue);
-  body["model"] = "claude-haiku-4-5-20251001";
+  body["model"] = "claude-sonnet-5";
   body["max_tokens"] = 2000;
   body["temperature"] = 0;
   body["system"] = kSystemPrompt;
