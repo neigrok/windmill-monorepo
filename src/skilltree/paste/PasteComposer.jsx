@@ -13,7 +13,7 @@ import { API_BASE } from '../apiBase.js';
 
 const PLACEHOLDER = 'Paste anything — a to-do list, an outline, markdown checkboxes.';
 const AI_RESET_MS = 5000;
-const SHAPE_TIMEOUT_MS = 25000;
+const SHAPE_TIMEOUT_MS = 45000;  // the server gives Sonnet 40s; stay behind it, not ahead
 const COMPOSE_TEXT_MAX_BYTES = 10240; // the server's cap — over it the handle never offers
 const AI_COPY = {
   idle: 'Looks like prose — shape it with AI',
