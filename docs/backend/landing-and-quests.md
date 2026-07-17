@@ -9,40 +9,31 @@ quests). Everything else on the page is static or already contracted. These buil
 ## 1. Quest catalog (F5 — the starter paths)
 
 Authored learning trees with real prerequisite logic (ownership gates lifetimes, fundamentals
-gate frameworks). The landing shows four; the copy promises **nine**. Dev paths are adapted from
-the roadmap.sh community maps (CC BY-SA) — carry the attribution in the payload.
+gate frameworks). The landing shows four; the shelf carries **nine**. Dev paths are adapted from
+the roadmap.sh community maps (CC BY-SA) — the shelf carries the attribution.
 
-- **`GET /v1/quests`** — public, no auth. List the catalog for the Paths grid + a quest picker:
-  ```
-  { quests: [ {
-      id: "frontend",
-      title: "Frontend path",
-      readout: "24 steps · ~4 months",   // human string; or { stepCount, etaWeeks } and the client formats
-      kinds: ["terracotta","sky","gold"], // the legend hues, for the card's rule + dots
-      stepCount: 24,
-      tags: ["dev"],
-      source: "roadmap.sh (CC BY-SA)"     // attribution, nullable
-    }, … ] }
-  ```
-- **`GET /v1/quests/:id`** — the full template to preview/plant: the tree structure (nodes with
-  labels, kinds, descriptions, prerequisites) + the F6 legend. Same shape a tree load returns, minus
-  progress. Public.
+**The catalog is client-shipped static content — `/v1/quests` will never be built.** The nine
+quests live in the frontend bundle (`src/skilltree/quests/roster/`, one module per quest:
+structure, legend kinds, descriptions, estimate, attribution), gated by the roster CI test.
+The backend never learns what a quest is: planting one is an ordinary tree create carrying the
+quest's full body, indistinguishable from a paste-import. Seasonal roster review is a frontend
+deploy, not an operator data seed.
 
 ## 2. Create a tree
 
-- **`POST /v1/trees`** — create a roadmap in the caller's registry. Body:
+- **`POST /v1/trees`** — create a roadmap in the caller's registry. Body is the starting
+  `TreeData`:
   ```
-  { fromQuest?: "frontend",   // clone a quest template (structure + legend + descriptions), progress reset
-    title?: "My roadmap",     // for a blank tree
-    blank?: true }            // an empty tree with the default legend (Build/Learn/Milestone, F6)
-  → 200 { treeId }
+  { title?: "My roadmap",     // names it; omit everything for an empty tree with the default legend
+    nodes?: [...], kinds?: [...],  // seed structure + legend (quest plants and paste-imports send these)
+    id?: "t_…" }              // the anon-first claim seam: a client-minted id the server keeps
+  → 200 { treeId, existed }
   ```
   Requires a session (X6 cookie). **Signed out is not an error:** per `auth.md`, "your first tree
-  lives in your browser" — the client creates the tree **locally** when there's no session and
-  claims it on sign-in (the X6 adoption/union). So this endpoint is the signed-in path; the
-  signed-out path is client-only (no call). The magic-link/fork flows already encode "the fork
-  waits server-side behind the link" — creation from a quest while signed-out follows the same
-  claim-on-sign-in rule.
+  lives in your browser" — the client bears the tree **locally** when there's no session (or the
+  server can't answer) and claims it on sign-in (the X6 adoption/union). Quest plants ride the same
+  two roads: signed in, the full quest body goes up as one `POST /v1/trees`; signed out, it's borne
+  locally and claimed later — no quest-specific wire shape anywhere.
 
 ## 3. The playable demo & the hosted share page
 
@@ -57,10 +48,9 @@ The nav links to a Changelog. Either a static page/markdown the frontend renders
 
 ## Notes
 
-- Quest catalog + tree creation both need the **per-user tree registry** (create/list/delete),
-  the same dependency the gallery and fork carry — build it once.
-- The nine starter quests are authored content; treat the catalog as data the operator seeds, not
-  code. Keep quest ids stable (they appear in URLs and the client's local "claim" bookkeeping).
-- Frontend status: the landing ships now with its CTAs pointed at the existing app (`#/` and the
-  read-only `#/t/demo`) and the X6 sign-in door; wiring "Start your tree" to real quest-planting
-  lands when `/v1/quests` + `POST /v1/trees` exist (a small frontend follow-up).
+- Tree creation needs the **per-user tree registry** (create/list/delete), the same dependency
+  the gallery and fork carry — build it once. The quest catalog needs nothing from the backend.
+- The nine starter quests are authored content shipped as frontend modules — keep quest ids
+  stable (they ride telemetry props and the roster gate test).
+- Frontend status: the shelf lives at `#/app/start` (the empty-gallery landing); the marketing
+  Paths section links to it, and every card plants through the two roads above.

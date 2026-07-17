@@ -91,7 +91,7 @@ function AppRoutes() {
   return (
     <Suspense fallback={<RouteFallback />}>
       {route === '#/showcase' ? <Showcase />
-        : isApp ? <SkillTreeApp treeId={target.treeId} birth={target.birth} openSignInSignal={openSignInSignal} />
+        : isApp ? <SkillTreeApp treeId={target.treeId} birth={target.birth} start={target.start} openSignInSignal={openSignInSignal} />
         : <Marketing />}
     </Suspense>
   );
@@ -107,13 +107,15 @@ function landingHash(forkedTree) {
 }
 
 // Which tree the #/app family names: #/app/:id opens it, #/app/new is the birth canvas,
-// #/t/:id is the read-only share, and bare #/app resolves against the registry.
+// #/app/start is the quest shelf (F5), #/t/:id is the read-only share, and bare #/app
+// resolves against the registry.
 function appTarget(route) {
   const hash = route.split('?')[0];
-  if (hash.startsWith('#/t/')) return { treeId: hash.slice('#/t/'.length) || null, birth: false };
-  if (hash === '#/app/new') return { treeId: null, birth: true };
-  if (hash.startsWith('#/app/')) return { treeId: hash.slice('#/app/'.length) || null, birth: false };
-  return { treeId: null, birth: false };
+  if (hash.startsWith('#/t/')) return { treeId: hash.slice('#/t/'.length) || null, birth: false, start: false };
+  if (hash === '#/app/new') return { treeId: null, birth: true, start: false };
+  if (hash === '#/app/start') return { treeId: null, birth: false, start: true };
+  if (hash.startsWith('#/app/')) return { treeId: hash.slice('#/app/'.length) || null, birth: false, start: false };
+  return { treeId: null, birth: false, start: false };
 }
 
 export default function App() {

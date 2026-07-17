@@ -296,7 +296,7 @@ function Paths() {
         ))}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 16, marginTop: 20, flexWrap: 'wrap' }}>
-        <a href="#/app" style={{ fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 15 }}>
+        <a href="#/app/start" style={{ fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 15 }}>
           Browse all nine starter quests →
         </a>
         <div style={{ fontFamily: 'var(--font-body)', fontSize: 12.5, color: 'var(--text-tertiary)' }}>

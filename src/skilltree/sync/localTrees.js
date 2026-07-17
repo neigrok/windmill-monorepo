@@ -52,6 +52,9 @@ export async function bearImportedTree({ title, nodes, kinds }) {
   new LocalTreeRegistry().record(treeId, title);
   const session = new SyncSession({ treeId, title });
   session.seed({ id: treeId, title, nodes: [], kinds: DEFAULT_KINDS });
+  // LOAD-BEARING ORDER: the legend diff goes first, while no node wears a hue yet.
+  // RecolorKind repaints every node of the old hue as it lands, so a recolor after the
+  // import would silently repaint imported nodes. Never swap these two lines.
   for (const gesture of legendGestures(kinds)) session.dispatch(gesture);
   session.dispatch({
     kind: 'ImportSubgraph',

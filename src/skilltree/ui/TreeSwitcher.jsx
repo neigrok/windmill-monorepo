@@ -199,8 +199,8 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
     const remaining = (Array.isArray(trees) ? trees : []).filter((r) => r.id !== t.id);
     setTrees(remaining);
     if (t.id !== current?.id) return;
-    setOpen(false); // the current tree left — land on the newest remaining, or the birth canvas
-    window.location.hash = remaining.length ? `#/app/${remaining[0].id}` : '#/app/new';
+    setOpen(false); // the current tree left — land on the newest remaining, or hand bare #/app to the resolver
+    window.location.hash = remaining.length ? `#/app/${remaining[0].id}` : '#/app';
   };
 
   // While the current tree's row is the editor, the plaque follows every keystroke —

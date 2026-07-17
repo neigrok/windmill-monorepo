@@ -68,6 +68,17 @@ const CHILD_DROP = NODE_SIZE * 2.6; // world units a new child spawns below its 
 const SIBLING_GAP = NODE_SIZE * 1.8; // horizontal spread between successive new children
 const NEW_NODE_ICON = 'sparkles';
 const DEMO_TREE_ID = 't_9e407a96b5330ebe';
+const PLANTED_QUEST_KEY = 'windmill:planted-quest'; // the shelf's one-shot note (F5 §04): this arrival is a quest
+
+function consumePlantedQuest() {
+  try {
+    if (sessionStorage.getItem(PLANTED_QUEST_KEY) !== '1') return false;
+    sessionStorage.removeItem(PLANTED_QUEST_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
   const { breakpoint, readOnly: viewReadOnly, shared } = useViewMode();
@@ -217,6 +228,7 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
     };
   }, [refresh]);
   const invalidRef = useRef(false); // whether the last render fell back to the loose-graph path
+  const plantedQuestRef = useRef(null); // consumed once on mount; survives StrictMode's double effect
   const selectedIdRef = useRef(null);
   const toastTimersRef = useRef([]); // pending hold→leave→unmount timers for the active toast
   const toastKeyRef = useRef(0); // monotonic key so a replacing toast remounts and re-enters
@@ -768,6 +780,9 @@ export function SkillTreeView({ treeId, openSignInSignal = 0 }) {
       onCeremonyToast: (message, options) => showToast(message, options),
       ...editing,
     });
+    // A quest plant left its one-shot note: this arrival announces a Quest, not a Roadmap.
+    if (plantedQuestRef.current === null) plantedQuestRef.current = consumePlantedQuest();
+    if (plantedQuestRef.current) nextScene.setArrivalNoun('Quest');
     sceneRef.current = nextScene;
     setScene(nextScene);
     nextScene.start();

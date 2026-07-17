@@ -1,0 +1,100 @@
+// Starter quest (F5 §03): twelve weeks from a baseline mile to a 10k finish line —
+// the long-run ladder gates race day, and rest is load-bearing, not optional.
+
+export default {
+  id: 'run-a-10k',
+  title: 'Run a 10k',
+  audience: 'life',
+  estimate: '~12 weeks',
+  source: null,
+  kinds: [
+    { id: 'training', hue: 'olive', label: 'Training', description: 'The runs that build the engine' },
+    { id: 'race-prep', hue: 'gold', label: 'Race prep', description: 'Everything that makes race day go smoothly' },
+  ],
+  nodes: [
+    {
+      id: 'run-your-baseline-mile',
+      label: 'Run your baseline mile',
+      color: 'olive',
+      prerequisites: [],
+      description: 'This quest assumes you can already run about 3 km without stopping — if you are not there yet, take a few gentle weeks to get there and the rest of this will be waiting. Run one easy mile and note your time and how it felt: this is your starting line, not a test. Done when the number is written down somewhere you will see it in twelve weeks.',
+    },
+    {
+      id: 'get-fitted-for-running-shoes',
+      label: 'Get fitted for running shoes',
+      color: 'gold',
+      prerequisites: ['run-your-baseline-mile'],
+      description: 'Visit a running store, have your gait watched, and leave with shoes that fit your feet rather than the sale rack. Done when a thirty-minute run leaves no new blisters or hot spots.',
+    },
+    {
+      id: 'settle-into-three-runs-a-week',
+      label: 'Settle into three runs a week',
+      color: 'olive',
+      prerequisites: ['run-your-baseline-mile'],
+      description: 'Run three times a week for two weeks — two short, one slightly longer — on days you can actually keep. Done when the runs feel like a habit instead of a negotiation.',
+    },
+    {
+      id: 'keep-easy-runs-conversational',
+      label: 'Keep easy runs conversational',
+      color: 'olive',
+      prerequisites: ['run-your-baseline-mile'],
+      description: 'Slow your easy runs until you could chat through them; walking breaks count as running here. Done when you finish a run feeling like you had a little more to give.',
+    },
+    {
+      id: 'take-rest-days-on-purpose',
+      label: 'Take rest days on purpose',
+      color: 'olive',
+      prerequisites: ['settle-into-three-runs-a-week'],
+      description: 'Put at least two non-running days in every week and treat them as part of the plan, not a lapse. Aches that fade once you warm up are ordinary; a sharp pain is a stop sign, not a rest day. Done when your legs feel fresher at the start of each week, not more worn down.',
+    },
+    {
+      id: 'stretch-the-long-run-to-5k',
+      label: 'Stretch the long run to 5 km',
+      color: 'olive',
+      prerequisites: ['settle-into-three-runs-a-week', 'keep-easy-runs-conversational', 'get-fitted-for-running-shoes'],
+      description: 'Once a week, take the longer run out to 5 km at your conversational pace. Done when you finish 5 km tired but able to imagine going farther.',
+    },
+    {
+      id: 'pick-a-race-and-enter-it',
+      label: 'Pick a race and enter it',
+      color: 'gold',
+      prerequisites: ['settle-into-three-runs-a-week'],
+      description: 'Find a 10k roughly two months out, enter it, and put the date where the whole household can see it. Done when the confirmation email exists and the morning is blocked off.',
+    },
+    {
+      id: 'stretch-the-long-run-to-7k',
+      label: 'Stretch the long run to 7 km',
+      color: 'olive',
+      prerequisites: ['stretch-the-long-run-to-5k', 'take-rest-days-on-purpose'],
+      description: 'Take the weekly long run out to 7 km, keeping the pace honest and easy. Done when the distance feels long but no longer scary.',
+    },
+    {
+      id: 'stretch-the-long-run-to-9k',
+      label: 'Stretch the long run to 9 km',
+      color: 'olive',
+      prerequisites: ['stretch-the-long-run-to-7k'],
+      description: 'Run 9 km about two weeks before the race — close enough to trust the distance, short enough to recover from. Done when you finish believing the last kilometer will come from the crowd.',
+    },
+    {
+      id: 'rehearse-race-morning',
+      label: 'Rehearse race morning',
+      color: 'gold',
+      prerequisites: ['stretch-the-long-run-to-7k', 'pick-a-race-and-enter-it'],
+      description: 'Do one run that copies race day: same wake-up time, same breakfast, same kit, a few kilometers at your hoped-for pace. Done when nothing about the morning would surprise you.',
+    },
+    {
+      id: 'ease-off-for-taper-week',
+      label: 'Ease off for taper week',
+      color: 'gold',
+      prerequisites: ['stretch-the-long-run-to-9k'],
+      description: 'In the final week, cut your distances roughly in half and keep every run gentle. Done when race day arrives and your legs feel springy instead of stale.',
+    },
+    {
+      id: 'run-the-race',
+      label: 'Run the race',
+      color: 'gold',
+      prerequisites: ['ease-off-for-taper-week', 'rehearse-race-morning'],
+      description: 'Start slower than feels right, settle in, and let the second half be the faster half. Done when you cross the line and go compare notes with that baseline mile.',
+    },
+  ],
+};

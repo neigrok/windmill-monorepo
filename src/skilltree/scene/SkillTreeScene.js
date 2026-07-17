@@ -126,6 +126,7 @@ export class SkillTreeScene {
       motion: () => this.motion,
     });
     this.nodeStates = new Map(); // last states pushed — the diff baseline
+    this.arrivalNoun = 'Roadmap'; // what the arrival toast says was planted (the quest shelf flips it)
     this.pendingSummary = null; // the toast the next ceremony speaks (set by the shell)
     this.pendingHasAction = false;
     this.settle = null; // in-flight layout glide: { startAt, moves } (see beginSettle)
@@ -498,8 +499,14 @@ export class SkillTreeScene {
     }
     let done = 0;
     for (const state of statesMap.values()) if (state === 'complete') done += 1;
-    const summary = `Roadmap planted · ${nodes.length} steps${done > 0 ? ` · ${done} already done` : ''}`;
+    const summary = `${this.arrivalNoun} planted · ${nodes.length} steps${done > 0 ? ` · ${done} already done` : ''}`;
     return { rings, litEdgesByRing, summary };
+  }
+
+  // A quest plant announces itself as one (F5 §04): the shell flips the noun before the
+  // first model install, so the arrival toast says "Quest planted" instead of Roadmap.
+  setArrivalNoun(noun) {
+    this.arrivalNoun = noun;
   }
 
   // Live reposition of one node: cheap per-instance GPU writes for the node and

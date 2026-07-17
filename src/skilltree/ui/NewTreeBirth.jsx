@@ -31,7 +31,9 @@ export function NewTreeBirth() {
   const [phase, setPhase] = useState('naming'); // naming | planting | error
   const [draft, setDraft] = useState('');       // the composer's text — survives Esc
   const [draftKinds, setDraftKinds] = useState(DEFAULT_KINDS);
-  const [composerOpen, setComposerOpen] = useState(false);
+  // The shelf's "Paste a plan" door lands on #/app/new?compose — the composer opens with it.
+  const [composerOpen, setComposerOpen] = useState(() =>
+    typeof window !== 'undefined' && new URLSearchParams(window.location.hash.split('?')[1] ?? '').has('compose'));
   const [dropHot, setDropHot] = useState(false);
   const inputRef = useRef(null);
 
