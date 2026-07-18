@@ -628,6 +628,21 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     emit({ verb: 'added', nodeId: id, label: '', kind: parent.color });
   }, [syncStructure, emit]);
 
+  // The emptied tree's way back in (empty-state): plant a first root with no parent —
+  // the same parent-less CreateNode localTrees seeds a birth with — then select it and
+  // focus its name so typing names the step at once. Mirrors handleCreateChild, minus
+  // the parent (no anchor to spread from, so the bud lands at the world origin).
+  const handleCreateRoot = useCallback(() => {
+    if (readOnlyRef.current) return;
+    const id = crypto.randomUUID?.() ?? `n-${Date.now()}`;
+    const color = legendRef.current[0]?.hue ?? 'terracotta';
+    collabRef.current?.dispatch({ kind: 'CreateNode', id, label: '', icon: NEW_NODE_ICON, color, x: 0, y: 0 });
+    sceneRef.current?.select(id);
+    setSelectedId(id);
+    setAutoFocusNameId(id);
+    emit({ verb: 'added', nodeId: id, label: '', kind: color });
+  }, [emit, setSelectedId]);
+
   // Drag from a port to a node → add a dependency (one history step). The gesture
   // already blocked cycles before the drop.
   const handleConnect = useCallback((sourceId, targetId) => {
@@ -1566,6 +1581,23 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
 
       {!readOnly && (
         <PresenceLayer peersRef={peersRef} scene={scene} canvasRef={canvasRef} collabRef={collabRef} selection={selectedId} />
+      )}
+
+      {/* The way back in when the last step is deleted: an editable tree with no nodes
+          strands the user on a blank canvas (the "+" lives on existing nodes). A calm
+          centered card plants a first root through the same create path, selected with
+          its name focused — mirroring the birth canvas, minus the naming ceremony. */}
+      {!readOnly && tree && tree.nodes.length === 0 && (
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 15, pointerEvents: 'none' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-4)', padding: 'var(--space-6) var(--space-7)', background: 'var(--surface-card)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-md)', pointerEvents: 'auto', textAlign: 'center' }}>
+            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 'var(--text-lg)', color: 'var(--text-primary)' }}>This tree is empty</div>
+            <p style={{ margin: 0, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Add a first step to start growing it.</p>
+            <Button onClick={handleCreateRoot}>Add your first step</Button>
+            {breakpoint === 'desktop' && (
+              <p style={{ margin: 0, fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>or paste a plan — ⌘V</p>
+            )}
+          </div>
+        </div>
       )}
 
       {readOnly ? (
