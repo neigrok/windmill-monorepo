@@ -25,6 +25,19 @@ export function track(name, props) {
   if (flushTimer === null) flushTimer = window.setTimeout(() => flush('fetch'), FLUSH_AFTER_MS);
 }
 
+// A crash — caught by the React boundary or a global handler — beacons once and flushes NOW,
+// because the page may reload before the debounce would fire. The props stay a flat object
+// under the endpoint's 1KB budget (message + stack truncated), so it lands like any event and
+// is queryable as `name = 'client_error'`. Still fire-and-forget: reporting a crash can't crash.
+export function reportError(error, kind = 'error') {
+  if (typeof window === 'undefined') return;
+  const message = String(error?.message ?? error ?? 'unknown').slice(0, 280);
+  const stack = String(error?.stack ?? '').slice(0, 480);
+  const route = (window.location?.hash || window.location?.pathname || '').slice(0, 120);
+  track('client_error', { kind: String(kind).slice(0, 40), message, stack, route });
+  flush('beacon');
+}
+
 function flush(transport) {
   if (flushTimer !== null) {
     clearTimeout(flushTimer);
