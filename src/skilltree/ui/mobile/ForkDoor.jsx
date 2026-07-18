@@ -101,8 +101,10 @@ export function ForkDoor({ open, tablet = false, treeId, signedIn = false, demo 
         // re-plant speaks "Forked — 17 steps planted" — now you're the actor, so it toasts.
         if (demo) { try { sessionStorage.setItem(FORKED_FROM_DEMO_KEY, '1'); } catch { /* ignore */ } }
         // A fork crosses the read-only → editor boundary; land in the copy on a clean
-        // page load so the scene is born in editor mode, not retrofitted into it.
-        window.location.hash = `#/app/${forkedId}`;
+        // page load so the scene is born in editor mode, not retrofitted into it. When the
+        // share opened at the /t/:id PATH, a bare hash set would leave the pathname pinned
+        // read-only — so rewrite the URL to the hash route first, then reload the editor fresh.
+        window.history.replaceState(null, '', `/#/app/${forkedId}`);
         window.location.reload();
       })
       .catch((err) => {

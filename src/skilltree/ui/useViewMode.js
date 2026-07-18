@@ -1,8 +1,8 @@
 // The view mode (X5): the current breakpoint from the window width, and whether
 // the app is read-only. Small screens default to read-only — editing stays on
-// desktop — and a `?view` query param, a `#/t/…` share hash, or the `#/demo`
-// playable route (F4) forces read-only on any width. Desktop with no share param
-// is the editor, unchanged.
+// desktop — and a `?view` query param, a `/t/…` share path, a `#/t/…` share hash,
+// or the `#/demo` playable route (F4) forces read-only on any width. Desktop with no
+// share signal is the editor, unchanged.
 
 import { useEffect, useState } from 'react';
 
@@ -18,7 +18,13 @@ function breakpointFor(width) {
 function isShared() {
   if (typeof window === 'undefined') return false;
   const shared = new URLSearchParams(window.location.search).has('view');
-  return shared || window.location.hash.startsWith('#/t/') || window.location.hash.startsWith('#/demo');
+  // The /t/:id path is a read-only share ONLY while it's actually the rendered route — i.e. the
+  // hash names no app route (App.jsx renders the path share under the same `!hash.startsWith('#/')`
+  // guard). The pathname is sticky across hash-only nav, so without this an owner who opens their
+  // own /t/ link then navigates into their editor would stay locked read-only.
+  const pathShare = window.location.pathname.startsWith('/t/') && !window.location.hash.startsWith('#/');
+  return shared || pathShare
+    || window.location.hash.startsWith('#/t/') || window.location.hash.startsWith('#/demo');
 }
 
 function readViewMode() {

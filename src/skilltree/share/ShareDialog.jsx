@@ -19,7 +19,9 @@ export function ShareDialog({ open, onClose, visibility, mine }) {
   const urlRef = useRef(null);
 
   const treeId = treeIdFromHash(window.location.hash);
-  const shareUrl = treeId ? `${window.location.origin}/#/t/${treeId}?ref=share` : null;
+  // The real, indexable share URL: a shared tree lives at /t/:id, where the backend unfurls
+  // its own title and description for social scrapers (the #/t/:id hash still works too).
+  const shareUrl = treeId ? `${window.location.origin}/t/${treeId}` : null;
 
   useEffect(() => () => clearTimeout(copiedTimer.current), []);
 

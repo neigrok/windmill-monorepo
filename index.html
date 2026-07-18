@@ -4,17 +4,6 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <!-- Primary SERP + tab signals -->
-    <title>Windmill — Skill Tree Goal Tracker & Learning Roadmaps</title>
-    <meta
-      name="description"
-      content="Turn any goal or learning roadmap into an animated RPG skill tree. Finish a step, unlock the next branch. Free, no account — plant your first tree."
-    />
-
-    <!-- Indexing controls (the landing is the site root, so canonical is self-referencing) -->
-    <link rel="canonical" href="https://windmill.works/" />
-    <meta name="robots" content="index, follow, max-image-preview:large" />
-
     <!-- Brand chrome (cream / terracotta light theme) -->
     <meta name="theme-color" content="#F9F5EB" />
     <meta name="color-scheme" content="light" />
@@ -30,6 +19,23 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
+
+    <!-- meta:unfurl:start -->
+    <!-- The path-share seam (/t/:id): windmill_server rewrites everything between these
+         sentinels with a shared tree's own title, description, and url so the link unfurls
+         as itself for social scrapers. The root and any private or absent tree get this
+         block verbatim. The sentinels must survive the Vite build — the server keys on them. -->
+
+    <!-- Primary SERP + tab signals -->
+    <title>Windmill — Skill Tree Goal Tracker & Learning Roadmaps</title>
+    <meta
+      name="description"
+      content="Turn any goal or learning roadmap into an animated RPG skill tree. Finish a step, unlock the next branch. Free, no account — plant your first tree."
+    />
+
+    <!-- Indexing controls (the landing is the site root, so canonical is self-referencing) -->
+    <link rel="canonical" href="https://windmill.works/" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
 
     <!-- Open Graph (Facebook, LinkedIn, iMessage, Slack, Discord, WhatsApp) -->
     <meta property="og:type" content="website" />
@@ -62,6 +68,7 @@
       name="twitter:image:alt"
       content="A hand-drawn RPG skill tree on a cream background with terracotta, gold, and sky nodes, the Windmill wordmark, and the tagline &ldquo;Any goal, as a skill tree.&rdquo;"
     />
+    <!-- meta:unfurl:end -->
 
     <!-- Structured data — static in <head> so it ships in the initial HTML response
          (this is a client-rendered hash-routed SPA; runtime-injected JSON-LD is unreliable). -->
