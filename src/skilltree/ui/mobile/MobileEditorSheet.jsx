@@ -39,7 +39,7 @@ const barkVerb = {
   color: 'var(--color-bark)',
 };
 
-export function MobileEditorSheet({ node, state, prerequisites = [], unlocks = [], completedAt, kinds = [], autoFocusName = false, onRename, onAddStep, onSetKind, onMarkDone, onUnmarkDone, onDelete }) {
+export function MobileEditorSheet({ node, state, prerequisites = [], unlocks = [], completedAt, kinds = [], autoFocusName = false, onRename, onAddStep, onConnect, onSetKind, onMarkDone, onUnmarkDone, onDelete }) {
   const [editingName, setEditingName] = useState(!!autoFocusName);
   const [draft, setDraft] = useState(node?.label ?? '');
   const inputRef = useRef(null);
@@ -123,6 +123,10 @@ export function MobileEditorSheet({ node, state, prerequisites = [], unlocks = [
         <button type="button" style={barkVerb} onClick={() => onAddStep(node.id)}>
           <Icon name="plus" size={16} />
           Add step
+        </button>
+        <button type="button" style={barkVerb} onClick={() => onConnect(node.id)}>
+          <Icon name="git-branch-plus" size={16} />
+          Connect
         </button>
       </div>
 

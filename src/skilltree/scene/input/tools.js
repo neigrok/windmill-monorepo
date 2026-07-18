@@ -121,6 +121,7 @@ export class ReadOnlyTool extends NavigateTool {
     const moved = this.drag.moved;
     this.drag = null;
     if (moved) return; // a pan settles in place — no fling
+    if (this.ctx.editTap?.(pos.x, pos.y)) return; // an owner editing on a phone routes the tap by mode
     this.ctx.select(this.ctx.pick(pos.x, pos.y)); // a tap selects the node under it, else clears
   }
 

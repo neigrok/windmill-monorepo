@@ -151,10 +151,19 @@ export class SkillTreeScene {
       },
     });
 
+    // A React tap override for phone editing (Wave B): the scene stays read-only, but an
+    // owner editing on a phone routes canvas taps through here so React owns the mode logic
+    // (aim / remove / select). Absent (read-only shares) it stays null and the tool's default
+    // select fires byte-unchanged.
+    this.editTap = null;
+
     this.toolContext = {
       camera: this.camera,
       pick: (x, y) => this.pick(x, y),
       pickEdge: (x, y) => this.pickEdge(x, y),
+      // The tool stays dumb: it detects an unmoved tap and offers it here. A handler present
+      // consumes the tap (returns true so the default select never fires); absent, false lets it through.
+      editTap: (x, y) => this.editTap ? (this.editTap(x, y), true) : false,
       select: (id) => this.select(id),
       // A plain edge pick reports up (onEdgePick) so the shell drops any lingering multi-selection.
       selectEdge: (edge) => { this.selectEdge(edge); this.options.onEdgePick?.(edge); },
@@ -650,6 +659,8 @@ export class SkillTreeScene {
   restoreKind(id) { const node = this.nodesById.get(id); if (node) this.nodeBatch.setColor(id, node.color); }
   previewDeleteCost(id) { this.nodeBatch.setFaded(new Set([id])); } // §5.1 branch-dim deferred: needs a connector fade
   clearDeleteCost() { this.nodeBatch.clearFaded(); }
+  setFaded(ids) { this.nodeBatch.setFaded(ids); } // aim mode's illegal-target dim (M3)
+  clearFaded() { this.nodeBatch.clearFaded(); }
 
   fitToView() {
     if (!this.renderModel) return;
@@ -949,6 +960,10 @@ export class SkillTreeScene {
   // on release. Immediate feedback, never queued; the shader skips the scale under reduced motion.
   setPress(id) { this.nodeBatch.setPress(id, this.elapsedSeconds); }
 
+  // Install (or clear) the phone-editing tap override — React hands (x, y) and owns the
+  // mode logic; null restores the tool's default read-only select (Wave B).
+  setEditTap(fn) { this.editTap = fn; }
+
   // Hovering a branch only deepens its line + a pointer cursor — never chrome.
   hoverEdge(edge) {
     const next = edge ?? null;
@@ -986,6 +1001,7 @@ export class SkillTreeScene {
     for (const edge of this.renderModel.edges) {
       const from = this.nodesById.get(edge.from);
       const to = this.nodesById.get(edge.to);
+      if (!from || !to) continue; // an edge can briefly outrun its endpoints mid-rebuild
       const d = distanceToSegment(world.x, world.y, from.x, from.y, to.x, to.y);
       if (d < bestDist) { bestDist = d; best = edge; }
     }

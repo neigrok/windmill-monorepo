@@ -15,6 +15,8 @@ import { StatusChip, VisitorNotice } from './ui/HonestyChrome.jsx';
 import { MobileChrome } from './ui/mobile/MobileChrome.jsx';
 import { BottomSheet } from './ui/mobile/BottomSheet.jsx';
 import { MobileEditorSheet } from './ui/mobile/MobileEditorSheet.jsx';
+import { AimBar, RemoveLinkBar } from './ui/mobile/AimBar.jsx';
+import { illegalTargets, edgeFor } from './ui/mobile/aim.js';
 import { ForkDoor } from './ui/mobile/ForkDoor.jsx';
 import { useAuth } from './auth/AuthProvider.jsx';
 import { AccountSeat } from './auth/AccountSeat.jsx';
@@ -378,6 +380,8 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   const [signInOpen, setSignInOpen] = useState(false); // the one sign-in door (X6) — opened by the seat or an expired landing
   const [panning, setPanning] = useState(false); // the scene is being panned; mobile chrome yields (§chrome)
   const [recenterAvailable, setRecenterAvailable] = useState(false); // the tree left the safe frame — offer Recenter
+  const [aim, setAim] = useState(null); // connect aim mode (M3): { sourceId, direction: 'unlocks'|'needs' } | null
+  const [removing, setRemoving] = useState(null); // the branch the remove-link bar targets (M3): { from, to } | null
   const [coachAllowed, setCoachAllowed] = useState(false); // the demo coach may mount — a stranger who hasn't seen it (F4 §03)
   const [demoCompletions, setDemoCompletions] = useState(0); // marks made this demo session — any one retires the coach
   const [ctaEcho, setCtaEcho] = useState(false); // the Fork CTA takes the pulse once, after the unlock toast (§04)
@@ -801,6 +805,18 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       duration: 4000,
     });
   }, [handleCreateChild, showToast]);
+
+  // Connect aim mode (M3): the sheet's Connect verb folds the sheet into the aim bar and
+  // turns the canvas into a target chooser. The source stays selected (its ring), and the
+  // sheet returns when aim ends. One surface at a time — entering aim clears any remove bar.
+  const enterAim = useCallback((sourceId) => {
+    setRemoving(null);
+    setAim({ sourceId, direction: 'unlocks' });
+  }, []);
+
+  const flipAimDirection = useCallback(() => {
+    setAim((current) => (current ? { ...current, direction: current.direction === 'unlocks' ? 'needs' : 'unlocks' } : current));
+  }, []);
 
   // Recolor the whole node selection to one legend kind's hue in ONE undoable gesture (mirrors
   // bulkDelete): a single BulkRecolor stamp repaints every selected node, and captureInverse
@@ -1470,6 +1486,62 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       .map((node) => ({ id: node.id, label: node.label, complete: states.get(node.id) === 'complete' }));
   }, [selectedNode, tree, states]);
 
+  // Ownership gates editing, not a mode (M0): the owner's own tree stays editable on a
+  // phone/tablet even though the view is read-only (the calm read-only scene never flips —
+  // edits persist through the same live collabRef dispatch). A stranger's share, the demo,
+  // and desktop (which has its full editor) are excluded. Wave B wires the phone's aim +
+  // remove-link taps below; the sheet verbs are Wave A.
+  const mobileEditable = treeMine && !shared && !demo && breakpoint !== 'desktop';
+
+  // Route canvas taps by mode (M3): the scene stays read-only, but an owner editing on a
+  // phone gets a ref-backed tap override so React owns the mode logic. Aiming turns the
+  // canvas into a connect chooser (tap an eligible step to link, empty canvas cancels);
+  // otherwise a node opens its sheet, a branch opens the remove-link bar, and empty clears.
+  // A stranger's read-only share leaves editTap null, so the tool's default select is unchanged.
+  useEffect(() => {
+    if (!scene) return undefined;
+    // Wave B's aim + remove-link bars are phone-only, so editTap is too — a tablet owner keeps
+    // the read-only default select until Wave D, and a branch tap can't strand an invisible bar.
+    if (!mobileEditable || breakpoint !== 'phone') { scene.setEditTap(null); return undefined; }
+    scene.setEditTap((x, y) => {
+      const nodeId = scene.pick(x, y);
+      if (aim && tree && nodesById.has(aim.sourceId)) {
+        if (nodeId === null) { setAim(null); return; } // empty canvas cancels the aim
+        if (illegalTargets(tree, aim.sourceId, aim.direction).has(nodeId)) return; // illegal target: the tap is inert
+        const { from, to } = edgeFor(aim.sourceId, nodeId, aim.direction);
+        handleConnect(from, to);
+        setAim(null);
+        setSelectedId(aim.sourceId); // the source's sheet returns
+        showToast('Linked', { action: { label: 'Undo', run: () => collabRef.current?.dispatch({ kind: 'RemoveEdge', from, to }) }, duration: 4000 });
+        return;
+      }
+      if (nodeId) { setRemoving(null); setSelectedId(nodeId); return; } // open / retarget the editor sheet
+      const edge = scene.pickEdge(x, y);
+      if (edge) { setAim(null); setSelectedId(null); setRemoving({ from: edge.from, to: edge.to }); return; } // a branch → remove-link bar (never alongside aim)
+      setSelectedId(null); // empty canvas clears the selection
+    });
+    return () => scene.setEditTap(null);
+  }, [scene, mobileEditable, breakpoint, aim, tree, nodesById, handleConnect, showToast, setSelectedId]);
+
+  // Aim doesn't outlive its source: a concurrent peer deleting the aimed step leaves `aim`
+  // dangling, which would strand a labelless aim bar (and, with a branch tap, stack a second
+  // bar). Exit aim the moment its source leaves the tree. The fade effect already self-clears.
+  useEffect(() => {
+    if (aim && tree && !nodesById.has(aim.sourceId)) setAim(null);
+  }, [aim, tree, nodesById]);
+
+  // Aim mode's canvas chooser (M3): dim the illegal targets so only eligible steps stay
+  // bright; the source keeps its selection ring. Recomputes when the direction flips, and
+  // clears the dim the instant aim ends — this effect is the sole owner of the fade during
+  // aim, so the tap handlers only ever flip `aim`.
+  useEffect(() => {
+    if (!scene || !aim || !tree || !nodesById.has(aim.sourceId)) return undefined;
+    const illegal = illegalTargets(tree, aim.sourceId, aim.direction);
+    illegal.delete(aim.sourceId); // the source keeps its selection ring — never dim the anchor
+    scene.setFaded(illegal);
+    return () => scene.clearFaded();
+  }, [scene, aim, tree, nodesById]);
+
   // The wire half of a mark (progress-wire): signed-in sessions mirror each local mark to
   // the server over the socket; ghosts stay localStorage-only. Offline sends no-op — the
   // reconciliation below carries those marks up on the next graft.
@@ -1742,13 +1814,6 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     />
   );
 
-  // Ownership gates editing, not a mode (M0): the owner's own tree stays editable on a
-  // phone/tablet even though the view is read-only (the calm read-only scene never flips —
-  // edits persist through the same live collabRef dispatch). A stranger's share, the demo,
-  // and desktop (which has its full editor) are excluded. Computed for both small
-  // breakpoints so the signal is ready; Wave A only wires the phone sheet below.
-  const mobileEditable = treeMine && !shared && !demo && breakpoint !== 'desktop';
-
   // The selected step, rendered read-only: no editing controls, but its unlocks,
   // prerequisites and history. Shared by the phone sheet and the tablet/desktop panel.
   const readOnlyDetail = selectedNode && (
@@ -1960,7 +2025,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
 
       {readOnly && breakpoint === 'phone' && (
         <BottomSheet
-          open={!!selectedNode}
+          open={!!selectedNode && !aim && !removing}
           onDismiss={() => setSelectedId(null)}
           peekHeight={mobileEditable ? 300 : undefined}
           maxVh={mobileEditable ? 66 : undefined}
@@ -1981,6 +2046,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
                   autoFocusName={selectedId !== null && selectedId === autoFocusNameId}
                   onRename={mobileRename}
                   onAddStep={mobileAddStep}
+                  onConnect={enterAim}
                   onSetKind={mobileRecolor}
                   onMarkDone={(id) => completeStep(id)}
                   onUnmarkDone={(id) => handleSetState(id, 'notstarted')}
@@ -1989,6 +2055,30 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
               ))
             : (readOnlyDetail && React.cloneElement(readOnlyDetail, { fill: true }))}
         </BottomSheet>
+      )}
+
+      {/* Aim mode + remove-link chrome (M3): each stands in for the sheet (one surface at a
+          time), and the undo snackbar floats above either. Owner-gated — a stranger's read-
+          only tap never reaches them (editTap stays null, so a branch tap does nothing). */}
+      {mobileEditable && breakpoint === 'phone' && aim && (
+        <AimBar
+          sourceLabel={nodesById.get(aim.sourceId)?.label}
+          direction={aim.direction}
+          onToggleDirection={flipAimDirection}
+          onCancel={() => setAim(null)}
+        />
+      )}
+
+      {mobileEditable && breakpoint === 'phone' && removing && (
+        <RemoveLinkBar
+          onRemove={() => {
+            const { from, to } = removing;
+            handleDeleteEdge(from, to);
+            setRemoving(null);
+            showToast('Link removed', { action: { label: 'Undo', run: () => collabRef.current?.dispatch({ kind: 'AddEdge', from, to }) }, duration: 4000 });
+          }}
+          onCancel={() => setRemoving(null)}
+        />
       )}
 
       {readOnly && breakpoint !== 'phone' && (
