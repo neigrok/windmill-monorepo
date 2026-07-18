@@ -176,3 +176,79 @@ test('BulkDelete edges: an edge touching a doomed node is a no-op (dies with the
     { id: 'root', prerequisites: [] },
   ]);
 });
+
+// BulkRecolor (desktop multi-select recolor): the one gesture that repaints many nodes to a single
+// legend hue under one stamp. These pin the fan-out against the projected tree — build a lattice,
+// join the materialized writes, and assert every node's colour. The single-node case must stay
+// byte-equal to SetNodeColor, and a node outside the id list keeps its own hue untouched.
+
+// Every live node with its colour, sorted so the assertion is a full structural equality.
+function colors(lattice) {
+  return lattice.toTreeData().nodes
+    .map((n) => ({ id: n.id, color: n.color }))
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+test('BulkRecolor: three selected nodes all take the new hue', () => {
+  const { lattice, play } = newTree();
+  play({ kind: 'CreateNode', id: 'a', label: 'A' });
+  play({ kind: 'CreateNode', id: 'b', label: 'B', parentId: 'a' });
+  play({ kind: 'CreateNode', id: 'c', label: 'C', parentId: 'b' });
+
+  play({ kind: 'BulkRecolor', nodeIds: ['a', 'b', 'c'], color: 'sky' });
+
+  assert.deepStrictEqual(colors(lattice), [
+    { id: 'a', color: 'sky' },
+    { id: 'b', color: 'sky' },
+    { id: 'c', color: 'sky' },
+  ]);
+});
+
+test('BulkRecolor: a node outside the id list keeps its own hue', () => {
+  const { lattice, play } = newTree();
+  play({ kind: 'CreateNode', id: 'a', label: 'A', color: 'terracotta' });
+  play({ kind: 'CreateNode', id: 'b', label: 'B', parentId: 'a', color: 'gold' });
+  play({ kind: 'CreateNode', id: 'c', label: 'C', parentId: 'b', color: 'terracotta' });
+
+  play({ kind: 'BulkRecolor', nodeIds: ['a', 'c'], color: 'plum' });
+
+  assert.deepStrictEqual(colors(lattice), [
+    { id: 'a', color: 'plum' },
+    { id: 'b', color: 'gold' }, // untouched — not in the id list
+    { id: 'c', color: 'plum' },
+  ]);
+});
+
+test('BulkRecolor: an id absent from the projection is skipped (no phantom node)', () => {
+  const { lattice, play } = newTree();
+  play({ kind: 'CreateNode', id: 'a', label: 'A' });
+
+  play({ kind: 'BulkRecolor', nodeIds: ['a', 'ghost'], color: 'olive' });
+
+  assert.deepStrictEqual(colors(lattice), [
+    { id: 'a', color: 'olive' },
+  ]);
+});
+
+test('one-element BulkRecolor is byte-equivalent to SetNodeColor on the projected tree', () => {
+  const seed = (play) => {
+    play({ kind: 'CreateNode', id: 'a', label: 'A' });
+    play({ kind: 'CreateNode', id: 'b', label: 'B', parentId: 'a' });
+  };
+
+  const single = newTree();
+  seed(single.play);
+  single.play({ kind: 'SetNodeColor', id: 'a', color: 'brick' });
+
+  const bulk = newTree();
+  seed(bulk.play);
+  bulk.play({ kind: 'BulkRecolor', nodeIds: ['a'], color: 'brick' });
+
+  const expected = [
+    { id: 'a', color: 'brick' },
+    { id: 'b', color: 'terracotta' },
+  ];
+  assert.deepStrictEqual(colors(single.lattice), expected);
+  assert.deepStrictEqual(colors(bulk.lattice), expected);
+  assert.deepStrictEqual(colors(single.lattice), colors(bulk.lattice));
+});

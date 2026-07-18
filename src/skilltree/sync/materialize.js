@@ -136,6 +136,16 @@ export function materialize(gesture, lattice, clock) {
       }
       break;
     }
+    // A multi-node recolor as one atomic gesture (bulk-recolor): every selected node still
+    // present in the projection gets one color write under this single stamp — one persist, one
+    // undo. captureInverse banks each node's prior color generically, so that one undo restores
+    // every original hue. Edges carry no color; they follow their source node's hue, so outgoing
+    // edges repaint for free. A one-element BulkRecolor is exactly SetNodeColor on the projection.
+    case 'BulkRecolor': {
+      const present = new Set(data.nodes.map((n) => n.id));
+      for (const id of g.nodeIds) if (present.has(id)) nodes.push(node(id, at, { color: g.color }));
+      break;
+    }
     case 'RenameKind': kinds.push(kind(g.id, at, { label: g.label })); break;
     case 'DescribeKind': kinds.push(kind(g.id, at, { description: g.description })); break;
     case 'AddKind':

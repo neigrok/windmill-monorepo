@@ -54,7 +54,7 @@ import { graftPlan } from './paste/graftPlan.js';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
 import { edgeKey, parseEdgeKey } from './scene/edgeKey.js';
 import { TreeEditor } from './editing/TreeEditor.js';
-import { NODE_SIZE } from './theme.js';
+import { NODE_SIZE, NODE_COLORS, NODE_COLOR_NAMES } from './theme.js';
 import { track } from '../telemetry/beacon.js';
 import { CoachChip } from './demo/CoachChip.jsx';
 import { DEMO_TREE_ID, DEMO_STAGED_COMPLETED, COACHED_NODE_ID, COACH_DONE_KEY, FORKED_FROM_DEMO_KEY, DEMO_COPY, coachEligible } from './demo/demoStage.js';
@@ -766,6 +766,18 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     collabRef.current?.dispatch({ kind: 'SetNodeColor', id, color: kind });
   }, []);
 
+  // Recolor the whole node selection to one legend kind's hue in ONE undoable gesture (mirrors
+  // bulkDelete): a single BulkRecolor stamp repaints every selected node, and captureInverse
+  // banks each node's prior color so one undo restores them all. The selection is KEPT so the
+  // user can recolor again. Only nodes are touched (selectedIds); edges carry no color and
+  // follow their source node's hue, repainting for free — a pure-edge selection never reaches here.
+  const bulkRecolor = useCallback((color) => {
+    const ids = [...selectedIdsRef.current];
+    if (!ids.length) return;
+    collabRef.current?.dispatch({ kind: 'BulkRecolor', nodeIds: ids, color });
+    showToast(`${ids.length} step${ids.length === 1 ? '' : 's'} recolored`, { action: { label: 'Undo', run: undo } });
+  }, [showToast, undo]);
+
   // The legend (F6): every kind edit funnels through one seam — update the fresh ref,
   // set state, and persist — mirroring commitWorkspace; the open flag rides in the payload.
   const persistLegend = useCallback((kinds, open) => {
@@ -1279,6 +1291,9 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   // new tree, an add/rename a new legend — so counts and the mount gate stay honest.
   const legendWithCounts = useMemo(() => (tree ? withCounts(legend, tree.nodes) : []), [legend, tree, states]);
   const inUse = useMemo(() => (tree ? inUseCount(legend, tree.nodes) : 0), [legend, tree, states]);
+  // The kinds the selection bar's recolor swatches offer — the tree's ordered legend, or the
+  // raw palette before a legend is derived (same fallback the single-node picker uses).
+  const recolorKinds = legend.length > 0 ? legend : NODE_COLOR_NAMES.map((hue) => ({ id: hue, hue }));
 
   // The share "score" — done/total + the dominant kind that tints the exported frame.
   const shareStats = useMemo(() => (tree ? ShareStats.from(tree, states) : null), [tree, states]);
@@ -1946,6 +1961,27 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       {!readOnly && selectedIds.size + selectedEdges.size > 1 && (
         <div className="st-selection-bar" role="status">
           <span>{selectedIds.size + selectedEdges.size} selected</span>
+          {/* Recolor the node part of the selection to any legend kind — the same round Kind
+              swatches as the single-node picker (StepPanel). Nodes only: hidden when the
+              selection is edges alone, since edges carry no colour of their own. */}
+          {selectedIds.size > 0 && (
+            <div className="st-step-kinds" role="group" aria-label="Recolour selected steps">
+              {recolorKinds.map((kind) => {
+                const name = kind.label || kind.hue.charAt(0).toUpperCase() + kind.hue.slice(1);
+                return (
+                  <button
+                    key={kind.id}
+                    type="button"
+                    className="st-step-swatch"
+                    style={{ background: NODE_COLORS[kind.hue].base }}
+                    title={name}
+                    aria-label={`Recolour selection to ${name}`}
+                    onClick={() => bulkRecolor(kind.hue)}
+                  />
+                );
+              })}
+            </div>
+          )}
           <Button variant="danger" size="sm" onClick={bulkDelete}>Delete</Button>
         </div>
       )}
