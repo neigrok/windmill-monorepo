@@ -8,6 +8,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Badge } from '../components';
 import { SignInDialog } from '../skilltree/auth/SignInDialog.jsx';
+import { FeedbackDialog } from '../skilltree/feedback/FeedbackDialog.jsx';
 import { requestMagicLink, pendingMagicLink } from '../skilltree/auth/AuthClient.js';
 import { useAuth } from '../skilltree/auth/AuthProvider.jsx';
 import { AccountSeat } from '../skilltree/auth/AccountSeat.jsx';
@@ -388,7 +389,7 @@ function CtaBand({ planted }) {
   );
 }
 
-function Footer() {
+function Footer({ onFeedback }) {
   return (
     <footer className="wrap" style={{ borderTop: '1px solid var(--border-subtle)', marginTop: 80, paddingTop: 32, paddingBottom: 32, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, color: 'var(--text-tertiary)', fontSize: 14, fontFamily: 'var(--font-body)' }}>
@@ -396,6 +397,7 @@ function Footer() {
         © 2026
       </div>
       <div style={{ display: 'flex', gap: 24, fontSize: 14, fontFamily: 'var(--font-body)' }}>
+        <button type="button" onClick={onFeedback} style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'var(--text-tertiary)', cursor: 'pointer' }}>Feedback</button>
         <a href="/connect.html" style={{ color: 'var(--text-tertiary)' }}>Connect your AI tools</a>
         <a href="/privacy.html" style={{ color: 'var(--text-tertiary)' }}>Privacy</a>
         <a href="/terms.html" style={{ color: 'var(--text-tertiary)' }}>Terms</a>
@@ -408,6 +410,7 @@ function Footer() {
 export default function Marketing() {
   const [signInOpen, setSignInOpen] = useState(false);
   const [signInResume, setSignInResume] = useState(null); // the chip reopens the door on its wait panel; Log in opens fresh
+  const [feedbackOpen, setFeedbackOpen] = useState(false); // the footer's contact door — posts anon, no account needed
   const { user, status, signOut } = useAuth();
   const [trees, setTrees] = useState(null); // null until the registry answers; [] doubles as the honest fallback
   const [pendingLink, setPendingLink] = useState(pendingMagicLink);
@@ -465,8 +468,9 @@ export default function Marketing() {
         <Story />
         <CtaBand planted={Boolean(newest)} />
       </main>
-      <Footer />
+      <Footer onFeedback={() => setFeedbackOpen(true)} />
       <SignInDialog open={signInOpen} resume={signInResume} onClose={() => setSignInOpen(false)} onSend={sendLink} />
+      <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
     </div>
   );
 }

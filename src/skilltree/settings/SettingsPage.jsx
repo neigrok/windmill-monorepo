@@ -14,6 +14,7 @@ import { ProfileSection } from './ProfileSection.jsx';
 import { ConnectedToolsSection } from './ConnectedToolsSection.jsx';
 import { ApiKeysSection } from './ApiKeysSection.jsx';
 import { SessionsSection } from './SessionsSection.jsx';
+import { FeedbackSection } from './FeedbackSection.jsx';
 import { YourDataSection } from './YourDataSection.jsx';
 
 export function SettingsPage() {
@@ -32,6 +33,7 @@ export function SettingsPage() {
             <ConnectedToolsSection />
             <ApiKeysSection />
             <SessionsSection />
+            <FeedbackSection />
             <YourDataSection />
           </>
         ) : (
