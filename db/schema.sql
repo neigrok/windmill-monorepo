@@ -127,6 +127,17 @@ create table if not exists tree_kinds (
   primary key (tree_id, kind_id)
 );
 
+-- per-tree share unfurl card (og-tree-cards): the client renders its tree to a 1200×630 PNG
+-- and uploads it; GET /og/:id.png serves it as the link's og:image (a missing card falls back
+-- to the generic image). One row per tree, replaced on each re-upload — the bytes live inline
+-- as bytea, well under a megabyte. No FK to trees: the row is addressed by tree id and read
+-- behind the tree's own visibility gate, so a stray row for a deleted tree is simply unreachable.
+create table if not exists tree_og_images (
+  tree_id    text primary key,
+  png        bytea not null,
+  updated_at timestamptz not null default now()
+);
+
 -- append-only op log: activity, undo, reconnect replay (Phase 2)
 create table if not exists tree_ops (
   tree_id    text not null,

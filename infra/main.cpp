@@ -8,6 +8,7 @@
 #include "adapters/http/HttpApi.h"
 #include "adapters/http/McpKeyApi.h"
 #include "adapters/http/OAuthApi.h"
+#include "adapters/http/OgImageApi.h"
 #include "adapters/http/RateLimiter.h"
 #include "adapters/http/SharePageApi.h"
 #include "adapters/http/TreeRegistryApi.h"
@@ -20,6 +21,7 @@
 #include "adapters/postgres/PgFeedbackRepository.h"
 #include "adapters/postgres/PgMcpKeyRepository.h"
 #include "adapters/postgres/PgOAuthRepository.h"
+#include "adapters/postgres/PgOgImageRepository.h"
 #include "adapters/postgres/PgOpLog.h"
 #include "adapters/postgres/PgProgressRepository.h"
 #include "adapters/postgres/PgServerErrorRepository.h"
@@ -113,6 +115,12 @@ int main() {
   // private or absent tree gets the shell verbatim, so it stays indistinguishable from absent.
   const char* webRootEnv = std::getenv("WINDMILL_WEB_ROOT");
   auto sharePageApi = std::make_shared<SharePageApi>(registry, authService, webRootEnv ? webRootEnv : "");
+
+  // Per-tree unfurl cards (og-tree-cards): the owner PUTs their tree's rendered 1200×630 PNG,
+  // and GET /og/:id.png serves it (canRead-gated) as the share link's og:image — with the
+  // generic card as the fallback whenever a tree has no image or can't be read.
+  auto ogImages = std::make_shared<PgOgImageRepository>(connString);
+  auto ogImageApi = std::make_shared<OgImageApi>(ogImages, trees, authService);
 
   // The per-user tree registry (create + list + rename + delete). Reads are repo-direct;
   // rename goes through RoomRegistry so a live room's title stays coherent with the column.
@@ -487,6 +495,14 @@ int main() {
         api->getProgress(req, std::move(cb), id);
       },
       {drogon::Get});
+
+  // Per-tree unfurl card upload (og-tree-cards): owner-only, the raw PNG in the body.
+  app.registerHandler(
+      "/v1/trees/{id}/og-image",
+      [ogImageApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        ogImageApi->putImage(req, std::move(cb), id);
+      },
+      {drogon::Put});
   app.registerHandler(
       "/v1/trees/{id}/diagnostics",
       [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
@@ -506,6 +522,15 @@ int main() {
       "/t/{id}",
       [sharePageApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
         sharePageApi->page(req, std::move(cb), id);
+      },
+      {drogon::Get});
+
+  // The og:image scrapers fetch: the tree's own card, canRead-gated, 302 to the generic card
+  // on any miss. Public, unauthenticated (a private tree's card resolves only for its owner).
+  app.registerHandler(
+      "/og/{id}.png",
+      [ogImageApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        ogImageApi->getImage(req, std::move(cb), id);
       },
       {drogon::Get});
 

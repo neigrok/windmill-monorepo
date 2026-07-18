@@ -105,6 +105,8 @@ TEST(render_shell_injects_the_trees_own_meta_and_keeps_the_sentinels) {
   CHECK(has(html, "content=\"My Tree\""));  // og:title + twitter:title
   CHECK(has(html, "A Windmill skill tree \xE2\x80\x94 3 steps."));
   CHECK(has(html, "href=\"https://windmill.works/t/t_abc\""));
+  CHECK(has(html, "content=\"https://windmill.works/og/t_abc.png\""));  // per-tree og:image + twitter:image
+  CHECK_FALSE(has(html, "og-image.png"));                   // the generic card is no longer the tag
   CHECK(has(html, "content=\"noindex\""));                  // unlisted is not indexable
   CHECK(has(html, "content=\"summary_large_image\""));      // large card preserved
   CHECK_FALSE(has(html, "Windmill root"));                  // the root title is gone

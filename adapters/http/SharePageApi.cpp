@@ -61,12 +61,15 @@ std::string SharePageApi::renderShell(const std::string& shell, const std::strin
   if (start == std::string::npos || end == std::string::npos || end < start) return shell;
 
   const std::string safeTitle = htmlEscape(title.empty() ? "Untitled tree" : title);
-  const std::string url = "https://windmill.works/t/" + htmlEscape(id);
+  const std::string host = "https://windmill.works";
+  const std::string url = host + "/t/" + htmlEscape(id);
   const std::string description =
       "A Windmill skill tree \xE2\x80\x94 " + std::to_string(steps) + (steps == 1 ? " step." : " steps.");
   const std::string robots =
       visibility == Visibility::public_ ? "index, follow, max-image-preview:large" : "noindex";
-  const std::string image = "https://windmill.works/og-image.png";
+  // Per-tree unfurl card (og-tree-cards): GET /og/:id.png serves this tree's own rendered image
+  // and falls back to the generic card when none was uploaded — so the tag can always point here.
+  const std::string image = host + "/og/" + htmlEscape(id) + ".png";
 
   std::string meta;
   meta += "\n\n    <!-- Rewritten for this shared tree by windmill_server (path-share). -->\n";
