@@ -30,7 +30,7 @@ export function Toast({ children, tone = 'success', onClose }) {
     >
       <span style={{ flex: 1 }}>{children}</span>
       {onClose && (
-        <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', opacity: 0.5, fontSize: 16 }}>
+        <button onClick={onClose} aria-label="Dismiss" title="Dismiss" style={{ border: 'none', background: 'none', cursor: 'pointer', opacity: 0.5, fontSize: 16 }}>
           ×
         </button>
       )}

@@ -132,7 +132,7 @@ export function BottomSheet({ open, onDismiss, children }) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          height: 28,
+          minHeight: 44,
           cursor: 'grab',
           touchAction: 'none',
         }}

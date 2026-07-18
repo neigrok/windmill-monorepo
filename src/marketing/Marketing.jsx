@@ -113,11 +113,11 @@ function NavCluster({ status, user, newest, treeCount, linkSent, onLogin, onResu
   return (
     <>
       {resolving && (
-        <span style={{ visibility: 'hidden' }} aria-hidden="true"><Button variant="ghost" size="sm">Log in</Button></span>
+        <span style={{ visibility: 'hidden' }} aria-hidden="true"><Button variant="ghost" size="sm">Sign in</Button></span>
       )}
       {status === 'ghost' && (linkSent
         ? <LinkSentChip onClick={onResumeLink} />
-        : <Button variant="ghost" size="sm" onClick={onLogin}>Log in</Button>)}
+        : <Button variant="ghost" size="sm" onClick={onLogin}>Sign in</Button>)}
       <a href="#/app"><Button variant="primary" size="sm">Start your tree</Button></a>
     </>
   );
@@ -268,10 +268,10 @@ function QuestThumb({ quest }) {
 
 function Paths() {
   const quests = [
-    { id: 'frontend', title: 'Frontend path', readout: '24 steps · ~4 months', rule: 'var(--kind-terracotta)', dots: ['var(--kind-terracotta)', 'var(--kind-sky)', 'var(--kind-gold)'] },
+    { id: 'frontend', title: 'Frontend path', readout: '24 steps · ~4-6 months', rule: 'var(--kind-terracotta)', dots: ['var(--kind-terracotta)', 'var(--kind-sky)', 'var(--kind-gold)'] },
     { id: 'rust', title: 'Rust from zero', readout: '21 steps · ~3 months', rule: 'var(--kind-brick)', dots: ['var(--kind-brick)', 'var(--kind-olive)', 'var(--kind-gold)'] },
-    { id: 'ml', title: 'ML foundations', readout: '26 steps · ~4 months', rule: 'var(--kind-plum)', dots: ['var(--kind-plum)', 'var(--kind-sky)', 'var(--kind-olive)'] },
-    { id: 'ship', title: 'Ship v1.0', readout: '14 steps · ~6 weeks', rule: 'var(--kind-terracotta)', dots: ['var(--kind-terracotta)', 'var(--kind-sky)', 'var(--kind-gold)'] },
+    { id: 'ml', title: 'ML foundations', readout: '26 steps · ~6 months', rule: 'var(--kind-plum)', dots: ['var(--kind-plum)', 'var(--kind-sky)', 'var(--kind-olive)'] },
+    { id: 'ship', title: 'Ship v1', readout: '14 steps · ~6 weeks', rule: 'var(--kind-terracotta)', dots: ['var(--kind-terracotta)', 'var(--kind-sky)', 'var(--kind-gold)'] },
   ];
   return (
     <section id="paths" className="wrap" style={{ paddingTop: 96 }}>
@@ -353,7 +353,7 @@ function AiTools() {
 
 function Story() {
   const items = [
-    { icon: 'git-fork', title: 'Share a tree', copy: 'Every tree is a page. Send the link or post the picture — anyone can fork a copy and grow their own.' },
+    { icon: 'git-fork', title: 'Share a tree', copy: 'Every tree is a page. Send the link — anyone can fork a copy and grow their own.' },
     { icon: 'monitor-smartphone', title: 'Everywhere you are', copy: 'Sign in once and your trees follow — check a step off on your phone, tend the branches at your desk.' },
   ];
   return (

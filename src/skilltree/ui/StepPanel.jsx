@@ -400,7 +400,7 @@ function EditorStep({ node, state, prerequisites, startedAt, completedAt, histor
 // shared or phone viewer reads it; it never edits.
 const RO_DOT = { width: 9, height: 9, borderRadius: '50%', flexShrink: 0 };
 
-function ReadOnlyStep({ node, state, prerequisites = [], unlocks = [], completedAt, workspace = EMPTY_WORKSPACE, kinds = [], onMarkComplete, onClose = noop }) {
+function ReadOnlyStep({ node, state, prerequisites = [], unlocks = [], completedAt, workspace = EMPTY_WORKSPACE, kinds = [], onMarkComplete, onClose = noop, fill = false }) {
   if (!node) return null;
 
   const currentKind = node.color ?? DEFAULT_NODE_COLOR;
@@ -410,7 +410,7 @@ function ReadOnlyStep({ node, state, prerequisites = [], unlocks = [], completed
   const blocker = prerequisites.find((prerequisite) => !prerequisite.complete)?.label;
 
   return (
-    <Card style={{ maxHeight: '70vh', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+    <Card style={{ ...(fill ? { height: '100%' } : { maxHeight: '70vh' }), display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
       <div className="st-step-pinned">
       <div className="st-step-header">
         <div className="st-step-identity">

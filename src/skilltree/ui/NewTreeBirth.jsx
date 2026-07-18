@@ -155,11 +155,11 @@ export function NewTreeBirth() {
 
   const onKeyDown = (e) => {
     if (e.key === 'Enter') { e.preventDefault(); plant(); }
-    else if (e.key === 'Escape') { e.preventDefault(); window.history.back(); }
+    else if (e.key === 'Escape') { e.preventDefault(); window.location.hash = '#/app'; }
   };
 
   const planting = phase === 'planting';
-  const plaqueName = name.trim() || 'New tree';
+  const plaqueName = name.trim() || 'Untitled roadmap';
 
   const composer = composerOpen && parse && (
     <PasteComposer
@@ -180,13 +180,16 @@ export function NewTreeBirth() {
     <div style={shell}>
       <style>{CSS}</style>
 
-      {/* The plaque mirrors the typing — naming the root names the tree */}
+      {/* The plaque mirrors the typing — naming the root names the tree. The wordmark is a
+          home link on every viewport, so there's always an on-screen way back to #/app. */}
       <div style={plaque}>
-        <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: '50%', background: 'var(--color-brand-soft)', color: 'var(--color-brand-hover)' }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M12 20v-8" /><path d="M12 12c0-3 2-5 6-5 0 3-2 5-6 5z" /><path d="M12 14c0-2.5-1.7-4-5-4 0 2.5 1.7 4 5 4z" /></svg>
-        </span>
-        <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'var(--text-base)', color: 'var(--text-primary)' }}>Windmill</span>
-        <span style={{ fontSize: 'var(--text-xs)', color: name.trim() ? 'var(--text-secondary)' : 'var(--text-tertiary)', marginLeft: 4, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{plaqueName}</span>
+        <a href="#/app" style={plaqueLink}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: '50%', background: 'var(--color-brand-soft)', color: 'var(--color-brand-hover)' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M12 20v-8" /><path d="M12 12c0-3 2-5 6-5 0 3-2 5-6 5z" /><path d="M12 14c0-2.5-1.7-4-5-4 0 2.5 1.7 4 5 4z" /></svg>
+          </span>
+          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'var(--text-base)', color: 'var(--text-primary)' }}>Windmill</span>
+          <span style={{ fontSize: 'var(--text-xs)', color: name.trim() ? 'var(--text-secondary)' : 'var(--text-tertiary)', marginLeft: 4, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{plaqueName}</span>
+        </a>
       </div>
 
       <div style={stage}>
@@ -213,9 +216,12 @@ export function NewTreeBirth() {
             <div style={hint}>
               {planting ? 'Planting…' : (<><kbd style={kbd}>↵</kbd> plants your tree</>)}
             </div>
+            {breakpoint !== 'desktop' && (
+              <button type="button" className="birth-plant" onClick={plant} disabled={planting}>Plant</button>
+            )}
             {!planting && !composerOpen && (
               <div style={hint}>
-                or <button type="button" className="birth-paste-door" onClick={() => setComposerOpen(true)}>paste a plan</button> — ⌘V anywhere
+                or <button type="button" className="birth-paste-door" onClick={() => setComposerOpen(true)}>paste a plan</button>{breakpoint !== 'phone' && ' — ⌘V anywhere'}
               </div>
             )}
           </>
@@ -257,6 +263,7 @@ async function plantImportedLocally(plan) {
 
 const shell = { position: 'fixed', inset: 0, background: 'var(--surface-canvas)', fontFamily: 'var(--font-body)', color: 'var(--text-primary)' };
 const plaque = { position: 'absolute', top: 'var(--space-6)', left: 'var(--space-6)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)', padding: 'var(--space-2) var(--space-3)', background: 'color-mix(in srgb, var(--surface-card) 88%, transparent)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-full)', boxShadow: 'var(--shadow-sm)' };
+const plaqueLink = { display: 'flex', alignItems: 'center', gap: 'var(--space-2)', textDecoration: 'none', color: 'inherit' };
 const stage = { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-4)', padding: 'var(--space-6)' };
 const title = { fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 'var(--text-xl)' };
 const sub = { fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', margin: 0 };

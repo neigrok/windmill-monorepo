@@ -47,6 +47,7 @@ import { ReturnLedger } from './persistence/ReturnLedger.js';
 import { emptyWorkspace, arcFraction, addSubtask, toggleSubtask, editSubtask, deleteSubtask, setNote, addLink, deleteLink } from './model/NodeWorkspace.js';
 import { deriveLegend, withCounts, inUseCount, freeHue, addKind, recolorKind } from './model/Legend.js';
 import { KindLegend } from '../components/tree/KindLegend.jsx';
+import { Button } from '../components';
 import { PasteComposer } from './paste/PasteComposer.jsx';
 import { parsePlan } from './paste/planGrammar.js';
 import { graftPlan } from './paste/graftPlan.js';
@@ -1732,7 +1733,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
 
       {readOnly && breakpoint === 'phone' && (
         <BottomSheet open={!!selectedNode} onDismiss={() => setSelectedId(null)}>
-          {readOnlyDetail}
+          {readOnlyDetail && React.cloneElement(readOnlyDetail, { fill: true })}
         </BottomSheet>
       )}
 
@@ -1812,8 +1813,16 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
         mine={treeMine}
       />
 
-      {loading && !loadError && <div className="st-loading">Planting the tree…</div>}
-      {loadError && <div className="st-loading">Couldn’t load this roadmap. It may have moved, or the server is unreachable.</div>}
+      {loading && !loadError && <div className="st-loading"><span className="st-loading-msg">Planting the tree…</span></div>}
+      {loadError && (
+        <div className="st-load-error">
+          <p className="st-loading-msg">Couldn’t load this roadmap. It may have moved, or the server is unreachable.</p>
+          <div className="st-load-error-actions">
+            <Button onClick={() => setReloadKey((k) => k + 1)}>Try again</Button>
+            <a href="#/app" className="st-load-error-link">Your trees</a>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

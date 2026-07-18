@@ -16,6 +16,7 @@ export function SessionsSection() {
   const { signOut } = useAuth();
   const [sessions, setSessions] = useState(null); // null while loading
   const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0); // bump to re-run the load after a failure
 
   useEffect(() => {
     let alive = true;
@@ -23,7 +24,9 @@ export function SessionsSection() {
       .then((rows) => { if (alive) setSessions(rows); })
       .catch(() => { if (alive) { setSessions([]); setFailed(true); } });
     return () => { alive = false; };
-  }, []);
+  }, [attempt]);
+
+  const retry = () => { setSessions(null); setFailed(false); setAttempt((n) => n + 1); };
 
   const revoke = async (session) => {
     try {
@@ -52,7 +55,12 @@ export function SessionsSection() {
 
       {sessions !== null && sessions.length === 0 && (
         <p style={styles.calmLine}>
-          {failed ? "Couldn't load your sessions just now." : 'No other sessions.'}
+          {failed ? (
+            <>
+              Couldn't load your sessions just now.{' '}
+              <button type="button" onClick={retry} style={retryButton}>Try again</button>
+            </>
+          ) : 'No other sessions.'}
         </p>
       )}
 
@@ -77,3 +85,9 @@ export function SessionsSection() {
 }
 
 export default SessionsSection;
+
+const retryButton = {
+  background: 'none', border: 'none', padding: 0, font: 'inherit',
+  color: 'var(--text-secondary)', cursor: 'pointer',
+  textDecoration: 'underline', textUnderlineOffset: '2px',
+};

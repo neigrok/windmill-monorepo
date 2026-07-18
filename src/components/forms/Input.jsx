@@ -1,6 +1,6 @@
 import React from 'react';
 
-export function Input({ label, placeholder, value, onChange, error, type = 'text', icon = null }) {
+export function Input({ label, placeholder, value, onChange, error, type = 'text', icon = null, autoFocus = false }) {
   const [focus, setFocus] = React.useState(false);
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontFamily: 'var(--font-body)' }}>
@@ -24,6 +24,7 @@ export function Input({ label, placeholder, value, onChange, error, type = 'text
           value={value}
           placeholder={placeholder}
           onChange={onChange}
+          autoFocus={autoFocus}
           onFocus={() => setFocus(true)}
           onBlur={() => setFocus(false)}
           style={{

@@ -32,7 +32,7 @@ export function ControlBar({ title, titleSlot, onZoomIn, onZoomOut, onFitToView,
           </button>
         </Tooltip>
         <Tooltip label="Share roadmap" side="bottom">
-          <IconButton icon={<Icon name="image" />} label="Share roadmap" size="sm" onClick={onShare} />
+          <IconButton icon={<Icon name="share" />} label="Share roadmap" size="sm" onClick={onShare} />
         </Tooltip>
         {canReset && (
           <Tooltip label="Reset to authored roadmap" side="bottom">

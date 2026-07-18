@@ -260,11 +260,17 @@ const CSS = `
   .quest-card--ghost:hover { transform:none; box-shadow:none; }
   .quest-ghost-bud { width:28px; height:28px; border-radius:50%; box-sizing:border-box;
                      border:2px dashed var(--accent-terracotta-400); background:var(--color-brand-soft); }
-  .quest-ghost-door { border:none; background:none; padding:4px 8px; cursor:pointer;
+  .quest-ghost-door { display:inline-flex; align-items:center; justify-content:center;
+                      min-height:44px; border:none; background:none; padding:10px 16px; cursor:pointer;
                       font-family:var(--font-display); font-weight:700; font-size:var(--text-base);
-                      color:var(--text-secondary); border-radius:var(--radius-sm);
-                      transition:color 150ms var(--ease-standard); }
+                      color:var(--text-secondary); border-radius:var(--radius-md);
+                      transition:color 150ms var(--ease-standard), background 150ms var(--ease-standard); }
   .quest-ghost-door:hover { color:var(--text-primary); }
+
+  @media (max-width: 743px) {
+    .quest-ghost-door { align-self:stretch; width:100%; background:var(--color-brand-soft);
+                        color:var(--text-primary); }
+  }
 
   .quest-shelf-credit { margin-top:var(--space-8); font-size:12px; color:var(--text-tertiary); }
 

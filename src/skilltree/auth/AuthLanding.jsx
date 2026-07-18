@@ -16,32 +16,50 @@ export function AuthLanding({ onVerify, onSignedIn, onExpired, onOpenDoor }) {
   const [status, setStatus] = React.useState('verifying');
   const verified = React.useRef(false);
 
-  React.useEffect(() => {
-    if (verified.current) return; // one verify per mount — survives StrictMode's double-run
-    verified.current = true;
-
+  // The one verify path — run once on mount, and again from the unreachable retry.
+  // A network brick is honest ('unreachable'), never dressed up as an expired link.
+  const runVerify = React.useCallback(() => {
     const token = readTokenFromHash();
     if (!token) {
       setStatus('expired');
       onExpired?.();
       return;
     }
-
-    let active = true;
+    setStatus('verifying');
     onVerify(token)
       .then(({ user, forkedTree }) => {
-        if (!active) return;
         track('sign_in', { forked: !!forkedTree });
         if (forkedTree) track('fork_claim', { mode: 'email' });
         onSignedIn(user, forkedTree);
       })
-      .catch(() => {
-        if (!active) return;
+      .catch((err) => {
+        if (err?.code === 'unreachable') { setStatus('unreachable'); return; }
         setStatus('expired');
         onExpired?.();
       });
-    return () => { active = false; };
-  }, []);
+  }, [onVerify, onSignedIn, onExpired]);
+
+  React.useEffect(() => {
+    if (verified.current) return; // one verify per mount — survives StrictMode's double-run
+    verified.current = true;
+    runVerify();
+  }, [runVerify]);
+
+  const retry = () => { verified.current = true; runVerify(); };
+
+  if (status === 'unreachable') {
+    return (
+      <div style={stage}>
+        <div style={column}>
+          <h1 style={heading}>Can't reach windmill.works</h1>
+          <p style={subtext}>The link is still good — check your connection and try again.</p>
+          <div style={{ marginTop: 'var(--space-2)' }}>
+            <Button size="lg" onClick={retry}>Try again</Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (status === 'expired') {
     return (

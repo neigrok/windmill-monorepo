@@ -110,6 +110,7 @@ export function SignInDialog({ open, onClose, onSend, resume = null }) {
               type="email"
               placeholder="you@example.com"
               value={email}
+              autoFocus
               onChange={(e) => { setEmail(e.target.value); if (typo) setTypo(false); }}
             />
           </div>

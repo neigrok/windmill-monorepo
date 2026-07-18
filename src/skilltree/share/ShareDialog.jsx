@@ -10,11 +10,13 @@ import { track } from '../../telemetry/beacon.js';
 
 export function ShareDialog({ open, onClose, visibility, mine }) {
   const [linkCopied, setLinkCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false); // clipboard denied — the link is still selectable
   // The tree's live sharing stance. Seeded from the server's answer, but the owner's copy-link
   // flip and the Make-private toggle move it here without a reload — so the dialog's stance line
   // always states the reach the server actually holds, never a stale prop.
   const [stance, setStance] = useState(visibility ?? null);
   const copiedTimer = useRef(null);
+  const urlRef = useRef(null);
 
   const treeId = treeIdFromHash(window.location.hash);
   const shareUrl = treeId ? `${window.location.origin}/#/t/${treeId}?ref=share` : null;
@@ -26,8 +28,17 @@ export function ShareDialog({ open, onClose, visibility, mine }) {
   useEffect(() => { setStance(visibility ?? null); }, [visibility, open]);
 
   async function handleCopyLink() {
-    if (!(await copyText(shareUrl))) return;
+    if (!(await copyText(shareUrl))) {
+      // Clipboard blocked (insecure context / denied). Surface the link instead of
+      // failing silently: select it and tell the reader to copy it by hand.
+      urlRef.current?.select();
+      setCopyFailed(true);
+      clearTimeout(copiedTimer.current);
+      copiedTimer.current = setTimeout(() => setCopyFailed(false), 2500);
+      return;
+    }
     track('link_copy', {});
+    setCopyFailed(false);
     setLinkCopied(true);
     clearTimeout(copiedTimer.current);
     copiedTimer.current = setTimeout(() => setLinkCopied(false), 1500);
@@ -59,6 +70,7 @@ export function ShareDialog({ open, onClose, visibility, mine }) {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <input
+              ref={urlRef}
               readOnly
               value={shareUrl}
               onFocus={(e) => e.target.select()}
@@ -77,7 +89,7 @@ export function ShareDialog({ open, onClose, visibility, mine }) {
                 textOverflow: 'ellipsis',
               }}
             />
-            <Button variant="secondary" onClick={handleCopyLink}>{linkCopied ? 'Copied' : 'Copy link'}</Button>
+            <Button variant="secondary" onClick={handleCopyLink}>{linkCopied ? 'Copied' : copyFailed ? 'Press ⌘C' : 'Copy link'}</Button>
           </div>
 
           {(stance === 'unlisted' || stance === 'public') && (
