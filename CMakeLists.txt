@@ -78,6 +78,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     adapters/postgres/PgOAuthRepository.cpp
     adapters/postgres/PgEventRepository.cpp
     adapters/http/HttpApi.cpp
+    adapters/http/SharePageApi.cpp
     adapters/http/AuthApi.cpp
     adapters/http/EventsApi.cpp
     adapters/http/ComposeApi.cpp
@@ -131,6 +132,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/adapters/http/ComposeApiTest.cpp
     test/adapters/http/RateLimiterTest.cpp
     test/adapters/http/HttpApiTest.cpp
+    test/adapters/http/SharePageApiTest.cpp
     test/adapters/http/TreeRegistryApiTest.cpp
     test/adapters/ws/CollabTest.cpp
     test/adapters/email/ResendEmailSenderTest.cpp

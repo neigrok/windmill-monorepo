@@ -60,6 +60,11 @@ services:
       WINDMILL_API_URL: https://${DOMAIN_APP}
       WINDMILL_MCP_ALLOWED_ORIGINS: ${WINDMILL_MCP_ALLOWED_ORIGINS:-}
       WINDMILL_MCP_TOKEN: ${WINDMILL_MCP_TOKEN:-}
+      # The /t/:id share pages read the built SPA shell from here (the same host dir Caddy
+      # serves) to splice in each shared tree's own unfurl meta for social scrapers.
+      WINDMILL_WEB_ROOT: /srv/windmill-web
+    volumes:
+      - ./web:/srv/windmill-web:ro
     command: ["windmill_server"]
     healthcheck:
       test: ["CMD-SHELL", "curl -s -o /dev/null http://localhost:8080/ || exit 1"]

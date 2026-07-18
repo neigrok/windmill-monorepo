@@ -7,6 +7,7 @@
 #include "adapters/http/HttpApi.h"
 #include "adapters/http/OAuthApi.h"
 #include "adapters/http/RateLimiter.h"
+#include "adapters/http/SharePageApi.h"
 #include "adapters/http/TreeRegistryApi.h"
 #include "adapters/llm/AnthropicComposer.h"
 #include "adapters/mcp/McpHttpEndpoint.h"
@@ -92,6 +93,13 @@ int main() {
   linkTreeSocket();
 
   auto api = std::make_shared<HttpApi>(registry, trees, progress, oplog, genesis, authService, forkService);
+
+  // The real share path (path-share-pages): GET /t/:id serves the SPA shell with a shared
+  // tree's own unfurl meta spliced in, so the link unfurls as itself for social scrapers. It
+  // reads the built index.html from WINDMILL_WEB_ROOT (the same host dir Caddy serves); a
+  // private or absent tree gets the shell verbatim, so it stays indistinguishable from absent.
+  const char* webRootEnv = std::getenv("WINDMILL_WEB_ROOT");
+  auto sharePageApi = std::make_shared<SharePageApi>(registry, authService, webRootEnv ? webRootEnv : "");
 
   // The per-user tree registry (create + list + rename + delete). Reads are repo-direct;
   // rename goes through RoomRegistry so a live room's title stays coherent with the column.
@@ -420,6 +428,15 @@ int main() {
       "/v1/trees/{id}/activity",
       [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
         api->getActivity(req, std::move(cb), id);
+      },
+      {drogon::Get});
+
+  // The unfurlable share page: /t/:id serves the SPA shell with this tree's OG meta baked in.
+  // Caddy path-routes /t/* here; everything else stays the static SPA.
+  app.registerHandler(
+      "/t/{id}",
+      [sharePageApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        sharePageApi->page(req, std::move(cb), id);
       },
       {drogon::Get});
 
