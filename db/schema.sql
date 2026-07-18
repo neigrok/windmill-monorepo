@@ -363,5 +363,8 @@ ON CONFLICT DO NOTHING;
 INSERT INTO tree_edges (tree_id, from_id, to_id, added_hlc, removed_hlc) VALUES ('t_9e407a96b5330ebe', 'wind-basics', 'points-of-sail', '1:0:genesis', '0:0:')
 ON CONFLICT DO NOTHING;
 
--- Force public even if a pre-existing row was private (the INSERT above no-ops when the row exists).
-update trees set visibility = 'public' where id = 't_9e407a96b5330ebe';
+-- Force the demo live even if a pre-existing row is private OR soft-deleted: the INSERT above
+-- no-ops on an existing row, so it can't repair one whose state drifted. Every read path filters
+-- `deleted_at is null`, so a stray soft-delete reads byte-identical to absent — republish and
+-- un-delete so the front door can never be dark while a row exists.
+update trees set visibility = 'public', deleted_at = null where id = 't_9e407a96b5330ebe';
