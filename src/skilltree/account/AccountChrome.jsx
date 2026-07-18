@@ -23,12 +23,27 @@ export function AccountChrome({ width = 460, children }) {
   const signedIn = status === 'signed-in' && Boolean(user);
   const name = signedIn ? (user.name?.trim() || user.email) : '';
 
+  // Esc leaves the account surface for the app — the keyboard twin of the "Back to Windmill"
+  // door, so /settings and /connect aren't a dead end. A bubble listener, so an open Dialog's
+  // capture-phase Esc still wins (closes the dialog first); skipped while typing in a field so
+  // Esc mid-edit stays the field's own, not a navigation that discards the edit.
+  React.useEffect(() => {
+    const onKey = (event) => {
+      if (event.key !== 'Escape') return;
+      const el = document.activeElement;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+      window.location.hash = backHash();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   return (
     <div style={shell}>
       <div style={{ ...card, width }}>
         <div style={head}>
           <span style={mark}>Windmill</span>
-          <a href={backHash()} style={backLink}>Back to Windmill</a>
+          <a href={backHash()} style={backLink} title="Back to Windmill (Esc)">Back to Windmill</a>
           {signedIn && <Avatar name={name} size={22} />}
         </div>
         {children}
