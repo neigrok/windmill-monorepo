@@ -25,6 +25,15 @@ import { GENESIS_STAMP } from '../model/Legend.js';
 const DEFAULT_URL = socketUrl();
 const MAX_BACKOFF_MS = 8000;
 const FLUSH_CHUNK_BYTES = 256 * 1024;
+const HEARTBEAT_MS = 20000;
+// Dead-socket detection counts consecutive UNANSWERED pings, not wall-clock silence: a
+// backgrounded tab's setInterval is throttled to ~once/60s, so any wall-clock threshold near
+// that floor false-trips a healthy-but-throttled socket (it fires a ping, then finds the last
+// pong ~60s old, and reconnects a live pipe). Counting pings is throttle-immune — a live peer
+// answers each ping before the next (however throttled) tick, so the count only climbs on a
+// genuinely silent pipe. STALE_MS is only for the wake/online path (events, never throttled).
+const MISSED_PINGS_LIMIT = 3;   // pings unanswered in a row ⇒ half-open ⇒ reconnect (≈60s foreground)
+const STALE_MS = 60000;         // on refocus/reconnect-to-network, a minute of silence ⇒ reconnect for a fresh graft
 
 function replicaActor() {
   const nonce = crypto.randomUUID?.().slice(0, 8) ?? `${Date.now()}`;
@@ -66,6 +75,11 @@ export class SyncSession {
     this.presence = null;
     this.presenceTimer = null;
     this.pagehide = null;
+    this.heartbeatTimer = null;
+    this.lastRecvAt = 0;        // Date.now() of the last inbound frame — the wake/online staleness clock
+    this.pingsSinceRecv = 0;    // consecutive pings with no inbound frame since — the throttle-immune liveness gauge
+    this.onVisible = null;  // refocus reconnect: a background tab's throttled timers can miss a half-open socket
+    this.onOnline = null;   // network-return reconnect
     this.closed = false;
   }
 
@@ -118,6 +132,14 @@ export class SyncSession {
     if (typeof window !== 'undefined') {
       this.pagehide = () => this.persistNow();
       window.addEventListener('pagehide', this.pagehide);
+      // Wake/online recovery: a sleep/wake or network flap can leave the socket half-open (OPEN,
+      // no bytes flowing) with no `close` to reconnect. On the tab becoming visible or the network
+      // returning, reconnect at once if the socket is down or has gone silent past the window —
+      // this catches cases a throttled background-tab heartbeat would miss.
+      this.onVisible = () => { if (document.visibilityState === 'visible') this.reconnectIfStale(); };
+      this.onOnline = () => this.reconnectIfStale();
+      document.addEventListener('visibilitychange', this.onVisible);
+      window.addEventListener('online', this.onOnline);
     }
     this.connect();
     return this;
@@ -130,13 +152,17 @@ export class SyncSession {
       this.phase = 'syncing';
       // Send our coverage so the server replies with only the gap (two-way anti-entropy, §6).
       this.ws.send(JSON.stringify({ t: 'subscribe', treeId: this.treeId, lastSeq: this.lastSeq, vector: this.ackedServerVector.toJSON() }));
+      this.startHeartbeat();  // liveness begins once subscribed — pings surface a half-open pipe
     });
     this.ws.addEventListener('message', (event) => {
+      this.lastRecvAt = Date.now();  // any inbound frame proves the pipe is alive — bump before parse
+      this.pingsSinceRecv = 0;       // and answers every outstanding ping
       let frame;
       try { frame = JSON.parse(event.data); } catch { return; }
       this.receive(frame);
     });
     this.ws.addEventListener('close', () => {
+      this.stopHeartbeat();
       this.phase = 'offline';
       this.inFlight.clear();  // unacked frontiers die with the connection — never persisted
       if (!this.closed) this.scheduleReconnect();
@@ -155,7 +181,35 @@ export class SyncSession {
     try { this.ws?.close(); } catch { /* ignore */ }  // the close handler schedules the reconnect + graft resync
   }
 
+  // Application-level liveness. A half-open socket (NAT/proxy idle-timeout, laptop sleep/wake, a
+  // network flap with no clean TCP close) leaves readyState OPEN while no bytes flow and fires no
+  // `close`, so nothing reconnects and every server broadcast is lost. The heartbeat pings on a
+  // fixed interval and, once the socket has been silent past the staleness window, forces a
+  // reconnect — which closes → close handler → scheduleReconnect → a fresh graft (the existing
+  // heal path). It never touches sync semantics; the graft is the only resync.
+  startHeartbeat() {
+    this.stopHeartbeat();
+    this.lastRecvAt = Date.now();
+    this.pingsSinceRecv = 0;  // the subscribe reply answers as an inbound frame; start the count clean
+    this.heartbeatTimer = setInterval(() => {
+      if (this.ws?.readyState !== WebSocket.OPEN) return;  // the close handler owns reconnection while not open
+      this.ws.send(JSON.stringify({ t: 'ping', treeId: this.treeId }));
+      this.pingsSinceRecv += 1;
+      if (this.pingsSinceRecv >= MISSED_PINGS_LIMIT) this.forceReconnect();  // pings in a row unanswered ⇒ half-open
+    }, HEARTBEAT_MS);
+  }
+
+  stopHeartbeat() {
+    clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = null;
+  }
+
+  reconnectIfStale() {
+    if (this.ws?.readyState !== WebSocket.OPEN || Date.now() - this.lastRecvAt > STALE_MS) this.forceReconnect();
+  }
+
   receive(frame) {
+    if (frame.t === 'pong' || frame.t === 'ping') return;  // heartbeat: liveness already bumped by the message listener
     // Only the subscribe reply ('delta') may re-baseline coverage. Everything else on the
     // broadcast channel — 'live', an echoed 'flush', an import 'graft' — is a seq'd delta:
     // re-baselining on one would REPLACE coverage with that frame's own frontier, uncovering
@@ -424,10 +478,13 @@ export class SyncSession {
 
   close() {
     this.closed = true;
-    if (this.pagehide) {
-      window.removeEventListener('pagehide', this.pagehide);
-      this.pagehide = null;
+    if (typeof window !== 'undefined') {
+      if (this.pagehide) window.removeEventListener('pagehide', this.pagehide);
+      if (this.onVisible) document.removeEventListener('visibilitychange', this.onVisible);
+      if (this.onOnline) window.removeEventListener('online', this.onOnline);
     }
+    this.pagehide = this.onVisible = this.onOnline = null;
+    this.stopHeartbeat();
     clearTimeout(this.presenceTimer);
     clearTimeout(this.reconnectTimer);
     clearTimeout(this.saveTimer);
