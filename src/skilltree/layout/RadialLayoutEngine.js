@@ -2,6 +2,7 @@
 // its trunk depth, at the center of an angular wedge; wedges split among trunk
 // children proportional to subtree leaf counts. Synchronous — no worker, no dagre.
 import { LayoutEngine } from '../model/ports.js';
+import { cmpOrder } from '../model/TrunkTree.js';
 import { NODE_SIZE } from '../theme.js';
 
 const RING = NODE_SIZE * 2.8;
@@ -37,7 +38,7 @@ export class RadialLayoutEngine extends LayoutEngine {
       return positions;
     }
 
-    const roots = [...tree.roots()].sort((a, b) => (a.id < b.id ? -1 : 1));
+    const roots = [...tree.roots()].sort(cmpOrder);
     const totalLeaves = roots.reduce((sum, root) => sum + trunk.leafCountOf(root.id), 0);
     let cursor = 0;
     for (const root of roots) {

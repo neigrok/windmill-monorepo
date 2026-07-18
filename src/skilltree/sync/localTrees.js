@@ -58,7 +58,7 @@ export async function bearImportedTree({ title, nodes, kinds }) {
   for (const gesture of legendGestures(kinds)) session.dispatch(gesture);
   session.dispatch({
     kind: 'ImportSubgraph',
-    nodes: nodes.map((n) => ({ id: n.id, label: n.label, icon: n.icon, color: n.color, status: n.status, description: n.description, links: n.links })),
+    nodes: nodes.map((n) => ({ id: n.id, label: n.label, icon: n.icon, color: n.color, status: n.status, description: n.description, links: n.links, order: n.order })),
     edges: nodes.flatMap((n) => n.prerequisites.map((from) => ({ from, to: n.id }))),
   });
   await session.persistNow();

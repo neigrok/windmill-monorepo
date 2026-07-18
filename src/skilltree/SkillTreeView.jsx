@@ -548,14 +548,14 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   // Re-derive the whole render model from the editor's current TreeData and apply
   // it to the scene preserving the view. The seam every structural edit + undo/redo
   // funnels through; constructing a SkillTree here also re-validates the DAG.
-  // Positions are a projection of structure: whenever the node/edge signature changes —
-  // a create, connect, or delete, local or remote alike — the engine lays the whole tree
-  // out afresh, exactly as a page load would. Content-only updates (rename, progress,
+  // Positions are a projection of structure: whenever the node/edge/order signature changes —
+  // a create, connect, delete, or reorder, local or remote alike — the engine lays the whole
+  // tree out afresh, exactly as a page load would. Content-only updates (rename, progress,
   // drag) reuse the cached layout so nothing else moves, and hand-placed nodes win over
   // the engine either way via nudges.
   const layoutPositions = useCallback((nextTree) => {
     const signature = nextTree.allNodes
-      .map((node) => `${node.id}<${[...node.prerequisites].sort().join(',')}`)
+      .map((node) => `${node.id}<${[...node.prerequisites].sort().join(',')}<${node.order ?? ''}`)
       .sort()
       .join('|');
     if (layoutCacheRef.current.signature !== signature) {

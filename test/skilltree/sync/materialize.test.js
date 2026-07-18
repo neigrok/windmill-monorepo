@@ -252,3 +252,35 @@ test('one-element BulkRecolor is byte-equivalent to SetNodeColor on the projecte
   assert.deepStrictEqual(colors(bulk.lattice), expected);
   assert.deepStrictEqual(colors(single.lattice), colors(bulk.lattice));
 });
+
+// ImportSubgraph order-seeding (paste / append-mode): un-ordered pasted nodes get fractional keys
+// grouped by primary parent, appended PAST the graft parent's existing children — so a graft never
+// sorts to the front of an already-ordered tree. A node that already carries an order keeps it.
+
+const orderOf = (lattice, id) => lattice.toTreeData().nodes.find((n) => n.id === id).order;
+
+test('ImportSubgraph append: pasted children land after the graft parent existing child', () => {
+  const { lattice, play } = newTree();
+  play({ kind: 'CreateNode', id: 'root', label: 'Root' });
+  play({ kind: 'CreateNode', id: 'existing', label: 'E', parentId: 'root' });
+
+  play({ kind: 'ImportSubgraph', nodes: [{ id: 'p1', label: 'P1' }, { id: 'p2', label: 'P2' }], edges: [{ from: 'root', to: 'p1' }, { from: 'root', to: 'p2' }] });
+
+  const e = orderOf(lattice, 'existing');
+  const p1 = orderOf(lattice, 'p1');
+  const p2 = orderOf(lattice, 'p2');
+  assert.ok(e < p1 && p1 < p2, `expected existing(${e}) < p1(${p1}) < p2(${p2})`);
+});
+
+test('ImportSubgraph: a pasted node that already carries an order keeps it (doc round-trip)', () => {
+  const { lattice, play } = newTree();
+  play({ kind: 'ImportSubgraph', nodes: [{ id: 'x', label: 'X', order: 'Zz' }], edges: [] });
+  assert.strictEqual(orderOf(lattice, 'x'), 'Zz');
+});
+
+test('ImportSubgraph: pasted roots get distinct ascending keys', () => {
+  const { lattice, play } = newTree();
+  play({ kind: 'ImportSubgraph', nodes: [{ id: 'r1', label: 'R1' }, { id: 'r2', label: 'R2' }, { id: 'r3', label: 'R3' }], edges: [] });
+  const [r1, r2, r3] = ['r1', 'r2', 'r3'].map((id) => orderOf(lattice, id));
+  assert.ok(r1 < r2 && r2 < r3, `expected ascending, got ${r1}, ${r2}, ${r3}`);
+});

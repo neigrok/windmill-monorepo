@@ -98,6 +98,7 @@ export class SyncSession {
       id: n.id, createdAt: genesis,
       label: n.label ?? '', labelAt: genesis, icon: n.icon ?? '', iconAt: genesis,
       color: n.color ?? 'terracotta', colorAt: genesis,
+      order: n.order ?? '', orderAt: genesis,
       ...(n.position ? { position: n.position, positionAt: genesis } : {}),
       ...(n.status ? { status: n.status, statusAt: genesis } : {}),
       ...(n.description ? { description: n.description, descriptionAt: genesis } : {}),
@@ -396,6 +397,7 @@ export class SyncSession {
       if ('labelAt' in n) inv.label = record ? record.label.v : '';
       if ('iconAt' in n) inv.icon = record ? record.icon.v : '';
       if ('colorAt' in n) inv.color = record ? record.color.v : 'terracotta';
+      if ('orderAt' in n) inv.order = record ? record.order.v : '';
       if ('positionAt' in n) inv.position = record ? record.position.v : null;
       if ('statusAt' in n) inv.status = record ? record.status.v : null;
       if ('descriptionAt' in n) inv.description = record ? record.description.v : '';
@@ -427,6 +429,7 @@ export class SyncSession {
       if ('label' in n) { e.label = n.label; e.labelAt = s; }
       if ('icon' in n) { e.icon = n.icon; e.iconAt = s; }
       if ('color' in n) { e.color = n.color; e.colorAt = s; }
+      if ('order' in n) { e.order = n.order; e.orderAt = s; }
       if ('position' in n) { e.position = n.position; e.positionAt = s; }
       if ('status' in n) { e.status = n.status; e.statusAt = s; }
       if ('description' in n) { e.description = n.description; e.descriptionAt = s; }

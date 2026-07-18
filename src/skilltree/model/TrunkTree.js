@@ -1,11 +1,35 @@
 // Elects one "trunk" (primary) parent per node — a spanning arborescence over
 // the DAG — and derives each node's sector: branch root, trunk depth, leaf
 // weight. Same-kind parents win; ties go to the shallowest, then smallest id.
-// Trunk children keep id order, so a layout over the trunk is stable no matter
-// how the underlying node list happens to be ordered (HTTP load vs lattice).
+// Trunk children keep sibling order (cmpOrder — fractional-index key, then
+// creation time, then id), so a layout over the trunk is stable no matter how
+// the underlying node list happens to be ordered (HTTP load vs lattice).
 // A branch starts wherever the trunk crosses a color boundary or hangs off the
 // center, so sectors are affinity runs (topological runs when uncolored).
 // Pure — no WebGL, no React.
+
+// The total, stable order of two siblings — the whole layout's sort key, shared by the trunk
+// children here and the roots in RadialLayoutEngine. Lexicographic over (order, createdAt, id):
+// a node's fractional-index `order` decides first (an empty '' sorts before any assigned key,
+// so un-ordered migration data lands ahead of anything explicitly placed); ties and the all-''
+// case fall back to the creation stamp, then id. Identical data ⇒ identical order on every
+// device — the determinism contract. A node projected without these fields (a non-lattice
+// TreeData) simply sorts by id, exactly as before.
+const ZERO_STAMP = { ms: 0, counter: 0, actor: '' };
+
+export function cmpOrder(a, b) {
+  const orderA = a.order ?? '';
+  const orderB = b.order ?? '';
+  if (orderA !== orderB) return orderA < orderB ? -1 : 1;
+  // A missing createdAt (a non-lattice TreeData node) is compared as the zero stamp, not skipped —
+  // skipping made the compare non-transitive when stamped and un-stamped siblings mixed in one set.
+  const stampA = a.createdAt ?? ZERO_STAMP;
+  const stampB = b.createdAt ?? ZERO_STAMP;
+  if (stampA.ms !== stampB.ms) return stampA.ms < stampB.ms ? -1 : 1;
+  if (stampA.counter !== stampB.counter) return stampA.counter < stampB.counter ? -1 : 1;
+  if (stampA.actor !== stampB.actor) return stampA.actor < stampB.actor ? -1 : 1;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
 
 export class TrunkTree {
   constructor(tree) {
@@ -48,7 +72,9 @@ export class TrunkTree {
       this.trunkChildrenById.get(elected.id).push(id);
     }
 
-    for (const children of this.trunkChildrenById.values()) children.sort();
+    for (const children of this.trunkChildrenById.values()) {
+      children.sort((x, y) => cmpOrder(tree.nodesById.get(x), tree.nodesById.get(y)));
+    }
 
     for (const id of [...order].reverse()) {
       const children = this.trunkChildrenById.get(id);

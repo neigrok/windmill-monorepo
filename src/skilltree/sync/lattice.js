@@ -76,6 +76,7 @@ function newNode() {
     label: { v: '', at: { ...UNSET } },
     icon: { v: '', at: { ...UNSET } },
     color: { v: 'terracotta', at: { ...UNSET } },
+    order: { v: '', at: { ...UNSET } },  // fractional-index key, scoped to the parent; '' falls back to creation time
     position: { v: null, at: { ...UNSET } },
     status: { v: null, at: { ...UNSET } },
     description: { v: '', at: { ...UNSET } },
@@ -197,6 +198,7 @@ export class TreeLattice {
       mergeLww(record.label, n.label ?? '', fold(parseHlc(n.labelAt)));
       mergeLww(record.icon, n.icon ?? '', fold(parseHlc(n.iconAt)));
       mergeLww(record.color, n.color ?? 'terracotta', fold(parseHlc(n.colorAt)));
+      mergeLww(record.order, typeof n.order === 'string' ? n.order : '', fold(parseHlc(n.orderAt)));
       const position = n.position && typeof n.position === 'object' ? { x: n.position.x, y: n.position.y } : null;
       mergeLww(record.position, position, fold(parseHlc(n.positionAt)));
       mergeLww(record.status, n.status ?? null, fold(parseHlc(n.statusAt)));
@@ -237,7 +239,7 @@ export class TreeLattice {
   seedClock(clock) {
     for (const record of this.nodes.values()) {
       for (const reg of [record.life.addedAt, record.life.removedAt, record.label.at, record.icon.at,
-        record.color.at, record.position.at, record.status.at, record.description.at, record.links.at]) clock.observe(reg);
+        record.color.at, record.order.at, record.position.at, record.status.at, record.description.at, record.links.at]) clock.observe(reg);
     }
     for (const record of this.edges.values()) { clock.observe(record.addedAt); clock.observe(record.removedAt); }
     for (const record of this.kinds.values()) {
@@ -322,7 +324,7 @@ export class TreeLattice {
     const vector = new VersionVector();
     for (const record of this.nodes.values()) {
       for (const at of [record.life.addedAt, record.life.removedAt, record.label.at, record.icon.at,
-        record.color.at, record.position.at, record.status.at, record.description.at, record.links.at]) vector.observe(at);
+        record.color.at, record.order.at, record.position.at, record.status.at, record.description.at, record.links.at]) vector.observe(at);
     }
     for (const record of this.edges.values()) { vector.observe(record.addedAt); vector.observe(record.removedAt); }
     for (const record of this.kinds.values()) {
@@ -345,6 +347,7 @@ export class TreeLattice {
       emitField(entry, 'label', 'labelAt', record.label.v, record.label.at, vector);
       emitField(entry, 'icon', 'iconAt', record.icon.v, record.icon.at, vector);
       emitField(entry, 'color', 'colorAt', record.color.v, record.color.at, vector);
+      emitField(entry, 'order', 'orderAt', record.order.v, record.order.at, vector);
       emitField(entry, 'position', 'positionAt', record.position.v, record.position.at, vector);
       emitField(entry, 'status', 'statusAt', record.status.v, record.status.at, vector);
       emitField(entry, 'description', 'descriptionAt', record.description.v, record.description.at, vector);
@@ -397,6 +400,8 @@ export class TreeLattice {
         label: record.label.v,
         icon: record.icon.v,
         color: record.color.v,
+        order: record.order.v,                 // the sibling sort key (layout reads it; '' ⇒ creation-time fallback)
+        createdAt: { ...record.life.addedAt },  // read-only creation stamp the layout's fallback compares
         prerequisites: parentsOf.get(id) ?? [],
         position: record.position.v ? { ...record.position.v } : undefined,
         status: record.status.v ?? undefined,

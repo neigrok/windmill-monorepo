@@ -5,6 +5,7 @@
 // TreeData, and there is exactly one encoding of it.
 
 import { hlcText } from './lattice.js';
+import { keyBetween, nKeysBetween } from './fractionalIndex.js';
 
 function node(id, at, fields) {
   const entry = { id };
@@ -14,6 +15,7 @@ function node(id, at, fields) {
   if ('label' in fields) { entry.label = fields.label; entry.labelAt = s; }
   if ('icon' in fields) { entry.icon = fields.icon; entry.iconAt = s; }
   if ('color' in fields) { entry.color = fields.color; entry.colorAt = s; }
+  if ('order' in fields) { entry.order = fields.order; entry.orderAt = s; }
   if ('position' in fields) { entry.position = fields.position; entry.positionAt = s; }
   if ('status' in fields) { entry.status = fields.status; entry.statusAt = s; }
   if ('description' in fields) { entry.description = fields.description; entry.descriptionAt = s; }
@@ -48,7 +50,14 @@ export function materialize(gesture, lattice, clock) {
 
   switch (g.kind) {
     case 'CreateNode': {
-      nodes.push(node(g.id, at, { created: true, label: g.label ?? '', icon: g.icon ?? '', color: g.color ?? 'terracotta', position: g.x != null && g.y != null ? { x: g.x, y: g.y } : null, ...(g.description ? { description: g.description } : {}), ...(g.links?.length ? { links: g.links } : {}) }));
+      // Slot the new node just after its last-ordered sibling under the same parent (roots share
+      // the virtual canvas-center parent), so a create always appends rather than renumbering.
+      const parentId = g.parentId ?? null;
+      const siblings = data.nodes.filter((n) => (parentId ? n.prerequisites.includes(parentId) : n.prerequisites.length === 0));
+      let lastOrder = null;
+      for (const sibling of siblings) if (sibling.order && (lastOrder === null || sibling.order > lastOrder)) lastOrder = sibling.order;
+      const order = keyBetween(lastOrder, null);
+      nodes.push(node(g.id, at, { created: true, label: g.label ?? '', icon: g.icon ?? '', color: g.color ?? 'terracotta', order, position: g.x != null && g.y != null ? { x: g.x, y: g.y } : null, ...(g.description ? { description: g.description } : {}), ...(g.links?.length ? { links: g.links } : {}) }));
       if (g.parentId) edges.push(addEdge(g.parentId, g.id, at));
       break;
     }
@@ -59,6 +68,27 @@ export function materialize(gesture, lattice, clock) {
     // (hue + label + description) in a single created write; ranks step past the last so
     // they land in order. AddKind repaints nothing (nodes carry their hue as a string).
     case 'ImportSubgraph': {
+      // Seed order for pasted nodes so a graft appends after the target parent's existing children
+      // instead of sorting to the front (an empty order sorts first). Group by primary parent — a
+      // pasted node's first edge, else the virtual center for a pasted root — and hand each group
+      // keys past that parent's last existing child. A doc round-trip that already carries an order
+      // (n.order) keeps it; only un-ordered paste/quest nodes get seeded.
+      const primaryParent = new Map();
+      for (const e of g.edges) if (!primaryParent.has(e.to)) primaryParent.set(e.to, e.from);
+      const needKeys = new Map();
+      for (const n of g.nodes) {
+        if (n.order) continue;
+        const parentId = primaryParent.get(n.id) ?? '';
+        if (!needKeys.has(parentId)) needKeys.set(parentId, []);
+        needKeys.get(parentId).push(n.id);
+      }
+      const seeded = new Map();
+      for (const [parentId, ids] of needKeys) {
+        const siblings = data.nodes.filter((nd) => (parentId ? nd.prerequisites.includes(parentId) : nd.prerequisites.length === 0));
+        let lastOrder = null;
+        for (const sibling of siblings) if (sibling.order && (lastOrder === null || sibling.order > lastOrder)) lastOrder = sibling.order;
+        nKeysBetween(lastOrder, null, ids.length).forEach((key, i) => seeded.set(ids[i], key));
+      }
       for (const n of g.nodes) {
         nodes.push(node(n.id, at, {
           created: true,
@@ -66,6 +96,7 @@ export function materialize(gesture, lattice, clock) {
           icon: n.icon ?? '',
           color: n.color ?? 'terracotta',
           position: n.position ?? null,
+          order: n.order ?? seeded.get(n.id) ?? '',
           ...(n.status ? { status: n.status } : {}),
           ...(n.description ? { description: n.description } : {}),
           ...(n.links?.length ? { links: n.links } : {}),
@@ -81,6 +112,7 @@ export function materialize(gesture, lattice, clock) {
     case 'ResurrectNode': nodes.push(node(g.id, at, { created: true })); break;  // re-add life only; the tombstoned fields survive
     case 'RenameNode': nodes.push(node(g.id, at, { label: g.label })); break;
     case 'SetNodeColor': nodes.push(node(g.id, at, { color: g.color })); break;
+    case 'SetNodeOrder': nodes.push(node(g.id, at, { order: g.order })); break;  // one register write — siblings re-sort, none renumber
     case 'AddEdge': edges.push(addEdge(g.from, g.to, at)); break;
     case 'RemoveEdge': edges.push(removeEdge(g.from, g.to, at)); break;
     case 'ReconnectEdge':
