@@ -43,6 +43,7 @@ import { WorkspaceStore } from './persistence/WorkspaceStore.js';
 import { LegendStore } from './persistence/LegendStore.js';
 import { LocalTreeRegistry } from './persistence/LocalTreeRegistry.js';
 import { PlaceStore } from './persistence/PlaceStore.js';
+import { ReturnLedger } from './persistence/ReturnLedger.js';
 import { emptyWorkspace, arcFraction, addSubtask, toggleSubtask, editSubtask, deleteSubtask, setNote, addLink, deleteLink } from './model/NodeWorkspace.js';
 import { deriveLegend, withCounts, inUseCount, freeHue, addKind, recolorKind } from './model/Legend.js';
 import { KindLegend } from '../components/tree/KindLegend.jsx';
@@ -63,6 +64,7 @@ const legendStore = new LegendStore();
 const syncStore = new SyncStore();
 const deviceTrees = new LocalTreeRegistry();
 const placeStore = new PlaceStore();
+const returnLedger = new ReturnLedger();
 const AUTO_COMPLETE_HOLD = 600; // held breath before auto-completing: arc-close 280 + hold 320 (§4)
 const NEXT_UP_SELECT_MS = 540; // ~90% of the camera's default 600ms glide — the dock swaps as the fly settles
 const NEXT_UP_ENTER_MS = 600; // auto-open waits for the fit-to-view camera to still (whats-next-panel §04)
@@ -325,6 +327,10 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     if (demoRef.current) return; // the demo plays against an in-memory overlay — never localStorage (F4 invariant)
     if (!seedRef.current) return;
     progressStore.save(seedRef.current.id, next);
+    // Advance the return-recap baseline as work lands: this device has now witnessed these
+    // completions, so a same-session reload replays nothing — only steps finished elsewhere while
+    // the tab was closed (a collaborator, or this account's MCP agent) are "new" on the next open.
+    if (!readOnlyRef.current) returnLedger.save(seedRef.current.id, { completed: [...next.completed], at: Date.now() });
   }, []);
 
   // Durable per-node workspaces (F13): callers pass the freshly-computed map, since
@@ -451,6 +457,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       progressStore.clear(seedRef.current.id);
       workspaceStore.clear(seedRef.current.id);
       legendStore.clear(seedRef.current.id);
+      returnLedger.clear(seedRef.current.id); // the reset reload re-baselines the recap from the cleared progress
     }
     pendingCompleteRef.current.forEach(clearTimeout);
     pendingCompleteRef.current.clear();
@@ -991,6 +998,16 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       if (cancelled) return;
 
       const scene = sceneRef.current;
+      // return-recap (P3): before the model installs, diff the steps completed since the
+      // last visit (a pure set-diff — robust to completions made on other devices) and arm
+      // the scene to replay them instead of the generic arrival. The demo and any view the
+      // user can't edit (shared, mobile, or a non-owner demotion — readOnlyRef, not just
+      // viewReadOnly) get neither a recap nor a ledger write: only the owner's editable tree.
+      const priorLedger = demo || readOnlyRef.current ? null : returnLedger.load(seed.id);
+      const sinceIds = ReturnLedger.since(progress.completed, priorLedger, states);
+      if (sinceIds.length) {
+        scene.armReturnRecap(sinceIds, `Welcome back · ${sinceIds.length} step${sinceIds.length > 1 ? 's' : ''} done since your last visit`);
+      }
       scene.setModel(model);
       // The demo load replays the arrival with NO toast (F4 §01): visitors watch the tree
       // grow; toasts speak to actors. The bloom still plays — only its summary is muted.
@@ -1047,6 +1064,10 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       setBounds(scene.getBounds());
       if (restoredSelection) setSelectedId(restoredSelection);
       if (!viewReadOnly) placeStore.save({ treeId: seed.id, camera: scene.getViewpoint(), selectedId: restoredSelection });
+      // Stamp this visit's completed set as the baseline the NEXT open diffs against (return-recap),
+      // so the away-work just replayed is shown once, not on every later open. Demo and any
+      // non-editable view never write — a visited tree isn't a returned-to one.
+      if (!demo && !readOnlyRef.current) returnLedger.save(seed.id, { completed: [...progress.completed], at: Date.now() });
       setLoading(false);
       if (shared && seed.id === DEMO_TREE_ID) track('demo_open', { treeId: seed.id });
 

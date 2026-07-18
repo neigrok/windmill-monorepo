@@ -103,20 +103,27 @@ export class CeremonyDirector {
     const t0 = this.clock();
     let lastSettle = 0;
     const waking = new Set();
+    // A step the light will wake (a child on a newly-lit edge) blooms as the light lands, not at
+    // t0 — so a chain completed in one changeset (a return-recap replay, a coalesced multi-finish)
+    // cascades one bloom per node rather than every step blooming at once and re-blooming on wake.
+    const woken = new Set(Object.values(changeset.wakeByEdge).map((child) => child.id));
 
     for (const n of changeset.risen) {
-      if (n.toTier !== TIER_COMPLETE) continue;
+      if (n.toTier !== TIER_COMPLETE || woken.has(n.id)) continue;
       this.nodes.igniteNode(n.id, t0, TIER_COMPLETE, { blossom: true });
       lastSettle = Math.max(lastSettle, BLOSSOM);
     }
 
     for (const e of changeset.litEdges) {
+      // e.wave staggers a multi-hop replay a cadence apart so light flows down a chain in order;
+      // ordinary single-hop completions carry no wave and ride IGNITE exactly as before.
+      const at = IGNITE + (e.wave ?? 0) * CADENCE;
       const dur = this.edges.edgeDuration(e.from, e.to) || IGNITE;
-      this.schedule(IGNITE, () => this.edges.travel(e.from, e.to, this.clock(), {}));
+      this.schedule(at, () => this.edges.travel(e.from, e.to, this.clock(), {}));
       const child = changeset.wakeByEdge[key(e.from, e.to)];
-      if (!child) { lastSettle = Math.max(lastSettle, IGNITE + dur); continue; }
+      if (!child) { lastSettle = Math.max(lastSettle, at + dur); continue; }
       waking.add(child.id);
-      const wakeAt = IGNITE + dur * HANDOFF + jitter(child.id);
+      const wakeAt = at + dur * HANDOFF + jitter(child.id);
       this.schedule(wakeAt, () => this.nodes.igniteNode(child.id, this.clock(), child.toTier, { blossom: child.toTier === TIER_COMPLETE }));
       lastSettle = Math.max(lastSettle, wakeAt + BLOSSOM);
     }

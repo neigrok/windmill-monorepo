@@ -129,6 +129,7 @@ export class SkillTreeScene {
     this.arrivalNoun = 'Roadmap'; // what the arrival toast says was planted (the quest shelf flips it)
     this.arrivalSummaryOverride = null; // a fixed arrival toast line (the fork re-plant sets it), or null for the default
     this.arrivalToastSuppressed = false; // the demo load suppresses the arrival toast — visitors watch, toasts are for actors
+    this.returnRecap = null; // a one-shot return-recap intent (set before setModel): { sinceIds, summary } | null
     this.pendingSummary = null; // the toast the next ceremony speaks (set by the shell)
     this.pendingHasAction = false;
     this.settle = null; // in-flight layout glide: { startAt, moves } (see beginSettle)
@@ -184,8 +185,17 @@ export class SkillTreeScene {
     this.hoveredId = null;
     this.selectedEdge = null;
     this.fitToView();
-    // Pre-dim before the first paint so the plant cascade doesn't flash the resting tree first.
-    if (this.arrivalLikely()) {
+    // Pre-dim before the first paint so the first ceremony doesn't flash a resting tree first.
+    // A return-recap only darkens the steps it will replay — the backdrop keeps the lit rest that
+    // installModel just painted, so the returning eye lands on the tree at rest before the new
+    // steps bloom (no full-tree black flash). Any other first paint dims the whole tree to wake
+    // it outward from the crowned root.
+    if (this.returnRecap) {
+      const dimmed = new Map();
+      for (const id of this.returnRecap.sinceIds) dimmed.set(id, 'locked');
+      this.nodeBatch.setStates(dimmed);
+      this.connectorBatch.setStates(dimmed, this.elapsedSeconds);
+    } else if (this.arrivalLikely()) {
       const dimmed = new Map(renderModel.nodes.map((node) => [node.id, 'locked']));
       this.nodeBatch.setStates(dimmed);
       this.connectorBatch.setStates(dimmed, this.elapsedSeconds);
@@ -359,6 +369,10 @@ export class SkillTreeScene {
     this.iconOverlay.setStates(statesMap);
 
     if (this.nodeStates.size === 0) {
+      // A returning visit replaces the generic arrival cascade with a replay of the steps
+      // completed since last time (return-recap, P3); a first-ever visit or nothing-new
+      // falls through to the ordinary arrival, untouched.
+      if (this.returnRecap) { this.playReturnRecap(statesMap); return; }
       this.nodeStates = new Map(statesMap);
       if (this.shouldAnimateArrival(statesMap)) { this.playArrival(statesMap); return; }
       this.nodeBatch.setStates(statesMap);
@@ -507,6 +521,53 @@ export class SkillTreeScene {
     return { rings, litEdgesByRing, summary };
   }
 
+  // return-recap (P3): a returning visit replays the steps completed since the last one,
+  // instead of the generic full-tree arrival. The since-nodes are painted back down to a
+  // pre-completion baseline (locked — an accepted approximation; the true prior tier isn't
+  // stored), the rest of the tree rests at its current state, and the ordinary growth
+  // ceremony blooms them + travels their newly-lit edges into the current frontier, closing
+  // on the one summary toast. Reduced motion (celebrate → the director's reduced path) and
+  // any yield-to-input are honoured for free. One-shot: consumed on the first push.
+  playReturnRecap(statesMap) {
+    const recap = this.returnRecap;
+    this.returnRecap = null;
+    const priorStates = new Map(statesMap);
+    for (const id of recap.sinceIds) if (priorStates.has(id)) priorStates.set(id, 'locked');
+    this.nodeBatch.setStates(priorStates);
+    this.connectorBatch.setStates(priorStates, this.elapsedSeconds);
+    this.nodeStates = priorStates;
+
+    const changeset = this.buildChangeset(statesMap);
+    this.nodeStates = new Map(statesMap);
+
+    // A path completed while away must cascade parent→child, not bloom all at once. Each since-node's
+    // depth within the since-only subgraph orders the replay: its edges travel one ring later than its
+    // since-parent's (the director reads e.wave), and a chained descendant blooms as the light lands,
+    // not at t0. Roots (no since-parent) are depth 0 and seed the travel.
+    const depth = this.sinceDepths(recap.sinceIds);
+    for (const edge of changeset.litEdges) edge.wave = depth.get(edge.from) ?? 0;
+
+    changeset.summary = recap.summary;
+    this.director.celebrate(changeset);
+  }
+
+  // Longest-path depth of each since-node within the since-only subgraph: 0 for a node with no
+  // since-parent (a cascade root), one past its deepest since-parent otherwise. Orders the recap.
+  sinceDepths(sinceIds) {
+    const edges = this.renderModel.edges.filter((e) => sinceIds.has(e.from) && sinceIds.has(e.to));
+    const depth = new Map();
+    for (const id of sinceIds) depth.set(id, 0);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const e of edges) {
+        const next = depth.get(e.from) + 1;
+        if (next > depth.get(e.to)) { depth.set(e.to, next); changed = true; }
+      }
+    }
+    return depth;
+  }
+
   // A quest plant announces itself as one (F5 §04): the shell flips the noun before the
   // first model install, so the arrival toast says "Quest planted" instead of Roadmap.
   setArrivalNoun(noun) {
@@ -518,6 +579,10 @@ export class SkillTreeScene {
   // (visitors watch the tree grow — toasts speak to actors). Both are read by buildArrivalPlan.
   setArrivalSummary(text) { this.arrivalSummaryOverride = text; }
   suppressArrivalToast() { this.arrivalToastSuppressed = true; }
+
+  // The shell arms the return-recap before the model installs (the same seam the arrival
+  // intents use): the first applyStates push replays these ids instead of the arrival.
+  armReturnRecap(sinceIds, summary) { this.returnRecap = { sinceIds: new Set(sinceIds), summary }; }
 
   // Live reposition of one node: cheap per-instance GPU writes for the node and
   // its incident edges, plus a spatial re-bucket. Overlays follow next frame.
