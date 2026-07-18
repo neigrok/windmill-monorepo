@@ -284,6 +284,21 @@ create table if not exists events (
 -- the funnel query: one event name over a time window
 create index if not exists events_name_ts on events (name, ts);
 
+-- the feedback door: one-click notes from anyone, signed-in or ghost. session_key is the
+-- client-minted correlation id (never identity); user_id is resolved server-side from the
+-- wm_session cookie / Bearer token — never trusted from the body, null for a ghost.
+create table if not exists feedback (
+  id          bigserial primary key,
+  ts          timestamptz not null default now(),
+  session_key text,
+  user_id     uuid,
+  message     text not null,
+  email       text,
+  context     text
+);
+-- the weekly read: newest feedback first
+create index if not exists feedback_ts on feedback (ts);
+
 -- ── The playable demo tree (F4) ─────────────────────────────────────────────────────────────
 -- The hosted "Learn to sail" roadmap a stranger meets at #/demo — read anonymously over both
 -- HTTP and WS, so the row must exist AND be public or read enforcement 404s it for every visitor.

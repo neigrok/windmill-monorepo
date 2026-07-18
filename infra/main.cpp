@@ -4,6 +4,7 @@
 #include "adapters/http/AuthApi.h"
 #include "adapters/http/ComposeApi.h"
 #include "adapters/http/EventsApi.h"
+#include "adapters/http/FeedbackApi.h"
 #include "adapters/http/HttpApi.h"
 #include "adapters/http/McpKeyApi.h"
 #include "adapters/http/OAuthApi.h"
@@ -16,6 +17,7 @@
 #include "adapters/mcp/RoadmapTools.h"
 #include "adapters/postgres/PgAuthRepository.h"
 #include "adapters/postgres/PgEventRepository.h"
+#include "adapters/postgres/PgFeedbackRepository.h"
 #include "adapters/postgres/PgMcpKeyRepository.h"
 #include "adapters/postgres/PgOAuthRepository.h"
 #include "adapters/postgres/PgOpLog.h"
@@ -120,6 +122,11 @@ int main() {
   // general per-IP apiLimiter below covers this route like every other.
   auto eventRepo = std::make_shared<PgEventRepository>(connString);
   auto eventsApi = std::make_shared<EventsApi>(eventRepo, authService);
+
+  // The feedback door: one-click notes from anyone, signed-in or ghost. Same shape as the
+  // event-spine — anon-allowed, caller resolved server-side, one row per note.
+  auto feedbackRepo = std::make_shared<PgFeedbackRepository>(connString);
+  auto feedbackApi = std::make_shared<FeedbackApi>(feedbackRepo, authService);
 
   // Paste-import escalation (F3): the model rewrites arbitrary prose into the paste grammar
   // and the client re-parses it deterministically — text in, text out, never a door into the
@@ -470,6 +477,13 @@ int main() {
   app.registerHandler(
       "/v1/events",
       [eventsApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { eventsApi->ingest(req, std::move(cb)); },
+      {drogon::Post});
+
+  // The feedback door: anonymous allowed (a frustrated logged-out user is the point); the
+  // shared per-IP apiLimiter covers this route like every other.
+  app.registerHandler(
+      "/v1/feedback",
+      [feedbackApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { feedbackApi->submit(req, std::move(cb)); },
       {drogon::Post});
 
   // Paste-import escalation: anonymous allowed (the birth canvas has no account); abuse is

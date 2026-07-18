@@ -80,11 +80,13 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     adapters/postgres/PgOAuthRepository.cpp
     adapters/postgres/PgMcpKeyRepository.cpp
     adapters/postgres/PgEventRepository.cpp
+    adapters/postgres/PgFeedbackRepository.cpp
     adapters/http/HttpApi.cpp
     adapters/http/SharePageApi.cpp
     adapters/http/AuthApi.cpp
     adapters/http/McpKeyApi.cpp
     adapters/http/EventsApi.cpp
+    adapters/http/FeedbackApi.cpp
     adapters/http/ComposeApi.cpp
     adapters/http/OAuthApi.cpp
     adapters/http/Caller.cpp
@@ -133,6 +135,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/adapters/json/SubgraphJsonTest.cpp
     test/adapters/json/TreeJsonTest.cpp
     test/adapters/http/EventsApiTest.cpp
+    test/adapters/http/FeedbackApiTest.cpp
     test/adapters/http/ComposeApiTest.cpp
     test/adapters/http/RateLimiterTest.cpp
     test/adapters/http/HttpApiTest.cpp
