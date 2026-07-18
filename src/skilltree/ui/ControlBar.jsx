@@ -4,7 +4,7 @@
 import React from 'react';
 import { IconButton, Tooltip, Icon } from '../../components';
 
-export function ControlBar({ title, titleSlot, onZoomIn, onZoomOut, onFitToView, canReset, onResetEdits, onShare, activityOpen, activityUnread, activityPing, readyCount = 0, onToggleActivity }) {
+export function ControlBar({ title, titleSlot, onZoomIn, onZoomOut, onFitToView, canReset, onResetEdits, onShare, onShowShortcuts, activityOpen, activityUnread, activityPing, readyCount = 0, onToggleActivity }) {
   return (
     <div className="st-topbar">
       <div className="st-brand">
@@ -37,6 +37,11 @@ export function ControlBar({ title, titleSlot, onZoomIn, onZoomOut, onFitToView,
         {canReset && (
           <Tooltip label="Reset to authored roadmap" side="bottom">
             <IconButton icon={<Icon name="rotate-ccw" />} label="Reset edits" size="sm" onClick={onResetEdits} />
+          </Tooltip>
+        )}
+        {onShowShortcuts && (
+          <Tooltip label="Keyboard shortcuts (?)" side="bottom">
+            <IconButton icon={<Icon name="keyboard" />} label="Keyboard shortcuts" size="sm" onClick={onShowShortcuts} />
           </Tooltip>
         )}
         <div className="st-zoom-group">

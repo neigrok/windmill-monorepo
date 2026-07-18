@@ -6,6 +6,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './skilltree.css';
 import { ControlBar } from './ui/ControlBar.jsx';
+import { ShortcutsDialog } from './ui/ShortcutsDialog.jsx';
 import { TreeSwitcher } from './ui/TreeSwitcher.jsx';
 import { StepPanel } from './ui/StepPanel.jsx';
 import { Minimap } from './ui/Minimap.jsx';
@@ -369,6 +370,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   const [hasLocalEdits, setHasLocalEdits] = useState(false); // local edits overlaid on the authored seed
   const [reloadKey, setReloadKey] = useState(0); // bump to re-run the load pipeline (e.g. after reset)
   const [shareOpen, setShareOpen] = useState(false); // the Share dialog (export postcard preview)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false); // the keyboard-shortcuts help overlay (editor only)
   const [treeVisibility, setTreeVisibility] = useState(null); // server stance on this tree: 'private'|'unlisted'|'public'|null
   const [treeMine, setTreeMine] = useState(false); // is the signed-in caller this tree's owner
   const [forkOpen, setForkOpen] = useState(false); // the fork "door" (read-only — the page's one verb)
@@ -985,6 +987,16 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
         toggleActivity();
         return;
       }
+      // "?" (Shift+/) opens the keyboard-shortcuts help — an editor affordance, guarded like
+      // ⌘A so it never fires while typing in a field (label, note, legend, switcher). The
+      // shared Dialog owns its own Esc/close; this branch only opens.
+      if (!readOnlyRef.current && event.key === '?' && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        const el = document.activeElement;
+        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+        event.preventDefault();
+        setShortcutsOpen(true);
+        return;
+      }
       if (!readOnlyRef.current && (event.key === 'Backspace' || event.key === 'Delete')) {
         const el = document.activeElement;
         if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
@@ -1003,7 +1015,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [undo, redo, deleteSelected, bulkDelete, handleDeleteEdge, toggleActivity, closeActivity, cancelNextUpSelect, setSelectedId, reconcileProjections]);
+  }, [undo, redo, deleteSelected, bulkDelete, handleDeleteEdge, toggleActivity, closeActivity, cancelNextUpSelect, setSelectedId, reconcileProjections, setShortcutsOpen]);
 
   // paste append-mode (F3 §01): raw ⌘V on the editor opens the composer already filled and
   // parsed, grafting under the current selection. Capture-phase, with three guards so it
@@ -1774,6 +1786,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
           canReset={hasLocalEdits}
           onResetEdits={handleResetEdits}
           onShare={() => setShareOpen(true)}
+          onShowShortcuts={() => setShortcutsOpen(true)}
           activityOpen={feedVisible}
           activityUnread={unreadCount}
           activityPing={activityPing}
@@ -2007,6 +2020,8 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
           ))}
         </div>
       )}
+
+      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
 
       <SignInDialog open={signInOpen} onClose={() => setSignInOpen(false)} onSend={requestMagicLink} />
 

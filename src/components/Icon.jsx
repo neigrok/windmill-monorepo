@@ -70,6 +70,7 @@ import {
   Pin,
   RotateCcw,
   ArrowRight,
+  Keyboard,
 } from 'lucide-react';
 
 /**
@@ -153,6 +154,7 @@ const REGISTRY = {
   pin: Pin,
   'rotate-ccw': RotateCcw,
   'arrow-right': ArrowRight,
+  keyboard: Keyboard,
 };
 
 export function Icon({ name, size = 16, strokeWidth = 2, color = 'currentColor', style }) {
