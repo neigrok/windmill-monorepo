@@ -240,6 +240,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   const demoRef = useRef(demo); // the scene is built once; the write seams read the fresh demo mode without a rebuild
   useEffect(() => { demoRef.current = demo; }, [demo]);
   const selectedIdRef = useRef(null);
+  const selectedIdsRef = useRef(new Set()); // the live multi-selection for the synchronous key/gesture checks
   const toastTimersRef = useRef([]); // pending hold→leave→unmount timers for the active toast
   const toastKeyRef = useRef(0); // monotonic key so a replacing toast remounts and re-enters
   const workspaceByNodeRef = useRef({}); // nodeId → workspace; the fresh read for arc pushes + persistence
@@ -271,6 +272,9 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   const [draft, setDraft] = useState('');
   const [draftKinds, setDraftKinds] = useState([]);
   const [selectedId, commitSelectedId] = useState(null);
+  // The selection is a SET; selectedId is its size≤1 projection (null above one), so single-select
+  // stays byte-identical and only size>1 diverges — the floating bar shows, the single chrome hides.
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [hoveredId, setHoveredId] = useState(null);
   const [bounds, setBounds] = useState(EMPTY_BOUNDS);
   const [scene, setScene] = useState(null);
@@ -299,6 +303,25 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   const setSelectedId = useCallback((id) => {
     cancelNextUpSelect();
     commitSelectedId(id);
+    setSelectedIds(id ? new Set([id]) : new Set()); // every single-select path collapses the set to match
+  }, [cancelNextUpSelect]);
+
+  // The two multi-select entrances, both reconciling selectedId to the size≤1 projection:
+  // a shift-click toggles one node; a marquee unions its catch onto the set (or replaces it
+  // when the drop wasn't additive). They read the live ref, since a gesture is never batched.
+  const onSelectionToggle = useCallback((id) => {
+    cancelNextUpSelect();
+    const next = new Set(selectedIdsRef.current);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setSelectedIds(next);
+    commitSelectedId(next.size === 1 ? [...next][0] : null);
+  }, [cancelNextUpSelect]);
+  const onMarqueeSelect = useCallback((ids, additive) => {
+    cancelNextUpSelect();
+    const next = additive ? new Set(selectedIdsRef.current) : new Set();
+    for (const id of ids) next.add(id);
+    setSelectedIds(next);
+    commitSelectedId(next.size === 1 ? [...next][0] : null);
   }, [cancelNextUpSelect]);
 
   const [hasLocalEdits, setHasLocalEdits] = useState(false); // local edits overlaid on the authored seed
@@ -675,6 +698,22 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   }, [emit, showToast, undo]);
   const deleteSelected = useCallback(() => deleteNodeAt(selectedIdRef.current), [deleteNodeAt]);
 
+  // Bulk delete the whole multi-selection in ONE undoable gesture (mirrors ImportSubgraph):
+  // a single BulkDelete stamp tombstones every node and transitively splices orphaned children
+  // up to live ground. Labels are snapshotted BEFORE dispatch — the projection drops the doomed
+  // nodes synchronously — so the feed can name each removal; one summary toast carries the Undo.
+  const bulkDelete = useCallback(() => {
+    const ids = [...selectedIdsRef.current];
+    if (!ids.length) return;
+    const nodes = editorRef.current?.treeData.nodes ?? [];
+    const doomed = ids.map((id) => nodes.find((n) => n.id === id)).filter(Boolean);
+    collabRef.current?.dispatch({ kind: 'BulkDelete', nodeIds: ids, edges: [] });
+    for (const node of doomed) emit({ verb: 'removed', nodeId: node.id, label: node.label, kind: node.color });
+    setSelectedIds(new Set());
+    setSelectedId(null);
+    showToast(`${ids.length} steps deleted`, { action: { label: 'Undo', run: undo } });
+  }, [emit, showToast, undo, setSelectedId]);
+
   const handleSetKind = useCallback((id, kind) => {
     if (!id) return;
     collabRef.current?.dispatch({ kind: 'SetNodeColor', id, color: kind });
@@ -802,15 +841,17 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       onSetKind: handleSetKind,
       onDeleteEdge: handleDeleteEdge,
       onReconnectEdge: handleReconnect,
+      onSelectionToggle,
+      onMarqueeSelect,
     };
     const nextScene = new SkillTreeScene(canvasRef.current, {
       readOnly: readOnlyRef.current,
       onPanStateChange: handlePanStateChange,
       onNodePick: (id) => {
         if (id) { setSelectedId(id); return; }
-        // Empty-canvas click: close details (the feed returns iff it was open),
-        // or dismiss the feed itself when nothing was selected (design A″).
-        if (selectedIdRef.current) setSelectedId(null);
+        // Empty-canvas click: drop any selection — single or multi — (the feed returns iff it
+        // was open), or dismiss the feed itself when nothing was selected (design A″).
+        if (selectedIdsRef.current.size > 0) setSelectedId(null);
         else { cancelNextUpSelect(); setFeedOpen(false); setPinned(false); }
       },
       onNodeHover: (id) => setHoveredId(id),
@@ -837,7 +878,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       sceneRef.current = null;
       setScene(null);
     };
-  }, [handleCreateChild, handleConnect, deleteNodeAt, handleSetKind, handleDeleteEdge, handleReconnect, showToast, handlePanStateChange]);
+  }, [handleCreateChild, handleConnect, deleteNodeAt, handleSetKind, handleDeleteEdge, handleReconnect, showToast, handlePanStateChange, onSelectionToggle, onMarqueeSelect]);
 
   // Keyboard: ⌘Z / ⇧⌘Z history, ⌫ / Delete removes the selection, Esc deselects.
   useEffect(() => {
@@ -848,6 +889,19 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
         else undo();
         return;
       }
+      // ⌘/Ctrl+A selects every node — but only over the canvas: a focused field keeps the
+      // browser's select-all so text editing is untouched.
+      if (!readOnlyRef.current && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
+        const el = document.activeElement;
+        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+        event.preventDefault();
+        cancelNextUpSelect();
+        const ids = editorRef.current?.treeData.nodes.map((n) => n.id) ?? [];
+        const set = new Set(ids);
+        setSelectedIds(set);
+        commitSelectedId(set.size === 1 ? ids[0] : null); // the size≤1 projection
+        return;
+      }
       if (event.key === 'Escape') {
         if (highlightedKindIdRef.current) {
           highlightedKindIdRef.current = null;
@@ -855,7 +909,9 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
           sceneRef.current?.highlightKind?.(null);
           return;
         }
-        if (selectedIdRef.current) { setSelectedId(null); return; }
+        // Clear any selection — single or multi — through one branch (subsumes the old
+        // single-select clear, since a single selection is a size-1 set).
+        if (selectedIdsRef.current.size > 0) { setSelectedIds(new Set()); setSelectedId(null); return; }
         if (sceneRef.current?.selectedEdge) { sceneRef.current.selectEdge(null); return; }
         if (feedOpenRef.current || pinnedRef.current) closeActivity();
         return;
@@ -869,6 +925,9 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       if (!readOnlyRef.current && (event.key === 'Backspace' || event.key === 'Delete')) {
         const el = document.activeElement;
         if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
+        // A multi-selection deletes as one gesture; a single node keeps the byte-identical
+        // DeleteNode path (its own toast + one history step).
+        if (selectedIdsRef.current.size > 1) { event.preventDefault(); bulkDelete(); return; }
         if (selectedIdRef.current) { event.preventDefault(); deleteSelected(); return; }
         const edge = sceneRef.current?.selectedEdge; // edge selection lives in the scene, not React
         if (edge) { event.preventDefault(); handleDeleteEdge(edge.from, edge.to); }
@@ -876,7 +935,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [undo, redo, deleteSelected, handleDeleteEdge, toggleActivity, closeActivity]);
+  }, [undo, redo, deleteSelected, bulkDelete, handleDeleteEdge, toggleActivity, closeActivity, cancelNextUpSelect, setSelectedId]);
 
   // paste append-mode (F3 §01): raw ⌘V on the editor opens the composer already filled and
   // parsed, grafting under the current selection. Capture-phase, with three guards so it
@@ -902,11 +961,17 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   }, []);
 
   useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
+  useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
 
   // Mirror React's selection back to the scene so the canvas chrome (affordances,
   // highlight) tracks it however it cleared — Esc, the panel's close button, or a
   // canvas click. The scene guards a same-id call, so canvas-driven picks no-op here.
-  useEffect(() => { sceneRef.current?.setSelection(selectedId); }, [selectedId]);
+  // setSelectedSet runs last and does a full-array sweep, so it's the authority for the
+  // GPU highlight; the affordance chrome follows selectedId (null above one, so it hides).
+  useEffect(() => {
+    sceneRef.current?.setSelection(selectedId);
+    sceneRef.current?.setSelectedSet(selectedIds);
+  }, [selectedId, selectedIds]);
 
   // The last-place ledger (anon-first-tree F6): as the camera settles, remember where
   // this tree was left — the magic-link landing's fresh tab and bare #/app both re-open
@@ -1249,6 +1314,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       if (pending.epoch !== epoch) return;
       sceneRef.current?.spotlightNode(null);
       commitSelectedId(id);
+      setSelectedIds(new Set([id])); // the delayed single-select keeps the set projection in step
     }, NEXT_UP_SELECT_MS);
   }, [cancelNextUpSelect]);
 
@@ -1812,6 +1878,15 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
           onMarkDone={() => completeStep(COACHED_NODE_ID)}
           completionCount={demoCompletions}
         />
+      )}
+
+      {/* Multi-select bar (not a dock tenant): a floating "N selected · Delete" that shows only
+          above one node, bottom-center over the canvas. Single-select keeps its own affordances. */}
+      {!readOnly && selectedIds.size > 1 && (
+        <div className="st-selection-bar" role="status">
+          <span>{selectedIds.size} selected</span>
+          <Button variant="danger" size="sm" onClick={bulkDelete}>Delete</Button>
+        </div>
       )}
 
       {toast && (

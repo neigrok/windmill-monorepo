@@ -29,12 +29,21 @@ export class NavigateTool extends Tool {
     this.lastHoverAt = 0;
   }
 
-  onPointerDown(pos) {
-    this.drag = { startX: pos.x, startY: pos.y, lastX: pos.x, lastY: pos.y, lastTime: performance.now(), moved: false, vx: 0, vy: 0 };
+  onPointerDown(pos, event) {
+    // Shift+press starts a marquee (rubber-band select) instead of a pan — but only in the
+    // editor, where the scene wired the marquee hooks. Read-only keeps shift-drag a plain pan.
+    const marquee = !!event?.shiftKey && !!this.ctx.beginMarquee;
+    this.drag = { startX: pos.x, startY: pos.y, lastX: pos.x, lastY: pos.y, lastTime: performance.now(), moved: false, vx: 0, vy: 0, marquee };
+    if (marquee) this.ctx.beginMarquee(pos.x, pos.y);
   }
 
   onPointerDrag(pos) {
     if (!this.drag) return;
+    if (this.drag.marquee) { // rubber-band: grow the band, never pan or gather inertia
+      if (!this.drag.moved && Math.hypot(pos.x - this.drag.startX, pos.y - this.drag.startY) > DRAG_THRESHOLD_PX) this.drag.moved = true;
+      this.ctx.updateMarquee(this.drag.startX, this.drag.startY, pos.x, pos.y);
+      return;
+    }
     const dx = pos.x - this.drag.lastX;
     const dy = pos.y - this.drag.lastY;
     const now = performance.now();
@@ -57,10 +66,18 @@ export class NavigateTool extends Tool {
     this.ctx.hoverEdge(id ? null : this.ctx.pickEdge(pos.x, pos.y)); // deepen a branch only off-node
   }
 
-  onPointerUp(pos) {
+  onPointerUp(pos, event) {
     if (!this.drag) return;
-    const { moved, vx, vy } = this.drag;
+    const drag = this.drag;
     this.drag = null;
+    if (drag.marquee) {
+      if (drag.moved) { this.ctx.commitMarquee(drag.startX, drag.startY, pos.x, pos.y, !!event?.shiftKey); return; }
+      this.ctx.cancelMarquee(); // a shift-click that never dragged: no band to keep — just toggle the node
+      const hit = this.ctx.pick(pos.x, pos.y);
+      if (hit) this.ctx.toggleSelect(hit);
+      return;
+    }
+    const { moved, vx, vy } = drag;
     if (moved) { this.ctx.camera.launchInertia(vx, vy); return; }
     const id = this.ctx.pick(pos.x, pos.y);
     if (id) { this.ctx.select(id); return; }

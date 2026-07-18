@@ -102,6 +102,40 @@ export function materialize(gesture, lattice, clock) {
       }
       break;
     }
+    // A multi-node delete as one atomic gesture (bulk-delete): every doomed node is
+    // tombstoned, and any surviving child that loses ALL its parents to the deletion is
+    // spliced up to its nearest SURVIVING ancestors — walking UP through doomed ancestors so
+    // the gap closes to live ground, never re-tethering to another doomed node or to itself.
+    // DeleteNode's single-node splice is exactly the g.nodeIds.length === 1 case of this. The
+    // edges list (v1 passes []) drops any explicit edge whose endpoint dies with a tombstone.
+    case 'BulkDelete': {
+      const doomed = new Set(g.nodeIds);
+      const byId = new Map(data.nodes.map((n) => [n.id, n]));
+      for (const id of g.nodeIds) if (byId.has(id)) nodes.push(node(id, at, { deleted: true }));
+      for (const child of data.nodes) {
+        if (doomed.has(child.id)) continue;
+        if (!child.prerequisites.some((p) => doomed.has(p))) continue; // no doomed parent — untouched
+        if (child.prerequisites.some((p) => !doomed.has(p))) continue; // keeps a live parent — not spliced
+        const survivors = new Set();
+        const seen = new Set();
+        const stack = child.prerequisites.filter((p) => doomed.has(p));
+        while (stack.length > 0) {
+          const p = stack.pop();
+          if (seen.has(p)) continue;
+          seen.add(p);
+          for (const grand of byId.get(p)?.prerequisites ?? []) {
+            if (doomed.has(grand)) stack.push(grand); // keep climbing through doomed ancestors
+            else survivors.add(grand);                // the nearest live ground on this path
+          }
+        }
+        for (const grand of survivors) if (grand !== child.id) edges.push(addEdge(grand, child.id, at));
+      }
+      for (const e of g.edges ?? []) {
+        if (doomed.has(e.from) || doomed.has(e.to)) continue; // dies with the tombstone anyway
+        edges.push(removeEdge(e.from, e.to, at));
+      }
+      break;
+    }
     case 'RenameKind': kinds.push(kind(g.id, at, { label: g.label })); break;
     case 'DescribeKind': kinds.push(kind(g.id, at, { description: g.description })); break;
     case 'AddKind':

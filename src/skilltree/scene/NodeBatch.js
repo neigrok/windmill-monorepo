@@ -569,10 +569,21 @@ export class NodeBatch {
 
   setSelected(id) {
     if (!this.selected) return;
-    if (this.selectedIndex >= 0) this.selected[this.selectedIndex] = 0;
     const i = id == null ? -1 : this.idToIndex.get(id) ?? -1;
+    this.selected.fill(0);  // clear EVERY prior highlight — incl. a setSelectedSet sweep, which left selectedIndex=-1
     this.selectedIndex = i;
     if (i >= 0) this.selected[i] = 1;
+    this.upload(this.selectedBuffer, this.selected);
+  }
+
+  // Multi-select highlight: every node in the set reads aSelected=1, every other 0 — the
+  // shader already lifts a selected node (size/brightness/glow), so a whole set highlights
+  // for free. One buffer sweep, mirroring setFaded. Clears the single-index bookkeeping so a
+  // later setSelected does not try to unset a stale slot (the full sweep is the authority).
+  setSelectedSet(idSet) {
+    if (!this.selected) return;
+    for (const [id, i] of this.idToIndex) this.selected[i] = idSet.has(id) ? 1 : 0;
+    this.selectedIndex = -1;
     this.upload(this.selectedBuffer, this.selected);
   }
 

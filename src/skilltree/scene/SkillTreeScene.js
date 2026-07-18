@@ -15,6 +15,7 @@ import { AffordanceLayer } from './AffordanceLayer.js';
 import { ArrivalChevron } from './ArrivalChevron.js';
 import { HoverLabel } from './HoverLabel.js';
 import { EdgeChrome } from './EdgeChrome.js';
+import { MarqueeOverlay } from './MarqueeOverlay.js';
 import { createTextureFromCanvas } from './glcore.js';
 import { InputController } from './input/InputController.js';
 import { NavigateTool, ReadOnlyTool } from './input/tools.js';
@@ -73,7 +74,9 @@ export class SkillTreeScene {
     // it just never grows the affordances, so every call into them is guarded below.
     this.affordanceLayer = null;
     this.edgeChrome = null;
+    this.marqueeOverlay = null;
     if (!this.readOnly) {
+      this.marqueeOverlay = new MarqueeOverlay(canvas);
       this.affordanceLayer = new AffordanceLayer(canvas, {
         camera: this.camera,
         pick: (x, y) => this.pick(x, y),
@@ -99,7 +102,8 @@ export class SkillTreeScene {
     this.spatialGrid = null;
     this.iconAtlas = null;
     this.iconTexture = null;
-    this.selectedId = null;
+    this.selectedId = null;      // the size≤1 projection of selectedIds — single-select chrome tracks this
+    this.selectedIds = new Set(); // the full multi-selection; size>1 shows the floating bar, hides single chrome
     this.hoveredId = null;
     this.selectedEdge = null;
     this.hoveredEdge = null;
@@ -162,6 +166,16 @@ export class SkillTreeScene {
       onPan: () => this.reportPan(),
       press: (id) => this.setPress(id),
     };
+    // The marquee + shift-click hooks are an editor capability the tool probes for: present
+    // only when editing, and stripped on demotion (setReadOnly) so a read-only shift-drag stays
+    // a plain pan. NavigateTool gates its marquee branch on `ctx.beginMarquee` existing.
+    if (!this.readOnly) {
+      this.toolContext.toggleSelect = (id) => this.toggleSelect(id);
+      this.toolContext.beginMarquee = (x0, y0) => this.marqueeOverlay?.show(x0, y0);
+      this.toolContext.updateMarquee = (x0, y0, x1, y1) => this.marqueeOverlay?.update(x0, y0, x1, y1);
+      this.toolContext.cancelMarquee = () => this.marqueeOverlay?.hide();
+      this.toolContext.commitMarquee = (x0, y0, x1, y1, additive) => this.commitMarquee(x0, y0, x1, y1, additive);
+    }
     const tool = this.readOnly ? new ReadOnlyTool(this.toolContext) : new NavigateTool(this.toolContext);
     this.input = new InputController(canvas, this.toolContext, tool);
 
@@ -213,11 +227,15 @@ export class SkillTreeScene {
     const selectedEdge = this.selectedEdge;
     this.installModel(renderModel);
     this.selectedId = this.nodesById.has(selected) ? selected : null;
+    // Intersect the multi-selection with the survivors too, so a deleted id can't linger
+    // highlighted after a rebuild (mirrors the single selectedId intersection above).
+    this.selectedIds = new Set([...this.selectedIds].filter((id) => this.nodesById.has(id)));
     this.hoveredId = this.nodesById.has(hovered) ? hovered : null;
     this.selectedEdge = selectedEdge
       ? renderModel.edges.find((edge) => edge.from === selectedEdge.from && edge.to === selectedEdge.to) ?? null
       : null;
-    this.nodeBatch.setSelected(this.hoveredId ?? this.selectedId);
+    if (this.selectedIds.size > 1) this.nodeBatch.setSelectedSet(this.selectedIds);
+    else this.nodeBatch.setSelected(this.hoveredId ?? this.selectedId);
     this.affordanceLayer?.setSelected(this.selectedId);
     this.hoverLabel.setHovered(this.hoveredId);
     this.edgeChrome?.setSelectedEdge(this.selectedEdge);
@@ -242,6 +260,18 @@ export class SkillTreeScene {
     this.input.setTool(new ReadOnlyTool(this.toolContext));
     this.selectEdge(null);
     this.hoverEdge(null);
+    // Drop the multi-selection and the editor-only marquee capability: a demoted view pans on
+    // shift-drag exactly like a born-read-only one, and no floating bar can linger. Clear the set
+    // directly (setSelectedSet now no-ops in read-only) so the highlight repaints to selectedId.
+    this.selectedIds = new Set();
+    this.refreshHighlight();
+    delete this.toolContext.toggleSelect;
+    delete this.toolContext.beginMarquee;
+    delete this.toolContext.updateMarquee;
+    delete this.toolContext.cancelMarquee;
+    delete this.toolContext.commitMarquee;
+    this.marqueeOverlay?.dispose();
+    this.marqueeOverlay = null;
     this.affordanceLayer?.clear();
     const retiring = [this.affordanceLayer, this.edgeChrome].filter(Boolean);
     this.affordanceLayer = null;
@@ -619,6 +649,7 @@ export class SkillTreeScene {
     const node = this.nodesById.get(id);
     if (!node) return;
     this.selectedId = id;
+    this.selectedIds = new Set([id]);
     this.nodeBatch.setSelected(id);
     this.camera.focus(node.x, node.y);
   }
@@ -746,6 +777,7 @@ export class SkillTreeScene {
     this.arrivalChevron.dispose();
     this.affordanceLayer?.dispose();
     this.edgeChrome?.dispose();
+    this.marqueeOverlay?.dispose();
     if (this.iconTexture) this.gl.deleteTexture(this.iconTexture);
   }
 
@@ -814,9 +846,37 @@ export class SkillTreeScene {
   // create) without clearing the edge or echoing back, so the canvas chrome tracks
   // React however it changed. The id guard makes the mirror idempotent.
   select(id) {
+    this.selectedIds = id ? new Set([id]) : new Set(); // a plain pick collapses any multi-selection
     this.setSelection(id);
+    this.refreshHighlight(); // repaint even when setSelection's id-guard short-circuits (multi → same selectedId)
     this.selectEdge(null);
     if (this.options.onNodePick) this.options.onNodePick(id);
+  }
+
+  // Mirror React's multi-selection into the scene: store the set and repaint. The single-select
+  // chrome still tracks selectedId (the size≤1 projection the shell keeps null above one) — this
+  // only drives the GPU highlight, which the shader lifts identically for one node or many.
+  setSelectedSet(idSet) {
+    if (this.readOnly) return; // multi-select is editor-only; a demoted view keeps its set empty
+    this.selectedIds = idSet;
+    this.refreshHighlight();
+  }
+
+  // A shift-click toggled a node — report it up so the shell reconciles the set (and the
+  // selectedId projection); the scene sync effect pushes the result straight back.
+  toggleSelect(id) {
+    if (this.options.onSelectionToggle) this.options.onSelectionToggle(id);
+  }
+
+  // A marquee drag committed: turn the screen rect into the world-space nodes it encloses via
+  // the spatial grid, hide the band, and report the ids up (additive when the drop held Shift).
+  commitMarquee(x0, y0, x1, y1, additive) {
+    this.marqueeOverlay?.hide();
+    if (!this.spatialGrid) return;
+    const a = this.camera.screenToWorld(x0, y0);
+    const b = this.camera.screenToWorld(x1, y1);
+    const ids = this.spatialGrid.within(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x, b.x), Math.max(a.y, b.y));
+    if (this.options.onMarqueeSelect) this.options.onMarqueeSelect(ids, additive);
   }
 
   setSelection(id) {
@@ -828,7 +888,7 @@ export class SkillTreeScene {
   }
 
   selectEdge(edge) {
-    if (edge && this.selectedId !== null) this.select(null); // safe: its selectEdge(null) recursion stops on the falsy edge
+    if (edge && this.selectedIds.size > 0) this.select(null); // clear any node selection — multi too (selectedId is null above 1)
     this.selectedEdge = edge ?? null;
     this.edgeChrome?.setSelectedEdge(this.selectedEdge);
     this.overlaysDirty = true;
@@ -857,6 +917,7 @@ export class SkillTreeScene {
   }
 
   refreshHighlight() {
+    if (this.selectedIds.size > 1) { this.nodeBatch.setSelectedSet(this.selectedIds); return; }
     this.nodeBatch.setSelected(this.selectedId);
   }
 
