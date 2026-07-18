@@ -16,7 +16,9 @@ import { MobileChrome } from './ui/mobile/MobileChrome.jsx';
 import { BottomSheet } from './ui/mobile/BottomSheet.jsx';
 import { MobileEditorSheet } from './ui/mobile/MobileEditorSheet.jsx';
 import { AimBar, RemoveLinkBar } from './ui/mobile/AimBar.jsx';
+import { BulkBar } from './ui/mobile/BulkBar.jsx';
 import { illegalTargets, edgeFor } from './ui/mobile/aim.js';
+import { sharedKind } from './ui/mobile/bulk.js';
 import { ForkDoor } from './ui/mobile/ForkDoor.jsx';
 import { useAuth } from './auth/AuthProvider.jsx';
 import { AccountSeat } from './auth/AccountSeat.jsx';
@@ -58,7 +60,7 @@ import { graftPlan } from './paste/graftPlan.js';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
 import { edgeKey, parseEdgeKey } from './scene/edgeKey.js';
 import { TreeEditor } from './editing/TreeEditor.js';
-import { NODE_SIZE, NODE_COLORS, NODE_COLOR_NAMES } from './theme.js';
+import { NODE_SIZE, NODE_COLORS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from './theme.js';
 import { track } from '../telemetry/beacon.js';
 import { CoachChip } from './demo/CoachChip.jsx';
 import { DEMO_TREE_ID, DEMO_STAGED_COMPLETED, COACHED_NODE_ID, COACH_DONE_KEY, FORKED_FROM_DEMO_KEY, DEMO_COPY, coachEligible } from './demo/demoStage.js';
@@ -382,6 +384,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   const [recenterAvailable, setRecenterAvailable] = useState(false); // the tree left the safe frame — offer Recenter
   const [aim, setAim] = useState(null); // connect aim mode (M3): { sourceId, direction: 'unlocks'|'needs' } | null
   const [removing, setRemoving] = useState(null); // the branch the remove-link bar targets (M3): { from, to } | null
+  const [multiMode, setMultiMode] = useState(false); // phone multi-select (M5): the bulk bar replaces the sheet
   const [coachAllowed, setCoachAllowed] = useState(false); // the demo coach may mount — a stranger who hasn't seen it (F4 §03)
   const [demoCompletions, setDemoCompletions] = useState(0); // marks made this demo session — any one retires the coach
   const [ctaEcho, setCtaEcho] = useState(false); // the Fork CTA takes the pulse once, after the unlock toast (§04)
@@ -762,6 +765,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     // endpoints both survive (materialize removeEdges those) — nodes + edges land in one undo.
     collabRef.current?.dispatch({ kind: 'BulkDelete', nodeIds: ids, edges });
     for (const node of doomed) emit({ verb: 'removed', nodeId: node.id, label: node.label, kind: node.color });
+    setMultiMode(false); // the deleted set is gone — leave the phone bulk bar (no-op on desktop)
     setSelectedId(null); // clears both sets and reconciles both projections (incl. scene.selectedEdge)
     const parts = [];
     if (ids.length) parts.push(`${ids.length} step${ids.length === 1 ? '' : 's'}`);
@@ -1425,6 +1429,13 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     return new Map(tree.nodes.map((node) => [node.id, node]));
   }, [tree]);
 
+  // The kind the whole multi-selection shares (M5), or null for a mixed set — the bulk bar's
+  // recolor row rings it so a same-kind set reads its category, a mixed set rings nothing.
+  const ringedKind = useMemo(
+    () => sharedKind([...selectedIds].map((id) => nodesById.get(id)?.color ?? DEFAULT_NODE_COLOR)),
+    [selectedIds, nodesById],
+  );
+
   // The grouped view and per-node history both recompute when the log version bumps.
   const activityGroups = useMemo(() => logRef.current.groupedByDay(Date.now()), [logVersion]);
   const selectedHistory = useMemo(() => (selectedId ? logRef.current.forNode(selectedId) : []), [selectedId, logVersion]);
@@ -1505,6 +1516,18 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     if (!mobileEditable || breakpoint !== 'phone') { scene.setEditTap(null); return undefined; }
     scene.setEditTap((x, y) => {
       const nodeId = scene.pick(x, y);
+      // Multi-select owns every tap while it's the surface (M5): a node toggles membership, and an
+      // empty tap clears the set but keeps the mode (only Done / deselecting the last member exits).
+      // Aim / remove never coexist with it, so those branches are skipped here.
+      if (multiMode) {
+        if (nodeId === null) { setSelectedIds(new Set()); reconcileProjections(new Set(), new Set()); return; }
+        const next = new Set(selectedIdsRef.current);
+        if (next.has(nodeId)) next.delete(nodeId); else next.add(nodeId);
+        if (next.size === 0) setMultiMode(false); // toggled off the last member → leave multi-select
+        setSelectedIds(next);
+        reconcileProjections(next, selectedEdgesRef.current);
+        return;
+      }
       if (aim && tree && nodesById.has(aim.sourceId)) {
         if (nodeId === null) { setAim(null); return; } // empty canvas cancels the aim
         if (illegalTargets(tree, aim.sourceId, aim.direction).has(nodeId)) return; // illegal target: the tap is inert
@@ -1521,7 +1544,27 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       setSelectedId(null); // empty canvas clears the selection
     });
     return () => scene.setEditTap(null);
-  }, [scene, mobileEditable, breakpoint, aim, tree, nodesById, handleConnect, showToast, setSelectedId]);
+  }, [scene, mobileEditable, breakpoint, multiMode, aim, tree, nodesById, handleConnect, showToast, setSelectedId, reconcileProjections]);
+
+  // Long-press → multi-select (M5): mirrors the editTap effect. Phone-owner only — a stranger's
+  // read-only tree leaves setLongPress null, so a hold is inert. The held node is the first
+  // member; entering clears any sheet (via the render gate), aim, and remove bar (one surface at
+  // a time). The set drives the read-only highlight through the setSelectedSet sync effect.
+  useEffect(() => {
+    if (!scene) return undefined;
+    if (!mobileEditable || breakpoint !== 'phone') { scene.setLongPress(null); return undefined; }
+    scene.setLongPress((id) => {
+      if (!id) return;
+      setAim(null);
+      setRemoving(null);
+      setMultiMode(true);
+      const next = new Set([id]);
+      setSelectedIds(next);
+      setSelectedEdges(new Set()); // links aren't multi-selectable on touch (M5) — start nodes-only
+      reconcileProjections(next, new Set());
+    });
+    return () => scene.setLongPress(null);
+  }, [scene, mobileEditable, breakpoint, reconcileProjections]);
 
   // Aim doesn't outlive its source: a concurrent peer deleting the aimed step leaves `aim`
   // dangling, which would strand a labelless aim bar (and, with a branch tap, stack a second
@@ -2025,7 +2068,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
 
       {readOnly && breakpoint === 'phone' && (
         <BottomSheet
-          open={!!selectedNode && !aim && !removing}
+          open={!!selectedNode && !aim && !removing && !multiMode}
           onDismiss={() => setSelectedId(null)}
           peekHeight={mobileEditable ? 300 : undefined}
           maxVh={mobileEditable ? 66 : undefined}
@@ -2057,10 +2100,10 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
         </BottomSheet>
       )}
 
-      {/* Aim mode + remove-link chrome (M3): each stands in for the sheet (one surface at a
-          time), and the undo snackbar floats above either. Owner-gated — a stranger's read-
-          only tap never reaches them (editTap stays null, so a branch tap does nothing). */}
-      {mobileEditable && breakpoint === 'phone' && aim && (
+      {/* Aim mode + remove-link chrome (M3) and the multi-select bulk bar (M5): each stands in
+          for the sheet — one surface at a time — and the undo snackbar floats above any of them.
+          Owner-gated: a stranger's read-only tap never reaches them (editTap/longPress stay null). */}
+      {mobileEditable && breakpoint === 'phone' && aim && !multiMode && (
         <AimBar
           sourceLabel={nodesById.get(aim.sourceId)?.label}
           direction={aim.direction}
@@ -2069,7 +2112,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
         />
       )}
 
-      {mobileEditable && breakpoint === 'phone' && removing && (
+      {mobileEditable && breakpoint === 'phone' && removing && !multiMode && (
         <RemoveLinkBar
           onRemove={() => {
             const { from, to } = removing;
@@ -2078,6 +2121,17 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
             showToast('Link removed', { action: { label: 'Undo', run: () => collabRef.current?.dispatch({ kind: 'AddEdge', from, to }) }, duration: 4000 });
           }}
           onCancel={() => setRemoving(null)}
+        />
+      )}
+
+      {mobileEditable && breakpoint === 'phone' && multiMode && (
+        <BulkBar
+          count={selectedIds.size}
+          kinds={recolorKinds}
+          ringedKind={ringedKind}
+          onRecolor={bulkRecolor}
+          onDelete={bulkDelete}
+          onDone={() => { setMultiMode(false); setSelectedId(null); }}
         />
       )}
 

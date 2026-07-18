@@ -8,6 +8,7 @@
 const DOUBLE_TAP_MS = 300; // two taps within this window count as a double-tap
 const DOUBLE_TAP_TOL = 32; // ...and within this many screen px of each other
 const TAP_MOVE_TOL = 10; // a tap barely moves; further than this is a drag, not a tap
+const LONG_PRESS_MS = 500; // a still finger held this long over a node enters multi-select (M5)
 const DOUBLE_TAP_ZOOM_IN = 1.6; // double-tap steps between these two zooms
 const DOUBLE_TAP_ZOOM_OUT = 1;
 const DOUBLE_TAP_PIVOT = 1.3; // below → step in, at/above → step out
@@ -23,9 +24,13 @@ export class InputController {
     this.downPos = null; // where the single-pointer gesture began (tap detection)
     this.downTime = 0;
     this.lastTap = null; // the previous tap { x, y, time } for double-tap
+    this.longPressTimer = null; // pending hold → multi-select (M5): armed in onDown, cleared on pan/lift/pinch
+    this.longPressFired = false; // the hold fired — the lift that ends it must not also tap/select
   }
 
   setTool(tool) {
+    clearTimeout(this.longPressTimer);
+    this.longPressFired = false;
     this.tool = tool;
     this.activePointerId = null;
     this.touches.clear();
@@ -75,14 +80,27 @@ export class InputController {
     this.downPos = pos;
     this.downTime = performance.now();
     this.tool.onPointerDown(pos, event);
+    // Long-press over a node arms multi-select (M5): a finger held still past LONG_PRESS_MS fires
+    // once. A pan cancels it (onMove) and the lift it consumes is swallowed (onUp), so the same
+    // gesture never also taps. Only over a node — pressed is a real id — and only for this single
+    // active pointer (a pinch returned above). onLongPress returns true iff it armed multi-select
+    // (mirrors editTap's consume); on desktop / a read-only share it returns false, so nothing swallows.
+    this.longPressFired = false;
+    if (event.pointerType === 'touch' && this.context.onLongPress && pressed != null) {
+      this.longPressTimer = setTimeout(() => { this.longPressFired = this.context.onLongPress(pressed) === true; }, LONG_PRESS_MS);
+    }
   };
 
   onMove = (event) => {
     const pos = this.localPos(event);
     if (this.touches.has(event.pointerId)) this.touches.set(event.pointerId, pos);
     if (this.pinch) { this.updatePinch(); return; }
-    if (this.activePointerId === event.pointerId) this.tool.onPointerDrag(pos, event);
-    else if (this.activePointerId === null) this.tool.onPointerMove(pos, event);
+    if (this.activePointerId === event.pointerId) {
+      // A pan wins the moment the finger travels past the tap tolerance — the deliberate-entry
+      // rule (M5): the hold arms multi-select only if the finger stays put for the full hold.
+      if (this.downPos && Math.hypot(pos.x - this.downPos.x, pos.y - this.downPos.y) > TAP_MOVE_TOL) clearTimeout(this.longPressTimer);
+      this.tool.onPointerDrag(pos, event);
+    } else if (this.activePointerId === null) this.tool.onPointerMove(pos, event);
   };
 
   onUp = (event) => {
@@ -96,9 +114,11 @@ export class InputController {
     }
 
     if (event.pointerId !== this.activePointerId) return;
+    clearTimeout(this.longPressTimer); // the hold is over either way — cancel any pending fire
     if (this.canvas.hasPointerCapture(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId);
     this.activePointerId = null;
     this.context.press?.(null); // release: the pressed node springs back
+    if (this.longPressFired) { this.longPressFired = false; return; } // the long-press consumed this gesture — no tap/select on lift
     const pos = this.localPos(event);
     this.tool.onPointerUp(pos, event);
     if (wasTouch) this.detectDoubleTap(pos);
@@ -123,6 +143,8 @@ export class InputController {
   // A second finger went down: abandon the first finger's single-pointer gesture (no
   // select, no move) and start tracking the pinch from the current spread + midpoint.
   beginPinch(pointerId) {
+    clearTimeout(this.longPressTimer); // a second finger is a pinch, not a hold — disarm multi-select
+    this.longPressFired = false;
     if (this.activePointerId !== null) {
       this.tool.onPointerCancel();
       this.context.press?.(null);

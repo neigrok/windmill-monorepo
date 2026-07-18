@@ -156,6 +156,10 @@ export class SkillTreeScene {
     // (aim / remove / select). Absent (read-only shares) it stays null and the tool's default
     // select fires byte-unchanged.
     this.editTap = null;
+    // A React long-press override for phone multi-select (Wave C, M5): the scene stays read-only,
+    // but a held finger over a node routes here so React owns the mode. Absent (read-only shares,
+    // desktop) it stays null and no hold arms — the tool's default select fires byte-unchanged.
+    this.longPress = null;
 
     this.toolContext = {
       camera: this.camera,
@@ -164,6 +168,10 @@ export class SkillTreeScene {
       // The tool stays dumb: it detects an unmoved tap and offers it here. A handler present
       // consumes the tap (returns true so the default select never fires); absent, false lets it through.
       editTap: (x, y) => this.editTap ? (this.editTap(x, y), true) : false,
+      // A held finger over a real node offers the id here; a handler present enters multi-select
+      // and returns true so the InputController swallows the lift (no tap follows). Absent, false
+      // lets the ordinary gesture through — mirrors editTap's consume contract.
+      onLongPress: (id) => (id != null && this.longPress ? (this.longPress(id), true) : false),
       select: (id) => this.select(id),
       // A plain edge pick reports up (onEdgePick) so the shell drops any lingering multi-selection.
       selectEdge: (edge) => { this.selectEdge(edge); this.options.onEdgePick?.(edge); },
@@ -254,10 +262,13 @@ export class SkillTreeScene {
     this.selectedEdges = new Set([...this.selectedEdges].filter((key) => survivingEdges.has(key)));
     this.connectorBatch.setSelectedEdges(this.selectedEdges);
     // The node highlight tracks the SET, not the size≤1 projection — a mixed node+edge selection
-    // has one node with selectedId null, which setSelected would blank. Read-only keeps its single
-    // path (setSelectedSet no-ops there) and its hover fallback re-lifts the hovered node.
-    if (this.readOnly) this.nodeBatch.setSelected(this.hoveredId ?? this.selectedId);
-    else this.nodeBatch.setSelectedSet(this.selectedIds);
+    // has one node with selectedId null, which setSelected would blank. Read-only lights the phone
+    // owner's multi-select set when it's non-empty (else a rebuild — e.g. a bulk recolor that keeps
+    // the selection — would blank every ring), and otherwise keeps its hover-fallback single path.
+    if (this.readOnly) {
+      if (this.selectedIds.size > 0) this.nodeBatch.setSelectedSet(this.selectedIds);
+      else this.nodeBatch.setSelected(this.hoveredId ?? this.selectedId);
+    } else this.nodeBatch.setSelectedSet(this.selectedIds);
     this.affordanceLayer?.setSelected(this.selectedId);
     this.hoverLabel.setHovered(this.hoveredId);
     this.edgeChrome?.setSelectedEdge(this.selectedEdge);
@@ -882,9 +893,10 @@ export class SkillTreeScene {
 
   // Mirror React's multi-selection into the scene: store the set and repaint. The single-select
   // chrome still tracks selectedId (the size≤1 projection the shell keeps null above one) — this
-  // only drives the GPU highlight, which the shader lifts identically for one node or many.
+  // only drives the GPU highlight, which the shader lifts identically for one node or many. Read-only
+  // stores the set too now (Wave C): the phone owner's multi-select lights on the calm read-only
+  // scene. A demoted view is already emptied by setReadOnly and never re-pushed a non-empty set.
   setSelectedSet(idSet) {
-    if (this.readOnly) return; // multi-select is editor-only; a demoted view keeps its set empty
     this.selectedIds = idSet;
     this.refreshHighlight();
   }
@@ -964,6 +976,10 @@ export class SkillTreeScene {
   // mode logic; null restores the tool's default read-only select (Wave B).
   setEditTap(fn) { this.editTap = fn; }
 
+  // Install (or clear) the phone long-press override — React gets a real node id and enters
+  // multi-select (Wave C, M5); null disarms the hold (the tool's default select is unchanged).
+  setLongPress(fn) { this.longPress = fn; }
+
   // Hovering a branch only deepens its line + a pointer cursor — never chrome.
   hoverEdge(edge) {
     const next = edge ?? null;
@@ -975,9 +991,14 @@ export class SkillTreeScene {
 
   refreshHighlight() {
     // Editor: the node highlight is the SET — one, mixed, or many all sweep the same way, and a
-    // deselect clears stale slots. Read-only has no multi-select (setSelectedSet no-ops), so it
-    // keeps tracking the single selectedId.
-    if (this.readOnly) { this.nodeBatch.setSelected(this.selectedId); return; }
+    // deselect clears stale slots. Read-only single-select tracks the lone selectedId, but the
+    // phone owner's multi-select (Wave C) lights the whole set with the same glow: a non-empty set
+    // wins, otherwise the single selectedId (setSelected and a size-1 sweep light one node alike).
+    if (this.readOnly) {
+      if (this.selectedIds.size > 0) this.nodeBatch.setSelectedSet(this.selectedIds);
+      else this.nodeBatch.setSelected(this.selectedId);
+      return;
+    }
     this.nodeBatch.setSelectedSet(this.selectedIds);
   }
 
