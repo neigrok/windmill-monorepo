@@ -72,9 +72,11 @@ export class NavigateTool extends Tool {
     this.drag = null;
     if (drag.marquee) {
       if (drag.moved) { this.ctx.commitMarquee(drag.startX, drag.startY, pos.x, pos.y, !!event?.shiftKey); return; }
-      this.ctx.cancelMarquee(); // a shift-click that never dragged: no band to keep — just toggle the node
+      this.ctx.cancelMarquee(); // a shift-click that never dragged: no band to keep — just toggle
       const hit = this.ctx.pick(pos.x, pos.y);
-      if (hit) this.ctx.toggleSelect(hit);
+      if (hit) { this.ctx.toggleSelect(hit); return; }
+      const edge = this.ctx.pickEdge(pos.x, pos.y); // off-node: shift-click a branch toggles it into the set
+      if (edge && this.ctx.toggleEdge) this.ctx.toggleEdge(edge);
       return;
     }
     const { moved, vx, vy } = drag;

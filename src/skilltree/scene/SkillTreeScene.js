@@ -16,6 +16,7 @@ import { ArrivalChevron } from './ArrivalChevron.js';
 import { HoverLabel } from './HoverLabel.js';
 import { EdgeChrome } from './EdgeChrome.js';
 import { MarqueeOverlay } from './MarqueeOverlay.js';
+import { edgeKey } from './edgeKey.js';
 import { createTextureFromCanvas } from './glcore.js';
 import { InputController } from './input/InputController.js';
 import { NavigateTool, ReadOnlyTool } from './input/tools.js';
@@ -106,6 +107,7 @@ export class SkillTreeScene {
     this.selectedIds = new Set(); // the full multi-selection; size>1 shows the floating bar, hides single chrome
     this.hoveredId = null;
     this.selectedEdge = null;
+    this.selectedEdges = new Set(); // desktop multi-select: edge keys highlighted in the ConnectorBatch
     this.hoveredEdge = null;
     this.lastArcs = new Map(); // last workspace arc fractions — re-applied across model rebuilds
 
@@ -154,7 +156,8 @@ export class SkillTreeScene {
       pick: (x, y) => this.pick(x, y),
       pickEdge: (x, y) => this.pickEdge(x, y),
       select: (id) => this.select(id),
-      selectEdge: (edge) => this.selectEdge(edge),
+      // A plain edge pick reports up (onEdgePick) so the shell drops any lingering multi-selection.
+      selectEdge: (edge) => { this.selectEdge(edge); this.options.onEdgePick?.(edge); },
       hover: (id) => this.hover(id),
       hoverEdge: (edge) => this.hoverEdge(edge),
       onInteract: () => {
@@ -171,6 +174,7 @@ export class SkillTreeScene {
     // a plain pan. NavigateTool gates its marquee branch on `ctx.beginMarquee` existing.
     if (!this.readOnly) {
       this.toolContext.toggleSelect = (id) => this.toggleSelect(id);
+      this.toolContext.toggleEdge = (edge) => this.toggleEdge(edge);
       this.toolContext.beginMarquee = (x0, y0) => this.marqueeOverlay?.show(x0, y0);
       this.toolContext.updateMarquee = (x0, y0, x1, y1) => this.marqueeOverlay?.update(x0, y0, x1, y1);
       this.toolContext.cancelMarquee = () => this.marqueeOverlay?.hide();
@@ -198,6 +202,7 @@ export class SkillTreeScene {
     this.selectedId = null;
     this.hoveredId = null;
     this.selectedEdge = null;
+    this.selectedEdges = new Set(); // a fresh dataset clears the edge multi-selection (connector rebuilt)
     this.fitToView();
     // Pre-dim before the first paint so the first ceremony doesn't flash a resting tree first.
     // A return-recap only darkens the steps it will replay — the backdrop keeps the lit rest that
@@ -234,8 +239,16 @@ export class SkillTreeScene {
     this.selectedEdge = selectedEdge
       ? renderModel.edges.find((edge) => edge.from === selectedEdge.from && edge.to === selectedEdge.to) ?? null
       : null;
-    if (this.selectedIds.size > 1) this.nodeBatch.setSelectedSet(this.selectedIds);
-    else this.nodeBatch.setSelected(this.hoveredId ?? this.selectedId);
+    // Intersect the edge multi-selection with the survivors too (installModel rebuilt the connector
+    // batch to a zeroed selected buffer), so a deleted edge can't linger highlighted after a rebuild.
+    const survivingEdges = new Set(renderModel.edges.map((edge) => edgeKey(edge.from, edge.to)));
+    this.selectedEdges = new Set([...this.selectedEdges].filter((key) => survivingEdges.has(key)));
+    this.connectorBatch.setSelectedEdges(this.selectedEdges);
+    // The node highlight tracks the SET, not the size≤1 projection — a mixed node+edge selection
+    // has one node with selectedId null, which setSelected would blank. Read-only keeps its single
+    // path (setSelectedSet no-ops there) and its hover fallback re-lifts the hovered node.
+    if (this.readOnly) this.nodeBatch.setSelected(this.hoveredId ?? this.selectedId);
+    else this.nodeBatch.setSelectedSet(this.selectedIds);
     this.affordanceLayer?.setSelected(this.selectedId);
     this.hoverLabel.setHovered(this.hoveredId);
     this.edgeChrome?.setSelectedEdge(this.selectedEdge);
@@ -264,8 +277,11 @@ export class SkillTreeScene {
     // shift-drag exactly like a born-read-only one, and no floating bar can linger. Clear the set
     // directly (setSelectedSet now no-ops in read-only) so the highlight repaints to selectedId.
     this.selectedIds = new Set();
+    this.selectedEdges = new Set(); // and the edge multi-selection — a demoted view carries neither
+    this.connectorBatch.setSelectedEdges(this.selectedEdges);
     this.refreshHighlight();
     delete this.toolContext.toggleSelect;
+    delete this.toolContext.toggleEdge;
     delete this.toolContext.beginMarquee;
     delete this.toolContext.updateMarquee;
     delete this.toolContext.cancelMarquee;
@@ -868,6 +884,21 @@ export class SkillTreeScene {
     if (this.options.onSelectionToggle) this.options.onSelectionToggle(id);
   }
 
+  // Mirror React's edge multi-selection into the connector highlight (editor-only; a demoted view
+  // keeps it empty). The single selectedEdge chrome (EdgeChrome) is driven separately via selectEdge
+  // — this only paints the GL highlight across the whole set, one branch or many.
+  setSelectedEdges(keySet) {
+    if (this.readOnly) return;
+    this.selectedEdges = keySet;
+    this.connectorBatch.setSelectedEdges(keySet);
+  }
+
+  // A shift-click toggled a branch — report it up so the shell reconciles the edge set (and the
+  // single selectedEdge projection); the scene sync effect pushes the highlight straight back.
+  toggleEdge(edge) {
+    if (this.options.onEdgeToggle) this.options.onEdgeToggle(edge);
+  }
+
   // A marquee drag committed: turn the screen rect into the world-space nodes it encloses via
   // the spatial grid, hide the band, and report the ids up (additive when the drop held Shift).
   commitMarquee(x0, y0, x1, y1, additive) {
@@ -889,6 +920,17 @@ export class SkillTreeScene {
 
   selectEdge(edge) {
     if (edge && this.selectedIds.size > 0) this.select(null); // clear any node selection — multi too (selectedId is null above 1)
+    this.selectedEdge = edge ?? null;
+    this.edgeChrome?.setSelectedEdge(this.selectedEdge);
+    this.overlaysDirty = true;
+  }
+
+  // Set the single-edge projection WITHOUT selectEdge's user-pick side effects (no node-clear, no
+  // report up). The shell's reconciliation already owns the exact target sets, so it must drive the
+  // projection through here — routing it through selectEdge would fire a node-clear cascade off
+  // lagging scene state, wiping a still-selected edge. selectEdge keeps those side effects for a
+  // genuine plain edge pick, where clearing any node selection is the right thing.
+  projectEdge(edge) {
     this.selectedEdge = edge ?? null;
     this.edgeChrome?.setSelectedEdge(this.selectedEdge);
     this.overlaysDirty = true;
@@ -917,8 +959,11 @@ export class SkillTreeScene {
   }
 
   refreshHighlight() {
-    if (this.selectedIds.size > 1) { this.nodeBatch.setSelectedSet(this.selectedIds); return; }
-    this.nodeBatch.setSelected(this.selectedId);
+    // Editor: the node highlight is the SET — one, mixed, or many all sweep the same way, and a
+    // deselect clears stale slots. Read-only has no multi-select (setSelectedSet no-ops), so it
+    // keeps tracking the single selectedId.
+    if (this.readOnly) { this.nodeBatch.setSelected(this.selectedId); return; }
+    this.nodeBatch.setSelectedSet(this.selectedIds);
   }
 
   pick(x, y) {

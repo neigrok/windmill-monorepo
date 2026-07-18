@@ -139,3 +139,40 @@ test('one-element BulkDelete is byte-equivalent to DeleteNode on the projected t
   assert.deepStrictEqual(project(bulk.lattice), expected);
   assert.deepStrictEqual(project(single.lattice), project(bulk.lattice));
 });
+
+// The explicit `edges` array — carried now that desktop edge multi-select is live: a selected edge
+// between two SURVIVING nodes is dropped in the same atomic gesture that tombstones the nodes.
+test('BulkDelete edges: an edge between survivors is removed alongside the doomed nodes', () => {
+  const { lattice, play } = newTree();
+  play({ kind: 'CreateNode', id: 'root', label: 'Root' });
+  play({ kind: 'CreateNode', id: 'a', label: 'A', parentId: 'root' });
+  play({ kind: 'CreateNode', id: 'b', label: 'B', parentId: 'root' });
+  play({ kind: 'CreateNode', id: 'x', label: 'X', parentId: 'root' });
+  play({ kind: 'AddEdge', from: 'a', to: 'b' }); // b now depends on root AND a
+
+  play({ kind: 'BulkDelete', nodeIds: ['x'], edges: [{ from: 'a', to: 'b' }] });
+
+  assert.deepStrictEqual(project(lattice), [
+    { id: 'a', prerequisites: ['root'] },
+    { id: 'b', prerequisites: ['root'] }, // the a→b edge was dropped; root stays
+    { id: 'root', prerequisites: [] },
+  ]);
+});
+
+// A selected edge whose endpoint is itself doomed needs no removeEdge — it dies with the tombstone.
+// The materialize case skips it (guarding against a redundant write), and the survivor keeps its
+// live parent rather than being spliced.
+test('BulkDelete edges: an edge touching a doomed node is a no-op (dies with the tombstone)', () => {
+  const { lattice, play } = newTree();
+  play({ kind: 'CreateNode', id: 'root', label: 'Root' });
+  play({ kind: 'CreateNode', id: 'a', label: 'A', parentId: 'root' });
+  play({ kind: 'CreateNode', id: 'b', label: 'B', parentId: 'root' });
+  play({ kind: 'AddEdge', from: 'a', to: 'b' }); // b depends on root AND a
+
+  play({ kind: 'BulkDelete', nodeIds: ['a'], edges: [{ from: 'a', to: 'b' }] });
+
+  assert.deepStrictEqual(project(lattice), [
+    { id: 'b', prerequisites: ['root'] }, // a is gone with its a→b edge; b keeps its live root parent
+    { id: 'root', prerequisites: [] },
+  ]);
+});

@@ -597,3 +597,53 @@ behind the OG card, the PNG, the gallery thumb and the GIF.
   and browsers can't natively encode GIF. What ships: the intro title-card frame + the final
   frame (≡ the PNG) as a filmstrip in the dialog, and the reduced-motion path (the static PNG).
   `share-gif` stays `active` in the roadmap log until a real encoder lands.
+
+## Desktop edge multi-select (extends node multi-select)
+
+- **Two sets, two size≤1 projections.** The selection is now `selectedIds` (nodes) **and**
+  `selectedEdges` (edge keys). `selectedId` and `scene.selectedEdge` are their projections, and
+  `reconcileProjections(nodeSet, edgeSet)` is the single pure function that derives both: a lone
+  node shows its StepPanel, a lone edge shows its EdgeChrome, and any **total** above one hides
+  both — only the floating bar + GPU highlights remain. Every entrance (shift-click node/edge,
+  marquee, ⌘A, plain click, Esc, bulk-delete) reconciles through that one function, so the two
+  chromes can never both show at once and single-node/single-edge stay byte-identical.
+- **An edge's key is its (from, to) pair.** A node is its own id; an edge has none, so
+  `scene/edgeKey.js` folds the ordered endpoints into one string key (NUL separator, which no id
+  contains) and back. It's the *one* shared definition — React selection state and the
+  ConnectorBatch highlight both import it, so they can't drift on what "this edge" means.
+- **The GL highlight cloned the `dim`/`setSpotlight` per-vertex pattern.** A new per-vertex
+  `aSelected` float buffer; `setSelectedEdges(keySet)` sweeps every edge (1 if its key is in the
+  set) in one upload, never per frame — exactly like `setSpotlight`'s `dim`. The fragment brightens
+  a selected branch toward white + an additive kind-hue lift + near-full opacity (last say, so it's
+  never dimmed). Geometry width is baked per-vertex, so a shader can't *thicken* the ribbon — the
+  brighten/glow is the on-brand stand-in, distinct from hover's hot-hue deepen.
+- **Seam decided: single-edge selection stays scene-owned (dual representation).** A *plain* edge
+  click still goes `NavigateTool → ctx.selectEdge → scene.selectedEdge`, byte-identical; only
+  *shift*-click populates React's `selectedEdges`. The one gap that opens — plain-clicking a new
+  edge while a multi-edge selection lingers — is closed by a new `onEdgePick` (fired from the
+  tool's `selectEdge` hook, never from internal `selectEdge(null)` clears), which resets the React
+  sets so the scene-owned lone edge is the only truth. The shift-branch lives in NavigateTool's
+  **marquee no-drag** case (shift-press already enters marquee mode), beside the node toggle.
+- **BulkDelete already spoke edges.** `materialize`'s `BulkDelete` case reads `g.edges` as
+  `[{from,to}]` and `removeEdge`s any whose endpoints both survive (skipping ones a tombstone
+  already takes). Both paths were untested (v1 always passed `[]`); now pinned by two tests.
+- **Mixed-selection reconciliation (adversarial-review fixes).** The nodes-only path never
+  exercised "some nodes AND some edges at once"; three desyncs surfaced there:
+  - *A reconciler must not route through a user-pick verb.* `reconcileProjections` drives the
+    edge projection through **`projectEdge`** (a pure setter: `selectedEdge` + EdgeChrome, nothing
+    else), NOT `selectEdge`. `selectEdge`'s node-clear cascade reads `scene.selectedIds`, which the
+    post-render sync effect updates a beat later — so dropping the node from a mixed selection would
+    fire the cascade off the *stale* set and wipe the still-selected edge. `selectEdge` keeps its
+    side effects for the one caller that wants them: a genuine plain edge pick (clears any node).
+  - *The node GL highlight is the SET, not the projection.* In the editor `refreshHighlight` /
+    `applyModel` now always `setSelectedSet(selectedIds)` — a mixed selection has one node with
+    `selectedId===null`, and the old `setSelected(selectedId)` blanked it. Read-only keeps the
+    single-`selectedId` path (setSelectedSet no-ops there). `setSelected`/`setSelectedSet` are each
+    full buffer rewrites, so routing single-select through the sweep leaves no stale slot.
+  - *Every delete path must clear its own set.* The lone-edge Delete now clears `selectedEdges` +
+    `projectEdge(null)`, mirroring how the lone-node Delete clears via `setSelectedId(null)`.
+  - Verified end-to-end: shift-edge → shift-node → shift-node-off leaves the lone edge intact;
+    mixed lights node + edge together; Esc clears both; plain-click a node drops a lingering
+    multi-edge set; lone-edge Delete empties the set. Known pre-existing (nodes too, out of scope):
+    a *remote* structural delete of a selected item prunes the scene's copy but not the React set,
+    so the bar can over-count until the next selection change.

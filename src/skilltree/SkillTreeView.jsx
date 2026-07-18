@@ -52,6 +52,7 @@ import { PasteComposer } from './paste/PasteComposer.jsx';
 import { parsePlan } from './paste/planGrammar.js';
 import { graftPlan } from './paste/graftPlan.js';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
+import { edgeKey, parseEdgeKey } from './scene/edgeKey.js';
 import { TreeEditor } from './editing/TreeEditor.js';
 import { NODE_SIZE } from './theme.js';
 import { track } from '../telemetry/beacon.js';
@@ -241,6 +242,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   useEffect(() => { demoRef.current = demo; }, [demo]);
   const selectedIdRef = useRef(null);
   const selectedIdsRef = useRef(new Set()); // the live multi-selection for the synchronous key/gesture checks
+  const selectedEdgesRef = useRef(new Set()); // the live edge multi-selection (keys), for the same synchronous checks
   const toastTimersRef = useRef([]); // pending hold→leave→unmount timers for the active toast
   const toastKeyRef = useRef(0); // monotonic key so a replacing toast remounts and re-enters
   const workspaceByNodeRef = useRef({}); // nodeId → workspace; the fresh read for arc pushes + persistence
@@ -272,9 +274,12 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   const [draft, setDraft] = useState('');
   const [draftKinds, setDraftKinds] = useState([]);
   const [selectedId, commitSelectedId] = useState(null);
-  // The selection is a SET; selectedId is its size≤1 projection (null above one), so single-select
-  // stays byte-identical and only size>1 diverges — the floating bar shows, the single chrome hides.
+  // The selection is TWO sets — nodes (selectedIds) and edges (selectedEdges, keyed by endpoints).
+  // selectedId / scene.selectedEdge are their size≤1 projections (null once the TOTAL exceeds one),
+  // so single-node and single-edge selection stay byte-identical and only >1 total diverges: the
+  // floating bar shows and both single chromes hide.
   const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [selectedEdges, setSelectedEdges] = useState(() => new Set());
   const [hoveredId, setHoveredId] = useState(null);
   const [bounds, setBounds] = useState(EMPTY_BOUNDS);
   const [scene, setScene] = useState(null);
@@ -300,28 +305,65 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     window.clearTimeout(pending.timer);
     pending.timer = null;
   }, []);
+  // The two size≤1 projections are a pure function of the two selection sets: a lone node keeps its
+  // StepPanel + affordances (selectedId), a lone edge keeps its EdgeChrome (scene.selectedEdge), and
+  // any total above one hides both — only the floating bar and the GPU highlights remain. Every
+  // selection entrance reconciles through here after computing the next sets, so the projections can
+  // never drift from them. It drives the scene's edge projection through projectEdge (a pure setter),
+  // NOT selectEdge — selectEdge's node-clear cascade reads lagging scene.selectedIds and would wipe a
+  // still-selected edge when a node drops out of a mixed selection. projectEdge takes a plain {from,to}.
+  const reconcileProjections = useCallback((nodeSet, edgeSet) => {
+    const total = nodeSet.size + edgeSet.size;
+    commitSelectedId(total === 1 && nodeSet.size === 1 ? [...nodeSet][0] : null);
+    sceneRef.current?.projectEdge(total === 1 && edgeSet.size === 1 ? parseEdgeKey([...edgeSet][0]) : null);
+  }, []);
+
   const setSelectedId = useCallback((id) => {
     cancelNextUpSelect();
-    commitSelectedId(id);
-    setSelectedIds(id ? new Set([id]) : new Set()); // every single-select path collapses the set to match
-  }, [cancelNextUpSelect]);
+    const nodes = id ? new Set([id]) : new Set();
+    setSelectedIds(nodes);
+    setSelectedEdges(new Set()); // a single node / empty select drops any edge selection (mutually exclusive)
+    reconcileProjections(nodes, new Set());
+  }, [cancelNextUpSelect, reconcileProjections]);
 
-  // The two multi-select entrances, both reconciling selectedId to the size≤1 projection:
-  // a shift-click toggles one node; a marquee unions its catch onto the set (or replaces it
-  // when the drop wasn't additive). They read the live ref, since a gesture is never batched.
+  // The multi-select entrances, each reconciling both projections off the sets they just computed.
+  // Node gestures leave the edge set alone (so a node can join an edge selection); a non-additive
+  // marquee replaces, clearing edges too. They read the live refs, since a gesture is never batched.
   const onSelectionToggle = useCallback((id) => {
     cancelNextUpSelect();
     const next = new Set(selectedIdsRef.current);
     if (next.has(id)) next.delete(id); else next.add(id);
     setSelectedIds(next);
-    commitSelectedId(next.size === 1 ? [...next][0] : null);
-  }, [cancelNextUpSelect]);
+    reconcileProjections(next, selectedEdgesRef.current);
+  }, [cancelNextUpSelect, reconcileProjections]);
   const onMarqueeSelect = useCallback((ids, additive) => {
     cancelNextUpSelect();
     const next = additive ? new Set(selectedIdsRef.current) : new Set();
     for (const id of ids) next.add(id);
+    const nextEdges = additive ? selectedEdgesRef.current : new Set();
     setSelectedIds(next);
-    commitSelectedId(next.size === 1 ? [...next][0] : null);
+    if (!additive) setSelectedEdges(new Set());
+    reconcileProjections(next, nextEdges);
+  }, [cancelNextUpSelect, reconcileProjections]);
+
+  // Shift-click a branch → toggle its key into the edge set (mirrors onSelectionToggle for nodes).
+  const onEdgeToggle = useCallback((edge) => {
+    cancelNextUpSelect();
+    const key = edgeKey(edge.from, edge.to);
+    const next = new Set(selectedEdgesRef.current);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    setSelectedEdges(next);
+    reconcileProjections(selectedIdsRef.current, next);
+  }, [cancelNextUpSelect, reconcileProjections]);
+
+  // A plain (non-shift) branch click is a fresh single-edge selection: the scene already set its
+  // selectedEdge (EdgeChrome) synchronously, so here we only drop any lingering node/edge multi-
+  // selection — the lone edge lives in the scene, not these sets, exactly as it did before.
+  const onEdgePick = useCallback(() => {
+    cancelNextUpSelect();
+    setSelectedIds(new Set());
+    setSelectedEdges(new Set());
+    commitSelectedId(null);
   }, [cancelNextUpSelect]);
 
   const [hasLocalEdits, setHasLocalEdits] = useState(false); // local edits overlaid on the authored seed
@@ -704,14 +746,19 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   // nodes synchronously — so the feed can name each removal; one summary toast carries the Undo.
   const bulkDelete = useCallback(() => {
     const ids = [...selectedIdsRef.current];
-    if (!ids.length) return;
+    const edges = [...selectedEdgesRef.current].map(parseEdgeKey); // {from,to} — the shape BulkDelete's materialize case expects
+    if (!ids.length && !edges.length) return;
     const nodes = editorRef.current?.treeData.nodes ?? [];
     const doomed = ids.map((id) => nodes.find((n) => n.id === id)).filter(Boolean);
-    collabRef.current?.dispatch({ kind: 'BulkDelete', nodeIds: ids, edges: [] });
+    // One atomic gesture tombstones every node AND drops every explicitly-selected edge whose
+    // endpoints both survive (materialize removeEdges those) — nodes + edges land in one undo.
+    collabRef.current?.dispatch({ kind: 'BulkDelete', nodeIds: ids, edges });
     for (const node of doomed) emit({ verb: 'removed', nodeId: node.id, label: node.label, kind: node.color });
-    setSelectedIds(new Set());
-    setSelectedId(null);
-    showToast(`${ids.length} steps deleted`, { action: { label: 'Undo', run: undo } });
+    setSelectedId(null); // clears both sets and reconciles both projections (incl. scene.selectedEdge)
+    const parts = [];
+    if (ids.length) parts.push(`${ids.length} step${ids.length === 1 ? '' : 's'}`);
+    if (edges.length) parts.push(`${edges.length} link${edges.length === 1 ? '' : 's'}`);
+    showToast(`${parts.join(' and ')} deleted`, { action: { label: 'Undo', run: undo } });
   }, [emit, showToast, undo, setSelectedId]);
 
   const handleSetKind = useCallback((id, kind) => {
@@ -843,15 +890,17 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       onReconnectEdge: handleReconnect,
       onSelectionToggle,
       onMarqueeSelect,
+      onEdgeToggle,
+      onEdgePick,
     };
     const nextScene = new SkillTreeScene(canvasRef.current, {
       readOnly: readOnlyRef.current,
       onPanStateChange: handlePanStateChange,
       onNodePick: (id) => {
         if (id) { setSelectedId(id); return; }
-        // Empty-canvas click: drop any selection — single or multi — (the feed returns iff it
-        // was open), or dismiss the feed itself when nothing was selected (design A″).
-        if (selectedIdsRef.current.size > 0) setSelectedId(null);
+        // Empty-canvas click: drop any selection — nodes or edges, single or multi — (the feed
+        // returns iff it was open), or dismiss the feed itself when nothing was selected (design A″).
+        if (selectedIdsRef.current.size > 0 || selectedEdgesRef.current.size > 0) setSelectedId(null);
         else { cancelNextUpSelect(); setFeedOpen(false); setPinned(false); }
       },
       onNodeHover: (id) => setHoveredId(id),
@@ -878,7 +927,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       sceneRef.current = null;
       setScene(null);
     };
-  }, [handleCreateChild, handleConnect, deleteNodeAt, handleSetKind, handleDeleteEdge, handleReconnect, showToast, handlePanStateChange, onSelectionToggle, onMarqueeSelect]);
+  }, [handleCreateChild, handleConnect, deleteNodeAt, handleSetKind, handleDeleteEdge, handleReconnect, showToast, handlePanStateChange, onSelectionToggle, onMarqueeSelect, onEdgeToggle, onEdgePick]);
 
   // Keyboard: ⌘Z / ⇧⌘Z history, ⌫ / Delete removes the selection, Esc deselects.
   useEffect(() => {
@@ -899,7 +948,8 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
         const ids = editorRef.current?.treeData.nodes.map((n) => n.id) ?? [];
         const set = new Set(ids);
         setSelectedIds(set);
-        commitSelectedId(set.size === 1 ? ids[0] : null); // the size≤1 projection
+        setSelectedEdges(new Set()); // "select all steps" is nodes-only — drop any edge selection
+        reconcileProjections(set, new Set());
         return;
       }
       if (event.key === 'Escape') {
@@ -909,9 +959,10 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
           sceneRef.current?.highlightKind?.(null);
           return;
         }
-        // Clear any selection — single or multi — through one branch (subsumes the old
-        // single-select clear, since a single selection is a size-1 set).
-        if (selectedIdsRef.current.size > 0) { setSelectedIds(new Set()); setSelectedId(null); return; }
+        // Clear any multi-selection — nodes and/or edges — through one branch. setSelectedId(null)
+        // empties both sets and reconciles both projections (incl. the scene's selectedEdge).
+        if (selectedIdsRef.current.size > 0 || selectedEdgesRef.current.size > 0) { setSelectedId(null); return; }
+        // A plain-clicked single edge lives only in the scene (empty React sets) — clear it here.
         if (sceneRef.current?.selectedEdge) { sceneRef.current.selectEdge(null); return; }
         if (feedOpenRef.current || pinnedRef.current) closeActivity();
         return;
@@ -925,17 +976,22 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       if (!readOnlyRef.current && (event.key === 'Backspace' || event.key === 'Delete')) {
         const el = document.activeElement;
         if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
-        // A multi-selection deletes as one gesture; a single node keeps the byte-identical
-        // DeleteNode path (its own toast + one history step).
-        if (selectedIdsRef.current.size > 1) { event.preventDefault(); bulkDelete(); return; }
+        // Above one selected item (nodes and/or edges) deletes as one BulkDelete gesture; a lone
+        // node or lone edge keeps its byte-identical single path (its own toast + one history step).
+        if (selectedIdsRef.current.size + selectedEdgesRef.current.size > 1) { event.preventDefault(); bulkDelete(); return; }
         if (selectedIdRef.current) { event.preventDefault(); deleteSelected(); return; }
-        const edge = sceneRef.current?.selectedEdge; // edge selection lives in the scene, not React
-        if (edge) { event.preventDefault(); handleDeleteEdge(edge.from, edge.to); }
+        const edge = sceneRef.current?.selectedEdge; // a lone edge — the size-1 set's projection, or a plain-clicked one
+        if (edge) {
+          event.preventDefault();
+          handleDeleteEdge(edge.from, edge.to);
+          setSelectedEdges(new Set());         // clear the edge set (mirrors the lone-node setSelectedId(null) clear)
+          sceneRef.current?.projectEdge(null); // …and the scene projection / EdgeChrome
+        }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [undo, redo, deleteSelected, bulkDelete, handleDeleteEdge, toggleActivity, closeActivity, cancelNextUpSelect, setSelectedId]);
+  }, [undo, redo, deleteSelected, bulkDelete, handleDeleteEdge, toggleActivity, closeActivity, cancelNextUpSelect, setSelectedId, reconcileProjections]);
 
   // paste append-mode (F3 §01): raw ⌘V on the editor opens the composer already filled and
   // parsed, grafting under the current selection. Capture-phase, with three guards so it
@@ -962,6 +1018,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
 
   useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
   useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
+  useEffect(() => { selectedEdgesRef.current = selectedEdges; }, [selectedEdges]);
 
   // Mirror React's selection back to the scene so the canvas chrome (affordances,
   // highlight) tracks it however it cleared — Esc, the panel's close button, or a
@@ -971,7 +1028,8 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   useEffect(() => {
     sceneRef.current?.setSelection(selectedId);
     sceneRef.current?.setSelectedSet(selectedIds);
-  }, [selectedId, selectedIds]);
+    sceneRef.current?.setSelectedEdges(selectedEdges); // the edge GPU highlight follows the whole set (one or many)
+  }, [selectedId, selectedIds, selectedEdges]);
 
   // The last-place ledger (anon-first-tree F6): as the camera settles, remember where
   // this tree was left — the magic-link landing's fresh tab and bare #/app both re-open
@@ -1315,6 +1373,8 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       sceneRef.current?.spotlightNode(null);
       commitSelectedId(id);
       setSelectedIds(new Set([id])); // the delayed single-select keeps the set projection in step
+      setSelectedEdges(new Set());   // …and drops any edge selection (this is a node open)
+      sceneRef.current?.selectEdge(null);
     }, NEXT_UP_SELECT_MS);
   }, [cancelNextUpSelect]);
 
@@ -1881,10 +1941,11 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       )}
 
       {/* Multi-select bar (not a dock tenant): a floating "N selected · Delete" that shows only
-          above one node, bottom-center over the canvas. Single-select keeps its own affordances. */}
-      {!readOnly && selectedIds.size > 1 && (
+          above one selected item — nodes and/or edges — bottom-center over the canvas. A lone node
+          or edge keeps its own single chrome (StepPanel / EdgeChrome). */}
+      {!readOnly && selectedIds.size + selectedEdges.size > 1 && (
         <div className="st-selection-bar" role="status">
-          <span>{selectedIds.size} selected</span>
+          <span>{selectedIds.size + selectedEdges.size} selected</span>
           <Button variant="danger" size="sm" onClick={bulkDelete}>Delete</Button>
         </div>
       )}

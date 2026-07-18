@@ -6,6 +6,7 @@
 // hue is baked once and never changes.
 import { createProgram, uniformLocations } from './glcore.js';
 import { NODE_COLORS, NODE_COLOR_NAMES, isDone, CONNECTOR, NODE_SIZE } from '../theme.js';
+import { edgeKey } from './edgeKey.js';
 
 const SEGMENTS = 14;
 const WIDTH = 4;
@@ -39,6 +40,7 @@ layout(location=7) in float aDim;
 layout(location=8) in float aDuration;
 layout(location=9) in float aLength;
 layout(location=10) in float aHead;
+layout(location=11) in float aSelected;
 uniform vec2 uResolution;
 uniform vec2 uCamera;
 uniform float uZoom;
@@ -52,6 +54,7 @@ out float vDim;
 out float vDuration;
 out float vLength;
 out float vHead;
+out float vSelected;
 void main() {
   vActive = aActive;
   vAlongT = aAlongT;
@@ -63,6 +66,7 @@ void main() {
   vDuration = aDuration;
   vLength = aLength;
   vHead = aHead;
+  vSelected = aSelected;
   vec2 screen = (aPos - uCamera) * uZoom;
   vec2 clip = vec2(screen.x / (uResolution.x * 0.5), -screen.y / (uResolution.y * 0.5));
   gl_Position = vec4(clip, 0.0, 1.0);
@@ -80,6 +84,7 @@ in float vDim;
 in float vDuration;
 in float vLength;
 in float vHead;
+in float vSelected;
 uniform float uTime;
 uniform float uGrowDuration;
 uniform float uMotion;
@@ -123,6 +128,12 @@ void main() {
   alpha = mix(alpha, 0.95, vHover);
   color = mix(color, dim, vDim * 0.5); // spotlight: branches off the focused node recede
   alpha *= 1.0 - vDim * 0.72;
+  // selected (desktop multi-select): the branch reads picked — a soft brighten toward white
+  // plus an additive lift in its own kind hue, brought to near-full opacity so even a dormant
+  // edge stands out. Last say, so a selected edge is never dimmed; distinct from hover's deepen.
+  color = mix(color, vec3(1.0), vSelected * 0.20);
+  color += hue * vSelected * 0.28;
+  alpha = max(alpha, vSelected * 0.9);
   fragColor = vec4(color, alpha);
 }`;
 
@@ -240,6 +251,7 @@ export class ConnectorBatch {
     this.durationBuffer = this.attrib(8, 1, gl.DYNAMIC_DRAW);
     this.lengthBuffer = this.attrib(9, 1, gl.DYNAMIC_DRAW);
     this.headBuffer = this.attrib(10, 1, gl.DYNAMIC_DRAW);
+    this.selectedBuffer = this.attrib(11, 1, gl.DYNAMIC_DRAW);
     this.spotlit = null;
     this.indexBuffer = gl.createBuffer();
     gl.bindVertexArray(null);
@@ -271,6 +283,7 @@ export class ConnectorBatch {
     this.duration = new Float32Array(vertexTotal); // per-edge, length-derived travel seconds
     this.length = new Float32Array(vertexTotal); // per-edge world length, for the wake px->t
     this.head = new Float32Array(vertexTotal); // 1 only on edges lit via travel() — enables the comet
+    this.selected = new Float32Array(vertexTotal); // 1 on desktop multi-selected edges (setSelectedEdges)
     this.hoveredEdge = -1;
     this.spotlit = null;
     const indices = new Uint32Array(edgeCount * SEGMENTS * 6);
@@ -327,6 +340,7 @@ export class ConnectorBatch {
     this.uploadDynamic(this.durationBuffer, this.duration);
     this.uploadDynamic(this.lengthBuffer, this.length);
     this.uploadDynamic(this.headBuffer, this.head);
+    this.uploadDynamic(this.selectedBuffer, this.selected);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
     gl.bindVertexArray(null);
@@ -455,6 +469,18 @@ export class ConnectorBatch {
     this.uploadDynamic(this.dimBuffer, this.dim);
   }
 
+  // Highlight the desktop multi-selection: every edge whose key is in the set reads aSelected=1,
+  // every other 0 — one whole-buffer sweep + upload, mirroring setSpotlight's per-vertex `dim`.
+  // Called once per selection change (never per frame), so the sweep stays off the render loop.
+  setSelectedEdges(keySet) {
+    if (!this.selected) return;
+    for (const edge of this.edges) {
+      const on = keySet.has(edgeKey(edge.from, edge.to)) ? 1 : 0;
+      this.selected.fill(on, edge.vertexStart, edge.vertexStart + VERTS_PER_EDGE);
+    }
+    this.uploadDynamic(this.selectedBuffer, this.selected);
+  }
+
   draw(camera, timeSeconds, motion) {
     const gl = this.gl;
     if (this.indexCount === 0) return;
@@ -477,6 +503,6 @@ export class ConnectorBatch {
     const gl = this.gl;
     gl.deleteProgram(this.program);
     gl.deleteVertexArray(this.vao);
-    [this.posBuffer, this.alongBuffer, this.activeBuffer, this.growBuffer, this.colorBuffer, this.hoverBuffer, this.kindBuffer, this.dimBuffer, this.durationBuffer, this.lengthBuffer, this.headBuffer, this.indexBuffer].forEach((b) => gl.deleteBuffer(b));
+    [this.posBuffer, this.alongBuffer, this.activeBuffer, this.growBuffer, this.colorBuffer, this.hoverBuffer, this.kindBuffer, this.dimBuffer, this.durationBuffer, this.lengthBuffer, this.headBuffer, this.selectedBuffer, this.indexBuffer].forEach((b) => gl.deleteBuffer(b));
   }
 }
