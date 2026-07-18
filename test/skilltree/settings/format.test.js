@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { formatUserAgent, relativeTime, shortDate } from '../../../src/skilltree/settings/format.js';
+import { formatUserAgent, relativeTime, shortDate, mcpKeyMeta } from '../../../src/skilltree/settings/format.js';
 
 test('formatUserAgent — browser on OS for the common desktop agents', () => {
   assert.equal(
@@ -51,4 +51,21 @@ test('relativeTime — the near-now boundaries and the empty case', () => {
 test('shortDate — a fixed timestamp renders a plain date, empty for none', () => {
   assert.equal(shortDate(0), '');
   assert.equal(shortDate(Date.parse('2026-08-16T00:00:00Z')).includes('2026'), true);
+});
+
+test('mcpKeyMeta — a fresh key reads "never used" until its first call', () => {
+  const created = Date.parse('2026-08-16T00:00:00Z');
+  assert.equal(
+    mcpKeyMeta({ createdMs: created, lastUsedMs: null }),
+    `Created ${shortDate(created)} · never used`,
+  );
+});
+
+test('mcpKeyMeta — a used key reports its last-active recency', () => {
+  const created = Date.parse('2026-08-16T00:00:00Z');
+  const usedAt = Date.now() - 3 * 60 * 60 * 1000;
+  assert.equal(
+    mcpKeyMeta({ createdMs: created, lastUsedMs: usedAt }),
+    `Created ${shortDate(created)} · Last used 3h ago`,
+  );
 });

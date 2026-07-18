@@ -12,6 +12,7 @@ import { useAuth } from '../auth/AuthProvider.jsx';
 import { requestMagicLink } from '../auth/AuthClient.js';
 import { SignInDialog } from '../auth/SignInDialog.jsx';
 import { AccountChrome } from '../account/AccountChrome.jsx';
+import { McpKeyPanel } from './McpKeyPanel.jsx';
 
 const MCP_URL = 'https://windmill.works/mcp';
 const JSON_TEXT = `{\n  "mcpServers": {\n    "windmill": { "url": "${MCP_URL}" }\n  }\n}`;
@@ -75,6 +76,7 @@ export function ConnectPage() {
   const [active, setActive] = useState(1); // Claude Code
   const [copied, setCopied] = useState(false);
   const [signInOpen, setSignInOpen] = useState(false);
+  const [advOpen, setAdvOpen] = useState(false);
   const client = CLIENTS[active];
 
   // Copy is the sign-in gate: connecting needs an account, so a signed-out Copy opens the
@@ -138,6 +140,23 @@ export function ConnectPage() {
             </span>
           ))}
         </div>
+
+        <div style={adv}>
+          <button type="button" style={advSummary} onClick={() => setAdvOpen((open) => !open)}>
+            <span style={advCaret(advOpen)}>›</span>
+            Advanced — static API key for clients without OAuth
+          </button>
+          {advOpen && (
+            <div style={advBody}>
+              <p style={advPara}>
+                OAuth above is the way in — first connect opens your browser, no keys to paste. A static key is a
+                fallback for clients that can't run that flow: a credential you paste yourself, so guard it like a password.
+              </p>
+              <McpKeyPanel signedIn={signedIn} onRequireSignIn={() => setSignInOpen(true)} />
+              <a href="#/settings" style={advManage}>Manage your keys in Settings → API keys</a>
+            </div>
+          )}
+        </div>
       </AccountChrome>
 
       <SignInDialog open={signInOpen} onClose={() => setSignInOpen(false)} onSend={requestMagicLink} />
@@ -155,6 +174,19 @@ const steps = { display: 'flex', flexDirection: 'column', gap: 4, marginTop: 10 
 const step = { display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', lineHeight: 1.45 };
 const stepNum = { fontStyle: 'normal', fontFamily: 'var(--font-mono)', fontSize: '9.5px', color: 'var(--accent-terracotta-500)', fontWeight: 700, flex: 'none' };
 const promise = { fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', lineHeight: 1.5, margin: '11px 2px 0' };
+
+const adv = { marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border-subtle)' };
+const advSummary = {
+  display: 'inline-flex', alignItems: 'center', gap: 6, border: 'none', background: 'none', padding: 0, cursor: 'pointer',
+  fontFamily: 'var(--font-body)', fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-tertiary)',
+};
+const advCaret = (open) => ({
+  display: 'inline-block', fontSize: '13px', lineHeight: 1, transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
+  transition: 'transform 150ms var(--ease-standard)',
+});
+const advBody = { marginTop: 8 };
+const advPara = { fontSize: 'var(--text-xs)', lineHeight: 1.55, color: 'var(--text-secondary)', margin: '0 0 6px' };
+const advManage = { display: 'inline-block', marginTop: 12, fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-link)', textDecoration: 'none' };
 
 const CSS = `
   .wm-cn-tabs { display:flex; gap:3px; background:var(--surface-canvas); border-radius:var(--radius-full); padding:3px; margin-bottom:10px; }

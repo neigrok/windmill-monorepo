@@ -58,3 +58,11 @@ export function shortDate(ms) {
   if (!ms) return '';
   return new Date(ms).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
+
+// An MCP key's meta line: when it was minted, and how recently it last authenticated — a
+// fresh key reads "never used" until its first call. Composes the same two dialects the
+// session and grant rows speak.
+export function mcpKeyMeta(key) {
+  const used = key.lastUsedMs ? `Last used ${relativeTime(key.lastUsedMs)}` : 'never used';
+  return `Created ${shortDate(key.createdMs)} · ${used}`;
+}
