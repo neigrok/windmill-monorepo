@@ -314,10 +314,20 @@ int main() {
   // OAuth authorization server. Discovery/register/authorize/token are driven by the MCP client;
   // the consent-facing endpoints (client info + decision) are called by the app, and their
   // preflight is covered by the shared CORS policy above.
-  app.registerHandler(
-      "/.well-known/oauth-authorization-server",
-      [oauthApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { oauthApi->metadata(req, std::move(cb)); },
-      {drogon::Get});
+  // The bare RFC 8414 URL, plus the shapes real MCP clients probe before it: the path-aware
+  // variant (some clients wrongly append the resource path) and OpenID Connect's
+  // openid-configuration (with and without the path). Serve the same authorization-server
+  // metadata at each — a client that tries one of these FIRST must get JSON, not the SPA's
+  // index.html falling through Caddy (which a client reads as "no authorization support").
+  for (const char* asMetadataPath : {"/.well-known/oauth-authorization-server",
+                                     "/.well-known/oauth-authorization-server/mcp",
+                                     "/.well-known/openid-configuration",
+                                     "/.well-known/openid-configuration/mcp"}) {
+    app.registerHandler(
+        asMetadataPath,
+        [oauthApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { oauthApi->metadata(req, std::move(cb)); },
+        {drogon::Get});
+  }
   app.registerHandler(
       "/oauth/register",
       [oauthApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { oauthApi->registerClient(req, std::move(cb)); },
@@ -454,21 +464,22 @@ int main() {
       {drogon::Options});
 
   // OAuth Protected Resource Metadata (RFC 9728): where an MCP client discovers this host's
-  // authorization server after a 401 challenge. Public, unauthenticated.
-  app.registerHandler(
-      "/.well-known/oauth-protected-resource",
-      [mcpResource, apiBaseUrl](const drogon::HttpRequestPtr&, HttpCallback&& cb) {
-        Json::Value metadata(Json::objectValue);
-        metadata["resource"] = mcpResource;
-        Json::Value servers(Json::arrayValue);
-        servers.append(apiBaseUrl);
-        metadata["authorization_servers"] = servers;
-        Json::Value methods(Json::arrayValue);
-        methods.append("header");
-        metadata["bearer_methods_supported"] = methods;
-        cb(drogon::HttpResponse::newHttpJsonResponse(metadata));
-      },
-      {drogon::Get});
+  // authorization server after a 401 challenge. Public, unauthenticated. Served at both the bare
+  // URL (which the 401's WWW-Authenticate points at) and the path-aware variant that RFC 9728 §3.1
+  // derives for the resource https://…/mcp — the one MCP 2025-06-18 clients probe FIRST.
+  auto protectedResourceMetadata = [mcpResource, apiBaseUrl](const drogon::HttpRequestPtr&, HttpCallback&& cb) {
+    Json::Value metadata(Json::objectValue);
+    metadata["resource"] = mcpResource;
+    Json::Value servers(Json::arrayValue);
+    servers.append(apiBaseUrl);
+    metadata["authorization_servers"] = servers;
+    Json::Value methods(Json::arrayValue);
+    methods.append("header");
+    metadata["bearer_methods_supported"] = methods;
+    cb(drogon::HttpResponse::newHttpJsonResponse(metadata));
+  };
+  app.registerHandler("/.well-known/oauth-protected-resource", protectedResourceMetadata, {drogon::Get});
+  app.registerHandler("/.well-known/oauth-protected-resource/mcp", protectedResourceMetadata, {drogon::Get});
 
   const char* portEnv = std::getenv("PORT");
   int port = portEnv ? std::atoi(portEnv) : 8080;
