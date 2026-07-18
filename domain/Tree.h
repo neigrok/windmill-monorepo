@@ -106,6 +106,7 @@ struct NodeSpec {
   std::string label;
   std::string icon;
   NodeColor color = NodeColor::terracotta;
+  std::string order;  // fractional-index sibling key ('' ⇒ layout falls back to creation time)
   std::vector<NodeId> prerequisites;
   std::optional<Vec2> position;
   std::optional<std::string> status;

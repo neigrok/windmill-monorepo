@@ -7,6 +7,28 @@ using namespace wm;
 static NodeId nid(const char* s) { return NodeId{std::string(s)}; }
 static Hlc at(std::uint64_t ms, const char* actor = "a") { return Hlc{ms, 0, actor}; }
 
+// The order register is opaque LWW: a dominating stamp wins, a stale one is ignored, and the
+// value survives export/reload and the TreeData projection (what the layout sorts by).
+TEST(order_register_is_lww_and_survives_export_and_projection) {
+  LooseGraph g;
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+
+  GraphState newer;
+  NodeStateEntry e1; e1.id = nid("a"); e1.order = "a1"; e1.orderAt = at(4);
+  newer.nodes.push_back(e1);
+  GraphState older;
+  NodeStateEntry e2; e2.id = nid("a"); e2.order = "a0"; e2.orderAt = at(2);
+  older.nodes.push_back(e2);
+
+  g.join(newer);
+  g.join(older);  // older stamp — LWW ignores it
+  CHECK_EQ(g.exportNode(nid("a"))->order, std::string("a1"));
+
+  LooseGraph reloaded(g.exportState());  // full-state round-trip carries order + its stamp
+  CHECK_EQ(reloaded.exportNode(nid("a"))->order, std::string("a1"));
+  CHECK_EQ(reloaded.toTreeData(TreeId{std::string("t")}, "T").nodes[0].order, std::string("a1"));
+}
+
 TEST(project_present_nodes_and_edges) {
   LooseGraph g;
   g.createNode(nid("root"), "Root", "zap", NodeColor::sky, std::nullopt, at(1));
@@ -86,6 +108,21 @@ TEST(status_seed_round_trips_through_projection) {
   auto view = g.nodeView(nid("a"));
   CHECK(view->status.has_value());
   CHECK_EQ(*view->status, std::string("complete"));
+}
+
+// The document seed constructor (POST /v1/trees create-from-document, and the byte-exact copy
+// trick) must carry each node's fractional-index order, not just label/description/links.
+TEST(order_seed_survives_the_document_seed_constructor) {
+  TreeData data;
+  data.id = TreeId{"t"};
+  NodeSpec a; a.id = nid("a"); a.label = "A"; a.order = "a1";
+  NodeSpec b; b.id = nid("b"); b.label = "B"; b.order = "a2";
+  data.nodes.push_back(a);
+  data.nodes.push_back(b);
+
+  LooseGraph g(data, at(1));
+  CHECK_EQ(g.nodeView(nid("a"))->order, std::string("a1"));
+  CHECK_EQ(g.nodeView(nid("b"))->order, std::string("a2"));
 }
 
 TEST(description_and_links_round_trip_and_merge_by_lww) {

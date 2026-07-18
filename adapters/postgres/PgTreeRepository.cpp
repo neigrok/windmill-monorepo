@@ -23,9 +23,9 @@ void upsertNode(pqxx::work& txn, const TreeId& tree, const NodeStateEntry& node)
   txn.exec_params(
       "INSERT INTO tree_nodes (tree_id, node_id, created_hlc, deleted_hlc, label, label_hlc, "
       "icon, icon_hlc, color, color_hlc, pos_x, pos_y, pos_hlc, status, status_hlc, "
-      "description, description_hlc, links, links_hlc, present) "
+      "description, description_hlc, links, links_hlc, present, ord, ord_hlc) "
       "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, "
-      "$18::jsonb, $19, $20) "
+      "$18::jsonb, $19, $20, $21, $22) "
       "ON CONFLICT (tree_id, node_id) DO UPDATE SET "
       "created_hlc = EXCLUDED.created_hlc, deleted_hlc = EXCLUDED.deleted_hlc, "
       "label = EXCLUDED.label, label_hlc = EXCLUDED.label_hlc, "
@@ -34,14 +34,16 @@ void upsertNode(pqxx::work& txn, const TreeId& tree, const NodeStateEntry& node)
       "pos_x = EXCLUDED.pos_x, pos_y = EXCLUDED.pos_y, pos_hlc = EXCLUDED.pos_hlc, "
       "status = EXCLUDED.status, status_hlc = EXCLUDED.status_hlc, "
       "description = EXCLUDED.description, description_hlc = EXCLUDED.description_hlc, "
-      "links = EXCLUDED.links, links_hlc = EXCLUDED.links_hlc, present = EXCLUDED.present",
+      "links = EXCLUDED.links, links_hlc = EXCLUDED.links_hlc, present = EXCLUDED.present, "
+      "ord = EXCLUDED.ord, ord_hlc = EXCLUDED.ord_hlc",
       tree.str(), node.id.str(), toString(node.createdAt), toString(node.deletedAt),
       node.label, toString(node.labelAt), node.icon, toString(node.iconAt),
       std::string(toString(node.color)), toString(node.colorAt),
       posX, posY, toString(node.positionAt), node.status, toString(node.statusAt),
       node.description, toString(node.descriptionAt),
       dump(linksToJson(node.links)), toString(node.linksAt),
-      entryPresent(node.createdAt, node.deletedAt));
+      entryPresent(node.createdAt, node.deletedAt),
+      node.order, toString(node.orderAt));
 }
 
 void upsertEdge(pqxx::work& txn, const TreeId& tree, const EdgeStateEntry& edge) {
@@ -92,6 +94,8 @@ NodeStateEntry nodeFromRow(const auto& row) {
   node.iconAt = stamp(row, "icon_hlc");
   node.color = parseColor(text(row, "color")).value_or(NodeColor::terracotta);
   node.colorAt = stamp(row, "color_hlc");
+  node.order = text(row, "ord");
+  node.orderAt = stamp(row, "ord_hlc");
   if (!row["pos_x"].is_null() && !row["pos_y"].is_null())
     node.position = Vec2{row["pos_x"].template as<double>(), row["pos_y"].template as<double>()};
   node.positionAt = stamp(row, "pos_hlc");
@@ -108,8 +112,8 @@ GraphState graphRows(pqxx::work& txn, const TreeId& tree) {
   GraphState state;
   pqxx::result nodes = txn.exec_params(
       "SELECT node_id, created_hlc, deleted_hlc, label, label_hlc, icon, icon_hlc, color, "
-      "color_hlc, pos_x, pos_y, pos_hlc, status, status_hlc, description, description_hlc, "
-      "links::text AS links, links_hlc FROM tree_nodes WHERE tree_id = $1",
+      "color_hlc, ord, ord_hlc, pos_x, pos_y, pos_hlc, status, status_hlc, description, "
+      "description_hlc, links::text AS links, links_hlc FROM tree_nodes WHERE tree_id = $1",
       tree.str());
   for (const auto& row : nodes) state.nodes.push_back(nodeFromRow(row));
 

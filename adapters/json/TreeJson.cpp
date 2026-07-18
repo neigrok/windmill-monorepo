@@ -46,6 +46,7 @@ Json::Value nodeToJson(const NodeSpec& node) {
   n["label"] = node.label;
   n["icon"] = node.icon;
   n["color"] = std::string(toString(node.color));
+  if (!node.order.empty()) n["order"] = node.order;
 
   Json::Value prerequisites(Json::arrayValue);
   for (const NodeId& prereq : node.prerequisites) prerequisites.append(prereq.str());
@@ -156,6 +157,7 @@ TreeData treeFromJson(const Json::Value& root, const TreeId& id) {
     node.label = n.get("label", "").asString();
     node.icon = n.get("icon", "").asString();
     node.color = parseColor(n.get("color", "terracotta").asString()).value_or(NodeColor::terracotta);
+    node.order = n.get("order", "").asString();
     for (const Json::Value& prereq : n["prerequisites"]) node.prerequisites.push_back(NodeId{prereq.asString()});
     if (n.isMember("position") && n["position"].isObject()) {
       Vec2 position;
@@ -194,6 +196,8 @@ Json::Value toJson(const GraphState& state) {
     n["iconAt"] = hlcText(node.iconAt);
     n["color"] = std::string(toString(node.color));
     n["colorAt"] = hlcText(node.colorAt);
+    n["order"] = node.order;
+    n["orderAt"] = hlcText(node.orderAt);
     if (node.position) {
       Json::Value position(Json::objectValue);
       position["x"] = node.position->x;
@@ -235,6 +239,8 @@ GraphState graphStateFromJson(const Json::Value& root) {
     node.iconAt = hlcFromText(n.get("iconAt", "").asString());
     node.color = parseColor(n.get("color", "terracotta").asString()).value_or(NodeColor::terracotta);
     node.colorAt = hlcFromText(n.get("colorAt", "").asString());
+    node.order = n.get("order", "").asString();
+    node.orderAt = hlcFromText(n.get("orderAt", "").asString());
     if (n.isMember("position") && n["position"].isObject()) {
       Vec2 position;
       position.x = n["position"].get("x", 0.0).asDouble();

@@ -17,6 +17,8 @@ NodeStateEntry entryOf(const NodeId& id, const NodeRecord& record) {
   entry.iconAt = record.icon.stamp;
   entry.color = record.color.value;
   entry.colorAt = record.color.stamp;
+  entry.order = record.order.value;
+  entry.orderAt = record.order.stamp;
   entry.position = record.position.value;
   entry.positionAt = record.position.stamp;
   entry.status = record.status.value;
@@ -32,6 +34,7 @@ NodeStateEntry entryOf(const NodeId& id, const NodeRecord& record) {
 LooseGraph::LooseGraph(const TreeData& seed, const Hlc& at) {
   for (const auto& node : seed.nodes) {
     createNode(node.id, node.label, node.icon, node.color, node.position, at, node.status);
+    if (!node.order.empty()) setOrder(node.id, node.order, at);
     if (!node.description.empty()) setDescription(node.id, node.description, at);
     if (!node.links.empty()) setLinks(node.id, node.links, at);
   }
@@ -48,6 +51,7 @@ LooseGraph::LooseGraph(const GraphState& state) {
     record.label = {node.label, node.labelAt};
     record.icon = {node.icon, node.iconAt};
     record.color = {node.color, node.colorAt};
+    record.order = {node.order, node.orderAt};
     record.position = {node.position, node.positionAt};
     record.status = {node.status, node.statusAt};
     record.description = {node.description, node.descriptionAt};
@@ -67,6 +71,7 @@ void LooseGraph::join(const GraphState& state) {
     record.label.merge(node.label, node.labelAt);
     record.icon.merge(node.icon, node.iconAt);
     record.color.merge(node.color, node.colorAt);
+    record.order.merge(node.order, node.orderAt);
     record.position.merge(node.position, node.positionAt);
     record.status.merge(node.status, node.statusAt);
     record.description.merge(node.description, node.descriptionAt);
@@ -115,6 +120,10 @@ void LooseGraph::setLinks(const NodeId& id, const std::vector<Link>& links, cons
   nodes_[id].links.merge(links, at);
 }
 
+void LooseGraph::setOrder(const NodeId& id, const std::string& order, const Hlc& at) {
+  nodes_[id].order.merge(order, at);
+}
+
 void LooseGraph::addEdge(const NodeId& from, const NodeId& to, const Hlc& at) {
   edges_[Edge{from, to}].add(at);
 }
@@ -146,6 +155,7 @@ std::optional<NodeSpec> LooseGraph::nodeView(const NodeId& id) const {
   spec.label = record.label.value;
   spec.icon = record.icon.value;
   spec.color = record.color.value;
+  spec.order = record.order.value;
   spec.position = record.position.value;
   spec.status = record.status.value;
   spec.description = record.description.value;
@@ -255,6 +265,7 @@ TreeData LooseGraph::toTreeData(const TreeId& id, const std::string& title) cons
     spec.label = record.label.value;
     spec.icon = record.icon.value;
     spec.color = record.color.value;
+    spec.order = record.order.value;
     spec.position = record.position.value;
     spec.status = record.status.value;
     spec.description = record.description.value;

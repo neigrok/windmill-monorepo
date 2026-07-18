@@ -18,6 +18,7 @@ struct NodeRecord {
   Lww<std::string> label;
   Lww<std::string> icon;
   Lww<NodeColor> color;
+  Lww<std::string> order;  // fractional-index sort key, scoped to the parent; round-tripped, never interpreted
   Lww<std::optional<Vec2>> position;
   Lww<std::optional<std::string>> status;  // opaque authoring seed, round-tripped
   Lww<std::string> description;            // free annotation body
@@ -48,6 +49,7 @@ public:
   void setPosition(const NodeId& id, const Vec2& position, const Hlc& at);
   void setDescription(const NodeId& id, const std::string& description, const Hlc& at);
   void setLinks(const NodeId& id, const std::vector<Link>& links, const Hlc& at);
+  void setOrder(const NodeId& id, const std::string& order, const Hlc& at);
   void addEdge(const NodeId& from, const NodeId& to, const Hlc& at);
   void removeEdge(const NodeId& from, const NodeId& to, const Hlc& at);
 

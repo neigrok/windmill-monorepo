@@ -120,6 +120,38 @@ TEST(delta_masks_fields_the_peer_already_covers) {
   CHECK_EQ(node.color, NodeColor::brick);
 }
 
+// The order register must ride anti-entropy exactly like color: frontier observes orderAt,
+// nodeUncovered detects it, maskNode carries it. Miss any one and a reorder converges only via
+// a full graft, never a delta — so this asserts the whole trio through one masked delta.
+TEST(delta_carries_an_order_write_the_peer_has_not_yet_seen) {
+  LooseGraph source;
+  source.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  GraphState orderWrite;  // no domain command sets order — it arrives as a register join
+  NodeStateEntry entry;
+  entry.id = nid("a");
+  entry.order = "a5";
+  entry.orderAt = at(5);
+  orderWrite.nodes.push_back(entry);
+  source.join(orderWrite);
+
+  VersionVector peer;
+  peer.observe(at(3));  // covers the create (t=1), not the order write (t=5)
+
+  Subgraph delta = deltaBetween(source.exportState(), Legend{}.exportState(), peer);
+  CHECK_EQ(delta.graph.nodes.size(), 1u);
+  const NodeStateEntry& node = delta.graph.nodes[0];
+  CHECK_EQ(node.createdAt, Hlc{});         // covered → masked to no-information
+  CHECK_EQ(node.colorAt, Hlc{});           // covered → masked
+  CHECK_EQ(node.orderAt, at(5));           // uncovered → carried on the delta
+  CHECK_EQ(node.order, std::string("a5"));
+  CHECK(delta.coverage->covers(at(5)));    // frontier folded the order stamp into coverage
+
+  LooseGraph target;                        // a peer holding only the create reconciles in one join
+  target.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  target.join(delta.graph);
+  CHECK_EQ(target.exportNode(nid("a"))->order, std::string("a5"));
+}
+
 TEST(two_divergent_replicas_reconcile_to_the_full_join_in_one_exchange) {
   LooseGraph baseGraph;
   baseGraph.createNode(nid("root"), "Root", "x", NodeColor::sky, std::nullopt, at(1));

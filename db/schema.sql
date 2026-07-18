@@ -89,6 +89,8 @@ create table if not exists tree_nodes (
   icon_hlc        text not null default '',
   color           text not null default 'terracotta',
   color_hlc       text not null default '',
+  ord             text not null default '',
+  ord_hlc         text not null default '',
   pos_x           double precision,
   pos_y           double precision,
   pos_hlc         text not null default '',
@@ -101,6 +103,10 @@ create table if not exists tree_nodes (
   present         boolean not null default false,
   primary key (tree_id, node_id)
 );
+-- angular reorder (§F11): `ord` is a node's fractional-index sort key (opaque text, LWW by
+-- `ord_hlc`), scoped to its parent. Converge a tree_nodes table that predates the column.
+alter table tree_nodes add column if not exists ord text not null default '';
+alter table tree_nodes add column if not exists ord_hlc text not null default '';
 
 create table if not exists tree_edges (
   tree_id     text not null,

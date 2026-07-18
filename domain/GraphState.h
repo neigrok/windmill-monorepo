@@ -21,6 +21,8 @@ struct NodeStateEntry {
   Hlc iconAt;
   NodeColor color = NodeColor::terracotta;
   Hlc colorAt;
+  std::string order;  // fractional-index key scoped to the parent; opaque here — the server never interprets it
+  Hlc orderAt;
   std::optional<Vec2> position;
   Hlc positionAt;
   std::optional<std::string> status;
