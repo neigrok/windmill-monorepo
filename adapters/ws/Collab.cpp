@@ -84,6 +84,9 @@ void Collab::onMessage(const drogon::WebSocketConnectionPtr& conn, const std::st
     Json::Value frame = parse(text);
     if (!frame.isObject()) return;
     std::string type = frame.get("t", "").asString();
+    // The client heartbeat: connection-scoped liveness, no tree lookup or auth — echo pong on the
+    // same socket so an idle tab keeps the pipe warm and detects a half-open connection.
+    if (type == "ping") { Json::Value pong(Json::objectValue); pong["t"] = "pong"; send(conn, pong); return; }
     std::string treeId = frame.get("treeId", "").asString();
     if (type == "subscribe") return subscribe(conn, treeId, frame);
     if (type == "subgraph") return subgraphFrame(conn, treeId, frame);
