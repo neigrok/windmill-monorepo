@@ -14,6 +14,7 @@ import { useViewMode } from './ui/useViewMode.js';
 import { StatusChip, VisitorNotice } from './ui/HonestyChrome.jsx';
 import { MobileChrome } from './ui/mobile/MobileChrome.jsx';
 import { BottomSheet } from './ui/mobile/BottomSheet.jsx';
+import { MobileEditorSheet } from './ui/mobile/MobileEditorSheet.jsx';
 import { ForkDoor } from './ui/mobile/ForkDoor.jsx';
 import { useAuth } from './auth/AuthProvider.jsx';
 import { AccountSeat } from './auth/AccountSeat.jsx';
@@ -427,7 +428,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     toastTimersRef.current.forEach(clearTimeout);
     toastTimersRef.current = [];
     const action = options.action ?? null;
-    const hold = action ? 6000 : 4000;
+    const hold = options.duration ?? (action ? 6000 : 4000);
     const key = (toastKeyRef.current += 1);
     setToast({ message, action, key, leaving: false });
     const leave = setTimeout(() => {
@@ -693,6 +694,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     setSelectedId(id);
     setAutoFocusNameId(id);
     emit({ verb: 'added', nodeId: id, label: '', kind: parent.color });
+    return id; // so a caller (the phone undo snackbar) can target this exact node
   }, [syncStructure, emit]);
 
   // The emptied tree's way back in (empty-state): plant a first root with no parent —
@@ -767,6 +769,38 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     if (!id) return;
     collabRef.current?.dispatch({ kind: 'SetNodeColor', id, color: kind });
   }, []);
+
+  // The finger's ⌘Z (M6): every phone edit drops a 4s undo snackbar, since a touch
+  // surface has no keyboard undo. Each wrapper runs the same handle* the desktop editor
+  // calls, then toasts with Undo → undo(). Delete keeps its own 6s toast (deleteNodeAt),
+  // and Mark done carries its own completion ceremony — neither routes through here. A
+  // fresh bud's first naming is part of the add, not a rename, so it stays silent.
+  const mobileRename = useCallback((id, label) => {
+    const node = editorRef.current?.treeData.nodes.find((n) => n.id === id);
+    const wasNamed = node && node.label.trim() !== '' && node.label !== label;
+    handleRename(id, label);
+    if (wasNamed) showToast('Renamed', { action: { label: 'Undo', run: undo }, duration: 4000 });
+  }, [handleRename, showToast, undo]);
+
+  const mobileRecolor = useCallback((id, kind) => {
+    handleSetKind(id, kind);
+    showToast('Recolored', { action: { label: 'Undo', run: undo }, duration: 4000 });
+  }, [handleSetKind, showToast, undo]);
+
+  // The add's undo must remove THIS bud, not pop the stack: the bud auto-focuses its name
+  // field, so naming it dispatches a RenameNode on top — a plain undo() would pop that rename
+  // and leave the step. Target the created id directly (a fresh bud has no children to resplice).
+  const mobileAddStep = useCallback((parentId) => {
+    const newId = handleCreateChild(parentId);
+    if (!newId) return;
+    showToast('Step added', {
+      action: { label: 'Undo', run: () => {
+        collabRef.current?.dispatch({ kind: 'DeleteNode', id: newId });
+        if (selectedIdRef.current === newId) setSelectedId(null);
+      } },
+      duration: 4000,
+    });
+  }, [handleCreateChild, showToast]);
 
   // Recolor the whole node selection to one legend kind's hue in ONE undoable gesture (mirrors
   // bulkDelete): a single BulkRecolor stamp repaints every selected node, and captureInverse
@@ -1708,6 +1742,13 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     />
   );
 
+  // Ownership gates editing, not a mode (M0): the owner's own tree stays editable on a
+  // phone/tablet even though the view is read-only (the calm read-only scene never flips —
+  // edits persist through the same live collabRef dispatch). A stranger's share, the demo,
+  // and desktop (which has its full editor) are excluded. Computed for both small
+  // breakpoints so the signal is ready; Wave A only wires the phone sheet below.
+  const mobileEditable = treeMine && !shared && !demo && breakpoint !== 'desktop';
+
   // The selected step, rendered read-only: no editing controls, but its unlocks,
   // prerequisites and history. Shared by the phone sheet and the tablet/desktop panel.
   const readOnlyDetail = selectedNode && (
@@ -1918,8 +1959,35 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       )}
 
       {readOnly && breakpoint === 'phone' && (
-        <BottomSheet open={!!selectedNode} onDismiss={() => setSelectedId(null)}>
-          {readOnlyDetail && React.cloneElement(readOnlyDetail, { fill: true })}
+        <BottomSheet
+          open={!!selectedNode}
+          onDismiss={() => setSelectedId(null)}
+          peekHeight={mobileEditable ? 300 : undefined}
+          maxVh={mobileEditable ? 66 : undefined}
+        >
+          {/* The owner's own tree grows the verb rail (M1); a stranger's share keeps the
+              read-only detail. Keyed by node id so a retarget swaps content cleanly (and a
+              freshly-added bud remounts with its name field focused, M2). */}
+          {mobileEditable
+            ? (selectedNode && (
+                <MobileEditorSheet
+                  key={selectedNode.id}
+                  node={selectedNode}
+                  state={selectedState}
+                  prerequisites={prerequisites}
+                  unlocks={unlocks}
+                  completedAt={completedAt[selectedId]}
+                  kinds={legend}
+                  autoFocusName={selectedId !== null && selectedId === autoFocusNameId}
+                  onRename={mobileRename}
+                  onAddStep={mobileAddStep}
+                  onSetKind={mobileRecolor}
+                  onMarkDone={(id) => completeStep(id)}
+                  onUnmarkDone={(id) => handleSetState(id, 'notstarted')}
+                  onDelete={deleteNodeAt}
+                />
+              ))
+            : (readOnlyDetail && React.cloneElement(readOnlyDetail, { fill: true }))}
         </BottomSheet>
       )}
 

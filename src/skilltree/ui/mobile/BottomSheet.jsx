@@ -1,9 +1,10 @@
-// The phone node-detail sheet (X5 §S2). A bottom-edge sheet that opens at a 216px
-// peek and lifts to at most 62vh — the canvas is never fully covered, and there is
-// only ever one. The grabber is the whole gesture surface: a tap toggles
-// peek↔expanded, a drag follows the finger, and a drag well past the peek dismisses.
-// The parent tapping the canvas dismisses too (it flips `open`). `children` is the
-// read-only StepPanel content the parent supplies — we own only the shell + gestures.
+// The phone node-detail sheet (X5 §S2). A bottom-edge sheet that opens at a peek
+// (216px default) and lifts to at most a fraction of the viewport (62vh default) — the
+// canvas is never fully covered, and there is only ever one. The taller editor sheet
+// (M1) passes its own peekHeight/maxVh. The grabber is the whole gesture surface: a tap
+// toggles peek↔expanded, a drag follows the finger, and a drag well past the peek
+// dismisses. The parent tapping the canvas dismisses too (it flips `open`). `children`
+// is the detail content the parent supplies — we own only the shell + gestures.
 
 import React, { useEffect, useRef, useState } from 'react';
 
@@ -12,12 +13,12 @@ const MAX_VH = 62;
 const DISMISS_THRESHOLD = 90; // px dragged past the peek before we let go into a dismiss
 const TAP_SLOP = 4;           // movement under this reads as a tap, not a drag
 
-const sheetHeightPx = () => Math.round((window.innerHeight * MAX_VH) / 100);
-const peekOffsetPx = () => Math.max(0, sheetHeightPx() - PEEK_HEIGHT);
+const sheetHeightPx = (maxVh) => Math.round((window.innerHeight * maxVh) / 100);
+const peekOffsetPx = (maxVh, peekHeight) => Math.max(0, sheetHeightPx(maxVh) - peekHeight);
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-export function BottomSheet({ open, onDismiss, children }) {
+export function BottomSheet({ open, onDismiss, children, peekHeight = PEEK_HEIGHT, maxVh = MAX_VH }) {
   const [rendered, setRendered] = useState(false);
   const [shown, setShown] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -56,7 +57,7 @@ export function BottomSheet({ open, onDismiss, children }) {
     dragging.current = true;
     moved.current = false;
     startY.current = e.clientY;
-    baseOffset.current = expanded ? 0 : peekOffsetPx();
+    baseOffset.current = expanded ? 0 : peekOffsetPx(maxVh, peekHeight);
     setDragOffset(baseOffset.current);
   };
 
@@ -64,7 +65,7 @@ export function BottomSheet({ open, onDismiss, children }) {
     if (!dragging.current) return;
     const delta = e.clientY - startY.current;
     if (Math.abs(delta) > TAP_SLOP) moved.current = true;
-    const next = Math.min(Math.max(baseOffset.current + delta, 0), sheetHeightPx());
+    const next = Math.min(Math.max(baseOffset.current + delta, 0), sheetHeightPx(maxVh));
     setDragOffset(next);
   };
 
@@ -77,7 +78,7 @@ export function BottomSheet({ open, onDismiss, children }) {
       setExpanded((x) => !x);
       return;
     }
-    const peek = peekOffsetPx();
+    const peek = peekOffsetPx(maxVh, peekHeight);
     if (settled > peek + DISMISS_THRESHOLD) {
       onDismiss?.();
       return;
@@ -87,7 +88,9 @@ export function BottomSheet({ open, onDismiss, children }) {
 
   if (!rendered) return null;
 
-  const resting = expanded ? 'translateY(0)' : 'translateY(calc(62vh - 216px))';
+  // max(0px, …) so a peek taller than the sheet (a tall editor peek on an ultra-short
+  // landscape viewport) can't push resting negative and float the sheet off the bottom edge.
+  const resting = expanded ? 'translateY(0)' : `translateY(max(0px, calc(${maxVh}vh - ${peekHeight}px)))`;
   let transform;
   if (dragOffset != null) transform = `translateY(${dragOffset}px)`;
   else if (shown) transform = resting;
@@ -107,8 +110,8 @@ export function BottomSheet({ open, onDismiss, children }) {
         left: 0,
         right: 0,
         bottom: 0,
-        height: '62vh',
-        maxHeight: '62vh',
+        height: `${maxVh}vh`,
+        maxHeight: `${maxVh}vh`,
         display: 'flex',
         flexDirection: 'column',
         background: 'var(--surface-card)',

@@ -60,7 +60,7 @@ function cap(hue) {
 }
 
 // The node's shared annotation: authored intent that travels with the tree, distinct from the per-user workspace.
-function NodeAnnotation({ description, links = [] }) {
+export function NodeAnnotation({ description, links = [] }) {
   const [expanded, setExpanded] = useState(false);
   const [overflows, setOverflows] = useState(false);
   const bodyRef = useRef(null);
@@ -464,7 +464,7 @@ function ReadOnlyStep({ node, state, prerequisites = [], unlocks = [], completed
   );
 }
 
-function ReadOnlyStateChip({ state, hue, completedAt }) {
+export function ReadOnlyStateChip({ state, hue, completedAt }) {
   const base = { display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)', padding: '4px 11px', borderRadius: 'var(--radius-full)', fontSize: 'var(--text-sm)', fontWeight: 700, whiteSpace: 'nowrap' };
   if (state === 'complete') {
     return (
@@ -490,7 +490,7 @@ function ReadOnlyStateChip({ state, hue, completedAt }) {
   );
 }
 
-function ReadOnlyRelations({ title, items, empty }) {
+export function ReadOnlyRelations({ title, items, empty }) {
   return (
     <div>
       <div className="st-step-heading">{title}</div>
