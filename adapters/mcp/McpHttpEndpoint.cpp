@@ -1,5 +1,7 @@
 #include "adapters/mcp/McpHttpEndpoint.h"
 
+#include "application/McpKeyService.h"
+
 #include <openssl/rand.h>
 
 #include <memory>
@@ -109,7 +111,7 @@ McpHttpEndpoint::McpHttpEndpoint(McpServer& server, std::set<std::string> allowe
     : server_(server), allowedOrigins_(std::move(allowedOrigins)), auth_(std::move(auth)) {}
 
 std::optional<UserId> McpHttpEndpoint::resolveCaller(const drogon::HttpRequestPtr& request) const {
-  const bool authConfigured = auth_.oauth != nullptr || !auth_.fallbackToken.empty();
+  const bool authConfigured = auth_.oauth != nullptr || auth_.mcpKeys != nullptr || !auth_.fallbackToken.empty();
   if (!authConfigured) return auth_.fallbackUser;  // no auth wired (local/stdio, tests): the default caller
 
   const std::string authorization = request->getHeader("authorization");
@@ -119,6 +121,8 @@ std::optional<UserId> McpHttpEndpoint::resolveCaller(const drogon::HttpRequestPt
 
   if (auth_.oauth)
     if (std::optional<UserId> user = auth_.oauth->resolveAccessToken(bearer, auth_.resource)) return user;
+  if (auth_.mcpKeys)
+    if (std::optional<UserId> user = auth_.mcpKeys->resolveKey(bearer)) return user;
   if (!auth_.fallbackToken.empty() && secretEqual(bearer, auth_.fallbackToken)) return auth_.fallbackUser;
   return std::nullopt;
 }

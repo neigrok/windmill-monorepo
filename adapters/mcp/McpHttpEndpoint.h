@@ -17,14 +17,17 @@
 
 namespace wm {
 
+class McpKeyService;
+
 using McpHttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
 // Parse a comma-separated allow-list (e.g. WINDMILL_MCP_ALLOWED_ORIGINS), trimming spaces.
 std::set<std::string> parseOriginList(const std::string& csv);
 
 // How the endpoint authenticates a request into a caller. `oauth` (when set) validates a
-// per-user OAuth access token bound to `resource`; `fallbackToken` is an optional shared
-// bearer that acts as `fallbackUser` (CI/agents). With neither configured, requests run
+// per-user OAuth access token bound to `resource`; `mcpKeys` (when set) validates a per-user
+// personal API key — the OAuth-less static-token fallback; `fallbackToken` is an optional shared
+// bearer that acts as `fallbackUser` (CI/agents). With none configured, requests run
 // unauthenticated as `fallbackUser` (local/stdio-style, and the tests). `resourceMetadataUrl`
 // is advertised in the 401 WWW-Authenticate challenge.
 struct McpAuth {
@@ -33,6 +36,7 @@ struct McpAuth {
   std::string resourceMetadataUrl;
   std::string fallbackToken;
   UserId fallbackUser;
+  McpKeyService* mcpKeys = nullptr;
 };
 
 // The MCP Streamable-HTTP transport (spec 2025-06-18): one endpoint, three verbs.

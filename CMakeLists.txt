@@ -27,6 +27,7 @@ add_library(windmill_application
   application/ActivityFeed.cpp
   application/AuthService.cpp
   application/ForkService.cpp
+  application/McpKeyService.cpp
   application/OAuthService.cpp
   application/TreeRegistry.cpp)
 target_link_libraries(windmill_application PUBLIC windmill_domain)
@@ -54,7 +55,8 @@ add_executable(windmill_domain_tests
   test/domain/AuthTest.cpp
   test/application/AuthServiceTest.cpp
   test/domain/OAuthTest.cpp
-  test/application/OAuthServiceTest.cpp)
+  test/application/OAuthServiceTest.cpp
+  test/application/McpKeyServiceTest.cpp)
 target_link_libraries(windmill_domain_tests PRIVATE windmill_application)
 
 enable_testing()
@@ -76,10 +78,12 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     adapters/postgres/PgOpLog.cpp
     adapters/postgres/PgAuthRepository.cpp
     adapters/postgres/PgOAuthRepository.cpp
+    adapters/postgres/PgMcpKeyRepository.cpp
     adapters/postgres/PgEventRepository.cpp
     adapters/http/HttpApi.cpp
     adapters/http/SharePageApi.cpp
     adapters/http/AuthApi.cpp
+    adapters/http/McpKeyApi.cpp
     adapters/http/EventsApi.cpp
     adapters/http/ComposeApi.cpp
     adapters/http/OAuthApi.cpp

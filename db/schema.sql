@@ -197,6 +197,26 @@ alter table sessions add column if not exists last_seen_ms bigint not null defau
 alter table sessions add column if not exists ip text not null default '';
 create unique index if not exists sessions_id on sessions (id);
 
+-- settings: personal MCP API keys. A long-lived per-user bearer token that authenticates MCP
+-- requests as a static-token fallback for OAuth-less clients. Show-once, hash-at-rest: the key is
+-- keyed by the digest of its secret (the raw token is never stored), listable and revocable,
+-- scoped to its owner. `id` is the public per-key handle the revoke endpoint addresses.
+-- expires_ms is nullable (unused in v1 = never expires) but resolveKey still honours it;
+-- last_used_ms rolls forward on use (throttled). The users cascade makes a key vanish with its
+-- account, and findActiveUser also refuses one whose account carries the §4 soft-close stamp.
+create table if not exists mcp_keys (
+  token_hash   text primary key,
+  id           uuid not null default gen_random_uuid(),
+  user_id      uuid not null references users(id) on delete cascade,
+  name         text not null default '',
+  created_ms   bigint not null,
+  last_used_ms bigint,
+  expires_ms   bigint,
+  created_at   timestamptz not null default now()
+);
+create index if not exists mcp_keys_user on mcp_keys (user_id);
+create unique index if not exists mcp_keys_id on mcp_keys (id);
+
 -- settings §4 delete: a soft close with a 30-day grace. `deleted_at` stamps the request;
 -- the account fully closes 30 days later. A within-grace magic-link sign-in clears it (the
 -- undo), and authenticate refuses any session whose user carries it.

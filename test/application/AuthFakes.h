@@ -3,6 +3,7 @@
 #include "ports/AuthRepository.h"
 #include "ports/Clock.h"
 #include "ports/EmailSender.h"
+#include "ports/McpKeyRepository.h"
 #include "ports/OAuthRepository.h"
 #include "ports/TokenGenerator.h"
 
@@ -206,6 +207,58 @@ struct FakeAuthRepository : AuthRepository {
     if (it == usersById.end()) return;
     it->second.deletedAt = at;
     usersByEmail[it->second.email.value].deletedAt = at;
+  }
+};
+
+// Personal MCP API keys as a fake: the digest→row map the real table keys on, plus the public
+// id. findActiveUser models just the digest→user + expiry gate (the real deleted_at JOIN is
+// SQL-only); touchUsed and revoke mirror the throttled last-used write and the owner-scoped delete.
+struct FakeMcpKeyRepository : McpKeyRepository {
+  struct KeyRow {
+    std::string id;
+    UserId user;
+    std::string name;
+    long long createdMs = 0;
+    std::optional<long long> lastUsedMs;
+    std::optional<long long> expiresMs;
+  };
+  std::map<std::string, KeyRow> keys;  // digest -> row
+  int nextKeyId = 0;
+
+  std::string insert(const std::string& tokenDigest, const UserId& user, const std::string& name,
+                     long long createdMs) override {
+    std::string id = "key" + std::to_string(++nextKeyId);
+    keys[tokenDigest] = KeyRow{id, user, name, createdMs, std::nullopt, std::nullopt};
+    return id;
+  }
+  std::vector<McpKeyRow> list(const UserId& user) override {
+    std::vector<McpKeyRow> out;
+    for (const auto& [digest, row] : keys)
+      if (row.user == user) out.push_back(McpKeyRow{row.id, row.name, row.createdMs, row.lastUsedMs});
+    std::sort(out.begin(), out.end(),
+              [](const McpKeyRow& a, const McpKeyRow& b) { return a.createdMs > b.createdMs; });
+    return out;
+  }
+  bool revoke(const UserId& user, const std::string& id) override {
+    for (auto it = keys.begin(); it != keys.end(); ++it) {
+      if (it->second.id == id && it->second.user == user) {
+        keys.erase(it);
+        return true;
+      }
+    }
+    return false;
+  }
+  std::optional<UserId> findActiveUser(const std::string& tokenDigest, long long nowMs) override {
+    auto it = keys.find(tokenDigest);
+    if (it == keys.end()) return std::nullopt;
+    if (it->second.expiresMs && *it->second.expiresMs <= nowMs) return std::nullopt;
+    return it->second.user;
+  }
+  void touchUsed(const std::string& tokenDigest, long long nowMs, long long throttleMs) override {
+    auto it = keys.find(tokenDigest);
+    if (it == keys.end()) return;
+    if (!it->second.lastUsedMs || *it->second.lastUsedMs < nowMs - throttleMs)
+      it->second.lastUsedMs = nowMs;
   }
 };
 

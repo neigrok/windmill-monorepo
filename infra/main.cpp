@@ -5,6 +5,7 @@
 #include "adapters/http/ComposeApi.h"
 #include "adapters/http/EventsApi.h"
 #include "adapters/http/HttpApi.h"
+#include "adapters/http/McpKeyApi.h"
 #include "adapters/http/OAuthApi.h"
 #include "adapters/http/RateLimiter.h"
 #include "adapters/http/SharePageApi.h"
@@ -15,6 +16,7 @@
 #include "adapters/mcp/RoadmapTools.h"
 #include "adapters/postgres/PgAuthRepository.h"
 #include "adapters/postgres/PgEventRepository.h"
+#include "adapters/postgres/PgMcpKeyRepository.h"
 #include "adapters/postgres/PgOAuthRepository.h"
 #include "adapters/postgres/PgOpLog.h"
 #include "adapters/postgres/PgProgressRepository.h"
@@ -25,6 +27,7 @@
 #include "adapters/ws/WsPresenceBus.h"
 #include "application/AuthService.h"
 #include "application/ForkService.h"
+#include "application/McpKeyService.h"
 #include "application/OAuthService.h"
 #include "application/ProgressService.h"
 #include "application/RoomRegistry.h"
@@ -81,10 +84,17 @@ int main() {
   auto oauthRepo = std::make_shared<PgOAuthRepository>(connString);
   auto oauthService = std::make_shared<OAuthService>(*oauthRepo, *tokens, *systemClock);
 
+  // Personal MCP API keys: the OAuth-less static-token fallback. The same token generator mints
+  // and digests them (no prefix — consistent with sessions/oauth), so a leaked digest can neither
+  // resurrect a key nor act as one.
+  auto mcpKeyRepo = std::make_shared<PgMcpKeyRepository>(connString);
+  auto mcpKeyService = std::make_shared<McpKeyService>(*mcpKeyRepo, *tokens, *systemClock);
+
   auto authService =
       std::make_shared<AuthService>(*authRepo, *emailSender, *tokens, *systemClock, *oauthService, appBaseUrl);
   auto forkService = std::make_shared<ForkService>(*registry, *trees, *tokens);
   auto authApi = std::make_shared<AuthApi>(authService, forkService, secureCookies, cookieDomain);
+  auto mcpKeyApi = std::make_shared<McpKeyApi>(authService, mcpKeyService);
   auto oauthApi = std::make_shared<OAuthApi>(oauthService, authService, apiBaseUrl, appBaseUrl, "/#/oauth/authorize");
 
   // The socket authenticates each connection at its upgrade and writes progress as that
@@ -138,7 +148,8 @@ int main() {
   const std::set<std::string> mcpOrigins = parseOriginList(mcpOriginsEnv ? mcpOriginsEnv : "");
 
   auto mcpTools = std::make_shared<RoadmapTools>(*registry, *progressService, *systemClock, *treeRegistry, *bus);
-  McpAuth mcpAuth{oauthService.get(), mcpResource, mcpResourceMetadataUrl, mcpToken, mcpFallbackUser};
+  McpAuth mcpAuth{oauthService.get(), mcpResource,     mcpResourceMetadataUrl,
+                  mcpToken,           mcpFallbackUser, mcpKeyService.get()};
   ServerInfo mcpInfo{
       "windmill", "0.1.0",
       "Windmill roadmaps are RPG-style skill trees: nodes are skills/milestones, and a "
@@ -316,6 +327,22 @@ int main() {
       "/v1/sessions/{id}",
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
         authApi->revokeSession(req, std::move(cb), id);
+      },
+      {drogon::Delete});
+
+  // Settings: personal MCP API keys — mint (the secret shown once), list (metadata only), revoke.
+  app.registerHandler(
+      "/v1/mcp-keys",
+      [mcpKeyApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { mcpKeyApi->createKey(req, std::move(cb)); },
+      {drogon::Post});
+  app.registerHandler(
+      "/v1/mcp-keys",
+      [mcpKeyApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { mcpKeyApi->listKeys(req, std::move(cb)); },
+      {drogon::Get});
+  app.registerHandler(
+      "/v1/mcp-keys/{id}",
+      [mcpKeyApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        mcpKeyApi->revokeKey(req, std::move(cb), id);
       },
       {drogon::Delete});
 
