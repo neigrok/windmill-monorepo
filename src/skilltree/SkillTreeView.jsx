@@ -6,7 +6,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './skilltree.css';
 import { ControlBar } from './ui/ControlBar.jsx';
-import { ShortcutsDialog } from './ui/ShortcutsDialog.jsx';
+import { ShortcutsDialog } from './shortcuts/ShortcutsDialog.jsx';
 import { TreeSwitcher } from './ui/TreeSwitcher.jsx';
 import { StepPanel } from './ui/StepPanel.jsx';
 import { Minimap } from './ui/Minimap.jsx';
@@ -27,6 +27,9 @@ import { SignInDialog } from './auth/SignInDialog.jsx';
 import { requestMagicLink } from './auth/AuthClient.js';
 import { ShareDialog } from './share/ShareDialog.jsx';
 import { ShareStats } from './share/ShareStats.js';
+import { buildOgCardSvg } from './share/ogCard.js';
+import { svgToPngBlob } from './share/rasterize.js';
+import { uploadOgImage } from './share/OgImageClient.js';
 import { ActivityFeed } from './activity/ActivityFeed.jsx';
 import { NextUp, planNextUp, considerAutoOpen } from './ui/NextUp.jsx';
 import { ActivityLog, ActivityEvent } from './activity/ActivityLog.js';
@@ -1042,14 +1045,15 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
         toggleActivity();
         return;
       }
-      // "?" (Shift+/) opens the keyboard-shortcuts help — an editor affordance, guarded like
-      // ⌘A so it never fires while typing in a field (label, note, legend, switcher). The
-      // shared Dialog owns its own Esc/close; this branch only opens.
-      if (!readOnlyRef.current && event.key === '?' && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      // "?" (Shift+/) toggles the keyboard-shortcuts reference — a View affordance like "A",
+      // so it works read-only too (the panel just shows less); guarded like ⌘A so it never
+      // fires while typing in a field. Pressing "?" again closes it (the fourth close path
+      // alongside the Dialog's own Esc / × / backdrop).
+      if (event.key === '?' && !event.metaKey && !event.ctrlKey && !event.altKey) {
         const el = document.activeElement;
         if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
         event.preventDefault();
-        setShortcutsOpen(true);
+        setShortcutsOpen((visible) => !visible);
         return;
       }
       if (!readOnlyRef.current && (event.key === 'Backspace' || event.key === 'Delete')) {
@@ -1364,6 +1368,26 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
 
   // The share "score" — done/total + the dominant kind that tints the exported frame.
   const shareStats = useMemo(() => (tree ? ShareStats.from(tree, states) : null), [tree, states]);
+
+  // When the owner shares, publish the tree's unfurl card (brief #12): build the SVG from the
+  // same model + layout the canvas draws, rasterize it, and upload it — all best-effort, off
+  // the copy interaction. Owner-only (treeMine), and every step is guarded so a failed card
+  // (bad raster, offline, no DOM) stays silent and the backend's generic image covers it.
+  const publishOgImage = useCallback(async () => {
+    if (!treeMine || !tree || !shareStats) return;
+    try {
+      const model = tree.toRenderModel(layoutPositions(tree), states);
+      const svg = buildOgCardSvg({
+        model,
+        title: tree.title,
+        done: shareStats.done,
+        total: shareStats.total,
+        dominantKind: shareStats.dominantKind,
+      });
+      const png = await svgToPngBlob(svg);
+      if (png) await uploadOgImage(treeId, png);
+    } catch { /* the unfurl image is best-effort — never breaks sharing */ }
+  }, [treeMine, tree, states, shareStats, layoutPositions, treeId]);
 
   // Push re-derived states to the scene whenever completion changes; the
   // scene owns the growth animation for newly-unlocked branches.
@@ -2300,7 +2324,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
         </div>
       )}
 
-      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} readOnly={readOnly} />
 
       <SignInDialog open={signInOpen} onClose={() => setSignInOpen(false)} onSend={requestMagicLink} />
 
@@ -2309,6 +2333,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
         onClose={() => setShareOpen(false)}
         visibility={treeVisibility}
         mine={treeMine}
+        onShareLink={publishOgImage}
       />
 
       {loading && !loadError && <div className="st-loading"><span className="st-loading-msg">Planting the tree…</span></div>}

@@ -1,14 +1,15 @@
 // The Share surface (X2 identity), link-only: a copyable share URL and the tree's
 // sharing stance. Copying a private tree's link flips it to unlisted so the recipient
-// can view; the owner can lock it back to private. No image export — the link is the
-// whole surface.
+// can view; the owner can lock it back to private. The link is the whole surface here —
+// the one image is the unfurl card (brief #12), published in the background via onShareLink
+// when the owner shares, never previewed or downloaded in the dialog.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Dialog, Button } from '../../components';
 import { setVisibility } from '../persistence/TreeRegistry.js';
 import { track } from '../../telemetry/beacon.js';
 
-export function ShareDialog({ open, onClose, visibility, mine }) {
+export function ShareDialog({ open, onClose, visibility, mine, onShareLink }) {
   const [linkCopied, setLinkCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false); // clipboard denied — the link is still selectable
   // The tree's live sharing stance. Seeded from the server's answer, but the owner's copy-link
@@ -49,12 +50,17 @@ export function ShareDialog({ open, onClose, visibility, mine }) {
     // view. Guarded on mine + private so a non-owner's call never fires (it would 403) and a
     // public tree is never lowered. If the flip fails the link still copied; the stance stays
     // private, so the dialog never claims a reach the server won't honor.
+    let shareable = mine && (stance === 'unlisted' || stance === 'public');
     if (mine && stance === 'private') {
       try {
         await setVisibility(treeId, 'unlisted');
         setStance('unlisted');
+        shareable = true;
       } catch { /* keep the private stance — no false promise of reach */ }
     }
+    // The owner just made their own tree reachable — publish its unfurl image (the tree as
+    // itself). Fired without await and best-effort inside, so it never delays or breaks the copy.
+    if (shareable) onShareLink?.();
   }
 
   // The owner's deliberate reverse: lock the tree back to owner-only. Its link goes dark, and

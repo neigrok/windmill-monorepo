@@ -23,25 +23,39 @@ const DIM_EDGE = RADIUS * 0.05;      // ~1.4  — a dormant branch
 const AVAIL_STROKE = RADIUS * 0.072; // ~2    — the outline of an available node
 const LOCKED_STROKE = RADIUS * 0.046;// ~1.3  — the faint edge of a locked ghost
 
+const BLUR_STD = RADIUS * 0.55;  // the done/active halo's gaussian spread — part of a node's drawn footprint
+
 let portraitUid = 0; // unique filter ids so many portraits on one page never collide
 
-export function treePortraitSvg(model, palette, box) {
-  const { minX, minY, maxX, maxY } = model.bounds;
-  const vbW = maxX - minX;
-  const vbH = maxY - minY;
+// The tree portrait as an SVG string. `box` is the pixel viewport; `viewBox` optionally
+// overrides the world window — the OG card passes a glow-inclusive, padded, clamped box so
+// any tree centers and fills the panel. Omit it and the model's own bounds are the window.
+export function treePortraitSvg(model, palette, box, viewBox) {
+  const b = model.bounds;
+  const vb = viewBox ?? { minX: b.minX, minY: b.minY, width: b.maxX - b.minX, height: b.maxY - b.minY };
   const glowId = `wm-glow-${portraitUid++}`;
 
   const byId = new Map(model.nodes.map((node) => [node.id, node]));
   const edges = model.edges.map((edge) => edgePath(edge, byId, palette)).join('');
-  const nodes = model.nodes.map((node) => nodeMarkup(node, palette, glowId)).join('');
+  const nodes = model.nodes.map((node) => `<g class="wm-node">${nodeMarkup(node, palette, glowId)}</g>`).join('');
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${box.w}" height="${box.h}"`
-    + ` viewBox="${num(minX)} ${num(minY)} ${num(vbW)} ${num(vbH)}" preserveAspectRatio="xMidYMid meet">`
+    + ` viewBox="${num(vb.minX)} ${num(vb.minY)} ${num(vb.width)} ${num(vb.height)}" preserveAspectRatio="xMidYMid meet">`
     + `<defs><filter id="${glowId}" x="-80%" y="-80%" width="260%" height="260%">`
-    + `<feGaussianBlur stdDeviation="${num(RADIUS * 0.55)}"/></filter></defs>`
+    + `<feGaussianBlur stdDeviation="${num(BLUR_STD)}"/></filter></defs>`
     + `<g>${edges}</g>`
     + `<g>${nodes}</g>`
     + `</svg>`;
+}
+
+// A node's drawn footprint radius in world units — the OG card grows its bounding box by
+// this per node so no done halo (nor the root's crown) clips at the panel edge.
+export function nodeGlowRadius(node) {
+  const r = node.emphasis ? RADIUS * ROOT_SCALE : RADIUS;
+  const lit = node.state === 'complete' || node.state === 'active';
+  const outer = lit ? r * GLOW_R + BLUR_STD * 2 : r * RING_R;
+  const crown = node.emphasis ? r * 1.75 : 0; // the crown reaches ~1.72r above the disc
+  return Math.max(outer, crown);
 }
 
 // A branch: a quadratic bézier bowed perpendicular to its own line, lit when its

@@ -3,8 +3,12 @@
 
 import React from 'react';
 import { IconButton, Tooltip, Icon } from '../../components';
+import { keyHint } from '../shortcuts/shortcutMap.js';
 
 export function ControlBar({ title, titleSlot, onZoomIn, onZoomOut, onFitToView, canReset, onResetEdits, onShare, onShowShortcuts, activityOpen, activityUnread, activityPing, readyCount = 0, onToggleActivity }) {
+  // The (A) / (?) key hints come from the canonical shortcut map, never a duplicated literal.
+  const activityHint = keyHint('Activity feed');
+  const shortcutsHint = keyHint('Keyboard shortcuts');
   return (
     <div className="st-topbar">
       <div className="st-brand">
@@ -19,7 +23,7 @@ export function ControlBar({ title, titleSlot, onZoomIn, onZoomOut, onFitToView,
       <div className="st-controls">
         {/* The standing offer (whats-next-panel): "Next · N" while steps are ready,
             the plain Activity chip at zero; the unseen-activity badge rides along. */}
-        <Tooltip label={readyCount > 0 ? 'What’s next (A)' : 'Activity (A)'} side="bottom">
+        <Tooltip label={readyCount > 0 ? `What’s next (${activityHint})` : `Activity (${activityHint})`} side="bottom">
           <button
             type="button"
             className={`st-activity-chip ${activityOpen ? 'st-activity-chip--on' : ''} ${activityPing ? 'st-activity-chip--ping' : ''}`}
@@ -40,7 +44,7 @@ export function ControlBar({ title, titleSlot, onZoomIn, onZoomOut, onFitToView,
           </Tooltip>
         )}
         {onShowShortcuts && (
-          <Tooltip label="Keyboard shortcuts (?)" side="bottom">
+          <Tooltip label={`Keyboard shortcuts (${shortcutsHint})`} side="bottom">
             <IconButton icon={<Icon name="keyboard" />} label="Keyboard shortcuts" size="sm" onClick={onShowShortcuts} />
           </Tooltip>
         )}
