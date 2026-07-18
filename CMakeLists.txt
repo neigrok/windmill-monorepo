@@ -81,6 +81,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     adapters/postgres/PgMcpKeyRepository.cpp
     adapters/postgres/PgEventRepository.cpp
     adapters/postgres/PgFeedbackRepository.cpp
+    adapters/postgres/PgServerErrorRepository.cpp
     adapters/http/HttpApi.cpp
     adapters/http/SharePageApi.cpp
     adapters/http/AuthApi.cpp

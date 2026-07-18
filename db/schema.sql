@@ -299,6 +299,23 @@ create table if not exists feedback (
 -- the weekly read: newest feedback first
 create index if not exists feedback_ts on feedback (ts);
 
+-- the server-side safety net: an uncaught exception that escaped an HTTP/WS handler, so a broken
+-- endpoint is queryable here instead of only in a container's stdout (the mirror of the client's
+-- crash beacon). method/path/message are best-effort; actor is nullable — the exception handler
+-- often can't resolve a caller. The per-handler try/catch paths never land here; this is only for
+-- the exceptions nobody caught.
+create table if not exists server_errors (
+  id      bigserial primary key,
+  ts      timestamptz not null default now(),
+  method  text,
+  path    text,
+  status  int not null default 500,
+  message text,
+  actor   uuid
+);
+-- the triage read: newest errors first
+create index if not exists server_errors_ts on server_errors (ts);
+
 -- ── The playable demo tree (F4) ─────────────────────────────────────────────────────────────
 -- The hosted "Learn to sail" roadmap a stranger meets at #/demo — read anonymously over both
 -- HTTP and WS, so the row must exist AND be public or read enforcement 404s it for every visitor.

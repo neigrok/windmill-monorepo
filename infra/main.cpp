@@ -22,6 +22,7 @@
 #include "adapters/postgres/PgOAuthRepository.h"
 #include "adapters/postgres/PgOpLog.h"
 #include "adapters/postgres/PgProgressRepository.h"
+#include "adapters/postgres/PgServerErrorRepository.h"
 #include "adapters/postgres/PgTreeRepository.h"
 #include "adapters/ws/Collab.h"
 #include "adapters/ws/PresenceHub.h"
@@ -128,6 +129,11 @@ int main() {
   auto feedbackRepo = std::make_shared<PgFeedbackRepository>(connString);
   auto feedbackApi = std::make_shared<FeedbackApi>(feedbackRepo, authService);
 
+  // The uncaught-exception safety net: the drogon exception handler (registered below) persists
+  // whatever escaped a request handler, so a broken endpoint surfaces in server_errors instead of
+  // only in a stdout LOG_ERROR no one can see.
+  auto serverErrors = std::make_shared<PgServerErrorRepository>(connString);
+
   // Paste-import escalation (F3): the model rewrites arbitrary prose into the paste grammar
   // and the client re-parses it deterministically — text in, text out, never a door into the
   // tree. No ANTHROPIC_API_KEY → the route answers 503 and the client hides the handle.
@@ -191,6 +197,35 @@ int main() {
   }
 
   auto& app = drogon::app();
+
+  // Safety net for uncaught exceptions: setExceptionHandler replaces ONLY drogon's default
+  // uncaught-exception path — a handler that already catches its own error (EventsApi, McpKeyApi,
+  // FeedbackApi) and every successful response are untouched. Anything that escaped a handler lands
+  // a row in server_errors and gets a clean generic 500. The insert is fully guarded — if the DB is
+  // the very thing that's down, the handler must never throw again — and e.what() never reaches the
+  // body (it can carry internals); the stdout LOG_ERROR signal is kept too.
+  app.setExceptionHandler([serverErrors](const std::exception& e, const drogon::HttpRequestPtr& req,
+                                         std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+    const std::string method = req->getMethodString();
+    const std::string path = req->getPath();
+    std::string message = e.what();
+    if (message.size() > 500) {                            // bound the column, cutting on a UTF-8 boundary
+      std::size_t cut = 500;
+      while (cut > 0 && (static_cast<unsigned char>(message[cut]) & 0xC0) == 0x80) --cut;
+      message.resize(cut);
+    }
+    LOG_ERROR << "uncaught exception on " << method << " " << path << ": " << message;
+    try {
+      serverErrors->insert(method, path, 500, message);
+    } catch (const std::exception& sink) {
+      LOG_ERROR << "server_errors insert dropped: " << sink.what();
+    }
+    Json::Value body(Json::objectValue);
+    body["error"] = "internal error";
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
+    resp->setStatusCode(drogon::k500InternalServerError);
+    callback(resp);
+  });
 
   // One CORS policy for every response the server mints early. The session cookie is credentialed,
   // so Allow-Credentials only ever rides an allow-listed Origin — never a reflect-any-origin, which
