@@ -62,6 +62,9 @@ export function Dialog({ open, onClose, title, children, footer, width = 420 }) 
           position: 'relative',
           width: width,
           maxWidth: '90vw',
+          maxHeight: '90vh',           // never taller than the viewport…
+          display: 'flex',
+          flexDirection: 'column',     // …the body scrolls, the header/close/footer stay pinned
           background: 'var(--surface-card)',
           borderRadius: 'var(--radius-2xl)',
           boxShadow: 'var(--shadow-lg)',
@@ -102,7 +105,7 @@ export function Dialog({ open, onClose, title, children, footer, width = 420 }) 
             {title}
           </div>
         )}
-        <div style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-base)', color: 'var(--text-secondary)' }}>
+        <div style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-base)', color: 'var(--text-secondary)', flex: '1 1 auto', minHeight: 0, overflowY: 'auto' }}>
           {children}
         </div>
         {footer && <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>{footer}</div>}
