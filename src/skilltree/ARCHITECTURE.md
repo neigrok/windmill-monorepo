@@ -128,11 +128,11 @@ Everything in `model/` is pure JS — no WebGL, no React.
 - `scene/input/` — pointer interaction, extracted so the scene isn't a god-object and edit
   tools plug in without touching event plumbing. `InputController` owns the canvas listeners
   + pointer capture + single-pointer bookkeeping, forwards down/drag/move/up/leave to the
-  active `Tool`, and handles wheel-zoom globally. `tools.js`: the `Tool` contract + two
-  impls sharing a small scene context (`camera`, `pick`, `getNode`, `select`, `hover`,
-  `moveNode`) — `NavigateTool` (drag-pan + inertia, click-select, throttled hover) and
-  `MoveTool` (adds node dragging: press-on-node drags it live, press-on-empty falls back to
-  pan). The scene defaults to `MoveTool` and can `input.setTool(...)` later.
+  active `Tool`, and handles wheel-zoom globally. `tools.js`: the `Tool` contract + its
+  impls sharing a small scene context (`camera`, `pick`, `select`, `hover`) — `NavigateTool`
+  (drag-pan + inertia, click-select, throttled hover) is both the viewer behaviour and the
+  editing default, and `ReadOnlyTool` (shared-tree viewer: 1:1 pan, tap-select, no fling).
+  The scene defaults to `NavigateTool` and can `input.setTool(...)` later.
 - `scene/SkillTreeScene.js` — orchestrator: owns the GL context, the `Camera2D`, both
   batches, the `IconAtlas`, the label + icon overlays, and the `InputController`. The rAF loop
   advances `uTime` and the camera; **whenever the camera moved (or a node moved) that frame it
@@ -168,48 +168,41 @@ and feeds results back through the render pipeline.
 
 ## `share/`  (the X2 share identity)
 
-Everything Windmill exports — the OG/unfurl card, the share PNG, the gallery thumb,
-the GIF frames — through one shared recipe so the surfaces can't drift. Canonical
-spec: the design system's `explorations/share-identity.html`. Grouped as one
-feature package (not split across layers) because it's a self-contained surface.
+Sharing is a **link**: `ShareDialog` copies the read-only tree URL and, when the tree is
+yours and private, flips it to unlisted on copy. The rest of the package renders the
+in-product gallery card and the stats readouts the app chrome shows. Canonical spec: the
+design system's `explorations/share-identity.html`. Grouped as one feature package (not
+split across layers) because it's a self-contained surface. (The image-export recipe —
+`ShareFrame` + the Canvas2D `exportImage` compositor + the PNG/GIF preview — was retired
+2026-07-18; the share surface is a link now, and the OG/unfurl card is a static asset.)
 
 - `share/palette.js` — `SHARE_PALETTE` (`light` + `dark`) + `KIND_ORDER`. Light is the
-  design system 1:1 (kinds pulled from `theme.js`, so an exported tree can't drift from
-  the in-app tree); dark is the export-only night skin the live renderer doesn't have.
-  Per theme: chrome (`mat/panel/edge/track/brand/grad*`) + per-kind `{c,rgb,soft}`.
+  design system 1:1 (kinds pulled from `theme.js`); dark is the night skin. Per theme:
+  chrome (`mat/panel/edge/track/brand/grad*`) + per-kind `{c,rgb,soft}`. Read by
+  `ShareStats` (kind order) and `GalleryCard`.
 - `share/ShareStats.js` — `class ShareStats`; `from(tree, states)` → `done/total/percent`
   and the **dominant kind**: the most common kind among *done* nodes, a shared max (or an
-  empty tree) tying to terracotta. The only hue the frame chrome takes.
-- `share/ShareFrame.js` — the pure **frame recipe**: `SHARE_SIZES` (OG 1200×630, feed
-  1600×900, square 1080×1080, GIF 960×540) and `class ShareFrame` resolving every rect,
-  hue and type size off `k = w/1200` (mat, kind rule, panel, identity strip, safe inset,
-  1:1 crop). No rendering — renderers read it.
+  empty tree) tying to terracotta. Feeds the plaque, switcher, fork readouts and the card.
 - `share/TreePortrait.js` — `treePortraitSvg(model, palette, box)`: the tree as a
   standalone SVG string from the `RenderModel` (glow halos, crowned root, kind hues, done/
   available/locked looks), self-contained (own xmlns, unique filter ids, no text/urls) so it
-  rasterizes into an `<img>`. Deterministic and resolution-independent, in light and dark —
-  chosen over capturing the WebGL canvas so both themes and any size work without a GL
-  read-back or `preserveDrawingBuffer` (see NOTES).
-- `share/exportImage.js` — the one **Canvas2D compositor**: `renderShareCanvas(frame, model,
-  {scale})` paints mat → kind rule → panel → rasterized portrait → identity strip onto a
-  canvas; `canvasToPngBlob` / `canvasToDataUrl` for @2x export. Reads font stacks off the
-  document root (Canvas2D can't parse `var()` in `ctx.font`).
-- `share/ShareDialog.jsx` — the Share surface. **The preview IS the export**: it renders the
-  frame onto a canvas via `renderShareCanvas` and shows/downloads that very canvas, so what
-  the user sees and what they post can't diverge. Size + light/dark pickers; the dominant
-  kind is computed, never chosen. A filmstrip illustrates GIF intro → final ≡ the PNG.
+  rasterizes into an `<img>`. Deterministic, resolution-independent, light and dark. Used by
+  `GalleryCard`.
+- `share/ShareDialog.jsx` — the Share surface, **link-only**: copies the read-only view URL
+  and, when the tree is yours and private, flips it to unlisted on copy with an honest reach
+  line ("Anyone with this link can view" / "Make private"). No image export.
 - `share/GalleryCard.jsx` — the in-product card (#12): drops the mat (it lives inside app
-  chrome) but keeps the kind rule + the same title/readout, presentational, light and dark.
+  chrome) but keeps the kind rule + the same title/readout, presentational, light and dark
+  (renders in the `#/showcase` design gallery).
 
-`ControlBar` gains a Share button; `SkillTreeView` opens `ShareDialog` with the live
-`renderModel` + `ShareStats.from(tree, states)`.
+`ControlBar` gains a Share button; `SkillTreeView` opens `ShareDialog` (link-only).
 
 ## `SkillTreeView.jsx` + overlay UI
 
 Runs the pipeline above (repo → domain → layout → scene) and owns the edit loop: builds a
 `TreeEditor` from the loaded TreeData, caches the raw layout, and funnels every edit through
 `syncStructure()` (re-derive the model from `editor.treeData` — which re-validates the DAG —
-and `scene.applyModel`). Edits: `MoveTool` drops (`onNodeMoveEnd` → `repositionNode`); the
+and `scene.applyModel`). Edits: the
 affordance plus (`onCreateChild` → `addChildNode`, committed as an unnamed bud, auto-selected with
 the panel's name field focused); rename/kind from the step panel (`renameNode`/`setNodeColor`, one
 step each); ⌫/Delete on the selection (`deleteNode`, children splice up, one step + an Undo toast;

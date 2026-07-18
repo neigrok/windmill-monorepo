@@ -1,13 +1,12 @@
 // Pointer tools: each interprets the same gesture stream differently. The
 // InputController routes canvas pointer events to the active tool, which reads
-// and drives the scene through a small context (camera, pick, pickEdge, getNode,
-// select, selectEdge, hover, hoverEdge, moveNode). Wheel-zoom is global and
-// never goes through a tool.
+// and drives the scene through a small context (camera, pick, pickEdge,
+// select, selectEdge, hover, hoverEdge). Wheel-zoom is global and never goes
+// through a tool.
 //
-// NavigateTool is the viewer behaviour: drag to pan; hover highlights a node or
-// deepens a branch (never chrome — spec v2 §1.1, §4.1); a click selects a node,
-// else a branch, else clears. MoveTool adds node dragging — press on a node
-// drags it, press on empty space falls back to NavigateTool's pan.
+// NavigateTool is the viewer behaviour and the editing default: drag to pan;
+// hover highlights a node or deepens a branch (never chrome — spec v2 §1.1,
+// §4.1); a click selects a node, else a branch, else clears.
 
 const DRAG_THRESHOLD_PX = 4;
 const HOVER_THROTTLE_MS = 40;
@@ -82,63 +81,6 @@ export class NavigateTool extends Tool {
   onDoubleClick(pos) {
     const id = this.ctx.pick(pos.x, pos.y);
     if (id) this.ctx.select(id);
-  }
-}
-
-export class MoveTool extends NavigateTool {
-  constructor(context) {
-    super(context);
-    this.node = null;
-    this.grabX = 0;
-    this.grabY = 0;
-    this.startX = 0;
-    this.startY = 0;
-    this.moved = false;
-  }
-
-  onPointerDown(pos, event) {
-    const id = this.ctx.pick(pos.x, pos.y);
-    if (id) {
-      const node = this.ctx.getNode(id);
-      const world = this.ctx.camera.screenToWorld(pos.x, pos.y);
-      this.node = id;
-      this.grabX = node.x - world.x;
-      this.grabY = node.y - world.y;
-      this.startX = pos.x;
-      this.startY = pos.y;
-      this.moved = false;
-      this.ctx.select(id);
-      return;
-    }
-    super.onPointerDown(pos, event);
-  }
-
-  onPointerDrag(pos, event) {
-    if (this.node) {
-      if (!this.moved && Math.hypot(pos.x - this.startX, pos.y - this.startY) > DRAG_THRESHOLD_PX) this.moved = true;
-      if (this.moved) {
-        const world = this.ctx.camera.screenToWorld(pos.x, pos.y);
-        this.ctx.moveNode(this.node, world.x + this.grabX, world.y + this.grabY);
-      }
-      return;
-    }
-    super.onPointerDrag(pos, event);
-  }
-
-  onPointerUp(pos, event) {
-    if (this.node) {
-      const id = this.node;
-      const moved = this.moved;
-      this.node = null;
-      if (moved) this.ctx.endMove(id); // a real drag — record it; a click just selected
-      return;
-    }
-    super.onPointerUp(pos, event);
-  }
-
-  onPointerCancel() {
-    this.node = null;
-    super.onPointerCancel();
   }
 }
 

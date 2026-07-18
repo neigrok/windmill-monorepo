@@ -420,43 +420,6 @@ export class SyncSession {
   // colliding slug never resurrects a deleted node (F3 §01).
   knownNodeIds() { return this.lattice.knownNodeIds(); }
 
-  // Device-to-device by file (the `.windmill` sneakernet): the whole lattice as one graft
-  // document. Tombstones ride along, so even deletions travel by AirDrop/QR/disk.
-  exportGraft() {
-    return { format: 'windmill-tree', v: 1, treeId: this.treeId, title: this.lattice.title, exportedAt: Date.now(), frame: this.lattice.toFrame() };
-  }
-
-  // Import a `.windmill` document. Same tree → join the stamps verbatim (a device catching up;
-  // state-only, so it never advances coverage — the merged content flushes to the server on the
-  // next sync). Different tree → a subtree gift: restamp every present node as fresh local
-  // authorship with remapped ids, so foreign stamps never enter this tree's coverage space.
-  importGraft(doc) {
-    if (!doc || doc.format !== 'windmill-tree' || !doc.frame) return { ok: false, reason: 'not a windmill tree file' };
-    if (doc.treeId === this.treeId) {
-      try { this.lattice.join(doc.frame); } catch { return { ok: false, reason: 'corrupt tree file' }; }
-      this.emitTree();
-      this.persistNow();
-      if (this.phase === 'live') this.flush();
-      return { ok: true, mode: 'merged' };
-    }
-    return this.importGift(doc);
-  }
-
-  importGift(doc) {
-    const source = new TreeLattice(doc.treeId);
-    try { source.join(doc.frame); } catch { return { ok: false, reason: 'corrupt tree file' }; }
-    const data = source.toTreeData();
-    const remap = new Map();
-    for (const n of data.nodes) remap.set(n.id, `gift-${crypto.randomUUID?.().slice(0, 8) ?? Date.now()}`);
-    for (const n of data.nodes) {
-      this.dispatch({ kind: 'CreateNode', id: remap.get(n.id), label: n.label, icon: n.icon, color: n.color, x: n.position?.x, y: n.position?.y, description: n.description, links: n.links });
-    }
-    for (const n of data.nodes) for (const p of n.prerequisites) {
-      if (remap.has(p)) this.dispatch({ kind: 'AddEdge', from: remap.get(p), to: remap.get(n.id) });
-    }
-    return { ok: true, mode: 'gifted', count: data.nodes.length };
-  }
-
   clearDurable() { this.store.clear(this.treeId).catch(() => {}); }
 
   close() {

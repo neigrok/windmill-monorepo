@@ -36,32 +36,6 @@ function kind(id, at, fields) {
   return entry;
 }
 
-// Redundant edges: a direct parent that another parent already reaches transitively. Mirrors
-// LooseGraph::redundantEdges / editing/edits.js transitiveReduction, over the projection.
-function redundantEdges(data) {
-  const prereqsOf = new Map(data.nodes.map((n) => [n.id, n.prerequisites]));
-  const memo = new Map();
-  const ancestorsOf = (id) => {
-    if (memo.has(id)) return memo.get(id);
-    const ancestors = new Set();
-    memo.set(id, ancestors);
-    for (const parent of prereqsOf.get(id) ?? []) {
-      ancestors.add(parent);
-      for (const up of ancestorsOf(parent)) ancestors.add(up);
-    }
-    return ancestors;
-  };
-  const redundant = [];
-  for (const n of data.nodes) {
-    for (const from of n.prerequisites) {
-      if (n.prerequisites.some((other) => other !== from && ancestorsOf(other).has(from))) {
-        redundant.push({ from, to: n.id });
-      }
-    }
-  }
-  return redundant;
-}
-
 // gesture: { kind, ...payload }. Returns { nodes, edges, kinds } — a partial subgraph. The
 // caller stamps it with a frameId/actor and joins + sends it.
 export function materialize(gesture, lattice, clock) {
@@ -107,7 +81,6 @@ export function materialize(gesture, lattice, clock) {
     case 'ResurrectNode': nodes.push(node(g.id, at, { created: true })); break;  // re-add life only; the tombstoned fields survive
     case 'RenameNode': nodes.push(node(g.id, at, { label: g.label })); break;
     case 'SetNodeColor': nodes.push(node(g.id, at, { color: g.color })); break;
-    case 'RepositionNode': nodes.push(node(g.id, at, { position: { x: g.x, y: g.y } })); break;
     case 'AddEdge': edges.push(addEdge(g.from, g.to, at)); break;
     case 'RemoveEdge': edges.push(removeEdge(g.from, g.to, at)); break;
     case 'ReconnectEdge':
@@ -129,9 +102,6 @@ export function materialize(gesture, lattice, clock) {
       }
       break;
     }
-    case 'TransitiveReduction':
-      for (const edge of redundantEdges(data)) edges.push(removeEdge(edge.from, edge.to, at));
-      break;
     case 'RenameKind': kinds.push(kind(g.id, at, { label: g.label })); break;
     case 'DescribeKind': kinds.push(kind(g.id, at, { description: g.description })); break;
     case 'AddKind':

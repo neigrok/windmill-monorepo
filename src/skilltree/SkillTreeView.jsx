@@ -7,7 +7,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './skilltree.css';
 import { ControlBar } from './ui/ControlBar.jsx';
 import { TreeSwitcher } from './ui/TreeSwitcher.jsx';
-import { TidinessBadge } from './ui/TidinessBadge.jsx';
 import { StepPanel } from './ui/StepPanel.jsx';
 import { Minimap } from './ui/Minimap.jsx';
 import { useViewMode } from './ui/useViewMode.js';
@@ -27,7 +26,6 @@ import { ActivityLog, ActivityEvent } from './activity/ActivityLog.js';
 import { ActorAvatar, EventSentence } from './activity/grammar.jsx';
 import { SkillTree } from './model/SkillTree.js';
 import { makeRenderable } from './model/renderableGraph.js';
-import { TreeHealth } from './model/TreeHealth.js';
 import { UnlockRules } from './model/UnlockRules.js';
 import { RadialLayoutEngine } from './layout/RadialLayoutEngine.js';
 import { applyNudges } from './layout/applyNudges.js';
@@ -541,12 +539,6 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   }, [syncStructure, showToast]);
   onTreeChangedRef.current = onTreeChanged;
 
-  // A node was dragged to a new spot: dispatch it as one gesture. The scene already shows
-  // the new position; the dispatch joins the write, re-renders, and syncs it.
-  const handleNodeMoved = useCallback((id, x, y) => {
-    collabRef.current?.dispatch({ kind: 'RepositionNode', id, x, y });
-  }, []);
-
   // The browser tab follows the tree's name; the switcher previews each keystroke of an
   // in-flight rename through the same format, so the tab is live while the field is.
   const pageTitle = tree?.title?.trim();
@@ -736,45 +728,6 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     onLegendOpenChange(true);
   }, [onLegendOpenChange]);
 
-  // One-click tidy: drop transitively-implied dependencies in one undoable step.
-  // Only offered when there's redundancy to remove, so the commit is never a no-op.
-  // Device-to-device by file: export the tree as one `.windmill` graft (tombstones ride along),
-  // and import one — the same tree merges (a device catching up), a different tree is gifted in
-  // as a fresh, restamped subtree. Both reuse the lattice `join` — no new protocol.
-  const handleExportTree = useCallback(() => {
-    const doc = collabRef.current?.exportGraft?.();
-    if (!doc) return;
-    const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `${(seedRef.current?.title || doc.treeId || 'tree').replace(/[^a-z0-9-]+/gi, '-').toLowerCase()}.windmill`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  }, []);
-
-  const handleImportTree = useCallback(() => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.windmill,application/json';
-    input.onchange = async () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      try {
-        const doc = JSON.parse(await file.text());
-        const result = collabRef.current?.importGraft?.(doc);
-        if (!result?.ok) { showToast(result?.reason ?? 'could not import that file'); return; }
-        showToast(result.mode === 'gifted' ? `Gifted in ${result.count} step${result.count === 1 ? '' : 's'}` : 'Merged the imported tree');
-      } catch { showToast('could not read that file'); }
-    };
-    input.click();
-  }, [showToast]);
-
-  const handleTidy = useCallback(() => {
-    collabRef.current?.dispatch({ kind: 'TransitiveReduction' });
-    showToast('Tidied — dropped redundant links', { action: { label: 'Undo', run: undo } });
-  }, [showToast, undo]);
-
   // The composer's "Add to tree" (paste append-mode, F3 §01): the raw parse becomes a
   // graft under the current selection — the tree's root when nothing is selected, or when
   // the selection was deleted mid-compose. graftPlan shapes it (id-collision remap,
@@ -820,7 +773,6 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   // `readOnly` so the scene suppresses its own affordances (X5 shared contract).
   useEffect(() => {
     const editing = readOnlyRef.current ? {} : {
-      onNodeMoveEnd: handleNodeMoved,
       onCreateChild: handleCreateChild,
       onConnectNodes: handleConnect,
       onDeleteNode: deleteNodeAt,
@@ -862,7 +814,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       sceneRef.current = null;
       setScene(null);
     };
-  }, [handleNodeMoved, handleCreateChild, handleConnect, deleteNodeAt, handleSetKind, handleDeleteEdge, handleReconnect, showToast, handlePanStateChange]);
+  }, [handleCreateChild, handleConnect, deleteNodeAt, handleSetKind, handleDeleteEdge, handleReconnect, showToast, handlePanStateChange]);
 
   // Keyboard: ⌘Z / ⇧⌘Z history, ⌫ / Delete removes the selection, Esc deselects.
   useEffect(() => {
@@ -1235,9 +1187,6 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     if (!tree) return new Map();
     return new Map(tree.nodes.map((node) => [node.id, node]));
   }, [tree]);
-
-  // Graph tidiness — cross-area coupling + redundancy → a score the user nudges up.
-  const health = useMemo(() => (tree ? TreeHealth.assess(tree) : null), [tree]);
 
   // The grouped view and per-node history both recompute when the log version bumps.
   const activityGroups = useMemo(() => logRef.current.groupedByDay(Date.now()), [logVersion]);
@@ -1629,11 +1578,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
           onFitToView={handleFitToView}
           canReset={hasLocalEdits}
           onResetEdits={handleResetEdits}
-          canTidy={!!health && health.redundant > 0}
-          onTidy={handleTidy}
           onShare={() => setShareOpen(true)}
-          onExport={handleExportTree}
-          onImport={handleImportTree}
           activityOpen={feedVisible}
           activityUnread={unreadCount}
           activityPing={activityPing}
@@ -1661,8 +1606,6 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
           />
         </div>
       )}
-
-      {!readOnly && <TidinessBadge health={health} />}
 
       <Minimap
         nodes={renderModel?.nodes ?? []}
@@ -1844,9 +1787,6 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       <ShareDialog
         open={shareOpen}
         onClose={() => setShareOpen(false)}
-        model={renderModel}
-        title={tree?.title}
-        stats={shareStats}
         visibility={treeVisibility}
         mine={treeMine}
       />

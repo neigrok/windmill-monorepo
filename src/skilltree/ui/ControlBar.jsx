@@ -4,7 +4,7 @@
 import React from 'react';
 import { IconButton, Tooltip, Icon } from '../../components';
 
-export function ControlBar({ title, titleSlot, onZoomIn, onZoomOut, onFitToView, canReset, onResetEdits, canTidy, onTidy, onShare, onExport, onImport, activityOpen, activityUnread, activityPing, readyCount = 0, onToggleActivity }) {
+export function ControlBar({ title, titleSlot, onZoomIn, onZoomOut, onFitToView, canReset, onResetEdits, onShare, activityOpen, activityUnread, activityPing, readyCount = 0, onToggleActivity }) {
   return (
     <div className="st-topbar">
       <div className="st-brand">
@@ -34,21 +34,6 @@ export function ControlBar({ title, titleSlot, onZoomIn, onZoomOut, onFitToView,
         <Tooltip label="Share roadmap" side="bottom">
           <IconButton icon={<Icon name="image" />} label="Share roadmap" size="sm" onClick={onShare} />
         </Tooltip>
-        {onExport && (
-          <Tooltip label="Export as a .windmill file" side="bottom">
-            <IconButton icon={<Icon name="download" />} label="Export tree" size="sm" onClick={onExport} />
-          </Tooltip>
-        )}
-        {onImport && (
-          <Tooltip label="Import a .windmill file" side="bottom">
-            <IconButton icon={<Icon name="upload" />} label="Import tree" size="sm" onClick={onImport} />
-          </Tooltip>
-        )}
-        {canTidy && (
-          <Tooltip label="Drop redundant dependencies" side="bottom">
-            <IconButton icon={<Icon name="spray-can" />} label="Tidy up" size="sm" onClick={onTidy} />
-          </Tooltip>
-        )}
         {canReset && (
           <Tooltip label="Reset to authored roadmap" side="bottom">
             <IconButton icon={<Icon name="rotate-ccw" />} label="Reset edits" size="sm" onClick={onResetEdits} />

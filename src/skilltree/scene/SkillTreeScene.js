@@ -17,7 +17,7 @@ import { HoverLabel } from './HoverLabel.js';
 import { EdgeChrome } from './EdgeChrome.js';
 import { createTextureFromCanvas } from './glcore.js';
 import { InputController } from './input/InputController.js';
-import { MoveTool, ReadOnlyTool } from './input/tools.js';
+import { NavigateTool, ReadOnlyTool } from './input/tools.js';
 import { track } from '../../telemetry/beacon.js';
 
 const SPATIAL_CELL_SIZE = NODE_SIZE * 2;
@@ -148,13 +148,10 @@ export class SkillTreeScene {
       camera: this.camera,
       pick: (x, y) => this.pick(x, y),
       pickEdge: (x, y) => this.pickEdge(x, y),
-      getNode: (id) => this.nodesById.get(id),
       select: (id) => this.select(id),
       selectEdge: (edge) => this.selectEdge(edge),
       hover: (id) => this.hover(id),
       hoverEdge: (edge) => this.hoverEdge(edge),
-      moveNode: (id, x, y) => this.moveNode(id, x, y),
-      endMove: (id) => this.endMove(id),
       onInteract: () => {
         this.lastInputAt = this.elapsedSeconds;
         this.pendingFrame = null; // a grab is intent — never auto-frame over it
@@ -164,7 +161,7 @@ export class SkillTreeScene {
       onPan: () => this.reportPan(),
       press: (id) => this.setPress(id),
     };
-    const tool = this.readOnly ? new ReadOnlyTool(this.toolContext) : new MoveTool(this.toolContext);
+    const tool = this.readOnly ? new ReadOnlyTool(this.toolContext) : new NavigateTool(this.toolContext);
     this.input = new InputController(canvas, this.toolContext, tool);
 
     this.resize();
@@ -198,7 +195,7 @@ export class SkillTreeScene {
   // Apply a re-derived model (add/remove/reconnect/relayout) while keeping the
   // camera and any still-present selection — node chrome stays up, a selected
   // edge survives only if the new model still carries it. The edit layer produces
-  // the new model and hands it here; live single-node drags use moveNode instead.
+  // the new model and hands it here; settle glides move single nodes via moveNode.
   applyModel(renderModel) {
     const previous = this.nodesById;
     const selected = this.selectedId;
@@ -533,13 +530,6 @@ export class SkillTreeScene {
     this.connectorBatch.moveNode(id, x, y);
     this.spatialGrid.move(id, x, y);
     this.overlaysDirty = true;
-  }
-
-  // A drag ended: report the node's committed position so the shell can record it
-  // in edit history. The scene snapshot already holds the new position.
-  endMove(id) {
-    const node = this.nodesById.get(id);
-    if (node && this.options.onNodeMoveEnd) this.options.onNodeMoveEnd(id, node.x, node.y);
   }
 
   // Live previews the React step panel drives: recolour while a kind swatch is

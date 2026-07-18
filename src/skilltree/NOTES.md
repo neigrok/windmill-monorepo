@@ -154,6 +154,11 @@ already exists for it), and per-instance add/remove GPU compaction (`applyModel`
 re-upload is fine at edit cadence). Verified live (headless): drag-node moves it with edges +
 label following and it stays clickable; pan/select/hover unchanged; no errors.
 
+> Retired 2026-07-18: the free-pixel node-move gesture (`MoveTool`, `scene.onNodeMoveEnd`,
+> `repositionNode`) was removed — it had no effect after reload. `NavigateTool` is now the
+> editing default (a node-drag pans); the lattice `position` register + the `moveNode` settle
+> glide stay (seeded/server positions still render). The §07 angular reorder is the successor.
+
 ## Editing phase — command layer + undo/redo (first slice)
 
 The substrate every edit will write through, proven end-to-end by making node drags
@@ -440,6 +445,11 @@ cost, not chaos, so users self-correct.
   one-click **Tidy** (`transitiveReduction` in edits.js, gated on redundant>0), and
   clean-by-default create (new nodes inherit the parent's kind + spawn radially outward).
   Verified live: Tidy took the roadmap 83→87, redundant 3→0.
+
+  > Retired 2026-07-18: the user-facing tidiness surface (`model/TreeHealth.js` score,
+  > `TidinessBadge`, one-click Tidy) was removed as low-value. The backend transitive-
+  > reduction / prune / health capability stays (MCP `tidy` / `prune` / `get_health`), as do
+  > the connect-gesture cost hints and clean-by-default create.
 - **Follow-ups**: huge (5k) crowds at outer rings under pure radial (ring spacing /
   angular padding needed); cost-hint tip still uses the brick colour (could go amber to
   match its ring); root visual is a first pass (user will refine).
@@ -560,6 +570,11 @@ behind the OG card, the PNG, the gallery thumb and the GIF.
   postcard; the dialog shows that canvas and downloads that canvas. No second render path, so
   preview and posted image can't drift — the same discipline as "a paused GIF is the share
   image."
+
+  > Retired 2026-07-18: the image export (`ShareFrame`, `exportImage`, the PNG/GIF preview)
+  > was removed — the share surface is a link now (`ShareDialog` copies the URL + flips
+  > visibility). `TreePortrait` + `ShareStats` stay (gallery card + stats readouts); the
+  > OG/unfurl card is a static asset.
 - **`ctx.font` can't parse `var()`.** Canvas2D silently falls back to 10px sans-serif on a CSS
   custom property, so the compositor reads `--font-display/body/mono` off the document root and
   awaits `document.fonts.ready` before any `fillText`. (Fonts render right; the one deviation

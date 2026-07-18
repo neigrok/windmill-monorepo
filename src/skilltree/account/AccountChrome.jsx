@@ -9,6 +9,14 @@
 import React from 'react';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { Avatar } from '../../components';
+import { PlaceStore } from '../persistence/PlaceStore.js';
+
+// Return to work, not a lobby (anon-first-tree F6): the back door re-opens the last
+// tree this device stood in, matching App.landingHash.
+function backHash() {
+  const place = new PlaceStore().load();
+  return place?.treeId ? `#/app/${place.treeId}` : '#/app';
+}
 
 export function AccountChrome({ width = 460, children }) {
   const { user, status } = useAuth();
@@ -20,7 +28,8 @@ export function AccountChrome({ width = 460, children }) {
       <div style={{ ...card, width }}>
         <div style={head}>
           <span style={mark}>Windmill</span>
-          {signedIn ? <Avatar name={name} size={22} /> : <a href="#/app" style={backLink}>Back to Windmill</a>}
+          <a href={backHash()} style={backLink}>Back to Windmill</a>
+          {signedIn && <Avatar name={name} size={22} />}
         </div>
         {children}
       </div>
