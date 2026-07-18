@@ -16,6 +16,8 @@ import { ArrivalChevron } from './ArrivalChevron.js';
 import { HoverLabel } from './HoverLabel.js';
 import { EdgeChrome } from './EdgeChrome.js';
 import { MarqueeOverlay } from './MarqueeOverlay.js';
+import { ReorderSlot } from './ReorderSlot.js';
+import { circularInsertionIndex, reorderPlan } from './input/reorderGeometry.js';
 import { edgeKey } from './edgeKey.js';
 import { createTextureFromCanvas } from './glcore.js';
 import { InputController } from './input/InputController.js';
@@ -76,8 +78,11 @@ export class SkillTreeScene {
     this.affordanceLayer = null;
     this.edgeChrome = null;
     this.marqueeOverlay = null;
+    this.reorderSlot = null;
+    this.reorder = null; // the in-flight angular-reorder drag: { id, radius, siblings, homeX, homeY }
     if (!this.readOnly) {
       this.marqueeOverlay = new MarqueeOverlay(canvas);
+      this.reorderSlot = new ReorderSlot(canvas);
       this.affordanceLayer = new AffordanceLayer(canvas, {
         camera: this.camera,
         pick: (x, y) => this.pick(x, y),
@@ -196,6 +201,13 @@ export class SkillTreeScene {
       this.toolContext.updateMarquee = (x0, y0, x1, y1) => this.updateMarquee(x0, y0, x1, y1);
       this.toolContext.cancelMarquee = () => { this.marqueeOverlay?.hide(); this.nodeBatch.setMarqueePreview(new Set()); };
       this.toolContext.commitMarquee = (x0, y0, x1, y1, additive) => this.commitMarquee(x0, y0, x1, y1, additive);
+      // The angular-reorder capability (editing spec v2 §07) — a node drag reslots it among its
+      // siblings. Editor-only and stripped on demotion, exactly like the marquee; NavigateTool gates
+      // its reorder branch on `ctx.beginReorder` existing, so a read-only node drag stays a plain pan.
+      this.toolContext.beginReorder = (id, sx, sy) => this.beginReorder(id, sx, sy);
+      this.toolContext.updateReorder = (sx, sy) => this.updateReorder(sx, sy);
+      this.toolContext.commitReorder = (sx, sy) => this.commitReorder(sx, sy);
+      this.toolContext.cancelReorder = () => this.cancelReorder();
     }
     const tool = this.readOnly ? new ReadOnlyTool(this.toolContext) : new NavigateTool(this.toolContext);
     this.input = new InputController(canvas, this.toolContext, tool);
@@ -309,8 +321,15 @@ export class SkillTreeScene {
     delete this.toolContext.updateMarquee;
     delete this.toolContext.cancelMarquee;
     delete this.toolContext.commitMarquee;
+    delete this.toolContext.beginReorder;
+    delete this.toolContext.updateReorder;
+    delete this.toolContext.commitReorder;
+    delete this.toolContext.cancelReorder;
+    this.cancelReorder();
     this.marqueeOverlay?.dispose();
     this.marqueeOverlay = null;
+    this.reorderSlot?.dispose();
+    this.reorderSlot = null;
     this.affordanceLayer?.clear();
     const retiring = [this.affordanceLayer, this.edgeChrome].filter(Boolean);
     this.affordanceLayer = null;
@@ -956,6 +975,75 @@ export class SkillTreeScene {
     const b = this.camera.screenToWorld(x1, y1);
     const ids = this.spatialGrid.within(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x, b.x), Math.max(a.y, b.y));
     if (this.options.onMarqueeSelect) this.options.onMarqueeSelect(ids, additive);
+  }
+
+  // ---- Angular reorder (editing spec v2 §07) ------------------------------------------------
+  // A node drag reslots the node among its same-parent siblings. The view supplies the sibling set
+  // + their order keys (reorderContext); the scene owns the visual — lift the grabbed node, arc it
+  // along its pinned-radius depth ring, preview the insertion slot — and reports the chosen
+  // fractional key up (onSetNodeOrder) on release. The dispatch re-lays the tree and the ordinary
+  // settle glides every sibling to even spacing, so the scene never eases the ring itself.
+  beginReorder(id, sx, sy) {
+    const node = this.nodesById.get(id);
+    const context = this.options.reorderContext?.(id);
+    if (!node || !context) { this.reorder = null; return; }
+    const siblings = context.siblings
+      .filter((s) => s.id !== id)
+      .map((s) => { const n = this.nodesById.get(s.id); return n ? { id: s.id, order: s.order, x: n.x, y: n.y } : null; })
+      .filter(Boolean);
+    if (siblings.length === 0) { this.reorder = null; return; } // a lone child / single root can't move
+    this.finishSettle(); // land any in-flight glide so moveNode owns the dragged node cleanly
+    this.reorder = { id, radius: Math.hypot(node.x, node.y), siblings, homeX: node.x, homeY: node.y };
+    this.nodeBatch.setMarqueePreview(new Set([id])); // the lift: a bark ring marks the grabbed node
+    this.reorderSlot?.show();
+    this.updateReorder(sx, sy);
+  }
+
+  updateReorder(sx, sy) {
+    if (!this.reorder) return;
+    const { id, radius, siblings } = this.reorder;
+    const world = this.camera.screenToWorld(sx, sy);
+    const angle = Math.atan2(world.y, world.x);
+    this.moveNode(id, radius * Math.cos(angle), radius * Math.sin(angle)); // arc, radius pinned
+    const index = circularInsertionIndex(siblings.map((s) => Math.atan2(s.y, s.x)), angle);
+    const slot = this.slotAngle(siblings, index);
+    const screen = this.camera.worldToScreen(radius * Math.cos(slot), radius * Math.sin(slot));
+    this.reorderSlot?.moveTo(screen.x, screen.y, 1.3 * NODE_SIZE * this.camera.zoom);
+  }
+
+  commitReorder(sx, sy) {
+    if (!this.reorder) return;
+    const { id, siblings } = this.reorder;
+    const plan = reorderPlan(siblings, this.camera.screenToWorld(sx, sy));
+    this.clearReorder(); // drop the lift + slot before the model rebuild glides everyone
+    if (plan) this.options.onSetNodeOrder?.(id, plan.key);
+  }
+
+  cancelReorder() {
+    if (!this.reorder) return;
+    const { id, homeX, homeY } = this.reorder;
+    this.clearReorder();
+    this.moveNode(id, homeX, homeY); // no dispatch: snap the arc back to the seat it left
+  }
+
+  clearReorder() {
+    this.nodeBatch.setMarqueePreview(new Set());
+    this.reorderSlot?.hide();
+    this.reorder = null;
+  }
+
+  // The angle of the insertion slot at `index` — the midpoint of the gap the dragged node will drop
+  // into, so the dashed ring previews the resulting seat. The ends borrow half the seam (wrap) gap.
+  slotAngle(siblings, index) {
+    const TAU = Math.PI * 2;
+    const norm = (a) => ((a % TAU) + TAU) % TAU;
+    const m = siblings.length;
+    const ang = siblings.map((s) => Math.atan2(s.y, s.x));
+    if (m === 1) return index === 0 ? ang[0] - 0.3 : ang[0] + 0.3;
+    const wrap = norm(ang[0] - ang[m - 1]);
+    if (index === 0) return norm(ang[0] - wrap / 2);
+    if (index === m) return norm(ang[m - 1] + wrap / 2);
+    return norm(ang[index - 1] + norm(ang[index] - ang[index - 1]) / 2);
   }
 
   setSelection(id) {

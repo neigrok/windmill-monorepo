@@ -117,6 +117,13 @@ export class Camera2D {
     };
   }
 
+  worldToScreen(wx, wy) {
+    return {
+      x: (wx - this.x) * this.zoom + this.viewportWidth / 2,
+      y: (wy - this.y) * this.zoom + this.viewportHeight / 2,
+    };
+  }
+
   pan(dxPx, dyPx) {
     this.glide = null;
     const x = this.x - dxPx / this.zoom;

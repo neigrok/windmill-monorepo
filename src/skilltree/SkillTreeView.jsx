@@ -36,10 +36,10 @@ import { NextUp, planNextUp, considerAutoOpen } from './ui/NextUp.jsx';
 import { ActivityLog, ActivityEvent } from './activity/ActivityLog.js';
 import { ActorAvatar, EventSentence } from './activity/grammar.jsx';
 import { SkillTree } from './model/SkillTree.js';
+import { cmpOrder } from './model/TrunkTree.js';
 import { makeRenderable } from './model/renderableGraph.js';
 import { UnlockRules } from './model/UnlockRules.js';
 import { RadialLayoutEngine } from './layout/RadialLayoutEngine.js';
-import { applyNudges } from './layout/applyNudges.js';
 import { HttpTreeRepository } from './persistence/HttpTreeRepository.js';
 import { API_BASE } from './apiBase.js';
 import { listAllTrees, renameTree, deleteTree } from './persistence/TreeRegistry.js';
@@ -65,7 +65,7 @@ import { graftPlan } from './paste/graftPlan.js';
 import { SkillTreeScene } from './scene/SkillTreeScene.js';
 import { edgeKey, parseEdgeKey } from './scene/edgeKey.js';
 import { TreeEditor } from './editing/TreeEditor.js';
-import { NODE_SIZE, NODE_COLORS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from './theme.js';
+import { NODE_COLORS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from './theme.js';
 import { track } from '../telemetry/beacon.js';
 import { CoachChip } from './demo/CoachChip.jsx';
 import { DEMO_TREE_ID, DEMO_STAGED_COMPLETED, COACHED_NODE_ID, COACH_DONE_KEY, FORKED_FROM_DEMO_KEY, DEMO_COPY, coachEligible } from './demo/demoStage.js';
@@ -82,8 +82,6 @@ const AUTO_COMPLETE_HOLD = 600; // held breath before auto-completing: arc-close
 const NEXT_UP_SELECT_MS = 540; // ~90% of the camera's default 600ms glide — the dock swaps as the fly settles
 const NEXT_UP_ENTER_MS = 600; // auto-open waits for the fit-to-view camera to still (whats-next-panel §04)
 const EMPTY_BOUNDS = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
-const CHILD_DROP = NODE_SIZE * 2.6; // world units a new child spawns below its parent
-const SIBLING_GAP = NODE_SIZE * 1.8; // horizontal spread between successive new children
 const NEW_NODE_ICON = 'sparkles';
 const PLANTED_QUEST_KEY = 'windmill:planted-quest'; // the shelf's one-shot note (F5 §04): this arrival is a quest
 const CTA_ECHO_DELAY = 1500; // §04: ~when the unlock toast has settled + 120ms — the Fork CTA takes the pulse once
@@ -117,6 +115,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   const readOnlyRef = useRef(readOnly); // the scene is built once; it reads the fresh mode without a rebuild
   const progressRef = useRef({ completed: new Set(), inProgress: new Set() });
   const editorRef = useRef(null);
+  const treeRef = useRef(null); // the current projected SkillTree — the angular-reorder gesture reads its trunk for a node's siblings
   const layoutCacheRef = useRef({ signature: '', raw: new Map() });
   const completedRef = useRef(new Set());
   const inProgressRef = useRef(new Set());
@@ -548,11 +547,10 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   // Re-derive the whole render model from the editor's current TreeData and apply
   // it to the scene preserving the view. The seam every structural edit + undo/redo
   // funnels through; constructing a SkillTree here also re-validates the DAG.
-  // Positions are a projection of structure: whenever the node/edge/order signature changes —
-  // a create, connect, delete, or reorder, local or remote alike — the engine lays the whole
-  // tree out afresh, exactly as a page load would. Content-only updates (rename, progress,
-  // drag) reuse the cached layout so nothing else moves, and hand-placed nodes win over
-  // the engine either way via nudges.
+  // Position is purely a projection of structure now (angular-reorder retired the free-pixel move,
+  // §07): whenever the node/edge/order signature changes — a create, connect, delete, or reorder,
+  // local or remote alike — the engine lays the whole tree out afresh, exactly as a page load
+  // would. Content-only updates (rename, progress) reuse the cached layout so nothing else moves.
   const layoutPositions = useCallback((nextTree) => {
     const signature = nextTree.allNodes
       .map((node) => `${node.id}<${[...node.prerequisites].sort().join(',')}<${node.order ?? ''}`)
@@ -561,7 +559,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     if (layoutCacheRef.current.signature !== signature) {
       layoutCacheRef.current = { signature, raw: layoutEngine.layout(nextTree) };
     }
-    return applyNudges(layoutCacheRef.current.raw, nextTree);
+    return new Map(layoutCacheRef.current.raw);
   }, []);
 
   const syncStructure = useCallback(() => {
@@ -585,6 +583,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     const nextStates = UnlockRules.derive(nextTree, { completed: completedRef.current, inProgress: inProgressRef.current });
     const model = nextTree.toRenderModel(positions, nextStates);
     sceneNow.applyModel(model);
+    treeRef.current = nextTree;
     setTree(nextTree);
     setRenderModel(model);
     setBounds(sceneNow.getBounds());
@@ -689,19 +688,10 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     const parent = scene?.nodesById.get(parentId);
     if (!parent || !editor) return;
 
-    // spread successive new children beside each other rather than stacking
-    const placed = editor.treeData.nodes.filter((n) => n.position && n.prerequisites.includes(parentId)).length;
+    // Born in the parent's kind (same branch); the radial layout owns where it lands — a fresh
+    // child appends after its last sibling (CreateNode seeds its order key) and the wedge re-splits.
     const id = crypto.randomUUID?.() ?? `n-${Date.now()}`;
-    // born in the parent's kind (same branch) and pushed radially outward from the
-    // center, so a new step lands cleanly in its area rather than crossing others
-    const dist = Math.hypot(parent.x, parent.y);
-    const outX = dist < 1 ? 0 : parent.x / dist;
-    const outY = dist < 1 ? 1 : parent.y / dist;
-    const spread = placed * SIBLING_GAP;
-    const x = parent.x + outX * CHILD_DROP - outY * spread;
-    const y = parent.y + outY * CHILD_DROP + outX * spread;
-    const params = { id, label: '', icon: NEW_NODE_ICON, color: parent.color, parentId, x, y };
-    collabRef.current?.dispatch({ kind: 'CreateNode', ...params });
+    collabRef.current?.dispatch({ kind: 'CreateNode', id, label: '', icon: NEW_NODE_ICON, color: parent.color, parentId });
     scene.select(id);
     setSelectedId(id);
     setAutoFocusNameId(id);
@@ -717,7 +707,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     if (readOnlyRef.current) return;
     const id = crypto.randomUUID?.() ?? `n-${Date.now()}`;
     const color = legendRef.current[0]?.hue ?? 'terracotta';
-    collabRef.current?.dispatch({ kind: 'CreateNode', id, label: '', icon: NEW_NODE_ICON, color, x: 0, y: 0 });
+    collabRef.current?.dispatch({ kind: 'CreateNode', id, label: '', icon: NEW_NODE_ICON, color });
     sceneRef.current?.select(id);
     setSelectedId(id);
     setAutoFocusNameId(id);
@@ -781,6 +771,26 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   const handleSetKind = useCallback((id, kind) => {
     if (!id) return;
     collabRef.current?.dispatch({ kind: 'SetNodeColor', id, color: kind });
+  }, []);
+
+  // The angular-reorder gesture (§07) asks, at drag start, for a node's same-parent siblings in
+  // sort order with their order keys — the scene turns those into insertion angles and a new key.
+  // A node's siblings are its trunk parent's trunk children (already sorted); a root's are the
+  // other roots (sorted here to match the layout's root sweep). The dragged node stays in the list;
+  // the scene filters it out. Returns null off-tree so a stale pick can't crash the gesture.
+  const reorderContext = useCallback((nodeId) => {
+    const tree = treeRef.current;
+    if (!tree || !tree.nodesById.has(nodeId)) return null;
+    const parentId = tree.trunk.primaryParentOf(nodeId);
+    const siblingIds = parentId === null
+      ? [...tree.roots()].sort(cmpOrder).map((root) => root.id)
+      : tree.trunk.trunkChildrenOf(parentId);
+    return { siblings: siblingIds.map((id) => ({ id, order: tree.nodesById.get(id)?.order ?? '' })) };
+  }, []);
+
+  const handleSetNodeOrder = useCallback((id, order) => {
+    if (!id) return;
+    collabRef.current?.dispatch({ kind: 'SetNodeOrder', id, order });
   }, []);
 
   // The finger's ⌘Z (M6): every phone edit drops a 4s undo snackbar, since a touch
@@ -968,6 +978,8 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       onMarqueeSelect,
       onEdgeToggle,
       onEdgePick,
+      reorderContext,
+      onSetNodeOrder: handleSetNodeOrder,
     };
     const nextScene = new SkillTreeScene(canvasRef.current, {
       readOnly: readOnlyRef.current,

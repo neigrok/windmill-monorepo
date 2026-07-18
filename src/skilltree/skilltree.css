@@ -647,6 +647,32 @@
   opacity: 1;
 }
 
+/* ---- Angular-reorder slot (editing spec v2 §07): a bark dashed ring over a whisper of brand-soft
+   fill, marking the gap a dragged node will drop into. A thin sibling of the marquee overlay —
+   editor-only, purely visual, screen-positioned by the scene each pointer-move. */
+.st-reorder-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  pointer-events: none;
+}
+.st-reorder-slot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2px dashed var(--color-bark);
+  background: color-mix(in srgb, var(--color-brand-soft) 55%, transparent);
+  opacity: 0;
+  transition: opacity 120ms var(--ease-standard);
+  will-change: transform;
+}
+.st-reorder-layer--on .st-reorder-slot {
+  opacity: 1;
+}
+
 /* ---- Multi-select action card (brief #10): a light, persistent card (not a dark transient toast)
    that replaces the single StepPanel while a set is live. Count anchors LEFT (margin-right:auto pushes
    the rest right); recolor swatches · Mark all done · the brick Delete cluster grow leftward from the

@@ -33,7 +33,11 @@ export class NavigateTool extends Tool {
     // Shift+press starts a marquee (rubber-band select) instead of a pan — but only in the
     // editor, where the scene wired the marquee hooks. Read-only keeps shift-drag a plain pan.
     const marquee = !!event?.shiftKey && !!this.ctx.beginMarquee;
-    this.drag = { startX: pos.x, startY: pos.y, lastX: pos.x, lastY: pos.y, lastTime: performance.now(), moved: false, vx: 0, vy: 0, marquee };
+    // In the editor a press that lands on a node begins an angular reorder (it lifts + arcs past the
+    // drag threshold, §07); a press on empty canvas pans. Shift always wins for the marquee, and
+    // read-only has no beginReorder — so a node press there falls through to a plain pan + select.
+    const reorderId = !marquee && this.ctx.beginReorder ? this.ctx.pick(pos.x, pos.y) : null;
+    this.drag = { startX: pos.x, startY: pos.y, lastX: pos.x, lastY: pos.y, lastTime: performance.now(), moved: false, vx: 0, vy: 0, marquee, reorderId, reordering: false };
     if (marquee) this.ctx.beginMarquee(pos.x, pos.y);
   }
 
@@ -42,6 +46,13 @@ export class NavigateTool extends Tool {
     if (this.drag.marquee) { // rubber-band: grow the band, never pan or gather inertia
       if (!this.drag.moved && Math.hypot(pos.x - this.drag.startX, pos.y - this.drag.startY) > DRAG_THRESHOLD_PX) this.drag.moved = true;
       this.ctx.updateMarquee(this.drag.startX, this.drag.startY, pos.x, pos.y);
+      return;
+    }
+    if (this.drag.reorderId) { // a node drag reslots it — lift on the first move past threshold, then arc
+      if (!this.drag.moved && Math.hypot(pos.x - this.drag.startX, pos.y - this.drag.startY) > DRAG_THRESHOLD_PX) this.drag.moved = true;
+      if (!this.drag.moved) return;
+      if (!this.drag.reordering) { this.drag.reordering = true; this.ctx.beginReorder(this.drag.reorderId, pos.x, pos.y); }
+      else this.ctx.updateReorder(pos.x, pos.y);
       return;
     }
     const dx = pos.x - this.drag.lastX;
@@ -79,6 +90,11 @@ export class NavigateTool extends Tool {
       if (edge && this.ctx.toggleEdge) this.ctx.toggleEdge(edge);
       return;
     }
+    if (drag.reorderId) {
+      if (drag.reordering) { this.ctx.commitReorder(pos.x, pos.y); return; } // dropped past threshold: reslot
+      this.ctx.select(drag.reorderId); // a press that never lifted is a plain select
+      return;
+    }
     const { moved, vx, vy } = drag;
     if (moved) { this.ctx.camera.launchInertia(vx, vy); return; }
     const id = this.ctx.pick(pos.x, pos.y);
@@ -94,9 +110,10 @@ export class NavigateTool extends Tool {
   }
 
   onPointerCancel() {
-    // A competing gesture (a second finger → pinch) took over mid-marquee: drop the band AND its
-    // preview rings, or they'd stay stuck on the previewed nodes until the next selection change.
+    // A competing gesture (a second finger → pinch) took over: drop any in-flight marquee band or
+    // reorder, or their preview rings / lifted node would stay stuck until the next selection change.
     if (this.drag?.marquee) this.ctx.cancelMarquee?.();
+    if (this.drag?.reordering) this.ctx.cancelReorder?.();
     this.drag = null;
   }
 
