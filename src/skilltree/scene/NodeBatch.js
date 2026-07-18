@@ -7,7 +7,8 @@
 //   activated   → same + an outer ring and a static halo (only the root breathes)
 // The body is procedural; no per-node JS runs per frame.
 import { createProgram, uniformLocations } from './glcore.js';
-import { NODE_COLORS, NODE_COLOR_NAMES, nodeTier, BACKGROUND, NODE_SIZE } from '../theme.js';
+import { NODE_COLORS, NODE_COLOR_NAMES, nodeTier, BACKGROUND, NODE_SIZE, BARK } from '../theme.js';
+import { isGrouped } from '../selection/bulkSelection.js';
 
 const QUAD_PADDING = 1.9;
 const NC = NODE_COLOR_NAMES.length;
@@ -30,6 +31,7 @@ layout(location=10) in float aPulseStart;
 layout(location=11) in vec4 aBloom;   // (start, fromTier, durSec, blossom)
 layout(location=12) in vec4 aFeedback; // (hoverStart, hoverTo, pressStart, pressTo)
 layout(location=13) in vec3 aArc;      // (fromFraction, targetFraction, easeStart); target < 0 == no arc
+layout(location=14) in float aPreview; // 1 while a marquee drag is touching this node (pre-commit)
 uniform vec2 uResolution;
 uniform vec2 uCamera;
 uniform float uZoom;
@@ -37,6 +39,7 @@ uniform float uNodeSize;
 uniform float uPadding;
 uniform float uTime;
 uniform float uMotion;
+uniform float uGrouped;   // 0 = single selection (loud terracotta), 1 = a set of >=2 (quiet bark)
 out vec2 vUv;
 out float vColor;
 out float vTier;
@@ -50,6 +53,7 @@ out float vPulseStart;
 out vec4 vBloom;
 out vec4 vFeedback;
 out vec3 vArc;
+out float vPreview;
 const float PI = 3.14159265;
 const float BLOSSOM = 0.62;   // scale-settle window (s)
 const float HOVER_DUR = 0.28; // hover feedback ease (ease-soft)
@@ -73,6 +77,7 @@ void main() {
   vBloom = aBloom;
   vFeedback = aFeedback;
   vArc = aArc;
+  vPreview = aPreview;
   // scale settle: a finite 1->peak->1 bump while a node blooms (motion only)
   float settle = 1.0;
   if (uMotion > 0.5 && aBloom.x > -900.0) {
@@ -88,7 +93,9 @@ void main() {
   float pressE = feedbackEase(aFeedback.z, aFeedback.w, uTime, PRESS_DUR);
   float fbScale = (1.0 + 0.06 * hoverE) * (1.0 - 0.03 * pressE);
   if (uMotion < 0.5) fbScale = 1.0;
-  float size = uNodeSize * (1.0 + aSelected * 0.14 + aEmphasis * 0.55) * settle * fbScale * uPadding;
+  // grouped set (>=2): suppress the single-select scale bump so the set reads calm — a set is one
+  // thing, not N loud suns. A single selection (uGrouped 0) keeps the 0.14 lift byte-identical.
+  float size = uNodeSize * (1.0 + aSelected * 0.14 * (1.0 - uGrouped) + aEmphasis * 0.55) * settle * fbScale * uPadding;
   vec2 world = aOffset + aQuad * size;
   vec2 screen = (world - uCamera) * uZoom;
   vec2 clip = vec2(screen.x / (uResolution.x * 0.5), -screen.y / (uResolution.y * 0.5));
@@ -110,10 +117,13 @@ in float vPulseStart;
 in vec4 vBloom;
 in vec4 vFeedback;
 in vec3 vArc;
+in float vPreview;
 uniform float uPadding;
 uniform float uZoom;
 uniform float uTime;
 uniform float uMotion;
+uniform float uGrouped;   // 0 = single selection (terracotta), 1 = a set of >=2 (bark)
+uniform vec3 uBark;       // the grouped-set ring + halo hue (theme --color-bark)
 uniform vec4 uGlow[${NC}];
 uniform vec3 uBase[${NC}];
 uniform vec3 uRing[${NC}];
@@ -197,7 +207,11 @@ void main() {
 
   vec3 body = mix(fill, ringColor, ringBand);
   body = mix(body, glyphColor, iconMask * uIconOpacity);
-  body *= (1.0 + vSelected * 0.20);
+  // The loud single-select body lift belongs to a LONE selection; a grouped member (uGrouped 1)
+  // keeps its resting brightness and wears the quiet bark ring below instead. singleSel == vSelected
+  // when uGrouped is 0, so the single-select and read-only single-tap look stay byte-identical.
+  float singleSel = vSelected * (1.0 - uGrouped);
+  body *= (1.0 + singleSel * 0.20);
   // hover brightness: a subtle lift kept even under reduced motion (color feedback)
   float hoverE = feedbackEase(vFeedback.x, vFeedback.y, uTime, HOVER_DUR);
   body *= (1.0 + 0.12 * hoverE);
@@ -233,7 +247,7 @@ void main() {
     }
   }
   if (vEmphasis > 0.5) strength = mix(CROWN_LO, CROWN_HI, crownWave); // crown halo a .22<->.34
-  if (tier >= 1) strength = max(strength, vSelected);
+  if (tier >= 1) strength = max(strength, singleSel); // the loud kind-hue glow is single-select only
   // arrival pulse: a finite double-bump when an event lands (any tier), 2400ms with two
   // decaying crests (a .42->.34) -- felt on the graph first (design F). Gated by motion.
   float pt = uTime - vPulseStart;
@@ -253,6 +267,20 @@ void main() {
   vec3 color = body * bodyMask + glow.rgb * glowAmt;
   color = color * (1.0 - outerA) + base * outerA;
   float alpha = max(max(bodyMask, glowAmt), outerA);
+
+  // ---- grouped multi-select + marquee preview: a quiet bark ring, a faint bark halo, no scale ----
+  // A set of >=2 (grouped) wears bark where a lone selection wears the loud terracotta lift above, so
+  // the set reads as one thing. A node the marquee is dragging over (vPreview, pre-commit) takes a
+  // LIGHTER bark ring — honest before commit; release promotes it to a full member. uGrouped is 0 for
+  // a single selection and no marquee sets vPreview, so both terms vanish and the single look is exact.
+  float grouped = vSelected * uGrouped;
+  float barkRing = 1.0 - smoothstep(0.04, 0.09, abs(dist - 0.98)); // a thin band hugging the body rim
+  float ringA = max(barkRing * 0.85 * grouped, barkRing * 0.42 * vPreview * (1.0 - grouped));
+  color = color * (1.0 - ringA) + uBark * ringA;
+  alpha = max(alpha, ringA);
+  float barkHalo = max(smoothstep(1.5, 0.9, dist) - smoothstep(0.9, 0.0, dist), 0.0) * 0.22 * grouped;
+  color += uBark * barkHalo; // a soft outward bloom, additive, grouped members only
+  alpha = max(alpha, barkHalo);
 
   // ---- root crown: a bright ring plus a satellite ring, breathing in sync with the halo ----
   float crownR = 1.32 + (crownWave - 0.5) * 0.06; // radius +/-2px equiv
@@ -341,13 +369,16 @@ export class NodeBatch {
     this.selectedIndex = -1;
     this.hoveredIndex = -1;
     this.pressedIndex = -1;
+    this.grouped = 0; // 1 once the selection is a set of >=2 — the shader swaps terracotta for bark
 
     this.program = createProgram(gl, VERTEX_SRC, FRAGMENT_SRC);
     this.u = uniformLocations(gl, this.program, [
       'uResolution', 'uCamera', 'uZoom', 'uNodeSize', 'uPadding', 'uTime', 'uMotion',
+      'uGrouped', 'uBark',
       'uGlow', 'uBase', 'uRing', 'uSoft', 'uCanvas',
       'uIconAtlas', 'uIconCols', 'uIconRows', 'uIconOpacity',
     ]);
+    this.bark = hexRgb(BARK);
 
     this.glowColors = colorFlat((c) => glowVec(NODE_COLORS[c].glow));
     this.baseColors = colorFlat((c) => hexRgb(NODE_COLORS[c].base));
@@ -376,6 +407,7 @@ export class NodeBatch {
     this.bloomBuffer = this.attribBuffer(11, 4, null, 1, gl.DYNAMIC_DRAW);
     this.feedbackBuffer = this.attribBuffer(12, 4, null, 1, gl.DYNAMIC_DRAW);
     this.arcBuffer = this.attribBuffer(13, 3, null, 1, gl.DYNAMIC_DRAW);
+    this.previewBuffer = this.attribBuffer(14, 1, null, 1, gl.DYNAMIC_DRAW);
 
     gl.bindVertexArray(null);
   }
@@ -410,6 +442,7 @@ export class NodeBatch {
     const colors = this.colors;
     const glowSeeds = new Float32Array(count);
     this.selected = new Float32Array(count);
+    this.preview = new Float32Array(count); // 1 while a marquee drag touches this node (pre-commit)
     const iconCells = new Float32Array(count);
     this.tiers = new Float32Array(count);
     const forms = new Float32Array(count);
@@ -442,6 +475,7 @@ export class NodeBatch {
     this.upload(this.colorBuffer, colors);
     this.upload(this.glowSeedBuffer, glowSeeds);
     this.upload(this.selectedBuffer, this.selected);
+    this.upload(this.previewBuffer, this.preview);
     this.upload(this.iconCellBuffer, iconCells);
     this.upload(this.tierBuffer, this.tiers);
     this.upload(this.formBuffer, forms);
@@ -572,6 +606,7 @@ export class NodeBatch {
     const i = id == null ? -1 : this.idToIndex.get(id) ?? -1;
     this.selected.fill(0);  // clear EVERY prior highlight — incl. a setSelectedSet sweep, which left selectedIndex=-1
     this.selectedIndex = i;
+    this.grouped = 0; // a lone node keeps the loud terracotta look
     if (i >= 0) this.selected[i] = 1;
     this.upload(this.selectedBuffer, this.selected);
   }
@@ -584,7 +619,19 @@ export class NodeBatch {
     if (!this.selected) return;
     for (const [id, i] of this.idToIndex) this.selected[i] = idSet.has(id) ? 1 : 0;
     this.selectedIndex = -1;
+    // A set of >=2 wears the quiet bark ring (grouped); one (or none) keeps the loud terracotta look.
+    // The same gate lights the phone bulk bar's members, so desktop and mobile read identically.
+    this.grouped = isGrouped(idSet.size) ? 1 : 0;
     this.upload(this.selectedBuffer, this.selected);
+  }
+
+  // The live marquee preview: every node the drag rect is touching reads aPreview=1 (a lighter bark
+  // ring), the rest 0 — honest before commit; release promotes them to full members. One whole-buffer
+  // sweep + upload per drag move, mirroring setSelectedSet; an empty set clears it (commit/cancel).
+  setMarqueePreview(idSet) {
+    if (!this.preview) return;
+    for (const [id, i] of this.idToIndex) this.preview[i] = idSet.has(id) ? 1 : 0;
+    this.upload(this.previewBuffer, this.preview);
   }
 
   // Hover feedback (decoupled from selection): the newly hovered node swells; the
@@ -657,6 +704,8 @@ export class NodeBatch {
     gl.uniform1f(this.u.uPadding, QUAD_PADDING);
     gl.uniform1f(this.u.uTime, timeSeconds);
     gl.uniform1f(this.u.uMotion, motion);
+    gl.uniform1f(this.u.uGrouped, this.grouped);
+    gl.uniform3fv(this.u.uBark, this.bark);
     gl.uniform4fv(this.u.uGlow, this.glowColors);
     gl.uniform3fv(this.u.uBase, this.baseColors);
     gl.uniform3fv(this.u.uRing, this.ringColors);
@@ -678,7 +727,7 @@ export class NodeBatch {
     const gl = this.gl;
     gl.deleteProgram(this.program);
     gl.deleteVertexArray(this.vao);
-    [this.quadBuffer, this.offsetBuffer, this.colorBuffer, this.glowSeedBuffer, this.selectedBuffer, this.iconCellBuffer, this.tierBuffer, this.formBuffer, this.fadedBuffer, this.emphasisBuffer, this.pulseBuffer, this.bloomBuffer, this.feedbackBuffer, this.arcBuffer]
+    [this.quadBuffer, this.offsetBuffer, this.colorBuffer, this.glowSeedBuffer, this.selectedBuffer, this.iconCellBuffer, this.tierBuffer, this.formBuffer, this.fadedBuffer, this.emphasisBuffer, this.pulseBuffer, this.bloomBuffer, this.feedbackBuffer, this.arcBuffer, this.previewBuffer]
       .forEach((b) => gl.deleteBuffer(b));
   }
 }

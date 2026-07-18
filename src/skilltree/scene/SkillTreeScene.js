@@ -193,8 +193,8 @@ export class SkillTreeScene {
       this.toolContext.toggleSelect = (id) => this.toggleSelect(id);
       this.toolContext.toggleEdge = (edge) => this.toggleEdge(edge);
       this.toolContext.beginMarquee = (x0, y0) => this.marqueeOverlay?.show(x0, y0);
-      this.toolContext.updateMarquee = (x0, y0, x1, y1) => this.marqueeOverlay?.update(x0, y0, x1, y1);
-      this.toolContext.cancelMarquee = () => this.marqueeOverlay?.hide();
+      this.toolContext.updateMarquee = (x0, y0, x1, y1) => this.updateMarquee(x0, y0, x1, y1);
+      this.toolContext.cancelMarquee = () => { this.marqueeOverlay?.hide(); this.nodeBatch.setMarqueePreview(new Set()); };
       this.toolContext.commitMarquee = (x0, y0, x1, y1, additive) => this.commitMarquee(x0, y0, x1, y1, additive);
     }
     const tool = this.readOnly ? new ReadOnlyTool(this.toolContext) : new NavigateTool(this.toolContext);
@@ -261,6 +261,9 @@ export class SkillTreeScene {
     const survivingEdges = new Set(renderModel.edges.map((edge) => edgeKey(edge.from, edge.to)));
     this.selectedEdges = new Set([...this.selectedEdges].filter((key) => survivingEdges.has(key)));
     this.connectorBatch.setSelectedEdges(this.selectedEdges);
+    // installModel rebuilt the connector to a zeroed inSet buffer — re-light the inside-set links
+    // (both endpoints in the surviving node set) so a rebuild that keeps the selection keeps them.
+    this.connectorBatch.setInSetEdges(this.selectedIds);
     // The node highlight tracks the SET, not the size≤1 projection — a mixed node+edge selection
     // has one node with selectedId null, which setSelected would blank. Read-only lights the phone
     // owner's multi-select set when it's non-empty (else a rebuild — e.g. a bulk recolor that keeps
@@ -670,6 +673,13 @@ export class SkillTreeScene {
   restoreKind(id) { const node = this.nodesById.get(id); if (node) this.nodeBatch.setColor(id, node.color); }
   previewDeleteCost(id) { this.nodeBatch.setFaded(new Set([id])); } // §5.1 branch-dim deferred: needs a connector fade
   clearDeleteCost() { this.nodeBatch.clearFaded(); }
+
+  // The set-wide previews the multi-select action card drives (brief #10): recolour the whole
+  // selection while a swatch is hovered, dim it as a delete cost-preview while Delete is hovered.
+  // No history — a commit's model rebuild (or the restore/clear on leave) supersedes them.
+  previewKindSet(ids, kind) { for (const id of ids) this.nodeBatch.setColor(id, kind); }
+  restoreKindSet(ids) { for (const id of ids) { const node = this.nodesById.get(id); if (node) this.nodeBatch.setColor(id, node.color); } }
+  previewDeleteCostSet(ids) { this.nodeBatch.setFaded(new Set(ids)); } // §5.1 branch-dim deferred, as the single-node case
   setFaded(ids) { this.nodeBatch.setFaded(ids); } // aim mode's illegal-target dim (M3)
   clearFaded() { this.nodeBatch.clearFaded(); }
 
@@ -922,10 +932,25 @@ export class SkillTreeScene {
     if (this.options.onEdgeToggle) this.options.onEdgeToggle(edge);
   }
 
+  // A marquee drag moved: grow the band AND preview the nodes it now encloses with a lighter bark
+  // ring (honest before commit — release promotes them to full members). The enclosure is the same
+  // node-centre test commitMarquee uses, run live off the spatial grid, so the preview and the commit
+  // can never disagree about which nodes the box takes.
+  updateMarquee(x0, y0, x1, y1) {
+    this.marqueeOverlay?.update(x0, y0, x1, y1);
+    if (!this.spatialGrid) return;
+    const a = this.camera.screenToWorld(x0, y0);
+    const b = this.camera.screenToWorld(x1, y1);
+    const ids = this.spatialGrid.within(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x, b.x), Math.max(a.y, b.y));
+    this.nodeBatch.setMarqueePreview(new Set(ids));
+  }
+
   // A marquee drag committed: turn the screen rect into the world-space nodes it encloses via
-  // the spatial grid, hide the band, and report the ids up (additive when the drop held Shift).
+  // the spatial grid, hide the band, drop the pre-commit preview, and report the ids up (additive
+  // when the drop held Shift) — the selection sync then promotes them to full bark members.
   commitMarquee(x0, y0, x1, y1, additive) {
     this.marqueeOverlay?.hide();
+    this.nodeBatch.setMarqueePreview(new Set());
     if (!this.spatialGrid) return;
     const a = this.camera.screenToWorld(x0, y0);
     const b = this.camera.screenToWorld(x1, y1);
@@ -997,9 +1022,11 @@ export class SkillTreeScene {
     if (this.readOnly) {
       if (this.selectedIds.size > 0) this.nodeBatch.setSelectedSet(this.selectedIds);
       else this.nodeBatch.setSelected(this.selectedId);
+      this.connectorBatch.setInSetEdges(this.selectedIds); // inside-set links light on the phone bulk select too
       return;
     }
     this.nodeBatch.setSelectedSet(this.selectedIds);
+    this.connectorBatch.setInSetEdges(this.selectedIds); // brighten a branch whose both ends are in the set
   }
 
   pick(x, y) {

@@ -634,9 +634,12 @@
   top: 0;
   width: 0;
   height: 0;
-  border: 1px solid var(--color-brand);
-  background: color-mix(in srgb, var(--color-brand) 14%, transparent);
-  border-radius: 2px;
+  /* A neutral TOOL, not a brand block (brief #10): a bark dashed rectangle over a whisper of
+     brand-soft fill — honest that it's picking, not committed. Touched nodes take the preview
+     bark ring (NodeBatch); release promotes them to full members. */
+  border: 1.5px dashed var(--color-bark);
+  background: color-mix(in srgb, var(--color-brand-soft) 60%, transparent);
+  border-radius: 3px;
   opacity: 0;
   will-change: transform, width, height;
 }
@@ -644,7 +647,11 @@
   opacity: 1;
 }
 
-/* ---- Selection bar: the floating "N selected · Delete" over multiple nodes (matches dock chrome) ---- */
+/* ---- Multi-select action card (brief #10): a light, persistent card (not a dark transient toast)
+   that replaces the single StepPanel while a set is live. Count anchors LEFT (margin-right:auto pushes
+   the rest right); recolor swatches · Mark all done · the brick Delete cluster grow leftward from the
+   far right, so Delete keeps its place as the card widens. Bark/cream tool chrome — only the swatches
+   wear kind hue. Floats bottom-centre in the toast lane, above the ControlBar. ---- */
 .st-selection-bar {
   position: absolute;
   left: 50%;
@@ -654,7 +661,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-4);
-  padding: 8px 10px 8px 18px;
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-5);
   font-family: var(--font-body);
   font-size: var(--text-sm);
   font-weight: 600;
@@ -662,9 +669,42 @@
   background: var(--surface-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-full);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-lg);
   pointer-events: auto;
   animation: wm-fade-in-up var(--duration-base) var(--ease-soft);
+}
+.st-selection-count {
+  margin-right: auto; /* anchor the count LEFT; the swatches/Mark-all-done/Delete cluster grows leftward */
+  font-weight: 700;
+  white-space: nowrap;
+}
+/* Mark all done — a calm bark text button (a tool, not a brand action); the brick Delete beside it
+   carries the destructive weight. */
+.st-selection-done {
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--color-bark);
+  background: transparent;
+  border: 1.5px solid var(--border-default);
+  border-radius: var(--radius-md);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard);
+}
+.st-selection-done:hover {
+  background: var(--surface-hover);
+  border-color: var(--color-bark);
+}
+.st-selection-delete {
+  display: inline-flex; /* wraps the brick Delete Button so the card can drive its cost-preview hover */
+}
+@media (prefers-reduced-motion: reduce) {
+  /* the card appears in place — no fade-rise (brief #10 §5) */
+  .st-selection-bar {
+    animation: none;
+  }
 }
 
 /* ---- Keyboard-shortcuts reference (brief #14): a wide two-column scanning card.

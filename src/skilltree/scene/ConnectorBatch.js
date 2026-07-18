@@ -5,7 +5,7 @@
 // setStates only rewrites the aActive / aGrowStart floats, never vertex positions;
 // hue is baked once and never changes.
 import { createProgram, uniformLocations } from './glcore.js';
-import { NODE_COLORS, NODE_COLOR_NAMES, isDone, CONNECTOR, NODE_SIZE } from '../theme.js';
+import { NODE_COLORS, NODE_COLOR_NAMES, isDone, CONNECTOR, NODE_SIZE, BARK_CREAM } from '../theme.js';
 import { edgeKey } from './edgeKey.js';
 
 const SEGMENTS = 14;
@@ -41,6 +41,7 @@ layout(location=8) in float aDuration;
 layout(location=9) in float aLength;
 layout(location=10) in float aHead;
 layout(location=11) in float aSelected;
+layout(location=12) in float aInSet; // 1 when BOTH endpoints are in the node multi-selection
 uniform vec2 uResolution;
 uniform vec2 uCamera;
 uniform float uZoom;
@@ -55,6 +56,7 @@ out float vDuration;
 out float vLength;
 out float vHead;
 out float vSelected;
+out float vInSet;
 void main() {
   vActive = aActive;
   vAlongT = aAlongT;
@@ -67,6 +69,7 @@ void main() {
   vLength = aLength;
   vHead = aHead;
   vSelected = aSelected;
+  vInSet = aInSet;
   vec2 screen = (aPos - uCamera) * uZoom;
   vec2 clip = vec2(screen.x / (uResolution.x * 0.5), -screen.y / (uResolution.y * 0.5));
   gl_Position = vec4(clip, 0.0, 1.0);
@@ -85,11 +88,13 @@ in float vDuration;
 in float vLength;
 in float vHead;
 in float vSelected;
+in float vInSet;
 uniform float uTime;
 uniform float uGrowDuration;
 uniform float uMotion;
 uniform vec3 uColorInactive;
 uniform vec3 uColorHot;
+uniform vec3 uBarkCream;
 uniform vec3 uEdgeColor[${NC}];
 out vec4 fragColor;
 void main() {
@@ -128,6 +133,12 @@ void main() {
   alpha = mix(alpha, 0.95, vHover);
   color = mix(color, dim, vDim * 0.5); // spotlight: branches off the focused node recede
   alpha *= 1.0 - vDim * 0.72;
+  // inside a node multi-selection (BOTH endpoints selected): the branch reads as part of the set —
+  // a heavier stroke brightening toward a warm bark-cream, so the whole selection reads as one
+  // connected shape. Derived from the node set, not an explicit edge pick; quieter than the white
+  // single-edge select below, which stays the brighter, handled edit.
+  color = mix(color, uBarkCream, vInSet * 0.6);
+  alpha = max(alpha, vInSet * 0.92);
   // selected (desktop multi-select): the branch reads picked — a soft brighten toward white
   // plus an additive lift in its own kind hue, brought to near-full opacity so even a dormant
   // edge stands out. Last say, so a selected edge is never dimmed; distinct from hover's deepen.
@@ -232,9 +243,10 @@ export class ConnectorBatch {
     this.edges = [];
 
     this.program = createProgram(gl, VERTEX_SRC, FRAGMENT_SRC);
-    this.u = uniformLocations(gl, this.program, ['uResolution', 'uCamera', 'uZoom', 'uTime', 'uGrowDuration', 'uMotion', 'uColorInactive', 'uColorHot', 'uEdgeColor']);
+    this.u = uniformLocations(gl, this.program, ['uResolution', 'uCamera', 'uZoom', 'uTime', 'uGrowDuration', 'uMotion', 'uColorInactive', 'uColorHot', 'uBarkCream', 'uEdgeColor']);
     this.colorInactive = hexRgb(CONNECTOR.inactive);
     this.colorHot = hexRgb(HOVER_COLOR);
+    this.barkCream = hexRgb(BARK_CREAM);
     this.edgeColors = new Float32Array(NODE_COLOR_NAMES.flatMap((c) => hexRgb(NODE_COLORS[c].base)));
     this.hoveredEdge = -1;
 
@@ -252,6 +264,7 @@ export class ConnectorBatch {
     this.lengthBuffer = this.attrib(9, 1, gl.DYNAMIC_DRAW);
     this.headBuffer = this.attrib(10, 1, gl.DYNAMIC_DRAW);
     this.selectedBuffer = this.attrib(11, 1, gl.DYNAMIC_DRAW);
+    this.inSetBuffer = this.attrib(12, 1, gl.DYNAMIC_DRAW);
     this.spotlit = null;
     this.indexBuffer = gl.createBuffer();
     gl.bindVertexArray(null);
@@ -284,6 +297,7 @@ export class ConnectorBatch {
     this.length = new Float32Array(vertexTotal); // per-edge world length, for the wake px->t
     this.head = new Float32Array(vertexTotal); // 1 only on edges lit via travel() — enables the comet
     this.selected = new Float32Array(vertexTotal); // 1 on desktop multi-selected edges (setSelectedEdges)
+    this.inSet = new Float32Array(vertexTotal); // 1 when BOTH endpoints are in the node selection (bark-cream)
     this.hoveredEdge = -1;
     this.spotlit = null;
     const indices = new Uint32Array(edgeCount * SEGMENTS * 6);
@@ -341,6 +355,7 @@ export class ConnectorBatch {
     this.uploadDynamic(this.lengthBuffer, this.length);
     this.uploadDynamic(this.headBuffer, this.head);
     this.uploadDynamic(this.selectedBuffer, this.selected);
+    this.uploadDynamic(this.inSetBuffer, this.inSet);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
     gl.bindVertexArray(null);
@@ -481,6 +496,20 @@ export class ConnectorBatch {
     this.uploadDynamic(this.selectedBuffer, this.selected);
   }
 
+  // Highlight the inside-set links (brief #10): every edge whose BOTH endpoints are in the node
+  // selection reads aInSet=1 — a heavier bark-cream stroke, so a node multi-selection reads as one
+  // connected shape. Derived from the node set (not an explicit edge pick), so it lights the phone
+  // bulk selection too; independent of the editor-only setSelectedEdges. One whole-buffer sweep +
+  // upload per selection change, mirroring setSpotlight — off the render loop.
+  setInSetEdges(nodeIdSet) {
+    if (!this.inSet) return;
+    for (const edge of this.edges) {
+      const on = nodeIdSet.has(edge.from) && nodeIdSet.has(edge.to) ? 1 : 0;
+      this.inSet.fill(on, edge.vertexStart, edge.vertexStart + VERTS_PER_EDGE);
+    }
+    this.uploadDynamic(this.inSetBuffer, this.inSet);
+  }
+
   draw(camera, timeSeconds, motion) {
     const gl = this.gl;
     if (this.indexCount === 0) return;
@@ -494,6 +523,7 @@ export class ConnectorBatch {
     gl.uniform1f(this.u.uMotion, motion);
     gl.uniform3fv(this.u.uColorInactive, this.colorInactive);
     gl.uniform3fv(this.u.uColorHot, this.colorHot);
+    gl.uniform3fv(this.u.uBarkCream, this.barkCream);
     gl.uniform3fv(this.u.uEdgeColor, this.edgeColors);
     gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_INT, 0);
     gl.bindVertexArray(null);
@@ -503,6 +533,6 @@ export class ConnectorBatch {
     const gl = this.gl;
     gl.deleteProgram(this.program);
     gl.deleteVertexArray(this.vao);
-    [this.posBuffer, this.alongBuffer, this.activeBuffer, this.growBuffer, this.colorBuffer, this.hoverBuffer, this.kindBuffer, this.dimBuffer, this.durationBuffer, this.lengthBuffer, this.headBuffer, this.selectedBuffer, this.indexBuffer].forEach((b) => gl.deleteBuffer(b));
+    [this.posBuffer, this.alongBuffer, this.activeBuffer, this.growBuffer, this.colorBuffer, this.hoverBuffer, this.kindBuffer, this.dimBuffer, this.durationBuffer, this.lengthBuffer, this.headBuffer, this.selectedBuffer, this.inSetBuffer, this.indexBuffer].forEach((b) => gl.deleteBuffer(b));
   }
 }

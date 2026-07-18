@@ -20,6 +20,7 @@ import { BulkBar } from './ui/mobile/BulkBar.jsx';
 import { activeSurface } from './ui/mobile/editorSheet.js';
 import { illegalTargets, edgeFor } from './ui/mobile/aim.js';
 import { sharedKind } from './ui/mobile/bulk.js';
+import { markDoneTargets } from './selection/bulkSelection.js';
 import { ForkDoor } from './ui/mobile/ForkDoor.jsx';
 import { useAuth } from './auth/AuthProvider.jsx';
 import { AccountSeat } from './auth/AccountSeat.jsx';
@@ -831,11 +832,14 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   // banks each node's prior color so one undo restores them all. The selection is KEPT so the
   // user can recolor again. Only nodes are touched (selectedIds); edges carry no color and
   // follow their source node's hue, repainting for free — a pure-edge selection never reaches here.
-  const bulkRecolor = useCallback((color) => {
+  // `silent` is the desktop power surface (brief #10): a recolor swatch commits with no toast — one
+  // gesture, ⌘Z undoes it (the BulkRecolor stamp is on the history stack). The phone bulk bar keeps
+  // its snackbar (touch has no keyboard undo), so it calls with silent left false.
+  const bulkRecolor = useCallback((color, { silent = false } = {}) => {
     const ids = [...selectedIdsRef.current];
     if (!ids.length) return;
     collabRef.current?.dispatch({ kind: 'BulkRecolor', nodeIds: ids, color });
-    showToast(`${ids.length} step${ids.length === 1 ? '' : 's'} recolored`, { action: { label: 'Undo', run: undo } });
+    if (!silent) showToast(`${ids.length} step${ids.length === 1 ? '' : 's'} recolored`, { action: { label: 'Undo', run: undo } });
   }, [showToast, undo]);
 
   // The legend (F6): every kind edit funnels through one seam — update the fresh ref,
@@ -1682,6 +1686,37 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
 
   completeStepRef.current = completeStep; // the auto-complete timer fires the freshest one
 
+  // Mark the whole node selection complete in ONE gesture (brief #10, "Mark all done"). completeStep
+  // can't be looped — each call reads the same render-time `completed`, so only the last would stick —
+  // so this unions the members that aren't already complete (markDoneTargets) into one setState, then
+  // runs the same feed beats. Silent: no toast (the applyStates effect blooms the set; only bulk delete
+  // toasts), and the selection is KEPT so the bark rings stay and the user can act again.
+  function bulkMarkDone() {
+    const targets = markDoneTargets(selectedIdsRef.current, completed);
+    if (!targets.length) return;
+    const now = Date.now();
+    const nextCompleted = new Set(completed);
+    const nextInProgress = new Set(inProgress);
+    const nextCompletedAt = { ...completedAt };
+    for (const id of targets) { nextCompleted.add(id); nextInProgress.delete(id); nextCompletedAt[id] = now; }
+    setCompleted(nextCompleted);
+    setInProgress(nextInProgress);
+    setCompletedAt(nextCompletedAt);
+    persistProgress({ completed: nextCompleted, inProgress: nextInProgress, startedAt, completedAt: nextCompletedAt });
+    for (const id of targets) {
+      pushProgress(id, 'complete');
+      const node = nodesById.get(id);
+      emit({ verb: 'completed', nodeId: id, label: node?.label, kind: node?.color }, { silent: true });
+    }
+    const after = UnlockRules.derive(tree, { completed: nextCompleted, inProgress: nextInProgress });
+    for (const [otherId, nodeState] of after) {
+      if (nodeState === 'available' && states.get(otherId) !== 'available') {
+        const unlocked = nodesById.get(otherId);
+        emit({ verb: 'unlocked', nodeId: otherId, label: unlocked?.label, kind: unlocked?.color }, { silent: true });
+      }
+    }
+  }
+
   function handleMarkComplete() {
     if (selectedId) completeStep(selectedId);
   }
@@ -2271,15 +2306,18 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
         />
       )}
 
-      {/* Multi-select bar (not a dock tenant): a floating "N selected · Delete" that shows only
-          above one selected item — nodes and/or edges — bottom-center over the canvas. A lone node
-          or edge keeps its own single chrome (StepPanel / EdgeChrome). */}
+      {/* Multi-select action card (brief #10 — not a dock tenant): a light, persistent card that
+          replaces the single StepPanel while a set is live (>=2 nodes and/or edges), bottom-centre
+          over the canvas in the toast lane, above the ControlBar. Count anchors LEFT; recolor swatches,
+          Mark all done, and the brick Delete cluster grow leftward from the far RIGHT (muscle memory).
+          A lone node or edge keeps its own single chrome (StepPanel / EdgeChrome). */}
       {!readOnly && selectedIds.size + selectedEdges.size > 1 && (
         <div className="st-selection-bar" role="status">
-          <span>{selectedIds.size + selectedEdges.size} selected</span>
-          {/* Recolor the node part of the selection to any legend kind — the same round Kind
-              swatches as the single-node picker (StepPanel). Nodes only: hidden when the
-              selection is edges alone, since edges carry no colour of their own. */}
+          <span className="st-selection-count">{selectedIds.size + selectedEdges.size} selected</span>
+          {/* Recolor the node part of the selection to any legend kind — the same round Kind swatches
+              as the single-node picker (StepPanel). Hover previews the whole set live; click commits
+              silent + ⌘Z. The shared kind rings (a mixed-kind set rings nothing). Nodes only: hidden
+              when the selection is edges alone, since edges carry no colour of their own. */}
           {selectedIds.size > 0 && (
             <div className="st-step-kinds" role="group" aria-label="Recolour selected steps">
               {recolorKinds.map((kind) => {
@@ -2288,17 +2326,32 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
                   <button
                     key={kind.id}
                     type="button"
-                    className="st-step-swatch"
+                    className={`st-step-swatch ${kind.hue === ringedKind ? 'st-step-swatch--current' : ''}`}
                     style={{ background: NODE_COLORS[kind.hue].base }}
                     title={name}
                     aria-label={`Recolour selection to ${name}`}
-                    onClick={() => bulkRecolor(kind.hue)}
+                    onPointerEnter={() => sceneRef.current?.previewKindSet([...selectedIdsRef.current], kind.hue)}
+                    onPointerLeave={() => sceneRef.current?.restoreKindSet([...selectedIdsRef.current])}
+                    onClick={() => bulkRecolor(kind.hue, { silent: true })}
                   />
                 );
               })}
             </div>
           )}
-          <Button variant="danger" size="sm" onClick={bulkDelete}>Delete</Button>
+          {/* Mark all done (brief #10 — set-status): complete every selected step in one gesture,
+              silent + the set is kept. Nodes only (edges carry no progress). */}
+          {selectedIds.size > 0 && (
+            <button type="button" className="st-selection-done" onClick={bulkMarkDone}>Mark all done</button>
+          )}
+          {/* Delete — the one brick control, pinned far right. Hover dims the set as a cost preview;
+              click resplices orphaned children up and drops one "N deleted · Undo" toast (one history). */}
+          <span
+            className="st-selection-delete"
+            onPointerEnter={() => sceneRef.current?.previewDeleteCostSet([...selectedIdsRef.current])}
+            onPointerLeave={() => sceneRef.current?.clearDeleteCost()}
+          >
+            <Button variant="danger" size="sm" onClick={bulkDelete}>Delete</Button>
+          </span>
         </div>
       )}
 

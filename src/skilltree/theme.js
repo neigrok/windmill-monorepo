@@ -58,6 +58,15 @@ export function isDone(state) {
 
 export const CONNECTOR = { inactive: '#D3C2A0' };
 
+// The grouped multi-selection treatment (brief #10): a set of two or more wears a quiet bark
+// ring + faint bark glow (never the loud single-select terracotta), so the set reads as one
+// thing — shared by the desktop marquee/action-card and the phone bulk bar alike. The GL scene
+// bakes concrete values (WebGL can't read CSS vars), mirroring the light `--color-bark` token.
+// BARK_CREAM is the warm cream a branch brightens toward when BOTH its endpoints are in the set,
+// so the selection reads as one connected shape (quieter than a white single-edge select).
+export const BARK = '#9C6B44';
+export const BARK_CREAM = '#EAD8B0';
+
 export const LEAF = { light: '#9AA859', vein: '#616E33' };
 
 export const BACKGROUND = {

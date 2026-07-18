@@ -94,6 +94,9 @@ export class NavigateTool extends Tool {
   }
 
   onPointerCancel() {
+    // A competing gesture (a second finger → pinch) took over mid-marquee: drop the band AND its
+    // preview rings, or they'd stay stuck on the previewed nodes until the next selection change.
+    if (this.drag?.marquee) this.ctx.cancelMarquee?.();
     this.drag = null;
   }
 
