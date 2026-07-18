@@ -52,6 +52,13 @@ export function Button({
   const v = variants[variant];
   const [hover, setHover] = React.useState(false);
   const [active, setActive] = React.useState(false);
+  const [focused, setFocused] = React.useState(false);
+
+  const boxShadow = disabled
+    ? 'none'
+    : focused
+    ? (v.shadow === 'none' ? 'var(--focus-ring)' : `${v.shadow}, var(--focus-ring)`)
+    : v.shadow;
 
   return (
     <button
@@ -62,6 +69,8 @@ export function Button({
       onMouseLeave={() => { setHover(false); setActive(false); }}
       onMouseDown={() => setActive(true)}
       onMouseUp={() => setActive(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -75,7 +84,7 @@ export function Button({
         border: v.border,
         background: disabled ? 'var(--neutral-200)' : active ? v.activeBg : hover ? v.hoverBg : v.background,
         color: disabled ? 'var(--text-tertiary)' : v.color,
-        boxShadow: disabled ? 'none' : v.shadow,
+        boxShadow,
         cursor: disabled ? 'not-allowed' : 'pointer',
         transition: `background var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard)`,
         transform: active && !disabled ? 'scale(0.97)' : 'scale(1)',

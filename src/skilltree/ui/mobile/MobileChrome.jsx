@@ -60,7 +60,7 @@ export function MobileChrome({
           position: 'absolute',
           top: `calc(${SAFE_TOP} + 8px)`,
           left: 'calc(env(safe-area-inset-left, 0px) + 12px)',
-          maxWidth: 236,
+          maxWidth: 'min(236px, calc(100vw - 150px))',
           display: 'flex',
           flexDirection: 'column',
           gap: 6,
