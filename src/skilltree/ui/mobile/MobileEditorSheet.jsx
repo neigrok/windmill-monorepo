@@ -1,12 +1,15 @@
-// The phone editor sheet (M1): the read-only detail grown a set of editing verbs for
+// The mobile editor sheet (M1): the read-only detail grown a set of editing verbs for
 // the tree's owner. It flows top-to-bottom — rename-in-place title, state chip, the
 // bark verb rail, the recolor swatches (all inside the ~300px peek), then the DAG
 // (description, branch, Needs, Unlocks) on expand, and Delete alone at the foot. Purely
 // presentational: every verb dispatches through the handlers SkillTreeView passes, which
 // wrap the same handle* callbacks the desktop editor uses (with a mobile undo snackbar).
+// The phone seats it inside the BottomSheet (which supplies the card + scroll); `panel` wraps
+// it in its own card + inner scroll so the tablet can stand it up in the detail panel column,
+// where the DAG shows at rest (the panel is tall — no grabber, no peek).
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Icon } from '../../../components';
+import { Icon, Card } from '../../../components';
 import { NodeAnnotation, ReadOnlyStateChip, ReadOnlyRelations } from '../StepPanel.jsx';
 import { NODE_COLORS, DEFAULT_NODE_COLOR } from '../../theme.js';
 import { deleteCostLine, progressVerb } from './editorSheet.js';
@@ -39,7 +42,7 @@ const barkVerb = {
   color: 'var(--color-bark)',
 };
 
-export function MobileEditorSheet({ node, state, prerequisites = [], unlocks = [], completedAt, kinds = [], autoFocusName = false, onRename, onAddStep, onConnect, onSetKind, onMarkDone, onUnmarkDone, onDelete }) {
+export function MobileEditorSheet({ node, state, prerequisites = [], unlocks = [], completedAt, kinds = [], autoFocusName = false, panel = false, onRename, onAddStep, onConnect, onSetKind, onMarkDone, onUnmarkDone, onDelete }) {
   const [editingName, setEditingName] = useState(!!autoFocusName);
   const [draft, setDraft] = useState(node?.label ?? '');
   const inputRef = useRef(null);
@@ -71,7 +74,7 @@ export function MobileEditorSheet({ node, state, prerequisites = [], unlocks = [
     if (label !== node.label.trim()) onRename(node.id, label);
   };
 
-  return (
+  const body = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', paddingTop: 'var(--space-2)' }}>
       {editingName ? (
         <input
@@ -176,6 +179,9 @@ export function MobileEditorSheet({ node, state, prerequisites = [], unlocks = [
       )}
     </div>
   );
+
+  if (!panel) return body;
+  return <Card style={{ maxHeight: '70vh', overflowY: 'auto' }}>{body}</Card>;
 }
 
 export default MobileEditorSheet;

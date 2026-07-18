@@ -17,6 +17,7 @@ import { BottomSheet } from './ui/mobile/BottomSheet.jsx';
 import { MobileEditorSheet } from './ui/mobile/MobileEditorSheet.jsx';
 import { AimBar, RemoveLinkBar } from './ui/mobile/AimBar.jsx';
 import { BulkBar } from './ui/mobile/BulkBar.jsx';
+import { activeSurface } from './ui/mobile/editorSheet.js';
 import { illegalTargets, edgeFor } from './ui/mobile/aim.js';
 import { sharedKind } from './ui/mobile/bulk.js';
 import { ForkDoor } from './ui/mobile/ForkDoor.jsx';
@@ -1511,9 +1512,9 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   // A stranger's read-only share leaves editTap null, so the tool's default select is unchanged.
   useEffect(() => {
     if (!scene) return undefined;
-    // Wave B's aim + remove-link bars are phone-only, so editTap is too — a tablet owner keeps
-    // the read-only default select until Wave D, and a branch tap can't strand an invisible bar.
-    if (!mobileEditable || breakpoint !== 'phone') { scene.setEditTap(null); return undefined; }
+    // Owner editing routes taps on phone AND tablet (Wave D stood the surfaces up in the tablet
+    // panel, so a branch tap can no longer strand an invisible bar); the desktop keeps its own editor.
+    if (!mobileEditable || breakpoint === 'desktop') { scene.setEditTap(null); return undefined; }
     scene.setEditTap((x, y) => {
       const nodeId = scene.pick(x, y);
       // Multi-select owns every tap while it's the surface (M5): a node toggles membership, and an
@@ -1552,7 +1553,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   // a time). The set drives the read-only highlight through the setSelectedSet sync effect.
   useEffect(() => {
     if (!scene) return undefined;
-    if (!mobileEditable || breakpoint !== 'phone') { scene.setLongPress(null); return undefined; }
+    if (!mobileEditable || breakpoint === 'desktop') { scene.setLongPress(null); return undefined; }
     scene.setLongPress((id) => {
       if (!id) return;
       setAim(null);
@@ -1877,6 +1878,12 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     />
   );
 
+  // Which of the four owner-editing surfaces is live (M7): the tablet panel reads the same
+  // one-at-a-time precedence the phone docks to the bottom edge, then seats the winner in the
+  // panel column and keys its cross-fade on the result (the editor keys on the node, so a
+  // retarget remounts). A stranger's share leaves mobileEditable false → the read-only detail.
+  const mobileSurface = activeSurface({ multiMode, aim, removing, selectedNode });
+
   return (
     <div className={`st-root ${panning ? 'panning' : ''}`} ref={rootRef}>
       <canvas ref={canvasRef} className={`st-canvas ${hoveredId ? 'st-canvas--hover' : ''}`} />
@@ -2135,7 +2142,67 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
         />
       )}
 
-      {readOnly && breakpoint !== 'phone' && (
+      {/* The tablet stands the sheet up (M7): the owner's editing surfaces render in the same
+          320px right-side panel the read-only page uses, one at a time, with the aim/remove/bulk
+          bars docked in-flow (`inPanel`) into the column instead of the bottom edge. A stranger's
+          share (or a read-only desktop view) keeps the read-only detail below, byte-unchanged. */}
+      {mobileEditable && breakpoint === 'tablet' && (
+        <aside className={`st-detail-panel st-detail-panel--tablet ${mobileSurface !== 'empty' ? 'st-detail-panel--open' : ''}`}>
+          <div className="st-dock-tenant" key={mobileSurface === 'editor' ? selectedNode.id : mobileSurface}>
+            {mobileSurface === 'bulk' ? (
+              <BulkBar
+                inPanel
+                count={selectedIds.size}
+                kinds={recolorKinds}
+                ringedKind={ringedKind}
+                onRecolor={bulkRecolor}
+                onDelete={bulkDelete}
+                onDone={() => { setMultiMode(false); setSelectedId(null); }}
+              />
+            ) : mobileSurface === 'aim' ? (
+              <AimBar
+                inPanel
+                sourceLabel={nodesById.get(aim.sourceId)?.label}
+                direction={aim.direction}
+                onToggleDirection={flipAimDirection}
+                onCancel={() => setAim(null)}
+              />
+            ) : mobileSurface === 'remove' ? (
+              <RemoveLinkBar
+                inPanel
+                onRemove={() => {
+                  const { from, to } = removing;
+                  handleDeleteEdge(from, to);
+                  setRemoving(null);
+                  showToast('Link removed', { action: { label: 'Undo', run: () => collabRef.current?.dispatch({ kind: 'AddEdge', from, to }) }, duration: 4000 });
+                }}
+                onCancel={() => setRemoving(null)}
+              />
+            ) : mobileSurface === 'editor' ? (
+              <MobileEditorSheet
+                panel
+                key={selectedNode.id}
+                node={selectedNode}
+                state={selectedState}
+                prerequisites={prerequisites}
+                unlocks={unlocks}
+                completedAt={completedAt[selectedId]}
+                kinds={legend}
+                autoFocusName={selectedId !== null && selectedId === autoFocusNameId}
+                onRename={mobileRename}
+                onAddStep={mobileAddStep}
+                onConnect={enterAim}
+                onSetKind={mobileRecolor}
+                onMarkDone={(id) => completeStep(id)}
+                onUnmarkDone={(id) => handleSetState(id, 'notstarted')}
+                onDelete={deleteNodeAt}
+              />
+            ) : null}
+          </div>
+        </aside>
+      )}
+
+      {readOnly && breakpoint !== 'phone' && !(mobileEditable && breakpoint === 'tablet') && (
         <aside className={`st-detail-panel ${breakpoint === 'tablet' ? 'st-detail-panel--tablet' : ''} ${selectedNode ? 'st-detail-panel--open' : ''}`}>
           <div className="st-dock-tenant" key={selectedNode ? selectedNode.id : 'empty'}>
             {readOnlyDetail}

@@ -1,10 +1,11 @@
 // The multi-select bulk bar (M5): long-press enters multi-select and this bar replaces the
 // sheet — an "N selected" count with Done, the recolor swatch row, and a full-width Delete.
-// Bottom-docked (a finger acts here, not a floating chip), bark/cream chrome — tools stay
-// neutral, and the swatches are the one place category hue shows. Every control clears the
-// 44px touch floor. One surface at a time: SkillTreeView mounts this only in multiMode, never
-// beside the sheet or an aim bar. Purely presentational — every verb dispatches through the
-// bulk* handlers SkillTreeView passes, which reuse the desktop editor's undoable gestures.
+// Bottom-docked on the phone (a finger acts here, not a floating chip); `inPanel` drops the
+// fixed positioning so the tablet seats it in-flow in the detail panel column. Bark/cream
+// chrome — tools stay neutral, and the swatches are the one place category hue shows. Every
+// control clears the 44px touch floor. One surface at a time: SkillTreeView mounts this only in
+// multiMode, never beside the sheet or an aim bar. Purely presentational — every verb dispatches
+// through the bulk* handlers SkillTreeView passes, which reuse the desktop editor's undoable gestures.
 
 import React from 'react';
 import { Icon } from '../../../components';
@@ -14,11 +15,7 @@ function cap(hue) {
   return hue.charAt(0).toUpperCase() + hue.slice(1);
 }
 
-const shell = {
-  position: 'fixed',
-  left: 'var(--space-4)',
-  right: 'var(--space-4)',
-  bottom: 'calc(env(safe-area-inset-bottom, 0px) + var(--space-4))',
+const shellBase = {
   display: 'flex',
   flexDirection: 'column',
   gap: 'var(--space-3)',
@@ -27,8 +24,17 @@ const shell = {
   border: '1px solid var(--border-subtle)',
   borderRadius: 'var(--radius-xl)',
   boxShadow: 'var(--shadow-lg)',
+};
+
+const shellFixed = {
+  position: 'fixed',
+  left: 'var(--space-4)',
+  right: 'var(--space-4)',
+  bottom: 'calc(env(safe-area-inset-bottom, 0px) + var(--space-4))',
   zIndex: 40,
 };
+
+const shellInPanel = { width: '100%' };
 
 const countLabel = {
   flex: 1,
@@ -74,11 +80,11 @@ const deleteButton = {
   cursor: 'pointer',
 };
 
-export function BulkBar({ count = 0, kinds = [], ringedKind = null, onRecolor, onDelete, onDone }) {
+export function BulkBar({ count = 0, kinds = [], ringedKind = null, onRecolor, onDelete, onDone, inPanel = false }) {
   const legendKinds = kinds.length > 0 ? kinds : Object.keys(NODE_COLORS).map((h) => ({ id: h, hue: h }));
   const plural = count === 1 ? '' : 's';
   return (
-    <div style={shell} role="group" aria-label={`${count} selected`}>
+    <div style={{ ...shellBase, ...(inPanel ? shellInPanel : shellFixed) }} role="group" aria-label={`${count} selected`}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
         <span style={countLabel}>{count} selected</span>
         <button type="button" style={doneButton} onClick={onDone}>Done</button>

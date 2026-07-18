@@ -1,17 +1,14 @@
-// The aim mode's chrome (M3): a slim bottom bar that stands in for the editor sheet while
-// the canvas is a connect chooser, plus its sibling remove-link bar. Both are bark/cream —
-// tools are neutral, only nodes carry category color — and every control clears the 44px
-// touch floor. One surface at a time: SkillTreeView mounts exactly one of these or the
-// sheet, never two, and the undo snackbar floats above either.
+// The aim mode's chrome (M3): a slim bar that stands in for the editor sheet while the canvas
+// is a connect chooser, plus its sibling remove-link bar. Both are bark/cream — tools are
+// neutral, only nodes carry category color — and every control clears the 44px touch floor.
+// One surface at a time: SkillTreeView mounts exactly one of these or the sheet, never two, and
+// the undo snackbar floats above either. Phone docks it to the bottom edge; `inPanel` drops the
+// fixed positioning so the tablet can seat the same bar in-flow inside the detail panel column.
 
 import React from 'react';
 import { Icon } from '../../../components';
 
-const shell = {
-  position: 'fixed',
-  left: 'var(--space-4)',
-  right: 'var(--space-4)',
-  bottom: 'calc(env(safe-area-inset-bottom, 0px) + var(--space-4))',
+const shellBase = {
   display: 'flex',
   alignItems: 'center',
   gap: 'var(--space-3)',
@@ -20,8 +17,17 @@ const shell = {
   border: '1px solid var(--border-subtle)',
   borderRadius: 'var(--radius-xl)',
   boxShadow: 'var(--shadow-lg)',
+};
+
+const shellFixed = {
+  position: 'fixed',
+  left: 'var(--space-4)',
+  right: 'var(--space-4)',
+  bottom: 'calc(env(safe-area-inset-bottom, 0px) + var(--space-4))',
   zIndex: 40,
 };
+
+const shellInPanel = { width: '100%' };
 
 const prompt = {
   fontFamily: 'var(--font-body)',
@@ -67,10 +73,10 @@ const SEGMENTS = [
   { direction: 'needs', label: '← needs' },
 ];
 
-export function AimBar({ sourceLabel, direction, onToggleDirection, onCancel }) {
+export function AimBar({ sourceLabel, direction, onToggleDirection, onCancel, inPanel = false }) {
   const label = sourceLabel || 'this step';
   return (
-    <div style={shell} role="group" aria-label="Choose a step to connect">
+    <div style={{ ...shellBase, ...(inPanel ? shellInPanel : shellFixed) }} role="group" aria-label="Choose a step to connect">
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
         <span style={prompt}>
           {direction === 'needs'
@@ -108,9 +114,9 @@ export function AimBar({ sourceLabel, direction, onToggleDirection, onCancel }) 
   );
 }
 
-export function RemoveLinkBar({ onRemove, onCancel }) {
+export function RemoveLinkBar({ onRemove, onCancel, inPanel = false }) {
   return (
-    <div style={shell} role="group" aria-label="Remove this link">
+    <div style={{ ...shellBase, ...(inPanel ? shellInPanel : shellFixed) }} role="group" aria-label="Remove this link">
       <span style={{ ...prompt, flex: 1, minWidth: 0 }}>Remove this link?</span>
       <button
         type="button"
