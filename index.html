@@ -119,26 +119,14 @@
               "Sign in once and your trees sync across phone and desktop",
               "Authored developer learning paths adapted from roadmap.sh (CC BY-SA)"
             ],
-            "offers": [
-              {
-                "@type": "Offer",
-                "name": "Free",
-                "price": "0",
-                "priceCurrency": "USD",
-                "availability": "https://schema.org/InStock",
-                "url": "https://windmill.works/pricing.html",
-                "description": "Unlimited trees and steps, the whole editor, paste import, sharing, forking, export, and the MCP server with one API key."
-              },
-              {
-                "@type": "Offer",
-                "name": "Windmill Pro",
-                "price": "12",
-                "priceCurrency": "USD",
-                "availability": "https://schema.org/InStock",
-                "url": "https://windmill.works/pricing.html",
-                "description": "Everything in Free, plus private trees. Billed monthly, cancel any time, 30-day money-back guarantee."
-              }
-            ],
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "USD",
+              "availability": "https://schema.org/InStock",
+              "url": "https://windmill.works/pricing.html",
+              "description": "All of Windmill, free: unlimited trees and steps, private trees, the whole editor, paste import, sharing, forking, export, and the MCP server with an API key."
+            },
             "publisher": { "@id": "https://windmill.works/#organization" }
           },
           {
@@ -160,7 +148,7 @@
                 "name": "How much does Windmill cost?",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "Windmill is free — unlimited trees and steps, the whole editor, sharing, forking and export, with no account needed and no card. Windmill Pro costs $12 a month and adds private trees; it is billed monthly, can be cancelled any time, and carries a 30-day money-back guarantee."
+                  "text": "Windmill is free — all of it, including private trees, with no account needed and no card. Paid plans are planned for heavy use and for AI built into the site, and nothing that is free today will move behind them."
                 }
               },
               {
@@ -234,8 +222,7 @@
           Frontend, Rust from zero, ML foundations, and Ship v1.0.
         </p>
         <p style="font-size: 15px; color: #4A4034; line-height: 1.6; margin: 0 0 24px;">
-          <strong>Pricing:</strong> free forever, no card. Windmill Pro is $12 a month and adds
-          private trees, with a 30-day money-back guarantee.
+          <strong>Pricing:</strong> free, all of it, no card — private trees included.
         </p>
         <!-- The rendered footer is React's, which a crawler never runs. These same links live here
              so pricing and the policies are reachable from the one crawlable URL without JavaScript. -->

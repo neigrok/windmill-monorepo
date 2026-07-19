@@ -9,13 +9,20 @@ import { Button } from '../../components';
 import { Section, styles } from './Section.jsx';
 import { beginUpgrade, billingConfigured, fetchSubscription } from '../billing/checkout.js';
 
+// Nothing is for sale right now. Private trees were briefly the paid line, which meant the free
+// default had been moved to unlisted so that privacy could be charged for — taking a default away
+// to sell it back. Privacy went back to free, and the paid line will be usage and in-app AI, which
+// cost us something per use. Until one of those ships there is no Upgrade: offering one would take
+// money for nothing. Flip this to true when there is.
+const PAID_PLANS_OPEN = false;
+
 const PLAN_COPY = {
   active: { name: 'Windmill Pro', note: 'Thanks for backing the work.' },
   trialing: { name: 'Windmill Pro', note: 'You’re on a trial.' },
   past_due: { name: 'Windmill Pro', note: 'The last payment didn’t go through — Paddle is retrying. Nothing is switched off.' },
   paused: { name: 'Paused', note: 'Billing is paused, so Pro is off for now.' },
   canceled: { name: 'Free', note: 'Your Pro subscription has ended.' },
-  none: { name: 'Free', note: 'Everything you need to build, share and fork roadmaps.' },
+  none: { name: 'Free', note: 'Everything Windmill does, including private trees. Paid plans are coming for heavy use and in-app AI.' },
 };
 
 const asDate = (iso) => {
@@ -63,7 +70,7 @@ export function PlanSection() {
           )}
         </div>
         {!loading && subscription?.active && !ending && <span style={styles.tag}>ACTIVE</span>}
-        {!loading && !subscription?.active && (
+        {PAID_PLANS_OPEN && !loading && !subscription?.active && (
           <Button size="sm" onClick={upgrade} disabled={opening}>
             {opening ? 'Opening…' : 'Upgrade'}
           </Button>
