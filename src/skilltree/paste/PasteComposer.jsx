@@ -12,6 +12,7 @@ import { withCounts, renameKind, recolorKind, describeKind, addKind, removeKind 
 import { NODE_COLORS } from '../theme.js';
 import { API_BASE } from '../apiBase.js';
 import { readComposeStream } from './composeStream.js';
+import { reportError } from '../../telemetry/beacon.js';
 
 const PLACEHOLDER = 'Paste anything — a to-do list, an outline, markdown checkboxes.';
 const AI_RESET_MS = 5000;
@@ -209,6 +210,13 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
       signal: controller.signal,
     });
 
+    // Shaping failing quietly is how a broken feature stays broken: the well keeps your text, the
+    // handle stays calm, and nothing anywhere goes red. So every failure the reader actually SEES
+    // is reported — the reason and the size of the attempt only. The text itself is never sent:
+    // it is the user's, and it is the one thing an error tracker must not keep.
+    const reportShapeFailure = (reason) =>
+      reportError(new Error(`shape ${reason} (${new TextEncoder().encode(prior).length}B)`), 'shape');
+
     const settleUndo = () => {
       setAi({ phase: 'undo', prior });
       clearTimeout(aiTimer.current);
@@ -225,6 +233,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
         return;
       }
       if (response?.status === 503 && body?.code === 'compose-unavailable') {
+        reportShapeFailure('unavailable');
         composeUnavailable = true;
         setAiHidden(true);
         setAi({ phase: 'idle', prior: null });
@@ -238,6 +247,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
         settleAi('long');
         return;
       }
+      reportShapeFailure(response ? `failed (${response.status})` : 'unreachable');
       settleAi('fail');
     };
 
@@ -274,6 +284,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
 
       if (streamed === '') {
         if (outcome === 'fail') {
+          reportShapeFailure('failed before its first word');
           settleAi('fail'); // the model stopped before its first word — the text is untouched
           return;
         }
@@ -292,6 +303,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
         settleUndo();
         return;
       }
+      reportShapeFailure(`stopped mid-plan after ${streamed.length} chars`);
       setAi({ phase: 'stopped', prior }); // the partial plan is kept; the handle itself is the undo
     } finally {
       clearTimeout(deadline);
