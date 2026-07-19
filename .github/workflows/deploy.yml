@@ -30,6 +30,13 @@ jobs:
       # baked in. apiBase.js derives it: empty base → relative fetch, socket → ws(s):// of the page.
       # (Set VITE_API_BASE_URL only for a preview build that must reach a remote backend.)
       - name: Build
+        env:
+          # The frontend Sentry DSN is public — it ships inside the client bundle either way — so it
+          # lives here as plain build config, not a secret. Rotate here if the Sentry project changes.
+          VITE_SENTRY_DSN: https://8ccb99ec79873a1f7ad27fb1939906d0@o4511760691953664.ingest.de.sentry.io/4511760715350096
+          # Stamp the build so Sentry groups + tracks errors by release (frames stay minified until
+          # source-map upload is added — a follow-up that needs a Sentry org auth token).
+          VITE_RELEASE: ${{ github.sha }}
         run: npm run build
 
       - name: Rsync dist to the VPS

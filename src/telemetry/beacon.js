@@ -4,6 +4,7 @@
 // must never affect product behavior.
 
 import { API_BASE } from '../skilltree/apiBase.js';
+import { captureError } from './sentry.js';
 
 const SESSION_KEY_STORAGE = 'windmill:beacon:key';
 const DEV_OPT_IN_STORAGE = 'windmill:beacon:dev';
@@ -31,10 +32,11 @@ export function track(name, props) {
 // is queryable as `name = 'client_error'`. Still fire-and-forget: reporting a crash can't crash.
 export function reportError(error, kind = 'error') {
   if (typeof window === 'undefined') return;
-  const message = String(error?.message ?? error ?? 'unknown').slice(0, 280);
-  const stack = String(error?.stack ?? '').slice(0, 480);
+  const stack = String(error?.stack ?? '');
+  const message = String(error?.message ?? error ?? 'unknown');
   const route = (window.location?.hash || window.location?.pathname || '').slice(0, 120);
-  track('client_error', { kind: String(kind).slice(0, 40), message, stack, route });
+  track('client_error', { kind: String(kind).slice(0, 40), message: message.slice(0, 280), stack: stack.slice(0, 480), route });
+  captureError(kind, message, stack, route); // also surface in Sentry (fuller message + stack) — no-op without a DSN
   flush('beacon');
 }
 
