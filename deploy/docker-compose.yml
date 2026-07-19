@@ -66,6 +66,7 @@ services:
       PADDLE_WEBHOOK_SECRET: ${PADDLE_WEBHOOK_SECRET:-}
       PADDLE_API_KEY: ${PADDLE_API_KEY:-}
       PADDLE_ENV: ${PADDLE_ENV:-sandbox}
+      PADDLE_PRICE_ID: ${PADDLE_PRICE_ID:-}
       # Magic links point at the app; the session cookie is first-party on the single origin.
       WINDMILL_APP_URL: https://${DOMAIN_APP}
       WINDMILL_COOKIE_DOMAIN: ${DOMAIN_APP}
