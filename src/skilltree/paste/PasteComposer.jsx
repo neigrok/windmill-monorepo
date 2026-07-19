@@ -16,9 +16,10 @@ import { readComposeStream } from './composeStream.js';
 const PLACEHOLDER = 'Paste anything — a to-do list, an outline, markdown checkboxes.';
 const AI_RESET_MS = 5000;
 const SHAPE_TIMEOUT_MS = 90000;  // the server's stream deadline; the abort tears the reader down
-const COMPOSE_TEXT_MAX_BYTES = 10240; // the server's cap — over it the handle never offers
+const COMPOSE_TEXT_MAX_BYTES = 24576; // the server's cap — over it the handle never offers
 const AI_COPY = {
   handle: 'Looks like notes — shape it into a plan',
+  handleAny: 'Shape this into a plan',
   shape: 'Shape',
   honesty: 'Sends your text to an AI model to draft the steps — only when you tap.',
   more: 'What’s sent?',
@@ -167,15 +168,16 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
     }]);
   };
 
-  // The escalation door (owner-decided hybrid): only when the parse is degenerate —
-  // six or more spoken lines, sixty percent of them notes — a quiet gold handle
-  // offers to reshape the TEXT server-side. Failures stay gold and stay quiet, and
-  // text past the server's byte cap keeps the heuristic quiet too: a handle that can
-  // only fail is no handle.
+  // The shape door. It used to open only for text that read as loose notes — six or more spoken
+  // lines, sixty percent of them prose — which meant the one paste that most wants shaping, a
+  // document someone already wrote, arrived as a wall of headings and got no offer at all. So the
+  // handle is now offered for anything with real content in it. The grammar still parses every
+  // paste on its own; shaping is the way to a better plan, not a rescue from a broken one.
+  // Text past the server's byte cap keeps it quiet: a handle that can only fail is no handle.
   const spoken = parse.gutter.filter((entry) => entry.glyph !== null);
   const prose = spoken.length >= 6 && spoken.filter((entry) => entry.glyph === '¶').length / spoken.length >= 0.6;
-  const degenerate = prose && new TextEncoder().encode(text).length <= COMPOSE_TEXT_MAX_BYTES;
-  const aiVisible = !aiHidden && (degenerate || ai.phase !== 'idle');
+  const shapeable = spoken.length >= 3 && new TextEncoder().encode(text).length <= COMPOSE_TEXT_MAX_BYTES;
+  const aiVisible = !aiHidden && (shapeable || ai.phase !== 'idle');
 
   const settleAi = (phase) => {
     setAi({ phase, prior: null });
@@ -419,7 +421,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
       {ai.phase === 'idle' && (
         <div className="pc-shape-idle">
           <div className="pc-shape-offer">
-            <span className="pc-shape-line">{AI_COPY.handle}</span>
+            <span className="pc-shape-line">{prose ? AI_COPY.handle : AI_COPY.handleAny}</span>
             <button type="button" className="pc-shape-do" onClick={() => shape()} disabled={planting}>{AI_COPY.shape}</button>
           </div>
           <div className="pc-shape-honesty">
