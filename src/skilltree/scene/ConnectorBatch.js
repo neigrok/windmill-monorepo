@@ -217,7 +217,7 @@ function travelDuration(lengthWorld) {
 // the positions depend on the endpoints, so both setModel (bulk) and moveNode
 // (a single node's incident edges) go through here; the along/active/color
 // attributes are constant under a move and written once.
-function writeEdgePositions(positions, vertexStart, fx, fy, tx, ty, halfWidth, sway) {
+export function writeEdgePositions(positions, vertexStart, fx, fy, tx, ty, halfWidth, sway) {
   const { cx, cy } = controlPoint(fx, fy, tx, ty, sway);
   const [t0, t1] = trimRange(fx, fy, cx, cy, tx, ty);
   const span = t1 - t0;
