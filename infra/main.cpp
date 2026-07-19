@@ -1,5 +1,6 @@
 #include "adapters/amplitude/AmplitudeClient.h"
 #include "adapters/clock/SystemClock.h"
+#include "adapters/google/GoogleOAuthClient.h"
 #include "adapters/crypto/OpenSslTokenGenerator.h"
 #include "adapters/email/ResendEmailSender.h"
 #include "adapters/sentry/SentryClient.h"
@@ -100,7 +101,16 @@ int main() {
   auto authService =
       std::make_shared<AuthService>(*authRepo, *emailSender, *tokens, *systemClock, *oauthService, appBaseUrl);
   auto forkService = std::make_shared<ForkService>(*registry, *trees, *tokens);
-  auto authApi = std::make_shared<AuthApi>(authService, forkService, secureCookies, cookieDomain);
+  // Google sign-in (second door onto wm_session). Empty client id/secret → configured() is false and
+  // the routes bounce to the app, so the feature is dark until GOOGLE_CLIENT_ID/SECRET are set. The
+  // redirect URI must be registered verbatim in the Google Cloud console.
+  const char* googleClientId = std::getenv("GOOGLE_CLIENT_ID");
+  const char* googleClientSecret = std::getenv("GOOGLE_CLIENT_SECRET");
+  auto googleClient = std::make_shared<GoogleOAuthClient>(googleClientId ? googleClientId : "",
+                                                          googleClientSecret ? googleClientSecret : "",
+                                                          apiBaseUrl + "/v1/auth/google/callback");
+  auto authApi = std::make_shared<AuthApi>(authService, forkService, secureCookies, cookieDomain,
+                                           googleClient, appBaseUrl);
   auto mcpKeyApi = std::make_shared<McpKeyApi>(authService, mcpKeyService);
   auto oauthApi = std::make_shared<OAuthApi>(oauthService, authService, apiBaseUrl, appBaseUrl, "/#/oauth/authorize");
 
@@ -362,6 +372,19 @@ int main() {
         authApi->verify(req, std::move(cb));
       },
       {drogon::Post});
+  // Google sign-in: two top-level browser navigations (no CORS — these are redirects, not fetches).
+  app.registerHandler(
+      "/v1/auth/google/start",
+      [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        authApi->googleStart(req, std::move(cb));
+      },
+      {drogon::Get});
+  app.registerHandler(
+      "/v1/auth/google/callback",
+      [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        authApi->googleCallback(req, std::move(cb));
+      },
+      {drogon::Get});
   app.registerHandler(
       "/v1/auth/logout",
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {

@@ -82,6 +82,13 @@ public:
   // metadata (ctx).
   Completion completeLink(const std::string& linkSecret, const SessionContext& ctx = {});
 
+  // Sign in a Google-verified identity. The email is resolved to an account the same way a magic
+  // link is — found or created, revived if within its close grace — so a Google email and a
+  // magic-link email that match land on ONE account (users.email is unique), with no new provider
+  // state. The caller must have proven the email is Google-verified before calling this.
+  SignedIn completeGoogle(const Email& verifiedEmail, const std::string& name,
+                          const SessionContext& ctx = {});
+
   // Resolve a session secret to its user, rolling the 90-day window forward on each use and
   // healing the row's metadata from ctx. A closed account is refused (nullopt) even if a
   // stale session row somehow survives — defense in depth behind the close's session sweep.
@@ -109,6 +116,12 @@ public:
   UnixMs closeAccount(const UserId& userId);
 
 private:
+  // The shared session-mint tail behind both doors: find-or-create the user by email, revive a
+  // within-grace closed account, then mint + persist a session. Every sign-in path funnels here so
+  // the revival rule and account-linking-by-email hold identically.
+  SignedIn mintSessionFor(const Email& email, const std::string& name, const SessionContext& ctx,
+                          UnixMs now);
+
   AuthRepository& repo_;
   EmailSender& email_;
   TokenGenerator& tokens_;

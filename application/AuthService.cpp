@@ -54,18 +54,32 @@ AuthService::Completion AuthService::completeLink(const std::string& linkSecret,
   // row, we lost the race — treat it exactly as an already-used link, no session.
   if (!repo_.consumeLink(digest, now)) return {LinkVerdict::alreadyUsed, std::nullopt, ""};
 
+  return {verdict, mintSessionFor(link->email, nameFromEmail(link->email), ctx, now), link->forkSource};
+}
+
+AuthService::SignedIn AuthService::completeGoogle(const Email& verifiedEmail, const std::string& name,
+                                                  const SessionContext& ctx) {
+  const UnixMs now = clock_.nowMs();
+  // No link to verify or consume: the caller proved the email via Google's OAuth. Everything else
+  // — revival, account-linking-by-email, session mint — is the shared tail.
+  const std::string safeName = name.empty() ? nameFromEmail(verifiedEmail) : name;
+  return mintSessionFor(verifiedEmail, safeName, ctx, now);
+}
+
+AuthService::SignedIn AuthService::mintSessionFor(const Email& email, const std::string& name,
+                                                  const SessionContext& ctx, UnixMs now) {
   // Signing in is the undo: a within-grace closed account revives before the session is
   // minted, so the door reopens onto exactly the trees and grants the close left in place.
-  std::optional<User> existing = repo_.findUserByEmail(link->email);
+  std::optional<User> existing = repo_.findUserByEmail(email);
   if (existing && existing->deletedAt) {
     repo_.reviveUser(existing->id);
     existing->deletedAt = std::nullopt;
   }
-  const User user = existing ? *existing : repo_.createUser(link->email, nameFromEmail(link->email));
+  const User user = existing ? *existing : repo_.createUser(email, name);
 
   const MintedToken session = tokens_.mint();
   repo_.insertSession(session.digest, user.id, sessionExpiry(now), ctx.userAgent, ctx.ip, now);
-  return {verdict, SignedIn{user, session.secret}, link->forkSource};
+  return SignedIn{user, session.secret};
 }
 
 std::optional<User> AuthService::authenticate(const std::string& sessionSecret, const SessionContext& ctx) {

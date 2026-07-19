@@ -123,6 +123,45 @@ TEST(complete_link_reuses_the_existing_account_on_a_later_sign_in) {
   CHECK_EQ(h.repo.usersById.size(), 1u);
 }
 
+TEST(google_sign_in_creates_the_account_and_a_session_for_a_new_email) {
+  Harness h;
+  AuthService::SignedIn signedIn = h.service.completeGoogle(*parseEmail("sam@example.com"), "Sam Gold");
+  CHECK_EQ(signedIn.user.email.value, std::string("sam@example.com"));
+  CHECK_EQ(signedIn.user.name, std::string("Sam Gold"));  // Google's name, not the email-derived one
+
+  // No link to consume, so the session secret is the first mint (s1), stored under its digest 90 days out.
+  CHECK_EQ(signedIn.sessionSecret, std::string("s1"));
+  std::optional<StoredSession> session = h.repo.findSession("d1");
+  CHECK(session.has_value());
+  CHECK_EQ(session->user.str(), signedIn.user.id.str());
+  CHECK_EQ(session->expiresAt, h.clock.now + AuthPolicy::sessionLifetimeMs);
+}
+
+// The load-bearing account-linking guarantee: one email, either door, ONE account. A Google-verified
+// email that a magic link already created resolves to the same row — and casing can't fork it.
+TEST(google_sign_in_links_to_the_same_account_a_magic_link_created) {
+  Harness h;
+  h.requestLink("sam@example.com");
+  const UserId viaLink = h.service.completeLink("s1").signedIn->user.id;
+
+  AuthService::SignedIn viaGoogle = h.service.completeGoogle(*parseEmail("Sam@Example.com"), "Sam");
+  CHECK_EQ(viaGoogle.user.id.str(), viaLink.str());
+  CHECK_EQ(h.repo.usersById.size(), 1u);  // one account, two doors — no duplicate
+}
+
+TEST(google_sign_in_revives_a_within_grace_closed_account) {
+  Harness h;
+  h.requestLink("sam@example.com");
+  const UserId account = h.service.completeLink("s1").signedIn->user.id;
+  h.service.closeAccount(account);
+  CHECK(h.repo.usersById.at(account.str()).deletedAt.has_value());  // closed, within grace
+
+  AuthService::SignedIn revived = h.service.completeGoogle(*parseEmail("sam@example.com"), "Sam");
+  CHECK_EQ(revived.user.id.str(), account.str());  // same account — signing in is the undo
+  CHECK_FALSE(revived.user.deletedAt.has_value());
+  CHECK_FALSE(h.repo.usersById.at(account.str()).deletedAt.has_value());
+}
+
 TEST(a_fork_request_sends_the_fork_mail_naming_the_source_tree) {
   Harness h;
   AuthService::ForkDescription tree{"Learn to sail", 12};

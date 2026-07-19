@@ -57,6 +57,9 @@ services:
       SENTRY_DSN: ${SENTRY_DSN:-}
       AMPLITUDE_API_KEY: ${AMPLITUDE_API_KEY:-}
       AMPLITUDE_HOST: ${AMPLITUDE_HOST:-api2.amplitude.com}
+      # Google sign-in (second door onto wm_session). Empty → the /auth/google routes stay dark.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       # Magic links point at the app; the session cookie is first-party on the single origin.
       WINDMILL_APP_URL: https://${DOMAIN_APP}
       WINDMILL_COOKIE_DOMAIN: ${DOMAIN_APP}

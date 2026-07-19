@@ -96,6 +96,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     adapters/http/TreeRegistryApi.cpp
     adapters/crypto/OpenSslTokenGenerator.cpp
     adapters/email/ResendEmailSender.cpp
+    adapters/google/GoogleOAuthClient.cpp
     adapters/sentry/SentryClient.cpp
     adapters/amplitude/AmplitudeClient.cpp
     adapters/llm/AnthropicComposer.cpp

@@ -4,6 +4,8 @@
 
 #include <drogon/Cookie.h>
 
+#include <openssl/rand.h>
+
 #include <ctime>
 
 namespace wm {
@@ -45,6 +47,20 @@ Json::Value userJson(const User& user) {
   return out;
 }
 
+// Set the wm_session cookie — the single place its attributes live, shared by the magic-link
+// verify and the Google callback so the two doors mint a byte-identical session cookie.
+void setSessionCookie(const drogon::HttpResponsePtr& response, const std::string& secret, bool secure,
+                      const std::string& domain) {
+  drogon::Cookie cookie("wm_session", secret);
+  cookie.setHttpOnly(true);
+  cookie.setPath("/");
+  cookie.setSameSite(drogon::Cookie::SameSite::kLax);
+  if (secure) cookie.setSecure(true);
+  if (!domain.empty()) cookie.setDomain(domain);
+  cookie.setMaxAge(7776000);  // 90 days
+  response->addCookie(std::move(cookie));
+}
+
 // Expire the wm_session cookie, matching the flags it was set with — used on logout, on a
 // close, and when a caller revokes the very session they are calling from.
 void clearSessionCookie(const drogon::HttpResponsePtr& response, bool secure, const std::string& domain) {
@@ -56,6 +72,33 @@ void clearSessionCookie(const drogon::HttpResponsePtr& response, bool secure, co
   if (!domain.empty()) cookie.setDomain(domain);
   cookie.setMaxAge(0);
   response->addCookie(std::move(cookie));
+}
+
+// Expire the short-lived OAuth `state` cookie once a Google round trip ends (success or failure).
+// It touches ONLY wm_oauth_state — never wm_session — so a bounced callback can't log a signed-in
+// user out (a forced-logout CSRF: a failed /callback must not clear the session it never minted).
+void expireStateCookie(const drogon::HttpResponsePtr& response, const std::string& domain) {
+  drogon::Cookie cookie("wm_oauth_state", "");
+  cookie.setPath("/");
+  if (!domain.empty()) cookie.setDomain(domain);
+  cookie.setMaxAge(0);
+  response->addCookie(std::move(cookie));
+}
+
+// An unguessable OAuth `state` nonce (CSRF): echoed in the authorize URL and stashed in an HttpOnly
+// cookie, the callback accepts the code only when the two match. Empty on the (near-impossible)
+// entropy failure, which the caller treats as "can't start the flow".
+std::string randomState() {
+  unsigned char buf[16];
+  if (RAND_bytes(buf, sizeof(buf)) != 1) return "";
+  static const char* hex = "0123456789abcdef";
+  std::string out;
+  out.reserve(sizeof(buf) * 2);
+  for (unsigned char b : buf) {
+    out.push_back(hex[b >> 4]);
+    out.push_back(hex[b & 0x0F]);
+  }
+  return out;
 }
 
 // A UnixMs as an ISO 8601 UTC instant (the §4 close date the client formats for its chip).
@@ -70,9 +113,9 @@ std::string isoUtc(UnixMs ms) {
 }
 
 AuthApi::AuthApi(std::shared_ptr<AuthService> auth, std::shared_ptr<ForkService> fork, bool secureCookies,
-                 std::string cookieDomain)
+                 std::string cookieDomain, std::shared_ptr<GoogleOAuthClient> google, std::string appUrl)
     : auth_(std::move(auth)), fork_(std::move(fork)), secureCookies_(secureCookies),
-      cookieDomain_(std::move(cookieDomain)) {}
+      cookieDomain_(std::move(cookieDomain)), google_(std::move(google)), appUrl_(std::move(appUrl)) {}
 
 void AuthApi::requestLink(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
   // One door in: parse the address, defer the verdict to the service, translate to the doc's copy.
@@ -171,16 +214,73 @@ void AuthApi::verify(const drogon::HttpRequestPtr& req, HttpCallback&& callback)
   }
 
   auto response = jsonResponse(body);
-
-  drogon::Cookie cookie("wm_session", signedIn.sessionSecret);
-  cookie.setHttpOnly(true);
-  cookie.setPath("/");
-  cookie.setSameSite(drogon::Cookie::SameSite::kLax);
-  if (secureCookies_) cookie.setSecure(true);
-  if (!cookieDomain_.empty()) cookie.setDomain(cookieDomain_);
-  cookie.setMaxAge(7776000);  // 90 days
-  response->addCookie(std::move(cookie));
+  setSessionCookie(response, signedIn.sessionSecret, secureCookies_, cookieDomain_);
   callback(response);
+}
+
+// Google sign-in, door one: mint a CSRF state, stash it in a short-lived HttpOnly cookie, and 302
+// the browser to Google's consent. Unconfigured (no client id/secret) → bounce to the app, so a
+// stray click before the secrets land is a harmless no-op rather than an error page.
+void AuthApi::googleStart(const drogon::HttpRequestPtr&, HttpCallback&& callback) {
+  const std::string state = (google_ && google_->configured()) ? randomState() : "";
+  if (state.empty()) {  // unconfigured, or an entropy failure — bounce rather than start a broken flow
+    callback(drogon::HttpResponse::newRedirectionResponse(appUrl_ + "/#/"));
+    return;
+  }
+  auto response = drogon::HttpResponse::newRedirectionResponse(google_->authorizeUrl(state));
+
+  drogon::Cookie stateCookie("wm_oauth_state", state);
+  stateCookie.setHttpOnly(true);
+  stateCookie.setPath("/");
+  stateCookie.setSameSite(drogon::Cookie::SameSite::kLax);  // Lax rides the top-level callback nav back
+  if (secureCookies_) stateCookie.setSecure(true);
+  if (!cookieDomain_.empty()) stateCookie.setDomain(cookieDomain_);
+  stateCookie.setMaxAge(600);  // 10 minutes to complete the consent
+  response->addCookie(std::move(stateCookie));
+  callback(response);
+}
+
+// Google sign-in, door two: validate the state against the cookie, exchange the code for a verified
+// identity, then run the SAME session-mint tail as a magic link (revival + account-linking-by-email)
+// and land the browser back in the app with a wm_session cookie. Any failure lands unauthenticated —
+// the user simply isn't signed in and can retry — never an error page.
+void AuthApi::googleCallback(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
+  // A bounce only ever expires the OAuth state cookie — it must NEVER clear wm_session, so a failed
+  // or forged callback can't force-log-out a signed-in user.
+  auto bounce = [this](const std::string& hash) {
+    auto response = drogon::HttpResponse::newRedirectionResponse(appUrl_ + hash);
+    expireStateCookie(response, cookieDomain_);
+    return response;
+  };
+
+  if (!google_ || !google_->configured()) {
+    callback(drogon::HttpResponse::newRedirectionResponse(appUrl_ + "/#/"));
+    return;
+  }
+  const std::string code = req->getParameter("code");
+  const std::string state = req->getParameter("state");
+  const std::string cookieState = req->getCookie("wm_oauth_state");
+  if (code.empty() || state.empty() || cookieState.empty() || state != cookieState) {
+    callback(bounce("/#/?signin=google_failed"));
+    return;
+  }
+
+  const SessionContext ctx = contextOf(req);
+  google_->exchangeCode(
+      code, [auth = auth_, secure = secureCookies_, domain = cookieDomain_, appUrl = appUrl_,
+             callback = std::move(callback), ctx](std::optional<GoogleIdentity> identity) mutable {
+        if (!identity) {
+          auto response = drogon::HttpResponse::newRedirectionResponse(appUrl + "/#/?signin=google_failed");
+          expireStateCookie(response, domain);
+          callback(response);
+          return;
+        }
+        const AuthService::SignedIn signedIn = auth->completeGoogle(identity->email, identity->name, ctx);
+        auto response = drogon::HttpResponse::newRedirectionResponse(appUrl + "/#/");
+        setSessionCookie(response, signedIn.sessionSecret, secure, domain);
+        expireStateCookie(response, domain);
+        callback(response);
+      });
 }
 
 void AuthApi::me(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
