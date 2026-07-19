@@ -10,7 +10,9 @@
 namespace wm {
 
 namespace {
-constexpr std::size_t kMaxTextBytes = 10240;
+// A whole page of notes, or a document someone actually wrote — pasting a plan should not mean
+// trimming it first. The spend ceiling is the rate limiter's job, not a stingy input cap.
+constexpr std::size_t kMaxTextBytes = 24576;
 constexpr double kHeartbeatSeconds = 15.0;
 
 drogon::HttpResponsePtr coded(drogon::HttpStatusCode status, const std::string& code) {

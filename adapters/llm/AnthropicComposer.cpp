@@ -43,8 +43,10 @@ constexpr const char* kSystemPrompt =
     "plain step — never guess at completion.\n"
     "- Keep step labels short imperatives, at most 8 words.\n"
     "- Anything that is context rather than a step — links, asides, half sentences — "
-    "stays as a plain line (no bullet, no number) directly under the step it belongs to. "
-    "Nothing from the text is dropped.\n"
+    "stays as a plain line (no bullet, no number) directly under the step it belongs to.\n"
+    "- A plan is 5 to 40 steps. Short notes keep everything that matters; a long document is "
+    "distilled to the work it implies, and prose that only explains or restates is left behind. "
+    "Someone should be able to act on the plan without reading the source.\n"
     "\n"
     "Hard rules:\n"
     "- Never invent steps the text does not imply.\n"
@@ -59,8 +61,14 @@ std::string messagesPayload(const std::string& text, bool stream) {
   message["role"] = "user";
   message["content"] = text;
   Json::Value body(Json::objectValue);
-  body["model"] = "claude-sonnet-5";
-  body["max_tokens"] = 2000;
+  // Haiku, because shaping is a latency feature before it is a quality one — the plan lands in
+  // the well while you are still looking at it, and it does not lead with a thinking block that
+  // spends the token budget before the first word of the plan reaches the client.
+  body["model"] = "claude-haiku-4-5-20251001";
+  // Room for a plan drawn from a long document. The old 2000 was under what a real page of notes
+  // produces, and a truncated plan is refused outright — so the budget being tight read to the
+  // client as an open stream that never said anything.
+  body["max_tokens"] = 8000;
   body["system"] = kSystemPrompt;
   body["messages"] = Json::Value(Json::arrayValue);
   body["messages"].append(message);

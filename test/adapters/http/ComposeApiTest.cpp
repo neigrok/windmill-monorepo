@@ -147,19 +147,19 @@ TEST(compose_missing_or_blank_text_is_400_empty) {
   CHECK_EQ(h.composer->composed.size(), 0u);
 }
 
-TEST(compose_text_over_10240_bytes_is_400_too_long) {
+TEST(compose_text_over_the_cap_is_400_too_long) {
   Harness h;
-  drogon::HttpResponsePtr response = send(h.api, postText(std::string(10241, 'a')));
+  drogon::HttpResponsePtr response = send(h.api, postText(std::string(24577, 'a')));
 
   CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(bodyOf(response), std::string(R"({"code":"too-long"})"));
   CHECK_EQ(h.composer->composed.size(), 0u);
 }
 
-TEST(compose_text_at_exactly_10240_bytes_passes_the_cap) {
+TEST(compose_text_at_exactly_the_cap_passes) {
   Harness h;
   h.composer->reply = "# Plan";
-  drogon::HttpResponsePtr response = send(h.api, postText(std::string(10240, 'a')));
+  drogon::HttpResponsePtr response = send(h.api, postText(std::string(24576, 'a')));
 
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
   CHECK_EQ(bodyOf(response), std::string(R"({"plan":"# Plan"})"));
@@ -273,7 +273,7 @@ TEST(compose_stream_keeps_the_json_guards_ahead_of_the_stream) {
   CHECK_EQ(blank->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(bodyOf(blank), std::string(R"({"code":"empty"})"));
 
-  drogon::HttpResponsePtr tooLong = send(h.api, postStreamText(std::string(10241, 'a')));
+  drogon::HttpResponsePtr tooLong = send(h.api, postStreamText(std::string(24577, 'a')));
   CHECK_EQ(tooLong->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(bodyOf(tooLong), std::string(R"({"code":"too-long"})"));
 
