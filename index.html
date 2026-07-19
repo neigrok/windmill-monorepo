@@ -119,12 +119,26 @@
               "Sign in once and your trees sync across phone and desktop",
               "Authored developer learning paths adapted from roadmap.sh (CC BY-SA)"
             ],
-            "offers": {
-              "@type": "Offer",
-              "price": "0",
-              "priceCurrency": "USD",
-              "availability": "https://schema.org/InStock"
-            },
+            "offers": [
+              {
+                "@type": "Offer",
+                "name": "Free",
+                "price": "0",
+                "priceCurrency": "USD",
+                "availability": "https://schema.org/InStock",
+                "url": "https://windmill.works/pricing.html",
+                "description": "Unlimited trees and steps, the whole editor, paste import, sharing, forking, export, and the MCP server with one API key."
+              },
+              {
+                "@type": "Offer",
+                "name": "Windmill Pro",
+                "price": "12",
+                "priceCurrency": "USD",
+                "availability": "https://schema.org/InStock",
+                "url": "https://windmill.works/pricing.html",
+                "description": "Everything in Free, plus private trees. Billed monthly, cancel any time, 30-day money-back guarantee."
+              }
+            ],
             "publisher": { "@id": "https://windmill.works/#organization" }
           },
           {
@@ -146,7 +160,7 @@
                 "name": "How much does Windmill cost?",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "Windmill is free to use and currently in public beta. You can plant and grow trees without paying and without creating an account."
+                  "text": "Windmill is free — unlimited trees and steps, the whole editor, sharing, forking and export, with no account needed and no card. Windmill Pro costs $12 a month and adds private trees; it is billed monthly, can be cancelled any time, and carries a 30-day money-back guarantee."
                 }
               },
               {
@@ -214,11 +228,25 @@
         <p style="font-size: 14px; color: #6B5D4A; margin: 0 0 32px;">
           No account needed — your first tree lives in your browser.
         </p>
-        <p style="font-size: 15px; color: #4A4034; line-height: 1.6; margin: 0;">
+        <p style="font-size: 15px; color: #4A4034; line-height: 1.6; margin: 0 0 32px;">
           <strong>How it works:</strong> Map your plan → Finish a step → Watch it unlock.<br />
           <strong>Starter developer paths</strong> adapted from roadmap.sh (CC BY-SA):
           Frontend, Rust from zero, ML foundations, and Ship v1.0.
         </p>
+        <p style="font-size: 15px; color: #4A4034; line-height: 1.6; margin: 0 0 24px;">
+          <strong>Pricing:</strong> free forever, no card. Windmill Pro is $12 a month and adds
+          private trees, with a 30-day money-back guarantee.
+        </p>
+        <!-- The rendered footer is React's, which a crawler never runs. These same links live here
+             so pricing and the policies are reachable from the one crawlable URL without JavaScript. -->
+        <nav style="font-size: 14px; color: #6B5D4A;">
+          <a href="/pricing.html" style="color: #6B5D4A; margin: 0 10px;">Pricing</a>
+          <a href="/connect.html" style="color: #6B5D4A; margin: 0 10px;">Connect your AI tools</a>
+          <a href="/privacy.html" style="color: #6B5D4A; margin: 0 10px;">Privacy</a>
+          <a href="/terms.html" style="color: #6B5D4A; margin: 0 10px;">Terms</a>
+          <a href="/refunds.html" style="color: #6B5D4A; margin: 0 10px;">Refunds</a>
+          <a href="/changelog.html" style="color: #6B5D4A; margin: 0 10px;">Changelog</a>
+        </nav>
       </main>
     </div>
     <script type="module" src="/src/main.jsx"></script>
