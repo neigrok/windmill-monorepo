@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pricing — Windmill</title>
+    <meta name="description" content="Windmill is free, forever, no card. Pro is $12 a month and adds private trees. Cancel any time, 30-day money-back guarantee." />
+    <link rel="canonical" href="https://windmill.works/pricing.html" />
+    <meta name="theme-color" content="#F9F5EB" />
+    <meta name="color-scheme" content="light" />
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <style>
+      /* Design tokens resolved from src/styles/tokens/{fonts,colors,typography,motion}.css — system fallback stacks, no bundled woff2. */
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #F9F5EB; color: #211B13; font-family: 'Nunito', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+      .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+      .hdr { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 24px; padding-bottom: 24px; }
+      .mark { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 21px; color: #211B13; text-decoration: none; }
+      .acts { display: flex; align-items: center; gap: 10px; }
+      .btn { display: inline-block; border-radius: 999px; font-weight: 800; font-size: 12.5px; padding: 7px 15px; text-decoration: none; transition: background 150ms cubic-bezier(0.16, 1, 0.3, 1), color 150ms cubic-bezier(0.16, 1, 0.3, 1); }
+      .btn--pri { background: #BC6C42; color: #FFFFFF; }
+      .btn--pri:hover { background: #9D5330; }
+      .btn--gho { color: #6F5F45; }
+      .btn--gho:hover { background: #F1EADA; color: #211B13; }
+      .doc { max-width: 640px; padding: 40px 0 8px; }
+      .doc h1 { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 38px; letter-spacing: -0.02em; margin: 0; }
+      .lede { font-size: 16.5px; line-height: 1.6; color: #211B13; margin: 18px 0 0; }
+      .doc h2 { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 20px; margin: 36px 0 0; }
+      .doc p, .doc li { font-size: 15px; line-height: 1.65; color: #6F5F45; }
+      .doc p { margin: 10px 0 0; }
+      .doc strong { color: #211B13; }
+      .doc a { color: #9D5330; }
+      .doc a:hover { color: #7C3F23; }
+      .plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; max-width: 880px; padding: 34px 0 8px; }
+      .plan { border: 1.5px solid #E5D9C0; border-radius: 18px; padding: 26px 24px 28px; background: #FFFDF7; }
+      .plan--pro { border-color: #BC6C42; }
+      .plan h2 { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 21px; margin: 0; color: #211B13; }
+      .price { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 34px; color: #211B13; margin: 10px 0 0; letter-spacing: -0.02em; }
+      .per { font-size: 15px; font-weight: 700; color: #92805F; }
+      .plan .sub { font-size: 14px; color: #92805F; margin: 6px 0 0; }
+      .plan ul { list-style: none; margin: 18px 0 0; padding: 0; }
+      .plan li { font-size: 14.5px; line-height: 1.5; color: #6F5F45; padding: 0 0 0 22px; margin: 9px 0 0; position: relative; }
+      .plan li::before { content: '·'; position: absolute; left: 7px; top: -1px; color: #BC6C42; font-weight: 800; font-size: 17px; }
+      .plan .go { margin-top: 22px; }
+      .ftr { border-top: 1px solid #E5D9C0; margin-top: 72px; padding-top: 28px; padding-bottom: 40px; display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 12px; }
+      .fmark { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 16px; color: #6F5F45; }
+      .ftag { font-size: 13.5px; color: #92805F; margin-left: 10px; }
+      .flinks { display: flex; gap: 24px; font-size: 14px; flex-wrap: wrap; }
+      .flinks a { color: #92805F; text-decoration: none; }
+      .flinks a:hover { color: #211B13; }
+    </style>
+  </head>
+  <body>
+    <header class="wrap hdr">
+      <a class="mark" href="/#/">Windmill</a>
+      <div class="acts">
+        <a class="btn btn--gho" href="/#/">Log in</a>
+        <a class="btn btn--pri" href="/#/app">Start your tree</a>
+      </div>
+    </header>
+    <main class="wrap">
+      <article class="doc">
+        <h1>Pricing</h1>
+        <p class="lede">Windmill is free, and the free tier is not a trial — no card, no expiry, no countdown. Pro exists for the one promise that costs us something to keep: that a tree stays private.</p>
+      </article>
+
+      <section class="plans">
+        <div class="plan">
+          <h2>Free</h2>
+          <div class="price">$0</div>
+          <p class="sub">Forever. No card.</p>
+          <ul>
+            <li>Unlimited trees and steps</li>
+            <li>The whole editor — kinds, layout, reordering, progress, and the unlock ceremony</li>
+            <li>Paste any plan or outline and grow it into a tree</li>
+            <li>Share by link or publicly, and fork anyone's tree</li>
+            <li>All nine starter quests</li>
+            <li>Export everything you've made, whenever you like</li>
+            <li>The MCP server and one API key, so your AI tools can build trees with you</li>
+          </ul>
+          <div class="go"><a class="btn btn--pri" href="/#/app">Start your tree</a></div>
+        </div>
+
+        <div class="plan plan--pro">
+          <h2>Pro</h2>
+          <div class="price">$12<span class="per"> / month</span></div>
+          <p class="sub">Everything in Free, plus:</p>
+          <ul>
+            <li><strong>Private trees</strong> — visible to you alone, and to nobody with the link</li>
+          </ul>
+          <p style="font-size: 14px; margin-top: 16px;">That's the whole list today. More is planned — a larger allowance for AI-shaped imports, and higher limits for AI tools — but we only charge for what has shipped, so this page changes when they do.</p>
+          <div class="go"><a class="btn btn--pri" href="/#/settings">Go Pro</a></div>
+        </div>
+      </section>
+
+      <article class="doc">
+        <h2>The details</h2>
+        <p><strong>Cancel any time</strong>, from account settings. Your subscription runs to the end of the period you've paid for, and nothing renews after that.</p>
+        <p><strong>30-day money-back guarantee.</strong> If Windmill isn't for you, write to us within 30 days of paying and we'll refund it — see the <a href="/refunds.html">refund policy</a>.</p>
+        <p><strong>What happens to a private tree if you stop paying.</strong> Nothing is deleted, ever. Trees you made private stay private and stay yours to read and export; you just can't make new ones private until you're back on Pro.</p>
+        <p><strong>Prices are in US dollars</strong> and shown before tax. Any sales tax or VAT is calculated at checkout for where you are. Payments are handled by <a href="https://www.paddle.com">Paddle</a>, who act as the seller of record — your receipt and card statement will say Paddle.</p>
+        <p>Questions about any of this? Write to <a href="mailto:hello@windmill.works">hello@windmill.works</a> — a person reads it.</p>
+      </article>
+    </main>
+    <footer class="wrap ftr">
+      <div><span class="fmark">Windmill</span><span class="ftag">Any goal, as a skill tree.</span></div>
+      <nav class="flinks">
+        <a href="/pricing.html">Pricing</a>
+        <a href="/connect.html">Connect your AI tools</a>
+        <a href="/privacy.html">Privacy</a>
+        <a href="/terms.html">Terms</a>
+        <a href="/refunds.html">Refunds</a>
+        <a href="/changelog.html">Changelog</a>
+      </nav>
+    </footer>
+  </body>
+</html>

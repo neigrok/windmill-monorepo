@@ -148,6 +148,10 @@ export function ShareDialog({ open, onClose, visibility, mine, onShareLink }) {
                   <Button variant="primary" onClick={handleUpgrade} disabled={upgrading}>
                     {upgrading ? 'Opening…' : 'Upgrade to Pro'}
                   </Button>
+                  {/* Nobody should be asked to pay without being told the price first. */}
+                  <div style={{ marginTop: 8, color: 'var(--text-tertiary)', fontSize: 'var(--text-xs, 12px)' }}>
+                    $12 a month · cancel any time · <a href="/pricing.html" target="_blank" rel="noreferrer" style={{ color: 'inherit' }}>what’s included</a>
+                  </div>
                 </div>
               )}
               {upgradeFailed && (
