@@ -130,7 +130,9 @@ export async function setVisibility(treeId, visibility) {
   if (response.ok) return;
   if (response.status === 401) throw new AuthError('Sign in to change visibility', { code: 'unauthenticated', status: 401 });
   const body = await response.json().catch(() => ({}));
-  throw new AuthError(body.error ?? 'Could not change visibility', { code: body.code, status: response.status });
+  // `detail` rides along: a refusal like "that's part of Pro" carries its own second line, and the
+  // dialog shows the server's words rather than inventing its own.
+  throw new AuthError(body.error ?? 'Could not change visibility', { code: body.code, detail: body.detail, status: response.status });
 }
 
 // Retire a roadmap (DELETE /v1/trees/:id, 204 — a soft delete; it leaves every list).

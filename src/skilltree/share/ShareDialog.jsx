@@ -7,6 +7,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Dialog, Button } from '../../components';
 import { setVisibility } from '../persistence/TreeRegistry.js';
+import { beginUpgrade, billingConfigured } from '../billing/checkout.js';
 import { track } from '../../telemetry/beacon.js';
 
 export function ShareDialog({ open, onClose, visibility, mine, onShareLink }) {
@@ -16,6 +17,11 @@ export function ShareDialog({ open, onClose, visibility, mine, onShareLink }) {
   // flip and the Make-private toggle move it here without a reload — so the dialog's stance line
   // always states the reach the server actually holds, never a stale prop.
   const [stance, setStance] = useState(visibility ?? null);
+  // The server's "that one's part of Pro" answer, held so the dialog can explain the refusal and
+  // offer the way through. Null whenever nothing is being refused.
+  const [gate, setGate] = useState(null);
+  const [upgrading, setUpgrading] = useState(false);
+  const [upgradeFailed, setUpgradeFailed] = useState(false);
   const copiedTimer = useRef(null);
   const urlRef = useRef(null);
 
@@ -28,7 +34,11 @@ export function ShareDialog({ open, onClose, visibility, mine, onShareLink }) {
 
   // Re-seed the stance whenever the server's answer changes or the dialog reopens, so a
   // reload's fresh visibility replaces any flip we made in a prior opening.
-  useEffect(() => { setStance(visibility ?? null); }, [visibility, open]);
+  useEffect(() => {
+    setStance(visibility ?? null);
+    setGate(null);
+    setUpgradeFailed(false);
+  }, [visibility, open]);
 
   async function handleCopyLink() {
     if (!(await copyText(shareUrl))) {
@@ -66,10 +76,24 @@ export function ShareDialog({ open, onClose, visibility, mine, onShareLink }) {
   // The owner's deliberate reverse: lock the tree back to owner-only. Its link goes dark, and
   // the stance line retreats with it.
   async function handleMakePrivate() {
+    setGate(null);
     try {
       await setVisibility(treeId, 'private');
       setStance('private');
-    } catch { /* leave the stance as it stands */ }
+    } catch (error) {
+      // Private roadmaps are the paid line, so a free account's click is a gate, not a fault — the
+      // one refusal here worth explaining, in the server's own words. Anything else (offline, a
+      // stale session) leaves the stance exactly as it stands, as it always has.
+      if (error?.code === 'pro_required') setGate({ title: error.message, detail: error.detail });
+    }
+  }
+
+  // Upgrading from here means the reader wanted this tree private, so finish that for them rather
+  // than leaving them to find the toggle again once the payment clears.
+  async function handleUpgrade() {
+    setUpgrading(true);
+    if (!(await beginUpgrade({ onCompleted: handleMakePrivate }))) setUpgradeFailed(true);
+    setUpgrading(false);
   }
 
   return (
@@ -111,6 +135,23 @@ export function ShareDialog({ open, onClose, visibility, mine, onShareLink }) {
                 >
                   Make private
                 </button>
+              )}
+            </div>
+          )}
+
+          {gate && (
+            <div style={{ marginTop: 12, padding: '12px 14px', borderRadius: 'var(--radius-lg)', border: '1.5px solid var(--border-default)', background: 'var(--surface-sunken, var(--surface-card))', fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}>
+              <div style={{ color: 'var(--text-secondary)' }}>{gate.title}</div>
+              {gate.detail && <div style={{ marginTop: 4, color: 'var(--text-tertiary)' }}>{gate.detail}</div>}
+              {billingConfigured() && (
+                <div style={{ marginTop: 10 }}>
+                  <Button variant="primary" onClick={handleUpgrade} disabled={upgrading}>
+                    {upgrading ? 'Opening…' : 'Upgrade to Pro'}
+                  </Button>
+                </div>
+              )}
+              {upgradeFailed && (
+                <div style={{ marginTop: 8, color: 'var(--text-tertiary)' }}>Checkout wouldn’t open. Try again, or upgrade from Settings.</div>
               )}
             </div>
           )}

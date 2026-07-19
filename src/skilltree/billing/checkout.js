@@ -13,7 +13,10 @@ const PADDLE_SCRIPT = 'https://cdn.paddle.com/paddle/v2/paddle.js';
 
 let scriptPromise = null;
 let initialized = false;
-const completedHandlers = new Set();
+// Only one overlay can be open at a time, so there is only ever one caller waiting on it. Holding
+// a single slot instead of a growing set means a component that re-renders between clicks can't
+// leave older callbacks behind to fire on somebody else's checkout later.
+let onCheckoutCompleted = null;
 
 export function billingConfigured() {
   return !!TOKEN;
@@ -66,8 +69,10 @@ function initialize(paddle) {
   paddle.Initialize({
     token: TOKEN,
     eventCallback: (event) => {
-      if (event?.name === 'checkout.completed')
-        for (const handler of completedHandlers) handler(event);
+      if (event?.name !== 'checkout.completed') return;
+      const handler = onCheckoutCompleted;
+      onCheckoutCompleted = null;  // one checkout, one completion — never replayed onto the next
+      handler?.(event);
     },
   });
   initialized = true;
@@ -75,16 +80,29 @@ function initialize(paddle) {
 
 export async function openCheckout(transactionId, { onCompleted } = {}) {
   if (!TOKEN || !transactionId) return false;
-  if (onCompleted) completedHandlers.add(onCompleted);
   try {
     const paddle = await loadPaddle();
     if (!paddle) return false;
     initialize(paddle);
+    onCheckoutCompleted = onCompleted ?? null;  // armed only once the overlay is really opening
     paddle.Checkout.open({ transactionId });
     return true;
   } catch {
+    onCheckoutCompleted = null;
     return false;
   }
+}
+
+// The whole upgrade ceremony, so every door into Pro behaves the same: mint a fresh transaction,
+// open the overlay, and fall back to Paddle's own hosted page when the overlay can't open (blocked
+// script, stubborn browser). False means there is nothing left to try and the caller should say so.
+export async function beginUpgrade({ onCompleted } = {}) {
+  const checkout = await startCheckout();
+  if (!checkout) return false;
+  if (await openCheckout(checkout.transactionId, { onCompleted })) return true;
+  if (!checkout.checkoutUrl) return false;
+  window.location.href = checkout.checkoutUrl;
+  return true;
 }
 
 // Paddle's payment link lands back on our own origin as `?_ptxn=<transaction>`; whichever route the

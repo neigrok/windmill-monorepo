@@ -7,7 +7,7 @@
 import React from 'react';
 import { Button } from '../../components';
 import { Section, styles } from './Section.jsx';
-import { billingConfigured, fetchSubscription, startCheckout, openCheckout } from '../billing/checkout.js';
+import { beginUpgrade, billingConfigured, fetchSubscription } from '../billing/checkout.js';
 
 const PLAN_COPY = {
   active: { name: 'Windmill Pro', note: 'Thanks for backing the work.' },
@@ -40,11 +40,8 @@ export function PlanSection() {
   const upgrade = async () => {
     setFailed(false);
     setOpening(true);
-    const checkout = await startCheckout();
     // The webhook lands a moment after the payment clears, so re-read rather than guess the state.
-    const opened = checkout && (await openCheckout(checkout.transactionId, { onCompleted: refresh }));
-    if (!opened && checkout?.checkoutUrl) window.location.href = checkout.checkoutUrl;  // last resort
-    if (!opened && !checkout?.checkoutUrl) setFailed(true);
+    if (!(await beginUpgrade({ onCompleted: refresh }))) setFailed(true);
     setOpening(false);
   };
 

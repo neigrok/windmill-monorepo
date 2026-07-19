@@ -73,3 +73,23 @@ test('setVisibility — a 403 falls to the default message when the body is empt
     return true;
   });
 });
+
+test('setVisibility — a 402 carries the code AND the detail through to the dialog', async () => {
+  stubFetch(() => ({
+    ok: false,
+    status: 402,
+    json: async () => ({
+      error: 'Private trees are part of Windmill Pro',
+      detail: 'Unlisted keeps this tree reachable only by its link, and stays free.',
+      code: 'pro_required',
+    }),
+  }));
+  await assert.rejects(setVisibility('t_abc', 'private'), (err) => {
+    assert.ok(err instanceof AuthError);
+    assert.equal(err.code, 'pro_required');
+    assert.equal(err.status, 402);
+    assert.equal(err.message, 'Private trees are part of Windmill Pro');
+    assert.equal(err.detail, 'Unlisted keeps this tree reachable only by its link, and stays free.');
+    return true;
+  });
+});
