@@ -185,7 +185,7 @@ int main() {
   // and the client re-parses it deterministically — text in, text out, never a door into the
   // tree. No ANTHROPIC_API_KEY → the route answers 503 and the client hides the handle.
   const char* anthropicKey = std::getenv("ANTHROPIC_API_KEY");
-  auto composer = std::make_shared<AnthropicComposer>(anthropicKey ? anthropicKey : "");
+  auto composer = std::make_shared<AnthropicComposer>(anthropicKey ? anthropicKey : "", sentry);
   auto composeApi = std::make_shared<ComposeApi>(composer);
 
   // MCP (Streamable-HTTP) mounted in this same process — the whole point of this change: agent

@@ -1,11 +1,13 @@
 #pragma once
 
+#include "ports/FailureReporter.h"
 #include "ports/PlanComposer.h"
 
 #include <trantor/net/EventLoopThread.h>
 
 #include <cstddef>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 
@@ -24,8 +26,12 @@ std::string strippedPlan(const std::string& reply);
 // false. After onDone every further byte is ignored.
 class AnthropicStreamParser {
 public:
+  // onFailure names the reason a stream came apart — an upstream error code, a truncating stop
+  // reason — so a failure the client only hears as "fail" is not also a failure we cannot see.
+  using Reporter = std::function<void(const std::string& where, const std::string& detail)>;
+
   AnthropicStreamParser(std::function<void(const std::string&)> onDelta,
-                        std::function<void(bool)> onDone);
+                        std::function<void(bool)> onDone, Reporter onFailure = nullptr);
 
   void feed(const char* data, std::size_t length);
   void finish();
@@ -41,6 +47,7 @@ private:
 
   std::function<void(const std::string&)> onDelta_;
   std::function<void(bool)> onDone_;
+  Reporter onFailure_;
   Phase phase_ = Phase::Headers;
   std::string raw_;
   std::size_t chunkLeft_ = 0;
@@ -59,7 +66,9 @@ private:
 // each text delta as the model writes it, under a 90s whole-stream deadline.
 class AnthropicComposer : public PlanComposer {
 public:
-  explicit AnthropicComposer(std::string apiKey);
+  // The reporter is optional (null = report nowhere), so tests and local runs stay silent while
+  // production sees every upstream failure that the client only ever hears as a polite "fail".
+  explicit AnthropicComposer(std::string apiKey, std::shared_ptr<FailureReporter> failures = nullptr);
 
   bool configured() const override;
   void compose(const std::string& text,
@@ -69,7 +78,12 @@ public:
                                       std::function<void(bool)> onDone) override;
 
 private:
+  // Hands out a reporter that owns everything it needs. A compose call settles long after the
+  // caller may be gone, so nothing it holds is allowed to reach back through the composer.
+  AnthropicStreamParser::Reporter reporter() const;
+
   std::string apiKey_;
+  std::shared_ptr<FailureReporter> failures_;
   trantor::EventLoopThread loop_;
 };
 

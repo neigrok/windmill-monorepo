@@ -59,11 +59,7 @@ bool SentryClient::allow() {
   return true;
 }
 
-void SentryClient::captureException(const std::string& kind, const std::string& method,
-                                    const std::string& path, const std::string& message) {
-  if (!enabled_ || !allow()) return;
-
-  const std::string id = hex32();
+Json::Value SentryClient::newEvent(const std::string& id, const std::string& kind) const {
   Json::Value event(Json::objectValue);
   event["event_id"] = id;
   event["timestamp"] = std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -72,15 +68,39 @@ void SentryClient::captureException(const std::string& kind, const std::string& 
   event["logger"] = "windmill-server";
   event["environment"] = environment_;
   if (!release_.empty()) event["release"] = release_;
-  event["transaction"] = method + " " + path;
   event["tags"]["kind"] = kind;
+  return event;
+}
+
+void SentryClient::report(const std::string& kind, const std::string& where,
+                          const std::string& detail) {
+  if (!enabled_ || !allow()) return;
+  const std::string id = hex32();
+  Json::Value event = newEvent(id, kind);
+  event["transaction"] = where;
+  // Grouped by the operation that failed, with the reason as the readable body. `detail` is
+  // metadata by contract (ports/FailureReporter) — never anything the user wrote.
+  event["message"]["formatted"] = where + ": " + detail;
+  ship(id, event);
+}
+
+void SentryClient::captureException(const std::string& kind, const std::string& method,
+                                    const std::string& path, const std::string& message) {
+  if (!enabled_ || !allow()) return;
+
+  const std::string id = hex32();
+  Json::Value event = newEvent(id, kind);
+  event["transaction"] = method + " " + path;
   event["request"]["method"] = method;
   event["request"]["url"] = path;
   Json::Value value(Json::objectValue);
   value["type"] = kind.empty() ? std::string("Exception") : kind;
   value["value"] = message;
   event["exception"]["values"].append(value);
+  ship(id, event);
+}
 
+void SentryClient::ship(const std::string& id, const Json::Value& event) {
   Json::StreamWriterBuilder builder;
   builder["indentation"] = "";
   Json::Value envelopeHeader(Json::objectValue);

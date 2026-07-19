@@ -158,8 +158,8 @@ std::string strippedPlan(const std::string& reply) {
 }
 
 AnthropicStreamParser::AnthropicStreamParser(std::function<void(const std::string&)> onDelta,
-                                             std::function<void(bool)> onDone)
-    : onDelta_(std::move(onDelta)), onDone_(std::move(onDone)) {}
+                                             std::function<void(bool)> onDone, Reporter onFailure)
+    : onDelta_(std::move(onDelta)), onDone_(std::move(onDone)), onFailure_(std::move(onFailure)) {}
 
 void AnthropicStreamParser::feed(const char* data, std::size_t length) {
   if (phase_ == Phase::Done) return;
@@ -267,11 +267,16 @@ void AnthropicStreamParser::consumeSse(const char* data, std::size_t length) {
 void AnthropicStreamParser::dispatch(const std::string& event, const std::string& data) {
   if (event == "message_stop") {
     // Any early stop — max_tokens truncation above all — fails; a cut-off plan must never
-    // masquerade as a finished one. Deltas already forwarded stay with the client.
+    // masquerade as a finished one. Deltas already forwarded stay with the client. This is the
+    // quiet one: the user waited, saw a plan begin (or not), and got a refusal. Say so out loud.
+    if (stopReason_ != "end_turn" && onFailure_)
+      onFailure_("compose.stream", "stopped early (stop_reason: " +
+                                       (stopReason_.empty() ? std::string("missing") : stopReason_) + ")");
     settle(stopReason_ == "end_turn");
     return;
   }
   if (event == "error") {
+    if (onFailure_) onFailure_("compose.stream", "upstream error event: " + data);
     LOG_ERROR << "compose stream upstream errored: " << data;
     settle(false);
     return;
@@ -284,6 +289,7 @@ void AnthropicStreamParser::dispatch(const std::string& event, const std::string
   std::string errors;
   if (!reader->parse(data.data(), data.data() + data.size(), &payload, &errors) ||
       !payload.isObject()) {
+    if (onFailure_) onFailure_("compose.stream", "unreadable " + event + " frame");
     LOG_ERROR << "compose stream upstream sent an unreadable " << event << " frame";
     settle(false);
     return;
@@ -299,8 +305,16 @@ void AnthropicStreamParser::dispatch(const std::string& event, const std::string
   }
 }
 
-AnthropicComposer::AnthropicComposer(std::string apiKey) : apiKey_(std::move(apiKey)) {
+AnthropicComposer::AnthropicComposer(std::string apiKey, std::shared_ptr<FailureReporter> failures)
+    : apiKey_(std::move(apiKey)), failures_(std::move(failures)) {
   loop_.run();
+}
+
+AnthropicStreamParser::Reporter AnthropicComposer::reporter() const {
+  return [failures = failures_](const std::string& where, const std::string& detail) {
+    LOG_ERROR << where << ": " << detail;
+    if (failures) failures->report("compose", where, detail);
+  };
 }
 
 bool AnthropicComposer::configured() const { return !apiKey_.empty(); }
@@ -324,7 +338,7 @@ void AnthropicComposer::compose(const std::string& text,
 
   client->sendRequest(
       req,
-      [client, done = std::move(done)](drogon::ReqResult result, const drogon::HttpResponsePtr& resp) {
+      [client, report = reporter(), done = std::move(done)](drogon::ReqResult result, const drogon::HttpResponsePtr& resp) {
         const int status = resp ? static_cast<int>(resp->getStatusCode()) : 0;
         if (result != drogon::ReqResult::Ok || status < 200 || status >= 300) {  // accept any 2xx
           const std::string detail = resp ? std::string(resp->getBody()) : std::string("no response");
@@ -335,7 +349,7 @@ void AnthropicComposer::compose(const std::string& text,
 
         std::shared_ptr<Json::Value> reply = resp->getJsonObject();
         if (!reply || !(*reply)["content"].isArray() || (*reply)["content"].empty()) {
-          LOG_ERROR << "compose upstream returned an unreadable reply";
+          report("compose.buffered", "unreadable reply");
           done(std::nullopt);
           return;
         }
@@ -346,7 +360,7 @@ void AnthropicComposer::compose(const std::string& text,
           if (block["text"].isString()) { raw = block["text"].asString(); break; }
         }
         if (raw.empty()) {
-          LOG_ERROR << "compose upstream returned no text block";
+          report("compose.buffered", "reply carried no text block");
           done(std::nullopt);
           return;
         }
@@ -355,8 +369,8 @@ void AnthropicComposer::compose(const std::string& text,
         if (!stopReason.isString() || stopReason.asString() != "end_turn") {
           // max_tokens or any other early stop means a truncated plan — never hand the
           // client half a plan to replace the user's paste with.
-          LOG_ERROR << "compose upstream stopped early (stop_reason: "
-                    << (stopReason.isString() ? stopReason.asString() : std::string("missing")) << ")";
+          report("compose.buffered", "stopped early (stop_reason: " +
+                                                 (stopReason.isString() ? stopReason.asString() : std::string("missing")) + ")");
           done(std::nullopt);
           return;
         }
@@ -401,11 +415,15 @@ std::function<void()> AnthropicComposer::composeStream(
   call->request = std::move(request);
   call->self = call;
   std::weak_ptr<StreamCall> weak = call;
+  // The reporter holds the shared_ptr, not `this`: a stream can settle long after the caller has
+  // gone, and a report must never reach through a dangling composer to get out.
   call->parser = std::make_unique<AnthropicStreamParser>(
-      std::move(onDelta), [weak, onDone = std::move(onDone)](bool ok) {
+      std::move(onDelta),
+      [weak, onDone = std::move(onDone)](bool ok) {
         if (auto call = weak.lock()) call->hangUp();
         onDone(ok);
-      });
+      },
+      reporter());
 
   call->loop->runInLoop([call, weak]() {
     if (call->settled) return;

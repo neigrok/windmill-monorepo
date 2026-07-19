@@ -16,9 +16,13 @@ struct ParsedStream {
   std::vector<std::string> deltas;
   int doneCalls = 0;
   bool ok = false;
+  std::vector<std::string> failures;  // what the operator would have been told
   AnthropicStreamParser parser{
       [this](const std::string& delta) { deltas.push_back(delta); },
-      [this](bool clean) { ++doneCalls; ok = clean; }};
+      [this](bool clean) { ++doneCalls; ok = clean; },
+      [this](const std::string& where, const std::string& detail) {
+        failures.push_back(where + " | " + detail);
+      }};
 
   void feedBytewise(const std::string& wire) {
     for (const char c : wire) parser.feed(&c, 1);
@@ -191,4 +195,43 @@ TEST(stream_parser_handles_a_plain_unchunked_body_too) {
   CHECK_EQ(observed.deltas[0], std::string("# Plan"));
   CHECK_EQ(observed.doneCalls, 1);
   CHECK(observed.ok);
+}
+
+// The failure that started this: a plan cut off by the token budget refuses cleanly, and used to
+// refuse in total silence — the client saw an open stream say nothing and nothing anywhere went red.
+TEST(stream_parser_names_a_truncated_plan_to_the_operator) {
+  ParsedStream observed;
+  observed.feedBytewise(
+      std::string(kStreamHeaders) +
+      chunk(sse("content_block_delta", R"({"delta":{"type":"text_delta","text":"# Plan"}})")) +
+      chunk(sse("message_delta", R"({"delta":{"stop_reason":"max_tokens"}})")) +
+      chunk(sse("message_stop", "{}")));
+
+  CHECK_EQ(observed.doneCalls, 1);
+  CHECK_FALSE(observed.ok);
+  CHECK_EQ(observed.failures.size(), 1u);
+  CHECK_EQ(observed.failures[0], std::string("compose.stream | stopped early (stop_reason: max_tokens)"));
+}
+
+TEST(stream_parser_names_an_upstream_error_to_the_operator) {
+  ParsedStream observed;
+  observed.feedBytewise(
+      std::string(kStreamHeaders) +
+      chunk(sse("error", R"({"type":"error","error":{"type":"overloaded_error"}})")));
+
+  CHECK_EQ(observed.failures.size(), 1u);
+  CHECK(observed.failures[0].find("compose.stream | upstream error event:") == 0);
+  CHECK(observed.failures[0].find("overloaded_error") != std::string::npos);
+}
+
+TEST(stream_parser_stays_quiet_when_the_plan_finishes_cleanly) {
+  ParsedStream observed;
+  observed.feedBytewise(
+      std::string(kStreamHeaders) +
+      chunk(sse("content_block_delta", R"({"delta":{"type":"text_delta","text":"# Plan"}})")) +
+      chunk(sse("message_delta", R"({"delta":{"stop_reason":"end_turn"}})")) +
+      chunk(sse("message_stop", "{}")));
+
+  CHECK(observed.ok);
+  CHECK_EQ(observed.failures.size(), 0u);
 }
