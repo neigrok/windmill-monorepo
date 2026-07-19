@@ -1,5 +1,6 @@
 import React from 'react';
 import { Dialog, Input, Button, Icon } from '../../components';
+import { API_BASE } from '../apiBase.js';
 
 // One door, keyed by email. This component owns its own little state machine —
 // idle → sending → wait, with error branches that never turn the door red. The
@@ -125,7 +126,11 @@ export function SignInDialog({ open, onClose, onSend, resume = null }) {
             <Button type="submit">Email me a link</Button>
           )}
 
-          <Button variant="ghost" disabled>Continue with Google</Button>
+          {/* A top-level navigation, not a fetch — the OAuth redirect must leave the SPA. The backend
+              bounces back to the app with a wm_session cookie (or unauthenticated on any failure). */}
+          <Button type="button" variant="ghost" onClick={() => { window.location.href = `${API_BASE}/v1/auth/google/start`; }}>
+            Continue with Google
+          </Button>
 
           <p style={reassurance}>No password. Signed out, Windmill still works — your trees live on this device.</p>
         </form>
