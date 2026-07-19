@@ -29,6 +29,7 @@ TendRefusal tendRefusalFrom(const std::string& name) {
   if (name == "out-of-allowance") return TendRefusal::outOfAllowance;
   if (name == "tree-too-large")   return TendRefusal::treeTooLarge;
   if (name == "prompt-empty")     return TendRefusal::promptEmpty;
+  if (name == "prompt-too-long")  return TendRefusal::promptTooLong;
   return TendRefusal::none;
 }
 
@@ -90,7 +91,12 @@ int PgTendRunRepository::countForUser(const UserId& user, std::uint64_t sinceMs)
   // Read through pqxx::result (never a bare row: pqxx names it row_ref on macOS, row on CI Linux).
   pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result rows = txn.exec_params(
-      "SELECT count(*) AS n FROM tend_runs WHERE user_id = $1::uuid AND started_at >= $2",
+      // Only runs that actually started work count against the day's allowance — a refusal (blank
+      // prompt, the dark-launch "not turned on" tap, an over-length paste) costs nothing, so
+      // counting it would let someone lock themselves out for free, or pre-spend the allowance on
+      // taps made while the feature was still dark.
+      "SELECT count(*) AS n FROM tend_runs "
+      "WHERE user_id = $1::uuid AND started_at >= $2 AND status <> 'refused'",
       user.str(), sinceMs);
   return rows[0]["n"].as<int>();
 }

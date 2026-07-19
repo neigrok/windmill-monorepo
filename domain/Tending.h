@@ -41,7 +41,7 @@ inline const char* tendStatusName(TendStatus status) {
 
 // Why a run never started. The client turns these into the spec's four quiet faces; `none` is
 // the ordinary case where the run did start.
-enum class TendRefusal { none, notEnabled, rateLimited, outOfAllowance, treeTooLarge, promptEmpty };
+enum class TendRefusal { none, notEnabled, rateLimited, outOfAllowance, treeTooLarge, promptEmpty, promptTooLong };
 
 inline const char* tendRefusalName(TendRefusal refusal) {
   switch (refusal) {
@@ -51,6 +51,7 @@ inline const char* tendRefusalName(TendRefusal refusal) {
     case TendRefusal::outOfAllowance: return "out-of-allowance";
     case TendRefusal::treeTooLarge:   return "tree-too-large";
     case TendRefusal::promptEmpty:    return "prompt-empty";
+    case TendRefusal::promptTooLong:  return "prompt-too-long";
   }
   return "";
 }

@@ -31,8 +31,7 @@ TendRun TendingService::start(const TreeId& tree, const UserId& caller, const st
   // spent allowance — each a persisted refusal the client wears as a quiet face, none of them work.
   if (blank(prompt)) return refuse(tree, caller, prompt, TendRefusal::promptEmpty);
   // Over the cap is the "you pasted a document" case — paste-import is the door for that, not this.
-  // The refusal set has no length-specific reason, so it wears the same prompt face.
-  if (prompt.size() > kMaxTendPromptBytes) return refuse(tree, caller, prompt, TendRefusal::promptEmpty);
+  if (prompt.size() > kMaxTendPromptBytes) return refuse(tree, caller, prompt, TendRefusal::promptTooLong);
   if (!enabled_) return refuse(tree, caller, prompt, TendRefusal::notEnabled);
   if (overAllowance(caller)) return refuse(tree, caller, prompt, TendRefusal::outOfAllowance);
 

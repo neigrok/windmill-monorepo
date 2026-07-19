@@ -33,14 +33,24 @@ add_library(windmill_application
   application/TreeRegistry.cpp)
 target_link_libraries(windmill_application PUBLIC windmill_domain)
 
-# TendingService runs the agent loop on a private trantor event-loop thread, so the durable half
-# of tending can answer the HTTP request at once and never park a drogon request loop. It also
-# reads the run's op-log seq footprint back through the ToolHost port (ports/ToolHost.h speaks
-# Json::Value). Both trantor and jsoncpp are packaged independently of Drogon (and ship in the
-# drogon builder image the CI uses), so the core still resolves them even when the libpqxx/Drogon
-# server target below is absent.
-find_package(Trantor CONFIG REQUIRED)
-find_package(jsoncpp CONFIG REQUIRED)
+# Drogon + libpqxx gate the real adapters (SPEC §11). Found here, up front, because Drogon also
+# exports Trantor and jsoncpp as imported targets — and TendingService (in this core library)
+# needs both: its agent loop runs on a private trantor event-loop thread so the durable half can
+# answer the HTTP request at once, and the ToolHost port (ports/ToolHost.h) speaks Json::Value.
+find_package(Drogon CONFIG QUIET)
+find_package(libpqxx CONFIG QUIET)
+find_package(OpenSSL QUIET)  # magic-link token entropy + digests (adapters/crypto)
+
+# Never find Trantor twice: its bundled Findc-ares.cmake creates the c-ares_lib imported target
+# without an existence guard, so a second find — Drogon's own find_dependency(Trantor), or an
+# explicit one here — aborts the configure trying to recreate it. When Drogon is present it has
+# already brought both targets; only reach for them directly in a core-only build without Drogon.
+if(NOT TARGET Trantor::Trantor)
+  find_package(Trantor CONFIG REQUIRED)
+endif()
+if(NOT TARGET JsonCpp::JsonCpp)
+  find_package(jsoncpp CONFIG REQUIRED)
+endif()
 target_link_libraries(windmill_application PUBLIC Trantor::Trantor JsonCpp::JsonCpp)
 
 add_executable(windmill_domain_tests
@@ -74,12 +84,9 @@ target_link_libraries(windmill_domain_tests PRIVATE windmill_application)
 enable_testing()
 add_test(NAME domain COMMAND windmill_domain_tests)
 
-# Real adapters (SPEC §11). Guarded: the core library + tests always build; the server
-# target appears only once Drogon and libpqxx are installed (brew install drogon libpqxx).
-find_package(Drogon CONFIG QUIET)
-find_package(libpqxx CONFIG QUIET)
-find_package(OpenSSL QUIET)  # magic-link token entropy + digests (adapters/crypto)
-
+# Real adapters (SPEC §11). Guarded: the core library + tests always build; the server target
+# appears only once Drogon and libpqxx are installed (brew install drogon libpqxx) — both were
+# located up front, above, so the application core could link Trantor + jsoncpp through Drogon.
 if(Drogon_FOUND AND libpqxx_FOUND)
   add_library(windmill_adapters
     adapters/json/TreeJson.cpp

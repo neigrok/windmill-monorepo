@@ -148,7 +148,7 @@ TEST(an_over_length_prompt_refuses_without_work) {
   TendRun run = service.start(TreeId{"t"}, UserId{"u"}, tooLong);
 
   CHECK_EQ(run.status, TendStatus::refused);
-  CHECK_EQ(run.refusal, TendRefusal::promptEmpty);
+  CHECK_EQ(run.refusal, TendRefusal::promptTooLong);
   CHECK_EQ(h.agent.calls.load(), 0);
 }
 
