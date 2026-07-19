@@ -60,6 +60,12 @@ services:
       # Google sign-in (second door onto wm_session). Empty → the /auth/google routes stay dark.
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      # Paddle billing. The webhook secret belongs to ONE notification destination — sandbox and
+      # production have separate destinations and separate secrets. Empty → every delivery is
+      # refused (and retried), so billing is dark rather than forgeable.
+      PADDLE_WEBHOOK_SECRET: ${PADDLE_WEBHOOK_SECRET:-}
+      PADDLE_API_KEY: ${PADDLE_API_KEY:-}
+      PADDLE_ENV: ${PADDLE_ENV:-sandbox}
       # Magic links point at the app; the session cookie is first-party on the single origin.
       WINDMILL_APP_URL: https://${DOMAIN_APP}
       WINDMILL_COOKIE_DOMAIN: ${DOMAIN_APP}

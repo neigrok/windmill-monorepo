@@ -1,6 +1,7 @@
 #include "adapters/amplitude/AmplitudeClient.h"
 #include "adapters/clock/SystemClock.h"
 #include "adapters/google/GoogleOAuthClient.h"
+#include "adapters/paddle/BillingApi.h"
 #include "adapters/crypto/OpenSslTokenGenerator.h"
 #include "adapters/email/ResendEmailSender.h"
 #include "adapters/sentry/SentryClient.h"
@@ -28,6 +29,7 @@
 #include "adapters/postgres/PgOpLog.h"
 #include "adapters/postgres/PgProgressRepository.h"
 #include "adapters/postgres/PgServerErrorRepository.h"
+#include "adapters/postgres/PgSubscriptionRepository.h"
 #include "adapters/postgres/PgTreeRepository.h"
 #include "adapters/ws/Collab.h"
 #include "adapters/ws/PresenceHub.h"
@@ -155,6 +157,20 @@ int main() {
   // event-spine — anon-allowed, caller resolved server-side, one row per note.
   auto feedbackRepo = std::make_shared<PgFeedbackRepository>(connString);
   auto feedbackApi = std::make_shared<FeedbackApi>(feedbackRepo, authService);
+
+  // Paddle billing: verified webhooks upsert the local mirror of customers + subscriptions, and the
+  // browser reads its own subscription from that mirror. An empty PADDLE_WEBHOOK_SECRET refuses
+  // every delivery (they retry), so billing is dark rather than forgeable until the secret lands.
+  const char* paddleWebhookSecret = std::getenv("PADDLE_WEBHOOK_SECRET");
+  const char* paddleApiKey = std::getenv("PADDLE_API_KEY");
+  const char* paddleEnv = std::getenv("PADDLE_ENV");
+  const char* paddlePriceId = std::getenv("PADDLE_PRICE_ID");
+  auto subscriptionRepo = std::make_shared<PgSubscriptionRepository>(connString);
+  auto paddleClient = std::make_shared<PaddleApiClient>(paddleApiKey ? paddleApiKey : "",
+                                                        paddleEnv ? paddleEnv : "sandbox");
+  auto billingApi = std::make_shared<BillingApi>(*subscriptionRepo, authService, *systemClock,
+                                                 paddleWebhookSecret ? paddleWebhookSecret : "",
+                                                 paddleClient, paddlePriceId ? paddlePriceId : "");
 
   // The uncaught-exception safety net: the drogon exception handler (registered below) persists
   // whatever escaped a request handler, so a broken endpoint surfaces in server_errors instead of
@@ -317,6 +333,11 @@ int main() {
         std::string path = req->path();
         std::transform(path.begin(), path.end(), path.begin(),
                        [](unsigned char c) { return std::tolower(c); });
+        // The Paddle webhook authenticates every byte by HMAC, and Paddle delivers a whole event
+        // burst from a small IP set behind Cloudflare — which collapses onto ONE bucket here. A 429
+        // is a failed delivery that burns one of Paddle's ~60 retries, so shedding a billing event
+        // to rate-limit an endpoint that already verifies its own signature is a bad trade.
+        if (path == "/v1/paddle/webhook") return nullptr;
         bool ok = apiLimiter->allow(ip);
         if (ok && path == "/v1/auth/magic-link")
           ok = magicPerIp->allow(ip) && magicGlobal->allow("global");
@@ -372,6 +393,27 @@ int main() {
         authApi->verify(req, std::move(cb));
       },
       {drogon::Post});
+  // Paddle billing: the webhook Paddle delivers to (signature-verified, no session), and the
+  // signed-in browser's own subscription read.
+  app.registerHandler(
+      "/v1/paddle/webhook",
+      [billingApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        billingApi->webhook(req, std::move(cb));
+      },
+      {drogon::Post});
+  app.registerHandler(
+      "/v1/billing/checkout",
+      [billingApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        billingApi->startCheckout(req, std::move(cb));
+      },
+      {drogon::Post});
+  app.registerHandler(
+      "/v1/subscription",
+      [billingApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        billingApi->mySubscription(req, std::move(cb));
+      },
+      {drogon::Get});
+
   // Google sign-in: two top-level browser navigations (no CORS — these are redirects, not fetches).
   app.registerHandler(
       "/v1/auth/google/start",

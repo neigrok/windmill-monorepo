@@ -333,6 +333,47 @@ create table if not exists server_errors (
 -- the triage read: newest errors first
 create index if not exists server_errors_ts on server_errors (ts);
 
+-- ── Paddle billing ──────────────────────────────────────────────────────────────────────────
+-- Webhooks are the source of truth: every notification upserts here, so access gating reads this
+-- database instead of round-tripping the Paddle API. The bridge from a Windmill account to a
+-- Paddle customer is EMAIL (citext, matching users.email) — a user has no Paddle customer until
+-- their first checkout, when customer.created arrives.
+create table if not exists paddle_customers (
+  customer_id text primary key,   -- "ctm_..."
+  email       citext not null,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+create index if not exists paddle_customers_email on paddle_customers (email);
+
+-- Deliberately NO foreign key to paddle_customers: Paddle does not order its deliveries, so a
+-- subscription event can arrive before the customer event it references. Both tables converge on
+-- the latest state through upserts, and an orphan row simply reads as "no access" until its
+-- customer lands.
+create table if not exists paddle_subscriptions (
+  subscription_id     text primary key,  -- "sub_..."
+  customer_id         text not null,
+  user_id             uuid,              -- the Windmill account, stamped via checkout custom_data
+  status              text not null,     -- active | trialing | past_due | paused | canceled
+  price_id            text not null default '',
+  product_id          text not null default '',
+  scheduled_change_at timestamptz,       -- set while a pause/cancel is pending; status stays active
+  occurred_at         timestamptz,       -- Paddle's event time; a stale retry must not overwrite newer state
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now()
+);
+create index if not exists paddle_subscriptions_customer on paddle_subscriptions (customer_id);
+-- Paddle retries a failed delivery for ~3 days, so an OLD event can land AFTER a newer one (a
+-- retried "active" arriving after a real "canceled" would hand back paid access). Every write
+-- carries the event's occurred_at and the upsert refuses to go backwards.
+alter table paddle_subscriptions add column if not exists occurred_at timestamptz;
+-- Our checkout binds identity server-side: it stamps custom_data.user_id on the transaction, Paddle
+-- carries it onto the subscription, and the webhook lands it here. Gating reads this first and falls
+-- back to the email match only for subscriptions created outside that flow (e.g. by hand in the
+-- Paddle dashboard). Converge a table that predates the column.
+alter table paddle_subscriptions add column if not exists user_id uuid;
+create index if not exists paddle_subscriptions_user on paddle_subscriptions (user_id);
+
 -- ── The playable demo tree (F4) ─────────────────────────────────────────────────────────────
 -- The hosted "Learn to sail" roadmap a stranger meets at #/demo — read anonymously over both
 -- HTTP and WS, so the row must exist AND be public or read enforcement 404s it for every visitor.

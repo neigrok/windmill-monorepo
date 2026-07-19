@@ -83,6 +83,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     adapters/postgres/PgEventRepository.cpp
     adapters/postgres/PgFeedbackRepository.cpp
     adapters/postgres/PgServerErrorRepository.cpp
+    adapters/postgres/PgSubscriptionRepository.cpp
     adapters/http/HttpApi.cpp
     adapters/http/SharePageApi.cpp
     adapters/http/OgImageApi.cpp
@@ -97,6 +98,9 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     adapters/crypto/OpenSslTokenGenerator.cpp
     adapters/email/ResendEmailSender.cpp
     adapters/google/GoogleOAuthClient.cpp
+    adapters/paddle/PaddleSignature.cpp
+    adapters/paddle/PaddleApiClient.cpp
+    adapters/paddle/BillingApi.cpp
     adapters/sentry/SentryClient.cpp
     adapters/amplitude/AmplitudeClient.cpp
     adapters/llm/AnthropicComposer.cpp
@@ -150,6 +154,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/adapters/http/TreeRegistryApiTest.cpp
     test/adapters/ws/CollabTest.cpp
     test/adapters/email/ResendEmailSenderTest.cpp
+    test/adapters/paddle/PaddleSignatureTest.cpp
     test/adapters/llm/AnthropicComposerTest.cpp)
   target_link_libraries(windmill_adapters_tests PRIVATE windmill_adapters)
   add_test(NAME adapters COMMAND windmill_adapters_tests)
