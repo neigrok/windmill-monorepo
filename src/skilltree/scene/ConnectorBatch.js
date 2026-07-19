@@ -159,14 +159,24 @@ function hashStr(str) {
   return Math.abs(h);
 }
 
-function controlPoint(fx, fy, tx, ty) {
+// Each edge bows by its own arbitrary amount, so a fan of branches reads as drawn rather than
+// printed. `sway` is that amount, in [-0.5, 0.5), and it belongs to the EDGE — it is hashed from
+// the two node ids by bendOf, once, and never from the endpoints. Hashing the coordinates (as this
+// did) re-rolls the curve every time either end moves: drag a node and its edges are re-bent from
+// scratch on every pointer event, which is not a wobble but a different curve sixty times a second.
+function controlPoint(fx, fy, tx, ty, sway) {
   const dx = tx - fx;
   const dy = ty - fy;
   const len = Math.hypot(dx, dy) || 1;
   const nx = -dy / len;
   const ny = dx / len;
-  const bend = ((hashStr(`${fx},${fy}-${tx},${ty}`) % 100) / 100 - 0.5) * len * BEND_FACTOR;
+  const bend = sway * len * BEND_FACTOR;
   return { cx: (fx + tx) / 2 + nx * bend, cy: (fy + ty) / 2 + ny * bend };
+}
+
+// The edge's own bow, fixed for as long as the edge exists.
+export function bendOf(fromId, toId) {
+  return (hashStr(`${fromId}-${toId}`) % 100) / 100 - 0.5;
 }
 
 // The curve parameter range that lies outside both endpoint discs, so the drawn
@@ -207,8 +217,8 @@ function travelDuration(lengthWorld) {
 // the positions depend on the endpoints, so both setModel (bulk) and moveNode
 // (a single node's incident edges) go through here; the along/active/color
 // attributes are constant under a move and written once.
-function writeEdgePositions(positions, vertexStart, fx, fy, tx, ty, halfWidth) {
-  const { cx, cy } = controlPoint(fx, fy, tx, ty);
+function writeEdgePositions(positions, vertexStart, fx, fy, tx, ty, halfWidth, sway) {
+  const { cx, cy } = controlPoint(fx, fy, tx, ty, sway);
   const [t0, t1] = trimRange(fx, fy, cx, cy, tx, ty);
   const span = t1 - t0;
   let length = 0; // centerline polyline length — drives per-edge travel duration
@@ -315,7 +325,8 @@ export class ConnectorBatch {
       const halfWidth = KIND_HALF_WIDTH[edge.kind] ?? KIND_HALF_WIDTH.trunk;
       const code = KIND_CODE[edge.kind] ?? 0;
 
-      const length = writeEdgePositions(this.positions, vertexStart, from.x, from.y, to.x, to.y, halfWidth);
+      const sway = bendOf(edge.from, edge.to);
+      const length = writeEdgePositions(this.positions, vertexStart, from.x, from.y, to.x, to.y, halfWidth, sway);
       const duration = travelDuration(length);
       for (let i = 0; i <= SEGMENTS; i++) {
         const v = vertexStart + i * 2;
@@ -338,7 +349,7 @@ export class ConnectorBatch {
         this.edgesByNode.get(nid).push(e);
       }
       this.edgeIndex.set(`${edge.from}→${edge.to}`, e);
-      return { from: edge.from, to: edge.to, active, vertexStart, halfWidth, length, duration };
+      return { from: edge.from, to: edge.to, active, vertexStart, halfWidth, length, duration, sway };
     });
 
     this.indexCount = indices.length;
@@ -375,7 +386,7 @@ export class ConnectorBatch {
       const edge = this.edges[e];
       const from = this.nodePos.get(edge.from);
       const to = this.nodePos.get(edge.to);
-      const length = writeEdgePositions(this.positions, edge.vertexStart, from.x, from.y, to.x, to.y, edge.halfWidth);
+      const length = writeEdgePositions(this.positions, edge.vertexStart, from.x, from.y, to.x, to.y, edge.halfWidth, edge.sway);
       edge.length = length;
       edge.duration = travelDuration(length); // the move changed the edge's length, so retime it
       const start = edge.vertexStart;
