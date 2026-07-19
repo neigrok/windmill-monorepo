@@ -100,6 +100,9 @@ jobs:
           MCP_ORIGINS: ${{ vars.WINDMILL_MCP_ALLOWED_ORIGINS }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          AMPLITUDE_API_KEY: ${{ secrets.AMPLITUDE_API_KEY }}
+          AMPLITUDE_HOST: ${{ vars.AMPLITUDE_HOST }}
           WINDMILL_MCP_TOKEN: ${{ secrets.WINDMILL_MCP_TOKEN }}
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -108,7 +111,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           port: ${{ secrets.SSH_PORT }}
           key: ${{ secrets.SSH_KEY }}
-          envs: IMAGE_TAG,POSTGRES_PASSWORD,DOMAIN_API,DOMAIN_APP,ACME_EMAIL,MCP_ORIGINS,RESEND_API_KEY,ANTHROPIC_API_KEY,WINDMILL_MCP_TOKEN,GHCR_USER,GHCR_TOKEN,CF_IPS_CSV
+          envs: IMAGE_TAG,POSTGRES_PASSWORD,DOMAIN_API,DOMAIN_APP,ACME_EMAIL,MCP_ORIGINS,RESEND_API_KEY,ANTHROPIC_API_KEY,SENTRY_DSN,AMPLITUDE_API_KEY,AMPLITUDE_HOST,WINDMILL_MCP_TOKEN,GHCR_USER,GHCR_TOKEN,CF_IPS_CSV
           script: |
             set -euo pipefail
             cd ~/windmill
@@ -129,6 +132,9 @@ jobs:
             WINDMILL_MCP_ALLOWED_ORIGINS=${MCP_ORIGINS}
             RESEND_API_KEY=${RESEND_API_KEY}
             ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+            SENTRY_DSN=${SENTRY_DSN}
+            AMPLITUDE_API_KEY=${AMPLITUDE_API_KEY}
+            AMPLITUDE_HOST=${AMPLITUDE_HOST:-api2.amplitude.com}
             WINDMILL_MCP_TOKEN=${WINDMILL_MCP_TOKEN}
             EOF
             echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin

@@ -82,8 +82,9 @@ std::optional<FunnelEvent> eventOf(const Json::Value& entry) {
 }
 }
 
-EventsApi::EventsApi(std::shared_ptr<EventRepository> events, std::shared_ptr<AuthService> auth)
-    : events_(std::move(events)), auth_(std::move(auth)) {}
+EventsApi::EventsApi(std::shared_ptr<EventRepository> events, std::shared_ptr<AuthService> auth,
+                     std::shared_ptr<AmplitudeClient> amplitude)
+    : events_(std::move(events)), auth_(std::move(auth)), amplitude_(std::move(amplitude)) {}
 
 void EventsApi::ingest(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
   // Parse the envelope, drop bad entries one by one, resolve the caller, append. The user
@@ -116,6 +117,15 @@ void EventsApi::ingest(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
       LOG_ERROR << "event batch dropped at storage: " << e.what();
       callback(error(drogon::k500InternalServerError, "events not recorded"));
       return;
+    }
+    // The analytics forward is the most insulated step: the batch is already persisted, so a throw
+    // here (realistically bad_alloc) must not turn a stored 202 into a 500. Swallow and move on.
+    if (amplitude_) {
+      try {
+        amplitude_->forward(sessionKey.asString(), caller, accepted);
+      } catch (const std::exception& e) {
+        LOG_ERROR << "amplitude forward dropped: " << e.what();
+      }
     }
   }
 

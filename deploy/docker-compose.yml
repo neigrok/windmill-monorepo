@@ -52,6 +52,11 @@ services:
       # Paste-import LLM escalation (/v1/compose). Empty → the route answers 503 compose-unavailable
       # and the client hides the handle.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Observability: uncaught server exceptions ship to Sentry (empty → no-op). Funnel events
+      # forward to Amplitude with the resolved user_id (empty key → skipped); HOST picks the region.
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      AMPLITUDE_API_KEY: ${AMPLITUDE_API_KEY:-}
+      AMPLITUDE_HOST: ${AMPLITUDE_HOST:-api2.amplitude.com}
       # Magic links point at the app; the session cookie is first-party on the single origin.
       WINDMILL_APP_URL: https://${DOMAIN_APP}
       WINDMILL_COOKIE_DOMAIN: ${DOMAIN_APP}

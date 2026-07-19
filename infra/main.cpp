@@ -1,6 +1,8 @@
+#include "adapters/amplitude/AmplitudeClient.h"
 #include "adapters/clock/SystemClock.h"
 #include "adapters/crypto/OpenSslTokenGenerator.h"
 #include "adapters/email/ResendEmailSender.h"
+#include "adapters/sentry/SentryClient.h"
 #include "adapters/http/AuthApi.h"
 #include "adapters/http/ComposeApi.h"
 #include "adapters/http/EventsApi.h"
@@ -128,9 +130,16 @@ int main() {
   auto registryApi = std::make_shared<TreeRegistryApi>(treeRegistry, authService);
 
   // Funnel telemetry (event-spine): ghosts and signed-in users alike beacon here; the
-  // general per-IP apiLimiter below covers this route like every other.
+  // general per-IP apiLimiter below covers this route like every other. Accepted events also
+  // forward to Amplitude — with the session-resolved user_id — when AMPLITUDE_API_KEY is set.
+  // AMPLITUDE_HOST overrides the region (api.eu.amplitude.com for an EU project); default is US.
+  const char* amplitudeKey = std::getenv("AMPLITUDE_API_KEY");
+  const char* amplitudeHost = std::getenv("AMPLITUDE_HOST");
+  auto amplitude = std::make_shared<AmplitudeClient>(
+      amplitudeKey ? amplitudeKey : "",
+      (amplitudeHost && *amplitudeHost) ? amplitudeHost : "api2.amplitude.com");  // set-but-empty → default
   auto eventRepo = std::make_shared<PgEventRepository>(connString);
-  auto eventsApi = std::make_shared<EventsApi>(eventRepo, authService);
+  auto eventsApi = std::make_shared<EventsApi>(eventRepo, authService, amplitude);
 
   // The feedback door: one-click notes from anyone, signed-in or ghost. Same shape as the
   // event-spine — anon-allowed, caller resolved server-side, one row per note.
@@ -139,8 +148,11 @@ int main() {
 
   // The uncaught-exception safety net: the drogon exception handler (registered below) persists
   // whatever escaped a request handler, so a broken endpoint surfaces in server_errors instead of
-  // only in a stdout LOG_ERROR no one can see.
+  // only in a stdout LOG_ERROR no one can see. It also ships the same exception to Sentry when
+  // SENTRY_DSN is set (empty → a no-op client, mirroring the Resend/Anthropic key guards).
   auto serverErrors = std::make_shared<PgServerErrorRepository>(connString);
+  const char* sentryDsn = std::getenv("SENTRY_DSN");
+  auto sentry = std::make_shared<SentryClient>(sentryDsn ? sentryDsn : "");
 
   // Paste-import escalation (F3): the model rewrites arbitrary prose into the paste grammar
   // and the client re-parses it deterministically — text in, text out, never a door into the
@@ -212,8 +224,8 @@ int main() {
   // a row in server_errors and gets a clean generic 500. The insert is fully guarded — if the DB is
   // the very thing that's down, the handler must never throw again — and e.what() never reaches the
   // body (it can carry internals); the stdout LOG_ERROR signal is kept too.
-  app.setExceptionHandler([serverErrors](const std::exception& e, const drogon::HttpRequestPtr& req,
-                                         std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+  app.setExceptionHandler([serverErrors, sentry](const std::exception& e, const drogon::HttpRequestPtr& req,
+                                                 std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
     const std::string method = req->getMethodString();
     const std::string path = req->getPath();
     std::string message = e.what();
@@ -227,6 +239,11 @@ int main() {
       serverErrors->insert(method, path, 500, message);
     } catch (const std::exception& sink) {
       LOG_ERROR << "server_errors insert dropped: " << sink.what();
+    }
+    try {
+      sentry->captureException("uncaught", method, path, message);
+    } catch (const std::exception& sink) {
+      LOG_ERROR << "sentry capture dropped: " << sink.what();
     }
     Json::Value body(Json::objectValue);
     body["error"] = "internal error";
