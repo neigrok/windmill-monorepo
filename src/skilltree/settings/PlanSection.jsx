@@ -22,7 +22,7 @@ const PLAN_COPY = {
   past_due: { name: 'Windmill Pro', note: 'The last payment didn’t go through — Paddle is retrying. Nothing is switched off.' },
   paused: { name: 'Paused', note: 'Billing is paused, so Pro is off for now.' },
   canceled: { name: 'Free', note: 'Your Pro subscription has ended.' },
-  none: { name: 'Free', note: 'Everything Windmill does, including private trees. Paid plans are coming for heavy use and in-app AI.' },
+  none: { name: 'Free', note: 'Everything Windmill does, including private trees and a monthly allowance of AI tending. Windmill Pro — a larger tending allowance — arrives with tending itself.' },
 };
 
 const asDate = (iso) => {

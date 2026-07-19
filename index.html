@@ -119,14 +119,26 @@
               "Sign in once and your trees sync across phone and desktop",
               "Authored developer learning paths adapted from roadmap.sh (CC BY-SA)"
             ],
-            "offers": {
-              "@type": "Offer",
-              "price": "0",
-              "priceCurrency": "USD",
-              "availability": "https://schema.org/InStock",
-              "url": "https://windmill.works/pricing.html",
-              "description": "All of Windmill, free: unlimited trees and steps, private trees, the whole editor, paste import, sharing, forking, export, and the MCP server with an API key."
-            },
+            "offers": [
+              {
+                "@type": "Offer",
+                "name": "Free",
+                "price": "0",
+                "priceCurrency": "USD",
+                "availability": "https://schema.org/InStock",
+                "url": "https://windmill.works/pricing.html",
+                "description": "All of Windmill, free: unlimited trees and steps, private trees, the whole editor, paste import, sharing, forking, export, the MCP server with an API key, and a monthly allowance of AI tendings."
+              },
+              {
+                "@type": "Offer",
+                "name": "Windmill Pro",
+                "price": "12",
+                "priceCurrency": "USD",
+                "availability": "https://schema.org/InStock",
+                "url": "https://windmill.works/pricing.html",
+                "description": "A larger monthly allowance of tending — the AI that plants and reshapes your tree. Billed monthly, cancel any time, 30-day money-back guarantee."
+              }
+            ],
             "publisher": { "@id": "https://windmill.works/#organization" }
           },
           {
@@ -148,7 +160,7 @@
                 "name": "How much does Windmill cost?",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "Windmill is free — all of it, including private trees, with no account needed and no card. Paid plans are planned for heavy use and for AI built into the site, and nothing that is free today will move behind them."
+                  "text": "Windmill is free — building, sharing, exporting, and keeping a tree private cost nothing, and no account is needed to start. The one paid thing is tending: the AI that plants and reshapes your tree for you. Every account gets a free monthly allowance; Windmill Pro is $12 a month for a larger one, billed monthly, cancellable any time, with a 30-day money-back guarantee. Nothing that is free today moves behind the paywall."
                 }
               },
               {
@@ -222,7 +234,7 @@
           Frontend, Rust from zero, ML foundations, and Ship v1.0.
         </p>
         <p style="font-size: 15px; color: #4A4034; line-height: 1.6; margin: 0 0 24px;">
-          <strong>Pricing:</strong> free, all of it, no card — private trees included.
+          <strong>Pricing:</strong> free to build, share, and keep private — no card. Pay only for tending, the AI that builds your tree: $12/month for Windmill Pro, cancel any time, 30-day money-back guarantee.
         </p>
         <!-- The rendered footer is React's, which a crawler never runs. These same links live here
              so pricing and the policies are reachable from the one crawlable URL without JavaScript. -->
