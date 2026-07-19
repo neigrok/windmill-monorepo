@@ -29,8 +29,19 @@ add_library(windmill_application
   application/ForkService.cpp
   application/McpKeyService.cpp
   application/OAuthService.cpp
+  application/TendingService.cpp
   application/TreeRegistry.cpp)
 target_link_libraries(windmill_application PUBLIC windmill_domain)
+
+# TendingService runs the agent loop on a private trantor event-loop thread, so the durable half
+# of tending can answer the HTTP request at once and never park a drogon request loop. It also
+# reads the run's op-log seq footprint back through the ToolHost port (ports/ToolHost.h speaks
+# Json::Value). Both trantor and jsoncpp are packaged independently of Drogon (and ship in the
+# drogon builder image the CI uses), so the core still resolves them even when the libpqxx/Drogon
+# server target below is absent.
+find_package(Trantor CONFIG REQUIRED)
+find_package(jsoncpp CONFIG REQUIRED)
+target_link_libraries(windmill_application PUBLIC Trantor::Trantor JsonCpp::JsonCpp)
 
 add_executable(windmill_domain_tests
   test/main.cpp
@@ -56,7 +67,8 @@ add_executable(windmill_domain_tests
   test/application/AuthServiceTest.cpp
   test/domain/OAuthTest.cpp
   test/application/OAuthServiceTest.cpp
-  test/application/McpKeyServiceTest.cpp)
+  test/application/McpKeyServiceTest.cpp
+  test/application/TendingServiceTest.cpp)
 target_link_libraries(windmill_domain_tests PRIVATE windmill_application)
 
 enable_testing()
@@ -84,6 +96,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     adapters/postgres/PgFeedbackRepository.cpp
     adapters/postgres/PgServerErrorRepository.cpp
     adapters/postgres/PgSubscriptionRepository.cpp
+    adapters/postgres/PgTendRunRepository.cpp
     adapters/http/HttpApi.cpp
     adapters/http/SharePageApi.cpp
     adapters/http/OgImageApi.cpp
@@ -95,6 +108,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     adapters/http/OAuthApi.cpp
     adapters/http/Caller.cpp
     adapters/http/TreeRegistryApi.cpp
+    adapters/http/TendingApi.cpp
     adapters/crypto/OpenSslTokenGenerator.cpp
     adapters/email/ResendEmailSender.cpp
     adapters/google/GoogleOAuthClient.cpp
@@ -104,6 +118,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     adapters/sentry/SentryClient.cpp
     adapters/amplitude/AmplitudeClient.cpp
     adapters/llm/AnthropicComposer.cpp
+    adapters/llm/AnthropicAgent.cpp
     adapters/ws/WsPresenceBus.cpp
     adapters/ws/PresenceHub.cpp
     adapters/ws/Collab.cpp
@@ -155,7 +170,8 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/adapters/ws/CollabTest.cpp
     test/adapters/email/ResendEmailSenderTest.cpp
     test/adapters/paddle/PaddleSignatureTest.cpp
-    test/adapters/llm/AnthropicComposerTest.cpp)
+    test/adapters/llm/AnthropicComposerTest.cpp
+    test/adapters/llm/AnthropicAgentTest.cpp)
   target_link_libraries(windmill_adapters_tests PRIVATE windmill_adapters)
   add_test(NAME adapters COMMAND windmill_adapters_tests)
 else()

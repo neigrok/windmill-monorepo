@@ -32,27 +32,6 @@ Json::Value failure(const Json::Value& id, int code, const std::string& message)
 }
 }
 
-ToolResult ToolResult::text(const std::string& body) {
-  ToolResult out;
-  Json::Value block(Json::objectValue);
-  block["type"] = "text";
-  block["text"] = body;
-  out.content.append(block);
-  return out;
-}
-
-ToolResult ToolResult::json(const Json::Value& value) {
-  ToolResult out = text(compact(value));
-  out.structured = value;
-  return out;
-}
-
-ToolResult ToolResult::failure(const std::string& message) {
-  ToolResult out = text(message);
-  out.isError = true;
-  return out;
-}
-
 McpServer::McpServer(ToolHost& tools, ServerInfo info) : tools_(tools), info_(std::move(info)) {}
 
 std::optional<Json::Value> McpServer::handle(const Json::Value& message, const UserId& caller) {

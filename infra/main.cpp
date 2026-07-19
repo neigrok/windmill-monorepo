@@ -15,7 +15,9 @@
 #include "adapters/http/OgImageApi.h"
 #include "adapters/http/RateLimiter.h"
 #include "adapters/http/SharePageApi.h"
+#include "adapters/http/TendingApi.h"
 #include "adapters/http/TreeRegistryApi.h"
+#include "adapters/llm/AnthropicAgent.h"
 #include "adapters/llm/AnthropicComposer.h"
 #include "adapters/mcp/McpHttpEndpoint.h"
 #include "adapters/mcp/McpServer.h"
@@ -30,6 +32,7 @@
 #include "adapters/postgres/PgProgressRepository.h"
 #include "adapters/postgres/PgServerErrorRepository.h"
 #include "adapters/postgres/PgSubscriptionRepository.h"
+#include "adapters/postgres/PgTendRunRepository.h"
 #include "adapters/postgres/PgTreeRepository.h"
 #include "adapters/ws/Collab.h"
 #include "adapters/ws/PresenceHub.h"
@@ -41,6 +44,7 @@
 #include "application/OAuthService.h"
 #include "application/ProgressService.h"
 #include "application/RoomRegistry.h"
+#include "application/TendingService.h"
 #include "application/TreeRegistry.h"
 
 #include <drogon/drogon.h>
@@ -208,6 +212,23 @@ int main() {
   const std::set<std::string> mcpOrigins = parseOriginList(mcpOriginsEnv ? mcpOriginsEnv : "");
 
   auto mcpTools = std::make_shared<RoadmapTools>(*registry, *progressService, *systemClock, *treeRegistry, *bus);
+
+  // Tending (durable half): a sentence starts a server-side agent run over the very same tools MCP
+  // drives (*mcpTools), so an agent's edits land through the rooms exactly as a person's do. The
+  // agent is the AnthropicAgent loop on the same ANTHROPIC_API_KEY the composer uses. Shipped DARK
+  // by default — the designed first face is "not turned on" — so TENDING_ENABLED must be an explicit
+  // "true"/"1" to arm it, AND the agent must actually be configured (a key present). Enabling the
+  // flag with no key keeps the quiet "not-enabled" face rather than emitting a stream of failed runs.
+  const char* tendingEnabledEnv = std::getenv("TENDING_ENABLED");
+  const std::string tendingEnabledFlag = tendingEnabledEnv ? tendingEnabledEnv : "";
+  auto tendRuns = std::make_shared<PgTendRunRepository>(connString);
+  auto tendingAgent = std::make_shared<AnthropicAgent>(anthropicKey ? anthropicKey : "", sentry);
+  const bool tendingEnabled =
+      (tendingEnabledFlag == "true" || tendingEnabledFlag == "1") && tendingAgent->configured();
+  auto tendingService = std::make_shared<TendingService>(*tendRuns, *tendingAgent, *mcpTools,
+                                                         *systemClock, *tokens, tendingEnabled);
+  auto tendingApi = std::make_shared<TendingApi>(tendingService, authService);
+
   McpAuth mcpAuth{oauthService.get(), mcpResource,     mcpResourceMetadataUrl,
                   mcpToken,           mcpFallbackUser, mcpKeyService.get()};
   ServerInfo mcpInfo{
@@ -321,8 +342,13 @@ int main() {
   auto magicGlobal = std::make_shared<RateLimiter>(0.5, 60.0);          // global email send ceiling
   auto composePerIp = std::make_shared<RateLimiter>(10.0 / 600.0, 5.0);  // ~10 plans / 10 min / client
   auto composeGlobal = std::make_shared<RateLimiter>(0.5, 20.0);         // global LLM spend ceiling
+  // Tending starts a whole agent loop — many model turns and many tool calls — so it is far more
+  // expensive than one compose and gets its own, tighter pair. The per-user allowance in
+  // TendingService is the real per-account brake; these buckets guard the fleet against a single IP.
+  auto tendPerIp = std::make_shared<RateLimiter>(5.0 / 600.0, 3.0);   // ~5 runs / 10 min / client
+  auto tendGlobal = std::make_shared<RateLimiter>(0.2, 8.0);          // global agent-spend ceiling
   app.registerSyncAdvice(
-      [apiLimiter, magicPerIp, magicGlobal, composePerIp, composeGlobal,
+      [apiLimiter, magicPerIp, magicGlobal, composePerIp, composeGlobal, tendPerIp, tendGlobal,
        writeCors](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
         if (req->method() == drogon::Options) return nullptr;  // preflight already answered above
         const std::string ip = clientIp(req);
@@ -344,6 +370,11 @@ int main() {
           ok = magicPerIp->allow(ip) && magicGlobal->allow("global");
         if (ok && path == "/v1/compose")
           ok = composePerIp->allow(ip) && composeGlobal->allow("global");
+        // Only the POST that STARTS a run (/v1/trees/{id}/tend) carries the agent cost; the GET
+        // catch-up (/v1/tend/{runId}) is a plain row read the general apiLimiter already covers.
+        if (ok && path.rfind("/v1/trees/", 0) == 0 && path.size() >= 5 &&
+            path.compare(path.size() - 5, 5, "/tend") == 0)
+          ok = tendPerIp->allow(ip) && tendGlobal->allow("global");
         if (ok) return nullptr;
         Json::Value body(Json::objectValue);
         body["error"] = "rate limited";
@@ -596,6 +627,23 @@ int main() {
       "/v1/trees/{id}/activity",
       [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
         api->getActivity(req, std::move(cb), id);
+      },
+      {drogon::Get});
+
+  // Tending: POST a sentence to start a server-side agent run — 202 + a run id at once, the loop
+  // carries on without the browser. GET the run by id is the catch-up a returning phone makes long
+  // after its socket died; it never surfaces a run that isn't the caller's. The POST wears the
+  // tending rate-limit pair above; the GET is a plain read under the general ceiling.
+  app.registerHandler(
+      "/v1/trees/{id}/tend",
+      [tendingApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        tendingApi->tend(req, std::move(cb), id);
+      },
+      {drogon::Post});
+  app.registerHandler(
+      "/v1/tend/{runId}",
+      [tendingApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& runId) {
+        tendingApi->getRun(req, std::move(cb), runId);
       },
       {drogon::Get});
 

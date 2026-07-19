@@ -378,6 +378,43 @@ alter table paddle_subscriptions add column if not exists occurred_at timestampt
 alter table paddle_subscriptions add column if not exists user_id uuid;
 create index if not exists paddle_subscriptions_user on paddle_subscriptions (user_id);
 
+-- ── Tending runs (server-side agent edits) ──────────────────────────────────────────────────
+-- One row per sentence someone told their tree (domain/Tending.h). A tend run is a JOB, not a
+-- stream: the browser starts it and is free to leave, so the run's whole state must outlive the
+-- socket. This table IS that durable state — the catch-up endpoint reads a row here long after
+-- the request that made it has died. status is running/done/failed/refused; refusal is the quiet
+-- face a never-started run wears (''=none). started_at/finished_at are epoch ms (TendRun's own
+-- clock, the same units the allowance window counts in — not now()). (seq_from, seq_to] is the
+-- run's footprint in the tree's op log, recorded faithfully so one sentence can be one undo later.
+create table if not exists tend_runs (
+  id           text primary key,
+  tree_id      text not null,
+  user_id      uuid not null,
+  prompt       text not null,
+  status       text not null default 'running',
+  refusal      text not null default '',
+  summary      text not null default '',
+  detail       text not null default '',
+  edits        int not null default 0,
+  seq_from     bigint not null default 0,
+  seq_to       bigint not null default 0,
+  started_at   bigint not null default 0,
+  finished_at  bigint not null default 0,
+  created_at   timestamptz not null default now()
+);
+-- Converge a table that predates any column (the file's idempotent habit): every add is a no-op
+-- on the fresh table above and heals an older one row-for-row.
+alter table tend_runs add column if not exists refusal text not null default '';
+alter table tend_runs add column if not exists detail text not null default '';
+alter table tend_runs add column if not exists edits int not null default 0;
+alter table tend_runs add column if not exists seq_from bigint not null default 0;
+alter table tend_runs add column if not exists seq_to bigint not null default 0;
+alter table tend_runs add column if not exists finished_at bigint not null default 0;
+-- The allowance read: how many runs this user started inside the window — keyed (user, started_at).
+create index if not exists tend_runs_user_started on tend_runs (user_id, started_at);
+-- The per-tree footprint read (undo, activity): every run that touched a given tree.
+create index if not exists tend_runs_tree on tend_runs (tree_id);
+
 -- ── The playable demo tree (F4) ─────────────────────────────────────────────────────────────
 -- The hosted "Learn to sail" roadmap a stranger meets at #/demo — read anonymously over both
 -- HTTP and WS, so the row must exist AND be public or read enforcement 404s it for every visitor.

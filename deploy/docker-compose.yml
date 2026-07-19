@@ -52,6 +52,9 @@ services:
       # Paste-import LLM escalation (/v1/compose). Empty → the route answers 503 compose-unavailable
       # and the client hides the handle.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Tending (server-side agent edits). Ships DARK: empty/absent → every run refuses with
+      # "not turned on", the designed first face. Set to "true" to arm it once the agent loop lands.
+      TENDING_ENABLED: ${TENDING_ENABLED:-}
       # Observability: uncaught server exceptions ship to Sentry (empty → no-op). Funnel events
       # forward to Amplitude with the resolved user_id (empty key → skipped); HOST picks the region.
       SENTRY_DSN: ${SENTRY_DSN:-}
