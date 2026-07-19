@@ -77,3 +77,33 @@ test('a lone node sits at the origin', () => {
   const only = positions.get('only');
   assert.equal(Math.hypot(only.x, only.y), 0);  // signed zero is still the origin
 });
+
+test('rings open up as they go outward', () => {
+  // A single chain: every ring holds one node, so nothing is crowded and the only thing setting
+  // the radii is the clearance — which should widen with depth rather than repeat one constant.
+  const nodes = [{ id: 'n0', label: 'n0', prerequisites: [] }];
+  for (let i = 1; i < 8; i++) nodes.push({ id: `n${i}`, label: `n${i}`, prerequisites: [`n${i - 1}`] });
+  const positions = new RadialLayoutEngine().layout(treeOf(nodes));
+  const radii = nodes.map(n => Math.hypot(positions.get(n.id).x, positions.get(n.id).y));
+  const gaps = radii.slice(1).map((r, i) => r - radii[i]);
+  for (let i = 1; i < gaps.length; i++)
+    assert.ok(gaps[i] > gaps[i - 1], `gap ${i} (${gaps[i].toFixed(0)}) should exceed ${gaps[i - 1].toFixed(0)}`);
+});
+
+test('a thin branch gets more room than its leaf count alone would buy', () => {
+  // 'narrow' carries one leaf against thirty, so on pure proportion it would be pressed against
+  // its neighbour. It should hold a wider slice than 1/31 of the circle.
+  const nodes = [
+    { id: 'root', label: 'root', prerequisites: [] },
+    { id: 'wide', label: 'wide', prerequisites: ['root'] },
+    { id: 'narrow', label: 'narrow', prerequisites: ['root'] },
+  ];
+  for (let i = 0; i < 30; i++) nodes.push({ id: `w${i}`, label: `w${i}`, prerequisites: ['wide'] });
+  const positions = new RadialLayoutEngine().layout(treeOf(nodes));
+  const angleOf = (id) => Math.atan2(positions.get(id).y, positions.get(id).x);
+  let apart = Math.abs(angleOf('wide') - angleOf('narrow'));
+  if (apart > Math.PI) apart = 2 * Math.PI - apart;
+  // Pure leaf count would place the two wedge centers about (1/2)(30/31 + 1/31) x 2pi apart at
+  // most; the evenness nudge has to move narrow measurably off the crowd.
+  assert.ok(apart > (Math.PI * 2) / 31, `only ${apart.toFixed(3)} rad apart`);
+});
