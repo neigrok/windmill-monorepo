@@ -37,6 +37,10 @@ jobs:
           # Stamp the build so Sentry groups + tracks errors by release (frames stay minified until
           # source-map upload is added — a follow-up that needs a Sentry org auth token).
           VITE_RELEASE: ${{ github.sha }}
+          # Paddle's client-side token is public by design (it ships in the bundle and only opens
+          # checkouts). The secret-bearing API key lives on the server, never here.
+          VITE_PADDLE_TOKEN: test_d4d8d13ce4ce20c7b43867bf800
+          VITE_PADDLE_ENV: sandbox
         run: npm run build
 
       - name: Rsync dist to the VPS

@@ -11,6 +11,7 @@ import { requestMagicLink } from '../auth/AuthClient.js';
 import { SignInDialog } from '../auth/SignInDialog.jsx';
 import { Button } from '../../components';
 import { ProfileSection } from './ProfileSection.jsx';
+import { PlanSection } from './PlanSection.jsx';
 import { ConnectedToolsSection } from './ConnectedToolsSection.jsx';
 import { ApiKeysSection } from './ApiKeysSection.jsx';
 import { SessionsSection } from './SessionsSection.jsx';
@@ -30,6 +31,7 @@ export function SettingsPage() {
         {status === 'loading' ? null : signedIn ? (
           <>
             <ProfileSection />
+            <PlanSection />
             <ConnectedToolsSection />
             <ApiKeysSection />
             <SessionsSection />

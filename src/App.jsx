@@ -8,6 +8,7 @@ import { verifyToken } from './skilltree/auth/AuthClient.js';
 import { PlaceStore } from './skilltree/persistence/PlaceStore.js';
 import { DEMO_TREE_ID } from './skilltree/demo/demoStage.js';
 import Marketing from './marketing/Marketing.jsx';
+import { pendingTransactionId, openCheckout } from './skilltree/billing/checkout.js';
 
 // Marketing is the site root and our one crawlable/indexable URL, so it ships
 // eagerly with the entry chunk — the landing paints in a single download (best
@@ -154,9 +155,26 @@ export function pathTarget(pathname = typeof window === 'undefined' ? '' : windo
   return id ? { treeId: id } : null;
 }
 
+// Paddle's payment link lands back on our own origin carrying `?_ptxn=<transaction>` — the signal
+// to resume that checkout. It can arrive on any route (the link points at /checkout, but a stale one
+// could land anywhere), so this is read at the root rather than owned by a route. The parameter is
+// stripped once consumed, so a refresh doesn't reopen a checkout the user already closed.
+function ResumeCheckout() {
+  React.useEffect(() => {
+    const transactionId = pendingTransactionId();
+    if (!transactionId) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete('_ptxn');
+    window.history.replaceState({}, '', url.toString());
+    openCheckout(transactionId);
+  }, []);
+  return null;
+}
+
 export default function App() {
   return (
     <AuthProvider>
+      <ResumeCheckout />
       <AppRoutes />
     </AuthProvider>
   );
