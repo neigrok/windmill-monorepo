@@ -48,8 +48,11 @@ void Collab::onOpen(const drogon::HttpRequestPtr& req, const drogon::WebSocketCo
     if (authorization.rfind("Bearer ", 0) == 0) secret = authorization.substr(7);
   }
   std::optional<User> user = auth_.authenticate(secret);
-  Principal principal = user ? Principal{user->id, true}
-                             : Principal{UserId{"u" + std::to_string(++actorSeq_)}, false};
+  // Keep the session's digest — never the secret — so each write can re-prove the session is still
+  // live, and a revocation reaches a connection that was opened before it.
+  Principal principal =
+      user ? Principal{user->id, true, auth_.digestOf(secret), clock_.nowMs()}
+           : Principal{UserId{"u" + std::to_string(++actorSeq_)}, false, "", 0};
   conn->setContext(std::make_shared<Principal>(std::move(principal)));
 
   std::lock_guard<std::mutex> lock(wsMutex_);
@@ -151,10 +154,30 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
 // its own writes, so the server never re-stamps — it clamps gross clock skew, joins the frame
 // verbatim, and acks. Legend/cap invariants are diagnostics now, never a refusal (§2), so the
 // only rejections here are auth and ownership.
+// A socket authenticates once, at the upgrade, and can then live for hours — so "sign out
+// everywhere" and closing an account would not reach a connection already open, and a stolen
+// session could keep writing long after it was revoked. Every WRITE re-proves its session, throttled
+// to one lookup a minute so ordinary editing still costs nothing.
+bool Collab::stillAuthorized(const drogon::WebSocketConnectionPtr& conn) {
+  const std::shared_ptr<Principal> principal = conn->getContext<Principal>();
+  if (!principal || !principal->authenticated) return false;
+  if (principal->sessionDigest.empty()) return false;
+
+  const std::uint64_t now = clock_.nowMs();
+  if (now - principal->checkedAtMs < kRevalidateEveryMs) return true;
+
+  if (!auth_.revalidate(principal->sessionDigest)) {
+    principal->authenticated = false;  // revoked mid-connection: it is a guest from here on
+    return false;
+  }
+  principal->checkedAtMs = now;
+  return true;
+}
+
 void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, const Json::Value& frame) {
   const Principal& principal = principalOf(conn);
   std::string frameId = frame.get("frameId", "").asString();
-  if (!principal.authenticated) {
+  if (!stillAuthorized(conn)) {
     Json::Value reject(Json::objectValue);
     reject["t"] = "reject";
     reject["treeId"] = treeId;
@@ -221,7 +244,7 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
 // rejected), then echo only to the same user's other sessions — not to collaborators.
 void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, const Json::Value& frame) {
   const Principal& principal = principalOf(conn);
-  if (!principal.authenticated) {
+  if (!stillAuthorized(conn)) {
     // Progress is a private per-account overlay — but a silent drop would lose a lapsed
     // session's marks invisibly. Echo the mark back in the reject so the client can requeue.
     Json::Value reject(Json::objectValue);

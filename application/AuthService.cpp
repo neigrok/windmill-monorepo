@@ -84,8 +84,15 @@ AuthService::SignedIn AuthService::mintSessionFor(const Email& email, const std:
 
 std::optional<User> AuthService::authenticate(const std::string& sessionSecret, const SessionContext& ctx) {
   if (sessionSecret.empty()) return std::nullopt;
+  return revalidate(tokens_.digestOf(sessionSecret), ctx);
+}
 
-  const std::string digest = tokens_.digestOf(sessionSecret);
+std::string AuthService::digestOf(const std::string& sessionSecret) {
+  return tokens_.digestOf(sessionSecret);
+}
+
+std::optional<User> AuthService::revalidate(const std::string& digest, const SessionContext& ctx) {
+  if (digest.empty()) return std::nullopt;
   const UnixMs now = clock_.nowMs();
 
   const std::optional<StoredSession> session = repo_.findSession(digest);

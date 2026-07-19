@@ -23,6 +23,12 @@ namespace wm {
 struct Principal {
   UserId user;
   bool authenticated = false;
+  // A socket outlives the request that opened it, so the session that authorized it can be revoked
+  // — signed out everywhere, or the account closed — while the connection keeps writing. The digest
+  // (never the secret) is kept so a writer can re-prove its session; checkedAtMs throttles that to
+  // one lookup a minute rather than one per edit.
+  std::string sessionDigest;
+  std::uint64_t checkedAtMs = 0;
 };
 
 // Class C presence (§5): ephemeral cursor/selection, never persisted, never in the op

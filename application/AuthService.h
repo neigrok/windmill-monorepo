@@ -93,6 +93,12 @@ public:
   // healing the row's metadata from ctx. A closed account is refused (nullopt) even if a
   // stale session row somehow survives — defense in depth behind the close's session sweep.
   std::optional<User> authenticate(const std::string& sessionSecret, const SessionContext& ctx = {});
+
+  // The same check keyed by the session's DIGEST rather than its secret — for a long-lived
+  // connection that must keep proving its session is still good without holding the raw secret in
+  // memory for hours. digestOf turns a secret into that key once, at the point it arrives.
+  std::string digestOf(const std::string& sessionSecret);
+  std::optional<User> revalidate(const std::string& digest, const SessionContext& ctx = {});
   void signOut(const std::string& sessionSecret);
 
   // Settings §5 profile: rename the account. nullopt is a blank or over-cap name (a 400); the

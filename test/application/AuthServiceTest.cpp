@@ -123,6 +123,41 @@ TEST(complete_link_reuses_the_existing_account_on_a_later_sign_in) {
   CHECK_EQ(h.repo.usersById.size(), 1u);
 }
 
+// A websocket authenticates once at its upgrade and can then live for hours, so it re-proves its
+// session by digest as it writes. These pin the two revocations that must actually reach it.
+TEST(revalidate_accepts_a_live_session_and_refuses_a_signed_out_one) {
+  Harness h;
+  h.requestLink("sam@example.com");
+  const std::string session = h.service.completeLink("s1").signedIn->sessionSecret;
+  const std::string digest = h.service.digestOf(session);
+  CHECK(h.service.revalidate(digest).has_value());
+
+  h.service.signOut(session);
+  CHECK_FALSE(h.service.revalidate(digest).has_value());
+}
+
+TEST(revalidate_refuses_a_closed_account) {
+  Harness h;
+  h.requestLink("sam@example.com");
+  const AuthService::SignedIn signedIn = *h.service.completeLink("s1").signedIn;
+  const std::string digest = h.service.digestOf(signedIn.sessionSecret);
+  CHECK(h.service.revalidate(digest).has_value());
+
+  h.service.closeAccount(signedIn.user.id);
+  CHECK_FALSE(h.service.revalidate(digest).has_value());
+}
+
+TEST(revalidate_refuses_an_expired_session_and_an_unknown_digest) {
+  Harness h;
+  h.requestLink("sam@example.com");
+  const std::string digest = h.service.digestOf(h.service.completeLink("s1").signedIn->sessionSecret);
+
+  h.clock.now += AuthPolicy::sessionLifetimeMs + 1;
+  CHECK_FALSE(h.service.revalidate(digest).has_value());
+  CHECK_FALSE(h.service.revalidate("d-never-issued").has_value());
+  CHECK_FALSE(h.service.revalidate("").has_value());
+}
+
 TEST(google_sign_in_creates_the_account_and_a_session_for_a_new_email) {
   Harness h;
   AuthService::SignedIn signedIn = h.service.completeGoogle(*parseEmail("sam@example.com"), "Sam Gold");

@@ -36,6 +36,11 @@ public:
 
 private:
   void subscribe(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, const Json::Value& frame);
+  // How often an open socket re-proves its session on a write. A revoked session keeps writing for
+  // at most this long, which is the trade against a database lookup per edit.
+  static constexpr std::uint64_t kRevalidateEveryMs = 60000;
+
+  bool stillAuthorized(const drogon::WebSocketConnectionPtr& conn);
   void subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, const Json::Value& frame);
   void progress(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, const Json::Value& frame);
   bool overRate(const drogon::WebSocketConnectionPtr& conn);  // per-connection message-rate gate
