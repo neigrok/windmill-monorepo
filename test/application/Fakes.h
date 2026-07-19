@@ -70,6 +70,13 @@ struct FakeTreeRepository : TreeRepository {
     if (it == byId.end()) return std::nullopt;
     return it->second;
   }
+  // The same two facts the real repository reads with a two-column select — projected off the
+  // stored tree here, so a fake can never disagree with load() about who may read what.
+  std::optional<TreeAccess> loadAccess(const TreeId& tree) override {
+    const std::optional<StoredTree> stored = load(tree);
+    if (!stored) return std::nullopt;
+    return TreeAccess{stored->owner, stored->visibility};
+  }
   void save(const TreeId& tree, const GraphState& state, const LegendState& legend,
             const Lww<std::string>& title, Seq head) override {
     savedNodeCounts.push_back(state.nodes.size());

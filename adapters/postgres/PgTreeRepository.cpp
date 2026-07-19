@@ -155,6 +155,22 @@ LegendState legendRows(pqxx::work& txn, const TreeId& tree) {
 
 PgTreeRepository::PgTreeRepository(std::string connString) : connString_(std::move(connString)) {}
 
+std::optional<TreeAccess> PgTreeRepository::loadAccess(const TreeId& tree) {
+  // Two columns, one row, no lattice — the whole point is that deciding "may this caller read it?"
+  // costs a primary-key lookup rather than every node, edge and kind the tree owns.
+  pqxx::work txn{pgThreadConnection(connString_)};
+  pqxx::result rows = txn.exec_params(
+      "SELECT owner_id::text, visibility FROM trees WHERE id = $1 AND deleted_at IS NULL",
+      tree.str());
+  if (rows.empty()) return std::nullopt;
+
+  const auto& row = rows[0];
+  TreeAccess access;
+  if (!row["owner_id"].is_null()) access.owner = UserId{row["owner_id"].as<std::string>()};
+  access.visibility = parseVisibility(row["visibility"].as<std::string>());
+  return access;
+}
+
 std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
   pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result rows = txn.exec_params(

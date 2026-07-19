@@ -127,7 +127,12 @@ jobs:
             # expand to the space-separated form Caddy's remote_ip wants. Fail open to allow-all if
             # the list is empty, so a fetch miss can't lock ingress out.
             CF_IPS="$(printf '%s' "${CF_IPS_CSV:-}" | tr ',' ' ')"
-            if [ -z "${CF_IPS}" ]; then CF_IPS="0.0.0.0/0 ::/0"; echo "WARNING: no Cloudflare IPs supplied; origin left open"; fi
+            # Fail the DEPLOY rather than open the origin. Every per-IP rate limit trusts
+            # cf-connecting-ip, and that header is only trustworthy because Caddy refuses traffic
+            # from outside Cloudflare's ranges — so shipping an allow-all list silently turns every
+            # limit into a header an attacker rotates, with the magic-link and LLM spend ceilings as
+            # the only brake. Stopping here leaves the previous (correctly locked) deploy running.
+            if [ -z "${CF_IPS}" ]; then echo "ERROR: no Cloudflare IP ranges fetched; refusing to deploy with an open origin"; exit 1; fi
             cat > .env <<EOF
             IMAGE_TAG=${IMAGE_TAG}
             POSTGRES_PASSWORD=${POSTGRES_PASSWORD}

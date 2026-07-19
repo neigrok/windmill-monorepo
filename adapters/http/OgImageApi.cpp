@@ -67,8 +67,11 @@ void OgImageApi::putImage(const drogon::HttpRequestPtr& req, HttpCallback&& call
 }
 
 void OgImageApi::getImage(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& id) {
+  // Anyone may request an unfurl card, so this must stay a cheap read: the two access columns, not
+  // the tree's whole lattice — otherwise a single fat tree turns every card request into a
+  // multi-table scan an unauthenticated client can repeat at will.
   const std::optional<UserId> caller = callerOf(req, *auth_);
-  const std::optional<StoredTree> tree = trees_->load(TreeId{id});
+  const std::optional<TreeAccess> tree = trees_->loadAccess(TreeId{id});
   if (!tree || !canRead(caller, tree->owner, tree->visibility)) {
     callback(genericCard());  // absent or private-denied — indistinguishable from having no card
     return;

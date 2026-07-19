@@ -11,7 +11,18 @@ std::optional<OAuthClient> OAuthService::registerClient(std::vector<std::string>
   for (const std::string& uri : redirectUris)
     if (!redirectSchemeAllowed(uri)) return std::nullopt;
 
-  OAuthClient client{tokens_.mint().secret, std::move(redirectUris), std::move(name)};
+  // Registration is open (RFC 7591), and this name becomes the headline on the consent screen —
+  // "<name> wants to tend your roadmaps". Anyone could otherwise register a name that impersonates
+  // us or runs long enough to push the honest signal (which host you'd be sent back to) off screen.
+  // Clamp the length and drop control characters; the redirect host remains the real trust anchor.
+  std::string safeName;
+  for (char c : name) {
+    if (static_cast<unsigned char>(c) < 0x20 || c == 0x7F) continue;
+    safeName.push_back(c);
+    if (safeName.size() >= 64) break;
+  }
+
+  OAuthClient client{tokens_.mint().secret, std::move(redirectUris), std::move(safeName)};
   repo_.registerClient(client);
   return client;
 }

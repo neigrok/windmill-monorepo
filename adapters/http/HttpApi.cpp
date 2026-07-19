@@ -104,6 +104,13 @@ void HttpApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
     return;
   }
   TreeData data = treeFromJson(*json, TreeId{treeId});
+  // The same ceiling the command path enforces (domain/Command.h). Without it this route admits
+  // whatever fits in the body limit — tens of thousands of nodes — and every later read of that
+  // tree pays for it.
+  if (data.nodes.size() > kMaxNodes) {
+    callback(error(drogon::k413RequestEntityTooLarge, "that tree has too many steps"));
+    return;
+  }
   GraphState state = LooseGraph(data, genesis_).exportState();  // seed full state from the posted tree
 
   Seq head = 0;

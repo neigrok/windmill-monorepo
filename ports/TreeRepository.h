@@ -43,9 +43,18 @@ struct OwnedTree {
   std::uint64_t updatedAt = 0;
 };
 
+// Only the two facts an access decision needs. `load` drags every node, edge and kind row off
+// disk to rebuild the CRDT state; a caller that just asks "may this reader see it?" — the unfurl
+// card, most notably, which anyone may request — must not pay for the whole lattice to answer it.
+struct TreeAccess {
+  std::optional<UserId> owner;
+  Visibility visibility = Visibility::private_;
+};
+
 struct TreeRepository {
   virtual ~TreeRepository() = default;
   virtual std::optional<StoredTree> load(const TreeId& tree) = 0;
+  virtual std::optional<TreeAccess> loadAccess(const TreeId& tree) = 0;
   // Upsert a slice of the tree's lattice: every entry given replaces its stored row (the
   // caller — the room — is the single authority, so its values are always current), plus
   // the title register and head. A sparse slice is the norm (just the entries dirtied since

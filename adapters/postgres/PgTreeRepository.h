@@ -15,6 +15,7 @@ public:
   explicit PgTreeRepository(std::string connString);
 
   std::optional<StoredTree> load(const TreeId& tree) override;
+  std::optional<TreeAccess> loadAccess(const TreeId& tree) override;
   void save(const TreeId& tree, const GraphState& state, const LegendState& legend,
             const Lww<std::string>& title, Seq head) override;
   void create(const TreeId& tree, const GraphState& state, const LegendState& legend,
