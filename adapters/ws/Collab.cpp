@@ -4,6 +4,7 @@
 #include "adapters/json/TreeJson.h"
 #include "application/TreeRoom.h"
 #include "domain/Access.h"
+#include "domain/Auth.h"
 
 #include <optional>
 #include <stdexcept>
@@ -51,8 +52,8 @@ void Collab::onOpen(const drogon::HttpRequestPtr& req, const drogon::WebSocketCo
   // Keep the session's digest — never the secret — so each write can re-prove the session is still
   // live, and a revocation reaches a connection that was opened before it.
   Principal principal =
-      user ? Principal{user->id, true, auth_.digestOf(secret), clock_.nowMs()}
-           : Principal{UserId{"u" + std::to_string(++actorSeq_)}, false, "", 0};
+      user ? Principal{user->id, true, sharableName(*user), auth_.digestOf(secret), clock_.nowMs()}
+           : Principal{UserId{"u" + std::to_string(++actorSeq_)}, false, "", "", 0};
   conn->setContext(std::make_shared<Principal>(std::move(principal)));
 
   std::lock_guard<std::mutex> lock(wsMutex_);

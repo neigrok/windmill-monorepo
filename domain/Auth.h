@@ -35,6 +35,11 @@ struct User {
 };
 std::string nameFromEmail(const Email& email);
 
+// The name strangers may see. A name we spliced out of an email address is not one anyone chose
+// to publish — showing it on a public tree would hand every passer-by most of the address — so it
+// reads as no name at all, and the surface that needs one names the visitor itself.
+std::string sharableName(const User& user);
+
 // The settings §5 profile edit: a trimmed, non-empty display name within the length cap.
 // nullopt is the doc's "that name's blank, or too long" — the only two ways a rename fails.
 std::optional<std::string> parseName(const std::string& raw);

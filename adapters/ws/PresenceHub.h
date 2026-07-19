@@ -23,6 +23,10 @@ namespace wm {
 struct Principal {
   UserId user;
   bool authenticated = false;
+  // The display name this connection may show to others — empty for a guest, and empty too for an
+  // account still wearing the name we derived from its address (§sharableName). Resolved here, at
+  // the one place that knows who the connection is, rather than guessed downstream from the id.
+  std::string name;
   // A socket outlives the request that opened it, so the session that authorized it can be revoked
   // — signed out everywhere, or the account closed — while the connection keeps writing. The digest
   // (never the secret) is kept so a writer can re-prove its session; checkedAtMs throttles that to
@@ -57,6 +61,7 @@ private:
     bool moved = false;                 // has fresh cursor/selection to send on next flush
   };
 
+  std::string guestName(const UserId& actor, const std::map<drogon::WebSocketConnectionPtr, Member>& members) const;
   Json::Value presenceFrame(const std::string& tree, const Member& member) const;
   Json::Value peerFrame(const std::string& tree, const Member& member, const char* event) const;
 

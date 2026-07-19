@@ -16,6 +16,7 @@
 
 #include <chrono>
 #include <memory>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -100,6 +101,17 @@ void broadcastTo(WsPresenceBus& bus, const char* tree) {
 
 std::string frameType(const std::string& text) { return parse(text).get("t", "").asString(); }
 
+// The profile name carried by the last "peer join" frame a connection received — how a peer
+// is announced to everyone already in the tree.
+std::string announcedName(const FakeSocket& conn) {
+  for (auto it = conn.sent.rbegin(); it != conn.sent.rend(); ++it) {
+    Json::Value frame = parse(*it);
+    if (frame.get("t", "").asString() == "peer" && frame.get("event", "").asString() == "join")
+      return frame["profile"].get("name", "").asString();
+  }
+  return "";
+}
+
 }
 
 TEST(ws_owner_of_a_private_tree_subscribes_and_receives_the_delta) {
@@ -175,4 +187,104 @@ TEST(ws_subscribe_to_an_absent_tree_is_rejected) {
 
   CHECK_EQ(conn->sent.size(), 1u);
   CHECK_EQ(frameType(conn->sent[0]), std::string("reject"));
+}
+
+TEST(presence_announces_an_account_by_the_name_it_chose) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");  // signIn names the account "sam"
+  h.seed("t_pub", owner, Visibility::public_);
+
+  auto watcher = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade(""), watcher);
+  h.collab.onMessage(watcher, subscribeFrame("t_pub"));
+
+  auto named = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), named);
+  h.collab.onMessage(named, subscribeFrame("t_pub"));
+
+  CHECK_EQ(announcedName(*watcher), std::string("sam"));
+}
+
+TEST(presence_never_announces_a_name_still_spliced_from_an_address) {
+  Harness h;
+  User plain = h.authRepo.createUser(Email{"sam.gold@example.com"}, "sam.gold");  // untouched default
+  h.authRepo.insertSession(h.tokens.digestOf("s-plain"), plain.id, h.clock.now + 1'000'000, "", "", h.clock.now);
+  h.seed("t_pub", plain.id, Visibility::public_);
+
+  auto watcher = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade(""), watcher);
+  h.collab.onMessage(watcher, subscribeFrame("t_pub"));
+
+  auto derived = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-plain"), derived);
+  h.collab.onMessage(derived, subscribeFrame("t_pub"));
+
+  const std::string announced = announcedName(*watcher);
+  CHECK_FALSE(announced == std::string("sam.gold"));  // the address must not reach a stranger
+  CHECK_FALSE(announced.empty());                     // but they are still someone
+  CHECK(announced.find(' ') != std::string::npos);    // a traveller's name, two words
+}
+
+TEST(presence_does_not_reannounce_a_connection_that_resubscribes) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_pub", owner, Visibility::public_);
+
+  auto watcher = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade(""), watcher);
+  h.collab.onMessage(watcher, subscribeFrame("t_pub"));
+
+  auto guest = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade(""), guest);
+  h.collab.onMessage(guest, subscribeFrame("t_pub"));
+  const std::string announced = announcedName(*watcher);
+  const std::size_t seen = watcher->sent.size();
+  const std::size_t guestSeen = guest->sent.size();
+
+  // A resubscribe is how a client re-baselines after a gap. It still gets its own delta, but the
+  // room already knows this connection: no second arrival, and it keeps the name it was given.
+  h.collab.onMessage(guest, subscribeFrame("t_pub"));
+  CHECK_EQ(watcher->sent.size(), seen);
+  CHECK_EQ(announcedName(*watcher), announced);
+  CHECK_EQ(guest->sent.size(), guestSeen + 1);  // its delta, and no second copy of the roster
+}
+
+TEST(presence_never_seats_two_guests_under_one_name) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_pub", owner, Visibility::public_);
+
+  auto watcher = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade(""), watcher);
+  h.collab.onMessage(watcher, subscribeFrame("t_pub"));
+
+  std::set<std::string> names;
+  std::vector<std::shared_ptr<FakeSocket>> guests;
+  for (int i = 0; i < 40; ++i) {
+    auto guest = std::make_shared<FakeSocket>();
+    h.collab.onOpen(h.upgrade(""), guest);
+    h.collab.onMessage(guest, subscribeFrame("t_pub"));
+    names.insert(announcedName(*watcher));
+    guests.push_back(guest);  // held open, so each newcomer collides against a full room
+  }
+  CHECK_EQ(names.size(), 40u);
+}
+
+TEST(presence_gives_a_guest_a_travellers_name_not_a_row_number) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_pub", owner, Visibility::public_);
+
+  auto watcher = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade(""), watcher);
+  h.collab.onMessage(watcher, subscribeFrame("t_pub"));
+
+  auto guest = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade(""), guest);
+  h.collab.onMessage(guest, subscribeFrame("t_pub"));
+
+  const std::string announced = announcedName(*watcher);
+  CHECK_FALSE(announced.rfind("Guest", 0) == 0);
+  CHECK(announced.find(' ') != std::string::npos);
+  CHECK(announced.find_first_of("0123456789") == std::string::npos);  // no id bleeding through
 }
