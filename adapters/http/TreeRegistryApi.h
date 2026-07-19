@@ -2,7 +2,6 @@
 
 #include "application/AuthService.h"
 #include "application/TreeRegistry.h"
-#include "ports/SubscriptionRepository.h"
 
 #include <drogon/HttpRequest.h>
 #include <drogon/HttpResponse.h>
@@ -19,8 +18,7 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // Credentialed by the wm_session cookie — the read/write halves of the switcher's YOURS list.
 class TreeRegistryApi {
 public:
-  TreeRegistryApi(std::shared_ptr<TreeRegistry> registry, std::shared_ptr<AuthService> auth,
-                  SubscriptionRepository* subscriptions = nullptr);
+  TreeRegistryApi(std::shared_ptr<TreeRegistry> registry, std::shared_ptr<AuthService> auth);
 
   void createTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback);                      // POST   /v1/trees
   void listTrees(const drogon::HttpRequestPtr& req, HttpCallback&& callback);                       // GET    /v1/trees
@@ -28,11 +26,9 @@ public:
   void deleteTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);  // DELETE /v1/trees/:id
 
 private:
-  bool hasPro(const drogon::HttpRequestPtr& req);
 
   std::shared_ptr<TreeRegistry> registry_;
   std::shared_ptr<AuthService> auth_;
-  SubscriptionRepository* subscriptions_;  // null → the private gate is open (billing unconfigured)
 };
 
 }

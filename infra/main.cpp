@@ -141,7 +141,7 @@ int main() {
   auto treeRegistry = std::make_shared<TreeRegistry>(*trees, *progress, *tokens, genesis, *registry, *systemClock);
   // Built before the registry API, which reads it to gate private trees behind a live subscription.
   auto subscriptionRepo = std::make_shared<PgSubscriptionRepository>(connString);
-  auto registryApi = std::make_shared<TreeRegistryApi>(treeRegistry, authService, subscriptionRepo.get());
+  auto registryApi = std::make_shared<TreeRegistryApi>(treeRegistry, authService);
 
   // Funnel telemetry (event-spine): ghosts and signed-in users alike beacon here; the
   // general per-IP apiLimiter below covers this route like every other. Accepted events also

@@ -53,7 +53,7 @@ create table if not exists trees (
   title_hlc     text not null default '',
   title_ms      bigint not null default 0,
   title_counter bigint not null default 0,
-  visibility    text not null default 'unlisted',
+  visibility    text not null default 'private',
   head_seq      bigint not null default 0,
   forked_from   text,
   document      jsonb not null default '{"nodes":[]}'::jsonb,
@@ -65,12 +65,13 @@ alter table trees add column if not exists title_hlc text not null default '';
 alter table trees add column if not exists title_ms bigint not null default 0;
 alter table trees add column if not exists title_counter bigint not null default 0;
 -- visibility gates every read (domain/Access.h): 'private' is owner-only, 'unlisted'/'public'
--- are readable by anyone holding the id. New trees are UNLISTED: a tree id carries 64 bits of
--- entropy, so an unshared unlisted tree is unreachable in practice, while sharing stays one link
--- away — this product's whole loop. 'private' (not even by link) is the paid guarantee. An existing
--- table keeps whatever each row already says; only the default for new rows moves.
-alter table trees add column if not exists visibility text not null default 'unlisted';
-alter table trees alter column visibility set default 'unlisted';
+-- are readable by anyone holding the id. New trees are PRIVATE, which is what someone writing a
+-- plan down expects, and sharing is the deliberate act that opens it. This briefly defaulted to
+-- 'unlisted' so that setting a tree private could be sold — taking a default away in order to
+-- charge for it back, which is not a thing we do. Privacy is free. An existing table keeps
+-- whatever each row already says; only the default for new rows moves.
+alter table trees add column if not exists visibility text not null default 'private';
+alter table trees alter column visibility set default 'private';
 
 -- the registry list: a caller's live (not soft-deleted) trees, keyed by owner
 create index if not exists trees_owner on trees (owner_id) where deleted_at is null;
