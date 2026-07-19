@@ -25,8 +25,20 @@ drogon::HttpResponsePtr error(drogon::HttpStatusCode status, const std::string& 
 }
 }
 
-TreeRegistryApi::TreeRegistryApi(std::shared_ptr<TreeRegistry> registry, std::shared_ptr<AuthService> auth)
-    : registry_(std::move(registry)), auth_(std::move(auth)) {}
+// Does the caller hold a live subscription? Read only on the rare path that needs it (setting a
+// tree private), never on every request. Billing unconfigured (no repository) leaves the gate open.
+bool TreeRegistryApi::hasPro(const drogon::HttpRequestPtr& req) {
+  if (!subscriptions_) return true;
+  const std::optional<User> user = callerUserOf(req, *auth_);
+  if (!user) return false;
+  const std::optional<PaddleSubscription> subscription =
+      subscriptions_->findFor(user->id, user->email.value);
+  return subscription && grantsAccess(subscription->status);
+}
+
+TreeRegistryApi::TreeRegistryApi(std::shared_ptr<TreeRegistry> registry, std::shared_ptr<AuthService> auth,
+                                 SubscriptionRepository* subscriptions)
+    : registry_(std::move(registry)), auth_(std::move(auth)), subscriptions_(subscriptions) {}
 
 void TreeRegistryApi::createTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
   std::optional<UserId> caller = callerOf(req, *auth_);
@@ -93,6 +105,18 @@ void TreeRegistryApi::patchTree(const drogon::HttpRequestPtr& req, HttpCallback&
     const std::string requested = (*json)["visibility"].asString();
     if (requested != "private" && requested != "unlisted" && requested != "public") {
       callback(error(drogon::k400BadRequest, "visibility must be private, unlisted, or public"));
+      return;
+    }
+    // Private — unreachable even with the link — is the paid guarantee; unlisted stays free and is
+    // what new trees are. Only SETTING private is gated: a lapsed subscriber's existing private
+    // trees stay exactly as private as they were, because revoking privacy on a downgrade would
+    // publish work somebody chose to keep to themselves.
+    if (requested == "private" && !hasPro(req)) {
+      Json::Value body(Json::objectValue);
+      body["error"] = "Private trees are part of Windmill Pro";
+      body["detail"] = "Unlisted keeps this tree reachable only by its link, and stays free.";
+      body["code"] = "pro_required";
+      callback(jsonResponse(body, drogon::k402PaymentRequired));
       return;
     }
     TreeRegistry::VisibilityChange outcome =

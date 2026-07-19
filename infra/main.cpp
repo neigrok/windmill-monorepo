@@ -139,7 +139,9 @@ int main() {
   // The per-user tree registry (create + list + rename + delete). Reads are repo-direct;
   // rename goes through RoomRegistry so a live room's title stays coherent with the column.
   auto treeRegistry = std::make_shared<TreeRegistry>(*trees, *progress, *tokens, genesis, *registry, *systemClock);
-  auto registryApi = std::make_shared<TreeRegistryApi>(treeRegistry, authService);
+  // Built before the registry API, which reads it to gate private trees behind a live subscription.
+  auto subscriptionRepo = std::make_shared<PgSubscriptionRepository>(connString);
+  auto registryApi = std::make_shared<TreeRegistryApi>(treeRegistry, authService, subscriptionRepo.get());
 
   // Funnel telemetry (event-spine): ghosts and signed-in users alike beacon here; the
   // general per-IP apiLimiter below covers this route like every other. Accepted events also
@@ -165,7 +167,6 @@ int main() {
   const char* paddleApiKey = std::getenv("PADDLE_API_KEY");
   const char* paddleEnv = std::getenv("PADDLE_ENV");
   const char* paddlePriceId = std::getenv("PADDLE_PRICE_ID");
-  auto subscriptionRepo = std::make_shared<PgSubscriptionRepository>(connString);
   auto paddleClient = std::make_shared<PaddleApiClient>(paddleApiKey ? paddleApiKey : "",
                                                         paddleEnv ? paddleEnv : "sandbox");
   auto billingApi = std::make_shared<BillingApi>(*subscriptionRepo, authService, *systemClock,
