@@ -1,9 +1,5 @@
 import React, { Suspense, lazy } from 'react';
 import AuthProvider, { useAuth } from './skilltree/auth/AuthProvider.jsx';
-import { AuthLanding } from './skilltree/auth/AuthLanding.jsx';
-import { OAuthConsent } from './skilltree/auth/OAuthConsent.jsx';
-import { ConnectPage } from './skilltree/connect/ConnectPage.jsx';
-import { SettingsPage } from './skilltree/settings/SettingsPage.jsx';
 import { verifyToken } from './skilltree/auth/AuthClient.js';
 import { PlaceStore } from './skilltree/persistence/PlaceStore.js';
 import { DEMO_TREE_ID } from './skilltree/demo/demoStage.js';
@@ -12,10 +8,17 @@ import { pendingTransactionId, openCheckout } from './skilltree/billing/checkout
 
 // Marketing is the site root and our one crawlable/indexable URL, so it ships
 // eagerly with the entry chunk — the landing paints in a single download (best
-// LCP) instead of paying a lazy round-trip. The heavy WebGL skill-tree route and
-// the design-system showcase stay lazy: they load on demand while the fallback shows.
+// LCP) instead of paying a lazy round-trip. Everything else loads on demand behind
+// a Suspense fallback: the heavy WebGL skill-tree route, the design-system showcase,
+// and the signed-in account surfaces (auth landing, OAuth consent, connect, settings)
+// — none of which a first-time visitor to the landing ever renders, so their code
+// has no business in the entry chunk.
 const SkillTreeApp = lazy(() => import('./skilltree').then((m) => ({ default: m.SkillTreeApp })));
 const Showcase = lazy(() => import('./Showcase.jsx'));
+const AuthLanding = lazy(() => import('./skilltree/auth/AuthLanding.jsx').then((m) => ({ default: m.AuthLanding })));
+const OAuthConsent = lazy(() => import('./skilltree/auth/OAuthConsent.jsx').then((m) => ({ default: m.OAuthConsent })));
+const ConnectPage = lazy(() => import('./skilltree/connect/ConnectPage.jsx').then((m) => ({ default: m.ConnectPage })));
+const SettingsPage = lazy(() => import('./skilltree/settings/SettingsPage.jsx').then((m) => ({ default: m.SettingsPage })));
 
 function useHashRoute() {
   const [hash, setHash] = React.useState(() => window.location.hash);
@@ -77,11 +80,13 @@ function AppRoutes() {
 
   if (route.startsWith('#/auth')) {
     return (
-      <AuthLanding
-        onVerify={verifyToken}
-        onSignedIn={(user, forkedTree) => { signIn(user); window.location.hash = landingHash(forkedTree); }}
-        onOpenDoor={() => { setOpenSignInSignal((n) => n + 1); window.location.hash = '#/app'; }}
-      />
+      <Suspense fallback={<RouteFallback />}>
+        <AuthLanding
+          onVerify={verifyToken}
+          onSignedIn={(user, forkedTree) => { signIn(user); window.location.hash = landingHash(forkedTree); }}
+          onOpenDoor={() => { setOpenSignInSignal((n) => n + 1); window.location.hash = '#/app'; }}
+        />
+      </Suspense>
     );
   }
 
@@ -90,20 +95,20 @@ function AppRoutes() {
   // #/app, which would drop the consent params; this route stays put and lets sign-in
   // resolve in place (AuthProvider flips the tab), preserving the URL for the decision.
   if (route.startsWith('#/oauth/authorize')) {
-    return <OAuthConsent />;
+    return <Suspense fallback={<RouteFallback />}><OAuthConsent /></Suspense>;
   }
 
   // The connect surface (F17) — where a signed-in user points Claude / Cursor / Codex at the
   // hosted MCP server. Account business, its own stable URL; the tree canvas never learns of MCP.
   if (route.startsWith('#/connect')) {
-    return <ConnectPage />;
+    return <Suspense fallback={<RouteFallback />}><ConnectPage /></Suspense>;
   }
 
   // The settings home (X6 §5) — the signed-in account surface: profile, connected tools,
   // sessions, and data. Its own stable URL, plain chrome shared with /connect; the tree
   // canvas never learns of it.
   if (route.startsWith('#/settings')) {
-    return <SettingsPage />;
+    return <Suspense fallback={<RouteFallback />}><SettingsPage /></Suspense>;
   }
 
   const isApp = route.startsWith('#/app') || route.startsWith('#/t/') || route.startsWith('#/demo')
