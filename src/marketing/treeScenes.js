@@ -168,7 +168,11 @@ export function mountHero(wrap) {
     const w = wrap.clientWidth || HW;
     const s = Math.min(Math.max(w / HW, .60), 1.08);
     stage.style.transform = `translateX(-50%) scale(${s})`;
-    wrap.style.height = Math.round(HH * s) + 'px';
+    // Phones floor the world at .60×, where the tree fills the moat right down to where the
+    // Fork CTA floats — its lowest branch reads as stuck to the button. Give the button a clear
+    // band below the tree (matched in marketing.css's 743px reserve so mounting doesn't shift).
+    const pad = w < 744 ? 72 : 0;
+    wrap.style.height = Math.round(HH * s + pad) + 'px';
     wrap.classList.toggle('labels-off', s < 0.8);
   };
   new ResizeObserver(fit).observe(wrap); fit();

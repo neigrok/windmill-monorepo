@@ -176,6 +176,8 @@ path.eb { transition: opacity 280ms var(--ease-standard), stroke 280ms var(--eas
   .sectionTitle { font-size: 30px; }
   .plq .tn { font-size: 13px; }
   .ctaBand { padding: 40px 24px; }
+  /* Match fit()'s phone pad (treeScenes): +72px clear band below the tree for the Fork CTA. */
+  .heroBleed > div { height: calc(clamp(336px, 57.14vw, 605px) + 72px); }
 }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
