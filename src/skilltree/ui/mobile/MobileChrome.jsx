@@ -20,6 +20,7 @@ export function MobileChrome({
   byline = null,
   dominantKind,
   onFork,
+  onSignInToKeep,
   ctaEcho = false,
   onRecenter,
   showRecenter = false,
@@ -145,6 +146,31 @@ export function MobileChrome({
           <span style={{ fontFamily: 'var(--font-body)', fontSize: 11, color: 'var(--text-tertiary)' }}>
             {author}
           </span>
+        )}
+
+        {/* An anon owner's tree lives only on this device — the one honest nudge, in the plaque
+            where the tree names itself. Tapping opens the sign-in door; claimLocalTrees keeps the
+            tree and its progress on the account. No account seat reaches a phone, so this is it. */}
+        {onSignInToKeep && (
+          <button
+            type="button"
+            onClick={onSignInToKeep}
+            style={{
+              pointerEvents: 'auto',
+              marginTop: 1,
+              padding: 0,
+              border: 'none',
+              background: 'none',
+              textAlign: 'left',
+              fontFamily: 'var(--font-body)',
+              fontSize: 12,
+              fontWeight: 700,
+              color: 'var(--color-brand)',
+              cursor: 'pointer',
+            }}
+          >
+            Saved on this device — sign in to keep it →
+          </button>
         )}
       </div>
 

@@ -2033,6 +2033,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
           ctaEcho={ctaEcho}
           dominantKind={shareStats?.dominantKind}
           onFork={(shared || !!demotion) && !demotion?.cardOpen ? () => setForkOpen(true) : undefined}
+          onSignInToKeep={status === 'ghost' && treeMine && !demo ? () => setSignInOpen(true) : undefined}
           onRecenter={handleRecenter}
           showRecenter={recenterAvailable}
           tablet={breakpoint === 'tablet'}
@@ -2072,7 +2073,12 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
           control bar (z 20 < seat 24 < panel 25). */}
       {!readOnly && (
         <div style={{ position: 'absolute', top: 'calc(var(--space-6) + 52px)', right: 'var(--space-6)', zIndex: 24, display: 'flex', alignItems: 'center', gap: 8 }}>
-          {lapsed && status !== 'signed-in' && <StatusChip>Signed out — saved on this device</StatusChip>}
+          {status !== 'signed-in' && treeMine && !demo && (
+            // Honest, not nagging: an owned tree with no account lives only on this device. A lapsed
+            // session says so with "signed out"; a never-signed-in anon just needs the fact. Either
+            // way the AccountSeat beside it is the door — sign in and claimLocalTrees keeps it.
+            <StatusChip>{lapsed ? 'Signed out — saved on this device' : 'Saved on this device — sign in to keep it'}</StatusChip>
+          )}
           <AccountSeat
             user={user}
             status={status}
