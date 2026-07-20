@@ -2,8 +2,8 @@
 // The live moat — a self-playing demo tree, three how-it-works beats, developer quest
 // thumbnails — comes from treeScenes.js; the rest reuses the app's Button/Badge. The
 // design-time tweaks panel is dropped; the "Any goal" headline is fixed. The landing is the
-// site root; CTAs point at the app (Start → #/app, Try the demo → the read-only hosted demo tree) and
-// the X6 sign-in door.
+// site root; CTAs point at the app (Start → #/app/start, the quest shelf — never bare #/app, which
+// RESUMES the newest tree; Try the demo → the read-only hosted demo tree) and the X6 sign-in door.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Badge } from '../components';
@@ -95,7 +95,7 @@ function NavCluster({ status, user, newest, treeCount, linkSent, onLogin, onResu
       <>
         {newest
           ? <a href={`#/app/${newest.id}`}><Button variant="primary" size="sm">My trees</Button></a>
-          : <a href="#/app"><Button variant="primary" size="sm">Start your tree</Button></a>}
+          : <a href="#/app/start"><Button variant="primary" size="sm">Start your tree</Button></a>}
         <span style={{ display: 'flex', alignItems: 'center' }}>
           <AccountSeat
             user={user}
@@ -119,7 +119,7 @@ function NavCluster({ status, user, newest, treeCount, linkSent, onLogin, onResu
       {status === 'ghost' && (linkSent
         ? <LinkSentChip onClick={onResumeLink} />
         : <Button variant="ghost" size="sm" onClick={onLogin}>Sign in</Button>)}
-      <a href="#/app"><Button variant="primary" size="sm">Start your tree</Button></a>
+      <a href="#/app/start"><Button variant="primary" size="sm">Start your tree</Button></a>
     </>
   );
 }
@@ -214,7 +214,7 @@ function Hero({ resume }) {
         ) : (
           <>
             <div style={{ display: 'flex', gap: 12, marginTop: 32, flexWrap: 'wrap', justifyContent: 'center' }}>
-              <a href="#/app"><Button variant="primary" size="lg">Start your tree</Button></a>
+              <a href="#/app/start"><Button variant="primary" size="lg">Start your tree</Button></a>
               <a href="#/demo"><Button variant="secondary" size="lg">Try the live demo</Button></a>
             </div>
             <div style={{ fontFamily: 'var(--font-body)', fontSize: 13.5, color: 'var(--text-tertiary)', marginTop: 14 }}>
@@ -281,7 +281,7 @@ function Paths() {
       <p className="sectionSub">Authored learning trees with real prerequisite logic — ownership gates lifetimes, fundamentals gate frameworks. Pick one and it’s yours to grow.</p>
       <div className="paths">
         {quests.map(q => (
-          <a key={q.id} className="questCard" href="#/app">
+          <a key={q.id} className="questCard" href="#/app/start">
             <div className="questRule" style={{ background: q.rule }}></div>
             <QuestThumb quest={q.id} />
             <div className="questMeta">
@@ -381,7 +381,7 @@ function CtaBand({ planted }) {
         <h2 className="sectionTitle" style={{ margin: 0 }}>{planted ? 'Plant another tree' : 'Plant your first tree'}</h2>
         <p className="sectionSub" style={{ maxWidth: 460 }}>It takes about a minute, and the first branch unlocks tonight.</p>
         <div style={{ display: 'flex', gap: 12, marginTop: 20, flexWrap: 'wrap', justifyContent: 'center' }}>
-          <a href={planted ? '#/app/new' : '#/app'}><Button variant="primary" size="lg">Start your tree</Button></a>
+          <a href={planted ? '#/app/new' : '#/app/start'}><Button variant="primary" size="lg">Start your tree</Button></a>
           <a href="#/demo"><Button variant="ghost" size="lg">Try the live demo</Button></a>
         </div>
       </div>
