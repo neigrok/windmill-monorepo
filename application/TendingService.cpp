@@ -16,6 +16,9 @@ namespace {
 // worth of sentences is generous for the mobile moment this feature serves and cheap to count.
 constexpr std::uint64_t kAllowanceWindowMs = 24ull * 60 * 60 * 1000;
 constexpr int kAllowancePerDay = 20;
+// Concurrent tends before they queue. Each run is a blocking agent loop of tens of seconds, so a
+// handful of threads is plenty against the fleet rate ceiling (~0.2 runs/s) — more would just idle.
+constexpr std::size_t kTendWorkers = 4;
 
 bool blank(const std::string& text) {
   return text.find_first_not_of(" \t\r\n") == std::string::npos;
@@ -24,8 +27,9 @@ bool blank(const std::string& text) {
 
 TendingService::TendingService(TendRunRepository& runs, PlanAgent& agent, ToolHost& tools,
                                Clock& clock, TokenGenerator& tokens, bool enabled)
-    : runs_(runs), agent_(agent), tools_(tools), clock_(clock), tokens_(tokens), enabled_(enabled) {
-  worker_.run();
+    : runs_(runs), agent_(agent), tools_(tools), clock_(clock), tokens_(tokens), enabled_(enabled),
+      workers_(kTendWorkers, "tend-workers") {
+  workers_.start();
 }
 
 TendRun TendingService::start(const TreeId& tree, const UserId& caller, const std::string& prompt) {
@@ -46,9 +50,9 @@ TendRun TendingService::start(const TreeId& tree, const UserId& caller, const st
   run.startedAtMs = clock_.nowMs();
   runs_.save(run);  // durable BEFORE we answer, so the returned id is queryable the instant it lands
 
-  // Hand the blocking loop to the private worker thread and return. The service is a process-lifetime
-  // singleton, so capturing `this` is safe for as long as the worker (a member) lives.
-  worker_.getLoop()->queueInLoop([this, run] { execute(run); });
+  // Hand the blocking loop to the next worker in the pool and return. The service is a
+  // process-lifetime singleton, so capturing `this` is safe for as long as the pool (a member) lives.
+  workers_.getNextLoop()->queueInLoop([this, run] { execute(run); });
   return run;
 }
 

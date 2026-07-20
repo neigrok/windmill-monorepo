@@ -8,7 +8,7 @@
 #include "ports/TokenGenerator.h"
 #include "ports/ToolHost.h"
 
-#include <trantor/net/EventLoopThread.h>
+#include <trantor/net/EventLoopThreadPool.h>
 
 #include <cstdint>
 #include <optional>
@@ -23,9 +23,11 @@ namespace wm {
 // run's state lives in Postgres and the edits land through the tree's rooms, so a phone that comes
 // back reads the finished run off `TendRunRepository`, never a half-done tree.
 //
-// The worker owns its own trantor event-loop thread (like adapters/llm/AnthropicComposer), so the
-// blocking agent loop never parks a drogon request loop. An exception escaping the worker becomes
-// a `failed` run, never a crash.
+// The runs execute on a small POOL of private trantor event-loop threads (each blocking agent loop
+// runs tens of seconds, so a single thread would serialize concurrent tends behind one another),
+// never on a drogon request loop. Runs round-robin across the pool; excess beyond the pool queue
+// behind it — a bound the per-account allowance and the fleet rate limits already keep small. An
+// exception escaping a worker becomes a `failed` run, never a crash.
 class TendingService {
 public:
   TendingService(TendRunRepository& runs, PlanAgent& agent, ToolHost& tools, Clock& clock,
@@ -55,7 +57,7 @@ private:
   Clock& clock_;
   TokenGenerator& tokens_;
   bool enabled_;
-  trantor::EventLoopThread worker_;
+  trantor::EventLoopThreadPool workers_;
 };
 
 }

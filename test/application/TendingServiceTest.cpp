@@ -12,6 +12,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <vector>
 
 using namespace wm;
 using namespace wm::fake;
@@ -254,4 +255,20 @@ TEST(fail_orphaned_runs_settles_running_rows_and_leaves_finished_ones_alone) {
   CHECK_EQ(runs.find("tr_b")->summary, std::string("Added 3 steps"));
   CHECK_EQ(runs.find("tr_c")->status, TendStatus::refused);    // a refusal is untouched
   CHECK_EQ(runs.failOrphanedRuns(), 0);                        // idempotent — nothing left running
+}
+
+TEST(the_worker_pool_completes_more_runs_than_it_has_threads) {
+  Harness h;
+  h.agent.outcome = ok("grew it", 1);
+  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, /*enabled=*/true);
+
+  // Eight runs against a four-thread pool: the excess must queue and still finish, never deadlock
+  // or drop. Distinct users so the per-account allowance never trips.
+  std::vector<std::string> ids;
+  for (int i = 0; i < 8; ++i)
+    ids.push_back(service.start(TreeId{"t"}, UserId{"u" + std::to_string(i)}, "grow it").id);
+
+  for (const std::string& id : ids)
+    CHECK_EQ(awaitTerminal(h.runs, id).status, TendStatus::done);
+  CHECK_EQ(h.agent.calls.load(), 8);
 }
