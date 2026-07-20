@@ -224,7 +224,11 @@ export function MobileChrome({
           aria-label="Recenter"
           style={{
             position: 'absolute',
-            bottom: `calc(${SAFE_BOTTOM} + 14px)`,
+            // The Fork CTA sits centered at the bottom; on a narrow phone its right edge reaches the
+            // right-aligned Recenter chip. When the fork is present (a tree that isn't yours), lift
+            // the chip clear ABOVE the fork's 50px pill so the two never collide; on your own tree
+            // (no fork) it rests at the bottom-right. Tablet puts the fork bottom-LEFT, so no lift.
+            bottom: onFork && !tablet ? `calc(${SAFE_BOTTOM} + 80px)` : `calc(${SAFE_BOTTOM} + 14px)`,
             right: `calc(env(safe-area-inset-right, 0px) + ${recenterRight}px)`,
             pointerEvents: 'auto',
             display: 'inline-flex',
