@@ -41,6 +41,17 @@ struct FakeTendRunRepository : TendRunRepository {
       if (run.user == user && run.startedAtMs >= sinceMs) ++n;
     return n;
   }
+  int failOrphanedRuns() override {
+    std::lock_guard<std::mutex> lock(mutex);
+    int reaped = 0;
+    for (auto& [id, run] : byId)
+      if (run.status == TendStatus::running) {
+        run.status = TendStatus::failed;
+        if (run.detail.empty()) run.detail = "interrupted — the run did not survive a restart";
+        ++reaped;
+      }
+    return reaped;
+  }
 };
 
 // The op-log seam the service reads the seq footprint through: get_tree answers with the head.
@@ -218,4 +229,29 @@ TEST(the_seq_range_is_recorded) {
   CHECK_EQ(done.status, TendStatus::done);
   CHECK_EQ(done.seqFrom, static_cast<std::uint64_t>(10));
   CHECK_EQ(done.seqTo, static_cast<std::uint64_t>(13));
+}
+
+TEST(fail_orphaned_runs_settles_running_rows_and_leaves_finished_ones_alone) {
+  FakeTendRunRepository runs;
+  TendRun running;
+  running.id = "tr_a";
+  running.status = TendStatus::running;
+  TendRun done;
+  done.id = "tr_b";
+  done.status = TendStatus::done;
+  done.summary = "Added 3 steps";
+  TendRun refused;
+  refused.id = "tr_c";
+  refused.status = TendStatus::refused;
+  runs.save(running);
+  runs.save(done);
+  runs.save(refused);
+
+  CHECK_EQ(runs.failOrphanedRuns(), 1);  // only the orphaned running one is reaped
+  CHECK_EQ(runs.find("tr_a")->status, TendStatus::failed);
+  CHECK_FALSE(runs.find("tr_a")->detail.empty());              // reaped runs carry a diagnostic
+  CHECK_EQ(runs.find("tr_b")->status, TendStatus::done);       // a finished run is untouched
+  CHECK_EQ(runs.find("tr_b")->summary, std::string("Added 3 steps"));
+  CHECK_EQ(runs.find("tr_c")->status, TendStatus::refused);    // a refusal is untouched
+  CHECK_EQ(runs.failOrphanedRuns(), 0);                        // idempotent — nothing left running
 }

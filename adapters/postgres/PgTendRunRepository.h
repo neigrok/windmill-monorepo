@@ -13,6 +13,7 @@ public:
   void save(const TendRun& run) override;
   std::optional<TendRun> find(const std::string& id) override;
   int countForUser(const UserId& user, std::uint64_t sinceMs) override;
+  int failOrphanedRuns() override;
 
 private:
   std::string connString_;

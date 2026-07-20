@@ -222,6 +222,11 @@ int main() {
   const char* tendingEnabledEnv = std::getenv("TENDING_ENABLED");
   const std::string tendingEnabledFlag = tendingEnabledEnv ? tendingEnabledEnv : "";
   auto tendRuns = std::make_shared<PgTendRunRepository>(connString);
+  // Reap runs a previous process left mid-flight: this boots before the server accepts traffic, so
+  // every `running` row is orphaned and safe to settle to `failed` — a returning phone then reads a
+  // finished run rather than polling a `running` row that will never move.
+  if (const int reaped = tendRuns->failOrphanedRuns(); reaped > 0)
+    LOG_INFO << "tending: reaped " << reaped << " run(s) stranded by a restart";
   auto tendingAgent = std::make_shared<AnthropicAgent>(anthropicKey ? anthropicKey : "", sentry);
   const bool tendingEnabled =
       (tendingEnabledFlag == "true" || tendingEnabledFlag == "1") && tendingAgent->configured();

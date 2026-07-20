@@ -20,6 +20,14 @@ struct TendRunRepository {
   virtual void save(const TendRun& run) = 0;
   virtual std::optional<TendRun> find(const std::string& id) = 0;
   virtual int countForUser(const UserId& user, std::uint64_t sinceMs) = 0;
+
+  // The reaper, run once at startup: a run executes on this process's worker thread, so any run
+  // still marked `running` when the process boots was orphaned by the restart that ended its owner
+  // — it will never finish on its own. Mark every one `failed` so a returning phone reads a settled
+  // run instead of polling a `running` row forever. Returns how many were reaped. (Single-instance:
+  // a live sibling's in-flight run doesn't exist to mistake for a stranded one — revisit when the
+  // server scales out, alongside the sync-scale-out clock/seq work.)
+  virtual int failOrphanedRuns() = 0;
 };
 
 }

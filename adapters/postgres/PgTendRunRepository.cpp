@@ -85,6 +85,20 @@ std::optional<TendRun> PgTendRunRepository::find(const std::string& id) {
   return tendRunFrom(rows[0]);
 }
 
+int PgTendRunRepository::failOrphanedRuns() {
+  // Every `running` row at startup was orphaned by the restart (a run lives on this process's
+  // worker thread), so settle them all to `failed` with a plain diagnostic. finished_at is stamped
+  // from the DB clock — no Clock dependency for a one-shot boot sweep.
+  pqxx::work txn{pgThreadConnection(connString_)};
+  pqxx::result result = txn.exec(
+      "UPDATE tend_runs SET status = 'failed', "
+      "detail = CASE WHEN detail = '' THEN 'interrupted — the run did not survive a restart' ELSE detail END, "
+      "finished_at = (extract(epoch from now()) * 1000)::bigint "
+      "WHERE status = 'running'");
+  txn.commit();
+  return static_cast<int>(result.affected_rows());
+}
+
 int PgTendRunRepository::countForUser(const UserId& user, std::uint64_t sinceMs) {
   // The allowance read: runs this user started within the window. An agent loop is expensive, so
   // this is the real brake on a single account — counted over started_at, the indexed column.
