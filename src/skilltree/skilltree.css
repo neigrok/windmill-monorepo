@@ -493,6 +493,26 @@
   color: var(--accent-gold-200);
 }
 
+/* On a phone the bottom toast lane lands right on the working surface — the verb rail, the fork
+   and recenter chips, and your thumbs — so a status beat or an undo snackbar covers what you're
+   reaching for. Move the transient toasts to the TOP, below the mobile chrome's title plaque row
+   (its top edge is MobileChrome's SAFE_TOP + 8px; ~72px of plaque clears at +88), and let them
+   fade in place (no 8px rise, which reads as rising-from-below at the top). The selection bar
+   stays at the bottom: it's a tool you act on, not a beat you read. (M-toast) */
+@media (max-width: 743px) {
+  .st-toast {
+    top: calc(max(env(safe-area-inset-top, 0px), 44px) + 88px);
+    bottom: auto;
+    max-width: calc(100vw - 24px);
+    animation: wm-fade-in var(--duration-base) var(--ease-soft);
+  }
+  .st-ticker {
+    top: calc(max(env(safe-area-inset-top, 0px), 44px) + 88px);
+    bottom: auto;
+    flex-direction: column;
+  }
+}
+
 /* ---- Connect gesture: dashed ghost branch + target ring + cycle tip ---- */
 .st-connect {
   position: absolute;
