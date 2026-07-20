@@ -151,6 +151,9 @@
     .pro-aside { position:static; }
   }
 </style>
+  <script>try{var h=JSON.parse(localStorage.getItem("windmill:auth-hint")||"null");document.documentElement.setAttribute("data-auth",h&&h.status==="signed-in"&&h.user?"in":"out")}catch(e){document.documentElement.setAttribute("data-auth","out")}</script>
+  <style>html[data-auth=in] .au-out{display:none}html[data-auth=out] .au-in{display:none}.au-in{display:none}</style>
+  <script defer src="/nav-auth.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -158,8 +161,10 @@
 <header>
   <a class="wm" href="/#/">Windmill</a>
   <span class="navr">
-    <a class="btn btn--gho" href="/#/">Log in</a>
-    <a class="btn btn--pri" href="/#/app">Start your tree</a>
+    <a class="btn btn--gho au-out" href="/#/">Log in</a>
+    <a class="btn btn--pri au-out" href="/#/app">Start your tree</a>
+    <a class="btn btn--gho au-in" href="/#/settings" data-authname>My account</a>
+    <a class="btn btn--pri au-in" href="/#/app">My trees</a>
   </span>
 </header>
 

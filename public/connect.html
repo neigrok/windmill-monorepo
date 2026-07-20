@@ -63,13 +63,18 @@
       .flinks a { color: #92805F; text-decoration: none; }
       .flinks a:hover { color: #211B13; }
     </style>
-  </head>
+    <script>try{var h=JSON.parse(localStorage.getItem("windmill:auth-hint")||"null");document.documentElement.setAttribute("data-auth",h&&h.status==="signed-in"&&h.user?"in":"out")}catch(e){document.documentElement.setAttribute("data-auth","out")}</script>
+  <style>html[data-auth=in] .au-out{display:none}html[data-auth=out] .au-in{display:none}.au-in{display:none}</style>
+  <script defer src="/nav-auth.js"></script>
+</head>
   <body>
     <header class="wrap hdr">
       <a class="mark" href="/#/">Windmill</a>
       <div class="acts">
-        <a class="btn btn--gho" href="/#/">Log in</a>
-        <a class="btn btn--pri" href="/#/app">Start your tree</a>
+        <a class="btn btn--gho au-out" href="/#/">Log in</a>
+        <a class="btn btn--pri au-out" href="/#/app">Start your tree</a>
+        <a class="btn btn--gho au-in" href="/#/settings" data-authname>My account</a>
+        <a class="btn btn--pri au-in" href="/#/app">My trees</a>
       </div>
     </header>
     <main class="wrap">
