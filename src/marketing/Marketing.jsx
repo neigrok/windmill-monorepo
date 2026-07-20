@@ -409,12 +409,32 @@ function Footer({ onFeedback }) {
   );
 }
 
+// The last tree list this account saw, kept per-email so a returning signed-in tab paints its
+// real hero and nav on the first frame instead of the signed-out ones — the registry still
+// answers on boot and replaces this. Keyed by email so one device never shows another account's
+// trees; a ghost (no email) reads nothing. Pure optimization: never trusted, always refreshed.
+const TREES_CACHE_PREFIX = 'windmill:trees:';
+
+function readTreesCache(email) {
+  if (!email) return null;
+  try {
+    const rows = JSON.parse(localStorage.getItem(TREES_CACHE_PREFIX + email) || 'null');
+    return Array.isArray(rows) ? rows : null;
+  } catch { return null; }
+}
+
+function writeTreesCache(email, rows) {
+  if (!email) return;
+  try { localStorage.setItem(TREES_CACHE_PREFIX + email, JSON.stringify(rows)); }
+  catch { /* storage unavailable — the cache is never load-bearing */ }
+}
+
 export default function Marketing() {
   const [signInOpen, setSignInOpen] = useState(false);
   const [signInResume, setSignInResume] = useState(null); // the chip reopens the door on its wait panel; Log in opens fresh
   const [feedbackOpen, setFeedbackOpen] = useState(false); // the footer's contact door — posts anon, no account needed
   const { user, status, signOut } = useAuth();
-  const [trees, setTrees] = useState(null); // null until the registry answers; [] doubles as the honest fallback
+  const [trees, setTrees] = useState(() => readTreesCache(user?.email)); // seeded from cache, then the registry corrects it
   const [pendingLink, setPendingLink] = useState(pendingMagicLink);
   const landed = useRef(false);
 
@@ -430,7 +450,7 @@ export default function Marketing() {
     setPendingLink(pendingMagicLink());
     if (status !== 'signed-in') { setTrees(null); return undefined; }
     let cancelled = false;
-    listTrees().then((rows) => { if (!cancelled) setTrees(rows); });
+    listTrees().then((rows) => { if (!cancelled) { setTrees(rows); writeTreesCache(user?.email, rows); } });
     return () => { cancelled = true; };
   }, [status]);
 
