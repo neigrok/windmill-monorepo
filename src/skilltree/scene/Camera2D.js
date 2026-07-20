@@ -3,7 +3,10 @@
 // exact inverse of screenToWorld, so pointer picking stays pixel-accurate.
 const MIN_ZOOM = 0.006;
 const MAX_ZOOM = 6;
-const PINCH_MIN_ZOOM = 0.5; // the touch pinch range (§S3) — tighter than the wheel's
+// The touch pinch range (§S3). The out-limit must clear a whole tree's fit zoom — on a phone a
+// ~20-node quest fits near 0.1, so the old 0.5 floor both stopped you seeing the tree AND snapped
+// the very first pinch INWARD from the fit. 0.05 lets a pinch reach past any quest's fit.
+const PINCH_MIN_ZOOM = 0.05;
 const PINCH_MAX_ZOOM = 2.5;
 const PAN_SLACK = 80; // px the read-only pan may drift past the tree bounds before it stalls
 const WHEEL_ZOOM_SPEED = 0.0016;
