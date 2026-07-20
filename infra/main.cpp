@@ -132,7 +132,7 @@ int main() {
   // reads the built index.html from WINDMILL_WEB_ROOT (the same host dir Caddy serves); a
   // private or absent tree gets the shell verbatim, so it stays indistinguishable from absent.
   const char* webRootEnv = std::getenv("WINDMILL_WEB_ROOT");
-  auto sharePageApi = std::make_shared<SharePageApi>(registry, authService, webRootEnv ? webRootEnv : "");
+  auto sharePageApi = std::make_shared<SharePageApi>(registry, trees, authService, webRootEnv ? webRootEnv : "");
 
   // Per-tree unfurl cards (og-tree-cards): the owner PUTs their tree's rendered 1200×630 PNG,
   // and GET /og/:id.png serves it (canRead-gated) as the share link's og:image — with the

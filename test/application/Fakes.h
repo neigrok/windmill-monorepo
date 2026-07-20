@@ -77,6 +77,20 @@ struct FakeTreeRepository : TreeRepository {
     if (!stored) return std::nullopt;
     return TreeAccess{stored->owner, stored->visibility};
   }
+
+  ForkLineage loadForkLineage(const TreeId& tree) override {
+    ForkLineage lineage;
+    auto source = forkedFrom.find(tree.str());
+    lineage.isFork = source != forkedFrom.end();
+    if (lineage.isFork) {
+      auto src = byId.find(source->second);
+      if (src != byId.end() && !deletedIds.count(source->second) && src->second.visibility == Visibility::public_)
+        lineage.sourceTitle = src->second.title.value;
+    }
+    for (const auto& [id, from] : forkedFrom)
+      if (from == tree.str() && !deletedIds.count(id)) lineage.forkCount++;
+    return lineage;
+  }
   void save(const TreeId& tree, const GraphState& state, const LegendState& legend,
             const Lww<std::string>& title, Seq head) override {
     savedNodeCounts.push_back(state.nodes.size());

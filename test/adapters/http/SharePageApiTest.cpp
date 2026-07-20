@@ -52,7 +52,10 @@ struct Harness {
   std::shared_ptr<AuthService> auth =
       std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, "https://windmill.works");
 
-  SharePageApi make(const std::string& webRoot) { return SharePageApi{rooms, auth, webRoot}; }
+  SharePageApi make(const std::string& webRoot) { return SharePageApi{rooms, trees, auth, webRoot}; }
+
+  // Record that `forkId` was forked from `sourceId` (the provenance loadForkLineage reads).
+  void seedFork(const char* forkId, const char* sourceId) { trees->forkedFrom[forkId] = sourceId; }
 
   UserId signIn(const std::string& sessionSecret, const std::string& emailAddr = "sam@example.com") {
     User user = authRepo.createUser(Email{emailAddr}, "sam");
@@ -97,7 +100,7 @@ bool has(std::string_view body, std::string_view needle) {
 // ---- renderShell: the pure templating boundary -------------------------------------------
 
 TEST(render_shell_injects_the_trees_own_meta_and_keeps_the_sentinels) {
-  std::string html = SharePageApi::renderShell(SHELL, "My Tree", 3, Visibility::unlisted, "t_abc");
+  std::string html = SharePageApi::renderShell(SHELL, "My Tree", 3, Visibility::unlisted, "t_abc", ForkLineage{});
 
   CHECK(has(html, "<!-- meta:unfurl:start -->"));
   CHECK(has(html, "<!-- meta:unfurl:end -->"));
@@ -115,23 +118,50 @@ TEST(render_shell_injects_the_trees_own_meta_and_keeps_the_sentinels) {
 }
 
 TEST(render_shell_uses_singular_step_and_makes_a_public_tree_indexable) {
-  std::string html = SharePageApi::renderShell(SHELL, "Solo", 1, Visibility::public_, "t_x");
+  std::string html = SharePageApi::renderShell(SHELL, "Solo", 1, Visibility::public_, "t_x", ForkLineage{});
   CHECK(has(html, "A Windmill skill tree \xE2\x80\x94 1 step."));
   CHECK(has(html, "content=\"index, follow, max-image-preview:large\""));
 }
 
+TEST(render_shell_names_a_public_source_and_counts_forks) {
+  ForkLineage lineage;
+  lineage.isFork = true;
+  lineage.sourceTitle = "Learn to sail";
+  lineage.forkCount = 12;
+  std::string html = SharePageApi::renderShell(SHELL, "My voyage", 5, Visibility::unlisted, "t_x", lineage);
+  CHECK(has(html, "A fork of \xE2\x80\x9CLearn to sail\xE2\x80\x9D \xE2\x80\x94 5 steps. Forked 12 times."));
+}
+
+TEST(render_shell_keeps_an_unnamed_source_anonymous_and_singularizes_one_fork) {
+  ForkLineage lineage;
+  lineage.isFork = true;  // sourceTitle empty — the source was unlisted/private, never revealed
+  lineage.forkCount = 1;
+  std::string html = SharePageApi::renderShell(SHELL, "Mine", 3, Visibility::unlisted, "t_x", lineage);
+  CHECK(has(html, "A forked Windmill skill tree \xE2\x80\x94 3 steps. Forked 1 time."));
+  CHECK_FALSE(has(html, "A fork of"));  // no source named
+}
+
+TEST(render_shell_escapes_a_forked_source_title) {
+  ForkLineage lineage;
+  lineage.isFork = true;
+  lineage.sourceTitle = "<b>x</b>";
+  std::string html = SharePageApi::renderShell(SHELL, "Mine", 2, Visibility::unlisted, "t_x", lineage);
+  CHECK(has(html, "&lt;b&gt;x&lt;/b&gt;"));
+  CHECK_FALSE(has(html, "<b>x</b>"));
+}
+
 TEST(render_shell_html_escapes_the_title) {
-  std::string html = SharePageApi::renderShell(SHELL, "<script>alert(1)</script>&\"x", 2, Visibility::unlisted, "t_x");
+  std::string html = SharePageApi::renderShell(SHELL, "<script>alert(1)</script>&\"x", 2, Visibility::unlisted, "t_x", ForkLineage{});
   CHECK_FALSE(has(html, "<script>alert(1)"));
   CHECK(has(html, "&lt;script&gt;alert(1)&lt;/script&gt;&amp;&quot;x"));
 }
 
 TEST(render_shell_falls_back_to_untitled_and_returns_a_fenceless_shell_unchanged) {
-  std::string named = SharePageApi::renderShell(SHELL, "", 2, Visibility::unlisted, "t_x");
+  std::string named = SharePageApi::renderShell(SHELL, "", 2, Visibility::unlisted, "t_x", ForkLineage{});
   CHECK(has(named, "<title>Untitled tree \xE2\x80\x94 Windmill</title>"));
 
   const std::string fenceless = "<html><head><title>No fence</title></head></html>";
-  CHECK_EQ(SharePageApi::renderShell(fenceless, "T", 2, Visibility::public_, "t_x"), fenceless);
+  CHECK_EQ(SharePageApi::renderShell(fenceless, "T", 2, Visibility::public_, "t_x", ForkLineage{}), fenceless);
 }
 
 // ---- page(): read gating + response shape ------------------------------------------------
@@ -149,6 +179,31 @@ TEST(page_serves_an_unlisted_tree_with_its_meta_and_cache_headers) {
   CHECK(has(resp->getBody(), "content=\"Shared plan\""));
   CHECK(has(resp->getBody(), "A Windmill skill tree \xE2\x80\x94 2 steps."));
   CHECK(has(resp->getBody(), "href=\"https://windmill.works/t/t_shared\""));
+}
+
+TEST(page_of_a_fork_names_its_public_source_and_counts_its_own_forks) {
+  Harness h;
+  h.seed("t_src", "Learn to sail", UserId{"owner"}, Visibility::public_, 4);   // the public origin
+  h.seed("t_fork", "My voyage", UserId{"me"}, Visibility::unlisted, 5);        // an unlisted fork of it
+  h.seedFork("t_fork", "t_src");
+  h.seed("t_grandchild", "Their voyage", UserId{"other"}, Visibility::unlisted, 3);
+  h.seedFork("t_grandchild", "t_fork");                                        // one fork OF the fork
+  SharePageApi api = h.make(makeWebRoot(SHELL));
+
+  std::string body{sendPage(api, "", "t_fork")->getBody()};
+  CHECK(has(body, "A fork of \xE2\x80\x9CLearn to sail\xE2\x80\x9D \xE2\x80\x94 5 steps. Forked 1 time."));
+}
+
+TEST(page_of_a_fork_hides_an_unlisted_source_title) {
+  Harness h;
+  h.seed("t_src", "Someone's private-ish plan", UserId{"owner"}, Visibility::unlisted, 4);  // not public
+  h.seed("t_fork", "My copy", UserId{"me"}, Visibility::unlisted, 2);
+  h.seedFork("t_fork", "t_src");
+  SharePageApi api = h.make(makeWebRoot(SHELL));
+
+  std::string body{sendPage(api, "", "t_fork")->getBody()};
+  CHECK(has(body, "A forked Windmill skill tree \xE2\x80\x94 2 steps."));
+  CHECK_FALSE(has(body, "Someone's private-ish plan"));  // an unlisted source is never named
 }
 
 TEST(page_private_denial_is_byte_identical_to_absent_and_to_the_raw_shell) {

@@ -48,12 +48,14 @@ drogon::HttpResponsePtr htmlResponse(std::string body) {
 }
 }
 
-SharePageApi::SharePageApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<AuthService> auth,
-                           std::string webRoot)
-    : registry_(std::move(registry)), auth_(std::move(auth)), webRoot_(std::move(webRoot)) {}
+SharePageApi::SharePageApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
+                           std::shared_ptr<AuthService> auth, std::string webRoot)
+    : registry_(std::move(registry)), trees_(std::move(trees)), auth_(std::move(auth)),
+      webRoot_(std::move(webRoot)) {}
 
 std::string SharePageApi::renderShell(const std::string& shell, const std::string& title,
-                                      std::size_t steps, Visibility visibility, const std::string& id) {
+                                      std::size_t steps, Visibility visibility, const std::string& id,
+                                      const ForkLineage& lineage) {
   static const std::string startTag = "<!-- meta:unfurl:start -->";
   static const std::string endTag = "<!-- meta:unfurl:end -->";
   const std::size_t start = shell.find(startTag);
@@ -63,8 +65,19 @@ std::string SharePageApi::renderShell(const std::string& shell, const std::strin
   const std::string safeTitle = htmlEscape(title.empty() ? "Untitled tree" : title);
   const std::string host = "https://windmill.works";
   const std::string url = host + "/t/" + htmlEscape(id);
-  const std::string description =
-      "A Windmill skill tree \xE2\x80\x94 " + std::to_string(steps) + (steps == 1 ? " step." : " steps.");
+  // Fork attribution (fork-attribution-unfurl): the description advertises the loop this tree came
+  // from and the loop it invites. The source is named only when loadForkLineage found it public;
+  // an unlisted/private source stays anonymous ("a forked Windmill skill tree").
+  const std::string stepPhrase = std::to_string(steps) + (steps == 1 ? " step." : " steps.");
+  std::string description;
+  if (lineage.isFork && !lineage.sourceTitle.empty())
+    description = "A fork of \xE2\x80\x9C" + htmlEscape(lineage.sourceTitle) + "\xE2\x80\x9D \xE2\x80\x94 " + stepPhrase;
+  else if (lineage.isFork)
+    description = "A forked Windmill skill tree \xE2\x80\x94 " + stepPhrase;
+  else
+    description = "A Windmill skill tree \xE2\x80\x94 " + stepPhrase;
+  if (lineage.forkCount > 0)
+    description += " Forked " + std::to_string(lineage.forkCount) + (lineage.forkCount == 1 ? " time." : " times.");
   const std::string robots =
       visibility == Visibility::public_ ? "index, follow, max-image-preview:large" : "noindex";
   // Per-tree unfurl card (og-tree-cards): GET /og/:id.png serves this tree's own rendered image
@@ -126,7 +139,11 @@ void SharePageApi::page(const drogon::HttpRequestPtr& req, HttpCallback&& callba
     }
   }
 
-  callback(htmlResponse(readable ? renderShell(shell, title, steps, visibility, id) : shell));
+  // Fork lineage is a two-count DB read, taken OUTSIDE the room strand (never hold a room lock
+  // across Postgres) and only when the tree is actually readable — a private/absent tree gets the
+  // shell verbatim, so the extra query never fires for it and "private = absent" holds.
+  const ForkLineage lineage = readable ? trees_->loadForkLineage(TreeId{id}) : ForkLineage{};
+  callback(htmlResponse(readable ? renderShell(shell, title, steps, visibility, id, lineage) : shell));
 }
 
 }

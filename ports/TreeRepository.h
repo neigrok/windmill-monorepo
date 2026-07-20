@@ -51,10 +51,22 @@ struct TreeAccess {
   Visibility visibility = Visibility::private_;
 };
 
+// Fork provenance for the unfurl (fork-attribution): whether this tree is itself a fork, its
+// SOURCE's title — named only when the source still exists and is PUBLIC, so an unlisted or
+// private source is never revealed to a stranger who happens on the unfurl — and how many trees
+// were forked FROM this one. The loop the shared tree came from, and the loop it invites.
+struct ForkLineage {
+  bool isFork = false;
+  std::string sourceTitle;  // empty unless the source exists and is public
+  int forkCount = 0;
+};
+
 struct TreeRepository {
   virtual ~TreeRepository() = default;
   virtual std::optional<StoredTree> load(const TreeId& tree) = 0;
   virtual std::optional<TreeAccess> loadAccess(const TreeId& tree) = 0;
+  // Fork provenance for the unfurl — two small counts/lookups, never the whole lattice.
+  virtual ForkLineage loadForkLineage(const TreeId& tree) = 0;
   // Upsert a slice of the tree's lattice: every entry given replaces its stored row (the
   // caller — the room — is the single authority, so its values are always current), plus
   // the title register and head. A sparse slice is the norm (just the entries dirtied since

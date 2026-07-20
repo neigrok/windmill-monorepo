@@ -171,6 +171,31 @@ std::optional<TreeAccess> PgTreeRepository::loadAccess(const TreeId& tree) {
   return access;
 }
 
+ForkLineage PgTreeRepository::loadForkLineage(const TreeId& tree) {
+  pqxx::work txn{pgThreadConnection(connString_)};
+  ForkLineage lineage;
+  // Is this a fork, and may its source be named? The source is named only while it still exists
+  // and is PUBLIC — an unlisted, private or deleted source stays anonymous in the unfurl. (auto
+  // row, never a bound pqxx::row: it is named row_ref on macOS and row on the CI's Linux.)
+  pqxx::result src = txn.exec_params(
+      "SELECT t.forked_from IS NOT NULL AS is_fork, "
+      "coalesce(s.title, '') AS source_title, coalesce(s.visibility, '') AS source_visibility "
+      "FROM trees t LEFT JOIN trees s ON s.id = t.forked_from AND s.deleted_at IS NULL "
+      "WHERE t.id = $1 AND t.deleted_at IS NULL",
+      tree.str());
+  if (!src.empty()) {
+    const auto& row = src[0];
+    lineage.isFork = row["is_fork"].as<bool>();
+    if (row["source_visibility"].as<std::string>() == "public")
+      lineage.sourceTitle = row["source_title"].as<std::string>();
+  }
+  // Trees forked FROM this one — the social proof that invites the next fork.
+  pqxx::result forks = txn.exec_params(
+      "SELECT count(*) AS n FROM trees WHERE forked_from = $1 AND deleted_at IS NULL", tree.str());
+  lineage.forkCount = forks[0]["n"].as<int>();
+  return lineage;
+}
+
 std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
   pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result rows = txn.exec_params(
