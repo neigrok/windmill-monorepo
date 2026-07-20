@@ -142,7 +142,7 @@ export class SkillTreeScene {
     this.arrivalToastSuppressed = false; // the demo load suppresses the arrival toast — visitors watch, toasts are for actors
     this.returnRecap = null; // a one-shot return-recap intent (set before setModel): { sinceIds, summary } | null
     this.pendingSummary = null; // the toast the next ceremony speaks (set by the shell)
-    this.pendingHasAction = false;
+    this.pendingAction = null;  // an optional {label, run} the toast carries (e.g. share-on-unlock)
     this.settle = null; // in-flight layout glide: { startAt, moves } (see beginSettle)
     this.pendingFrame = null; // off-screen arrivals awaiting an idle auto-frame: { nodes, at }
     this.lastInputAt = 0; // when the pointer last touched the canvas — the idle gate reads this
@@ -474,9 +474,9 @@ export class SkillTreeScene {
     this.nodeStates = new Map(statesMap);
 
     changeset.summary = this.pendingSummary;
-    changeset.hasAction = this.pendingHasAction;
+    changeset.action = this.pendingAction;
     this.pendingSummary = null;
-    this.pendingHasAction = false;
+    this.pendingAction = null;
     this.director.celebrate(changeset);
   }
 
@@ -519,7 +519,7 @@ export class SkillTreeScene {
     const frontier = risen.filter((r) => r.toTier === 1).map((r) => r.id);
     const focusNode = risen.find((r) => r.toTier === TIER_COMPLETE) ?? risen[0] ?? null;
     const focus = focusNode ? { x: focusNode.x, y: focusNode.y } : null;
-    return { focus, risen, fell, litEdges, wakeByEdge, frontier, summary: null, hasAction: false };
+    return { focus, risen, fell, litEdges, wakeByEdge, frontier, summary: null, action: null };
   }
 
   // A quiet start: a step became in-progress. Kindle the ember directly — a soft glow-in
@@ -534,7 +534,7 @@ export class SkillTreeScene {
   // change; the director speaks it as the closing beat (§2 toast — last, once).
   announceCeremony(summary, opts = {}) {
     this.pendingSummary = summary;
-    this.pendingHasAction = !!opts.hasAction;
+    this.pendingAction = opts.action ?? null;
   }
 
   // Push each node's sub-task completion fraction (done / total) to the progress arcs.

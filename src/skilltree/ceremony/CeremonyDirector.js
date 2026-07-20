@@ -32,7 +32,7 @@ export class CeremonyDirector {
     this.nodes = deps.nodes;   // { igniteNode(id, atSec, toTier, opts), pulse(id, atSec) }
     this.edges = deps.edges;   // { travel(from, to, atSec, opts), edgeDuration(from, to) }
     this.camera = deps.camera; // { glideTo(x, y), settleProgress() }
-    this.speak = deps.speak;   // (message, { hasAction }) => void
+    this.speak = deps.speak;   // (message, { action }) => void — action is an optional {label, run}
     this.clock = deps.clock;   // () => elapsedSeconds
     this.motion = deps.motion; // () => 0 | 1
 
@@ -53,7 +53,7 @@ export class CeremonyDirector {
     if (!changeset.risen.length) {
       // Nothing grew (e.g. an in-progress step completed with no child to open) —
       // there's no beat to play, but a summary still speaks, once, if the floor is clear.
-      if (changeset.summary && !this.live && !this.editing) this.speak(changeset.summary, { hasAction: !!changeset.hasAction });
+      if (changeset.summary && !this.live && !this.editing) this.speak(changeset.summary, { action: changeset.action });
       return;
     }
     if (this.editing) { this.pending = merge(this.pending, changeset); this.armIdle(); return; }
@@ -75,7 +75,7 @@ export class CeremonyDirector {
     const spoken = this.live.spoken;
     this.clearTimers();
     this.settleAll(cs);
-    if (cs.summary && !spoken) this.schedule(YIELD, () => this.speak(cs.summary, { hasAction: !!cs.hasAction }));
+    if (cs.summary && !spoken) this.schedule(YIELD, () => this.speak(cs.summary, { action: cs.action }));
     this.live = null;
     this.drain();
   }
@@ -188,7 +188,7 @@ export class CeremonyDirector {
   speakNow(changeset) {
     if (!changeset.summary || (this.live && this.live.spoken)) return;
     if (this.live) this.live.spoken = true;
-    this.speak(changeset.summary, { hasAction: !!changeset.hasAction });
+    this.speak(changeset.summary, { action: changeset.action });
   }
 
   // Dependent beats begin at DEPEND_AT of the camera settle — or now, when the
@@ -225,7 +225,7 @@ const key = (from, to) => `${from}|${to}`;
 // that lights (tier >= 1) rose from the dimmed baseline, and every ring edge lights.
 function arrivalChangeset(plan) {
   const risen = plan.rings.flat().filter((n) => n.tier >= 1).map((n) => ({ id: n.id, fromTier: 0, toTier: n.tier, x: n.x, y: n.y }));
-  return { focus: null, risen, fell: [], litEdges: plan.litEdgesByRing.flat(), wakeByEdge: {}, frontier: [], summary: plan.summary, hasAction: false };
+  return { focus: null, risen, fell: [], litEdges: plan.litEdgesByRing.flat(), wakeByEdge: {}, frontier: [], summary: plan.summary, action: null };
 }
 
 function jitter(id) {
@@ -244,7 +244,9 @@ function merge(a, b) {
     wakeByEdge: { ...a.wakeByEdge, ...b.wakeByEdge },
     frontier: [...new Set([...a.frontier, ...b.frontier])],
     summary: b.summary ?? a.summary,
-    hasAction: a.hasAction || b.hasAction,
+    // The action belongs to whichever summary won — never pair a milestone's Share button with a
+    // later ordinary step's line.
+    action: b.summary != null ? b.action : a.action,
   };
 }
 

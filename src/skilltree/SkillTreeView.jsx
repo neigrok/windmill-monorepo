@@ -55,6 +55,8 @@ import { LegendStore } from './persistence/LegendStore.js';
 import { LocalTreeRegistry } from './persistence/LocalTreeRegistry.js';
 import { PlaceStore } from './persistence/PlaceStore.js';
 import { ReturnLedger } from './persistence/ReturnLedger.js';
+import { MilestoneLedger } from './persistence/MilestoneLedger.js';
+import { detectMilestones } from './model/milestones.js';
 import { emptyWorkspace, arcFraction, addSubtask, toggleSubtask, editSubtask, deleteSubtask, setNote, addLink, deleteLink } from './model/NodeWorkspace.js';
 import { deriveLegend, withCounts, inUseCount, freeHue, addKind, recolorKind } from './model/Legend.js';
 import { KindLegend } from '../components/tree/KindLegend.jsx';
@@ -78,6 +80,7 @@ const syncStore = new SyncStore();
 const deviceTrees = new LocalTreeRegistry();
 const placeStore = new PlaceStore();
 const returnLedger = new ReturnLedger();
+const milestoneLedger = new MilestoneLedger();
 const AUTO_COMPLETE_HOLD = 600; // held breath before auto-completing: arc-close 280 + hold 320 (§4)
 const NEXT_UP_SELECT_MS = 540; // ~90% of the camera's default 600ms glide — the dock swaps as the fly settles
 const NEXT_UP_ENTER_MS = 600; // auto-open waits for the fit-to-view camera to still (whats-next-panel §04)
@@ -538,6 +541,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       workspaceStore.clear(seedRef.current.id);
       legendStore.clear(seedRef.current.id);
       returnLedger.clear(seedRef.current.id); // the reset reload re-baselines the recap from the cleared progress
+      milestoneLedger.clear(seedRef.current.id); // a reset tree can earn its milestones' share offers again
     }
     pendingCompleteRef.current.forEach(clearTimeout);
     pendingCompleteRef.current.clear();
@@ -1650,6 +1654,31 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     emit({ verb: 'started', nodeId: selectedId, label: node?.label, kind: node?.color }, { silent: true });
   }
 
+  // The share-on-unlock offer (milestone-share-beat / ceremony-moments canon): when a completion
+  // finishes a whole BRANCH (a root-child's subtree) or the CROWN (the whole tree), the ceremony's
+  // own toast gains a "Share the moment" action that opens the share sheet with the card
+  // pre-rendered. Owner-only, never on read-only surfaces, once ever per milestone (the ledger
+  // survives reloads and an undo/re-complete). Returns the milestone's toast copy + action, or null.
+  function milestoneOffer(prevCompleted, nextCompleted) {
+    // Owner editing this tree, on ANY device — gate on the genuine read-only signals (a shared/
+    // demo VIEW, or a visitor demotion), NOT the width-derived readOnly: a phone owner is fully
+    // editable and is exactly who shares, so the offer must reach them.
+    if (!treeMine || shared || demo || demotion || !tree) return null;
+    const fresh = detectMilestones(tree, prevCompleted, nextCompleted)
+      .filter((milestone) => !milestoneLedger.has(treeId, milestone.id));
+    if (fresh.length === 0) return null;
+    // Crown wins if it landed; otherwise the biggest limb is the better picture. Every fresh
+    // milestone is marked offered (a diamond step can finish two at once) so none re-offers.
+    const best = fresh.find((milestone) => milestone.kind === 'crown')
+      ?? fresh.reduce((a, b) => (b.done > a.done ? b : a));
+    for (const milestone of fresh) milestoneLedger.markOffered(treeId, milestone.id);
+    const summary = best.kind === 'crown'
+      ? `Tree complete — ${best.total}/${best.total} steps.`
+      : `Branch complete: ${best.label} · ${best.done}/${best.total} steps`;
+    const label = best.kind === 'crown' ? 'Share it' : 'Share the moment';
+    return { summary, action: { label, run: () => { publishOgImage(); setShareOpen(true); } } };
+  }
+
   // The shared completion path the button and the chip menu both take, so they can't
   // drift: mark complete, stamp completedAt (keep any startedAt), persist, then run the
   // ceremony — record the beat + its unlocks in the log and hand the scene the summary.
@@ -1680,10 +1709,15 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     // it once the bloom/travel/pulse have settled (§2 toast — last), not up front. In the
     // demo, completing the coached step speaks the canon unlock line (F4 §04) verbatim.
     const label = node?.label?.trim() || 'Step';
-    const summary = demo && id === COACHED_NODE_ID
+    const stepSummary = demo && id === COACHED_NODE_ID
       ? DEMO_COPY.unlockToast
       : (opened > 0 ? `Step completed: ${label} · ${opened} more opened` : `Step completed: ${label}`);
-    sceneRef.current?.announceCeremony(summary);
+    // A milestone (whole branch or the crown) replaces the step line with its own copy and carries
+    // the share offer; an ordinary step keeps the plain summary and no action. Only YOUR own
+    // completion offers the share — a milestone finished on another device (fromRemote) is the
+    // welcome-back recap's moment, not a live "share it" toast, and must never burn the once-ever.
+    const offer = fromRemote ? null : milestoneOffer(completed, nextCompleted);
+    sceneRef.current?.announceCeremony(offer ? offer.summary : stepSummary, offer ? { action: offer.action } : {});
 
     if (demo) {
       setDemoCompletions((count) => count + 1); // any completion retires the coach (§03)
@@ -1727,6 +1761,10 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
         emit({ verb: 'unlocked', nodeId: otherId, label: unlocked?.label, kind: unlocked?.color }, { silent: true });
       }
     }
+    // "Mark all done" stays silent for ordinary steps (the applyStates effect blooms the set), but
+    // a milestone it finishes still earns its one share offer.
+    const offer = milestoneOffer(completed, nextCompleted);
+    if (offer) sceneRef.current?.announceCeremony(offer.summary, { action: offer.action });
   }
 
   function handleMarkComplete() {
