@@ -29,6 +29,7 @@ add_library(windmill_application
   application/ForkService.cpp
   application/McpKeyService.cpp
   application/OAuthService.cpp
+  application/ScopedToolHost.cpp
   application/TendingService.cpp
   application/TreeRegistry.cpp)
 target_link_libraries(windmill_application PUBLIC windmill_domain)
@@ -78,6 +79,7 @@ add_executable(windmill_domain_tests
   test/domain/OAuthTest.cpp
   test/application/OAuthServiceTest.cpp
   test/application/McpKeyServiceTest.cpp
+  test/application/ScopedToolHostTest.cpp
   test/application/TendingServiceTest.cpp)
 target_link_libraries(windmill_domain_tests PRIVATE windmill_application)
 

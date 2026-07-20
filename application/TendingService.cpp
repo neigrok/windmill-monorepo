@@ -1,5 +1,7 @@
 #include "application/TendingService.h"
 
+#include "application/ScopedToolHost.h"
+
 #include <trantor/utils/Logger.h>
 
 #include <json/json.h>
@@ -84,8 +86,12 @@ void TendingService::execute(TendRun run) {
     // The failed-run guard: an upstream error, a timeout, or a tool that would not settle becomes a
     // `failed` run carrying its diagnostic, never a thrown exception past this point.
     try {
+      // The agent is pinned to the tended tree: it can edit only this one, and cannot mint, list
+      // or delete trees — so an injected node label can't turn a tend into a raid on the caller's
+      // other trees (the injection risk a forkable public tree carries into the loop).
+      ScopedToolHost scoped(tools_, run.tree);
       const AgentOutcome outcome =
-          agent_.run(run.prompt, run.tree, run.user, tools_, [](const AgentStep&) {});
+          agent_.run(run.prompt, run.tree, run.user, scoped, [](const AgentStep&) {});
       run.status = outcome.ok ? TendStatus::done : TendStatus::failed;
       run.summary = outcome.summary;
       run.detail = outcome.ok ? outcome.detail : outcome.error;  // the error is diagnostic, not a receipt
