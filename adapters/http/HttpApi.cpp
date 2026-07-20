@@ -185,8 +185,31 @@ void HttpApi::forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
 }
 
 void HttpApi::getProgress(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
-  std::optional<UserId> caller = callerOf(req);  // the overlay is private per user
-  Progress progress = caller ? progress_->load(TreeId{treeId}, *caller) : Progress{};
+  std::optional<UserId> caller = callerOf(req);
+  // A shared tree is shared to show its OWNER's journey — the whole point of the picture. So the
+  // progress a reader gets follows ownership, not the caller: a visitor (anonymous or a non-owner)
+  // sees the lit tree the share promised instead of an empty one, and the owner viewing their own
+  // tree sees their own progress (they are the owner). Gated by canRead exactly like the structure
+  // read, so a private tree's progress is 404 — byte-identical to absent, never leaked.
+  std::optional<UserId> owner;
+  bool found = true;
+  {
+    std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
+    try {
+      TreeRoom& room = registry_->open(TreeId{treeId});
+      if (!canRead(caller, room.owner(), room.visibility())) found = false;
+      else owner = room.owner();
+    } catch (const std::exception&) {
+      found = false;
+    }
+  }
+  if (!found) {
+    callback(error(drogon::k404NotFound, "no such tree"));
+    return;
+  }
+  // The DB load runs OUTSIDE the room strand — never hold a room's lock across a Postgres call. An
+  // unclaimed (ownerless) tree has no server-side progress to show, so it stays empty.
+  Progress progress = owner ? progress_->load(TreeId{treeId}, *owner) : Progress{};
   callback(jsonResponse(toJson(progress)));
 }
 

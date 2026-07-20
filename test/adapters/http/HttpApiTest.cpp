@@ -79,6 +79,12 @@ drogon::HttpResponsePtr sendGetActivity(HttpApi& api, const std::string& session
   return captured;
 }
 
+drogon::HttpResponsePtr sendGetProgress(HttpApi& api, const std::string& session, const std::string& id) {
+  drogon::HttpResponsePtr captured;
+  api.getProgress(getRequest(session), [&](const drogon::HttpResponsePtr& r) { captured = r; }, id);
+  return captured;
+}
+
 drogon::HttpRequestPtr forkRequest(const Json::Value& body, const std::string& session) {
   auto request = drogon::HttpRequest::newHttpRequest();
   request->setMethod(drogon::Post);
@@ -102,6 +108,13 @@ Json::Value withId(const std::string& id) {
 }
 
 Json::Value bodyOf(const drogon::HttpResponsePtr& response) { return *response->getJsonObject(); }
+
+// The single completed id in a progress body (these tests seed exactly one), or "" for none.
+std::string soleCompleted(const drogon::HttpResponsePtr& response) {
+  const Json::Value done = bodyOf(response)["completed"];
+  if (done.size() != 1) return "";
+  return done[0].asString();
+}
 
 }
 
@@ -251,6 +264,42 @@ TEST(get_activity_unlisted_is_readable_by_anyone) {
   Harness h;
   h.seed("t_shared", "Shared", UserId{"owner"}, Visibility::unlisted);
   CHECK_EQ(sendGetActivity(h.api, "", "t_shared")->getStatusCode(), drogon::k200OK);
+}
+
+// ---- shared-tree progress follows ownership (the share shows the owner's journey) --------
+
+TEST(get_progress_shows_the_owners_journey_to_an_anonymous_visitor) {
+  Harness h;
+  h.seed("t_shared", "Shared plan", UserId{"owner"}, Visibility::unlisted);
+  h.progress->setStatus(TreeId{"t_shared"}, UserId{"owner"}, NodeId{"root"}, ProgressStatus::complete, Hlc{2, 0, "owner"});
+
+  drogon::HttpResponsePtr anon = sendGetProgress(h.api, "", "t_shared");
+  CHECK_EQ(anon->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(soleCompleted(anon), std::string("root"));  // the lit tree the share promised, not empty
+}
+
+TEST(get_progress_shows_the_same_journey_to_owner_and_stranger) {
+  Harness h;
+  UserId me = h.signIn("s-me", "me@example.com");  // a signed-in NON-owner
+  h.seed("t_shared", "Shared plan", UserId{"owner"}, Visibility::public_);
+  h.progress->setStatus(TreeId{"t_shared"}, UserId{"owner"}, NodeId{"root"}, ProgressStatus::complete, Hlc{2, 0, "owner"});
+  // A stranger has their own (empty) row set for the same tree — it must NOT shadow the owner's.
+  h.progress->setStatus(TreeId{"t_shared"}, me, NodeId{"root"}, ProgressStatus::none, Hlc{2, 0, "me"});
+
+  CHECK_EQ(soleCompleted(sendGetProgress(h.api, "s-me", "t_shared")), std::string("root"));
+  CHECK_EQ(soleCompleted(sendGetProgress(h.api, "", "t_shared")), std::string("root"));
+}
+
+TEST(get_progress_of_a_private_tree_is_404_for_a_non_owner_and_200_for_its_owner) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner-acct@example.com");
+  h.signIn("s-other", "other@example.com");
+  h.seed("t_priv", "Secret", owner, Visibility::private_);
+  h.progress->setStatus(TreeId{"t_priv"}, owner, NodeId{"root"}, ProgressStatus::complete, Hlc{2, 0, "o"});
+
+  CHECK_EQ(sendGetProgress(h.api, "s-other", "t_priv")->getStatusCode(), drogon::k404NotFound);  // never leaked
+  CHECK_EQ(sendGetProgress(h.api, "", "t_priv")->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(soleCompleted(sendGetProgress(h.api, "s-owner", "t_priv")), std::string("root"));  // owner reads
 }
 
 TEST(fork_of_a_private_source_you_dont_own_is_404_like_absent) {
