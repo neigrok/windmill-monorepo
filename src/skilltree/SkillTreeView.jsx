@@ -1191,6 +1191,12 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
         const lattice = new TreeLattice(treeId, deviceTrees.get(treeId)?.title ?? '');
         lattice.join(saved.frame);
         seed = lattice.toTreeData();
+        // A device-born tree the server never saw is still THIS device's own — the blob path has no
+        // server `mine` bit to carry, so stamp ownership from the device index. Without it an anon's
+        // own planted quest loads treeMine=false and, on a phone, mobileEditable is false: the tree
+        // is a read-only dead end with no verb rail and no fork (it's yours, so there's nothing to
+        // fork). Ownership gates editing, not width (M0) — an anon owns this, so it must be editable.
+        seed.mine = !!deviceTrees.get(treeId);
       }
       // The seed is only the first paint; the durable structure is the lattice — loaded
       // from IndexedDB (offline) and reconciled with the server on subscribe by the SyncSession.
