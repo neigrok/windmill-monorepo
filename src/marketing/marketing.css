@@ -14,8 +14,10 @@
 
 html, body { margin: 0; background: var(--surface-canvas); }
 html { scroll-behavior: smooth; }
-.wm-landing a { text-decoration: none; color: var(--color-brand); }
-.wm-landing a:hover { color: var(--color-brand-hover); }
+/* Text links wear the brand hue — but the solid Fork CTA (.fcta) is a button, not a link,
+   and this rule outranks .fcta's own color, so exclude it or its label goes terracotta-on-terracotta. */
+.wm-landing a:not(.fcta) { text-decoration: none; color: var(--color-brand); }
+.wm-landing a:not(.fcta):hover { color: var(--color-brand-hover); }
 .wrap { max-width: 1280px; margin: 0 auto; padding: 0 64px; box-sizing: border-box; }
 
 /* ---- node vocabulary (X1/X5 — physics per motion-language.md) ---- */
@@ -76,7 +78,7 @@ path.eb { transition: opacity 280ms var(--ease-standard), stroke 280ms var(--eas
        border: 1px solid var(--border-subtle); border-radius: 999px; padding: 5px 13px; box-shadow: var(--shadow-xs); }
 .fcta { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 7; display: inline-flex;
         align-items: center; gap: 8px; font-family: var(--font-body); font-size: 14px; font-weight: 800;
-        color: var(--text-on-accent); background: var(--color-brand); border: none; border-radius: 999px;
+        text-decoration: none; color: var(--text-on-accent); background: var(--color-brand); border: none; border-radius: 999px;
         padding: 12px 22px; cursor: pointer; box-shadow: 0 3px 12px rgba(188,108,66,.35);
         transition: background 150ms var(--ease-standard), transform 150ms var(--ease-standard); }
 .fcta:hover { background: var(--color-brand-hover); color: var(--text-on-accent); }
