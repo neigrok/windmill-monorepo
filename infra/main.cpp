@@ -143,7 +143,9 @@ int main() {
   // The per-user tree registry (create + list + rename + delete). Reads are repo-direct;
   // rename goes through RoomRegistry so a live room's title stays coherent with the column.
   auto treeRegistry = std::make_shared<TreeRegistry>(*trees, *progress, *tokens, genesis, *registry, *systemClock);
-  // Built before the registry API, which reads it to gate private trees behind a live subscription.
+  // The local mirror of Paddle billing state. Private trees are free (the paid line is tending, not
+  // privacy), so nothing gates visibility on it — it feeds the /v1/subscription read and the
+  // tending allowance's free-vs-Pro plan lookup.
   auto subscriptionRepo = std::make_shared<PgSubscriptionRepository>(connString);
   auto registryApi = std::make_shared<TreeRegistryApi>(treeRegistry, authService);
 
@@ -231,7 +233,8 @@ int main() {
   const bool tendingEnabled =
       (tendingEnabledFlag == "true" || tendingEnabledFlag == "1") && tendingAgent->configured();
   auto tendingService = std::make_shared<TendingService>(*tendRuns, *tendingAgent, *mcpTools,
-                                                         *systemClock, *tokens, tendingEnabled);
+                                                         *systemClock, *tokens, *subscriptionRepo,
+                                                         tendingEnabled);
   auto tendingApi = std::make_shared<TendingApi>(tendingService, authService);
 
   McpAuth mcpAuth{oauthService.get(), mcpResource,     mcpResourceMetadataUrl,
@@ -649,6 +652,14 @@ int main() {
       "/v1/tend/{runId}",
       [tendingApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& runId) {
         tendingApi->getRun(req, std::move(cb), runId);
+      },
+      {drogon::Get});
+  // The meter + receipts ledger: this account's month budget, its reset, and its recent runs. A
+  // plain read under the general ceiling, available to any signed-in caller even while tending is dark.
+  app.registerHandler(
+      "/v1/tending",
+      [tendingApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        tendingApi->summary(req, std::move(cb));
       },
       {drogon::Get});
 

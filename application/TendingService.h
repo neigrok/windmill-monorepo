@@ -4,6 +4,7 @@
 #include "domain/Tending.h"
 #include "ports/Clock.h"
 #include "ports/PlanAgent.h"
+#include "ports/SubscriptionRepository.h"
 #include "ports/TendRunRepository.h"
 #include "ports/TokenGenerator.h"
 #include "ports/ToolHost.h"
@@ -31,13 +32,20 @@ namespace wm {
 class TendingService {
 public:
   TendingService(TendRunRepository& runs, PlanAgent& agent, ToolHost& tools, Clock& clock,
-                 TokenGenerator& tokens, bool enabled);
+                 TokenGenerator& tokens, SubscriptionRepository& subscriptions, bool enabled);
 
-  // Validate → persist → hand off → return. A refusal (not enabled, over allowance, or an unusable
-  // prompt) is persisted as a `refused` run and returned without ever starting work — the client
-  // renders it as a quiet face, not an error. Otherwise a `running` run is persisted and its id
-  // returned immediately, with the loop already queued on the worker thread.
-  TendRun start(const TreeId& tree, const UserId& caller, const std::string& prompt);
+  // Validate → persist → hand off → return. A refusal (not enabled, over the monthly allowance, or
+  // an unusable prompt) is persisted as a `refused` run and returned without ever starting work —
+  // the client renders it as a quiet face, not an error. Otherwise a `running` run is persisted and
+  // its id returned immediately, with the loop already queued on the worker thread. `email` is the
+  // second binding the plan lookup reads (a subscription bound by email, not just the checkout id).
+  TendRun start(const TreeId& tree, const UserId& caller, const std::string& email,
+                const std::string& prompt);
+
+  // The meter + receipts ledger read: this account's plan, its month's budget and spend, when it
+  // resets, and this month's runs newest-first. Always available to a signed-in caller, even while
+  // tending is dark — a free account simply reads 0 / 30.
+  TendingSummary summaryFor(const UserId& caller, const std::string& email);
 
   // The catch-up read a returning phone makes, long after its socket died. Returns the run only
   // when `caller` owns it — a run that is absent and one that belongs to someone else are the same
@@ -47,7 +55,7 @@ public:
 private:
   TendRun refuse(const TreeId& tree, const UserId& caller, const std::string& prompt,
                  TendRefusal reason);
-  bool overAllowance(const UserId& caller);
+  TendingAllowance allowanceAt(const UserId& caller, const std::string& email, std::uint64_t nowMs);
   void execute(TendRun run);
   std::uint64_t seqOf(const TreeId& tree, const UserId& caller);
 
@@ -56,6 +64,7 @@ private:
   ToolHost& tools_;
   Clock& clock_;
   TokenGenerator& tokens_;
+  SubscriptionRepository& subscriptions_;
   bool enabled_;
   trantor::EventLoopThreadPool workers_;
 };

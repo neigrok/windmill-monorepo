@@ -39,6 +39,22 @@ Json::Value toJson(const TendRun& run) {
   body["finishedAtMs"] = Json::Value::UInt64(run.finishedAtMs);
   return body;
 }
+
+// The meter + receipts ledger wire shape (GET /v1/tending): the month's budget the pricing page's
+// counter renders, when it resets, and the runs behind the receipts list.
+Json::Value toJson(const TendingSummary& summary) {
+  const TendingAllowance& allowance = summary.allowance;
+  Json::Value body(Json::objectValue);
+  body["plan"] = allowance.plan == Plan::pro ? "pro" : "free";
+  body["limit"] = allowance.limit;
+  body["used"] = allowance.used;
+  body["remaining"] = allowance.remaining();
+  body["resetAtMs"] = Json::Value::UInt64(summary.resetAtMs);
+  Json::Value runs(Json::arrayValue);
+  for (const TendRun& run : summary.recent) runs.append(toJson(run));
+  body["runs"] = runs;
+  return body;
+}
 }
 
 TendingApi::TendingApi(std::shared_ptr<TendingService> tending, std::shared_ptr<AuthService> auth)
@@ -46,7 +62,9 @@ TendingApi::TendingApi(std::shared_ptr<TendingService> tending, std::shared_ptr<
 
 void TendingApi::tend(const drogon::HttpRequestPtr& req, HttpCallback&& callback,
                       const std::string& treeId) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  // Resolved to the full user, not just the id: the allowance's plan lookup reads the email as its
+  // second binding (a subscription bound by customer email, not only by the checkout's stamped id).
+  std::optional<User> caller = callerUserOf(req, *auth_);
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to tend a tree"));
     return;
@@ -55,7 +73,7 @@ void TendingApi::tend(const drogon::HttpRequestPtr& req, HttpCallback&& callback
   const std::string prompt = json ? json->get("prompt", "").asString() : "";
 
   // start() returns the moment the run is durable — the loop is already queued on the worker thread.
-  TendRun run = tending_->start(TreeId{treeId}, *caller, prompt);
+  TendRun run = tending_->start(TreeId{treeId}, caller->id, caller->email.value, prompt);
   if (run.status == TendStatus::refused) {
     // A refusal is not an error: 200 with the quiet-face body the client renders as-is.
     callback(jsonResponse(toJson(run)));
@@ -82,6 +100,17 @@ void TendingApi::getRun(const drogon::HttpRequestPtr& req, HttpCallback&& callba
     return;
   }
   callback(jsonResponse(toJson(*run)));
+}
+
+void TendingApi::summary(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
+  // The full user for the same plan lookup start() makes. Available whether or not tending is armed
+  // — a signed-out caller can't have a meter, but a signed-in one always reads its month's budget.
+  std::optional<User> caller = callerUserOf(req, *auth_);
+  if (!caller) {
+    callback(error(drogon::k401Unauthorized, "sign in to read your tending"));
+    return;
+  }
+  callback(jsonResponse(toJson(tending_->summaryFor(caller->id, caller->email.value))));
 }
 
 }

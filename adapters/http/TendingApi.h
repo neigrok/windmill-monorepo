@@ -26,6 +26,7 @@ public:
 
   void tend(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);  // POST /v1/trees/:id/tend
   void getRun(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& runId);  // GET  /v1/tend/:runId
+  void summary(const drogon::HttpRequestPtr& req, HttpCallback&& callback);  // GET  /v1/tending
 
 private:
   std::shared_ptr<TendingService> tending_;

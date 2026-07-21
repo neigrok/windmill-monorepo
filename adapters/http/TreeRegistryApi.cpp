@@ -25,8 +25,8 @@ drogon::HttpResponsePtr error(drogon::HttpStatusCode status, const std::string& 
 }
 }
 
-// Does the caller hold a live subscription? Read only on the rare path that needs it (setting a
-// tree private), never on every request. Billing unconfigured (no repository) leaves the gate open.
+// No billing gate here: setting a tree private is free (the paid line is tending, not privacy), so
+// the registry needs only the tree store and the auth boundary.
 TreeRegistryApi::TreeRegistryApi(std::shared_ptr<TreeRegistry> registry, std::shared_ptr<AuthService> auth)
     : registry_(std::move(registry)), auth_(std::move(auth)) {}
 

@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace wm {
 
@@ -78,5 +79,45 @@ struct TendRun {
 // The prompt cap. Long enough for someone to describe a goal properly, short enough that the
 // field is a sentence rather than a document — pasting a document is what paste-import is for.
 constexpr std::size_t kMaxTendPromptBytes = 2000;
+
+// ── The paid line ─────────────────────────────────────────────────────────────
+// Tending is the one metered thing in Windmill (pricing.html): a plan grants a monthly allowance
+// of runs, and everything else — building, sharing, private trees, hand editing — is free. There
+// are only two plans, no tiers to climb. A run that never started (a refusal) costs nothing, so
+// only started runs spend the allowance (TendRunRepository::countForUser excludes refusals).
+enum class Plan { free, pro };
+
+constexpr int kFreeMonthlyTendings = 30;
+constexpr int kProMonthlyTendings = 300;
+
+inline int monthlyLimitFor(Plan plan) {
+  return plan == Plan::pro ? kProMonthlyTendings : kFreeMonthlyTendings;
+}
+
+// This month's tending budget for one account: what the plan grants, what's spent, and so whether
+// the next sentence may run. Pure — the service loads `used` and the plan, then reads `allows()`.
+struct TendingAllowance {
+  Plan plan = Plan::free;
+  int limit = kFreeMonthlyTendings;
+  int used = 0;
+
+  int remaining() const { return limit > used ? limit - used : 0; }
+  bool allows() const { return used < limit; }
+};
+
+// What the meter + receipts ledger read (GET /v1/tending): the budget, when it next resets, and
+// this month's runs newest-first. `resetAtMs` is the next calendar month's start — the "allowances
+// reset each month" the pricing page promises.
+struct TendingSummary {
+  TendingAllowance allowance;
+  std::uint64_t resetAtMs = 0;
+  std::vector<TendRun> recent;
+};
+
+// The UTC calendar-month the allowance counts within. `monthStartMsUtc` is the window's floor (the
+// `sinceMs` the count reads from); `nextMonthStartMsUtc` is the reset instant. Both derive purely
+// from an epoch-ms instant — the civil-date math lives in Tending.cpp.
+std::uint64_t monthStartMsUtc(std::uint64_t nowMs);
+std::uint64_t nextMonthStartMsUtc(std::uint64_t nowMs);
 
 }

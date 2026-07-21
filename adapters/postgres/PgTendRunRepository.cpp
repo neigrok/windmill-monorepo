@@ -115,4 +115,20 @@ int PgTendRunRepository::countForUser(const UserId& user, std::uint64_t sinceMs)
   return rows[0]["n"].as<int>();
 }
 
+std::vector<TendRun> PgTendRunRepository::recentForUser(const UserId& user, std::uint64_t sinceMs,
+                                                        int limit) {
+  // The ledger read, newest first: the same window and refusal exclusion as the count, so the
+  // receipts the user reads are exactly the runs the meter counted spent.
+  pqxx::work txn{pgThreadConnection(connString_)};
+  pqxx::result rows = txn.exec_params(
+      "SELECT " + std::string(kTendRunColumns) + " FROM tend_runs "
+      "WHERE user_id = $1::uuid AND started_at >= $2 AND status <> 'refused' "
+      "ORDER BY started_at DESC LIMIT $3",
+      user.str(), sinceMs, limit);
+  std::vector<TendRun> out;
+  out.reserve(rows.size());
+  for (const auto& row : rows) out.push_back(tendRunFrom(row));
+  return out;
+}
+
 }

@@ -1,8 +1,10 @@
 #include "application/TendingService.h"
 
+#include "ports/SubscriptionRepository.h"
 #include "test/application/AuthFakes.h"
 #include "test/testing.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <functional>
@@ -39,8 +41,19 @@ struct FakeTendRunRepository : TendRunRepository {
     std::lock_guard<std::mutex> lock(mutex);
     int n = 0;
     for (const auto& [id, run] : byId)
-      if (run.user == user && run.startedAtMs >= sinceMs) ++n;
+      if (run.user == user && run.startedAtMs >= sinceMs && run.status != TendStatus::refused) ++n;
     return n;
+  }
+  std::vector<TendRun> recentForUser(const UserId& user, std::uint64_t sinceMs, int limit) override {
+    std::lock_guard<std::mutex> lock(mutex);
+    std::vector<TendRun> out;
+    for (const auto& [id, run] : byId)
+      if (run.user == user && run.startedAtMs >= sinceMs && run.status != TendStatus::refused)
+        out.push_back(run);
+    std::sort(out.begin(), out.end(),
+              [](const TendRun& a, const TendRun& b) { return a.startedAtMs > b.startedAtMs; });
+    if (static_cast<int>(out.size()) > limit) out.resize(limit);
+    return out;
   }
   int failOrphanedRuns() override {
     std::lock_guard<std::mutex> lock(mutex);
@@ -92,12 +105,35 @@ struct FakePlanAgent : PlanAgent {
   }
 };
 
+// The billing mirror the allowance reads to tell Free from Pro. A user with no row is Free; one
+// granted Pro carries a live `active` status, the same predicate (grantsAccess) production reads.
+struct FakeSubscriptionRepository : SubscriptionRepository {
+  std::map<std::string, PaddleSubscription> byUser;
+
+  void upsertCustomer(const PaddleCustomer&) override {}
+  void upsertSubscription(const PaddleSubscription& subscription) override {
+    byUser[subscription.userId] = subscription;
+  }
+  std::optional<PaddleSubscription> findFor(const UserId& user, const std::string&) override {
+    auto it = byUser.find(user.str());
+    if (it == byUser.end()) return std::nullopt;
+    return it->second;
+  }
+  void grantPro(const UserId& user) {
+    PaddleSubscription subscription;
+    subscription.userId = user.str();
+    subscription.status = "active";
+    byUser[user.str()] = subscription;
+  }
+};
+
 struct Harness {
   FakeTendRunRepository runs;
   FakeToolHost tools;
   FakePlanAgent agent;
   FakeClock clock;
   FakeTokens tokens;
+  FakeSubscriptionRepository subs;
 };
 
 // The worker finishes asynchronously; spin on the durable row until it leaves `running`.
@@ -119,13 +155,27 @@ AgentOutcome ok(const std::string& summary, int edits) {
   return outcome;
 }
 
+// Seed `count` already-finished runs this month, so the next start sees a partly- or fully-spent
+// allowance. A summary rides on `id` so newest-first ordering in the ledger is checkable.
+void seedDoneRuns(FakeTendRunRepository& runs, const UserId& user, int count, std::uint64_t at) {
+  for (int i = 0; i < count; ++i) {
+    TendRun seeded;
+    seeded.id = "seed_" + user.str() + "_" + std::to_string(i);
+    seeded.user = user;
+    seeded.status = TendStatus::done;
+    seeded.summary = "receipt " + std::to_string(i);
+    seeded.startedAtMs = at + i;  // strictly increasing, so DESC order is deterministic
+    runs.save(seeded);
+  }
+}
+
 }
 
 TEST(a_refusal_never_starts_work_and_is_persisted) {
   Harness h;
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, /*enabled=*/false);
+  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.subs, /*enabled=*/false);
 
-  TendRun run = service.start(TreeId{"t"}, UserId{"u"}, "add a testing branch under backend");
+  TendRun run = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com","add a testing branch under backend");
 
   CHECK_EQ(run.status, TendStatus::refused);
   CHECK_EQ(run.refusal, TendRefusal::notEnabled);
@@ -139,13 +189,13 @@ TEST(a_refusal_never_starts_work_and_is_persisted) {
 
 TEST(an_empty_prompt_refuses_without_work) {
   Harness h;
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, /*enabled=*/true);
+  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.subs, /*enabled=*/true);
 
-  TendRun blank = service.start(TreeId{"t"}, UserId{"u"}, "");
+  TendRun blank = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com","");
   CHECK_EQ(blank.status, TendStatus::refused);
   CHECK_EQ(blank.refusal, TendRefusal::promptEmpty);
 
-  TendRun whitespace = service.start(TreeId{"t"}, UserId{"u"}, "   \t\n");
+  TendRun whitespace = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com","   \t\n");
   CHECK_EQ(whitespace.status, TendStatus::refused);
   CHECK_EQ(whitespace.refusal, TendRefusal::promptEmpty);
 
@@ -154,42 +204,80 @@ TEST(an_empty_prompt_refuses_without_work) {
 
 TEST(an_over_length_prompt_refuses_without_work) {
   Harness h;
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, /*enabled=*/true);
+  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.subs, /*enabled=*/true);
 
   const std::string tooLong(kMaxTendPromptBytes + 1, 'x');
-  TendRun run = service.start(TreeId{"t"}, UserId{"u"}, tooLong);
+  TendRun run = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com",tooLong);
 
   CHECK_EQ(run.status, TendStatus::refused);
   CHECK_EQ(run.refusal, TendRefusal::promptTooLong);
   CHECK_EQ(h.agent.calls.load(), 0);
 }
 
-TEST(a_spent_allowance_refuses_without_work) {
+TEST(a_spent_free_allowance_refuses_without_work) {
   Harness h;
-  // Seed a full day's worth of runs for this user, all inside the window.
-  for (int i = 0; i < 20; ++i) {
-    TendRun seeded;
-    seeded.id = "seed" + std::to_string(i);
-    seeded.user = UserId{"u"};
-    seeded.status = TendStatus::done;
-    seeded.startedAtMs = h.clock.now;
-    h.runs.save(seeded);
-  }
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, /*enabled=*/true);
+  seedDoneRuns(h.runs, UserId{"u"}, kFreeMonthlyTendings, h.clock.now);  // 30 this month, no subscription
+  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.subs, /*enabled=*/true);
 
-  TendRun run = service.start(TreeId{"t"}, UserId{"u"}, "one more please");
+  TendRun run = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com", "one more please");
 
   CHECK_EQ(run.status, TendStatus::refused);
   CHECK_EQ(run.refusal, TendRefusal::outOfAllowance);
   CHECK_EQ(h.agent.calls.load(), 0);
 }
 
+TEST(pro_gets_a_larger_allowance_than_free) {
+  Harness h;
+  h.subs.grantPro(UserId{"u"});
+  h.agent.outcome = ok("grew it", 1);
+  // The 30 that would exhaust a Free account leave a Pro account with room to spare.
+  seedDoneRuns(h.runs, UserId{"u"}, kFreeMonthlyTendings, h.clock.now);
+  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.subs, /*enabled=*/true);
+
+  TendRun allowed = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com", "one more please");
+  CHECK_EQ(allowed.status, TendStatus::running);  // Pro's 300 is nowhere near spent at 30
+  CHECK_EQ(awaitTerminal(h.runs, allowed.id).status, TendStatus::done);
+
+  // Fill the rest of Pro's 300 and the next one is refused just like Free's was.
+  seedDoneRuns(h.runs, UserId{"u"}, kProMonthlyTendings, h.clock.now);
+  TendRun refused = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com", "and another");
+  CHECK_EQ(refused.status, TendStatus::refused);
+  CHECK_EQ(refused.refusal, TendRefusal::outOfAllowance);
+}
+
+TEST(the_summary_reports_the_plan_budget_reset_and_recent_receipts) {
+  Harness h;
+  seedDoneRuns(h.runs, UserId{"u"}, 3, h.clock.now);
+  TendRun refused;  // a refusal spends nothing and never appears in the ledger
+  refused.id = "tr_refused";
+  refused.user = UserId{"u"};
+  refused.status = TendStatus::refused;
+  refused.startedAtMs = h.clock.now + 100;
+  h.runs.save(refused);
+  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.subs, /*enabled=*/true);
+
+  const TendingSummary free = service.summaryFor(UserId{"u"}, "u@example.com");
+  CHECK_EQ(free.allowance.plan, Plan::free);
+  CHECK_EQ(free.allowance.limit, 30);
+  CHECK_EQ(free.allowance.used, 3);
+  CHECK_EQ(free.allowance.remaining(), 27);
+  CHECK_EQ(free.resetAtMs, nextMonthStartMsUtc(h.clock.now));
+  CHECK_EQ(free.recent.size(), static_cast<std::size_t>(3));
+  CHECK_EQ(free.recent.front().summary, std::string("receipt 2"));  // newest first
+
+  h.subs.grantPro(UserId{"u"});
+  const TendingSummary pro = service.summaryFor(UserId{"u"}, "u@example.com");
+  CHECK_EQ(pro.allowance.plan, Plan::pro);
+  CHECK_EQ(pro.allowance.limit, 300);
+  CHECK_EQ(pro.allowance.remaining(), 297);
+}
+
 TEST(a_successful_run_persists_done_summary_and_edits) {
   Harness h;
   h.agent.outcome = ok("Added 3 steps under Backend", 3);
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, /*enabled=*/true);
+  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.subs, /*enabled=*/true);
 
-  TendRun started = service.start(TreeId{"t"}, UserId{"u"}, "add a testing branch under backend");
+  TendRun started = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com","add a testing branch under backend");
   CHECK_EQ(started.status, TendStatus::running);  // the request is answered while the loop runs on
 
   TendRun done = awaitTerminal(h.runs, started.id);
@@ -206,9 +294,9 @@ TEST(a_throwing_agent_yields_failed_not_a_crash) {
   Harness h;
   h.agent.shouldThrow = true;
   h.agent.throwWhat = "the model would not settle";
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, /*enabled=*/true);
+  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.subs, /*enabled=*/true);
 
-  TendRun started = service.start(TreeId{"t"}, UserId{"u"}, "reshape the whole thing");
+  TendRun started = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com","reshape the whole thing");
   TendRun failed = awaitTerminal(h.runs, started.id);
 
   CHECK_EQ(failed.status, TendStatus::failed);
@@ -222,9 +310,9 @@ TEST(the_seq_range_is_recorded) {
   h.tools.seq = 10;                                  // the head before the agent writes anything
   h.agent.onRun = [&h] { h.tools.seq = 13; };        // the agent advances the head by three ops
   h.agent.outcome = ok("Grew the tree", 3);
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, /*enabled=*/true);
+  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.subs, /*enabled=*/true);
 
-  TendRun started = service.start(TreeId{"t"}, UserId{"u"}, "grow it");
+  TendRun started = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com","grow it");
   TendRun done = awaitTerminal(h.runs, started.id);
 
   CHECK_EQ(done.status, TendStatus::done);
@@ -260,13 +348,13 @@ TEST(fail_orphaned_runs_settles_running_rows_and_leaves_finished_ones_alone) {
 TEST(the_worker_pool_completes_more_runs_than_it_has_threads) {
   Harness h;
   h.agent.outcome = ok("grew it", 1);
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, /*enabled=*/true);
+  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.subs, /*enabled=*/true);
 
   // Eight runs against a four-thread pool: the excess must queue and still finish, never deadlock
   // or drop. Distinct users so the per-account allowance never trips.
   std::vector<std::string> ids;
   for (int i = 0; i < 8; ++i)
-    ids.push_back(service.start(TreeId{"t"}, UserId{"u" + std::to_string(i)}, "grow it").id);
+    ids.push_back(service.start(TreeId{"t"}, UserId{"u" + std::to_string(i)}, "", "grow it").id);
 
   for (const std::string& id : ids)
     CHECK_EQ(awaitTerminal(h.runs, id).status, TendStatus::done);

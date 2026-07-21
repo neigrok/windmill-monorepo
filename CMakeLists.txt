@@ -17,7 +17,8 @@ add_library(windmill_domain
   domain/TreeHealth.cpp
   domain/TreeSummary.cpp
   domain/Auth.cpp
-  domain/OAuth.cpp)
+  domain/OAuth.cpp
+  domain/Tending.cpp)
 target_include_directories(windmill_domain PUBLIC ${CMAKE_SOURCE_DIR})
 
 add_library(windmill_application
@@ -80,7 +81,8 @@ add_executable(windmill_domain_tests
   test/application/OAuthServiceTest.cpp
   test/application/McpKeyServiceTest.cpp
   test/application/ScopedToolHostTest.cpp
-  test/application/TendingServiceTest.cpp)
+  test/application/TendingServiceTest.cpp
+  test/domain/TendingTest.cpp)
 target_link_libraries(windmill_domain_tests PRIVATE windmill_application)
 
 enable_testing()

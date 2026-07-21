@@ -1,6 +1,7 @@
 #include "application/TendingService.h"
 
 #include "application/ScopedToolHost.h"
+#include "domain/Billing.h"
 
 #include <trantor/utils/Logger.h>
 
@@ -11,14 +12,12 @@
 namespace wm {
 
 namespace {
-// An agent loop is far more expensive than a paste-compose, so the per-user allowance is the real
-// brake on a single account (the per-IP and global ceilings in infra guard the fleet). One day's
-// worth of sentences is generous for the mobile moment this feature serves and cheap to count.
-constexpr std::uint64_t kAllowanceWindowMs = 24ull * 60 * 60 * 1000;
-constexpr int kAllowancePerDay = 20;
 // Concurrent tends before they queue. Each run is a blocking agent loop of tens of seconds, so a
 // handful of threads is plenty against the fleet rate ceiling (~0.2 runs/s) — more would just idle.
 constexpr std::size_t kTendWorkers = 4;
+// How many receipts the ledger read returns — a month's worth of a Pro account (300) would be a
+// wall; the newest score of runs is the meaningful history and the rest lives in the count.
+constexpr int kLedgerDepth = 20;
 
 bool blank(const std::string& text) {
   return text.find_first_not_of(" \t\r\n") == std::string::npos;
@@ -26,20 +25,23 @@ bool blank(const std::string& text) {
 }
 
 TendingService::TendingService(TendRunRepository& runs, PlanAgent& agent, ToolHost& tools,
-                               Clock& clock, TokenGenerator& tokens, bool enabled)
-    : runs_(runs), agent_(agent), tools_(tools), clock_(clock), tokens_(tokens), enabled_(enabled),
-      workers_(kTendWorkers, "tend-workers") {
+                               Clock& clock, TokenGenerator& tokens,
+                               SubscriptionRepository& subscriptions, bool enabled)
+    : runs_(runs), agent_(agent), tools_(tools), clock_(clock), tokens_(tokens),
+      subscriptions_(subscriptions), enabled_(enabled), workers_(kTendWorkers, "tend-workers") {
   workers_.start();
 }
 
-TendRun TendingService::start(const TreeId& tree, const UserId& caller, const std::string& prompt) {
+TendRun TendingService::start(const TreeId& tree, const UserId& caller, const std::string& email,
+                              const std::string& prompt) {
   // The pipeline the contract pins, top to bottom: an unusable prompt, then a dark feature, then a
   // spent allowance — each a persisted refusal the client wears as a quiet face, none of them work.
   if (blank(prompt)) return refuse(tree, caller, prompt, TendRefusal::promptEmpty);
   // Over the cap is the "you pasted a document" case — paste-import is the door for that, not this.
   if (prompt.size() > kMaxTendPromptBytes) return refuse(tree, caller, prompt, TendRefusal::promptTooLong);
   if (!enabled_) return refuse(tree, caller, prompt, TendRefusal::notEnabled);
-  if (overAllowance(caller)) return refuse(tree, caller, prompt, TendRefusal::outOfAllowance);
+  if (!allowanceAt(caller, email, clock_.nowMs()).allows())
+    return refuse(tree, caller, prompt, TendRefusal::outOfAllowance);
 
   TendRun run;
   run.id = "tr_" + tokens_.mint().digest.substr(0, 16);  // server-minted, unguessable — the catch-up key
@@ -77,10 +79,25 @@ std::optional<TendRun> TendingService::runFor(const std::string& id, const UserI
   return run;
 }
 
-bool TendingService::overAllowance(const UserId& caller) {
-  const std::uint64_t now = clock_.nowMs();
-  const std::uint64_t since = now > kAllowanceWindowMs ? now - kAllowanceWindowMs : 0;
-  return runs_.countForUser(caller, since) >= kAllowancePerDay;
+TendingSummary TendingService::summaryFor(const UserId& caller, const std::string& email) {
+  const std::uint64_t now = clock_.nowMs();  // one instant for the whole read: budget, reset, ledger
+  TendingSummary summary;
+  summary.allowance = allowanceAt(caller, email, now);
+  summary.resetAtMs = nextMonthStartMsUtc(now);
+  summary.recent = runs_.recentForUser(caller, monthStartMsUtc(now), kLedgerDepth);
+  return summary;
+}
+
+// The two loads the allowance is built from — the plan (a live subscription grants Pro, everything
+// else is Free) and this calendar month's spend — then the pure domain budget over them. Takes the
+// instant so a single caller reads its meter and its ledger against one month, never straddling a
+// roll between two clock reads.
+TendingAllowance TendingService::allowanceAt(const UserId& caller, const std::string& email,
+                                             std::uint64_t nowMs) {
+  const std::optional<PaddleSubscription> subscription = subscriptions_.findFor(caller, email);
+  const Plan plan = subscription && grantsAccess(subscription->status) ? Plan::pro : Plan::free;
+  const int used = runs_.countForUser(caller, monthStartMsUtc(nowMs));
+  return TendingAllowance{plan, monthlyLimitFor(plan), used};
 }
 
 void TendingService::execute(TendRun run) {
