@@ -257,6 +257,7 @@ TEST(the_summary_reports_the_plan_budget_reset_and_recent_receipts) {
   TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.subs, /*enabled=*/true);
 
   const TendingSummary free = service.summaryFor(UserId{"u"}, "u@example.com");
+  CHECK(free.enabled);  // this service was built armed; the summary carries the arming signal through
   CHECK_EQ(free.allowance.plan, Plan::free);
   CHECK_EQ(free.allowance.limit, 30);
   CHECK_EQ(free.allowance.used, 3);

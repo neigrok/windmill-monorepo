@@ -45,6 +45,7 @@ Json::Value toJson(const TendRun& run) {
 Json::Value toJson(const TendingSummary& summary) {
   const TendingAllowance& allowance = summary.allowance;
   Json::Value body(Json::objectValue);
+  body["enabled"] = summary.enabled;
   body["plan"] = allowance.plan == Plan::pro ? "pro" : "free";
   body["limit"] = allowance.limit;
   body["used"] = allowance.used;

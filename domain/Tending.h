@@ -105,10 +105,13 @@ struct TendingAllowance {
   bool allows() const { return used < limit; }
 };
 
-// What the meter + receipts ledger read (GET /v1/tending): the budget, when it next resets, and
-// this month's runs newest-first. `resetAtMs` is the next calendar month's start — the "allowances
-// reset each month" the pricing page promises.
+// What the meter + receipts ledger read (GET /v1/tending): whether tending is armed at all, the
+// budget, when it next resets, and this month's runs newest-first. `enabled` is the one signal the
+// client gates the composer on — a dark server never shows an input that would only refuse.
+// `resetAtMs` is the next calendar month's start — the "allowances reset each month" the pricing
+// page promises.
 struct TendingSummary {
+  bool enabled = false;
   TendingAllowance allowance;
   std::uint64_t resetAtMs = 0;
   std::vector<TendRun> recent;

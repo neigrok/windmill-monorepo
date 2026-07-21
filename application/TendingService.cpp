@@ -82,6 +82,7 @@ std::optional<TendRun> TendingService::runFor(const std::string& id, const UserI
 TendingSummary TendingService::summaryFor(const UserId& caller, const std::string& email) {
   const std::uint64_t now = clock_.nowMs();  // one instant for the whole read: budget, reset, ledger
   TendingSummary summary;
+  summary.enabled = enabled_;
   summary.allowance = allowanceAt(caller, email, now);
   summary.resetAtMs = nextMonthStartMsUtc(now);
   summary.recent = runs_.recentForUser(caller, monthStartMsUtc(now), kLedgerDepth);
