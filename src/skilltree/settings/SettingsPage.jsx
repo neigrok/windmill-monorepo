@@ -12,6 +12,7 @@ import { SignInDialog } from '../auth/SignInDialog.jsx';
 import { Button } from '../../components';
 import { ProfileSection } from './ProfileSection.jsx';
 import { PlanSection } from './PlanSection.jsx';
+import { TendingSection } from './TendingSection.jsx';
 import { ConnectedToolsSection } from './ConnectedToolsSection.jsx';
 import { ApiKeysSection } from './ApiKeysSection.jsx';
 import { SessionsSection } from './SessionsSection.jsx';
@@ -32,6 +33,7 @@ export function SettingsPage() {
           <>
             <ProfileSection />
             <PlanSection />
+            <TendingSection />
             <ConnectedToolsSection />
             <ApiKeysSection />
             <SessionsSection />
