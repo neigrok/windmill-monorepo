@@ -2137,6 +2137,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
           variant="phone"
           working={tendWorking}
           placeholder={tree && tree.nodes.length === 0 ? 'What do you want to learn or build?' : 'Tell the tree what to change…'}
+          examples={tree && tree.nodes.length > 0 ? ['Is this realistic?', 'What am I missing?'] : []}
           onSubmit={submitTend}
         />
       )}
@@ -2145,6 +2146,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
           variant="desktop"
           working={tendWorking}
           placeholder={tree && tree.nodes.length === 0 ? 'What do you want to learn or build?' : 'Tell the tree what to change…'}
+          examples={tree && tree.nodes.length > 0 ? ['Is this realistic?', 'What am I missing?'] : []}
           onSubmit={submitTend}
           onDismiss={() => setTendOpen(false)}
         />

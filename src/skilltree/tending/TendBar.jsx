@@ -9,7 +9,7 @@ import { Icon } from '../../components';
 
 const SAFE_BOTTOM = 'env(safe-area-inset-bottom, 0px)';
 
-export function TendBar({ variant = 'phone', placeholder = 'Tell the tree what to change…', working, onSubmit, onDismiss }) {
+export function TendBar({ variant = 'phone', placeholder = 'Tell the tree what to change…', examples = [], working, onSubmit, onDismiss }) {
   const [value, setValue] = useState('');
   const inputRef = useRef(null);
   const desktop = variant === 'desktop';
@@ -28,12 +28,26 @@ export function TendBar({ variant = 'phone', placeholder = 'Tell the tree what t
     setValue('');
   };
 
+  // What tending can do, surfaced as one-tap starters — the review wedge ("Is this realistic?") is
+  // invisible otherwise. Tapping fills the field so you can tweak before sending, never fires blind.
+  const starters = !working && !value && examples.length > 0 && (
+    <div style={exampleRow}>
+      {examples.map((example) => (
+        <button key={example} type="button" style={exampleChip}
+          onClick={() => { setValue(example); inputRef.current?.focus(); }}>
+          {example}
+        </button>
+      ))}
+    </div>
+  );
+
   const bar = (
     <form
       onSubmit={submit}
       onKeyDown={(event) => { if (event.key === 'Escape') onDismiss?.(); }}
       style={desktop ? deskForm : phoneForm}
     >
+      {starters}
       <div style={shell}>
         <span style={mark}><Icon name="sparkles" size={17} /></span>
         {working ? (
@@ -102,3 +116,11 @@ const scrim = {
   paddingTop: '18vh', background: 'rgba(33,27,19,.14)', pointerEvents: 'auto',
 };
 const deskForm = { width: 'min(560px, calc(100vw - 48px))' };
+const exampleRow = { display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 };
+const exampleChip = {
+  display: 'inline-flex', alignItems: 'center', height: 30, padding: '0 12px',
+  border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-full)',
+  background: 'var(--surface-card)', boxShadow: 'var(--shadow-sm)',
+  fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)', fontWeight: 600,
+  color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap',
+};
