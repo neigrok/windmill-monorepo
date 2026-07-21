@@ -2,8 +2,10 @@
 
 #include "adapters/postgres/PgConnection.h"
 
+#include <json/json.h>
 #include <pqxx/pqxx>
 
+#include <sstream>
 #include <string_view>
 
 namespace wm {
@@ -11,7 +13,28 @@ namespace wm {
 namespace {
 constexpr std::string_view kTendRunColumns =
     "id, tree_id, coalesce(user_id::text, '') AS user_id, prompt, status, refusal, summary, "
-    "detail, edits, seq_from, seq_to, started_at, finished_at";
+    "detail, edits, seq_from, seq_to, started_at, finished_at, created_node_ids";
+
+// The created-ids column round-trips as a JSON array of strings — jsonb read back as text on the
+// way out, and written as text cast to jsonb on the way in (the save below).
+std::vector<std::string> parseIdArray(const std::string& json) {
+  std::vector<std::string> ids;
+  Json::Value root;
+  Json::CharReaderBuilder builder;
+  std::string errs;
+  std::istringstream stream(json);
+  if (Json::parseFromStream(builder, stream, &root, &errs) && root.isArray())
+    for (const Json::Value& id : root) ids.push_back(id.asString());
+  return ids;
+}
+
+std::string writeIdArray(const std::vector<std::string>& ids) {
+  Json::Value array(Json::arrayValue);
+  for (const std::string& id : ids) array.append(id);
+  Json::StreamWriterBuilder builder;
+  builder["indentation"] = "";
+  return Json::writeString(builder, array);
+}
 
 // The inverse of tendStatusName / tendRefusalName (domain/Tending.h). The name→enum direction
 // lives here, at the read boundary, because it is only ever needed when a row comes back off
@@ -51,6 +74,7 @@ TendRun tendRunFrom(const Row& row) {
   run.seqTo = row["seq_to"].template as<std::uint64_t>();
   run.startedAtMs = row["started_at"].template as<std::uint64_t>();
   run.finishedAtMs = row["finished_at"].template as<std::uint64_t>();
+  run.createdNodeIds = parseIdArray(row["created_node_ids"].template as<std::string>());
   return run;
 }
 }
@@ -63,17 +87,17 @@ void PgTendRunRepository::save(const TendRun& run) {
   pqxx::work txn{pgThreadConnection(connString_)};
   txn.exec("INSERT INTO tend_runs "
            "(id, tree_id, user_id, prompt, status, refusal, summary, detail, edits, "
-           "seq_from, seq_to, started_at, finished_at) "
-           "VALUES ($1, $2, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) "
+           "seq_from, seq_to, started_at, finished_at, created_node_ids) "
+           "VALUES ($1, $2, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb) "
            "ON CONFLICT (id) DO UPDATE SET "
            "status = excluded.status, refusal = excluded.refusal, summary = excluded.summary, "
            "detail = excluded.detail, edits = excluded.edits, seq_from = excluded.seq_from, "
            "seq_to = excluded.seq_to, started_at = excluded.started_at, "
-           "finished_at = excluded.finished_at",
+           "finished_at = excluded.finished_at, created_node_ids = excluded.created_node_ids",
            pqxx::params{run.id, run.tree.str(), run.user.str(), run.prompt,
                         tendStatusName(run.status), tendRefusalName(run.refusal), run.summary,
                         run.detail, run.edits, run.seqFrom, run.seqTo, run.startedAtMs,
-                        run.finishedAtMs});
+                        run.finishedAtMs, writeIdArray(run.createdNodeIds)});
   txn.commit();
 }
 

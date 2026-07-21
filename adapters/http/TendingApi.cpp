@@ -33,6 +33,9 @@ Json::Value toJson(const TendRun& run) {
   body["summary"] = run.summary;
   body["detail"] = run.detail;
   body["edits"] = run.edits;
+  Json::Value created(Json::arrayValue);
+  for (const std::string& id : run.createdNodeIds) created.append(id);  // the receipt's Undo target
+  body["created"] = created;
   body["seqFrom"] = Json::Value::UInt64(run.seqFrom);
   body["seqTo"] = Json::Value::UInt64(run.seqTo);
   body["startedAtMs"] = Json::Value::UInt64(run.startedAtMs);

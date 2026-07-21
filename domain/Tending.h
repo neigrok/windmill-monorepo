@@ -67,6 +67,7 @@ struct TendRun {
   std::string summary;   // the receipt line: "Added 3 steps under Backend"
   std::string detail;    // the "why", shown only when the receipt is tapped
   int edits = 0;         // tool calls that changed something — 0 means the tree is untouched
+  std::vector<std::string> createdNodeIds;  // the steps this run planted — exactly what its Undo reverts
   // The run's footprint in the tree's op log: every op it wrote falls in (seqFrom, seqTo].
   // This is what makes one sentence one undo — including for a client that was asleep for all
   // of it, which is precisely when the user most needs the way back.

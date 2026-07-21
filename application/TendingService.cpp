@@ -118,6 +118,7 @@ void TendingService::execute(TendRun run) {
       run.summary = outcome.summary;
       run.detail = outcome.ok ? outcome.detail : outcome.error;  // the error is diagnostic, not a receipt
       run.edits = outcome.edits;
+      run.createdNodeIds = scoped.createdNodeIds();  // the authoritative set the receipt's Undo reverts
     } catch (const std::exception& error) {
       run.status = TendStatus::failed;
       run.detail = error.what();

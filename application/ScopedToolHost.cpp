@@ -34,7 +34,27 @@ ToolResult ScopedToolHost::callTool(const std::string& name, const Json::Value& 
   // so the edit can only ever land on the tree being tended.
   Json::Value scopedArgs = arguments;
   scopedArgs["treeId"] = scope_.str();
-  return inner_.callTool(name, scopedArgs, caller);
+  ToolResult result = inner_.callTool(name, scopedArgs, caller);
+
+  // Record what this call planted, from the tool's own result — so the tend's Undo reverts exactly
+  // the agent's additions and never a step someone else touched. create_node echoes the one id it
+  // minted; import_subgraph plants every incoming node that wasn't already there (its result names
+  // the collisions that already existed). Modify tools (rename, recolor) also echo an id, so this
+  // captures only the two that CREATE — never the id of a step the agent merely changed.
+  if (!result.isError) {
+    if (name == "create_node") {
+      const std::string id = result.structured.get("id", "").asString();
+      if (!id.empty()) created_.push_back(id);
+    } else if (name == "import_subgraph" && !result.structured.get("dryRun", Json::Value(false)).asBool()) {
+      std::set<std::string> collided;
+      for (const Json::Value& c : result.structured["nodeCollisions"]) collided.insert(c.asString());
+      for (const Json::Value& node : scopedArgs["nodes"]) {
+        const std::string id = node.get("id", "").asString();
+        if (!id.empty() && !collided.count(id)) created_.push_back(id);
+      }
+    }
+  }
+  return result;
 }
 
 }

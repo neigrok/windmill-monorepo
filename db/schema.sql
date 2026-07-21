@@ -400,6 +400,7 @@ create table if not exists tend_runs (
   seq_to       bigint not null default 0,
   started_at   bigint not null default 0,
   finished_at  bigint not null default 0,
+  created_node_ids jsonb not null default '[]',
   created_at   timestamptz not null default now()
 );
 -- Converge a table that predates any column (the file's idempotent habit): every add is a no-op
@@ -410,6 +411,7 @@ alter table tend_runs add column if not exists edits int not null default 0;
 alter table tend_runs add column if not exists seq_from bigint not null default 0;
 alter table tend_runs add column if not exists seq_to bigint not null default 0;
 alter table tend_runs add column if not exists finished_at bigint not null default 0;
+alter table tend_runs add column if not exists created_node_ids jsonb not null default '[]';
 -- The allowance read: how many runs this user started inside the window — keyed (user, started_at).
 create index if not exists tend_runs_user_started on tend_runs (user_id, started_at);
 -- The per-tree footprint read (undo, activity): every run that touched a given tree.

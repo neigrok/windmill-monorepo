@@ -32,9 +32,13 @@ struct RecordingToolHost : ToolHost {
 
   ToolResult callTool(const std::string& name, const Json::Value& arguments, const UserId& caller) override {
     calls.push_back({name, arguments, caller.str()});
-    Json::Value ok(Json::objectValue);
-    ok["ok"] = true;
-    return ToolResult::json(ok);
+    Json::Value out(Json::objectValue);
+    out["ok"] = true;
+    // Mirror applyEdit: EVERY single-node edit echoes the id it touched (create, rename, recolor),
+    // so the recorder must key on the tool name, not the mere presence of an id.
+    if (name == "create_node" || name == "rename_node") out["id"] = arguments.get("id", "minted").asString();
+    if (name == "import_subgraph") out["nodeCollisions"] = Json::Value(Json::arrayValue);  // nothing pre-existing
+    return ToolResult::json(out);
   }
 };
 
@@ -82,4 +86,24 @@ TEST(scoped_tool_host_refuses_a_cross_tree_tool_without_reaching_the_inner_host)
   const ToolResult deleted = scoped.callTool("delete_tree", Json::Value(Json::objectValue), UserId{"u1"});
   CHECK(deleted.isError);
   CHECK_EQ(inner.calls.size(), std::size_t{0});  // the destructive call never reached the real host
+}
+
+TEST(scoped_tool_host_records_exactly_the_nodes_the_tend_planted) {
+  RecordingToolHost inner;
+  ScopedToolHost scoped(inner, TreeId{"t_target"});
+  const UserId u{"u1"};
+
+  Json::Value a(Json::objectValue); a["id"] = "n1"; scoped.callTool("create_node", a, u);
+  Json::Value b(Json::objectValue); b["id"] = "n2"; scoped.callTool("create_node", b, u);
+  // A rename echoes an id too (applyEdit does), but it created nothing — it must NOT be recorded.
+  Json::Value renamed(Json::objectValue); renamed["id"] = "existing"; scoped.callTool("rename_node", renamed, u);
+  // import_subgraph plants every incoming node that wasn't already there (no collisions here).
+  Json::Value imp(Json::objectValue);
+  Json::Value nodes(Json::arrayValue);
+  Json::Value n3(Json::objectValue); n3["id"] = "n3"; nodes.append(n3);
+  Json::Value n4(Json::objectValue); n4["id"] = "n4"; nodes.append(n4);
+  imp["nodes"] = nodes;
+  scoped.callTool("import_subgraph", imp, u);
+
+  CHECK_EQ(scoped.createdNodeIds(), (std::vector<std::string>{"n1", "n2", "n3", "n4"}));
 }
