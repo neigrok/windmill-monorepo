@@ -13,6 +13,9 @@ import { Minimap } from './ui/Minimap.jsx';
 import { useViewMode } from './ui/useViewMode.js';
 import { StatusChip, VisitorNotice } from './ui/HonestyChrome.jsx';
 import { MobileChrome } from './ui/mobile/MobileChrome.jsx';
+import { TendBar } from './tending/TendBar.jsx';
+import { useTend } from './tending/useTend.js';
+import { fetchTending } from './tending/tendingClient.js';
 import { BottomSheet } from './ui/mobile/BottomSheet.jsx';
 import { MobileEditorSheet } from './ui/mobile/MobileEditorSheet.jsx';
 import { AimBar, RemoveLinkBar } from './ui/mobile/AimBar.jsx';
@@ -458,6 +461,49 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     toastTimersRef.current = [];
     setToast(null);
   }, []);
+
+  // Tending (guidelines/tending.md): the agent lives in the tree. The bar appears only for a
+  // signed-in owner of an editable tree on an ARMED server — a dark server never shows an input
+  // that would only refuse (the summary's `enabled` is that gate). Its edits arrive live over the
+  // same collab socket a person's do; each run finishes as a quiet face in the toast lane.
+  const [tendingEnabled, setTendingEnabled] = useState(false);
+  const [tendOpen, setTendOpen] = useState(false);  // desktop only: the ⌘K/`/`-summoned command bar
+  useEffect(() => {
+    if (!treeMine || status !== 'signed-in' || demo) { setTendingEnabled(false); return undefined; }
+    let alive = true;
+    fetchTending().then((summary) => { if (alive) setTendingEnabled(!!summary?.enabled); });
+    return () => { alive = false; };
+  }, [treeMine, status, demo, treeId]);
+
+  const canTend = tendingEnabled && treeMine && !shared && !demo && !demotion;
+
+  const onTendFace = useCallback((face) => {
+    setTendOpen(false);  // the desktop bar closes as its work lands; the receipt speaks in the toast lane
+    if (face.kind === 'empty') return;  // a blank submit says nothing
+    showToast(face.line, { duration: face.kind === 'receipt' ? 6000 : 5000 });
+  }, [showToast]);
+
+  const { working: tendWorking, submit: submitTend } = useTend({ treeId, onFace: onTendFace });
+
+  // Desktop summons the bar deliberately — ⌘K anywhere, or `/` when the caret isn't already in a
+  // field. Phone shows it ambiently instead, so this only arms on desktop.
+  useEffect(() => {
+    if (!canTend || breakpoint !== 'desktop') return undefined;
+    const onKey = (event) => {
+      // Escape closes the summoned bar even mid-run, when its input is unmounted and the form can't
+      // catch the key itself. Only when it's actually open, so other Escape handlers keep theirs.
+      if (event.key === 'Escape' && tendOpen) { event.preventDefault(); setTendOpen(false); return; }
+      const meta = event.metaKey || event.ctrlKey;
+      const target = event.target;
+      const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+      if ((event.key.toLowerCase() === 'k' && meta) || (event.key === '/' && !meta && !typing)) {
+        event.preventDefault();
+        setTendOpen((open) => !open);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [canTend, breakpoint, tendOpen]);
 
   // The scene reports pan start/stop (§chrome yields): mobile chrome fades while
   // panning, and the first pan means the tree has left the safe frame — offer Recenter.
@@ -2064,6 +2110,28 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
           activityPing={activityPing}
           readyCount={readyCount}
           onToggleActivity={toggleActivity}
+        />
+      )}
+
+      {/* The Tend bar. Phone: it rides the bottom edge when nothing else owns that space (an open
+          editing surface takes precedence — you're editing one node, not telling the whole tree).
+          Desktop: summoned to centre with ⌘K / `/` over a soft scrim. Both only for an owner of an
+          armed, editable tree; the prompt reads "build" on an empty tree, "change" once it has steps. */}
+      {canTend && breakpoint !== 'desktop' && mobileSurface === 'empty' && (
+        <TendBar
+          variant="phone"
+          working={tendWorking}
+          placeholder={tree && tree.nodes.length === 0 ? 'What do you want to learn or build?' : 'Tell the tree what to change…'}
+          onSubmit={submitTend}
+        />
+      )}
+      {canTend && breakpoint === 'desktop' && tendOpen && (
+        <TendBar
+          variant="desktop"
+          working={tendWorking}
+          placeholder={tree && tree.nodes.length === 0 ? 'What do you want to learn or build?' : 'Tell the tree what to change…'}
+          onSubmit={submitTend}
+          onDismiss={() => setTendOpen(false)}
         />
       )}
 

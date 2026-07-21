@@ -1949,6 +1949,16 @@
   }
 }
 
+/* ---- Tend bar: the working-state breathing dot (X6 gold), the one motion the composer needs.
+   A calm pulse, never a spinner; reduced motion holds it as a steady dot. ---- */
+@keyframes wmTendBreathe {
+  0%, 100% { transform: scale(0.82); box-shadow: 0 0 0 0 rgba(201, 154, 46, 0.45); }
+  50%      { transform: scale(1);    box-shadow: 0 0 0 5px rgba(201, 154, 46, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  [style*="wmTendBreathe"] { animation: none !important; }
+}
+
 /* ---- Paste-import composer (F3): borrows the StepPanel dock seat on the birth canvas.
    The bud dims but never leaves; Esc hands the seat back with the draft kept. ---- */
 .birth-composer {

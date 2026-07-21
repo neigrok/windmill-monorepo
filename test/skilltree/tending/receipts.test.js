@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { receiptLine, meterPct, runFace } from '../../../src/skilltree/tending/receipts.js';
+import { receiptLine, meterPct, runFace, isTerminal } from '../../../src/skilltree/tending/receipts.js';
 
 test('receiptLine — a run that changed something shows its summary', () => {
   assert.equal(receiptLine({ status: 'done', summary: 'Added a testing branch', edits: 3 }), 'Added a testing branch');
@@ -62,4 +62,12 @@ test('runFace — the four refusal faces, out-of-allowance never a wall', () => 
 
 test('runFace — a transport miss is the "didn\'t land" face, not a crash', () => {
   assert.equal(runFace(null).kind, 'failed');
+});
+
+test('isTerminal — only a running run keeps the poll going', () => {
+  assert.equal(isTerminal({ status: 'running' }), false);
+  assert.equal(isTerminal({ status: 'done' }), true);
+  assert.equal(isTerminal({ status: 'failed' }), true);
+  assert.equal(isTerminal({ status: 'refused' }), true);
+  assert.equal(isTerminal(null), false);  // a missed read is not terminal — poll again
 });

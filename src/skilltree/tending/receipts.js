@@ -18,6 +18,11 @@ export function meterPct(used, limit) {
   return Math.min(100, Math.max(0, Math.round((used / limit) * 100)));
 }
 
+// A run has reached rest once it is anything but `running` — the poll stops here and reads the face.
+export function isTerminal(run) {
+  return !!run && run.status !== 'running';
+}
+
 // The quiet face a finished or refused run wears in the composer — guidelines/tending.md §6/§9. A
 // fact and a next step, never a wall, never a spinner. `kind` drives the visual register; `line` is
 // the copy; `undo` marks a receipt whose edits are worth the revert button.
