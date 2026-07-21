@@ -17,3 +17,26 @@ export function meterPct(used, limit) {
   if (!limit || limit <= 0) return 0;
   return Math.min(100, Math.max(0, Math.round((used / limit) * 100)));
 }
+
+// The quiet face a finished or refused run wears in the composer — guidelines/tending.md §6/§9. A
+// fact and a next step, never a wall, never a spinner. `kind` drives the visual register; `line` is
+// the copy; `undo` marks a receipt whose edits are worth the revert button.
+export function runFace(run) {
+  if (!run) return { kind: 'failed', line: 'Nothing changed — the tree is untouched and your sentence is still here.' };
+  if (run.status === 'running') return { kind: 'working', line: 'Tending your tree…' };
+  if (run.status === 'done') return { kind: 'receipt', line: receiptLine(run), undo: run.edits > 0 };
+  if (run.status === 'failed') return { kind: 'failed', line: 'Nothing changed — the tree is untouched and your sentence is still here.' };
+  if (run.status === 'refused') return refusalFace(run.refusal);
+  return { kind: 'failed', line: 'Nothing changed — the tree is untouched.' };
+}
+
+// The four honest refusal faces (§6): each a fact and a way forward, and out-of-allowance points at
+// hand editing rather than a paywall. `empty` is the no-op of a blank submit — nothing to say.
+function refusalFace(refusal) {
+  if (refusal === 'rate-limited') return { kind: 'rate', line: 'That’s a lot of tending quickly. Your tree is exactly as you left it.' };
+  if (refusal === 'out-of-allowance') return { kind: 'out', line: 'You’ve used this month’s tending. You can still edit by hand — nothing is gated.' };
+  if (refusal === 'prompt-too-long') return { kind: 'long', line: 'That’s a lot at once — paste an outline instead for a whole plan.' };
+  if (refusal === 'not-enabled') return { kind: 'off', line: 'Tending is off for this account.' };
+  if (refusal === 'prompt-empty') return { kind: 'empty', line: '' };
+  return { kind: 'failed', line: 'Nothing changed — the tree is untouched.' };
+}
