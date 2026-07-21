@@ -30,15 +30,15 @@ test('meterPct — never overflows or divides by a zero limit', () => {
   assert.equal(meterPct(0, 0), 0);
 });
 
-test('runFace — a done run with edits is a receipt with an undo', () => {
-  assert.deepEqual(runFace({ status: 'done', summary: 'Added 3 steps under Backend', edits: 3 }), {
-    kind: 'receipt', line: 'Added 3 steps under Backend', undo: true,
+test('runFace — a done run carries the ids it planted as the Undo target', () => {
+  assert.deepEqual(runFace({ status: 'done', summary: 'Added 3 steps under Backend', edits: 3, created: ['n1', 'n2', 'n3'] }), {
+    kind: 'receipt', line: 'Added 3 steps under Backend', created: ['n1', 'n2', 'n3'],
   });
 });
 
-test('runFace — a done run that touched nothing is a receipt with no undo', () => {
+test('runFace — a done run that planted nothing carries an empty target (no Undo shown)', () => {
   assert.deepEqual(runFace({ status: 'done', summary: '', edits: 0 }), {
-    kind: 'receipt', line: 'Nothing changed', undo: false,
+    kind: 'receipt', line: 'Nothing changed', created: [],
   });
 });
 
@@ -70,4 +70,8 @@ test('isTerminal — only a running run keeps the poll going', () => {
   assert.equal(isTerminal({ status: 'failed' }), true);
   assert.equal(isTerminal({ status: 'refused' }), true);
   assert.equal(isTerminal(null), false);  // a missed read is not terminal — poll again
+});
+
+test('isTerminal is unaffected by created ids', () => {
+  assert.equal(isTerminal({ status: 'done', created: [] }), true);
 });

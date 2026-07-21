@@ -477,11 +477,25 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
 
   const canTend = tendingEnabled && treeMine && !shared && !demo && !demotion;
 
+  // One sentence = one undo (tending §4): revert a tend by tombstoning the steps it planted, in a
+  // single BulkDelete down the ordinary command path — so it lands in history and is itself redoable.
+  // Only the nodes the tend ADDED, never a pre-existing step; a modify-only tend has nothing to revert
+  // here and simply carries no Undo (hand editing remains the way back for those).
+  const undoTend = useCallback((planted) => {
+    if (!planted.length) return;
+    collabRef.current?.dispatch({ kind: 'BulkDelete', nodeIds: planted, edges: [] });
+    showToast('Tending reverted');
+  }, [showToast]);
+
   const onTendFace = useCallback((face) => {
     setTendOpen(false);  // the desktop bar closes as its work lands; the receipt speaks in the toast lane
     if (face.kind === 'empty') return;  // a blank submit says nothing
+    if (face.kind === 'receipt' && face.created && face.created.length) {
+      showToast(face.line, { duration: 6000, action: { label: 'Undo', run: () => undoTend(face.created) } });
+      return;
+    }
     showToast(face.line, { duration: face.kind === 'receipt' ? 6000 : 5000 });
-  }, [showToast]);
+  }, [showToast, undoTend]);
 
   const { working: tendWorking, submit: submitTend } = useTend({ treeId, onFace: onTendFace });
 

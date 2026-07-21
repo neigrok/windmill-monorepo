@@ -29,7 +29,9 @@ export function isTerminal(run) {
 export function runFace(run) {
   if (!run) return { kind: 'failed', line: 'Nothing changed — the tree is untouched and your sentence is still here.' };
   if (run.status === 'running') return { kind: 'working', line: 'Tending your tree…' };
-  if (run.status === 'done') return { kind: 'receipt', line: receiptLine(run), undo: run.edits > 0 };
+  // `created` is the authoritative set the run planted (server-recorded at the tool boundary), so the
+  // receipt's Undo reverts exactly the agent's additions — never a step someone else touched.
+  if (run.status === 'done') return { kind: 'receipt', line: receiptLine(run), created: run.created ?? [] };
   if (run.status === 'failed') return { kind: 'failed', line: 'Nothing changed — the tree is untouched and your sentence is still here.' };
   if (run.status === 'refused') return refusalFace(run.refusal);
   return { kind: 'failed', line: 'Nothing changed — the tree is untouched.' };
