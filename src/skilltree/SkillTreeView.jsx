@@ -2102,6 +2102,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       ) : (
         <ControlBar
           title={tree?.title}
+          onTend={canTend ? () => setTendOpen(true) : undefined}
           titleSlot={
             <TreeSwitcher
               current={{ id: treeId, title: tree?.title, done: shareStats?.done, total: shareStats?.total, dominantKind: shareStats?.dominantKind }}

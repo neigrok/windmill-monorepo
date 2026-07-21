@@ -5,7 +5,7 @@ import React from 'react';
 import { IconButton, Tooltip, Icon } from '../../components';
 import { keyHint } from '../shortcuts/shortcutMap.js';
 
-export function ControlBar({ title, titleSlot, onZoomIn, onZoomOut, onFitToView, canReset, onResetEdits, onShare, onShowShortcuts, activityOpen, activityUnread, activityPing, readyCount = 0, onToggleActivity }) {
+export function ControlBar({ title, titleSlot, onTend, onZoomIn, onZoomOut, onFitToView, canReset, onResetEdits, onShare, onShowShortcuts, activityOpen, activityUnread, activityPing, readyCount = 0, onToggleActivity }) {
   // The (A) / (?) key hints come from the canonical shortcut map, never a duplicated literal.
   const activityHint = keyHint('Activity feed');
   const shortcutsHint = keyHint('Keyboard shortcuts');
@@ -21,6 +21,16 @@ export function ControlBar({ title, titleSlot, onZoomIn, onZoomOut, onFitToView,
       </div>
 
       <div className="st-controls">
+        {/* Tending's front door on desktop — the bar is summoned (⌘K / `/`), so this labelled
+            chip is how you discover it exists at all. Shown only for an owner of an armed tree. */}
+        {onTend && (
+          <Tooltip label="Tell your tree what to change · ⌘K" side="bottom">
+            <button type="button" className="st-tend-chip" onClick={onTend}>
+              <Icon name="sparkles" size={14} />
+              <span>Tend</span>
+            </button>
+          </Tooltip>
+        )}
         {/* The standing offer (whats-next-panel): "Next · N" while steps are ready,
             the plain Activity chip at zero; the unseen-activity badge rides along. */}
         <Tooltip label={readyCount > 0 ? `What’s next (${activityHint})` : `Activity (${activityHint})`} side="bottom">

@@ -1419,6 +1419,29 @@
   background: var(--color-brand-soft);
   border-color: var(--accent-terracotta-400);
 }
+
+/* Tending's discoverable front door (desktop): brand-tinted so the star action reads as inviting,
+   not just another grey tool. Only rendered for an owner of an armed tree. */
+.st-tend-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 800;
+  color: var(--color-brand);
+  background: var(--color-brand-soft);
+  border: 1px solid var(--accent-terracotta-200);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard);
+}
+.st-tend-chip:hover {
+  background: var(--surface-card);
+  border-color: var(--accent-terracotta-400);
+}
 .st-activity-chip-badge {
   display: inline-flex;
   align-items: center;
