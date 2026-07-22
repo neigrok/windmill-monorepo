@@ -903,6 +903,49 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     });
   }, [handleCreateChild, showToast]);
 
+  // The list's edit verbs (X8 L4). Each dispatches one gesture and drops the 4s undo snackbar,
+  // the way the phone's tree-view edits do — but the list names the step BEFORE it exists and
+  // connects through a picker, so these don't route through the sheet's autofocus-rename or aim.
+  // Describe restores the prior text with a targeted DescribeNode (a stack pop could catch a
+  // later edit); add tombstones exactly its new node; need removes exactly its new edge.
+  const mobileDescribe = useCallback((id, text) => {
+    const node = editorRef.current?.treeData.nodes.find((n) => n.id === id);
+    if (!node) return;
+    const before = node.description ?? '';
+    if (before === text) return;
+    collabRef.current?.dispatch({ kind: 'DescribeNode', id, description: text });
+    showToast('Description updated', {
+      action: { label: 'Undo', run: () => collabRef.current?.dispatch({ kind: 'DescribeNode', id, description: before }) },
+      duration: 4000,
+    });
+  }, [showToast]);
+
+  const mobileListAddStep = useCallback((parentId, label) => {
+    const parent = editorRef.current?.treeData.nodes.find((n) => n.id === parentId);
+    if (!parent) return null;
+    const id = crypto.randomUUID?.() ?? `n-${Date.now()}`;
+    collabRef.current?.dispatch({ kind: 'CreateNode', id, label, icon: NEW_NODE_ICON, color: parent.color, parentId });
+    emit({ verb: 'added', nodeId: id, label, kind: parent.color });
+    showToast(`“${label}” planted`, {
+      action: { label: 'Undo', run: () => {
+        collabRef.current?.dispatch({ kind: 'DeleteNode', id });
+        if (selectedIdRef.current === id) setSelectedId(null);
+      } },
+      duration: 4000,
+    });
+    return id;
+  }, [emit, showToast, setSelectedId]);
+
+  const mobileAddNeed = useCallback((id, parentId) => {
+    const parent = editorRef.current?.treeData.nodes.find((n) => n.id === parentId);
+    if (!parent) return;
+    collabRef.current?.dispatch({ kind: 'AddEdge', from: parentId, to: id });
+    showToast(`Linked — needs “${parent.label || 'Untitled step'}”`, {
+      action: { label: 'Undo', run: () => collabRef.current?.dispatch({ kind: 'RemoveEdge', from: parentId, to: id }) },
+      duration: 4000,
+    });
+  }, [showToast]);
+
   // Connect aim mode (M3): the sheet's Connect verb folds the sheet into the aim bar and
   // turns the canvas into a target chooser. The source stays selected (its ring), and the
   // sheet returns when aim ends. One surface at a time — entering aim clears any remove bar.
@@ -1885,7 +1928,13 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     // completion offers the share — a milestone finished on another device (fromRemote) is the
     // welcome-back recap's moment, not a live "share it" toast, and must never burn the once-ever.
     const offer = fromRemote ? null : milestoneOffer(completed, nextCompleted);
-    sceneRef.current?.announceCeremony(offer ? offer.summary : stepSummary, offer ? { action: offer.action } : {});
+    const ceremony = offer ? offer.summary : stepSummary;
+    const ceremonyOptions = offer ? { action: offer.action } : {};
+    // Ceremony plays where you are (X8): the scene is paused under the list, so its director can't
+    // speak the summary — in the list, the fruits flipping in place + this toast ARE the ceremony.
+    // The canvas path is untouched: the director still speaks it after the bloom/travel settle.
+    if (listActive) showToast(ceremony, ceremonyOptions);
+    else sceneRef.current?.announceCeremony(ceremony, ceremonyOptions);
 
     if (demo) {
       setDemoCompletions((count) => count + 1); // any completion retires the coach (§03)
@@ -2192,7 +2241,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
 
       {/* X8 — the phone list layer. It sits over the still-mounted canvas (the scene keeps
           its camera) and cross-fades in and out; once shown it stays mounted so its scroll
-          survives every flip. Read path only this wave: editable=false. */}
+          survives every flip. Owner edits in place (editable + handlers); a visitor gets neither. */}
       {listMounted && (
         <div className={`st-view-layer st-view-layer--list ${listActive ? 'is-active' : ''}`}>
           <ListView
@@ -2208,7 +2257,18 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
             active={listActive}
             prefs={viewPrefs}
             treeId={treeId}
-            editable={false}
+            portalTarget={rootRef.current}
+            editable={mobileEditable}
+            handlers={mobileEditable ? {
+              rename: mobileRename,
+              describe: mobileDescribe,
+              addStep: mobileListAddStep,
+              markDone: (id) => completeStep(id),
+              markUndone: (id) => handleSetState(id, 'notstarted'),
+              recolor: mobileRecolor,
+              remove: deleteNodeAt,
+              addNeed: mobileAddNeed,
+            } : undefined}
           />
         </div>
       )}

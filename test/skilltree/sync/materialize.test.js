@@ -284,3 +284,52 @@ test('ImportSubgraph: pasted roots get distinct ascending keys', () => {
   const [r1, r2, r3] = ['r1', 'r2', 'r3'].map((id) => orderOf(lattice, id));
   assert.ok(r1 < r2 && r2 < r3, `expected ascending, got ${r1}, ${r2}, ${r3}`);
 });
+
+// DescribeNode (X8 list describe-in-place): one stamped write to the description register — the
+// exact RenameNode/DescribeKind shape, but on a node. It must touch NOTHING else: no edge write,
+// no kind write, and no other node register (label/color/order stay where they were).
+
+test('DescribeNode writes only the description register — no edges, no kinds, no other node fields', () => {
+  const { lattice } = newTree();
+  const clock = new HlcClock('tester');
+  lattice.join(materialize({ kind: 'CreateNode', id: 'n1', label: 'Step' }, lattice, clock));
+
+  const writes = materialize({ kind: 'DescribeNode', id: 'n1', description: 'A tidy summary' }, lattice, clock);
+
+  assert.deepStrictEqual(writes.edges, []);
+  assert.deepStrictEqual(writes.kinds, []);
+  assert.strictEqual(writes.nodes.length, 1);
+  const entry = writes.nodes[0];
+  assert.deepStrictEqual(Object.keys(entry).sort(), ['description', 'descriptionAt', 'id']);
+  assert.strictEqual(entry.id, 'n1');
+  assert.strictEqual(entry.description, 'A tidy summary');
+  assert.strictEqual(typeof entry.descriptionAt, 'string');
+  assert.ok(entry.descriptionAt.length > 0);
+});
+
+test('DescribeNode projects onto the node and leaves label/color untouched; a later write wins', () => {
+  const { lattice, play } = newTree();
+  play({ kind: 'CreateNode', id: 'n1', label: 'Step', color: 'sky' });
+
+  play({ kind: 'DescribeNode', id: 'n1', description: 'first' });
+  const afterFirst = lattice.toTreeData().nodes.find((n) => n.id === 'n1');
+  assert.strictEqual(afterFirst.description, 'first');
+  assert.strictEqual(afterFirst.label, 'Step');
+  assert.strictEqual(afterFirst.color, 'sky');
+
+  play({ kind: 'DescribeNode', id: 'n1', description: 'second' });
+  const afterSecond = lattice.toTreeData().nodes.find((n) => n.id === 'n1');
+  assert.strictEqual(afterSecond.description, 'second');
+  assert.strictEqual(afterSecond.label, 'Step');
+  assert.strictEqual(afterSecond.color, 'sky');
+});
+
+test('DescribeNode clearing back to empty drops the description from the projection', () => {
+  const { lattice, play } = newTree();
+  play({ kind: 'CreateNode', id: 'n1', label: 'Step' });
+  play({ kind: 'DescribeNode', id: 'n1', description: 'something' });
+  assert.strictEqual(lattice.toTreeData().nodes.find((n) => n.id === 'n1').description, 'something');
+
+  play({ kind: 'DescribeNode', id: 'n1', description: '' });
+  assert.strictEqual(lattice.toTreeData().nodes.find((n) => n.id === 'n1').description, undefined);
+});

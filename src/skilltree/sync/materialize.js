@@ -111,6 +111,7 @@ export function materialize(gesture, lattice, clock) {
     }
     case 'ResurrectNode': nodes.push(node(g.id, at, { created: true })); break;  // re-add life only; the tombstoned fields survive
     case 'RenameNode': nodes.push(node(g.id, at, { label: g.label })); break;
+    case 'DescribeNode': nodes.push(node(g.id, at, { description: g.description })); break;
     case 'SetNodeColor': nodes.push(node(g.id, at, { color: g.color })); break;
     case 'SetNodeOrder': nodes.push(node(g.id, at, { order: g.order })); break;  // one register write — siblings re-sort, none renumber
     case 'AddEdge': edges.push(addEdge(g.from, g.to, at)); break;

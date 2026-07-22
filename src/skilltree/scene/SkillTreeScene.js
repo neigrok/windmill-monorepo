@@ -456,6 +456,20 @@ export class SkillTreeScene {
   applyStates(statesMap) {
     this.iconOverlay.setStates(statesMap);
 
+    // The list may be the active view — this scene is stopped beneath it (F6). Snap the new
+    // states to their resting look at once: no bloom, no camera glide, no pending beats, and any
+    // announced summary is dropped (the list speaks its own ceremony where you are, X8). A stopped
+    // scene must never arm the director — its settle poll would spin on a frozen clock and never
+    // clear, then burst stale beats on resume. The running scene keeps the full ceremony below.
+    if (!this.running) {
+      this.nodeStates = new Map(statesMap);
+      this.nodeBatch.setStates(statesMap);
+      this.connectorBatch.setStates(statesMap, this.elapsedSeconds);
+      this.pendingSummary = null;
+      this.pendingAction = null;
+      return;
+    }
+
     if (this.nodeStates.size === 0) {
       // A returning visit replaces the generic arrival cascade with a replay of the steps
       // completed since last time (return-recap, P3); a first-ever visit or nothing-new

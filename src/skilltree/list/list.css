@@ -16,7 +16,15 @@
 .st-list-row-line,
 .st-list-sec,
 .st-list-chip,
-.st-list-viewpill-seg {
+.st-list-viewpill-seg,
+.st-list-name-btn,
+.st-list-desc-edit,
+.st-list-verb,
+.st-list-foot-btn,
+.st-list-swatch-hit,
+.st-list-addrow,
+.st-list-picker-row,
+.st-list-picker-close {
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -185,6 +193,7 @@
 
 /* ---- Row: fruit · name · one meta fact; expands into a card in place ---- */
 .st-list-row {
+  position: relative;
   display: block;
   border-radius: 13px;
 }
@@ -423,6 +432,416 @@
   color: #fff;
 }
 
+/* ============================================================================
+   The edit path (X8 L3/L4) — every rule below is owner-only; the visitor render
+   above is untouched. Transient surfaces (the bud, the fields, the swatch row,
+   the picker) are born in place and read the same tokens as the read view.
+   ============================================================================ */
+
+/* ---- Swipe-to-done: an olive band with a check waits under the row; the line rides an opaque
+   surface over it, so the band shows only as the finger draws the line right. ---- */
+.st-list-swband {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding-left: 22px;
+  border-radius: 13px;
+  background: var(--color-success);
+  color: #fff;
+}
+.st-list-row-line--swipe {
+  position: relative;
+  z-index: 1;
+  background: var(--surface-canvas);
+  will-change: transform;
+}
+.st-list-row--swiping {
+  overflow: hidden;
+}
+
+/* ---- Edit field: the one input the keyboard ever attaches to (rename · describe · bud) ---- */
+.st-list-row-line--editing {
+  cursor: default;
+}
+.st-list-field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.st-list-input {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1.5px solid var(--color-brand);
+  border-radius: var(--radius-sm);
+  background: var(--surface-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  font-weight: 600;
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-brand-soft);
+}
+.st-list-input--area {
+  resize: none;
+  line-height: 1.5;
+  font-weight: 400;
+}
+.st-list-hint {
+  padding-left: 2px;
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+/* ---- The bud: a step named before it exists — a dashed ring fruit in the parent's hue ---- */
+.st-list-fruit--bud {
+  background: color-mix(in srgb, var(--k-base) 10%, transparent);
+  border: 1.5px dashed var(--k-ring);
+}
+
+/* ---- Expanded title: the name becomes a rename target with a pencil riding it ---- */
+.st-list-name-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-body);
+}
+.st-list-pencil {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+/* ---- Describe: the description block is a tap target, placeholder when empty ---- */
+.st-list-desc-edit {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-body);
+}
+.st-list-desc-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.st-list-desc-edit--empty .st-list-desc-text {
+  color: var(--text-tertiary);
+}
+
+/* ---- Verbs: Mark done is the one kind-tinted button; the rest are quiet bark ---- */
+.st-list-verbs {
+  display: flex;
+  gap: var(--space-2);
+}
+.st-list-verb {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 11px;
+  background: var(--surface-card);
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.st-list-verb--done {
+  border-color: var(--k-ring);
+  background: var(--k-base);
+  color: #fff;
+  box-shadow: 0 2px 12px var(--k-glow);
+}
+
+/* ---- Quiet foot: Recolor on the left, Delete (with its cost) in brick on the right ---- */
+.st-list-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.st-list-foot-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.st-list-foot-dot {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-full);
+}
+.st-list-foot-del {
+  margin-left: auto;
+  color: var(--color-danger);
+}
+
+/* ---- Recolor swatch row: swaps the foot; 34px kind circles, current ringed, 44px hits ---- */
+.st-list-swatches {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.st-list-swatch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.st-list-swatch-hit {
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.st-list-swatch {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-full);
+  box-shadow: 0 0 0 1px var(--border-default);
+}
+.st-list-swatch--on {
+  box-shadow: 0 0 0 3px var(--text-primary);
+}
+
+/* ---- Add-a-need ghost chip + the add-step ghost row ---- */
+.st-list-chip--add {
+  gap: 4px;
+  border-style: dashed;
+  color: var(--color-bark);
+}
+.st-list-addrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin: 2px 8px;
+  padding: 6px var(--space-4) 6px calc(var(--space-4) + var(--indent, 0px));
+  border: 1px dashed color-mix(in srgb, var(--color-bark) 40%, transparent);
+  border-radius: 11px;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--color-bark);
+}
+
+/* ---- Press feedback: every new control answers a tap with the list's surface-press treatment,
+   the same one the rows and picker rows already use. ---- */
+.st-list-verb:active,
+.st-list-foot-btn:active,
+.st-list-addrow:active,
+.st-list-name-btn:active,
+.st-list-desc-edit:active,
+.st-list-swatch-hit:active,
+.st-list-chip--add:active,
+.st-list-picker-close:active {
+  background: var(--surface-hover);
+}
+
+/* ---- The need picker: a half-sheet over a scrim, portalled above the pill/chrome (below the
+   fork door z100 and the undo toast z50) so a mid-modal view flip is impossible. ---- */
+.st-list-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: flex;
+  align-items: flex-end;
+  background: var(--surface-overlay);
+  opacity: 0;
+  transition: opacity 200ms var(--ease-soft);
+}
+.st-list-scrim.is-open {
+  opacity: 1;
+}
+.st-list-picker {
+  width: 100%;
+  max-height: 72%;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-card);
+  border-top-left-radius: 26px;
+  border-top-right-radius: 26px;
+  box-shadow: var(--shadow-lg);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  transform: translateY(100%);
+  transition: transform 280ms var(--ease-soft);
+  will-change: transform;
+}
+.st-list-picker.is-up {
+  transform: translateY(0);
+}
+.st-list-picker:not(.is-up) {
+  pointer-events: none; /* rising or descending: no row can link a second need mid-slide (a scrim tap still closes) */
+}
+.st-list-picker-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 16px var(--space-4) 10px;
+}
+.st-list-picker-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text-primary);
+}
+.st-list-picker-close {
+  position: relative;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--surface-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.st-list-picker-close::after {
+  content: '';
+  position: absolute;
+  inset: -5px; /* 34px + 2×5 = 44px hit */
+}
+.st-list-picker-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 var(--space-4) 8px;
+  padding: 0 12px;
+  min-height: 40px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+.st-list-picker-search-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+.st-list-picker-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  outline: none;
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  color: var(--text-primary);
+}
+.st-list-picker-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 4px var(--space-3) 12px;
+}
+.st-list-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 46px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-body);
+}
+.st-list-picker-row:active {
+  background: var(--surface-hover);
+}
+.st-list-picker-row--loop {
+  opacity: 0.45;
+  cursor: default;
+  pointer-events: none;
+}
+.st-list-picker-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.st-list-picker-tag {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.st-list-picker-empty {
+  padding: 20px var(--space-3);
+  font-size: 13px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+/* Reduced motion: the picker rises as a fade, not a slide (opacity only); the scrim already
+   is opacity, the swipe stays finger-driven, and the bud flash stays a color ramp. */
+@media (prefers-reduced-motion: reduce) {
+  .st-list-picker {
+    transform: none !important;
+    opacity: 0;
+    transition: opacity 200ms var(--ease-soft) !important;
+  }
+  .st-list-picker.is-up {
+    opacity: 1;
+  }
+}
+
 /* ---- Motion: the jump flash and the accordion fade (both survive reduced motion) ---- */
 @keyframes st-list-flash {
   from { background-color: var(--color-brand-soft); }
@@ -435,11 +854,19 @@
 .st-list-row--flash {
   animation: st-list-flash 1200ms var(--ease-standard);
 }
+/* A collapsed available row wears an opaque swipe line over the row's flash background, so the
+   line itself must ramp — otherwise the planted-bud flash is invisible on exactly these rows. */
+.st-list-row--flash .st-list-row-line--swipe {
+  animation: st-list-flash 1200ms var(--ease-standard);
+}
 
 @media (prefers-reduced-motion: reduce) {
   /* The design keeps the color ramps under reduced motion (they read, they don't move);
      it drops only the smooth scroll (handled in JS) and the chevron rotation. */
   .st-list-row--flash {
+    animation: st-list-flash 1200ms var(--ease-standard) !important;
+  }
+  .st-list-row--flash .st-list-row-line--swipe {
     animation: st-list-flash 1200ms var(--ease-standard) !important;
   }
   .st-list-card {
