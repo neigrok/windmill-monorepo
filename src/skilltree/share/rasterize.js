@@ -48,11 +48,18 @@ export async function svgToPngBlob(svgString, width = 2400, height = 1260) {
   }
 }
 
+// The card's fonts as a base64 @font-face <style>, fetched + encoded once and reused. Exposed so
+// the share-video capture can embed the same faces in every frame it rasterises (same font gotcha).
+export async function embeddedFontStyle() {
+  if (!fontStyle) fontStyle = await buildFontStyle();
+  return fontStyle;
+}
+
 async function withEmbeddedFonts(svgString) {
   try {
-    if (!fontStyle) fontStyle = await buildFontStyle();
+    const style = await embeddedFontStyle();
     const at = svgString.indexOf('>'); // end of the opening <svg …> tag
-    return at < 0 ? svgString : `${svgString.slice(0, at + 1)}${fontStyle}${svgString.slice(at + 1)}`;
+    return at < 0 ? svgString : `${svgString.slice(0, at + 1)}${style}${svgString.slice(at + 1)}`;
   } catch {
     // The woff2 bytes couldn't be fetched — fall back to the host page's loaded faces (weaker:
     // it works in some engines, not all) rather than failing the whole raster.

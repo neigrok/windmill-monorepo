@@ -34,6 +34,7 @@ import { ShareStats } from './share/ShareStats.js';
 import { buildOgCardSvg } from './share/ogCard.js';
 import { svgToPngBlob } from './share/rasterize.js';
 import { uploadOgImage } from './share/OgImageClient.js';
+import { uploadOgVideo } from './share/OgVideoClient.js';
 import { ActivityFeed } from './activity/ActivityFeed.jsx';
 import { NextUp, planNextUp, considerAutoOpen } from './ui/NextUp.jsx';
 import { ActivityLog, ActivityEvent } from './activity/ActivityLog.js';
@@ -1469,16 +1470,25 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     if (!treeMine || !tree || !shareStats) return;
     try {
       const model = tree.toRenderModel(layoutPositions(tree), states);
-      const svg = buildOgCardSvg({
+      const card = {
         model,
         title: tree.title,
         done: shareStats.done,
         total: shareStats.total,
         dominantKind: shareStats.dominantKind,
-      });
-      const png = await svgToPngBlob(svg);
+      };
+      const png = await svgToPngBlob(buildOgCardSvg(card));
       if (png) await uploadOgImage(treeId, png);
-    } catch { /* the unfurl image is best-effort — never breaks sharing */ }
+      // The motion companion (#19): kicked off AFTER the poster is up, un-awaited, so the share
+      // link is ready instantly and the ~3s encode + upload lands a beat later. Best-effort — a
+      // failed or unsupported encode just leaves the poster, never blocks or breaks sharing. The
+      // encoder (and its heavy WebCodecs/mux library) is loaded on demand here so it never weighs
+      // down the initial page — only an owner who actually shares ever pays for it.
+      import('./share/captureShareVideo.js')
+        .then(({ captureShareVideo }) => captureShareVideo(card))
+        .then((mp4) => { if (mp4) uploadOgVideo(treeId, mp4); })
+        .catch(() => {});
+    } catch { /* the unfurl artifacts are best-effort — never break sharing */ }
   }, [treeMine, tree, states, shareStats, layoutPositions, treeId]);
 
   // Push re-derived states to the scene whenever completion changes; the
