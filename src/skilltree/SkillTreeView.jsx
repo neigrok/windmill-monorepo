@@ -300,7 +300,8 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   const [bounds, setBounds] = useState(EMPTY_BOUNDS);
   const [scene, setScene] = useState(null);
   const [autoFocusNameId, setAutoFocusNameId] = useState(null); // freshly created bud → StepPanel focuses its name field
-  const [toast, setToast] = useState(null); // single status beat: { message, action, key, leaving }
+  const [toast, setToast] = useState(null); // single status beat: { message, action, detail, key, leaving }
+  const [toastWhyOpen, setToastWhyOpen] = useState(false); // a tend receipt's reasoning, revealed on tap
   const [logVersion, setLogVersion] = useState(0); // bump to re-render off the mutable activity log
   const [ticker, setTicker] = useState([]); // live arrival toasts (design C), max 3
   const [newEventIds, setNewEventIds] = useState(() => new Set()); // rows flashing on arrival
@@ -447,7 +448,8 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     const action = options.action ?? null;
     const hold = options.duration ?? (action ? 6000 : 4000);
     const key = (toastKeyRef.current += 1);
-    setToast({ message, action, key, leaving: false });
+    setToastWhyOpen(false);  // a fresh toast starts with its reasoning collapsed
+    setToast({ message, action, detail: options.detail || null, key, leaving: false });
     const leave = setTimeout(() => {
       setToast((current) => (current && current.key === key ? { ...current, leaving: true } : current));
       const drop = setTimeout(() => setToast((current) => (current && current.key === key ? null : current)), 280); // matches the CSS exit
@@ -490,11 +492,15 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   const onTendFace = useCallback((face) => {
     setTendOpen(false);  // the desktop bar closes as its work lands; the receipt speaks in the toast lane
     if (face.kind === 'empty') return;  // a blank submit says nothing
-    if (face.kind === 'receipt' && face.created && face.created.length) {
-      showToast(face.line, { duration: 6000, action: { label: 'Undo', run: () => undoTend(face.created) } });
-      return;
-    }
-    showToast(face.line, { duration: face.kind === 'receipt' ? 6000 : 5000 });
+    const isReceipt = face.kind === 'receipt';
+    const hasUndo = isReceipt && face.created && face.created.length > 0;
+    // The settle beat: once the last frames land + the layout eases, glide to frame the new work.
+    if (hasUndo) window.setTimeout(() => sceneRef.current?.frameNodes(face.created), 600);
+    showToast(face.line, {
+      duration: isReceipt ? 6000 : 5000,
+      detail: isReceipt ? face.detail : undefined,  // the "why", revealed on tap
+      action: hasUndo ? { label: 'Undo', run: () => undoTend(face.created) } : undefined,
+    });
   }, [showToast, undoTend]);
 
   const { working: tendWorking, submit: submitTend } = useTend({ treeId, onFace: onTendFace });
@@ -2503,13 +2509,29 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       )}
 
       {toast && (
-        <div className={`st-toast ${toast.leaving ? 'is-leaving' : ''}`} role="status" key={toast.key}>
-          <span>{toast.message}</span>
-          {toast.action && (
-            <button className="st-toast-undo" onClick={() => { toast.action.run(); dismissToast(); }}>
-              {toast.action.label}
-            </button>
-          )}
+        <div className={`st-toast ${toast.leaving ? 'is-leaving' : ''} ${toast.detail && toastWhyOpen ? 'st-toast--expanded' : ''}`} role="status" key={toast.key}>
+          <div className="st-toast-row">
+            <span>{toast.message}</span>
+            {toast.detail && (
+              <button
+                className="st-toast-why"
+                onClick={() => {
+                  // Reading the why cancels the auto-dismiss, so the toast waits while you read.
+                  toastTimersRef.current.forEach(clearTimeout);
+                  toastTimersRef.current = [];
+                  setToastWhyOpen((open) => !open);
+                }}
+              >
+                {toastWhyOpen ? 'Hide' : 'Why?'}
+              </button>
+            )}
+            {toast.action && (
+              <button className="st-toast-undo" onClick={() => { toast.action.run(); dismissToast(); }}>
+                {toast.action.label}
+              </button>
+            )}
+          </div>
+          {toast.detail && toastWhyOpen && <p className="st-toast-detail">{toast.detail}</p>}
         </div>
       )}
 

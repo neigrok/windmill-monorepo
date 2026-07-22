@@ -724,6 +724,21 @@ export class SkillTreeScene {
   panTo(x, y) { this.camera.panTo(x, y); }
   zoomBy(factor) { this.camera.zoomBy(factor); }
 
+  // The settle beat (tending §3.4): after a tend lands, glide to frame the steps it planted so you
+  // see what grew. Centroid of the named nodes; ids not yet in the scene (a late frame) are skipped,
+  // and an empty set (a review that added nothing) is a no-op — the camera stays where you left it.
+  frameNodes(ids) {
+    const points = [];
+    for (const id of ids) {
+      const node = this.nodesById.get(id);
+      if (node) points.push(node);
+    }
+    if (!points.length) return;
+    const cx = points.reduce((sum, node) => sum + node.x, 0) / points.length;
+    const cy = points.reduce((sum, node) => sum + node.y, 0) / points.length;
+    this.camera.focus(cx, cy);
+  }
+
   // A pan gesture is underway: tell the shell so it can fade the editing chrome (WS-A),
   // then restore it a short quiet after the finger settles. Debounced — one `true` on
   // the first move of a gesture, one `false` ~200ms after the last. No-op in the editor

@@ -30,15 +30,15 @@ test('meterPct — never overflows or divides by a zero limit', () => {
   assert.equal(meterPct(0, 0), 0);
 });
 
-test('runFace — a done run carries the ids it planted as the Undo target', () => {
-  assert.deepEqual(runFace({ status: 'done', summary: 'Added 3 steps under Backend', edits: 3, created: ['n1', 'n2', 'n3'] }), {
-    kind: 'receipt', line: 'Added 3 steps under Backend', created: ['n1', 'n2', 'n3'],
+test('runFace — a done run carries the ids it planted as the Undo target + the why', () => {
+  assert.deepEqual(runFace({ status: 'done', summary: 'Added 3 steps under Backend', edits: 3, created: ['n1', 'n2', 'n3'], detail: 'because you asked' }), {
+    kind: 'receipt', line: 'Added 3 steps under Backend', created: ['n1', 'n2', 'n3'], detail: 'because you asked',
   });
 });
 
 test('runFace — a done run that planted nothing carries an empty target (no Undo shown)', () => {
   assert.deepEqual(runFace({ status: 'done', summary: '', edits: 0 }), {
-    kind: 'receipt', line: 'Nothing changed', created: [],
+    kind: 'receipt', line: 'Nothing changed', created: [], detail: '',
   });
 });
 
