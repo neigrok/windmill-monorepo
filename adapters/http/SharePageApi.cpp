@@ -49,13 +49,14 @@ drogon::HttpResponsePtr htmlResponse(std::string body) {
 }
 
 SharePageApi::SharePageApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
-                           std::shared_ptr<AuthService> auth, std::string webRoot)
+                           std::shared_ptr<AuthService> auth, std::shared_ptr<OgVideoRepository> videos,
+                           std::string webRoot)
     : registry_(std::move(registry)), trees_(std::move(trees)), auth_(std::move(auth)),
-      webRoot_(std::move(webRoot)) {}
+      videos_(std::move(videos)), webRoot_(std::move(webRoot)) {}
 
 std::string SharePageApi::renderShell(const std::string& shell, const std::string& title,
                                       std::size_t steps, Visibility visibility, const std::string& id,
-                                      const ForkLineage& lineage) {
+                                      const ForkLineage& lineage, bool hasVideo) {
   static const std::string startTag = "<!-- meta:unfurl:start -->";
   static const std::string endTag = "<!-- meta:unfurl:end -->";
   const std::size_t start = shell.find(startTag);
@@ -99,6 +100,16 @@ std::string SharePageApi::renderShell(const std::string& shell, const std::strin
   meta += "    <meta property=\"og:image:type\" content=\"image/png\" />\n";
   meta += "    <meta property=\"og:image:width\" content=\"1200\" />\n";
   meta += "    <meta property=\"og:image:height\" content=\"630\" />\n";
+  // Per-tree share video (og-share-video): only for a tree that carries an uploaded loop. The
+  // og:image above stays the unconditional poster fallback for scrapers that ignore og:video.
+  if (hasVideo) {
+    const std::string video = host + "/v1/trees/" + htmlEscape(id) + "/og-video";
+    meta += "    <meta property=\"og:video\" content=\"" + video + "\" />\n";
+    meta += "    <meta property=\"og:video:secure_url\" content=\"" + video + "\" />\n";
+    meta += "    <meta property=\"og:video:type\" content=\"video/mp4\" />\n";
+    meta += "    <meta property=\"og:video:width\" content=\"1080\" />\n";
+    meta += "    <meta property=\"og:video:height\" content=\"1080\" />\n";
+  }
   meta += "    <meta property=\"og:locale\" content=\"en_US\" />\n\n";
   meta += "    <meta name=\"twitter:card\" content=\"summary_large_image\" />\n";
   meta += "    <meta name=\"twitter:title\" content=\"" + safeTitle + "\" />\n";
@@ -143,7 +154,10 @@ void SharePageApi::page(const drogon::HttpRequestPtr& req, HttpCallback&& callba
   // across Postgres) and only when the tree is actually readable — a private/absent tree gets the
   // shell verbatim, so the extra query never fires for it and "private = absent" holds.
   const ForkLineage lineage = readable ? trees_->loadForkLineage(TreeId{id}) : ForkLineage{};
-  callback(htmlResponse(readable ? renderShell(shell, title, steps, visibility, id, lineage) : shell));
+  // A cheap SELECT 1 (never the bytes) that decides whether the og:video tag is emitted — taken
+  // only for a readable tree, so a private/absent tree never fires it and "private = absent" holds.
+  const bool hasVideo = readable && videos_->has(id);
+  callback(htmlResponse(readable ? renderShell(shell, title, steps, visibility, id, lineage, hasVideo) : shell));
 }
 
 }

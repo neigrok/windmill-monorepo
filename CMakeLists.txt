@@ -103,6 +103,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     adapters/postgres/PgOAuthRepository.cpp
     adapters/postgres/PgMcpKeyRepository.cpp
     adapters/postgres/PgOgImageRepository.cpp
+    adapters/postgres/PgOgVideoRepository.cpp
     adapters/postgres/PgEventRepository.cpp
     adapters/postgres/PgFeedbackRepository.cpp
     adapters/postgres/PgServerErrorRepository.cpp
@@ -111,6 +112,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     adapters/http/HttpApi.cpp
     adapters/http/SharePageApi.cpp
     adapters/http/OgImageApi.cpp
+    adapters/http/OgVideoApi.cpp
     adapters/http/AuthApi.cpp
     adapters/http/McpKeyApi.cpp
     adapters/http/EventsApi.cpp
@@ -177,6 +179,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/adapters/http/HttpApiTest.cpp
     test/adapters/http/SharePageApiTest.cpp
     test/adapters/http/OgImageApiTest.cpp
+    test/adapters/http/OgVideoApiTest.cpp
     test/adapters/http/TreeRegistryApiTest.cpp
     test/adapters/ws/CollabTest.cpp
     test/adapters/email/ResendEmailSenderTest.cpp

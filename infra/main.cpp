@@ -13,6 +13,7 @@
 #include "adapters/http/McpKeyApi.h"
 #include "adapters/http/OAuthApi.h"
 #include "adapters/http/OgImageApi.h"
+#include "adapters/http/OgVideoApi.h"
 #include "adapters/http/RateLimiter.h"
 #include "adapters/http/SharePageApi.h"
 #include "adapters/http/TendingApi.h"
@@ -28,6 +29,7 @@
 #include "adapters/postgres/PgMcpKeyRepository.h"
 #include "adapters/postgres/PgOAuthRepository.h"
 #include "adapters/postgres/PgOgImageRepository.h"
+#include "adapters/postgres/PgOgVideoRepository.h"
 #include "adapters/postgres/PgOpLog.h"
 #include "adapters/postgres/PgProgressRepository.h"
 #include "adapters/postgres/PgServerErrorRepository.h"
@@ -127,18 +129,27 @@ int main() {
 
   auto api = std::make_shared<HttpApi>(registry, trees, progress, oplog, genesis, authService, forkService);
 
-  // The real share path (path-share-pages): GET /t/:id serves the SPA shell with a shared
-  // tree's own unfurl meta spliced in, so the link unfurls as itself for social scrapers. It
-  // reads the built index.html from WINDMILL_WEB_ROOT (the same host dir Caddy serves); a
-  // private or absent tree gets the shell verbatim, so it stays indistinguishable from absent.
-  const char* webRootEnv = std::getenv("WINDMILL_WEB_ROOT");
-  auto sharePageApi = std::make_shared<SharePageApi>(registry, trees, authService, webRootEnv ? webRootEnv : "");
-
   // Per-tree unfurl cards (og-tree-cards): the owner PUTs their tree's rendered 1200×630 PNG,
   // and GET /og/:id.png serves it (canRead-gated) as the share link's og:image — with the
   // generic card as the fallback whenever a tree has no image or can't be read.
   auto ogImages = std::make_shared<PgOgImageRepository>(connString);
   auto ogImageApi = std::make_shared<OgImageApi>(ogImages, trees, authService);
+
+  // Per-tree share videos (og-share-video): the owner PUTs their tree's rendered mp4/webm loop,
+  // and GET /v1/trees/:id/og-video serves it (canRead-gated) as the share link's og:video — the
+  // og:image card above stays the poster fallback, so a tree with no video is a plain 404 there,
+  // never a broken tag. Built before the share page so it can advertise og:video only for a tree
+  // that actually carries one (a cheap `has` on render).
+  auto ogVideos = std::make_shared<PgOgVideoRepository>(connString);
+  auto ogVideoApi = std::make_shared<OgVideoApi>(ogVideos, trees, authService);
+
+  // The real share path (path-share-pages): GET /t/:id serves the SPA shell with a shared
+  // tree's own unfurl meta spliced in, so the link unfurls as itself for social scrapers. It
+  // reads the built index.html from WINDMILL_WEB_ROOT (the same host dir Caddy serves); a
+  // private or absent tree gets the shell verbatim, so it stays indistinguishable from absent.
+  const char* webRootEnv = std::getenv("WINDMILL_WEB_ROOT");
+  auto sharePageApi =
+      std::make_shared<SharePageApi>(registry, trees, authService, ogVideos, webRootEnv ? webRootEnv : "");
 
   // The per-user tree registry (create + list + rename + delete). Reads are repo-direct;
   // rename goes through RoomRegistry so a live room's title stays coherent with the column.
@@ -625,6 +636,22 @@ int main() {
         ogImageApi->putImage(req, std::move(cb), id);
       },
       {drogon::Put});
+
+  // Per-tree share video (og-share-video): owner-only PUT of the raw mp4/webm loop; the GET
+  // (canRead-gated) is what the scraper's og:video tag points at — 404 on any miss, since the
+  // og:image poster is the fallback. Same path, two verbs.
+  app.registerHandler(
+      "/v1/trees/{id}/og-video",
+      [ogVideoApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        ogVideoApi->putVideo(req, std::move(cb), id);
+      },
+      {drogon::Put});
+  app.registerHandler(
+      "/v1/trees/{id}/og-video",
+      [ogVideoApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        ogVideoApi->getVideo(req, std::move(cb), id);
+      },
+      {drogon::Get});
   app.registerHandler(
       "/v1/trees/{id}/diagnostics",
       [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {

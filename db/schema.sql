@@ -148,6 +148,19 @@ create table if not exists tree_og_images (
   updated_at timestamptz not null default now()
 );
 
+-- per-tree share video (og-share-video): the client renders + encodes a short mp4/webm loop and
+-- uploads it; GET /v1/trees/:id/og-video serves it as the link's og:video, with the og:image card
+-- above as the poster fallback (so a missing video is a plain 404, never a broken tag). One row per
+-- tree, replaced on each re-upload — the bytes live inline as bytea, a few megabytes at most. No FK
+-- to trees: the row is addressed by tree id and read behind the tree's own visibility gate, so a
+-- stray row for a deleted tree is simply unreachable. `mime` records the detected container.
+create table if not exists tree_og_videos (
+  tree_id    text primary key,
+  video      bytea not null,
+  mime       text not null default 'video/mp4',
+  updated_at timestamptz not null default now()
+);
+
 -- append-only op log: activity, undo, reconnect replay (Phase 2)
 create table if not exists tree_ops (
   tree_id    text not null,

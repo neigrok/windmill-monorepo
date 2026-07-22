@@ -4,6 +4,7 @@
 #include "domain/Ids.h"
 #include "domain/LooseGraph.h"
 #include "domain/Tree.h"
+#include "ports/OgVideoRepository.h"
 #include "ports/OpLog.h"
 #include "ports/PresenceBus.h"
 #include "ports/ProgressRepository.h"
@@ -160,6 +161,19 @@ struct FakeTreeRepository : TreeRepository {
     byId[newTree.str()] = StoredTree{state, legend, {title, {}}, 0, owner};
     forkedFrom[newTree.str()] = source.str();
   }
+};
+
+struct FakeOgVideoRepository : OgVideoRepository {
+  std::map<std::string, StoredVideo> byId;
+  void put(const std::string& treeId, const std::string& bytes, const std::string& mime) override {
+    byId[treeId] = StoredVideo{bytes, mime};
+  }
+  std::optional<StoredVideo> get(const std::string& treeId) override {
+    auto it = byId.find(treeId);
+    if (it == byId.end()) return std::nullopt;
+    return it->second;
+  }
+  bool has(const std::string& treeId) override { return byId.count(treeId) != 0; }
 };
 
 struct FakeProgressRepository : ProgressRepository {
