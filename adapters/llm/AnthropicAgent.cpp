@@ -48,10 +48,17 @@ constexpr const char* kSystemPrompt =
     "step in place.\n"
     "\n"
     "Finishing:\n"
-    "- When the work is done, stop calling tools and reply with a single line summarising what "
-    "changed, in a passive tree-voice receipt — for example \"Added 3 steps under Backend\" or "
-    "\"Renamed 2 steps and linked them\". That line becomes the person's receipt, so make it "
-    "accurate and specific.";
+    "- When the work is done, stop calling tools and reply in TWO parts. First, a short paragraph "
+    "explaining WHY — your reasoning for the changes, in plain language (this is shown only when the "
+    "person taps the receipt for it). Then a blank line. Then a SINGLE final line: a passive "
+    "tree-voice receipt of what changed — for example \"Added 3 steps under Backend\" or \"Renamed 2 "
+    "steps and linked them\". The final line becomes the person's receipt, so keep it to one "
+    "accurate, specific line. If there is genuinely nothing to explain, the one-line receipt alone "
+    "is fine.\n"
+    "- When the sentence left something open and you had to guess — how much time a week, the "
+    "starting level, the scope — say so plainly in the WHY as a brief assumption, for example "
+    "\"Assumed about 3 evenings a week, starting from scratch\", so the person can correct it with "
+    "another sentence.";
 
 // Sonnet, not the sibling composer's Haiku. The composer picks Haiku for latency because a plan
 // lands in the well while you are still looking at it; here the design treats the wait as
@@ -360,37 +367,42 @@ AgentOutcome AnthropicAgent::run(const std::string& prompt, const TreeId& tree, 
   const std::string apiKey = apiKey_;
   trantor::EventLoop* loop = loop_.getLoop();
   const MessagesCall call = [apiKey, loop](const Json::Value& request) -> std::optional<Json::Value> {
-    auto client = drogon::HttpClient::newHttpClient("https://api.anthropic.com", loop);
-    auto req = drogon::HttpRequest::newHttpRequest();
-    req->setMethod(drogon::Post);
-    req->setPath("/v1/messages");
-    req->addHeader("x-api-key", apiKey);
-    req->addHeader("anthropic-version", "2023-06-01");
-    req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-    Json::StreamWriterBuilder builder;
-    builder["indentation"] = "";
-    req->setBody(Json::writeString(builder, request));
-
     auto promise = std::make_shared<std::promise<std::optional<Json::Value>>>();
     std::future<std::optional<Json::Value>> future = promise->get_future();
-    client->sendRequest(
-        req,
-        [client, promise](drogon::ReqResult result, const drogon::HttpResponsePtr& resp) {
-          const int status = resp ? static_cast<int>(resp->getStatusCode()) : 0;
-          if (result != drogon::ReqResult::Ok || status < 200 || status >= 300) {
-            LOG_ERROR << "tend upstream failed (status " << status << ")";
-            promise->set_value(std::nullopt);
-            return;
-          }
-          std::shared_ptr<Json::Value> reply = resp->getJsonObject();
-          if (!reply) {
-            LOG_ERROR << "tend upstream sent an unreadable reply";
-            promise->set_value(std::nullopt);
-            return;
-          }
-          promise->set_value(*reply);
-        },
-        kRequestTimeoutSeconds);
+    // Trantor forbids driving a loop from any thread but its own — and creating the client or
+    // sending the request from this worker thread is a race that intermittently FATALs the whole
+    // process. So marshal EVERY client + loop touch onto the loop thread; the worker only queues
+    // the work and blocks on the future, which the timeout-guaranteed callback always fulfils.
+    loop->queueInLoop([apiKey, loop, request, promise]() {
+      auto client = drogon::HttpClient::newHttpClient("https://api.anthropic.com", loop);
+      auto req = drogon::HttpRequest::newHttpRequest();
+      req->setMethod(drogon::Post);
+      req->setPath("/v1/messages");
+      req->addHeader("x-api-key", apiKey);
+      req->addHeader("anthropic-version", "2023-06-01");
+      req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+      Json::StreamWriterBuilder builder;
+      builder["indentation"] = "";
+      req->setBody(Json::writeString(builder, request));
+      client->sendRequest(
+          req,
+          [client, promise](drogon::ReqResult result, const drogon::HttpResponsePtr& resp) {
+            const int status = resp ? static_cast<int>(resp->getStatusCode()) : 0;
+            if (result != drogon::ReqResult::Ok || status < 200 || status >= 300) {
+              LOG_ERROR << "tend upstream failed (status " << status << ")";
+              promise->set_value(std::nullopt);
+              return;
+            }
+            std::shared_ptr<Json::Value> reply = resp->getJsonObject();
+            if (!reply) {
+              LOG_ERROR << "tend upstream sent an unreadable reply";
+              promise->set_value(std::nullopt);
+              return;
+            }
+            promise->set_value(*reply);
+          },
+          kRequestTimeoutSeconds);
+    });
     return future.get();
   };
 
