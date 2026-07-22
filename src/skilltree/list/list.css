@@ -1,0 +1,448 @@
+/* X8 · The list view. One scroller (the body); everything else is layout over the app's tokens,
+   so light/dark follow the theme. Kind hues arrive as --k-* custom properties set inline from
+   theme.js (never hardcoded), so a fruit reads 1:1 with the canvas. Reduced motion keeps the
+   jump flash and a short accordion fade (the design's calm color ramps) but drops smooth scroll
+   and rotation — see the block at the foot. */
+
+.st-list {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--surface-canvas);
+}
+
+/* No blue iOS flash on any of the list's tap targets — the row/chip flash is our own. */
+.st-list-notice,
+.st-list-row-line,
+.st-list-sec,
+.st-list-chip,
+.st-list-viewpill-seg {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ---- Header: the plaque facts on one line (kind dot · name · n/m · gradient bar) ---- */
+.st-list-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: calc(max(env(safe-area-inset-top, 0px), 44px) + 8px) var(--space-4) var(--space-3);
+  background: var(--surface-canvas);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.st-list-header-dot {
+  flex-shrink: 0;
+  width: 11px;
+  height: 11px;
+  border-radius: var(--radius-full);
+  background: var(--k-base);
+  box-shadow: inset 0 0 0 1.5px var(--k-ring);
+}
+.st-list-header-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 17px;
+  color: var(--text-primary);
+}
+.st-list-header-count {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+.st-list-header-bar {
+  flex-shrink: 0;
+  width: 72px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+.st-list-header-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: linear-gradient(90deg, var(--k-soft), var(--k-base));
+  transition: width var(--duration-base) var(--ease-soft);
+}
+
+/* ---- Notice row: a quiet full-width line under the header (e.g. the anon sign-in nudge). It is
+   the plaque nudge's list-view home (X8 L1) — static above the scroller, one tap, ≥44px. ---- */
+.st-list-notice {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 8px 12px 0;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-sm);
+  color: var(--color-brand);
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+.st-list-notice-text {
+  flex: 1;
+  min-width: 0;
+}
+.st-list-notice-chevron {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+/* ---- The one scroller ---- */
+.st-list-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: var(--space-2) 0 calc(120px + env(safe-area-inset-bottom, 0px));
+}
+
+/* ---- Next-up shelf: ≤3 ready steps, hidden entirely when none ---- */
+.st-list-nextup {
+  margin: 6px 12px 10px;
+  padding: 10px 12px 12px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-sm);
+}
+.st-list-nextup-label {
+  margin-bottom: var(--space-2);
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.st-list-nextup-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* ---- Section header: fold control + branch summary ---- */
+.st-list-sec {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 44px;
+  padding: var(--space-1) var(--space-4);
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-body);
+}
+.st-list-chevron {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  transition: transform 180ms var(--ease-standard);
+}
+.st-list-chevron--open {
+  transform: rotate(90deg);
+}
+.st-list-sec-dot {
+  flex-shrink: 0;
+  width: 9px;
+  height: 9px;
+  border-radius: var(--radius-full);
+}
+.st-list-sec-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.st-list-sec-count {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+
+/* ---- Row: fruit · name · one meta fact; expands into a card in place ---- */
+.st-list-row {
+  display: block;
+  border-radius: 13px;
+}
+.st-list-row--expanded {
+  margin: 3px 8px;
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-md);
+}
+.st-list-row-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 6px var(--space-4) 6px calc(var(--space-4) + var(--indent, 0px));
+  border: 0;
+  border-radius: 13px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-body);
+}
+.st-list-row-line:active {
+  background: var(--surface-hover);
+}
+.st-list-row--expanded .st-list-row-line:active {
+  background: transparent;
+}
+.st-list-name-group {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.st-list-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.st-list-name--locked {
+  color: var(--text-tertiary);
+  font-weight: 600;
+}
+.st-list-crown {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.st-list-meta {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+.st-list-lock {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+/* ---- Fruit: the kind × state treatment (24px) ---- */
+.st-list-fruit {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.st-list-fruit--done {
+  background: var(--k-base);
+  box-shadow: 0 0 7px var(--k-glow);
+  color: #fff;
+}
+.st-list-fruit--ready {
+  background: var(--surface-card);
+  box-shadow: inset 0 0 0 2.5px var(--k-ring);
+}
+.st-list-fruit--active {
+  background: var(--surface-card);
+  box-shadow: inset 0 0 0 2.5px var(--k-ring), 0 0 7px var(--k-glow);
+}
+.st-list-fruit--locked {
+  background: color-mix(in srgb, var(--k-base) 18%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--k-base) 35%, transparent);
+}
+
+/* ---- Expanded card interior ---- */
+.st-list-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 2px var(--space-4) 14px calc(var(--space-4) + var(--indent, 0px));
+  animation: st-list-card-in 150ms var(--ease-soft);
+}
+.st-list-desc {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.st-list-why {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 9px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+}
+.st-list-why strong {
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+.st-list-hairline {
+  height: 1px;
+  margin: 2px 0;
+  background: var(--border-subtle);
+}
+.st-list-dag {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.st-list-dag-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.st-list-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* ---- Chips: next-up (fruit) + jump (11px state dot); ≥34px visual, 44px hit ---- */
+.st-list-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  max-width: 100%;
+  padding: 0 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--surface-card);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.st-list-chip::after {
+  content: '';
+  position: absolute;
+  inset: -5px 0;
+}
+.st-list-nextup-chip {
+  min-height: 38px;
+}
+.st-list-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-list-dot {
+  flex-shrink: 0;
+  width: 11px;
+  height: 11px;
+  border-radius: var(--radius-full);
+}
+.st-list-dot--done {
+  background: var(--k-base);
+}
+.st-list-dot--ready {
+  background: var(--surface-card);
+  box-shadow: inset 0 0 0 2px var(--k-ring);
+}
+.st-list-dot--active {
+  background: var(--surface-card);
+  box-shadow: inset 0 0 0 2px var(--k-ring), 0 0 5px var(--k-glow);
+}
+.st-list-dot--locked {
+  background: color-mix(in srgb, var(--k-base) 18%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--k-base) 35%, transparent);
+}
+
+/* ---- View switch pill: a tool, never a kind — bark, not a hue ---- */
+.st-list-viewpill {
+  position: fixed;
+  left: calc(env(safe-area-inset-left, 0px) + 14px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 24px + var(--pill-lift, 0px));
+  z-index: 21;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-md);
+  transition: bottom var(--duration-fast) var(--ease-standard);
+}
+.st-list-viewpill-seg {
+  width: 46px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.st-list-viewpill-fill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+  transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+}
+.st-list-viewpill-seg[data-active="true"] .st-list-viewpill-fill {
+  background: var(--color-bark);
+  color: #fff;
+}
+
+/* ---- Motion: the jump flash and the accordion fade (both survive reduced motion) ---- */
+@keyframes st-list-flash {
+  from { background-color: var(--color-brand-soft); }
+  to { background-color: transparent; }
+}
+@keyframes st-list-card-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.st-list-row--flash {
+  animation: st-list-flash 1200ms var(--ease-standard);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The design keeps the color ramps under reduced motion (they read, they don't move);
+     it drops only the smooth scroll (handled in JS) and the chevron rotation. */
+  .st-list-row--flash {
+    animation: st-list-flash 1200ms var(--ease-standard) !important;
+  }
+  .st-list-card {
+    animation: st-list-card-in 150ms var(--ease-soft) !important;
+  }
+}

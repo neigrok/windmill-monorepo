@@ -12,6 +12,7 @@
 import React, { useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { createTree } from '../persistence/TreeRegistry.js';
+import { stampBorn } from '../persistence/ViewPrefs.js';
 import { bearImportedTree } from '../sync/localTrees.js';
 import { useViewMode } from '../ui/useViewMode.js';
 import { track } from '../../telemetry/beacon.js';
@@ -89,6 +90,7 @@ export function QuestShelf() {
     try {
       const [treeId] = await Promise.all([mint, ease]);
       try { sessionStorage.setItem(PLANTED_QUEST_KEY, '1'); } catch { /* the toast just says Roadmap */ }
+      stampBorn(treeId); // a quest's first open is the canvas — the arrival cascade plays there (X8 L1)
       window.location.hash = `#/app/${treeId}`;
     } catch {
       setSeed(null);

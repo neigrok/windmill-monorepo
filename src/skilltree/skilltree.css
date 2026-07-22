@@ -2006,6 +2006,54 @@
   }
 }
 
+/* ============================================================================
+   X8 — The phone list view: a second view over the same model. The list layer
+   fades over the still-mounted canvas (the scene keeps its camera) and back —
+   one 240ms opacity cross-fade. The hidden layer is inert to pointer input, and
+   the list stays mounted once shown so its scroll survives every flip. Phone
+   only; the layer classes are never applied above 743px. The pill's own look
+   and fixed placement live in list.css (Agent A). The cross-fade is already the
+   reduced-motion-friendly form, so it is kept there too.
+   ============================================================================ */
+.st-canvas--layer {
+  transition: opacity 240ms var(--ease-standard);
+}
+.st-view-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 18; /* above the canvas, below the mobile chrome (z20) */
+}
+/* The hidden list keeps opacity 0 through the fade, then goes visibility:hidden so nothing in it
+   (rows, chips, the sign-in link) stays focusable or hit-testable under the canvas. The delay
+   holds it visible for the 240ms fade-out; on activate visibility flips at 0s so it fades in live. */
+.st-view-layer--list {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  background: var(--surface-canvas);
+  transition: opacity 240ms var(--ease-standard), visibility 0s 240ms;
+}
+.st-view-layer--list.is-active {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity 240ms var(--ease-standard), visibility 0s 0s;
+}
+/* The cross-fade IS the reduced-motion form (a fade, not movement), so re-assert it past the
+   global reduce rule that would otherwise collapse every transition to 0.001ms — including the
+   visibility delay, or the hidden layer would flip focusable on the wrong beat. */
+@media (prefers-reduced-motion: reduce) {
+  .st-canvas--layer {
+    transition: opacity 240ms var(--ease-standard) !important;
+  }
+  .st-view-layer--list {
+    transition: opacity 240ms var(--ease-standard), visibility 0s 240ms !important;
+  }
+  .st-view-layer--list.is-active {
+    transition: opacity 240ms var(--ease-standard), visibility 0s 0s !important;
+  }
+}
+
 /* ---- Tend bar: the working-state breathing dot (X6 gold), the one motion the composer needs.
    A calm pulse, never a spinner; reduced motion holds it as a steady dot. ---- */
 @keyframes wmTendBreathe {

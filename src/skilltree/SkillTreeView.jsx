@@ -20,6 +20,8 @@ import { BottomSheet } from './ui/mobile/BottomSheet.jsx';
 import { MobileEditorSheet } from './ui/mobile/MobileEditorSheet.jsx';
 import { AimBar, RemoveLinkBar } from './ui/mobile/AimBar.jsx';
 import { BulkBar } from './ui/mobile/BulkBar.jsx';
+import ListView from './list/ListView.jsx';
+import ViewPill from './list/ViewPill.jsx';
 import { activeSurface } from './ui/mobile/editorSheet.js';
 import { illegalTargets, edgeFor } from './ui/mobile/aim.js';
 import { sharedKind } from './ui/mobile/bulk.js';
@@ -36,7 +38,8 @@ import { svgToPngBlob } from './share/rasterize.js';
 import { uploadOgImage } from './share/OgImageClient.js';
 import { uploadOgVideo } from './share/OgVideoClient.js';
 import { ActivityFeed } from './activity/ActivityFeed.jsx';
-import { NextUp, planNextUp, considerAutoOpen } from './ui/NextUp.jsx';
+import { NextUp, considerAutoOpen } from './ui/NextUp.jsx';
+import { planNextUp } from './ui/nextUpPlan.js';
 import { ActivityLog, ActivityEvent } from './activity/ActivityLog.js';
 import { ActorAvatar, EventSentence } from './activity/grammar.jsx';
 import { SkillTree } from './model/SkillTree.js';
@@ -58,6 +61,7 @@ import { WorkspaceStore } from './persistence/WorkspaceStore.js';
 import { LegendStore } from './persistence/LegendStore.js';
 import { LocalTreeRegistry } from './persistence/LocalTreeRegistry.js';
 import { PlaceStore } from './persistence/PlaceStore.js';
+import { ViewPrefs, initialView, peekBorn, clearBorn } from './persistence/ViewPrefs.js';
 import { ReturnLedger } from './persistence/ReturnLedger.js';
 import { MilestoneLedger } from './persistence/MilestoneLedger.js';
 import { detectMilestones } from './model/milestones.js';
@@ -83,6 +87,7 @@ const legendStore = new LegendStore();
 const syncStore = new SyncStore();
 const deviceTrees = new LocalTreeRegistry();
 const placeStore = new PlaceStore();
+const viewPrefs = new ViewPrefs();
 const returnLedger = new ReturnLedger();
 const milestoneLedger = new MilestoneLedger();
 const AUTO_COMPLETE_HOLD = 600; // held breath before auto-completing: arc-close 280 + hold 320 (§4)
@@ -397,6 +402,8 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   const [aim, setAim] = useState(null); // connect aim mode (M3): { sourceId, direction: 'unlocks'|'needs' } | null
   const [removing, setRemoving] = useState(null); // the branch the remove-link bar targets (M3): { from, to } | null
   const [multiMode, setMultiMode] = useState(false); // phone multi-select (M5): the bulk bar replaces the sheet
+  const [view, setView] = useState(null); // X8 phone view: 'tree' | 'list' | null (undecided → today's tree view)
+  const [sheetHeld, setSheetHeld] = useState(false); // list→tree flip carried a selection: hold the sheet down (ring only) until the next tap (F13)
   const [coachAllowed, setCoachAllowed] = useState(false); // the demo coach may mount — a stranger who hasn't seen it (F4 §03)
   const [demoCompletions, setDemoCompletions] = useState(0); // marks made this demo session — any one retires the coach
   const [ctaEcho, setCtaEcho] = useState(false); // the Fork CTA takes the pulse once, after the unlock toast (§04)
@@ -1056,6 +1063,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       readOnly: readOnlyRef.current,
       onPanStateChange: handlePanStateChange,
       onNodePick: (id) => {
+        setSheetHeld(false); // any canvas tap releases the F13 sheet hold
         if (id) { setSelectedId(id); return; }
         // Empty-canvas click: drop any selection — nodes or edges, single or multi — (the feed
         // returns iff it was open), or dismiss the feed itself when nothing was selected (design A″).
@@ -1631,6 +1639,83 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   // remove-link taps below; the sheet verbs are Wave A.
   const mobileEditable = treeMine && !shared && !demo && breakpoint !== 'desktop';
 
+  // The phone's second view (X8): the list and the canvas render one model — the pill
+  // flips between them, per tree, on this device only. The initial view is decided ONCE,
+  // the moment the tree is ready (an owner comes back to work → list; a visitor lands on
+  // the portrait → tree; an empty tree is always the bud canvas; a tree planted just now
+  // opens on the canvas once, for its birth/arrival ceremony). Until then `view` is
+  // null and we render today's tree view, so there's no flash and no double flip. The
+  // whole surface is phone-only; tablet and desktop keep `view` null and stay untouched.
+  const phone = breakpoint === 'phone';
+  if (view === null && phone && tree) {
+    const owner = treeMine && !shared && !demo && !demotion;
+    setView(initialView({ saved: viewPrefs.lastView(treeId), owner, empty: tree.nodes.length === 0, born: peekBorn(treeId) }));
+  }
+  useEffect(() => {
+    if (view !== null) clearBorn(treeId); // the stamp served its one open — a peek stays pure for StrictMode's double render
+  }, [view, treeId]);
+  const listReady = phone && !loading && !!tree && tree.nodes.length > 0; // the pill shows and the list can flip in
+  const listActive = listReady && view === 'list';
+
+  // Mount the list layer only once it's actually been shown (owner default counts), then keep it
+  // mounted forever so its scroll survives every flip. A tree-first visitor never pays for it
+  // until they tap the pill. The ref updates during render (synchronous, like `view` above), so
+  // the layer is present on the same paint the list first activates — no blank frame.
+  const listShownRef = useRef(false);
+  if (listActive) listShownRef.current = true;
+  const listMounted = listReady && listShownRef.current;
+
+  // Flipping views is view state, never navigation: persist the choice, drop the tree view's
+  // transient editing surfaces (aim / remove-link), and exit multi-select the way Done does —
+  // mode AND sets — so the canvas grouped glow can't linger under the list (F7). A lone carried
+  // selection is left alone: it rides across views. Flipping to the tree with a live selection
+  // holds the sheet down until the next canvas tap, so the node wears its ring, not a popped
+  // sheet (F13, X8 L1).
+  const switchView = useCallback((next) => {
+    setView(next);
+    viewPrefs.setLastView(treeId, next);
+    setAim(null);
+    setRemoving(null);
+    if (multiMode) {
+      setMultiMode(false);
+      setSelectedIds(new Set());
+      reconcileProjections(new Set(), new Set());
+    }
+    setSheetHeld(next === 'tree' && !multiMode && !!selectedId);
+  }, [treeId, multiMode, selectedId, reconcileProjections]);
+
+  // Pause the WebGL scene while the list owns the screen (F6): stop() only cancels the RAF —
+  // the camera and every GPU buffer survive, so start() resumes the exact frame. applyModel runs
+  // fine while stopped (it mutates the batches synchronously and flags overlaysDirty), so a remote
+  // edit arriving under the list applies and simply renders on the first frame after resume.
+  useEffect(() => {
+    if (!scene) return undefined;
+    if (listActive) scene.stop(); else scene.start();
+    return undefined;
+  }, [scene, listActive]);
+
+  // The pill lifts over whatever owns the bottom edge (F2), mirroring the Recenter-above-Fork
+  // rhythm: a peeking sheet in the tree view, or the Fork CTA on a shared/demotion page (either
+  // view). Resting state only — dragging the sheet past its peek may cover it, which is fine.
+  const sheetOpenNow = readOnly && phone && !!selectedNode && !aim && !removing && !multiMode && !sheetHeld && view !== 'list';
+  const forkPresent = readOnly && (shared || !!demotion) && !demotion?.cardOpen;
+  const pillLift = Math.max(
+    0,
+    sheetOpenNow ? (mobileEditable ? 300 : 216) + 12 - 24 : 0,
+    forkPresent ? (18 + 50 + 12) - 24 : 0,
+  );
+
+  // The anon owner's honest "sign in to keep it" line is the list header's own notice row (F3) —
+  // the plaque nudge's list-view home. Same door the tree-view plaque nudge opens.
+  const listNotice = status === 'ghost' && treeMine && !demo ? (
+    <button type="button" className="st-list-notice" onClick={() => setSignInOpen(true)}>
+      <span className="st-list-notice-text">Saved on this device — sign in to keep it</span>
+      <span className="st-list-notice-chevron" aria-hidden>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
+      </span>
+    </button>
+  ) : null;
+
   // Route canvas taps by mode (M3): the scene stays read-only, but an owner editing on a
   // phone gets a ref-backed tap override so React owns the mode logic. Aiming turns the
   // canvas into a connect chooser (tap an eligible step to link, empty canvas cancels);
@@ -1642,6 +1727,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     // panel, so a branch tap can no longer strand an invisible bar); the desktop keeps its own editor.
     if (!mobileEditable || breakpoint === 'desktop') { scene.setEditTap(null); return undefined; }
     scene.setEditTap((x, y) => {
+      setSheetHeld(false); // any canvas tap releases the F13 sheet hold
       const nodeId = scene.pick(x, y);
       // Multi-select owns every tap while it's the surface (M5): a node toggles membership, and an
       // empty tap clears the set but keeps the mode (only Done / deselecting the last member exits).
@@ -2077,7 +2163,11 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
 
   return (
     <div className={`st-root ${panning ? 'panning' : ''}`} ref={rootRef}>
-      <canvas ref={canvasRef} className={`st-canvas ${hoveredId ? 'st-canvas--hover' : ''}`} />
+      <canvas
+        ref={canvasRef}
+        className={`st-canvas ${hoveredId ? 'st-canvas--hover' : ''} ${phone && view !== null ? 'st-canvas--layer' : ''}`}
+        style={listActive ? { opacity: 0, pointerEvents: 'none' } : undefined}
+      />
 
       {!readOnly && (
         <PresenceLayer peersRef={peersRef} scene={scene} canvasRef={canvasRef} collabRef={collabRef} selection={selectedId} />
@@ -2100,8 +2190,32 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
         </div>
       )}
 
+      {/* X8 — the phone list layer. It sits over the still-mounted canvas (the scene keeps
+          its camera) and cross-fades in and out; once shown it stays mounted so its scroll
+          survives every flip. Read path only this wave: editable=false. */}
+      {listMounted && (
+        <div className={`st-view-layer st-view-layer--list ${listActive ? 'is-active' : ''}`}>
+          <ListView
+            tree={tree}
+            nodesById={nodesById}
+            states={states}
+            completedAt={completedAt}
+            legend={legend}
+            header={{ name: tree.title, dominantHue: shareStats?.dominantKind }}
+            notice={listNotice}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            active={listActive}
+            prefs={viewPrefs}
+            treeId={treeId}
+            editable={false}
+          />
+        </div>
+      )}
+
       {readOnly ? (
         <MobileChrome
+          view={phone && view === 'list' ? 'list' : 'tree'}
           title={tree?.title}
           progress={{ done: shareStats?.done ?? 0, total: shareStats?.total ?? 0 }}
           author={tree?.author}
@@ -2143,6 +2257,11 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
           onToggleActivity={toggleActivity}
         />
       )}
+
+      {/* The view-switch pill (X8): floating bottom-left, present in both views for both
+          audiences, phone-only, hidden while the tree is empty or still loading. It's a
+          tool — its own look and fixed placement live in list.css. */}
+      {listReady && <ViewPill view={view} onSwitch={switchView} lift={pillLift} />}
 
       {/* The Tend bar. Phone: it rides the bottom edge when nothing else owns that space (an open
           editing surface takes precedence — you're editing one node, not telling the whole tree).
@@ -2297,7 +2416,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
 
       {readOnly && breakpoint === 'phone' && (
         <BottomSheet
-          open={!!selectedNode && !aim && !removing && !multiMode}
+          open={!!selectedNode && !aim && !removing && !multiMode && view !== 'list' && !sheetHeld}
           onDismiss={() => setSelectedId(null)}
           peekHeight={mobileEditable ? 300 : undefined}
           maxVh={mobileEditable ? 66 : undefined}
@@ -2332,7 +2451,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       {/* Aim mode + remove-link chrome (M3) and the multi-select bulk bar (M5): each stands in
           for the sheet — one surface at a time — and the undo snackbar floats above any of them.
           Owner-gated: a stranger's read-only tap never reaches them (editTap/longPress stay null). */}
-      {mobileEditable && breakpoint === 'phone' && aim && !multiMode && (
+      {mobileEditable && breakpoint === 'phone' && aim && !multiMode && view !== 'list' && (
         <AimBar
           sourceLabel={nodesById.get(aim.sourceId)?.label}
           direction={aim.direction}
@@ -2341,7 +2460,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
         />
       )}
 
-      {mobileEditable && breakpoint === 'phone' && removing && !multiMode && (
+      {mobileEditable && breakpoint === 'phone' && removing && !multiMode && view !== 'list' && (
         <RemoveLinkBar
           onRemove={() => {
             const { from, to } = removing;
@@ -2353,7 +2472,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
         />
       )}
 
-      {mobileEditable && breakpoint === 'phone' && multiMode && (
+      {mobileEditable && breakpoint === 'phone' && multiMode && view !== 'list' && (
         <BulkBar
           count={selectedIds.size}
           kinds={recolorKinds}
@@ -2460,7 +2579,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
 
       {/* The coach (F4 §02) — the one temporary element the demo adds: it points at the
           single ready step, once ever per human, and retires on ✕/Esc/any completion/fork. */}
-      {demo && coachAllowed && scene && (
+      {demo && coachAllowed && scene && view !== 'list' && (
         <CoachChip
           scene={scene}
           nodeId={COACHED_NODE_ID}

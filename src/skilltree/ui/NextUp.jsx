@@ -1,60 +1,18 @@
 // NEXT UP — the "what's next" section that leads the activity dock (design:
 // whats-next-panel): up to three steps ready right now, an in-place expander for
-// the rest, and two empty states that never dead-end. The whole feature lives
-// here: planNextUp is the pure ranking (unlocks desc → node id, ≤2 per kind —
-// the spec's longest-ready tiebreak is skipped, no ready-since history exists),
-// and considerAutoOpen is the return-visit rule over a per-tree localStorage stamp.
+// the rest, and two empty states that never dead-end. The ranking is the shared
+// planNextUp rule (nextUpPlan.js, also read by the phone list's shelf); the host
+// computes the plan and hands it in. This file keeps the section's presentation
+// and considerAutoOpen — the return-visit rule over a per-tree localStorage stamp.
 
 import React, { useState } from 'react';
 import { Icon } from '../../components';
 import { NODE_COLORS, DEFAULT_NODE_COLOR } from '../theme.js';
 
-const FEATURED_CAP = 3;
-const KIND_CAP = 2;
 const RETURN_GAP_MS = 12 * 60 * 60 * 1000;
 const AUTO_OPEN_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 const MIN_AUTO_OPEN_STEPS = 12;
 const VISIT_KEY_PREFIX = 'windmill:nextup:';
-
-// The ranked offer of work, computed once per open and frozen (§03.2 — stable
-// in-session, never underfoot). A lone-bud tree doesn't mount the section at all.
-// `unlocks` is honest (X4): only children this completion ALONE would open — the
-// child isn't complete, and its every other prerequisite already is.
-export function planNextUp(tree, states) {
-  if (tree.nodes.length <= 1) return { mount: false };
-
-  const row = (node) => ({
-    id: node.id,
-    kind: node.color ?? DEFAULT_NODE_COLOR,
-    unlocks: tree.childrenOf(node.id).filter((child) =>
-      states.get(child.id) !== 'complete'
-      && child.prerequisites.every((prereqId) => prereqId === node.id || states.get(prereqId) === 'complete')).length,
-  });
-  const byRank = (a, b) => b.unlocks - a.unlocks || (a.id < b.id ? -1 : 1);
-  const ready = tree.nodes.filter((node) => states.get(node.id) === 'available').map(row).sort(byRank);
-  const doneCount = tree.nodes.filter((node) => states.get(node.id) === 'complete').length;
-  const totalCount = tree.nodes.length;
-
-  if (doneCount === totalCount) {
-    return { mount: true, mode: 'allDone', pill: `${doneCount}/${totalCount}`, doneCount, totalCount, readyCount: 0, featured: [], overflow: [], blockers: [] };
-  }
-  if (ready.length === 0) {
-    const blockers = tree.nodes.filter((node) => states.get(node.id) === 'active').map(row).sort(byRank);
-    return { mount: true, mode: 'blocked', pill: '0 ready', doneCount, totalCount, readyCount: 0, featured: [], overflow: [], blockers };
-  }
-
-  const featured = [];
-  const wornByKind = new Map();
-  for (const candidate of ready) {
-    if (featured.length === FEATURED_CAP) break;
-    const worn = wornByKind.get(candidate.kind) ?? 0;
-    if (worn === KIND_CAP) continue;
-    wornByKind.set(candidate.kind, worn + 1);
-    featured.push(candidate);
-  }
-  const overflow = ready.filter((candidate) => !featured.includes(candidate));
-  return { mount: true, mode: 'featured', pill: `${ready.length} ready`, doneCount, totalCount, readyCount: ready.length, featured, overflow, blockers: [] };
-}
 
 // The return-visit rule (§04): stamp every open; auto-open only when the last open
 // was ≥12h ago, ≥1 step is ready, the tree has ≥12 steps, and at most once a day.

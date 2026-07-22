@@ -26,6 +26,7 @@ export function MobileChrome({
   showRecenter = false,
   tablet = false,
   panelOpen = false,
+  view = 'tree',
 }) {
   const [pressed, setPressed] = useState(false);
 
@@ -37,6 +38,33 @@ export function MobileChrome({
 
   const recenterRight = tablet && panelOpen ? TABLET_PANEL_WIDTH + 24 : 16;
   const appear = 'wm-fade-in-up var(--duration-fast) var(--ease-soft)';
+  const listView = view === 'list';
+
+  // An anon owner's tree lives only on this device — the one honest nudge, riding inside the
+  // plaque where the tree names itself. The list view never renders it here: the list header
+  // owns the sign-in line as its own notice row. Tapping opens the sign-in door;
+  // claimLocalTrees keeps the tree and its progress on the account.
+  const signInNudge = onSignInToKeep ? (
+    <button
+      type="button"
+      onClick={onSignInToKeep}
+      style={{
+        pointerEvents: 'auto',
+        marginTop: 1,
+        padding: 0,
+        border: 'none',
+        background: 'none',
+        textAlign: 'left',
+        fontFamily: 'var(--font-body)',
+        fontSize: 12,
+        fontWeight: 700,
+        color: 'var(--color-brand)',
+        cursor: 'pointer',
+      }}
+    >
+      Saved on this device — sign in to keep it →
+    </button>
+  ) : null;
 
   return (
     <div
@@ -55,6 +83,10 @@ export function MobileChrome({
         }}
       />
 
+      {/* Plaque + wordmark — the tree view's identity chrome. The list view (X8) shows the
+          same facts in its own header and hides both; only the rule, Fork and nudge remain. */}
+      {!listView && (
+      <>
       {/* Plaque — a label, never a menu; sits below the status-bar-safe area */}
       <div
         style={{
@@ -148,30 +180,7 @@ export function MobileChrome({
           </span>
         )}
 
-        {/* An anon owner's tree lives only on this device — the one honest nudge, in the plaque
-            where the tree names itself. Tapping opens the sign-in door; claimLocalTrees keeps the
-            tree and its progress on the account. No account seat reaches a phone, so this is it. */}
-        {onSignInToKeep && (
-          <button
-            type="button"
-            onClick={onSignInToKeep}
-            style={{
-              pointerEvents: 'auto',
-              marginTop: 1,
-              padding: 0,
-              border: 'none',
-              background: 'none',
-              textAlign: 'left',
-              fontFamily: 'var(--font-body)',
-              fontSize: 12,
-              fontWeight: 700,
-              color: 'var(--color-brand)',
-              cursor: 'pointer',
-            }}
-          >
-            Saved on this device — sign in to keep it →
-          </button>
-        )}
+        {signInNudge}
       </div>
 
       {/* Wordmark chip — the way home (§06): a real link on every read-only surface */}
@@ -201,6 +210,8 @@ export function MobileChrome({
       >
         Windmill
       </a>
+      </>
+      )}
 
       {/* Fork CTA — the share page's one verb; absent on your own trees */}
       {onFork && (
@@ -242,8 +253,9 @@ export function MobileChrome({
       </button>
       )}
 
-      {/* Recenter chip — a 36px pill in a 44px touch target, only when off-center */}
-      {showRecenter && (
+      {/* Recenter chip — a 36px pill in a 44px touch target, only when off-center. The list
+          view never shows it (X8): the list has no camera to recenter. */}
+      {showRecenter && !listView && (
         <button
           type="button"
           onClick={onRecenter}
@@ -295,6 +307,9 @@ export function MobileChrome({
           </span>
         </button>
       )}
+
+      {/* List view (X8): no standalone nudge here — the list header owns the sign-in line (it
+          renders it as its own notice row), so the chrome shows only the rule, Fork and pill. */}
     </div>
   );
 }

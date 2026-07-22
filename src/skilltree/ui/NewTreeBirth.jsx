@@ -19,7 +19,16 @@ import { PasteComposer } from '../paste/PasteComposer.jsx';
 import { GhostSkeleton } from '../paste/GhostSkeleton.jsx';
 import { BottomSheet } from './mobile/BottomSheet.jsx';
 import { useViewMode } from './useViewMode.js';
+import { stampBorn } from '../persistence/ViewPrefs.js';
 import { track } from '../../telemetry/beacon.js';
+
+
+// Every birth exits through here: stamp the tree so its first open is the canvas —
+// the birth/arrival ceremony plays there — before the list takes over on return (X8 L1).
+function openBorn(treeId) {
+  stampBorn(treeId);
+  window.location.hash = `#/app/${treeId}`;
+}
 
 const reduced = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -111,16 +120,16 @@ export function NewTreeBirth() {
         const root = { id: rootId, label: title, icon: 'sparkles', color: DEFAULT_KINDS[0].hue, prerequisites: [] };
         const { treeId } = await createTree({ ...(title ? { title } : {}), nodes: [root] });
         track('birth');
-        window.location.hash = `#/app/${treeId}`;
+        openBorn(treeId);
         return;
       }
-      window.location.hash = `#/app/${await plantLocally(title)}`;
+      openBorn(await plantLocally(title));
     } catch (err) {
       // A signed-in plant the server refuses for want of a session falls back to the
       // local birth — the worst case of auth is the product's normal signed-out state.
       if (err.code === 'unauthenticated' || err.code === 'unreachable') {
         try {
-          window.location.hash = `#/app/${await plantLocally(title)}`;
+          openBorn(await plantLocally(title));
           return;
         } catch { /* the local soil failed too — fall through to the error face */ }
       }
@@ -138,14 +147,14 @@ export function NewTreeBirth() {
       if (status === 'signed-in') {
         const { treeId } = await createTree({ ...(plan.title ? { title: plan.title } : {}), nodes: plan.nodes, kinds: plan.kinds });
         track('birth', { import: true, steps: plan.nodes.length });
-        window.location.hash = `#/app/${treeId}`;
+        openBorn(treeId);
         return;
       }
-      window.location.hash = `#/app/${await plantImportedLocally(plan)}`;
+      openBorn(await plantImportedLocally(plan));
     } catch (err) {
       if (err.code === 'unauthenticated' || err.code === 'unreachable') {
         try {
-          window.location.hash = `#/app/${await plantImportedLocally(plan)}`;
+          openBorn(await plantImportedLocally(plan));
           return;
         } catch { /* the local soil failed too — fall through to the error face */ }
       }
