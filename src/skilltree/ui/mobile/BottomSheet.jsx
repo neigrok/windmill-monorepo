@@ -5,6 +5,11 @@
 // toggles peek↔expanded, a drag follows the finger, and a drag well past the peek
 // dismisses. The parent tapping the canvas dismisses too (it flips `open`). `children`
 // is the detail content the parent supplies — we own only the shell + gestures.
+//
+// The keyboard contract (X8 L5.5): a rename input inside the sheet raises the on-screen
+// keyboard; the sheet rises above it, never under it. We measure the inset the same way the
+// list does (innerHeight − visualViewport.height), force the sheet fully expanded so its top
+// header clears the keyboard, and pad the scroller so its lower content can reach above it.
 
 import React, { useEffect, useRef, useState } from 'react';
 
@@ -23,6 +28,7 @@ export function BottomSheet({ open, onDismiss, children, peekHeight = PEEK_HEIGH
   const [shown, setShown] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [dragOffset, setDragOffset] = useState(null); // px while dragging, else null
+  const [kbInset, setKbInset] = useState(0); // px of viewport the on-screen keyboard eats
 
   const wasOpen = useRef(false);
   const dragging = useRef(false);
@@ -31,6 +37,18 @@ export function BottomSheet({ open, onDismiss, children, peekHeight = PEEK_HEIGH
   const moved = useRef(false);
 
   const reduced = prefersReducedMotion();
+
+  // Track the keyboard inset while the sheet is open (visualViewport shrinks as the keyboard
+  // opens; innerHeight stays the layout height). Drops back to 0 the moment the sheet closes.
+  useEffect(() => {
+    if (!open) { setKbInset(0); return undefined; }
+    const vv = typeof window !== 'undefined' ? window.visualViewport : undefined;
+    if (!vv) return undefined;
+    const measure = () => setKbInset(Math.max(0, window.innerHeight - vv.height));
+    measure();
+    vv.addEventListener('resize', measure);
+    return () => { vv.removeEventListener('resize', measure); setKbInset(0); };
+  }, [open]);
 
   useEffect(() => {
     if (open && !wasOpen.current) {
@@ -90,14 +108,18 @@ export function BottomSheet({ open, onDismiss, children, peekHeight = PEEK_HEIGH
 
   // max(0px, …) so a peek taller than the sheet (a tall editor peek on an ultra-short
   // landscape viewport) can't push resting negative and float the sheet off the bottom edge.
-  const resting = expanded ? 'translateY(0)' : `translateY(max(0px, calc(${maxVh}vh - ${peekHeight}px)))`;
+  // A raised keyboard forces the sheet fully expanded so its header rides clear of the keyboard
+  // (and freezes the drag — you can't pull the sheet down while typing into it).
+  const lifted = kbInset > 0;
+  const followingFinger = dragOffset != null && !lifted;
+  const resting = expanded || lifted ? 'translateY(0)' : `translateY(max(0px, calc(${maxVh}vh - ${peekHeight}px)))`;
   let transform;
-  if (dragOffset != null) transform = `translateY(${dragOffset}px)`;
+  if (followingFinger) transform = `translateY(${dragOffset}px)`;
   else if (shown) transform = resting;
   else transform = reduced ? resting : 'translateY(100%)';
 
   const transition =
-    dragOffset != null
+    followingFinger
       ? 'none'
       : reduced
         ? 'opacity var(--duration-base) var(--ease-soft)'
@@ -156,7 +178,7 @@ export function BottomSheet({ open, onDismiss, children, peekHeight = PEEK_HEIGH
           minHeight: 0,
           overflowY: 'auto',
           WebkitOverflowScrolling: 'touch',
-          padding: '0 var(--space-4) calc(env(safe-area-inset-bottom, 0px) + var(--space-4))',
+          padding: `0 var(--space-4) calc(env(safe-area-inset-bottom, 0px) + var(--space-4) + ${kbInset}px)`,
         }}
       >
         {children}

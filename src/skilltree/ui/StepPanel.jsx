@@ -395,40 +395,29 @@ function EditorStep({ node, state, prerequisites, startedAt, completedAt, histor
   );
 }
 
-// The read-only detail (§S2): the same content and order as the editor — identity,
-// state, annotation, branch, needs, unlocks — with every control stripped out. A
-// shared or phone viewer reads it; it never edits.
-const RO_DOT = { width: 9, height: 9, borderRadius: '50%', flexShrink: 0 };
-
-function ReadOnlyStep({ node, state, prerequisites = [], unlocks = [], completedAt, workspace = EMPTY_WORKSPACE, kinds = [], onMarkComplete, onClose = noop, fill = false }) {
+// The read-only detail (§S2 / X8 L5.2): the visitor's sheet, at the same density as the
+// owner's. A one-line header merges the state fruit, the name and — only where the fruit
+// can't speak (done date, lock) — a chip; the description and why-locked ride at the top;
+// the DAG closes it as jump chips (tap eases the camera to that node and retargets in
+// place, onJump). The phone sheet dismisses by swipe/canvas-tap, so its × is dropped
+// (fill); the standing tablet/desktop panel keeps the × as its dismiss.
+function ReadOnlyStep({ node, state, prerequisites = [], unlocks = [], completedAt, onMarkComplete, onJump, onClose = noop, fill = false }) {
   if (!node) return null;
 
   const currentKind = node.color ?? DEFAULT_NODE_COLOR;
   const hue = NODE_COLORS[currentKind] ?? NODE_COLORS[DEFAULT_NODE_COLOR];
-  const branchLabel = kinds.find((kind) => kind.hue === currentKind)?.label || cap(currentKind);
-  const noteLine = node.description ? null : workspace?.note?.trim().split('\n')[0] || null;
   const blocker = prerequisites.find((prerequisite) => !prerequisite.complete)?.label;
+  const showChip = state === 'complete' || state === 'locked';
 
   return (
-    <Card style={{ ...(fill ? { height: '100%' } : { maxHeight: '70vh' }), display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+    <Card style={{ ...(fill ? { height: '100%' } : { maxHeight: '70vh' }), display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
       <div className="st-step-pinned">
-      <div className="st-step-header">
-        <div className="st-step-identity">
-          <span className="st-step-glyph">
-            <Icon name={node.icon} size={20} />
-          </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', minWidth: 0, flex: 1 }}>
-            <span style={{ ...RO_DOT, background: hue.base }} aria-hidden />
-            <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 'var(--text-xl)', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {node.label || 'Unnamed step'}
-            </span>
-          </div>
-        </div>
-        <IconButton icon={<Icon name="x" />} label="Close" size="sm" onClick={onClose} />
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-        <ReadOnlyStateChip state={state} hue={hue} completedAt={completedAt} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', minHeight: 34 }}>
+        <SheetStateFruit state={state} hue={hue} />
+        <span style={{ flex: 1, minWidth: 0, fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 'var(--text-lg)', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {node.label || 'Unnamed step'}
+        </span>
+        {showChip && <ReadOnlyStateChip state={state} hue={hue} completedAt={completedAt} />}
         {/* Complete-only (F4 §03): the demo's one write — mark the ready step done. Passed
             only in the demo, so a plain read-only share never offers it. */}
         {onMarkComplete && state === 'available' && (
@@ -436,29 +425,22 @@ function ReadOnlyStep({ node, state, prerequisites = [], unlocks = [], completed
             Mark it done
           </Button>
         )}
+        {!fill && <IconButton icon={<Icon name="x" />} label="Close" size="sm" onClick={onClose} />}
       </div>
       </div>
 
-      <div className="st-step-scroll">
+      <div className="st-step-scroll" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
       <NodeAnnotation description={node.description} links={node.links} />
 
-      {noteLine && (
-        <div style={{ fontSize: 'var(--text-sm)', lineHeight: 1.5, color: 'var(--text-secondary)' }}>{noteLine}</div>
-      )}
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-secondary)' }}>
-        <span style={{ ...RO_DOT, background: hue.base }} aria-hidden />
-        {branchLabel}
-      </div>
-
       {state === 'locked' && blocker && (
-        <div style={{ padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', background: 'var(--surface-sunken)', fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)' }}>
-          Finish <strong style={{ color: 'var(--text-secondary)' }}>{blocker}</strong> to unlock this step
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', background: 'var(--surface-sunken)', fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)' }}>
+          <Icon name="lock" size={13} color="var(--text-tertiary)" />
+          <span>Finish <strong style={{ color: 'var(--text-secondary)' }}>{blocker}</strong> to unlock</span>
         </div>
       )}
 
-      <ReadOnlyRelations title="Needs" items={prerequisites} empty="None — this is a starting point." />
-      <ReadOnlyRelations title="Unlocks" items={unlocks} empty="Nothing yet — this is a leaf." />
+      <SheetRelations title="Needs" items={prerequisites} onJump={onJump} />
+      <SheetRelations title="Unlocks" items={unlocks} onJump={onJump} />
       </div>
     </Card>
   );
@@ -490,27 +472,60 @@ export function ReadOnlyStateChip({ state, hue, completedAt }) {
   );
 }
 
-export function ReadOnlyRelations({ title, items, empty }) {
+
+// The sheet's density pieces (X8 L5.2), shared by the owner editor sheet and this read-only
+// one. The state fruit leads the one-line header, speaking done/ready/active/locked through
+// its treatment (so ready needs no chip); the jump chips close the sheet, each a mini state
+// dot + name that eases the camera to that node (onJump). The kind hue drives both; the
+// treatment styles mirror the list's fruit/dot 1:1 so a sheet and a list row read identically.
+function stateFruitStyle(state, hue) {
+  const base = { flexShrink: 0, width: 22, height: 22, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
+  if (state === 'complete') return { ...base, background: hue.base, boxShadow: `0 0 7px ${hue.glow}` };
+  if (state === 'locked') return { ...base, background: `color-mix(in srgb, ${hue.base} 18%, transparent)`, boxShadow: `inset 0 0 0 1.5px color-mix(in srgb, ${hue.base} 35%, transparent)` };
+  if (state === 'active') return { ...base, background: 'var(--surface-card)', boxShadow: `inset 0 0 0 2.5px ${hue.ring}, 0 0 7px ${hue.glow}` };
+  return { ...base, background: 'var(--surface-card)', boxShadow: `inset 0 0 0 2.5px ${hue.ring}` };
+}
+
+function stateDotStyle(state, hue) {
+  const base = { flexShrink: 0, width: 11, height: 11, borderRadius: '50%' };
+  if (state === 'complete') return { ...base, background: hue.base };
+  if (state === 'locked') return { ...base, background: `color-mix(in srgb, ${hue.base} 18%, transparent)`, boxShadow: `inset 0 0 0 1.5px color-mix(in srgb, ${hue.base} 35%, transparent)` };
+  if (state === 'active') return { ...base, background: 'var(--surface-card)', boxShadow: `inset 0 0 0 2px ${hue.ring}, 0 0 5px ${hue.glow}` };
+  return { ...base, background: 'var(--surface-card)', boxShadow: `inset 0 0 0 2px ${hue.ring}` };
+}
+
+export function SheetStateFruit({ state, hue }) {
+  return (
+    <span style={stateFruitStyle(state, hue)} aria-hidden>
+      {state === 'complete' && <Icon name="check" size={12} color="#fff" />}
+    </span>
+  );
+}
+
+const SHEET_CHIP = {
+  display: 'inline-flex', alignItems: 'center', gap: 7, minHeight: 34, maxWidth: '100%',
+  padding: '0 12px', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-full)',
+  background: 'var(--surface-card)', color: 'var(--text-primary)', fontFamily: 'var(--font-body)',
+  fontSize: '12.5px', fontWeight: 700, cursor: 'pointer',
+};
+
+export function SheetRelations({ title, items, onJump }) {
+  if (!items || items.length === 0) return null;
   return (
     <div>
       <div className="st-step-heading">{title}</div>
-      {items.length === 0 ? (
-        <div className="st-step-empty">{empty}</div>
-      ) : (
-        <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-          {items.map((item) => (
-            <li key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--text-sm)', fontWeight: 600, color: item.complete ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>
-              <span style={{ ...RO_DOT, width: 8, height: 8, background: item.complete ? 'var(--color-success)' : 'transparent', boxShadow: item.complete ? 'none' : 'inset 0 0 0 2px var(--text-tertiary)' }} aria-hidden />
-              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</span>
-              {item.complete && (
-                <span style={{ fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--text-tertiary)' }}>
-                  {item.completedAt ? `done ${shortDate(item.completedAt)}` : 'done'}
-                </span>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+        {items.map((item) => {
+          const hue = NODE_COLORS[item.color] ?? NODE_COLORS[DEFAULT_NODE_COLOR];
+          const state = item.state ?? (item.complete ? 'complete' : 'locked');
+          return (
+            <button key={item.id} type="button" style={SHEET_CHIP} onClick={() => onJump?.(item.id)}>
+              <span style={stateDotStyle(state, hue)} aria-hidden />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label || 'Untitled step'}</span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

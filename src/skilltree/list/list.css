@@ -24,7 +24,10 @@
 .st-list-swatch-hit,
 .st-list-addrow,
 .st-list-picker-row,
-.st-list-picker-close {
+.st-list-picker-close,
+.st-list-header-door,
+.st-switcher-row,
+.st-switcher-plant {
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -56,6 +59,32 @@
   font-weight: 700;
   font-size: 17px;
   color: var(--text-primary);
+}
+/* For an owner the name is a door (X8 L6): it grows a caret and raises the switcher. The name
+   inside shrinks with an ellipsis so the caret rides snug against it, not out at the count. */
+.st-list-header-door {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.st-list-header-door .st-list-header-name {
+  flex: 0 1 auto;
+}
+.st-list-header-caret {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+.st-list-header-door:active .st-list-header-caret {
+  color: var(--color-brand);
 }
 .st-list-header-count {
   flex-shrink: 0;
@@ -216,6 +245,10 @@
   cursor: pointer;
   text-align: left;
   font-family: var(--font-body);
+  /* A held row must not raise the native long-press callout or select its own text (M5). */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .st-list-row-line:active {
   background: var(--surface-hover);
@@ -285,6 +318,17 @@
 .st-list-fruit--locked {
   background: color-mix(in srgb, var(--k-base) 18%, transparent);
   box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--k-base) 35%, transparent);
+}
+
+/* ---- Check seat: the fruit's multi-select stand-in (M5) — bark, the selection tool's colour ---- */
+.st-list-check {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--border-default);
+}
+.st-list-check--on {
+  background: var(--color-bark);
+  box-shadow: none;
+  color: #fff;
 }
 
 /* ---- Expanded card interior ---- */
@@ -829,6 +873,115 @@
   text-align: center;
 }
 
+/* ---- The tree switcher (X8 L6): the same portalled half-sheet shell as the picker (it reuses
+   .st-list-scrim + .st-list-picker for the rise, scrim fade, pointer-events and reduced-motion
+   fallback), with rows carrying the plaque facts and a ghost plant row pinned at the foot. ---- */
+.st-switcher-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-body);
+}
+.st-switcher-row:active {
+  background: var(--surface-hover);
+}
+.st-switcher-row--current {
+  background: var(--color-brand-soft);
+}
+.st-switcher-dot {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-full);
+  background: var(--k-base);
+  box-shadow: inset 0 0 0 1.5px var(--k-ring);
+}
+.st-switcher-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.st-switcher-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.st-switcher-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.st-switcher-count {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.st-switcher-bar {
+  flex-shrink: 0;
+  width: 56px;
+  height: 5px;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+.st-switcher-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: linear-gradient(90deg, var(--k-soft), var(--k-base));
+}
+.st-switcher-when {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-switcher-lineage {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.st-switcher-plant {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% - 24px);
+  margin: 4px 12px;
+  min-height: 48px;
+  padding: 0 12px;
+  border: 1px dashed color-mix(in srgb, var(--color-bark) 40%, transparent);
+  border-radius: 11px;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--color-bark);
+}
+.st-switcher-plant:active {
+  background: var(--surface-hover);
+}
+.st-switcher-plant-glyph {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
 /* Reduced motion: the picker rises as a fade, not a slide (opacity only); the scrim already
    is opacity, the swipe stays finger-driven, and the bud flash stays a color ramp. */
 @media (prefers-reduced-motion: reduce) {
@@ -862,7 +1015,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   /* The design keeps the color ramps under reduced motion (they read, they don't move);
-     it drops only the smooth scroll (handled in JS) and the chevron rotation. */
+     it drops only the smooth scroll (handled in JS) and the movement transitions below. */
   .st-list-row--flash {
     animation: st-list-flash 1200ms var(--ease-standard) !important;
   }
@@ -871,5 +1024,17 @@
   }
   .st-list-card {
     animation: st-list-card-in 150ms var(--ease-soft) !important;
+  }
+  /* Movement, dropped: the chevron still points the right way (rotate applies instantly, no
+     tween); the header/switcher progress fills snap to width; the pill lifts without sliding. */
+  .st-list-chevron {
+    transition: none;
+  }
+  .st-list-header-fill,
+  .st-switcher-fill {
+    transition: none;
+  }
+  .st-list-viewpill {
+    transition: none;
   }
 }

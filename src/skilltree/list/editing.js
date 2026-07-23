@@ -12,6 +12,9 @@ const SWIPE_ARM_RATIO = 1.3;  // and it must out-run the vertical travel by this
 const SWIPE_CLAMP_PX = 120;   // the row never trails the finger past this
 const SWIPE_COMMIT_PX = 72;   // release at or beyond this marks the step done
 const PIN_MARGIN_PX = 16;     // breathing room left between the pinned row and the keyboard
+const HOLD_SLOP_PX = 10;      // a still finger; any travel past this yields the hold to a scroll or swipe
+
+export const HOLD_MS = 500;   // a finger held this long (still) arms multi-select (M5)
 
 export function swipeBegin() {
   return { armed: false, live: true, dx: 0 };
@@ -32,6 +35,14 @@ export function swipeMove(gesture, dx, dy) {
 
 export function swipeEnd(gesture) {
   return { commit: gesture.armed && gesture.dx >= SWIPE_COMMIT_PX, swallow: gesture.armed };
+}
+
+// Long-press multi-select is deliberate-entry (M5): the hold arms only if the finger stays put
+// for the full HOLD_MS. Any travel past the slop — a scroll starting, a swipe-to-done arming —
+// cancels the pending hold, so the list scrolls and the swipe runs unchallenged. Radial, not
+// axis-bound: a diagonal drift counts the same as a straight scroll.
+export function holdCancelledByMove(dx, dy) {
+  return Math.hypot(dx, dy) > HOLD_SLOP_PX;
 }
 
 // A cancelled pointer (the browser stole the gesture) never commits — it always springs back —

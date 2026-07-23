@@ -189,6 +189,25 @@ export class Camera2D {
     this.dirty = true;
   }
 
+  // Double-tap zoom (X5 §4): ease to `targetZoom` while the tapped screen point stays pinned
+  // under the finger. The world point there is captured once and held fixed for the whole glide
+  // (update() re-derives x/y from it each frame), so the view grows or shrinks AROUND the tap
+  // rather than lunging to re-centre it — and the anchor is exact at every frame, never bulging
+  // mid-ease. Fixed calm duration; any grab (stopMotion) cancels it, the user always winning.
+  glideZoomAround(pxX, pxY, targetZoom, duration = GLIDE_SHORT) {
+    this.velocityX = 0;
+    this.velocityY = 0;
+    const world = this.screenToWorld(pxX, pxY);
+    this.glide = {
+      fromZoom: this.zoom,
+      toZoom: clamp(targetZoom, MIN_ZOOM, MAX_ZOOM),
+      anchor: { px: pxX, py: pxY, wx: world.x, wy: world.y },
+      t: 0,
+      duration,
+    };
+    this.dirty = true;
+  }
+
   zoomAt(pxX, pxY, wheelDeltaY) {
     this.zoomAroundPoint(pxX, pxY, Math.exp(-wheelDeltaY * WHEEL_ZOOM_SPEED));
   }
@@ -264,9 +283,16 @@ export class Camera2D {
       const g = this.glide;
       g.t = Math.min(1, g.t + dt / g.duration);
       const e = easeSoft(g.t);
-      this.x = g.fromX + (g.toX - g.fromX) * e;
-      this.y = g.fromY + (g.toY - g.fromY) * e;
       this.zoom = g.fromZoom + (g.toZoom - g.fromZoom) * e;
+      if (g.anchor) {
+        // An anchored zoom (double-tap): hold the tapped world point under its screen point by
+        // deriving the camera centre from the eased zoom, so the anchor never drifts mid-ease.
+        this.x = g.anchor.wx - (g.anchor.px - this.viewportWidth / 2) / this.zoom;
+        this.y = g.anchor.wy - (g.anchor.py - this.viewportHeight / 2) / this.zoom;
+      } else {
+        this.x = g.fromX + (g.toX - g.fromX) * e;
+        this.y = g.fromY + (g.toY - g.fromY) * e;
+      }
       if (g.t >= 1) this.glide = null;
       this.dirty = false;
       return true;

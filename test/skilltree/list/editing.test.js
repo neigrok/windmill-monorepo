@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { SkillTree } from '../../../src/skilltree/model/SkillTree.js';
-import { swipeBegin, swipeMove, swipeEnd, swipeCancel, keyboardPin, pickerCandidates, stillEditing } from '../../../src/skilltree/list/editing.js';
+import { swipeBegin, swipeMove, swipeEnd, swipeCancel, keyboardPin, pickerCandidates, stillEditing, holdCancelledByMove, HOLD_MS } from '../../../src/skilltree/list/editing.js';
 
 function tree(nodes) {
   return new SkillTree({ id: 't', title: 'T', nodes });
@@ -99,6 +99,24 @@ test('pickerCandidates — a leaf can need any other step; nothing loops', () =>
 test('pickerCandidates — a target that no longer exists (deleted remotely) returns null', () => {
   const t = tree([node('r', []), node('a', ['r'], { order: 'a' })]);
   assert.equal(pickerCandidates(t, 'gone'), null);
+});
+
+test('holdCancelledByMove — a still finger (at or within the 10px slop) keeps the hold armed', () => {
+  assert.equal(holdCancelledByMove(0, 0), false);
+  assert.equal(holdCancelledByMove(10, 0), false);
+  assert.equal(holdCancelledByMove(0, -10), false);
+  assert.equal(holdCancelledByMove(7, 7), false); // hypot ≈ 9.9, still inside
+});
+
+test('holdCancelledByMove — any travel past the slop cancels the hold, in any direction', () => {
+  assert.equal(holdCancelledByMove(0, 11), true); // a scroll starting wins
+  assert.equal(holdCancelledByMove(11, 0), true); // a swipe arming wins
+  assert.equal(holdCancelledByMove(-11, 0), true); // a leftward drag counts too
+  assert.equal(holdCancelledByMove(8, 8), true); // hypot ≈ 11.3, radial — a diagonal drift cancels
+});
+
+test('HOLD_MS — the deliberate-entry hold is half a second', () => {
+  assert.equal(HOLD_MS, 500);
 });
 
 test('stillEditing — an add field is keyed by parentId, every other field by node id', () => {

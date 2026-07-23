@@ -22,6 +22,7 @@ import { AimBar, RemoveLinkBar } from './ui/mobile/AimBar.jsx';
 import { BulkBar } from './ui/mobile/BulkBar.jsx';
 import ListView from './list/ListView.jsx';
 import ViewPill from './list/ViewPill.jsx';
+import { SwitcherSheet } from './list/SwitcherSheet.jsx';
 import { activeSurface } from './ui/mobile/editorSheet.js';
 import { illegalTargets, edgeFor } from './ui/mobile/aim.js';
 import { sharedKind } from './ui/mobile/bulk.js';
@@ -402,6 +403,8 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   const [aim, setAim] = useState(null); // connect aim mode (M3): { sourceId, direction: 'unlocks'|'needs' } | null
   const [removing, setRemoving] = useState(null); // the branch the remove-link bar targets (M3): { from, to } | null
   const [multiMode, setMultiMode] = useState(false); // phone multi-select (M5): the bulk bar replaces the sheet
+  const [switcherOpen, setSwitcherOpen] = useState(false); // X8 L6: the list header's tree-switcher half-sheet
+  const [switcherTrees, setSwitcherTrees] = useState(null); // trees fetched for that sheet (null = not yet loaded)
   const [view, setView] = useState(null); // X8 phone view: 'tree' | 'list' | null (undecided → today's tree view)
   const [sheetHeld, setSheetHeld] = useState(false); // list→tree flip carried a selection: hold the sheet down (ring only) until the next tap (F13)
   const [coachAllowed, setCoachAllowed] = useState(false); // the demo coach may mount — a stranger who hasn't seen it (F4 §03)
@@ -1656,14 +1659,28 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
 
   const selectedNode = selectedId ? nodesById.get(selectedId) ?? null : null;
   const selectedState = selectedId ? states.get(selectedId) ?? 'locked' : null;
+  // The one node that gives up Delete and Mark done is the SINGLE root — a multi-root head or a
+  // detached step keeps its verbs (the list ruled this in G8; the sheet must agree, not re-derive
+  // rootness from parentlessness).
+  const singleRootId = useMemo(() => {
+    const roots = tree?.roots() ?? [];
+    return roots.length === 1 ? roots[0].id : null;
+  }, [tree]);
 
+  // Each relation carries its kind + live state so the sheet's jump chips can wear the same
+  // fruit treatment the list rows do — color and state alongside the label the panels read.
   const prerequisites = useMemo(() => {
     if (!selectedNode) return [];
-    return selectedNode.prerequisites.map((id) => ({
-      id,
-      label: nodesById.get(id)?.label ?? id,
-      complete: states.get(id) === 'complete',
-    }));
+    return selectedNode.prerequisites.map((id) => {
+      const node = nodesById.get(id);
+      return {
+        id,
+        label: node?.label ?? id,
+        color: node?.color,
+        state: states.get(id) ?? 'locked',
+        complete: states.get(id) === 'complete',
+      };
+    });
   }, [selectedNode, nodesById, states]);
 
   // What completing this step opens up — the node's children, mirroring the
@@ -1672,8 +1689,22 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     if (!selectedNode || !tree) return [];
     return tree.nodes
       .filter((node) => node.prerequisites.includes(selectedNode.id))
-      .map((node) => ({ id: node.id, label: node.label, complete: states.get(node.id) === 'complete' }));
+      .map((node) => ({
+        id: node.id,
+        label: node.label,
+        color: node.color,
+        state: states.get(node.id) ?? 'locked',
+        complete: states.get(node.id) === 'complete',
+      }));
   }, [selectedNode, tree, states]);
+
+  // A sheet jump chip (X8 L5.4): retarget the sheet to a related node in place and ease the
+  // camera to it. The sheet stays open (it's keyed by node id, so the content swaps); the
+  // reveal is the same glide the feed rows and the phone select-makes-room effect use.
+  const handleSheetJump = useCallback((id) => {
+    sceneRef.current?.revealNode(id);
+    setSelectedId(id);
+  }, [setSelectedId]);
 
   // Ownership gates editing, not a mode (M0): the owner's own tree stays editable on a
   // phone/tablet even though the view is read-only (the calm read-only scene never flips —
@@ -1726,6 +1757,59 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     }
     setSheetHeld(next === 'tree' && !multiMode && !!selectedId);
   }, [treeId, multiMode, selectedId, reconcileProjections]);
+
+  // The tree-switcher door (X8 L6): the owner's list-header caret opens a half-sheet of their
+  // trees. Load the registry each time it opens — cheap, and it keeps "updated 2h ago" honest.
+  // The current tree is always merged in (mergeCurrent) so it shows and highlights even before
+  // (or without) a fetch; onPick navigates via the hash, onPlant lands on the birth canvas.
+  useEffect(() => {
+    if (!switcherOpen) return undefined;
+    let cancelled = false;
+    listAllTrees().then((rows) => { if (!cancelled) setSwitcherTrees(rows); });
+    return () => { cancelled = true; };
+  }, [switcherOpen]);
+
+  const switcherRows = useMemo(() => {
+    const list = Array.isArray(switcherTrees) ? switcherTrees : [];
+    const current = { id: treeId, title: tree?.title, done: shareStats?.done, total: shareStats?.total, dominantKind: shareStats?.dominantKind };
+    const row = list.find((candidate) => candidate.id === treeId);
+    if (!row) return [current, ...list];
+    // The registry's row can trail the live tree (a device row carries no counts at all) — the
+    // sheet is looking AT this tree, so its own line speaks from the live stats, not the index.
+    return list.map((candidate) => (candidate.id === treeId ? { ...candidate, ...current } : candidate));
+  }, [switcherTrees, treeId, tree, shareStats]);
+
+  // Multi-select entered from the LIST (X8 L4): a long-press on a row arms the same multiMode
+  // a canvas long-press does — first member held, sheet/aim/remove cleared, edges dropped — and
+  // a tap on a check seat toggles membership, exiting when the last member leaves. These mirror
+  // the canvas long-press/editTap branches so both doors reach one bulk surface.
+  const enterMultiFromList = useCallback((id) => {
+    if (!id) return;
+    setAim(null);
+    setRemoving(null);
+    setMultiMode(true);
+    const next = new Set([id]);
+    setSelectedIds(next);
+    setSelectedEdges(new Set());
+    reconcileProjections(next, new Set());
+  }, [reconcileProjections]);
+
+  const toggleMultiMember = useCallback((id) => {
+    const next = new Set(selectedIdsRef.current);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    if (next.size === 0) setMultiMode(false);
+    setSelectedIds(next);
+    reconcileProjections(next, selectedEdgesRef.current);
+  }, [reconcileProjections]);
+
+  // Select makes room (X8 L0/L5): on the phone, opening a node's sheet in the tree view eases
+  // the node up so it's never buried under the sheet — the same glide the jump chips use, one
+  // seam whether the selection came from a canvas tap, a deep link, or a chip retarget. Skipped
+  // while a bulk / aim / remove surface owns the screen, and off the list (which has no sheet).
+  useEffect(() => {
+    if (!phone || view === 'list' || !selectedId || multiMode || aim || removing) return;
+    sceneRef.current?.revealNode(selectedId);
+  }, [phone, view, selectedId, multiMode, aim, removing]);
 
   // Pause the WebGL scene while the list owns the screen (F6): stop() only cancels the RAF —
   // the camera and every GPU buffer survive, so start() resumes the exact frame. applyModel runs
@@ -2199,6 +2283,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       workspace={workspaceByNode[selectedId] ?? emptyWorkspace()}
       kinds={legend}
       onReveal={handleRevealNode}
+      onJump={handleSheetJump}
       onMarkComplete={demo ? handleMarkComplete : undefined}
       onClose={() => setSelectedId(null)}
     />
@@ -2259,6 +2344,11 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
             treeId={treeId}
             portalTarget={rootRef.current}
             editable={mobileEditable}
+            switcher={mobileEditable ? () => setSwitcherOpen(true) : undefined}
+            multiMode={multiMode}
+            selectedIds={selectedIds}
+            onEnterMulti={mobileEditable ? enterMultiFromList : undefined}
+            onToggleMember={mobileEditable ? toggleMultiMember : undefined}
             handlers={mobileEditable ? {
               rename: mobileRename,
               describe: mobileDescribe,
@@ -2322,6 +2412,22 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
           audiences, phone-only, hidden while the tree is empty or still loading. It's a
           tool — its own look and fixed placement live in list.css. */}
       {listReady && <ViewPill view={view} onSwitch={switchView} lift={pillLift} />}
+
+      {/* The tree-switcher door (X8 L6): the list header's caret opens this half-sheet of the
+          owner's trees. Mounted only for the list's owner (a visitor header is a plain label);
+          it portals to the root and animates on `open`. onPick navigates the hash; onPlant
+          lands on the birth canvas. */}
+      {listReady && mobileEditable && (
+        <SwitcherSheet
+          portalTarget={rootRef.current}
+          open={switcherOpen}
+          trees={switcherRows}
+          currentId={treeId}
+          onPick={(id) => { setSwitcherOpen(false); if (id && id !== treeId) window.location.hash = `#/app/${id}`; }}
+          onPlant={() => { setSwitcherOpen(false); window.location.hash = '#/app/new'; }}
+          onClose={() => setSwitcherOpen(false)}
+        />
+      )}
 
       {/* The Tend bar. Phone: it rides the bottom edge when nothing else owns that space (an open
           editing surface takes precedence — you're editing one node, not telling the whole tree).
@@ -2502,6 +2608,8 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
                   onMarkDone={(id) => completeStep(id)}
                   onUnmarkDone={(id) => handleSetState(id, 'notstarted')}
                   onDelete={deleteNodeAt}
+                  onJump={handleSheetJump}
+                  isRoot={selectedId !== null && selectedId === singleRootId}
                 />
               ))
             : (readOnlyDetail && React.cloneElement(readOnlyDetail, { fill: true }))}
@@ -2532,7 +2640,10 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
         />
       )}
 
-      {mobileEditable && breakpoint === 'phone' && multiMode && view !== 'list' && (
+      {/* The bulk bar docks over BOTH views (X8 L4): multi-select can be entered from the canvas
+          (long-press) or the list (long-press a row), so — unlike the aim/remove bars, which are
+          tree-view-only gestures — it must not be gated off the list. */}
+      {mobileEditable && breakpoint === 'phone' && multiMode && (
         <BulkBar
           count={selectedIds.size}
           kinds={recolorKinds}
@@ -2597,6 +2708,8 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
                 onMarkDone={(id) => completeStep(id)}
                 onUnmarkDone={(id) => handleSetState(id, 'notstarted')}
                 onDelete={deleteNodeAt}
+                onJump={handleSheetJump}
+                isRoot={selectedId !== null && selectedId === singleRootId}
               />
             ) : null}
           </div>

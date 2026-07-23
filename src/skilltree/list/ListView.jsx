@@ -14,7 +14,7 @@ import { Icon } from '../../components';
 import { NODE_COLORS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../theme.js';
 import { deleteCostLine, progressVerb } from '../ui/mobile/editorSheet.js';
 import { buildOutline, nextUp, treatmentOf, indentPx, progressOf } from './outline.js';
-import { swipeBegin, swipeMove, swipeEnd, swipeCancel, keyboardPin, stillEditing } from './editing.js';
+import { swipeBegin, swipeMove, swipeEnd, swipeCancel, keyboardPin, stillEditing, holdCancelledByMove, HOLD_MS } from './editing.js';
 import { NeedPicker } from './NeedPicker.jsx';
 import './list.css';
 
@@ -75,7 +75,7 @@ function flashRow(row) {
   return setTimeout(() => row.classList.remove('st-list-row--flash'), FLASH_MS);
 }
 
-export function ListView({ tree, nodesById, states, completedAt = {}, legend, header, notice, selectedId, onSelect, active, prefs, treeId, editable = false, handlers, portalTarget }) {
+export function ListView({ tree, nodesById, states, completedAt = {}, legend, header, notice, selectedId, onSelect, active, prefs, treeId, editable = false, handlers, portalTarget, switcher, multiMode = false, selectedIds, onEnterMulti, onToggleMember }) {
   const bodyRef = useRef(null);
   const rowsRef = useRef(new Map());
   const fieldRef = useRef(null); // the .st-list-field wrapper of whichever edit input is focused
@@ -143,6 +143,15 @@ export function ListView({ tree, nodesById, states, completedAt = {}, legend, he
     setRecoloring(null);
     setPicker(null);
   }, [selectedId]);
+
+  // Entering multi-select is a mode switch (M5): the bulk bar takes the bottom edge and rows
+  // become check seats, so every in-place edit surface closes — the same one-transient discipline.
+  useEffect(() => {
+    if (!multiMode) return;
+    setEdit(null);
+    setRecoloring(null);
+    setPicker(null);
+  }, [multiMode]);
 
   // A freshly planted or linked row: scroll it into view and flash it once it has actually
   // mounted. The dispatch → re-render is async, so this re-runs as the outline changes until
@@ -250,7 +259,7 @@ export function ListView({ tree, nodesById, states, completedAt = {}, legend, he
     const node = nodesById.get(id);
     if (!node) return null;
     const state = states.get(id) ?? 'locked';
-    const budBelow = editable && edit?.mode === 'add' && !edit.section && edit.parentId === id;
+    const budBelow = editable && !multiMode && edit?.mode === 'add' && !edit.section && edit.parentId === id;
     return (
       <React.Fragment key={id}>
         <Row
@@ -265,6 +274,10 @@ export function ListView({ tree, nodesById, states, completedAt = {}, legend, he
           edits={edits}
           tree={tree}
           states={states}
+          multiMode={multiMode}
+          selected={selectedIds?.has(id) ?? false}
+          onEnterMulti={onEnterMulti}
+          onToggleMember={onToggleMember}
           onToggle={() => onSelect(selectedId === id ? null : id)}
           onJump={jumpTo}
           registerRow={registerRow(id)}
@@ -280,7 +293,7 @@ export function ListView({ tree, nodesById, states, completedAt = {}, legend, he
 
   return (
     <div className="st-list">
-      <ListHeader header={header} done={done} total={total} crowned={crowned} />
+      <ListHeader header={header} done={done} total={total} crowned={crowned} switcher={switcher} />
       {notice}
       <div className="st-list-body" ref={bodyRef} style={bodyStyle}>
         {ready.length > 0 && (
@@ -291,7 +304,7 @@ export function ListView({ tree, nodesById, states, completedAt = {}, legend, he
           const open = !folded.has(section.head);
           const head = nodesById.get(section.head);
           const secDone = section.rows.reduce((count, row) => count + (states.get(row.id) === 'complete' ? 1 : 0), 0);
-          const budAtEnd = editable && edit?.mode === 'add' && edit.section && edit.parentId === section.head;
+          const budAtEnd = editable && !multiMode && edit?.mode === 'add' && edit.section && edit.parentId === section.head;
           return (
             <div className="st-list-section" key={section.head}>
               <SectionHeader
@@ -302,7 +315,7 @@ export function ListView({ tree, nodesById, states, completedAt = {}, legend, he
                 onToggle={() => toggleSection(section.head)}
               />
               {open && section.rows.map((row) => renderRow(row.id, row.depth, false))}
-              {open && editable && (
+              {open && editable && !multiMode && (
                 budAtEnd ? (
                   <Bud hue={hueOf(head?.color ?? DEFAULT_NODE_COLOR)} depth={2} commit={(value) => commitAdd(section.head, value)} cancel={() => closeField('add', section.head)} registerField={registerField} />
                 ) : (
@@ -330,13 +343,26 @@ export function ListView({ tree, nodesById, states, completedAt = {}, legend, he
   );
 }
 
-function ListHeader({ header, done, total, crowned }) {
+// The header repeats the plaque facts on one line. For an owner the host passes `switcher` — a
+// callback that raises the tree switcher — and the name grows a caret and becomes its door
+// (X8 L6). A visitor's header stays a plain label: no caret, no door, the plaque rule intact.
+function ListHeader({ header, done, total, crowned, switcher }) {
   const hue = hueOf(header?.dominantHue);
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  const name = header?.name || 'Untitled tree';
   return (
     <div className="st-list-header" style={hueVars(hue)}>
       <span className="st-list-header-dot" aria-hidden />
-      <span className="st-list-header-name">{header?.name || 'Untitled tree'}</span>
+      {switcher ? (
+        <button type="button" className="st-list-header-door" aria-haspopup="dialog" onClick={switcher}>
+          <span className="st-list-header-name">{name}</span>
+          <span className="st-list-header-caret" aria-hidden>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+          </span>
+        </button>
+      ) : (
+        <span className="st-list-header-name">{name}</span>
+      )}
       {crowned && <span className="st-list-crown" aria-label="Tree complete"><Icon name="crown" size={15} color="var(--accent-gold-500)" /></span>}
       <span className="st-list-header-count">{done}/{total}</span>
       <span className="st-list-header-bar">
@@ -449,28 +475,68 @@ function Bud({ hue, depth, commit, cancel, registerField }) {
   );
 }
 
-function Row({ node, state, hue, depth, isRoot, crown, completedAt, expanded, edits, tree, states, onToggle, onJump, registerRow }) {
+function Row({ node, state, hue, depth, isRoot, crown, completedAt, expanded, edits, tree, states, multiMode, selected, onEnterMulti, onToggleMember, onToggle, onJump, registerRow }) {
   const treatment = treatmentOf(state);
   const rowRef = useRef(null);
   const lineRef = useRef(null);
   const gestureRef = useRef(null);
   const swallowRef = useRef(false);
   const swallowTimer = useRef(null);
-  const swipeEnabled = !!edits && !expanded && state === 'available';
+  const holdTimer = useRef(null);
+  const holdStart = useRef(null);
+  const holdFired = useRef(false);
+  // A collapsed editable row is interactive: it can be held into multi-select (any state) and, when
+  // ready, swiped right to Mark done. Both gestures share the one pointer stream — the hold arms
+  // unless the finger moves (a scroll or the swipe arming both cancel it), and a fired hold drops
+  // the swipe. Expanded rows, visitors, and multi-mode rows are none of this.
+  const swipeEnabled = !!edits && !multiMode && !expanded && state === 'available';
+  const holdEnabled = !!edits && !multiMode && !expanded && !!onEnterMulti;
 
   const setRowEl = (el) => { rowRef.current = el; registerRow(el); };
 
+  const armSwallow = () => {
+    swallowRef.current = true;
+    if (swallowTimer.current) clearTimeout(swallowTimer.current);
+    swallowTimer.current = setTimeout(() => { swallowRef.current = false; swallowTimer.current = null; }, 200);
+  };
+
+  const clearHold = () => { if (holdTimer.current) { clearTimeout(holdTimer.current); holdTimer.current = null; } };
+
+  useEffect(() => () => {
+    if (holdTimer.current) clearTimeout(holdTimer.current);
+    if (swallowTimer.current) clearTimeout(swallowTimer.current);
+  }, []);
+
   const onPointerDown = (event) => {
-    gestureRef.current = { ...swipeBegin(), x0: event.clientX, y0: event.clientY, pointerId: event.pointerId };
+    if (holdEnabled) {
+      holdFired.current = false;
+      holdStart.current = { x: event.clientX, y: event.clientY };
+      holdTimer.current = setTimeout(() => {
+        holdTimer.current = null;
+        holdFired.current = true;
+        armSwallow(); // the lift that ends the hold must not also toggle the just-selected member
+        gestureRef.current = null; // a hold cancels any nascent swipe so the line never lands shifted
+        rowRef.current?.classList.remove('st-list-row--swiping');
+        if (lineRef.current) lineRef.current.style.transform = '';
+        onEnterMulti?.(node.id);
+      }, HOLD_MS);
+    }
+    if (swipeEnabled) {
+      gestureRef.current = { ...swipeBegin(), x0: event.clientX, y0: event.clientY, pointerId: event.pointerId };
+    }
   };
 
   const onPointerMove = (event) => {
+    if (holdTimer.current && holdStart.current && holdCancelledByMove(event.clientX - holdStart.current.x, event.clientY - holdStart.current.y)) {
+      clearHold();
+    }
     const gesture = gestureRef.current;
     if (!gesture || !gesture.live) return;
     const next = swipeMove(gesture, event.clientX - gesture.x0, event.clientY - gesture.y0);
     const armedNow = next.armed && !gesture.armed;
     gestureRef.current = { ...next, x0: gesture.x0, y0: gesture.y0, pointerId: gesture.pointerId };
     if (armedNow) {
+      clearHold(); // the swipe won the gesture — the hold is off
       try { lineRef.current?.setPointerCapture(gesture.pointerId); } catch { /* capture is a nicety, not required */ }
       rowRef.current?.classList.add('st-list-row--swiping');
     }
@@ -490,15 +556,13 @@ function Row({ node, state, hue, depth, isRoot, crown, completedAt, expanded, ed
       line.style.transform = '';
       setTimeout(() => { if (line) line.style.transition = ''; }, 220);
     }
-    if (verdict.swallow) {
-      swallowRef.current = true;
-      if (swallowTimer.current) clearTimeout(swallowTimer.current);
-      swallowTimer.current = setTimeout(() => { swallowRef.current = false; swallowTimer.current = null; }, 200);
-    }
+    if (verdict.swallow) armSwallow();
     if (verdict.commit) edits.markDone(node.id);
   };
 
   const onPointerUp = () => {
+    clearHold();
+    if (holdFired.current) { holdFired.current = false; return; } // the hold consumed the gesture — the swallow eats its click
     const gesture = gestureRef.current;
     gestureRef.current = null;
     if (!gesture || !gesture.armed) return;
@@ -506,6 +570,7 @@ function Row({ node, state, hue, depth, isRoot, crown, completedAt, expanded, ed
   };
 
   const onPointerCancel = () => {
+    clearHold();
     const gesture = gestureRef.current;
     gestureRef.current = null;
     if (!gesture || !gesture.armed) return;
@@ -513,8 +578,9 @@ function Row({ node, state, hue, depth, isRoot, crown, completedAt, expanded, ed
   };
 
   // The swallow lives on the row container's capture phase so it survives the branch swap: a
-  // committed swipe re-renders the row to the plain (non-swipe) line whose own onClick would
-  // otherwise expand it. Capturing here eats that one click for BOTH branches and all pointers.
+  // committed swipe or a fired hold re-renders the row to a different line (the plain line, or the
+  // check seat) whose own onClick would otherwise expand it or toggle the just-armed member.
+  // Capturing here eats that one click for every branch and all pointers.
   const onRowClickCapture = (event) => {
     if (!swallowRef.current) return;
     event.stopPropagation();
@@ -523,6 +589,13 @@ function Row({ node, state, hue, depth, isRoot, crown, completedAt, expanded, ed
     if (swallowTimer.current) { clearTimeout(swallowTimer.current); swallowTimer.current = null; }
   };
 
+  const nameGroup = (
+    <span className="st-list-name-group">
+      <span className={`st-list-name${treatment === 'locked' ? ' st-list-name--locked' : ''}`}>{node.label || 'Untitled step'}</span>
+      {crown && <span className="st-list-crown" aria-label="Tree complete"><Icon name="crown" size={14} color="var(--accent-gold-500)" /></span>}
+    </span>
+  );
+
   const meta = (
     <>
       {state === 'complete' && completedAt != null && <span className="st-list-meta">{shortDate(completedAt)}</span>}
@@ -530,8 +603,18 @@ function Row({ node, state, hue, depth, isRoot, crown, completedAt, expanded, ed
     </>
   );
 
+  const cardOpen = expanded && !multiMode;
+
   let line;
-  if (edits?.renaming === node.id) {
+  if (multiMode) {
+    line = (
+      <button type="button" className="st-list-row-line st-list-row-line--check" aria-pressed={selected} onClick={() => onToggleMember?.(node.id)}>
+        <CheckSeat selected={selected} />
+        {nameGroup}
+        {meta}
+      </button>
+    );
+  } else if (edits?.renaming === node.id) {
     line = (
       <div className="st-list-row-line st-list-row-line--editing">
         <Fruit hue={hue} state={state} />
@@ -552,12 +635,12 @@ function Row({ node, state, hue, depth, isRoot, crown, completedAt, expanded, ed
         {meta}
       </div>
     );
-  } else if (swipeEnabled) {
+  } else if (swipeEnabled || holdEnabled) {
     line = (
       <button
         type="button"
-        ref={lineRef}
-        className="st-list-row-line st-list-row-line--swipe"
+        ref={swipeEnabled ? lineRef : undefined}
+        className={`st-list-row-line${swipeEnabled ? ' st-list-row-line--swipe' : ''}`}
         aria-expanded={expanded}
         style={{ touchAction: 'pan-y' }}
         onClick={onToggle}
@@ -567,10 +650,7 @@ function Row({ node, state, hue, depth, isRoot, crown, completedAt, expanded, ed
         onPointerCancel={onPointerCancel}
       >
         <Fruit hue={hue} state={state} />
-        <span className="st-list-name-group">
-          <span className={`st-list-name${treatment === 'locked' ? ' st-list-name--locked' : ''}`}>{node.label || 'Untitled step'}</span>
-          {crown && <span className="st-list-crown" aria-label="Tree complete"><Icon name="crown" size={14} color="var(--accent-gold-500)" /></span>}
-        </span>
+        {nameGroup}
         {meta}
       </button>
     );
@@ -578,10 +658,7 @@ function Row({ node, state, hue, depth, isRoot, crown, completedAt, expanded, ed
     line = (
       <button type="button" className="st-list-row-line" onClick={onToggle} aria-expanded={expanded}>
         <Fruit hue={hue} state={state} />
-        <span className="st-list-name-group">
-          <span className={`st-list-name${treatment === 'locked' ? ' st-list-name--locked' : ''}`}>{node.label || 'Untitled step'}</span>
-          {crown && <span className="st-list-crown" aria-label="Tree complete"><Icon name="crown" size={14} color="var(--accent-gold-500)" /></span>}
-        </span>
+        {nameGroup}
         {meta}
       </button>
     );
@@ -589,7 +666,7 @@ function Row({ node, state, hue, depth, isRoot, crown, completedAt, expanded, ed
 
   return (
     <div
-      className={`st-list-row${expanded ? ' st-list-row--expanded' : ''}`}
+      className={`st-list-row${cardOpen ? ' st-list-row--expanded' : ''}`}
       style={{ '--indent': `${indentPx(depth)}px` }}
       data-list-row={node.id}
       ref={setRowEl}
@@ -601,8 +678,19 @@ function Row({ node, state, hue, depth, isRoot, crown, completedAt, expanded, ed
         </div>
       )}
       {line}
-      {expanded && <ExpandedCard node={node} state={state} hue={hue} isRoot={isRoot} tree={tree} states={states} edits={edits} onJump={onJump} />}
+      {cardOpen && <ExpandedCard node={node} state={state} hue={hue} isRoot={isRoot} tree={tree} states={states} edits={edits} onJump={onJump} />}
     </div>
+  );
+}
+
+// The multi-select seat (M5): in multi mode the fruit gives way to a selection control — a hollow
+// bark ring when unset, a filled bark disc with a white check when a member. Bark, not a kind:
+// this is the selection tool, not the step's category, and it matches the bulk bar's chrome.
+function CheckSeat({ selected }) {
+  return (
+    <span className={`st-list-fruit st-list-check${selected ? ' st-list-check--on' : ''}`} aria-hidden>
+      {selected && <Icon name="check" size={13} color="#fff" />}
+    </span>
   );
 }
 

@@ -176,9 +176,8 @@ export class InputController {
     if (this.downPos == null || Math.hypot(pos.x - this.downPos.x, pos.y - this.downPos.y) > TAP_MOVE_TOL) { this.lastTap = null; return; }
     const now = performance.now();
     if (this.lastTap && now - this.lastTap.time < DOUBLE_TAP_MS && Math.hypot(pos.x - this.lastTap.x, pos.y - this.lastTap.y) < DOUBLE_TAP_TOL) {
-      const world = this.context.camera.screenToWorld(pos.x, pos.y);
       const target = this.context.camera.zoom < DOUBLE_TAP_PIVOT ? DOUBLE_TAP_ZOOM_IN : DOUBLE_TAP_ZOOM_OUT;
-      this.context.camera.glideTo(world.x, world.y, target);
+      this.context.camera.glideZoomAround(pos.x, pos.y, target);
       this.lastTap = null;
       return;
     }
