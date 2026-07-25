@@ -137,6 +137,13 @@ test('the card never claims a period it cannot know — the chip says only what 
   assert.ok(cardOf({ period: '' }).includes('>Learn to sail</text>'));
 });
 
+test('a carried-over card says so on the score line, so two periods never read as one', () => {
+  const carried = cardOf({ period: 'Week 5', since: 'week 3' });
+  assert.ok(carried.includes('>steps done · since week 3</text>'));
+  // Nothing skipped, nothing said — the ordinary card's label is untouched.
+  assert.ok(cardOf().includes('>steps done</text>'));
+});
+
 test('the ledger is the series made visible: one tick per period, the current one in the hue', () => {
   const alone = cardOf({ lit: new Set(['n3']) });
   assert.equal((alone.match(/rx="6" fill=/g) || []).length, 1);

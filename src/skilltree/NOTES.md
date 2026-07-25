@@ -647,3 +647,49 @@ behind the OG card, the PNG, the gallery thumb and the GIF.
     multi-edge set; lone-edge Delete empties the set. Known pre-existing (nodes too, out of scope):
     a *remote* structural delete of a selected item prunes the scene's copy but not the React set,
     so the bar can over-count until the next selection change.
+
+## Wave 2 — the week card's offer, labelling and sheet (brief #20 · canon C5–C8)
+
+- **The offer moved from a budget to a rhythm.** Wave 1 asked after a completion, metered by
+  "≥3 new steps or 7 days, at most every 3 days" — three numbers nobody can feel. Canon replaces
+  all of them with the tree's own planting anniversary: one ask per seven-day period, on the first
+  open after one closes. The budget arithmetic simply deleted itself, which is the tell that the
+  rhythm was the right axis: `considerProgressShare` now reads as five refusals and a return.
+- **A decline needs no button.** "Two declines in a row retire it" sounds like it needs a No, but
+  an offer that is COUNTED as declined the moment it goes out (`commit()`) and cleared when taken
+  (`accept()`) gets the same answer from a faded toast, a closed tab and an ignored week — and
+  survives a reload for free, since the count lives in the same slot as the period stamp.
+- **The recap's last beat was already a seam.** `CeremonyDirector` ends every ceremony — recap,
+  arrival, growth — on `speak(summary)`, which reaches the shell through the single
+  `onCeremonyToast` sink. Wrapping that sink (`speakCeremony`) is the whole hook: no scene API
+  changed, and the offer follows the beat by 120ms instead of racing it. The one hole is the phone
+  LIST, where the scene is paused and no ceremony ever speaks; a 2600ms cap (past the director's
+  2400ms structural budget) fires the armed offer there. Worth remembering that "the scene is
+  paused under the list" keeps surfacing as the exception to anything hung off ceremony timing.
+- **Two doors, one set of facts.** The offer and the share menu both open the same sheet, so the
+  week is DERIVED in one memo (`weekSegment`) rather than stashed when the offer fires. The offer
+  path only accepts, pre-renders and opens. A second copy of "what this week holds" behind the
+  offer's door is exactly how the toast and the card would eventually disagree.
+- **`sinceAt` is a moment, not a sentence.** `newThisPeriod` first returned the sub-line string
+  ("week 3"), which broke the instant the Week/Day segment flipped — the label depends on a choice
+  made at the edge. Returning the timestamp and naming it with `sinceLabel(…)` at the two places
+  that print it keeps one counter behind "Week 5" and "since week 3".
+- **A tick is a claim the user already made.** The ledger's first cut derived per-period deltas from
+  the local `completedAt` map, and that was wrong in the way this whole brief exists to avoid: those
+  stamps are written only by completions made in THIS browser, so a week worked on a phone and posted
+  from a desktop would publish as a quiet tick — a false claim about the user's week, in their voice,
+  to their followers. #20 says "since I last shared" rather than "this week" for exactly that reason.
+  The row is now rebuilt from `ShareLedger`'s history of what each POSTED CARD stamped: a period with
+  a card takes that card's own number (so the row can never contradict a published picture), a period
+  without one takes the floor tick (which is what canon's quiet period already means). Post every
+  period and it is byte-for-byte canon's intent; skip one and it stays truthful instead of guessing.
+  The general lesson: **a device-local clock can support an omission, never an assertion.** The one
+  remaining `completedAt` read (a first-ever card's period-start baseline) survives only because it
+  omits — it under-lights a card rather than claiming a period was empty.
+- **A rule's stated justification is a precondition to check, not decoration.** "Two declines retire
+  it — the share menu keeps the card for anyone who changes their mind" is only safe where that menu
+  exists. It does not on a phone (the chrome carries no Share door), where the offer toast is the
+  only door — so two fading toasts would lock a phone owner out of their own week card forever.
+  `commit({ countsAsDecline })` makes the caller vouch for the second door; the phone spends its
+  period ask without ever counting it. Worth grepping other "safe because X exists" rules for the
+  same gap.

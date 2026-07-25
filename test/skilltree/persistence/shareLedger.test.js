@@ -22,17 +22,55 @@ test('load / save / clear — a round-trip keeps the completed set, the moment a
 
   assert.equal(ledger.load('t_1'), null);
   ledger.save('t_1', { completed: new Set(['a', 'b']), at: 42, count: 1 });
-  assert.deepEqual(ledger.load('t_1'), { completed: ['a', 'b'], at: 42, count: 1 });
+  assert.deepEqual(ledger.load('t_1'), { completed: ['a', 'b'], at: 42, count: 1, history: [{ at: 42, delta: 0 }] });
   ledger.save('t_1', { completed: ['a', 'b', 'c'], at: 99, count: 2 });
-  assert.deepEqual(ledger.load('t_1'), { completed: ['a', 'b', 'c'], at: 99, count: 2 });
+  assert.deepEqual(ledger.load('t_1'), {
+    completed: ['a', 'b', 'c'],
+    at: 99,
+    count: 2,
+    history: [{ at: 42, delta: 0 }, { at: 99, delta: 1 }],
+  });
   ledger.clear('t_1');
   assert.equal(ledger.load('t_1'), null);
+});
+
+test('history — a card states its own stamp, so the ledger row can never outrun what was published', () => {
+  const ledger = new ShareLedger(fakeStorage());
+
+  // The week card knows what it claimed (its "+3"), and says so; the ledger records that verbatim
+  // rather than re-deriving it later from a set that has moved on.
+  ledger.save('t_1', { completed: ['a'], at: 10, count: 1, delta: 3 });
+  ledger.save('t_1', { completed: ['a', 'b', 'c'], at: 20, count: 2, delta: 2 });
+
+  assert.deepEqual(ledger.load('t_1').history, [{ at: 10, delta: 3 }, { at: 20, delta: 2 }]);
+});
+
+test('history — a share with no stated claim falls back to the set difference, and trims to a window', () => {
+  const ledger = new ShareLedger(fakeStorage());
+  const completed = [];
+
+  for (let i = 0; i < 15; i += 1) {
+    completed.push(`n${i}`);
+    ledger.save('t_1', { completed: [...completed], at: i, count: i + 1 });
+  }
+  const { history } = ledger.load('t_1');
+
+  assert.equal(history.length, 12);                       // the slot stays small
+  assert.deepEqual(history[0], { at: 3, delta: 1 });      // oldest kept
+  assert.deepEqual(history[11], { at: 14, delta: 1 });    // newest
+});
+
+test('newCount — the set difference a share would stamp, and 0 when there is nothing to differ from', () => {
+  assert.equal(ShareLedger.newCount(new Set(['a', 'b', 'c']), { completed: ['a'] }), 2);
+  assert.equal(ShareLedger.newCount(new Set(['a']), { completed: ['a', 'b'] }), 0);
+  assert.equal(ShareLedger.newCount(new Set(['a', 'b']), { }), 2);
+  assert.equal(ShareLedger.newCount(new Set(['a', 'b']), null), 0);
 });
 
 test('the slot is per tree — one tree’s share history never answers for another', () => {
   const storage = fakeStorage();
   const ledger = new ShareLedger(storage);
-  ledger.save('t_1', { completed: ['a'], at: 1, count: 1 });
+  ledger.save('t_1', { completed: ['a'], at: 1, count: 1, delta: 1 });
 
   assert.equal(ledger.load('t_2'), null);
   assert.deepEqual([...storage.backing.keys()], ['windmill:shared:t_1']);

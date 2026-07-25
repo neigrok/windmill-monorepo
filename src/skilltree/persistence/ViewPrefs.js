@@ -1,9 +1,15 @@
-// Which view a tree opens in, and which sections it keeps folded (X8 L1/L2): per tree, per
-// device, never synced. Two localStorage slots, each a plain { [treeId]: value } map. Mirrors
-// PlaceStore — best-effort, storage errors are never fatal, a broken slot reads as empty.
+// The per-tree, per-device view preferences: which view a tree opens in, which sections it keeps
+// folded (X8 L1/L2), and how its progress card names itself (brief #20 — "Week 3" or "Day 17", and
+// whether the card carries its ledger). One localStorage slot each, every one a plain
+// { [treeId]: value } map. Mirrors PlaceStore — best-effort, storage errors are never fatal, a
+// broken slot reads as empty. None of it ever syncs: these are choices about this screen.
+
+import { WEEK_UNIT, DAY_UNIT } from '../share/progressPeriod.js';
 
 const LAST_VIEW_KEY = 'windmill:view:last';
 const FOLDED_KEY = 'windmill:view:folded';
+const CARD_UNIT_KEY = 'windmill:card:unit';
+const CARD_LEDGER_KEY = 'windmill:card:ledger';
 
 export class ViewPrefs {
   constructor(storage = window.localStorage) {
@@ -30,6 +36,29 @@ export class ViewPrefs {
     const map = this.readMap(FOLDED_KEY);
     map[treeId] = headIds;
     this.writeMap(FOLDED_KEY, map);
+  }
+
+  // The progress card's period label: weeks by default, days for anyone whose hashtag counts days.
+  cardUnit(treeId) {
+    return this.readMap(CARD_UNIT_KEY)[treeId] === DAY_UNIT ? DAY_UNIT : WEEK_UNIT;
+  }
+
+  setCardUnit(treeId, unit) {
+    const map = this.readMap(CARD_UNIT_KEY);
+    map[treeId] = unit === DAY_UNIT ? DAY_UNIT : WEEK_UNIT;
+    this.writeMap(CARD_UNIT_KEY, map);
+  }
+
+  // Whether the card carries its ledger. Default ON: it is the single element that makes a series
+  // read as a series. Off is a real choice, though — it publishes the quiet weeks too.
+  cardLedger(treeId) {
+    return this.readMap(CARD_LEDGER_KEY)[treeId] !== false;
+  }
+
+  setCardLedger(treeId, on) {
+    const map = this.readMap(CARD_LEDGER_KEY);
+    map[treeId] = !!on;
+    this.writeMap(CARD_LEDGER_KEY, map);
   }
 
   readMap(key) {

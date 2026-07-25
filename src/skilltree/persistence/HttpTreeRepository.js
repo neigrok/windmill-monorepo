@@ -17,11 +17,12 @@ export class HttpTreeRepository extends TreeRepository {
     const response = await fetch(`${this.baseUrl}/v1/trees/${this.treeId}`, { credentials: 'include' });
     if (!response.ok) throw new Error(`loadTree ${this.treeId}: HTTP ${response.status}`);
     const body = await response.json();
-    // The tree document plus the server's stance on it: `visibility` (private ⇒ owner-only,
-    // unlisted/public ⇒ anyone with the link) and `mine` (is the caller its owner). Both ride
-    // on the returned shape so the Share surface can share honestly; existing consumers read
-    // id/title/nodes/kinds off the same object, untouched.
-    return { ...body.data, visibility: body.visibility ?? null, mine: body.mine ?? false };
+    // The tree document plus what the server knows ABOUT it: `visibility` (private ⇒ owner-only,
+    // unlisted/public ⇒ anyone with the link), `mine` (is the caller its owner), and `createdAt` —
+    // the planting time in epoch ms, 0 when the row predates the stamp. The week-N card counts its
+    // periods from that instant and never from the calendar. All three ride on the returned shape;
+    // existing consumers read id/title/nodes/kinds off the same object, untouched.
+    return { ...body.data, visibility: body.visibility ?? null, mine: body.mine ?? false, createdAt: body.createdAt ?? 0 };
   }
 
   async loadProgress(treeData) {

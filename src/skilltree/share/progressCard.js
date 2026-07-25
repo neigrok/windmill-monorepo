@@ -19,7 +19,8 @@
 // the data rather than by decoration.
 //
 // The strip is stamp-led: the delta leads, the title follows. `period` is whatever names this
-// period on the chip; the card never invents one, because the client has no planting date yet.
+// period on the chip — the card never invents one, it prints what progressPeriod.js counted from
+// the tree's planting time (or the share ordinal, when there is no planting time to count from).
 
 import { SHARE_PALETTE } from './palette.js';
 import { ShareStats } from './ShareStats.js';
@@ -67,10 +68,12 @@ const DISPLAY_ADVANCE = 0.5;            // Baloo's rough em advance, for the tit
 
 // The card. `lit` is the set of steps that lit this period — it drives the ink, the stamp and the
 // hue, so an empty one has nothing to say and is refused rather than dressed up as a post claiming
-// nothing happened. `period` names this period on the chip. `ledger` is the deltas of the periods
-// BEFORE this one, oldest first — the card appends its own, so the current tick can never disagree
-// with the stamp; `null` draws no ledger at all, which is the per-tree toggle's off position.
-export function buildProgressCardSvg({ model, title, done, total, lit, period, ledger = [] }) {
+// nothing happened. `period` names this period on the chip. `since` names the period the LAST card
+// covered when one was skipped, and rides the score's label ("steps done · since week 3") so a
+// stamp carrying two periods' work never reads as one period's. `ledger` is the deltas of the
+// periods BEFORE this one, oldest first — the card appends its own, so the current tick can never
+// disagree with the stamp; `null` draws no ledger at all, the per-tree toggle's off position.
+export function buildProgressCardSvg({ model, title, done, total, lit, period, since = null, ledger = [] }) {
   if (!lit?.size) throw new Error('progress card needs at least one step lit this period');
 
   const pal = SHARE_PALETTE.light;
@@ -141,7 +144,7 @@ export function buildProgressCardSvg({ model, title, done, total, lit, period, l
     + `<text x="${rowsX}" y="${row2}" font-family="${MONO}" font-weight="600" font-size="${SCORE_FONT}" fill="${pal.sub}">${done}/${total}</text>`
     + `<rect x="${barX}" y="${barY}" width="${BAR_W}" height="${BAR_H}" rx="${BAR_H / 2}" fill="${pal.track}"/>`
     + `<rect x="${barX}" y="${barY}" width="${Math.round(BAR_W * fraction)}" height="${BAR_H}" rx="${BAR_H / 2}" fill="url(#${gradId})"/>`
-    + `<text x="${barX + BAR_W + GUTTER / 2}" y="${row2}" font-family="${DISPLAY}" font-weight="600" font-size="${LABEL_FONT}" fill="${pal.tert}">steps done</text>`
+    + `<text x="${barX + BAR_W + GUTTER / 2}" y="${row2}" font-family="${DISPLAY}" font-weight="600" font-size="${LABEL_FONT}" fill="${pal.tert}">${escapeXml(since ? `steps done · since ${since}` : 'steps done')}</text>`
 
     + ticks
     + `<text x="${wordsEnd}" y="${row2}" text-anchor="end" font-family="${DISPLAY}" font-weight="600" font-size="${MARK_FONT}" fill="${pal.sub}">`

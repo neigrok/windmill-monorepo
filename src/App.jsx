@@ -10,15 +10,16 @@ import { pendingTransactionId, openCheckout } from './skilltree/billing/checkout
 // eagerly with the entry chunk — the landing paints in a single download (best
 // LCP) instead of paying a lazy round-trip. Everything else loads on demand behind
 // a Suspense fallback: the heavy WebGL skill-tree route, the design-system showcase,
-// and the signed-in account surfaces (auth landing, OAuth consent, connect, settings)
-// — none of which a first-time visitor to the landing ever renders, so their code
-// has no business in the entry chunk.
+// the in-product public wall, and the signed-in account surfaces (auth landing, OAuth
+// consent, connect, settings) — none of which a first-time visitor to the landing ever
+// renders, so their code has no business in the entry chunk.
 const SkillTreeApp = lazy(() => import('./skilltree').then((m) => ({ default: m.SkillTreeApp })));
 const Showcase = lazy(() => import('./Showcase.jsx'));
 const AuthLanding = lazy(() => import('./skilltree/auth/AuthLanding.jsx').then((m) => ({ default: m.AuthLanding })));
 const OAuthConsent = lazy(() => import('./skilltree/auth/OAuthConsent.jsx').then((m) => ({ default: m.OAuthConsent })));
 const ConnectPage = lazy(() => import('./skilltree/connect/ConnectPage.jsx').then((m) => ({ default: m.ConnectPage })));
 const SettingsPage = lazy(() => import('./skilltree/settings/SettingsPage.jsx').then((m) => ({ default: m.SettingsPage })));
+const BrowsePage = lazy(() => import('./skilltree/browse/BrowsePage.jsx').then((m) => ({ default: m.BrowsePage })));
 
 function useHashRoute() {
   const [hash, setHash] = React.useState(() => window.location.hash);
@@ -109,6 +110,14 @@ function AppRoutes() {
   // canvas never learns of it.
   if (route.startsWith('#/settings')) {
     return <Suspense fallback={<RouteFallback />}><SettingsPage /></Suspense>;
+  }
+
+  // The in-product public wall (public-gallery §2) — the client-rendered reader of the same
+  // ranked index /gallery server-renders for strangers, state-aware and with the fork on the
+  // card. Its own stable URL, entered from the shelf at the end of your own gallery; deliberately
+  // never a nav item, so reading other people's plans can't displace writing yours.
+  if (route.startsWith('#/browse')) {
+    return <Suspense fallback={<RouteFallback />}><BrowsePage /></Suspense>;
   }
 
   const isApp = route.startsWith('#/app') || route.startsWith('#/t/') || route.startsWith('#/demo')

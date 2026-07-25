@@ -202,20 +202,38 @@ split across layers) because it's a self-contained surface. (The image-export re
   hue taken from the **dominant kind among the new steps** — so two consecutive posts differ by
   construction. Deliberately the structural opposite of the milestone card, so a feed of someone's
   posts never reads as the same image twice.
-- `share/progressOffer.js` — `considerProgressShare(…)`: when that card is worth offering
-  (≥3 newly-lit steps, or ≥1 after a week; at most one ask per 3 days). Shaped like
-  `considerAutoOpen` — the budget burns in `commit()` at fire time, so a declined offer is free.
+- `share/progressPeriod.js` — the period math the card counts on, pure: `ProgressPeriod`
+  (index/day/`startedAt`/label, **counted from the tree's planting time, never the calendar week** —
+  seven days a period, "Week 3" or "Day 17" by the reader's choice, `Update #N` when the server has
+  no planting stamp), `newThisPeriod` (the baseline: since the last posted card, else since the
+  period start — with `sinceAt` naming a SKIPPED period so a carried-over card says so), and
+  `ledgerDeltas` (one tick per elapsed period, each the stamp of the card **published** in it, from
+  `ShareLedger`'s history — never from local completion timestamps, which are device-local and would
+  publish a week worked on another device as a quiet one).
+- `share/progressOffer.js` — `considerProgressShare(…)`: when that card is worth offering. It rides
+  the RETURN, not a completion — the first open after a period closes, once per period, never on the
+  first period, never twice, never without a card already posted. Shaped like `considerAutoOpen`:
+  the ask is spent in `commit()` at fire time, so an offer that loses the lane to a milestone is
+  free. **Two declines in a row retire it for that tree, permanently and silently** — a decline needs
+  no button, since an offer counts as declined the moment it is made and `accept()` clears the count.
   Its baseline is `persistence/ShareLedger.js`, written **only when a share happens** (unlike
   `ReturnLedger`, which re-baselines on every completion) — the only honest way to say "since
   you last shared" while the server's progress API returns no timestamps.
-- `share/ShareDialog.jsx` — the Share surface, **link-only**: copies the read-only view URL
-  and, when the tree is yours and private, flips it to unlisted on copy with an honest reach
-  line ("Anyone with this link can view" / "Make private"). No image export.
+- `share/ShareDialog.jsx` — the Share surface, in two segments. First the LINK: copies the
+  read-only view URL and, when the tree is yours and private, flips it to unlisted on copy with an
+  honest reach line ("Anyone with this link can view" / "Make private"), plus the gallery listing
+  consent. Then `share/ProgressCardSegment.jsx` — the week's POST: the drawn card, Download / Copy /
+  the OS sheet, the Week/Day segmented control and the ledger toggle (both remembered per tree in
+  `ViewPrefs`). It is also the door back for anyone the offer has retired.
 - `share/GalleryCard.jsx` — the in-product card (#12): drops the mat (it lives inside app
   chrome) but keeps the kind rule + the same title/readout, presentational, light and dark
   (renders in the `#/showcase` design gallery).
 
-`ControlBar` gains a Share button; `SkillTreeView` opens `ShareDialog` (link-only).
+`ControlBar` gains a Share button; `SkillTreeView` opens `ShareDialog`. The week's offer is armed
+during the load and fired by `speakCeremony` — the scene's one toast sink — 120ms after whatever
+ceremony closes this open (the welcome-back recap, or the arrival standing in for it), with a cap
+for the paused-scene case. A milestone landing in the same window calls `dropWeekOffer()`: one
+pride moment per open, and the week's ask is dropped rather than queued.
 
 ## `SkillTreeView.jsx` + overlay UI
 

@@ -1,8 +1,9 @@
-// The Share surface (X2 identity), link-only: a copyable share URL and the tree's
-// sharing stance. Copying a private tree's link flips it to unlisted so the recipient
-// can view; the owner can lock it back to private. The link is the whole surface here —
-// the one image is the unfurl card (brief #12), published in the background via onShareLink
-// when the owner shares, never previewed or downloaded in the dialog.
+// The Share surface (X2 identity), in two segments. The first shares the TREE: a copyable share
+// URL and the tree's sharing stance. Copying a private tree's link flips it to unlisted so the
+// recipient can view; the owner can lock it back to private. Its one image is the unfurl card
+// (brief #12), published in the background via onShareLink when the owner shares, never previewed
+// or downloaded here. The second segment shares a POST — this week of the tree, as a picture
+// (brief #20) — and is the door anyone who declined the offer comes back through.
 //
 // The three stances are two decisions, not one scale. Private→unlisted is REACH, and copying
 // the link makes it. Unlisted→public is LISTING, a separate consent the owner gives on purpose
@@ -13,12 +14,13 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Dialog, Button, Switch } from '../../components';
 import { setVisibility } from '../persistence/TreeRegistry.js';
 import { track } from '../../telemetry/beacon.js';
+import { ProgressCardSegment } from './ProgressCardSegment.jsx';
 
 // `stance` is the caller's — the view that loaded the tree owns the server's answer, and every
 // flip made here is reported back through onStanceChange rather than mirrored in local state.
 // A dialog that kept its own copy would go stale the moment it closed: reopening it would show
 // the stance the page loaded with, not the one the owner just chose.
-export function ShareDialog({ open, onClose, visibility, mine, onShareLink, onStanceChange }) {
+export function ShareDialog({ open, onClose, visibility, mine, onShareLink, onStanceChange, weekSegment = null }) {
   const [linkCopied, setLinkCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false); // clipboard denied — the link is still selectable
   const copiedTimer = useRef(null);
@@ -88,7 +90,7 @@ export function ShareDialog({ open, onClose, visibility, mine, onShareLink, onSt
   return (
     <Dialog open={open} onClose={onClose} title="Share roadmap" width={640} footer={null}>
       {shareUrl ? (
-        <div>
+        <div key="link">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <input
               ref={urlRef}
@@ -139,8 +141,12 @@ export function ShareDialog({ open, onClose, visibility, mine, onShareLink, onSt
 
         </div>
       ) : (
-        <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--text-tertiary)' }}>This roadmap has no shareable link yet.</div>
+        <div key="link" style={{ padding: '32px 0', textAlign: 'center', color: 'var(--text-tertiary)' }}>This roadmap has no shareable link yet.</div>
       )}
+
+      {/* The second segment — the week's post. Present for an owner of an editable tree; a tree
+          that isn't yours passes null and the sheet stays the link surface it has always been. */}
+      {weekSegment && <ProgressCardSegment {...weekSegment} />}
     </Dialog>
   );
 }

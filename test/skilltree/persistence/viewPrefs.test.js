@@ -42,6 +42,30 @@ test('ViewPrefs — folded sections round-trip per tree and default to empty', (
   assert.deepEqual(prefs.foldedSections('t3'), []);
 });
 
+test('ViewPrefs — the card counts weeks until a tree is told otherwise, and remembers per tree', () => {
+  const prefs = new ViewPrefs(memoryStorage());
+  assert.equal(prefs.cardUnit('t1'), 'week');
+
+  prefs.setCardUnit('t1', 'day');
+  assert.equal(prefs.cardUnit('t1'), 'day');
+  assert.equal(prefs.cardUnit('t2'), 'week');
+
+  prefs.setCardUnit('t1', 'fortnight'); // an unknown unit is weeks — the card never prints a guess
+  assert.equal(prefs.cardUnit('t1'), 'week');
+});
+
+test('ViewPrefs — the card carries its ledger by default, and off is remembered per tree', () => {
+  const prefs = new ViewPrefs(memoryStorage());
+  assert.equal(prefs.cardLedger('t1'), true);
+
+  prefs.setCardLedger('t1', false);
+  assert.equal(prefs.cardLedger('t1'), false);
+  assert.equal(prefs.cardLedger('t2'), true);
+
+  prefs.setCardLedger('t1', true);
+  assert.equal(prefs.cardLedger('t1'), true);
+});
+
 test('ViewPrefs — the two slots do not collide, and a later write keeps the earlier tree', () => {
   const storage = memoryStorage();
   const prefs = new ViewPrefs(storage);
@@ -70,8 +94,12 @@ test('ViewPrefs — a throwing storage never throws and reads as empty', () => {
 
   assert.equal(prefs.lastView('t1'), null);
   assert.deepEqual(prefs.foldedSections('t1'), []);
+  assert.equal(prefs.cardUnit('t1'), 'week');
+  assert.equal(prefs.cardLedger('t1'), true);
   assert.doesNotThrow(() => prefs.setLastView('t1', 'list'));
   assert.doesNotThrow(() => prefs.setFoldedSections('t1', ['a']));
+  assert.doesNotThrow(() => prefs.setCardUnit('t1', 'day'));
+  assert.doesNotThrow(() => prefs.setCardLedger('t1', false));
   assert.equal(prefs.lastView('t1'), null);
 });
 
