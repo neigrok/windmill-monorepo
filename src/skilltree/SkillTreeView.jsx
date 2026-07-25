@@ -2858,6 +2858,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
         visibility={treeVisibility}
         mine={treeMine}
         onShareLink={publishOgImage}
+        onStanceChange={setTreeVisibility}
       />
 
       {loading && !loadError && <div className="st-loading"><span className="st-loading-msg">Planting the tree…</span></div>}

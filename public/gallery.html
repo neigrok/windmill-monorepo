@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Public roadmaps — Windmill</title>
+    <meta name="description" content="Roadmaps people are working through in public, as skill trees. Browse them, fork one, and make it yours." />
+    <link rel="canonical" href="https://windmill.works/gallery" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="theme-color" content="#F9F5EB" />
+    <meta name="color-scheme" content="light" />
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Windmill" />
+    <meta property="og:title" content="Public roadmaps — Windmill" />
+    <meta property="og:description" content="Roadmaps people are working through in public, as skill trees. Browse them, fork one, and make it yours." />
+    <meta property="og:url" content="https://windmill.works/gallery" />
+    <meta property="og:image" content="https://windmill.works/og-image.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <style>
+      /* Design tokens resolved from src/styles/tokens/{fonts,colors,typography,motion}.css and the
+         share palette (src/skilltree/share/palette.js, light) — system fallback stacks, no bundled woff2.
+         The card below is the X2 #12 gallery thumb rendered as plain HTML: same frame, same kind rule,
+         same progress readout. The server (adapters/http/GalleryApi.cpp) fills the fenced block with
+         one <a class="card"> per listed tree; everything else on this page is static. */
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #F9F5EB; color: #211B13; font-family: 'Nunito', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+      .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+      .hdr { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 24px; padding-bottom: 24px; }
+      .mark { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 21px; color: #211B13; text-decoration: none; }
+      .acts { display: flex; align-items: center; gap: 10px; }
+      .btn { display: inline-block; border-radius: 999px; font-weight: 800; font-size: 12.5px; padding: 7px 15px; text-decoration: none; transition: background 150ms cubic-bezier(0.16, 1, 0.3, 1), color 150ms cubic-bezier(0.16, 1, 0.3, 1); }
+      .btn--pri { background: #BC6C42; color: #FFFFFF; }
+      .btn--pri:hover { background: #9D5330; }
+      .btn--gho { color: #6F5F45; }
+      .btn--gho:hover { background: #F1EADA; color: #211B13; }
+
+      .lede { max-width: 640px; padding: 40px 0 30px; }
+      .lede h1 { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 38px; letter-spacing: -0.02em; margin: 0; }
+      .lede p { font-size: 16.5px; line-height: 1.6; color: #6F5F45; margin: 14px 0 0; }
+
+      /* The wall. auto-fill so one tree doesn't stretch across the page and twenty don't crush. */
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(272px, 1fr)); gap: 20px; padding-bottom: 8px; }
+
+      .card { display: block; background: #FFFFFF; border: 1px solid #E5D9C0; border-radius: 18px; overflow: hidden; text-decoration: none; box-shadow: 0 1px 2px rgba(33, 27, 19, .05); transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 200ms cubic-bezier(0.16, 1, 0.3, 1), border-color 200ms cubic-bezier(0.16, 1, 0.3, 1); }
+      .card:hover { transform: translateY(-2px); border-color: #D3C2A0; box-shadow: 0 4px 18px rgba(33, 27, 19, .14); }
+      .card:focus-visible { outline: 2px solid #BC6C42; outline-offset: 3px; }
+
+      .shot { display: block; position: relative; aspect-ratio: 1200 / 630; background: #F9F5EB; border-bottom: 1px solid #E5D9C0; overflow: hidden; }
+      .shot img { display: block; width: 100%; height: 100%; object-fit: cover; }
+      .shot .hue { display: block; position: absolute; left: 0; top: 0; right: 0; height: 4px; }
+
+      .body { display: block; padding: 13px 15px 14px; }
+      .ct { display: block; font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 16.5px; color: #211B13; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .bar { display: block; height: 6px; border-radius: 999px; background: #E5D9C0; overflow: hidden; margin-top: 11px; }
+      .bar i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #BC6C42, #C4972F); }
+      .meta { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 11.5px; font-weight: 700; color: #6F5F45; }
+      .meta .sep { display: block; width: 3px; height: 3px; border-radius: 50%; background: #C9BCA0; flex: none; }
+      .meta .forks { color: #92805F; }
+
+      /* The empty wall. Not an error — an invitation, and honest about why it's bare. It is a
+         child of the same grid the cards fill, so it must claim every column or it renders as a
+         lone card-width sliver against an empty page. */
+      .empty { grid-column: 1 / -1; border: 1px dashed #D3C2A0; border-radius: 18px; padding: 48px 28px; text-align: center; }
+      .empty h2 { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 21px; margin: 0; color: #211B13; }
+      .empty p { font-size: 15px; line-height: 1.65; color: #6F5F45; margin: 10px auto 0; max-width: 430px; }
+      .empty .btn { margin-top: 20px; font-size: 14px; padding: 9px 20px; }
+
+      .how { border-top: 1px solid #E5D9C0; margin-top: 56px; padding-top: 28px; max-width: 640px; }
+      .how h2 { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 20px; margin: 0; }
+      .how p { font-size: 15px; line-height: 1.65; color: #6F5F45; margin: 10px 0 0; }
+      .how strong { color: #211B13; }
+      .how a { color: #9D5330; }
+      .how a:hover { color: #7C3F23; }
+
+      .ftr { border-top: 1px solid #E5D9C0; margin-top: 56px; padding-top: 28px; padding-bottom: 40px; display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 12px; }
+      .fmark { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 16px; color: #6F5F45; }
+      .ftag { font-size: 13.5px; color: #92805F; margin-left: 10px; }
+      .flinks { display: flex; gap: 24px; font-size: 14px; flex-wrap: wrap; }
+      .flinks a { color: #92805F; text-decoration: none; }
+      .flinks a:hover { color: #211B13; }
+
+      @media (prefers-reduced-motion: reduce) {
+        .card { transition: none; }
+        .card:hover { transform: none; }
+      }
+    </style>
+    <script>try{var h=JSON.parse(localStorage.getItem("windmill:auth-hint")||"null");document.documentElement.setAttribute("data-auth",h&&h.status==="signed-in"&&h.user?"in":"out")}catch(e){document.documentElement.setAttribute("data-auth","out")}</script>
+    <style>html[data-auth=in] .au-out{display:none}html[data-auth=out] .au-in{display:none}</style>
+    <script defer src="/nav-auth.js"></script>
+  </head>
+  <body>
+    <header class="wrap hdr">
+      <a class="mark" href="/#/">Windmill</a>
+      <div class="acts">
+        <a class="btn btn--gho au-out" href="/#/">Log in</a>
+        <a class="btn btn--pri au-out" href="/#/app">Start your tree</a>
+        <a class="btn btn--gho au-in" href="/#/settings" data-authname>My account</a>
+        <a class="btn btn--pri au-in" href="/#/app">My trees</a>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <div class="lede">
+        <h1>Roadmaps in public</h1>
+        <p>Plans people are working through out loud, each one a skill tree. Open any of them to see how far they've got — or fork it and make the plan yours.</p>
+      </div>
+
+      <div class="grid">
+      <!-- wall:cards:start -->
+        <div class="empty">
+          <h2>Nothing on the wall yet</h2>
+          <p>Trees land here when someone lists one — sharing a link keeps a tree unlisted, and listing it is a separate, deliberate choice. Yours could be the first.</p>
+          <a class="btn btn--pri" href="/#/app">Plant a tree</a>
+        </div>
+      <!-- wall:cards:end -->
+      </div>
+
+      <section class="how">
+        <h2>How a tree gets here</h2>
+        <p>Every tree starts <strong>private</strong>. Copying its share link makes it <strong>unlisted</strong> — reachable by anyone holding the link, and listed nowhere. Adding it to this gallery is a third, separate choice you make in the share dialog, and you can take it back at any time.</p>
+        <p>Nothing else changes when you list a tree: the wall shows what a visitor with your link would already see. <a href="/privacy.html">Privacy</a> · <a href="/#/app">Start your own</a></p>
+      </section>
+    </main>
+
+    <footer class="wrap ftr">
+      <div><span class="fmark">Windmill</span><span class="ftag">Any goal, as a skill tree.</span></div>
+      <nav class="flinks">
+        <a href="/gallery">Gallery</a>
+        <a href="/pricing.html">Pricing</a>
+        <a href="/connect.html">Connect your AI tools</a>
+        <a href="/privacy.html">Privacy</a>
+        <a href="/terms.html">Terms</a>
+        <a href="/refunds.html">Refunds</a>
+        <a href="/changelog.html">Changelog</a>
+      </nav>
+    </footer>
+  </body>
+</html>

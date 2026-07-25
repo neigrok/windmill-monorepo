@@ -3,32 +3,34 @@
 // can view; the owner can lock it back to private. The link is the whole surface here —
 // the one image is the unfurl card (brief #12), published in the background via onShareLink
 // when the owner shares, never previewed or downloaded in the dialog.
+//
+// The three stances are two decisions, not one scale. Private→unlisted is REACH, and copying
+// the link makes it. Unlisted→public is LISTING, a separate consent the owner gives on purpose
+// below — because "anyone with the link can view" and "put my plan on a wall strangers browse"
+// are different things to agree to, and only the second one puts a tree in /gallery.
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Dialog, Button } from '../../components';
+import { Dialog, Button, Switch } from '../../components';
 import { setVisibility } from '../persistence/TreeRegistry.js';
 import { track } from '../../telemetry/beacon.js';
 
-export function ShareDialog({ open, onClose, visibility, mine, onShareLink }) {
+// `stance` is the caller's — the view that loaded the tree owns the server's answer, and every
+// flip made here is reported back through onStanceChange rather than mirrored in local state.
+// A dialog that kept its own copy would go stale the moment it closed: reopening it would show
+// the stance the page loaded with, not the one the owner just chose.
+export function ShareDialog({ open, onClose, visibility, mine, onShareLink, onStanceChange }) {
   const [linkCopied, setLinkCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false); // clipboard denied — the link is still selectable
-  // The tree's live sharing stance. Seeded from the server's answer, but the owner's copy-link
-  // flip and the Make-private toggle move it here without a reload — so the dialog's stance line
-  // always states the reach the server actually holds, never a stale prop.
-  const [stance, setStance] = useState(visibility ?? null);
   const copiedTimer = useRef(null);
   const urlRef = useRef(null);
 
+  const stance = visibility ?? null;
   const treeId = treeIdFromHash(window.location.hash);
   // The real, indexable share URL: a shared tree lives at /t/:id, where the backend unfurls
   // its own title and description for social scrapers (the #/t/:id hash still works too).
   const shareUrl = treeId ? `${window.location.origin}/t/${treeId}` : null;
 
   useEffect(() => () => clearTimeout(copiedTimer.current), []);
-
-  // Re-seed the stance whenever the server's answer changes or the dialog reopens, so a
-  // reload's fresh visibility replaces any flip we made in a prior opening.
-  useEffect(() => { setStance(visibility ?? null); }, [visibility, open]);
 
   async function handleCopyLink() {
     if (!(await copyText(shareUrl))) {
@@ -54,7 +56,7 @@ export function ShareDialog({ open, onClose, visibility, mine, onShareLink }) {
     if (mine && stance === 'private') {
       try {
         await setVisibility(treeId, 'unlisted');
-        setStance('unlisted');
+        onStanceChange?.('unlisted');
         shareable = true;
       } catch { /* keep the private stance — no false promise of reach */ }
     }
@@ -68,8 +70,19 @@ export function ShareDialog({ open, onClose, visibility, mine, onShareLink }) {
   async function handleMakePrivate() {
     try {
       await setVisibility(treeId, 'private');
-      setStance('private');
+      onStanceChange?.('private');
     } catch { /* leave the stance as it stands */ }
+  }
+
+  // The listing consent. Reach doesn't move — unlisted and public read identically to anyone
+  // holding the link — so this only decides whether the tree appears on the public wall, and
+  // it un-decides as easily. A failed flip leaves the switch where the server actually is.
+  async function handleListed(next) {
+    try {
+      await setVisibility(treeId, next ? 'public' : 'unlisted');
+      onStanceChange?.(next ? 'public' : 'unlisted');
+      track('gallery_listing', { listed: next });
+    } catch { /* the switch springs back — never claim a listing the server didn't take */ }
   }
 
   return (
@@ -112,6 +125,15 @@ export function ShareDialog({ open, onClose, visibility, mine, onShareLink }) {
                   Make private
                 </button>
               )}
+            </div>
+          )}
+
+          {mine && (stance === 'unlisted' || stance === 'public') && (
+            <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px solid var(--border-subtle)' }}>
+              <Switch checked={stance === 'public'} onChange={handleListed} label="List in the public gallery" />
+              <div style={{ marginTop: 6, fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)', lineHeight: 1.55, color: 'var(--text-tertiary)' }}>
+                Puts it on <a href="/gallery" target="_blank" rel="noreferrer" style={{ color: 'var(--text-secondary)' }}>the gallery</a> for strangers to browse and fork. Nothing else changes — it shows exactly what your link already shows. Switch it off to unlist it again.
+              </div>
             </div>
           )}
 
