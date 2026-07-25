@@ -3,18 +3,23 @@ WINDMILL
 Your frontier is waiting
 ------------------------
 
-A few steps on {{tree_name}} just came within reach.
-Whenever you have a minute, they're ready for you.
+{{{tree_name}}} has {{{ready_phrase}}} ready.
+Whenever you have a minute, they're waiting for you.
 
-{{tree_name}} — {{done}}/{{total}} done
-{{#each ready_steps}}
-  • {{label}} (ready)
-{{/each}}
+{{{tree_name}}} — {{{done}}}/{{{total}}} done
+
+Ready now:
+{{{step_1_label}}}
+{{{step_2_label}}}
+{{{step_3_label}}}
+{{{more_on_tree}}}
+{{{more_ready}}}
 
 Open your tree:
-{{tree_url}}
+{{{tree_url}}}
 
 --
-You get these because reminders are on for this tree.
-Pause reminders: {{settings_url}}
+You get this once a week, only while a tree has steps ready.
+Pause reminders: {{{pause_url}}}
+Manage in settings: {{{settings_url}}}
 Windmill · https://windmill.works

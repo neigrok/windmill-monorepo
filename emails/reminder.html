@@ -2,21 +2,49 @@
   Windmill transactional email — frontier reminder · X7
   From:      Windmill <reminders@windmill.works>
   Reply-To:  hello@windmill.works
-  Subject:   {{ready_count}} steps are ready · {{tree_name}}
+  Subject:   {{{ready_phrase}}} ready · {{{tree_name}}}
   Preheader: Your frontier is waiting — finish one and the next branch unlocks.
   Plain-text pair: reminder.txt
 
-  Template variables:
-    {{tree_name}}    display name of the tree            e.g. "Frontend path"
-    {{tree_url}}     deep link to the tree               e.g. https://windmill.works/t/frontend-path
-    {{done}} {{total}}  progress counters                e.g. 9 / 24
-    {{ready_count}}  number of newly-ready steps (subject line)
-    {{settings_url}} pause-reminders link                e.g. https://windmill.works/settings
-    {{#each ready_steps}} { {{label}}, {{color}} }  the ready rows (dot color is a hex string)
+  Every variable is TRIPLE-braced: substitution is raw, with no escaping tier, so URLs keep
+  their & = ? intact and a hex colour lands inside a style attribute unmangled. The values that
+  can carry user text ({{{tree_name}}}, the step labels) are sanitised server-side; the colours
+  are the six-hue enum rendered to hex, never anything a person typed.
 
-  If your engine can't iterate (plain {{var}} substitution only), swap the {{#each}}
-  block for three fixed rows using {{step_1_label}}/{{step_1_color}} … — see emails/README.md.
-  Unlike the auth mail, reminders ALWAYS carry the pause/settings link (guidelines/email.md).
+  Template variables:
+    {{{tree_name}}}     display name of the tree            e.g. "Frontend path"
+    {{{tree_url}}}      deep link to the OWNER's tree       e.g. https://windmill.works/#/app/t_1a2b3c
+    {{{done}}} {{{total}}}  progress counters               e.g. 9 / 24
+    {{{ready_phrase}}}  the count already worded by the server — "1 step" / "3 steps", so the
+                        subject and lede never read "1 steps". Same trick as the fork mail's
+                        tree_meta; the server owns the plural, the template never guesses.
+    {{{pause_url}}}     one-click pause page                e.g. https://windmill.works/pause.html#t=<secret>
+    {{{more_on_tree}}}     the in-tree remainder, already worded — "and 4 more on this tree" — or ''
+                        when the three slots below already show everything ready in THIS tree
+    {{{more_ready}}}    the other-trees line, already worded — "2 other trees have steps ready" —
+                        or '' when this is the only one. The number counts TREES, so the server
+                        names the unit in the sentence; a reader must never have to guess whether
+                        a bare "+2" means steps or trees
+    {{{settings_url}}}  account settings                    https://windmill.works/#/settings
+    {{{step_1_label}}} {{{step_1_color}}} … {{{step_3_*}}}  up to three ready steps
+
+  Both remainder lines are finished sentences from the server: the template counts nothing,
+  pluralises nothing and compares nothing. Empty is the ordinary case — an empty {{{more_on_tree}}}
+  leaves a cell with no content and so no height, an empty {{{more_ready}}} leaves only its 14px
+  of padding. The two facts differ (steps left in THIS tree vs other trees waiting), so they are
+  two slots and never one line.
+
+  The steps are THREE FIXED SLOTS, never a provider-side repeat — the engine caps at three, and
+  fixed slots drop any dependence on iteration. An unused slot is the empty string in both
+  fields: the label renders as nothing and `background:;` is an invalid declaration the client
+  drops, so the dot is transparent and the row collapses to the 8px the dot occupies. Row height
+  is line-height, never padding, precisely so an unused slot costs almost nothing.
+
+  {{{settings_url}}} must carry the hash — the app is hash-routed, so a bare /settings path falls
+  through to the SPA root and lands the reader on the landing page instead of their account.
+
+  Unlike the auth mail, reminders ALWAYS carry the pause link and the once-a-week promise line in
+  the footer (emails/README.md, compliance). Keep both when you edit.
 -->
 <!DOCTYPE html>
 <html lang="en" xmlns:o="urn:schemas-microsoft-com:office:office">
@@ -68,7 +96,7 @@
               </tr>
               <tr>
                 <td align="center" class="wm-p" style="font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:16px; line-height:1.55; color:#6F5F45; padding-bottom:24px;">
-                  {{ready_count}} steps on <strong style="color:inherit;">{{tree_name}}</strong> are ready whenever you are.
+                  <strong style="color:inherit;">{{{tree_name}}}</strong> has {{{ready_phrase}}} ready whenever you are.
                 </td>
               </tr>
 
@@ -81,34 +109,55 @@
                         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                           <tr>
                             <td class="wm-step" style="font-family:'Baloo 2','Trebuchet MS','Segoe UI',sans-serif; font-size:16px; font-weight:700; color:#2C2416;">
-                              {{tree_name}}
+                              {{{tree_name}}}
                             </td>
                             <td align="right" class="wm-counter" style="font-family:'JetBrains Mono','SFMono-Regular',Consolas,'Courier New',monospace; font-size:13px; color:#6F5F45; white-space:nowrap;">
-                              {{done}}/{{total}} done
+                              {{{done}}}/{{{total}}} done
                             </td>
                           </tr>
                         </table>
 
                         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:14px;">
-                          {{#each ready_steps}}
                           <tr>
-                            <td class="wm-step-b" style="padding:11px 0; border-top:1px solid #F1EADA;">
-                              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-                                <tr>
-                                  <td width="10" style="width:10px;">
-                                    <div style="width:8px; height:8px; border-radius:999px; background:{{color}};">&nbsp;</div>
-                                  </td>
-                                  <td class="wm-step" style="padding-left:12px; font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:15px; font-weight:600; color:#2C2416;">
-                                    {{label}}
-                                  </td>
-                                </tr>
-                              </table>
-                            </td>
-                            <td align="right" class="wm-ready wm-step-b" style="padding:11px 0; border-top:1px solid #F1EADA; font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:13px; color:#92805F;">
-                              ready
+                            <td class="wm-ready" style="padding:12px 0 4px; border-top:1px solid #F1EADA; font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#92805F;">
+                              Ready now
                             </td>
                           </tr>
-                          {{/each}}
+                        </table>
+
+                        <!-- three fixed slots; an empty slot draws a transparent dot and no text -->
+                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                          <tr>
+                            <td width="20" valign="middle" style="width:20px;">
+                              <div style="width:8px; height:8px; font-size:0; line-height:0; border-radius:999px; background:{{{step_1_color}}};">&nbsp;</div>
+                            </td>
+                            <td class="wm-step" style="font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:15px; line-height:30px; font-weight:600; color:#2C2416;">
+                              {{{step_1_label}}}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td width="20" valign="middle" style="width:20px;">
+                              <div style="width:8px; height:8px; font-size:0; line-height:0; border-radius:999px; background:{{{step_2_color}}};">&nbsp;</div>
+                            </td>
+                            <td class="wm-step" style="font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:15px; line-height:30px; font-weight:600; color:#2C2416;">
+                              {{{step_2_label}}}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td width="20" valign="middle" style="width:20px;">
+                              <div style="width:8px; height:8px; font-size:0; line-height:0; border-radius:999px; background:{{{step_3_color}}};">&nbsp;</div>
+                            </td>
+                            <td class="wm-step" style="font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:15px; line-height:30px; font-weight:600; color:#2C2416;">
+                              {{{step_3_label}}}
+                            </td>
+                          </tr>
+                          <!-- What the three slots didn't fit, in the server's own words, aligned
+                               with the labels. Empty is the common case: the cell then holds
+                               nothing at all and the row takes no height. -->
+                          <tr>
+                            <td width="20" style="width:20px; font-size:0; line-height:0;"></td>
+                            <td class="wm-more" style="font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:13px; line-height:26px; color:#92805F;">{{{more_on_tree}}}</td>
+                          </tr>
                         </table>
                       </td>
                     </tr>
@@ -116,12 +165,20 @@
                 </td>
               </tr>
 
+              <!-- The OTHER trees this mail doesn't feature — a count of trees, worded as trees
+                   by the server, never a bare "+N" a reader would take for steps. The empty
+                   string when there are none, which leaves this row holding nothing but its
+                   padding, so there is no logic in the template. -->
+              <tr>
+                <td align="center" style="font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:13px; line-height:1.5; color:#92805F; padding-top:14px;">{{{more_ready}}}</td>
+              </tr>
+
               <tr>
                 <td align="center" style="padding:28px 0 6px;">
                   <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
                     <tr>
                       <td align="center" bgcolor="#BC6C42" style="background:#BC6C42; border-radius:999px; mso-padding-alt:15px 38px;">
-                        <a href="{{tree_url}}" style="display:inline-block; padding:15px 38px; font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:16px; font-weight:800; line-height:1; color:#FFFFFF; text-decoration:none; border-radius:999px;">
+                        <a href="{{{tree_url}}}" style="display:inline-block; padding:15px 38px; font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:16px; font-weight:800; line-height:1; color:#FFFFFF; text-decoration:none; border-radius:999px;">
                           Open your tree
                         </a>
                       </td>
@@ -133,11 +190,11 @@
           </td>
         </tr>
 
-        <!-- footer: reminders always carry the pause link -->
+        <!-- footer: reminders always carry the promise and the pause link -->
         <tr>
           <td align="center" class="wm-mut" style="padding:22px 12px 0; font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:12.5px; line-height:1.6; color:#92805F;">
             You get this once a week, only while a tree has steps ready.<br>
-            <a href="{{settings_url}}" class="wm-link" style="color:#9D5330; text-decoration:underline;">Pause reminders</a> &middot; <a href="{{settings_url}}" class="wm-link" style="color:#9D5330; text-decoration:underline;">Manage in settings</a><br>
+            <a href="{{{pause_url}}}" class="wm-link" style="color:#9D5330; text-decoration:underline;">Pause reminders</a> &middot; <a href="{{{settings_url}}}" class="wm-link" style="color:#9D5330; text-decoration:underline;">Manage in settings</a><br>
             Windmill &middot; <a href="https://windmill.works" class="wm-link" style="color:#9D5330; text-decoration:none;">windmill.works</a>
           </td>
         </tr>

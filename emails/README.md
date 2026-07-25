@@ -16,7 +16,7 @@ variable — the templates never hardcode a link.
 |------|------|---------|------|
 | `magic-link.html` / `.txt` | `Windmill <sign-in@windmill.works>` | `Your sign-in link` | Returning address requests a link |
 | `magic-link-signup.html` / `.txt` | `Windmill <sign-in@windmill.works>` | `Welcome to Windmill — your sign-in link` | New address requests a link |
-| `reminder.html` / `.txt` | `Windmill <reminders@windmill.works>` | `{{ready_count}} steps are ready · {{tree_name}}` | Steps on a tree became reachable |
+| `reminder.html` / `.txt` | `Windmill <reminders@windmill.works>` | `{{{ready_phrase}}} ready · {{{tree_name}}}` | The weekly slot came round and a tree has steps ready |
 
 Reply-to for every email is `hello@windmill.works` — never a no-reply address.
 The two magic-link mails are the same shell with different words; the server picks
@@ -34,8 +34,10 @@ Each lives as a hidden `<div>` at the top of the HTML and is padded with
 ## Variables
 
 Resend substitutes `{{var}}` in both subject and body. If your engine
-HTML-escapes values, use the triple brace `{{{var}}}` for anything containing a URL
+HTML-escapes values, use the triple-brace form for anything containing a URL
 (the magic link, tree/settings links) so `&`, `=` and `?` survive intact.
+The reminder is triple-braced throughout — a test enforces it, along with the rule
+that every variable below appears in a template and every template variable appears below.
 
 **magic-link / magic-link-signup**
 
@@ -47,17 +49,34 @@ HTML-escapes values, use the triple brace `{{{var}}}` for anything containing a 
 
 | Variable | Meaning |
 |----------|---------|
-| `{{tree_name}}` | Display name, e.g. `Frontend path` |
-| `{{tree_url}}` | Deep link, e.g. `https://windmill.works/t/frontend-path` |
-| `{{done}}` / `{{total}}` | Progress counters, e.g. `9` / `24` |
-| `{{ready_count}}` | Count of newly-ready steps (subject line) |
-| `{{settings_url}}` | Pause-reminders link, e.g. `https://windmill.works/settings` |
-| `{{#each ready_steps}}` | Rows to render; each item has `{{label}}` and `{{color}}` (a hex string for the dot) |
+| `{{{tree_name}}}` | Display name, e.g. `Frontend path` |
+| `{{{tree_url}}}` | The OWNER's tree, e.g. `https://windmill.works/#/app/t_1a2b3c` — not the public `/t/:id` share page; a reminder goes to the person whose tree it is |
+| `{{{done}}}` / `{{{total}}}` | Progress counters, e.g. `9` / `24` |
+| `{{{ready_phrase}}}` | The ready count already worded by the server — `1 step`, `3 steps`. Drives the subject and the lede, so the template never has to guess a plural |
+| `{{{more_on_tree}}}` | The in-tree remainder, already worded: `and 4 more on this tree`, or `''` when the three slots show everything ready in the featured tree |
+| `{{{more_ready}}}` | The other-trees line, already worded: `2 other trees have steps ready`, or `''` when this is the only one. The number counts **trees** — the server names the unit, because a bare `+2` reads as steps |
+| `{{{settings_url}}}` | `https://windmill.works/#/settings` — the hash is load-bearing, the app is hash-routed and a bare `/settings` path falls through to the SPA root |
+| `{{{pause_url}}}` | `https://windmill.works/pause.html#t=<secret>` — the one-tap pause. The secret rides in the FRAGMENT, which a browser never puts on the wire, so it never reaches **our** logs; a corporate mail rewriter that percent-encodes the whole URL onto its own domain can still see it. The page only pauses on a button press |
+| `{{{step_1_label}}}` `{{{step_1_color}}}` | First ready step: its text, and its hue as hex |
+| `{{{step_2_label}}}` `{{{step_2_color}}}` | Second slot, or `''` in both fields |
+| `{{{step_3_label}}}` `{{{step_3_color}}}` | Third slot, or `''` in both fields |
 
-If the engine can't iterate over a list (plain `{{var}}` substitution only), replace
-the `{{#each ready_steps}}…{{/each}}` block with fixed rows keyed by
-`{{step_1_label}}` / `{{step_1_color}}`, `{{step_2_*}}`, `{{step_3_*}}` and have the
-backend send empty strings for unused slots. The iterating form is preferred.
+Fixed slots, **not** `{{#each}}`: the engine never sends more than three steps, and fixed
+slots drop a dependency on provider-side iteration. `step_N_color` is one of the six node
+hues rendered to hex by the server and is NEVER user text — it lands inside a `style="…"`
+attribute, and the raw-substitution contract above explicitly does not cover attribute
+positions.
+
+The two remainder lines carry different facts and are therefore two variables, never one:
+`more_on_tree` is about the tree the mail is already showing, `more_ready` is about the others.
+Both are finished sentences — the template counts nothing and pluralises nothing.
+
+An unused slot collapses to invisible space in the HTML (row height is line-height, never
+padding, so an empty label leaves only the 8px dot). The `.txt` twin cannot collapse a line
+it doesn't render — an unused slot leaves an *empty* line there, never a whitespace-only one,
+because trailing spaces are what `format=flowed` clients join and quoted-printable encodes
+as `=20`. A true collapse would need each value to carry its own newline; that is a wire
+change, not a template one.
 
 ## Dark mode
 
@@ -81,4 +100,16 @@ images-off fallback. When a mark ships, swap the header cell for
 ## Compliance note
 
 The auth mails never carry an unsubscribe link (they're strictly transactional). The
-reminder always carries the `Pause reminders` / settings link — keep it when you edit.
+reminder always carries the `Pause reminders` / settings link — keep it when you edit,
+along with the promise line above it. That line ("once a week, only while a tree has
+steps ready") is not decoration: the whole send rule in `windmill-backend/reminders/`
+exists to make it literally true, so changing the copy changes a contract. It states a
+*necessary* condition, not the whole rule — the recently-active window and the new-account
+grace also have to pass, and settings §Reminders is where those are spelled out.
+
+**Not shipped — wave 2:** RFC 8058 `List-Unsubscribe` / `List-Unsubscribe-Post`. Nothing
+sets those headers today, so Gmail's and Yahoo's native unsubscribe button does not appear
+on a Windmill reminder. It wants a `headers` field on the Resend payload plus a form-encoded
+endpoint; that one IS a one-click POST, which is safe, unlike a bare GET link in the body —
+and it is also the answer to a link scanner that runs JavaScript *and* presses buttons. Until
+it lands, the in-body pause link and the settings link are the whole opt-out story.

@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pause reminders — Windmill</title>
+    <meta name="description" content="Turn off Windmill's weekly reminder email for your account." />
+    <link rel="canonical" href="https://windmill.works/pause.html" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="theme-color" content="#F9F5EB" />
+    <meta name="color-scheme" content="light" />
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <style>
+      /* Design tokens resolved from src/styles/tokens/{fonts,colors,typography,motion}.css — system fallback stacks, no bundled woff2. */
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #F9F5EB; color: #211B13; font-family: 'Nunito', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+      .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+      .hdr { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 24px; padding-bottom: 24px; }
+      .mark { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 21px; color: #211B13; text-decoration: none; }
+      .acts { display: flex; align-items: center; gap: 10px; }
+      .btn { display: inline-block; border: 0; border-radius: 999px; font-family: inherit; font-weight: 800; font-size: 12.5px; padding: 7px 15px; text-decoration: none; cursor: pointer; transition: background 150ms cubic-bezier(0.16, 1, 0.3, 1), color 150ms cubic-bezier(0.16, 1, 0.3, 1); }
+      .btn--pri { background: #BC6C42; color: #FFFFFF; }
+      .btn--pri:hover { background: #9D5330; }
+      .btn--gho { color: #6F5F45; }
+      .btn--gho:hover { background: #F1EADA; color: #211B13; }
+      .btn--lg { font-size: 15px; padding: 13px 26px; }
+      .doc { max-width: 560px; padding: 56px 0 24px; }
+      .doc h1 { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 34px; letter-spacing: -0.02em; margin: 0; }
+      .doc p { font-size: 15.5px; line-height: 1.65; color: #6F5F45; margin: 14px 0 0; }
+      .doc strong { color: #211B13; }
+      .doc a { color: #9D5330; }
+      .doc a:hover { color: #7C3F23; }
+      .doc .btn--pri, .doc .btn--pri:hover { color: #FFFFFF; }
+      .act { margin-top: 26px; }
+      .doc .note { font-size: 13px; line-height: 1.6; color: #92805F; margin-top: 16px; }
+      .ftr { border-top: 1px solid #E5D9C0; margin-top: 72px; padding-top: 28px; padding-bottom: 40px; display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 12px; }
+      .fmark { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 16px; color: #6F5F45; }
+      .ftag { font-size: 13.5px; color: #92805F; margin-left: 10px; }
+      .flinks { display: flex; gap: 24px; font-size: 14px; flex-wrap: wrap; }
+      .flinks a { color: #92805F; text-decoration: none; }
+      .flinks a:hover { color: #211B13; }
+
+      /* One document, five faces. The face is chosen by <html data-pause>, stamped before first
+         paint below, so the reader never sees the button flash past a state it isn't in. With no
+         JavaScript at all nothing here shows and the <noscript> line stands in its place — which
+         is the safe way round: a page that can only pause by running our script is a page a link
+         scanner can't pause through. */
+      .st { display: none; }
+      html[data-pause="ready"] .st--ready { display: block; }
+      html[data-pause="working"] .st--working { display: block; }
+      html[data-pause="done"] .st--done { display: block; }
+      html[data-pause="none"] .st--none { display: block; }
+      html[data-pause="failed"] .st--failed { display: block; }
+    </style>
+    <script>try{var t=new URLSearchParams((location.hash||"").replace(/^#/,"")).get("t");document.documentElement.setAttribute("data-pause",t?"ready":"none")}catch(e){document.documentElement.setAttribute("data-pause","none")}</script>
+    <script>try{var h=JSON.parse(localStorage.getItem("windmill:auth-hint")||"null");document.documentElement.setAttribute("data-auth",h&&h.status==="signed-in"&&h.user?"in":"out")}catch(e){document.documentElement.setAttribute("data-auth","out")}</script>
+    <style>html[data-auth=in] .au-out{display:none}html[data-auth=out] .au-in{display:none}</style>
+    <script defer src="/nav-auth.js"></script>
+  </head>
+  <body>
+    <header class="wrap hdr">
+      <a class="mark" href="/#/">Windmill</a>
+      <div class="acts">
+        <a class="btn btn--gho au-out" href="/#/">Log in</a>
+        <a class="btn btn--pri au-out" href="/#/app">Start your tree</a>
+        <a class="btn btn--gho au-in" href="/#/settings" data-authname>My account</a>
+        <a class="btn btn--pri au-in" href="/#/app">My trees</a>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <article class="doc">
+        <noscript>
+          <h1>Pause reminders</h1>
+          <p>This page needs JavaScript to pause anything — deliberately, so that a mail app opening the link on its own can never switch your reminders off.</p>
+          <p>Open <a href="/#/settings">account settings</a> and turn the weekly reminder off there instead. Same result, one tap.</p>
+        </noscript>
+
+        <section class="st st--ready">
+          <h1>Pause reminders</h1>
+          <p>This turns off Windmill’s weekly reminder email for your account. Nothing else changes — your trees, your progress and the way you sign in all stay exactly as they are, and you can switch reminders back on any time in settings.</p>
+          <div class="act"><button id="pause" type="button" class="btn btn--pri btn--lg">Pause reminders</button></div>
+          <p class="note">We only do it when you press the button. Mail apps and company link scanners open the links in an email on their own, and none of them should get to decide this for you.</p>
+        </section>
+
+        <section class="st st--working">
+          <h1>Pausing…</h1>
+          <p>One moment.</p>
+        </section>
+
+        <section class="st st--done">
+          <h1>Pause requested</h1>
+          <p>We’ve asked to turn the weekly email off for the account that link belongs to.</p>
+          <p>This page never confirms whether the code in your link was still good — deliberately, because that is what stops a guessed or forwarded link from telling anyone anything about anybody. So if the link was old, or already used, nothing changed. <strong>Account settings always shows the truth.</strong></p>
+          <div class="act"><a class="btn btn--pri btn--lg" href="/#/settings">Open account settings</a></div>
+        </section>
+
+        <section class="st st--none">
+          <h1>This link is missing its code</h1>
+          <p>The part that says which account to pause rides after the <strong>#</strong> in the address, and some mail apps trim it when they rewrite a link. Nothing is wrong with your account.</p>
+          <p>Open account settings and switch the weekly reminder off there — same result, one tap.</p>
+          <div class="act"><a class="btn btn--pri btn--lg" href="/#/settings">Open account settings</a></div>
+        </section>
+
+        <section class="st st--failed">
+          <h1>Couldn’t reach windmill.works</h1>
+          <p>The link is still good — check your connection and try again.</p>
+          <div class="act"><button id="retry" type="button" class="btn btn--pri btn--lg">Try again</button></div>
+        </section>
+      </article>
+    </main>
+
+    <footer class="wrap ftr">
+      <div><span class="fmark">Windmill</span><span class="ftag">Any goal, as a skill tree.</span></div>
+      <nav class="flinks">
+        <a href="/gallery">Gallery</a>
+        <a href="/pricing.html">Pricing</a>
+        <a href="/connect.html">Connect your AI tools</a>
+        <a href="/privacy.html">Privacy</a>
+        <a href="/terms.html">Terms</a>
+        <a href="/refunds.html">Refunds</a>
+        <a href="/changelog.html">Changelog</a>
+      </nav>
+    </footer>
+
+    <script>
+      // The pause itself. Two rules hold this page up, and both are about the same danger:
+      //
+      //   1. The token rides in the FRAGMENT (/pause.html#t=<secret>), like the magic link — the
+      //      part of a URL a browser never puts on the wire, so the secret stays out of OUR access
+      //      logs, referrers and proxy traces. Not out of everyone's: a corporate mail rewriter
+      //      that percent-encodes the whole URL onto its own domain carries the fragment along
+      //      with it. The mechanism is still the right one — the claim is just narrower than
+      //      "nobody ever sees it".
+      //   2. Nothing is sent until a person presses the button. Outlook and corporate link
+      //      scanners fetch every URL in an email before the reader ever sees it; a pause that
+      //      happened on GET would quietly switch off people who never clicked.
+      //
+      // The server answers 204 whether or not the token matches, on purpose — it must never work
+      // as an oracle for guessed tokens — so a success here means "we asked", not "it was you".
+      // The copy on the done state says exactly that rather than claiming more than we know.
+      (function () {
+        var root = document.documentElement;
+        var button = document.getElementById('pause');
+        var retry = document.getElementById('retry');
+        var token = null;
+        try {
+          token = new URLSearchParams((location.hash || '').replace(/^#/, '')).get('t');
+        } catch (e) { /* a hash we can't parse is a link without a code */ }
+
+        function send() {
+          if (!token) { root.setAttribute('data-pause', 'none'); return; }
+          root.setAttribute('data-pause', 'working');
+          fetch('/v1/reminders/pause', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ token: token })
+          }).then(function (response) {
+            if (!response.ok) { root.setAttribute('data-pause', 'failed'); return; }
+            root.setAttribute('data-pause', 'done');
+            // The secret has done its one job. Take it out of the address bar so it can't be
+            // copied out of a screenshot, shared, or walked back to from history.
+            try { history.replaceState(null, '', location.pathname); } catch (e) { /* file:// and the like */ }
+          }).catch(function () { root.setAttribute('data-pause', 'failed'); });
+        }
+
+        if (button) button.addEventListener('click', send);
+        if (retry) retry.addEventListener('click', send);
+      })();
+    </script>
+  </body>
+</html>

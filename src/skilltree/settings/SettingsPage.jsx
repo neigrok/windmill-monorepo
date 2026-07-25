@@ -1,6 +1,7 @@
 // The settings home (X6 §5) — windmill.works/#/settings, the plain account chrome shared
-// with /connect, reached from the seat's "Account settings" row. Signed in, it renders the
-// four sections and nothing else: Profile, Connected tools, Sessions & devices, Your data.
+// with /connect, reached from the seat's "Account settings" row. Signed in, it renders its
+// sections in order and nothing else — several of which draw nothing at all when the feature
+// behind them isn't a thing on this server yet, which is how the page stays short.
 // A ghost visitor gets the same calm copy-gate /connect uses — a line and the sign-in door,
 // never a wall — because the worst case of auth is the product's normal signed-out state.
 
@@ -11,6 +12,7 @@ import { requestMagicLink } from '../auth/AuthClient.js';
 import { SignInDialog } from '../auth/SignInDialog.jsx';
 import { Button } from '../../components';
 import { ProfileSection } from './ProfileSection.jsx';
+import { ReminderSection } from './ReminderSection.jsx';
 import { PlanSection } from './PlanSection.jsx';
 import { TendingSection } from './TendingSection.jsx';
 import { ConnectedToolsSection } from './ConnectedToolsSection.jsx';
@@ -32,6 +34,7 @@ export function SettingsPage() {
         {status === 'loading' ? null : signedIn ? (
           <>
             <ProfileSection />
+            <ReminderSection />
             <PlanSection />
             <TendingSection />
             <ConnectedToolsSection />
