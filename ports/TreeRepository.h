@@ -43,6 +43,17 @@ struct OwnedTree {
   std::uint64_t updatedAt = 0;
 };
 
+// One row of the public wall: the same projected document and structural timestamp, plus the
+// two facts a gallery card needs that a registry row doesn't — how many trees were forked from
+// it, and whose journey it shows (a shared tree shows its OWNER's progress, so the wall joins
+// the owner's overlay, not the reader's).
+struct ListedTree {
+  TreeData data;
+  std::uint64_t updatedAt = 0;
+  int forks = 0;
+  UserId owner;
+};
+
 // Only the two facts an access decision needs. `load` drags every node, edge and kind row off
 // disk to rebuild the CRDT state; a caller that just asks "may this reader see it?" — the unfurl
 // card, most notably, which anyone may request — must not pay for the whole lattice to answer it.
@@ -84,6 +95,10 @@ struct TreeRepository {
   // The trees a user owns, newest-touched excluded from ordering here (the domain orders).
   // Soft-deleted trees are never returned.
   virtual std::vector<OwnedTree> listOwnedBy(const UserId& owner) = 0;
+  // Every tree its owner listed publicly, for the gallery wall. Visibility is this query's own
+  // filter — private and unlisted trees are never candidates — so the wall cannot leak a tree
+  // whose owner didn't ask to be listed. Unowned and soft-deleted trees are never returned.
+  virtual std::vector<ListedTree> listPublic() = 0;
   // Retire a tree by stamping deleted_at; every read filters it out afterwards.
   virtual void softDelete(const TreeId& tree) = 0;
   // Write the title register (and touch updated_at). The closed-room seam only — a live

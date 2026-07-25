@@ -32,9 +32,11 @@
 
 	# The app's own backend: REST + /v1/socket (WebSocket), MCP, the OAuth authorization-server
 	# endpoints, the OAuth discovery documents, the /t/:id share pages (served with per-tree
-	# unfurl meta), and the /og/:id.png unfurl cards the og:image tags point at. Hash-routed SPA
-	# otherwise (try_files is a net).
-	@backend path /v1/* /t/* /og/* /mcp /mcp/* /oauth/* /.well-known/oauth-authorization-server /.well-known/oauth-authorization-server/* /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/* /.well-known/openid-configuration /.well-known/openid-configuration/*
+	# unfurl meta), the /gallery public wall (gallery.html with the card grid spliced in), and the
+	# /og/:id.png unfurl cards the og:image tags point at. Hash-routed SPA otherwise (try_files is
+	# a net). NOTE /gallery is exact — the static gallery.html beside it must keep being served by
+	# the file server, or the template would recursively proxy to itself.
+	@backend path /v1/* /t/* /og/* /gallery /mcp /mcp/* /oauth/* /.well-known/oauth-authorization-server /.well-known/oauth-authorization-server/* /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/* /.well-known/openid-configuration /.well-known/openid-configuration/*
 	handle @backend {
 		reverse_proxy server:8080
 	}

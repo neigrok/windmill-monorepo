@@ -9,6 +9,7 @@
 #include "adapters/http/ComposeApi.h"
 #include "adapters/http/EventsApi.h"
 #include "adapters/http/FeedbackApi.h"
+#include "adapters/http/GalleryApi.h"
 #include "adapters/http/HttpApi.h"
 #include "adapters/http/McpKeyApi.h"
 #include "adapters/http/OAuthApi.h"
@@ -150,6 +151,12 @@ int main() {
   const char* webRootEnv = std::getenv("WINDMILL_WEB_ROOT");
   auto sharePageApi =
       std::make_shared<SharePageApi>(registry, trees, authService, ogVideos, webRootEnv ? webRootEnv : "");
+
+  // The public wall (public-gallery): GET /gallery renders every LISTED tree as a real anchor in
+  // the served HTML, ranked by the forks it inspired. It is the path that was missing — a public
+  // tree's share page has always been indexable, but nothing linked to it, so neither a crawler
+  // nor a stranger arriving from one shared tree could ever find the next one.
+  auto galleryApi = std::make_shared<GalleryApi>(trees, progress, webRootEnv ? webRootEnv : "");
 
   // The per-user tree registry (create + list + rename + delete). Reads are repo-direct;
   // rename goes through RoomRegistry so a live room's title stays coherent with the column.
@@ -696,6 +703,15 @@ int main() {
       "/t/{id}",
       [sharePageApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
         sharePageApi->page(req, std::move(cb), id);
+      },
+      {drogon::Get});
+
+  // The public wall. Unauthenticated by design — it lists only trees whose owners asked to be
+  // listed, and every card links straight to that tree's own share page.
+  app.registerHandler(
+      "/gallery",
+      [galleryApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        galleryApi->page(req, std::move(cb));
       },
       {drogon::Get});
 

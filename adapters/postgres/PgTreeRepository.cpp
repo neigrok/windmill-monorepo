@@ -273,28 +273,57 @@ std::vector<OwnedTree> PgTreeRepository::listOwnedBy(const UserId& owner) {
   std::vector<OwnedTree> owned;
   owned.reserve(rows.size());
   for (const auto& row : rows) {
-    TreeId id{row["id"].as<std::string>()};
-    std::string title = row["title"].as<std::string>();
-    // The registry summary needs only each present node's id and color (count, done,
-    // dominant kind) — one narrow indexed read, not the whole lattice.
-    pqxx::result nodes = txn.exec_params(
-        "SELECT node_id, color FROM tree_nodes WHERE tree_id = $1 AND present", id.str());
-    TreeData data;
-    data.id = id;
-    data.title = title;
-    for (const auto& n : nodes) {
-      NodeSpec spec;
-      spec.id = NodeId{n["node_id"].as<std::string>()};
-      spec.color = parseColor(n["color"].as<std::string>()).value_or(NodeColor::terracotta);
-      data.nodes.push_back(std::move(spec));
-    }
-    if (data.nodes.empty()) {  // a pre-rows tree not yet opened: fall back to the legacy blob
-      GraphState state = graphStateFromJson(parse(row["document"].as<std::string>()));
-      data = LooseGraph(state).toTreeData(id, title);
-    }
+    TreeData data = projectDocument(txn, TreeId{row["id"].as<std::string>()}, row["title"].as<std::string>(),
+                                    row["document"].as<std::string>());
     owned.push_back(OwnedTree{std::move(data), static_cast<std::uint64_t>(row["updated_ms"].as<long long>())});
   }
   return owned;
+}
+
+TreeData PgTreeRepository::projectDocument(pqxx::work& txn, const TreeId& tree, const std::string& title,
+                                           const std::string& documentBlob) {
+  pqxx::result nodes = txn.exec_params(
+      "SELECT node_id, color FROM tree_nodes WHERE tree_id = $1 AND present", tree.str());
+  TreeData data;
+  data.id = tree;
+  data.title = title;
+  for (const auto& n : nodes) {
+    NodeSpec spec;
+    spec.id = NodeId{n["node_id"].as<std::string>()};
+    spec.color = parseColor(n["color"].as<std::string>()).value_or(NodeColor::terracotta);
+    data.nodes.push_back(std::move(spec));
+  }
+  if (!data.nodes.empty()) return data;
+  // A pre-rows tree not yet opened: fall back to the legacy blob.
+  GraphState state = graphStateFromJson(parse(documentBlob));
+  return LooseGraph(state).toTreeData(tree, title);
+}
+
+std::vector<ListedTree> PgTreeRepository::listPublic() {
+  pqxx::work txn{pgThreadConnection(connString_)};
+  // Every listed tree, unbounded: listing is a deliberate, rare owner act, so the candidate set
+  // is small by construction. Ordering and the wall's cap belong to the domain (domain/Gallery.h)
+  // and are deliberately NOT duplicated here — if this set ever grows past one query's worth,
+  // that is a materialized wall, not a silent LIMIT that would quietly change the ranking rule.
+  pqxx::result rows = txn.exec_params(
+      "SELECT t.id, t.title, t.owner_id::text AS owner_id, t.document::text, "
+      "(extract(epoch from t.updated_at) * 1000)::bigint AS updated_ms, "
+      "(SELECT count(*) FROM trees f WHERE f.forked_from = t.id AND f.deleted_at IS NULL) AS forks "
+      "FROM trees t "
+      "WHERE t.visibility = 'public' AND t.deleted_at IS NULL AND t.owner_id IS NOT NULL");
+
+  std::vector<ListedTree> listed;
+  listed.reserve(rows.size());
+  for (const auto& row : rows) {
+    ListedTree entry;
+    entry.data = projectDocument(txn, TreeId{row["id"].as<std::string>()}, row["title"].as<std::string>(),
+                                 row["document"].as<std::string>());
+    entry.updatedAt = static_cast<std::uint64_t>(row["updated_ms"].as<long long>());
+    entry.forks = row["forks"].as<int>();
+    entry.owner = UserId{row["owner_id"].as<std::string>()};
+    listed.push_back(std::move(entry));
+  }
+  return listed;
 }
 
 void PgTreeRepository::softDelete(const TreeId& tree) {

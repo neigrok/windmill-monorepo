@@ -138,6 +138,22 @@ struct FakeTreeRepository : TreeRepository {
     }
     return owned;
   }
+  std::vector<ListedTree> listPublic() override {
+    std::vector<ListedTree> listed;
+    for (const auto& [id, stored] : byId) {
+      if (deletedIds.count(id)) continue;
+      if (!stored.owner) continue;
+      if (stored.visibility != Visibility::public_) continue;  // the query's own visibility filter
+      ListedTree entry;
+      entry.data = LooseGraph(stored.state).toTreeData(TreeId{id}, stored.title.value);
+      entry.updatedAt = updatedAt.count(id) ? updatedAt.at(id) : 0;
+      entry.owner = *stored.owner;
+      for (const auto& [forkId, from] : forkedFrom)
+        if (from == id && !deletedIds.count(forkId)) entry.forks++;
+      listed.push_back(std::move(entry));
+    }
+    return listed;
+  }
   void softDelete(const TreeId& tree) override { deletedIds.insert(tree.str()); }
   void rename(const TreeId& tree, const Lww<std::string>& title) override {
     auto it = byId.find(tree.str());

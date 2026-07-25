@@ -75,6 +75,12 @@ alter table trees alter column visibility set default 'private';
 
 -- the registry list: a caller's live (not soft-deleted) trees, keyed by owner
 create index if not exists trees_owner on trees (owner_id) where deleted_at is null;
+-- fork counts, asked constantly and never indexed until now: loadForkLineage runs "how many trees
+-- were forked from this one" on EVERY share-page render, and the gallery wall asks it once per
+-- listed tree. Both were sequential scans of the whole table.
+create index if not exists trees_forked_from on trees (forked_from) where deleted_at is null;
+-- the public wall: the listed set is a small slice of a table that is mostly private trees.
+create index if not exists trees_public on trees (visibility) where visibility = 'public' and deleted_at is null;
 
 -- The tree lattice, one row per CRDT entry. An edit upserts only the rows it touched —
 -- the old whole-document write pushed the entire tree (descriptions can be KBs per node)

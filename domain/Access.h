@@ -9,8 +9,10 @@ namespace wm {
 
 // A tree's read authorization — the single stored visibility axis. Enforcement is binary: a
 // private tree is owner-only, while unlisted and public are both readable by anyone holding
-// the id. `public_` reserves a future crawl/gallery intent (no listing endpoint exists yet),
-// so today it enforces exactly as `unlisted`.
+// the id. The third value is not a third permission but a second, narrower CONSENT layered on
+// the same read: `unlisted` means "reachable by link", `public_` means "and list me" — it is
+// what puts a tree on the gallery wall (domain/Gallery.h) and lets its share page be indexed.
+// So the two read alike and are chosen differently, deliberately.
 enum class Visibility { private_, unlisted, public_ };
 
 // Parse the stored column text, fail-closed: an unknown or malformed value reads as private,

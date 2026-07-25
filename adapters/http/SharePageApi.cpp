@@ -1,52 +1,15 @@
 #include "adapters/http/SharePageApi.h"
 
 #include "adapters/http/Caller.h"
+#include "adapters/http/PageShell.h"
 #include "application/TreeRoom.h"
 #include "domain/Tree.h"
 
 #include <exception>
-#include <fstream>
 #include <mutex>
 #include <optional>
-#include <sstream>
 
 namespace wm {
-
-namespace {
-std::string htmlEscape(const std::string& text) {
-  std::string out;
-  out.reserve(text.size());
-  for (char c : text) {
-    switch (c) {
-      case '&': out += "&amp;"; break;
-      case '<': out += "&lt;"; break;
-      case '>': out += "&gt;"; break;
-      case '"': out += "&quot;"; break;
-      case '\'': out += "&#39;"; break;
-      default: out += c;
-    }
-  }
-  return out;
-}
-
-std::string readShell(const std::string& webRoot) {
-  if (webRoot.empty()) return {};
-  std::ifstream file(webRoot + "/index.html", std::ios::binary);
-  if (!file) return {};
-  std::ostringstream buffer;
-  buffer << file.rdbuf();
-  return buffer.str();
-}
-
-drogon::HttpResponsePtr htmlResponse(std::string body) {
-  auto resp = drogon::HttpResponse::newHttpResponse();
-  resp->setStatusCode(drogon::k200OK);
-  resp->setContentTypeCode(drogon::CT_TEXT_HTML);
-  resp->addHeader("Cache-Control", "public, max-age=300");
-  resp->setBody(std::move(body));
-  return resp;
-}
-}
 
 SharePageApi::SharePageApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
                            std::shared_ptr<AuthService> auth, std::shared_ptr<OgVideoRepository> videos,
@@ -57,12 +20,6 @@ SharePageApi::SharePageApi(std::shared_ptr<RoomRegistry> registry, std::shared_p
 std::string SharePageApi::renderShell(const std::string& shell, const std::string& title,
                                       std::size_t steps, Visibility visibility, const std::string& id,
                                       const ForkLineage& lineage, bool hasVideo) {
-  static const std::string startTag = "<!-- meta:unfurl:start -->";
-  static const std::string endTag = "<!-- meta:unfurl:end -->";
-  const std::size_t start = shell.find(startTag);
-  const std::size_t end = shell.find(endTag);
-  if (start == std::string::npos || end == std::string::npos || end < start) return shell;
-
   const std::string safeTitle = htmlEscape(title.empty() ? "Untitled tree" : title);
   const std::string host = "https://windmill.works";
   const std::string url = host + "/t/" + htmlEscape(id);
@@ -116,17 +73,17 @@ std::string SharePageApi::renderShell(const std::string& shell, const std::strin
   meta += "    <meta name=\"twitter:description\" content=\"" + description + "\" />\n";
   meta += "    <meta name=\"twitter:image\" content=\"" + image + "\" />\n    ";
 
-  return shell.substr(0, start + startTag.size()) + meta + shell.substr(end);
+  return spliceBetween(shell, "<!-- meta:unfurl:start -->", "<!-- meta:unfurl:end -->", meta);
 }
 
 void SharePageApi::page(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& id) {
-  const std::string shell = readShell(webRoot_);
+  const std::string shell = readWebFile(webRoot_, "index.html");
   if (shell.empty()) {
     // The web root is misconfigured (no shell to serve). Bounce the human to the working
     // hash route so the tree still opens; scrapers get nothing to unfurl, which is fine for
     // a deploy-error fallback. The target is the id the caller already holds — no leak.
-    callback(htmlResponse("<!doctype html><meta http-equiv=\"refresh\" content=\"0;url=/#/t/"
-                          + htmlEscape(id) + "\">"));
+    callback(htmlPage("<!doctype html><meta http-equiv=\"refresh\" content=\"0;url=/#/t/"
+                      + htmlEscape(id) + "\">"));
     return;
   }
 
@@ -157,7 +114,7 @@ void SharePageApi::page(const drogon::HttpRequestPtr& req, HttpCallback&& callba
   // A cheap SELECT 1 (never the bytes) that decides whether the og:video tag is emitted — taken
   // only for a readable tree, so a private/absent tree never fires it and "private = absent" holds.
   const bool hasVideo = readable && videos_->has(id);
-  callback(htmlResponse(readable ? renderShell(shell, title, steps, visibility, id, lineage, hasVideo) : shell));
+  callback(htmlPage(readable ? renderShell(shell, title, steps, visibility, id, lineage, hasVideo) : shell));
 }
 
 }

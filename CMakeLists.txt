@@ -16,6 +16,7 @@ add_library(windmill_domain
   domain/UnlockRules.cpp
   domain/TreeHealth.cpp
   domain/TreeSummary.cpp
+  domain/Gallery.cpp
   domain/Auth.cpp
   domain/OAuth.cpp
   domain/Tending.cpp)
@@ -69,6 +70,7 @@ add_executable(windmill_domain_tests
   test/domain/UnlockRulesTest.cpp
   test/domain/TreeHealthTest.cpp
   test/domain/TreeSummaryTest.cpp
+  test/domain/GalleryTest.cpp
   test/application/TreeRegistryTest.cpp
   test/application/ForkServiceTest.cpp
   test/application/TreeRoomTest.cpp
@@ -110,7 +112,9 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     adapters/postgres/PgSubscriptionRepository.cpp
     adapters/postgres/PgTendRunRepository.cpp
     adapters/http/HttpApi.cpp
+    adapters/http/PageShell.cpp
     adapters/http/SharePageApi.cpp
+    adapters/http/GalleryApi.cpp
     adapters/http/OgImageApi.cpp
     adapters/http/OgVideoApi.cpp
     adapters/http/AuthApi.cpp
@@ -178,6 +182,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/adapters/http/RateLimiterTest.cpp
     test/adapters/http/HttpApiTest.cpp
     test/adapters/http/SharePageApiTest.cpp
+    test/adapters/http/GalleryApiTest.cpp
     test/adapters/http/OgImageApiTest.cpp
     test/adapters/http/OgVideoApiTest.cpp
     test/adapters/http/TreeRegistryApiTest.cpp
