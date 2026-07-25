@@ -59,6 +59,9 @@
       .meta { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 11.5px; font-weight: 700; color: #6F5F45; }
       .meta .sep { display: block; width: 3px; height: 3px; border-radius: 50%; background: #C9BCA0; flex: none; }
       .meta .forks { color: #92805F; }
+      /* Lineage is last on the line and the only thing allowed to clip: .meta is a nowrap flex
+         row, so a long source title would otherwise push the n/m off the card edge. */
+      .meta .from { color: #92805F; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
       /* The empty wall. Not an error — an invitation, and honest about why it's bare. It is a
          child of the same grid the cards fill, so it must claim every column or it renders as a
