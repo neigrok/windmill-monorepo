@@ -693,3 +693,30 @@ behind the OG card, the PNG, the gallery thumb and the GIF.
   `commit({ countsAsDecline })` makes the caller vouch for the second door; the phone spends its
   period ask without ever counting it. Worth grepping other "safe because X exists" rules for the
   same gap.
+
+## Mobile canon, wave 1 (X8 §1 · §5 · §6 · §10)
+
+- **A model that returns a thing twice will be rendered twice.** `buildOutline` put the branch head
+  at `rows[0]` AND named it `section.head`; `ListView` dutifully drew both — a fold header and a
+  checkable row, same node, two affordances, on every section of every tree. The shape was the bug:
+  the head is the section (canon §2), so it must appear in exactly one place in the model. Rows are
+  now what hangs BENEATH a head, and the head is rendered once — as a row carrying the fold and the
+  branch tally. **When a value is reachable by two names, one render will use each.**
+- **A floating control cannot be cleared by a scroller that can't see it.** The list padded its
+  bottom only while a keyboard was up, so the Tend bar and its starter chips sat on live rows with
+  no way to scroll them clear — and the numbers that would have fixed it (`pillLift`'s `216`, `300`,
+  `18 + 50 + 12`) were already hand-arithmetic about controls the list never measured. The lane is a
+  real element now (`ActionLane`): it seats the pill, the Tend bar and Share, measures from its own
+  top edge to the bottom of the screen, and reports that. The list pads by the measurement. A tenant
+  can come and go (the starter chips only exist while the bar is idle and empty) and the clearance
+  follows for free. **Anything that overlaps a scroller should publish its own height, never let the
+  scroller guess it.**
+- **Three affordances on one line need three elements.** Making the fruit the check-off control
+  (§6) was impossible while the row line was itself a `<button>` — a button inside a button. The row
+  is now a carrier div holding a seat (fruit, 24px visual in a 44px pseudo-element hit), an opener,
+  and the fold; the swipe/hold pointer stream still rides the carrier, so the gesture work is
+  untouched. **Nesting is the tell: if a new control can't be added without nesting interactives,
+  the container was doing two jobs.**
+- The `commit({ countsAsDecline })` precondition from the entry above is now MET: the action lane's
+  right slot is the phone's standing Share door, so the guard is gone and every surface counts a
+  faded offer as a decline. The parameter stays — it is the next doorless surface's honest escape.

@@ -20,6 +20,7 @@ import { BottomSheet } from './ui/mobile/BottomSheet.jsx';
 import { MobileEditorSheet } from './ui/mobile/MobileEditorSheet.jsx';
 import { AimBar, RemoveLinkBar } from './ui/mobile/AimBar.jsx';
 import { BulkBar } from './ui/mobile/BulkBar.jsx';
+import { ActionLane, LaneButton } from './ui/mobile/ActionLane.jsx';
 import ListView from './list/ListView.jsx';
 import ViewPill from './list/ViewPill.jsx';
 import { SwitcherSheet } from './list/SwitcherSheet.jsx';
@@ -405,6 +406,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   const [hasLocalEdits, setHasLocalEdits] = useState(false); // local edits overlaid on the authored seed
   const [reloadKey, setReloadKey] = useState(0); // bump to re-run the load pipeline (e.g. after reset)
   const [shareOpen, setShareOpen] = useState(false); // the Share dialog (link + the week's card)
+  const [laneInset, setLaneInset] = useState(0); // px of the screen bottom the action lane occupies (it measures itself)
   const [shortcutsOpen, setShortcutsOpen] = useState(false); // the keyboard-shortcuts help overlay (editor only)
   const [treeVisibility, setTreeVisibility] = useState(null); // server stance on this tree: 'private'|'unlisted'|'public'|null
   const [treeMine, setTreeMine] = useState(false); // is the signed-in caller this tree's owner
@@ -1526,11 +1528,11 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
         });
         if (weekOffer.offer) {
           armWeekOffer(() => {
-            // The ask is spent the moment it goes out, and counts as declined until taken — but only
-            // where the share menu can hand the card back. The phone chrome carries no Share door
-            // yet, so a toast that fades there is the only door closing, never a refusal, and two of
-            // them must not strand a phone owner with no way back. Pass `true` once that door lands.
-            weekOffer.commit({ countsAsDecline: breakpoint === 'desktop' });
+            // The ask is spent the moment it goes out, and counts as declined until taken. Every
+            // surface that can make the offer now carries a standing Share door — the control bar
+            // on desktop, the action lane's right slot below it (X8 §10) — so a toast left to fade
+            // is a refusal everywhere, and retirement can never strand an owner.
+            weekOffer.commit({ countsAsDecline: true });
             const count = weekOffer.lit.length;
             showToast(`${weekOffer.period.label} · ${count} step${count === 1 ? '' : 's'} lit`, {
               duration: 6000,
@@ -1996,15 +1998,15 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     return undefined;
   }, [scene, listActive]);
 
-  // The pill lifts over whatever owns the bottom edge (F2), mirroring the Recenter-above-Fork
+  // The lane lifts over whatever else owns the bottom edge (F2), mirroring the Recenter-above-Fork
   // rhythm: a peeking sheet in the tree view, or the Fork CTA on a shared/demotion page (either
   // view). Resting state only — dragging the sheet past its peek may cover it, which is fine.
   const sheetOpenNow = readOnly && phone && !!selectedNode && !aim && !removing && !multiMode && !sheetHeld && view !== 'list';
   const forkPresent = readOnly && (shared || !!demotion) && !demotion?.cardOpen;
-  const pillLift = Math.max(
+  const laneLift = Math.max(
     0,
-    sheetOpenNow ? (mobileEditable ? 300 : 216) + 12 - 24 : 0,
-    forkPresent ? (18 + 50 + 12) - 24 : 0,
+    sheetOpenNow ? (mobileEditable ? 300 : 216) + 12 - 16 : 0,
+    forkPresent ? (18 + 50 + 12) - 16 : 0,
   );
 
   // The anon owner's honest "sign in to keep it" line is the list header's own notice row (F3) —
@@ -2474,6 +2476,24 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   // retarget remounts). A stranger's share leaves mobileEditable false → the read-only detail.
   const mobileSurface = activeSurface({ multiMode, aim, removing, selectedNode });
 
+  // The action lane's three tenants (X8 §5). None of them depends on which view is live, so
+  // flipping the pill moves nothing on the rail; the Tend bar yields the centre to any open
+  // editing surface (you're editing one node, not telling the whole tree), and Share stands
+  // for as long as there is a tree to share.
+  const lanePill = listReady ? <ViewPill view={view} onSwitch={switchView} /> : null;
+  const laneTend = canTend && breakpoint !== 'desktop' && mobileSurface === 'empty' ? (
+    <TendBar
+      variant="phone"
+      working={tendWorking}
+      placeholder={tree && tree.nodes.length === 0 ? 'What do you want to learn or build?' : 'Tell the tree what to change…'}
+      examples={tree && tree.nodes.length > 0 ? ['Is this realistic?', 'What am I missing?'] : []}
+      onSubmit={submitTend}
+    />
+  ) : null;
+  const laneShare = mobileEditable && tree && tree.nodes.length > 0 ? (
+    <LaneButton icon="share" label="Share" onClick={() => setShareOpen(true)} />
+  ) : null;
+
   return (
     <div className={`st-root ${panning ? 'panning' : ''}`} ref={rootRef}>
       <canvas
@@ -2521,6 +2541,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
             active={listActive}
             prefs={viewPrefs}
             treeId={treeId}
+            laneInset={laneInset}
             portalTarget={rootRef.current}
             editable={mobileEditable}
             switcher={mobileEditable ? () => setSwitcherOpen(true) : undefined}
@@ -2587,10 +2608,15 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
         />
       )}
 
-      {/* The view-switch pill (X8): floating bottom-left, present in both views for both
-          audiences, phone-only, hidden while the tree is empty or still loading. It's a
-          tool — its own look and fixed placement live in list.css. */}
-      {listReady && <ViewPill view={view} onSwitch={switchView} lift={pillLift} />}
+      {/* The action lane (X8 §5) — the one band verbs live in below the desktop breakpoint, because
+          the top of a scrolling list can't be reached by a thumb. The view pill takes the left slot
+          (phone-only, hidden while the tree is empty or loading), the Tend bar the centre, and Share
+          the right: the owner's standing share door, the twin of a visitor's Fork pill, and the one
+          the week-card offer needs to exist before it may retire (§10, og-progress-card.md). The
+          lane measures what it occupies and the list pads its scroller by that. */}
+      {(lanePill || laneTend || laneShare) && (
+        <ActionLane lift={laneLift} onHeight={setLaneInset} left={lanePill} center={laneTend} right={laneShare} />
+      )}
 
       {/* The tree-switcher door (X8 L6): the list header's caret opens this half-sheet of the
           owner's trees. Mounted only for the list's owner (a visitor header is a plain label);
@@ -2608,19 +2634,10 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
         />
       )}
 
-      {/* The Tend bar. Phone: it rides the bottom edge when nothing else owns that space (an open
-          editing surface takes precedence — you're editing one node, not telling the whole tree).
-          Desktop: summoned to centre with ⌘K / `/` over a soft scrim. Both only for an owner of an
-          armed, editable tree; the prompt reads "build" on an empty tree, "change" once it has steps. */}
-      {canTend && breakpoint !== 'desktop' && mobileSurface === 'empty' && (
-        <TendBar
-          variant="phone"
-          working={tendWorking}
-          placeholder={tree && tree.nodes.length === 0 ? 'What do you want to learn or build?' : 'Tell the tree what to change…'}
-          examples={tree && tree.nodes.length > 0 ? ['Is this realistic?', 'What am I missing?'] : []}
-          onSubmit={submitTend}
-        />
-      )}
+      {/* The Tend bar, desktop: summoned to centre with ⌘K / `/` over a soft scrim. Below the
+          desktop breakpoint it is the action lane's centre tenant (assembled above). Both only for
+          an owner of an armed, editable tree; the prompt reads "build" on an empty tree, "change"
+          once it has steps. */}
       {canTend && breakpoint === 'desktop' && tendOpen && (
         <TendBar
           variant="desktop"

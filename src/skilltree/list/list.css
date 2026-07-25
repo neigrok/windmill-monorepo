@@ -14,13 +14,15 @@
 /* No blue iOS flash on any of the list's tap targets — the row/chip flash is our own. */
 .st-list-notice,
 .st-list-row-line,
-.st-list-sec,
+.st-list-row-open,
+.st-list-seat,
+.st-list-fold,
 .st-list-chip,
 .st-list-viewpill-seg,
 .st-list-name-btn,
 .st-list-desc-edit,
 .st-list-verb,
-.st-list-foot-btn,
+.st-list-edit-btn,
 .st-list-swatch-hit,
 .st-list-addrow,
 .st-list-picker-row,
@@ -140,13 +142,15 @@
   color: var(--text-tertiary);
 }
 
-/* ---- The one scroller ---- */
+/* ---- The one scroller. Its bottom clears the action lane by what the lane measured itself to
+   occupy (§5) — the host sets --lane-inset; the fallback only covers the frame before it does —
+   plus a row's worth of air, so the last step never kisses the pill. ---- */
 .st-list-body {
   flex: 1 1 auto;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  padding: var(--space-2) 0 calc(120px + env(safe-area-inset-bottom, 0px));
+  padding: var(--space-2) 0 calc(var(--lane-inset, 132px) + var(--space-3));
 }
 
 /* ---- Next-up shelf: ≤3 ready steps, hidden entirely when none ---- */
@@ -173,19 +177,26 @@
   gap: var(--space-2);
 }
 
-/* ---- Section header: fold control + branch summary ---- */
-.st-list-sec {
-  display: flex;
+/* ---- Branch head: a row like any other (it IS the section, §2), reading as a heading, with the
+   fold on the trailing edge so the fruit stays in the one column every row shares ---- */
+.st-list-row--head {
+  margin-top: 6px;
+}
+.st-list-row--head .st-list-name {
+  font-size: 14.5px;
+}
+.st-list-fold {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  margin: -10px -12px -10px 0;
+  display: inline-flex;
   align-items: center;
-  gap: 9px;
-  width: 100%;
-  min-height: 44px;
-  padding: var(--space-1) var(--space-4);
+  justify-content: center;
+  padding: 0;
   border: 0;
   background: none;
   cursor: pointer;
-  text-align: left;
-  font-family: var(--font-body);
 }
 .st-list-chevron {
   display: inline-flex;
@@ -196,22 +207,6 @@
 .st-list-chevron--open {
   transform: rotate(90deg);
 }
-.st-list-sec-dot {
-  flex-shrink: 0;
-  width: 9px;
-  height: 9px;
-  border-radius: var(--radius-full);
-}
-.st-list-sec-label {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-secondary);
-}
 .st-list-sec-count {
   flex-shrink: 0;
   font-family: var(--font-mono);
@@ -220,7 +215,8 @@
   color: var(--text-tertiary);
 }
 
-/* ---- Row: fruit · name · one meta fact; expands into a card in place ---- */
+/* ---- Row: the seat (fruit) · the opener (name · one meta fact) · the fold, on branch heads.
+   Three targets, one line — the line itself is only their carrier and the swipe's canvas. ---- */
 .st-list-row {
   position: relative;
   display: block;
@@ -242,7 +238,6 @@
   border: 0;
   border-radius: 13px;
   background: transparent;
-  cursor: pointer;
   text-align: left;
   font-family: var(--font-body);
   /* A held row must not raise the native long-press callout or select its own text (M5). */
@@ -255,6 +250,21 @@
 }
 .st-list-row--expanded .st-list-row-line:active {
   background: transparent;
+}
+/* The opener: everything between the fruit and the fold, and the row's own tap target (§3). */
+.st-list-row-open {
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-body);
 }
 .st-list-name-group {
   flex: 1;
@@ -290,6 +300,27 @@
 .st-list-lock {
   display: inline-flex;
   flex-shrink: 0;
+}
+
+/* ---- The seat: the fruit IS the control (§6), so its 24px of state carries a 44px hit. The hit
+   is a pseudo-element so it costs the row no layout, and it takes the layer above its neighbours
+   so the opener beside it can never steal the finger. ---- */
+.st-list-seat {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.st-list-seat::after {
+  content: '';
+  position: absolute;
+  inset: -10px;
 }
 
 /* ---- Fruit: the kind × state treatment (24px) ---- */
@@ -434,12 +465,8 @@
   box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--k-base) 35%, transparent);
 }
 
-/* ---- View switch pill: a tool, never a kind — bark, not a hue ---- */
+/* ---- View switch pill: a tool, never a kind — bark, not a hue. The action lane places it. ---- */
 .st-list-viewpill {
-  position: fixed;
-  left: calc(env(safe-area-inset-left, 0px) + 14px);
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 24px + var(--pill-lift, 0px));
-  z-index: 21;
   display: inline-flex;
   align-items: center;
   gap: 2px;
@@ -448,7 +475,6 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-full);
   box-shadow: var(--shadow-md);
-  transition: bottom var(--duration-fast) var(--ease-standard);
 }
 .st-list-viewpill-seg {
   width: 46px;
@@ -620,17 +646,19 @@
   box-shadow: 0 2px 12px var(--k-glow);
 }
 
-/* ---- Quiet foot: Recolor on the left, Delete (with its cost) in brick on the right ---- */
-.st-list-foot {
+/* ---- The structural edits (P3, §1): a quiet wrapping strip at the card's foot — add · connect ·
+   recolor · delete. Available, never featured; the delete carries its cost and takes the last
+   line to itself so the cost is read before the tap (§8). ---- */
+.st-list-edits {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-2);
 }
-.st-list-foot-btn {
+.st-list-edit-btn {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   min-height: 44px;
   padding: 0 4px;
   border: 0;
@@ -647,7 +675,7 @@
   height: 12px;
   border-radius: var(--radius-full);
 }
-.st-list-foot-del {
+.st-list-edit-del {
   margin-left: auto;
   color: var(--color-danger);
 }
@@ -711,7 +739,7 @@
 /* ---- Press feedback: every new control answers a tap with the list's surface-press treatment,
    the same one the rows and picker rows already use. ---- */
 .st-list-verb:active,
-.st-list-foot-btn:active,
+.st-list-edit-btn:active,
 .st-list-addrow:active,
 .st-list-name-btn:active,
 .st-list-desc-edit:active,
@@ -1026,15 +1054,12 @@
     animation: st-list-card-in 150ms var(--ease-soft) !important;
   }
   /* Movement, dropped: the chevron still points the right way (rotate applies instantly, no
-     tween); the header/switcher progress fills snap to width; the pill lifts without sliding. */
+     tween); the header/switcher progress fills snap to width. */
   .st-list-chevron {
     transition: none;
   }
   .st-list-header-fill,
   .st-switcher-fill {
-    transition: none;
-  }
-  .st-list-viewpill {
     transition: none;
   }
 }

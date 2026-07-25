@@ -1,13 +1,12 @@
 // The Tend bar (guidelines/tending.md §2, §3) — the thin input you tell the tree what to change,
-// and watch it do it. Phone: a bar riding the bottom edge over the canvas. Desktop: the same bar
-// summoned to centre with ⌘K / `/`, over a soft scrim. One field, no mode switch; the working state
-// is a thinking line with X6's breathing dot, never a spinner. The effects are the reply — the tree
-// reflows live and a receipt lands — so nothing here scrolls back like a chat.
+// and watch it do it. Phone: the action lane's centre tenant, full width above the rail (X8 §5).
+// Desktop: the same bar summoned to centre with ⌘K / `/`, over a soft scrim. One field, no mode
+// switch; the working state is a thinking line with X6's breathing dot, never a spinner. The
+// effects are the reply — the tree reflows live and a receipt lands — so nothing here scrolls
+// back like a chat.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from '../../components';
-
-const SAFE_BOTTOM = 'env(safe-area-inset-bottom, 0px)';
 
 export function TendBar({ variant = 'phone', placeholder = 'Tell the tree what to change…', examples = [], working, onSubmit, onDismiss }) {
   const [value, setValue] = useState('');
@@ -107,10 +106,7 @@ const send = {
   border: 'none', borderRadius: 'var(--radius-full)', background: 'var(--color-brand)', color: 'var(--text-on-accent)',
   cursor: 'pointer', transition: 'opacity var(--duration-fast) var(--ease-standard)',
 };
-const phoneForm = {
-  position: 'absolute', left: 12, right: 12, zIndex: 22,
-  bottom: `calc(${SAFE_BOTTOM} + 16px)`, pointerEvents: 'auto',
-};
+const phoneForm = { width: '100%' }; // the lane places it; the bar only fills the slot it is given
 const scrim = {
   position: 'absolute', inset: 0, zIndex: 30, display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
   paddingTop: '18vh', background: 'rgba(33,27,19,.14)', pointerEvents: 'auto',

@@ -12,7 +12,7 @@ function node(id, prerequisites, extra = {}) {
   return { id, label: id.toUpperCase(), prerequisites, ...extra };
 }
 
-test('buildOutline — root above sections, heads carry their DFS subtree with head at depth 1', () => {
+test('buildOutline — root above sections, heads carry the DFS walk BENEATH them, from depth 2', () => {
   const t = tree([
     node('r', []),
     node('a', ['r'], { order: 'a' }),
@@ -25,10 +25,30 @@ test('buildOutline — root above sections, heads carry their DFS subtree with h
   assert.deepEqual(buildOutline(t), {
     rootId: 'r',
     sections: [
-      { head: 'a', rows: [{ id: 'a', depth: 1 }, { id: 'a1', depth: 2 }, { id: 'a1x', depth: 3 }, { id: 'a2', depth: 2 }] },
-      { head: 'b', rows: [{ id: 'b', depth: 1 }] },
+      { head: 'a', rows: [{ id: 'a1', depth: 2 }, { id: 'a1x', depth: 3 }, { id: 'a2', depth: 2 }] },
+      { head: 'b', rows: [] },
     ],
   });
+});
+
+// The head IS the section (canon §2), so it is rendered once — as the section's own row. A head
+// that also sat in its rows would render twice: a fold header and a step, same node, two hit
+// targets, different affordances.
+test('buildOutline — a section head never appears among its own rows', () => {
+  const t = tree([
+    node('r', []),
+    node('a', ['r'], { order: 'a' }),
+    node('b', ['r'], { order: 'b' }),
+    node('a1', ['a']),
+  ]);
+
+  for (const section of buildOutline(t).sections) {
+    assert.equal(section.rows.some((row) => row.id === section.head), false);
+  }
+  assert.deepEqual(buildOutline(t).sections, [
+    { head: 'a', rows: [{ id: 'a1', depth: 2 }] },
+    { head: 'b', rows: [] },
+  ]);
 });
 
 test('buildOutline — section order follows the order register, not the node-list order', () => {
@@ -52,12 +72,12 @@ test('buildOutline — a multi-parent step lands once, under the first parent th
 
   const outline = buildOutline(t);
   assert.deepEqual(outline.sections, [
-    { head: 'a', rows: [{ id: 'a', depth: 1 }, { id: 'shared', depth: 2 }] },
-    { head: 'b', rows: [{ id: 'b', depth: 1 }] },
+    { head: 'a', rows: [{ id: 'shared', depth: 2 }] },
+    { head: 'b', rows: [] },
   ]);
 });
 
-test('buildOutline — a root child also reachable from an earlier section drops its empty section', () => {
+test('buildOutline — a root child already placed under an earlier section keeps no section of its own', () => {
   const t = tree([
     node('r', []),
     node('a', ['r'], { order: 'a' }),
@@ -66,7 +86,7 @@ test('buildOutline — a root child also reachable from an earlier section drops
 
   const outline = buildOutline(t);
   assert.deepEqual(outline.sections, [
-    { head: 'a', rows: [{ id: 'a', depth: 1 }, { id: 'c', depth: 2 }] },
+    { head: 'a', rows: [{ id: 'c', depth: 2 }] },
   ]);
 });
 
@@ -81,7 +101,6 @@ test('buildOutline — indent-cap-worthy depths are reported raw (rendering caps
   ]);
 
   assert.deepEqual(buildOutline(t).sections[0].rows, [
-    { id: 'a', depth: 1 },
     { id: 'a1', depth: 2 },
     { id: 'a2', depth: 3 },
     { id: 'a3', depth: 4 },
@@ -99,8 +118,8 @@ test('buildOutline — a multi-root tree has no root row and each root is a sect
   assert.deepEqual(buildOutline(t), {
     rootId: null,
     sections: [
-      { head: 'p', rows: [{ id: 'p', depth: 1 }, { id: 'p1', depth: 2 }] },
-      { head: 'q', rows: [{ id: 'q', depth: 1 }] },
+      { head: 'p', rows: [{ id: 'p1', depth: 2 }] },
+      { head: 'q', rows: [] },
     ],
   });
 });

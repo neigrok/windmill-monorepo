@@ -1,8 +1,10 @@
-// The outline shape (X8 L2): the list is the tree read top-to-bottom. Section heads are the
-// root's children in the canvas's own order (cmpOrder — the fractional-index register the
-// RadialLayoutEngine sorts by), and each section is a depth-first walk of that head's subtree.
-// A global `placed` set carries across sections so a multi-parent step lands once, under the
-// first parent the walk reaches; depth counts rings below the head, the head itself depth 1.
+// The outline shape (X8 L2): the list is the tree read top-to-bottom. Sections ARE branches —
+// the root's children in the canvas's own order (cmpOrder, the fractional-index register the
+// RadialLayoutEngine sorts by) — and a section's rows are a depth-first walk of what hangs
+// BENEATH its head. The head is the section, so it never appears among its own rows: one step,
+// one row, one place to tap. A global `placed` set carries across sections so a multi-parent
+// step lands once, under the first parent the walk reaches; depth counts rings from the root,
+// the head itself depth 1 and its children depth 2.
 // Everything the list reads that isn't rendering — the shelf, the fruit treatment, the indent
 // rule, the progress tally and crown — lives here, pure: the same model the canvas draws.
 
@@ -22,9 +24,11 @@ export function buildOutline(tree) {
   const placed = new Set(single ? [rootId] : []);
   const sections = [];
   for (const head of heads) {
+    if (placed.has(head.id)) continue; // an earlier section already gave this step its one row
+    placed.add(head.id);
     const rows = [];
-    walk(tree, head, 1, placed, rows);
-    if (rows.length > 0) sections.push({ head: head.id, rows });
+    for (const child of tree.childrenOf(head.id).slice().sort(cmpOrder)) walk(tree, child, 2, placed, rows);
+    sections.push({ head: head.id, rows });
   }
 
   return { rootId, sections };

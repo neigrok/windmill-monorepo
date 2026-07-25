@@ -1,8 +1,7 @@
-// The view switch (X8 L1): a floating cream pill, two icon segments — list and tree — one tap
-// apart. It is a tool, never a kind, so it wears bark, not a hue. Present in both views for
-// both audiences; the active segment fills bark with a white glyph. Purely presentational —
-// the host owns which view is live and persists the choice. Positioning lives in list.css; the
-// host passes a `lift` (px) so the pill rises over a peeking sheet or the Fork CTA, never buried.
+// The view switch (X8 L1): a cream pill, two icon segments — list and tree — one tap apart. It is
+// a tool, never a kind, so it wears bark, not a hue. Present in both views for both audiences; the
+// active segment fills bark with a white glyph. Purely presentational — the host owns which view
+// is live and persists the choice, and the action lane owns where the pill sits (its left slot).
 
 import React from 'react';
 
@@ -30,9 +29,9 @@ const SEGMENTS = [
   { view: 'tree', label: 'Tree view', glyph: TREE_GLYPH },
 ];
 
-export function ViewPill({ view, onSwitch, lift = 0 }) {
+export function ViewPill({ view, onSwitch }) {
   return (
-    <div className="st-list-viewpill" role="group" aria-label="Switch view" style={{ '--pill-lift': `${lift}px` }}>
+    <div className="st-list-viewpill" role="group" aria-label="Switch view">
       {SEGMENTS.map((segment) => (
         <button
           key={segment.view}

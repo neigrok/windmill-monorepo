@@ -75,7 +75,11 @@ function flashRow(row) {
   return setTimeout(() => row.classList.remove('st-list-row--flash'), FLASH_MS);
 }
 
-export function ListView({ tree, nodesById, states, completedAt = {}, legend, header, notice, selectedId, onSelect, active, prefs, treeId, editable = false, handlers, portalTarget, switcher, multiMode = false, selectedIds, onEnterMulti, onToggleMember }) {
+// Until the action lane has measured itself (one frame), the body clears a lane's worth of the
+// screen on faith — never zero, because a row born under the Tend bar cannot be scrolled clear.
+const LANE_FALLBACK_PX = 132;
+
+export function ListView({ tree, nodesById, states, completedAt = {}, legend, header, notice, selectedId, onSelect, active, prefs, treeId, laneInset = 0, editable = false, handlers, portalTarget, switcher, multiMode = false, selectedIds, onEnterMulti, onToggleMember }) {
   const bodyRef = useRef(null);
   const rowsRef = useRef(new Map());
   const fieldRef = useRef(null); // the .st-list-field wrapper of whichever edit input is focused
@@ -255,7 +259,7 @@ export function ListView({ tree, nodesById, states, completedAt = {}, legend, he
     if (el) rows.set(id, el); else rows.delete(id);
   };
 
-  const renderRow = (id, depth, isRoot) => {
+  const renderRow = (id, depth, isRoot, section) => {
     const node = nodesById.get(id);
     if (!node) return null;
     const state = states.get(id) ?? 'locked';
@@ -274,6 +278,7 @@ export function ListView({ tree, nodesById, states, completedAt = {}, legend, he
           edits={edits}
           tree={tree}
           states={states}
+          section={section}
           multiMode={multiMode}
           selected={selectedIds?.has(id) ?? false}
           onEnterMulti={onEnterMulti}
@@ -289,7 +294,10 @@ export function ListView({ tree, nodesById, states, completedAt = {}, legend, he
     );
   };
 
-  const bodyStyle = kbInset > 0 ? { paddingBottom: `calc(120px + env(safe-area-inset-bottom, 0px) + ${kbInset}px)` } : undefined;
+  // The scroller clears the action lane by what the lane actually occupies (§5) — the host
+  // measures it, because its height moves with its tenants (the Tend bar's starter chips come
+  // and go) — plus the keyboard when one is up (§7).
+  const bodyStyle = { '--lane-inset': `${(laneInset > 0 ? laneInset : LANE_FALLBACK_PX) + kbInset}px` };
 
   return (
     <div className="st-list">
@@ -303,17 +311,20 @@ export function ListView({ tree, nodesById, states, completedAt = {}, legend, he
         {outline.sections.map((section) => {
           const open = !folded.has(section.head);
           const head = nodesById.get(section.head);
-          const secDone = section.rows.reduce((count, row) => count + (states.get(row.id) === 'complete' ? 1 : 0), 0);
+          // The branch's tally counts the head with its steps — the head is part of the branch,
+          // not a label above it — and the same row carries the fold, so it is rendered ONCE.
+          const branch = [section.head, ...section.rows.map((row) => row.id)];
+          const secDone = branch.reduce((count, id) => count + (states.get(id) === 'complete' ? 1 : 0), 0);
           const budAtEnd = editable && !multiMode && edit?.mode === 'add' && edit.section && edit.parentId === section.head;
           return (
             <div className="st-list-section" key={section.head}>
-              <SectionHeader
-                node={head}
-                open={open}
-                done={secDone}
-                total={section.rows.length}
-                onToggle={() => toggleSection(section.head)}
-              />
+              {renderRow(section.head, 1, false, {
+                open,
+                foldable: section.rows.length > 0,
+                done: secDone,
+                total: branch.length,
+                onToggle: () => toggleSection(section.head),
+              })}
               {open && section.rows.map((row) => renderRow(row.id, row.depth, false))}
               {open && editable && !multiMode && (
                 budAtEnd ? (
@@ -392,18 +403,6 @@ function NextUpShelf({ ready, nodesById, states, onJump }) {
   );
 }
 
-function SectionHeader({ node, open, done, total, onToggle }) {
-  const hue = hueOf(node?.color ?? DEFAULT_NODE_COLOR);
-  return (
-    <button type="button" className="st-list-sec" onClick={onToggle} aria-expanded={open}>
-      <span className={`st-list-chevron${open ? ' st-list-chevron--open' : ''}`} aria-hidden>{CHEVRON}</span>
-      <span className="st-list-sec-dot" style={{ background: hue.base }} aria-hidden />
-      <span className="st-list-sec-label">{node?.label || 'Untitled branch'}</span>
-      <span className="st-list-sec-count">{done}/{total}</span>
-    </button>
-  );
-}
-
 // A single edit field — the one input the keyboard is ever attached to. Focuses on mount (and
 // selects, for a single-line rename), commits on Enter (shift+Enter is a newline in a textarea),
 // reverts on Escape, and — so a tap on the hint doesn't drop the edit — commits a short beat
@@ -475,7 +474,11 @@ function Bud({ hue, depth, commit, cancel, registerField }) {
   );
 }
 
-function Row({ node, state, hue, depth, isRoot, crown, completedAt, expanded, edits, tree, states, multiMode, selected, onEnterMulti, onToggleMember, onToggle, onJump, registerRow }) {
+// A row is three targets on one line, never one that means three things (§3): the fruit marks it
+// done, the chevron folds the branch (head rows only), and everything between them opens the card.
+// A branch head IS its section (§2), so it wears the fold and the branch tally and is rendered
+// exactly once — as a row like any other, with the same fruit and the same card.
+function Row({ node, state, hue, depth, isRoot, crown, completedAt, expanded, edits, tree, states, section, multiMode, selected, onEnterMulti, onToggleMember, onToggle, onJump, registerRow }) {
   const treatment = treatmentOf(state);
   const rowRef = useRef(null);
   const lineRef = useRef(null);
@@ -589,9 +592,11 @@ function Row({ node, state, hue, depth, isRoot, crown, completedAt, expanded, ed
     if (swallowTimer.current) { clearTimeout(swallowTimer.current); swallowTimer.current = null; }
   };
 
+  const label = node.label || 'Untitled step';
+
   const nameGroup = (
     <span className="st-list-name-group">
-      <span className={`st-list-name${treatment === 'locked' ? ' st-list-name--locked' : ''}`}>{node.label || 'Untitled step'}</span>
+      <span className={`st-list-name${treatment === 'locked' ? ' st-list-name--locked' : ''}`}>{label}</span>
       {crown && <span className="st-list-crown" aria-label="Tree complete"><Icon name="crown" size={14} color="var(--accent-gold-500)" /></span>}
     </span>
   );
@@ -605,68 +610,75 @@ function Row({ node, state, hue, depth, isRoot, crown, completedAt, expanded, ed
 
   const cardOpen = expanded && !multiMode;
 
-  let line;
+  // §6 — the fruit IS the control: 24px of state in a 44px hit, the same object that shows it.
+  // The root never toggles (the crown is earned) and a locked step has nothing to offer, so both
+  // wear the fruit as plain state. The card's Mark done button stays as the visible twin (§3).
+  const toggle = edits && !multiMode && !isRoot ? progressVerb(state) : null;
+
+  let seat;
   if (multiMode) {
-    line = (
-      <button type="button" className="st-list-row-line st-list-row-line--check" aria-pressed={selected} onClick={() => onToggleMember?.(node.id)}>
+    seat = (
+      <button type="button" className="st-list-seat" aria-pressed={selected} aria-label={`${selected ? 'Deselect' : 'Select'} ${label}`} onClick={() => onToggleMember?.(node.id)}>
         <CheckSeat selected={selected} />
-        {nameGroup}
-        {meta}
       </button>
     );
-  } else if (edits?.renaming === node.id) {
-    line = (
-      <div className="st-list-row-line st-list-row-line--editing">
+  } else if (toggle) {
+    seat = (
+      <button
+        type="button"
+        className="st-list-seat"
+        aria-label={`${toggle === 'complete' ? 'Mark done' : 'Mark not done'}: ${label}`}
+        onClick={() => (toggle === 'complete' ? edits.markDone(node.id) : edits.markUndone(node.id))}
+      >
         <Fruit hue={hue} state={state} />
-        <EditField multiline={false} initial={node.label ?? ''} placeholder="Name this step" hint="↵ save · esc cancel" commit={(value) => edits.commitRename(node.id, value)} cancel={() => edits.closeField('rename', node.id)} registerField={edits.registerField} />
-      </div>
+      </button>
+    );
+  } else {
+    seat = <span className="st-list-seat"><Fruit hue={hue} state={state} /></span>;
+  }
+
+  // A head with nothing under it is a branch of one: heading weight, but no tally to keep and
+  // nothing to fold. Only a head that actually holds steps earns the count and the chevron.
+  const count = section?.foldable ? <span className="st-list-sec-count">{section.done}/{section.total}</span> : null;
+
+  let body;
+  if (edits?.renaming === node.id) {
+    body = (
+      <EditField multiline={false} initial={node.label ?? ''} placeholder="Name this step" hint="↵ save · esc cancel" commit={(value) => edits.commitRename(node.id, value)} cancel={() => edits.closeField('rename', node.id)} registerField={edits.registerField} />
     );
   } else if (edits && expanded) {
-    line = (
-      <div className="st-list-row-line" role="button" tabIndex={0} aria-expanded onClick={onToggle}>
-        <Fruit hue={hue} state={state} />
+    body = (
+      <div className="st-list-row-open" role="button" tabIndex={0} aria-expanded onClick={onToggle}>
         <span className="st-list-name-group">
           <button type="button" className="st-list-name-btn" onClick={(event) => { event.stopPropagation(); edits.startRename(node.id); }}>
-            <span className={`st-list-name${treatment === 'locked' ? ' st-list-name--locked' : ''}`}>{node.label || 'Untitled step'}</span>
+            <span className={`st-list-name${treatment === 'locked' ? ' st-list-name--locked' : ''}`}>{label}</span>
             <span className="st-list-pencil" aria-hidden><Icon name="pencil" size={13} color="var(--text-tertiary)" /></span>
           </button>
           {crown && <span className="st-list-crown" aria-label="Tree complete"><Icon name="crown" size={14} color="var(--accent-gold-500)" /></span>}
         </span>
         {meta}
+        {count}
       </div>
     );
-  } else if (swipeEnabled || holdEnabled) {
-    line = (
-      <button
-        type="button"
-        ref={swipeEnabled ? lineRef : undefined}
-        className={`st-list-row-line${swipeEnabled ? ' st-list-row-line--swipe' : ''}`}
-        aria-expanded={expanded}
-        style={{ touchAction: 'pan-y' }}
-        onClick={onToggle}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerCancel}
-      >
-        <Fruit hue={hue} state={state} />
-        {nameGroup}
-        {meta}
-      </button>
-    );
   } else {
-    line = (
-      <button type="button" className="st-list-row-line" onClick={onToggle} aria-expanded={expanded}>
-        <Fruit hue={hue} state={state} />
+    body = (
+      <button type="button" className="st-list-row-open" aria-expanded={expanded} onClick={multiMode ? () => onToggleMember?.(node.id) : onToggle}>
         {nameGroup}
         {meta}
+        {count}
       </button>
     );
   }
 
+  const fold = section?.foldable ? (
+    <button type="button" className="st-list-fold" aria-expanded={section.open} aria-label={`${section.open ? 'Collapse' : 'Expand'} ${label}`} onClick={section.onToggle}>
+      <span className={`st-list-chevron${section.open ? ' st-list-chevron--open' : ''}`} aria-hidden>{CHEVRON}</span>
+    </button>
+  ) : null;
+
   return (
     <div
-      className={`st-list-row${cardOpen ? ' st-list-row--expanded' : ''}`}
+      className={`st-list-row${section ? ' st-list-row--head' : ''}${cardOpen ? ' st-list-row--expanded' : ''}`}
       style={{ '--indent': `${indentPx(depth)}px` }}
       data-list-row={node.id}
       ref={setRowEl}
@@ -677,7 +689,19 @@ function Row({ node, state, hue, depth, isRoot, crown, completedAt, expanded, ed
           <Icon name="check" size={16} color="#fff" />
         </div>
       )}
-      {line}
+      <div
+        ref={lineRef}
+        className={`st-list-row-line${swipeEnabled ? ' st-list-row-line--swipe' : ''}`}
+        style={swipeEnabled ? { touchAction: 'pan-y' } : undefined}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+      >
+        {seat}
+        {body}
+        {fold}
+      </div>
       {cardOpen && <ExpandedCard node={node} state={state} hue={hue} isRoot={isRoot} tree={tree} states={states} edits={edits} onJump={onJump} />}
     </div>
   );
@@ -729,8 +753,10 @@ function ExpandedCard({ node, state, hue, isRoot, tree, states, edits, onJump })
   const progress = progressVerb(state);
   const currentKind = node.color ?? DEFAULT_NODE_COLOR;
   const swatchKinds = edits.legend.length > 0 ? edits.legend : NODE_COLOR_NAMES.map((h) => ({ id: h, hue: h }));
-  const showHairline = parents.length > 0 || children.length > 0 || !isRoot;
 
+  // The card reads down the priority ladder (§1): what this step is, why it's locked, the one
+  // verb the phone is actually for, then the branch it sits in — and only then the structural
+  // edits. P3 is available and unhurried at the foot; it no longer sets the card's layout.
   return (
     <div className="st-list-card" data-editable="">
       {edits.describing === node.id ? (
@@ -749,21 +775,25 @@ function ExpandedCard({ node, state, hue, isRoot, tree, states, edits, onJump })
         </div>
       )}
 
-      <div className="st-list-verbs">
-        {progress === 'complete' && (
-          <button type="button" className="st-list-verb st-list-verb--done" style={hueVars(hue)} onClick={() => edits.markDone(node.id)}>
-            <Icon name="check" size={16} color="#fff" />Mark done
-          </button>
-        )}
-        {progress === 'uncomplete' && (
-          <button type="button" className="st-list-verb" onClick={() => edits.markUndone(node.id)}>
-            <Icon name="rotate-ccw" size={16} />Mark not done
-          </button>
-        )}
-        <button type="button" className="st-list-verb" onClick={() => edits.startAddSub(node.id)}>
-          <Icon name="plus" size={16} />Add sub-step
-        </button>
-      </div>
+      {progress && (
+        <div className="st-list-verbs">
+          {progress === 'complete' ? (
+            <button type="button" className="st-list-verb st-list-verb--done" style={hueVars(hue)} onClick={() => edits.markDone(node.id)}>
+              <Icon name="check" size={16} color="#fff" />Mark done
+            </button>
+          ) : (
+            <button type="button" className="st-list-verb" onClick={() => edits.markUndone(node.id)}>
+              <Icon name="rotate-ccw" size={16} />Mark not done
+            </button>
+          )}
+        </div>
+      )}
+
+      {(parents.length > 0 || children.length > 0) && <div className="st-list-hairline" />}
+      {parents.length > 0 && <ChipGroup title="Needs" items={parents} states={states} onJump={onJump} />}
+      {children.length > 0 && <ChipGroup title="Unlocks" items={children} states={states} onJump={onJump} />}
+
+      <div className="st-list-hairline" />
 
       {edits.recoloring === node.id ? (
         <div className="st-list-swatches" role="group" aria-label="Recolor this step">
@@ -777,36 +807,25 @@ function ExpandedCard({ node, state, hue, isRoot, tree, states, edits, onJump })
           </div>
         </div>
       ) : (
-        <div className="st-list-foot">
-          <button type="button" className="st-list-foot-btn" onClick={() => edits.startRecolor(node.id)}>
+        <div className="st-list-edits" role="group" aria-label="Edit this step">
+          <button type="button" className="st-list-edit-btn" onClick={() => edits.startAddSub(node.id)}>
+            <Icon name="plus" size={15} />Add step
+          </button>
+          {!isRoot && (
+            <button type="button" className="st-list-edit-btn" onClick={() => edits.openPicker(node.id)}>
+              <Icon name="plus" size={15} />Add need
+            </button>
+          )}
+          <button type="button" className="st-list-edit-btn" onClick={() => edits.startRecolor(node.id)}>
             <span className="st-list-foot-dot" style={{ background: hue.base }} aria-hidden />Recolor
           </button>
           {!isRoot && (
-            <button type="button" className="st-list-foot-btn st-list-foot-del" onClick={() => edits.remove(node.id)}>
+            <button type="button" className="st-list-edit-btn st-list-edit-del" onClick={() => edits.remove(node.id)}>
               <Icon name="trash-2" size={15} color="var(--color-danger)" />{deleteCostLine(children.length)}
             </button>
           )}
         </div>
       )}
-
-      {showHairline && <div className="st-list-hairline" />}
-
-      {(parents.length > 0 || !isRoot) && (
-        <div className="st-list-dag">
-          <div className="st-list-dag-label">Needs</div>
-          <div className="st-list-chips">
-            {parents.map((item) => (
-              <JumpChip key={item.id} item={item} states={states} onJump={onJump} />
-            ))}
-            {!isRoot && (
-              <button type="button" className="st-list-chip st-list-chip--add" onClick={() => edits.openPicker(node.id)}>
-                <Icon name="plus" size={13} />Add a need
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-      {children.length > 0 && <ChipGroup title="Unlocks" items={children} states={states} onJump={onJump} />}
     </div>
   );
 }
