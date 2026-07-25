@@ -10,15 +10,21 @@ import { DEFAULT_NODE_COLOR } from '../theme.js';
 const FEATURED_CAP = 3;
 const KIND_CAP = 2;
 
+// The rank itself, exported because it is the one number the app orders work by — the plan below
+// ranks the ready set with it, and a locked step's frontier (list/explore.js) ranks with it too.
+export function unlocksOf(tree, states, id) {
+  return tree.childrenOf(id).filter((child) =>
+    states.get(child.id) !== 'complete'
+    && child.prerequisites.every((prereqId) => prereqId === id || states.get(prereqId) === 'complete')).length;
+}
+
 export function planNextUp(tree, states) {
   if (tree.nodes.length <= 1) return { mount: false };
 
   const row = (node) => ({
     id: node.id,
     kind: node.color ?? DEFAULT_NODE_COLOR,
-    unlocks: tree.childrenOf(node.id).filter((child) =>
-      states.get(child.id) !== 'complete'
-      && child.prerequisites.every((prereqId) => prereqId === node.id || states.get(prereqId) === 'complete')).length,
+    unlocks: unlocksOf(tree, states, node.id),
   });
   const byRank = (a, b) => b.unlocks - a.unlocks || (a.id < b.id ? -1 : 1);
   const ready = tree.nodes.filter((node) => states.get(node.id) === 'available').map(row).sort(byRank);

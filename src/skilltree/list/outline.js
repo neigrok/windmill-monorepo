@@ -43,15 +43,21 @@ function walk(tree, node, depth, placed, rows) {
   }
 }
 
-// The Next-up shelf (X8 L2): the shared whats-next offer, capped at the limit, minus the single
-// root — you don't "do" the tree's own root as a next step. Multi-root trees have no such root
-// (buildOutline's rootId is null), so their available roots stay in the shelf as true entry steps.
-export function nextUp(tree, states, limit = 3) {
+// The Next-up shelf (X8 L2): the shared whats-next offer minus the single root — you don't "do"
+// the tree's own root as a next step — and the readout counts what the shelf would actually offer,
+// never a step it just refused. Each entry carries the plan's own `unlocks`, the consequence line
+// the shelf prints. Under the lens the question is asked inside one kind, where the plan's
+// two-per-kind mix cap means nothing: featured then overflow is the ready set in rank order within
+// any one kind, so ranking that is the honest answer.
+export function nextUp(tree, states, limit = 3, kind = null) {
   const plan = planNextUp(tree, states);
-  if (!plan.mount || plan.mode !== 'featured') return [];
+  if (!plan.mount || plan.mode !== 'featured') return { entries: [], readyCount: 0 };
   const roots = tree.roots();
   const rootId = roots.length === 1 ? roots[0].id : null;
-  return plan.featured.map((entry) => entry.id).filter((id) => id !== rootId).slice(0, limit);
+  const ofKind = kind ? [...plan.featured, ...plan.overflow].filter((entry) => entry.kind === kind) : plan.featured;
+  const ranked = ofKind.filter((entry) => entry.id !== rootId);
+  const readyCount = kind ? ranked.length : plan.readyCount - (rootId && states.get(rootId) === 'available' ? 1 : 0);
+  return { entries: ranked.slice(0, limit).map((entry) => ({ id: entry.id, unlocks: entry.unlocks })), readyCount };
 }
 
 export function treatmentOf(state) {

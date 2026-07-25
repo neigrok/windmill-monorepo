@@ -124,7 +124,7 @@ test('buildOutline — a multi-root tree has no root row and each root is a sect
   });
 });
 
-test('nextUp — the shared whats-next ranking (unlocks desc → id), kind-capped at two, limit honored', () => {
+test('nextUp — the shared whats-next ranking (unlocks desc → id), kind-capped at two, limit honored, each entry carrying its consequence', () => {
   const t = tree([
     node('r', []),
     node('a', ['r'], { color: 'terracotta' }),
@@ -143,18 +143,71 @@ test('nextUp — the shared whats-next ranking (unlocks desc → id), kind-cappe
 
   // b unlocks 2 (y,z), a unlocks 1 (x), c and d unlock 0. The third terracotta (c) is dropped by
   // the two-per-kind cap; the olive d fills the third slot.
-  assert.deepEqual(nextUp(t, states, 3), ['b', 'a', 'd']);
-  assert.deepEqual(nextUp(t, states, 2), ['b', 'a']);
+  assert.deepEqual(nextUp(t, states, 3), {
+    entries: [{ id: 'b', unlocks: 2 }, { id: 'a', unlocks: 1 }, { id: 'd', unlocks: 0 }],
+    readyCount: 4,
+  });
+  assert.deepEqual(nextUp(t, states, 2), {
+    entries: [{ id: 'b', unlocks: 2 }, { id: 'a', unlocks: 1 }],
+    readyCount: 4,
+  });
 });
 
-test('nextUp — a single root is excluded even while it is the only available step', () => {
+// Under the lens the two-per-kind mix cap means nothing — every offer is that kind — so the shelf
+// ranks the whole ready set of it, and the readout counts that kind alone.
+test('nextUp — the lens ranks within one kind, past the plan mix cap', () => {
+  const t = tree([
+    node('r', []),
+    node('a', ['r'], { color: 'terracotta' }),
+    node('b', ['r'], { color: 'terracotta' }),
+    node('c', ['r'], { color: 'terracotta' }),
+    node('d', ['r'], { color: 'olive' }),
+    node('x', ['a']),
+    node('y', ['b']),
+    node('z', ['b']),
+  ]);
+  const states = new Map([
+    ['r', 'complete'],
+    ['a', 'available'], ['b', 'available'], ['c', 'available'], ['d', 'available'],
+    ['x', 'locked'], ['y', 'locked'], ['z', 'locked'],
+  ]);
+
+  assert.deepEqual(nextUp(t, states, 3, 'terracotta'), {
+    entries: [{ id: 'b', unlocks: 2 }, { id: 'a', unlocks: 1 }, { id: 'c', unlocks: 0 }],
+    readyCount: 3,
+  });
+  assert.deepEqual(nextUp(t, states, 3, 'olive'), {
+    entries: [{ id: 'd', unlocks: 0 }],
+    readyCount: 1,
+  });
+  assert.deepEqual(nextUp(t, states, 3, 'plum'), { entries: [], readyCount: 0 });
+});
+
+// The readout counts what the shelf would offer, never a step it just refused: a root with no
+// prerequisites is available on nearly every incomplete tree, so counting it read "1 ready" over
+// an empty shelf — and "4 ready" over three rows on every tree with one.
+test('nextUp — a single root is excluded from the offer AND from the readout', () => {
   const t = tree([
     node('r', []),
     node('a', ['r']),
   ]);
   const states = new Map([['r', 'available'], ['a', 'locked']]);
 
-  assert.deepEqual(nextUp(t, states, 3), []);
+  assert.deepEqual(nextUp(t, states, 3), { entries: [], readyCount: 0 });
+});
+
+test('nextUp — a complete root was never in the ready count, so the readout is untouched', () => {
+  const t = tree([
+    node('r', []),
+    node('a', ['r']),
+    node('b', ['r']),
+  ]);
+  const states = new Map([['r', 'complete'], ['a', 'available'], ['b', 'available']]);
+
+  assert.deepEqual(nextUp(t, states, 3), {
+    entries: [{ id: 'a', unlocks: 0 }, { id: 'b', unlocks: 0 }],
+    readyCount: 2,
+  });
 });
 
 test('nextUp — a multi-root tree keeps its available roots in the shelf', () => {
@@ -165,14 +218,17 @@ test('nextUp — a multi-root tree keeps its available roots in the shelf', () =
   ]);
   const states = new Map([['p', 'available'], ['q', 'available'], ['p1', 'locked']]);
 
-  assert.deepEqual(nextUp(t, states, 3), ['p', 'q']);
+  assert.deepEqual(nextUp(t, states, 3), {
+    entries: [{ id: 'p', unlocks: 1 }, { id: 'q', unlocks: 0 }],
+    readyCount: 2,
+  });
 });
 
 test('nextUp — no featured offer (blocked, all done, lone bud) yields an empty shelf', () => {
   const pair = tree([node('r', []), node('a', ['r'])]);
-  assert.deepEqual(nextUp(pair, new Map([['r', 'active'], ['a', 'locked']])), []);
-  assert.deepEqual(nextUp(pair, new Map([['r', 'complete'], ['a', 'complete']])), []);
-  assert.deepEqual(nextUp(tree([node('r', [])]), new Map([['r', 'available']])), []);
+  assert.deepEqual(nextUp(pair, new Map([['r', 'active'], ['a', 'locked']])), { entries: [], readyCount: 0 });
+  assert.deepEqual(nextUp(pair, new Map([['r', 'complete'], ['a', 'complete']])), { entries: [], readyCount: 0 });
+  assert.deepEqual(nextUp(tree([node('r', [])]), new Map([['r', 'available']])), { entries: [], readyCount: 0 });
 });
 
 test('treatmentOf — every state maps to its fruit treatment, unknown falls to locked', () => {

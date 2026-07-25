@@ -2,9 +2,16 @@
 // top to bottom. It renders the same model the canvas draws (buildOutline mirrors the canvas
 // order) and grows the edit path in place: rename/describe by tapping the text, a kind-tinted
 // Mark done, a bud row born under any step, a swipe-right accelerator, a recolor swatch row and
-// a needs picker. Every edit dispatches through the `handlers` the host passes; this owns only
-// the fold state, the transient edit field (one at a time), and the jump/scroll/flash/keyboard
-// choreography. The visitor path (editable=false) renders exactly the wave-1 read view.
+// a needs picker. It also carries the three explore primitives (§4), as two surfaces because they
+// are two jobs: the LENS — the legend as a filter row, the first thing in the scroller, persistent
+// and composing with everything — and the LOOKUP, the head's search icon expanding to a field that
+// grows beside identity in the head and ends on a result. A locked card answers "why" with the
+// gate: what you can start now, how much is owed, how deep it runs. Every edit dispatches through
+// the `handlers` the host passes; this owns only the fold state, the lens/lookup state, the
+// transient edit field (one at a time), and the jump/scroll/flash/keyboard choreography. The
+// visitor path (editable=false) renders exactly the wave-1 read view, explore primitives included.
+// The explore surfaces write nothing of their own — though tapping one still blurs an open field,
+// and a blurred field commits (EditField below), which is the edit path finishing, not this one.
 //
 // One scroller — the list body. Kind hues come from theme.js (never CSS, so they read 1:1 with
 // the canvas); everything else is a token, so light/dark and reduced-motion follow the app.
@@ -14,6 +21,7 @@ import { Icon } from '../../components';
 import { NODE_COLORS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../theme.js';
 import { deleteCostLine, progressVerb } from '../ui/mobile/editorSheet.js';
 import { buildOutline, nextUp, treatmentOf, indentPx, progressOf } from './outline.js';
+import { filterOutline, kindOptions, gateOf } from './explore.js';
 import { swipeBegin, swipeMove, swipeEnd, swipeCancel, keyboardPin, stillEditing, holdCancelledByMove, HOLD_MS } from './editing.js';
 import { NeedPicker } from './NeedPicker.jsx';
 import './list.css';
@@ -26,9 +34,23 @@ const CHEVRON = (
   </svg>
 );
 
+const SEARCH_GLYPH = (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="11" cy="11" r="7" />
+    <path d="M21 21l-4.3-4.3" />
+  </svg>
+);
+
+const CLOSE_GLYPH = (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+    <path d="M6 6l12 12M18 6L6 18" />
+  </svg>
+);
+
 const FLASH_MS = 1300;
 const JUMP_OFFSET = 84;
 const BLUR_COMMIT_MS = 140;
+const STATE_WORDS = { done: 'done', ready: 'ready', active: 'in progress', locked: 'locked' };
 
 // Shared across the list package (ListView + NeedPicker): the kind hue lookup, its CSS custom
 // properties, and the reduced-motion query. Exported so the picker reads them 1:1 rather than
@@ -90,9 +112,47 @@ export function ListView({ tree, nodesById, states, completedAt = {}, legend, he
   const [recoloring, setRecoloring] = useState(null); // id whose foot shows the swatch row
   const [picker, setPicker] = useState(null); // id we are adding a need to (the half-sheet)
   const [born, setBorn] = useState(null); // a freshly-created/linked row to scroll to and flash once it mounts
+  const [lens, setLens] = useState(null); // the kind the legend row is holding the list to, or null for All
+  const [lookup, setLookup] = useState(null); // { query } while the head's search field is open, else null
+  const [revealed, setRevealed] = useState(() => new Set()); // section heads the finger opened in full under a filter
+  const [back, setBack] = useState(null); // { id, label } — the one step of "back" a jump leaves behind
 
   const outline = useMemo(() => (tree ? buildOutline(tree) : { rootId: null, sections: [] }), [tree]);
-  const ready = useMemo(() => (tree ? nextUp(tree, states, 3) : []), [tree, states]);
+  const kinds = useMemo(() => (tree ? kindOptions(tree, legend) : []), [tree, legend]);
+  const query = lookup?.query ?? '';
+  const searching = lookup !== null;
+
+  // The lens narrows what's next (§4 rev — "what's next in Backend" is the question, not noise);
+  // the lookup hides the shelf instead, because "next up matching auth" is incoherent.
+  const { entries: ready, readyCount } = useMemo(
+    () => (tree ? nextUp(tree, states, 3, lens) : { entries: [], readyCount: 0 }),
+    [tree, states, lens],
+  );
+
+  // Both surfaces narrow the same outline, and an open field with nothing typed still reads as
+  // the plain list — a lookup only starts filtering once there is something to look up.
+  const looking = query.trim() !== '';
+  const filtering = looking || lens !== null;
+  // Never trust the held hue for copy: for one render after its last step is recoloured away, the
+  // lens names a kind with no chip, and "Next up in " is worse than saying nothing.
+  const lensKind = lens ? kinds.find((kind) => kind.hue === lens) ?? null : null;
+  const filtered = useMemo(
+    () => (filtering ? filterOutline(outline, nodesById, { query, kind: lens, revealed }) : null),
+    [filtering, outline, nodesById, query, lens, revealed],
+  );
+
+  // Which rows this view is actually putting on the screen — null when nothing is filtering, since
+  // then every row is. It is the fact behind "the filter is hiding this step", and the only thing
+  // any jump should ever consult (a hue comparison was a proxy, and it missed the root entirely).
+  const shown = useMemo(() => {
+    if (!filtered) return null;
+    const ids = new Set(filtered.root ? [filtered.root.id] : []);
+    for (const section of filtered.sections) {
+      ids.add(section.head);
+      for (const row of section.rows) ids.add(row.id);
+    }
+    return ids;
+  }, [filtered]);
 
   const { done, total, crowned } = tree ? progressOf(tree, states) : { done: 0, total: 0, crowned: false };
 
@@ -105,8 +165,38 @@ export function ListView({ tree, nodesById, states, completedAt = {}, legend, he
     });
   }, [prefs, treeId]);
 
-  const reveal = useCallback((id, flash) => {
-    const section = outline.sections.find((candidate) => candidate.rows.some((row) => row.id === id));
+  // A new ask starts at the top of its own results (the browser would otherwise clamp the old
+  // scroll into the shorter list, landing the eye past the first hit on every keystroke) and drops
+  // both the counts the finger had opened and the way back, which named the world before it.
+  const toTop = useCallback(() => bodyRef.current?.scrollTo({ top: 0, behavior: 'auto' }), []);
+  const ask = useCallback((change) => {
+    change();
+    setRevealed(new Set());
+    setBack(null);
+    toTop();
+  }, [toTop]);
+  const askLens = useCallback((kind) => ask(() => setLens(kind)), [ask]);
+  const askQuery = useCallback((query) => ask(() => setLookup({ query })), [ask]);
+  const clearFilters = useCallback(() => ask(() => {
+    setLens(null);
+    setLookup((current) => (current ? { query: '' } : null));
+  }), [ask]);
+  // The lookup opens and closes on the same quiet icon (✕ and Escape are that same act): closing
+  // clears the query and never the lens. Two surfaces, and neither owns the other.
+  const toggleLookup = useCallback(() => ask(() => setLookup((current) => (current ? null : { query: '' }))), [ask]);
+  const revealSection = useCallback((head) => setRevealed((current) => new Set(current).add(head)), []);
+
+  // Everything that can hide a row, lifted in one place, and then the scroll queued: every path
+  // that moves the eye goes through here, so none of them can land on a row that isn't there.
+  // A filter yields only for a destination the finger chose (§4 rev 4a) — and a fold is unfolded
+  // only when a fold is genuinely what's in the way, because that unfold PERSISTS: rewriting the
+  // user's folds behind a filtered screen, which doesn't even show folds, would be pure damage.
+  const showRow = useCallback((id, flash) => {
+    const hidden = !!shown && !shown.has(id);
+    if (hidden) { setLens(null); setLookup(null); setRevealed(new Set()); }
+    const section = hidden || !filtering
+      ? outline.sections.find((candidate) => candidate.rows.some((row) => row.id === id))
+      : null;
     if (section) {
       setFolded((prev) => {
         if (!prev.has(section.head)) return prev;
@@ -118,9 +208,28 @@ export function ListView({ tree, nodesById, states, completedAt = {}, legend, he
     }
     seqRef.current += 1;
     setPending({ id, flash, seq: seqRef.current });
-  }, [outline, prefs, treeId]);
+  }, [shown, filtering, outline, prefs, treeId]);
 
-  const jumpTo = useCallback((id) => { reveal(id, true); onSelect(id); }, [reveal, onSelect]);
+  // A jump is a move: it ends the lookup — a lookup ends on its result — and leaves one step of
+  // "back" behind, naming where the finger came from. A jump from the shelf has no origin row; its
+  // way back is the shelf itself, at the top.
+  const jumpTo = useCallback((id) => {
+    setLookup(null);
+    setBack(selectedId && selectedId !== id
+      ? { id: selectedId, label: nodesById.get(selectedId)?.label || 'Untitled step' }
+      : { id: null, label: 'Next up' });
+    showRow(id, true);
+    onSelect(id);
+  }, [nodesById, selectedId, showRow, onSelect]);
+
+  // One level, one chip, no stack: going back re-opens the card the jump left and drops the chip.
+  const goBack = useCallback(() => {
+    setBack(null);
+    if (!back) return;
+    if (back.id === null) { toTop(); return; }
+    showRow(back.id, true);
+    onSelect(back.id);
+  }, [back, toTop, showRow, onSelect]);
 
   useLayoutEffect(() => {
     if (!pending) return undefined;
@@ -136,9 +245,26 @@ export function ListView({ tree, nodesById, states, completedAt = {}, legend, he
 
   const wasActive = useRef(false);
   useEffect(() => {
-    if (active && !wasActive.current && selectedId) reveal(selectedId, false);
+    if (active && !wasActive.current && selectedId) showRow(selectedId, false);
     wasActive.current = active;
-  }, [active, selectedId, reveal]);
+  }, [active, selectedId, showRow]);
+
+  // A lens outlives its kind if the last step wearing it is recoloured or deleted while it is
+  // held — and a filter no chip can lift is just an empty screen, so it lets go with the kind.
+  useEffect(() => {
+    if (lens && !kinds.some((kind) => kind.hue === lens)) setLens(null);
+  }, [kinds, lens]);
+
+  // Neither filter crosses the view switch (§4 rev): an invisible lens waiting on the canvas is
+  // the worst of the options, and the legend row is one tap away on return. The way back from a
+  // jump goes with them — it names a place the eye has since left.
+  useEffect(() => {
+    if (active) return;
+    setLens(null);
+    setLookup(null);
+    setBack(null);
+    setRevealed((current) => (current.size === 0 ? current : new Set()));
+  }, [active]);
 
   // Collapsing or switching rows cancels any in-flight edit surface — one transient at a time,
   // and a stale field must never linger on a row the eye has left.
@@ -149,19 +275,27 @@ export function ListView({ tree, nodesById, states, completedAt = {}, legend, he
   }, [selectedId]);
 
   // Entering multi-select is a mode switch (M5): the bulk bar takes the bottom edge and rows
-  // become check seats, so every in-place edit surface closes — the same one-transient discipline.
+  // become check seats, so every in-place edit surface closes — and the filters go with them. A
+  // selection is a set of steps a verb will act on; a filter that hides members of it while the
+  // bar still counts them turns "Delete 3 steps" into two deletions the eye never saw.
   useEffect(() => {
     if (!multiMode) return;
     setEdit(null);
     setRecoloring(null);
     setPicker(null);
+    setLens(null);
+    setLookup(null);
+    setRevealed((current) => (current.size === 0 ? current : new Set()));
   }, [multiMode]);
 
   // A freshly planted or linked row: scroll it into view and flash it once it has actually
   // mounted. The dispatch → re-render is async, so this re-runs as the outline changes until
-  // the row appears, then clears itself — independent of the jump machinery above.
+  // the row appears, then clears itself — independent of the jump machinery above. A step planted
+  // under the lens may not wear its kind, so it takes the same yield as a jump: the view lifts
+  // what is hiding a row the finger just asked for.
   useEffect(() => {
     if (!born) return undefined;
+    if (nodesById.has(born) && shown && !shown.has(born)) { clearFilters(); return undefined; }
     const body = bodyRef.current;
     const row = rowsRef.current.get(born);
     if (!body || !row) return undefined;
@@ -170,12 +304,13 @@ export function ListView({ tree, nodesById, states, completedAt = {}, legend, he
     const timer = flashRow(row);
     setBorn(null);
     return () => clearTimeout(timer);
-  }, [born, outline]);
+  }, [born, outline, nodesById, shown, clearFilters]);
 
-  // The keyboard contract: while an edit field is up, the body pads its bottom by the keyboard
-  // inset the shared hook measures — the same inset the picker lifts its sheet by.
+  // The keyboard contract: while an edit field or the search field is up, the body pads its
+  // bottom by the keyboard inset the shared hook measures — the same inset the picker lifts its
+  // sheet by.
   const editing = edit != null;
-  const kbInset = useKeyboardInset(editing);
+  const kbInset = useKeyboardInset(editing || searching);
 
   // Pin the active field just above the keyboard: scroll the body down to it, never up, never
   // the page. Runs once the field is mounted and again as the measured inset settles.
@@ -259,7 +394,7 @@ export function ListView({ tree, nodesById, states, completedAt = {}, legend, he
     if (el) rows.set(id, el); else rows.delete(id);
   };
 
-  const renderRow = (id, depth, isRoot, section) => {
+  const renderRow = (id, depth, isRoot, section, snippet) => {
     const node = nodesById.get(id);
     if (!node) return null;
     const state = states.get(id) ?? 'locked';
@@ -275,6 +410,7 @@ export function ListView({ tree, nodesById, states, completedAt = {}, legend, he
           crown={!!isRoot && crowned}
           completedAt={completedAt[id]}
           expanded={selectedId === id}
+          snippet={snippet}
           edits={edits}
           tree={tree}
           states={states}
@@ -294,51 +430,122 @@ export function ListView({ tree, nodesById, states, completedAt = {}, legend, he
     );
   };
 
+  // The plant row at a branch's foot (P3) survives the LENS — "add a step to Backend" is the very
+  // next thought after holding Backend — but not the lookup, which is a reading view.
+  const sectionFoot = (headId) => {
+    if (!editable || multiMode || looking) return null;
+    const head = nodesById.get(headId);
+    if (edit?.mode === 'add' && edit.section && edit.parentId === headId) {
+      return <Bud hue={hueOf(head?.color ?? DEFAULT_NODE_COLOR)} depth={2} commit={(value) => commitAdd(headId, value)} cancel={() => closeField('add', headId)} registerField={registerField} />;
+    }
+    return (
+      <button type="button" className="st-list-addrow" style={{ '--indent': `${indentPx(2)}px` }} onClick={() => startEdit({ mode: 'add', parentId: headId, section: true })}>
+        <Icon name="plus" size={14} />
+        <span>Add step to {head?.label || 'branch'}</span>
+      </button>
+    );
+  };
+
+  // Filtered or not, the body hands React the same three slots — root, sections, empty line — and
+  // each section the same four. Swapping an array and an element between slots is the one thing
+  // React cannot reconcile, and it would remount every row (and every ref, gesture and pending
+  // blur-commit with it) on each tap of a kind chip.
+  const rootRow = filtered
+    ? filtered.root && renderRow(filtered.root.id, 1, true, undefined, filtered.root.snippet)
+    : outline.rootId && renderRow(outline.rootId, 1, true);
+
+  const sections = filtered
+    // A head that missed still renders — sections keep their headers so depth survives (§4) — but
+    // dimmed, so the eye reads it as scaffolding. It carries no fold and no tally under a filter:
+    // both would describe the other list.
+    ? filtered.sections.map((section) => (
+      <div className={`st-list-section${section.headMatches ? '' : ' st-list-section--scaffold'}`} key={section.head}>
+        {renderRow(section.head, 1, false, { open: true, foldable: false }, section.headSnippet)}
+        {section.rows.map((row) => renderRow(row.id, row.depth, false, undefined, row.snippet))}
+        {section.hidden > 0 && (
+          <button type="button" className="st-list-more" style={{ '--indent': `${indentPx(2)}px` }} onClick={() => revealSection(section.head)}>
+            +{section.hidden} more in this branch
+          </button>
+        )}
+        {sectionFoot(section.head)}
+      </div>
+    ))
+    : outline.sections.map((section) => {
+      const open = !folded.has(section.head);
+      // The branch's tally counts the head with its steps — the head is part of the branch, not a
+      // label above it — and the same row carries the fold, so it is rendered ONCE.
+      const branch = [section.head, ...section.rows.map((row) => row.id)];
+      const secDone = branch.reduce((count, id) => count + (states.get(id) === 'complete' ? 1 : 0), 0);
+      return (
+        <div className="st-list-section" key={section.head}>
+          {renderRow(section.head, 1, false, {
+            open,
+            foldable: section.rows.length > 0,
+            done: secDone,
+            total: branch.length,
+            onToggle: () => toggleSection(section.head),
+          })}
+          {open && section.rows.map((row) => renderRow(row.id, row.depth, false))}
+          {/* the hidden-count line's slot, empty when nothing is filtering */}
+          {null}
+          {open && sectionFoot(section.head)}
+        </div>
+      );
+    });
+
+  const kindPrefix = lensKind ? `${lensKind.label} ` : '';
+  const emptyLine = filtered && filtered.matches === 0 ? (
+    <div className="st-list-empty">
+      <span>{looking ? `No ${kindPrefix}steps match “${query.trim()}”` : `No ${kindPrefix}steps`}</span>
+      <button type="button" className="st-list-empty-clear" onClick={clearFilters}>Clear filters</button>
+    </div>
+  ) : null;
+
   // The scroller clears the action lane by what the lane actually occupies (§5) — the host
   // measures it, because its height moves with its tenants (the Tend bar's starter chips come
-  // and go) — plus the keyboard when one is up (§7).
-  const bodyStyle = { '--lane-inset': `${(laneInset > 0 ? laneInset : LANE_FALLBACK_PX) + kbInset}px` };
+  // and go) — plus the keyboard when one is up (§7). While the lookup is open the two overlap
+  // rather than stack: the lane is fixed to the layout viewport, so the keyboard is already
+  // sitting on top of it, and reserving both would leave a sliver of results between two fields.
+  const lane = laneInset > 0 ? laneInset : LANE_FALLBACK_PX;
+  const bodyStyle = { '--lane-inset': `${searching ? Math.max(lane, kbInset) : lane + kbInset}px` };
 
   return (
     <div className="st-list">
-      <ListHeader header={header} done={done} total={total} crowned={crowned} switcher={switcher} />
+      <ListHeader
+        header={header}
+        done={done}
+        total={total}
+        crowned={crowned}
+        switcher={switcher}
+        searchable={!multiMode}
+        searching={searching}
+        query={query}
+        onSearch={toggleLookup}
+        onQuery={askQuery}
+      />
       {notice}
+      {/* The filter speaks: 180 rows leaving the screen is silent to a screen reader otherwise. */}
+      <span className="st-list-live" aria-live="polite">
+        {filtered ? `${filtered.matches} matching step${filtered.matches === 1 ? '' : 's'}` : ''}
+      </span>
+      {/* The way back reserves its own strip rather than floating over live rows (§10): it names
+          its destination, so it stands until it is taken, replaced, or the world it names moves. */}
+      {back && (
+        <div className="st-list-backlane" role="status">
+          <button type="button" className="st-list-back" onClick={goBack}>
+            <span className="st-list-back-arrow" aria-hidden>←</span>
+            <span className="st-list-back-label">Back to {back.label}</span>
+          </button>
+        </div>
+      )}
       <div className="st-list-body" ref={bodyRef} style={bodyStyle}>
-        {ready.length > 0 && (
-          <NextUpShelf ready={ready} nodesById={nodesById} states={states} onJump={jumpTo} />
+        {kinds.length > 0 && !multiMode && <KindLens kinds={kinds} lens={lens} onPick={askLens} />}
+        {!looking && ready.length > 0 && (
+          <NextUpShelf entries={ready} readyCount={readyCount} lensLabel={lensKind?.label ?? ''} nodesById={nodesById} states={states} onJump={jumpTo} />
         )}
-        {outline.rootId && renderRow(outline.rootId, 1, true)}
-        {outline.sections.map((section) => {
-          const open = !folded.has(section.head);
-          const head = nodesById.get(section.head);
-          // The branch's tally counts the head with its steps — the head is part of the branch,
-          // not a label above it — and the same row carries the fold, so it is rendered ONCE.
-          const branch = [section.head, ...section.rows.map((row) => row.id)];
-          const secDone = branch.reduce((count, id) => count + (states.get(id) === 'complete' ? 1 : 0), 0);
-          const budAtEnd = editable && !multiMode && edit?.mode === 'add' && edit.section && edit.parentId === section.head;
-          return (
-            <div className="st-list-section" key={section.head}>
-              {renderRow(section.head, 1, false, {
-                open,
-                foldable: section.rows.length > 0,
-                done: secDone,
-                total: branch.length,
-                onToggle: () => toggleSection(section.head),
-              })}
-              {open && section.rows.map((row) => renderRow(row.id, row.depth, false))}
-              {open && editable && !multiMode && (
-                budAtEnd ? (
-                  <Bud hue={hueOf(head?.color ?? DEFAULT_NODE_COLOR)} depth={2} commit={(value) => commitAdd(section.head, value)} cancel={() => closeField('add', section.head)} registerField={registerField} />
-                ) : (
-                  <button type="button" className="st-list-addrow" style={{ '--indent': `${indentPx(2)}px` }} onClick={() => startEdit({ mode: 'add', parentId: section.head, section: true })}>
-                    <Icon name="plus" size={14} />
-                    <span>Add step to {head?.label || 'branch'}</span>
-                  </button>
-                )
-              )}
-            </div>
-          );
-        })}
+        {rootRow}
+        {sections}
+        {emptyLine}
       </div>
       {picker && (
         <NeedPicker
@@ -357,14 +564,31 @@ export function ListView({ tree, nodesById, states, completedAt = {}, legend, he
 // The header repeats the plaque facts on one line. For an owner the host passes `switcher` — a
 // callback that raises the tree switcher — and the name grows a caret and becomes its door
 // (X8 L6). A visitor's header stays a plain label: no caret, no door, the plaque rule intact.
-function ListHeader({ header, done, total, crowned, switcher }) {
+// The readout is 46px of brand gradient with a 6px floor (audit fix 2): a 71px track holding a 4px
+// nub reads as a failed load, not as early. The count carries the truth — done in the reading
+// weight, the total quieter behind it — and the search affordance the explore job was missing
+// takes the room the empty track was wasting. The field GROWS BESIDE identity rather than
+// replacing it (§5: the head exists so that identity never scrolls away); the readout yields the
+// width, the kind dot and the name stay. One trailing button wears both faces, so closing the
+// field leaves the finger — and the focus ring — exactly where it already was.
+function ListHeader({ header, done, total, crowned, switcher, searchable, searching, query, onSearch, onQuery }) {
   const hue = hueOf(header?.dominantHue);
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
   const name = header?.name || 'Untitled tree';
+  const field = useRef(null);
+  const searchBtn = useRef(null);
+  const wasSearching = useRef(false);
+  useEffect(() => {
+    if (searching) { field.current?.focus(); wasSearching.current = true; return; }
+    if (!wasSearching.current) return;
+    wasSearching.current = false;
+    searchBtn.current?.focus(); // the field left under the finger — hand focus back to what opened it
+  }, [searching]);
+
   return (
-    <div className="st-list-header" style={hueVars(hue)}>
+    <div className={`st-list-header${searching ? ' st-list-header--searching' : ''}`} style={hueVars(hue)}>
       <span className="st-list-header-dot" aria-hidden />
-      {switcher ? (
+      {switcher && !searching ? (
         <button type="button" className="st-list-header-door" aria-haspopup="dialog" onClick={switcher}>
           <span className="st-list-header-name">{name}</span>
           <span className="st-list-header-caret" aria-hidden>
@@ -374,36 +598,114 @@ function ListHeader({ header, done, total, crowned, switcher }) {
       ) : (
         <span className="st-list-header-name">{name}</span>
       )}
-      {crowned && <span className="st-list-crown" aria-label="Tree complete"><Icon name="crown" size={15} color="var(--accent-gold-500)" /></span>}
-      <span className="st-list-header-count">{done}/{total}</span>
-      <span className="st-list-header-bar">
-        <span className="st-list-header-fill" style={{ width: `${pct}%` }} />
-      </span>
+      {searching ? (
+        <span className="st-list-search-field">
+          <span className="st-list-search-glyph" aria-hidden>{SEARCH_GLYPH}</span>
+          <input
+            ref={field}
+            type="text"
+            className="st-list-search-input"
+            value={query}
+            placeholder="Find a step"
+            spellCheck={false}
+            autoCapitalize="none"
+            autoCorrect="off"
+            enterKeyHint="search"
+            aria-label="Find a step"
+            onChange={(event) => onQuery(event.target.value)}
+            onKeyDown={(event) => {
+              event.stopPropagation();
+              // Enter is "I'm done typing", not "I'm done searching": the keyboard leaves, the
+              // query and its results stay. Escape is the one that gives the query up.
+              if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); return; }
+              if (event.key === 'Escape') { event.preventDefault(); onSearch(); }
+            }}
+          />
+        </span>
+      ) : (
+        <>
+          {crowned && <span className="st-list-crown" aria-label="Tree complete"><Icon name="crown" size={15} color="var(--accent-gold-500)" /></span>}
+          <span className="st-list-header-count">{done}<span className="st-list-header-total">/{total}</span></span>
+          <span className="st-list-header-bar">
+            <span className="st-list-header-fill" style={{ width: `${pct}%`, minWidth: pct > 0 ? '6px' : 0 }} />
+          </span>
+        </>
+      )}
+      {searchable && (
+        <button
+          ref={searchBtn}
+          type="button"
+          className="st-list-search-btn"
+          aria-label={searching ? 'Close search' : 'Find a step'}
+          aria-expanded={searching}
+          onClick={onSearch}
+        >
+          {searching ? CLOSE_GLYPH : SEARCH_GLYPH}
+        </button>
+      )}
     </div>
   );
 }
 
-function NextUpShelf({ ready, nodesById, states, onJump }) {
+// The lens (§4 rev): the F6 legend as a filter row, and the first thing in the scroller rather
+// than a band pinned above the fold — it is content, it scrolls away, and it earns its place as
+// the colour key the phone list never had before it filters anything. Single-select; tapping the
+// held kind lets go of it.
+function KindLens({ kinds, lens, onPick }) {
+  return (
+    <div className="st-list-lens" role="group" aria-label="Filter by kind">
+      <button type="button" className={`st-list-kindchip${lens === null ? ' is-on' : ''}`} aria-pressed={lens === null} onClick={() => onPick(null)}>
+        <span className="st-list-chip-label">All</span>
+      </button>
+      {kinds.map((kind) => (
+        <button
+          key={kind.id}
+          type="button"
+          className={`st-list-kindchip${lens === kind.hue ? ' is-on' : ''}`}
+          style={hueVars(hueOf(kind.hue))}
+          aria-pressed={lens === kind.hue}
+          onClick={() => onPick(lens === kind.hue ? null : kind.hue)}
+        >
+          <span className="st-list-kindchip-dot" aria-hidden />
+          <span className="st-list-chip-label">{kind.label}</span>
+          {/* Which chip is held cannot rest on colour: the ring hues have no dark palette. */}
+          {lens === kind.hue && <span className="st-list-kindchip-held" aria-hidden><Icon name="check" size={13} /></span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Next up as rows, not pills (audit fix 3): three widths hugging three strings left a ragged edge
+// and nowhere for the consequence to go, so each offer is a full-bleed row carrying the count the
+// ranking already paid for. Under the lens it answers the same question inside one kind (§4 rev).
+function NextUpShelf({ entries, readyCount, lensLabel, nodesById, states, onJump }) {
   return (
     <div className="st-list-nextup">
-      <div className="st-list-nextup-label">Next up</div>
-      <div className="st-list-nextup-row">
-        {ready.map((id) => {
-          const node = nodesById.get(id);
-          const hue = hueOf(node?.color ?? DEFAULT_NODE_COLOR);
-          return (
-            <button key={id} type="button" className="st-list-chip st-list-nextup-chip" style={hueVars(hue)} onClick={() => onJump(id)}>
-              <Fruit hue={hue} state={states.get(id) ?? 'available'} />
-              <span className="st-list-chip-label">{node?.label || 'Untitled step'}</span>
-            </button>
-          );
-        })}
+      <div className="st-list-nextup-label">
+        <span>{lensLabel ? `Next up in ${lensLabel}` : 'Next up'}</span>
+        <span className="st-list-nextup-ready">{readyCount} ready</span>
       </div>
+      {entries.map(({ id, unlocks }) => {
+        const node = nodesById.get(id);
+        const hue = hueOf(node?.color ?? DEFAULT_NODE_COLOR);
+        return (
+          <button key={id} type="button" className="st-list-nextup-row" style={hueVars(hue)} onClick={() => onJump(id)}>
+            <Fruit hue={hue} state={states.get(id) ?? 'available'} />
+            <span className="st-list-nextup-main">
+              <span className="st-list-nextup-name">{node?.label || 'Untitled step'}</span>
+              {unlocks > 0 && <span className="st-list-nextup-unlocks">unlocks {unlocks} more step{unlocks === 1 ? '' : 's'}</span>}
+            </span>
+            <span className="st-list-nextup-chevron" aria-hidden>{CHEVRON}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
 
-// A single edit field — the one input the keyboard is ever attached to. Focuses on mount (and
+// A single edit field — the one input on the EDIT path (the lookup keeps its own in the head, and
+// it writes nothing, so none of the commit machinery below is its business). Focuses on mount (and
 // selects, for a single-line rename), commits on Enter (shift+Enter is a newline in a textarea),
 // reverts on Escape, and — so a tap on the hint doesn't drop the edit — commits a short beat
 // after blur. `emptyCancels` makes an empty value a cancel (the bud vanishes rather than plants).
@@ -478,7 +780,7 @@ function Bud({ hue, depth, commit, cancel, registerField }) {
 // done, the chevron folds the branch (head rows only), and everything between them opens the card.
 // A branch head IS its section (§2), so it wears the fold and the branch tally and is rendered
 // exactly once — as a row like any other, with the same fruit and the same card.
-function Row({ node, state, hue, depth, isRoot, crown, completedAt, expanded, edits, tree, states, section, multiMode, selected, onEnterMulti, onToggleMember, onToggle, onJump, registerRow }) {
+function Row({ node, state, hue, depth, isRoot, crown, completedAt, expanded, snippet, edits, tree, states, section, multiMode, selected, onEnterMulti, onToggleMember, onToggle, onJump, registerRow }) {
   const treatment = treatmentOf(state);
   const rowRef = useRef(null);
   const lineRef = useRef(null);
@@ -594,19 +896,22 @@ function Row({ node, state, hue, depth, isRoot, crown, completedAt, expanded, ed
 
   const label = node.label || 'Untitled step';
 
+  // A row that matched on its description alone carries the fragment as a second line (§4 rev):
+  // without it the result is a title that doesn't contain what was typed, and reads as a bug. The
+  // title keeps its own line so the crown stays beside the name rather than between the two.
   const nameGroup = (
-    <span className="st-list-name-group">
-      <span className={`st-list-name${treatment === 'locked' ? ' st-list-name--locked' : ''}`}>{label}</span>
-      {crown && <span className="st-list-crown" aria-label="Tree complete"><Icon name="crown" size={14} color="var(--accent-gold-500)" /></span>}
+    <span className={`st-list-name-group${snippet ? ' st-list-name-group--snippet' : ''}`}>
+      <span className="st-list-name-line">
+        <span className={`st-list-name${treatment === 'locked' ? ' st-list-name--locked' : ''}`}>{label}</span>
+        {crown && <span className="st-list-crown" aria-label="Tree complete"><Icon name="crown" size={14} color="var(--accent-gold-500)" /></span>}
+      </span>
+      {snippet && <span className="st-list-snippet">{snippet}</span>}
     </span>
   );
 
-  const meta = (
-    <>
-      {state === 'complete' && completedAt != null && <span className="st-list-meta">{shortDate(completedAt)}</span>}
-      {state === 'locked' && <span className="st-list-lock" aria-hidden><Icon name="lock" size={13} color="var(--text-tertiary)" /></span>}
-    </>
-  );
+  // Tier belongs to the fruit (audit fix 7): the lock rides inside the dim fruit, so the trailing
+  // rail is gone and the title keeps a name's own colour instead of the meta token.
+  const meta = state === 'complete' && completedAt != null ? <span className="st-list-meta">{shortDate(completedAt)}</span> : null;
 
   const cardOpen = expanded && !multiMode;
 
@@ -661,8 +966,10 @@ function Row({ node, state, hue, depth, isRoot, crown, completedAt, expanded, ed
       </div>
     );
   } else {
+    // The fruit is aria-hidden and a locked row has no verb, so without this a locked step and a
+    // ready one read identically aloud — the tier only ever existed in the paint.
     body = (
-      <button type="button" className="st-list-row-open" aria-expanded={expanded} onClick={multiMode ? () => onToggleMember?.(node.id) : onToggle}>
+      <button type="button" className="st-list-row-open" aria-expanded={expanded} aria-label={`${label}, ${STATE_WORDS[treatment]}`} onClick={multiMode ? () => onToggleMember?.(node.id) : onToggle}>
         {nameGroup}
         {meta}
         {count}
@@ -723,6 +1030,7 @@ function Fruit({ hue, state }) {
   return (
     <span className={`st-list-fruit st-list-fruit--${treatment}`} style={hueVars(hue)} aria-hidden>
       {treatment === 'done' && <Icon name="check" size={13} color="#fff" />}
+      {treatment === 'locked' && <Icon name="lock" size={11} color="var(--text-tertiary)" />}
     </span>
   );
 }
@@ -730,19 +1038,15 @@ function Fruit({ hue, state }) {
 function ExpandedCard({ node, state, hue, isRoot, tree, states, edits, onJump }) {
   const parents = tree.parentsOf(node.id);
   const children = tree.childrenOf(node.id);
-  const blocker = state === 'locked' ? parents.find((parent) => states.get(parent.id) !== 'complete') : null;
+  // The gate is a graph walk, and this card re-renders for every keystroke anywhere in the list.
+  const gate = useMemo(() => (state === 'locked' ? gateOf(tree, states, node.id) : null), [state, tree, states, node.id]);
 
   if (!edits) {
     const hasDag = parents.length > 0 || children.length > 0;
     return (
       <div className="st-list-card">
         {node.description && <div className="st-list-desc">{node.description}</div>}
-        {blocker && (
-          <div className="st-list-why">
-            <Icon name="lock" size={13} color="var(--text-tertiary)" />
-            <span>Finish <strong>{blocker.label}</strong> to unlock</span>
-          </div>
-        )}
+        <Gate node={node} gate={gate} states={states} onJump={onJump} />
         {hasDag && <div className="st-list-hairline" />}
         {parents.length > 0 && <ChipGroup title="Needs" items={parents} states={states} onJump={onJump} />}
         {children.length > 0 && <ChipGroup title="Unlocks" items={children} states={states} onJump={onJump} />}
@@ -768,12 +1072,7 @@ function ExpandedCard({ node, state, hue, isRoot, tree, states, edits, onJump })
         </button>
       )}
 
-      {blocker && (
-        <div className="st-list-why">
-          <Icon name="lock" size={13} color="var(--text-tertiary)" />
-          <span>Finish <strong>{blocker.label}</strong> to unlock</span>
-        </div>
-      )}
+      <Gate node={node} gate={gate} states={states} onJump={onJump} />
 
       {progress && (
         <div className="st-list-verbs">
@@ -826,6 +1125,48 @@ function ExpandedCard({ node, state, hue, isRoot, tree, states, edits, onJump })
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// Why a step is locked, answered the way the question is actually asked (§4 rev): what can I start
+// now — the ready frontier, tappable — how much is owed, and how deep it runs. One chain would
+// point at the MOST blocked thing up there, the one place the work cannot begin; a chain is the
+// honest shape only when the gate really is a line, and then it reads better than any set could.
+function Gate({ node, gate, states, onJump }) {
+  if (!gate || gate.blockedBy === 0) return null;
+
+  if (gate.line) {
+    return (
+      <div className="st-list-why">
+        <div className="st-list-why-label"><Icon name="lock" size={12} color="var(--text-secondary)" />Why is this locked?</div>
+        <div className="st-list-trace">
+          {gate.clipped && <span className="st-list-trace-sep" aria-hidden>…</span>}
+          {gate.line.slice(0, -1).map((ancestor) => (
+            <React.Fragment key={ancestor.id}>
+              <JumpChip item={ancestor} states={states} onJump={onJump} />
+              <span className="st-list-trace-sep" aria-hidden>›</span>
+            </React.Fragment>
+          ))}
+          <span className="st-list-trace-self">{node.label || 'Untitled step'}</span>
+        </div>
+      </div>
+    );
+  }
+
+  // With nothing startable (only a cyclic gate can do that) the promise of a set goes with the set.
+  return (
+    <div className="st-list-why">
+      <div className="st-list-why-label"><Icon name="lock" size={12} color="var(--text-secondary)" />Why is this locked?</div>
+      <div className="st-list-why-line">
+        Blocked by {gate.blockedBy} step{gate.blockedBy === 1 ? '' : 's'}{gate.frontier.length > 0 ? ` — ${gate.frontier.length} you can start now.` : '.'}
+      </div>
+      {gate.frontier.length > 0 && (
+        <div className="st-list-chips">
+          {gate.frontier.map((item) => <JumpChip key={item.id} item={item} states={states} onJump={onJump} />)}
+        </div>
+      )}
+      {gate.longestChain > 1 && <div className="st-list-why-depth">Longest chain: {gate.longestChain} steps deep.</div>}
     </div>
   );
 }
