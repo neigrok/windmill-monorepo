@@ -24,6 +24,8 @@ static WallCandidate candidate(const char* id, const char* title, int steps, int
   return listed;
 }
 
+static const Viewer ANONYMOUS{};
+
 TEST(wall_ranks_by_forks_then_freshness_then_id) {
   std::vector<WallCandidate> candidates{
       candidate("t_a", "A", 5, 1, 900),
@@ -32,7 +34,7 @@ TEST(wall_ranks_by_forks_then_freshness_then_id) {
       candidate("t_d", "D", 5, 3, 100),
   };
 
-  std::vector<GalleryEntry> wall = publicWall(candidates, 10);
+  std::vector<GalleryEntry> wall = publicWall(candidates, ANONYMOUS);
 
   CHECK_EQ(wall.size(), std::size_t{4});
   CHECK_EQ(wall[0].id, TreeId{"t_b"});  // 7 forks
@@ -47,7 +49,7 @@ TEST(wall_drops_a_tree_too_small_to_read_as_a_plan) {
       candidate("t_plan", "Plan", kWallMinimumSteps, 0, 100),
   };
 
-  std::vector<GalleryEntry> wall = publicWall(candidates, 10);
+  std::vector<GalleryEntry> wall = publicWall(candidates, ANONYMOUS);
 
   CHECK_EQ(wall.size(), std::size_t{1});
   CHECK_EQ(wall[0].id, TreeId{"t_plan"});  // the stub's 99 forks don't buy it a place
@@ -60,24 +62,19 @@ TEST(wall_drops_an_unnamed_tree) {
       candidate("t_named", "Named", 5, 0, 100),
   };
 
-  std::vector<GalleryEntry> wall = publicWall(candidates, 10);
+  std::vector<GalleryEntry> wall = publicWall(candidates, ANONYMOUS);
 
   CHECK_EQ(wall.size(), std::size_t{1});
   CHECK_EQ(wall[0].id, TreeId{"t_named"});
 }
 
-TEST(wall_keeps_the_first_page_and_drops_the_rest) {
-  std::vector<WallCandidate> candidates{
-      candidate("t_a", "A", 5, 3, 100),
-      candidate("t_b", "B", 5, 2, 100),
-      candidate("t_c", "C", 5, 1, 100),
-  };
+TEST(wall_keeps_an_unstarted_plan) {
+  // No progress floor: an unstarted plan is still a plan, and an abandoned one loses on ranking
+  // rather than being gated off the wall.
+  std::vector<GalleryEntry> wall = publicWall({candidate("t_new", "Untouched", 5, 0, 100)}, ANONYMOUS);
 
-  std::vector<GalleryEntry> wall = publicWall(candidates, 2);
-
-  CHECK_EQ(wall.size(), std::size_t{2});
-  CHECK_EQ(wall[0].id, TreeId{"t_a"});
-  CHECK_EQ(wall[1].id, TreeId{"t_b"});
+  CHECK_EQ(wall.size(), std::size_t{1});
+  CHECK_EQ(wall[0].stats.done, 0);
 }
 
 TEST(an_entry_carries_the_owners_progress_and_dominant_kind) {
@@ -90,7 +87,7 @@ TEST(an_entry_carries_the_owners_progress_and_dominant_kind) {
   listed.forks = 2;
   listed.updatedAt = 4242;
 
-  std::vector<GalleryEntry> wall = publicWall({listed}, 10);
+  std::vector<GalleryEntry> wall = publicWall({listed}, ANONYMOUS);
 
   CHECK_EQ(wall.size(), std::size_t{1});
   CHECK_EQ(wall[0].id, TreeId{"t_x"});
@@ -100,8 +97,132 @@ TEST(an_entry_carries_the_owners_progress_and_dominant_kind) {
   CHECK_EQ(wall[0].stats.dominantKind, NodeColor::olive);
   CHECK_EQ(wall[0].forks, 2);
   CHECK_EQ(wall[0].updatedAt, std::uint64_t{4242});
+  CHECK_EQ(wall[0].sourceTitle, std::string(""));
+  CHECK_FALSE(wall[0].mine);
+  CHECK_FALSE(wall[0].forked);
+}
+
+TEST(an_entry_names_the_tree_it_was_forked_from) {
+  WallCandidate listed = candidate("t_fork", "My Rust", 5, 0, 100);
+  listed.sourceTitle = "Learn Rust";
+
+  std::vector<GalleryEntry> wall = publicWall({listed}, ANONYMOUS);
+
+  CHECK_EQ(wall.size(), std::size_t{1});
+  CHECK_EQ(wall[0].sourceTitle, std::string("Learn Rust"));
 }
 
 TEST(an_empty_candidate_set_is_an_empty_wall) {
-  CHECK_EQ(publicWall({}, 10).size(), std::size_t{0});
+  CHECK_EQ(publicWall({}, ANONYMOUS).size(), std::size_t{0});
+}
+
+TEST(the_anonymous_reader_owns_nothing_and_has_forked_nothing) {
+  WallCandidate mine = candidate("t_mine", "Mine", 5, 1, 100);
+  mine.owner = UserId{"u_sam"};
+  WallCandidate taken = candidate("t_taken", "Taken", 5, 2, 100);
+  taken.owner = UserId{"u_other"};
+
+  std::vector<GalleryEntry> wall = publicWall({mine, taken}, ANONYMOUS);
+
+  CHECK_EQ(wall.size(), std::size_t{2});
+  CHECK_FALSE(wall[0].mine);
+  CHECK_FALSE(wall[0].forked);
+  CHECK_FALSE(wall[1].mine);
+  CHECK_FALSE(wall[1].forked);
+}
+
+TEST(a_signed_in_reader_sees_which_rows_are_theirs_and_which_they_took) {
+  WallCandidate mine = candidate("t_mine", "Mine", 5, 3, 100);
+  mine.owner = UserId{"u_sam"};
+  WallCandidate taken = candidate("t_taken", "Taken", 5, 2, 100);
+  taken.owner = UserId{"u_other"};
+  WallCandidate stranger = candidate("t_new", "Stranger's", 5, 1, 100);
+  stranger.owner = UserId{"u_other"};
+
+  const Viewer sam{UserId{"u_sam"}, {TreeId{"t_taken"}}};
+  std::vector<GalleryEntry> wall = publicWall({mine, taken, stranger}, sam);
+
+  CHECK_EQ(wall.size(), std::size_t{3});
+  CHECK_EQ(wall[0].id, TreeId{"t_mine"});
+  CHECK(wall[0].mine);
+  CHECK_FALSE(wall[0].forked);
+  CHECK_EQ(wall[1].id, TreeId{"t_taken"});
+  CHECK_FALSE(wall[1].mine);
+  CHECK(wall[1].forked);
+  CHECK_EQ(wall[2].id, TreeId{"t_new"});
+  CHECK_FALSE(wall[2].mine);
+  CHECK_FALSE(wall[2].forked);
+}
+
+TEST(who_is_reading_never_changes_the_ranking) {
+  std::vector<WallCandidate> candidates{
+      candidate("t_a", "A", 5, 1, 900),
+      candidate("t_b", "B", 5, 7, 100),
+      candidate("t_c", "C", 5, 3, 100),
+  };
+  candidates[0].owner = UserId{"u_sam"};  // the reader's own tree earns no lift
+
+  const Viewer sam{UserId{"u_sam"}, {TreeId{"t_b"}}};
+  std::vector<GalleryEntry> anonymousWall = publicWall(candidates, Viewer{});
+  std::vector<GalleryEntry> samsWall = publicWall(candidates, sam);
+
+  CHECK_EQ(anonymousWall.size(), samsWall.size());
+  for (std::size_t i = 0; i < samsWall.size(); ++i) CHECK_EQ(anonymousWall[i].id, samsWall[i].id);
+}
+
+TEST(a_page_is_the_first_limit_entries_and_the_token_that_resumes_it) {
+  std::vector<GalleryEntry> wall = publicWall(
+      {candidate("t_a", "A", 5, 3, 100), candidate("t_b", "B", 5, 2, 100), candidate("t_c", "C", 5, 1, 100)},
+      ANONYMOUS);
+
+  std::optional<WallPage> first = wallPage(wall, "", 2);
+
+  CHECK(first.has_value());
+  CHECK_EQ(first->entries.size(), std::size_t{2});
+  CHECK_EQ(first->entries[0].id, TreeId{"t_a"});
+  CHECK_EQ(first->entries[1].id, TreeId{"t_b"});
+  CHECK_EQ(first->nextCursor, std::string("t_b"));
+
+  std::optional<WallPage> second = wallPage(wall, first->nextCursor, 2);
+
+  CHECK(second.has_value());
+  CHECK_EQ(second->entries.size(), std::size_t{1});
+  CHECK_EQ(second->entries[0].id, TreeId{"t_c"});
+  CHECK_EQ(second->nextCursor, std::string(""));  // the last page never invites another
+}
+
+TEST(a_page_that_holds_the_whole_index_carries_no_cursor) {
+  std::vector<GalleryEntry> wall =
+      publicWall({candidate("t_a", "A", 5, 3, 100), candidate("t_b", "B", 5, 2, 100)}, ANONYMOUS);
+
+  std::optional<WallPage> page = wallPage(wall, "", 60);
+
+  CHECK(page.has_value());
+  CHECK_EQ(page->entries.size(), std::size_t{2});
+  CHECK_EQ(page->nextCursor, std::string(""));
+}
+
+TEST(a_cursor_naming_no_entry_is_refused_rather_than_restarted) {
+  std::vector<GalleryEntry> wall = publicWall({candidate("t_a", "A", 5, 3, 100)}, ANONYMOUS);
+
+  CHECK_FALSE(wallPage(wall, "t_gone", 10).has_value());
+}
+
+TEST(a_cursor_on_the_last_entry_walks_off_the_end_cleanly) {
+  std::vector<GalleryEntry> wall =
+      publicWall({candidate("t_a", "A", 5, 3, 100), candidate("t_b", "B", 5, 2, 100)}, ANONYMOUS);
+
+  std::optional<WallPage> page = wallPage(wall, "t_b", 10);
+
+  CHECK(page.has_value());
+  CHECK_EQ(page->entries.size(), std::size_t{0});
+  CHECK_EQ(page->nextCursor, std::string(""));
+}
+
+TEST(an_empty_wall_pages_to_nothing) {
+  std::optional<WallPage> page = wallPage({}, "", 10);
+
+  CHECK(page.has_value());
+  CHECK_EQ(page->entries.size(), std::size_t{0});
+  CHECK_EQ(page->nextCursor, std::string(""));
 }

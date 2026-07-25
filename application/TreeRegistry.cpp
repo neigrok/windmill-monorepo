@@ -55,6 +55,7 @@ std::vector<TreeSummary> TreeRegistry::list(const UserId& owner) {
   loaded.reserve(owned.size());
   for (OwnedTree& tree : owned) {
     LoadedTree row;
+    row.createdAt = tree.createdAt;
     row.updatedAt = tree.updatedAt;
     row.data = std::move(tree.data);
     auto digest = overlays.find(row.data.id);

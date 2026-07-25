@@ -199,7 +199,8 @@ ForkLineage PgTreeRepository::loadForkLineage(const TreeId& tree) {
 std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
   pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result rows = txn.exec_params(
-      "SELECT title, title_hlc, head_seq, document::text, owner_id::text, visibility "
+      "SELECT title, title_hlc, head_seq, document::text, owner_id::text, visibility, "
+      "(extract(epoch from created_at) * 1000)::bigint AS created_ms "
       "FROM trees WHERE id = $1 AND deleted_at IS NULL",
       tree.str());
   if (rows.empty()) return std::nullopt;
@@ -223,7 +224,8 @@ std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
   Lww<std::string> title{row["title"].as<std::string>(), parseHlc(row["title_hlc"].as<std::string>())};
   return StoredTree{std::move(state), std::move(legend), std::move(title),
                     static_cast<Seq>(row["head_seq"].as<long long>()), std::move(owner),
-                    parseVisibility(row["visibility"].as<std::string>())};
+                    parseVisibility(row["visibility"].as<std::string>()),
+                    static_cast<std::uint64_t>(row["created_ms"].as<long long>())};
 }
 
 void PgTreeRepository::save(const TreeId& tree, const GraphState& state, const LegendState& legend,
@@ -266,7 +268,9 @@ void PgTreeRepository::create(const TreeId& tree, const GraphState& state, const
 std::vector<OwnedTree> PgTreeRepository::listOwnedBy(const UserId& owner) {
   pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result rows = txn.exec_params(
-      "SELECT id, title, document::text, (extract(epoch from updated_at) * 1000)::bigint AS updated_ms "
+      "SELECT id, title, document::text, "
+      "(extract(epoch from created_at) * 1000)::bigint AS created_ms, "
+      "(extract(epoch from updated_at) * 1000)::bigint AS updated_ms "
       "FROM trees WHERE owner_id = $1::uuid AND deleted_at IS NULL",
       owner.str());
 
@@ -275,7 +279,9 @@ std::vector<OwnedTree> PgTreeRepository::listOwnedBy(const UserId& owner) {
   for (const auto& row : rows) {
     TreeData data = projectDocument(txn, TreeId{row["id"].as<std::string>()}, row["title"].as<std::string>(),
                                     row["document"].as<std::string>());
-    owned.push_back(OwnedTree{std::move(data), static_cast<std::uint64_t>(row["updated_ms"].as<long long>())});
+    owned.push_back(OwnedTree{std::move(data),
+                              static_cast<std::uint64_t>(row["created_ms"].as<long long>()),
+                              static_cast<std::uint64_t>(row["updated_ms"].as<long long>())});
   }
   return owned;
 }
@@ -305,11 +311,17 @@ std::vector<ListedTree> PgTreeRepository::listPublic() {
   // is small by construction. Ordering and the wall's cap belong to the domain (domain/Gallery.h)
   // and are deliberately NOT duplicated here — if this set ever grows past one query's worth,
   // that is a materialized wall, not a silent LIMIT that would quietly change the ranking rule.
+  // The source's title rides the same row as a LEFT JOIN carrying loadForkLineage's privacy rule
+  // in its ON clause — the source is named only while it exists and is public, so an unlisted,
+  // private or deleted source coalesces to '' and the card says nothing. Joined rather than
+  // looked up per card: a wall of sixty would otherwise be sixty extra round trips.
   pqxx::result rows = txn.exec_params(
       "SELECT t.id, t.title, t.owner_id::text AS owner_id, t.document::text, "
       "(extract(epoch from t.updated_at) * 1000)::bigint AS updated_ms, "
-      "(SELECT count(*) FROM trees f WHERE f.forked_from = t.id AND f.deleted_at IS NULL) AS forks "
+      "(SELECT count(*) FROM trees f WHERE f.forked_from = t.id AND f.deleted_at IS NULL) AS forks, "
+      "coalesce(s.title, '') AS source_title "
       "FROM trees t "
+      "LEFT JOIN trees s ON s.id = t.forked_from AND s.deleted_at IS NULL AND s.visibility = 'public' "
       "WHERE t.visibility = 'public' AND t.deleted_at IS NULL AND t.owner_id IS NOT NULL");
 
   std::vector<ListedTree> listed;
@@ -321,9 +333,24 @@ std::vector<ListedTree> PgTreeRepository::listPublic() {
     entry.updatedAt = static_cast<std::uint64_t>(row["updated_ms"].as<long long>());
     entry.forks = row["forks"].as<int>();
     entry.owner = UserId{row["owner_id"].as<std::string>()};
+    entry.sourceTitle = row["source_title"].as<std::string>();
     listed.push_back(std::move(entry));
   }
   return listed;
+}
+
+std::set<TreeId> PgTreeRepository::listForkedSources(const UserId& owner) {
+  pqxx::work txn{pgThreadConnection(connString_)};
+  // One row per source this user still holds a fork of. A deleted fork drops out: the reader let
+  // that copy go, so the plan is theirs to take again.
+  pqxx::result rows = txn.exec_params(
+      "SELECT DISTINCT forked_from FROM trees "
+      "WHERE owner_id = $1::uuid AND forked_from IS NOT NULL AND deleted_at IS NULL",
+      owner.str());
+
+  std::set<TreeId> sources;
+  for (const auto& row : rows) sources.insert(TreeId{row["forked_from"].as<std::string>()});
+  return sources;
 }
 
 void PgTreeRepository::softDelete(const TreeId& tree) {

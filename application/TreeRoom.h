@@ -12,6 +12,7 @@
 #include "ports/OpLog.h"
 #include "ports/PresenceBus.h"
 
+#include <cstdint>
 #include <optional>
 #include <set>
 #include <string>
@@ -31,7 +32,8 @@ public:
   static constexpr std::string_view kServerActor{"srv"};
 
   TreeRoom(TreeId id, Lww<std::string> title, LooseGraph graph, Legend legend, Seq head,
-           std::optional<UserId> owner, Visibility visibility, OpLog& ops, PresenceBus& bus);
+           std::optional<UserId> owner, Visibility visibility, std::uint64_t createdAt,
+           OpLog& ops, PresenceBus& bus);
 
   // Join a client-authored subgraph frame: dedupe on its frameId, fold its stamps into the
   // clock (so a later server mint stays ahead), join its graph + legend + title register
@@ -94,6 +96,10 @@ public:
   // the create-time baseline — the tree was never renamed).
   const Lww<std::string>& title() const { return title_; }
   Seq head() const { return head_; }
+  // When the tree was planted (epoch ms) — the row fact a read serves alongside the document,
+  // so a progress card can count weeks from planting rather than the calendar. Immutable, so
+  // unlike owner/visibility a live room never has to be told it changed.
+  std::uint64_t createdAt() const { return createdAt_; }
 
   // Authorization: who owns this tree (empty until claimed), and the first-writer claim
   // that fills it. Writes require the owner (or claim an unowned tree); reads are gated by
@@ -113,6 +119,7 @@ private:
   Seq head_;
   std::optional<UserId> owner_;
   Visibility visibility_;
+  std::uint64_t createdAt_;
   std::set<std::string> appliedOpIds_;
   OpLog& ops_;
   PresenceBus& bus_;

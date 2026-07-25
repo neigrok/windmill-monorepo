@@ -25,7 +25,8 @@ TreeRoom& RoomRegistry::open(const TreeId& id) {
   LooseGraph graph(stored->state);  // full CRDT state — lossless
   Legend legend(stored->legend);    // empty for legacy trees; the client derives then
   auto room = std::make_unique<TreeRoom>(id, stored->title, std::move(graph), std::move(legend),
-                                         stored->head, stored->owner, stored->visibility, ops_, bus_);
+                                         stored->head, stored->owner, stored->visibility,
+                                         stored->createdAt, ops_, bus_);
   // The document is a snapshot at stored->head; replay the op-log tail to reach the
   // true current state (and the true head), so new ops never collide on seq.
   for (const AppliedOp& op : ops_.since(id, stored->head)) room->replay(op);

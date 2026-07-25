@@ -155,11 +155,12 @@ int main() {
   auto sharePageApi =
       std::make_shared<SharePageApi>(registry, trees, authService, ogVideos, webRootEnv ? webRootEnv : "");
 
-  // The public wall (public-gallery): GET /gallery renders every LISTED tree as a real anchor in
-  // the served HTML, ranked by the forks it inspired. It is the path that was missing — a public
-  // tree's share page has always been indexable, but nothing linked to it, so neither a crawler
-  // nor a stranger arriving from one shared tree could ever find the next one.
-  auto galleryApi = std::make_shared<GalleryApi>(trees, progress, webRootEnv ? webRootEnv : "");
+  // The public gallery (public-gallery), on its two surfaces over one index: GET /gallery renders
+  // every LISTED tree as a real anchor in the served HTML — the path that was missing, since a
+  // public tree's share page has always been indexable but nothing linked to it — and GET
+  // /v1/gallery hands the same ranked index to the in-product shelf and /browse as JSON, with two
+  // extra facts per row for a signed-in reader (is it mine, have I forked it).
+  auto galleryApi = std::make_shared<GalleryApi>(trees, progress, authService, webRootEnv ? webRootEnv : "");
 
   // The per-user tree registry (create + list + rename + delete). Reads are repo-direct;
   // rename goes through RoomRegistry so a live room's title stays coherent with the column.
@@ -765,6 +766,16 @@ int main() {
       "/gallery",
       [galleryApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
         galleryApi->page(req, std::move(cb));
+      },
+      {drogon::Get});
+
+  // The same index as JSON, for the client-rendered surfaces (the shelf at the end of your own
+  // gallery, and /browse). Anonymous-allowed like the wall — a session only adds the two facts a
+  // row wears about its reader, and never changes which trees are on it.
+  app.registerHandler(
+      "/v1/gallery",
+      [galleryApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        galleryApi->index(req, std::move(cb));
       },
       {drogon::Get});
 

@@ -39,6 +39,7 @@ std::vector<TreeSummary> registrySummaries(const std::vector<LoadedTree>& loaded
     TreeSummary summary;
     summary.id = tree.data.id;
     summary.title = tree.data.title;
+    summary.createdAt = tree.createdAt;  // a birth stamp: never folded with the freshness ones
     summary.updatedAt = std::max(tree.updatedAt, tree.lastMarkedAt);
     summary.stats = treeStats(tree.data, tree.progress);
     summaries.push_back(std::move(summary));

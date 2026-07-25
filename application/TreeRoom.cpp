@@ -5,10 +5,11 @@
 namespace wm {
 
 TreeRoom::TreeRoom(TreeId id, Lww<std::string> title, LooseGraph graph, Legend legend, Seq head,
-                   std::optional<UserId> owner, Visibility visibility, OpLog& ops, PresenceBus& bus)
+                   std::optional<UserId> owner, Visibility visibility, std::uint64_t createdAt,
+                   OpLog& ops, PresenceBus& bus)
     : id_(std::move(id)), title_(std::move(title)), graph_(std::move(graph)), legend_(std::move(legend)),
-      head_(head), owner_(std::move(owner)), visibility_(visibility), ops_(ops), bus_(bus),
-      clock_(std::string{kServerActor}) {
+      head_(head), owner_(std::move(owner)), visibility_(visibility), createdAt_(createdAt),
+      ops_(ops), bus_(bus), clock_(std::string{kServerActor}) {
   // Fold every stamp the loaded document already carries — the graph frontier and the title
   // register — so a fresh mint after restart is always ahead of anything persisted: the
   // receive rule, applied at load.

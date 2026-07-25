@@ -551,8 +551,9 @@ Json::Value RoadmapTools::listTools() const {
   {
     tools.append(tool("list_trees",
         "List the roadmaps you own — one row each: id, title, total node count, how many you have "
-        "completed, when it last moved (updatedAt, epoch ms), and its dominant hue (dominantKind), "
-        "newest activity first. Takes no arguments. Use it to discover the treeId the other tools need.",
+        "completed, when it was planted (createdAt, epoch ms), when it last moved (updatedAt, epoch "
+        "ms), and its dominant hue (dominantKind), newest activity first. Takes no arguments. Use it "
+        "to discover the treeId the other tools need.",
         Json::Value(Json::objectValue), {}));
   }
   {

@@ -57,9 +57,9 @@ TEST(dominant_kind_of_an_empty_tree_is_absent) {
 
 TEST(registry_orders_by_recency_then_id_and_a_progress_mark_bumps_a_row) {
   std::vector<LoadedTree> loaded;
-  loaded.push_back({tree("c", {}), 100, Progress{}, 0});    // recency 100
-  loaded.push_back({tree("b", {}), 50, Progress{}, 200});   // progress mark lifts 50 -> 200
-  loaded.push_back({tree("a", {}), 200, Progress{}, 0});    // recency 200
+  loaded.push_back({tree("c", {}), 10, 100, Progress{}, 0});    // recency 100
+  loaded.push_back({tree("b", {}), 20, 50, Progress{}, 200});   // progress mark lifts 50 -> 200
+  loaded.push_back({tree("a", {}), 30, 200, Progress{}, 0});    // recency 200
 
   std::vector<TreeSummary> summaries = registrySummaries(loaded);
   CHECK_EQ(summaries.size(), 3u);
@@ -69,4 +69,23 @@ TEST(registry_orders_by_recency_then_id_and_a_progress_mark_bumps_a_row) {
   CHECK_EQ(summaries[0].updatedAt, 200u);
   CHECK_EQ(summaries[1].updatedAt, 200u);
   CHECK_EQ(summaries[2].updatedAt, 100u);
+}
+
+TEST(registry_carries_the_planting_time_untouched_by_recency) {
+  std::vector<LoadedTree> loaded;
+  loaded.push_back({tree("a", {}), 1'000, 5'000, Progress{}, 0});
+  loaded.push_back({tree("b", {}), 2'000, 4'000, Progress{}, 9'000});  // a mark far past its planting
+  loaded.push_back({tree("c", {}), 0, 0, Progress{}, 0});              // no recorded planting -> 0
+
+  std::vector<TreeSummary> summaries = registrySummaries(loaded);
+  CHECK_EQ(summaries.size(), 3u);
+  CHECK_EQ(summaries[0].id, TreeId{std::string("b")});
+  CHECK_EQ(summaries[0].createdAt, 2'000u);  // the mark bumped updatedAt, never the birth stamp
+  CHECK_EQ(summaries[0].updatedAt, 9'000u);
+  CHECK_EQ(summaries[1].id, TreeId{std::string("a")});
+  CHECK_EQ(summaries[1].createdAt, 1'000u);
+  CHECK_EQ(summaries[1].updatedAt, 5'000u);
+  CHECK_EQ(summaries[2].id, TreeId{std::string("c")});
+  CHECK_EQ(summaries[2].createdAt, 0u);
+  CHECK_EQ(summaries[2].updatedAt, 0u);
 }

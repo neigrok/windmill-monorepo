@@ -187,6 +187,21 @@ TEST(get_tree_owner_reads_a_private_tree_with_mine_true) {
   CHECK_EQ(body["seq"].asInt64(), 0);
 }
 
+TEST(get_tree_serves_the_planting_time_and_zero_when_there_is_none) {
+  Harness h;
+  UserId me = h.signIn("s-me");
+  h.seed("t_plant", "Sourdough", me, Visibility::private_);
+  h.seed("t_undated", "Ancient", me, Visibility::private_);
+  h.trees->byId["t_plant"].createdAt = 1'753'400'000'000;  // epoch ms, exactly like updatedAt
+
+  Json::Value planted = bodyOf(sendGetTree(h.api, "s-me", "t_plant"));
+  Json::Value undated = bodyOf(sendGetTree(h.api, "s-me", "t_undated"));
+
+  CHECK_EQ(planted["createdAt"].asInt64(), 1'753'400'000'000);
+  CHECK(undated.isMember("createdAt"));  // present and 0 — never a missing key, never null
+  CHECK_EQ(undated["createdAt"].asInt64(), 0);
+}
+
 TEST(get_tree_private_denial_is_404_byte_identical_to_absent) {
   Harness h;
   h.signIn("s-other", "other@example.com");  // a signed-in non-owner (u1)

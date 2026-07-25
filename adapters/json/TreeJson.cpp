@@ -92,8 +92,31 @@ Json::Value toJson(const TreeSummary& summary) {
   row["title"] = summary.title;
   row["total"] = summary.stats.total;
   row["done"] = summary.stats.done;
+  row["createdAt"] = static_cast<Json::Int64>(summary.createdAt);
   row["updatedAt"] = static_cast<Json::Int64>(summary.updatedAt);
   if (summary.stats.dominantKind) row["dominantKind"] = std::string(toString(*summary.stats.dominantKind));
+  return row;
+}
+
+Json::Value toJson(const GalleryEntry& entry) {
+  Json::Value row(Json::objectValue);
+  // A gallery card is a registry row plus what the wall knows: the forks it inspired, the tree
+  // it came from, and the two facts about its reader — spelled the same as GET /v1/trees so one
+  // card component paints both surfaces.
+  row["id"] = entry.id.str();
+  row["title"] = entry.title;
+  row["total"] = entry.stats.total;
+  row["done"] = entry.stats.done;
+  row["updatedAt"] = static_cast<Json::Int64>(entry.updatedAt);
+  if (entry.stats.dominantKind) row["dominantKind"] = std::string(toString(*entry.stats.dominantKind));
+  row["forks"] = entry.forks;
+  // Always spelled, never inferred: a card that must say "Listed by you" or refuse a second fork
+  // reads a boolean, and an absent key would leave it guessing.
+  row["mine"] = entry.mine;
+  row["forked"] = entry.forked;
+  // Present only when this tree is a fork whose source may still be named — an unlisted, private
+  // or deleted source leaves the key off entirely rather than naming an empty tree.
+  if (!entry.sourceTitle.empty()) row["sourceTitle"] = entry.sourceTitle;
   return row;
 }
 

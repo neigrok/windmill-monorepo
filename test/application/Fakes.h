@@ -134,7 +134,9 @@ struct FakeTreeRepository : TreeRepository {
       if (!stored.owner || *stored.owner != owner) continue;
       TreeData data = LooseGraph(stored.state).toTreeData(TreeId{id}, stored.title.value);
       std::uint64_t ms = updatedAt.count(id) ? updatedAt.at(id) : 0;
-      owned.push_back(OwnedTree{std::move(data), ms});
+      // The planting time rides the stored tree (the real column is read by load() too), unlike
+      // updated_at, which no read ever hands back and which this fake keeps in its own map.
+      owned.push_back(OwnedTree{std::move(data), stored.createdAt, ms});
     }
     return owned;
   }
@@ -150,9 +152,28 @@ struct FakeTreeRepository : TreeRepository {
       entry.owner = *stored.owner;
       for (const auto& [forkId, from] : forkedFrom)
         if (from == id && !deletedIds.count(forkId)) entry.forks++;
+      // The same rule the real query carries in its join, and the same one loadForkLineage
+      // applies: a source is named only while it exists and is public.
+      auto source = forkedFrom.find(id);
+      if (source != forkedFrom.end()) {
+        auto src = byId.find(source->second);
+        if (src != byId.end() && !deletedIds.count(source->second) &&
+            src->second.visibility == Visibility::public_)
+          entry.sourceTitle = src->second.title.value;
+      }
       listed.push_back(std::move(entry));
     }
     return listed;
+  }
+  std::set<TreeId> listForkedSources(const UserId& owner) override {
+    std::set<TreeId> sources;
+    for (const auto& [id, from] : forkedFrom) {
+      if (deletedIds.count(id)) continue;
+      auto it = byId.find(id);
+      if (it == byId.end() || !it->second.owner || *it->second.owner != owner) continue;
+      sources.insert(TreeId{from});
+    }
+    return sources;
   }
   void softDelete(const TreeId& tree) override { deletedIds.insert(tree.str()); }
   void rename(const TreeId& tree, const Lww<std::string>& title) override {

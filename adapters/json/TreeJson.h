@@ -1,5 +1,6 @@
 #pragma once
 
+#include "domain/Gallery.h"
 #include "domain/GraphState.h"
 #include "domain/Ids.h"
 #include "domain/Legend.h"
@@ -19,7 +20,8 @@ Json::Value nodeToJson(const NodeSpec& node);  // one node's wire shape, shared 
 Json::Value toJson(const TreeData& data);
 Json::Value toJson(const Progress& progress);
 Json::Value toJson(const TreeDiagnostics& diagnostics);
-Json::Value toJson(const TreeSummary& summary);  // one registry row (GET /v1/trees)
+Json::Value toJson(const TreeSummary& summary);   // one registry row (GET /v1/trees)
+Json::Value toJson(const GalleryEntry& entry);    // one gallery card (GET /v1/gallery)
 Json::Value toJson(const GraphState& state);    // the persisted graph document
 Json::Value toJson(const LegendState& legend);  // the persisted legend document
 

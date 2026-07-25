@@ -21,18 +21,23 @@ struct TreeStats {
 
 TreeStats treeStats(const TreeData& tree, const Progress& progress);
 
-// One glanceable registry row: which tree, its stats, and when it last moved forward.
+// One glanceable registry row: which tree, its stats, when it was planted, and when it last
+// moved forward. The two timestamps answer different questions — how old the tree is, and how
+// fresh it is — so neither stands in for the other.
 struct TreeSummary {
   TreeId id;
   std::string title;
+  std::uint64_t createdAt = 0;  // epoch ms; the planting time, fixed for the tree's whole life
   std::uint64_t updatedAt = 0;  // epoch ms; the freshest forward change (structural edit or a progress mark)
   TreeStats stats;
 };
 
-// One owned tree's loaded facts, handed to the domain to summarize. The two timestamps have
-// different provenance — the tree's last structural save, and the caller's last progress mark.
+// One owned tree's loaded facts, handed to the domain to summarize. The three timestamps have
+// three provenances — the tree's planting, its last structural save, and the caller's last
+// progress mark.
 struct LoadedTree {
   TreeData data;
+  std::uint64_t createdAt = 0;     // the trees-row planting timestamp (epoch ms)
   std::uint64_t updatedAt = 0;     // the trees-row structural timestamp (epoch ms)
   Progress progress;               // the caller's overlay
   std::uint64_t lastMarkedAt = 0;  // the caller's latest progress mark (epoch ms), 0 if none

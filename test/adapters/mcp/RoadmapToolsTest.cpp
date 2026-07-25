@@ -288,6 +288,8 @@ TEST(mcp_create_tree_plants_an_owned_roadmap_and_lists_it) {
 
 TEST(mcp_list_trees_returns_the_callers_owned_rows) {
   Harness h;  // "t" is owned by the caller
+  h.trees.byId["t"].createdAt = 1'753'400'000'000;  // planted; epoch ms, exactly like updatedAt
+  h.trees.updatedAt["t"] = 1'753'900'000'000;
   h.call("create_node", with("label", "A"));
   h.call("create_node", with("label", "B"));
 
@@ -299,6 +301,16 @@ TEST(mcp_list_trees_returns_the_callers_owned_rows) {
   CHECK_EQ(trees[0]["title"].asString(), std::string("Test Roadmap"));
   CHECK_EQ(trees[0]["total"].asInt(), 2);
   CHECK_EQ(trees[0]["done"].asInt(), 0);
+  CHECK_EQ(trees[0]["createdAt"].asInt64(), 1'753'400'000'000);
+  CHECK_EQ(trees[0]["updatedAt"].asInt64(), 1'753'900'000'000);
+}
+
+TEST(mcp_list_trees_reports_zero_for_a_tree_with_no_recorded_planting) {
+  Harness h;  // "t" is seeded without a createdAt
+  const Json::Value trees = body(h.tools.callTool("list_trees", Json::Value(Json::objectValue), h.caller))["trees"];
+  CHECK_EQ(trees.size(), 1u);
+  CHECK(trees[0].isMember("createdAt"));  // present and 0 — never a missing key, never null
+  CHECK_EQ(trees[0]["createdAt"].asInt64(), 0);
 }
 
 TEST(mcp_delete_tree_soft_deletes_and_drops_it_from_the_list) {

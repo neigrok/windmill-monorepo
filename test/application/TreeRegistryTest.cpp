@@ -49,7 +49,9 @@ static void seed(FakeTreeRepository& trees, const char* id, const UserId& owner,
   data.title = id;
   data.nodes = std::move(nodes);
   GraphState state = LooseGraph(data, Hlc{1, 0, "seed"}).exportState();
-  trees.byId[id] = StoredTree{state, LegendState{}, {data.title, {}}, 0, owner};
+  // Planted ten ticks before its last touch, so a row can never confuse the two stamps.
+  trees.byId[id] = StoredTree{state, LegendState{}, {data.title, {}}, 0, owner,
+                              Visibility::private_, updatedAt - 10};
   trees.updatedAt[id] = updatedAt;
 }
 
@@ -174,11 +176,13 @@ TEST(list_orders_owned_trees_newest_first_and_excludes_other_owners) {
 
   CHECK_EQ(rows.size(), 2u);
   CHECK_EQ(rows[0].id, TreeId{std::string("fresh")});
+  CHECK_EQ(rows[0].createdAt, 290u);
   CHECK_EQ(rows[0].updatedAt, 300u);
   CHECK_EQ(rows[0].stats.total, 1);
   CHECK_EQ(rows[0].stats.done, 0);
   CHECK_EQ(rows[0].stats.dominantKind, NodeColor::sky);
   CHECK_EQ(rows[1].id, TreeId{std::string("old")});
+  CHECK_EQ(rows[1].createdAt, 90u);   // the planting stamp, untouched by the progress mark
   CHECK_EQ(rows[1].updatedAt, 150u);  // the progress mark (150) beat the structural stamp (100)
   CHECK_EQ(rows[1].stats.total, 2);
   CHECK_EQ(rows[1].stats.done, 1);

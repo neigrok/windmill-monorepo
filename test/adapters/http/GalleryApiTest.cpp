@@ -1,11 +1,17 @@
 #include "adapters/http/GalleryApi.h"
 
+#include "adapters/json/TreeJson.h"
+#include "domain/LooseGraph.h"
+#include "test/application/AuthFakes.h"
+#include "test/application/Fakes.h"
 #include "test/testing.h"
 
+#include <memory>
 #include <string>
 #include <vector>
 
 using namespace wm;
+using namespace wm::fake;
 
 namespace {
 
@@ -36,6 +42,66 @@ GalleryEntry entry(const char* id, const char* title, int done, int total, int f
 bool contains(const std::string& haystack, const std::string& needle) {
   return haystack.find(needle) != std::string::npos;
 }
+
+// The JSON surface's whole stack behind the endpoint: the tree store, the owner-overlay store the
+// wall joins, and the auth boundary that turns a cookie into a reader. No web root — GET
+// /v1/gallery never reads one.
+struct Harness {
+  std::shared_ptr<FakeTreeRepository> trees = std::make_shared<FakeTreeRepository>();
+  std::shared_ptr<FakeProgressRepository> progress = std::make_shared<FakeProgressRepository>();
+  FakeTokens tokens;
+  FakeClock clock;
+  FakeAuthRepository authRepo;
+  FakeEmail email;
+  FakeOAuthRepository oauthRepo;
+  OAuthService oauth{oauthRepo, tokens, clock};
+  std::shared_ptr<AuthService> auth =
+      std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, "https://windmill.works");
+  GalleryApi api{trees, progress, auth, ""};
+
+  UserId signIn(const std::string& sessionSecret, const std::string& address) {
+    User user = authRepo.createUser(Email{address}, "sam");
+    authRepo.insertSession(tokens.digestOf(sessionSecret), user.id, clock.now + 1'000'000, "", "", clock.now);
+    return user.id;
+  }
+
+  void seed(const char* id, const char* title, const UserId& owner, Visibility visibility, int steps,
+            std::uint64_t updatedAt = 100) {
+    TreeData data;
+    data.id = TreeId{std::string(id)};
+    data.title = title;
+    for (int i = 0; i < steps; ++i) {
+      NodeSpec node;
+      node.id = NodeId{"n" + std::to_string(i)};
+      node.label = "Step " + std::to_string(i);
+      data.nodes.push_back(node);
+    }
+    GraphState state = LooseGraph(data, Hlc{1, 0, "seed"}).exportState();
+    trees->byId[id] = StoredTree{state, LegendState{}, {title, {}}, 0, owner, visibility};
+    trees->updatedAt[id] = updatedAt;
+  }
+
+  void seedFork(const char* forkId, const char* sourceId) { trees->forkedFrom[forkId] = sourceId; }
+};
+
+drogon::HttpRequestPtr galleryReq(const std::string& session = "", const std::string& limit = "",
+                                  const std::string& cursor = "") {
+  auto req = drogon::HttpRequest::newHttpRequest();
+  req->setMethod(drogon::Get);
+  req->setPath("/v1/gallery");
+  if (!session.empty()) req->addCookie("wm_session", session);
+  if (!limit.empty()) req->setParameter("limit", limit);
+  if (!cursor.empty()) req->setParameter("cursor", cursor);
+  return req;
+}
+
+drogon::HttpResponsePtr sendIndex(GalleryApi& api, const drogon::HttpRequestPtr& req) {
+  drogon::HttpResponsePtr captured;
+  api.index(req, [&](const drogon::HttpResponsePtr& response) { captured = response; });
+  return captured;
+}
+
+Json::Value bodyOf(const drogon::HttpResponsePtr& response) { return *response->getJsonObject(); }
 
 }
 
@@ -103,4 +169,159 @@ TEST(every_entry_lands_on_the_wall_in_the_order_it_was_given) {
   CHECK(first != std::string::npos);
   CHECK(first < second);
   CHECK(second < third);
+}
+
+TEST(a_forked_card_names_the_tree_it_came_from_and_never_the_person) {
+  GalleryEntry row = entry("t_fork", "My Rust", 1, 5, 0);
+  row.sourceTitle = "Learn Rust";
+
+  const std::string page = GalleryApi::renderWall(SHELL, {row});
+
+  CHECK(contains(page, "A fork of \xE2\x80\x9CLearn Rust\xE2\x80\x9D"));
+  // A card with no lineage says nothing at all about a source.
+  CHECK_FALSE(contains(GalleryApi::renderWall(SHELL, {entry("t_own", "Own", 1, 5, 0)}), "A fork of"));
+}
+
+TEST(a_source_title_carrying_markup_is_escaped_not_rendered) {
+  GalleryEntry row = entry("t_fork", "My Rust", 1, 5, 0);
+  row.sourceTitle = "<script>alert('x')</script>";
+
+  const std::string page = GalleryApi::renderWall(SHELL, {row});
+
+  CHECK_FALSE(contains(page, "<script>alert"));
+  CHECK(contains(page, "&lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;"));
+}
+
+TEST(the_json_index_serves_an_anonymous_caller_the_walls_own_rows) {
+  Harness h;
+  const UserId owner = h.signIn("s1", "owner@example.com");
+  h.seed("t_popular", "Popular", owner, Visibility::public_, 5, 100);
+  h.seed("t_quiet", "Quiet", owner, Visibility::public_, 5, 100);
+  h.seed("t_unlisted", "Unlisted", owner, Visibility::unlisted, 5, 100);
+  h.seed("t_private", "Private", owner, Visibility::private_, 5, 100);
+  h.seedFork("t_copy", "t_popular");
+  h.seed("t_copy", "Copy", owner, Visibility::private_, 5, 100);
+
+  const Json::Value body = bodyOf(sendIndex(h.api, galleryReq()));
+
+  CHECK_EQ(body["count"].asUInt(), 2u);  // never the unlisted or the private tree
+  CHECK_EQ(body["entries"].size(), 2u);
+  CHECK_EQ(body["entries"][0]["id"].asString(), std::string("t_popular"));  // one fork outranks none
+  CHECK_EQ(body["entries"][0]["title"].asString(), std::string("Popular"));
+  CHECK_EQ(body["entries"][0]["total"].asInt(), 5);
+  CHECK_EQ(body["entries"][0]["done"].asInt(), 0);
+  CHECK_EQ(body["entries"][0]["forks"].asInt(), 1);
+  CHECK_FALSE(body["entries"][0]["mine"].asBool());
+  CHECK_FALSE(body["entries"][0]["forked"].asBool());
+  CHECK_EQ(body["entries"][1]["id"].asString(), std::string("t_quiet"));
+  CHECK_FALSE(body.isMember("nextCursor"));
+}
+
+TEST(the_json_index_tells_a_signed_in_caller_what_is_theirs_and_what_they_took) {
+  Harness h;
+  const UserId sam = h.signIn("s1", "sam@example.com");
+  const UserId other = h.signIn("s2", "other@example.com");
+  h.seed("t_mine", "Mine", sam, Visibility::public_, 5, 100);
+  h.seed("t_taken", "Taken", other, Visibility::public_, 5, 100);
+  h.seed("t_stranger", "Stranger's", other, Visibility::public_, 5, 100);
+  // Sam's own copy of t_taken: private, so it is not itself on the wall — it is only the record
+  // that says he has already taken that plan.
+  h.seed("t_samscopy", "Taken (mine)", sam, Visibility::private_, 5, 100);
+  h.seedFork("t_samscopy", "t_taken");
+
+  const Json::Value body = bodyOf(sendIndex(h.api, galleryReq("s1")));
+
+  CHECK_EQ(body["count"].asUInt(), 3u);
+  CHECK_EQ(body["entries"][0]["id"].asString(), std::string("t_taken"));  // one fork, so it leads
+  CHECK_FALSE(body["entries"][0]["mine"].asBool());
+  CHECK(body["entries"][0]["forked"].asBool());
+  CHECK_EQ(body["entries"][1]["id"].asString(), std::string("t_mine"));
+  CHECK(body["entries"][1]["mine"].asBool());
+  CHECK_FALSE(body["entries"][1]["forked"].asBool());
+  CHECK_EQ(body["entries"][2]["id"].asString(), std::string("t_stranger"));
+  CHECK_FALSE(body["entries"][2]["mine"].asBool());
+  CHECK_FALSE(body["entries"][2]["forked"].asBool());
+
+  // The same rows to a stranger, with both facts back to false — a session adds facts, never trees.
+  const Json::Value anonymous = bodyOf(sendIndex(h.api, galleryReq()));
+  CHECK_EQ(anonymous["count"].asUInt(), 3u);
+  for (const Json::Value& row : anonymous["entries"]) {
+    CHECK_FALSE(row["mine"].asBool());
+    CHECK_FALSE(row["forked"].asBool());
+  }
+}
+
+TEST(a_listed_fork_names_its_source_only_while_that_source_is_public) {
+  Harness h;
+  const UserId owner = h.signIn("s1", "owner@example.com");
+  h.seed("t_source", "Learn Rust", owner, Visibility::public_, 5, 100);
+  h.seed("t_fork", "My Rust", owner, Visibility::public_, 5, 100);
+  h.seedFork("t_fork", "t_source");
+
+  const Json::Value named = bodyOf(sendIndex(h.api, galleryReq()));
+  CHECK_EQ(named["entries"][0]["id"].asString(), std::string("t_source"));  // the fork it inspired
+  CHECK_FALSE(named["entries"][0].isMember("sourceTitle"));
+  CHECK_EQ(named["entries"][1]["id"].asString(), std::string("t_fork"));
+  CHECK_EQ(named["entries"][1]["sourceTitle"].asString(), std::string("Learn Rust"));
+
+  // The owner pulls the source back to unlisted: the fork stays on the wall, but stops naming it.
+  h.trees->setVisibility(TreeId{"t_source"}, Visibility::unlisted);
+  const Json::Value anonymousSource = bodyOf(sendIndex(h.api, galleryReq()));
+  CHECK_EQ(anonymousSource["count"].asUInt(), 1u);
+  CHECK_EQ(anonymousSource["entries"][0]["id"].asString(), std::string("t_fork"));
+  CHECK_FALSE(anonymousSource["entries"][0].isMember("sourceTitle"));
+}
+
+TEST(the_json_index_pages_with_a_cursor_and_never_reshuffles) {
+  Harness h;
+  const UserId owner = h.signIn("s1", "owner@example.com");
+  h.seed("t_a", "A", owner, Visibility::public_, 5, 300);
+  h.seed("t_b", "B", owner, Visibility::public_, 5, 200);
+  h.seed("t_c", "C", owner, Visibility::public_, 5, 100);
+
+  const Json::Value first = bodyOf(sendIndex(h.api, galleryReq("", "2")));
+  CHECK_EQ(first["count"].asUInt(), 3u);  // the whole index, not this page
+  CHECK_EQ(first["entries"].size(), 2u);
+  CHECK_EQ(first["entries"][0]["id"].asString(), std::string("t_a"));
+  CHECK_EQ(first["entries"][1]["id"].asString(), std::string("t_b"));
+  CHECK_EQ(first["nextCursor"].asString(), std::string("t_b"));
+
+  const Json::Value second = bodyOf(sendIndex(h.api, galleryReq("", "2", first["nextCursor"].asString())));
+  CHECK_EQ(second["count"].asUInt(), 3u);
+  CHECK_EQ(second["entries"].size(), 1u);
+  CHECK_EQ(second["entries"][0]["id"].asString(), std::string("t_c"));
+  CHECK_FALSE(second.isMember("nextCursor"));
+}
+
+TEST(the_json_index_refuses_a_limit_it_cannot_read_or_will_not_serve) {
+  Harness h;
+  const UserId owner = h.signIn("s1", "owner@example.com");
+  h.seed("t_a", "A", owner, Visibility::public_, 5, 100);
+
+  for (const char* bad : {"0", "-4", "61", "many", "2cards", "2.5"}) {
+    const drogon::HttpResponsePtr response = sendIndex(h.api, galleryReq("", bad));
+    CHECK_EQ(response->statusCode(), drogon::k400BadRequest);
+    CHECK_EQ(bodyOf(response)["code"].asString(), std::string("bad-limit"));
+  }
+}
+
+TEST(the_json_index_refuses_a_cursor_naming_no_tree_rather_than_restarting) {
+  Harness h;
+  const UserId owner = h.signIn("s1", "owner@example.com");
+  h.seed("t_a", "A", owner, Visibility::public_, 5, 100);
+
+  const drogon::HttpResponsePtr response = sendIndex(h.api, galleryReq("", "", "t_gone"));
+
+  CHECK_EQ(response->statusCode(), drogon::k400BadRequest);
+  CHECK_EQ(bodyOf(response)["code"].asString(), std::string("unknown-cursor"));
+}
+
+TEST(an_empty_gallery_is_an_empty_list_never_an_error) {
+  Harness h;
+
+  const drogon::HttpResponsePtr response = sendIndex(h.api, galleryReq());
+
+  CHECK_EQ(response->statusCode(), drogon::k200OK);
+  CHECK_EQ(bodyOf(response)["count"].asUInt(), 0u);
+  CHECK_EQ(bodyOf(response)["entries"].size(), 0u);
 }

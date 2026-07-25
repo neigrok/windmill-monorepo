@@ -64,6 +64,9 @@ void HttpApi::getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
         state.graph = room.exportState();
         state.legend = room.exportLegend();
         body["state"] = toJson(state);
+        // When the tree was planted (epoch ms) — the week-N progress card counts from here,
+        // never the calendar week, so the client can't derive it from the document alone.
+        body["createdAt"] = static_cast<Json::Int64>(room.createdAt());
         // The share flip reads these: the current visibility, and whether the caller owns it.
         body["visibility"] = toString(room.visibility());
         body["mine"] = caller && owner && *caller == *owner;
