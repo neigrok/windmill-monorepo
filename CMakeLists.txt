@@ -156,6 +156,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
   # one RoomRegistry for REST, the socket, and MCP (a tree has a single live room).
   add_library(windmill_mcp_lib
     adapters/mcp/McpServer.cpp
+    adapters/mcp/ReadShape.cpp
     adapters/mcp/RoadmapTools.cpp
     adapters/mcp/McpHttpEndpoint.cpp)
   target_link_libraries(windmill_mcp_lib PUBLIC windmill_adapters)

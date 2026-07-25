@@ -9,12 +9,17 @@
 namespace wm {
 
 // The result of one tool invocation, in MCP's `tools/call` shape. `content` is the array
-// of blocks the model reads (we emit a single text block); `structured` mirrors it as
-// machine-readable JSON (structuredContent), null when absent. `isError` marks a
-// tool-level failure — reported inside the result so the model sees it, not as a
-// JSON-RPC transport error.
+// of blocks the model reads (we emit a single text block) — the primary channel, and the
+// one every client understands. `payload` is that same answer unserialized, for the hosts
+// in this process that read a result rather than ship it (a tend reads back the seq it
+// wrote); it never reaches the wire. `structured` is MCP's structuredContent, which the
+// spec pairs with a declared `outputSchema` — left null unless a tool declares one, since
+// otherwise it is the whole answer sent a second time. `isError` marks a tool-level
+// failure — reported inside the result so the model sees it, not as a JSON-RPC transport
+// error.
 struct ToolResult {
   Json::Value content{Json::arrayValue};
+  Json::Value payload{Json::nullValue};
   Json::Value structured{Json::nullValue};
   bool isError = false;
 
@@ -27,12 +32,12 @@ struct ToolResult {
     return out;
   }
 
-  // text = compact dump, structured = value
+  // content = compact dump, payload = value, structuredContent = nothing
   static ToolResult json(const Json::Value& value) {
     Json::StreamWriterBuilder builder;
     builder["indentation"] = "";
     ToolResult out = text(Json::writeString(builder, value));
-    out.structured = value;
+    out.payload = value;
     return out;
   }
 

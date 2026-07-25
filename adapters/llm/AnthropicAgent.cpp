@@ -247,8 +247,21 @@ AgentOutcome driveAgent(const std::string& prompt, const TreeId& tree, const Use
 
   // Read the tree the sentence is about, so the model plans against real ids and the person's
   // actual structure rather than a guess. Unreadable tree, no run.
+  //
+  // get_tree answers an agent with a lean projection by default; a tend asks for the whole
+  // document, because it may touch any part of it — it repositions nodes, rewrites annotations,
+  // and reads the legend's briefs to sort what it plants.
   Json::Value treeArgs(Json::objectValue);
   treeArgs["treeId"] = tree.str();
+  Json::Value everyNodeField(Json::arrayValue);
+  for (const char* field : {"id", "label", "icon", "color", "order", "prerequisites", "position",
+                            "status", "description", "links"})
+    everyNodeField.append(field);
+  Json::Value everyKindField(Json::arrayValue);
+  for (const char* field : {"id", "hue", "label", "description"}) everyKindField.append(field);
+  treeArgs["fields"] = everyNodeField;
+  treeArgs["kindFields"] = everyKindField;
+  treeArgs["limit"] = 1000;
   const ToolResult treeResult = tools.callTool("get_tree", treeArgs, caller);
   if (treeResult.isError) {
     outcome.error = "could not read the tree before tending";

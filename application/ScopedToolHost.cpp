@@ -43,11 +43,11 @@ ToolResult ScopedToolHost::callTool(const std::string& name, const Json::Value& 
   // captures only the two that CREATE — never the id of a step the agent merely changed.
   if (!result.isError) {
     if (name == "create_node") {
-      const std::string id = result.structured.get("id", "").asString();
+      const std::string id = result.payload.get("id", "").asString();
       if (!id.empty()) created_.push_back(id);
-    } else if (name == "import_subgraph" && !result.structured.get("dryRun", Json::Value(false)).asBool()) {
+    } else if (name == "import_subgraph" && !result.payload.get("dryRun", Json::Value(false)).asBool()) {
       std::set<std::string> collided;
-      for (const Json::Value& c : result.structured["nodeCollisions"]) collided.insert(c.asString());
+      for (const Json::Value& c : result.payload["nodeCollisions"]) collided.insert(c.asString());
       for (const Json::Value& node : scopedArgs["nodes"]) {
         const std::string id = node.get("id", "").asString();
         if (!id.empty() && !collided.count(id)) created_.push_back(id);

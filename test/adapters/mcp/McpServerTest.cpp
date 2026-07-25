@@ -8,6 +8,7 @@ namespace {
 struct FakeHost : ToolHost {
   std::string lastName;
   Json::Value lastArgs;
+  bool declaresOutputSchema = false;  // the one thing structuredContent exists to accompany
 
   Json::Value listTools() const override {
     Json::Value tools(Json::arrayValue);
@@ -23,7 +24,9 @@ struct FakeHost : ToolHost {
     if (name == "boom") return ToolResult::failure("boom failed");
     Json::Value out(Json::objectValue);
     out["ok"] = true;
-    return ToolResult::json(out);
+    ToolResult result = ToolResult::json(out);
+    if (declaresOutputSchema) result.structured = out;
+    return result;
   }
 };
 
@@ -76,7 +79,7 @@ TEST(mcp_tools_list_passes_through_the_host_catalog) {
   CHECK_EQ((*reply)["result"]["tools"][0]["name"].asString(), std::string("echo"));
 }
 
-TEST(mcp_tools_call_success_carries_content_and_structured) {
+TEST(mcp_tools_call_answers_through_content_alone) {
   FakeHost host;
   McpServer server = make(host);
 
@@ -91,10 +94,26 @@ TEST(mcp_tools_call_success_carries_content_and_structured) {
   CHECK_FALSE((*reply)["result"]["isError"].asBool());
   CHECK(( *reply)["result"]["content"].isArray());
   CHECK_EQ((*reply)["result"]["content"][0]["type"].asString(), std::string("text"));
-  CHECK(( *reply)["result"].isMember("structuredContent"));
-  CHECK(( *reply)["result"]["structuredContent"]["ok"].asBool());
+  CHECK_EQ((*reply)["result"]["content"][0]["text"].asString(), std::string("{\"ok\":true}"));
+  // structuredContent accompanies a declared outputSchema; without one it would be the whole
+  // answer a second time, so a tool that declares none does not pay for it.
+  CHECK_FALSE((*reply)["result"].isMember("structuredContent"));
   CHECK_EQ(host.lastName, std::string("echo"));
   CHECK_EQ(host.lastArgs["x"].asInt(), 7);
+}
+
+TEST(mcp_tools_call_passes_structured_content_through_when_a_tool_sets_it) {
+  FakeHost host;
+  host.declaresOutputSchema = true;  // a future tool that publishes an outputSchema opts back in
+  McpServer server = make(host);
+
+  Json::Value params(Json::objectValue);
+  params["name"] = "echo";
+  std::optional<Json::Value> reply = server.handle(request("tools/call", params, 4));
+
+  CHECK(reply.has_value());
+  CHECK(( *reply)["result"].isMember("structuredContent"));
+  CHECK(( *reply)["result"]["structuredContent"]["ok"].asBool());
 }
 
 TEST(mcp_tools_call_failure_is_reported_in_result_not_transport) {

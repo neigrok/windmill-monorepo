@@ -2,6 +2,7 @@
 
 #include "adapters/json/CommandJson.h"
 #include "adapters/json/TreeJson.h"
+#include "adapters/mcp/ReadShape.h"
 #include "application/TreeRoom.h"
 #include "domain/Access.h"
 #include "domain/NodeQuery.h"
@@ -57,6 +58,32 @@ Json::Value strArray(const char* description) {
   property["type"] = "array";
   property["items"] = str("");
   property["description"] = description;
+  return property;
+}
+
+// A read's `fields` argument, carrying its shape's whole vocabulary as the item `enum` — a
+// client can only pre-validate what the schema states, so the legal set is stated.
+Json::Value fieldArray(const char* description, const std::vector<std::string>& legal) {
+  Json::Value allowed(Json::arrayValue);
+  for (const std::string& name : legal) allowed.append(name);
+  Json::Value item(Json::objectValue);
+  item["type"] = "string";
+  item["enum"] = allowed;
+
+  Json::Value property(Json::objectValue);
+  property["type"] = "array";
+  property["items"] = item;
+  property["description"] = description;
+  return property;
+}
+
+Json::Value boundedInt(const char* description, int smallest, int largest, int fallback) {
+  Json::Value property(Json::objectValue);
+  property["type"] = "integer";
+  property["description"] = description;
+  property["minimum"] = smallest;
+  property["maximum"] = largest;
+  property["default"] = fallback;
   return property;
 }
 
@@ -146,14 +173,39 @@ ToolResult withRoom(RoomRegistry& registry, const TreeId& tree, Fn&& fn) {
   }
 }
 
-ToolResult readTree(RoomRegistry& registry, const TreeId& tree, const std::optional<UserId>& caller) {
+ToolResult readTree(RoomRegistry& registry, const TreeId& tree, const Json::Value& args,
+                    const std::optional<UserId>& caller) {
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
     // Byte-identical to the absent message (RoomRegistry::open throws the same) — a private
     // tree must be indistinguishable from one that does not exist, or the id is an oracle.
     if (!canRead(caller, room.owner(), room.visibility())) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
+
+    std::string error;
+    std::optional<NodeFields> nodeFields = nodeVocabulary().parse(args["fields"], kGetTreeFields, error);
+    if (!nodeFields) return ToolResult::failure(error);
+    std::optional<KindFields> kindFields = kindVocabulary().parse(args["kindFields"], kLegendFields, error);
+    if (!kindFields) return ToolResult::failure(error);
+
+    const TreeData data = room.snapshot();
+    std::optional<Page> page = pageOf(data.nodes, args, error);
+    if (!page) return ToolResult::failure(error);
+
+    Json::Value nodes(Json::arrayValue);
+    for (std::size_t i = page->begin; i < page->end; ++i) nodes.append(projectNode(data.nodes[i], *nodeFields));
+    Json::Value kinds(Json::arrayValue);
+    for (const Kind& kind : data.kinds) kinds.append(projectKind(kind, *kindFields));
+
+    Json::Value document(Json::objectValue);
+    document["id"] = data.id.str();
+    document["title"] = data.title;
+    document["nodes"] = nodes;
+    document["kinds"] = kinds;
+
     Json::Value out(Json::objectValue);
     out["seq"] = static_cast<Json::Int64>(room.head());
-    out["tree"] = toJson(room.snapshot());
+    out["count"] = static_cast<Json::UInt64>(data.nodes.size());  // the whole tree, not this page
+    if (!page->nextCursor.empty()) out["nextCursor"] = page->nextCursor;
+    out["tree"] = document;
     return ToolResult::json(out);
   });
 }
@@ -191,8 +243,12 @@ ToolResult readHealth(RoomRegistry& registry, const TreeId& tree, const std::opt
   });
 }
 
-ToolResult readProgress(ProgressService& progress, const TreeId& tree, const UserId& user) {
-  return ToolResult::json(toJson(progress.progressOf(tree, user)));
+ToolResult readProgress(ProgressService& progress, const TreeId& tree, const Json::Value& args,
+                        const UserId& user) {
+  std::string error;
+  std::optional<ProgressFields> fields = progressVocabulary().parse(args["fields"], kProgressFields, error);
+  if (!fields) return ToolResult::failure(error);
+  return ToolResult::json(projectProgress(progress.progressOf(tree, user), *fields));
 }
 
 ToolResult findNodes(RoomRegistry& registry, const TreeId& tree, const Json::Value& args,
@@ -210,11 +266,20 @@ ToolResult findNodes(RoomRegistry& registry, const TreeId& tree, const Json::Val
       filter.kind = KindId{args["kind"].asString()};
     filter.query = args.get("query", "").asString();
 
+    std::string error;
+    std::optional<NodeFields> fields = nodeVocabulary().parse(args["fields"], kFindNodesFields, error);
+    if (!fields) return ToolResult::failure(error);
+
+    const std::vector<NodeSpec> matches = selectNodes(room.snapshot(), filter);
+    std::optional<Page> page = pageOf(matches, args, error);
+    if (!page) return ToolResult::failure(error);
+
     Json::Value nodes(Json::arrayValue);
-    for (const NodeSpec& node : selectNodes(room.snapshot(), filter)) nodes.append(nodeToJson(node));
+    for (std::size_t i = page->begin; i < page->end; ++i) nodes.append(projectNode(matches[i], *fields));
     Json::Value out(Json::objectValue);
-    out["count"] = nodes.size();
+    out["count"] = static_cast<Json::UInt64>(matches.size());  // everything that matched, not this page
     out["nodes"] = nodes;
+    if (!page->nextCursor.empty()) out["nextCursor"] = page->nextCursor;
     return ToolResult::json(out);
   });
 }
@@ -383,8 +448,8 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
   if (!requested.empty()) {
     Json::Value results;
     applyProgressBatch(registry, progress, bus, tree, clock, actor, requested, false, results);  // skip unknowns
-    grafted.structured["progress"] = results;
-    return ToolResult::json(grafted.structured);
+    grafted.payload["progress"] = results;
+    return ToolResult::json(grafted.payload);
   }
   return grafted;
 }
@@ -486,11 +551,19 @@ Json::Value RoadmapTools::listTools() const {
   {
     Json::Value p(Json::objectValue);
     p["treeId"] = str(treeId);
+    p["fields"] = fieldArray(
+        "Which fields each node carries. Default {id, label, color, prerequisites} — the shape of "
+        "the tree. Ask for description, links, position, order, icon or status when you need them.",
+        nodeVocabulary().names());
+    p["kindFields"] = fieldArray(
+        "Which fields each legend kind carries. Default {id, hue, label}.", kindVocabulary().names());
+    p["limit"] = boundedInt("Most nodes to return in one page.", 1, kMaxLimit, kDefaultLimit);
+    p["cursor"] = str("Resume token from a previous page's `nextCursor`. Omit for the first page.");
     tools.append(tool("get_tree",
-        "Read a roadmap's current document — title, every node (id, label, icon, color, position) "
-        "and its prerequisite edges, and the ordered legend `kinds` (each a hue with a label and "
-        "description) — with the tree's op sequence number. Call this before editing to learn the "
-        "node ids the other tools take, and the legend a node's color refers to.",
+        "Read a roadmap's current document — title, its nodes and their prerequisite edges, and the "
+        "ordered legend `kinds` — with the tree's op sequence number. Call this before editing to "
+        "learn the node ids the other tools take, and the legend a node's color refers to. `count` "
+        "is the tree's whole node count; when it exceeds one page a `nextCursor` comes back with it.",
         p, {"treeId"}));
   }
   {
@@ -514,6 +587,10 @@ Json::Value RoadmapTools::listTools() const {
   {
     Json::Value p(Json::objectValue);
     p["treeId"] = str(treeId);
+    p["fields"] = fieldArray(
+        "Which id lists to return. Default {completed, inProgress}; `cleared` (the tombstones a "
+        "browser reconciles against) is available but rarely useful.",
+        progressVocabulary().names());
     tools.append(tool("get_progress",
         "The caller's private progress overlay for a roadmap: the node ids that are completed and "
         "those in progress. Per-user, separate from the shared structure.",
@@ -526,10 +603,18 @@ Json::Value RoadmapTools::listTools() const {
                          {"terracotta", "olive", "gold", "brick", "sky", "plum"});
     p["kind"] = str("Optional legend kind id — matches nodes wearing that kind's hue.");
     p["query"] = str("Optional case-insensitive substring matched against each node's label and description.");
+    p["fields"] = fieldArray(
+        "Which fields each match carries. Default {id, label, color} — an index you pick edit targets "
+        "out of. Ask for description, links, prerequisites, position, order, icon or status when you "
+        "need them.",
+        nodeVocabulary().names());
+    p["limit"] = boundedInt("Most nodes to return in one page.", 1, kMaxLimit, kDefaultLimit);
+    p["cursor"] = str("Resume token from a previous page's `nextCursor`. Omit for the first page.");
     tools.append(tool("find_nodes",
         "Search a roadmap's nodes. Every filter you set must match (AND): `color` or `kind` pin a hue, "
         "`query` is a case-insensitive substring over label + description. Omit all filters to list every "
-        "node. Returns the matching nodes (same shape as get_tree) and a count.",
+        "node. `count` is everything that matched, not the size of the page you got; when more remain a "
+        "`nextCursor` comes back with it.",
         p, {"treeId"}));
   }
   {
@@ -718,8 +803,9 @@ Json::Value RoadmapTools::listTools() const {
   {
     Json::Value p(Json::objectValue);
     p["treeId"] = str(treeId);
-    p["nodes"] = strArray("The nodes to import — each {id, label, icon?, color?, prerequisites?, "
-                          "description?, links?}, the same shape get_tree returns.");
+    p["nodes"] = strArray("The nodes to import — each {id, label, icon?, color?, order?, "
+                          "prerequisites?, position?, status?, description?, links?}, the shape "
+                          "get_tree returns when you ask it for those fields.");
     p["kinds"] = strArray("Optional legend kinds — each {id, hue, label?, description?}. Omit to leave "
                           "the legend untouched.");
     p["progress"] = strArray("Optional carried progress — a list of {nodeId, status} applied over the "
@@ -727,7 +813,9 @@ Json::Value RoadmapTools::listTools() const {
     p["dryRun"] = boolean("If true, report collisions and change nothing.");
     tools.append(tool("import_subgraph",
         "Bulk-apply a whole roadmap slice in one op — the shape get_tree returns ({title?, nodes[], "
-        "kinds[]}, plus optional progress[]). Upsert by id: an incoming id already present is "
+        "kinds[]}, plus optional progress[]); to copy a tree faithfully, read it with every field "
+        "named in `fields` first, since get_tree answers with a projection. Upsert by id: an "
+        "incoming id already present is "
         "overwritten (reported in nodeCollisions/kindCollisions), a new id is added; nothing is removed. "
         "Pass dryRun to preview the collisions first. This collapses hundreds of create/connect calls "
         "into one.",
@@ -759,10 +847,10 @@ ToolResult RoadmapTools::callTool(const std::string& name, const Json::Value& ar
   std::optional<UserId> reader = caller.empty() ? std::nullopt : std::optional<UserId>(caller);
 
   if (name == "delete_tree")     return removeTree(treeRegistry_, tree, caller);
-  if (name == "get_tree")        return readTree(registry_, tree, reader);
+  if (name == "get_tree")        return readTree(registry_, tree, arguments, reader);
   if (name == "get_diagnostics") return readDiagnostics(registry_, tree, reader);
   if (name == "get_health")      return readHealth(registry_, tree, reader);
-  if (name == "get_progress")    return readProgress(progress_, tree, caller);
+  if (name == "get_progress")    return readProgress(progress_, tree, arguments, caller);
   if (name == "find_nodes")      return findNodes(registry_, tree, arguments, reader);
   if (name == "set_progress")
     return writeProgress(registry_, progress_, bus_, tree, arguments, clock_, caller);

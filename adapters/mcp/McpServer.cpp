@@ -79,6 +79,8 @@ std::optional<Json::Value> McpServer::handle(const Json::Value& message, const U
     Json::Value payload(Json::objectValue);
     payload["content"] = outcome.content;
     payload["isError"] = outcome.isError;
+    // Only a tool that declares an `outputSchema` sets `structured`; without one the block
+    // would be the answer the caller already has in `content`, shipped twice.
     if (!outcome.structured.isNull()) payload["structuredContent"] = outcome.structured;
     return result(id, payload);
   }
