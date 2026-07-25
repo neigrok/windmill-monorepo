@@ -21,6 +21,14 @@ struct TreeStats {
 
 TreeStats treeStats(const TreeData& tree, const Progress& progress);
 
+// When a tree last moved forward. Its freshness lives in two places and neither stands for the
+// other: the trees row moves on a structural edit (and on a rename or a visibility flip), while a
+// progress mark writes only node_progress. A tree whose owner ticks a step every day but never
+// restructures it is the most active tree there is, and reading one column would call it
+// abandoned. Every ordering that means "last active" folds the pair here, so the registry and the
+// public wall can never drift into two answers.
+std::uint64_t lastActiveAt(std::uint64_t updatedAt, std::uint64_t lastMarkedAt);
+
 // One glanceable registry row: which tree, its stats, when it was planted, and when it last
 // moved forward. The two timestamps answer different questions — how old the tree is, and how
 // fresh it is — so neither stands in for the other.
@@ -28,7 +36,7 @@ struct TreeSummary {
   TreeId id;
   std::string title;
   std::uint64_t createdAt = 0;  // epoch ms; the planting time, fixed for the tree's whole life
-  std::uint64_t updatedAt = 0;  // epoch ms; the freshest forward change (structural edit or a progress mark)
+  std::uint64_t updatedAt = 0;  // epoch ms; lastActiveAt — a structural edit or a progress mark
   TreeStats stats;
 };
 

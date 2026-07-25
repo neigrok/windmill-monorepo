@@ -15,15 +15,19 @@ namespace wm {
 
 // A candidate for the public wall: one tree its owner listed (Visibility::public_ — the
 // deliberate act past unlisted, which means "reachable by link", not "listed"), whose it is, the
-// OWNER's overlay because a shared tree shows the owner's journey, when it last moved forward,
-// how many trees were forked from it, and the title of the tree it was itself forked from —
-// carried already resolved, because whether a source may be named at all is a privacy rule the
-// repository owns (a source is named only while it exists and is public).
+// OWNER's overlay because a shared tree shows the owner's journey, the two stamps that say when
+// it last moved forward, how many trees were forked from it, and the title of the tree it was
+// itself forked from — carried already resolved, because whether a source may be named at all is
+// a privacy rule the repository owns (a source is named only while it exists and is public).
 struct WallCandidate {
   TreeData data;
   UserId owner;
   Progress ownerProgress;
+  // Kept apart until the ranking folds them (lastActiveAt): a structural edit stamps the tree's
+  // own row, a progress mark stamps only the owner's overlay. Reading either alone mistakes one
+  // kind of activity for none at all.
   std::uint64_t updatedAt = 0;
+  std::uint64_t lastMarkedAt = 0;
   int forks = 0;
   std::string sourceTitle;
 };
@@ -45,6 +49,9 @@ struct GalleryEntry {
   std::string title;
   TreeStats stats;
   int forks = 0;
+  // The folded answer, spelled the way a registry row spells it (domain/TreeSummary.h): the
+  // freshest of the tree's own stamp and its owner's latest mark. Canon's "New = last-active
+  // desc" sort mode is this field descending — the only thing missing is the chip.
   std::uint64_t updatedAt = 0;
   std::string sourceTitle;
   bool mine = false;
@@ -59,8 +66,11 @@ inline constexpr int kWallMinimumSteps = 3;
 
 // The index, whole and ranked: drop the candidates that haven't earned a place, order by the
 // forks they inspired (the one honest popularity signal we have — a fork is someone taking the
-// plan for themselves), then by freshness, then by id so the order never wobbles between two
-// equal rows. Every surface reads this one function: two URLs, one index, never two rankings.
+// plan for themselves), then by when the tree was last active, then by id so the order never
+// wobbles between two equal rows. Last-active is what carries the whole weight of "no progress
+// floor": a tree its owner ticks a step on every week beats one nobody has opened in a year,
+// without either being gated off the wall. Every surface reads this one function: two URLs, one
+// index, never two rankings.
 std::vector<GalleryEntry> publicWall(const std::vector<WallCandidate>& candidates, const Viewer& viewer);
 
 // One page of that index: the `limit` entries following the one `cursor` names (an empty cursor

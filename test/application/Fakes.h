@@ -61,6 +61,11 @@ struct FakeTreeRepository : TreeRepository {
   std::map<std::string, StoredTree> byId;
   std::map<std::string, std::string> forkedFrom;
   std::map<std::string, std::uint64_t> updatedAt;  // epoch ms per tree, for registry ordering
+  // The owner's latest progress mark per tree — the column listPublic joins in. It lives here
+  // rather than being derived from a progress fake because it is a fact of the wall ROW: the real
+  // query carries it on the same row as the fork count, and a repository fake models the row it
+  // hands back, not the tables behind it.
+  std::map<std::string, std::uint64_t> lastMarkedAt;
   std::set<std::string> deletedIds;
   // One entry per save call: how many node rows the slice carried — the sparse-persistence
   // assertions read this (a one-node edit must save one node, not the tree).
@@ -149,6 +154,7 @@ struct FakeTreeRepository : TreeRepository {
       ListedTree entry;
       entry.data = LooseGraph(stored.state).toTreeData(TreeId{id}, stored.title.value);
       entry.updatedAt = updatedAt.count(id) ? updatedAt.at(id) : 0;
+      entry.lastMarkedAt = lastMarkedAt.count(id) ? lastMarkedAt.at(id) : 0;
       entry.owner = *stored.owner;
       for (const auto& [forkId, from] : forkedFrom)
         if (from == id && !deletedIds.count(forkId)) entry.forks++;

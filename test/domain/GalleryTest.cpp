@@ -43,6 +43,53 @@ TEST(wall_ranks_by_forks_then_freshness_then_id) {
   CHECK_EQ(wall[3].id, TreeId{"t_c"});
 }
 
+TEST(a_tended_tree_outranks_a_structurally_newer_one_nobody_has_opened) {
+  // The whole of the wall's answer to abandonment. A progress mark writes only the owner's
+  // overlay and never moves the tree's own stamp, so a tiebreak reading that stamp alone would
+  // put a tree nobody has touched above one its owner ticks a step on every day.
+  WallCandidate tended = candidate("t_tended", "Tended", 5, 1, 100);
+  tended.lastMarkedAt = 900;
+  WallCandidate abandoned = candidate("t_abandoned", "Abandoned", 5, 1, 500);
+
+  std::vector<GalleryEntry> wall = publicWall({abandoned, tended}, ANONYMOUS);
+
+  CHECK_EQ(wall.size(), std::size_t{2});
+  CHECK_EQ(wall[0].id, TreeId{"t_tended"});
+  CHECK_EQ(wall[0].updatedAt, std::uint64_t{900});  // the row wears last-active, not the stamp
+  CHECK_EQ(wall[1].id, TreeId{"t_abandoned"});
+  CHECK_EQ(wall[1].updatedAt, std::uint64_t{500});
+}
+
+TEST(last_active_is_the_freshest_of_the_two_stamps_in_either_direction) {
+  // The fold is a max, not a preference: a stale mark never drags down a tree edited since.
+  WallCandidate edited = candidate("t_edited", "Edited", 5, 1, 900);
+  edited.lastMarkedAt = 100;
+  WallCandidate marked = candidate("t_marked", "Marked", 5, 1, 100);
+  marked.lastMarkedAt = 500;
+
+  std::vector<GalleryEntry> wall = publicWall({marked, edited}, ANONYMOUS);
+
+  CHECK_EQ(wall.size(), std::size_t{2});
+  CHECK_EQ(wall[0].id, TreeId{"t_edited"});
+  CHECK_EQ(wall[0].updatedAt, std::uint64_t{900});
+  CHECK_EQ(wall[1].id, TreeId{"t_marked"});
+  CHECK_EQ(wall[1].updatedAt, std::uint64_t{500});
+}
+
+TEST(forks_still_outrank_freshness) {
+  // Last-active only ever breaks a tie: the wall is fork-ranked first, so a much-forked plan
+  // never falls behind a busy one.
+  WallCandidate popular = candidate("t_popular", "Popular", 5, 7, 100);
+  WallCandidate busy = candidate("t_busy", "Busy", 5, 1, 100);
+  busy.lastMarkedAt = 9000;
+
+  std::vector<GalleryEntry> wall = publicWall({busy, popular}, ANONYMOUS);
+
+  CHECK_EQ(wall.size(), std::size_t{2});
+  CHECK_EQ(wall[0].id, TreeId{"t_popular"});
+  CHECK_EQ(wall[1].id, TreeId{"t_busy"});
+}
+
 TEST(wall_drops_a_tree_too_small_to_read_as_a_plan) {
   std::vector<WallCandidate> candidates{
       candidate("t_stub", "Stub", kWallMinimumSteps - 1, 99, 100),

@@ -1,6 +1,7 @@
 #include "adapters/http/OgVideoApi.h"
 
 #include "adapters/http/Caller.h"
+#include "adapters/http/JsonReply.h"
 #include "domain/Access.h"
 
 #include <cstddef>
@@ -13,14 +14,6 @@ namespace wm {
 
 namespace {
 constexpr std::size_t kMaxVideoBytes = 3 * 1024 * 1024;  // 3 MB — a short 1080×1080 loop encodes well under this
-
-drogon::HttpResponsePtr error(drogon::HttpStatusCode status, const std::string& message) {
-  Json::Value body(Json::objectValue);
-  body["error"] = message;
-  auto response = drogon::HttpResponse::newHttpJsonResponse(body);
-  response->setStatusCode(status);
-  return response;
-}
 
 // The container the upload leads with, by magic bytes: an ISO-BMFF (mp4) box tags bytes 4..8
 // "ftyp"; a Matroska/WebM stream opens with the EBML header 1A 45 DF A3. Anything else is refused,

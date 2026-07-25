@@ -1,6 +1,7 @@
 #include "adapters/http/TendingApi.h"
 
 #include "adapters/http/Caller.h"
+#include "adapters/http/JsonReply.h"
 #include "domain/Tending.h"
 
 #include <optional>
@@ -9,18 +10,6 @@
 namespace wm {
 
 namespace {
-drogon::HttpResponsePtr jsonResponse(const Json::Value& body, drogon::HttpStatusCode code = drogon::k200OK) {
-  auto response = drogon::HttpResponse::newHttpJsonResponse(body);
-  response->setStatusCode(code);
-  return response;
-}
-
-drogon::HttpResponsePtr error(drogon::HttpStatusCode status, const std::string& message) {
-  Json::Value body(Json::objectValue);
-  body["error"] = message;
-  return jsonResponse(body, status);
-}
-
 // The run's outgoing wire shape. `refusal` is empty for a run that started; `status` and
 // `refusal` are the vocabulary the client branches on to pick the receipt or the quiet face.
 Json::Value toJson(const TendRun& run) {

@@ -1,6 +1,7 @@
 #include "adapters/http/OgImageApi.h"
 
 #include "adapters/http/Caller.h"
+#include "adapters/http/JsonReply.h"
 #include "domain/Access.h"
 
 #include <optional>
@@ -12,14 +13,6 @@ namespace wm {
 
 namespace {
 constexpr std::size_t kMaxImageBytes = 3 * 1024 * 1024;  // 3 MB — a rendered 1200×630 card is far smaller
-
-drogon::HttpResponsePtr error(drogon::HttpStatusCode status, const std::string& message) {
-  Json::Value body(Json::objectValue);
-  body["error"] = message;
-  auto response = drogon::HttpResponse::newHttpJsonResponse(body);
-  response->setStatusCode(status);
-  return response;
-}
 
 // The honest fallback: a missing image, an unreadable tree, or an absent one all bounce to the
 // generic card rather than 404, so the og:image tag always resolves to something (never broken).

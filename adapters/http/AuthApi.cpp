@@ -1,5 +1,6 @@
 #include "adapters/http/AuthApi.h"
 
+#include "adapters/http/JsonReply.h"
 #include "adapters/http/RateLimiter.h"  // clientIp
 
 #include <drogon/Cookie.h>
@@ -11,18 +12,6 @@
 namespace wm {
 
 namespace {
-drogon::HttpResponsePtr jsonResponse(const Json::Value& body, drogon::HttpStatusCode code = drogon::k200OK) {
-  auto response = drogon::HttpResponse::newHttpJsonResponse(body);
-  response->setStatusCode(code);
-  return response;
-}
-
-drogon::HttpResponsePtr error(drogon::HttpStatusCode code, const std::string& message) {
-  Json::Value body(Json::objectValue);
-  body["error"] = message;
-  return jsonResponse(body, code);
-}
-
 // The session secret behind a request: the HttpOnly cookie, or a Bearer token for API/test
 // callers. One reader shared by every account endpoint (me, logout, patch, delete, sessions).
 std::string sessionSecret(const drogon::HttpRequestPtr& req) {

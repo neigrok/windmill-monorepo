@@ -49,15 +49,18 @@ struct OwnedTree {
 };
 
 // One row of the public wall: the same projected document and structural timestamp, plus the
-// facts a gallery card needs that a registry row doesn't — how many trees were forked from it,
-// whose journey it shows (a shared tree shows its OWNER's progress, so the wall joins the
+// facts a gallery card needs that a registry row doesn't — when the OWNER last marked a step (the
+// other half of "last active": the structural stamp never moves for a progress mark, so a wall
+// ranked on it alone cannot tell a tended tree from an abandoned one), how many trees were forked
+// from it, whose journey it shows (a shared tree shows its OWNER's progress, so the wall joins the
 // owner's overlay, not the reader's), and the title of the tree this one was forked from, under
-// the same rule ForkLineage carries: named only while that source exists and is public. The
-// lineage rides this query rather than a per-card `loadForkLineage`, which would be a second
-// round trip per row.
+// the same rule ForkLineage carries: named only while that source exists and is public. The mark
+// and the lineage ride this query rather than a per-card lookup, which would be a second round
+// trip per row.
 struct ListedTree {
   TreeData data;
   std::uint64_t updatedAt = 0;
+  std::uint64_t lastMarkedAt = 0;  // epoch ms of the owner's latest mark on this tree, 0 if none
   int forks = 0;
   UserId owner;
   std::string sourceTitle;

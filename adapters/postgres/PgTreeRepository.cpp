@@ -315,13 +315,22 @@ std::vector<ListedTree> PgTreeRepository::listPublic() {
   // in its ON clause — the source is named only while it exists and is public, so an unlisted,
   // private or deleted source coalesces to '' and the card says nothing. Joined rather than
   // looked up per card: a wall of sixty would otherwise be sixty extra round trips.
+  // The owner's latest mark rides it the same way, as a lateral. It has to: `updated_at` on this
+  // row moves for a structural edit, a rename or a visibility flip and for NOTHING else, so a
+  // wall ranked on that column alone cannot see a tree being worked on at all — while the flip
+  // that lists a long-dead tree reads to it as freshness. The domain folds the two (lastActiveAt).
+  // The lookup lands on node_progress's primary key, whose (tree_id, user_id) prefix is exactly
+  // this predicate — an index scan per listed tree, not a scan of the marks table.
   pqxx::result rows = txn.exec_params(
       "SELECT t.id, t.title, t.owner_id::text AS owner_id, t.document::text, "
       "(extract(epoch from t.updated_at) * 1000)::bigint AS updated_ms, "
+      "coalesce((extract(epoch from m.marked_at) * 1000)::bigint, 0) AS marked_ms, "
       "(SELECT count(*) FROM trees f WHERE f.forked_from = t.id AND f.deleted_at IS NULL) AS forks, "
       "coalesce(s.title, '') AS source_title "
       "FROM trees t "
       "LEFT JOIN trees s ON s.id = t.forked_from AND s.deleted_at IS NULL AND s.visibility = 'public' "
+      "LEFT JOIN LATERAL (SELECT max(p.updated_at) AS marked_at FROM node_progress p "
+      "                   WHERE p.tree_id = t.id AND p.user_id = t.owner_id::text) m ON true "
       "WHERE t.visibility = 'public' AND t.deleted_at IS NULL AND t.owner_id IS NOT NULL");
 
   std::vector<ListedTree> listed;
@@ -331,6 +340,7 @@ std::vector<ListedTree> PgTreeRepository::listPublic() {
     entry.data = projectDocument(txn, TreeId{row["id"].as<std::string>()}, row["title"].as<std::string>(),
                                  row["document"].as<std::string>());
     entry.updatedAt = static_cast<std::uint64_t>(row["updated_ms"].as<long long>());
+    entry.lastMarkedAt = static_cast<std::uint64_t>(row["marked_ms"].as<long long>());
     entry.forks = row["forks"].as<int>();
     entry.owner = UserId{row["owner_id"].as<std::string>()};
     entry.sourceTitle = row["source_title"].as<std::string>();
@@ -380,8 +390,12 @@ void PgTreeRepository::claim(const TreeId& tree, const UserId& owner) {
 
 void PgTreeRepository::setVisibility(const TreeId& tree, Visibility visibility) {
   pqxx::work txn{pgThreadConnection(connString_)};
-  txn.exec_params("UPDATE trees SET visibility = $2, updated_at = now() "
-                  "WHERE id = $1 AND deleted_at IS NULL",
+  // Deliberately does NOT touch updated_at. The gallery folds that column into last-active, so a
+  // bump here would let anyone flip unlisted->public to vault a long-dead tree up the wall — the
+  // one thing ranking by activity exists to prevent. Nothing is lost by leaving it: the funnel's
+  // W1-return test is a three-way OR over marks, tree edits AND events, and listing a tree already
+  // beacons its own event, so a share flip still counts as a return through that arm.
+  txn.exec_params("UPDATE trees SET visibility = $2 WHERE id = $1 AND deleted_at IS NULL",
                   tree.str(), toString(visibility));
   txn.commit();
 }

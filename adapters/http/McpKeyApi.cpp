@@ -1,20 +1,8 @@
 #include "adapters/http/McpKeyApi.h"
 
+#include "adapters/http/JsonReply.h"
+
 namespace wm {
-
-namespace {
-drogon::HttpResponsePtr jsonResponse(const Json::Value& body, drogon::HttpStatusCode code = drogon::k200OK) {
-  auto response = drogon::HttpResponse::newHttpJsonResponse(body);
-  response->setStatusCode(code);
-  return response;
-}
-
-drogon::HttpResponsePtr error(drogon::HttpStatusCode code, const std::string& message) {
-  Json::Value body(Json::objectValue);
-  body["error"] = message;
-  return jsonResponse(body, code);
-}
-}
 
 McpKeyApi::McpKeyApi(std::shared_ptr<AuthService> auth, std::shared_ptr<McpKeyService> keys)
     : auth_(std::move(auth)), service_(std::move(keys)) {}

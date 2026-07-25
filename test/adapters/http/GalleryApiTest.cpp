@@ -82,6 +82,10 @@ struct Harness {
   }
 
   void seedFork(const char* forkId, const char* sourceId) { trees->forkedFrom[forkId] = sourceId; }
+
+  // The owner ticked a step. It lands on the wall row exactly where the lateral join puts it, and
+  // — the whole point — the tree's own structural stamp stays where it was.
+  void seedMark(const char* id, std::uint64_t markedAt) { trees->lastMarkedAt[id] = markedAt; }
 };
 
 drogon::HttpRequestPtr galleryReq(const std::string& session = "", const std::string& limit = "",
@@ -270,6 +274,22 @@ TEST(a_listed_fork_names_its_source_only_while_that_source_is_public) {
   CHECK_EQ(anonymousSource["count"].asUInt(), 1u);
   CHECK_EQ(anonymousSource["entries"][0]["id"].asString(), std::string("t_fork"));
   CHECK_FALSE(anonymousSource["entries"][0].isMember("sourceTitle"));
+}
+
+TEST(the_json_index_ranks_a_tended_tree_above_a_newer_one_nobody_has_opened) {
+  Harness h;
+  const UserId owner = h.signIn("s1", "owner@example.com");
+  h.seed("t_abandoned", "Abandoned", owner, Visibility::public_, 5, 500);
+  h.seed("t_tended", "Tended", owner, Visibility::public_, 5, 100);
+  h.seedMark("t_tended", 900);
+
+  const Json::Value body = bodyOf(sendIndex(h.api, galleryReq()));
+
+  CHECK_EQ(body["count"].asUInt(), 2u);
+  CHECK_EQ(body["entries"][0]["id"].asString(), std::string("t_tended"));
+  CHECK_EQ(body["entries"][0]["updatedAt"].asInt64(), Json::Int64{900});
+  CHECK_EQ(body["entries"][1]["id"].asString(), std::string("t_abandoned"));
+  CHECK_EQ(body["entries"][1]["updatedAt"].asInt64(), Json::Int64{500});
 }
 
 TEST(the_json_index_pages_with_a_cursor_and_never_reshuffles) {

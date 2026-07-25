@@ -1,6 +1,7 @@
 #include "adapters/http/RemindersApi.h"
 
 #include "adapters/http/Caller.h"
+#include "adapters/http/JsonReply.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -14,19 +15,6 @@ namespace {
 // An IANA name is short by construction ("America/Argentina/Buenos_Aires" is 30); anything
 // longer is not a timezone, and refusing it here keeps junk out of the column and off the probe.
 constexpr std::size_t kMaxTimezoneBytes = 64;
-
-drogon::HttpResponsePtr jsonResponse(const Json::Value& body,
-                                     drogon::HttpStatusCode code = drogon::k200OK) {
-  auto response = drogon::HttpResponse::newHttpJsonResponse(body);
-  response->setStatusCode(code);
-  return response;
-}
-
-drogon::HttpResponsePtr error(drogon::HttpStatusCode status, const std::string& message) {
-  Json::Value body(Json::objectValue);
-  body["error"] = message;
-  return jsonResponse(body, status);
-}
 
 drogon::HttpResponsePtr noContent() {
   auto response = drogon::HttpResponse::newHttpResponse();

@@ -1,6 +1,7 @@
 #include "adapters/http/EventsApi.h"
 
 #include "adapters/http/Caller.h"
+#include "adapters/http/JsonReply.h"
 #include "adapters/json/TreeJson.h"
 
 #include <cmath>
@@ -17,18 +18,6 @@ constexpr std::size_t kMaxEventsPerCall = 50;
 constexpr std::size_t kMaxNameChars = 64;
 constexpr std::size_t kMaxSessionKeyChars = 64;
 constexpr std::size_t kMaxPropsBytes = 1024;
-
-drogon::HttpResponsePtr jsonResponse(const Json::Value& body, drogon::HttpStatusCode code = drogon::k200OK) {
-  auto response = drogon::HttpResponse::newHttpJsonResponse(body);
-  response->setStatusCode(code);
-  return response;
-}
-
-drogon::HttpResponsePtr error(drogon::HttpStatusCode code, const std::string& message) {
-  Json::Value body(Json::objectValue);
-  body["error"] = message;
-  return jsonResponse(body, code);
-}
 
 bool isSnakeName(const std::string& name) {
   if (name.empty() || name.size() > kMaxNameChars) return false;

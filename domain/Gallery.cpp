@@ -19,7 +19,7 @@ std::vector<GalleryEntry> publicWall(const std::vector<WallCandidate>& candidate
     entry.title = candidate.data.title;
     entry.stats = stats;
     entry.forks = candidate.forks;
-    entry.updatedAt = candidate.updatedAt;
+    entry.updatedAt = lastActiveAt(candidate.updatedAt, candidate.lastMarkedAt);
     entry.sourceTitle = candidate.sourceTitle;
     // The two facts the row wears about its reader. An anonymous Viewer owns nothing and has
     // forked nothing, so both fall out false without a special case.

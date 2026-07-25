@@ -1,6 +1,7 @@
 #include "adapters/http/HttpApi.h"
 
 #include "adapters/http/Caller.h"
+#include "adapters/http/JsonReply.h"
 #include "adapters/json/SubgraphJson.h"
 #include "adapters/json/TreeJson.h"
 #include "application/ActivityFeed.h"
@@ -13,22 +14,6 @@
 #include <mutex>
 
 namespace wm {
-
-namespace {
-drogon::HttpResponsePtr jsonResponse(const Json::Value& body, drogon::HttpStatusCode code = drogon::k200OK) {
-  auto response = drogon::HttpResponse::newHttpJsonResponse(body);
-  response->setStatusCode(code);
-  return response;
-}
-
-drogon::HttpResponsePtr error(drogon::HttpStatusCode status, const std::string& message,
-                              const char* code = nullptr) {
-  Json::Value body(Json::objectValue);
-  body["error"] = message;
-  if (code) body["code"] = code;  // the machine-readable vocabulary: "bad-id", "id-taken"
-  return jsonResponse(body, status);
-}
-}
 
 HttpApi::HttpApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
                  std::shared_ptr<ProgressRepository> progress, std::shared_ptr<OpLog> ops, Hlc genesis,

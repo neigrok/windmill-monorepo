@@ -1,6 +1,7 @@
 #include "adapters/paddle/BillingApi.h"
 
 #include "adapters/http/Caller.h"
+#include "adapters/http/JsonReply.h"
 #include "adapters/paddle/PaddleSignature.h"
 
 #include <json/json.h>
@@ -12,19 +13,6 @@
 namespace wm {
 
 namespace {
-drogon::HttpResponsePtr jsonResponse(const Json::Value& body,
-                                     drogon::HttpStatusCode code = drogon::k200OK) {
-  auto response = drogon::HttpResponse::newHttpJsonResponse(body);
-  response->setStatusCode(code);
-  return response;
-}
-
-drogon::HttpResponsePtr error(drogon::HttpStatusCode code, const std::string& message) {
-  Json::Value body(Json::objectValue);
-  body["error"] = message;
-  return jsonResponse(body, code);
-}
-
 // asString() throws on a non-string node; read every field defensively so a surprising payload
 // degrades to empty rather than throwing inside the handler.
 std::string asStr(const Json::Value& value) {

@@ -1,6 +1,7 @@
 #include "adapters/http/GalleryApi.h"
 
 #include "adapters/http/Caller.h"
+#include "adapters/http/JsonReply.h"
 #include "adapters/http/PageShell.h"
 #include "adapters/json/TreeJson.h"
 
@@ -11,21 +12,6 @@
 #include <utility>
 
 namespace wm {
-
-namespace {
-drogon::HttpResponsePtr jsonResponse(const Json::Value& body) {
-  return drogon::HttpResponse::newHttpJsonResponse(body);
-}
-
-drogon::HttpResponsePtr error(drogon::HttpStatusCode status, const std::string& message, const char* code) {
-  Json::Value body(Json::objectValue);
-  body["error"] = message;
-  body["code"] = code;  // the machine-readable vocabulary: "bad-limit", "unknown-cursor"
-  auto response = drogon::HttpResponse::newHttpJsonResponse(body);
-  response->setStatusCode(status);
-  return response;
-}
-}
 
 GalleryApi::GalleryApi(std::shared_ptr<TreeRepository> trees, std::shared_ptr<ProgressRepository> progress,
                        std::shared_ptr<AuthService> auth, std::string webRoot)
@@ -50,6 +36,7 @@ std::vector<WallCandidate> GalleryApi::candidates() {
     candidate.owner = std::move(tree.owner);
     candidate.data = std::move(tree.data);
     candidate.updatedAt = tree.updatedAt;
+    candidate.lastMarkedAt = tree.lastMarkedAt;
     candidate.forks = tree.forks;
     candidate.sourceTitle = std::move(tree.sourceTitle);
     candidates.push_back(std::move(candidate));

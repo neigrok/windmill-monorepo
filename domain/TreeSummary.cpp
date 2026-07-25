@@ -32,6 +32,10 @@ TreeStats treeStats(const TreeData& tree, const Progress& progress) {
   return stats;
 }
 
+std::uint64_t lastActiveAt(std::uint64_t updatedAt, std::uint64_t lastMarkedAt) {
+  return std::max(updatedAt, lastMarkedAt);
+}
+
 std::vector<TreeSummary> registrySummaries(const std::vector<LoadedTree>& loaded) {
   std::vector<TreeSummary> summaries;
   summaries.reserve(loaded.size());
@@ -40,7 +44,7 @@ std::vector<TreeSummary> registrySummaries(const std::vector<LoadedTree>& loaded
     summary.id = tree.data.id;
     summary.title = tree.data.title;
     summary.createdAt = tree.createdAt;  // a birth stamp: never folded with the freshness ones
-    summary.updatedAt = std::max(tree.updatedAt, tree.lastMarkedAt);
+    summary.updatedAt = lastActiveAt(tree.updatedAt, tree.lastMarkedAt);
     summary.stats = treeStats(tree.data, tree.progress);
     summaries.push_back(std::move(summary));
   }

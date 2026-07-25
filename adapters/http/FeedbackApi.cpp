@@ -1,6 +1,7 @@
 #include "adapters/http/FeedbackApi.h"
 
 #include "adapters/http/Caller.h"
+#include "adapters/http/JsonReply.h"
 
 #include <optional>
 #include <string>
@@ -12,18 +13,6 @@ namespace {
 constexpr std::size_t kMaxMessageBytes = 2000;
 constexpr std::size_t kMaxSideBytes = 200;
 constexpr std::size_t kMaxSessionKeyChars = 64;
-
-drogon::HttpResponsePtr jsonResponse(const Json::Value& body, drogon::HttpStatusCode code = drogon::k200OK) {
-  auto response = drogon::HttpResponse::newHttpJsonResponse(body);
-  response->setStatusCode(code);
-  return response;
-}
-
-drogon::HttpResponsePtr error(drogon::HttpStatusCode code, const std::string& message) {
-  Json::Value body(Json::objectValue);
-  body["error"] = message;
-  return jsonResponse(body, code);
-}
 
 std::string trim(const std::string& text) {
   const char* whitespace = " \t\n\r\f\v";

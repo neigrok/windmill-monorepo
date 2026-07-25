@@ -1,6 +1,7 @@
 #include "adapters/http/TreeRegistryApi.h"
 
 #include "adapters/http/Caller.h"
+#include "adapters/http/JsonReply.h"
 #include "adapters/json/TreeJson.h"
 #include "domain/Access.h"
 
@@ -8,22 +9,6 @@
 #include <utility>
 
 namespace wm {
-
-namespace {
-drogon::HttpResponsePtr jsonResponse(const Json::Value& body, drogon::HttpStatusCode code = drogon::k200OK) {
-  auto response = drogon::HttpResponse::newHttpJsonResponse(body);
-  response->setStatusCode(code);
-  return response;
-}
-
-drogon::HttpResponsePtr error(drogon::HttpStatusCode status, const std::string& message,
-                              const char* code = nullptr) {
-  Json::Value body(Json::objectValue);
-  body["error"] = message;
-  if (code) body["code"] = code;  // the machine-readable vocabulary: "bad-id", "id-taken"
-  return jsonResponse(body, status);
-}
-}
 
 // No billing gate here: setting a tree private is free (the paid line is tending, not privacy), so
 // the registry needs only the tree store and the auth boundary.
