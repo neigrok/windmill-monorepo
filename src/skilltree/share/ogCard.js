@@ -42,6 +42,15 @@ const PANEL_W = W - MAT * 2;    // 2288
 const PANEL_BOTTOM = H - STRIP; // 1068
 const PANEL_H = PANEL_BOTTOM - PANEL_Y; // 1012
 
+// The postcard itself — one set of measures for every card in the family, so a sibling
+// (progressCard.js) is the same object with a different strip rather than a lookalike that
+// drifts. Everything here is spec·k; the strip's own baselines are each card's business.
+export const POSTCARD = {
+  W, H, MAT, RULE, STRIP, PAD, PANEL_RADIUS, PANEL_BORDER, MAX_FIT_SCALE,
+  PANEL_X, PANEL_Y, PANEL_W, PANEL_H, PANEL_BOTTOM,
+  TITLE_FONT, READOUT_FONT, MARK_FONT, DISPLAY, MONO,
+};
+
 // The tree's own node positions, grown by each node's glow/crown footprint, padded 8%. The
 // meet-fit reads this as the world window it centers into the panel — so wide, tall and
 // sparse trees all frame themselves without a per-tree knob.
@@ -142,7 +151,7 @@ export function buildOgCardSvg({ model, title, done, total, dominantKind }) {
 
 // One line, ellipsis-guarded — SVG text has no CSS ellipsis, so a title too wide for the
 // strip is cut to fit and tailed with an ellipsis.
-function ellipsize(text, maxChars) {
+export function ellipsize(text, maxChars) {
   const clean = (text ?? '').trim();
   if (clean.length <= maxChars) return clean;
   return `${clean.slice(0, Math.max(1, maxChars - 1)).trimEnd()}…`;
@@ -150,7 +159,7 @@ function ellipsize(text, maxChars) {
 
 // The tree title is user text dropped into markup — escape the five XML delimiters so a
 // stray & or < can never break (or inject into) the SVG.
-function escapeXml(text) {
+export function escapeXml(text) {
   return String(text).replace(/[&<>"']/g, (ch) => (
     ch === '&' ? '&amp;'
       : ch === '<' ? '&lt;'

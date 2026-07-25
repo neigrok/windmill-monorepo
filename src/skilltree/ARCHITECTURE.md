@@ -183,11 +183,27 @@ split across layers) because it's a self-contained surface. (The image-export re
 - `share/ShareStats.js` — `class ShareStats`; `from(tree, states)` → `done/total/percent`
   and the **dominant kind**: the most common kind among *done* nodes, a shared max (or an
   empty tree) tying to terracotta. Feeds the plaque, switcher, fork readouts and the card.
-- `share/TreePortrait.js` — `treePortraitSvg(model, palette, box)`: the tree as a
-  standalone SVG string from the `RenderModel` (glow halos, crowned root, kind hues, done/
+- `share/TreePortrait.js` — `treePortraitSvg(model, palette, box, viewBox, options)`: the tree
+  as a standalone SVG string from the `RenderModel` (glow halos, crowned root, kind hues, done/
   available/locked looks), self-contained (own xmlns, unique filter ids, no text/urls) so it
   rasterizes into an `<img>`. Deterministic, resolution-independent, light and dark. Used by
-  `GalleryCard`.
+  `GalleryCard`. `options = {highlight, dim}` veils everything outside the highlight set (an
+  edge counts as outside unless both endpoints are in it); no highlight — or `dim` 1 — writes
+  nothing, so the default markup every other surface pins is byte-identical.
+- `share/ogCard.js` — the unfurl postcard (#12): `buildOgCardSvg` plus the recipe its siblings
+  share — `POSTCARD` (the 2400×1260 measures), `paddedGlowBox`/`clampViewBox` (the glow-inclusive
+  fit) and the `ellipsize`/`escapeXml` text guards. `share/rasterize.js` turns any card into a
+  PNG (fonts embedded as base64 — an `<img>`-drawn SVG can't reach the page's faces).
+- `share/progressCard.js` — the recurring post (#20): the same postcard with the settled tree
+  veiled back and only what lit **since the last share** burning, headlined by that count and
+  stamped `Update #N`. Deliberately the structural opposite of the milestone card, so a feed of
+  someone's posts never reads as the same image twice.
+- `share/progressOffer.js` — `considerProgressShare(…)`: when that card is worth offering
+  (≥3 newly-lit steps, or ≥1 after a week; at most one ask per 3 days). Shaped like
+  `considerAutoOpen` — the budget burns in `commit()` at fire time, so a declined offer is free.
+  Its baseline is `persistence/ShareLedger.js`, written **only when a share happens** (unlike
+  `ReturnLedger`, which re-baselines on every completion) — the only honest way to say "since
+  you last shared" while the server's progress API returns no timestamps.
 - `share/ShareDialog.jsx` — the Share surface, **link-only**: copies the read-only view URL
   and, when the tree is yours and private, flips it to unlisted on copy with an honest reach
   line ("Anyone with this link can view" / "Make private"). No image export.

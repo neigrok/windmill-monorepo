@@ -35,6 +35,8 @@ import { requestMagicLink } from './auth/AuthClient.js';
 import { ShareDialog } from './share/ShareDialog.jsx';
 import { ShareStats } from './share/ShareStats.js';
 import { buildOgCardSvg } from './share/ogCard.js';
+import { buildProgressCardSvg } from './share/progressCard.js';
+import { considerProgressShare } from './share/progressOffer.js';
 import { svgToPngBlob } from './share/rasterize.js';
 import { uploadOgImage } from './share/OgImageClient.js';
 import { uploadOgVideo } from './share/OgVideoClient.js';
@@ -65,6 +67,7 @@ import { PlaceStore } from './persistence/PlaceStore.js';
 import { ViewPrefs, initialView, peekBorn, clearBorn } from './persistence/ViewPrefs.js';
 import { ReturnLedger } from './persistence/ReturnLedger.js';
 import { MilestoneLedger } from './persistence/MilestoneLedger.js';
+import { ShareLedger } from './persistence/ShareLedger.js';
 import { detectMilestones } from './model/milestones.js';
 import { emptyWorkspace, arcFraction, addSubtask, toggleSubtask, editSubtask, deleteSubtask, setNote, addLink, deleteLink } from './model/NodeWorkspace.js';
 import { deriveLegend, withCounts, inUseCount, freeHue, addKind, recolorKind } from './model/Legend.js';
@@ -91,6 +94,7 @@ const placeStore = new PlaceStore();
 const viewPrefs = new ViewPrefs();
 const returnLedger = new ReturnLedger();
 const milestoneLedger = new MilestoneLedger();
+const shareLedger = new ShareLedger();
 const AUTO_COMPLETE_HOLD = 600; // held breath before auto-completing: arc-close 280 + hold 320 (§4)
 const NEXT_UP_SELECT_MS = 540; // ~90% of the camera's default 600ms glide — the dock swaps as the fly settles
 const NEXT_UP_ENTER_MS = 600; // auto-open waits for the fit-to-view camera to still (whats-next-panel §04)
@@ -271,6 +275,8 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   const workspaceByNodeRef = useRef({}); // nodeId → workspace; the fresh read for arc pushes + persistence
   const pendingCompleteRef = useRef(new Map()); // nodeId → auto-complete timer awaiting its held breath
   const completeStepRef = useRef(null); // always points at the latest completeStep (for the deferred beat)
+  const shareProgressCardRef = useRef(null); // latest shareProgressCard — the offer's toast outlives its render
+  const publishOgImageRef = useRef(null);    // same hazard on the milestone beat, which predates it
   const legendRef = useRef([]); // the current ordered kinds; the fresh read for legend ops + persistence
   const commitLegendRef = useRef(null); // latest commitLegend, so applyRemoteOp (defined earlier) can reach it
   const legendOpenRef = useRef(true); // mirrors legendOpen so persistence reads it without a dep churn
@@ -619,6 +625,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       legendStore.clear(seedRef.current.id);
       returnLedger.clear(seedRef.current.id); // the reset reload re-baselines the recap from the cleared progress
       milestoneLedger.clear(seedRef.current.id); // a reset tree can earn its milestones' share offers again
+      shareLedger.clear(seedRef.current.id); // and starts its share series over — no "since" against work that's gone
     }
     pendingCompleteRef.current.forEach(clearTimeout);
     pendingCompleteRef.current.clear();
@@ -1516,12 +1523,22 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   // The share "score" — done/total + the dominant kind that tints the exported frame.
   const shareStats = useMemo(() => (tree ? ShareStats.from(tree, states) : null), [tree, states]);
 
+  // Every share moves the baseline the NEXT progress card is "since" (brief #20): the completed
+  // set as it stands right now, the moment, and the share's ordinal. Written here and only here —
+  // never on a completion — because a baseline that survives your own work is the only honest way
+  // to say "since you last shared" without per-node timestamps from the server.
+  const recordShare = useCallback(() => {
+    const prior = shareLedger.load(treeId);
+    shareLedger.save(treeId, { completed: completedRef.current, at: Date.now(), count: (prior?.count ?? 0) + 1 });
+  }, [treeId]);
+
   // When the owner shares, publish the tree's unfurl card (brief #12): build the SVG from the
   // same model + layout the canvas draws, rasterize it, and upload it — all best-effort, off
   // the copy interaction. Owner-only (treeMine), and every step is guarded so a failed card
   // (bad raster, offline, no DOM) stays silent and the backend's generic image covers it.
   const publishOgImage = useCallback(async () => {
     if (!treeMine || !tree || !shareStats) return;
+    recordShare();
     try {
       const model = tree.toRenderModel(layoutPositions(tree), states);
       const card = {
@@ -1543,7 +1560,60 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
         .then((mp4) => { if (mp4) uploadOgVideo(treeId, mp4); })
         .catch(() => {});
     } catch { /* the unfurl artifacts are best-effort — never break sharing */ }
-  }, [treeMine, tree, states, shareStats, layoutPositions, treeId]);
+  }, [treeMine, tree, states, shareStats, layoutPositions, treeId, recordShare]);
+
+  // Taking the progress offer (brief #20): build the card with `lit` burning against the ghosted
+  // tree, rasterize it with the same rasterizer the unfurl card uses, and hand it over — the OS
+  // share sheet where there is one, so a phone user goes straight to their app of choice, and a
+  // download everywhere else. The tree's own og:image is deliberately untouched: the unfurl is the
+  // tree's identity, this is a post the user makes. Asking for the artifact IS the share, so the
+  // baseline advances first — whatever the raster does next.
+  const shareProgressCard = useCallback(async (lit, update) => {
+    if (!tree || !shareStats) return;
+    recordShare();
+    try {
+      const model = tree.toRenderModel(layoutPositions(tree), states);
+      const svg = buildProgressCardSvg({
+        model,
+        title: tree.title,
+        done: shareStats.done,
+        total: shareStats.total,
+        dominantKind: shareStats.dominantKind,
+        lit: new Set(lit),
+        update,
+      });
+      const png = await svgToPngBlob(svg);
+      if (!png) return;
+      const file = new File([png], `windmill-update-${update}.png`, { type: 'image/png' });
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file] });
+          return;
+        } catch (err) {
+          // A dismissed sheet is an answer, not a failure — only a broken one falls through to
+          // the download, so nobody who cancels finds a surprise file in Downloads.
+          if (err?.name === 'AbortError') return;
+        }
+      }
+      const url = URL.createObjectURL(png);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = file.name;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch { /* the card is best-effort like every other share artifact — never fatal */ }
+  }, [tree, states, shareStats, layoutPositions, recordShare]);
+
+  // The offer's toast is built during the completion that earned it — a render before that
+  // completion reaches `states` — and is clicked long after. Going through the ref means the card
+  // draws the tree as it actually stands, with the step that triggered the offer properly lit.
+  shareProgressCardRef.current = shareProgressCard;
+  // The milestone beat has always had the same stale-closure hazard, and it mattered more: its
+  // toast could say "Tree complete — 22/22" while the card it published drew 21/22, because the
+  // completion that earned the crown had not reached `states` in the render that built the action.
+  publishOgImageRef.current = publishOgImage;
 
   // Push re-derived states to the scene whenever completion changes; the
   // scene owns the growth animation for newly-unlocked branches.
@@ -1971,7 +2041,24 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       ? `Tree complete — ${best.total}/${best.total} steps.`
       : `Branch complete: ${best.label} · ${best.done}/${best.total} steps`;
     const label = best.kind === 'crown' ? 'Share it' : 'Share the moment';
-    return { summary, action: { label, run: () => { publishOgImage(); setShareOpen(true); } } };
+    return { summary, action: { label, run: () => { publishOgImageRef.current?.(); setShareOpen(true); } } };
+  }
+
+  // The recurring beat (repeat-share-surface, brief #20): the milestone offer fires once, ever;
+  // this one comes back, so a retained user always has something worth posting. Same owner-and-
+  // editable gate as the milestone. The rules live in considerProgressShare — enough new steps or
+  // a stale enough share, at most one ask every three days — and its budget burns via commit()
+  // here, at fire time, because reaching this line means the toast is going out.
+  function progressShareOffer(nextCompleted, nextStates) {
+    if (!treeMine || shared || demo || demotion || !tree) return null;
+    const decision = considerProgressShare({ treeId, completed: nextCompleted, states: nextStates });
+    if (!decision.offer) return null;
+    decision.commit();
+    const count = decision.lit.length;
+    return {
+      summary: `${count} step${count === 1 ? '' : 's'} since you last shared.`,
+      action: { label: 'Get the image', run: () => shareProgressCardRef.current?.(decision.lit, decision.update) },
+    };
   }
 
   // The shared completion path the button and the chip menu both take, so they can't
@@ -2008,10 +2095,13 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       ? DEMO_COPY.unlockToast
       : (opened > 0 ? `Step completed: ${label} · ${opened} more opened` : `Step completed: ${label}`);
     // A milestone (whole branch or the crown) replaces the step line with its own copy and carries
-    // the share offer; an ordinary step keeps the plain summary and no action. Only YOUR own
-    // completion offers the share — a milestone finished on another device (fromRemote) is the
-    // welcome-back recap's moment, not a live "share it" toast, and must never burn the once-ever.
-    const offer = fromRemote ? null : milestoneOffer(completed, nextCompleted);
+    // the share offer; failing that, the recurring progress beat may claim the same lane; an
+    // ordinary step keeps the plain summary and no action. A milestone always wins — never both.
+    // Only YOUR own completion offers either — one finished on another device (fromRemote) is the
+    // welcome-back recap's moment, not a live "share it" toast, and must never burn a budget.
+    const offer = fromRemote
+      ? null
+      : (milestoneOffer(completed, nextCompleted) ?? progressShareOffer(nextCompleted, after));
     const ceremony = offer ? offer.summary : stepSummary;
     const ceremonyOptions = offer ? { action: offer.action } : {};
     // Ceremony plays where you are (X8): the scene is paused under the list, so its director can't
@@ -2063,8 +2153,9 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       }
     }
     // "Mark all done" stays silent for ordinary steps (the applyStates effect blooms the set), but
-    // a milestone it finishes still earns its one share offer.
-    const offer = milestoneOffer(completed, nextCompleted);
+    // a share offer still speaks: the milestone it finishes, or failing that the progress beat —
+    // marking a handful of steps at once is exactly the moment there's something worth posting.
+    const offer = milestoneOffer(completed, nextCompleted) ?? progressShareOffer(nextCompleted, after);
     if (offer) sceneRef.current?.announceCeremony(offer.summary, { action: offer.action });
   }
 

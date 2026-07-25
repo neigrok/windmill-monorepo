@@ -30,14 +30,26 @@ let portraitUid = 0; // unique filter ids so many portraits on one page never co
 // The tree portrait as an SVG string. `box` is the pixel viewport; `viewBox` optionally
 // overrides the world window — the OG card passes a glow-inclusive, padded, clamped box so
 // any tree centers and fills the panel. Omit it and the model's own bounds are the window.
-export function treePortraitSvg(model, palette, box, viewBox) {
+// `options` = { highlight: Set<nodeId>|null, dim: number } opens the veil seam below.
+export function treePortraitSvg(model, palette, box, viewBox, options) {
   const b = model.bounds;
   const vb = viewBox ?? { minX: b.minX, minY: b.minY, width: b.maxX - b.minX, height: b.maxY - b.minY };
   const glowId = `wm-glow-${portraitUid++}`;
 
+  // The veil (brief #20): given a non-empty highlight set, everything outside it drops to `dim`
+  // — a scatter of new brightness on a ghosted tree, which is what makes the progress card read
+  // as the structural opposite of the milestone card at thumbnail size. An edge is outside
+  // unless BOTH its endpoints are highlighted. A veil that doesn't dim isn't one: with no
+  // highlight, an empty one, or dim 1, nothing is written and the markup is byte-identical to
+  // the portrait the OG card and the share clip already draw.
+  const dim = options?.dim ?? 1;
+  const highlight = dim < 1 && options?.highlight?.size ? options.highlight : null;
+  const nodeVeil = (node) => (!highlight || highlight.has(node.id) ? '' : ` opacity="${num(dim)}"`);
+  const edgeVeil = (edge) => (!highlight || (highlight.has(edge.from) && highlight.has(edge.to)) ? 1 : dim);
+
   const byId = new Map(model.nodes.map((node) => [node.id, node]));
-  const edges = model.edges.map((edge) => edgePath(edge, byId, palette)).join('');
-  const nodes = model.nodes.map((node) => `<g class="wm-node">${nodeMarkup(node, palette, glowId)}</g>`).join('');
+  const edges = model.edges.map((edge) => edgePath(edge, byId, palette, edgeVeil(edge))).join('');
+  const nodes = model.nodes.map((node) => `<g class="wm-node"${nodeVeil(node)}>${nodeMarkup(node, palette, glowId)}</g>`).join('');
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${box.w}" height="${box.h}"`
     + ` viewBox="${num(vb.minX)} ${num(vb.minY)} ${num(vb.width)} ${num(vb.height)}" preserveAspectRatio="xMidYMid meet">`
@@ -60,7 +72,8 @@ export function nodeGlowRadius(node) {
 
 // A branch: a quadratic bézier bowed perpendicular to its own line, lit when its
 // source node is engaged (complete/active), dimmed and de-emphasised otherwise.
-function edgePath(edge, byId, palette) {
+// `veil` scales the finished opacity — 1 for every caller that doesn't highlight.
+function edgePath(edge, byId, palette, veil = 1) {
   const a = byId.get(edge.from);
   const b = byId.get(edge.to);
   if (!a || !b) return '';
@@ -76,7 +89,7 @@ function edgePath(edge, byId, palette) {
   const faded = edge.kind === 'cross-branch' ? 0.8 : 1;
   const stroke = lit ? palette.bark : palette.dimEdge;
   const width = lit ? LIT_EDGE : DIM_EDGE;
-  const opacity = (lit ? 0.92 : 0.75) * faded;
+  const opacity = (lit ? 0.92 : 0.75) * faded * veil;
 
   return `<path d="M${num(a.x)} ${num(a.y)} Q${num(cx)} ${num(cy)} ${num(b.x)} ${num(b.y)}"`
     + ` fill="none" stroke="${stroke}" stroke-width="${num(width)}" stroke-linecap="round" opacity="${num(opacity)}"/>`;
