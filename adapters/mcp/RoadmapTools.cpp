@@ -61,6 +61,21 @@ Json::Value strArray(const char* description) {
   return property;
 }
 
+// An array of objects. Separate from strArray because the difference is not cosmetic: a caller
+// that believes `items` is a string sends strings, and the request dies at the parser with a bare
+// transport error naming no field. A schema is the only thing an agent has — it cannot look at an
+// example and recover the way a person reading docs can — so a schema that contradicts its own
+// description is worse than no schema at all.
+Json::Value objArray(const char* description) {
+  Json::Value items(Json::objectValue);
+  items["type"] = "object";
+  Json::Value property(Json::objectValue);
+  property["type"] = "array";
+  property["items"] = items;
+  property["description"] = description;
+  return property;
+}
+
 // A read's `fields` argument, carrying its shape's whole vocabulary as the item `enum` — a
 // client can only pre-validate what the schema states, so the legal set is stated.
 Json::Value fieldArray(const char* description, const std::vector<std::string>& legal) {
@@ -803,12 +818,12 @@ Json::Value RoadmapTools::listTools() const {
   {
     Json::Value p(Json::objectValue);
     p["treeId"] = str(treeId);
-    p["nodes"] = strArray("The nodes to import — each {id, label, icon?, color?, order?, "
+    p["nodes"] = objArray("The nodes to import — each {id, label, icon?, color?, order?, "
                           "prerequisites?, position?, status?, description?, links?}, the shape "
                           "get_tree returns when you ask it for those fields.");
-    p["kinds"] = strArray("Optional legend kinds — each {id, hue, label?, description?}. Omit to leave "
+    p["kinds"] = objArray("Optional legend kinds — each {id, hue, label?, description?}. Omit to leave "
                           "the legend untouched.");
-    p["progress"] = strArray("Optional carried progress — a list of {nodeId, status} applied over the "
+    p["progress"] = objArray("Optional carried progress — a list of {nodeId, status} applied over the "
                              "imported nodes (unknown ids skipped).");
     p["dryRun"] = boolean("If true, report collisions and change nothing.");
     tools.append(tool("import_subgraph",
