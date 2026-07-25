@@ -1,5 +1,6 @@
 #include "adapters/http/Caller.h"
 
+#include <cstddef>
 #include <string>
 
 namespace wm {
@@ -17,6 +18,14 @@ std::optional<UserId> callerOf(const drogon::HttpRequestPtr& req, AuthService& a
   const std::optional<User> user = callerUserOf(req, auth);
   if (!user) return std::nullopt;
   return user->id;
+}
+
+bool secretEqual(const std::string& a, const std::string& b) {
+  if (a.size() != b.size()) return false;
+  unsigned char diff = 0;
+  for (std::size_t i = 0; i < a.size(); ++i)
+    diff |= static_cast<unsigned char>(a[i]) ^ static_cast<unsigned char>(b[i]);
+  return diff == 0;
 }
 
 }

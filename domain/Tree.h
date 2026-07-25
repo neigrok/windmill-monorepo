@@ -60,6 +60,23 @@ inline std::optional<NodeColor> parseColor(std::string_view name) {
   return std::nullopt;
 }
 
+// The six hues as hex, straight from the design tokens (src/skilltree/theme.js → tokens/colors.css).
+// Every server-rendered surface reads the palette from here — the gallery card's bar, the reminder
+// mail's step glyphs — so the legend is one identity everywhere it appears rather than a literal
+// copied per adapter. Also the safe form for a mail: a colour is one of these six literals and
+// never a string that came from a person, which matters where it lands in a style attribute.
+inline const char* nodeColorHex(NodeColor color) {
+  switch (color) {
+    case NodeColor::terracotta: return "#BC6C42";
+    case NodeColor::olive:      return "#7D8C43";
+    case NodeColor::gold:       return "#C4972F";
+    case NodeColor::brick:      return "#A84E35";
+    case NodeColor::sky:        return "#5F8494";
+    case NodeColor::plum:       return "#8D4F83";
+  }
+  return "#BC6C42";
+}
+
 inline std::optional<ProgressStatus> parseProgressStatus(std::string_view name) {
   if (name == "active")   return ProgressStatus::active;
   if (name == "complete") return ProgressStatus::complete;

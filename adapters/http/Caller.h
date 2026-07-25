@@ -6,6 +6,7 @@
 #include <drogon/HttpRequest.h>
 
 #include <optional>
+#include <string>
 
 namespace wm {
 
@@ -16,5 +17,10 @@ std::optional<User> callerUserOf(const drogon::HttpRequestPtr& req, AuthService&
 
 // The same resolution projected to just the id, for the surfaces that only key on it.
 std::optional<UserId> callerOf(const drogon::HttpRequestPtr& req, AuthService& auth);
+
+// The other way an edge decides who is calling: a shared secret presented whole — the admin
+// bearer, the MCP fallback token — compared in constant time so a mismatch cannot be timed out a
+// byte at a time. The == that would otherwise be written here returns on the first differing byte.
+bool secretEqual(const std::string& a, const std::string& b);
 
 }

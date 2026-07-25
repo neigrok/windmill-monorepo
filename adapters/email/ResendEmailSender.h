@@ -29,6 +29,8 @@ public:
   void sendForkLink(const Email& to, const std::string& magicLinkUrl,
                     const std::string& treeTitle, const std::string& treeMeta,
                     std::function<void(bool)> done) override;
+  void sendReminder(const Email& to, const ReminderMail& mail,
+                    std::function<void(bool)> done) override;
 
 private:
   void send(const Email& to, const std::string& templateId, const Json::Value& variables,

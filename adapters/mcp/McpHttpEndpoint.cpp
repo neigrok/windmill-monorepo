@@ -1,5 +1,6 @@
 #include "adapters/mcp/McpHttpEndpoint.h"
 
+#include "adapters/http/Caller.h"  // secretEqual: one constant-time compare for every shared secret
 #include "application/McpKeyService.h"
 
 #include <openssl/rand.h>
@@ -94,17 +95,6 @@ std::set<std::string> parseOriginList(const std::string& csv) {
     if (!trimmed.empty()) origins.insert(trimmed);
   }
   return origins;
-}
-
-namespace {
-// Constant-time compare for the shared fallback token, so a mismatch can't be timed.
-bool secretEqual(const std::string& a, const std::string& b) {
-  if (a.size() != b.size()) return false;
-  unsigned char diff = 0;
-  for (std::size_t i = 0; i < a.size(); ++i)
-    diff |= static_cast<unsigned char>(a[i]) ^ static_cast<unsigned char>(b[i]);
-  return diff == 0;
-}
 }
 
 McpHttpEndpoint::McpHttpEndpoint(McpServer& server, std::set<std::string> allowedOrigins, McpAuth auth)

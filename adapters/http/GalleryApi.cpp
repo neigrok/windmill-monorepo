@@ -7,23 +7,6 @@
 
 namespace wm {
 
-namespace {
-// The six node hues, straight from the design tokens (src/skilltree/theme.js → tokens/colors.css).
-// A card wears its tree's dominant kind as a bar across the top of the portrait, the same way a
-// node wears its kind in the tree — the legend is the identity everywhere it appears.
-const char* hueHex(NodeColor color) {
-  switch (color) {
-    case NodeColor::terracotta: return "#BC6C42";
-    case NodeColor::olive:      return "#7D8C43";
-    case NodeColor::gold:       return "#C4972F";
-    case NodeColor::brick:      return "#A84E35";
-    case NodeColor::sky:        return "#5F8494";
-    case NodeColor::plum:       return "#8D4F83";
-  }
-  return "#BC6C42";
-}
-}
-
 GalleryApi::GalleryApi(std::shared_ptr<TreeRepository> trees, std::shared_ptr<ProgressRepository> progress,
                        std::string webRoot)
     : trees_(std::move(trees)), progress_(std::move(progress)), webRoot_(std::move(webRoot)) {}
@@ -35,7 +18,9 @@ std::string GalleryApi::renderWall(const std::string& shell, const std::vector<G
   for (const GalleryEntry& entry : wall) {
     const std::string id = htmlEscape(entry.id.str());
     const int percent = entry.stats.total > 0 ? entry.stats.done * 100 / entry.stats.total : 0;
-    const char* hue = hueHex(entry.stats.dominantKind.value_or(NodeColor::terracotta));
+    // A card wears its tree's dominant kind as a bar across the top of the portrait, the same way a
+    // node wears its kind in the tree — the legend is the identity everywhere it appears.
+    const char* hue = nodeColorHex(entry.stats.dominantKind.value_or(NodeColor::terracotta));
 
     cards += "\n        <a class=\"card\" href=\"/t/" + id + "\">\n";
     // The portrait is the tree's own uploaded unfurl card; /og/:id.png falls back to the generic

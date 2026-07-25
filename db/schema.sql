@@ -436,6 +436,70 @@ create index if not exists tend_runs_user_started on tend_runs (user_id, started
 -- The per-tree footprint read (undo, activity): every run that touched a given tree.
 create index if not exists tend_runs_tree on tend_runs (tree_id);
 
+-- ── Weekly reminders (domain/Reminders.h) ────────────────────────────────────────────────
+-- The engine holds NO schedule state in the process: a sweep is a pure function of (now, these
+-- two tables), so a deploy restart loses nothing. All calendar work happens HERE, via AT TIME
+-- ZONE — Postgres ships its own IANA database and therefore behaves identically on a macOS dev
+-- box and on CI's Linux, which C++ calendar functions demonstrably do not.
+--
+-- `next_due_at` is the materialized UTC instant of the user's next slot, and the ONLY thing the
+-- sweep queries. It is NULL whenever we cannot know when to send — no timezone, reminders off —
+-- so "unknown timezone ⇒ never send" needs no special case anywhere in the code; it falls out of
+-- the partial index. Defaulting an unknown zone to UTC would mail US users at 4am, which is a
+-- worse failure than silence. slot_minute is confined to 08:00–11:00 local so that DST's
+-- nonexistent and ambiguous local times (2–3am) are unreachable by construction.
+-- pause_digest is the emailed pause link's credential — the digest at rest, never the secret,
+-- exactly like sessions, magic links and MCP keys.
+create table if not exists reminder_subscription (
+  user_id      uuid primary key references users(id) on delete cascade,
+  enabled      boolean not null default false,
+  iana_tz      text not null default '',
+  slot_dow     int not null default 2 check (slot_dow between 1 and 7),      -- 1=Mon .. 7=Sun
+  slot_minute  int not null default 540 check (slot_minute between 480 and 660),
+  next_due_at  timestamptz,
+  -- Hard bounce / spam complaint. NOTHING WRITES THIS YET: the bounce webhook that would set it
+  -- is wave 2, so the column and the dueNow filter are the hook waiting for it, and a
+  -- hard-bouncing address is still mailed every week until that handler exists. Nowhere may claim
+  -- otherwise to a reader — a state that cannot occur must never be described as if it can.
+  suppressed   boolean not null default false,
+  pause_digest text not null default '',
+  created_at   timestamptz not null default now()
+);
+-- the sweep's whole question: one indexed range scan over the few rows that can ever be due
+create index if not exists reminder_due on reminder_subscription (next_due_at)
+  where enabled and not suppressed and next_due_at is not null;
+create unique index if not exists reminder_pause on reminder_subscription (pause_digest)
+  where pause_digest <> '';
+
+-- A DECISION LEDGER, not a send log: every user still ELIGIBLE at claim time gets exactly one row
+-- per week recording what we decided and why. "Eligible at claim time" is deliberately narrower
+-- than "reached the decision point" — the claim re-checks enabled/suppressed/deleted inside its
+-- own transaction, so someone who hits Pause while the sweep is mid-batch gets no row at all
+-- rather than a row saying we decided to mail them after they'd asked us not to. The primary key IS the mutex that
+-- enforces "at most one per 7 days" — it is never enforced by comparing timestamps at read time.
+-- It also makes the guardrail metric a GROUP BY reason rather than an analytics project.
+-- A row whose sent_at is null is indistinguishable from one whose mail landed but whose update
+-- was lost, so it must NEVER be auto-retried: a lost reminder costs nothing, a duplicate costs
+-- trust. decision is 'sent' | 'skipped'; reason is 'ok' | 'no-ready-steps' | 'recently-active' |
+-- 'in-grace' | 'too-late' | 'load-failed' (the facts could not be read; the week is claimed anyway
+-- so the pointer moves) | 'held' (the arming gate withheld a send we had decided on) |
+-- 'send-failed' (the provider refused it). The last three are stamped after the decision, and
+-- 'held' exists so that a dark rollout's rows cannot be mistaken for a crash between claim and
+-- send — which is what every one of them would otherwise look like.
+create table if not exists reminder_week (
+  user_id     uuid not null references users(id) on delete cascade,
+  slot_date   date not null,          -- the LOCAL date of the slot; unique per week by construction
+  decision    text not null,
+  reason      text not null,
+  tree_id     text,
+  ready_count int not null default 0,
+  sent_at     timestamptz,
+  decided_at  timestamptz not null default now(),
+  primary key (user_id, slot_date)
+);
+-- the guardrail read: how last week's decisions broke down, and how many mails actually landed
+create index if not exists reminder_week_decided on reminder_week (decided_at);
+
 -- ── The playable demo tree (F4) ─────────────────────────────────────────────────────────────
 -- The hosted "Learn to sail" roadmap a stranger meets at #/demo — read anonymously over both
 -- HTTP and WS, so the row must exist AND be public or read enforcement 404s it for every visitor.

@@ -16,6 +16,7 @@
 #include "adapters/http/OgImageApi.h"
 #include "adapters/http/OgVideoApi.h"
 #include "adapters/http/RateLimiter.h"
+#include "adapters/http/RemindersApi.h"
 #include "adapters/http/SharePageApi.h"
 #include "adapters/http/TendingApi.h"
 #include "adapters/http/TreeRegistryApi.h"
@@ -33,6 +34,7 @@
 #include "adapters/postgres/PgOgVideoRepository.h"
 #include "adapters/postgres/PgOpLog.h"
 #include "adapters/postgres/PgProgressRepository.h"
+#include "adapters/postgres/PgReminderRepository.h"
 #include "adapters/postgres/PgServerErrorRepository.h"
 #include "adapters/postgres/PgSubscriptionRepository.h"
 #include "adapters/postgres/PgTendRunRepository.h"
@@ -49,6 +51,7 @@
 #include "application/RoomRegistry.h"
 #include "application/TendingService.h"
 #include "application/TreeRegistry.h"
+#include "application/ReminderSweep.h"
 
 #include <drogon/drogon.h>
 
@@ -254,6 +257,27 @@ int main() {
                                                          *systemClock, *tokens, *subscriptionRepo,
                                                          tendingEnabled);
   auto tendingApi = std::make_shared<TendingApi>(tendingService, authService);
+
+  // Weekly reminders (domain/Reminders.h). The heartbeat is a dedicated thread of the sweep's
+  // own — never a drogon request loop, which must not block on libpqxx — and it carries no
+  // schedule state, so this restart loses nothing: within one tick it asks the database who is
+  // due. Shipped DARK twice over: REMINDERS_ENABLED must say so AND the user must be named in
+  // REMINDERS_ALLOWLIST, which is how the whole engine runs against one account for a month
+  // before anyone else can receive anything. Both gates are read at send time, so the decision
+  // ledger keeps recording honest weeks while nothing goes out.
+  const char* remindersEnabledEnv = std::getenv("REMINDERS_ENABLED");
+  const std::string remindersEnabledFlag = remindersEnabledEnv ? remindersEnabledEnv : "";
+  const char* remindersAllowlistEnv = std::getenv("REMINDERS_ALLOWLIST");
+  const char* remindersAdminEnv = std::getenv("REMINDERS_ADMIN_TOKEN");
+  auto reminderRepo = std::make_shared<PgReminderRepository>(connString);
+  ReminderArming reminderArming(remindersEnabledFlag == "true" || remindersEnabledFlag == "1",
+                                remindersAllowlistEnv ? remindersAllowlistEnv : "");
+  auto reminderSweep = std::make_shared<ReminderSweep>(*reminderRepo, *emailSender, *tokens,
+                                                       *systemClock, reminderArming, appBaseUrl);
+  reminderSweep->start();
+  auto remindersApi = std::make_shared<RemindersApi>(reminderSweep, reminderRepo, authService, tokens,
+                                                     systemClock,
+                                                     remindersAdminEnv ? remindersAdminEnv : "");
 
   McpAuth mcpAuth{oauthService.get(), mcpResource,     mcpResourceMetadataUrl,
                   mcpToken,           mcpFallbackUser, mcpKeyService.get()};
@@ -696,6 +720,35 @@ int main() {
         tendingApi->summary(req, std::move(cb));
       },
       {drogon::Get});
+
+  // Weekly reminders. The two settings verbs ride the ordinary session; the pause POST carries no
+  // credential but the secret from someone's own mail, and answers 204 either way so it can never
+  // be asked whose reminders exist. The admin sweep is the rehearsal door — closed unless
+  // REMINDERS_ADMIN_TOKEN is set, and it refuses a time-travelling asOfMs once the engine is armed.
+  app.registerHandler(
+      "/v1/reminders",
+      [remindersApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        remindersApi->getSettings(req, std::move(cb));
+      },
+      {drogon::Get});
+  app.registerHandler(
+      "/v1/reminders",
+      [remindersApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        remindersApi->patchSettings(req, std::move(cb));
+      },
+      {drogon::Patch});
+  app.registerHandler(
+      "/v1/reminders/pause",
+      [remindersApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        remindersApi->pause(req, std::move(cb));
+      },
+      {drogon::Post});
+  app.registerHandler(
+      "/v1/admin/reminders/sweep",
+      [remindersApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        remindersApi->sweep(req, std::move(cb));
+      },
+      {drogon::Post});
 
   // The unfurlable share page: /t/:id serves the SPA shell with this tree's OG meta baked in.
   // Caddy path-routes /t/* here; everything else stays the static SPA.

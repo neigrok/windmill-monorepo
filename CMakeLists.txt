@@ -19,7 +19,8 @@ add_library(windmill_domain
   domain/Gallery.cpp
   domain/Auth.cpp
   domain/OAuth.cpp
-  domain/Tending.cpp)
+  domain/Tending.cpp
+  domain/Reminders.cpp)
 target_include_directories(windmill_domain PUBLIC ${CMAKE_SOURCE_DIR})
 
 add_library(windmill_application
@@ -33,7 +34,8 @@ add_library(windmill_application
   application/OAuthService.cpp
   application/ScopedToolHost.cpp
   application/TendingService.cpp
-  application/TreeRegistry.cpp)
+  application/TreeRegistry.cpp
+  application/ReminderSweep.cpp)
 target_link_libraries(windmill_application PUBLIC windmill_domain)
 
 # Drogon + libpqxx gate the real adapters (SPEC §11). Found here, up front, because Drogon also
@@ -84,7 +86,10 @@ add_executable(windmill_domain_tests
   test/application/McpKeyServiceTest.cpp
   test/application/ScopedToolHostTest.cpp
   test/application/TendingServiceTest.cpp
-  test/domain/TendingTest.cpp)
+  test/domain/TendingTest.cpp
+  test/domain/TreeTest.cpp
+  test/domain/RemindersTest.cpp
+  test/application/ReminderSweepTest.cpp)
 target_link_libraries(windmill_domain_tests PRIVATE windmill_application)
 
 enable_testing()
@@ -111,6 +116,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     adapters/postgres/PgServerErrorRepository.cpp
     adapters/postgres/PgSubscriptionRepository.cpp
     adapters/postgres/PgTendRunRepository.cpp
+    adapters/postgres/PgReminderRepository.cpp
     adapters/http/HttpApi.cpp
     adapters/http/PageShell.cpp
     adapters/http/SharePageApi.cpp
@@ -126,6 +132,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     adapters/http/Caller.cpp
     adapters/http/TreeRegistryApi.cpp
     adapters/http/TendingApi.cpp
+    adapters/http/RemindersApi.cpp
     adapters/crypto/OpenSslTokenGenerator.cpp
     adapters/email/ResendEmailSender.cpp
     adapters/google/GoogleOAuthClient.cpp
@@ -186,6 +193,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/adapters/http/OgImageApiTest.cpp
     test/adapters/http/OgVideoApiTest.cpp
     test/adapters/http/TreeRegistryApiTest.cpp
+    test/adapters/http/RemindersApiTest.cpp
     test/adapters/ws/CollabTest.cpp
     test/adapters/email/ResendEmailSenderTest.cpp
     test/adapters/paddle/PaddleSignatureTest.cpp

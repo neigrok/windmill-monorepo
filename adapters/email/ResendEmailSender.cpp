@@ -13,8 +13,14 @@ namespace wm {
 std::string emailSafeTitle(const std::string& title) {
   std::string safe;
   safe.reserve(title.size());
-  for (char c : title)
-    if (c != '<' && c != '>') safe.push_back(c);
+  for (unsigned char c : title) {
+    if (c == '<' || c == '>') continue;  // markup, in a body
+    // Control characters, in a HEADER. A tree title carries no length or charset validation
+    // anywhere in the system and now reaches a Subject line, where a CR or an LF is not a stray
+    // character but the end of the header. Multi-byte UTF-8 is all >= 0x80 and passes untouched.
+    if (c < 0x20 || c == 0x7F) continue;
+    safe.push_back(static_cast<char>(c));
+  }
   return safe;
 }
 
@@ -38,6 +44,33 @@ void ResendEmailSender::sendForkLink(const Email& to, const std::string& magicLi
   variables["tree_title"] = emailSafeTitle(treeTitle);
   variables["tree_meta"] = treeMeta;
   send(to, "magic-link-fork", variables, std::move(done));
+}
+
+void ResendEmailSender::sendReminder(const Email& to, const ReminderMail& mail,
+                                     std::function<void(bool)> done) {
+  Json::Value variables(Json::objectValue);
+  // The two positions that carry someone's own words shed markup first; the hue beside each step
+  // never does, because it is one of six server-chosen literals landing inside a style attribute,
+  // where angle-bracket stripping would not have protected it anyway.
+  variables["tree_name"] = emailSafeTitle(mail.treeName);
+  variables["tree_url"] = mail.treeUrl;
+  variables["settings_url"] = mail.settingsUrl;
+  variables["pause_url"] = mail.pauseUrl;
+  variables["done"] = mail.done;
+  variables["total"] = mail.total;
+  // Every counted sentence arrives finished, worded in the pure core. This adapter binds; it does
+  // not write copy — plurals and units included.
+  variables["ready_phrase"] = mail.readyPhrase;
+  variables["more_on_tree"] = mail.moreOnTree;
+  variables["more_ready"] = mail.moreReady;
+  // Three fixed slots rather than a list the provider iterates: the template documents this
+  // fallback, three is the cap regardless, and an empty label simply renders an empty row.
+  for (std::size_t slot = 0; slot < mail.steps.size(); ++slot) {
+    const std::string prefix = "step_" + std::to_string(slot + 1) + "_";
+    variables[prefix + "label"] = emailSafeTitle(mail.steps[slot].label);
+    variables[prefix + "color"] = mail.steps[slot].colorHex;
+  }
+  send(to, "reminder", variables, std::move(done));
 }
 
 void ResendEmailSender::send(const Email& to, const std::string& templateId,
