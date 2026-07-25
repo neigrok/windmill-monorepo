@@ -201,11 +201,18 @@ TEST(remove_soft_deletes_an_owned_tree_and_it_leaves_the_list) {
 
 TEST(remove_refuses_a_non_owner_and_an_unknown_tree) {
   Setup s;
-  seed(s.trees, "t", uid("owner"), 100, {spec("a", NodeColor::sky)});
+  seed(s.trees, "t", uid("owner"), 100, {spec("a", NodeColor::sky)});  // private by default
 
-  CHECK(s.registry.remove(tid("t"), uid("intruder")) == TreeRegistry::Removal::notOwner);
+  // A stranger cannot read this tree, so the refusal must be the one an absent id gets: a
+  // distinct "not yours" would confirm the id names a real private tree.
+  CHECK(s.registry.remove(tid("t"), uid("intruder")) == TreeRegistry::Removal::notFound);
   CHECK(s.registry.remove(tid("ghost"), uid("owner")) == TreeRegistry::Removal::notFound);
   CHECK_EQ(s.registry.list(uid("owner")).size(), 1u);  // the refusal left it intact
+
+  // A tree the stranger CAN read is a different matter — nothing is hidden, so it is told why.
+  s.trees.byId["t"].visibility = Visibility::unlisted;
+  CHECK(s.registry.remove(tid("t"), uid("intruder")) == TreeRegistry::Removal::notOwner);
+  CHECK_EQ(s.registry.list(uid("owner")).size(), 1u);
 }
 
 TEST(rename_retitles_an_owned_tree_trimmed_and_the_list_shows_it) {

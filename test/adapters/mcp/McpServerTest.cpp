@@ -1,4 +1,6 @@
 #include "adapters/mcp/McpServer.h"
+
+#include "adapters/mcp/Resources.h"
 #include "test/testing.h"
 
 using namespace wm;
@@ -58,7 +60,67 @@ TEST(mcp_initialize_reports_capabilities_and_echoes_protocol) {
   CHECK_EQ((*reply)["result"]["protocolVersion"].asString(), std::string("2025-06-18"));
   CHECK_EQ((*reply)["result"]["serverInfo"]["name"].asString(), std::string("windmill"));
   CHECK(( *reply)["result"]["capabilities"].isMember("tools"));
+  // Resources are declared, or a client never asks for the quickstart it could have read.
+  CHECK(( *reply)["result"]["capabilities"].isMember("resources"));
+  CHECK_FALSE((*reply)["result"]["capabilities"]["resources"]["subscribe"].asBool());
+  CHECK_FALSE((*reply)["result"]["capabilities"]["resources"]["listChanged"].asBool());
   CHECK_EQ((*reply)["result"]["instructions"].asString(), std::string("roadmaps as skill trees"));
+}
+
+TEST(mcp_resources_list_publishes_the_quickstart) {
+  FakeHost host;
+  McpServer server = make(host);
+  std::optional<Json::Value> reply = server.handle(request("resources/list", Json::nullValue, 8));
+
+  CHECK(reply.has_value());
+  const Json::Value listing = (*reply)["result"]["resources"];
+  CHECK_EQ(listing.size(), resourceCatalog().size());
+  CHECK_EQ(listing[0]["uri"].asString(), std::string("windmill://quickstart"));
+  CHECK_EQ(listing[0]["name"].asString(), std::string("quickstart"));
+  CHECK_EQ(listing[0]["title"].asString(), std::string("Windmill quickstart"));
+  CHECK_EQ(listing[0]["mimeType"].asString(), std::string("text/markdown"));
+  CHECK_FALSE(listing[0]["description"].asString().empty());
+  CHECK_FALSE(listing[0].isMember("text"));  // the listing is an index; the body is one read away
+}
+
+TEST(mcp_resources_read_answers_the_quickstart_body) {
+  FakeHost host;
+  McpServer server = make(host);
+
+  Json::Value params(Json::objectValue);
+  params["uri"] = "windmill://quickstart";
+  std::optional<Json::Value> reply = server.handle(request("resources/read", params, 9));
+
+  CHECK(reply.has_value());
+  const Json::Value contents = (*reply)["result"]["contents"];
+  CHECK_EQ(contents.size(), 1u);
+  CHECK_EQ(contents[0]["uri"].asString(), std::string("windmill://quickstart"));
+  CHECK_EQ(contents[0]["mimeType"].asString(), std::string("text/markdown"));
+  CHECK_EQ(contents[0]["text"].asString(), resourceCatalog()[0].text);
+}
+
+TEST(mcp_resources_read_of_an_unknown_uri_names_it) {
+  FakeHost host;
+  McpServer server = make(host);
+
+  Json::Value params(Json::objectValue);
+  params["uri"] = "windmill://nope";
+  std::optional<Json::Value> reply = server.handle(request("resources/read", params, 10));
+
+  CHECK(reply.has_value());
+  CHECK_EQ((*reply)["error"]["code"].asInt(), -32002);
+  CHECK_EQ((*reply)["error"]["message"].asString(),
+           std::string("no such resource: \"windmill://nope\" — call resources/list"));
+}
+
+TEST(mcp_resource_templates_list_is_empty_rather_than_unknown) {
+  FakeHost host;
+  McpServer server = make(host);
+  std::optional<Json::Value> reply =
+      server.handle(request("resources/templates/list", Json::nullValue, 11));
+  CHECK(reply.has_value());
+  CHECK(( *reply)["result"]["resourceTemplates"].isArray());
+  CHECK_EQ((*reply)["result"]["resourceTemplates"].size(), 0u);
 }
 
 TEST(mcp_ping_returns_empty_result) {
@@ -149,6 +211,56 @@ TEST(mcp_notification_gets_no_response) {
   std::optional<Json::Value> reply =
       server.handle(request("notifications/initialized", Json::nullValue, Json::nullValue));
   CHECK_FALSE(reply.has_value());
+}
+
+// jsoncpp throws on asString() of a container, and on the stdio transport a throw out of handle()
+// leaves main and kills the whole session — one malformed frame ending every later call. Each of
+// these was a live process-terminating input.
+TEST(mcp_a_container_where_a_string_belongs_is_answered_not_thrown) {
+  FakeHost host;
+  McpServer server = make(host);
+
+  Json::Value read(Json::objectValue);
+  read["uri"] = Json::Value(Json::arrayValue);
+  std::optional<Json::Value> uri = server.handle(request("resources/read", read, 20));
+  CHECK(uri.has_value());
+  CHECK_EQ((*uri)["error"]["code"].asInt(), -32602);
+  CHECK_EQ((*uri)["error"]["message"].asString(), std::string("\"uri\" must be a string"));
+
+  Json::Value call(Json::objectValue);
+  call["name"] = Json::Value(Json::arrayValue);
+  std::optional<Json::Value> named = server.handle(request("tools/call", call, 21));
+  CHECK(named.has_value());
+  CHECK_EQ((*named)["error"]["code"].asInt(), -32602);
+  CHECK_EQ((*named)["error"]["message"].asString(), std::string("\"name\" must be a string"));
+  CHECK(host.lastName.empty());  // nothing was dispatched
+
+  Json::Value handshake(Json::objectValue);
+  handshake["protocolVersion"] = Json::Value(Json::objectValue);
+  std::optional<Json::Value> version = server.handle(request("initialize", handshake, 22));
+  CHECK(version.has_value());
+  CHECK_EQ((*version)["error"]["code"].asInt(), -32602);
+  CHECK_EQ((*version)["error"]["message"].asString(),
+           std::string("\"protocolVersion\" must be a string"));
+
+  Json::Value framed(Json::objectValue);
+  framed["jsonrpc"] = "2.0";
+  framed["id"] = 23;
+  framed["method"] = Json::Value(Json::objectValue);
+  std::optional<Json::Value> method = server.handle(framed);
+  CHECK(method.has_value());
+  CHECK_EQ((*method)["error"]["code"].asInt(), -32600);
+  CHECK_EQ((*method)["error"]["message"].asString(), std::string("\"method\" must be a string"));
+}
+
+TEST(mcp_non_object_params_are_invalid_params_not_a_throw) {
+  FakeHost host;
+  McpServer server = make(host);
+  std::optional<Json::Value> reply = server.handle(request("tools/call", Json::Value("echo"), 12));
+  CHECK(reply.has_value());
+  CHECK_EQ((*reply)["error"]["code"].asInt(), -32602);
+  CHECK_EQ((*reply)["error"]["message"].asString(), std::string("\"params\" must be an object"));
+  CHECK(host.lastName.empty());  // nothing was dispatched
 }
 
 TEST(mcp_non_object_message_is_invalid_request) {

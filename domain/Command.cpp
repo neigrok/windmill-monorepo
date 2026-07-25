@@ -11,9 +11,7 @@ struct overloaded : Ts... { using Ts::operator()...; };
 template <class... Ts>
 overloaded(Ts...) -> overloaded<Ts...>;
 
-constexpr std::size_t kMaxKinds = 6;
-constexpr std::size_t kMaxLabelLength = 24;
-constexpr std::size_t kMaxDescriptionLength = 80;
+std::string quoted(const std::string& value) { return "\"" + value + "\""; }
 }
 
 void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc& at) {
@@ -62,6 +60,11 @@ void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc&
   }, command);
 }
 
+// A refusal names the thing it is about — the id, the value that clashed, who holds it, the limit
+// that was reached — because the caller cannot see this state and must be able to act on the
+// sentence alone. Every fact these messages quote is already in hand at the point of refusal; the
+// old strings simply withheld it. Same words reach an MCP agent (with its tool name stamped on by
+// adapters/mcp) and an HTTP client.
 std::optional<std::string> validate(const LooseGraph& graph, const Legend& legend, const Command& command) {
   auto idBounds = [](const NodeId& id) -> std::optional<std::string> {
     if (id.empty()) return "node id is empty";
@@ -89,7 +92,8 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
       if (c.position && !(std::isfinite(c.position->x) && std::isfinite(c.position->y)))
         return "position is not finite";
       if (!graph.hasNode(c.id) && graph.presentNodeIds().size() >= kMaxNodes)
-        return "tree is at node capacity";
+        return "tree is at node capacity (" + std::to_string(kMaxNodes) +
+               " nodes) — delete a node before adding another";
       return std::nullopt;
     },
     [&](const AnnotateNode& c) -> std::optional<std::string> {
@@ -112,7 +116,8 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
       if (auto bad = idBounds(c.from)) return bad;
       if (auto bad = idBounds(c.to)) return bad;
       if (!graph.edgePresent(c.from, c.to) && graph.presentEdges().size() >= kMaxEdges)
-        return "tree is at edge capacity";
+        return "tree is at edge capacity (" + std::to_string(kMaxEdges) +
+               " edges) — call tidy to drop the edges a longer path already implies";
       return std::nullopt;
     },
     [&](const RemoveEdge& c) -> std::optional<std::string> {
@@ -126,33 +131,51 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
       return idBounds(c.newTo);
     },
     [&](const RenameKind& c) -> std::optional<std::string> {
-      if (!legend.has(c.id)) return "no such kind";
-      if (c.label.size() > kMaxLabelLength) return "label is too long (max 24 characters)";
+      if (!legend.has(c.id)) return "no kind " + quoted(c.id.str()) + " in this legend";
+      if (c.label.size() > kMaxKindLabelLength)
+        return "label is " + std::to_string(c.label.size()) + " characters, max " +
+               std::to_string(kMaxKindLabelLength);
       return std::nullopt;
     },
     [&](const DescribeKind& c) -> std::optional<std::string> {
-      if (!legend.has(c.id)) return "no such kind";
-      if (c.description.size() > kMaxDescriptionLength) return "description is too long (max 80 characters)";
+      if (!legend.has(c.id)) return "no kind " + quoted(c.id.str()) + " in this legend";
+      if (c.description.size() > kMaxKindDescriptionLength)
+        return "description is " + std::to_string(c.description.size()) + " characters, max " +
+               std::to_string(kMaxKindDescriptionLength);
       return std::nullopt;
     },
     [&](const AddKind& c) -> std::optional<std::string> {
-      if (legend.has(c.id)) return "kind already exists";
-      if (legend.size() >= kMaxKinds) return "the legend is full (max 6 kinds)";
-      if (legend.ownerOf(c.hue)) return "that hue already belongs to another kind";
-      if (c.label.size() > kMaxLabelLength) return "label is too long (max 24 characters)";
-      if (c.description.size() > kMaxDescriptionLength) return "description is too long (max 80 characters)";
+      if (legend.has(c.id)) return "kind " + quoted(c.id.str()) + " already exists in this legend";
+      if (legend.size() >= kMaxKinds)
+        return "the legend is full (" + std::to_string(legend.size()) + " of " +
+               std::to_string(kMaxKinds) + " kinds) — remove a kind before adding another";
+      if (std::optional<KindId> owner = legend.ownerOf(c.hue))
+        return "hue " + quoted(std::string(toString(c.hue))) + " already belongs to kind " +
+               quoted(owner->str()) + " — a hue names one kind, so pick a free one";
+      if (c.label.size() > kMaxKindLabelLength)
+        return "label is " + std::to_string(c.label.size()) + " characters, max " +
+               std::to_string(kMaxKindLabelLength);
+      if (c.description.size() > kMaxKindDescriptionLength)
+        return "description is " + std::to_string(c.description.size()) + " characters, max " +
+               std::to_string(kMaxKindDescriptionLength);
       return std::nullopt;
     },
     [&](const RemoveKind& c) -> std::optional<std::string> {
       std::optional<NodeColor> hue = legend.hueOf(c.id);
-      if (!hue) return "no such kind";
-      if (graph.hueInUse(*hue)) return "kind is in use — nodes still wear its hue";
-      return std::nullopt;
+      if (!hue) return "no kind " + quoted(c.id.str()) + " in this legend";
+      if (!graph.hueInUse(*hue)) return std::nullopt;
+      // Only the refusal pays for the count — the caller needs to know how much repainting the
+      // removal is asking of it, which "kind is in use" never said.
+      return "kind " + quoted(c.id.str()) + " is in use — " +
+             std::to_string(graph.nodesWithColor(*hue).size()) + " node(s) still wear hue " +
+             quoted(std::string(toString(*hue))) + "; recolor them first";
     },
     [&](const RecolorKind& c) -> std::optional<std::string> {
-      if (!legend.has(c.id)) return "no such kind";
+      if (!legend.has(c.id)) return "no kind " + quoted(c.id.str()) + " in this legend";
       std::optional<KindId> owner = legend.ownerOf(c.hue);
-      if (owner && *owner != c.id) return "that hue already belongs to another kind";
+      if (owner && *owner != c.id)
+        return "hue " + quoted(std::string(toString(c.hue))) + " already belongs to kind " +
+               quoted(owner->str()) + " — a hue names one kind, so pick a free one";
       return std::nullopt;
     },
     [&](const auto&) -> std::optional<std::string> { return std::nullopt; },

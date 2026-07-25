@@ -1,89 +1,12 @@
-#include "adapters/mcp/RoadmapTools.h"
+#include "test/adapters/mcp/ToolsHarness.h"
 
-#include "adapters/json/TreeJson.h"
-#include "application/ProgressService.h"
-#include "application/RoomRegistry.h"
-#include "domain/LooseGraph.h"
-#include "ports/Clock.h"
-#include "test/application/AuthFakes.h"
-#include "test/application/Fakes.h"
 #include "test/testing.h"
 
 using namespace wm;
 using namespace wm::fake;
+using namespace wm::test;
 
 namespace {
-
-// A strictly-increasing clock so every stamp is fresh and later edits win.
-struct StepClock : Clock {
-  std::uint64_t ms = 1000;
-  std::uint64_t nowMs() override { return ms++; }
-};
-
-// A harness owning the fakes + wiring, seeded with one empty tree "t".
-struct Harness {
-  FakeTreeRepository trees;
-  FakeOpLog ops;
-  FakeBus bus;
-  FakeProgressRepository progressRepo;
-  StepClock clock;
-  FakeTokens tokens;
-  RoomRegistry registry{trees, ops, bus};
-  ProgressService progress{progressRepo};
-  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
-  UserId caller = uid("agent");
-  RoadmapTools tools{registry, progress, clock, treeRegistry, bus};
-
-  Harness() {
-    trees.byId["t"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Test Roadmap", {}}, 0, caller};
-  }
-
-  ToolResult call(const char* name, Json::Value args) {
-    args["treeId"] = "t";
-    return tools.callTool(name, args, caller);
-  }
-};
-
-// Every successful result speaks through content[0].text — the one channel every MCP client
-// reads. structuredContent is not sent (no tool declares an outputSchema), so these tests read
-// exactly the bytes an agent reads.
-Json::Value body(const ToolResult& result) {
-  return parse(result.content[0]["text"].asString());
-}
-
-std::string message(const ToolResult& result) {
-  return result.content[0]["text"].asString();
-}
-
-std::vector<std::string> keys(const Json::Value& value) {
-  return value.getMemberNames();
-}
-
-Json::Value with(const char* key, const char* value) {
-  Json::Value args(Json::objectValue);
-  args[key] = value;
-  return args;
-}
-
-Json::Value node(const char* id, const char* label) {
-  Json::Value n(Json::objectValue);
-  n["id"] = id;
-  n["label"] = label;
-  return n;
-}
-
-Json::Value mark(const char* nodeId, const char* status) {
-  Json::Value m(Json::objectValue);
-  m["nodeId"] = nodeId;
-  m["status"] = status;
-  return m;
-}
-
-Json::Value list(std::vector<const char*> values) {
-  Json::Value array(Json::arrayValue);
-  for (const char* value : values) array.append(value);
-  return array;
-}
 
 // A `fields` request for the whole node vocabulary — what a caller asks for when it wants the
 // document shape the browser gets.
@@ -91,8 +14,6 @@ Json::Value everyNodeField() {
   return list({"id", "label", "icon", "color", "order", "prerequisites", "position", "status",
                "description", "links"});
 }
-
-const Json::Value kNoArgs(Json::objectValue);
 
 }
 
@@ -577,8 +498,8 @@ TEST(mcp_read_tools_deny_a_private_tree_you_dont_own) {
     ToolResult absent = h.tools.callTool(name, with("treeId", "nope"), h.caller);
     CHECK(denied.isError);
     CHECK(absent.isError);
-    CHECK_EQ(message(denied), std::string("no such tree \"priv\""));
-    CHECK_EQ(message(absent), std::string("no such tree \"nope\""));
+    CHECK_EQ(message(denied), std::string(name) + ": no such tree \"priv\"");
+    CHECK_EQ(message(absent), std::string(name) + ": no such tree \"nope\"");
   }
 
   // set_progress must not become a node-id/prerequisite oracle on that same private tree:
@@ -591,8 +512,8 @@ TEST(mcp_read_tools_deny_a_private_tree_you_dont_own) {
   ToolResult progDenied = h.tools.callTool("set_progress", progArgs("priv"), h.caller);
   ToolResult progAbsent = h.tools.callTool("set_progress", progArgs("nope"), h.caller);
   CHECK(progDenied.isError);
-  CHECK_EQ(message(progDenied), std::string("no such tree \"priv\""));
-  CHECK_EQ(message(progAbsent), std::string("no such tree \"nope\""));
+  CHECK_EQ(message(progDenied), std::string("set_progress: no such tree \"priv\""));
+  CHECK_EQ(message(progAbsent), std::string("set_progress: no such tree \"nope\""));
 }
 
 TEST(mcp_read_tools_allow_an_unlisted_tree_by_a_stranger) {
@@ -762,8 +683,8 @@ TEST(mcp_an_unknown_field_names_it_and_the_legal_set) {
   ToolResult misspelled = h.call("find_nodes", args);
   CHECK(misspelled.isError);
   CHECK_EQ(message(misspelled),
-           std::string("unknown field: labl; legal fields: id, label, icon, color, order, "
-                       "prerequisites, position, status, description, links"));
+           std::string("find_nodes: fields[1] \"labl\" is not one of {id, label, icon, color, order, "
+                       "prerequisites, position, status, description, links}"));
 
   // Each shape refuses against ITS OWN vocabulary — the legend's and the overlay's differ.
   Json::Value kindArgs(Json::objectValue);
@@ -771,14 +692,14 @@ TEST(mcp_an_unknown_field_names_it_and_the_legal_set) {
   ToolResult wrongVocabulary = h.call("get_tree", kindArgs);
   CHECK(wrongVocabulary.isError);
   CHECK_EQ(message(wrongVocabulary),
-           std::string("unknown field: color; legal fields: id, hue, label, description"));
+           std::string("get_tree: kindFields[0] \"color\" is not one of {id, hue, label, description}"));
 
   Json::Value progressArgs(Json::objectValue);
   progressArgs["fields"] = list({"nodes"});
   ToolResult wrongProgress = h.call("get_progress", progressArgs);
   CHECK(wrongProgress.isError);
   CHECK_EQ(message(wrongProgress),
-           std::string("unknown field: nodes; legal fields: completed, inProgress, cleared"));
+           std::string("get_progress: fields[0] \"nodes\" is not one of {completed, inProgress, cleared}"));
 }
 
 TEST(mcp_limit_and_cursor_walk_the_whole_set_exactly_once) {
@@ -834,7 +755,8 @@ TEST(mcp_a_limit_out_of_range_and_an_unknown_cursor_are_named_errors) {
   tooMany["limit"] = 5000;
   ToolResult refused = h.call("find_nodes", tooMany);
   CHECK(refused.isError);
-  CHECK_EQ(message(refused), std::string("limit must be a number between 1 and 1000; got 5000"));
+  CHECK_EQ(message(refused),
+           std::string("find_nodes: argument \"limit\" must be a number between 1 and 1000, got 5000"));
 
   Json::Value zero(Json::objectValue);
   zero["limit"] = 0;
@@ -845,6 +767,6 @@ TEST(mcp_a_limit_out_of_range_and_an_unknown_cursor_are_named_errors) {
   ToolResult lost = h.call("find_nodes", ghost);
   CHECK(lost.isError);
   CHECK_EQ(message(lost),
-           std::string("unknown cursor: vanished — it names no node in this result set; "
-                       "call again without a cursor to walk it from the start"));
+           std::string("find_nodes: cursor \"vanished\" names no node in this result set. "
+                       "Call again without a cursor to walk it from the start."));
 }

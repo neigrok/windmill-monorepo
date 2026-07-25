@@ -13,8 +13,8 @@
 
 namespace wm {
 
-// Admission bounds for graph commands, enforced by validate() at the edge; legend caps
-// (kMaxKinds etc.) live with the legend cases in Command.cpp.
+// Admission bounds, enforced by validate() at the edge — and published as `maxLength` by the
+// surfaces that take them (adapters/mcp), which is why they are stated once, here.
 constexpr std::size_t kMaxIdLength = 128;               // node / tree id length in bytes
 constexpr std::size_t kMaxNodeLabelLength = 200;        // node display-label length in bytes
 constexpr std::size_t kMaxIconLength = 64;              // node icon token length in bytes
@@ -24,6 +24,10 @@ constexpr std::size_t kMaxLinkLabelLength = 200;        // a link's display-text
 constexpr std::size_t kMaxLinkUrlLength = 2048;         // a link's url length in bytes
 constexpr std::size_t kMaxNodes = 10000;                // present nodes admitted per tree
 constexpr std::size_t kMaxEdges = 20000;                // present edges admitted per tree
+constexpr std::size_t kMaxTitleChars = 200;             // a roadmap's name (TreeRegistry truncates)
+constexpr std::size_t kMaxKinds = 6;                    // legend kinds per tree (one per hue)
+constexpr std::size_t kMaxKindLabelLength = 24;         // a legend kind's label length in bytes
+constexpr std::size_t kMaxKindDescriptionLength = 80;   // a kind's sorting brief, in bytes
 
 struct RenameNode { NodeId id; std::string label; };
 struct SetNodeColor { NodeId id; NodeColor color; };

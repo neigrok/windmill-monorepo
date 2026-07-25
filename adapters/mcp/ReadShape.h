@@ -68,34 +68,36 @@ public:
   }
 
   std::string legalSet() const {
-    std::string out;
+    std::string out = "{";
     for (const auto& [name, field] : entries_) {
-      if (!out.empty()) out += ", ";
+      if (out.size() > 1) out += ", ";
       out += name;
     }
-    return out;
+    return out + "}";
   }
 
-  // The fields `requested` names, or `fallback` when the caller asked for nothing. An unknown
-  // name is refused with a message that names the offender AND enumerates the legal set, so one
-  // round trip is enough to fix it.
-  std::optional<Fields> parse(const Json::Value& requested, const Fields& fallback, std::string& error) const {
+  // The fields `requested` names, or `fallback` when the caller asked for nothing. Every refusal
+  // names the argument by the spelling that tool publishes (`path` — "fields" or "kindFields"),
+  // the offending element by its index, and the whole legal set, so one round trip is enough.
+  std::optional<Fields> parse(const Json::Value& requested, const char* path, const Fields& fallback,
+                              std::string& error) const {
     if (requested.isNull()) return fallback;
     if (!requested.isArray()) {
-      error = "fields must be an array of field names; legal fields: " + legalSet();
+      error = "argument \"" + std::string(path) + "\" must be an array of field names, one of " + legalSet();
       return std::nullopt;
     }
     Fields chosen;
-    for (const Json::Value& value : requested) {
-      if (!value.isString()) {
-        error = "fields must be an array of field names; legal fields: " + legalSet();
+    for (Json::ArrayIndex i = 0; i < requested.size(); ++i) {
+      const std::string element = std::string(path) + "[" + std::to_string(i) + "]";
+      if (!requested[i].isString()) {
+        error = element + " must be a string, one of " + legalSet();
         return std::nullopt;
       }
-      const std::string name = value.asString();
+      const std::string name = requested[i].asString();
       const auto entry = std::find_if(entries_.begin(), entries_.end(),
                                       [&](const auto& candidate) { return candidate.first == name; });
       if (entry == entries_.end()) {
-        error = "unknown field: " + name + "; legal fields: " + legalSet();
+        error = element + " \"" + name + "\" is not one of " + legalSet();
         return std::nullopt;
       }
       chosen.insert(entry->second);

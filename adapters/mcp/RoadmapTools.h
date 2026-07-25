@@ -25,6 +25,11 @@ public:
   ToolResult callTool(const std::string& name, const Json::Value& arguments, const UserId& caller) override;
 
 private:
+  // The tool itself. callTool wraps it so every failure — refused, thrown, or raised deeper in
+  // the core — reaches the agent naming the tool it came from, exactly once.
+  ToolResult dispatch(const std::string& name, const Json::Value& arguments, const UserId& caller);
+
+
   RoomRegistry& registry_;
   ProgressService& progress_;
   Clock& clock_;                // wall time for the room's HLC (the room mints, this feeds it)

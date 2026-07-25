@@ -157,7 +157,9 @@ if(Drogon_FOUND AND libpqxx_FOUND)
   add_library(windmill_mcp_lib
     adapters/mcp/McpServer.cpp
     adapters/mcp/ReadShape.cpp
+    adapters/mcp/Resources.cpp
     adapters/mcp/RoadmapTools.cpp
+    adapters/mcp/ToolArgs.cpp
     adapters/mcp/McpHttpEndpoint.cpp)
   target_link_libraries(windmill_mcp_lib PUBLIC windmill_adapters)
 
@@ -176,6 +178,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/main.cpp
     test/adapters/mcp/McpServerTest.cpp
     test/adapters/mcp/RoadmapToolsTest.cpp
+    test/adapters/mcp/ToolErrorContractTest.cpp
     test/adapters/mcp/McpHttpEndpointTest.cpp)
   target_link_libraries(windmill_mcp_tests PRIVATE windmill_mcp_lib)
   add_test(NAME mcp COMMAND windmill_mcp_tests)

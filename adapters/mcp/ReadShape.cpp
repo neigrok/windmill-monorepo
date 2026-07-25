@@ -1,6 +1,7 @@
 #include "adapters/mcp/ReadShape.h"
 
 #include "adapters/json/TreeJson.h"
+#include "adapters/mcp/ToolArgs.h"
 
 namespace wm {
 
@@ -90,8 +91,8 @@ std::optional<Page> pageOf(const std::vector<NodeSpec>& matches, const Json::Val
   if (!requestedLimit.isNull()) {
     const double value = requestedLimit.isNumeric() ? requestedLimit.asDouble() : 0.0;
     if (!requestedLimit.isNumeric() || value < 1 || value > kMaxLimit) {
-      error = "limit must be a number between 1 and " + std::to_string(kMaxLimit) + "; got " +
-              dump(requestedLimit);
+      error = "argument \"limit\" must be a number between 1 and " + std::to_string(kMaxLimit) +
+              ", got " + literal(requestedLimit);
       return std::nullopt;
     }
     limit = static_cast<int>(value);
@@ -103,8 +104,8 @@ std::optional<Page> pageOf(const std::vector<NodeSpec>& matches, const Json::Val
     const auto found = std::find_if(matches.begin(), matches.end(),
                                     [&](const NodeSpec& node) { return node.id.str() == cursor; });
     if (found == matches.end()) {
-      error = "unknown cursor: " + cursor + " — it names no node in this result set; "
-              "call again without a cursor to walk it from the start";
+      error = "cursor \"" + cursor + "\" names no node in this result set. "
+              "Call again without a cursor to walk it from the start.";
       return std::nullopt;
     }
     page.begin = static_cast<std::size_t>(found - matches.begin()) + 1;

@@ -1,5 +1,6 @@
 #include "application/TreeRegistry.h"
 
+#include "domain/Command.h"
 #include "domain/GraphState.h"
 #include "domain/Legend.h"
 #include "domain/LooseGraph.h"
@@ -71,6 +72,9 @@ std::vector<TreeSummary> TreeRegistry::list(const UserId& owner) {
 TreeRegistry::Removal TreeRegistry::remove(const TreeId& tree, const UserId& caller) {
   std::optional<StoredTree> stored = trees_.load(tree);
   if (!stored) return Removal::notFound;
+  // A tree the caller cannot even read is answered as absent, never as "someone else's": the
+  // second sentence would tell a stranger which private ids are real.
+  if (!canRead(caller, stored->owner, stored->visibility)) return Removal::notFound;
   if (!stored->owner || *stored->owner != caller) return Removal::notOwner;
   trees_.softDelete(tree);
   return Removal::deleted;
@@ -83,9 +87,8 @@ TreeRegistry::Renaming TreeRegistry::rename(const TreeId& tree, const UserId& ca
   std::string trimmed = title.substr(start, title.find_last_not_of(" \t\r\n") - start + 1);
 
   // A name, not a payload: an 8MB body would otherwise ride every broadcast, save, and
-  // listing. Truncate — never reject — to 200 characters, counted as UTF-8 codepoints so
-  // the cut can never split a sequence.
-  constexpr std::size_t kMaxTitleChars = 200;
+  // listing. Truncate — never reject — to kMaxTitleChars (domain/Command.h, the one home for
+  // admission bounds), counted as UTF-8 codepoints so the cut can never split a sequence.
   std::size_t seen = 0;
   for (std::size_t i = 0; i < trimmed.size(); ++i) {
     if ((static_cast<unsigned char>(trimmed[i]) & 0xC0) == 0x80) continue;  // continuation byte

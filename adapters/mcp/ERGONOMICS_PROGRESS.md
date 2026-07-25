@@ -80,3 +80,78 @@ MVCC/TOAST/WAL. Fix, in layers:
   make the next field a one-liner — a good future refactor if node fields keep growing.
 - **`prune` counting reuses diagnostics** (`dangling + selfEdges`) instead of re-deriving, so the
   reported count and the `PruneDangling` removal set come from the same definition of "junk edge".
+
+### Landed — the error contract, the node handle, and a quickstart resource
+
+- **One home for refusals** — `ToolArgs.{h,cpp}`: `requireString` / `requireOneOf` /
+  `requireNumber` / `requireObjects` / `optionalLinks` / `requireHandle`, each answering
+  nullopt or the whole sentence, so a tool's contract reads as a fail-fast pipeline.
+  `prepareEdit` in RoadmapTools states what every edit tool requires — the one place that
+  contract is written down — and runs BEFORE `commandFromJson`, which stays a bare yes/no
+  because `PgOpLog` replays through it.
+- **The tool name is stamped once**, by `callTool`, on whatever `dispatch` refused with — which
+  puts the tool on every message but is NOT what makes a message good. A stamp on a sentence that
+  names nothing (`add_kind: that hue already belongs to another kind`) is still a sentence that
+  names nothing, so the domain's own refusals were rewritten where the fact lives
+  (`domain/Command.cpp`): `hue "sky" already belongs to kind "build"`. The same wrapper catches
+  `std::exception`: a JSON-encoded object in `nodes[]` used to throw out of jsoncpp and kill the
+  whole HTTP request with no status and no message.
+- **`nodeId` is the node handle** on annotate/rename/set_node_color/move/delete/set_progress
+  (and `progress[].nodeId`), with `id` kept as a silent alias (declared `deprecated`, since
+  `additionalProperties: false` would otherwise have a strict client reject it). `id` now means
+  only "the id I propose for a new node" — `create_node` refuses `nodeId` and says why.
+- **Caps are published**: `maxLength` on every capped string (description 4000, label 200, icon
+  64, ids 128, link url 2048, kind label 24 / description 80) and `maxItems` on `links` — a client
+  can only pre-validate what the schema states, which was the whole 4000-character complaint.
+- **`windmill://quickstart`** as an MCP resource (`resources/list` + `resources/read`, capability
+  declared at `initialize`): edge direction, the handle law, never-refused, `set_progress` is
+  advisory, the read projections, the caps. A test pins every tool it names against the catalog.
+
+### Observations (structure / perf)
+
+- **A message is a wire format.** Pinning error text in a test felt heavy until the first
+  refactor: the assertions caught two messages that had quietly grown a second tool name and one
+  that named an argument the schema does not publish. Errors deserve the same fixity as payloads.
+- **jsoncpp's mutable `operator[]` CREATES what it probes.** `prepareEdit` reads through a const
+  reference for exactly this reason — a create_node that merely asked whether `x` was present
+  would otherwise have grown a position of {0,0} on every call. Any future validator that takes a
+  mutable `Json::Value&` needs the same discipline.
+- **Validation belongs where the vocabulary is published.** `kHues` / `kStatuses` now feed both
+  the schema's `enum` and the check that refuses against it, so a legal set stated in one place
+  cannot drift from the one enforced. The legend's caps (24 / 80) are still mirrored from an
+  anonymous namespace in `domain/Command.cpp` — hoisting them into `domain/Command.h` beside the
+  node caps is the follow-up that removes the copy.
+- **`import_subgraph` grafts without the domain's `validate()`**, so it was the one authoring path
+  where a 10MB description or an empty node id would have landed. Its item checks are now the only
+  thing standing there — worth remembering if a second bulk path ever appears.
+
+### The fix pass — what two adversarial reviews found by executing it
+
+Tests: domain 302, adapters 201, mcp 80 — green locally and under the CI toolchain
+(`docker build --target build`, gcc-11/Ubuntu Release, ctest 3/3).
+
+- **A throw is not a refusal.** `resources/read` with `uri: []` terminated the stdio server —
+  jsoncpp throws on `asString()` of a container, and nothing above `main` catches. Every string
+  leaf the engine reads is now type-checked before it is read; two pre-existing siblings
+  (`method` as an object, `tools/call` with an array `name`) went the same way.
+- **Null is the third state a validator forgets.** `ToolArgs` reads a null as "not given";
+  `commandFromJson` reads presence with `isMember`. Between them, `links: null` DESTROYED a
+  node's links and `x: null, y: null` pinned a node at the origin. One loop in `prepareEdit`
+  erases null members before the decode, so the payload now says what this layer believes it
+  says — a fix that covers every future `isMember` in that decoder, not just the two we found.
+- **A flag that admits strings is a flag that lies.** `dryRun: "yes"` performed a real import.
+  The schema published `boolean`; the check accepted a string and treated everything but
+  `"true"` as go-ahead. A preview is a promise not to write.
+- **The domain owns the fact, so the domain owns the sentence.** Seven refusals reached agents as
+  a tool name stapled to a sentence that named nothing (`add_kind: that hue already belongs to
+  another kind`) while `legend.ownerOf(hue)` sat right there. Rewriting them in
+  `domain/Command.cpp` — `hue "sky" already belongs to kind "build"` — cannot drift from the rule
+  it describes, and fixes the REST path for free. Stamping was never the fix.
+- **An oracle test that enumerates reads only proves reads.** Every write tool answered "this tree
+  belongs to another account" for a private tree the caller cannot read, versus "no such tree" for
+  an absent one — telling a stranger which private ids are real, on the surface `tree-visibility`
+  shipped a byte-identical-denial promise for. The test now enumerates all 20 writes; that gap is
+  why it survived.
+- **Bytes vs codepoints, still deferred.** Every cap counts bytes while its message and its
+  published `maxLength` say characters; they diverge only for non-ASCII. Both halves are now in
+  one place (`domain/Command.h`), which is what a fix would need.

@@ -11,18 +11,64 @@ Edits route through the tree's `TreeRoom`, so they are merged, sequenced, logged
 ```
 adapters/mcp/
   McpServer.{h,cpp}       transport-agnostic JSON-RPC 2.0 engine (initialize, tools/list,
-                          tools/call, ping). Depends only on jsoncpp + an injected ToolHost.
+                          tools/call, resources/list, resources/read, ping). Depends only on
+                          jsoncpp + an injected ToolHost.
   RoadmapTools.{h,cpp}    the ToolHost: the tool catalog + dispatch into RoomRegistry /
                           TreeRoom / ProgressService.
+  ToolArgs.{h,cpp}        one home for argument validation and for the sentence a refusal is
+                          written in — every tool routes through it.
+  ReadShape.{h,cpp}       the read projections (`fields`) and paging (`limit`/`cursor`).
+  Resources.{h,cpp}       the MCP resources served: `windmill://quickstart`.
   McpHttpEndpoint.{h,cpp} the Streamable-HTTP transport (sessions, Origin checks, verbs).
 infra/mcp_main.cpp        `windmill_mcp`      — stdio transport (local hosts spawn it).
 infra/mcp_http_main.cpp   `windmill_mcp_http` — HTTP transport (the deployable API).
 ```
 
 The dependency arrow points inward: `McpServer` knows nothing of rooms, Postgres, or HTTP;
-the transports know nothing of the tools. The 9 edit tools reuse the existing
-`commandFromJson` codec — their argument names *are* the command payload keys — so each is a
-thin, well-described intent over machinery that already exists.
+the transports know nothing of the tools. The edit tools reuse the existing `commandFromJson`
+codec — their argument names are the command payload keys, save for the node handle, which the
+tool layer normalizes (`nodeId` → the codec's `id`) before the decode. `commandFromJson` stays a
+bare yes/no on purpose: it is also the op-log replay decoder (`PgOpLog`), so **arguments are
+validated in the tool layer**, where the failure can name the field.
+
+## The error contract
+
+Every failure is one line, and it names four things when they apply: the **tool**, the
+**argument** by its published spelling (or its JSON path — `nodes[3].label`, `updates[1].status`),
+the **value given** (its type when the type was wrong, its size when a cap was hit, its text when
+an enum missed), and the **limit or legal set** it missed. Where there is an obvious next move it
+rides along as a second sentence.
+
+```
+rename_node: missing required argument "nodeId". Call get_tree with fields ["id","label"] to list the ids this tree has.
+annotate_node: description is 4613 characters, max 4000
+import_subgraph: nodes[0] must be an object, got string. Each item is a JSON object, not a JSON-encoded string.
+set_progress: status "finished" is not one of {active, complete, none}
+```
+
+The checks live in `ToolArgs.{h,cpp}` — one home, every tool — and the tool name is stamped
+exactly once, by `RoadmapTools::callTool`, which also catches: a type-confused read throws inside
+jsoncpp, and a malformed argument must fail its own call rather than the whole HTTP request.
+Every cap a tool enforces is also published as `maxLength` / `maxItems` in its `inputSchema`, so a
+client can pre-validate what the server refuses. `test/adapters/mcp/ToolErrorContractTest.cpp`
+pins the messages themselves.
+
+## Handles
+
+- `treeId` — the roadmap, on every tree-scoped tool.
+- `nodeId` — a node that **exists**, on every tool that edits or marks one. The older `id` spelling
+  is still accepted (declared `deprecated` in the schema, since `additionalProperties: false`
+  would otherwise have a client's own validator reject it), and never published as canonical.
+- `id` — the id **proposed** for a NEW node: `create_node`, `import_subgraph`'s `nodes[].id`.
+  A different concept, deliberately a different word; `create_node` refuses `nodeId` outright.
+- Legend kinds keep their own `id`: a kind is not a node.
+
+## Resources
+
+`resources/list` and `resources/read` serve `windmill://quickstart` (markdown) — edge direction,
+the handle law, what is never refused, the read projections, and the caps. A resource costs no
+tool slot, so it is the right home for what an agent needs before its first call. Everything it
+claims is checked against the shipped catalog by a test.
 
 ## Transports
 
@@ -59,6 +105,7 @@ transports wrap it; both speak JSON-RPC 2.0, protocol version `2025-06-18`:
 | edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame |
 | legend | `add_kind` (inline label+description) · `rename_kind` · `describe_kind` · `remove_kind` · `reorder_kinds` · `recolor_kind` | the legend |
 | write | `set_progress` | per-user overlay: single `nodeId`+`status`, or a bulk `updates[]` (order-safe) |
+| resource | `windmill://quickstart` | the read-me-first document; no tool slot |
 
 Every tree-scoped tool takes `treeId`. Edits return `{applied, seq, diagnosticsClean}` so the
 agent learns immediately whether its change kept the graph valid (nothing is ever rejected).

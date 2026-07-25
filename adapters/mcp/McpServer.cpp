@@ -1,5 +1,7 @@
 #include "adapters/mcp/McpServer.h"
 
+#include "adapters/mcp/Resources.h"
+
 namespace wm {
 
 namespace {
@@ -18,6 +20,15 @@ Json::Value result(const Json::Value& id, Json::Value payload) {
   response["id"] = id;
   response["result"] = std::move(payload);
   return response;
+}
+
+// jsoncpp does not answer asString() on an object or an array — it THROWS, and on the stdio
+// transport a throw out of handle() leaves main and terminates the process: one malformed frame
+// takes the whole session down, not the one call. So every leaf this engine reads is checked
+// before it is read, and a bad one is answered as invalid params like any other.
+std::optional<std::string> notAString(const Json::Value& parent, const char* field) {
+  if (parent[field].isNull() || parent[field].isString()) return std::nullopt;
+  return "\"" + std::string(field) + "\" must be a string";
 }
 
 Json::Value failure(const Json::Value& id, int code, const std::string& message) {
@@ -39,19 +50,33 @@ std::optional<Json::Value> McpServer::handle(const Json::Value& message, const U
 
   const bool isNotification = !message.isMember("id");
   const Json::Value id = message.get("id", Json::nullValue);
-  const std::string method = message.get("method", "").asString();
+  if (std::optional<std::string> bad = notAString(message, "method"))
+    return wm::failure(id, -32600, *bad);
+  const std::string method = message["method"].asString();
+
+  // Every branch below reads `params` by key, and jsoncpp throws rather than answers when a key
+  // is asked of something that is not an object — a throw here would take the whole request down.
+  const Json::Value& params = message["params"];
+  if (!params.isNull() && !params.isObject())
+    return wm::failure(id, -32602, "\"params\" must be an object");
 
   if (method == "initialize") {
     Json::Value tools(Json::objectValue);
     tools["listChanged"] = false;
+    Json::Value resources(Json::objectValue);
+    resources["subscribe"] = false;   // the catalog is static: nothing to subscribe to,
+    resources["listChanged"] = false; // and nothing that changes under a connected client
     Json::Value capabilities(Json::objectValue);
     capabilities["tools"] = tools;
+    capabilities["resources"] = resources;
 
     Json::Value serverInfo(Json::objectValue);
     serverInfo["name"] = info_.name;
     serverInfo["version"] = info_.version;
 
-    const std::string requested = message["params"].get("protocolVersion", "").asString();
+    if (std::optional<std::string> bad = notAString(params, "protocolVersion"))
+      return wm::failure(id, -32602, *bad);
+    const std::string requested = params.get("protocolVersion", "").asString();
     Json::Value payload(Json::objectValue);
     payload["protocolVersion"] = requested.empty() ? kProtocolVersion : requested;
     payload["capabilities"] = capabilities;
@@ -68,8 +93,50 @@ std::optional<Json::Value> McpServer::handle(const Json::Value& message, const U
     return result(id, payload);
   }
 
+  // Resources cost no tool slot, so the document an agent needs before its first call rides
+  // here rather than in a tool description. The catalog is static (adapters/mcp/Resources.cpp).
+  if (method == "resources/list") {
+    Json::Value listing(Json::arrayValue);
+    for (const McpResource& resource : resourceCatalog()) {
+      Json::Value entry(Json::objectValue);
+      entry["uri"] = resource.uri;
+      entry["name"] = resource.name;
+      entry["title"] = resource.title;
+      entry["description"] = resource.description;
+      entry["mimeType"] = resource.mimeType;
+      listing.append(entry);
+    }
+    Json::Value payload(Json::objectValue);
+    payload["resources"] = listing;
+    return result(id, payload);
+  }
+
+  if (method == "resources/templates/list") {  // we template no uri; an empty list, not an error
+    Json::Value payload(Json::objectValue);
+    payload["resourceTemplates"] = Json::Value(Json::arrayValue);
+    return result(id, payload);
+  }
+
+  if (method == "resources/read") {
+    if (std::optional<std::string> bad = notAString(params, "uri")) return wm::failure(id, -32602, *bad);
+    const std::string uri = params.get("uri", "").asString();
+    for (const McpResource& resource : resourceCatalog()) {
+      if (resource.uri != uri) continue;
+      Json::Value block(Json::objectValue);
+      block["uri"] = resource.uri;
+      block["mimeType"] = resource.mimeType;
+      block["text"] = resource.text;
+      Json::Value contents(Json::arrayValue);
+      contents.append(block);
+      Json::Value payload(Json::objectValue);
+      payload["contents"] = contents;
+      return result(id, payload);
+    }
+    return wm::failure(id, -32002, "no such resource: \"" + uri + "\" — call resources/list");
+  }
+
   if (method == "tools/call") {
-    const Json::Value& params = message["params"];
+    if (std::optional<std::string> bad = notAString(params, "name")) return wm::failure(id, -32602, *bad);
     const std::string name = params.get("name", "").asString();
     if (name.empty()) return wm::failure(id, -32602, "tools/call requires a \"name\"");
     const Json::Value arguments =

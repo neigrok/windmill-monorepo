@@ -123,7 +123,8 @@ TEST(validate_rejects_new_create_at_node_capacity) {
   }
   CHECK_EQ(g.presentNodeIds().size(), kMaxNodes);
   CHECK_EQ(validate(g, legend, Command{CreateNode{nid("overflow"), "L", "i"}}),
-           std::optional<std::string>("tree is at node capacity"));
+           std::optional<std::string>(
+               "tree is at node capacity (10000 nodes) — delete a node before adding another"));
   CHECK_FALSE(validate(g, legend, Command{CreateNode{nid("n0"), "L", "i"}}).has_value());  // existing node, not new
 }
 
@@ -279,7 +280,7 @@ TEST(add_kind_seeds_label_and_description_inline) {
   CHECK_EQ(kind.description, std::string("platform work"));
 
   CHECK_EQ(validate(g, legend, Command{AddKind{kid("x"), NodeColor::gold, std::string(25, 'x'), ""}}),
-           std::optional<std::string>("label is too long (max 24 characters)"));
+           std::optional<std::string>("label is 25 characters, max 24"));
 }
 
 TEST(prune_dangling_drops_self_and_missing_endpoint_edges_only) {
