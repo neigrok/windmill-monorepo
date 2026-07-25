@@ -42,6 +42,23 @@ test('paddedGlowBox grows the tree by each node’s glow/crown footprint, then p
   });
 });
 
+test('the steady box measures every node as if lit, so progress can never move a frame', () => {
+  const plan = [
+    { id: 'a', x: 0, y: 0, emphasis: 1, color: 'terracotta' },
+    { id: 'b', x: 200, y: 100, emphasis: 0, color: 'olive' },
+    { id: 'c', x: -200, y: 100, emphasis: 0, color: 'gold' },
+  ];
+  const at = (doneCount) => modelOf(plan.map((node, i) => ({ ...node, state: i < doneCount ? 'complete' : 'locked' })));
+
+  // The as-drawn box swells as the tree fills — right for a one-off unfurl, fatal for a series.
+  assert.notDeepEqual(paddedGlowBox(at(1)), paddedGlowBox(at(3)));
+  // The steady box is the same box at every point in the plan.
+  assert.deepEqual(paddedGlowBox(at(0), { steady: true }), paddedGlowBox(at(3), { steady: true }));
+  assert.deepEqual(paddedGlowBox(at(1), { steady: true }), paddedGlowBox(at(3), { steady: true }));
+  // …and it is exactly the footprint of the finished tree, which contains every earlier one.
+  assert.deepEqual(paddedGlowBox(at(1), { steady: true }), paddedGlowBox(at(3)));
+});
+
 test('clampViewBox expands a too-small window to the floor, re-centered on the tree', () => {
   assert.deepEqual(
     clampViewBox({ minX: -100, minY: -50, width: 200, height: 100 }, 1000, 500),

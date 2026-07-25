@@ -46,7 +46,7 @@ const PANEL_H = PANEL_BOTTOM - PANEL_Y; // 1012
 // (progressCard.js) is the same object with a different strip rather than a lookalike that
 // drifts. Everything here is spec·k; the strip's own baselines are each card's business.
 export const POSTCARD = {
-  W, H, MAT, RULE, STRIP, PAD, PANEL_RADIUS, PANEL_BORDER, MAX_FIT_SCALE,
+  W, H, K, MAT, RULE, STRIP, PAD, PANEL_RADIUS, PANEL_BORDER, MAX_FIT_SCALE,
   PANEL_X, PANEL_Y, PANEL_W, PANEL_H, PANEL_BOTTOM,
   TITLE_FONT, READOUT_FONT, MARK_FONT, DISPLAY, MONO,
 };
@@ -54,7 +54,15 @@ export const POSTCARD = {
 // The tree's own node positions, grown by each node's glow/crown footprint, padded 8%. The
 // meet-fit reads this as the world window it centers into the panel — so wide, tall and
 // sparse trees all frame themselves without a per-tree knob.
-export function paddedGlowBox(model) {
+//
+// `{ steady: true }` measures every node as if it were lit. A lit node's footprint is far bigger
+// than an unlit one's, so the as-drawn box SWELLS as steps complete — right for a one-off unfurl
+// of the tree as it stands, fatal for a card in a series, where week 4 must sit in exactly the
+// frame week 3 sat in or a feed of them flickers instead of progressing. The steady box depends
+// on the tree's SHAPE alone: it holds still while the plan is worked and re-frames when the plan
+// itself changes, which is the only thing that should move a frame. It is also the larger box, so
+// nothing a period card draws can clip against it.
+export function paddedGlowBox(model, { steady = false } = {}) {
   if (model.nodes.length === 0) return { minX: -100, minY: -100, width: 200, height: 200 };
 
   let minX = Infinity;
@@ -62,7 +70,7 @@ export function paddedGlowBox(model) {
   let maxX = -Infinity;
   let maxY = -Infinity;
   for (const node of model.nodes) {
-    const glow = nodeGlowRadius(node);
+    const glow = nodeGlowRadius(node, steady);
     minX = Math.min(minX, node.x - glow);
     minY = Math.min(minY, node.y - glow);
     maxX = Math.max(maxX, node.x + glow);

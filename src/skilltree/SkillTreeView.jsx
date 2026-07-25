@@ -1562,7 +1562,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     } catch { /* the unfurl artifacts are best-effort — never break sharing */ }
   }, [treeMine, tree, states, shareStats, layoutPositions, treeId, recordShare]);
 
-  // Taking the progress offer (brief #20): build the card with `lit` burning against the ghosted
+  // Taking the progress offer (brief #20): build the card with `lit` burning against the settled
   // tree, rasterize it with the same rasterizer the unfurl card uses, and hand it over — the OS
   // share sheet where there is one, so a phone user goes straight to their app of choice, and a
   // download everywhere else. The tree's own og:image is deliberately untouched: the unfurl is the
@@ -1573,14 +1573,16 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
     recordShare();
     try {
       const model = tree.toRenderModel(layoutPositions(tree), states);
+      // No dominant kind is passed: the card takes its hue from the steps that lit THIS period,
+      // which is what keeps two consecutive posts from being the same picture. The chip's label
+      // is the share ordinal until the tree carries a planting date and it can say "Week 3".
       const svg = buildProgressCardSvg({
         model,
         title: tree.title,
         done: shareStats.done,
         total: shareStats.total,
-        dominantKind: shareStats.dominantKind,
         lit: new Set(lit),
-        update,
+        period: `Update #${update}`,
       });
       const png = await svgToPngBlob(svg);
       if (!png) return;

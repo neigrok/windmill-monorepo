@@ -187,17 +187,21 @@ split across layers) because it's a self-contained surface. (The image-export re
   as a standalone SVG string from the `RenderModel` (glow halos, crowned root, kind hues, done/
   available/locked looks), self-contained (own xmlns, unique filter ids, no text/urls) so it
   rasterizes into an `<img>`. Deterministic, resolution-independent, light and dark. Used by
-  `GalleryCard`. `options = {highlight, dim}` veils everything outside the highlight set (an
-  edge counts as outside unless both endpoints are in it); no highlight — or `dim` 1 — writes
-  nothing, so the default markup every other surface pins is byte-identical.
+  `GalleryCard`. `options = {lit}` opens the **period ink**: a four-tier ladder (new work at the
+  in-app look, settled work at 34% with no halo, available, locked) plus the route rule — the
+  edge INTO each new step is drawn in that step's own kind at full alpha. No set, or an empty
+  one, writes nothing, so the default markup every other surface pins is byte-identical.
 - `share/ogCard.js` — the unfurl postcard (#12): `buildOgCardSvg` plus the recipe its siblings
   share — `POSTCARD` (the 2400×1260 measures), `paddedGlowBox`/`clampViewBox` (the glow-inclusive
-  fit) and the `ellipsize`/`escapeXml` text guards. `share/rasterize.js` turns any card into a
-  PNG (fonts embedded as base64 — an `<img>`-drawn SVG can't reach the page's faces).
-- `share/progressCard.js` — the recurring post (#20): the same postcard with the settled tree
-  veiled back and only what lit **since the last share** burning, headlined by that count and
-  stamped `Update #N`. Deliberately the structural opposite of the milestone card, so a feed of
-  someone's posts never reads as the same image twice.
+  fit) and the `ellipsize`/`escapeXml` text guards. `paddedGlowBox(model, {steady:true})` measures
+  every node as if lit, for a card in a series whose frame must not move as the tree fills.
+  `share/rasterize.js` turns any card into a PNG (fonts embedded as base64 — an `<img>`-drawn SVG
+  can't reach the page's faces).
+- `share/progressCard.js` — the recurring post (#20): the same postcard drawn in period ink, on
+  the steady frame, with a stamp-led strip (`+3` · period chip · title / score · ledger) and its
+  hue taken from the **dominant kind among the new steps** — so two consecutive posts differ by
+  construction. Deliberately the structural opposite of the milestone card, so a feed of someone's
+  posts never reads as the same image twice.
 - `share/progressOffer.js` — `considerProgressShare(…)`: when that card is worth offering
   (≥3 newly-lit steps, or ≥1 after a week; at most one ask per 3 days). Shaped like
   `considerAutoOpen` — the budget burns in `commit()` at fire time, so a declined offer is free.
