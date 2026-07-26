@@ -24,6 +24,25 @@ std::string emailSafeTitle(const std::string& title) {
   return safe;
 }
 
+Json::Value resendEmailBody(const std::string& from, const std::string& to,
+                            const std::string& templateId, const Json::Value& variables,
+                            const Json::Value& headers) {
+  Json::Value body(Json::objectValue);
+  body["from"] = from;
+  body["to"] = to;
+  body["template"]["id"] = templateId;
+  body["template"]["variables"] = variables;
+  if (!headers.empty()) body["headers"] = headers;
+  return body;
+}
+
+Json::Value reminderUnsubscribeHeaders(const std::string& unsubscribeUrl) {
+  Json::Value headers(Json::objectValue);
+  headers["List-Unsubscribe"] = "<" + unsubscribeUrl + ">";
+  headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
+  return headers;
+}
+
 ResendEmailSender::ResendEmailSender(std::string apiKey, std::string from)
     : apiKey_(std::move(apiKey)), from_(std::move(from)) {
   loop_.run();
@@ -33,7 +52,7 @@ void ResendEmailSender::sendMagicLink(const Email& to, const std::string& magicL
                                       std::function<void(bool)> done) {
   Json::Value variables(Json::objectValue);
   variables["magic_link"] = magicLinkUrl;
-  send(to, "magic-link", variables, std::move(done));
+  send(to, "magic-link", variables, Json::Value(Json::objectValue), std::move(done));
 }
 
 void ResendEmailSender::sendForkLink(const Email& to, const std::string& magicLinkUrl,
@@ -43,7 +62,7 @@ void ResendEmailSender::sendForkLink(const Email& to, const std::string& magicLi
   variables["magic_link"] = magicLinkUrl;
   variables["tree_title"] = emailSafeTitle(treeTitle);
   variables["tree_meta"] = treeMeta;
-  send(to, "magic-link-fork", variables, std::move(done));
+  send(to, "magic-link-fork", variables, Json::Value(Json::objectValue), std::move(done));
 }
 
 void ResendEmailSender::sendReminder(const Email& to, const ReminderMail& mail,
@@ -70,21 +89,20 @@ void ResendEmailSender::sendReminder(const Email& to, const ReminderMail& mail,
     variables[prefix + "label"] = emailSafeTitle(mail.steps[slot].label);
     variables[prefix + "color"] = mail.steps[slot].colorHex;
   }
-  send(to, "reminder", variables, std::move(done));
+  // The one-click unsubscribe rides as message headers, not template variables — only the reminder
+  // carries them, because a sign-in link is transactional and has nothing to leave.
+  send(to, "reminder", variables, reminderUnsubscribeHeaders(mail.unsubscribeUrl), std::move(done));
 }
 
 void ResendEmailSender::send(const Email& to, const std::string& templateId,
-                             const Json::Value& variables, std::function<void(bool)> done) {
+                             const Json::Value& variables, const Json::Value& headers,
+                             std::function<void(bool)> done) {
   if (apiKey_.empty()) {
     done(false);
     return;
   }
 
-  Json::Value body;
-  body["from"] = from_;
-  body["to"] = to.value;
-  body["template"]["id"] = templateId;
-  body["template"]["variables"] = variables;
+  const Json::Value body = resendEmailBody(from_, to.value, templateId, variables, headers);
 
   Json::StreamWriterBuilder builder;
   builder["indentation"] = "";

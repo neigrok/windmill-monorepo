@@ -198,6 +198,11 @@ ReminderMail ReminderSweep::mailFor(const ReminderContent& content,
   // on pauses only from a button the reader presses — a bare GET must never pause anyone, because
   // corporate link scanners and Outlook prefetch every URL in an email.
   mail.pauseUrl = appBaseUrl_ + "/pause.html#t=" + pauseSecret;
+  // The same secret, but the one-click machine door: a mail client POSTs this itself, so it cannot
+  // ride a fragment (a fragment never reaches a server) — it goes in the query of a real endpoint,
+  // registered POST-only so a scanner's GET can never unsubscribe anyone. Gmail and Yahoo require a
+  // List-Unsubscribe one-click on bulk mail, so a reminder that lacks it lands in spam.
+  mail.unsubscribeUrl = appBaseUrl_ + "/v1/reminders/unsubscribe?t=" + pauseSecret;
   mail.done = content.done;
   mail.total = content.total;
   mail.readyPhrase = readyPhrase(content.readyCount);

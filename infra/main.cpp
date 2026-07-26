@@ -745,6 +745,12 @@ int main() {
       },
       {drogon::Post});
   app.registerHandler(
+      "/v1/reminders/unsubscribe",
+      [remindersApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        remindersApi->unsubscribe(req, std::move(cb));
+      },
+      {drogon::Post});
+  app.registerHandler(
       "/v1/admin/reminders/sweep",
       [remindersApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
         remindersApi->sweep(req, std::move(cb));

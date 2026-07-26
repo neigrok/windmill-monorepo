@@ -102,6 +102,15 @@ drogon::HttpResponsePtr pause(Harness& h, const drogon::HttpRequestPtr& req) {
   return captured;
 }
 
+// The one-click secret rides the query, not the body — an empty token stands for a URL with no `t`.
+drogon::HttpResponsePtr unsubscribe(Harness& h, const std::string& token) {
+  drogon::HttpRequestPtr req = request(drogon::Post, "/v1/reminders/unsubscribe", "");
+  if (!token.empty()) req->setParameter("t", token);
+  drogon::HttpResponsePtr captured;
+  h.api->unsubscribe(req, [&](const drogon::HttpResponsePtr& response) { captured = response; });
+  return captured;
+}
+
 // The admin sweep answers from the sweep's OWN loop, never the thread that called it, so the test
 // waits for it exactly as a client would. `answeredOn` is the proof of that: a run that came back
 // on this thread would have blocked a drogon IO thread for the length of the whole batch.
@@ -276,6 +285,34 @@ TEST(reminders_a_pause_body_of_the_wrong_shape_is_still_a_204_and_never_a_500) {
            drogon::k204NoContent);
   CHECK_EQ(pause(h, request(drogon::Post, "/v1/reminders/pause", "garbage"))->getStatusCode(),
            drogon::k204NoContent);
+}
+
+TEST(reminders_the_one_click_unsubscribe_spends_the_same_secret_pause_does) {
+  // RFC 8058: a mail client POSTs the List-Unsubscribe URL for the reader, carrying the query
+  // secret from their own mail. Like pause it answers the same to a matching and a non-matching
+  // secret, and the credential is single-use.
+  Harness h;
+  h.reminders->pauseDigests["u1"] = "d1";
+  h.reminders->settings["u1"].enabled = true;
+
+  CHECK_EQ(unsubscribe(h, "nope")->getStatusCode(), drogon::k200OK);
+  CHECK(h.reminders->settings["u1"].enabled);  // a stranger's guess changes nothing
+
+  CHECK_EQ(unsubscribe(h, "s1")->getStatusCode(), drogon::k200OK);
+  CHECK_FALSE(h.reminders->settings["u1"].enabled);
+  CHECK_EQ(h.reminders->pauseDigests.count("u1"), std::size_t{0});  // spent
+}
+
+TEST(reminders_unsubscribe_with_no_token_is_a_200_and_a_noop) {
+  // A prefetcher or scanner that reaches this URL without the `t` — or the door's own empty case —
+  // must change nothing and still answer a clean 2xx, never throw out of an uncredentialed handler.
+  Harness h;
+  h.reminders->pauseDigests["u1"] = "d1";
+  h.reminders->settings["u1"].enabled = true;
+
+  CHECK_EQ(unsubscribe(h, "")->getStatusCode(), drogon::k200OK);
+  CHECK(h.reminders->settings["u1"].enabled);
+  CHECK_EQ(h.reminders->pauseDigests.count("u1"), std::size_t{1});
 }
 
 TEST(reminders_the_admin_sweep_is_a_404_rather_than_a_403) {

@@ -152,6 +152,21 @@ void RemindersApi::pause(const drogon::HttpRequestPtr& req, HttpCallback&& callb
   callback(noContent());
 }
 
+void RemindersApi::unsubscribe(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
+  // RFC 8058 one-click. A mail client POSTs this itself when the reader presses "unsubscribe", so
+  // the credential is the same secret pause carries — carried in the query of the List-Unsubscribe
+  // URL (a fragment would never reach us). Like pause it is uncredentialed and incapable of saying
+  // no: a secret that matches nothing gets the same answer as one that matches, so this door is no
+  // oracle either. Registered POST-only, so the prefetchers and scanners that GET every URL in a
+  // mail can never unsubscribe anyone. A 200 with no body is what a one-click client expects back.
+  const std::string secret = req->getParameter("t");
+  if (!secret.empty()) {
+    if (std::optional<UserId> user = reminders_->userByPauseDigest(tokens_->digestOf(secret)))
+      reminders_->pause(*user);
+  }
+  callback(drogon::HttpResponse::newHttpResponse());
+}
+
 void RemindersApi::sweep(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
   // The operator's door, and it is closed unless REMINDERS_ADMIN_TOKEN says otherwise. An absent
   // token and a wrong one answer identically, so the route never advertises that it is there, and

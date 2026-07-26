@@ -112,6 +112,9 @@ TEST(the_mail_carries_the_links_the_counters_and_the_coloured_slots) {
   // The secret rides in the fragment so it never reaches our logs, and only the digest of it is
   // at rest — written once the mail carrying it has actually gone.
   CHECK_EQ(mail.pauseUrl, std::string("https://windmill.works/pause.html#t=s1"));
+  // The same secret as a query on a real endpoint (not a fragment) — the RFC 8058 one-click target
+  // a mail client POSTs. It becomes the List-Unsubscribe header, so the sender can spend the pause.
+  CHECK_EQ(mail.unsubscribeUrl, std::string("https://windmill.works/v1/reminders/unsubscribe?t=s1"));
   CHECK_EQ(reminders.pauseDigests["u1"], std::string("d1"));
   CHECK_EQ(mail.done, 5);
   CHECK_EQ(mail.total, 12);

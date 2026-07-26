@@ -31,6 +31,10 @@ struct ReminderMail {
   std::string treeUrl;
   std::string settingsUrl;
   std::string pauseUrl;
+  // The RFC 8058 one-click target — a mail client POSTs it when the reader presses "unsubscribe".
+  // Distinct from pauseUrl (a human page reached from a body link); this is a bare endpoint, so its
+  // secret rides the query, not a fragment. It becomes the List-Unsubscribe header, not a variable.
+  std::string unsubscribeUrl;
   int done = 0;
   int total = 0;
   std::string readyPhrase;

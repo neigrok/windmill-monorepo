@@ -17,16 +17,20 @@ namespace wm {
 
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
-// The reminder engine's four doors.
+// The reminder engine's five doors.
 //
-// Three of them are ordinary settings surfaces behind the usual session. The fourth is not: the
-// pause endpoint takes NO credential, because the only thing it can be reached with is the secret
-// in someone's own email, and it answers 204 whether or not that secret matches anything. A pause
-// that reported "no such token" would be an oracle for which secrets exist.
+// Two are ordinary settings surfaces behind the usual session (get/patch). One is the operator's
+// rehearsal door, closed unless REMINDERS_ADMIN_TOKEN opens it (sweep). The other two — pause and
+// unsubscribe — take no credential at all, because the only thing either can be reached with is the
+// secret in someone's own mail, and each answers the same whether or not that secret matches. A door
+// that reported "no such token" would be an oracle for which secrets exist. The two differ only in
+// who presses them: pause is the human page's button, unsubscribe (RFC 8058 one-click) is the POST a
+// mail client makes for the reader. Both spend the same per-send pause secret, so either path pauses
+// exactly once.
 //
-// The pause link's page POSTs from a button the reader presses. A bare GET must never pause
-// anyone: corporate link scanners and Outlook prefetch every URL in an email, and a GET door
-// would silently unsubscribe people who never clicked anything.
+// Neither may act on a GET: corporate link scanners and Outlook prefetch every URL in an email, and
+// a GET door would silently unsubscribe people who never pressed anything. Both are POST-only, so a
+// scanner's GET reaches nothing.
 //
 // Every one of them answers a caller who may have typed anything at all, so each field is checked
 // for its type before it is read: jsoncpp throws on a conversion it cannot make, and an exception
@@ -40,6 +44,7 @@ public:
   void getSettings(const drogon::HttpRequestPtr& req, HttpCallback&& callback);   // GET   /v1/reminders
   void patchSettings(const drogon::HttpRequestPtr& req, HttpCallback&& callback); // PATCH /v1/reminders
   void pause(const drogon::HttpRequestPtr& req, HttpCallback&& callback);         // POST  /v1/reminders/pause
+  void unsubscribe(const drogon::HttpRequestPtr& req, HttpCallback&& callback);   // POST  /v1/reminders/unsubscribe
   void sweep(const drogon::HttpRequestPtr& req, HttpCallback&& callback);         // POST  /v1/admin/reminders/sweep
 
 private:
