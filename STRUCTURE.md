@@ -16,15 +16,19 @@ backend/     one C++ modular-monolith binary
   test/        mirrors src: test/platform, test/products/<p>
 
 web/         one Vite/React superapp; product modules lazy-loaded behind a switcher
-  design-system/  product-neutral component library (core · forms · feedback · navigation)
-  shell/          app frame: auth · billing · account · settings-shell · connect ·
-                  feedback · marketing frame · apiBase · telemetry · router + switcher
-  products/       one front-end per product
-    roadmap/  notes/  gym/
+  index.html · package.json · vite.config.js · test/
+  src/
+    main.jsx        entry
+    styles/  telemetry/   app-global, product-neutral (stay at src/ root)
+    design-system/  product-neutral component library (core · forms · feedback · navigation)
+    shell/          app frame: App.jsx (router + product switcher) · auth · billing · account ·
+                    settings-shell · connect · feedback · marketing · apiBase · products.js
+    products/       one front-end per product
+      roadmap/  notes/  gym/
 
-apps/        native superapps (one per OS; roadmap/notes/gym are module groups inside)
-  ios/         Swift
-  android/     Kotlin
+apps/        native superapps (one per OS; roadmap/notes/gym are mountable module libraries)
+  ios/         Swift — compilable SwiftPM scaffold (WindmillPlatform + Roadmap/Notes/Gym + app)
+  android/     Kotlin — structured scaffold (Gradle project is a later native wave)
 
 packages/    cross-surface shared assets (consumed by more than one surface)
   api-contract/   wire types + the genesis-legend golden (single source of truth)
@@ -50,6 +54,26 @@ prematurely abstracted — the second consumer earns the abstraction.
   `<product>::makeTools()`. `backend/platform/infra` composes the shared host and calls each.
 - **Web:** each product exports a route table; `web/shell` composes them and renders the
   product switcher. The shell knows an "active product home" — it hard-codes no product.
+
+## Known follow-ups from the split
+
+The restructure was a behavior-identical relocation; these are the honest edges where a pure
+platform boundary wasn't reached, each green and zero-logic today:
+
+- **`backend`: `AuthApi` lives in `products/roadmap`** — auth's HTTP surface forks a tree on
+  signup (`ForkService`). A notes-only deployment would have no auth routes until a platform
+  `SignupHook` port is extracted and roadmap injects it.
+- **`backend`: the MCP `Resources` catalog stays in `platform`** — the transport engine reads it
+  statically. Inject the catalog into `McpServer` so its roadmap-flavored content moves to roadmap.
+- **`backend`: `platform/ports/EmailSender.h` includes `roadmap/domain/Reminders.h`** (compile-only,
+  no link edge) for `sendReminder`. Split a roadmap-side reminder-mail port so platform email is
+  purely magic-link/fork.
+- **`web`: settings is a spliced page** — `shell/settings/SettingsPage.jsx` imports 4 roadmap
+  sections directly to preserve render order. Invert so products register settings sections.
+- **`web`: `shell/marketing/Marketing.jsx`** still reads roadmap trees and its copy is roadmap-only
+  — it's the brand landing to be revised for three products.
+- **`backend/infra`** (the composition-root executables) sit under `platform/infra`; they depend on
+  roadmap by nature (they compose it). Fine today; revisit if a neutral app-assembly layer is wanted.
 
 ## Per-surface docs
 

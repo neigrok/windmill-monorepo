@@ -21,6 +21,12 @@ build/
 cmake-build-*/
 *.log
 
+# Native build outputs
+.build/
+.swiftpm/
+.gradle/
+apps/android/local.properties
+
 # Secrets — never commit
 .env
 *.local

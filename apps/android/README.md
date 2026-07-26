@@ -1,10 +1,22 @@
 # Windmill Android
 
-One Kotlin superapp for the whole brand. `roadmap`, `notes`, and `gym` are module groups
-inside a single app, behind one sign-in and one subscription — mirroring `web/` and `apps/ios`.
-Modules stay independently mountable.
+One Kotlin superapp for the whole brand — the mirror of `apps/ios` and `web/`. `roadmap`,
+`notes`, and `gym` are Gradle module libraries mounted by a single `:app` over a shared
+`:platform`, behind one sign-in and one subscription. Modules stay independently mountable.
 
-Talks to the shared backend over the same single-origin API as the web app; shared wire
-types live in `packages/api-contract`, shared visual scales in `packages/design-tokens`.
+## Intended layout (mirrors iOS)
 
-Status: **scaffold** — structure only. Gradle project and module targets land in a later wave.
+```
+settings.gradle.kts        includes :app :platform :roadmap :notes :gym
+platform/                  shared core: Account + the ProductModule seam + Superapp composition
+roadmap/  notes/  gym/     one product module each (depends on :platform, never on a sibling)
+app/                       the app — the only module that knows all three products exist
+```
+
+Each product depends on `:platform`, never on another product — the same one-directional rule
+the backend, web, and iOS follow (`STRUCTURE.md`).
+
+Status: **structured scaffold, not built here** — this environment has no Gradle / Android SDK
+(and only Java 8), so the module tree and this contract are documented but not yet materialized as
+build files. Standing up the Gradle project (AGP + Compose) and the API client against the shared
+backend is a dedicated native wave, tracked as its own node.

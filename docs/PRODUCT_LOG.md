@@ -5,6 +5,19 @@ The product strategy narrative. The **bet ledger lives in the dogfood tree**
 bet id IS the node id, and progress is tracked there — never here. This doc holds what a
 tree node can't: the thesis, the metric contract, the cuts, and the risks.
 
+> **Status (2026-07-27): brand restructure.** Windmill became a **monorepo brand of three
+> self-growth products** — `roadmap` (shipped), `notes` and `gym` (scaffolded) — on one shared
+> backend, presented as one superapp per surface (web · iOS · Android), behind one account and one
+> subscription. The old two repos (`windmill-backend`, `windmill`) were grafted with full history
+> under `backend/` and `web/`; the flat backend split into product-neutral `platform/` +
+> `products/roadmap/`, the web app into `design-system` + `shell` + `products/roadmap`. Behavior-
+> identical relocation — 610 backend + 399 web tests green, and the full stack verified end-to-end
+> (server boots with platform+roadmap routes, MCP `create_tree` persists, the demo scene renders
+> with zero console errors). Native slots: a compilable iOS SwiftPM scaffold, a structured Android
+> one. See `STRUCTURE.md` for the layout, the one dependency rule, and the known follow-ups. Not yet
+> pushed to a remote — the GitHub topology decision is pending. This does not change the product
+> thesis below; it changes the house the products live in.
+
 > **Status (2026-07-16): reality reset.** The previous revision of this doc ("design
 > phase, backend now in progress") had fallen months behind the code. A full three-way
 > review (this doc ↔ dogfood tree ↔ both repos + the live site, multi-agent, code-verified)
