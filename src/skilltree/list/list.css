@@ -1377,6 +1377,45 @@
   flex-shrink: 0;
 }
 
+/* The public-wall door — beneath your own trees, the one entrance to #/browse. Solid, not the
+   plant row's dashed bud: it navigates away rather than creating, and the arrow says so. No
+   count (og-tree-cards build-findings §1 — no vanity numbers on the door). */
+.st-switcher-public {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% - 24px);
+  margin: 0 12px 8px;
+  min-height: 48px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 11px;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  -webkit-tap-highlight-color: transparent;
+}
+.st-switcher-public:active {
+  background: var(--surface-hover);
+}
+.st-switcher-public-glyph {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+.st-switcher-public-label {
+  flex: 1;
+  text-align: left;
+}
+.st-switcher-public-arrow {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
 /* Reduced motion: the picker rises as a fade, not a slide (opacity only); the scrim already
    is opacity, the swipe stays finger-driven, and the bud flash stays a color ramp. */
 @media (prefers-reduced-motion: reduce) {

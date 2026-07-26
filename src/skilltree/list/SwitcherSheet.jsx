@@ -35,6 +35,21 @@ const BUD_GLYPH = (
   </svg>
 );
 
+// The public-wall door (og-tree-cards build-findings §1): a compass to explore, an arrow to say
+// it leaves for #/browse rather than switching a tree in place.
+const COMPASS_GLYPH = (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="9" />
+    <path d="M15.5 8.5l-2 5-5 2 2-5z" />
+  </svg>
+);
+
+const ARROW_GLYPH = (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M5 12h14M13 6l6 6-6 6" />
+  </svg>
+);
+
 function updatedLabel(updatedAt) {
   if (updatedAt == null) return null;
   const then = typeof updatedAt === 'number' ? updatedAt : Date.parse(updatedAt);
@@ -139,6 +154,12 @@ export function SwitcherSheet({ open, trees = [], currentId, onPick, onPlant, on
         <button type="button" className="st-switcher-plant" onClick={() => { onPlant(); onClose(); }}>
           <span className="st-switcher-plant-glyph" aria-hidden>{BUD_GLYPH}</span>
           Plant a new tree
+        </button>
+        <button type="button" className="st-switcher-public" aria-label="Browse trees planted in public"
+          onClick={() => { window.location.hash = '#/browse'; onClose(); }}>
+          <span className="st-switcher-public-glyph" aria-hidden>{COMPASS_GLYPH}</span>
+          <span className="st-switcher-public-label">Planted in public</span>
+          <span className="st-switcher-public-arrow" aria-hidden>{ARROW_GLYPH}</span>
         </button>
       </div>
     </div>

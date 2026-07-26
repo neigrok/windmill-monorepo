@@ -13,6 +13,11 @@
 // device" for unclaimed local trees, "synced" for the rest — that flips in a 150ms
 // cross-fade as a claim lands (wm-tree-claimed). Edits route by that tag, never by
 // presence in the server list: a local row's pencil/trash reach only the local seams.
+//
+// The last row, beneath your own trees, is the one door to the public wall — "Planted in
+// public →" navigates to #/browse (og-tree-cards build-findings §1: the shelf re-sites as a
+// switcher row, never a nav item, no vanity count). Switching into a stranger's tree is not
+// switching, so it leaves for the wall rather than loading one here.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from '../../components';
@@ -333,6 +338,16 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
             <span style={bud} />
             New tree
           </button>
+
+          <button type="button" role="menuitem" aria-label="Browse trees planted in public"
+            onClick={() => { setOpen(false); window.location.hash = '#/browse'; }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-hover)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+            style={row}>
+            <span style={publicGlyph} aria-hidden><Icon name="compass" size={14} /></span>
+            <span style={{ flex: 1, fontWeight: 700 }}>Planted in public</span>
+            <span style={{ display: 'inline-flex', flex: 'none', color: 'var(--text-tertiary)' }} aria-hidden><Icon name="arrow-right" size={13} /></span>
+          </button>
         </div>
       )}
     </div>
@@ -434,3 +449,4 @@ const confirmKeepBtn = {
 };
 const divider = { height: 1, background: 'var(--border-subtle)', margin: '4px 6px' };
 const bud = { width: 15, height: 15, flex: 'none', borderRadius: '50%', border: '2px dashed var(--accent-terracotta-400)', background: 'var(--color-brand-soft)', boxSizing: 'border-box' };
+const publicGlyph = { width: 16, height: 16, flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' };
