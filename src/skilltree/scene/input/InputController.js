@@ -9,9 +9,10 @@ const DOUBLE_TAP_MS = 300; // two taps within this window count as a double-tap
 const DOUBLE_TAP_TOL = 32; // ...and within this many screen px of each other
 const TAP_MOVE_TOL = 10; // a tap barely moves; further than this is a drag, not a tap
 const LONG_PRESS_MS = 500; // a still finger held this long over a node enters multi-select (M5)
-const DOUBLE_TAP_ZOOM_IN = 1.6; // double-tap steps between these two zooms
-const DOUBLE_TAP_ZOOM_OUT = 1;
-const DOUBLE_TAP_PIVOT = 1.3; // below → step in, at/above → step out
+const DOUBLE_TAP_ZOOM_IN = 1.6; // the settled toggle steps between these two zooms
+const DOUBLE_TAP_ZOOM_OUT = 1; // ...and this out-level is also where the far-out walk-in hands off
+const DOUBLE_TAP_PIVOT = 1.3; // within the toggle: below → step in, at/above → step out
+const DOUBLE_TAP_STEP = 2; // far out (a whole-tree fit sits near 0.1 on a phone): each tap eases forward by this factor, never past the out-level
 
 export class InputController {
   constructor(canvas, context, tool) {
@@ -176,7 +177,13 @@ export class InputController {
     if (this.downPos == null || Math.hypot(pos.x - this.downPos.x, pos.y - this.downPos.y) > TAP_MOVE_TOL) { this.lastTap = null; return; }
     const now = performance.now();
     if (this.lastTap && now - this.lastTap.time < DOUBLE_TAP_MS && Math.hypot(pos.x - this.lastTap.x, pos.y - this.lastTap.y) < DOUBLE_TAP_TOL) {
-      const target = this.context.camera.zoom < DOUBLE_TAP_PIVOT ? DOUBLE_TAP_ZOOM_IN : DOUBLE_TAP_ZOOM_OUT;
+      const zoom = this.context.camera.zoom;
+      // Far out (a whole-tree fit): ease forward one step, capped at the out-level, so repeated taps
+      // walk in gently instead of lunging straight to the in-level. From the out-level up it's the
+      // default toggle — below the pivot steps in, at/above steps out.
+      const target = zoom < DOUBLE_TAP_ZOOM_OUT
+        ? Math.min(zoom * DOUBLE_TAP_STEP, DOUBLE_TAP_ZOOM_OUT)
+        : zoom < DOUBLE_TAP_PIVOT ? DOUBLE_TAP_ZOOM_IN : DOUBLE_TAP_ZOOM_OUT;
       this.context.camera.glideZoomAround(pos.x, pos.y, target);
       this.lastTap = null;
       return;
