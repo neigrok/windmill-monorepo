@@ -1,0 +1,167 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: cicd-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  # Build the builder stage only — it compiles everything and runs ctest, so a red
+  # suite fails here. Runs on every push and PR; shares the buildx layer cache with the
+  # image build below, so main doesn't recompile from scratch.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build + test (builder stage)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: build
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Build the slim runtime image and publish it to GHCR, tagged by commit SHA (+ latest).
+  build-and-push:
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Ship it: copy compose + Caddyfile to the VPS, render .env from secrets/vars, then
+  # pull the new image and roll the stack. Migrations run as a compose one-shot.
+  deploy:
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy deploy assets to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          port: ${{ secrets.SSH_PORT }}
+          key: ${{ secrets.SSH_KEY }}
+          source: "deploy/docker-compose.yml,deploy/Caddyfile"
+          target: "windmill"
+          strip_components: 1
+
+      # Fetch Cloudflare's edge ranges here on the runner (the VPS has no curl), comma-separated so
+      # the SSH action can pass them without tripping on spaces. Empty on failure -> the VPS fails open.
+      - name: Fetch Cloudflare IP ranges
+        id: cfips
+        run: |
+          CSV="$(curl -fsS --max-time 20 https://api.cloudflare.com/client/v4/ips \
+            | grep -oE '[0-9a-fA-F.:]+/[0-9]{1,3}' | paste -sd, - || true)"
+          echo "csv=${CSV}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          CF_IPS_CSV: ${{ steps.cfips.outputs.csv }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          DOMAIN_API: ${{ vars.DOMAIN_API }}
+          DOMAIN_APP: ${{ vars.DOMAIN_APP }}
+          ACME_EMAIL: ${{ vars.ACME_EMAIL }}
+          MCP_ORIGINS: ${{ vars.WINDMILL_MCP_ALLOWED_ORIGINS }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TENDING_ENABLED: ${{ vars.TENDING_ENABLED }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          AMPLITUDE_API_KEY: ${{ secrets.AMPLITUDE_API_KEY }}
+          AMPLITUDE_HOST: ${{ vars.AMPLITUDE_HOST }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          PADDLE_WEBHOOK_SECRET: ${{ secrets.PADDLE_WEBHOOK_SECRET }}
+          PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
+          PADDLE_ENV: ${{ vars.PADDLE_ENV }}
+          PADDLE_PRICE_ID: ${{ vars.PADDLE_PRICE_ID }}
+          WINDMILL_MCP_TOKEN: ${{ secrets.WINDMILL_MCP_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          port: ${{ secrets.SSH_PORT }}
+          key: ${{ secrets.SSH_KEY }}
+          envs: IMAGE_TAG,POSTGRES_PASSWORD,DOMAIN_API,DOMAIN_APP,ACME_EMAIL,MCP_ORIGINS,RESEND_API_KEY,ANTHROPIC_API_KEY,TENDING_ENABLED,SENTRY_DSN,AMPLITUDE_API_KEY,AMPLITUDE_HOST,GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET,PADDLE_WEBHOOK_SECRET,PADDLE_API_KEY,PADDLE_ENV,PADDLE_PRICE_ID,WINDMILL_MCP_TOKEN,GHCR_USER,GHCR_TOKEN,CF_IPS_CSV
+          script: |
+            set -euo pipefail
+            cd ~/windmill
+            mkdir -p web            # the frontend rsyncs here; create it as us before Caddy mounts it
+            umask 077
+            # Cloudflare's edge ranges arrive comma-separated from the runner (the VPS has no curl);
+            # expand to the space-separated form Caddy's remote_ip wants. Fail open to allow-all if
+            # the list is empty, so a fetch miss can't lock ingress out.
+            CF_IPS="$(printf '%s' "${CF_IPS_CSV:-}" | tr ',' ' ')"
+            # Fail the DEPLOY rather than open the origin. Every per-IP rate limit trusts
+            # cf-connecting-ip, and that header is only trustworthy because Caddy refuses traffic
+            # from outside Cloudflare's ranges — so shipping an allow-all list silently turns every
+            # limit into a header an attacker rotates, with the magic-link and LLM spend ceilings as
+            # the only brake. Stopping here leaves the previous (correctly locked) deploy running.
+            if [ -z "${CF_IPS}" ]; then echo "ERROR: no Cloudflare IP ranges fetched; refusing to deploy with an open origin"; exit 1; fi
+            cat > .env <<EOF
+            IMAGE_TAG=${IMAGE_TAG}
+            POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+            DOMAIN_API=${DOMAIN_API}
+            DOMAIN_APP=${DOMAIN_APP}
+            ACME_EMAIL=${ACME_EMAIL}
+            CF_IPS=${CF_IPS}
+            WINDMILL_MCP_ALLOWED_ORIGINS=${MCP_ORIGINS}
+            RESEND_API_KEY=${RESEND_API_KEY}
+            ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+            TENDING_ENABLED=${TENDING_ENABLED}
+            SENTRY_DSN=${SENTRY_DSN}
+            AMPLITUDE_API_KEY=${AMPLITUDE_API_KEY}
+            AMPLITUDE_HOST=${AMPLITUDE_HOST:-api2.amplitude.com}
+            GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+            GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+            PADDLE_WEBHOOK_SECRET=${PADDLE_WEBHOOK_SECRET}
+            PADDLE_API_KEY=${PADDLE_API_KEY}
+            PADDLE_ENV=${PADDLE_ENV:-sandbox}
+            PADDLE_PRICE_ID=${PADDLE_PRICE_ID}
+            WINDMILL_MCP_TOKEN=${WINDMILL_MCP_TOKEN}
+            EOF
+            echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
+            docker compose pull
+            docker compose up -d --remove-orphans
+            # The Caddyfile is a single-file bind mount; scp replaces it with a NEW inode, which a
+            # running container keeps missing (even across `restart` or `caddy reload`) — only
+            # recreating the container re-binds the mount. Force-recreate caddy so Caddyfile routing
+            # changes actually take effect on deploy.
+            docker compose up -d --force-recreate --no-deps caddy
+            docker image prune -f

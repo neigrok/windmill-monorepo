@@ -1,0 +1,62 @@
+# Automatic HTTPS via Let's Encrypt. Caddy proxies WebSockets transparently, so the collab
+# socket needs no extra config. Single origin: the app and its own backend share $DOMAIN_APP —
+# the SPA is served statically and /v1, /mcp, /oauth and the OAuth well-knowns are path-routed
+# to windmill_server (REST + collab socket + MCP, one process). $DOMAIN_API is kept as a
+# transitional alias while the deployed frontend build is flipped to same-origin; retire it
+# once nothing points at it.
+{
+	email {$ACME_EMAIL}
+}
+
+# Refuse origin traffic that didn't arrive through Cloudflare, so the rate limiter's trust in
+# CF-Connecting-IP can't be forged by hitting the VPS directly. CF_IPS is Cloudflare's current
+# edge list, fetched from api.cloudflare.com at deploy time and injected as an env var (never
+# hardcoded). It defaults to allow-all, so a failed fetch fails open rather than locking us out.
+(cloudflare_only) {
+	@not_cloudflare not remote_ip {$CF_IPS}
+	respond @not_cloudflare 403
+}
+
+# The single origin: static SPA + same-origin backend (so there is no CORS between them). The
+# frontend (windmill repo) is a Vite SPA rsync'd into ./web by its own deploy; everything under
+# the backend paths is reverse-proxied to windmill_server on the same host.
+{$DOMAIN_APP} {
+	import cloudflare_only
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		X-Frame-Options "DENY"
+		Content-Security-Policy "frame-ancestors 'none'"
+	}
+
+	# The app's own backend: REST + /v1/socket (WebSocket), MCP, the OAuth authorization-server
+	# endpoints, the OAuth discovery documents, the /t/:id share pages (served with per-tree
+	# unfurl meta), the /gallery public wall (gallery.html with the card grid spliced in), and the
+	# /og/:id.png unfurl cards the og:image tags point at. Hash-routed SPA otherwise (try_files is
+	# a net). NOTE /gallery is exact — the static gallery.html beside it must keep being served by
+	# the file server, or the template would recursively proxy to itself.
+	@backend path /v1/* /t/* /og/* /gallery /mcp /mcp/* /oauth/* /.well-known/oauth-authorization-server /.well-known/oauth-authorization-server/* /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/* /.well-known/openid-configuration /.well-known/openid-configuration/*
+	handle @backend {
+		reverse_proxy server:8080
+	}
+	handle {
+		encode gzip zstd
+		root * /srv/windmill-web
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+# Transitional alias: the previous separate API hostname, still proxying to the same server so
+# the currently-deployed frontend build keeps working until it is rebuilt same-origin. Retire
+# once no client references it. (The old mcp.$DOMAIN subdomain is gone — MCP lives at /mcp now.)
+{$DOMAIN_API} {
+	import cloudflare_only
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+	}
+	reverse_proxy server:8080
+}

@@ -1,0 +1,122 @@
+# Windmill backend, one VPS. Postgres holds the data, a one-shot applies the schema,
+# the two service binaries run from the same published image, and Caddy terminates TLS
+# and reverse-proxies both. Only Caddy is exposed to the internet; everything else talks
+# over the private compose network by service name.
+#
+# Values come from ./.env (rendered by the deploy workflow from GitHub secrets/vars).
+
+name: windmill
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: windmill
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: windmill
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U windmill -d windmill"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    image: ghcr.io/neigrok/windmill-backend:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGCONNECT_TIMEOUT: "10"
+    command: >
+      psql "postgresql://windmill:${POSTGRES_PASSWORD}@db:5432/windmill"
+      -v ON_ERROR_STOP=1 -f /app/db/schema.sql
+
+  server:
+    image: ghcr.io/neigrok/windmill-backend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql://windmill:${POSTGRES_PASSWORD}@db:5432/windmill
+      PORT: "8080"
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      # Verified Resend sender; defaults to Resend's shared test sender until the domain is set up.
+      RESEND_FROM: ${RESEND_FROM:-Windmill <onboarding@resend.dev>}
+      # Paste-import LLM escalation (/v1/compose). Empty → the route answers 503 compose-unavailable
+      # and the client hides the handle.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Tending (server-side agent edits). Ships DARK: empty/absent → every run refuses with
+      # "not turned on", the designed first face. Set to "true" to arm it once the agent loop lands.
+      TENDING_ENABLED: ${TENDING_ENABLED:-}
+      # Observability: uncaught server exceptions ship to Sentry (empty → no-op). Funnel events
+      # forward to Amplitude with the resolved user_id (empty key → skipped); HOST picks the region.
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      AMPLITUDE_API_KEY: ${AMPLITUDE_API_KEY:-}
+      AMPLITUDE_HOST: ${AMPLITUDE_HOST:-api2.amplitude.com}
+      # Google sign-in (second door onto wm_session). Empty → the /auth/google routes stay dark.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      # Paddle billing. The webhook secret belongs to ONE notification destination — sandbox and
+      # production have separate destinations and separate secrets. Empty → every delivery is
+      # refused (and retried), so billing is dark rather than forgeable.
+      PADDLE_WEBHOOK_SECRET: ${PADDLE_WEBHOOK_SECRET:-}
+      PADDLE_API_KEY: ${PADDLE_API_KEY:-}
+      PADDLE_ENV: ${PADDLE_ENV:-sandbox}
+      PADDLE_PRICE_ID: ${PADDLE_PRICE_ID:-}
+      # Magic links point at the app; the session cookie is first-party on the single origin.
+      WINDMILL_APP_URL: https://${DOMAIN_APP}
+      WINDMILL_COOKIE_DOMAIN: ${DOMAIN_APP}
+      # Single origin: the app IS the API host. This is the OAuth issuer and, by default, the MCP
+      # resource audience — windmill_server serves REST + socket + /mcp in-process on this host.
+      WINDMILL_API_URL: https://${DOMAIN_APP}
+      WINDMILL_MCP_ALLOWED_ORIGINS: ${WINDMILL_MCP_ALLOWED_ORIGINS:-}
+      WINDMILL_MCP_TOKEN: ${WINDMILL_MCP_TOKEN:-}
+      # The /t/:id share pages read the built SPA shell from here (the same host dir Caddy
+      # serves) to splice in each shared tree's own unfurl meta for social scrapers.
+      WINDMILL_WEB_ROOT: /srv/windmill-web
+    volumes:
+      - ./web:/srv/windmill-web:ro
+    command: ["windmill_server"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -o /dev/null http://localhost:8080/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  # The standalone `mcp` service is retired: windmill_server now serves REST, the collab socket,
+  # and MCP from one process against a single RoomRegistry, so an agent's edits and the web reader
+  # share the same live room. (The windmill_mcp_http binary still builds for local/standalone use.)
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN_API: ${DOMAIN_API}
+      DOMAIN_APP: ${DOMAIN_APP:-app.localhost}
+      ACME_EMAIL: ${ACME_EMAIL}
+      # Cloudflare edge ranges, rendered into .env by the deploy workflow. Allow-all default so a
+      # missing value fails open (Caddy refuses to start on an empty remote_ip matcher otherwise).
+      CF_IPS: "${CF_IPS:-0.0.0.0/0 ::/0}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./web:/srv/windmill-web:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

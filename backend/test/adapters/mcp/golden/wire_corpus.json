@@ -1,0 +1,644 @@
+{
+  "schemaVersion" : 2,
+  "steps" : 
+  [
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
+              "count" : 0,
+              "seq" : 0,
+              "tree" : 
+              {
+                "id" : "t",
+                "kinds" : [],
+                "nodes" : [],
+                "title" : "Test Roadmap"
+              }
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 0,
+      "tool" : "get_tree"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
+              "applied" : true,
+              "diagnosticsClean" : true,
+              "id" : "infra",
+              "introducedDiagnostics" : [],
+              "seq" : 1
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 1,
+      "tool" : "add_kind"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
+              "applied" : true,
+              "diagnosticsClean" : true,
+              "id" : "root",
+              "introducedDiagnostics" : [],
+              "seq" : 2
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 2,
+      "tool" : "create_node"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
+              "applied" : true,
+              "diagnosticsClean" : true,
+              "id" : "render",
+              "introducedDiagnostics" : [],
+              "seq" : 3
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 3,
+      "tool" : "create_node"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
+              "applied" : true,
+              "diagnosticsClean" : true,
+              "id" : "sync",
+              "introducedDiagnostics" : [],
+              "seq" : 4
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 4,
+      "tool" : "create_node"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
+              "applied" : true,
+              "diagnosticsClean" : true,
+              "introducedDiagnostics" : [],
+              "seq" : 5
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 5,
+      "tool" : "connect"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
+              "applied" : true,
+              "diagnosticsClean" : true,
+              "id" : "sync",
+              "introducedDiagnostics" : [],
+              "seq" : 6
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 6,
+      "tool" : "set_node_color"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
+              "applied" : true,
+              "diagnosticsClean" : true,
+              "id" : "render",
+              "introducedDiagnostics" : [],
+              "seq" : 7
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 7,
+      "tool" : "rename_node"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
+              "applied" : true,
+              "diagnosticsClean" : true,
+              "id" : "root",
+              "introducedDiagnostics" : [],
+              "seq" : 8
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 8,
+      "tool" : "move_node"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
+              "applied" : true,
+              "diagnosticsClean" : true,
+              "id" : "root",
+              "introducedDiagnostics" : [],
+              "seq" : 9
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 9,
+      "tool" : "annotate_node"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
+              "nodeId" : "root",
+              "prerequisitesMet" : true,
+              "status" : "complete"
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 10,
+      "tool" : "set_progress"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
+              "results" : 
+              [
+                {
+                  "nodeId" : "render",
+                  "prerequisitesMet" : true,
+                  "status" : "active"
+                },
+                {
+                  "nodeId" : "sync",
+                  "prerequisitesMet" : true,
+                  "status" : "complete"
+                }
+              ]
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 11,
+      "tool" : "set_progress"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
+              "diagnosticsClean" : true,
+              "imported" : true,
+              "introducedDiagnostics" : [],
+              "kindCollisions" : [],
+              "kinds" : 0,
+              "newKinds" : 0,
+              "newNodes" : 2,
+              "nodeCollisions" : [],
+              "nodes" : 2,
+              "seq" : 10
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 12,
+      "tool" : "import_subgraph"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
+              "dryRun" : true,
+              "kindCollisions" : [],
+              "kinds" : 0,
+              "newKinds" : 0,
+              "newNodes" : 0,
+              "nodeCollisions" : 
+              [
+                "root"
+              ],
+              "nodes" : 1
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 13,
+      "tool" : "import_subgraph"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
+              "diagnosticsClean" : true,
+              "imported" : true,
+              "introducedDiagnostics" : [],
+              "kindCollisions" : [],
+              "kinds" : 0,
+              "newKinds" : 0,
+              "newNodes" : 0,
+              "nodeCollisions" : [],
+              "nodes" : 0,
+              "progress" : 
+              [
+                {
+                  "nodeId" : "root",
+                  "prerequisitesMet" : true,
+                  "status" : "complete"
+                }
+              ],
+              "progressSkipped" : 
+              [
+                "ghost"
+              ],
+              "seq" : 11
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 14,
+      "tool" : "import_subgraph"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
+              "count" : 1,
+              "nodes" : 
+              [
+                {
+                  "color" : "sky",
+                  "id" : "render",
+                  "label" : "Renderer Core"
+                }
+              ]
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 15,
+      "tool" : "find_nodes"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
+              "count" : 5,
+              "seq" : 11,
+              "tree" : 
+              {
+                "id" : "t",
+                "kinds" : 
+                [
+                  {
+                    "hue" : "plum",
+                    "id" : "infra",
+                    "label" : "Infra"
+                  }
+                ],
+                "nodes" : 
+                [
+                  {
+                    "color" : "olive",
+                    "icon" : "",
+                    "id" : "docs",
+                    "label" : "Docs",
+                    "prerequisites" : 
+                    [
+                      "render"
+                    ],
+                    "status" : "none"
+                  },
+                  {
+                    "color" : "terracotta",
+                    "icon" : "",
+                    "id" : "launch",
+                    "label" : "Launch",
+                    "prerequisites" : 
+                    [
+                      "docs",
+                      "sync"
+                    ],
+                    "status" : "none"
+                  },
+                  {
+                    "color" : "sky",
+                    "icon" : "",
+                    "id" : "render",
+                    "label" : "Renderer Core",
+                    "prerequisites" : 
+                    [
+                      "root"
+                    ],
+                    "status" : "active"
+                  },
+                  {
+                    "color" : "gold",
+                    "description" : "the crown of the tree",
+                    "icon" : "",
+                    "id" : "root",
+                    "label" : "Ship v1",
+                    "links" : 
+                    [
+                      {
+                        "label" : "home",
+                        "url" : "https://windmill.works"
+                      }
+                    ],
+                    "position" : 
+                    {
+                      "x" : 120.0,
+                      "y" : 60.0
+                    },
+                    "prerequisites" : [],
+                    "status" : "complete"
+                  },
+                  {
+                    "color" : "plum",
+                    "icon" : "",
+                    "id" : "sync",
+                    "label" : "Sync",
+                    "prerequisites" : 
+                    [
+                      "root"
+                    ],
+                    "status" : "complete"
+                  }
+                ],
+                "title" : "Test Roadmap"
+              }
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 16,
+      "tool" : "get_tree"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
+              "cycles" : [],
+              "dangling" : [],
+              "maskedWork" : [],
+              "selfEdges" : [],
+              "smells" : 
+              [
+                {
+                  "kind" : "empty-icon",
+                  "node" : "docs"
+                },
+                {
+                  "kind" : "empty-icon",
+                  "node" : "launch"
+                },
+                {
+                  "kind" : "empty-icon",
+                  "node" : "render"
+                },
+                {
+                  "kind" : "empty-icon",
+                  "node" : "root"
+                },
+                {
+                  "kind" : "empty-icon",
+                  "node" : "sync"
+                }
+              ]
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 17,
+      "tool" : "get_diagnostics"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
+              "completed" : 
+              [
+                "root",
+                "sync"
+              ],
+              "inProgress" : 
+              [
+                "render"
+              ]
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 18,
+      "tool" : "get_progress"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
+              "avgInDegree" : 1.0,
+              "crossBranch" : 1,
+              "edgeCount" : 5,
+              "nodeCount" : 5,
+              "redundant" : 0,
+              "score" : 88
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 19,
+      "tool" : "get_health"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : "set_progress: no node in this tree is named no-such-node. Call get_tree with fields [\"id\",\"label\"] to list the ids this tree has.",
+            "type" : "text"
+          }
+        ],
+        "isError" : true,
+        "structuredContent" : null
+      },
+      "step" : 20,
+      "tool" : "set_progress"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : "annotate_node: nothing to set \u2014 pass \"description\", \"links\", or both.",
+            "type" : "text"
+          }
+        ],
+        "isError" : true,
+        "structuredContent" : null
+      },
+      "step" : 21,
+      "tool" : "annotate_node"
+    }
+  ]
+}

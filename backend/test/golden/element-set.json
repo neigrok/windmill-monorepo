@@ -1,0 +1,11 @@
+{
+  "cases": [
+    { "name": "add only is present", "adds": ["5:0:a"], "removes": [], "present": true },
+    { "name": "never added is absent", "adds": [], "removes": ["5:0:a"], "present": false },
+    { "name": "add then a later remove is absent", "adds": ["5:0:a"], "removes": ["6:0:a"], "present": false },
+    { "name": "remove then a later add is present", "adds": ["7:0:a"], "removes": ["6:0:a"], "present": true },
+    { "name": "keep more: an exact tie favours the add", "adds": ["5:0:a"], "removes": ["5:0:a"], "present": true },
+    { "name": "greatest add and greatest remove decide it", "adds": ["3:0:a", "8:0:b"], "removes": ["6:0:c"], "present": true },
+    { "name": "concurrent adds, one later remove wins", "adds": ["3:0:a", "4:0:b"], "removes": ["9:0:c"], "present": false }
+  ]
+}

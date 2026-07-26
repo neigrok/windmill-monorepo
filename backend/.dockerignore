@@ -1,0 +1,11 @@
+# Keep the build context tiny and hermetic: host CMake caches carry absolute paths
+# and a macOS/arm generator, and would poison the in-image Linux configure.
+build/
+cmake-build-*/
+.git/
+.github/
+.idea/
+.claude/
+uploads/
+deploy/
+*.md
