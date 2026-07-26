@@ -180,8 +180,13 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/adapters/mcp/McpServerTest.cpp
     test/adapters/mcp/RoadmapToolsTest.cpp
     test/adapters/mcp/ToolErrorContractTest.cpp
+    test/adapters/mcp/WireCorpusTest.cpp
     test/adapters/mcp/McpHttpEndpointTest.cpp)
   target_link_libraries(windmill_mcp_tests PRIVATE windmill_mcp_lib)
+  # The golden MCP wire (WireCorpusTest) lives beside the test and is byte-compared against a fresh
+  # transcript; the source path is handed in so the check finds it from any build tree.
+  target_compile_definitions(windmill_mcp_tests PRIVATE
+    WM_WIRE_CORPUS_PATH="${CMAKE_SOURCE_DIR}/test/adapters/mcp/golden/wire_corpus.json")
   add_test(NAME mcp COMMAND windmill_mcp_tests)
 
   add_executable(windmill_adapters_tests
