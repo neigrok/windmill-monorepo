@@ -1,6 +1,6 @@
-#include "domain/Legend.h"
-#include "domain/LooseGraph.h"
-#include "domain/Subgraph.h"
+#include "products/roadmap/domain/Legend.h"
+#include "products/roadmap/domain/LooseGraph.h"
+#include "products/roadmap/domain/Subgraph.h"
 #include "test/testing.h"
 
 using namespace wm;

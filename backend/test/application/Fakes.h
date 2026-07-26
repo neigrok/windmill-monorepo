@@ -1,14 +1,14 @@
 #pragma once
 
-#include "domain/Command.h"
-#include "domain/Ids.h"
-#include "domain/LooseGraph.h"
-#include "domain/Tree.h"
-#include "ports/OgVideoRepository.h"
-#include "ports/OpLog.h"
-#include "ports/PresenceBus.h"
-#include "ports/ProgressRepository.h"
-#include "ports/TreeRepository.h"
+#include "products/roadmap/domain/Command.h"
+#include "products/roadmap/domain/Ids.h"
+#include "products/roadmap/domain/LooseGraph.h"
+#include "products/roadmap/domain/Tree.h"
+#include "products/roadmap/ports/OgVideoRepository.h"
+#include "products/roadmap/ports/OpLog.h"
+#include "products/roadmap/ports/PresenceBus.h"
+#include "products/roadmap/ports/ProgressRepository.h"
+#include "products/roadmap/ports/TreeRepository.h"
 
 #include <algorithm>
 #include <cstdint>

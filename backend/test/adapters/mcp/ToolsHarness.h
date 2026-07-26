@@ -1,12 +1,12 @@
 #pragma once
 
-#include "adapters/mcp/RoadmapTools.h"
+#include "products/roadmap/adapters/mcp/RoadmapTools.h"
 
-#include "adapters/json/TreeJson.h"
-#include "application/ProgressService.h"
-#include "application/RoomRegistry.h"
-#include "domain/LooseGraph.h"
-#include "ports/Clock.h"
+#include "products/roadmap/adapters/json/TreeJson.h"
+#include "products/roadmap/application/ProgressService.h"
+#include "products/roadmap/application/RoomRegistry.h"
+#include "products/roadmap/domain/LooseGraph.h"
+#include "platform/ports/Clock.h"
 #include "test/application/AuthFakes.h"
 #include "test/application/Fakes.h"
 

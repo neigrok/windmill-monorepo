@@ -1,4 +1,4 @@
-#include "adapters/mcp/McpHttpEndpoint.h"
+#include "platform/adapters/mcp/McpHttpEndpoint.h"
 
 #include "test/testing.h"
 

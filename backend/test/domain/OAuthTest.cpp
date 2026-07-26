@@ -1,4 +1,4 @@
-#include "domain/OAuth.h"
+#include "platform/domain/OAuth.h"
 
 #include "test/testing.h"
 

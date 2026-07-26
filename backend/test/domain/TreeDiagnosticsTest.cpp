@@ -1,5 +1,5 @@
-#include "domain/LooseGraph.h"
-#include "domain/TreeDiagnostics.h"
+#include "products/roadmap/domain/LooseGraph.h"
+#include "products/roadmap/domain/TreeDiagnostics.h"
 #include "test/testing.h"
 
 using namespace wm;

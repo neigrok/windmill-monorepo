@@ -1,4 +1,4 @@
-#include "domain/Legend.h"
+#include "products/roadmap/domain/Legend.h"
 #include "test/testing.h"
 
 using namespace wm;

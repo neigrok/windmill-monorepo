@@ -1,7 +1,7 @@
-#include "adapters/http/HttpApi.h"
+#include "products/roadmap/adapters/http/HttpApi.h"
 
-#include "adapters/json/TreeJson.h"
-#include "domain/LooseGraph.h"
+#include "products/roadmap/adapters/json/TreeJson.h"
+#include "products/roadmap/domain/LooseGraph.h"
 #include "test/application/AuthFakes.h"
 #include "test/application/Fakes.h"
 #include "test/testing.h"

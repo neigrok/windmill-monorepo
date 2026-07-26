@@ -1,5 +1,5 @@
-#include "domain/SkillTree.h"
-#include "domain/TreeHealth.h"
+#include "products/roadmap/domain/SkillTree.h"
+#include "products/roadmap/domain/TreeHealth.h"
 #include "test/testing.h"
 
 #include <string>

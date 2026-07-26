@@ -1,0 +1,150 @@
+#include "products/roadmap/application/TendingService.h"
+
+#include "products/roadmap/application/ScopedToolHost.h"
+#include "platform/domain/Billing.h"
+
+#include <trantor/utils/Logger.h>
+
+#include <json/json.h>
+
+#include <exception>
+
+namespace wm {
+
+namespace {
+// Concurrent tends before they queue. Each run is a blocking agent loop of tens of seconds, so a
+// handful of threads is plenty against the fleet rate ceiling (~0.2 runs/s) — more would just idle.
+constexpr std::size_t kTendWorkers = 4;
+// How many receipts the ledger read returns — a month's worth of a Pro account (300) would be a
+// wall; the newest score of runs is the meaningful history and the rest lives in the count.
+constexpr int kLedgerDepth = 20;
+
+bool blank(const std::string& text) {
+  return text.find_first_not_of(" \t\r\n") == std::string::npos;
+}
+}
+
+TendingService::TendingService(TendRunRepository& runs, PlanAgent& agent, ToolHost& tools,
+                               Clock& clock, TokenGenerator& tokens,
+                               SubscriptionRepository& subscriptions, bool enabled)
+    : runs_(runs), agent_(agent), tools_(tools), clock_(clock), tokens_(tokens),
+      subscriptions_(subscriptions), enabled_(enabled), workers_(kTendWorkers, "tend-workers") {
+  workers_.start();
+}
+
+TendRun TendingService::start(const TreeId& tree, const UserId& caller, const std::string& email,
+                              const std::string& prompt) {
+  // The pipeline the contract pins, top to bottom: an unusable prompt, then a dark feature, then a
+  // spent allowance — each a persisted refusal the client wears as a quiet face, none of them work.
+  if (blank(prompt)) return refuse(tree, caller, prompt, TendRefusal::promptEmpty);
+  // Over the cap is the "you pasted a document" case — paste-import is the door for that, not this.
+  if (prompt.size() > kMaxTendPromptBytes) return refuse(tree, caller, prompt, TendRefusal::promptTooLong);
+  if (!enabled_) return refuse(tree, caller, prompt, TendRefusal::notEnabled);
+  if (!allowanceAt(caller, email, clock_.nowMs()).allows())
+    return refuse(tree, caller, prompt, TendRefusal::outOfAllowance);
+
+  TendRun run;
+  run.id = "tr_" + tokens_.mint().digest.substr(0, 16);  // server-minted, unguessable — the catch-up key
+  run.tree = tree;
+  run.user = caller;
+  run.prompt = prompt;
+  run.status = TendStatus::running;
+  run.startedAtMs = clock_.nowMs();
+  runs_.save(run);  // durable BEFORE we answer, so the returned id is queryable the instant it lands
+
+  // Hand the blocking loop to the next worker in the pool and return. The service is a
+  // process-lifetime singleton, so capturing `this` is safe for as long as the pool (a member) lives.
+  workers_.getNextLoop()->queueInLoop([this, run] { execute(run); });
+  return run;
+}
+
+TendRun TendingService::refuse(const TreeId& tree, const UserId& caller, const std::string& prompt,
+                               TendRefusal reason) {
+  TendRun run;
+  run.id = "tr_" + tokens_.mint().digest.substr(0, 16);
+  run.tree = tree;
+  run.user = caller;
+  run.prompt = prompt;
+  run.status = TendStatus::refused;
+  run.refusal = reason;
+  run.startedAtMs = clock_.nowMs();
+  run.finishedAtMs = run.startedAtMs;  // a refused run never ran, so it begins and ends at once
+  runs_.save(run);
+  return run;
+}
+
+std::optional<TendRun> TendingService::runFor(const std::string& id, const UserId& caller) {
+  const std::optional<TendRun> run = runs_.find(id);
+  if (!run || run->user != caller) return std::nullopt;  // absent and not-yours are one answer
+  return run;
+}
+
+TendingSummary TendingService::summaryFor(const UserId& caller, const std::string& email) {
+  const std::uint64_t now = clock_.nowMs();  // one instant for the whole read: budget, reset, ledger
+  TendingSummary summary;
+  summary.enabled = enabled_;
+  summary.allowance = allowanceAt(caller, email, now);
+  summary.resetAtMs = nextMonthStartMsUtc(now);
+  summary.recent = runs_.recentForUser(caller, monthStartMsUtc(now), kLedgerDepth);
+  return summary;
+}
+
+// The two loads the allowance is built from — the plan (a live subscription grants Pro, everything
+// else is Free) and this calendar month's spend — then the pure domain budget over them. Takes the
+// instant so a single caller reads its meter and its ledger against one month, never straddling a
+// roll between two clock reads.
+TendingAllowance TendingService::allowanceAt(const UserId& caller, const std::string& email,
+                                             std::uint64_t nowMs) {
+  const std::optional<PaddleSubscription> subscription = subscriptions_.findFor(caller, email);
+  const Plan plan = subscription && grantsAccess(subscription->status) ? Plan::pro : Plan::free;
+  const int used = runs_.countForUser(caller, monthStartMsUtc(nowMs));
+  return TendingAllowance{plan, monthlyLimitFor(plan), used};
+}
+
+void TendingService::execute(TendRun run) {
+  // The crash guard: whatever happens below, the worker thread must survive to serve the next run.
+  try {
+    run.seqFrom = seqOf(run.tree, run.user);  // the tree's head before the agent writes anything
+    // The failed-run guard: an upstream error, a timeout, or a tool that would not settle becomes a
+    // `failed` run carrying its diagnostic, never a thrown exception past this point.
+    try {
+      // The agent is pinned to the tended tree: it can edit only this one, and cannot mint, list
+      // or delete trees — so an injected node label can't turn a tend into a raid on the caller's
+      // other trees (the injection risk a forkable public tree carries into the loop).
+      ScopedToolHost scoped(tools_, run.tree);
+      const AgentOutcome outcome =
+          agent_.run(run.prompt, run.tree, run.user, scoped, [](const AgentStep&) {});
+      run.status = outcome.ok ? TendStatus::done : TendStatus::failed;
+      run.summary = outcome.summary;
+      run.detail = outcome.ok ? outcome.detail : outcome.error;  // the error is diagnostic, not a receipt
+      run.edits = outcome.edits;
+      run.createdNodeIds = scoped.createdNodeIds();  // the authoritative set the receipt's Undo reverts
+    } catch (const std::exception& error) {
+      run.status = TendStatus::failed;
+      run.detail = error.what();
+    } catch (...) {
+      run.status = TendStatus::failed;
+      run.detail = "unknown error";
+    }
+    run.seqTo = seqOf(run.tree, run.user);  // the far end of the footprint — captured on any outcome
+    run.finishedAtMs = clock_.nowMs();
+    runs_.save(run);
+  } catch (const std::exception& error) {
+    LOG_ERROR << "tend run " << run.id << " could not be finalized: " << error.what();
+  } catch (...) {
+    LOG_ERROR << "tend run " << run.id << " could not be finalized";
+  }
+}
+
+std::uint64_t TendingService::seqOf(const TreeId& tree, const UserId& caller) {
+  // The run's footprint in the op log is read through the very seam the agent edits through:
+  // get_tree answers as the caller with the tree's current head seq. A tree the caller can't read
+  // (or any tool error) reads as 0 — the run simply records no footprint rather than leaking one.
+  Json::Value args(Json::objectValue);
+  args["treeId"] = tree.str();
+  const ToolResult result = tools_.callTool("get_tree", args, caller);
+  if (result.isError || !result.payload.isObject()) return 0;
+  return result.payload.get("seq", Json::Value::UInt64(0)).asUInt64();
+}
+
+}

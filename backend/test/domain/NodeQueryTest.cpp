@@ -1,4 +1,4 @@
-#include "domain/NodeQuery.h"
+#include "products/roadmap/domain/NodeQuery.h"
 
 #include "test/testing.h"
 

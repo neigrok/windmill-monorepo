@@ -1,6 +1,6 @@
-#include "adapters/http/SharePageApi.h"
+#include "products/roadmap/adapters/http/SharePageApi.h"
 
-#include "domain/LooseGraph.h"
+#include "products/roadmap/domain/LooseGraph.h"
 #include "test/application/AuthFakes.h"
 #include "test/application/Fakes.h"
 #include "test/testing.h"

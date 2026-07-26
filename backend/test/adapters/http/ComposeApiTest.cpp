@@ -1,6 +1,6 @@
-#include "adapters/http/ComposeApi.h"
+#include "products/roadmap/adapters/http/ComposeApi.h"
 
-#include "adapters/json/TreeJson.h"
+#include "products/roadmap/adapters/json/TreeJson.h"
 #include "test/testing.h"
 
 #include <trantor/net/AsyncStream.h>

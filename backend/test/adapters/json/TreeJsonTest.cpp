@@ -1,6 +1,6 @@
-#include "adapters/json/TreeJson.h"
+#include "products/roadmap/adapters/json/TreeJson.h"
 
-#include "domain/LooseGraph.h"
+#include "products/roadmap/domain/LooseGraph.h"
 #include "test/testing.h"
 
 using namespace wm;

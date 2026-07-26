@@ -4,47 +4,57 @@ project(windmill_backend CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_library(windmill_domain
-  domain/LooseGraph.cpp
-  domain/Legend.cpp
-  domain/Subgraph.cpp
-  domain/Command.cpp
-  domain/NodeQuery.cpp
-  domain/TreeDiagnostics.cpp
-  domain/SkillTree.cpp
-  domain/TrunkTree.cpp
-  domain/UnlockRules.cpp
-  domain/TreeHealth.cpp
-  domain/TreeSummary.cpp
-  domain/Gallery.cpp
-  domain/Auth.cpp
-  domain/OAuth.cpp
-  domain/Tending.cpp
-  domain/Reminders.cpp)
-target_include_directories(windmill_domain PUBLIC ${CMAKE_SOURCE_DIR})
+# Windmill is one modular-monolith backend behind a brand of products. `windmill_platform` is
+# the product-neutral core (auth, oauth, billing, the MCP transport engine, the vendor edges);
+# `windmill_roadmap` is the skill-tree product (trees, the sync/room cluster, the roadmap tools)
+# and depends on the platform, never the other way round. A future product (notes, gym) adds its
+# own products/<name> library beside roadmap and mirrors the same seam.
 
-add_library(windmill_application
-  application/TreeRoom.cpp
-  application/RoomRegistry.cpp
-  application/ProgressService.cpp
-  application/ActivityFeed.cpp
-  application/AuthService.cpp
-  application/ForkService.cpp
-  application/McpKeyService.cpp
-  application/OAuthService.cpp
-  application/ScopedToolHost.cpp
-  application/TendingService.cpp
-  application/TreeRegistry.cpp
-  application/ReminderSweep.cpp)
-target_link_libraries(windmill_application PUBLIC windmill_domain)
+# --- platform + roadmap CORE (domain + application) — always built, even without Drogon/libpqxx,
+# so the pure logic and its tests stand up on Trantor + jsoncpp alone. The adapters (the messy
+# vendor edges) are folded into these same two libraries below, once Drogon + libpqxx are found.
+add_library(windmill_platform
+  platform/domain/Auth.cpp
+  platform/domain/OAuth.cpp
+  platform/application/AuthService.cpp
+  platform/application/OAuthService.cpp
+  platform/application/McpKeyService.cpp)
+target_include_directories(windmill_platform PUBLIC ${CMAKE_SOURCE_DIR})
+
+add_library(windmill_roadmap
+  products/roadmap/domain/LooseGraph.cpp
+  products/roadmap/domain/Legend.cpp
+  products/roadmap/domain/Subgraph.cpp
+  products/roadmap/domain/Command.cpp
+  products/roadmap/domain/NodeQuery.cpp
+  products/roadmap/domain/TreeDiagnostics.cpp
+  products/roadmap/domain/SkillTree.cpp
+  products/roadmap/domain/TrunkTree.cpp
+  products/roadmap/domain/UnlockRules.cpp
+  products/roadmap/domain/TreeHealth.cpp
+  products/roadmap/domain/TreeSummary.cpp
+  products/roadmap/domain/Gallery.cpp
+  products/roadmap/domain/Tending.cpp
+  products/roadmap/domain/Reminders.cpp
+  products/roadmap/application/TreeRoom.cpp
+  products/roadmap/application/RoomRegistry.cpp
+  products/roadmap/application/ProgressService.cpp
+  products/roadmap/application/ActivityFeed.cpp
+  products/roadmap/application/ForkService.cpp
+  products/roadmap/application/ScopedToolHost.cpp
+  products/roadmap/application/TendingService.cpp
+  products/roadmap/application/TreeRegistry.cpp
+  products/roadmap/application/ReminderSweep.cpp)
+target_include_directories(windmill_roadmap PUBLIC ${CMAKE_SOURCE_DIR})
+target_link_libraries(windmill_roadmap PUBLIC windmill_platform)
 
 # Drogon + libpqxx gate the real adapters (SPEC §11). Found here, up front, because Drogon also
-# exports Trantor and jsoncpp as imported targets — and TendingService (in this core library)
-# needs both: its agent loop runs on a private trantor event-loop thread so the durable half can
-# answer the HTTP request at once, and the ToolHost port (ports/ToolHost.h) speaks Json::Value.
+# exports Trantor and jsoncpp as imported targets — and TendingService (in the roadmap core) needs
+# both: its agent loop runs on a private trantor event-loop thread so the durable half can answer
+# the HTTP request at once, and the ToolHost port (platform/ports/ToolHost.h) speaks Json::Value.
 find_package(Drogon CONFIG QUIET)
 find_package(libpqxx CONFIG QUIET)
-find_package(OpenSSL QUIET)  # magic-link token entropy + digests (adapters/crypto)
+find_package(OpenSSL QUIET)  # magic-link token entropy + digests (platform/adapters/crypto)
 
 # Never find Trantor twice: its bundled Findc-ares.cmake creates the c-ares_lib imported target
 # without an existence guard, so a second find — Drogon's own find_dependency(Trantor), or an
@@ -56,7 +66,7 @@ endif()
 if(NOT TARGET JsonCpp::JsonCpp)
   find_package(jsoncpp CONFIG REQUIRED)
 endif()
-target_link_libraries(windmill_application PUBLIC Trantor::Trantor JsonCpp::JsonCpp)
+target_link_libraries(windmill_platform PUBLIC Trantor::Trantor JsonCpp::JsonCpp)
 
 add_executable(windmill_domain_tests
   test/main.cpp
@@ -90,90 +100,95 @@ add_executable(windmill_domain_tests
   test/domain/TreeTest.cpp
   test/domain/RemindersTest.cpp
   test/application/ReminderSweepTest.cpp)
-target_link_libraries(windmill_domain_tests PRIVATE windmill_application)
+target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap)
 
 enable_testing()
 add_test(NAME domain COMMAND windmill_domain_tests)
 
-# Real adapters (SPEC §11). Guarded: the core library + tests always build; the server target
-# appears only once Drogon and libpqxx are installed (brew install drogon libpqxx) — both were
-# located up front, above, so the application core could link Trantor + jsoncpp through Drogon.
+# Real adapters (SPEC §11). Guarded: the two core libraries + the domain tests always build; the
+# server and the vendor edges appear only once Drogon and libpqxx are installed (brew install
+# drogon libpqxx) — both were located up front, above, so the cores could link Trantor + jsoncpp
+# through Drogon. The adapters are folded straight into windmill_platform / windmill_roadmap, so a
+# product stays one library whether or not the vendor edges are present.
 if(Drogon_FOUND AND libpqxx_FOUND)
-  add_library(windmill_adapters
-    adapters/json/TreeJson.cpp
-    adapters/json/SubgraphJson.cpp
-    adapters/json/CommandJson.cpp
-    adapters/postgres/PgTreeRepository.cpp
-    adapters/postgres/PgProgressRepository.cpp
-    adapters/postgres/PgOpLog.cpp
-    adapters/postgres/PgAuthRepository.cpp
-    adapters/postgres/PgOAuthRepository.cpp
-    adapters/postgres/PgMcpKeyRepository.cpp
-    adapters/postgres/PgOgImageRepository.cpp
-    adapters/postgres/PgOgVideoRepository.cpp
-    adapters/postgres/PgEventRepository.cpp
-    adapters/postgres/PgFeedbackRepository.cpp
-    adapters/postgres/PgServerErrorRepository.cpp
-    adapters/postgres/PgSubscriptionRepository.cpp
-    adapters/postgres/PgTendRunRepository.cpp
-    adapters/postgres/PgReminderRepository.cpp
-    adapters/http/HttpApi.cpp
-    adapters/http/PageShell.cpp
-    adapters/http/SharePageApi.cpp
-    adapters/http/GalleryApi.cpp
-    adapters/http/OgImageApi.cpp
-    adapters/http/OgVideoApi.cpp
-    adapters/http/AuthApi.cpp
-    adapters/http/McpKeyApi.cpp
-    adapters/http/EventsApi.cpp
-    adapters/http/FeedbackApi.cpp
-    adapters/http/ComposeApi.cpp
-    adapters/http/OAuthApi.cpp
-    adapters/http/Caller.cpp
-    adapters/http/TreeRegistryApi.cpp
-    adapters/http/TendingApi.cpp
-    adapters/http/RemindersApi.cpp
-    adapters/crypto/OpenSslTokenGenerator.cpp
-    adapters/email/ResendEmailSender.cpp
-    adapters/google/GoogleOAuthClient.cpp
-    adapters/paddle/PaddleSignature.cpp
-    adapters/paddle/PaddleApiClient.cpp
-    adapters/paddle/BillingApi.cpp
-    adapters/sentry/SentryClient.cpp
-    adapters/amplitude/AmplitudeClient.cpp
-    adapters/llm/AnthropicComposer.cpp
-    adapters/llm/AnthropicAgent.cpp
-    adapters/ws/WsPresenceBus.cpp
-    adapters/ws/PresenceHub.cpp
-    adapters/ws/Collab.cpp
-    adapters/ws/TreeSocket.cpp)
-  target_link_libraries(windmill_adapters PUBLIC windmill_application Drogon::Drogon libpqxx::pqxx OpenSSL::Crypto)
+  # Platform adapters: the vendor edges + the MCP transport engine (McpServer/McpHttpEndpoint) —
+  # transport-agnostic, product-neutral. Resources rides here because the engine reads its catalog.
+  target_sources(windmill_platform PRIVATE
+    platform/adapters/json/JsonText.cpp
+    platform/adapters/http/PageShell.cpp
+    platform/adapters/http/Caller.cpp
+    platform/adapters/http/OAuthApi.cpp
+    platform/adapters/http/McpKeyApi.cpp
+    platform/adapters/http/EventsApi.cpp
+    platform/adapters/http/FeedbackApi.cpp
+    platform/adapters/postgres/PgAuthRepository.cpp
+    platform/adapters/postgres/PgOAuthRepository.cpp
+    platform/adapters/postgres/PgMcpKeyRepository.cpp
+    platform/adapters/postgres/PgSubscriptionRepository.cpp
+    platform/adapters/postgres/PgEventRepository.cpp
+    platform/adapters/postgres/PgFeedbackRepository.cpp
+    platform/adapters/postgres/PgServerErrorRepository.cpp
+    platform/adapters/crypto/OpenSslTokenGenerator.cpp
+    platform/adapters/email/ResendEmailSender.cpp
+    platform/adapters/google/GoogleOAuthClient.cpp
+    platform/adapters/sentry/SentryClient.cpp
+    platform/adapters/amplitude/AmplitudeClient.cpp
+    platform/adapters/paddle/PaddleSignature.cpp
+    platform/adapters/paddle/PaddleApiClient.cpp
+    platform/adapters/paddle/BillingApi.cpp
+    platform/adapters/mcp/McpServer.cpp
+    platform/adapters/mcp/McpHttpEndpoint.cpp
+    platform/adapters/mcp/Resources.cpp)
+  target_link_libraries(windmill_platform PUBLIC Drogon::Drogon libpqxx::pqxx OpenSSL::Crypto)
 
-  # MCP adapter (SPEC §11 boundary): a first-class edge onto the same application core, so
-  # an AI agent authors roadmaps through the rooms exactly as HTTP/WS clients do. The engine
-  # (McpServer) is transport-agnostic; stdio and Streamable-HTTP are two thin transports.
-  # Defined before windmill_server so the server can mount the HTTP transport in-process —
-  # one RoomRegistry for REST, the socket, and MCP (a tree has a single live room).
-  add_library(windmill_mcp_lib
-    adapters/mcp/McpServer.cpp
-    adapters/mcp/EditReceipt.cpp
-    adapters/mcp/ReadShape.cpp
-    adapters/mcp/Resources.cpp
-    adapters/mcp/RoadmapTools.cpp
-    adapters/mcp/ToolArgs.cpp
-    adapters/mcp/McpHttpEndpoint.cpp)
-  target_link_libraries(windmill_mcp_lib PUBLIC windmill_adapters)
+  # Roadmap adapters: the roadmap tools an AI agent drives (RoadmapTools), the sync/room socket,
+  # the LLM edges, the JSON boundary, and the roadmap postgres/http surfaces. They reach the vendor
+  # deps through windmill_platform (linked PUBLIC above).
+  target_sources(windmill_roadmap PRIVATE
+    products/roadmap/adapters/json/TreeJson.cpp
+    products/roadmap/adapters/json/SubgraphJson.cpp
+    products/roadmap/adapters/json/CommandJson.cpp
+    products/roadmap/adapters/postgres/PgTreeRepository.cpp
+    products/roadmap/adapters/postgres/PgProgressRepository.cpp
+    products/roadmap/adapters/postgres/PgOpLog.cpp
+    products/roadmap/adapters/postgres/PgOgImageRepository.cpp
+    products/roadmap/adapters/postgres/PgOgVideoRepository.cpp
+    products/roadmap/adapters/postgres/PgReminderRepository.cpp
+    products/roadmap/adapters/postgres/PgTendRunRepository.cpp
+    products/roadmap/adapters/http/HttpApi.cpp
+    products/roadmap/adapters/http/SharePageApi.cpp
+    products/roadmap/adapters/http/GalleryApi.cpp
+    products/roadmap/adapters/http/OgImageApi.cpp
+    products/roadmap/adapters/http/OgVideoApi.cpp
+    products/roadmap/adapters/http/AuthApi.cpp
+    products/roadmap/adapters/http/ComposeApi.cpp
+    products/roadmap/adapters/http/TreeRegistryApi.cpp
+    products/roadmap/adapters/http/TendingApi.cpp
+    products/roadmap/adapters/http/RemindersApi.cpp
+    products/roadmap/adapters/llm/AnthropicComposer.cpp
+    products/roadmap/adapters/llm/AnthropicAgent.cpp
+    products/roadmap/adapters/ws/WsPresenceBus.cpp
+    products/roadmap/adapters/ws/PresenceHub.cpp
+    products/roadmap/adapters/ws/Collab.cpp
+    products/roadmap/adapters/ws/TreeSocket.cpp
+    products/roadmap/adapters/mcp/RoadmapTools.cpp
+    products/roadmap/adapters/mcp/ReadShape.cpp
+    products/roadmap/adapters/mcp/EditReceipt.cpp
+    products/roadmap/adapters/mcp/ToolArgs.cpp
+    products/roadmap/routes.cpp)
 
-  # One process serves REST, the collab socket, AND MCP over the same rooms.
-  add_executable(windmill_server infra/main.cpp)
-  target_link_libraries(windmill_server PRIVATE windmill_mcp_lib)
+  # One process serves REST, the collab socket, AND MCP over the same rooms. main.cpp is the
+  # composition root: it builds platform + roadmap singletons, mounts the shared MCP endpoint, and
+  # calls roadmap::registerRoutes for the product half (products/roadmap/routes.h).
+  add_executable(windmill_server platform/infra/main.cpp)
+  target_link_libraries(windmill_server PRIVATE windmill_roadmap)
   message(STATUS "windmill_server enabled (Drogon + libpqxx found)")
 
-  add_executable(windmill_mcp infra/mcp_main.cpp)               # stdio transport (local hosts)
-  target_link_libraries(windmill_mcp PRIVATE windmill_mcp_lib)
+  add_executable(windmill_mcp platform/infra/mcp_main.cpp)            # stdio transport (local hosts)
+  target_link_libraries(windmill_mcp PRIVATE windmill_roadmap)
 
-  add_executable(windmill_mcp_http infra/mcp_http_main.cpp)     # standalone HTTP transport (legacy; now folded into windmill_server)
-  target_link_libraries(windmill_mcp_http PRIVATE windmill_mcp_lib)
+  add_executable(windmill_mcp_http platform/infra/mcp_http_main.cpp)  # standalone HTTP transport (legacy; folded into windmill_server)
+  target_link_libraries(windmill_mcp_http PRIVATE windmill_roadmap)
 
   add_executable(windmill_mcp_tests
     test/main.cpp
@@ -182,11 +197,11 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/adapters/mcp/ToolErrorContractTest.cpp
     test/adapters/mcp/WireCorpusTest.cpp
     test/adapters/mcp/McpHttpEndpointTest.cpp)
-  target_link_libraries(windmill_mcp_tests PRIVATE windmill_mcp_lib)
-  # The golden MCP wire (WireCorpusTest) lives beside the test and is byte-compared against a fresh
-  # transcript; the source path is handed in so the check finds it from any build tree.
+  target_link_libraries(windmill_mcp_tests PRIVATE windmill_roadmap)
+  # The golden MCP wire (WireCorpusTest) lives beside the roadmap tools and is byte-compared against
+  # a fresh transcript; the source path is handed in so the check finds it from any build tree.
   target_compile_definitions(windmill_mcp_tests PRIVATE
-    WM_WIRE_CORPUS_PATH="${CMAKE_SOURCE_DIR}/test/adapters/mcp/golden/wire_corpus.json")
+    WM_WIRE_CORPUS_PATH="${CMAKE_SOURCE_DIR}/products/roadmap/adapters/mcp/golden/wire_corpus.json")
   add_test(NAME mcp COMMAND windmill_mcp_tests)
 
   add_executable(windmill_adapters_tests
@@ -209,7 +224,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/adapters/paddle/PaddleSignatureTest.cpp
     test/adapters/llm/AnthropicComposerTest.cpp
     test/adapters/llm/AnthropicAgentTest.cpp)
-  target_link_libraries(windmill_adapters_tests PRIVATE windmill_adapters)
+  target_link_libraries(windmill_adapters_tests PRIVATE windmill_roadmap)
   add_test(NAME adapters COMMAND windmill_adapters_tests)
 else()
   message(STATUS "Drogon/libpqxx not found — building core + tests only; run 'brew install drogon libpqxx' to enable windmill_server")

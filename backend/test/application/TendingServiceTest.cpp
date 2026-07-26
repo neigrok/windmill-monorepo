@@ -1,6 +1,6 @@
-#include "application/TendingService.h"
+#include "products/roadmap/application/TendingService.h"
 
-#include "ports/SubscriptionRepository.h"
+#include "platform/ports/SubscriptionRepository.h"
 #include "test/application/AuthFakes.h"
 #include "test/testing.h"
 

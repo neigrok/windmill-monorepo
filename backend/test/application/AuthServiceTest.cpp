@@ -1,4 +1,4 @@
-#include "application/AuthService.h"
+#include "platform/application/AuthService.h"
 #include "test/application/AuthFakes.h"
 #include "test/testing.h"
 

@@ -1,4 +1,4 @@
-#include "adapters/http/OgImageApi.h"
+#include "products/roadmap/adapters/http/OgImageApi.h"
 
 #include "test/application/AuthFakes.h"
 #include "test/application/Fakes.h"

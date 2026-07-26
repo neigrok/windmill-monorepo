@@ -1,9 +1,9 @@
-#include "adapters/json/SubgraphJson.h"
+#include "products/roadmap/adapters/json/SubgraphJson.h"
 
-#include "adapters/json/TreeJson.h"
-#include "domain/Legend.h"
-#include "domain/LooseGraph.h"
-#include "domain/Subgraph.h"
+#include "products/roadmap/adapters/json/TreeJson.h"
+#include "products/roadmap/domain/Legend.h"
+#include "products/roadmap/domain/LooseGraph.h"
+#include "products/roadmap/domain/Subgraph.h"
 #include "test/testing.h"
 
 using namespace wm;

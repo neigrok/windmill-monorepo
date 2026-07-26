@@ -1,6 +1,6 @@
-#include "adapters/mcp/McpServer.h"
+#include "platform/adapters/mcp/McpServer.h"
 
-#include "adapters/mcp/Resources.h"
+#include "platform/adapters/mcp/Resources.h"
 #include "test/testing.h"
 
 using namespace wm;

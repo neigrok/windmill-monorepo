@@ -1,7 +1,7 @@
-#include "adapters/mcp/ReadShape.h"
-#include "adapters/mcp/Resources.h"
-#include "adapters/mcp/ToolArgs.h"
-#include "domain/Command.h"
+#include "products/roadmap/adapters/mcp/ReadShape.h"
+#include "platform/adapters/mcp/Resources.h"
+#include "products/roadmap/adapters/mcp/ToolArgs.h"
+#include "products/roadmap/domain/Command.h"
 #include "test/adapters/mcp/ToolsHarness.h"
 
 #include "test/testing.h"

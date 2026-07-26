@@ -1,7 +1,7 @@
-#include "application/ForkService.h"
+#include "products/roadmap/application/ForkService.h"
 
-#include "application/RoomRegistry.h"
-#include "domain/LooseGraph.h"
+#include "products/roadmap/application/RoomRegistry.h"
+#include "products/roadmap/domain/LooseGraph.h"
 #include "test/application/AuthFakes.h"
 #include "test/application/Fakes.h"
 #include "test/testing.h"

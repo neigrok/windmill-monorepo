@@ -1,11 +1,11 @@
 #pragma once
 
-#include "ports/AuthRepository.h"
-#include "ports/Clock.h"
-#include "ports/EmailSender.h"
-#include "ports/McpKeyRepository.h"
-#include "ports/OAuthRepository.h"
-#include "ports/TokenGenerator.h"
+#include "platform/ports/AuthRepository.h"
+#include "platform/ports/Clock.h"
+#include "platform/ports/EmailSender.h"
+#include "platform/ports/McpKeyRepository.h"
+#include "platform/ports/OAuthRepository.h"
+#include "platform/ports/TokenGenerator.h"
 
 #include <algorithm>
 #include <functional>

@@ -1,4 +1,4 @@
-#include "domain/Auth.h"
+#include "platform/domain/Auth.h"
 #include "test/testing.h"
 
 using namespace wm;

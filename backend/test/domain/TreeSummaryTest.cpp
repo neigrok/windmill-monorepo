@@ -1,4 +1,4 @@
-#include "domain/TreeSummary.h"
+#include "products/roadmap/domain/TreeSummary.h"
 #include "test/testing.h"
 
 #include <string>

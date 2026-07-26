@@ -1,8 +1,8 @@
-#include "application/TreeRegistry.h"
+#include "products/roadmap/application/TreeRegistry.h"
 
-#include "application/RoomRegistry.h"
-#include "domain/LooseGraph.h"
-#include "domain/Subgraph.h"
+#include "products/roadmap/application/RoomRegistry.h"
+#include "products/roadmap/domain/LooseGraph.h"
+#include "products/roadmap/domain/Subgraph.h"
 #include "test/application/AuthFakes.h"
 #include "test/application/Fakes.h"
 #include "test/testing.h"

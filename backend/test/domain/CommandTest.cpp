@@ -1,6 +1,6 @@
-#include "domain/Command.h"
-#include "domain/Legend.h"
-#include "domain/LooseGraph.h"
+#include "products/roadmap/domain/Command.h"
+#include "products/roadmap/domain/Legend.h"
+#include "products/roadmap/domain/LooseGraph.h"
 #include "test/testing.h"
 
 #include <limits>

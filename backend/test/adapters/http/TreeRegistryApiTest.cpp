@@ -1,7 +1,7 @@
-#include "adapters/http/TreeRegistryApi.h"
+#include "products/roadmap/adapters/http/TreeRegistryApi.h"
 
-#include "adapters/json/TreeJson.h"
-#include "application/RoomRegistry.h"
+#include "products/roadmap/adapters/json/TreeJson.h"
+#include "products/roadmap/application/RoomRegistry.h"
 #include "test/application/AuthFakes.h"
 #include "test/application/Fakes.h"
 #include "test/testing.h"

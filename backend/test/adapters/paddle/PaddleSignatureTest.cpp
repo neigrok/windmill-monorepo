@@ -1,4 +1,4 @@
-#include "adapters/paddle/PaddleSignature.h"
+#include "platform/adapters/paddle/PaddleSignature.h"
 #include "test/testing.h"
 
 using namespace wm;

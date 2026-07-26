@@ -1,5 +1,5 @@
-#include "domain/SkillTree.h"
-#include "domain/UnlockRules.h"
+#include "products/roadmap/domain/SkillTree.h"
+#include "products/roadmap/domain/UnlockRules.h"
 #include "test/testing.h"
 
 #include <string>
