@@ -1,0 +1,26 @@
+# Monorepo root ignores. Each surface keeps its own .gitignore under backend/, web/.
+
+# The pre-restructure repos, kept as a local recovery net (also live on GitHub).
+.attic/
+
+# OS / editor cruft
+.DS_Store
+**/.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Personal, per-machine Claude settings (skills/ stay tracked)
+.claude/settings.local.json
+
+# Build outputs / dependencies (sub-.gitignores also cover these; belt and braces)
+node_modules/
+dist/
+dist-ssr/
+build/
+cmake-build-*/
+*.log
+
+# Secrets — never commit
+.env
+*.local

@@ -1,0 +1,188 @@
+2026-07-16 · planting layout-parity work in dogfood tree:
+- create_node accepts a single parentId, so a two-prereq node (live-layout-parity needs radial-layout-fe + realtime-collab) takes create_node + a follow-up connect. Known gap, tracked as mcp-create-multi-prereq.
+- every edit result says diagnosticsClean:false with no detail; had to call get_diagnostics to learn the dirt was a PRE-EXISTING dangling edge (→ livecheck), not my edit. The flag should distinguish "your edit introduced dirt" from "tree was already dirty", or inline the offending diagnostic.
+2026-07-16 · verifying layout fix against local backend MCP:
+- rename_node on the local build wants arg `id` while set_progress wants `nodeId` (deployed schema says nodeId for both) — and the error for the wrong name is "node id is empty", which never names the expected field. Errors should say "missing required arg `id`".
+2026-07-16 · post-deploy of the ergonomics batch:
+- the edit tools standardized node args on `id` (delete_node, rename_node, annotate_node) while set_progress still takes `nodeId` — an MCP client with cached pre-deploy schemas sends `nodeId` and gets "node id is empty". Either accept both during a transition or version the tool list so clients re-fetch.
+2026-07-16 · authoring the demo tree:
+- import_subgraph `kinds` bypasses add_kind's hue-uniqueness law: importing three kinds whose hues matched the default legend produced a 6-kind legend with duplicate hues (Milestone + Milestones both live). add_kind would have rejected each.
+- and once duplicated, the legend is unrepairable: remove_kind refuses ANY kind whose hue nodes wear ("kind is in use"), even when a same-hue twin would remain. Had to delete and recreate the tree. remove_kind should allow removal when another kind still owns the hue — or import should enforce uniqueness.
+- import_subgraph nodes DO accept an authoring `status` seed ("complete"/"active") even though the schema doesn't document it — this is load-bearing for demo/staged trees; document it.
+2026-07-16 · seeding the growth plan via import_subgraph:
+- the published schema types `nodes`/`kinds`/`progress` items as `{type:"string"}` while the description says each is an object ({id, label, ...}). Objects are what the server actually accepts — the schema lies.
+- worse: following the schema and sending JSON-encoded strings kills the request with a bare "Streamable HTTP error: Error POSTing to endpoint:" (no status, no message) instead of a validation error naming the offending field. A malformed item should produce "nodes[0]: expected object, got string".
+
+2026-07-20 · planting the tending + storefront nodes in the dogfood tree:
+- find_nodes with a broad `query` returns FULL node bodies (label + description + position + links) for every match, so a common substring ("tend" — which matches extend/intend/attend/tending across descriptions) blew the result to 68k chars and tripped the token-limit guard, forcing a jq pass over a spilled file. find_nodes should (a) match `query` against the label by default (or expose a label-only mode), and (b) support a projection/limit so a caller can ask for just {id,label} — the ids are the only thing you need to pick edit targets. A search tool that can't return a lightweight index is a search tool you can't use on a real tree.
+- set_progress reports prerequisitesMet against COMMITTED state, so marking a node complete whose sole prerequisite is only `active` returns prerequisitesMet:false. That's correct and honest, but there's no way to say "shipped ahead of its prerequisite on purpose" — the ledger can't distinguish a real dependency violation from a deliberate sequencing (sales page live before the feature it sells is armed). A per-node "ahead of plan / intentional" acknowledgement would let the tree stop flagging a known-good inversion.
+
+## 2026-07-22 — node-id param name inconsistent across sibling tools
+While logging #19 to the dogfood tree, tripped on the same concept ("the node id")
+having a DIFFERENT required param name across tools:
+  - annotate_node  → `id`
+  - set_progress   → `nodeId`  (also accepts bulk `updates[].nodeId`)
+  - rename_node / move_node / etc. — worth auditing for the same split.
+Also: find_nodes requires `treeId` (passing `tree` errors "missing required argument: treeId").
+Pick ONE spelling for the node handle (`nodeId`) and ONE for the tree handle (`treeId`)
+and make every tool use it. The guess-and-retry cost is exactly the kind of friction the
+"MCP ergonomics must be extreme" bar is meant to kill.
+
+## 2026-07-25 — annotate_node's 4000-char cap is invisible until you hit it
+Logging the public-gallery build to the dogfood tree, annotate_node refused twice with
+a bare "description is too long (max 4000 characters)". Two problems:
+  - the error never says how long the description ACTUALLY was, so trimming is guesswork —
+    I burned two round trips shaving prose blind. Say "4,613 given, max 4,000".
+  - the cap is undocumented in the tool schema. `description` is described only as "the
+    annotation body — notes about the node", with no maxLength. A client can't pre-validate
+    what the schema doesn't state. Put maxLength on the field.
+Also worth considering: for a node used as a running work log (which is what the dogfood
+tree IS), 4000 chars is genuinely tight — a fully-described wave of work with its gauntlet
+results and follow-ups lands at 4-6k. Either raise the cap or give annotations an append
+mode so a node accumulates entries instead of forcing a rewrite-and-shrink each time.
+
+## 2026-07-25 — ideas from beads (github.com/gastownhall/beads), an AI-primary issue tracker
+Researched at the owner's request. 25.6k stars, Go, MCP server is a Python FastMCP shim that
+shells out to the `bd` binary. Their MCP is explicitly a FALLBACK for Claude Desktop — their own
+docs say "prefer CLI + hooks, it's more context efficient" and cost MCP at 10-50k tokens of
+overhead vs ~1-2k. Ours IS the product surface, so we should be better at this than they are.
+
+WORTH STEALING, ranked:
+1. WRITES RETURN A RECEIPT, NOT THE OBJECT. Every mutation (`create`/`claim`/`update`/`close`)
+   takes `brief: bool = True` and returns `OperationResult{id, action, message}`. We are
+   authoring-heavy — an agent planting a 40-node tree makes 40+ mutations; if each echoes a node
+   or a tree we burn the budget on confirmations. Biggest single token win available, ~one line
+   per tool.
+2. A PROJECTION LADDER WITH IDENTICAL PARAM NAMES ON EVERY READ. `brief` / `brief_deps` /
+   `fields` / `max_description_length`, same spelling on every read tool, plus a validated
+   `fields` whose error names the offending field AND enumerates the legal set. This is exactly
+   the fix for our logged find_nodes complaint (full node bodies, no lightweight index) AND for
+   the sibling-param-naming complaint, in one stroke.
+3. A GOLDEN WIRE CORPUS, BYTE-COMPARED IN CI. `cmd/bd/protocol/corpus.go` runs a deterministic
+   command plan, canonicalizes (timestamps -> <TS>, arrays stable-sorted, keys sorted), commits
+   golden JSON, and CI byte-compares; regenerating REQUIRES bumping schema_version, which is the
+   coordination canary for pinned decoders. This is the structural cure for "a schema that lies
+   about types" — and it aims straight at our CI gotcha, since pqxx row_ref/row and jsoncpp
+   infinity are exactly the class of change that compiles green and alters the wire.
+4. ERROR CLASSES PINNED BY TEST, ASSERTING CONTENT. Their errors_contract_test.go fails unless
+   not-found NAMES the missing id and a conflict NAMES the holder, with the rationale in the test:
+   "an agent that cannot see who holds the claim cannot decide whether to wait, escalate, or move
+   on". Turns our recurring "errors don't name the field or the limit" gripe into a CI gate.
+5. `hint` as a standard field on every failure. get_diagnostics is already hint-shaped; extend it
+   to errors.
+6. A `windmill://quickstart` MCP *resource* (not a tool — costs no slot). Natural home for the one
+   thing agents reliably get backwards: which way a prerequisite edge points.
+7. Consolidate the six *_kind tools behind one `kinds(action=...)` — but ONLY because their params
+   are near-identical; their own `admin(action=...)` shows the cost when they aren't (a flat param
+   bag where each flag applies to one action).
+8. Expose a BATCH verb with `bd batch`'s semantics: one transaction, all-or-nothing, `dry_run`,
+   and NAME THE FAILING ELEMENT on rejection. We already have import_subgraph — the steal is the
+   contract around it. (Beads left batch on the CLI; we shouldn't.)
+
+MISTAKES TO AVOID (all verified in their source):
+- Don't build a `discover_tools`/`get_tool_info` pair. It's theater: all 18 tools are still
+  registered, so the client gets every schema in tools/list anyway and the advertised "97% schema
+  reduction" is never realized. What it bought was a hand-maintained second copy of the schema
+  that has ALREADY drifted three ways (a `parent` filter reachable in the lib but not over MCP;
+  get_tool_info missing four real params of `create`; and entries for tools it can't describe).
+  Generate any index from the schema or don't ship one.
+- Don't ship compaction without pagination. Their CompactedResult has no cursor — the only advice
+  is "add filters", so rows 6..47 are unreachable. Worse, `total_count` is the length of the
+  ALREADY-LIMITED page while the docs call it total matching. Same disease as a lying schema.
+- Don't pick a default that stops your own code path executing: `limit=20` against
+  `COMPACTION_THRESHOLD=20` with a `>` guard makes compaction dead code at stock settings.
+- Don't let the return TYPE depend on which optional flags were passed — theirs is
+  `list[IssueMinimal] | list[BriefIssue] | list[dict] | CompactedResult`, forcing callers to sniff
+  with isinstance. Put the shape inside a stable envelope instead.
+- Don't return errors through the success channel on some tools and raise on others.
+- Don't ship a safety guard off by default (their require_context guards a documented P0 data
+  corruption risk but only when an env var is set).
+
+WHERE WE'RE ALREADY AHEAD: real transport + auth (Streamable HTTP + OAuth 2.1 vs stdio with zero
+auth code); our MCP talks to our own backend rather than subprocess-wrapping a CLI (theirs pays
+for that with version handshakes, health pings, reconnect backoff, a connection pool and
+directory tree-walking — all impedance, no product); bulk authoring via import_subgraph; and
+NEVER-REJECT + diagnostics as a first-class read, which is a better authoring model than their
+fail-fast validate-as-a-chore (`admin(action='validate')`).
+
+## 2026-07-25 — a node's ICON can be set at birth but never afterwards
+Planting the five beads-derived bets, each one immediately tripped an `empty-icon` smell in
+get_diagnostics — and there is no way to fix it. `create_node` accepts `icon`, but no edit tool
+sets one afterwards: rename_node changes the label, set_node_color the hue, annotate_node the
+description/links. So a node planted without an icon carries a permanent diagnostic that the
+tool surface cannot clear, and the tree currently shows 30+ of them.
+Either add `set_node_icon` (or fold `icon` into annotate_node alongside description/links, which
+is where "the node's free presentation" already lives), or stop reporting empty-icon as a smell.
+Reporting a defect you give the caller no verb to fix is worse than not reporting it: it trains
+every reader to ignore the smells list, which is the one place real dirt (cycles, dangling) shows.
+
+## 2026-07-25 — two defects found in one call while planting the wave-2 nodes
+
+Both surfaced from ordinary use (picking edit targets in the dogfood tree), and both are the
+same family: a read tool that answers confidently without answering the question.
+
+1. `status` is a DECLARED `fields` value that silently returns nothing.
+   `find_nodes(fields:["id","label","status"])` on a node I had just set to `active` came back
+   `{"id":…,"label":…}` — no `status` key, no error, no note. Same on `get_tree`. `status` is in
+   the published enum for both tools, so a client has every reason to ask for it. The caller
+   cannot distinguish "this node has no status" from "this server does not serve that field",
+   which is the worst of the three possible answers. Either serve it (it is per-caller progress,
+   which get_progress already returns, so the join is cheap) or reject it by name —
+   "find_nodes: field \"status\" is not served by this tool; use get_progress". Silence is the
+   one option that shouldn't be on the table. Cousin of the schema-lies defect logged 2026-07-16.
+
+2. `query` does not match the node ID — so searching for a node by its handle finds everything
+   EXCEPT that node. `find_nodes(query:"mcp-error-contract")` returned exactly one node, and it
+   was `mcp-read-projections` — whose DESCRIPTION happens to mention the string. The node
+   actually called `mcp-error-contract` did not match itself. `query:"Error contract"` (a label
+   substring) found it fine. So the tool matches label + description and skips the id.
+   Two things wrong, and the second is worse than the first:
+     - the id is the handle you pick edit targets by, and pasting an id you already know is the
+       single most natural thing to type into a search box;
+     - because the match set is non-empty, the caller gets `count:1` and a confident wrong
+       answer rather than an empty result they'd notice. A near-miss that returns someone else's
+       node is a correctness bug wearing a search tool's clothes.
+   Fix: match `query` against id + label + description, and when a match is on the id alone, it
+   should probably outrank a description hit (an exact id match is not a fuzzy match).
+   Related to the 2026-07-20 find_nodes complaint (broad query returns full bodies) — that half
+   shipped as `mcp-read-projections`; the ladder isn't finished.
+
+Both land in `adapters/mcp/ReadShape.cpp`. Held out of the in-flight error-contract wave on
+purpose (tight diff, agent already mid-pass); next MCP wave picks them up.
+
+## 2026-07-25 — RESOLVED by the error-contract wave (backend 9aa12aa)
+
+Every complaint above dated 2026-07-16 through 2026-07-25 about messages that name
+nothing is now closed, and pinned by tests that assert message CONTENT rather than
+merely that a call failed. Verified on the wire, not just in the suite:
+
+  rename_node: missing required argument "nodeId". Call get_tree with fields ["id","label"]…
+  import_subgraph: nodes[0] must be an object, got string. Each item is a JSON object, not
+                   a JSON-encoded string.
+  annotate_node: description is 4613 characters, max 4000        (+ maxLength now in schema)
+  set_progress:  status "finished" is not one of {active, complete, none}
+  add_kind:      hue "olive" already belongs to kind "learn" — a hue names one kind…
+
+The handle split is gone: `id` is the id you PROPOSE for a new thing, `<thing>Id` is the
+handle to one that exists, and both spellings are accepted wherever they could be
+confused. add_kind refuses `kindId` by name the way create_node refuses `nodeId`.
+The duplicate-hue legend import (logged 16 July as UNREPAIRABLE) is now refused outright.
+
+STILL OPEN, and now tracked as tree nodes rather than only here:
+  - diagnosticsClean cannot distinguish your dirt from pre-existing dirt → mcp-diagnostics-attribution
+  - `status` is a declared `fields` value that returns nothing; `query` doesn't match the
+    node id → mcp-read-truthful
+  - RoomRegistry::open throws where it should return, so a DB failure inside a
+    room-touching tool still surfaces pqxx internals → room-open-returns
+
+Three things worth remembering about HOW these were found, because none came from reading
+the code:
+  1. The crash (`resources/read` with a non-string uri terminated the stdio session) was
+     found by an adversarial reviewer that ran the shipped binary rather than reasoning
+     about it. The guard that was supposed to prevent exactly this checked the container
+     and not the leaves.
+  2. `dryRun: "yes"` performing a REAL import was found the same way. The type check
+     admitted strings while its own message said "must be a boolean".
+  3. The duplicate-hue import was reproduced by accident while seeding an unrelated
+     end-to-end tree — the seeded legend came back with two kinds sharing gold. A live
+     stack tells you things a test suite agrees with you about.
