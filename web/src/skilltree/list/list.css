@@ -1,0 +1,1488 @@
+/* X8 · The list view. One scroller (the body); everything else is layout over the app's tokens,
+   so light/dark follow the theme. Kind hues arrive as --k-* custom properties set inline from
+   theme.js (never hardcoded), so a fruit reads 1:1 with the canvas. Reduced motion keeps the
+   jump flash and a short accordion fade (the design's calm color ramps) but drops smooth scroll
+   and rotation — see the block at the foot. */
+
+.st-list {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--surface-canvas);
+}
+
+/* The list trains long-press = multi-select, so no control in it may raise the iOS selection
+   loupe or callout. .st-list-row-line carries this for rows; these five sit outside it. */
+.st-list-kindchip,
+.st-list-nextup-row,
+.st-list-more,
+.st-list-empty-clear,
+.st-list-back {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* The live region: heard, never seen. Filtering is otherwise silent — 180 rows leave with no
+   announcement at all — and it must be in the DOM from the start to be announced when it fills. */
+.st-list-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* No blue iOS flash on any of the list's tap targets — the row/chip flash is our own. */
+.st-list-notice,
+.st-list-row-line,
+.st-list-row-open,
+.st-list-seat,
+.st-list-fold,
+.st-list-chip,
+.st-list-kindchip,
+.st-list-search-btn,
+.st-list-nextup-row,
+.st-list-more,
+.st-list-empty-clear,
+.st-list-back,
+.st-list-viewpill-seg,
+.st-list-name-btn,
+.st-list-desc-edit,
+.st-list-verb,
+.st-list-edit-btn,
+.st-list-swatch-hit,
+.st-list-addrow,
+.st-list-picker-row,
+.st-list-picker-close,
+.st-list-header-door,
+.st-switcher-row,
+.st-switcher-plant {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ---- Header: the plaque facts on one line (kind dot · name · n/m · gradient bar · search).
+   The readout is 46px with a 6px floor (audit fix 2) — a long empty track with a nub in it reads
+   as a failed load, never as "early" — and the search icon takes the room that bought. The field
+   grows BESIDE identity: the readout yields its width, the dot and the name stay, because a head
+   that drops identity to hold a field is a head that stopped doing the job §5 gave it. ---- */
+.st-list-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: calc(max(env(safe-area-inset-top, 0px), 44px) + 8px) var(--space-4) var(--space-3);
+  background: var(--surface-canvas);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.st-list-header-dot {
+  flex-shrink: 0;
+  width: 11px;
+  height: 11px;
+  border-radius: var(--radius-full);
+  background: var(--k-base);
+  box-shadow: inset 0 0 0 1.5px var(--k-ring);
+}
+.st-list-header-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 17px;
+  color: var(--text-primary);
+}
+/* For an owner the name is a door (X8 L6): it grows a caret and raises the switcher. The name
+   inside shrinks with an ellipsis so the caret rides snug against it, not out at the count. */
+.st-list-header-door {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.st-list-header-door .st-list-header-name {
+  flex: 0 1 auto;
+}
+.st-list-header-caret {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+.st-list-header-door:active .st-list-header-caret {
+  color: var(--color-brand);
+}
+.st-list-header-count {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+.st-list-header-total {
+  color: var(--text-tertiary);
+}
+.st-list-header-bar {
+  flex-shrink: 0;
+  width: 46px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+.st-list-header-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: linear-gradient(90deg, var(--k-soft), var(--k-base));
+  transition: width var(--duration-base) var(--ease-soft);
+}
+
+.st-list-header--searching .st-list-header-name {
+  flex: 0 1 auto;
+  max-width: 34%;
+  font-size: 15px;
+}
+.st-list-search-field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  min-height: 36px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+
+/* The one door in the head (§5): 36px round in a 44px hit, quiet until it is the surface. */
+.st-list-search-btn {
+  position: relative;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.st-list-search-btn::after {
+  content: '';
+  position: absolute;
+  inset: -4px; /* 36 + 2×4 = 44px hit */
+}
+.st-list-search-btn:active {
+  background: var(--surface-hover);
+}
+.st-list-search-glyph {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+/* 16px, not a hair under: iOS zooms the whole page into any input below it, and this one sits in
+   the head — a zoom here would take the list with it the moment the keyboard opens. */
+.st-list-search-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  background: none;
+  outline: none;
+  font-family: var(--font-body);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* ---- Notice row: a quiet full-width line under the header (e.g. the anon sign-in nudge). It is
+   the plaque nudge's list-view home (X8 L1) — static above the scroller, one tap, ≥44px. ---- */
+.st-list-notice {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 8px 12px 0;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-sm);
+  color: var(--color-brand);
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+.st-list-notice-text {
+  flex: 1;
+  min-width: 0;
+}
+.st-list-notice-chevron {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+/* ---- The way back (§10): every explore primitive moves the finger hundreds of rows, so a jump
+   leaves one level of "back" behind — an invitation in the TOP transient lane, off the verb rail
+   and clear of the undo lane, naming where it returns to. The lane RESERVES its strip rather than
+   floating over the scroller: a chip hovering over live rows eats their taps, and the row it would
+   cover is the one the eye just arrived at. ---- */
+.st-list-backlane {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
+  padding: 8px 12px 0;
+}
+.st-list-back {
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-md);
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  animation: st-list-back-in 180ms var(--ease-soft);
+}
+.st-list-back:active {
+  background: var(--surface-hover);
+}
+.st-list-back-arrow {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+.st-list-back-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- The one scroller. Its bottom clears the action lane by what the lane measured itself to
+   occupy (§5) — the host sets --lane-inset; the fallback only covers the frame before it does —
+   plus a row's worth of air, so the last step never kisses the pill. ---- */
+.st-list-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: var(--space-2) 0 calc(var(--lane-inset, 132px) + var(--space-3));
+}
+
+/* ---- The lens (§4): the legend as a filter row, and the first thing in the scroller — content,
+   not a band above the fold, so it scrolls away like everything else. Scrolls horizontally with
+   momentum and no visible bar; the held chip wears its kind's ring AND a check, because colour
+   alone is unreadable on a dark surface where the ring hues have no dark palette. The 5px of top
+   padding is the chip's overflowing hit box: `overflow-x: auto` makes `overflow-y` auto too, and
+   without the room the 44px target is clipped to 43px. ---- */
+.st-list-lens {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px 10px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.st-list-lens::-webkit-scrollbar {
+  display: none;
+}
+.st-list-kindchip {
+  position: relative;
+  flex-shrink: 0;
+  max-width: 70%; /* two long legend names must not push `All` off the edge with no hint of scroll */
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--surface-card);
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.st-list-kindchip::after {
+  content: '';
+  position: absolute;
+  inset: -5px 0; /* 34 + 2×5 = 44px hit, without stretching the row */
+}
+.st-list-kindchip:active {
+  background: var(--surface-hover);
+}
+.st-list-kindchip.is-on {
+  border-color: var(--k-ring, var(--color-bark));
+  background: var(--surface-card);
+  box-shadow: inset 0 0 0 2px var(--k-ring, var(--color-bark));
+  color: var(--text-primary);
+}
+.st-list-kindchip-held {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-primary);
+}
+.st-list-kindchip-dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-full);
+  background: var(--k-base);
+  box-shadow: inset 0 0 0 1.5px var(--k-ring);
+}
+
+/* ---- Next-up shelf: ≤3 ready steps as full-bleed rows (audit fix 3) — a card border inside a
+   card was a rounded box in a rounded box, and three pills hugging three strings left a ragged
+   edge with nowhere for the consequence line to go. Two rules and 54px rows instead. ---- */
+.st-list-nextup {
+  margin: 0 0 10px;
+  padding: 0 0 2px;
+  background: var(--surface-card);
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.st-list-nextup-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 9px var(--space-4) 5px;
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+/* The readout and the consequence line carry the shelf's whole point (audit fix 3), so neither
+   can be the dimmest thing on it — tertiary on a card measures 3.84:1. */
+.st-list-nextup-ready {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.st-list-nextup-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 54px;
+  padding: 6px var(--space-4);
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-body);
+}
+.st-list-nextup-row:active {
+  background: var(--surface-hover);
+}
+.st-list-nextup-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.st-list-nextup-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.st-list-nextup-unlocks {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+.st-list-nextup-chevron {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+/* ---- Branch head: a row like any other (it IS the section, §2), reading as a heading, with the
+   fold on the trailing edge so the fruit stays in the one column every row shares ---- */
+.st-list-row--head {
+  margin-top: 6px;
+}
+.st-list-row--head .st-list-name {
+  font-size: 14.5px;
+}
+.st-list-fold {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  margin: -10px -12px -10px 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.st-list-chevron {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  transition: transform 180ms var(--ease-standard);
+}
+.st-list-chevron--open {
+  transform: rotate(90deg);
+}
+.st-list-sec-count {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+
+/* ---- Row: the seat (fruit) · the opener (name · one meta fact) · the fold, on branch heads.
+   Three targets, one line — the line itself is only their carrier and the swipe's canvas. ---- */
+.st-list-row {
+  position: relative;
+  display: block;
+  border-radius: 13px;
+}
+.st-list-row--expanded {
+  margin: 3px 8px;
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-md);
+}
+.st-list-row-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 6px var(--space-4) 6px calc(var(--space-4) + var(--indent, 0px));
+  border: 0;
+  border-radius: 13px;
+  background: transparent;
+  text-align: left;
+  font-family: var(--font-body);
+  /* A held row must not raise the native long-press callout or select its own text (M5). */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.st-list-row-line:active {
+  background: var(--surface-hover);
+}
+.st-list-row--expanded .st-list-row-line:active {
+  background: transparent;
+}
+/* The opener: everything between the fruit and the fold, and the row's own tap target (§3). */
+.st-list-row-open {
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-body);
+}
+.st-list-name-group {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.st-list-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+/* A locked step's name is still its own name (audit fix 7): tertiary is the meta token and fails
+   the contrast floor on the most numerous row type there is. Tier is carried by the fruit. */
+.st-list-name--locked {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.st-list-crown {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.st-list-meta {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+
+/* ---- Under a filter (§4): a section keeps its head so depth survives, dimmed when the head
+   itself missed; a row that matched on its description alone carries the fragment; and what the
+   filter left out waits behind one muted, tappable count rather than vanishing.
+   Scaffolding is said with WEIGHT, never with the meta token and never with opacity: this rule
+   outranks .st-list-name--locked, so tertiary here would put back the 3.5:1 failure audit fix 7
+   exists to remove, on the most numerous head under any filter — and opacity is the same failure
+   by another route (secondary at 0.85 measures 3.8–4.4:1 on these surfaces, 0.9 barely 4.6). ---- */
+.st-list-section--scaffold > .st-list-row--head .st-list-name {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.st-list-name-line {
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.st-list-name-group--snippet {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.st-list-snippet {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+.st-list-more {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  width: 100%;
+  padding: 4px var(--space-4) 4px calc(var(--space-4) + 34px + var(--indent, 0px));
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.st-list-more:active {
+  background: var(--surface-hover);
+}
+.st-list-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 32px var(--space-4);
+  font-size: 13px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+.st-list-empty-clear {
+  min-height: 44px;
+  padding: 0 8px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-brand-hover);
+}
+
+/* ---- The seat: the fruit IS the control (§6), so its 24px of state carries a 44px hit. The hit
+   is a pseudo-element so it costs the row no layout, and it takes the layer above its neighbours
+   so the opener beside it can never steal the finger. ---- */
+.st-list-seat {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.st-list-seat::after {
+  content: '';
+  position: absolute;
+  inset: -10px;
+}
+
+/* ---- Fruit: the kind × state treatment (24px) ---- */
+.st-list-fruit {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.st-list-fruit--done {
+  background: var(--k-base);
+  box-shadow: 0 0 7px var(--k-glow);
+  color: #fff;
+}
+.st-list-fruit--ready {
+  background: var(--surface-card);
+  box-shadow: inset 0 0 0 2.5px var(--k-ring);
+}
+.st-list-fruit--active {
+  background: var(--surface-card);
+  box-shadow: inset 0 0 0 2.5px var(--k-ring), 0 0 7px var(--k-glow);
+}
+.st-list-fruit--locked {
+  background: color-mix(in srgb, var(--k-base) 18%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--k-base) 35%, transparent);
+}
+
+/* ---- Check seat: the fruit's multi-select stand-in (M5) — bark, the selection tool's colour ---- */
+.st-list-check {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--border-default);
+}
+.st-list-check--on {
+  background: var(--color-bark);
+  box-shadow: none;
+  color: #fff;
+}
+
+/* ---- Expanded card interior ---- */
+.st-list-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 2px var(--space-4) 14px calc(var(--space-4) + var(--indent, 0px));
+  animation: st-list-card-in 150ms var(--ease-soft);
+}
+.st-list-desc {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+/* ---- The gate (§4): a locked step's own block — what it is waiting on, what you can start now,
+   and, when the data really is a line, the breadcrumb instead. The chips inside are ordinary jump
+   chips, so the frontier reads exactly like Needs and Unlocks do. ---- */
+.st-list-why {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+}
+.st-list-why-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.st-list-why-line {
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+.st-list-why-depth {
+  color: var(--text-secondary);
+}
+/* Chip hit boxes overhang their rows by 5px, so a wrapped line needs more than that between
+   rows or the sliver between two chips belongs to whichever came first in the DOM. */
+.st-list-trace {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 6px;
+}
+.st-list-trace-sep {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.st-list-trace-self {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+.st-list-hairline {
+  height: 1px;
+  margin: 2px 0;
+  background: var(--border-subtle);
+}
+.st-list-dag {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.st-list-dag-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.st-list-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px var(--space-2);
+}
+
+/* ---- Chips: next-up (fruit) + jump (11px state dot); ≥34px visual, 44px hit ---- */
+.st-list-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  max-width: 100%;
+  padding: 0 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--surface-card);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.st-list-chip::after {
+  content: '';
+  position: absolute;
+  inset: -5px 0;
+}
+.st-list-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-list-dot {
+  flex-shrink: 0;
+  width: 11px;
+  height: 11px;
+  border-radius: var(--radius-full);
+}
+.st-list-dot--done {
+  background: var(--k-base);
+}
+.st-list-dot--ready {
+  background: var(--surface-card);
+  box-shadow: inset 0 0 0 2px var(--k-ring);
+}
+.st-list-dot--active {
+  background: var(--surface-card);
+  box-shadow: inset 0 0 0 2px var(--k-ring), 0 0 5px var(--k-glow);
+}
+.st-list-dot--locked {
+  background: color-mix(in srgb, var(--k-base) 18%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--k-base) 35%, transparent);
+}
+
+/* ---- View switch pill: a tool, never a kind — bark, not a hue. The action lane places it. ---- */
+.st-list-viewpill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-md);
+}
+.st-list-viewpill-seg {
+  width: 46px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.st-list-viewpill-fill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+  transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+}
+.st-list-viewpill-seg[data-active="true"] .st-list-viewpill-fill {
+  background: var(--color-bark);
+  color: #fff;
+}
+
+/* ============================================================================
+   The edit path (X8 L3/L4) — every rule below is owner-only; the visitor render
+   above is untouched. Transient surfaces (the bud, the fields, the swatch row,
+   the picker) are born in place and read the same tokens as the read view.
+   ============================================================================ */
+
+/* ---- Swipe-to-done: an olive band with a check waits under the row; the line rides an opaque
+   surface over it, so the band shows only as the finger draws the line right. ---- */
+.st-list-swband {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding-left: 22px;
+  border-radius: 13px;
+  background: var(--color-success);
+  color: #fff;
+}
+.st-list-row-line--swipe {
+  position: relative;
+  z-index: 1;
+  background: var(--surface-canvas);
+  will-change: transform;
+}
+.st-list-row--swiping {
+  overflow: hidden;
+}
+
+/* ---- Edit field: the edit path's one input (rename · describe · bud). The lookup's field lives
+   in the head and writes nothing, so it shares none of this. ---- */
+.st-list-row-line--editing {
+  cursor: default;
+}
+.st-list-field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.st-list-input {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1.5px solid var(--color-brand);
+  border-radius: var(--radius-sm);
+  background: var(--surface-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  font-weight: 600;
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-brand-soft);
+}
+.st-list-input--area {
+  resize: none;
+  line-height: 1.5;
+  font-weight: 400;
+}
+/* On a phone the list IS the editing surface, and iOS zooms the whole page into any focused input
+   under 16px — so a rename or describe here would yank the viewport the moment the keyboard opens.
+   Floor it at 16px only where the keyboard is the concern; the desktop workbench keeps its tighter
+   rhythm. Covers the describe textarea too (--area doesn't override the size). */
+@media (max-width: 743px) {
+  .st-list-input {
+    font-size: 16px;
+  }
+}
+.st-list-hint {
+  padding-left: 2px;
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+/* ---- The bud: a step named before it exists — a dashed ring fruit in the parent's hue ---- */
+.st-list-fruit--bud {
+  background: color-mix(in srgb, var(--k-base) 10%, transparent);
+  border: 1.5px dashed var(--k-ring);
+}
+
+/* ---- Expanded title: the name becomes a rename target with a pencil riding it ---- */
+.st-list-name-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-body);
+}
+.st-list-pencil {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+/* ---- Describe: the description block is a tap target, placeholder when empty ---- */
+.st-list-desc-edit {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-body);
+}
+.st-list-desc-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.st-list-desc-edit--empty .st-list-desc-text {
+  color: var(--text-tertiary);
+}
+
+/* ---- Verbs: Mark done is the one kind-tinted button; the rest are quiet bark ---- */
+.st-list-verbs {
+  display: flex;
+  gap: var(--space-2);
+}
+.st-list-verb {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 11px;
+  background: var(--surface-card);
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.st-list-verb--done {
+  border-color: var(--k-ring);
+  background: var(--k-base);
+  color: #fff;
+  box-shadow: 0 2px 12px var(--k-glow);
+}
+
+/* ---- The structural edits (P3, §1): a quiet wrapping strip at the card's foot — add · connect ·
+   recolor · delete. Available, never featured; the delete carries its cost and takes the last
+   line to itself so the cost is read before the tap (§8). ---- */
+.st-list-edits {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.st-list-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.st-list-foot-dot {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-full);
+}
+.st-list-edit-del {
+  margin-left: auto;
+  color: var(--color-danger);
+}
+
+/* ---- Recolor swatch row: swaps the foot; 34px kind circles, current ringed, 44px hits ---- */
+.st-list-swatches {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.st-list-swatch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.st-list-swatch-hit {
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.st-list-swatch {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-full);
+  box-shadow: 0 0 0 1px var(--border-default);
+}
+.st-list-swatch--on {
+  box-shadow: 0 0 0 3px var(--text-primary);
+}
+
+/* ---- Add-a-need ghost chip + the add-step ghost row ---- */
+.st-list-chip--add {
+  gap: 4px;
+  border-style: dashed;
+  color: var(--color-bark);
+}
+.st-list-addrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin: 2px 8px;
+  padding: 6px var(--space-4) 6px calc(var(--space-4) + var(--indent, 0px));
+  border: 1px dashed color-mix(in srgb, var(--color-bark) 40%, transparent);
+  border-radius: 11px;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--color-bark);
+}
+
+/* ---- Press feedback: every new control answers a tap with the list's surface-press treatment,
+   the same one the rows and picker rows already use. ---- */
+.st-list-verb:active,
+.st-list-edit-btn:active,
+.st-list-addrow:active,
+.st-list-name-btn:active,
+.st-list-desc-edit:active,
+.st-list-swatch-hit:active,
+.st-list-chip--add:active,
+.st-list-picker-close:active {
+  background: var(--surface-hover);
+}
+
+/* ---- The need picker: a half-sheet over a scrim, portalled above the pill/chrome (below the
+   fork door z100 and the undo toast z50) so a mid-modal view flip is impossible. ---- */
+.st-list-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: flex;
+  align-items: flex-end;
+  background: var(--surface-overlay);
+  opacity: 0;
+  transition: opacity 200ms var(--ease-soft);
+}
+.st-list-scrim.is-open {
+  opacity: 1;
+}
+.st-list-picker {
+  width: 100%;
+  max-height: 72%;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-card);
+  border-top-left-radius: 26px;
+  border-top-right-radius: 26px;
+  box-shadow: var(--shadow-lg);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  transform: translateY(100%);
+  transition: transform 280ms var(--ease-soft);
+  will-change: transform;
+}
+.st-list-picker.is-up {
+  transform: translateY(0);
+}
+.st-list-picker:not(.is-up) {
+  pointer-events: none; /* rising or descending: no row can link a second need mid-slide (a scrim tap still closes) */
+}
+.st-list-picker-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 16px var(--space-4) 10px;
+}
+.st-list-picker-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text-primary);
+}
+.st-list-picker-close {
+  position: relative;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--surface-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.st-list-picker-close::after {
+  content: '';
+  position: absolute;
+  inset: -5px; /* 34px + 2×5 = 44px hit */
+}
+.st-list-picker-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 var(--space-4) 8px;
+  padding: 0 12px;
+  min-height: 40px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+.st-list-picker-search-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+.st-list-picker-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  outline: none;
+  font-family: var(--font-body);
+  font-size: 16px; /* under 16px iOS zooms the page on focus, and a search field is where it shows */
+  color: var(--text-primary);
+}
+.st-list-picker-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 4px var(--space-3) 12px;
+}
+.st-list-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 46px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-body);
+}
+.st-list-picker-row:active {
+  background: var(--surface-hover);
+}
+.st-list-picker-row--loop {
+  opacity: 0.45;
+  cursor: default;
+  pointer-events: none;
+}
+.st-list-picker-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.st-list-picker-tag {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.st-list-picker-empty {
+  padding: 20px var(--space-3);
+  font-size: 13px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+/* ---- The tree switcher (X8 L6): the same portalled half-sheet shell as the picker (it reuses
+   .st-list-scrim + .st-list-picker for the rise, scrim fade, pointer-events and reduced-motion
+   fallback), with rows carrying the plaque facts and a ghost plant row pinned at the foot. ---- */
+.st-switcher-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-body);
+}
+.st-switcher-row:active {
+  background: var(--surface-hover);
+}
+.st-switcher-row--current {
+  background: var(--color-brand-soft);
+}
+.st-switcher-dot {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-full);
+  background: var(--k-base);
+  box-shadow: inset 0 0 0 1.5px var(--k-ring);
+}
+.st-switcher-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.st-switcher-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.st-switcher-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.st-switcher-count {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.st-switcher-bar {
+  flex-shrink: 0;
+  width: 56px;
+  height: 5px;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+.st-switcher-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: linear-gradient(90deg, var(--k-soft), var(--k-base));
+}
+.st-switcher-when {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-switcher-lineage {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.st-switcher-plant {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% - 24px);
+  margin: 4px 12px;
+  min-height: 48px;
+  padding: 0 12px;
+  border: 1px dashed color-mix(in srgb, var(--color-bark) 40%, transparent);
+  border-radius: 11px;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--color-bark);
+}
+.st-switcher-plant:active {
+  background: var(--surface-hover);
+}
+.st-switcher-plant-glyph {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+/* The public-wall door — beneath your own trees, the one entrance to #/browse. Solid, not the
+   plant row's dashed bud: it navigates away rather than creating, and the arrow says so. No
+   count (og-tree-cards build-findings §1 — no vanity numbers on the door). */
+.st-switcher-public {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% - 24px);
+  margin: 0 12px 8px;
+  min-height: 48px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 11px;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  -webkit-tap-highlight-color: transparent;
+}
+.st-switcher-public:active {
+  background: var(--surface-hover);
+}
+.st-switcher-public-glyph {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+.st-switcher-public-label {
+  flex: 1;
+  text-align: left;
+}
+.st-switcher-public-arrow {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+/* Reduced motion: the picker rises as a fade, not a slide (opacity only); the scrim already
+   is opacity, the swipe stays finger-driven, and the bud flash stays a color ramp. */
+@media (prefers-reduced-motion: reduce) {
+  .st-list-picker {
+    transform: none !important;
+    opacity: 0;
+    transition: opacity 200ms var(--ease-soft) !important;
+  }
+  .st-list-picker.is-up {
+    opacity: 1;
+  }
+}
+
+/* ---- Motion: the jump flash and the accordion fade (both survive reduced motion) ---- */
+@keyframes st-list-flash {
+  from { background-color: var(--color-brand-soft); }
+  to { background-color: transparent; }
+}
+@keyframes st-list-card-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes st-list-back-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
+}
+.st-list-row--flash {
+  animation: st-list-flash 1200ms var(--ease-standard);
+}
+/* A collapsed available row wears an opaque swipe line over the row's flash background, so the
+   line itself must ramp — otherwise the planted-bud flash is invisible on exactly these rows. */
+.st-list-row--flash .st-list-row-line--swipe {
+  animation: st-list-flash 1200ms var(--ease-standard);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The design keeps the color ramps under reduced motion (they read, they don't move);
+     it drops only the smooth scroll (handled in JS) and the movement transitions below. */
+  .st-list-row--flash {
+    animation: st-list-flash 1200ms var(--ease-standard) !important;
+  }
+  .st-list-row--flash .st-list-row-line--swipe {
+    animation: st-list-flash 1200ms var(--ease-standard) !important;
+  }
+  .st-list-card {
+    animation: st-list-card-in 150ms var(--ease-soft) !important;
+  }
+  /* The way back arrives as a fade, never a drop — the same opacity-only ramp the card uses. */
+  .st-list-back {
+    animation: st-list-card-in 150ms var(--ease-soft) !important;
+  }
+  /* Movement, dropped: the chevron still points the right way (rotate applies instantly, no
+     tween); the header/switcher progress fills snap to width. */
+  .st-list-chevron {
+    transition: none;
+  }
+  .st-list-header-fill,
+  .st-switcher-fill {
+    transition: none;
+  }
+}

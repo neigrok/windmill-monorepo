@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <!-- Brand chrome (cream / terracotta light theme) -->
+    <meta name="theme-color" content="#F9F5EB" />
+    <meta name="color-scheme" content="light" />
+
+    <!-- App identity -->
+    <meta name="application-name" content="Windmill" />
+    <meta name="author" content="Windmill" />
+    <meta name="format-detection" content="telephone=no" />
+
+    <!-- Icons + manifest (served from public/ at the site root; assets from the design system). -->
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <!-- meta:unfurl:start -->
+    <!-- The path-share seam (/t/:id): windmill_server rewrites everything between these
+         sentinels with a shared tree's own title, description, and url so the link unfurls
+         as itself for social scrapers. The root and any private or absent tree get this
+         block verbatim. The sentinels must survive the Vite build — the server keys on them. -->
+
+    <!-- Primary SERP + tab signals -->
+    <title>Windmill — Skill Tree Goal Tracker & Learning Roadmaps</title>
+    <meta
+      name="description"
+      content="Turn any goal or learning roadmap into an animated RPG skill tree. Finish a step, unlock the next branch. Free, no account — plant your first tree."
+    />
+
+    <!-- Indexing controls (the landing is the site root, so canonical is self-referencing) -->
+    <link rel="canonical" href="https://windmill.works/" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+
+    <!-- Open Graph (Facebook, LinkedIn, iMessage, Slack, Discord, WhatsApp) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Windmill" />
+    <meta property="og:title" content="Windmill — Any goal, as a skill tree" />
+    <meta
+      property="og:description"
+      content="Turn any plan — redecorating a room, learning to bake, training for a 10k, shipping a side project — into a living RPG skill tree. Finish a step, watch the next branch unlock. Public beta, no account needed."
+    />
+    <meta property="og:url" content="https://windmill.works/" />
+    <meta property="og:image" content="https://windmill.works/og-image.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="A hand-drawn RPG skill tree on a cream background with terracotta, gold, and sky nodes, the Windmill wordmark, and the tagline &ldquo;Any goal, as a skill tree.&rdquo;"
+    />
+    <meta property="og:locale" content="en_US" />
+
+    <!-- Twitter / X Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Windmill — Any goal, as a skill tree" />
+    <meta
+      name="twitter:description"
+      content="Turn any plan into a living RPG skill tree. Finish a step, watch the next branch unlock. Public beta — no account needed, your first tree lives in your browser."
+    />
+    <meta name="twitter:image" content="https://windmill.works/og-image.png" />
+    <meta
+      name="twitter:image:alt"
+      content="A hand-drawn RPG skill tree on a cream background with terracotta, gold, and sky nodes, the Windmill wordmark, and the tagline &ldquo;Any goal, as a skill tree.&rdquo;"
+    />
+    <!-- meta:unfurl:end -->
+
+    <!-- Structured data — static in <head> so it ships in the initial HTML response
+         (this is a client-rendered hash-routed SPA; runtime-injected JSON-LD is unreliable). -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://windmill.works/#website",
+            "url": "https://windmill.works/",
+            "name": "Windmill",
+            "description": "Any goal, as a skill tree. Windmill turns any plan — redecorating a room, learning to bake, training for a 10k, planning a side project — into a living RPG-style skill tree that unlocks as you finish each step.",
+            "inLanguage": "en",
+            "publisher": { "@id": "https://windmill.works/#organization" }
+          },
+          {
+            "@type": "Organization",
+            "@id": "https://windmill.works/#organization",
+            "name": "Windmill",
+            "url": "https://windmill.works/",
+            "logo": {
+              "@type": "ImageObject",
+              "@id": "https://windmill.works/#logo",
+              "url": "https://windmill.works/favicon.svg",
+              "caption": "Windmill"
+            },
+            "image": { "@id": "https://windmill.works/#logo" }
+          },
+          {
+            "@type": "SoftwareApplication",
+            "@id": "https://windmill.works/#app",
+            "name": "Windmill",
+            "url": "https://windmill.works/",
+            "description": "Windmill renders any roadmap or goal as an animated RPG skill tree. Map your plan, finish a step to ripen its fruit, and watch dependent branches light up. No account needed — your first tree lives in your browser — and every tree is a shareable, forkable page.",
+            "applicationCategory": "ProductivityApplication",
+            "operatingSystem": "Web browser",
+            "browserRequirements": "Requires a browser with WebGL2 support",
+            "image": "https://windmill.works/og-image.png",
+            "screenshot": "https://windmill.works/og-image.png",
+            "softwareVersion": "Public beta",
+            "isAccessibleForFree": true,
+            "featureList": [
+              "Turn any plan into a living RPG skill tree with real prerequisite logic",
+              "No account needed — your first tree lives in your browser",
+              "Share any tree as a page; anyone can fork a copy and grow their own",
+              "Speaks MCP so Claude, Cursor, or any agent can plant and tend a tree",
+              "Sign in once and your trees sync across phone and desktop",
+              "Authored developer learning paths adapted from roadmap.sh (CC BY-SA)"
+            ],
+            "offers": [
+              {
+                "@type": "Offer",
+                "name": "Free",
+                "price": "0",
+                "priceCurrency": "USD",
+                "availability": "https://schema.org/InStock",
+                "url": "https://windmill.works/pricing.html",
+                "description": "All of Windmill, free: unlimited trees and steps, private trees, the whole editor, paste import, sharing, forking, export, the MCP server with an API key, and a monthly allowance of AI tendings."
+              },
+              {
+                "@type": "Offer",
+                "name": "Windmill Pro",
+                "price": "12",
+                "priceCurrency": "USD",
+                "availability": "https://schema.org/InStock",
+                "url": "https://windmill.works/pricing.html",
+                "description": "A larger monthly allowance of tending — the AI that plants and reshapes your tree. Billed monthly, cancel any time, 30-day money-back guarantee."
+              }
+            ],
+            "publisher": { "@id": "https://windmill.works/#organization" }
+          },
+          {
+            "@type": "FAQPage",
+            "@id": "https://windmill.works/#faq",
+            "url": "https://windmill.works/",
+            "isPartOf": { "@id": "https://windmill.works/#website" },
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "Do I need an account to use Windmill?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "No. No account is needed to start — your first tree lives right in your browser. Sign in only when you want your trees to sync across devices."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "How much does Windmill cost?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Windmill is free — building, sharing, exporting, and keeping a tree private cost nothing, and no account is needed to start. The one paid thing is tending: the AI that plants and reshapes your tree for you. Every account gets a free monthly allowance; Windmill Pro is $12 a month for a larger one, billed monthly, cancellable any time, with a 30-day money-back guarantee. Nothing that is free today moves behind the paywall."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Does Windmill work on my phone and my computer?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. Sign in once and your trees follow you — check a step off on your phone and tend the branches at your desk."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Can Claude, Cursor, or other AI agents build trees for me?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. Windmill speaks MCP (Model Context Protocol), so Claude, Cursor, or any compatible agent can plant and tend a tree alongside you."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Can I share a tree with other people?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Every tree is a page. Send the link or post the picture, and anyone can fork a copy to grow their own version."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Are there ready-made learning paths for developers?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. Windmill ships nine starter quests with real prerequisite logic — including Frontend, Rust from zero, ML foundations, and Ship v1.0 — adapted from the roadmap.sh community maps (CC BY-SA)."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
+
+    <!-- Fonts are self-hosted via @fontsource and imported in src/styles/fonts.js
+         (no external request). Substitution choices: Baloo 2 (display) + Nunito
+         (body/UI) + JetBrains Mono (numeric) — swap for licensed brand fonts if available. -->
+  </head>
+  <body>
+    <!-- Static first paint for crawlers and no-JS visitors. React's createRoot().render()
+         replaces this on mount, so it is a pure fallback: it mirrors the rendered hero copy
+         (no cloaking) and gives search engines real, indexable body content on the one
+         crawlable URL. Inline-styled so it reads correctly before the CSS bundle loads. -->
+    <div id="root">
+      <main style="max-width: 720px; margin: 0 auto; padding: 72px 24px; text-align: center; font-family: system-ui, -apple-system, 'Nunito', sans-serif; color: #211B13;">
+        <h1 style="font-family: 'Baloo 2', system-ui, sans-serif; font-weight: 700; font-size: 44px; line-height: 1.07; margin: 0 0 16px;">
+          Any goal, as a skill tree
+        </h1>
+        <p style="font-size: 19px; line-height: 1.5; color: #4A4034; margin: 0 auto 28px; max-width: 560px;">
+          Windmill turns any plan — redecorating a room, learning to bake, training for a 10k,
+          or shipping a side project — into a living RPG skill tree. Finish one step and watch
+          the next branch unlock.
+        </p>
+        <p style="margin: 0 0 28px;">
+          <a href="#/app" style="display: inline-block; background: #BC6C42; color: #F9F5EB; font-weight: 700; padding: 12px 22px; border-radius: 12px; text-decoration: none;">Start your tree</a>
+          &nbsp;
+          <a href="#/t/t_9e407a96b5330ebe" style="display: inline-block; color: #211B13; font-weight: 700; padding: 12px 22px; text-decoration: none;">Try the live demo</a>
+        </p>
+        <p style="font-size: 14px; color: #6B5D4A; margin: 0 0 32px;">
+          No account needed — your first tree lives in your browser.
+        </p>
+        <p style="font-size: 15px; color: #4A4034; line-height: 1.6; margin: 0 0 32px;">
+          <strong>How it works:</strong> Map your plan → Finish a step → Watch it unlock.<br />
+          <strong>Starter developer paths</strong> adapted from roadmap.sh (CC BY-SA):
+          Frontend, Rust from zero, ML foundations, and Ship v1.0.
+        </p>
+        <p style="font-size: 15px; color: #4A4034; line-height: 1.6; margin: 0 0 24px;">
+          <strong>Pricing:</strong> free to build, share, and keep private — no card. Pay only for tending, the AI that builds your tree: $12/month for Windmill Pro, cancel any time, 30-day money-back guarantee.
+        </p>
+        <!-- The rendered footer is React's, which a crawler never runs. These same links live here
+             so pricing and the policies are reachable from the one crawlable URL without JavaScript. -->
+        <nav style="font-size: 14px; color: #6B5D4A;">
+          <a href="/pricing.html" style="color: #6B5D4A; margin: 0 10px;">Pricing</a>
+          <a href="/connect.html" style="color: #6B5D4A; margin: 0 10px;">Connect your AI tools</a>
+          <a href="/privacy.html" style="color: #6B5D4A; margin: 0 10px;">Privacy</a>
+          <a href="/terms.html" style="color: #6B5D4A; margin: 0 10px;">Terms</a>
+          <a href="/refunds.html" style="color: #6B5D4A; margin: 0 10px;">Refunds</a>
+          <a href="/changelog.html" style="color: #6B5D4A; margin: 0 10px;">Changelog</a>
+        </nav>
+      </main>
+    </div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

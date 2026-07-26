@@ -1,0 +1,202 @@
+/* Marketing landing page — ported verbatim from the design system's
+   ui_kits/marketing/index.html <style> block. The design references bare --kind-<hue>
+   vars (the six kind hues); this app names them --accent-<hue>-500, so the :root below
+   bridges the gap (values from theme.js NODE_COLORS). Everything else is the design's. */
+
+:root {
+  --kind-terracotta: #BC6C42;
+  --kind-olive:      #7D8C43;
+  --kind-gold:       #C4972F;
+  --kind-brick:      #A84E35;
+  --kind-sky:        #5F8494;
+  --kind-plum:       #8D4F83;
+}
+
+html, body { margin: 0; background: var(--surface-canvas); }
+html { scroll-behavior: smooth; }
+/* Text links wear the brand hue — but the solid Fork CTA (.fcta) is a button, not a link,
+   and this rule outranks .fcta's own color, so exclude it or its label goes terracotta-on-terracotta. */
+.wm-landing a:not(.fcta) { text-decoration: none; color: var(--color-brand); }
+.wm-landing a:not(.fcta):hover { color: var(--color-brand-hover); }
+.wrap { max-width: 1280px; margin: 0 auto; padding: 0 64px; box-sizing: border-box; }
+
+/* ---- node vocabulary (X1/X5 — physics per motion-language.md) ---- */
+.nd { position: absolute; transform: translate(-50%,-50%); border-radius: 50%; box-sizing: border-box; z-index: 2;
+      transition: background-color 280ms var(--ease-standard), border-color 280ms var(--ease-standard),
+                  box-shadow 280ms var(--ease-standard), opacity 280ms var(--ease-standard); }
+.nd-dim   { border: 2px solid rgba(var(--g),.32); background: rgba(var(--g),.22); }
+.nd-avail { border: 2.5px solid var(--ring); background: var(--neutral-0); cursor: pointer; }
+.nd-done  { border: 2.5px solid var(--ring); background: var(--fill);
+            box-shadow: 0 0 0 3px rgba(var(--g),.4), 0 0 16px rgba(var(--g),.4); }
+.nd--wake    { animation: wmWakeK 480ms var(--ease-soft) 1; }
+.nd--blossom { animation: wmBlossomK 480ms var(--ease-soft) 1; }
+.nd--echo    { animation: wmEchoK 2400ms var(--ease-glow) 1; }
+.nd--crown   { animation: wmCrownK 2400ms var(--ease-glow) infinite; }
+@keyframes wmWakeK { 0% { transform: translate(-50%,-50%) scale(1); } 55% { transform: translate(-50%,-50%) scale(1.02); }
+                     100% { transform: translate(-50%,-50%) scale(1); } }
+@keyframes wmBlossomK {
+  0%   { transform: translate(-50%,-50%) scale(1); }
+  45%  { transform: translate(-50%,-50%) scale(1.045); box-shadow: 0 0 0 5px rgba(var(--g),.5), 0 0 26px 6px rgba(var(--g),.5); }
+  100% { transform: translate(-50%,-50%) scale(1); box-shadow: 0 0 0 3px rgba(var(--g),.4), 0 0 16px rgba(var(--g),.4); } }
+@keyframes wmEchoK {
+  0%,100% { box-shadow: 0 0 0 0 rgba(var(--g),0); }
+  25%     { box-shadow: 0 0 0 5px rgba(var(--g),.42), 0 0 26px rgba(var(--g),.42); }
+  50%     { box-shadow: 0 0 0 2px rgba(var(--g),.12), 0 0 8px rgba(var(--g),.12); }
+  66%     { box-shadow: 0 0 0 4px rgba(var(--g),.30), 0 0 18px rgba(var(--g),.30); } }
+@keyframes wmCrownK {
+  0%,100% { box-shadow: 0 0 0 4px rgba(var(--g),.22), 0 0 22px 4px rgba(var(--g),.22); }
+  50%     { box-shadow: 0 0 0 6px rgba(var(--g),.34), 0 0 34px 8px rgba(var(--g),.34); } }
+.pre { opacity: 0 !important; }
+.ndlabel { position: absolute; transform: translate(-50%,0); font-weight: 700; color: var(--neutral-600);
+           font-family: var(--font-body); white-space: nowrap; z-index: 3; transition: opacity 150ms var(--ease-standard); }
+.ndlabel--dim { color: var(--neutral-400); font-weight: 600; }
+path.eb { transition: opacity 280ms var(--ease-standard), stroke 280ms var(--ease-standard), stroke-width 280ms var(--ease-standard); }
+
+/* ---- hero band: the live moat ---- */
+.heroBleed { margin: 44px calc(50% - 50vw) 0; }
+/* Reserve the exact height fit() assigns at runtime (HH=560, s=clamp(w/980,.60,1.08),
+   full-bleed width ≈ 100vw → 560*57.14% of vw) so the band doesn't collapse from 0
+   before JS mounts it. Matches wrap.style.height in treeScenes, so mounting = no shift (CLS). */
+.heroBleed > div { height: clamp(336px, 57.14vw, 605px); }
+.heroWrap { position: relative; overflow: hidden; }
+.heroStage { position: absolute; left: 50%; top: 0; transform-origin: top center; }
+.labels-off .ndlabel { opacity: 0; }   /* X5 §5: labels hide below 0.8× — zoomed out, the tree reads as fruit */
+.scrim-t, .scrim-b { position: absolute; left: 0; right: 0; z-index: 5; pointer-events: none; }
+.scrim-t { top: 0; height: 64px; background: linear-gradient(to bottom, rgba(249,245,235,.94), rgba(249,245,235,0)); }
+.scrim-b { bottom: 0; height: 108px; background: linear-gradient(to top, rgba(249,245,235,.94), rgba(249,245,235,0)); }
+.plq { position: absolute; left: max(24px, calc(50vw - 616px)); top: 20px; z-index: 6; display: flex; align-items: center; gap: 9px;
+       background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: 14px;
+       padding: 8px 14px 8px 11px; box-shadow: var(--shadow-sm); opacity: 0; transition: opacity 280ms var(--ease-standard); }
+.plq.in { opacity: 1; }
+.plq .kdot { width: 10px; height: 10px; border-radius: 50%; background: var(--kind-terracotta); }
+.plq .tn { font-family: var(--font-display); font-size: 14.5px; font-weight: 700; line-height: 1.15; color: var(--text-primary); }
+.plq .by { font-size: 11px; color: var(--text-tertiary); line-height: 1.25; font-family: var(--font-body); }
+.plq .by b { color: var(--text-secondary); }
+.plq .ct { font-family: var(--font-mono); }
+.wmk { position: absolute; right: max(24px, calc(50vw - 616px)); top: 22px; z-index: 6; font-family: var(--font-display);
+       font-size: 14px; font-weight: 800; color: var(--accent-terracotta-500); background: var(--surface-card);
+       border: 1px solid var(--border-subtle); border-radius: 999px; padding: 5px 13px; box-shadow: var(--shadow-xs); }
+.fcta { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 7; display: inline-flex;
+        align-items: center; gap: 8px; font-family: var(--font-body); font-size: 14px; font-weight: 800;
+        text-decoration: none; color: var(--text-on-accent); background: var(--color-brand); border: none; border-radius: 999px;
+        padding: 12px 22px; cursor: pointer; box-shadow: 0 3px 12px rgba(188,108,66,.35);
+        transition: background 150ms var(--ease-standard), transform 150ms var(--ease-standard); }
+.fcta:hover { background: var(--color-brand-hover); color: var(--text-on-accent); }
+.fcta:active { transform: translateX(-50%) scale(.97); }
+.fcta--echo { animation: wmCtaEchoK 2400ms var(--ease-glow) 1; }
+@keyframes wmCtaEchoK {
+  0%,100% { box-shadow: 0 3px 12px rgba(188,108,66,.35); }
+  25%     { box-shadow: 0 3px 12px rgba(188,108,66,.35), 0 0 0 6px rgba(188,108,66,.30), 0 0 26px rgba(188,108,66,.30); }
+  66%     { box-shadow: 0 3px 12px rgba(188,108,66,.35), 0 0 0 4px rgba(188,108,66,.20), 0 0 18px rgba(188,108,66,.20); } }
+.toastp { position: absolute; left: 50%; bottom: 84px; transform: translateX(-50%); background: var(--surface-inverse);
+          color: var(--neutral-50); font-family: var(--font-body); font-size: 13px; font-weight: 600; padding: 9px 18px;
+          border-radius: 999px; box-shadow: 0 4px 14px rgba(33,27,19,.3); white-space: nowrap; z-index: 10; opacity: 0;
+          transition: opacity 280ms var(--ease-soft); }
+.toastp b { color: var(--accent-gold-400); }
+.toastp.tin { opacity: 1; }
+
+/* ---- sections ---- */
+.eyebrow { font-family: var(--font-body); font-size: 12.5px; font-weight: 800; letter-spacing: .12em;
+           text-transform: uppercase; color: var(--color-brand); }
+.sectionTitle { font-family: var(--font-display); font-weight: 700; font-size: 38px; line-height: 1.12;
+                color: var(--text-primary); margin: 10px 0 12px; text-wrap: pretty; }
+.sectionSub { font-family: var(--font-body); font-size: 17px; line-height: 1.55; color: var(--text-secondary);
+              max-width: 560px; margin: 0; text-wrap: pretty; }
+.beats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 40px; }
+.beat { background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-xl);
+        padding: 20px; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+/* min-width:0 lets the card shrink to its column instead of the fixed BEAT_W scene forcing it wide;
+   mountBeat then zooms the scene to fit (see treeScenes fitBeat) so it scales rather than crops. */
+.beatStage { background: var(--surface-canvas); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
+             display: flex; align-items: center; justify-content: center; overflow: hidden; cursor: pointer; min-width: 0; }
+.beatNum { font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); }
+.beatTitle { font-family: var(--font-display); font-weight: 700; font-size: 20px; color: var(--text-primary); margin: 4px 0 6px; }
+.beatCopy { font-family: var(--font-body); font-size: 15px; line-height: 1.5; color: var(--text-secondary); margin: 0; }
+
+.paths { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-top: 40px; }
+.questCard { display: block; background: var(--surface-card); border: 1px solid var(--border-subtle);
+             border-radius: var(--radius-xl); overflow: hidden; box-shadow: var(--shadow-sm); opacity: .82;
+             transition: opacity 150ms var(--ease-standard), transform 150ms var(--ease-standard), box-shadow 150ms var(--ease-standard); }
+.questCard:hover { opacity: 1; transform: translateY(-2px); box-shadow: var(--shadow-md); color: inherit; }
+.questRule { height: 3px; }
+.questThumb { display: flex; align-items: center; justify-content: center; background: var(--surface-canvas);
+              border-bottom: 1px solid var(--border-subtle); overflow: hidden; }
+.questMeta { padding: 14px 16px 15px; display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; }
+.questTitle { font-family: var(--font-display); font-weight: 700; font-size: 17px; color: var(--text-primary); line-height: 1.2; }
+.questReadout { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-tertiary); margin-top: 5px; }
+.questDots { display: flex; gap: 4px; padding-bottom: 2px; }
+.questDots span { width: 8px; height: 8px; border-radius: 50%; }
+
+.trio { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 40px; }
+.trioItem { display: flex; flex-direction: column; gap: 12px; }
+.trioIcon { width: 44px; height: 44px; border-radius: var(--radius-lg); background: var(--color-brand-soft);
+            display: flex; align-items: center; justify-content: center; color: var(--color-brand-hover); }
+.trioTitle { font-family: var(--font-display); font-weight: 700; font-size: 19px; color: var(--text-primary); margin: 0; }
+.trioCopy { font-family: var(--font-body); font-size: 15px; line-height: 1.5; color: var(--text-secondary); margin: 0; }
+
+/* ---- build with your AI tools (F17) — names carry identity, no logos ---- */
+.aiPanel { margin-top: 40px; background: var(--surface-card); border: 1px solid var(--border-subtle);
+           border-radius: var(--radius-2xl); box-shadow: var(--shadow-sm); padding: 36px 40px;
+           display: grid; grid-template-columns: 1.05fr 1fr; gap: 44px; align-items: start; }
+.aiCol { min-width: 0; }
+.aiLabel { font-family: var(--font-body); font-size: 11px; font-weight: 800; letter-spacing: .07em;
+           text-transform: uppercase; color: var(--text-tertiary); margin: 0 0 14px; }
+.aiClients { display: flex; flex-wrap: wrap; gap: 8px; }
+.aiClient { font-family: var(--font-body); font-size: 14px; font-weight: 700; color: var(--text-secondary);
+            background: var(--surface-canvas); border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-full); padding: 7px 15px; white-space: nowrap; }
+.aiVerbs { display: flex; flex-direction: column; gap: 11px; }
+.aiVerb { display: inline-flex; align-items: center; gap: 11px; font-family: var(--font-body);
+          font-size: 15px; font-weight: 700; color: var(--text-primary); }
+.aiVerb i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.aiPromise { font-family: var(--font-body); font-size: 15px; line-height: 1.55; color: var(--text-secondary); margin: 22px 0 0; }
+.aiCant { font-family: var(--font-body); font-size: 14px; line-height: 1.5; color: var(--text-tertiary); margin: 8px 0 0; }
+.aiCta { margin-top: 24px; }
+
+.ctaBand { background: var(--color-brand-soft); border-radius: var(--radius-2xl); padding: 56px 40px; text-align: center;
+           display: flex; flex-direction: column; align-items: center; gap: 8px; }
+
+.navlinks { display: flex; gap: 32px; font-family: var(--font-body); font-weight: 700; font-size: 15px; }
+.navlinks a { color: var(--text-secondary); }
+.navlinks a:hover { color: var(--text-primary); }
+
+@media (max-width: 1023px) {
+  .wrap { padding: 0 40px; }
+  .beats { grid-template-columns: 1fr; gap: 16px; }
+  .beat { flex-direction: row; align-items: center; gap: 24px; }
+  .beat .beatStage { flex-shrink: 0; }
+  .paths { grid-template-columns: 1fr 1fr; }
+  .navlinks { gap: 22px; }
+}
+@media (max-width: 743px) {
+  .wrap { padding: 0 20px; }
+  .navlinks { display: none; }
+  .beat { flex-direction: column; align-items: stretch; }
+  .paths { grid-template-columns: 1fr; }
+  .trio { grid-template-columns: 1fr !important; gap: 32px; }
+  .aiPanel { grid-template-columns: 1fr; gap: 28px; padding: 28px 24px; }
+  .sectionTitle { font-size: 30px; }
+  .plq .tn { font-size: 13px; }
+  .ctaBand { padding: 40px 24px; }
+  /* Match fit()'s phone pad (treeScenes): +72px clear band below the tree for the Fork CTA. */
+  .heroBleed > div { height: calc(clamp(336px, 57.14vw, 605px) + 72px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .nd--crown, .nd--wake, .nd--blossom, .nd--echo, .fcta--echo { animation: none !important; }
+  .nd--crown { box-shadow: 0 0 0 5px rgba(var(--g),.28), 0 0 26px 5px rgba(var(--g),.28) !important; }
+}
+
+/* ---- accessibility helpers ---- */
+.skip-link {
+  position: absolute; left: 8px; top: -48px;
+  padding: 10px 16px; border-radius: var(--radius-md);
+  background: var(--surface-card); color: var(--text-primary);
+  font-family: var(--font-body); font-weight: 700; z-index: 1000;
+  transition: top .15s ease;
+}
+.skip-link:focus { top: 8px; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}

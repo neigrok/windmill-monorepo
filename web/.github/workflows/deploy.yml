@@ -1,0 +1,58 @@
+name: Deploy
+
+# Static Vite build → rsync to the VPS. The Caddy running for windmill-backend serves
+# ~/windmill/web at $DOMAIN_APP, so a deploy is just "build the assets and swap them in".
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - run: npm ci
+
+      # Single origin: the SPA and its API share one host (Caddy path-routes /v1, /mcp, /oauth to
+      # the server), so a production build resolves the backend as same-origin — no API host is
+      # baked in. apiBase.js derives it: empty base → relative fetch, socket → ws(s):// of the page.
+      # (Set VITE_API_BASE_URL only for a preview build that must reach a remote backend.)
+      - name: Build
+        env:
+          # The frontend Sentry DSN is public — it ships inside the client bundle either way — so it
+          # lives here as plain build config, not a secret. Rotate here if the Sentry project changes.
+          VITE_SENTRY_DSN: https://8ccb99ec79873a1f7ad27fb1939906d0@o4511760691953664.ingest.de.sentry.io/4511760715350096
+          # Stamp the build so Sentry groups + tracks errors by release (frames stay minified until
+          # source-map upload is added — a follow-up that needs a Sentry org auth token).
+          VITE_RELEASE: ${{ github.sha }}
+          # Paddle's client-side token is public by design (it ships in the bundle and only opens
+          # checkouts). The secret-bearing API key lives on the server, never here.
+          VITE_PADDLE_TOKEN: test_d4d8d13ce4ce20c7b43867bf800
+          VITE_PADDLE_ENV: sandbox
+        run: npm run build
+
+      - name: Rsync dist to the VPS
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$SSH_KEY" > deploy_key
+          chmod 600 deploy_key
+          SSH="ssh -i deploy_key -p ${SSH_PORT:-22} -o StrictHostKeyChecking=accept-new"
+          $SSH "$SSH_USER@$SSH_HOST" 'mkdir -p ~/windmill/web'
+          rsync -az --delete -e "$SSH" dist/ "$SSH_USER@$SSH_HOST:windmill/web/"

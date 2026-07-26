@@ -1,0 +1,21 @@
+WINDMILL
+
+PLANT YOUR COPY OF {{{tree_title}}}
+
+This link does two things: it signs you in to Windmill AND plants a
+copy of "{{{tree_title}}}" in your trees -- progress cleared, yours to grow.
+
+  {{{tree_title}}} · {{{tree_meta}}}
+
+Sign in & plant the copy:
+{{{magic_link}}}
+
+It works once and lasts 15 minutes. The copy waits for you -- nothing
+is planted until you tap.
+
+Didn't ask to fork this tree? You can ignore this email -- nothing
+happens until the link is used.
+
+--
+Sent because this address asked to fork a tree at windmill.works.
+Windmill · https://windmill.works

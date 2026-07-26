@@ -1,0 +1,20 @@
+# https://windmill.works/robots.txt
+# Windmill is a single-page app plus a few static pages (connect, privacy,
+# terms, changelog). connect.html is the crawlable MCP works-with page; the
+# interactive workbench lives at the #/connect hash route. Hash routes
+# (#/app, #/t/:id, #/connect, #/showcase, #/welcome) are URL fragments, never
+# sent to the server, so there is nothing per-route to allow or block.
+#
+# /gallery and /t/:id are server-rendered, not static files: the gallery lists
+# every tree its owner chose to list (as real anchors, which is how a crawler
+# reaches the trees at all), and each /t/:id share page carries that tree's own
+# meta. A tree that was never listed is `noindex` on its own page and appears
+# on no wall — being crawlable is the owner's choice, made in the share dialog.
+
+User-agent: *
+Allow: /
+
+# Do NOT disallow /assets/ — crawlers must fetch the JS/CSS bundles to
+# render the client-side landing page. Blocking them would hide all content.
+
+Sitemap: https://windmill.works/sitemap.xml
