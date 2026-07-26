@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App.jsx';
-import { ErrorBoundary } from './components/feedback/ErrorBoundary.jsx';
+import App from './shell/App.jsx';
+import { ErrorBoundary } from './design-system/feedback/ErrorBoundary.jsx';
 import { reportError } from './telemetry/beacon.js';
 import './styles/fonts.js';
 import './styles/global.css';

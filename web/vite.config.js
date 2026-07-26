@@ -1,19 +1,13 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { DEFAULT_KINDS, GENESIS_STAMP } from './src/skilltree/model/Legend.js';
+import { DEFAULT_KINDS, GENESIS_STAMP } from './src/products/roadmap/model/Legend.js';
+import { GENESIS_GOLDEN } from '../packages/api-contract/genesis.js';
 
 // anon-first-tree: a local-born tree's claim converges with the server's empty tree
 // ONLY while the frontend's genesis seed is byte-equal to the backend's
 // (Legend::seededDefaults + Hlc{1,0,"genesis"} — pinned there by TreeRegistryTest).
-// Drift would silently split legends on every local-born tree, so the build refuses.
-const GENESIS_GOLDEN = JSON.stringify({
-  stamp: '1:0:genesis',
-  kinds: [
-    { id: 'build', hue: 'terracotta', label: 'Build', description: 'Things you make' },
-    { id: 'learn', hue: 'olive', label: 'Learn', description: 'Things you figure out' },
-    { id: 'milestone', hue: 'gold', label: 'Milestone', description: 'Moments that matter' },
-  ],
-});
+// The golden now lives once in packages/api-contract/genesis.js (shared with the backend);
+// this build re-asserts the roadmap model still consumes exactly it, so a drift refuses.
 if (JSON.stringify({ stamp: GENESIS_STAMP, kinds: DEFAULT_KINDS }) !== GENESIS_GOLDEN) {
   throw new Error(
     'DEFAULT_KINDS/GENESIS_STAMP drifted from the backend genesis legend (Legend::seededDefaults, Hlc{1,0,"genesis"}) — change both repos together or local-born trees silently diverge.',
@@ -26,6 +20,10 @@ export default defineConfig({
   server: {
     port: 5173,
     open: false,
+    // The web app now imports the shared genesis legend from ../packages/api-contract, which
+    // lives outside this Vite root. Allow the dev server to serve web/ and the packages/ dir
+    // it reads from (the production build resolves these through Rollup regardless).
+    fs: { allow: ['.', '../packages'] },
   },
   build: {
     rollupOptions: {

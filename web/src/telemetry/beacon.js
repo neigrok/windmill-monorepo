@@ -3,7 +3,7 @@
 // sendBeacon. Fire-and-forget by contract: a failed send is silently dropped and
 // must never affect product behavior.
 
-import { API_BASE } from '../skilltree/apiBase.js';
+import { API_BASE } from '../shell/apiBase.js';
 import { captureError } from './sentry.js';
 
 const SESSION_KEY_STORAGE = 'windmill:beacon:key';

@@ -17,12 +17,12 @@ import {
   Dialog,
   Toast,
   Tabs,
-  SkillNode,
-  SkillConnector,
-  ProgressBar,
-} from './components/index.js';
-import { GalleryCard } from './skilltree/share/GalleryCard.jsx';
-import { ShareStats } from './skilltree/share/ShareStats.js';
+} from './design-system/index.js';
+import { SkillNode } from './products/roadmap/ui/tree/SkillNode.jsx';
+import { SkillConnector } from './products/roadmap/ui/tree/SkillConnector.jsx';
+import { ProgressBar } from './products/roadmap/ui/tree/ProgressBar.jsx';
+import { GalleryCard } from './products/roadmap/share/GalleryCard.jsx';
+import { ShareStats } from './products/roadmap/share/ShareStats.js';
 
 /* ------------------------------------------------------------------ *
  * Skill-tree demo — the signature Windmill metaphor.
@@ -473,7 +473,7 @@ export default function Showcase() {
 
         <p className="wm-footnote">
           Built with the <strong>Windmill Design System</strong> — tokens in{' '}
-          <code>src/styles/tokens/</code>, components in <code>src/components/</code>.
+          <code>src/styles/tokens/</code>, components in <code>src/design-system/</code>.
           Colors, type, and voice are a proposed <strong>v1</strong> direction (the system was
           authored without the real Windmill repo or brand assets) — swap in real tokens when available.
         </p>
