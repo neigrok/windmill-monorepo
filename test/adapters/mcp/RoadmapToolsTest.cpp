@@ -419,10 +419,98 @@ TEST(mcp_import_subgraph_applies_carried_progress_order_safe) {
   CHECK_FALSE(result.isError);
   const Json::Value imported = body(result);
   CHECK_EQ(imported["progress"].size(), 2u);
+  CHECK_FALSE(imported.isMember("progressSkipped"));  // every id resolved — no skip list on a clean run
   for (const Json::Value& row : imported["progress"])
     if (row["nodeId"].asString() == "b") CHECK(row["prerequisitesMet"].asBool());  // judged on final state
 
   CHECK_EQ(body(h.call("get_progress", kNoArgs))["completed"].size(), 2u);
+}
+
+// The batch contract (mcp-batch-contract): atomic against MALFORMED input — a repeated id changes
+// nothing and names both the offender and the row it repeats — while a merely untidy result (a
+// dangling progress reference) is surfaced, never refused.
+TEST(mcp_import_subgraph_refuses_a_repeated_node_id_and_writes_nothing) {
+  Harness h;
+  Json::Value nodes(Json::arrayValue);
+  nodes.append(node("a", "first"));
+  nodes.append(node("b", "B"));
+  nodes.append(node("a", "second"));  // the same id twice in one batch is ambiguous, not an upsert
+  Json::Value args(Json::objectValue);
+  args["nodes"] = nodes;
+
+  ToolResult result = h.call("import_subgraph", args);
+  CHECK(result.isError);
+  CHECK_EQ(message(result),
+           std::string("import_subgraph: nodes[2].id \"a\" is already used by nodes[0] — an id names "
+                       "one node per batch"));
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["nodes"].size(), 0u);  // atomic: nothing landed
+}
+
+TEST(mcp_import_subgraph_refuses_a_repeated_kind_id) {
+  Harness h;
+  Json::Value first(Json::objectValue);
+  first["id"] = "craft";
+  first["hue"] = "olive";
+  Json::Value second(Json::objectValue);
+  second["id"] = "craft";  // repeated id, a free hue — so only the id check can fire
+  second["hue"] = "sky";
+  Json::Value kinds(Json::arrayValue);
+  kinds.append(first);
+  kinds.append(second);
+  Json::Value args(Json::objectValue);
+  args["nodes"] = Json::Value(Json::arrayValue);
+  args["kinds"] = kinds;
+
+  ToolResult result = h.call("import_subgraph", args);
+  CHECK(result.isError);
+  CHECK_EQ(message(result),
+           std::string("import_subgraph: kinds[1].id \"craft\" is already used by kinds[0] — an id names "
+                       "one kind per batch"));
+}
+
+TEST(mcp_import_subgraph_reports_carried_progress_that_named_no_node) {
+  Harness h;
+  Json::Value nodes(Json::arrayValue);
+  nodes.append(node("a", "A"));
+  Json::Value progress(Json::arrayValue);
+  progress.append(mark("a", "complete"));
+  progress.append(mark("ghost", "active"));  // names no node the graft leaves behind
+  Json::Value args(Json::objectValue);
+  args["nodes"] = nodes;
+  args["progress"] = progress;
+
+  ToolResult result = h.call("import_subgraph", args);
+  CHECK_FALSE(result.isError);  // a dangling reference is surfaced, not refused
+  const Json::Value imported = body(result);
+  CHECK(imported["imported"].asBool());
+  CHECK_EQ(imported["progress"].size(), 1u);  // only the real mark applied
+  CHECK_EQ(imported["progress"][0]["nodeId"].asString(), std::string("a"));
+  CHECK_EQ(imported["progressSkipped"].size(), 1u);
+  CHECK_EQ(imported["progressSkipped"][0].asString(), std::string("ghost"));
+  CHECK_EQ(body(h.call("get_progress", kNoArgs))["completed"].size(), 1u);
+}
+
+TEST(mcp_import_subgraph_dry_run_previews_progress_that_would_skip) {
+  Harness h;
+  Json::Value nodes(Json::arrayValue);
+  nodes.append(node("a", "A"));
+  Json::Value progress(Json::arrayValue);
+  progress.append(mark("a", "complete"));  // arrives in this batch — would land
+  progress.append(mark("ghost", "active"));  // names nothing — would skip
+  Json::Value args(Json::objectValue);
+  args["nodes"] = nodes;
+  args["progress"] = progress;
+  args["dryRun"] = true;
+
+  ToolResult result = h.call("import_subgraph", args);
+  CHECK_FALSE(result.isError);
+  const Json::Value preview = body(result);
+  CHECK(preview["dryRun"].asBool());
+  CHECK_EQ(preview["progressSkipped"].size(), 1u);
+  CHECK_EQ(preview["progressSkipped"][0].asString(), std::string("ghost"));
+  CHECK_FALSE(preview.isMember("progress"));  // a preview applies nothing
+  CHECK_FALSE(preview.isMember("imported"));
+  CHECK_EQ(body(h.call("get_progress", kNoArgs))["completed"].size(), 0u);  // nothing written
 }
 
 TEST(mcp_set_progress_bulk_is_order_safe_and_reports_each) {

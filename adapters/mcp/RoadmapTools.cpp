@@ -598,7 +598,8 @@ ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::stri
 std::optional<std::string> applyProgressBatch(
     RoomRegistry& registry, ProgressService& progress, PresenceBus& bus, const TreeId& tree,
     Clock& clock, const UserId& user, const std::vector<std::pair<NodeId, ProgressStatus>>& requested,
-    bool rejectUnknown, Json::Value& results) {
+    bool rejectUnknown, Json::Value& results, Json::Value& skipped) {
+  skipped = Json::Value(Json::arrayValue);  // ids naming no node in the tree; the caller decides what to do with them
   std::vector<ProgressMark> marks;
   {
     std::lock_guard<std::mutex> lock(registry.strandFor(tree));
@@ -608,14 +609,19 @@ std::optional<std::string> applyProgressBatch(
     // prerequisite shape). Deny it exactly as an absent tree does: private ⇒ owner-only.
     if (!canRead(user, room.owner(), room.visibility()))
       throw std::runtime_error("no such tree \"" + tree.str() + "\"");
-    std::string unknown;
     for (const auto& [node, status] : requested) {
-      if (!room.hasNode(node)) { if (!unknown.empty()) unknown += ", "; unknown += node.str(); continue; }
+      if (!room.hasNode(node)) { skipped.append(node.str()); continue; }
       marks.push_back({node, status, room.prerequisitesOf(node), room.nextStamp(clock.nowMs())});
     }
-    if (rejectUnknown && !unknown.empty())
-      return "no node in this tree is named " + unknown +
+    // set_progress rejects an unknown id outright (a mark that names nothing is a caller mistake);
+    // an import's carried progress skips it and reports it in `skipped` instead, because the graft
+    // has already landed and a dangling reference is dirt to surface, not a reason to refuse.
+    if (rejectUnknown && !skipped.empty()) {
+      std::string names;
+      for (const Json::Value& id : skipped) { if (!names.empty()) names += ", "; names += id.asString(); }
+      return "no node in this tree is named " + names +
              ". Call get_tree with fields [\"id\",\"label\"] to list the ids this tree has.";
+    }
   }
 
   std::vector<ProgressOutcome> outcomes = progress.setStatuses(tree, user, marks);
@@ -671,10 +677,10 @@ ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, Pres
     requested.emplace_back(NodeId{node}, *parseProgressStatus(args["status"].asString()));
   }
 
-  Json::Value results;
+  Json::Value results, skipped;  // set_progress rejects unknowns, so on success `skipped` stays empty
   try {
     if (std::optional<std::string> error =
-            applyProgressBatch(registry, progress, bus, tree, clock, user, requested, true, results))
+            applyProgressBatch(registry, progress, bus, tree, clock, user, requested, true, results, skipped))
       return ToolResult::failure(*error);
   } catch (const std::exception& error) {
     return ToolResult::failure(error.what());
@@ -695,13 +701,23 @@ std::optional<std::string> checkImport(const Json::Value& args) {
   // because a legend-only or progress-only import is a real thing to want.
   if (args["nodes"].isNull())
     return "missing required argument \"nodes\". Pass \"nodes\": [] to import only kinds or progress.";
+  // Two incoming rows under one id is malformed, not an upsert: an upsert overwrites a TREE node
+  // (reported in nodeCollisions), but two definitions of the same id WITHIN one batch are ambiguous
+  // — which wins is order-dependent and invisible. So it's named and refused up front, before a
+  // byte is written, naming both the offender and the earlier row it repeats.
   if (std::optional<std::string> bad = optionalObjects(args["nodes"], "nodes")) return bad;
-  for (Json::ArrayIndex i = 0; i < args["nodes"].size(); ++i)
-    if (std::optional<std::string> bad =
-            checkImportedNode(args["nodes"][i], "nodes[" + std::to_string(i) + "]"))
-      return bad;
+  std::map<std::string, Json::ArrayIndex> nodeIdAt;
+  for (Json::ArrayIndex i = 0; i < args["nodes"].size(); ++i) {
+    const std::string path = "nodes[" + std::to_string(i) + "]";
+    if (std::optional<std::string> bad = checkImportedNode(args["nodes"][i], path)) return bad;
+    const auto [seen, fresh] = nodeIdAt.emplace(args["nodes"][i]["id"].asString(), i);
+    if (!fresh)
+      return path + ".id \"" + seen->first + "\" is already used by nodes[" +
+             std::to_string(seen->second) + "] — an id names one node per batch";
+  }
 
   if (std::optional<std::string> bad = optionalObjects(args["kinds"], "kinds")) return bad;
+  std::map<std::string, Json::ArrayIndex> kindIdAt;
   for (Json::ArrayIndex i = 0; i < args["kinds"].size(); ++i) {
     const std::string path = "kinds[" + std::to_string(i) + "]";
     if (std::optional<std::string> bad =
@@ -715,6 +731,10 @@ std::optional<std::string> checkImport(const Json::Value& args) {
     if (std::optional<std::string> bad = optionalString(args["kinds"][i]["description"],
                                                         path + ".description", kMaxKindDescriptionLength))
       return bad;
+    const auto [seen, fresh] = kindIdAt.emplace(args["kinds"][i]["id"].asString(), i);
+    if (!fresh)
+      return path + ".id \"" + seen->first + "\" is already used by kinds[" +
+             std::to_string(seen->second) + "] — an id names one kind per batch";
   }
 
   if (std::optional<std::string> bad = optionalObjects(args["progress"], "progress")) return bad;
@@ -814,6 +834,20 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
     out["newKinds"] = static_cast<int>(incoming.kinds.size()) - kindCollisions.size();
     if (dryRun) {  // report what would collide, change nothing (§7 dry-run)
       out["dryRun"] = true;
+      // A faithful preview says which carried progress rows won't land: those naming no node the
+      // graft would leave behind (present now, or arriving in this batch). Same set the real run
+      // reports in progressSkipped, computed here before anything is written.
+      if (args["progress"].isArray()) {
+        std::set<std::string> afterGraft = presentNodes;
+        for (const NodeSpec& n : incoming.nodes) afterGraft.insert(n.id.str());
+        Json::Value skipped(Json::arrayValue);
+        for (const Json::Value& u : args["progress"]) {
+          const Json::Value& handle =
+              u[kNodeHandle.published].isNull() ? u[kNodeHandle.alias] : u[kNodeHandle.published];
+          if (!afterGraft.count(handle.asString())) skipped.append(handle.asString());
+        }
+        if (!skipped.empty()) out["progressSkipped"] = skipped;
+      }
       return ToolResult::json(out);
     }
 
@@ -837,9 +871,16 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
     requested.emplace_back(NodeId{handle.asString()}, *parseProgressStatus(u["status"].asString()));
   }
   if (!requested.empty()) {
-    Json::Value results;
-    applyProgressBatch(registry, progress, bus, tree, clock, actor, requested, false, results);  // skip unknowns
-    grafted.payload["progress"] = results;
+    // The graft has already committed. A throw from the progress overlay here — only a concurrent
+    // deletion of the tree between the two strand locks can cause one — must not escape to
+    // callTool's generic catch, which would answer "nothing was changed": false, the graft landed.
+    // Keep the graft's own receipt honest by catching it; the overlay is best-effort.
+    try {
+      Json::Value results, skipped;
+      applyProgressBatch(registry, progress, bus, tree, clock, actor, requested, false, results, skipped);
+      grafted.payload["progress"] = results;
+      if (!skipped.empty()) grafted.payload["progressSkipped"] = skipped;  // named, not silently swallowed
+    } catch (const std::exception&) { /* the graft stands; the carried progress simply didn't land */ }
     return ToolResult::json(grafted.payload);
   }
   return grafted;
@@ -1248,20 +1289,23 @@ Json::Value RoadmapTools::listTools() const {
                           nodeFields, {"id"});
     p["kinds"] = objArray("Optional legend kinds. Omit to leave the legend untouched.",
                           kindFields, {"id", "hue"});
-    p["progress"] = objArray("Optional carried progress, applied over the imported nodes (unknown ids "
-                             "skipped). `nodeId` here names a node that exists once the import lands.",
+    p["progress"] = objArray("Optional carried progress, applied over the imported nodes. `nodeId` here "
+                             "names a node that exists once the import lands; a row naming none is "
+                             "reported back in progressSkipped, not silently dropped.",
                              progressFields, {"nodeId", "status"});
-    p["dryRun"] = boolean("If true, report collisions and change nothing.");
+    p["dryRun"] = boolean("If true, report collisions (and any progressSkipped) and change nothing.");
     tools.append(tool("import_subgraph",
         "Bulk-apply a whole roadmap slice — the shape get_tree returns ({nodes[], kinds[]}, plus an "
         "optional progress[]); to copy a tree faithfully, read it with every field named in `fields` "
         "first, since get_tree answers with a projection — but a node carries `seedStatus`, never "
         "`status`: that one is your own mark, and travels in progress[]. The graft is ONE op; a "
-        "carried progress[] is applied after it as ordinary overlay writes. Upsert by id: an "
-        "incoming id already present is overwritten (reported in nodeCollisions/kindCollisions), a "
-        "new id is added; nothing is removed, and the tree's title is not touched. Pass dryRun to "
-        "preview the collisions and change nothing. This collapses hundreds of create/connect "
-        "calls into one.",
+        "carried progress[] is applied after it as ordinary overlay writes. The batch is atomic "
+        "against malformed input — a bad field or a repeated id changes nothing and names the "
+        "offending element — but never against a merely untidy result (a dangling edge lands and is "
+        "reported in introducedDiagnostics). Upsert by id: an incoming id already present is "
+        "overwritten (reported in nodeCollisions/kindCollisions), a new id is added; nothing is "
+        "removed, and the tree's title is not touched. Pass dryRun to preview the collisions and "
+        "change nothing. This collapses hundreds of create/connect calls into one.",
         p, {"treeId", "nodes"}));
   }
   {

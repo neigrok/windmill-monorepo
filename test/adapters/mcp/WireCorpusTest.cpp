@@ -21,7 +21,7 @@ namespace {
 // not the compiler, that catches "same version, different bytes". What the byte-compare itself
 // catches is the change that compiles green and still moves the wire — pqxx row_ref/row, jsoncpp's
 // infinity, a projection that quietly grows a field.
-constexpr int kWireCorpusVersion = 1;
+constexpr int kWireCorpusVersion = 2;  // v2: import_subgraph's receipt gained progressSkipped
 
 // One move in the plan: a tool and its arguments. The harness fills treeId.
 struct Step {
@@ -97,6 +97,16 @@ std::vector<Step> plan() {
                                   return array;
                                 }()},
                                {"dryRun", true}})},
+      // A progress-only import (nodes: []) whose carried progress names one node in the tree (root)
+      // and one that isn't (ghost): the batch contract lands the first and reports the second in
+      // progressSkipped, never silently. Pins that receipt shape on the wire without touching a node.
+      {"import_subgraph", obj({{"nodes", Json::Value(Json::arrayValue)},
+                               {"progress", [] {
+                                  Json::Value array(Json::arrayValue);
+                                  array.append(mark("root", "complete"));
+                                  array.append(mark("ghost", "active"));
+                                  return array;
+                                }()}})},
       {"find_nodes", with("query", "render")},
       {"get_tree", obj({{"fields", strings({"id", "label", "icon", "color", "order", "prerequisites",
                                             "position", "status", "seedStatus", "description",
