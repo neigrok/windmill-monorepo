@@ -1,16 +1,25 @@
-name: Deploy
+name: Web Deploy
 
-# Static Vite build → rsync to the VPS. The Caddy running for windmill-backend serves
-# ~/windmill/web at $DOMAIN_APP, so a deploy is just "build the assets and swap them in".
+# Monorepo: the web superapp lives under web/. Static Vite build → rsync to the VPS,
+# where the same Caddy that fronts the backend serves ~/windmill/web at $DOMAIN_APP.
+# Path-filtered so a backend-only change never redeploys the web assets.
 
 on:
   push:
     branches: [main]
+    paths:
+      - 'web/**'
+      - 'packages/**'
+      - '.github/workflows/web.yml'
   workflow_dispatch:
 
 concurrency:
-  group: deploy-${{ github.ref }}
+  group: web-deploy-${{ github.ref }}
   cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: web
 
 jobs:
   build-and-deploy:
@@ -22,6 +31,7 @@ jobs:
         with:
           node-version: "20"
           cache: npm
+          cache-dependency-path: web/package-lock.json
 
       - run: npm ci
 

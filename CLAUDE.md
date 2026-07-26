@@ -1,6 +1,16 @@
 ## Project
 
-Windmill is a highly animated and performant app for building roadmaps in the form of an RPG skill tree, rendered with a hand-rolled WebGL2 renderer (no three.js).
+Windmill is a brand of three self-growth products — **roadmap** (a highly animated RPG skill
+tree, rendered with a hand-rolled WebGL2 renderer, no three.js), **notes** (daily notes), and
+**gym** (training log) — served by one shared backend and presented as one superapp per surface
+(web · iOS · Android), behind one account and one subscription. Roadmap is the original and
+only built product; notes and gym are scaffolded.
+
+This is a monorepo grouped by surface, then product. **Read `STRUCTURE.md` for the layout and
+the one dependency rule** (platform is product-neutral; products depend on platform, never the
+reverse; products never depend on each other). Each surface keeps its own `CLAUDE.md`/`NOTES.md`
+for detail that only matters inside it (e.g. `backend/CLAUDE.md`, `web/src/skilltree/ARCHITECTURE.md`).
+The design/architecture principles below apply brand-wide.
 
 ## Architecture & Design
 Optimize for the reader, not the writer. Code is read far more than it's written — favor the obvious over the clever
