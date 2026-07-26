@@ -224,8 +224,14 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     TreeRoom* room = registry_.open(TreeId{treeId});
-    if (!room) {
-      notFound = true;  // a write to an absent tree is rejected, not a throw that closes the socket
+    // stillAuthorized proved a real signed-in caller above, so principal.user is that user.
+    // The read gate comes FIRST, exactly as applyEdit's does: a private tree the caller cannot
+    // read is answered "no such tree" — byte-identical to an absent one — so a rejected write
+    // never confirms the id names something. Only a readable-but-unowned tree (unlisted/public)
+    // reaches the ownership message. An unowned private tree fails canRead and so can no longer
+    // be written or claimed over the socket, matching applyEdit.
+    if (!room || !canRead(principal.user, room->owner(), room->visibility())) {
+      notFound = true;  // a write to an absent-or-unreadable tree is rejected, not a throw that closes the socket
     } else if (room->owner() && *room->owner() != principal.user) {
       notOwner = true;
     } else {

@@ -91,6 +91,18 @@ std::string subscribeFrame(const std::string& treeId) {
   return dump(f);
 }
 
+// A client-authored write frame — the sole browser write path. The envelope is enough to reach
+// the authz gate; an empty subgraph never has to be joined for a rejected write.
+std::string writeFrame(const std::string& treeId) {
+  Json::Value f(Json::objectValue);
+  f["t"] = "subgraph";
+  f["treeId"] = treeId;
+  f["frameId"] = "f1";
+  return dump(f);
+}
+
+std::string rejectReason(const std::string& text) { return parse(text).get("reason", "").asString(); }
+
 // Broadcast one live frame to whoever is subscribed to `tree` — the probe for "is this
 // connection on the bus?".
 void broadcastTo(WsPresenceBus& bus, const char* tree) {
@@ -187,6 +199,95 @@ TEST(ws_subscribe_to_an_absent_tree_is_rejected) {
 
   CHECK_EQ(conn->sent.size(), 1u);
   CHECK_EQ(frameType(conn->sent[0]), std::string("reject"));
+}
+
+// The write path must answer a private tree you cannot read exactly as it answers an absent one —
+// byte-identical but for the id — or the reject string is an existence oracle: it would tell a
+// stranger which private tree ids name something real. This is the read gate the read paths carry,
+// finally on the write path too.
+TEST(ws_write_to_a_private_tree_you_dont_own_reads_as_absent) {
+  Harness h;
+  h.signIn("s-other", "other@example.com");  // a signed-in non-owner
+  h.seed("t_priv", UserId{"owner"}, Visibility::private_);
+
+  auto onPrivate = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-other"), onPrivate);
+  h.collab.onMessage(onPrivate, writeFrame("t_priv"));
+
+  auto onAbsent = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-other"), onAbsent);
+  h.collab.onMessage(onAbsent, writeFrame("t_ghost"));
+
+  CHECK_EQ(onPrivate->sent.size(), 1u);
+  CHECK_EQ(frameType(onPrivate->sent[0]), std::string("reject"));
+  CHECK_EQ(rejectReason(onPrivate->sent[0]), std::string("no such tree \"t_priv\""));
+  CHECK_EQ(rejectReason(onAbsent->sent[0]), std::string("no such tree \"t_ghost\""));
+}
+
+// The gate did not over-broaden: a tree you CAN read but do not own (unlisted/public) still names
+// the truth — it exists, it is simply not yours — because that fact is not a secret.
+TEST(ws_write_to_an_unlisted_tree_you_dont_own_says_it_belongs_to_another) {
+  Harness h;
+  h.signIn("s-other", "other@example.com");
+  h.seed("t_shared", UserId{"owner"}, Visibility::unlisted);
+
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-other"), conn);
+  h.collab.onMessage(conn, writeFrame("t_shared"));
+
+  CHECK_EQ(conn->sent.size(), 1u);
+  CHECK_EQ(frameType(conn->sent[0]), std::string("reject"));
+  CHECK_EQ(rejectReason(conn->sent[0]), std::string("this tree belongs to another account"));
+}
+
+// An unowned private tree — the crash-orphaned row a putTree left between save and claim — is
+// no longer writable or claimable over the socket, matching applyEdit: canRead denies it, so a
+// stranger who knows the id can neither read it nor seize it.
+TEST(ws_write_to_an_unowned_private_tree_reads_as_absent) {
+  Harness h;
+  h.signIn("s-other", "other@example.com");
+  h.trees.byId["t_orphan"] = StoredTree{GraphState{}, LegendState{}, {"Tree", {}}, 0, std::nullopt, Visibility::private_};
+
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-other"), conn);
+  h.collab.onMessage(conn, writeFrame("t_orphan"));
+
+  CHECK_EQ(conn->sent.size(), 1u);
+  CHECK_EQ(frameType(conn->sent[0]), std::string("reject"));
+  CHECK_EQ(rejectReason(conn->sent[0]), std::string("no such tree \"t_orphan\""));
+}
+
+// The whole gate leans on principal.user being an authenticated caller by the time it runs, so a
+// guest must be turned away at the auth check FIRST — before the tree is ever looked up. And "sign
+// in to edit" is the same for a real tree and an absent one, so the auth gate is not an oracle either.
+TEST(ws_guest_write_is_turned_away_at_auth_before_the_tree_is_looked_up) {
+  Harness h;
+  h.seed("t_priv", UserId{"owner"}, Visibility::private_);
+
+  auto onReal = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade(""), onReal);  // no cookie — a guest
+  h.collab.onMessage(onReal, writeFrame("t_priv"));
+
+  auto onAbsent = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade(""), onAbsent);
+  h.collab.onMessage(onAbsent, writeFrame("t_ghost"));
+
+  CHECK_EQ(rejectReason(onReal->sent[0]), std::string("sign in to edit"));
+  CHECK_EQ(rejectReason(onAbsent->sent[0]), std::string("sign in to edit"));
+}
+
+// The owner still writes to their own private tree — the gate admits exactly the reader it should.
+TEST(ws_owner_writes_to_their_own_private_tree_and_is_acked) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  h.collab.onMessage(conn, writeFrame("t_priv"));
+
+  CHECK_EQ(conn->sent.size(), 1u);
+  CHECK_EQ(frameType(conn->sent[0]), std::string("subgraphAck"));
 }
 
 TEST(presence_announces_an_account_by_the_name_it_chose) {
