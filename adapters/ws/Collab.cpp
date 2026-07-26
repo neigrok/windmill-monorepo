@@ -117,33 +117,42 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     try {
-      TreeRoom& room = registry_.open(TreeId{treeId});
+      TreeRoom* room = registry_.open(TreeId{treeId});
       // Gate the read BEFORE joining the bus or presence: an unreadable caller must never be
-      // subscribed, or it would receive every later live broadcast. A private-denied read is
-      // rejected with the same "no such tree" the open-failure path sends — no existence leak.
-      if (!canRead(caller, room.owner(), room.visibility()))
-        throw std::runtime_error("no such tree \"" + treeId + "\"");
+      // subscribed, or it would receive every later live broadcast. An absent tree (null) and a
+      // private-denied one are rejected with the same "no such tree" — no existence leak. Only an
+      // infrastructure failure falls to the catch, which answers generically and logs its detail.
+      if (!room || !canRead(caller, room->owner(), room->visibility())) {
+        Json::Value reject(Json::objectValue);
+        reject["t"] = "reject";
+        reject["treeId"] = treeId;
+        reject["reason"] = "no such tree \"" + treeId + "\"";
+        send(conn, reject);
+        return;
+      }
       // Readable: join the bus + presence under the strand, so no edit broadcast can slip
       // between the delta computed here and the subscription taking effect.
       bus_.subscribe(TreeId{treeId}, conn, principal.user);
       presence_.join(conn, TreeId{treeId});
 
-      Subgraph delta = deltaBetween(room.exportState(), room.exportLegend(), clientVector);
+      Subgraph delta = deltaBetween(room->exportState(), room->exportLegend(), clientVector);
       delta.treeId = TreeId{treeId};
-      delta.frameId = "delta-" + std::to_string(room.head());
+      delta.frameId = "delta-" + std::to_string(room->head());
       delta.actor = "srv";
       // A renamed tree's title register rides the delta like any field the client lacks
       // (unset stamps — never-renamed titles — carry nothing to cover, so they stay home),
       // and the stated coverage owns the stamp so the client never flushes it back.
-      if (!clientVector.covers(room.title().stamp)) delta.title = room.title();
-      if (delta.coverage) delta.coverage->observe(room.title().stamp);
+      if (!clientVector.covers(room->title().stamp)) delta.title = room->title();
+      if (delta.coverage) delta.coverage->observe(room->title().stamp);
       frame = toJson(delta);
-      frame["seq"] = static_cast<Json::Int64>(room.head());
+      frame["seq"] = static_cast<Json::Int64>(room->head());
     } catch (const std::exception& error) {
+      // An infrastructure failure — never the socket's to relay: log the detail, reject generically.
+      LOG_ERROR << "collab join " << treeId << " failed: " << error.what();
       Json::Value reject(Json::objectValue);
       reject["t"] = "reject";
       reject["treeId"] = treeId;
-      reject["reason"] = error.what();
+      reject["reason"] = "the server could not open this tree";
       send(conn, reject);
       return;
     }
@@ -211,23 +220,26 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
 
   std::optional<Seq> seq;
   bool notOwner = false;
+  bool notFound = false;
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
-    TreeRoom& room = registry_.open(TreeId{treeId});
-    if (room.owner() && *room.owner() != principal.user) {
+    TreeRoom* room = registry_.open(TreeId{treeId});
+    if (!room) {
+      notFound = true;  // a write to an absent tree is rejected, not a throw that closes the socket
+    } else if (room->owner() && *room->owner() != principal.user) {
       notOwner = true;
     } else {
-      seq = room.joinSubgraph(incoming, principal.user);
-      if (!room.owner()) registry_.claim(TreeId{treeId}, principal.user);  // first writer claims it
+      seq = room->joinSubgraph(incoming, principal.user);
+      if (!room->owner()) registry_.claim(TreeId{treeId}, principal.user);  // first writer claims it
       if (seq) registry_.persist(TreeId{treeId});  // persist before the ack, so the ack attests durability
     }
   }
-  if (notOwner) {
+  if (notFound || notOwner) {
     Json::Value reject(Json::objectValue);
     reject["t"] = "reject";
     reject["treeId"] = treeId;
     reject["frameId"] = frameId;
-    reject["reason"] = "this tree belongs to another account";
+    reject["reason"] = notFound ? "no such tree \"" + treeId + "\"" : "this tree belongs to another account";
     send(conn, reject);
     return;
   }
@@ -267,14 +279,14 @@ void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::str
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     try {
-      TreeRoom& room = registry_.open(TreeId{treeId});
-      // Progress on someone else's private tree would confirm it exists — deny it exactly
-      // as an absent tree does (silent return), so the socket is no existence oracle.
-      if (!canRead(principal.user, room.owner(), room.visibility())) return;
-      prerequisites = room.prerequisitesOf(node);
-      hlc = room.nextStamp(clock_.nowMs());  // progress shares the tree's clock so its LWW stays comparable
+      TreeRoom* room = registry_.open(TreeId{treeId});
+      // An absent (null) or private-denied tree: nothing to record against, and the socket must be
+      // no existence oracle — return silently either way. Only an infra failure falls to the catch.
+      if (!room || !canRead(principal.user, room->owner(), room->visibility())) return;
+      prerequisites = room->prerequisitesOf(node);
+      hlc = room->nextStamp(clock_.nowMs());  // progress shares the tree's clock so its LWW stays comparable
     } catch (const std::exception&) {
-      return;  // no such tree — nothing to record progress against
+      return;  // an infrastructure failure — nothing to record; its detail is not the socket's to carry
     }
   }
 

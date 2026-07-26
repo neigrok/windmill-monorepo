@@ -30,6 +30,14 @@ std::vector<std::string> introduced(const Json::Value& receipt) {
   return out;
 }
 
+// A repository whose load fails the way a real one does under an outage — with a message carrying
+// the kind of internals (a host, a port, a role, a secret) a pqxx exception drags along.
+struct FailingTreeRepository : FakeTreeRepository {
+  std::optional<StoredTree> load(const TreeId&) override {
+    throw std::runtime_error("connect host=db.internal port=5432 user=windmill password=hunter2: FATAL");
+  }
+};
+
 }
 
 TEST(mcp_create_node_mints_a_slug_id_and_get_tree_shows_it) {
@@ -617,6 +625,33 @@ TEST(mcp_read_tools_deny_a_private_tree_you_dont_own) {
   CHECK(progDenied.isError);
   CHECK_EQ(message(progDenied), std::string("set_progress: no such tree \"priv\""));
   CHECK_EQ(message(progAbsent), std::string("set_progress: no such tree \"nope\""));
+}
+
+// The point of open() returning its absence: not-found is answered "no such tree", while a genuine
+// repository failure is left to throw past withRoom up to callTool, which logs the detail and
+// answers generically — so the host/port/role/secret a pqxx message carries never reaches the model.
+// The two used to arrive as one throw, and withRoom returned error.what() to tell them apart.
+TEST(mcp_an_infrastructure_failure_answers_generically_and_never_leaks_its_detail) {
+  FailingTreeRepository trees;
+  FakeOpLog ops;
+  FakeBus bus;
+  FakeProgressRepository progressRepo;
+  StepClock clock;
+  FakeTokens tokens;
+  RoomRegistry registry{trees, ops, bus};
+  ProgressService progress{progressRepo};
+  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
+  const UserId caller = uid("agent");
+  RoadmapTools tools{registry, progress, clock, treeRegistry, bus};
+
+  Json::Value args(Json::objectValue);
+  args["treeId"] = "t";
+  const ToolResult result = tools.callTool("get_tree", args, caller);
+  CHECK(result.isError);
+  CHECK_EQ(message(result), std::string("get_tree: that call failed inside the server. Nothing was "
+                                        "changed; the detail is in the server log."));
+  CHECK_EQ(message(result).find("hunter2"), std::string::npos);   // the secret never rides out
+  CHECK_EQ(message(result).find("db.internal"), std::string::npos);
 }
 
 TEST(mcp_read_tools_allow_an_unlisted_tree_by_a_stranger) {

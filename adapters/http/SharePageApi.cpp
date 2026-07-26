@@ -95,15 +95,16 @@ void SharePageApi::page(const drogon::HttpRequestPtr& req, HttpCallback&& callba
   {
     std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{id}));
     try {
-      TreeRoom& room = registry_->open(TreeId{id});
-      if (canRead(caller, room.owner(), room.visibility())) {
+      TreeRoom* room = registry_->open(TreeId{id});
+      if (room && canRead(caller, room->owner(), room->visibility())) {
         readable = true;
-        title = room.title().value;
-        steps = room.snapshot().nodes.size();
-        visibility = room.visibility();
+        title = room->title().value;
+        steps = room->snapshot().nodes.size();
+        visibility = room->visibility();
       }
     } catch (const std::exception&) {
-      // Absent tree — leave it unreadable, so the shell is served verbatim (== private).
+      // An infrastructure failure — leave it unreadable, so the shell is served verbatim (== private).
+      // An absent tree is a null open, handled above; only breakage reaches here, and it never leaks.
     }
   }
 

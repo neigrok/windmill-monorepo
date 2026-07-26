@@ -269,7 +269,7 @@ TEST(rename_of_a_live_tree_flows_through_the_room_and_reaches_subscribers) {
   Setup s;
   UserId me = uid("me");
   seed(s.trees, "t", me, 100, {spec("a", NodeColor::sky)});
-  TreeRoom& room = s.rooms.open(tid("t"));
+  TreeRoom& room = *s.rooms.open(tid("t"));
 
   CHECK(s.registry.rename(tid("t"), me, "Second wind") == TreeRegistry::Renaming::renamed);
 
@@ -290,7 +290,7 @@ TEST(a_joined_frame_carrying_a_title_register_renames_by_last_writer_wins) {
   Setup s;
   UserId me = uid("me");
   seed(s.trees, "t", me, 100, {spec("a", NodeColor::sky)});
-  TreeRoom& room = s.rooms.open(tid("t"));
+  TreeRoom& room = *s.rooms.open(tid("t"));
 
   Subgraph fresh;
   fresh.treeId = tid("t");
@@ -322,7 +322,7 @@ TEST(a_renames_stamp_survives_eviction_and_an_older_stamped_write_after_reload_l
   CHECK_FALSE(s.rooms.isOpen(tid("t")));
   CHECK(s.trees.byId["t"].title == renamed);  // the stamp rode the flush, not just the value
 
-  TreeRoom& reloaded = s.rooms.open(tid("t"));
+  TreeRoom& reloaded = *s.rooms.open(tid("t"));
   CHECK(reloaded.title() == renamed);  // the register is seeded from the persisted stamp
 
   Subgraph stale;  // the F2 replay: an older-stamped rename arriving only after the restart
@@ -372,7 +372,7 @@ TEST(set_visibility_flips_a_live_rooms_cache_at_once) {
   Setup s;
   UserId me = uid("me");
   seed(s.trees, "t", me, 100, {spec("a", NodeColor::sky)});
-  TreeRoom& room = s.rooms.open(tid("t"));
+  TreeRoom& room = *s.rooms.open(tid("t"));
   CHECK(room.visibility() == Visibility::private_);
 
   CHECK(s.registry.setVisibility(tid("t"), me, Visibility::unlisted) ==

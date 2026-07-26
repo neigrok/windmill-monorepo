@@ -9,18 +9,18 @@ namespace wm {
 RoomRegistry::RoomRegistry(TreeRepository& repo, OpLog& ops, PresenceBus& bus)
     : repo_(repo), ops_(ops), bus_(bus) {}
 
-TreeRoom& RoomRegistry::open(const TreeId& id) {
+TreeRoom* RoomRegistry::open(const TreeId& id) {
   {
     std::lock_guard<std::mutex> lock(mutex_);
     auto existing = rooms_.find(id);
-    if (existing != rooms_.end()) return *existing->second;
+    if (existing != rooms_.end()) return existing->second.get();
   }
 
   // Load + replay outside the registry lock so one cold/large tree's open can't freeze
   // every other tree's room operations. open(id) always runs under strandFor(id), so no
   // second thread builds the same id concurrently; the re-check below covers the general case.
   std::optional<StoredTree> stored = repo_.load(id);
-  if (!stored) throw std::runtime_error("no such tree \"" + id.str() + "\"");
+  if (!stored) return nullptr;  // no such tree — a benign absence the caller answers, never a throw
 
   LooseGraph graph(stored->state);  // full CRDT state — lossless
   Legend legend(stored->legend);    // empty for legacy trees; the client derives then
@@ -33,10 +33,10 @@ TreeRoom& RoomRegistry::open(const TreeId& id) {
 
   std::lock_guard<std::mutex> lock(mutex_);
   auto existing = rooms_.find(id);
-  if (existing != rooms_.end()) return *existing->second;  // another thread won the race
-  TreeRoom& ref = *room;
+  if (existing != rooms_.end()) return existing->second.get();  // another thread won the race
+  TreeRoom* ptr = room.get();
   rooms_.emplace(id, std::move(room));
-  return ref;
+  return ptr;
 }
 
 void RoomRegistry::evict(const TreeId& id) {

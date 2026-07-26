@@ -23,15 +23,16 @@ ForkService::Result ForkService::fork(const TreeId& source, const std::string& r
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(source));
     try {
-      TreeRoom& room = registry_.open(source);
-      // Forking copies the whole document — a read. A source the forker can't read is
-      // indistinguishable from an absent one: noSource → 404, no existence leak.
-      if (!canRead(std::optional<UserId>(owner), room.owner(), room.visibility()))
+      TreeRoom* room = registry_.open(source);
+      // Forking copies the whole document — a read. An absent source (null) and one the forker
+      // can't read are indistinguishable: noSource → 404, no existence leak. Only an infrastructure
+      // failure falls to the catch, also answered noSource — masked, never surfaced.
+      if (!room || !canRead(std::optional<UserId>(owner), room->owner(), room->visibility()))
         return {Outcome::noSource, {}};
-      data = room.snapshot();
-      state = room.exportState();
-      legend = room.exportLegend();
-      title = room.title().value;
+      data = room->snapshot();
+      state = room->exportState();
+      legend = room->exportLegend();
+      title = room->title().value;
     } catch (const std::exception&) {
       return {Outcome::noSource, {}};
     }
@@ -66,12 +67,12 @@ ForkService::Result ForkService::fork(const TreeId& source, const std::string& r
 std::optional<ForkService::Description> ForkService::describe(const TreeId& source) {
   std::lock_guard<std::mutex> lock(registry_.strandFor(source));
   try {
-    TreeRoom& room = registry_.open(source);
+    TreeRoom* room = registry_.open(source);
     // The one caller (the magic-link fork invite) is unauthenticated, so a source is named
-    // only when it is readable by id — an unlisted or public tree. A private tree stays
-    // undescribed, so its title and shape never ride an email addressed by a stranger.
-    if (!canRead(std::nullopt, room.owner(), room.visibility())) return std::nullopt;
-    return Description{room.title().value, room.snapshot().nodes.size()};
+    // only when it is readable by id — an unlisted or public tree. An absent (null) or private
+    // tree stays undescribed, so its title and shape never ride an email addressed by a stranger.
+    if (!room || !canRead(std::nullopt, room->owner(), room->visibility())) return std::nullopt;
+    return Description{room->title().value, room->snapshot().nodes.size()};
   } catch (const std::exception&) {
     return std::nullopt;
   }

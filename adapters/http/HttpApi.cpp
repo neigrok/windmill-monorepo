@@ -32,28 +32,29 @@ void HttpApi::getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
   {
     std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
     try {
-      TreeRoom& room = registry_->open(TreeId{treeId});
-      const std::optional<UserId>& owner = room.owner();
-      // A private tree the caller can't read is 404 — body byte-identical to an absent tree,
-      // so an id can't be probed for existence (reuse the found→404 branch below).
-      if (!canRead(caller, owner, room.visibility())) {
+      TreeRoom* room = registry_->open(TreeId{treeId});
+      // Absent (null) or a private tree the caller can't read is 404 — body byte-identical, so an
+      // id can't be probed for existence. An infrastructure failure still throws to the catch,
+      // which also answers 404: masked, not leaked (a message with a host never reaches the client).
+      if (!room || !canRead(caller, room->owner(), room->visibility())) {
         found = false;
       } else {
-        body["seq"] = static_cast<Json::Int64>(room.head());
-        body["data"] = toJson(room.snapshot());  // projected TreeData for the first paint
-        Subgraph state;                           // the stamped lattice the client builds its TreeLattice from
+        const std::optional<UserId>& owner = room->owner();
+        body["seq"] = static_cast<Json::Int64>(room->head());
+        body["data"] = toJson(room->snapshot());  // projected TreeData for the first paint
+        Subgraph state;                            // the stamped lattice the client builds its TreeLattice from
         state.treeId = TreeId{treeId};
-        state.frameId = "snapshot-" + std::to_string(room.head());
+        state.frameId = "snapshot-" + std::to_string(room->head());
         state.actor = "srv";
         state.intent = SubgraphIntent::graft;
-        state.graph = room.exportState();
-        state.legend = room.exportLegend();
+        state.graph = room->exportState();
+        state.legend = room->exportLegend();
         body["state"] = toJson(state);
         // When the tree was planted (epoch ms) — the week-N progress card counts from here,
         // never the calendar week, so the client can't derive it from the document alone.
-        body["createdAt"] = static_cast<Json::Int64>(room.createdAt());
+        body["createdAt"] = static_cast<Json::Int64>(room->createdAt());
         // The share flip reads these: the current visibility, and whether the caller owns it.
-        body["visibility"] = toString(room.visibility());
+        body["visibility"] = toString(room->visibility());
         body["mine"] = caller && owner && *caller == *owner;
       }
     } catch (const std::exception&) {
@@ -70,9 +71,9 @@ void HttpApi::getDiagnostics(const drogon::HttpRequestPtr& req, HttpCallback&& c
   {
     std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
     try {
-      TreeRoom& room = registry_->open(TreeId{treeId});
-      if (!canRead(caller, room.owner(), room.visibility())) found = false;  // structure is a read — gate it
-      else body = toJson(room.diagnose());
+      TreeRoom* room = registry_->open(TreeId{treeId});
+      if (!room || !canRead(caller, room->owner(), room->visibility())) found = false;  // absent or gated
+      else body = toJson(room->diagnose());
     } catch (const std::exception&) {
       found = false;
     }
@@ -184,9 +185,9 @@ void HttpApi::getProgress(const drogon::HttpRequestPtr& req, HttpCallback&& call
   {
     std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
     try {
-      TreeRoom& room = registry_->open(TreeId{treeId});
-      if (!canRead(caller, room.owner(), room.visibility())) found = false;
-      else owner = room.owner();
+      TreeRoom* room = registry_->open(TreeId{treeId});
+      if (!room || !canRead(caller, room->owner(), room->visibility())) found = false;
+      else owner = room->owner();
     } catch (const std::exception&) {
       found = false;
     }
@@ -218,9 +219,9 @@ void HttpApi::getActivity(const drogon::HttpRequestPtr& req, HttpCallback&& call
   {
     std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
     try {
-      TreeRoom& room = registry_->open(TreeId{treeId});
-      if (!canRead(caller, room.owner(), room.visibility())) found = false;  // the feed exposes structure too
-      else current = room.snapshot();
+      TreeRoom* room = registry_->open(TreeId{treeId});
+      if (!room || !canRead(caller, room->owner(), room->visibility())) found = false;  // absent or gated
+      else current = room->snapshot();
     } catch (const std::exception&) {
       found = false;
     }

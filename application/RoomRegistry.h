@@ -19,7 +19,12 @@ class RoomRegistry {
 public:
   RoomRegistry(TreeRepository& repo, OpLog& ops, PresenceBus& bus);
 
-  TreeRoom& open(const TreeId& id);
+  // Returns the live room, or nullptr if no such tree exists. Throws ONLY on a genuine
+  // infrastructure failure (the repository raising) — so a caller can tell absence (a benign
+  // nullptr it answers "no such tree") from breakage (an exception whose detail must be logged,
+  // never surfaced: a pqxx message carries a host, a port, a role). The two used to arrive as one
+  // throw, which forced callers to leak the second to distinguish neither.
+  TreeRoom* open(const TreeId& id);
   void evict(const TreeId& id);
   void persist(const TreeId& id);  // snapshot a live room's full state without evicting
   void claim(const TreeId& id, const UserId& owner);  // first-writer ownership, durable + in-room

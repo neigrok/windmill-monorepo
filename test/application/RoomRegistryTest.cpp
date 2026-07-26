@@ -18,6 +18,13 @@ std::size_t nodeCount(const GraphState& state) {
   return LooseGraph(state).presentNodeIds().size();
 }
 
+// A repository that fails the way a real one does under an outage, not by returning "no such tree".
+struct FailingTreeRepository : FakeTreeRepository {
+  std::optional<StoredTree> load(const TreeId&) override {
+    throw std::runtime_error("connect host=db.internal: FATAL");
+  }
+};
+
 }
 
 TEST(registry_opens_room_from_repository) {
@@ -27,23 +34,37 @@ TEST(registry_opens_room_from_repository) {
   repo.byId["t"] = oneNodeTree();
   RoomRegistry registry(repo, log, bus);
 
-  TreeRoom& room = registry.open(tid());
+  TreeRoom& room = *registry.open(tid());
   CHECK(registry.isOpen(tid()));
   CHECK_EQ(room.head(), static_cast<Seq>(7));
   CHECK_EQ(room.snapshot().nodes.size(), 1u);
-  CHECK_EQ(&registry.open(tid()), &room);  // second open reuses the same room
+  CHECK_EQ(registry.open(tid()), &room);  // second open reuses the same room
 }
 
-TEST(registry_open_unknown_tree_throws) {
+TEST(registry_open_unknown_tree_returns_null) {
   FakeTreeRepository repo;
   FakeOpLog log;
   FakeBus bus;
   RoomRegistry registry(repo, log, bus);
 
+  // Absence is a nullptr the caller answers, not a throw it must catch — so "no such tree" is
+  // distinguishable from a genuine repository failure, which is the only thing open() still throws.
+  CHECK_EQ(registry.open(tid("ghost")), static_cast<TreeRoom*>(nullptr));
+  CHECK_FALSE(registry.isOpen(tid("ghost")));  // a missed open materializes no room
+}
+
+TEST(registry_open_propagates_a_repository_failure_rather_than_nulling_it) {
+  FailingTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  RoomRegistry registry(repo, log, bus);
+
+  // A repository outage is NOT a benign absence: it must throw (for a handler to log + genericize),
+  // never be flattened into the nullptr that means "no such tree" — the two are the whole point.
   bool threw = false;
   try {
-    registry.open(tid("ghost"));
-  } catch (const std::runtime_error&) {
+    registry.open(tid("t"));
+  } catch (const std::exception&) {
     threw = true;
   }
   CHECK(threw);
@@ -61,7 +82,7 @@ TEST(registry_replays_op_log_tail_on_open) {
   };
   RoomRegistry registry(repo, log, bus);
 
-  TreeRoom& room = registry.open(tid());
+  TreeRoom& room = *registry.open(tid());
   CHECK_EQ(room.head(), static_cast<Seq>(3));      // head advanced to the log tail
   CHECK_EQ(room.snapshot().nodes.size(), 2u);      // state rebuilt from replay
 }
@@ -73,7 +94,7 @@ TEST(registry_persist_snapshots_full_state_without_evicting) {
   repo.byId["t"] = oneNodeTree();
   RoomRegistry registry(repo, log, bus);
 
-  TreeRoom& room = registry.open(tid());
+  TreeRoom& room = *registry.open(tid());
   room.applyCommand(createNode("added"), 10, uid());
   registry.persist(tid());
 
@@ -89,7 +110,7 @@ TEST(registry_persist_saves_only_the_dirty_slice_and_never_clobbers_the_rest) {
   repo.byId["t"] = oneNodeTree();  // "seed" already stored
   RoomRegistry registry(repo, log, bus);
 
-  TreeRoom& room = registry.open(tid());
+  TreeRoom& room = *registry.open(tid());
   room.applyCommand(createNode("added"), 10, uid());
   registry.persist(tid());
   CHECK_EQ(repo.savedNodeCounts.back(), 1u);       // the slice carried only "added"
@@ -111,7 +132,7 @@ TEST(registry_claim_sets_owner_once_and_is_durable) {
   repo.byId["t"] = oneNodeTree();  // unowned
   RoomRegistry registry(repo, log, bus);
 
-  TreeRoom& room = registry.open(tid());
+  TreeRoom& room = *registry.open(tid());
   CHECK_FALSE(room.owner().has_value());
 
   registry.claim(tid(), UserId{"alice"});
@@ -132,7 +153,7 @@ TEST(registry_evict_persists_and_closes) {
   repo.byId["t"] = oneNodeTree();
   RoomRegistry registry(repo, log, bus);
 
-  TreeRoom& room = registry.open(tid());
+  TreeRoom& room = *registry.open(tid());
   room.applyCommand(createNode("added"), 10, uid());
   registry.evict(tid());
 

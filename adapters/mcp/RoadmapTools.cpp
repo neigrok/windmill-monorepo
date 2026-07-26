@@ -403,16 +403,16 @@ std::optional<std::string> prepareEdit(const std::string& tool, Json::Value& pay
   return std::nullopt;  // tidy takes nothing beyond treeId
 }
 
-// Every room-touching tool holds the tree's strand, opens the room, and turns a
-// "no such tree" (or any open failure) into a tool-level error instead of a throw.
+// Every room-touching tool holds the tree's strand, opens the room, and turns a "no such tree" into
+// a tool-level error. An absent tree is a nullptr answered here; an infrastructure failure is left
+// to throw past this, up to callTool, which logs the detail and answers a generic sentence — so a
+// pqxx message never rides out on `error.what()` the way it once did.
 template <typename Fn>
 ToolResult withRoom(RoomRegistry& registry, const TreeId& tree, Fn&& fn) {
   std::lock_guard<std::mutex> lock(registry.strandFor(tree));
-  try {
-    return fn(registry.open(tree));
-  } catch (const std::exception& error) {
-    return ToolResult::failure(error.what());
-  }
+  TreeRoom* room = registry.open(tree);
+  if (!room) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
+  return fn(*room);
 }
 
 // The caller's own progress rows, read ONCE per tree read and only when `status` was asked for:
@@ -427,7 +427,7 @@ Progress marksFor(ProgressService& progress, const TreeId& tree, const std::opti
 ToolResult readTree(RoomRegistry& registry, ProgressService& progress, const TreeId& tree,
                     const Json::Value& args, const std::optional<UserId>& caller) {
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    // Byte-identical to the absent message (RoomRegistry::open throws the same) — a private
+    // Byte-identical to the absent message (withRoom answers a null open the same) — a private
     // tree must be indistinguishable from one that does not exist, or the id is an oracle.
     if (!canRead(caller, room.owner(), room.visibility())) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
 
@@ -467,7 +467,7 @@ ToolResult readTree(RoomRegistry& registry, ProgressService& progress, const Tre
 
 ToolResult readDiagnostics(RoomRegistry& registry, const TreeId& tree, const std::optional<UserId>& caller) {
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    // Byte-identical to the absent message (RoomRegistry::open throws the same) — a private
+    // Byte-identical to the absent message (withRoom answers a null open the same) — a private
     // tree must be indistinguishable from one that does not exist, or the id is an oracle.
     if (!canRead(caller, room.owner(), room.visibility())) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     return ToolResult::json(toJson(room.diagnose()));
@@ -476,7 +476,7 @@ ToolResult readDiagnostics(RoomRegistry& registry, const TreeId& tree, const std
 
 ToolResult readHealth(RoomRegistry& registry, const TreeId& tree, const std::optional<UserId>& caller) {
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    // Byte-identical to the absent message (RoomRegistry::open throws the same) — a private
+    // Byte-identical to the absent message (withRoom answers a null open the same) — a private
     // tree must be indistinguishable from one that does not exist, or the id is an oracle.
     if (!canRead(caller, room.owner(), room.visibility())) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     if (!room.diagnose().clean())
@@ -510,7 +510,7 @@ ToolResult readProgress(ProgressService& progress, const TreeId& tree, const Jso
 ToolResult findNodes(RoomRegistry& registry, ProgressService& progress, const TreeId& tree,
                      const Json::Value& args, const std::optional<UserId>& caller) {
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    // Byte-identical to the absent message (RoomRegistry::open throws the same) — a private
+    // Byte-identical to the absent message (withRoom answers a null open the same) — a private
     // tree must be indistinguishable from one that does not exist, or the id is an oracle.
     if (!canRead(caller, room.owner(), room.visibility())) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     if (std::optional<std::string> bad = optionalOneOf(args["color"], "color", kHues))
@@ -599,19 +599,24 @@ std::optional<std::string> applyProgressBatch(
     RoomRegistry& registry, ProgressService& progress, PresenceBus& bus, const TreeId& tree,
     Clock& clock, const UserId& user, const std::vector<std::pair<NodeId, ProgressStatus>>& requested,
     bool rejectUnknown, Json::Value& results, Json::Value& skipped) {
+  // Both out-params are set at entry, so an early return (absent/private-denied) still leaves them
+  // as empty arrays — a caller that reads them without checking the return (import) sees [], not null.
+  results = Json::Value(Json::arrayValue);
   skipped = Json::Value(Json::arrayValue);  // ids naming no node in the tree; the caller decides what to do with them
   std::vector<ProgressMark> marks;
   {
     std::lock_guard<std::mutex> lock(registry.strandFor(tree));
-    TreeRoom& room = registry.open(tree);
+    TreeRoom* room = registry.open(tree);
     // Progress is a per-user overlay, not an edit — so it isn't owner-gated — but marking a
     // node against someone else's PRIVATE tree would confirm which node ids exist (and their
-    // prerequisite shape). Deny it exactly as an absent tree does: private ⇒ owner-only.
-    if (!canRead(user, room.owner(), room.visibility()))
-      throw std::runtime_error("no such tree \"" + tree.str() + "\"");
+    // prerequisite shape). Deny it exactly as an absent tree does: private ⇒ owner-only. Both the
+    // absent and the private-denied case leave as a returned error (not a throw), so the caller's
+    // catch is left to mean only a genuine infrastructure failure.
+    if (!room || !canRead(user, room->owner(), room->visibility()))
+      return "no such tree \"" + tree.str() + "\"";  // byte-identical to every other absent/denied message
     for (const auto& [node, status] : requested) {
-      if (!room.hasNode(node)) { skipped.append(node.str()); continue; }
-      marks.push_back({node, status, room.prerequisitesOf(node), room.nextStamp(clock.nowMs())});
+      if (!room->hasNode(node)) { skipped.append(node.str()); continue; }
+      marks.push_back({node, status, room->prerequisitesOf(node), room->nextStamp(clock.nowMs())});
     }
     // set_progress rejects an unknown id outright (a mark that names nothing is a caller mistake);
     // an import's carried progress skips it and reports it in `skipped` instead, because the graft
@@ -625,7 +630,6 @@ std::optional<std::string> applyProgressBatch(
   }
 
   std::vector<ProgressOutcome> outcomes = progress.setStatuses(tree, user, marks);
-  results = Json::Value(Json::arrayValue);
   for (std::size_t i = 0; i < marks.size(); ++i) {
     bus.broadcastProgress(tree, user, marks[i].node, marks[i].status);  // live in the caller's web sessions
     Json::Value row(Json::objectValue);
@@ -677,14 +681,13 @@ ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, Pres
     requested.emplace_back(NodeId{node}, *parseProgressStatus(args["status"].asString()));
   }
 
+  // applyProgressBatch answers an absent/private-denied tree with a returned error string, so what
+  // is left to throw is only an infrastructure failure — left to reach callTool, which logs the
+  // detail and answers generically, rather than caught and echoed back on error.what().
   Json::Value results, skipped;  // set_progress rejects unknowns, so on success `skipped` stays empty
-  try {
-    if (std::optional<std::string> error =
-            applyProgressBatch(registry, progress, bus, tree, clock, user, requested, true, results, skipped))
-      return ToolResult::failure(*error);
-  } catch (const std::exception& error) {
-    return ToolResult::failure(error.what());
-  }
+  if (std::optional<std::string> error =
+          applyProgressBatch(registry, progress, bus, tree, clock, user, requested, true, results, skipped))
+    return ToolResult::failure(*error);
   if (bulk) {
     Json::Value out(Json::objectValue);
     out["results"] = results;
@@ -871,10 +874,10 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
     requested.emplace_back(NodeId{handle.asString()}, *parseProgressStatus(u["status"].asString()));
   }
   if (!requested.empty()) {
-    // The graft has already committed. A throw from the progress overlay here — only a concurrent
-    // deletion of the tree between the two strand locks can cause one — must not escape to
-    // callTool's generic catch, which would answer "nothing was changed": false, the graft landed.
-    // Keep the graft's own receipt honest by catching it; the overlay is best-effort.
+    // The graft has already committed. A throw from the progress overlay here — the progress store
+    // or the bus failing under it (a concurrent delete now returns a null open, not a throw) — must
+    // not escape to callTool's generic catch, which would answer "nothing was changed": false, the
+    // graft landed. Keep the graft's own receipt honest by catching it; the overlay is best-effort.
     try {
       Json::Value results, skipped;
       applyProgressBatch(registry, progress, bus, tree, clock, actor, requested, false, results, skipped);
