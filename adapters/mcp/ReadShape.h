@@ -24,7 +24,12 @@ namespace wm {
 // the lean answer that tool exists to give. This is MCP-only: the REST endpoints keep the whole
 // document.
 
-enum class NodeField { id, label, icon, color, order, prerequisites, position, status, description, links };
+// `status` is the CALLER'S OWN mark — set_progress's vocabulary, set_progress's meaning — and
+// `seedStatus` is the document's authored baseline, the inert seed an import may carry and every
+// reader sees before their own marks. Two facts, deliberately two words: served under one name
+// they would silently convert into each other on a read-then-import round trip.
+enum class NodeField { id, label, icon, color, order, prerequisites, position, status, seedStatus,
+                       description, links };
 enum class KindField { id, hue, label, description };
 enum class ProgressField { completed, inProgress, cleared };
 
@@ -38,8 +43,8 @@ using ProgressFields = std::set<ProgressField>;
 inline const NodeFields kFindNodesFields{NodeField::id, NodeField::label, NodeField::color};
 
 // get_tree answers the SHAPE: what exists, and what unlocks what. Layout (`position`, `order`),
-// `icon`, and the authoring-time `status` seed the server round-trips but never acts on are
-// noise to a reader; `description` and `links` are the bulk. All of them are one `fields` away.
+// `icon`, and both status fields are noise to a reader asking what the tree IS; `description`
+// and `links` are the bulk. All of them are one `fields` away.
 inline const NodeFields kGetTreeFields{NodeField::id, NodeField::label, NodeField::color,
                                        NodeField::prerequisites};
 
@@ -114,8 +119,12 @@ const Vocabulary<KindField>& kindVocabulary();
 const Vocabulary<ProgressField>& progressVocabulary();
 
 // The field semantics are TreeJson's, field for field — an empty `order`, an absent `position`
-// or `status`, an empty `description` or `links` are omitted exactly as the document omits them.
-Json::Value projectNode(const NodeSpec& node, const NodeFields& fields);
+// or `seedStatus`, an empty `description` or `links` are omitted exactly as the document omits
+// them. `status` is the exception, and deliberately: `marks` are the caller's own progress rows,
+// and an unmarked node answers "none" rather than nothing, so a reader can never mistake a node
+// with no mark for a server that does not serve the field. Pass the overlay in once per read —
+// it is the same set for every node on the page.
+Json::Value projectNode(const NodeSpec& node, const NodeFields& fields, const Progress& marks);
 Json::Value projectKind(const Kind& kind, const KindFields& fields);
 Json::Value projectProgress(const Progress& progress, const ProgressFields& fields);
 

@@ -18,6 +18,8 @@ adapters/mcp/
   ToolArgs.{h,cpp}        one home for argument validation and for the sentence a refusal is
                           written in — every tool routes through it.
   ReadShape.{h,cpp}       the read projections (`fields`) and paging (`limit`/`cursor`).
+  EditReceipt.{h,cpp}     what an edit answers about diagnostics: the whole-tree flag, and what
+                          THIS edit introduced.
   Resources.{h,cpp}       the MCP resources served: `windmill://quickstart`.
   McpHttpEndpoint.{h,cpp} the Streamable-HTTP transport (sessions, Origin checks, verbs).
 infra/mcp_main.cpp        `windmill_mcp`      — stdio transport (local hosts spawn it).
@@ -96,7 +98,7 @@ transports wrap it; both speak JSON-RPC 2.0, protocol version `2025-06-18`:
 | read | `get_diagnostics` | cycles / dangling / self-edges / smells |
 | read | `get_health` | tidiness metrics + 0–100 score (needs a valid DAG) |
 | read | `get_progress` | the caller's completed / in-progress node ids |
-| read | `find_nodes` | search nodes by `color`/`kind` and/or a `query` substring (label + description) |
+| read | `find_nodes` | search nodes by `color`/`kind` and/or a `query` substring (id + label + description), best match first |
 | edit | `create_node` | add a node — `prerequisites[]`, `description`, `links` all optional |
 | edit | `annotate_node` | set a node's `description` and/or `links` |
 | edit | `rename_node` · `set_node_color` · `move_node` | Class A content edits |
@@ -107,8 +109,27 @@ transports wrap it; both speak JSON-RPC 2.0, protocol version `2025-06-18`:
 | write | `set_progress` | per-user overlay: single `nodeId`+`status`, or a bulk `updates[]` (order-safe) |
 | resource | `windmill://quickstart` | the read-me-first document; no tool slot |
 
-Every tree-scoped tool takes `treeId`. Edits return `{applied, seq, diagnosticsClean}` so the
-agent learns immediately whether its change kept the graph valid (nothing is ever rejected).
+Every tree-scoped tool takes `treeId`. Edits return
+`{applied, seq, diagnosticsClean, introducedDiagnostics}` — nothing is ever rejected, so the
+receipt is how an agent learns what its change did. The two answer different questions:
+`diagnosticsClean` is the whole tree's state (a `false` may be dirt that was already there), and
+`introducedDiagnostics` names what THIS edit broke — the cycles, dangling and self-edges present
+after it that the tree did not hold before, bracketed under the tree's strand so the difference
+is this write's doing and nothing else's. An innocent edit on a dirty tree answers `[]`, which is
+the round trip to `get_diagnostics` that the flag alone always cost.
+
+## What `status` means
+
+One word, one concept, wherever it appears: **`status` is the caller's own mark** — `active`,
+`complete` or `none`, the vocabulary `set_progress` writes and `get_progress` returns. Ask
+`get_tree` or `find_nodes` for the `status` field and every node answers, marked or not; an
+omitted key would leave a caller unable to tell "no mark" from "not served".
+
+The document's authored baseline — the inert seed a shared or demo tree carries, which every
+reader sees before their own marks — is a second fact, and wears a second name: **`seedStatus`**,
+readable through `fields` and writable as `import_subgraph`'s `nodes[].seedStatus`. An imported
+node that carries `status` is refused by name rather than silently publishing a private mark into
+a shared document.
 
 ### Bulk & ergonomics
 
@@ -125,9 +146,13 @@ agent learns immediately whether its change kept the graph valid (nothing is eve
   progress rows for nodes no longer in the tree.
 - **`add_kind`** seeds `label` + `description` inline, so a legend entry lands in one op.
 - **`find_nodes`** searches without pulling the whole tree: `color` or `kind` pins a hue
-  (a node's color *is* its kind), `query` is a case-insensitive substring over label +
-  description, and every set filter must match (AND). Backed by the pure `selectNodes`
-  read-model (`domain/NodeQuery`).
+  (a node's color *is* its kind), `query` is a case-insensitive substring over **id + label +
+  description**, and every set filter must match (AND). Matches come back best first — an exact
+  id, then an id prefix, then a label hit, then an id substring, then a description-only hit —
+  so pasting an id you already know finds that node, at the top, instead of somebody else's node
+  whose prose happens to mention it. Ranking and matching are one question, so both live in the
+  pure `selectNodes` read-model (`domain/NodeQuery`); the order is deterministic, which is what
+  keeps a resume `cursor` pointing at the row it was minted from.
 
 ## Build
 

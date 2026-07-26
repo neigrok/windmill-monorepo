@@ -13,6 +13,14 @@ Json::Value idArray(const std::set<NodeId>& ids) {
   return array;
 }
 
+// The caller's own mark on one node, spelled the way set_progress spells it — one word for one
+// concept, whichever end of the surface you are on.
+const char* markOn(const Progress& marks, const NodeId& node) {
+  if (marks.completed.count(node)) return progressStatusName(ProgressStatus::complete);
+  if (marks.inProgress.count(node)) return progressStatusName(ProgressStatus::active);
+  return progressStatusName(ProgressStatus::none);
+}
+
 }
 
 const Vocabulary<NodeField>& nodeVocabulary() {
@@ -24,6 +32,7 @@ const Vocabulary<NodeField>& nodeVocabulary() {
                                                  {"prerequisites", NodeField::prerequisites},
                                                  {"position", NodeField::position},
                                                  {"status", NodeField::status},
+                                                 {"seedStatus", NodeField::seedStatus},
                                                  {"description", NodeField::description},
                                                  {"links", NodeField::links}});
   return vocabulary;
@@ -44,7 +53,7 @@ const Vocabulary<ProgressField>& progressVocabulary() {
   return vocabulary;
 }
 
-Json::Value projectNode(const NodeSpec& node, const NodeFields& fields) {
+Json::Value projectNode(const NodeSpec& node, const NodeFields& fields, const Progress& marks) {
   Json::Value n(Json::objectValue);
   if (fields.count(NodeField::id)) n["id"] = node.id.str();
   if (fields.count(NodeField::label)) n["label"] = node.label;
@@ -62,7 +71,8 @@ Json::Value projectNode(const NodeSpec& node, const NodeFields& fields) {
     position["y"] = node.position->y;
     n["position"] = position;
   }
-  if (fields.count(NodeField::status) && node.status) n["status"] = *node.status;
+  if (fields.count(NodeField::status)) n["status"] = markOn(marks, node.id);
+  if (fields.count(NodeField::seedStatus) && node.status) n["seedStatus"] = *node.status;
   if (fields.count(NodeField::description) && !node.description.empty()) n["description"] = node.description;
   if (fields.count(NodeField::links) && !node.links.empty()) n["links"] = linksToJson(node.links);
   return n;

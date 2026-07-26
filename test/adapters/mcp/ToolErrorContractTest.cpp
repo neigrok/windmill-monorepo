@@ -289,6 +289,48 @@ TEST(mcp_a_malformed_import_item_names_its_path_and_its_type) {
                        "{terracotta, olive, gold, brick, sky, plum}"));
 }
 
+TEST(mcp_an_imported_node_carries_a_seed_status_and_never_the_callers_mark) {
+  Harness h;
+
+  // `status` reads as the caller's own mark everywhere else on this surface, so a node claiming
+  // one is refused by name rather than quietly published into the document every reader sees.
+  Json::Value marked = node("a", "A");
+  marked["status"] = "complete";
+  Json::Value nodes(Json::arrayValue);
+  nodes.append(marked);
+  Json::Value args(Json::objectValue);
+  args["nodes"] = nodes;
+  ToolResult refused = h.call("import_subgraph", args);
+  CHECK(refused.isError);
+  CHECK_EQ(message(refused),
+           std::string("import_subgraph: nodes[0].status is your own mark on this surface, not the "
+                       "document's — the authored baseline every reader sees is \"seedStatus\", and "
+                       "your own progress goes in \"progress\": [{nodeId, status}]."));
+
+  // The baseline itself is refused against the same vocabulary set_progress publishes.
+  Json::Value wrong = node("a", "A");
+  wrong["seedStatus"] = "shipped";
+  Json::Value seeded(Json::arrayValue);
+  seeded.append(wrong);
+  Json::Value seedArgs(Json::objectValue);
+  seedArgs["nodes"] = seeded;
+  ToolResult misspelled = h.call("import_subgraph", seedArgs);
+  CHECK(misspelled.isError);
+  CHECK_EQ(message(misspelled),
+           std::string("import_subgraph: nodes[0].seedStatus \"shipped\" is not one of "
+                       "{active, complete, none}"));
+
+  // …and the catalog publishes the one spelling it accepts, so a strict client cannot send the
+  // other by reading the schema.
+  const Json::Value catalog = h.tools.listTools();
+  const Json::Value* import = toolNamed(catalog, "import_subgraph");
+  CHECK(import != nullptr);
+  const Json::Value& carried = (*import)["inputSchema"]["properties"]["nodes"]["items"]["properties"];
+  CHECK_EQ(carried["seedStatus"]["enum"].size(), 3u);
+  CHECK_EQ(carried["seedStatus"]["enum"][0].asString(), std::string("active"));
+  CHECK_FALSE(carried.isMember("status"));
+}
+
 TEST(mcp_a_wrong_type_fails_the_call_and_never_the_request) {
   Harness h;
   h.call("create_node", node("a", "A"));
@@ -743,4 +785,24 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
     CHECK(text.find(named) != std::string::npos);
     CHECK(toolNamed(tools, named) != nullptr);
   }
+
+  // …and so does every field it promises. The document explains what an edit answers and what the
+  // two status words mean; both claims are checked against a real receipt and a real read, because
+  // a quickstart that describes the surface it used to have is worse than none.
+  for (const char* claim : {"introducedDiagnostics", "seedStatus", "id, label and description"})
+    CHECK(text.find(claim) != std::string::npos);
+
+  h.call("create_node", node("a", "A"));
+  Json::Value rename(Json::objectValue);
+  rename["nodeId"] = "a";
+  rename["label"] = "A renamed";
+  const Json::Value receipt = body(h.call("rename_node", rename));
+  CHECK_EQ(keys(receipt),
+           (std::vector<std::string>{"applied", "diagnosticsClean", "id", "introducedDiagnostics", "seq"}));
+
+  Json::Value read(Json::objectValue);
+  read["fields"] = list({"id", "status", "seedStatus"});
+  const Json::Value found = body(h.call("find_nodes", read))["nodes"][0];
+  CHECK_EQ(keys(found), (std::vector<std::string>{"id", "status"}));  // seedStatus: absent, unseeded
+  CHECK_EQ(found["status"].asString(), std::string("none"));
 }

@@ -155,3 +155,55 @@ Tests: domain 302, adapters 201, mcp 80 — green locally and under the CI toolc
 - **Bytes vs codepoints, still deferred.** Every cap counts bytes while its message and its
   published `maxLength` say characters; they diverge only for non-ASCII. Both halves are now in
   one place (`domain/Command.h`), which is what a fix would need.
+
+### Landed — reads that answer the question asked
+
+The last wave made every *refusal* name the thing; this one makes every *answer* do it. All three
+defects came from live use against production, not from reading the code.
+
+- **`status` is served, and it is yours.** A declared `fields` value that silently returned
+  nothing is the worst of the three possible answers — a caller cannot tell "this node has no
+  status" from "this server does not serve that field". It now answers the caller's own progress
+  overlay in `set_progress`'s own vocabulary (`active`/`complete`/`none`), on `get_tree` and
+  `find_nodes` alike, **for every node** — an omitted key on an unmarked node would recreate the
+  ambiguity it fixes. The overlay is read ONCE per call and only when `status` is asked for, so a
+  200-node page pays one query, and the default projections are unchanged.
+- **…and the document's baseline is a second fact under a second name.** `status` used to project
+  `NodeSpec::status`, the inert authoring seed a demo/staged tree carries and every reader sees
+  before their own marks. Two facts under one word would have converted into each other on a
+  read-then-import round trip — a private mark published into a shared document, silently — so the
+  seed is now `seedStatus` on both sides of the surface (a `fields` value; `import_subgraph`'s
+  `nodes[].seedStatus`), and an imported node carrying `status` is refused by name.
+- **`query` matches the id, and an exact id outranks a fuzzy hit.** Searching for a node by the
+  handle you edit it by used to find everything except that node — and, worse, returned somebody
+  else's node whose description merely mentioned the string, with `count: 1`. Matching and ranking
+  are the same question, so both live in `selectNodes`: id + label + description, answered best
+  first (exact id → id prefix → label → id substring → description-only), ties keeping the tree's
+  order. Only the matches are sorted, never the tree, and the order is deterministic — which is
+  what keeps a `cursor` minted on one page valid on the next.
+- **`diagnosticsClean` is now attributable.** Every edit also answers `introducedDiagnostics`: the
+  errors present after it that the tree did not hold before, named endpoint by endpoint
+  (`dangling edge "a" -> "ghost"`, `cycle among "a", "b"`, `self-edge on "a"`), capped at five with
+  a count and a pointer to `get_diagnostics`. Both keys always, `[]` for an innocent edit.
+
+### Observations (structure / perf)
+
+- **A before/after bracket beat the clever local rule.** The contract proposed deriving
+  attribution from the command's own endpoints — cheap, and unsound: `delete_node` dangles every
+  edge incident to a node it never names, and a graft touches everything at once. Because the room
+  holds the tree's strand for the whole of an edit, `diagnose()` on each side of `applyCommand`
+  brackets exactly one write, so the difference IS the edit's doing — no command taxonomy, no
+  shape left out, and the honest version turned out shorter than the clever one. The cost is one
+  extra O(V+E) pass per edit; if that ever bites, the fix is an incremental diagnostics model in
+  the room, not a per-command rule.
+- **A word that means two things is a bug waiting for a round trip.** `status` was the caller's
+  mark on the write side and the document's seed on the read side. Nothing failed — a copy loop
+  would just have quietly turned one into the other. The fix that mattered was naming the second
+  fact (`seedStatus`), not serving the first.
+- **Ranking belongs with matching.** Splitting them would have left the domain deciding *whether*
+  a node matches and the adapter deciding *why* — and "why" is what a rank is. `selectNodes` now
+  answers both, and `find_nodes` stayed a one-line call.
+- **`find_nodes`' pagination survived ranking for one reason only:** the cursor names a node, not
+  an offset, and the order is a pure function of (tree, filter). Any future rank fed by something
+  outside that pair (recency, a per-caller signal) would break resume, and would need the cursor
+  to carry the rank with it.

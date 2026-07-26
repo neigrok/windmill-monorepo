@@ -34,24 +34,37 @@ already exists.** Whichever you guess, both are read.
 ## 3. Structure is never refused
 
 A cycle, a detached node, an edge to an id that does not exist: all accepted, none rejected.
-`get_diagnostics` is where you find them. Every edit answers `diagnosticsClean`, but that is a
-property of the WHOLE tree, not of your edit — a `false` may be dirt that was already there, and
-`get_diagnostics` is what tells you which. Two things do refuse: the legend (hues are unique per
-kind, at most 6 kinds, and a kind nodes still wear cannot be removed — `import_subgraph` is held
-to the same rule) and the per-tree capacity (10000 nodes, 20000 edges).
+`get_diagnostics` is where you find them. Every edit answers two things about them:
+`diagnosticsClean` is a property of the WHOLE tree — a `false` may be dirt that was already there
+— and `introducedDiagnostics` is what YOUR edit broke, the errors the tree holds now and did not
+hold a moment before, named endpoint by endpoint. An innocent edit on a dirty tree answers
+`{"diagnosticsClean": false, "introducedDiagnostics": []}`, so you never have to ask twice. Two
+things do refuse: the legend (hues are unique per kind, at most 6 kinds, and a kind nodes still
+wear cannot be removed — `import_subgraph` is held to the same rule) and the per-tree capacity
+(10000 nodes, 20000 edges).
 
-## 4. `set_progress` is advisory
+## 4. `set_progress` is advisory, and `status` is yours
 
 Marking a node complete whose prerequisites are unmet still records the mark and answers
 `prerequisitesMet: false` — it never fails. What it does refuse is an id the tree does not hold,
 so no orphan rows are born. Progress is per-caller and private; structure is shared.
 
+The same word means the same thing on every read: ask `get_tree` or `find_nodes` for the `status`
+field and each node answers YOUR mark — `active`, `complete` or `none`, always present, never
+omitted. The document's own authored baseline (what a reader sees before their own marks) is a
+different fact under a different name, `seedStatus`, and it is what `import_subgraph`'s
+`nodes[].seedStatus` carries. Copy a tree with `seedStatus`; carry your own marks in `progress[]`.
+
 ## 5. Ask for less
 
 `get_tree`, `find_nodes` and `get_progress` take `fields`; `get_tree` also takes `kindFields`.
 Ask for `["id","label"]` when you only need an index to pick edit targets — the default already
-omits `description`, `links`, `position` and `icon`. Both node reads page: `limit` (default 200,
-max 1000) and the `nextCursor` they hand back.
+omits `description`, `links`, `position`, `icon` and both status fields. Both node reads page:
+`limit` (default 200, max 1000) and the `nextCursor` they hand back.
+
+`find_nodes`' `query` is a case-insensitive substring over a node's **id, label and description**,
+answered best first: an exact id, then an id prefix, then a label hit, then an id substring, then
+a description-only hit. Pasting an id you already know finds that node, at the top.
 
 ## 6. Author in bulk
 

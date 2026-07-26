@@ -12,7 +12,22 @@ namespace {
 // document shape the browser gets.
 Json::Value everyNodeField() {
   return list({"id", "label", "icon", "color", "order", "prerequisites", "position", "status",
-               "description", "links"});
+               "seedStatus", "description", "links"});
+}
+
+// The ids of a read's nodes, in the order it answered with — what a caller trusts when it takes
+// the first match.
+std::vector<std::string> ids(const Json::Value& nodes) {
+  std::vector<std::string> out;
+  for (const Json::Value& node : nodes) out.push_back(node["id"].asString());
+  return out;
+}
+
+// The strings an edit's receipt names as its own doing.
+std::vector<std::string> introduced(const Json::Value& receipt) {
+  std::vector<std::string> out;
+  for (const Json::Value& entry : receipt["introducedDiagnostics"]) out.push_back(entry.asString());
+  return out;
 }
 
 }
@@ -603,7 +618,7 @@ TEST(mcp_fields_round_trips_every_field_of_a_node) {
   seed["icon"] = "anchor";
   seed["color"] = "plum";
   seed["order"] = "a0";
-  seed["status"] = "active";
+  seed["seedStatus"] = "active";
   seed["description"] = "the whole annotation";
   Json::Value position(Json::objectValue);
   position["x"] = 12.0;
@@ -630,7 +645,8 @@ TEST(mcp_fields_round_trips_every_field_of_a_node) {
   args["fields"] = everyNodeField();
   const Json::Value b = body(h.call("get_tree", args))["tree"]["nodes"][1];
   CHECK_EQ(keys(b), (std::vector<std::string>{"color", "description", "icon", "id", "label", "links",
-                                              "order", "position", "prerequisites", "status"}));
+                                              "order", "position", "prerequisites", "seedStatus",
+                                              "status"}));
   CHECK_EQ(b["id"].asString(), std::string("b"));
   CHECK_EQ(b["label"].asString(), std::string("B"));
   CHECK_EQ(b["icon"].asString(), std::string("anchor"));
@@ -640,7 +656,8 @@ TEST(mcp_fields_round_trips_every_field_of_a_node) {
   CHECK_EQ(b["prerequisites"][0].asString(), std::string("a"));
   CHECK_EQ(b["position"]["x"].asDouble(), 12.0);
   CHECK_EQ(b["position"]["y"].asDouble(), 34.0);
-  CHECK_EQ(b["status"].asString(), std::string("active"));
+  CHECK_EQ(b["seedStatus"].asString(), std::string("active"));  // the document's authored baseline
+  CHECK_EQ(b["status"].asString(), std::string("none"));        // …and the caller's own, unmarked
   CHECK_EQ(b["description"].asString(), std::string("the whole annotation"));
   CHECK_EQ(b["links"][0]["url"].asString(), std::string("https://spec"));
   CHECK_EQ(b["links"][0]["label"].asString(), std::string("Spec"));
@@ -684,7 +701,7 @@ TEST(mcp_an_unknown_field_names_it_and_the_legal_set) {
   CHECK(misspelled.isError);
   CHECK_EQ(message(misspelled),
            std::string("find_nodes: fields[1] \"labl\" is not one of {id, label, icon, color, order, "
-                       "prerequisites, position, status, description, links}"));
+                       "prerequisites, position, status, seedStatus, description, links}"));
 
   // Each shape refuses against ITS OWN vocabulary — the legend's and the overlay's differ.
   Json::Value kindArgs(Json::objectValue);
@@ -769,4 +786,192 @@ TEST(mcp_a_limit_out_of_range_and_an_unknown_cursor_are_named_errors) {
   CHECK_EQ(message(lost),
            std::string("find_nodes: cursor \"vanished\" names no node in this result set. "
                        "Call again without a cursor to walk it from the start."));
+}
+
+// --- Reads that answer the question asked --------------------------------------------------
+
+TEST(mcp_status_answers_the_callers_own_mark_on_every_node) {
+  Harness h;
+  for (const char* id : {"done", "doing", "untouched"}) h.call("create_node", node(id, id));
+  h.call("set_progress", mark("done", "complete"));
+  h.call("set_progress", mark("doing", "active"));
+
+  // Asked for, `status` is answered for EVERY node — an unmarked one says so, in set_progress's
+  // own vocabulary, so "no mark" can never read as "this server doesn't serve that field".
+  Json::Value args(Json::objectValue);
+  args["fields"] = list({"id", "status"});
+  const Json::Value tree = body(h.call("get_tree", args))["tree"]["nodes"];
+  CHECK_EQ(ids(tree), (std::vector<std::string>{"doing", "done", "untouched"}));
+  CHECK_EQ(keys(tree[0]), (std::vector<std::string>{"id", "status"}));
+  CHECK_EQ(tree[0]["status"].asString(), std::string("active"));
+  CHECK_EQ(tree[1]["status"].asString(), std::string("complete"));
+  CHECK_EQ(tree[2]["status"].asString(), std::string("none"));
+
+  // find_nodes answers identically — same field, same vocabulary, same always-present rule.
+  const Json::Value found = body(h.call("find_nodes", args))["nodes"];
+  CHECK_EQ(ids(found), (std::vector<std::string>{"doing", "done", "untouched"}));
+  CHECK_EQ(found[0]["status"].asString(), std::string("active"));
+  CHECK_EQ(found[1]["status"].asString(), std::string("complete"));
+  CHECK_EQ(found[2]["status"].asString(), std::string("none"));
+
+  // …and it stays off the default projection: a page of 200 nodes pays nothing for it unasked.
+  CHECK_EQ(keys(body(h.call("find_nodes", kNoArgs))["nodes"][0]),
+           (std::vector<std::string>{"color", "id", "label"}));
+  CHECK_EQ(keys(body(h.call("get_tree", kNoArgs))["tree"]["nodes"][0]),
+           (std::vector<std::string>{"color", "id", "label", "prerequisites"}));
+}
+
+TEST(mcp_status_is_the_readers_own_mark_and_never_another_readers) {
+  Harness h;
+  h.trees.byId["open"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Shared", {}}, 0,
+                                    h.caller, Visibility::unlisted};
+  Json::Value planted = node("step", "Step");
+  planted["treeId"] = "open";
+  h.tools.callTool("create_node", planted, h.caller);
+  Json::Value marked = mark("step", "complete");
+  marked["treeId"] = "open";
+  h.tools.callTool("set_progress", marked, h.caller);
+
+  Json::Value args(Json::objectValue);
+  args["treeId"] = "open";
+  args["fields"] = list({"id", "status"});
+  const Json::Value mine = body(h.tools.callTool("get_tree", args, h.caller))["tree"]["nodes"][0];
+  CHECK_EQ(mine["status"].asString(), std::string("complete"));
+
+  // Progress is a private overlay: a stranger reading the same unlisted tree sees the node, and
+  // sees that THEY have not marked it.
+  const Json::Value theirs =
+      body(h.tools.callTool("get_tree", args, uid("stranger")))["tree"]["nodes"][0];
+  CHECK_EQ(keys(theirs), (std::vector<std::string>{"id", "status"}));
+  CHECK_EQ(theirs["id"].asString(), std::string("step"));
+  CHECK_EQ(theirs["status"].asString(), std::string("none"));
+}
+
+TEST(mcp_seed_status_is_the_documents_baseline_beside_the_callers_mark) {
+  Harness h;
+  Json::Value seeded = node("shipped", "Shipped");
+  seeded["seedStatus"] = "complete";  // what every reader sees before their own marks
+  Json::Value nodes(Json::arrayValue);
+  nodes.append(seeded);
+  Json::Value imported(Json::objectValue);
+  imported["nodes"] = nodes;
+  CHECK_FALSE(h.call("import_subgraph", imported).isError);
+
+  Json::Value args(Json::objectValue);
+  args["fields"] = list({"id", "status", "seedStatus"});
+  const Json::Value unmarked = body(h.call("find_nodes", args))["nodes"][0];
+  CHECK_EQ(keys(unmarked), (std::vector<std::string>{"id", "seedStatus", "status"}));
+  CHECK_EQ(unmarked["seedStatus"].asString(), std::string("complete"));
+  CHECK_EQ(unmarked["status"].asString(), std::string("none"));
+
+  h.call("set_progress", mark("shipped", "active"));
+  const Json::Value marked = body(h.call("find_nodes", args))["nodes"][0];
+  CHECK_EQ(marked["seedStatus"].asString(), std::string("complete"));  // the document is untouched
+  CHECK_EQ(marked["status"].asString(), std::string("active"));        // the mark is the caller's
+}
+
+TEST(mcp_a_query_matches_a_node_by_its_own_id_and_ranks_the_exact_one_first) {
+  Harness h;
+  h.call("create_node", node("alpha", "First"));
+  h.call("create_node", node("alpha-two", "Second"));
+  h.call("create_node", node("gamma", "Alpha rising"));
+  h.call("create_node", node("pre-alpha", "Prelude"));
+  Json::Value mention = node("delta", "Delta");
+  mention["description"] = "supersedes alpha";
+  h.call("create_node", mention);
+
+  // Every node that carries the string matches — including the one whose ID is the string, which
+  // used to be the only node a search for its own handle missed.
+  const Json::Value ranked = body(h.call("find_nodes", with("query", "alpha")));
+  CHECK_EQ(ranked["count"].asInt(), 5);
+  CHECK_EQ(ids(ranked["nodes"]),
+           (std::vector<std::string>{"alpha", "alpha-two", "gamma", "pre-alpha", "delta"}));
+
+  // The exact id outranks the prose that merely mentions it — the confident wrong answer this
+  // ranking exists to delete — and the match is case-insensitive on the id as on the rest.
+  const Json::Value shouted = body(h.call("find_nodes", with("query", "ALPHA")));
+  CHECK_EQ(ids(shouted["nodes"]),
+           (std::vector<std::string>{"alpha", "alpha-two", "gamma", "pre-alpha", "delta"}));
+
+  // A filter still ANDs with the query, and paging walks the ranked order, best page first.
+  Json::Value paged(Json::objectValue);
+  paged["query"] = "alpha";
+  paged["limit"] = 2;
+  const Json::Value first = body(h.call("find_nodes", paged));
+  CHECK_EQ(first["count"].asInt(), 5);
+  CHECK_EQ(ids(first["nodes"]), (std::vector<std::string>{"alpha", "alpha-two"}));
+  CHECK_EQ(first["nextCursor"].asString(), std::string("alpha-two"));
+  paged["cursor"] = first["nextCursor"].asString();
+  CHECK_EQ(ids(body(h.call("find_nodes", paged))["nodes"]),
+           (std::vector<std::string>{"gamma", "pre-alpha"}));
+
+  // With no query there is nothing to rank: the tree's own order stands.
+  CHECK_EQ(ids(body(h.call("find_nodes", kNoArgs))["nodes"]),
+           (std::vector<std::string>{"alpha", "alpha-two", "delta", "gamma", "pre-alpha"}));
+}
+
+TEST(mcp_an_edit_says_whether_the_dirt_it_reports_is_its_own) {
+  Harness h;
+  h.call("create_node", node("a", "A"));
+  h.call("create_node", node("b", "B"));
+
+  Json::Value ghost(Json::objectValue);
+  ghost["from"] = "a";
+  ghost["to"] = "ghost";
+  const Json::Value guilty = body(h.call("connect", ghost));
+  CHECK_FALSE(guilty["diagnosticsClean"].asBool());
+  CHECK_EQ(introduced(guilty), (std::vector<std::string>{"dangling edge \"a\" -> \"ghost\""}));
+
+  // The innocent edit on the tree that dirt left behind: the whole-tree flag still says false,
+  // and the receipt says it was not this edit — the round trip to get_diagnostics is gone.
+  Json::Value renamed(Json::objectValue);
+  renamed["nodeId"] = "a";
+  renamed["label"] = "A renamed";
+  const Json::Value innocent = body(h.call("rename_node", renamed));
+  CHECK_FALSE(innocent["diagnosticsClean"].asBool());
+  CHECK_EQ(introduced(innocent), std::vector<std::string>{});
+
+  // A GC only ever removes, so it can never be the culprit — and it ends clean.
+  const Json::Value pruned = body(h.call("prune", kNoArgs));
+  CHECK(pruned["diagnosticsClean"].asBool());
+  CHECK_EQ(introduced(pruned), std::vector<std::string>{});
+}
+
+TEST(mcp_an_edit_names_the_cycle_the_dangle_and_the_self_edge_it_introduced) {
+  Harness h;
+  h.call("create_node", node("a", "A"));
+  h.call("create_node", node("b", "B"));
+  Json::Value forward(Json::objectValue);
+  forward["from"] = "a";
+  forward["to"] = "b";
+  CHECK_EQ(introduced(body(h.call("connect", forward))), std::vector<std::string>{});
+
+  Json::Value back(Json::objectValue);
+  back["from"] = "b";
+  back["to"] = "a";
+  CHECK_EQ(introduced(body(h.call("connect", back))),
+           (std::vector<std::string>{"cycle among \"a\", \"b\""}));
+
+  Json::Value loop(Json::objectValue);
+  loop["from"] = "a";
+  loop["to"] = "a";
+  CHECK_EQ(introduced(body(h.call("connect", loop))),
+           (std::vector<std::string>{"self-edge on \"a\""}));  // the standing cycle is not re-blamed
+
+  // A delete dirties edges it never named: both of b's, reported against the edit that did it.
+  const Json::Value deleted = body(h.call("delete_node", with("nodeId", "b")));
+  CHECK_EQ(introduced(deleted),
+           (std::vector<std::string>{"dangling edge \"a\" -> \"b\"", "dangling edge \"b\" -> \"a\""}));
+
+  // An import is one op over many nodes; its receipt is judged the same way.
+  Json::Value orphan = node("c", "C");
+  Json::Value prereqs(Json::arrayValue);
+  prereqs.append("nowhere");
+  orphan["prerequisites"] = prereqs;
+  Json::Value nodes(Json::arrayValue);
+  nodes.append(orphan);
+  Json::Value imported(Json::objectValue);
+  imported["nodes"] = nodes;
+  CHECK_EQ(introduced(body(h.call("import_subgraph", imported))),
+           (std::vector<std::string>{"dangling edge \"nowhere\" -> \"c\""}));
 }

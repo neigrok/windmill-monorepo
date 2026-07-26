@@ -2,6 +2,7 @@
 
 #include "adapters/json/CommandJson.h"
 #include "adapters/json/TreeJson.h"
+#include "adapters/mcp/EditReceipt.h"
 #include "adapters/mcp/ReadShape.h"
 #include "adapters/mcp/ToolArgs.h"
 #include "application/TreeRoom.h"
@@ -187,6 +188,14 @@ Json::Value linkArray(const char* description) {
 const std::vector<const char*> kHues = {"terracotta", "olive", "gold", "brick", "sky", "plum"};
 const std::vector<const char*> kStatuses = {"active", "complete", "none"};
 
+// `status` used to name an imported node's authored baseline, and now names the caller's own
+// mark everywhere else on this surface. A node that carried one where the other was meant would
+// publish a private mark into the document (or lose it) without a word, so the older spelling is
+// refused by name rather than guessed at — exactly as create_node refuses `nodeId`.
+constexpr char kSeedStatusMoved[] =
+    ".status is your own mark on this surface, not the document's — the authored baseline every "
+    "reader sees is \"seedStatus\", and your own progress goes in \"progress\": [{nodeId, status}].";
+
 // The one refusal that is about who you are rather than what you sent, so it says what to do
 // next instead of naming an argument.
 constexpr char kNotYours[] = "this tree belongs to another account. Call list_trees to see the "
@@ -279,7 +288,9 @@ std::optional<std::string> checkImportedNode(const Json::Value& node, const std:
     return bad;
   if (std::optional<std::string> bad = optionalString(node["icon"], path + ".icon", kMaxIconLength)) return bad;
   if (std::optional<std::string> bad = optionalOneOf(node["color"], path + ".color", kHues)) return bad;
-  if (std::optional<std::string> bad = optionalOneOf(node["status"], path + ".status", kStatuses)) return bad;
+  if (std::optional<std::string> bad = optionalOneOf(node["seedStatus"], path + ".seedStatus", kStatuses))
+    return bad;
+  if (!node["status"].isNull()) return path + kSeedStatusMoved;
   if (std::optional<std::string> bad = optionalString(node["order"], path + ".order")) return bad;
   if (std::optional<std::string> bad = optionalStrings(node["prerequisites"], path + ".prerequisites", kMaxIdLength))
     return bad;
@@ -404,8 +415,17 @@ ToolResult withRoom(RoomRegistry& registry, const TreeId& tree, Fn&& fn) {
   }
 }
 
-ToolResult readTree(RoomRegistry& registry, const TreeId& tree, const Json::Value& args,
-                    const std::optional<UserId>& caller) {
+// The caller's own progress rows, read ONCE per tree read and only when `status` was asked for:
+// the overlay is the same set for every node on the page, and an anonymous caller has no marks to
+// look up. Every node then answers `status`, marked or not.
+Progress marksFor(ProgressService& progress, const TreeId& tree, const std::optional<UserId>& caller,
+                  const NodeFields& fields) {
+  if (!fields.count(NodeField::status) || !caller) return Progress{};
+  return progress.progressOf(tree, *caller);
+}
+
+ToolResult readTree(RoomRegistry& registry, ProgressService& progress, const TreeId& tree,
+                    const Json::Value& args, const std::optional<UserId>& caller) {
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
     // Byte-identical to the absent message (RoomRegistry::open throws the same) — a private
     // tree must be indistinguishable from one that does not exist, or the id is an oracle.
@@ -423,8 +443,10 @@ ToolResult readTree(RoomRegistry& registry, const TreeId& tree, const Json::Valu
     std::optional<Page> page = pageOf(data.nodes, args, error);
     if (!page) return ToolResult::failure(error);
 
+    const Progress marks = marksFor(progress, tree, caller, *nodeFields);
     Json::Value nodes(Json::arrayValue);
-    for (std::size_t i = page->begin; i < page->end; ++i) nodes.append(projectNode(data.nodes[i], *nodeFields));
+    for (std::size_t i = page->begin; i < page->end; ++i)
+      nodes.append(projectNode(data.nodes[i], *nodeFields, marks));
     Json::Value kinds(Json::arrayValue);
     for (const Kind& kind : data.kinds) kinds.append(projectKind(kind, *kindFields));
 
@@ -485,8 +507,8 @@ ToolResult readProgress(ProgressService& progress, const TreeId& tree, const Jso
   return ToolResult::json(projectProgress(progress.progressOf(tree, user), *fields));
 }
 
-ToolResult findNodes(RoomRegistry& registry, const TreeId& tree, const Json::Value& args,
-                     const std::optional<UserId>& caller) {
+ToolResult findNodes(RoomRegistry& registry, ProgressService& progress, const TreeId& tree,
+                     const Json::Value& args, const std::optional<UserId>& caller) {
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
     // Byte-identical to the absent message (RoomRegistry::open throws the same) — a private
     // tree must be indistinguishable from one that does not exist, or the id is an oracle.
@@ -512,8 +534,10 @@ ToolResult findNodes(RoomRegistry& registry, const TreeId& tree, const Json::Val
     std::optional<Page> page = pageOf(matches, args, error);
     if (!page) return ToolResult::failure(error);
 
+    const Progress marks = marksFor(progress, tree, caller, *fields);
     Json::Value nodes(Json::arrayValue);
-    for (std::size_t i = page->begin; i < page->end; ++i) nodes.append(projectNode(matches[i], *fields));
+    for (std::size_t i = page->begin; i < page->end; ++i)
+      nodes.append(projectNode(matches[i], *fields, marks));
     Json::Value out(Json::objectValue);
     out["count"] = static_cast<Json::UInt64>(matches.size());  // everything that matched, not this page
     out["nodes"] = nodes;
@@ -550,6 +574,9 @@ ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::stri
                                  " could be built from them — that is a server bug, please report it.");
     if (std::optional<std::string> reason = room.validate(*command)) return ToolResult::failure(*reason);
 
+    // Bracketing the write under the strand is what makes the receipt attributable: whatever the
+    // tree gains between these two reads, this command gained it.
+    const TreeDiagnostics before = room.diagnose();
     Seq seq = room.applyCommand(*command, clock.nowMs(), actor);
     if (!room.owner()) registry.claim(tree, actor);  // first authenticated writer claims the tree
     registry.persist(tree);  // flush the dirty rows so the web reader sees this edit
@@ -557,7 +584,7 @@ ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::stri
     Json::Value out(Json::objectValue);
     out["applied"] = true;
     out["seq"] = static_cast<Json::Int64>(seq);
-    out["diagnosticsClean"] = room.diagnose().clean();
+    answerDiagnostics(before, room.diagnose(), out);
     if (payload.isMember("id")) out["id"] = payload["id"];
     return ToolResult::json(out);
   });
@@ -746,6 +773,15 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
   if (std::optional<std::string> bad = checkImport(args)) return ToolResult::failure(*bad);
 
   TreeData incoming = treeFromJson(args, tree);  // the get_tree shape: nodes[], kinds[]
+  // `seedStatus` is this surface's name for the document's authored baseline — the codec still
+  // reads the older `status`, so the published spelling is folded over it here, by id.
+  std::map<std::string, std::string> seeds;
+  for (const Json::Value& node : args["nodes"])
+    if (node["seedStatus"].isString()) seeds[node["id"].asString()] = node["seedStatus"].asString();
+  for (NodeSpec& node : incoming.nodes) {
+    auto seed = seeds.find(node.id.str());
+    if (seed != seeds.end()) node.status = seed->second;
+  }
   const bool dryRun = args["dryRun"].asBool();
 
   ToolResult grafted = withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
@@ -781,12 +817,14 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
       return ToolResult::json(out);
     }
 
+    // A graft can dangle an edge per node it carries; the receipt says which of them are new.
+    const TreeDiagnostics before = room.diagnose();
     Seq seq = room.importTree(incoming, clock.nowMs(), actor);
     if (!room.owner()) registry.claim(tree, actor);  // first authenticated writer claims the tree
     registry.persist(tree);
     out["imported"] = true;
     out["seq"] = static_cast<Json::Int64>(seq);
-    out["diagnosticsClean"] = room.diagnose().clean();
+    answerDiagnostics(before, room.diagnose(), out);
     return ToolResult::json(out);
   });
   if (grafted.isError || dryRun || !(args.isMember("progress") && args["progress"].isArray()))
@@ -837,7 +875,7 @@ ToolResult pruneTree(RoomRegistry& registry, ProgressService& progress, const Tr
     out["prunedEdges"] = prunedEdges;
     out["prunedProgress"] = static_cast<int>(orphans.size());
     out["seq"] = static_cast<Json::Int64>(seq);
-    out["diagnosticsClean"] = room.diagnose().clean();
+    answerDiagnostics(before, room.diagnose(), out);  // a GC only ever removes: always empty
     return ToolResult::json(out);
   });
   return cleaned;
@@ -910,7 +948,9 @@ Json::Value RoadmapTools::listTools() const {
     p["treeId"] = treeHandle();
     p["fields"] = fieldArray(
         "Which fields each node carries. Default {id, label, color, prerequisites} — the shape of "
-        "the tree. Ask for description, links, position, order, icon or status when you need them.",
+        "the tree. Ask for description, links, position, order or icon when you need them; `status` "
+        "is your own mark on each node (active/complete/none, always answered), `seedStatus` the "
+        "document's authored baseline.",
         nodeVocabulary().names());
     p["kindFields"] = fieldArray(
         "Which fields each legend kind carries. Default {id, hue, label}.", kindVocabulary().names());
@@ -958,17 +998,21 @@ Json::Value RoadmapTools::listTools() const {
     p["treeId"] = treeHandle();
     p["color"] = enumStr("Optional hue to match — a node's color is its kind.", kHues);
     p["kind"] = cappedStr("Optional legend kind id — matches nodes wearing that kind's hue.", kMaxIdLength);
-    p["query"] = str("Optional case-insensitive substring matched against each node's label and description.");
+    p["query"] = str("Optional case-insensitive substring matched against each node's id, label and "
+                     "description. Matches come back best first: an exact id, then an id prefix, then "
+                     "a label hit, then an id substring, then a description-only hit.");
     p["fields"] = fieldArray(
         "Which fields each match carries. Default {id, label, color} — an index you pick edit targets "
-        "out of. Ask for description, links, prerequisites, position, order, icon or status when you "
-        "need them.",
+        "out of. Ask for description, links, prerequisites, position, order or icon when you need them; "
+        "`status` is your own mark on each node (active/complete/none, always answered), `seedStatus` "
+        "the document's authored baseline.",
         nodeVocabulary().names());
     p["limit"] = boundedInt("Most nodes to return in one page.", 1, kMaxLimit, kDefaultLimit);
     p["cursor"] = str("Resume token from a previous page's `nextCursor`. Omit for the first page.");
     tools.append(tool("find_nodes",
         "Search a roadmap's nodes. Every filter you set must match (AND): `color` or `kind` pin a hue, "
-        "`query` is a case-insensitive substring over label + description. Omit all filters to list every "
+        "`query` is a case-insensitive substring over id + label + description, best match first — so "
+        "pasting an id you already know finds that node, at the top. Omit all filters to list every "
         "node. `count` is everything that matched, not the size of the page you got; when more remain a "
         "`nextCursor` comes back with it.",
         p, {"treeId"}));
@@ -1182,7 +1226,9 @@ Json::Value RoadmapTools::listTools() const {
     nodeFields["order"] = str("Optional sibling order key, as get_tree returns it.");
     nodeFields["prerequisites"] = strArray("Ids of the nodes that unlock this one.", kMaxIdLength);
     nodeFields["position"] = position("Optional canvas position {x, y}.");
-    nodeFields["status"] = enumStr("Optional authoring seed for the caller's own progress.", kStatuses);
+    nodeFields["seedStatus"] = enumStr(
+        "Optional authored baseline carried in the document — what every reader sees before their own "
+        "marks. Your own progress is not this: pass it in `progress[]`.", kStatuses);
     nodeFields["description"] = cappedStr("Optional annotation body.", kMaxNodeDescriptionLength);
     nodeFields["links"] = linkArray("Optional external references.");
 
@@ -1209,11 +1255,13 @@ Json::Value RoadmapTools::listTools() const {
     tools.append(tool("import_subgraph",
         "Bulk-apply a whole roadmap slice — the shape get_tree returns ({nodes[], kinds[]}, plus an "
         "optional progress[]); to copy a tree faithfully, read it with every field named in `fields` "
-        "first, since get_tree answers with a projection. The graft is ONE op; a carried progress[] "
-        "is applied after it as ordinary overlay writes. Upsert by id: an incoming id already present "
-        "is overwritten (reported in nodeCollisions/kindCollisions), a new id is added; nothing is "
-        "removed, and the tree's title is not touched. Pass dryRun to preview the collisions and "
-        "change nothing. This collapses hundreds of create/connect calls into one.",
+        "first, since get_tree answers with a projection — but a node carries `seedStatus`, never "
+        "`status`: that one is your own mark, and travels in progress[]. The graft is ONE op; a "
+        "carried progress[] is applied after it as ordinary overlay writes. Upsert by id: an "
+        "incoming id already present is overwritten (reported in nodeCollisions/kindCollisions), a "
+        "new id is added; nothing is removed, and the tree's title is not touched. Pass dryRun to "
+        "preview the collisions and change nothing. This collapses hundreds of create/connect "
+        "calls into one.",
         p, {"treeId", "nodes"}));
   }
   {
@@ -1279,11 +1327,11 @@ ToolResult RoadmapTools::dispatch(const std::string& name, const Json::Value& ar
   std::optional<UserId> reader = caller.empty() ? std::nullopt : std::optional<UserId>(caller);
 
   if (name == "delete_tree")     return removeTree(treeRegistry_, tree, caller);
-  if (name == "get_tree")        return readTree(registry_, tree, arguments, reader);
+  if (name == "get_tree")        return readTree(registry_, progress_, tree, arguments, reader);
   if (name == "get_diagnostics") return readDiagnostics(registry_, tree, reader);
   if (name == "get_health")      return readHealth(registry_, tree, reader);
   if (name == "get_progress")    return readProgress(progress_, tree, arguments, caller);
-  if (name == "find_nodes")      return findNodes(registry_, tree, arguments, reader);
+  if (name == "find_nodes")      return findNodes(registry_, progress_, tree, arguments, reader);
   if (name == "set_progress")
     return writeProgress(registry_, progress_, bus_, tree, arguments, clock_, caller);
   if (name == "import_subgraph")

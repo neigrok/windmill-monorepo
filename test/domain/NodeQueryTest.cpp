@@ -78,3 +78,53 @@ TEST(select_nodes_ands_every_criterion) {
 TEST(select_nodes_with_an_empty_filter_returns_all) {
   CHECK_EQ(selectNodes(sampleTree(), NodeFilter{}).size(), 3u);
 }
+
+static std::vector<std::string> ids(const std::vector<NodeSpec>& nodes) {
+  std::vector<std::string> out;
+  for (const NodeSpec& node : nodes) out.push_back(node.id.str());
+  return out;
+}
+
+// The id is the handle every edit is aimed by, so a query that IS an id is a caller naming the
+// node it already means. The tree is deliberately in another order: the ranking decides, not the
+// input.
+static TreeData rankableTree() {
+  TreeData tree;
+  tree.id = TreeId{"t"};
+  tree.nodes = {
+    node("delta", "Delta", NodeColor::sky, "supersedes alpha"),  // description only
+    node("gamma", "Alpha rising", NodeColor::sky),               // label
+    node("pre-alpha", "Prelude", NodeColor::sky),                // id substring
+    node("alpha-two", "Second", NodeColor::sky),                 // id prefix
+    node("alpha", "First", NodeColor::sky),                      // the exact id
+  };
+  return tree;
+}
+
+TEST(select_nodes_matches_the_id_and_ranks_an_exact_one_first) {
+  NodeFilter filter;
+  filter.query = "alpha";
+  CHECK_EQ(ids(selectNodes(rankableTree(), filter)),
+           (std::vector<std::string>{"alpha", "alpha-two", "gamma", "pre-alpha", "delta"}));
+
+  NodeFilter shouted;
+  shouted.query = "ALPHA";  // the id is matched case-insensitively, like the rest
+  CHECK_EQ(ids(selectNodes(rankableTree(), shouted)),
+           (std::vector<std::string>{"alpha", "alpha-two", "gamma", "pre-alpha", "delta"}));
+
+  NodeFilter narrowed;
+  narrowed.query = "alpha";
+  narrowed.color = NodeColor::brick;  // every criterion still ANDs; nothing here is brick
+  CHECK_EQ(selectNodes(rankableTree(), narrowed).size(), 0u);
+}
+
+TEST(select_nodes_keeps_the_trees_order_within_one_rank) {
+  TreeData tree;
+  tree.nodes = {node("second", "B", NodeColor::sky, "mentions alpha"),
+                node("first", "A", NodeColor::sky, "mentions alpha")};
+  NodeFilter filter;
+  filter.query = "alpha";
+  CHECK_EQ(ids(selectNodes(tree, filter)), (std::vector<std::string>{"second", "first"}));
+
+  CHECK_EQ(ids(selectNodes(tree, NodeFilter{})), (std::vector<std::string>{"second", "first"}));
+}
