@@ -396,7 +396,7 @@ function Footer({ onFeedback }) {
         <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16, color: 'var(--text-secondary)' }}>Windmill</span>
         © 2026
       </div>
-      <div style={{ display: 'flex', gap: 24, fontSize: 14, fontFamily: 'var(--font-body)' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, fontSize: 14, fontFamily: 'var(--font-body)' }}>
         <button type="button" onClick={onFeedback} style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'var(--text-tertiary)', cursor: 'pointer' }}>Feedback</button>
         <a href="/pricing.html" style={{ color: 'var(--text-tertiary)' }}>Pricing</a>
         <a href="/connect.html" style={{ color: 'var(--text-tertiary)' }}>Connect your AI tools</a>

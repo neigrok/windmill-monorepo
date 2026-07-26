@@ -336,6 +336,12 @@ export function mountBeat(stage, kind) {
               sizes: [24, 19, 15, 13], labelSizes: [11.5, 11.5, 11, 11],
               labels: defs.labels || 'none' };
   stage.style.cssText += `position:relative; width:${BEAT_W}px; height:${BEAT_H}px;`;
+  // Scale the fixed BEAT_W world down to the card's column when it's narrower (phones),
+  // so the scene shrinks instead of cropping. zoom (not transform) so the layout box
+  // shrinks too and the card never overflows. Mirrors the hero's fit().
+  const frame = stage.parentElement;
+  const fitBeat = () => { stage.style.zoom = Math.min(1, frame.clientWidth / BEAT_W); };
+  new ResizeObserver(fitBeat).observe(frame); fitBeat();
   let W, played = false;
   function build(pre) {
     K.clear(); stage.innerHTML = '';
