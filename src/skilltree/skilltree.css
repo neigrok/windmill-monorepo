@@ -2202,6 +2202,18 @@
   font-weight: 700;
 }
 
+/* Paste is where a tree is born, and on a phone that means the keyboard. iOS zooms the page into
+   any focused input under 16px, so the well and the plant-name field are floored at 16px on a phone.
+   The hidden mirror that measures the auto-growing well must match the text exactly — it moves with
+   it, or the well would mis-size. Desktop keeps var(--text-sm). */
+@media (max-width: 743px) {
+  .pc-mirror,
+  .pc-text,
+  .pc-name input {
+    font-size: 16px;
+  }
+}
+
 .pc-legend {
   padding: var(--space-2) var(--space-4);
   border-top: 1px solid var(--border-subtle);

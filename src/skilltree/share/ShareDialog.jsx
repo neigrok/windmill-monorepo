@@ -106,7 +106,9 @@ export function ShareDialog({ open, onClose, visibility, mine, onShareLink, onSt
                 border: '1.5px solid var(--border-default)',
                 background: 'var(--surface-card)',
                 fontFamily: 'var(--font-mono)',
-                fontSize: 'var(--text-sm)',
+                // 16px, not smaller: iOS zooms the page into any focused input under it, and this
+                // field selects-all on focus — a monospace link reads fine at this size everywhere.
+                fontSize: 'var(--text-base)',
                 color: 'var(--text-secondary)',
                 outline: 'none',
                 textOverflow: 'ellipsis',

@@ -927,6 +927,15 @@
   line-height: 1.5;
   font-weight: 400;
 }
+/* On a phone the list IS the editing surface, and iOS zooms the whole page into any focused input
+   under 16px — so a rename or describe here would yank the viewport the moment the keyboard opens.
+   Floor it at 16px only where the keyboard is the concern; the desktop workbench keeps its tighter
+   rhythm. Covers the describe textarea too (--area doesn't override the size). */
+@media (max-width: 743px) {
+  .st-list-input {
+    font-size: 16px;
+  }
+}
 .st-list-hint {
   padding-left: 2px;
   font-family: var(--font-body);
