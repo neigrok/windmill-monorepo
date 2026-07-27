@@ -42,6 +42,8 @@
 #include "products/roadmap/application/TreeRegistry.h"
 #include "products/roadmap/application/ReminderSweep.h"
 #include "products/roadmap/routes.h"
+#include "products/journal/adapters/llm/NullEmbedder.h"
+#include "products/journal/adapters/postgres/PgEchoRepository.h"
 #include "products/journal/adapters/postgres/PgJournalRepository.h"
 #include "products/journal/adapters/postgres/PgNudgeRepository.h"
 #include "products/journal/application/PageService.h"
@@ -681,10 +683,22 @@ int main() {
   auto journalNudgeSweep = std::make_shared<NudgeSweep>(*journalNudges, *emailSender, *tokens,
                                                         *systemClock, journalNudgeArming, appBaseUrl);
   journalNudgeSweep->start();
+  // Wave 3 echoes (Windmill One): the nightly reading-across, gated on the one subscription and
+  // reusing the Paddle mirror (subscriptionRepo) the billing edge already keeps. The embedder is
+  // unwired by default (NullEmbedder ⇒ configured() false ⇒ the sweep no-ops) until a vendor or a
+  // self-hosted model is plugged in behind the Embedder port; nothing else in the echo path moves.
+  auto journalEmbedder = std::make_shared<NullEmbedder>();
+  auto journalEchoes = std::make_shared<PgEchoRepository>(connString);
+  const char* journalEchoAdminEnv = std::getenv("JOURNAL_ECHO_ADMIN_TOKEN");
+  auto journalEchoSweep = std::make_shared<EchoSweep>(*journalEchoes, *journalEmbedder,
+                                                      *subscriptionRepo, *systemClock, EchoRules{});
+  journalEchoSweep->start();
   journal::JournalDeps journalDeps{.pageService = pageService, .authService = authService,
                                    .nudges = journalNudges, .nudgeSweep = journalNudgeSweep,
                                    .tokens = tokens, .clock = systemClock,
-                                   .nudgeAdminToken = journalNudgeAdminEnv ? journalNudgeAdminEnv : ""};
+                                   .nudgeAdminToken = journalNudgeAdminEnv ? journalNudgeAdminEnv : "",
+                                   .echoes = journalEchoes, .echoSweep = journalEchoSweep,
+                                   .echoAdminToken = journalEchoAdminEnv ? journalEchoAdminEnv : ""};
   journal::registerRoutes(app, journalDeps);
 
   const char* portEnv = std::getenv("PORT");

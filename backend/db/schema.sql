@@ -690,3 +690,38 @@ create table if not exists journal_nudge_day (
   primary key (user_id, slot_day)
 );
 create index if not exists journal_nudge_day_decided on journal_nudge_day (decided_at);
+
+-- ── Journal echoes (Windmill One, computed server-side, nightly) ─────────────────────────────
+-- An echo is Journal noticing that today repeats something written months ago. Produced only by
+-- the nightly EchoSweep, only for subscribers. trigger_day is the page that prompted it; match_day
+-- the older page; the char spans locate the resonant passage in each; score is stored but shown
+-- only as presence (never a number). "absent, not locked" for non-subscribers falls out of this
+-- table simply being empty for them. dismissed retires an echo/offer for that page (client-set).
+create table if not exists journal_echo (
+  user_id      uuid not null references users(id) on delete cascade,
+  trigger_day  date not null,
+  match_day    date not null,
+  trigger_lo   int not null default 0,      -- char span in the trigger page [lo, hi)
+  trigger_hi   int not null default 0,
+  match_lo     int not null default 0,      -- char span in the older page
+  match_hi     int not null default 0,
+  score        real not null default 0,
+  dismissed    boolean not null default false,
+  created_at   timestamptz not null default now(),
+  primary key (user_id, trigger_day, match_day)
+);
+create index if not exists journal_echo_trigger on journal_echo (user_id, trigger_day)
+  where not dismissed;
+
+-- Per-page embedding used ONLY by the nightly echo pass (NOT search — search embeds on-device).
+-- Stored as float4[] and matched in-memory by the pure EchoFinder; no pgvector dependency. The
+-- vector is recomputed when the page body changes, tracked by body_stamp_ms (the page's HLC ms the
+-- vector was computed from) — a vector staler than the page is re-embedded before it is trusted.
+create table if not exists journal_page_vector (
+  user_id       uuid not null references users(id) on delete cascade,
+  day           date not null,
+  vector        real[] not null,
+  body_stamp_ms bigint not null default 0,
+  created_at    timestamptz not null default now(),
+  primary key (user_id, day)
+);

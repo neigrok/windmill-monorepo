@@ -1,9 +1,15 @@
 #pragma once
 
+#include "platform/domain/Billing.h"
+#include "platform/ports/SubscriptionRepository.h"
+#include "products/journal/ports/EchoRepository.h"
+#include "products/journal/ports/Embedder.h"
 #include "products/journal/ports/JournalRepository.h"
 #include "products/journal/ports/NudgeRepository.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -178,6 +184,139 @@ public:
     settings[user.str()].pausedUntilMs = untilMs;
   }
   void disable(const UserId& user) override { settings[user.str()].enabled = false; }
+};
+
+// A deterministic stand-in for the server-side embedding model: normalised per-letter counts over
+// the 26 lowercase letters. Same text embeds to the same vector (cosine 1), text sharing most of its
+// letters cosines close, and text over a disjoint set cosines low — enough for the echo sweep to
+// tell a resonant pair from an unrelated one with no model in sight. `configured` is a settable flag
+// so a test can exercise the "no embedder — the whole pass is a no-op" path.
+struct FakeEmbedder : Embedder {
+  bool isConfigured = true;
+
+  bool configured() const override { return isConfigured; }
+  std::vector<float> embed(const std::string& body) override {
+    std::vector<float> counts(26, 0.0f);
+    for (char raw : body) {
+      const char c = static_cast<char>(std::tolower(static_cast<unsigned char>(raw)));
+      if (c >= 'a' && c <= 'z') counts[c - 'a'] += 1.0f;
+    }
+    double norm = 0.0;
+    for (float v : counts) norm += static_cast<double>(v) * v;
+    if (norm == 0.0) return counts;   // an empty/letterless body has no direction; leave it zero
+    for (float& v : counts) v = static_cast<float>(v / std::sqrt(norm));
+    return counts;
+  }
+};
+
+// An in-memory EchoRepository the sweep's tests drive by hand. The reads (activeSince, triggersSince)
+// ignore their window and return what the test planted — the sweep's windowing is the real adapter's
+// job, not the fake's — while the writes (saveVector, saveEcho) are RECORDED so a test asserts what
+// the pass did. A saved vector also joins the corpus, exactly as the real corpusOf would see it on
+// the next read, so "embed a missing vector, then match against it" works end to end.
+class FakeEchoRepository : public EchoRepository {
+public:
+  struct SavedVector {
+    UserId user;
+    LocalDate day;
+    std::vector<float> vector;
+    std::uint64_t stampMs;
+  };
+  struct SavedEcho {
+    UserId user;
+    LocalDate triggerDay;
+    EchoMatch match;
+  };
+
+  std::vector<EchoUser> users;                                // activeSince returns these, in order
+  std::map<std::string, std::vector<PageText>> needing;      // user -> pages still needing a vector
+  std::map<std::string, std::vector<EchoCandidate>> corpus;  // user -> already-vectored pages
+  std::map<std::string, std::vector<LocalDate>> triggers;    // user -> recently-changed days
+  std::vector<SavedVector> savedVectors;
+  std::vector<SavedEcho> savedEchoes;
+
+  void addUser(const UserId& user, const Email& email) { users.push_back(EchoUser{user, email}); }
+  void addPageNeedingVector(const UserId& user, const LocalDate& day, const std::string& body,
+                            std::uint64_t stampMs) {
+    needing[user.str()].push_back(PageText{day, body, stampMs});
+  }
+  void addCorpusEntry(const UserId& user, const LocalDate& day, const std::vector<float>& vector,
+                      const std::string& body) {
+    corpus[user.str()].push_back(EchoCandidate{day, vector, body});
+  }
+  void addTrigger(const UserId& user, const LocalDate& day) { triggers[user.str()].push_back(day); }
+
+  std::vector<EchoUser> activeSince(std::uint64_t) override { return users; }
+  std::vector<PageText> pagesNeedingVector(const UserId& user) override {
+    auto it = needing.find(user.str());
+    if (it == needing.end()) return {};
+    return it->second;
+  }
+  void saveVector(const UserId& user, const LocalDate& day, const std::vector<float>& vector,
+                  std::uint64_t bodyStampMs) override {
+    savedVectors.push_back(SavedVector{user, day, vector, bodyStampMs});
+    corpus[user.str()].push_back(EchoCandidate{day, vector, ""});   // now visible to corpusOf
+    auto it = needing.find(user.str());
+    if (it == needing.end()) return;
+    it->second.erase(std::remove_if(it->second.begin(), it->second.end(),
+                                    [&](const PageText& p) { return p.day == day; }),
+                     it->second.end());
+  }
+  std::vector<EchoCandidate> corpusOf(const UserId& user) override {
+    auto it = corpus.find(user.str());
+    if (it == corpus.end()) return {};
+    return it->second;
+  }
+  std::vector<LocalDate> triggersSince(const UserId& user, std::uint64_t) override {
+    auto it = triggers.find(user.str());
+    if (it == triggers.end()) return {};
+    return it->second;
+  }
+  void saveEcho(const UserId& user, const LocalDate& triggerDay, const EchoMatch& match) override {
+    savedEchoes.push_back(SavedEcho{user, triggerDay, match});
+  }
+
+  std::vector<StoredEcho> echoesFor(const UserId& user, const LocalDate& from,
+                                    const LocalDate& to) override {
+    std::vector<StoredEcho> out;
+    for (const SavedEcho& e : savedEchoes) {
+      if (!(e.user == user)) continue;
+      if (e.triggerDay < from || to < e.triggerDay) continue;
+      out.push_back(StoredEcho{e.triggerDay, e.match.matchDay, e.match.triggerSpan, e.match.matchSpan,
+                               e.match.score});
+    }
+    return out;
+  }
+  void dismiss(const UserId& user, const LocalDate& triggerDay) override {
+    savedEchoes.erase(std::remove_if(savedEchoes.begin(), savedEchoes.end(),
+                                     [&](const SavedEcho& e) {
+                                       return e.user == user && e.triggerDay == triggerDay;
+                                     }),
+                      savedEchoes.end());
+  }
+};
+
+// The billing mirror the echo sweep reads to tell a subscriber from everyone else. A user with no
+// row is unsubscribed; one who has subscribed carries a live `active` status, the same predicate
+// (grantsAccess) production reads. Mirrors TendingServiceTest's fake, minted email-agnostic.
+struct FakeSubscriptionRepository : SubscriptionRepository {
+  std::map<std::string, PaddleSubscription> byUser;
+
+  void upsertCustomer(const PaddleCustomer&) override {}
+  void upsertSubscription(const PaddleSubscription& subscription) override {
+    byUser[subscription.userId] = subscription;
+  }
+  std::optional<PaddleSubscription> findFor(const UserId& user, const std::string&) override {
+    auto it = byUser.find(user.str());
+    if (it == byUser.end()) return std::nullopt;
+    return it->second;
+  }
+  void subscribe(const UserId& user) {
+    PaddleSubscription subscription;
+    subscription.userId = user.str();
+    subscription.status = "active";
+    byUser[user.str()] = subscription;
+  }
 };
 
 }

@@ -1,8 +1,10 @@
 #pragma once
 
 #include "platform/application/AuthService.h"
+#include "products/journal/application/EchoSweep.h"
 #include "products/journal/application/NudgeSweep.h"
 #include "products/journal/application/PageService.h"
+#include "products/journal/ports/EchoRepository.h"
 #include "products/journal/ports/NudgeRepository.h"
 
 #include <drogon/HttpAppFramework.h>
@@ -24,6 +26,9 @@ struct JournalDeps {
   std::shared_ptr<TokenGenerator> tokens;
   std::shared_ptr<Clock> clock;
   std::string nudgeAdminToken;
+  std::shared_ptr<EchoRepository> echoes;
+  std::shared_ptr<EchoSweep> echoSweep;
+  std::string echoAdminToken;
 };
 
 // Mounts the journal product on the shared app: every /v1/journal/* route, owner-scoped, no public

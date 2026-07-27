@@ -1,5 +1,6 @@
 #include "products/journal/routes.h"
 
+#include "products/journal/adapters/http/EchoApi.h"
 #include "products/journal/adapters/http/JournalApi.h"
 #include "products/journal/adapters/http/NudgeApi.h"
 
@@ -77,6 +78,31 @@ void registerRoutes(drogon::HttpAppFramework& app, const JournalDeps& deps) {
       "/v1/admin/journal/nudge/sweep",
       [nudgeApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
         nudgeApi->adminSweep(req, std::move(cb));
+      },
+      {drogon::Post});
+
+  // The echo read surface (Windmill One). Entitlement-free by design: only the nightly sweep ever
+  // computes echoes, and it computes none for a non-subscriber, so their list is simply empty —
+  // "absent, not locked" needs no gate here. The admin sweep is the operator's rehearsal of one
+  // nightly pass, closed unless the deploy set a token.
+  auto echoApi = std::make_shared<EchoApi>(deps.echoes, deps.echoSweep, deps.authService,
+                                           deps.echoAdminToken);
+  app.registerHandler(
+      "/v1/journal/echoes",
+      [echoApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        echoApi->listEchoes(req, std::move(cb));
+      },
+      {drogon::Get});
+  app.registerHandler(
+      "/v1/journal/echoes/{date}/dismiss",
+      [echoApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& date) {
+        echoApi->dismiss(req, std::move(cb), date);
+      },
+      {drogon::Post});
+  app.registerHandler(
+      "/v1/admin/journal/echo/sweep",
+      [echoApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        echoApi->adminSweep(req, std::move(cb));
       },
       {drogon::Post});
 }
