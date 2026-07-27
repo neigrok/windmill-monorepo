@@ -24,7 +24,7 @@ services:
       retries: 20
 
   migrate:
-    image: ghcr.io/neigrok/windmill-backend:${IMAGE_TAG:-latest}
+    image: ghcr.io/neigrok/windmill-monorepo:${IMAGE_TAG:-latest}
     restart: "no"
     depends_on:
       db:
@@ -36,7 +36,7 @@ services:
       -v ON_ERROR_STOP=1 -f /app/db/schema.sql
 
   server:
-    image: ghcr.io/neigrok/windmill-backend:${IMAGE_TAG:-latest}
+    image: ghcr.io/neigrok/windmill-monorepo:${IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
       db:
