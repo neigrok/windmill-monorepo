@@ -81,6 +81,11 @@ EXPOSE 8080 8090
 # Drop root: the binaries and schema are world-readable/executable, curl (healthcheck)
 # needs no privilege, and psql runs in the separate migrate service — nothing here does.
 RUN useradd --system --uid 10001 --user-group windmill
+
+# The server writes temp upload shards under ./uploads (CWD is /app). /app is root-owned by
+# WORKDIR, so without an owned uploads dir the non-root runtime user hits EACCES on every
+# upload/OG-image/share-video temp write. Give it one it can write.
+RUN mkdir -p /app/uploads && chown -R windmill:windmill /app/uploads
 USER windmill
 
 # Default to the web server; the mcp service overrides `command` in compose.
