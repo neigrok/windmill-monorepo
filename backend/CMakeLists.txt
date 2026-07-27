@@ -4,6 +4,16 @@ project(windmill_backend CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# An unset build type means -O0, and -O0's fat un-inlined frames overflow drogon's ~512 KB
+# worker-thread stack once a request handler calls a few layers deep (Caller -> Api -> Service ->
+# Pg -> pqxx) — corrupting by-value return slots (a page read back as an empty/garbage struct) with
+# no crash. Prod builds Release (backend/Dockerfile), so this only ever bit a plain local
+# `cmake -S . -B build`. Default local builds to RelWithDebInfo — optimized like prod, with symbols.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type (Release-like default; see note above)" FORCE)
+  message(STATUS "No CMAKE_BUILD_TYPE set — defaulting to RelWithDebInfo (an -O0 build overflows drogon's worker stack)")
+endif()
+
 # Windmill is one modular-monolith backend behind a brand of products. `windmill_platform` is
 # the product-neutral core (auth, oauth, billing, the MCP transport engine, the vendor edges);
 # `windmill_roadmap` is the skill-tree product (trees, the sync/room cluster, the roadmap tools)
@@ -47,6 +57,16 @@ add_library(windmill_roadmap
   products/roadmap/application/ReminderSweep.cpp)
 target_include_directories(windmill_roadmap PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(windmill_roadmap PUBLIC windmill_platform)
+
+# --- journal product CORE (domain + application). Depends on windmill_platform only, never
+# windmill_roadmap — the same one-way rule roadmap follows (STRUCTURE.md). The messy adapters (Pg,
+# http, json) fold into this same library under the Drogon guard below, so journal stays one lib
+# whether or not the vendor edges are present.
+add_library(windmill_journal
+  products/journal/domain/Page.cpp
+  products/journal/application/PageService.cpp)
+target_include_directories(windmill_journal PUBLIC ${CMAKE_SOURCE_DIR})
+target_link_libraries(windmill_journal PUBLIC windmill_platform)
 
 # Drogon + libpqxx gate the real adapters (SPEC §11). Found here, up front, because Drogon also
 # exports Trantor and jsoncpp as imported targets — and TendingService (in the roadmap core) needs
@@ -99,8 +119,10 @@ add_executable(windmill_domain_tests
   test/domain/TendingTest.cpp
   test/domain/TreeTest.cpp
   test/domain/RemindersTest.cpp
-  test/application/ReminderSweepTest.cpp)
-target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap)
+  test/application/ReminderSweepTest.cpp
+  test/products/journal/domain/PageTest.cpp
+  test/products/journal/application/PageServiceTest.cpp)
+target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_journal)
 
 enable_testing()
 add_test(NAME domain COMMAND windmill_domain_tests)
@@ -177,11 +199,19 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     products/roadmap/adapters/mcp/ToolArgs.cpp
     products/roadmap/routes.cpp)
 
+  # Journal adapters: the Pg storage, the JSON wire boundary, the REST surface, and the route seam.
+  # They reach Drogon + libpqxx through windmill_platform (linked PUBLIC by the core lib above).
+  target_sources(windmill_journal PRIVATE
+    products/journal/adapters/json/PageJson.cpp
+    products/journal/adapters/postgres/PgJournalRepository.cpp
+    products/journal/adapters/http/JournalApi.cpp
+    products/journal/routes.cpp)
+
   # One process serves REST, the collab socket, AND MCP over the same rooms. main.cpp is the
   # composition root: it builds platform + roadmap singletons, mounts the shared MCP endpoint, and
   # calls roadmap::registerRoutes for the product half (products/roadmap/routes.h).
   add_executable(windmill_server platform/infra/main.cpp)
-  target_link_libraries(windmill_server PRIVATE windmill_roadmap)
+  target_link_libraries(windmill_server PRIVATE windmill_roadmap windmill_journal)
   message(STATUS "windmill_server enabled (Drogon + libpqxx found)")
 
   add_executable(windmill_mcp platform/infra/mcp_main.cpp)            # stdio transport (local hosts)
@@ -223,8 +253,10 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/adapters/email/ResendEmailSenderTest.cpp
     test/adapters/paddle/PaddleSignatureTest.cpp
     test/adapters/llm/AnthropicComposerTest.cpp
-    test/adapters/llm/AnthropicAgentTest.cpp)
-  target_link_libraries(windmill_adapters_tests PRIVATE windmill_roadmap)
+    test/adapters/llm/AnthropicAgentTest.cpp
+    test/products/journal/adapters/http/JournalApiTest.cpp
+    test/products/journal/adapters/postgres/PgJournalRepositoryTest.cpp)
+  target_link_libraries(windmill_adapters_tests PRIVATE windmill_roadmap windmill_journal)
   add_test(NAME adapters COMMAND windmill_adapters_tests)
 else()
   message(STATUS "Drogon/libpqxx not found — building core + tests only; run 'brew install drogon libpqxx' to enable windmill_server")

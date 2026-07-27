@@ -42,6 +42,9 @@
 #include "products/roadmap/application/TreeRegistry.h"
 #include "products/roadmap/application/ReminderSweep.h"
 #include "products/roadmap/routes.h"
+#include "products/journal/adapters/postgres/PgJournalRepository.h"
+#include "products/journal/application/PageService.h"
+#include "products/journal/routes.h"
 
 #include <drogon/drogon.h>
 
@@ -655,6 +658,15 @@ int main() {
       .tokens = tokens, .clock = systemClock,
       .remindersAdminToken = remindersAdminEnv ? remindersAdminEnv : "", .composer = composer};
   registerRoutes(app, roadmapDeps);
+
+  // The journal product — the second room — mounted behind its own seam (products/journal/routes.h),
+  // in namespace wm::journal so its registerRoutes never collides with roadmap's. Wave 1 is the
+  // pages canvas: durable, owner-scoped, offline-convergent. It reads platform auth like roadmap and
+  // owns no public surface.
+  auto journalPages = std::make_shared<PgJournalRepository>(connString);
+  auto pageService = std::make_shared<PageService>(*journalPages);
+  journal::JournalDeps journalDeps{.pageService = pageService, .authService = authService};
+  journal::registerRoutes(app, journalDeps);
 
   const char* portEnv = std::getenv("PORT");
   int port = portEnv ? std::atoi(portEnv) : 8080;

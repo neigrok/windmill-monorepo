@@ -604,3 +604,43 @@ ON CONFLICT DO NOTHING;
 -- `deleted_at is null`, so a stray soft-delete reads byte-identical to absent — republish and
 -- un-delete so the front door can never be dark while a row exists.
 update trees set visibility = 'public', deleted_at = null where id = 't_9e407a96b5330ebe';
+
+-- ── Journal (products/journal) ───────────────────────────────────────────────────────────────
+-- The second room in the superapp: a free-form daily canvas, one page per user per LOCAL day. The
+-- (user, day) pair IS the key — no id is minted. Nothing is shared: there is deliberately NO
+-- visibility column and no share entity, so a page is legible to exactly one account by
+-- construction, and every read is scoped `where user_id = $1`. Convergence across a user's own
+-- devices is last-writer-wins on an HLC stamp (stamp_ms, stamp_counter) — the same register
+-- node_progress and trees.title already use — with no CRDT text and no room. body is plain text
+-- with soft line breaks kept; mood/energy are nullable-by-zero (0 = not set).
+create table if not exists journal_page (
+  user_id       uuid not null references users(id) on delete cascade,
+  day           date not null,                    -- the writer's local ISO day, the key
+  body          text not null default '',
+  mood          smallint not null default 0 check (mood between 0 and 5),      -- 0 = not set
+  energy        smallint not null default 0 check (energy between 0 and 3),    -- 0 = not set
+  source        text not null default 'typed',    -- typed | spoken
+  stamp_ms      bigint not null default 0,         -- HLC physical ms  ┐ the LWW guard; a write
+  stamp_counter bigint not null default 0,         -- HLC counter      ┘ never goes backwards
+  stamp_actor   text not null default '',          -- HLC actor (the writing device/replica)
+  updated_at    timestamptz not null default now(),
+  primary key (user_id, day)
+);
+-- the canvas read (oldest→newest) and the delta feed (stamp > cursor) both scan this
+create index if not exists journal_page_user_day on journal_page (user_id, day);
+create index if not exists journal_page_user_stamp on journal_page (user_id, stamp_ms, stamp_counter);
+
+-- Superseded bodies, append-only, invisible. The safety net for the one lossy case LWW admits —
+-- the same day edited on two offline devices, where the loser's text would otherwise vanish. Never
+-- a merge UI (the canvas is one continuous surface); kept only so "nothing written is ever
+-- withdrawn" holds literally. Prunable by age.
+create table if not exists journal_page_revision (
+  user_id       uuid not null references users(id) on delete cascade,
+  day           date not null,
+  body          text not null,
+  stamp_ms      bigint not null default 0,
+  stamp_counter bigint not null default 0,
+  stamp_actor   text not null default '',
+  superseded_at timestamptz not null default now()
+);
+create index if not exists journal_page_revision_key on journal_page_revision (user_id, day);
