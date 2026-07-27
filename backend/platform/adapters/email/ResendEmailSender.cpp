@@ -94,6 +94,19 @@ void ResendEmailSender::sendReminder(const Email& to, const ReminderMail& mail,
   send(to, "reminder", variables, reminderUnsubscribeHeaders(mail.unsubscribeUrl), std::move(done));
 }
 
+void ResendEmailSender::sendJournalNudge(const Email& to, const JournalNudgeMail& mail,
+                                         std::function<void(bool)> done) {
+  // The one fixed line lives in the provider's template; this adapter binds only the three links,
+  // so no user-authored text can ride into a nudge at all. The one-click pair goes as message
+  // headers, exactly as the reminder's does.
+  Json::Value variables(Json::objectValue);
+  variables["settings_url"] = mail.settingsUrl;
+  variables["pause_url"] = mail.pauseUrl;
+  variables["unsubscribe_url"] = mail.unsubscribeUrl;
+  send(to, "journal-nudge", variables, reminderUnsubscribeHeaders(mail.unsubscribeUrl),
+       std::move(done));
+}
+
 void ResendEmailSender::send(const Email& to, const std::string& templateId,
                              const Json::Value& variables, const Json::Value& headers,
                              std::function<void(bool)> done) {

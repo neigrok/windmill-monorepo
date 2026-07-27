@@ -43,6 +43,17 @@ struct ReminderMail {
   std::array<Step, kMaxSteps> steps;
 };
 
+// The daily journal nudge, already rendered. The body line is fixed and lives in the provider's
+// 'journal-nudge' template ("The house is quiet. Three minutes?") — it never travels here, so a
+// bad word can't ride in; the mailer only binds the three links. Platform-neutral strings, so this
+// port stays free of any journal type. settingsUrl reaches the nudge panel, pauseUrl is the "pause
+// for a week" page, unsubscribeUrl is the RFC 8058 one-click target that becomes the header.
+struct JournalNudgeMail {
+  std::string settingsUrl;
+  std::string pauseUrl;
+  std::string unsubscribeUrl;
+};
+
 // The transactional email Windmill sends — one method per mail it can say. sendMagicLink
 // renders the provider's 'magic-link' template with `magic_link` bound to the sign-in URL;
 // sendForkLink renders 'magic-link-fork', which also names the tree the link will plant
@@ -62,6 +73,10 @@ struct EmailSender {
   // exactly once with the delivery verdict, and the sweep only stamps a row as sent on a true.
   virtual void sendReminder(const Email& to, const ReminderMail& mail,
                             std::function<void(bool)> done) = 0;
+  // The daily journal nudge ('journal-nudge'). Same asynchronous contract; the sweep stamps a row
+  // as sent only on a true.
+  virtual void sendJournalNudge(const Email& to, const JournalNudgeMail& mail,
+                                std::function<void(bool)> done) = 0;
 };
 
 }

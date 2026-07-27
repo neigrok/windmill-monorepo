@@ -644,3 +644,49 @@ create table if not exists journal_page_revision (
   superseded_at timestamptz not null default now()
 );
 create index if not exists journal_page_revision_key on journal_page_revision (user_id, day);
+
+-- ── Journal nudges (one a day at most; the TIME is the DEVICE's, never ours) ─────────────────
+-- Mirrors reminder_subscription/reminder_week (products/roadmap) with two differences: the slot is
+-- DAILY (the dedup key is the local day), and next_due_at is materialised by the DEVICE from its
+-- local rhythm — the server never learns WHEN you write, it is handed the next instant and the
+-- local day that instant belongs to. So Journal needs no timezone at all: slot_day is both the
+-- "did they already write today?" key and the ledger key. next_due_at is NULL whenever we cannot
+-- know when to send (nudges off, or under 7 days of data so the device sends no adaptive time), and
+-- the partial index turns "unknown ⇒ never send" into a fact no code has to special-case.
+-- pause_digest is the emailed pause link's credential — the digest at rest, never the secret.
+create table if not exists journal_nudge (
+  user_id      uuid primary key references users(id) on delete cascade,
+  enabled      boolean not null default false,
+  channel      text not null default 'email',    -- email | inapp (push is a later wave)
+  next_due_at  timestamptz,                       -- device-materialised; NULL ⇒ never send
+  slot_day     date,                              -- the LOCAL day next_due_at belongs to
+  paused_until timestamptz,                       -- "pause for a week", one tap
+  suppressed   boolean not null default false,    -- hard bounce / spam complaint (nothing writes it yet)
+  pause_digest text not null default '',
+  updated_at   timestamptz not null default now(),
+  created_at   timestamptz not null default now()
+);
+-- the sweep's whole question: the few rows that can be due right now
+create index if not exists journal_nudge_due on journal_nudge (next_due_at)
+  where enabled and not suppressed and next_due_at is not null;
+create unique index if not exists journal_nudge_pause on journal_nudge (pause_digest)
+  where pause_digest <> '';
+
+-- A DECISION LEDGER, not a send log (the reminder_week lesson, verbatim): every user still eligible
+-- at claim time gets exactly one row per day recording what we decided and why. The primary key IS
+-- the "at most one per day" mutex — never enforced by comparing timestamps at read time. A row whose
+-- sent_at is null is indistinguishable from one whose mail landed but whose update was lost, so it
+-- must NEVER be auto-retried: a lost nudge costs nothing, a duplicate costs trust. decision is
+-- 'sent' | 'skipped'; reason is 'ok' | 'already-wrote' | 'paused' | 'too-late' | 'held' (the arming
+-- gate withheld a send we'd decided on) | 'send-failed'. There is deliberately NO 'lapsed' reason —
+-- the engine never nudges about a gap (canon §7).
+create table if not exists journal_nudge_day (
+  user_id    uuid not null references users(id) on delete cascade,
+  slot_day   date not null,
+  decision   text not null,
+  reason     text not null,
+  sent_at    timestamptz,
+  decided_at timestamptz not null default now(),
+  primary key (user_id, slot_day)
+);
+create index if not exists journal_nudge_day_decided on journal_nudge_day (decided_at);

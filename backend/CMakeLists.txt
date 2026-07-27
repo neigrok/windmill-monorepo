@@ -64,7 +64,9 @@ target_link_libraries(windmill_roadmap PUBLIC windmill_platform)
 # whether or not the vendor edges are present.
 add_library(windmill_journal
   products/journal/domain/Page.cpp
-  products/journal/application/PageService.cpp)
+  products/journal/domain/NudgePlan.cpp
+  products/journal/application/PageService.cpp
+  products/journal/application/NudgeSweep.cpp)
 target_include_directories(windmill_journal PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(windmill_journal PUBLIC windmill_platform)
 
@@ -121,7 +123,9 @@ add_executable(windmill_domain_tests
   test/domain/RemindersTest.cpp
   test/application/ReminderSweepTest.cpp
   test/products/journal/domain/PageTest.cpp
-  test/products/journal/application/PageServiceTest.cpp)
+  test/products/journal/domain/NudgePlanTest.cpp
+  test/products/journal/application/PageServiceTest.cpp
+  test/products/journal/application/NudgeSweepTest.cpp)
 target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_journal)
 
 enable_testing()
@@ -204,7 +208,9 @@ if(Drogon_FOUND AND libpqxx_FOUND)
   target_sources(windmill_journal PRIVATE
     products/journal/adapters/json/PageJson.cpp
     products/journal/adapters/postgres/PgJournalRepository.cpp
+    products/journal/adapters/postgres/PgNudgeRepository.cpp
     products/journal/adapters/http/JournalApi.cpp
+    products/journal/adapters/http/NudgeApi.cpp
     products/journal/routes.cpp)
 
   # One process serves REST, the collab socket, AND MCP over the same rooms. main.cpp is the
@@ -255,6 +261,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/adapters/llm/AnthropicComposerTest.cpp
     test/adapters/llm/AnthropicAgentTest.cpp
     test/products/journal/adapters/http/JournalApiTest.cpp
+    test/products/journal/adapters/http/NudgeApiTest.cpp
     test/products/journal/adapters/postgres/PgJournalRepositoryTest.cpp)
   target_link_libraries(windmill_adapters_tests PRIVATE windmill_roadmap windmill_journal)
   add_test(NAME adapters COMMAND windmill_adapters_tests)

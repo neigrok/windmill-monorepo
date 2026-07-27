@@ -49,6 +49,7 @@ struct FakeEmail : EmailSender {
     std::string treeTitle;
     std::string treeMeta;
     ReminderMail reminder;  // only meaningful for the 'reminder' template
+    JournalNudgeMail journalNudge;  // only meaningful for the 'journal-nudge' template
   };
   std::vector<Sent> sent;
   bool failNext = false;
@@ -66,6 +67,12 @@ struct FakeEmail : EmailSender {
   void sendReminder(const Email& to, const ReminderMail& mail,
                     std::function<void(bool)> done) override {
     deliver({to, mail.treeUrl, "reminder", mail.treeName, "", mail}, std::move(done));
+  }
+  // The daily journal nudge, fully rendered: the fake keeps the whole mail so the sweep's tests
+  // read the pause and settings links straight back off it.
+  void sendJournalNudge(const Email& to, const JournalNudgeMail& mail,
+                        std::function<void(bool)> done) override {
+    deliver({to, mail.settingsUrl, "journal-nudge", "", "", {}, mail}, std::move(done));
   }
   // Async like the real sender, but resolves inline: a failed send records nothing and
   // reports false (the caller inserted the link row already, so it survives the failure),

@@ -43,6 +43,7 @@
 #include "products/roadmap/application/ReminderSweep.h"
 #include "products/roadmap/routes.h"
 #include "products/journal/adapters/postgres/PgJournalRepository.h"
+#include "products/journal/adapters/postgres/PgNudgeRepository.h"
 #include "products/journal/application/PageService.h"
 #include "products/journal/routes.h"
 
@@ -665,7 +666,25 @@ int main() {
   // owns no public surface.
   auto journalPages = std::make_shared<PgJournalRepository>(connString);
   auto pageService = std::make_shared<PageService>(*journalPages);
-  journal::JournalDeps journalDeps{.pageService = pageService, .authService = authService};
+  // Wave 2 nudges: a daily heartbeat on its own thread, shipped DARK behind an arming allowlist
+  // exactly like the reminder engine — JOURNAL_NUDGE_ENABLED must say so AND the user be named in
+  // JOURNAL_NUDGE_ALLOWLIST before any mail leaves; both gates are read at send time, so the ledger
+  // records honest days while nothing goes out. The knock time is the device's, so the server holds
+  // no rhythm and needs no timezone.
+  const char* journalNudgeEnabledEnv = std::getenv("JOURNAL_NUDGE_ENABLED");
+  const std::string journalNudgeEnabledFlag = journalNudgeEnabledEnv ? journalNudgeEnabledEnv : "";
+  const char* journalNudgeAllowlistEnv = std::getenv("JOURNAL_NUDGE_ALLOWLIST");
+  const char* journalNudgeAdminEnv = std::getenv("JOURNAL_NUDGE_ADMIN_TOKEN");
+  auto journalNudges = std::make_shared<PgNudgeRepository>(connString);
+  NudgeArming journalNudgeArming(journalNudgeEnabledFlag == "true" || journalNudgeEnabledFlag == "1",
+                                 journalNudgeAllowlistEnv ? journalNudgeAllowlistEnv : "");
+  auto journalNudgeSweep = std::make_shared<NudgeSweep>(*journalNudges, *emailSender, *tokens,
+                                                        *systemClock, journalNudgeArming, appBaseUrl);
+  journalNudgeSweep->start();
+  journal::JournalDeps journalDeps{.pageService = pageService, .authService = authService,
+                                   .nudges = journalNudges, .nudgeSweep = journalNudgeSweep,
+                                   .tokens = tokens, .clock = systemClock,
+                                   .nudgeAdminToken = journalNudgeAdminEnv ? journalNudgeAdminEnv : ""};
   journal::registerRoutes(app, journalDeps);
 
   const char* portEnv = std::getenv("PORT");

@@ -388,7 +388,7 @@ A first-match-wins gate pipeline, no clock/DB/mailer reachable — the `Reminder
 
 ```cpp
 enum class NudgeOutcome { send, skip };
-enum class SkipReason { none, alreadyWrote, paused, tooLate };
+enum class NudgeSkipReason { none, alreadyWrote, paused, tooLate };  // not SkipReason — roadmap owns that name
 
 struct NudgeCandidate {
   UserId user;
@@ -399,7 +399,7 @@ struct NudgeCandidate {
   bool paused;              // paused_until in the future
 };
 
-struct NudgeDecision { NudgeOutcome outcome; SkipReason reason; };
+struct NudgeDecision { NudgeOutcome outcome; NudgeSkipReason reason; };
 
 // Gates, in order: paused → tooLate (>Nh past the instant) → alreadyWrote → else send.
 // Note what is ABSENT: there is no "you lapsed" branch. The engine never nudges about a gap
@@ -418,7 +418,7 @@ Same skeleton as `ReminderSweep::run` — a `pg_try_advisory_lock` work lock (de
 correctness), a batched `dueNow`, then per user DECIDE → CLAIM → SEND:
 
 ```cpp
-for (const DueUser& due : nudges_.dueNow(nowMs, kBatch)) {
+for (const NudgeDueUser& due : nudges_.dueNow(nowMs, kBatch)) {
   NudgeDecision decision = decideFor(due, nowMs);               // load wroteToday/paused + decide()
   if (!nudges_.claimDay(due.user, due.slotDay, decision)) continue;  // PK-mutex; lost race = silent
   if (decision.outcome == NudgeOutcome::skip) continue;

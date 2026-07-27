@@ -1,0 +1,65 @@
+#pragma once
+
+#include "platform/domain/Auth.h"
+#include "products/journal/domain/NudgePlan.h"
+
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <vector>
+
+namespace wm {
+
+// The nudge settings a user owns, read whole and written whole (the HTTP layer read-modify-writes a
+// partial PATCH against this). next_due_at and slot_day are the DEVICE's materialised schedule — the
+// server stores and fires them but never derives them, so the rhythm stays on the phone. All instants
+// are epoch ms in the domain; the adapter is the only place a timestamptz is spoken.
+struct NudgeSettings {
+  bool enabled = false;
+  std::string channel = "email";                 // email | inapp
+  std::optional<std::uint64_t> nextDueAtMs;      // device-materialised; unset ⇒ never send
+  std::optional<LocalDate> slotDay;              // the local day nextDueAt belongs to
+  std::optional<std::uint64_t> pausedUntilMs;
+  bool suppressed = false;
+};
+
+// One user the sweep found due right now: everything a send needs plus the paused instant, so the
+// pure decide can be built with no second read.
+struct NudgeDueUser {
+  UserId user;
+  Email email;
+  LocalDate slotDay;
+  std::uint64_t slotInstantMs = 0;
+  std::uint64_t pausedUntilMs = 0;               // 0 = not paused
+};
+
+// What actually became of a claimed day at SEND time — stamped after the decision so a dark-held or
+// provider-refused send is distinguishable from a crash between claim and send.
+enum class DayOutcome { delivered, refused, held };
+
+// The sweep's seam and the settings store. Every read is owner-scoped. claimDay is the whole
+// "at most one per day" guarantee: the ledger primary key IS the mutex, re-checking eligibility
+// inside its own transaction, and it clears next_due_at in the same breath so the served instant
+// can never fire twice.
+struct NudgeRepository {
+  virtual ~NudgeRepository() = default;
+
+  virtual bool tryLockSweep() = 0;               // pg advisory lock — work dedup, NOT correctness
+  virtual void unlockSweep() = 0;
+
+  virtual std::vector<NudgeDueUser> dueNow(std::uint64_t nowMs, int limit) = 0;
+  virtual bool wroteToday(const UserId& user, const LocalDate& day) = 0;
+
+  virtual bool claimDay(const UserId& user, const LocalDate& slotDay, const NudgeDecision& decision) = 0;
+  virtual void closeDay(const UserId& user, const LocalDate& slotDay, DayOutcome outcome) = 0;
+
+  virtual std::optional<NudgeSettings> settingsFor(const UserId& user) = 0;
+  virtual void upsertSettings(const UserId& user, const NudgeSettings& settings) = 0;
+
+  virtual void setPauseDigest(const UserId& user, const std::string& digest) = 0;
+  virtual std::optional<UserId> userByPauseDigest(const std::string& digest) = 0;
+  virtual void pause(const UserId& user, std::uint64_t untilMs) = 0;   // "pause for a week"
+  virtual void disable(const UserId& user) = 0;                        // unsubscribe / turn off
+};
+
+}

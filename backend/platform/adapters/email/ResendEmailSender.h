@@ -44,6 +44,8 @@ public:
                     std::function<void(bool)> done) override;
   void sendReminder(const Email& to, const ReminderMail& mail,
                     std::function<void(bool)> done) override;
+  void sendJournalNudge(const Email& to, const JournalNudgeMail& mail,
+                        std::function<void(bool)> done) override;
 
 private:
   void send(const Email& to, const std::string& templateId, const Json::Value& variables,
