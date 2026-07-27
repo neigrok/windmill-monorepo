@@ -3,6 +3,7 @@
 #include "products/journal/adapters/http/EchoApi.h"
 #include "products/journal/adapters/http/JournalApi.h"
 #include "products/journal/adapters/http/NudgeApi.h"
+#include "products/journal/adapters/http/VoiceApi.h"
 
 #include <drogon/drogon.h>
 
@@ -103,6 +104,16 @@ void registerRoutes(drogon::HttpAppFramework& app, const JournalDeps& deps) {
       "/v1/admin/journal/echo/sweep",
       [echoApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
         echoApi->adminSweep(req, std::move(cb));
+      },
+      {drogon::Post});
+
+  // Voice (Windmill One): talk, get text. The subscription is checked before any audio is touched,
+  // and no vendor wired means a plain 503 — the audio never lands anywhere, and no page is made here.
+  auto voiceApi = std::make_shared<VoiceApi>(deps.transcriber, deps.subscriptions, deps.authService);
+  app.registerHandler(
+      "/v1/journal/transcribe",
+      [voiceApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        voiceApi->transcribe(req, std::move(cb));
       },
       {drogon::Post});
 }

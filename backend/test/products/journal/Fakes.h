@@ -6,6 +6,7 @@
 #include "products/journal/ports/Embedder.h"
 #include "products/journal/ports/JournalRepository.h"
 #include "products/journal/ports/NudgeRepository.h"
+#include "products/journal/ports/Transcriber.h"
 
 #include <algorithm>
 #include <cctype>
@@ -316,6 +317,22 @@ struct FakeSubscriptionRepository : SubscriptionRepository {
     subscription.userId = user.str();
     subscription.status = "active";
     byUser[user.str()] = subscription;
+  }
+};
+
+// A transcriber the voice tests drive: `on` toggles configured() (the 503 path), and transcribe
+// returns a fixed line plus the last audio/mime it saw, so a test can assert the bytes reached it.
+struct FakeTranscriber : Transcriber {
+  bool on = true;
+  std::string reply = "rain all morning";
+  std::string lastAudio;
+  std::string lastMime;
+
+  bool configured() const override { return on; }
+  Transcript transcribe(const std::string& audio, const std::string& mimeType) override {
+    lastAudio = audio;
+    lastMime = mimeType;
+    return Transcript{reply};
   }
 };
 

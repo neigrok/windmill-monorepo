@@ -217,6 +217,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     products/journal/adapters/http/JournalApi.cpp
     products/journal/adapters/http/NudgeApi.cpp
     products/journal/adapters/http/EchoApi.cpp
+    products/journal/adapters/http/VoiceApi.cpp
     products/journal/routes.cpp)
 
   # One process serves REST, the collab socket, AND MCP over the same rooms. main.cpp is the
@@ -269,6 +270,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/products/journal/adapters/http/JournalApiTest.cpp
     test/products/journal/adapters/http/NudgeApiTest.cpp
     test/products/journal/adapters/http/EchoApiTest.cpp
+    test/products/journal/adapters/http/VoiceApiTest.cpp
     test/products/journal/adapters/postgres/PgJournalRepositoryTest.cpp)
   target_link_libraries(windmill_adapters_tests PRIVATE windmill_roadmap windmill_journal)
   add_test(NAME adapters COMMAND windmill_adapters_tests)

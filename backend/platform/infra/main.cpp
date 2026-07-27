@@ -43,6 +43,7 @@
 #include "products/roadmap/application/ReminderSweep.h"
 #include "products/roadmap/routes.h"
 #include "products/journal/adapters/llm/NullEmbedder.h"
+#include "products/journal/adapters/llm/NullTranscriber.h"
 #include "products/journal/adapters/postgres/PgEchoRepository.h"
 #include "products/journal/adapters/postgres/PgJournalRepository.h"
 #include "products/journal/adapters/postgres/PgNudgeRepository.h"
@@ -693,12 +694,17 @@ int main() {
   auto journalEchoSweep = std::make_shared<EchoSweep>(*journalEchoes, *journalEmbedder,
                                                       *subscriptionRepo, *systemClock, EchoRules{});
   journalEchoSweep->start();
+  // Voice (Windmill One): bought from an ASR vendor, unwired by default (NullTranscriber ⇒ the
+  // endpoint answers 503) until one is plugged in behind the Transcriber port. It reuses the same
+  // Paddle mirror (subscriptionRepo) for the subscription gate.
+  auto journalTranscriber = std::make_shared<NullTranscriber>();
   journal::JournalDeps journalDeps{.pageService = pageService, .authService = authService,
                                    .nudges = journalNudges, .nudgeSweep = journalNudgeSweep,
                                    .tokens = tokens, .clock = systemClock,
                                    .nudgeAdminToken = journalNudgeAdminEnv ? journalNudgeAdminEnv : "",
                                    .echoes = journalEchoes, .echoSweep = journalEchoSweep,
-                                   .echoAdminToken = journalEchoAdminEnv ? journalEchoAdminEnv : ""};
+                                   .echoAdminToken = journalEchoAdminEnv ? journalEchoAdminEnv : "",
+                                   .transcriber = journalTranscriber, .subscriptions = subscriptionRepo};
   journal::registerRoutes(app, journalDeps);
 
   const char* portEnv = std::getenv("PORT");
