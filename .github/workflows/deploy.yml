@@ -1,0 +1,123 @@
+name: Deploy to VPS
+
+# Renders the complete ~/windmill/.env on the VPS from GitHub secrets + variables — the full render the
+# deploy README/.env.example describe — then ships the current compose + Caddyfile, pulls the published
+# image, and brings the stack up. Every value the compose reads is written here from exactly one source:
+#   secrets  → POSTGRES_PASSWORD, the service API keys, WINDMILL_MCP_TOKEN
+#   variables→ DOMAIN_APP, DOMAIN_API, ACME_EMAIL, CF_IPS, PADDLE_ENV, PADDLE_PRICE_ID, …
+# Anything left unset is written empty and the compose `${VAR:-default}` fallbacks take over, so an
+# absent optional key is safe. The handful whose emptiness would break the site, the database, or the
+# MCP auth are GUARDED below and fail the run before it ever touches the host.
+#
+# Manual (workflow_dispatch) so the first run is watched. The prior .env is backed up and restored if
+# the rendered file won't validate against compose — a bad render can't outlive the job.
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Image tag to deploy
+        default: latest
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Render .env + deploy the stack
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          # Guarded (emptiness breaks site / DB / MCP-auth):
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          WINDMILL_MCP_TOKEN: ${{ secrets.WINDMILL_MCP_TOKEN }}
+          DOMAIN_APP: ${{ vars.DOMAIN_APP }}
+          DOMAIN_API: ${{ vars.DOMAIN_API }}
+          ACME_EMAIL: ${{ vars.ACME_EMAIL }}
+          # Service API keys (compose defaults them empty ⇒ that feature stays dark):
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          AMPLITUDE_API_KEY: ${{ secrets.AMPLITUDE_API_KEY }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
+          PADDLE_WEBHOOK_SECRET: ${{ secrets.PADDLE_WEBHOOK_SECRET }}
+          # Config (variables; safe compose defaults when unset):
+          CF_IPS: ${{ vars.CF_IPS }}
+          PADDLE_ENV: ${{ vars.PADDLE_ENV }}
+          PADDLE_PRICE_ID: ${{ vars.PADDLE_PRICE_ID }}
+          RESEND_FROM: ${{ vars.RESEND_FROM }}
+          AMPLITUDE_HOST: ${{ vars.AMPLITUDE_HOST }}
+          TENDING_ENABLED: ${{ vars.TENDING_ENABLED }}
+          WINDMILL_MCP_ALLOWED_ORIGINS: ${{ vars.WINDMILL_MCP_ALLOWED_ORIGINS }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          set -euo pipefail
+
+          # Guard: refuse before touching the host if anything whose emptiness would break prod is unset.
+          missing=
+          for key in DOMAIN_APP DOMAIN_API ACME_EMAIL POSTGRES_PASSWORD WINDMILL_MCP_TOKEN; do
+            [ -n "${!key}" ] || missing="$missing $key"
+          done
+          if [ -n "$missing" ]; then
+            echo "Refusing to render — these required values are unset:$missing"
+            echo "Set them (vars for domains/email, secrets for POSTGRES_PASSWORD + WINDMILL_MCP_TOKEN) and re-run."
+            exit 1
+          fi
+
+          # Render the full .env with printf so values are written literally (no shell interpretation of
+          # a '\$' or space inside a key). Optional keys write empty and let compose defaults apply.
+          : > rendered.env
+          {
+            printf 'IMAGE_TAG=%s\n' "${IMAGE_TAG:-latest}"
+            for key in POSTGRES_PASSWORD DOMAIN_APP DOMAIN_API ACME_EMAIL CF_IPS \
+                       RESEND_API_KEY RESEND_FROM ANTHROPIC_API_KEY OPENAI_API_KEY \
+                       TENDING_ENABLED SENTRY_DSN AMPLITUDE_API_KEY AMPLITUDE_HOST \
+                       GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
+                       PADDLE_WEBHOOK_SECRET PADDLE_API_KEY PADDLE_ENV PADDLE_PRICE_ID \
+                       WINDMILL_MCP_ALLOWED_ORIGINS WINDMILL_MCP_TOKEN; do
+              printf '%s=%s\n' "$key" "${!key}"
+            done
+          } >> rendered.env
+
+          printf '%s\n' "$SSH_KEY" > deploy_key && chmod 600 deploy_key
+          PORT="${SSH_PORT:-22}"
+          SSH="ssh -i deploy_key -p ${PORT} -o StrictHostKeyChecking=accept-new"
+
+          $SSH "$SSH_USER@$SSH_HOST" 'mkdir -p ~/windmill'
+          scp -i deploy_key -P "${PORT}" -o StrictHostKeyChecking=accept-new \
+            backend/deploy/docker-compose.yml backend/deploy/Caddyfile rendered.env \
+            "$SSH_USER@$SSH_HOST:windmill/"
+
+          $SSH "$SSH_USER@$SSH_HOST" 'bash -seu' <<'REMOTE'
+          cd ~/windmill
+          # The DB password is bound to the initialized Postgres volume — a deploy must never rotate it.
+          # If the host already has one, it wins over whatever GitHub rendered (the rendered value is only
+          # the fallback for a first-time bring-up on an empty volume).
+          prior_pg=
+          [ -f .env ] && prior_pg=$(grep -E '^POSTGRES_PASSWORD=' .env | head -1 | cut -d= -f2- || true)
+          [ -f .env ] && cp .env .env.bak || true
+          mv rendered.env .env
+          if [ -n "$prior_pg" ]; then
+            grep -v '^POSTGRES_PASSWORD=' .env > .env.tmp
+            printf 'POSTGRES_PASSWORD=%s\n' "$prior_pg" >> .env.tmp
+            mv .env.tmp .env
+          fi
+          if ! docker compose config -q; then
+            echo "rendered .env fails compose validation — restoring the previous .env, nothing deployed"
+            [ -f .env.bak ] && mv .env.bak .env
+            exit 1
+          fi
+          docker compose pull
+          docker compose up -d
+          rm -f .env.bak
+          echo "deployed: .env rendered (DB password preserved), image pulled, stack up"
+          REMOTE
