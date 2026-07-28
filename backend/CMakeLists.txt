@@ -218,6 +218,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     products/journal/adapters/http/NudgeApi.cpp
     products/journal/adapters/http/EchoApi.cpp
     products/journal/adapters/http/VoiceApi.cpp
+    products/journal/adapters/llm/OpenAiTranscriber.cpp
     products/journal/routes.cpp)
 
   # One process serves REST, the collab socket, AND MCP over the same rooms. main.cpp is the

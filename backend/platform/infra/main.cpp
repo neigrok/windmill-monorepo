@@ -44,6 +44,7 @@
 #include "products/roadmap/routes.h"
 #include "products/journal/adapters/llm/NullEmbedder.h"
 #include "products/journal/adapters/llm/NullTranscriber.h"
+#include "products/journal/adapters/llm/OpenAiTranscriber.h"
 #include "products/journal/adapters/postgres/PgEchoRepository.h"
 #include "products/journal/adapters/postgres/PgJournalRepository.h"
 #include "products/journal/adapters/postgres/PgNudgeRepository.h"
@@ -694,10 +695,13 @@ int main() {
   auto journalEchoSweep = std::make_shared<EchoSweep>(*journalEchoes, *journalEmbedder,
                                                       *subscriptionRepo, *systemClock, EchoRules{});
   journalEchoSweep->start();
-  // Voice (Windmill One): bought from an ASR vendor, unwired by default (NullTranscriber ⇒ the
-  // endpoint answers 503) until one is plugged in behind the Transcriber port. It reuses the same
-  // Paddle mirror (subscriptionRepo) for the subscription gate.
-  auto journalTranscriber = std::make_shared<NullTranscriber>();
+  // Voice (Windmill One): bought from OpenAI's gpt-4o-transcribe when OPENAI_API_KEY is set, and
+  // unwired otherwise (NullTranscriber ⇒ the endpoint answers 503 and the client hides Talk). Either
+  // way it reuses the same Paddle mirror (subscriptionRepo) for the subscription gate.
+  const char* openaiKeyEnv = std::getenv("OPENAI_API_KEY");
+  std::shared_ptr<Transcriber> journalTranscriber;
+  if (openaiKeyEnv && *openaiKeyEnv) journalTranscriber = std::make_shared<OpenAiTranscriber>(openaiKeyEnv);
+  else journalTranscriber = std::make_shared<NullTranscriber>();
   journal::JournalDeps journalDeps{.pageService = pageService, .authService = authService,
                                    .nudges = journalNudges, .nudgeSweep = journalNudgeSweep,
                                    .tokens = tokens, .clock = systemClock,

@@ -11,6 +11,7 @@ import { usePages } from './usePages.js';
 import { DayMarker } from './DayMarker.jsx';
 import { MoodDots } from './MoodDots.jsx';
 import { EnergyBars } from './EnergyBars.jsx';
+import { TalkButton } from './TalkButton.jsx';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
@@ -147,6 +148,7 @@ export function Canvas({ focusDate = null, flyTo = null, echoDays = new Map(), o
           <div className="journal-controls">
             <MoodDots value={mood} onChange={toggleMood} />
             <EnergyBars value={energy} onChange={toggleEnergy} />
+            <TalkButton onTranscript={(text) => setBody(body ? `${body.replace(/\s+$/, '')} ${text}` : text)} />
           </div>
           {firstRun && <p className="journal-privacy">Nobody sees this but you.</p>}
         </article>

@@ -761,3 +761,42 @@
   .journal-zoom { animation: none; }
   .journal-zoom-cell:hover { transform: none; }
 }
+
+/* ── Talk ─────────────────────────────────────────────────────────────────
+   Speak a page. A quiet mic in the composer row; while it listens the dot
+   breathes in the lamp. Absent entirely where voice isn't available. */
+.journal-talk { display: inline-flex; align-items: center; gap: 10px; }
+.journal-talk-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--journal-ink-dim, #8A98AC) 28%, transparent);
+  background: none;
+  color: var(--journal-ink-dim, #8A98AC);
+  font: 500 12px/1 var(--font-body), sans-serif;
+  cursor: pointer;
+  transition: border-color var(--duration-fast, 150ms) var(--ease-standard), color var(--duration-fast, 150ms) var(--ease-standard);
+}
+.journal-talk-btn:hover { border-color: var(--lamp-400); color: var(--lamp-400); }
+.journal-talk-btn.is-recording {
+  border-color: var(--lamp-400);
+  color: var(--lamp-400);
+}
+.journal-talk-btn.is-recording svg {
+  border-radius: 50%;
+  animation: journal-talk-pulse 1400ms var(--ease-standard) infinite;
+}
+.journal-talk-btn.is-working { color: var(--lamp-400); opacity: 0.7; cursor: default; }
+.journal-talk-note {
+  color: var(--journal-ink-dim, #8A98AC);
+  font: 400 11px/1 var(--font-mono), ui-monospace, monospace;
+}
+@keyframes journal-talk-pulse {
+  0%, 100% { filter: drop-shadow(0 0 0 color-mix(in srgb, var(--lamp-400) 40%, transparent)); }
+  50% { filter: drop-shadow(0 0 5px color-mix(in srgb, var(--lamp-400) 70%, transparent)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .journal-talk-btn.is-recording svg { animation: none; }
+}
