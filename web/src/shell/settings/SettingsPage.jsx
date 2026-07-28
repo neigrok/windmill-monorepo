@@ -5,22 +5,24 @@
 // A ghost visitor gets the same calm copy-gate /connect uses — a line and the sign-in door,
 // never a wall — because the worst case of auth is the product's normal signed-out state.
 
-import React, { useState } from 'react';
+import React, { Suspense, useState } from 'react';
 import { AccountChrome } from '../account/AccountChrome.jsx';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { requestMagicLink } from '../auth/AuthClient.js';
 import { SignInDialog } from '../auth/SignInDialog.jsx';
-import { homeHash } from '../products.js';
+import { homeHash, PRODUCTS } from '../products.js';
 import { Button } from '../../design-system';
 import { ProfileSection } from './ProfileSection.jsx';
-import { ReminderSection } from '../../products/roadmap/settings/ReminderSection.jsx';
-import { PlanSection } from '../../products/roadmap/settings/PlanSection.jsx';
-import { TendingSection } from '../../products/roadmap/settings/TendingSection.jsx';
 import { ConnectedToolsSection } from './ConnectedToolsSection.jsx';
 import { ApiKeysSection } from './ApiKeysSection.jsx';
 import { SessionsSection } from './SessionsSection.jsx';
 import { FeedbackSection } from './FeedbackSection.jsx';
-import { YourDataSection } from '../../products/roadmap/settings/YourDataSection.jsx';
+
+// The product-owned settings sections, gathered from the registry so this neutral page names no
+// product. `main` sections sit in the product zone right after the account identity; `data` sections
+// render last, beside the account's own close. A product with none contributes nothing.
+const PRODUCT_MAIN_SECTIONS = PRODUCTS.flatMap((product) => product.settingsSections?.main ?? []);
+const PRODUCT_DATA_SECTIONS = PRODUCTS.flatMap((product) => product.settingsSections?.data ?? []);
 
 export function SettingsPage() {
   const { user, status } = useAuth();
@@ -35,14 +37,16 @@ export function SettingsPage() {
         {status === 'loading' ? null : signedIn ? (
           <>
             <ProfileSection />
-            <ReminderSection />
-            <PlanSection />
-            <TendingSection />
+            <Suspense fallback={null}>
+              {PRODUCT_MAIN_SECTIONS.map((Section, i) => <Section key={i} />)}
+            </Suspense>
             <ConnectedToolsSection />
             <ApiKeysSection />
             <SessionsSection />
             <FeedbackSection />
-            <YourDataSection />
+            <Suspense fallback={null}>
+              {PRODUCT_DATA_SECTIONS.map((Section, i) => <Section key={i} />)}
+            </Suspense>
           </>
         ) : (
           <div style={{ marginTop: 6 }}>

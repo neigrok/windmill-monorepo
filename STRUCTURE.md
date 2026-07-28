@@ -73,8 +73,11 @@ longer depends on any product, so a notes/gym-only backend needs nothing from ro
 
 Still open (**web** + infra):
 
-- **`web`: settings is a spliced page** — `shell/settings/SettingsPage.jsx` imports 4 roadmap
-  sections directly to preserve render order. Invert so products register settings sections.
+- ~~**`web`: settings is a spliced page**~~ **closed** — products now register their settings sections
+  on the route table (`settingsSections: { main, data }`); `shell/settings/SettingsPage.jsx` composes
+  them off the product registry and imports no product section. (`YourDataSection` still lives in
+  roadmap — its export is tree-shaped; moving it to shell with a product-contributed exporter is a
+  follow-up.)
 - **`web`: `shell/marketing/Marketing.jsx`** still reads roadmap trees and its copy is roadmap-only
   — it's the brand landing to be revised for three products.
 - **`backend/infra`** (the composition-root executables) sit under `platform/infra`; they depend on

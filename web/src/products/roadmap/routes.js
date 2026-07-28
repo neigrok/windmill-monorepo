@@ -10,6 +10,15 @@ import { DEMO_TREE_ID } from './demo/demoStage.js';
 const SkillTreeApp = lazy(() => import('./index.js').then((m) => ({ default: m.SkillTreeApp })));
 const BrowsePage = lazy(() => import('./browse/BrowsePage.jsx').then((m) => ({ default: m.BrowsePage })));
 
+// The roadmap's account-settings sections — registered here so the neutral settings page composes
+// them without ever naming the roadmap (shell/settings/SettingsPage.jsx reads settingsSections off
+// the product registry). Lazy, so they keep their own chunks and never weigh on first paint. `main`
+// renders in the product zone right after the account identity; `data` (export + close) renders last.
+const ReminderSection = lazy(() => import('./settings/ReminderSection.jsx').then((m) => ({ default: m.ReminderSection })));
+const PlanSection = lazy(() => import('./settings/PlanSection.jsx').then((m) => ({ default: m.PlanSection })));
+const TendingSection = lazy(() => import('./settings/TendingSection.jsx').then((m) => ({ default: m.TendingSection })));
+const YourDataSection = lazy(() => import('./settings/YourDataSection.jsx').then((m) => ({ default: m.YourDataSection })));
+
 // Return to work, not a lobby (anon-first-tree F6): home re-opens the last tree this
 // device stood in. This is what the shell surfaces as its default "active product home".
 function home() {
@@ -84,4 +93,5 @@ export const roadmapRoutes = {
   home,
   landingAfterSignIn,
   render,
+  settingsSections: { main: [ReminderSection, PlanSection, TendingSection], data: [YourDataSection] },
 };
