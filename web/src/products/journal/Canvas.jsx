@@ -1,12 +1,12 @@
 // The canvas — one continuous scroll, oldest at the top, today at the bottom.
 // Opening restores to the bottom instantly (a restore, not an entrance; the
-// cursor waits for nothing); a dated position scrolls that day into view.
-// Days present at first paint never animate — only ones that arrive later fade
-// in from below. Today is the last block: writing happens inline in a growing
-// textarea, mood and energy sit in thumb reach, and a mono "saved" fades in
-// after typing stops.
+// cursor waits for nothing); a dated position scrolls that day into view, and a
+// search result flies to the exact passage and lights it for a beat. Days present
+// at first paint never animate — only ones that arrive later fade in from below.
+// Today is the last block: writing happens inline in a growing textarea, mood and
+// energy sit in thumb reach, and a mono "saved" fades in after typing stops.
 
-import React, { useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { usePages } from './usePages.js';
 import { DayMarker } from './DayMarker.jsx';
 import { MoodDots } from './MoodDots.jsx';
@@ -20,17 +20,18 @@ function wordCount(body) {
   return trimmed ? trimmed.split(/\s+/).length : 0;
 }
 
-export function Canvas({ focusDate = null }) {
+export function Canvas({ focusDate = null, flyTo = null }) {
   const {
     today, history, loading, firstRun,
     body, mood, energy, saveState, saveTick,
-    setBody, toggleMood, toggleEnergy,
+    setBody, toggleMood, toggleEnergy, extendTo,
   } = usePages();
 
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
   const restoredRef = useRef(false);
   const bornSet = useRef(null); // the dates present at first paint — these never animate
+  const [highlight, setHighlight] = useState(null); // { day, lo, hi } — a search hit, lit for a beat
 
   if (!loading && !bornSet.current) {
     bornSet.current = new Set(history.map((day) => day.date));
@@ -38,9 +39,9 @@ export function Canvas({ focusDate = null }) {
   }
   const isBorn = (date) => (bornSet.current ? !bornSet.current.has(date) : false);
 
-  const scrollToDay = (date) => {
+  const scrollToDay = (date, block = 'start') => {
     const el = scrollRef.current?.querySelector(`[data-date="${date}"]`);
-    if (el) el.scrollIntoView({ block: 'start' });
+    if (el) el.scrollIntoView({ block });
   };
 
   // Grow the composer to its content. Runs before the restore below, so the
@@ -69,6 +70,31 @@ export function Canvas({ focusDate = null }) {
     scrollToDay(focusDate);
   }, [focusDate, loading]);
 
+  // Fly to a search hit: bring its day to centre, neighbours intact, and light the
+  // matched passage for a beat — a position, never a detail view. A hit older than the
+  // rendered window is loaded first (extendTo), then scrolled once it's in the DOM; a hit
+  // on today lands in the composer, its span selected, since today is a field not prose.
+  useEffect(() => {
+    if (!flyTo || loading) return;
+    let cancelled = false;
+    setHighlight(flyTo);
+    (async () => {
+      await extendTo(flyTo.day);
+      if (cancelled) return;
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+        scrollToDay(flyTo.day, 'center');
+        if (flyTo.day === today && textareaRef.current) {
+          const field = textareaRef.current;
+          field.focus({ preventScroll: true });
+          field.setSelectionRange(flyTo.lo, flyTo.hi);
+        }
+      });
+    })();
+    const fade = setTimeout(() => setHighlight(null), 2600);
+    return () => { cancelled = true; clearTimeout(fade); };
+  }, [flyTo, loading, extendTo, today]);
+
   const rendered = [];
   let lastMonth = null;
   for (const day of history) {
@@ -77,7 +103,8 @@ export function Canvas({ focusDate = null }) {
       rendered.push(<MonthDivider key={`m-${month}`} iso={day.date} />);
       lastMonth = month;
     }
-    rendered.push(<DayBlock key={day.date} day={day} born={isBorn(day.date)} />);
+    const dayHighlight = highlight && highlight.day === day.date ? highlight : null;
+    rendered.push(<DayBlock key={day.date} day={day} born={isBorn(day.date)} highlight={dayHighlight} />);
   }
   const todayMonth = today.slice(0, 7);
   if (todayMonth !== lastMonth) rendered.push(<MonthDivider key={`m-${todayMonth}`} iso={today} />);
@@ -123,21 +150,32 @@ function MonthDivider({ iso }) {
   return <div className="journal-month">{MONTHS[month - 1]} {year}</div>;
 }
 
-function DayBlock({ day, born }) {
+function DayBlock({ day, born, highlight = null }) {
   return (
     <article className={'journal-day' + (born ? ' journal-born' : '')} data-date={day.date}>
       <DayMarker date={day.date} mood={day.mood} energy={day.energy} written={day.written} wordCount={wordCount(day.body)} />
       {day.written
-        ? <div className="journal-prose">{day.body}</div>
+        ? <div className="journal-prose">{highlight ? markSpan(day.body, highlight) : day.body}</div>
         : <div className="journal-gap">nothing written</div>}
     </article>
+  );
+}
+
+// Wrap the matched [lo, hi) char range in a soft lamp-tinted mark — the passage a search flew to.
+function markSpan(body, { lo, hi }) {
+  return (
+    <>
+      {body.slice(0, lo)}
+      <mark className="journal-highlight">{body.slice(lo, hi)}</mark>
+      {body.slice(hi)}
+    </>
   );
 }
 
 // Mono "saved" (or "offline · saved here") that fades in on each write and eases
 // back out — never a button, never a spinner, never a toast.
 function SavedNote({ state, tick }) {
-  const [visible, setVisible] = React.useState(false);
+  const [visible, setVisible] = useState(false);
   useEffect(() => {
     if (tick === 0) return undefined;
     setVisible(true);

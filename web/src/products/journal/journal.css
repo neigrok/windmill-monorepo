@@ -330,3 +330,120 @@
     animation: none;
   }
 }
+
+/* ── Search — the ⌘K overlay, its results, and the passage a hit flies to ──────────────────── */
+
+/* The floating affordance: a quiet lamp-ringed glyph, out of the writer's way, bottom-right. */
+.journal-search-open {
+  position: fixed;
+  right: 20px;
+  bottom: 84px;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--lamp-400) 30%, transparent);
+  background: color-mix(in srgb, var(--surface-card) 88%, transparent);
+  color: var(--lamp-400);
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: border-color 180ms var(--ease-standard), transform 180ms var(--ease-standard);
+  z-index: 40;
+}
+.journal-search-open:hover { border-color: var(--lamp-400); transform: translateY(-1px); }
+
+/* The overlay: a dim wash over the night, a card floated over the canvas. */
+.journal-search {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, #000 46%, transparent);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: max(12vh, 72px) 20px 20px;
+  z-index: 60;
+  animation: journal-fade-in-up 200ms var(--ease-soft);
+}
+.journal-search-panel {
+  width: min(560px, 100%);
+  background: var(--surface-card);
+  border: 1px solid color-mix(in srgb, var(--lamp-400) 18%, transparent);
+  border-radius: var(--radius-lg, 16px);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+.journal-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 18px 20px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary, #F3ECDD);
+  font: 400 18px/1.4 var(--font-body), 'Nunito', system-ui, sans-serif;
+  outline: none;
+}
+.journal-search-input::placeholder { color: color-mix(in srgb, var(--neutral-300) 80%, transparent); }
+
+.journal-search-results { max-height: 52vh; overflow-y: auto; }
+.journal-search-hit {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  text-align: left;
+  padding: 13px 20px;
+  border: none;
+  border-top: 1px solid color-mix(in srgb, var(--neutral-300) 22%, transparent);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transition: background 140ms var(--ease-standard);
+}
+.journal-search-hit:hover { background: color-mix(in srgb, var(--lamp-400) 8%, transparent); }
+.journal-search-quote {
+  font: 400 15px/1.5 var(--font-body), 'Nunito', system-ui, sans-serif;
+  color: var(--text-primary, #EFE7D6);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.journal-search-line { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.journal-search-why,
+.journal-search-date {
+  font: 400 11px/1.4 var(--font-mono), 'JetBrains Mono', ui-monospace, monospace;
+  letter-spacing: 0.04em;
+}
+.journal-search-why { color: var(--lamp-400); }
+.journal-search-date { color: color-mix(in srgb, var(--neutral-300) 85%, transparent); white-space: nowrap; }
+.journal-search-empty {
+  padding: 22px 20px;
+  margin: 0;
+  color: color-mix(in srgb, var(--neutral-300) 85%, transparent);
+  font: 400 15px/1.4 var(--font-body), 'Nunito', system-ui, sans-serif;
+}
+.journal-search-foot {
+  margin: 0;
+  padding: 12px 20px;
+  border-top: 1px solid color-mix(in srgb, var(--neutral-300) 22%, transparent);
+  color: color-mix(in srgb, var(--neutral-300) 78%, transparent);
+  font: 400 11px/1.5 var(--font-mono), 'JetBrains Mono', ui-monospace, monospace;
+  letter-spacing: 0.03em;
+}
+
+/* The passage a search flew to — lit for a beat with the lamp, then eased back to the page. */
+.journal-highlight {
+  background: color-mix(in srgb, var(--lamp-400) 26%, transparent);
+  color: inherit;
+  border-radius: 3px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--lamp-400) 18%, transparent);
+  animation: journal-flew 2600ms var(--ease-soft) forwards;
+}
+@keyframes journal-flew {
+  0% { background: color-mix(in srgb, var(--lamp-400) 42%, transparent); }
+  70% { background: color-mix(in srgb, var(--lamp-400) 26%, transparent); }
+  100% { background: transparent; box-shadow: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .journal-search { animation: none; }
+  .journal-highlight { animation: none; background: color-mix(in srgb, var(--lamp-400) 22%, transparent); }
+}

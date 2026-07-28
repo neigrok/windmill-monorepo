@@ -38,6 +38,8 @@ export function usePages() {
 
   const draftRef = useRef(draft);
   draftRef.current = draft;
+  const historyRef = useRef(history);
+  historyRef.current = history;
   const touchedRef = useRef(false);                      // the writer typed before the window arrived
   const pendingRef = useRef(false);                      // a debounced save is queued
   const saveTimer = useRef(null);
@@ -68,6 +70,24 @@ export function usePages() {
       })
       .catch(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
+  }, [today]);
+
+  // Reach further back than the initial sixty-day window so a search hit older than the canvas
+  // renders can still be flown to. Loads [date, current earliest − 1] and prepends it, gaps and all,
+  // contiguous with what's already drawn. A no-op once the day is within the loaded window.
+  const extendTo = useCallback(async (date) => {
+    const hist = historyRef.current;
+    const earliest = hist.length ? hist[0].date : daysBefore(today, 1);
+    if (!date || date >= earliest) return;
+    const pages = await journalApi.range(date, daysBefore(earliest, 1)).catch(() => null);
+    if (!pages) return;
+    const byDate = new Map(pages.map((page) => [page.day, page]));
+    const older = span(date, daysBefore(earliest, 1)).map((day) => {
+      const page = byDate.get(day);
+      if (!page) return { date: day, body: '', mood: null, energy: null, written: false };
+      return { date: day, body: page.body || '', mood: page.mood ?? null, energy: page.energy ?? null, written: true };
+    });
+    setHistory((cur) => [...older, ...cur]);
   }, [today]);
 
   const persist = useCallback(async (next) => {
@@ -125,6 +145,6 @@ export function usePages() {
     today, history, loading, firstRun,
     body: draft.body, mood: draft.mood, energy: draft.energy,
     saveState, saveTick,
-    setBody, toggleMood, toggleEnergy,
+    setBody, toggleMood, toggleEnergy, extendTo,
   };
 }
