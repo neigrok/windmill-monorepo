@@ -167,8 +167,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     platform/adapters/paddle/PaddleApiClient.cpp
     platform/adapters/paddle/BillingApi.cpp
     platform/adapters/mcp/McpServer.cpp
-    platform/adapters/mcp/McpHttpEndpoint.cpp
-    platform/adapters/mcp/Resources.cpp)
+    platform/adapters/mcp/McpHttpEndpoint.cpp)
   target_link_libraries(windmill_platform PUBLIC Drogon::Drogon libpqxx::pqxx OpenSSL::Crypto)
 
   # Roadmap adapters: the roadmap tools an AI agent drives (RoadmapTools), the sync/room socket,
@@ -202,6 +201,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     products/roadmap/adapters/ws/Collab.cpp
     products/roadmap/adapters/ws/TreeSocket.cpp
     products/roadmap/adapters/mcp/RoadmapTools.cpp
+    products/roadmap/adapters/mcp/RoadmapResources.cpp
     products/roadmap/adapters/mcp/ReadShape.cpp
     products/roadmap/adapters/mcp/EditReceipt.cpp
     products/roadmap/adapters/mcp/ToolArgs.cpp

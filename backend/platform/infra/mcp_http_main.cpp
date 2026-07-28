@@ -2,6 +2,7 @@
 #include "platform/adapters/http/RateLimiter.h"
 #include "platform/adapters/mcp/McpHttpEndpoint.h"
 #include "platform/adapters/mcp/McpServer.h"
+#include "products/roadmap/adapters/mcp/RoadmapResources.h"
 #include "products/roadmap/adapters/mcp/RoadmapTools.h"
 #include "platform/adapters/postgres/PgOAuthRepository.h"
 #include "products/roadmap/adapters/postgres/PgOpLog.h"
@@ -99,7 +100,7 @@ int main() {
       "get_diagnostics to inspect, the edit tools (create_node, connect, …) to author, and "
       "set_progress to mark a node active or complete. Edits are never rejected — a cycle or a "
       "detached node is surfaced by get_diagnostics, not refused."};
-  auto server = std::make_shared<McpServer>(*tools, std::move(info));
+  auto server = std::make_shared<McpServer>(*tools, std::move(info), roadmapResources());
   auto endpoint = std::make_shared<McpHttpEndpoint>(*server, origins, mcpAuth);
 
   auto& app = drogon::app();

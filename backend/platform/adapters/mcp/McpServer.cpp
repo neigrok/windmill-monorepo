@@ -1,7 +1,5 @@
 #include "platform/adapters/mcp/McpServer.h"
 
-#include "platform/adapters/mcp/Resources.h"
-
 namespace wm {
 
 namespace {
@@ -43,7 +41,8 @@ Json::Value failure(const Json::Value& id, int code, const std::string& message)
 }
 }
 
-McpServer::McpServer(ToolHost& tools, ServerInfo info) : tools_(tools), info_(std::move(info)) {}
+McpServer::McpServer(ToolHost& tools, ServerInfo info, std::vector<McpResource> resources)
+    : tools_(tools), info_(std::move(info)), resources_(std::move(resources)) {}
 
 std::optional<Json::Value> McpServer::handle(const Json::Value& message, const UserId& caller) {
   if (!message.isObject()) return wm::failure(Json::nullValue, -32600, "invalid request");
@@ -94,10 +93,10 @@ std::optional<Json::Value> McpServer::handle(const Json::Value& message, const U
   }
 
   // Resources cost no tool slot, so the document an agent needs before its first call rides
-  // here rather than in a tool description. The catalog is static (adapters/mcp/Resources.cpp).
+  // here rather than in a tool description. The catalog is injected by the product (may be empty).
   if (method == "resources/list") {
     Json::Value listing(Json::arrayValue);
-    for (const McpResource& resource : resourceCatalog()) {
+    for (const McpResource& resource : resources_) {
       Json::Value entry(Json::objectValue);
       entry["uri"] = resource.uri;
       entry["name"] = resource.name;
@@ -120,7 +119,7 @@ std::optional<Json::Value> McpServer::handle(const Json::Value& message, const U
   if (method == "resources/read") {
     if (std::optional<std::string> bad = notAString(params, "uri")) return wm::failure(id, -32602, *bad);
     const std::string uri = params.get("uri", "").asString();
-    for (const McpResource& resource : resourceCatalog()) {
+    for (const McpResource& resource : resources_) {
       if (resource.uri != uri) continue;
       Json::Value block(Json::objectValue);
       block["uri"] = resource.uri;

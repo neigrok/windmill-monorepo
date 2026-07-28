@@ -1,5 +1,5 @@
 #include "products/roadmap/adapters/mcp/ReadShape.h"
-#include "platform/adapters/mcp/Resources.h"
+#include "products/roadmap/adapters/mcp/RoadmapResources.h"
 #include "products/roadmap/adapters/mcp/ToolArgs.h"
 #include "products/roadmap/domain/Command.h"
 #include "test/adapters/mcp/ToolsHarness.h"
@@ -762,7 +762,7 @@ TEST(mcp_every_write_tool_denies_a_private_tree_exactly_as_it_denies_an_absent_o
 
 TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
   Harness h;
-  const std::vector<McpResource>& catalog = resourceCatalog();
+  const std::vector<McpResource> catalog = roadmapResources();
   CHECK_EQ(catalog.size(), 1u);
   CHECK_EQ(catalog[0].uri, std::string("windmill://quickstart"));
   CHECK_EQ(catalog[0].mimeType, std::string("text/markdown"));

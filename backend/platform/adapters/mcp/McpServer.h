@@ -7,6 +7,7 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace wm {
 
@@ -17,18 +18,32 @@ struct ServerInfo {
   std::string instructions;
 };
 
+// An MCP resource: a document a client may read on connect, addressed by uri. It costs no tool slot,
+// which is why the things agents reliably get backwards live here rather than in a tool description no
+// one re-reads. The struct is the neutral wire shape; the CONTENT is a product's to supply (a roadmap
+// deployment injects its quickstart, a notes-only one need inject nothing).
+struct McpResource {
+  std::string uri;
+  std::string name;
+  std::string title;
+  std::string description;
+  std::string mimeType;
+  std::string text;
+};
+
 // A transport-agnostic MCP engine (JSON-RPC 2.0). `handle` maps one parsed request to its
 // reply, or to nothing for a notification. It owns no I/O: a transport (stdio today,
 // Streamable HTTP later) parses a frame, hands it here, and ships whatever comes back.
 class McpServer {
 public:
-  McpServer(ToolHost& tools, ServerInfo info);
+  McpServer(ToolHost& tools, ServerInfo info, std::vector<McpResource> resources = {});
 
   std::optional<Json::Value> handle(const Json::Value& message, const UserId& caller = UserId{});
 
 private:
   ToolHost& tools_;
   ServerInfo info_;
+  std::vector<McpResource> resources_;   // published under resources/list; product-supplied, may be empty
 };
 
 }

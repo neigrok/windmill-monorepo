@@ -1,6 +1,7 @@
 #include "platform/adapters/crypto/OpenSslTokenGenerator.h"
 #include "products/roadmap/adapters/json/TreeJson.h"
 #include "platform/adapters/mcp/McpServer.h"
+#include "products/roadmap/adapters/mcp/RoadmapResources.h"
 #include "products/roadmap/adapters/mcp/RoadmapTools.h"
 #include "products/roadmap/adapters/postgres/PgOpLog.h"
 #include "products/roadmap/adapters/postgres/PgProgressRepository.h"
@@ -84,7 +85,7 @@ int main() {
       "get_diagnostics to inspect, the edit tools (create_node, connect, …) to author, and "
       "set_progress to mark a node active or complete. Edits are never rejected — a cycle or a "
       "detached node is surfaced by get_diagnostics, not refused."};
-  McpServer server(tools, std::move(info));
+  McpServer server(tools, std::move(info), roadmapResources());
 
   // stdout is the protocol channel — everything else goes to stderr.
   std::cerr << "windmill-mcp ready (stdio; db=" << redactDbUrl(connString) << ", user=" << caller.str() << ")\n";

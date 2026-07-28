@@ -1,6 +1,5 @@
 #include "platform/adapters/mcp/McpServer.h"
 
-#include "platform/adapters/mcp/Resources.h"
 #include "test/testing.h"
 
 using namespace wm;
@@ -41,8 +40,15 @@ Json::Value request(const char* method, Json::Value params, Json::Value id) {
   return message;
 }
 
+// A neutral fixture catalog: the engine test proves the resources protocol without depending on any
+// product's content (the roadmap quickstart is tested against the real tools in ToolErrorContractTest).
+std::vector<McpResource> fixtureCatalog() {
+  return {{"test://doc", "doc", "Test document", "a fixture resource for the engine test",
+           "text/markdown", "FIXTURE BODY"}};
+}
+
 McpServer make(FakeHost& host) {
-  return McpServer(host, ServerInfo{"windmill", "0.1.0", "roadmaps as skill trees"});
+  return McpServer(host, ServerInfo{"windmill", "0.1.0", "roadmaps as skill trees"}, fixtureCatalog());
 }
 
 }
@@ -67,36 +73,45 @@ TEST(mcp_initialize_reports_capabilities_and_echoes_protocol) {
   CHECK_EQ((*reply)["result"]["instructions"].asString(), std::string("roadmaps as skill trees"));
 }
 
-TEST(mcp_resources_list_publishes_the_quickstart) {
+TEST(mcp_resources_list_publishes_the_injected_catalog) {
   FakeHost host;
   McpServer server = make(host);
   std::optional<Json::Value> reply = server.handle(request("resources/list", Json::nullValue, 8));
 
   CHECK(reply.has_value());
   const Json::Value listing = (*reply)["result"]["resources"];
-  CHECK_EQ(listing.size(), resourceCatalog().size());
-  CHECK_EQ(listing[0]["uri"].asString(), std::string("windmill://quickstart"));
-  CHECK_EQ(listing[0]["name"].asString(), std::string("quickstart"));
-  CHECK_EQ(listing[0]["title"].asString(), std::string("Windmill quickstart"));
+  CHECK_EQ(listing.size(), 1u);
+  CHECK_EQ(listing[0]["uri"].asString(), std::string("test://doc"));
+  CHECK_EQ(listing[0]["name"].asString(), std::string("doc"));
+  CHECK_EQ(listing[0]["title"].asString(), std::string("Test document"));
   CHECK_EQ(listing[0]["mimeType"].asString(), std::string("text/markdown"));
   CHECK_FALSE(listing[0]["description"].asString().empty());
   CHECK_FALSE(listing[0].isMember("text"));  // the listing is an index; the body is one read away
 }
 
-TEST(mcp_resources_read_answers_the_quickstart_body) {
+TEST(mcp_resources_list_is_empty_when_no_catalog_is_injected) {
+  FakeHost host;
+  McpServer server(host, ServerInfo{"windmill", "0.1.0", ""});   // default: a product-neutral empty catalog
+  std::optional<Json::Value> reply = server.handle(request("resources/list", Json::nullValue, 8));
+
+  CHECK(reply.has_value());
+  CHECK_EQ((*reply)["result"]["resources"].size(), 0u);
+}
+
+TEST(mcp_resources_read_answers_the_injected_body) {
   FakeHost host;
   McpServer server = make(host);
 
   Json::Value params(Json::objectValue);
-  params["uri"] = "windmill://quickstart";
+  params["uri"] = "test://doc";
   std::optional<Json::Value> reply = server.handle(request("resources/read", params, 9));
 
   CHECK(reply.has_value());
   const Json::Value contents = (*reply)["result"]["contents"];
   CHECK_EQ(contents.size(), 1u);
-  CHECK_EQ(contents[0]["uri"].asString(), std::string("windmill://quickstart"));
+  CHECK_EQ(contents[0]["uri"].asString(), std::string("test://doc"));
   CHECK_EQ(contents[0]["mimeType"].asString(), std::string("text/markdown"));
-  CHECK_EQ(contents[0]["text"].asString(), resourceCatalog()[0].text);
+  CHECK_EQ(contents[0]["text"].asString(), std::string("FIXTURE BODY"));
 }
 
 TEST(mcp_resources_read_of_an_unknown_uri_names_it) {

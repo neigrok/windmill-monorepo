@@ -1,4 +1,4 @@
-#include "platform/adapters/mcp/Resources.h"
+#include "products/roadmap/adapters/mcp/RoadmapResources.h"
 
 namespace wm {
 
@@ -82,13 +82,11 @@ the tool, the argument, what you sent and what is legal — read it before retry
 
 }  // namespace
 
-const std::vector<McpResource>& resourceCatalog() {
-  static const std::vector<McpResource> catalog{
-      {"windmill://quickstart", "quickstart", "Windmill quickstart",
-       "Edge direction, handle names, what is never refused, and the read projections — the "
-       "handful of things agents get backwards.",
-       "text/markdown", kQuickstart}};
-  return catalog;
+std::vector<McpResource> roadmapResources() {
+  return {{"windmill://quickstart", "quickstart", "Windmill quickstart",
+           "Edge direction, handle names, what is never refused, and the read projections — the "
+           "handful of things agents get backwards.",
+           "text/markdown", kQuickstart}};
 }
 
 }

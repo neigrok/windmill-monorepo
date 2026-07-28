@@ -15,6 +15,7 @@
 #include "products/roadmap/adapters/llm/AnthropicComposer.h"
 #include "platform/adapters/mcp/McpHttpEndpoint.h"
 #include "platform/adapters/mcp/McpServer.h"
+#include "products/roadmap/adapters/mcp/RoadmapResources.h"
 #include "products/roadmap/adapters/mcp/RoadmapTools.h"
 #include "platform/adapters/postgres/PgAuthRepository.h"
 #include "platform/adapters/postgres/PgEventRepository.h"
@@ -271,7 +272,7 @@ int main() {
       "get_diagnostics to inspect, the edit tools (create_node, connect, …) to author, and "
       "set_progress to mark a node active or complete. Edits are never rejected — a cycle or a "
       "detached node is surfaced by get_diagnostics, not refused."};
-  auto mcpServer = std::make_shared<McpServer>(*mcpTools, std::move(mcpInfo));
+  auto mcpServer = std::make_shared<McpServer>(*mcpTools, std::move(mcpInfo), roadmapResources());
   auto mcpEndpoint = std::make_shared<McpHttpEndpoint>(*mcpServer, mcpOrigins, mcpAuth);
 
   // The origins allowed to send credentialed (cookie-bearing) requests. The app itself is
