@@ -21,7 +21,8 @@ constexpr std::uint64_t kDay = 24ull * 60 * 60 * 1000;
 
 struct Harness {
   FakeAuthRepository authRepo;
-  FakeEmail email;
+  FakeEmail email;                // the platform sign-in mailer AuthService still speaks to
+  FakeReminderMail reminderMail;  // the roadmap reminder mailer the sweep now speaks to
   std::shared_ptr<FakeTokens> tokens = std::make_shared<FakeTokens>();
   std::shared_ptr<FakeClock> clock = std::make_shared<FakeClock>();
   FakeOAuthRepository oauthRepo;
@@ -33,8 +34,8 @@ struct Harness {
   std::shared_ptr<RemindersApi> api;
 
   explicit Harness(ReminderArming arming = ReminderArming(), std::string adminToken = "")
-      : sweep(std::make_shared<ReminderSweep>(*reminders, email, *tokens, *clock, std::move(arming),
-                                              "https://windmill.works")),
+      : sweep(std::make_shared<ReminderSweep>(*reminders, reminderMail, *tokens, *clock,
+                                              std::move(arming), "https://windmill.works")),
         api(std::make_shared<RemindersApi>(sweep, reminders, auth, tokens, clock,
                                            std::move(adminToken))) {}
 

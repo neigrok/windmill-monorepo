@@ -3,6 +3,7 @@
 #include "platform/adapters/google/GoogleOAuthClient.h"
 #include "platform/adapters/paddle/BillingApi.h"
 #include "platform/adapters/crypto/OpenSslTokenGenerator.h"
+#include "platform/adapters/email/ResendClient.h"
 #include "platform/adapters/email/ResendEmailSender.h"
 #include "platform/adapters/sentry/SentryClient.h"
 #include "products/roadmap/adapters/http/AuthApi.h"
@@ -26,6 +27,7 @@
 #include "products/roadmap/adapters/postgres/PgOgVideoRepository.h"
 #include "products/roadmap/adapters/postgres/PgOpLog.h"
 #include "products/roadmap/adapters/postgres/PgProgressRepository.h"
+#include "products/roadmap/adapters/email/ResendReminderSender.h"
 #include "products/roadmap/adapters/postgres/PgReminderRepository.h"
 #include "platform/adapters/postgres/PgServerErrorRepository.h"
 #include "platform/adapters/postgres/PgSubscriptionRepository.h"
@@ -43,6 +45,7 @@
 #include "products/roadmap/application/TreeRegistry.h"
 #include "products/roadmap/application/ReminderSweep.h"
 #include "products/roadmap/routes.h"
+#include "products/journal/adapters/email/ResendNudgeSender.h"
 #include "products/journal/adapters/llm/NullEmbedder.h"
 #include "products/journal/adapters/llm/NullTranscriber.h"
 #include "products/journal/adapters/llm/OpenAiTranscriber.h"
@@ -90,8 +93,13 @@ int main() {
   bool secureCookies = appBaseUrl.rfind("https://", 0) == 0;
 
   auto authRepo = std::make_shared<PgAuthRepository>(connString);
-  auto emailSender = std::make_shared<ResendEmailSender>(
+  // One Resend transport, shared by every mail: the neutral client owns the single outbound loop
+  // and the api key, and each mail sender (platform sign-in, roadmap reminder, journal nudge) is
+  // just a thin variable-binding over it. Kept alive here for the whole process, so every sender
+  // holding a reference to it outlives nothing.
+  auto resendClient = std::make_shared<ResendClient>(
       resendKey ? resendKey : "", resendFrom ? resendFrom : "Windmill <login@windmill.works>");
+  auto emailSender = std::make_shared<ResendEmailSender>(*resendClient);
   auto tokens = std::make_shared<OpenSslTokenGenerator>();
   auto systemClock = std::make_shared<SystemClock>();
 
@@ -259,7 +267,8 @@ int main() {
   auto reminderRepo = std::make_shared<PgReminderRepository>(connString);
   ReminderArming reminderArming(remindersEnabledFlag == "true" || remindersEnabledFlag == "1",
                                 remindersAllowlistEnv ? remindersAllowlistEnv : "");
-  auto reminderSweep = std::make_shared<ReminderSweep>(*reminderRepo, *emailSender, *tokens,
+  auto reminderMail = std::make_shared<ResendReminderSender>(*resendClient);
+  auto reminderSweep = std::make_shared<ReminderSweep>(*reminderRepo, *reminderMail, *tokens,
                                                        *systemClock, reminderArming, appBaseUrl);
   reminderSweep->start();
 
@@ -683,7 +692,8 @@ int main() {
   auto journalNudges = std::make_shared<PgNudgeRepository>(connString);
   NudgeArming journalNudgeArming(journalNudgeEnabledFlag == "true" || journalNudgeEnabledFlag == "1",
                                  journalNudgeAllowlistEnv ? journalNudgeAllowlistEnv : "");
-  auto journalNudgeSweep = std::make_shared<NudgeSweep>(*journalNudges, *emailSender, *tokens,
+  auto journalNudgeMail = std::make_shared<ResendNudgeSender>(*resendClient);
+  auto journalNudgeSweep = std::make_shared<NudgeSweep>(*journalNudges, *journalNudgeMail, *tokens,
                                                         *systemClock, journalNudgeArming, appBaseUrl);
   journalNudgeSweep->start();
   // Wave 3 echoes (Windmill One): the nightly reading-across, gated on the one subscription and

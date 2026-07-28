@@ -16,8 +16,9 @@ namespace wm {
 // the mail is one fixed line, so a decision to send carries no copy to get wrong.
 
 enum class NudgeOutcome { send, skip };
-// Named NudgeSkipReason, not SkipReason: roadmap's Reminders.h has its own wm::SkipReason, and both
-// headers reach any TU that includes NudgeSweep.h (EmailSender.h pulls Reminders.h for ReminderMail).
+// Named NudgeSkipReason, not SkipReason: roadmap's Reminders.h has its own wm::SkipReason, and the
+// composition root (main.cpp) includes both this header and Reminders.h, so the two enums would
+// collide there without the distinct name.
 enum class NudgeSkipReason { none, alreadyWrote, paused, tooLate };
 
 // How late, past the device's chosen instant, we stop bothering: a nudge that missed its moment by

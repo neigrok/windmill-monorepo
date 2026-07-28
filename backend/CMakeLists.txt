@@ -159,6 +159,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     platform/adapters/postgres/PgFeedbackRepository.cpp
     platform/adapters/postgres/PgServerErrorRepository.cpp
     platform/adapters/crypto/OpenSslTokenGenerator.cpp
+    platform/adapters/email/ResendClient.cpp
     platform/adapters/email/ResendEmailSender.cpp
     platform/adapters/google/GoogleOAuthClient.cpp
     platform/adapters/sentry/SentryClient.cpp
@@ -174,6 +175,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
   # the LLM edges, the JSON boundary, and the roadmap postgres/http surfaces. They reach the vendor
   # deps through windmill_platform (linked PUBLIC above).
   target_sources(windmill_roadmap PRIVATE
+    products/roadmap/adapters/email/ResendReminderSender.cpp
     products/roadmap/adapters/json/TreeJson.cpp
     products/roadmap/adapters/json/SubgraphJson.cpp
     products/roadmap/adapters/json/CommandJson.cpp
@@ -210,6 +212,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
   # Journal adapters: the Pg storage, the JSON wire boundary, the REST surface, and the route seam.
   # They reach Drogon + libpqxx through windmill_platform (linked PUBLIC by the core lib above).
   target_sources(windmill_journal PRIVATE
+    products/journal/adapters/email/ResendNudgeSender.cpp
     products/journal/adapters/json/PageJson.cpp
     products/journal/adapters/postgres/PgJournalRepository.cpp
     products/journal/adapters/postgres/PgNudgeRepository.cpp

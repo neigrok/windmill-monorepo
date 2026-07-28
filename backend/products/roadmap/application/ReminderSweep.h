@@ -1,7 +1,7 @@
 #pragma once
 
 #include "platform/ports/Clock.h"
-#include "platform/ports/EmailSender.h"
+#include "products/roadmap/ports/ReminderMailSender.h"
 #include "products/roadmap/ports/ReminderRepository.h"
 #include "platform/ports/TokenGenerator.h"
 #include "products/roadmap/domain/Reminders.h"
@@ -48,7 +48,7 @@ struct SweepReport {
 // retried. A lost reminder costs nothing; a duplicate costs trust.
 class ReminderSweep {
 public:
-  ReminderSweep(ReminderRepository& reminders, EmailSender& email, TokenGenerator& tokens,
+  ReminderSweep(ReminderRepository& reminders, ReminderMailSender& mail, TokenGenerator& tokens,
                 Clock& clock, ReminderArming arming, std::string appBaseUrl);
 
   // Starts the heartbeat. The first tick is jittered a minute or so past boot so a crash loop
@@ -83,7 +83,7 @@ private:
   bool deliver(const Email& to, const ReminderMail& mail);
 
   ReminderRepository& reminders_;
-  EmailSender& email_;
+  ReminderMailSender& mail_;
   TokenGenerator& tokens_;
   Clock& clock_;
   ReminderArming arming_;

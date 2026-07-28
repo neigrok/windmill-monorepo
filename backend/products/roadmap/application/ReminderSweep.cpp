@@ -45,10 +45,10 @@ struct SweepLock {
 };
 }
 
-ReminderSweep::ReminderSweep(ReminderRepository& reminders, EmailSender& email,
+ReminderSweep::ReminderSweep(ReminderRepository& reminders, ReminderMailSender& mail,
                              TokenGenerator& tokens, Clock& clock, ReminderArming arming,
                              std::string appBaseUrl)
-    : reminders_(reminders), email_(email), tokens_(tokens), clock_(clock),
+    : reminders_(reminders), mail_(mail), tokens_(tokens), clock_(clock),
       arming_(std::move(arming)), appBaseUrl_(std::move(appBaseUrl)), ticker_("reminder-ticker") {
   // The loop runs from construction, not from start(): an admin sweep is queued onto it whether
   // or not the heartbeat was ever armed, and a loop nobody spun would swallow that work in
@@ -223,7 +223,7 @@ ReminderMail ReminderSweep::mailFor(const ReminderContent& content,
 bool ReminderSweep::deliver(const Email& to, const ReminderMail& mail) {
   auto settled = std::make_shared<std::promise<bool>>();
   std::future<bool> outcome = settled->get_future();
-  email_.sendReminder(to, mail, [settled](bool ok) { settled->set_value(ok); });
+  mail_.sendReminder(to, mail, [settled](bool ok) { settled->set_value(ok); });
   if (outcome.wait_for(std::chrono::seconds(kSendTimeoutSeconds)) != std::future_status::ready)
     return false;
   return outcome.get();

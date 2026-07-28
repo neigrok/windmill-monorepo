@@ -27,7 +27,7 @@ void armSendableUser(FakeNudgeRepository& nudges) {
 TEST(a_due_writer_who_has_not_written_is_nudged_once_and_the_day_is_closed_delivered) {
   FakeNudgeRepository nudges;
   armSendableUser(nudges);
-  FakeEmail email;
+  FakeNudgeMail email;
   FakeTokens tokens;
   FakeClock clock;
 
@@ -46,11 +46,10 @@ TEST(a_due_writer_who_has_not_written_is_nudged_once_and_the_day_is_closed_deliv
   CHECK_EQ(nudges.claims[0].decision.outcome, NudgeOutcome::send);
   CHECK_EQ(nudges.claims[0].decision.reason, NudgeSkipReason::none);
 
-  // One 'journal-nudge' mail, carrying the three links the mailer only binds.
+  // One nudge mail, carrying the three links the mailer only binds.
   CHECK_EQ(email.sent.size(), std::size_t{1});
-  CHECK_EQ(email.sent[0].templateId, std::string("journal-nudge"));
   CHECK_EQ(email.sent[0].to, Email{"writer@example.com"});
-  const JournalNudgeMail& mail = email.sent[0].journalNudge;
+  const JournalNudgeMail& mail = email.sent[0].mail;
   CHECK_EQ(mail.settingsUrl, std::string("https://windmill.works/#/settings/nudges"));
   CHECK_EQ(mail.pauseUrl, std::string("https://windmill.works/journal/nudge/pause?t=s1"));
   CHECK_EQ(mail.unsubscribeUrl,
@@ -68,7 +67,7 @@ TEST(a_writer_who_already_wrote_today_is_skipped_with_no_mail) {
   FakeNudgeRepository nudges;
   armSendableUser(nudges);
   nudges.markWrote(uid("u1"), ld(kSlotDay));
-  FakeEmail email;
+  FakeNudgeMail email;
   FakeTokens tokens;
   FakeClock clock;
 
@@ -93,7 +92,7 @@ TEST(a_paused_writer_is_skipped_with_no_mail) {
   FakeNudgeRepository nudges;
   armSendableUser(nudges);
   nudges.pause(uid("u1"), kNow + kDay);   // paused a day into the future
-  FakeEmail email;
+  FakeNudgeMail email;
   FakeTokens tokens;
   FakeClock clock;
 
@@ -112,7 +111,7 @@ TEST(a_paused_writer_is_skipped_with_no_mail) {
 TEST(a_writer_off_the_allowlist_has_the_send_held_and_the_day_closed_held) {
   FakeNudgeRepository nudges;
   armSendableUser(nudges);
-  FakeEmail email;
+  FakeNudgeMail email;
   FakeTokens tokens;
   FakeClock clock;
 
@@ -139,7 +138,7 @@ TEST(a_writer_off_the_allowlist_has_the_send_held_and_the_day_closed_held) {
 TEST(two_sweeps_of_the_same_day_send_only_once) {
   FakeNudgeRepository nudges;
   armSendableUser(nudges);
-  FakeEmail email;
+  FakeNudgeMail email;
   FakeTokens tokens;
   FakeClock clock;
 
@@ -158,7 +157,7 @@ TEST(two_sweeps_of_the_same_day_send_only_once) {
 TEST(a_rehearsal_claims_and_sends_nothing) {
   FakeNudgeRepository nudges;
   armSendableUser(nudges);
-  FakeEmail email;
+  FakeNudgeMail email;
   FakeTokens tokens;
   FakeClock clock;
 

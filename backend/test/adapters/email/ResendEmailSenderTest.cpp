@@ -1,4 +1,4 @@
-#include "platform/adapters/email/ResendEmailSender.h"
+#include "platform/adapters/email/ResendClient.h"
 
 #include "test/testing.h"
 

@@ -5,6 +5,7 @@
 #include "products/journal/ports/EchoRepository.h"
 #include "products/journal/ports/Embedder.h"
 #include "products/journal/ports/JournalRepository.h"
+#include "products/journal/ports/NudgeMailSender.h"
 #include "products/journal/ports/NudgeRepository.h"
 #include "products/journal/ports/Transcriber.h"
 
@@ -12,6 +13,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
@@ -185,6 +187,30 @@ public:
     settings[user.str()].pausedUntilMs = untilMs;
   }
   void disable(const UserId& user) override { settings[user.str()].enabled = false; }
+};
+
+// The nudge mailer as a fake: the daily nudge arrives fully rendered, so it keeps the whole mail and
+// the recipient, and the sweep's tests read the pause and settings links straight back off it. Async
+// like the real sender but resolves inline — failNext makes the next send report false, recording
+// nothing, exactly as a refused provider call would.
+struct FakeNudgeMail : NudgeMailSender {
+  struct Sent {
+    Email to;
+    JournalNudgeMail mail;
+  };
+  std::vector<Sent> sent;
+  bool failNext = false;
+
+  void sendJournalNudge(const Email& to, const JournalNudgeMail& mail,
+                        std::function<void(bool)> done) override {
+    if (failNext) {
+      failNext = false;
+      done(false);
+      return;
+    }
+    sent.push_back(Sent{to, mail});
+    done(true);
+  }
 };
 
 // A deterministic stand-in for the server-side embedding model: normalised per-letter counts over

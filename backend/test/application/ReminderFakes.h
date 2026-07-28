@@ -1,13 +1,16 @@
 #pragma once
 
+#include "products/roadmap/ports/ReminderMailSender.h"
 #include "products/roadmap/ports/ReminderRepository.h"
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace wm::fake {
@@ -96,6 +99,30 @@ struct FakeReminders : ReminderRepository {
   void pause(const UserId& user) override {
     settings[user.str()].enabled = false;
     pauseDigests.erase(user.str());  // the link is spent the moment it is used
+  }
+};
+
+// The reminder mailer as a fake: the weekly reminder arrives fully rendered, so it keeps the whole
+// mail and the recipient, and the sweep's tests read the deep link, the pause link and the step
+// slots straight back off it. Async like the real sender but resolves inline — failNext makes the
+// next send report false, recording nothing, exactly as a refused provider call would.
+struct FakeReminderMail : ReminderMailSender {
+  struct Sent {
+    Email to;
+    ReminderMail mail;
+  };
+  std::vector<Sent> sent;
+  bool failNext = false;
+
+  void sendReminder(const Email& to, const ReminderMail& mail,
+                    std::function<void(bool)> done) override {
+    if (failNext) {
+      failNext = false;
+      done(false);
+      return;
+    }
+    sent.push_back(Sent{to, mail});
+    done(true);
   }
 };
 

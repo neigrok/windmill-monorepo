@@ -23,7 +23,8 @@ constexpr std::uint64_t kWeekMs = 7ULL * 24 * 60 * 60 * 1000;
 // user the auth fake mints is "u1".
 struct Harness {
   FakeAuthRepository authRepo;
-  FakeEmail email;
+  FakeEmail email;           // the platform sign-in mailer AuthService still speaks to
+  FakeNudgeMail nudgeMail;   // the journal nudge mailer the sweep now speaks to
   std::shared_ptr<FakeTokens> tokens = std::make_shared<FakeTokens>();
   std::shared_ptr<FakeClock> clock = std::make_shared<FakeClock>();
   FakeOAuthRepository oauthRepo;
@@ -35,7 +36,7 @@ struct Harness {
   std::shared_ptr<NudgeApi> api;
 
   explicit Harness(NudgeArming arming = NudgeArming(), std::string adminToken = "")
-      : sweep(std::make_shared<NudgeSweep>(*nudges, email, *tokens, *clock, std::move(arming),
+      : sweep(std::make_shared<NudgeSweep>(*nudges, nudgeMail, *tokens, *clock, std::move(arming),
                                            "https://windmill.works")),
         api(std::make_shared<NudgeApi>(nudges, sweep, auth, tokens, clock, std::move(adminToken))) {}
 

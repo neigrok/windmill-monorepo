@@ -54,7 +54,7 @@ void planOneSendableUser(FakeReminders& reminders) {
 TEST(a_sweep_decides_claims_and_only_then_mails) {
   FakeReminders reminders;
   planOneSendableUser(reminders);
-  FakeEmail email;
+  FakeReminderMail email;
   FakeTokens tokens;
   FakeClock clock;
 
@@ -82,7 +82,6 @@ TEST(a_sweep_decides_claims_and_only_then_mails) {
   CHECK_EQ(reminders.claims[0].decision.content.treeId, TreeId{"t_a"});
 
   CHECK_EQ(email.sent.size(), std::size_t{1});
-  CHECK_EQ(email.sent[0].templateId, std::string("reminder"));
   CHECK_EQ(email.sent[0].to, Email{"sailor@example.com"});
   CHECK_EQ(reminders.closes.size(), std::size_t{1});
   CHECK_EQ(reminders.closes[0].user, UserId{"u1"});
@@ -93,7 +92,7 @@ TEST(a_sweep_decides_claims_and_only_then_mails) {
 TEST(the_mail_carries_the_links_the_counters_and_the_coloured_slots) {
   FakeReminders reminders;
   planOneSendableUser(reminders);
-  FakeEmail email;
+  FakeReminderMail email;
   FakeTokens tokens;
   FakeClock clock;
 
@@ -102,7 +101,7 @@ TEST(the_mail_carries_the_links_the_counters_and_the_coloured_slots) {
   sweep.run(kNow, false);
 
   CHECK_EQ(email.sent.size(), std::size_t{1});
-  const ReminderMail& mail = email.sent[0].reminder;
+  const ReminderMail& mail = email.sent[0].mail;
   CHECK_EQ(mail.treeName, std::string("Learn to sail"));
   // The OWNER's tree (#/app/:id), never the public share page (/t/:id) — this mail goes to the
   // person whose plan it is, so it must open their editable tree, not a read-only view of it.
@@ -141,7 +140,7 @@ TEST(the_mail_names_the_in_tree_remainder_and_the_other_trees_separately) {
                  ReadyStep{NodeId{"d"}, "D", NodeColor::plum},
                  ReadyStep{NodeId{"e"}, "E", NodeColor::brick}}),
       readyTree("t_b", "Ship it", {ReadyStep{NodeId{"one"}, "One", NodeColor::sky}})};
-  FakeEmail email;
+  FakeReminderMail email;
   FakeTokens tokens;
   FakeClock clock;
 
@@ -150,7 +149,7 @@ TEST(the_mail_names_the_in_tree_remainder_and_the_other_trees_separately) {
   sweep.run(kNow, false);
 
   CHECK_EQ(email.sent.size(), std::size_t{1});
-  const ReminderMail& mail = email.sent[0].reminder;
+  const ReminderMail& mail = email.sent[0].mail;
   CHECK_EQ(mail.readyPhrase, std::string("5 steps"));
   CHECK_EQ(mail.moreOnTree, std::string("…and 2 more on this tree"));
   CHECK_EQ(mail.moreReady, std::string("1 other tree has steps ready"));
@@ -159,7 +158,7 @@ TEST(the_mail_names_the_in_tree_remainder_and_the_other_trees_separately) {
 TEST(a_rehearsal_decides_everything_and_commits_nothing) {
   FakeReminders reminders;
   planOneSendableUser(reminders);
-  FakeEmail email;
+  FakeReminderMail email;
   FakeTokens tokens;
   FakeClock clock;
 
@@ -183,7 +182,7 @@ TEST(a_week_another_sweep_already_owns_is_dropped_in_silence) {
   FakeReminders reminders;
   planOneSendableUser(reminders);
   reminders.weeksOwnedElsewhere.insert("u1");
-  FakeEmail email;
+  FakeReminderMail email;
   FakeTokens tokens;
   FakeClock clock;
 
@@ -206,7 +205,7 @@ TEST(a_skip_still_claims_its_week_so_the_ledger_stays_complete) {
   FakeReminders reminders;
   planOneSendableUser(reminders);
   reminders.readiness["u1"] = {readyTree("t_a", "Learn to sail", {})};
-  FakeEmail email;
+  FakeReminderMail email;
   FakeTokens tokens;
   FakeClock clock;
 
@@ -227,7 +226,7 @@ TEST(a_skip_still_claims_its_week_so_the_ledger_stays_complete) {
 TEST(a_dark_engine_records_an_honest_send_holds_it_and_delivers_nothing) {
   FakeReminders reminders;
   planOneSendableUser(reminders);
-  FakeEmail email;
+  FakeReminderMail email;
   FakeTokens tokens;
   FakeClock clock;
 
@@ -259,7 +258,7 @@ TEST(an_armed_engine_still_mails_only_the_allowlist) {
   reminders.born["u2"] = kNow - 90 * kDay;
   reminders.readiness["u2"] = {
       readyTree("t_b", "Ship it", {ReadyStep{NodeId{"one"}, "One", NodeColor::sky}})};
-  FakeEmail email;
+  FakeReminderMail email;
   FakeTokens tokens;
   FakeClock clock;
 
@@ -279,7 +278,7 @@ TEST(a_refused_send_is_recorded_never_retried_and_leaves_the_old_pause_link_aliv
   FakeReminders reminders;
   planOneSendableUser(reminders);
   reminders.pauseDigests["u1"] = "last-weeks-digest";
-  FakeEmail email;
+  FakeReminderMail email;
   email.failNext = true;
   FakeTokens tokens;
   FakeClock clock;
@@ -303,7 +302,7 @@ TEST(a_sweep_that_cannot_take_the_fleet_lock_touches_nothing) {
   FakeReminders reminders;
   planOneSendableUser(reminders);
   reminders.lockFree = false;
-  FakeEmail email;
+  FakeReminderMail email;
   FakeTokens tokens;
   FakeClock clock;
 
@@ -326,7 +325,7 @@ TEST(a_user_whose_facts_cannot_be_read_still_claims_the_week_and_moves_on) {
   planOneSendableUser(reminders);
   reminders.due.insert(reminders.due.begin(), due("u0", "broken@example.com"));
   reminders.unreadable.insert("u0");
-  FakeEmail email;
+  FakeReminderMail email;
   FakeTokens tokens;
   FakeClock clock;
 
@@ -359,7 +358,7 @@ TEST(an_unreadable_user_in_a_rehearsal_commits_nothing_either) {
   planOneSendableUser(reminders);
   reminders.due.insert(reminders.due.begin(), due("u0", "broken@example.com"));
   reminders.unreadable.insert("u0");
-  FakeEmail email;
+  FakeReminderMail email;
   FakeTokens tokens;
   FakeClock clock;
 

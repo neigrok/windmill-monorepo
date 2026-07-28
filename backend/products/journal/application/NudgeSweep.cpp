@@ -22,7 +22,8 @@ constexpr double kFirstTickSeconds = 45.0;
 // comfortably past the provider client's own timeout, so a real refusal is never lost to ours.
 constexpr int kSendTimeoutSeconds = 30;
 // The ceiling on one sweep, and so also the fleet's per-tick send rate. Named distinctly from
-// roadmap's kSweepBatch, which reaches this TU through EmailSender.h → Reminders.h.
+// roadmap's kSweepBatch: the composition root (main.cpp) includes both sweeps, so the two caps
+// share a translation unit even though this one no longer pulls Reminders.h.
 constexpr int kNudgeSweepBatch = 200;
 
 // The fleet-wide work lock as a scope. Correctness rides on the committed claim, never on this —
@@ -45,9 +46,9 @@ struct SweepLock {
 };
 }
 
-NudgeSweep::NudgeSweep(NudgeRepository& nudges, EmailSender& email, TokenGenerator& tokens,
+NudgeSweep::NudgeSweep(NudgeRepository& nudges, NudgeMailSender& mail, TokenGenerator& tokens,
                        Clock& clock, NudgeArming arming, std::string appBaseUrl)
-    : nudges_(nudges), email_(email), tokens_(tokens), clock_(clock), arming_(std::move(arming)),
+    : nudges_(nudges), mail_(mail), tokens_(tokens), clock_(clock), arming_(std::move(arming)),
       appBaseUrl_(std::move(appBaseUrl)), ticker_("journal-nudge-ticker") {
   // The loop runs from construction, not from start(): the same idiom as the reminder ticker, so a
   // loop nobody armed still exists to be queued onto.
@@ -144,7 +145,7 @@ bool NudgeSweep::deliver(const NudgeDueUser& due, const std::string& pauseSecret
 
   auto settled = std::make_shared<std::promise<bool>>();
   std::future<bool> outcome = settled->get_future();
-  email_.sendJournalNudge(due.email, mail, [settled](bool ok) { settled->set_value(ok); });
+  mail_.sendJournalNudge(due.email, mail, [settled](bool ok) { settled->set_value(ok); });
   if (outcome.wait_for(std::chrono::seconds(kSendTimeoutSeconds)) != std::future_status::ready)
     return false;
   return outcome.get();

@@ -1,9 +1,9 @@
 #pragma once
 
 #include "platform/ports/Clock.h"
-#include "platform/ports/EmailSender.h"
 #include "platform/ports/TokenGenerator.h"
 #include "products/journal/domain/NudgePlan.h"
+#include "products/journal/ports/NudgeMailSender.h"
 #include "products/journal/ports/NudgeRepository.h"
 
 #include <trantor/net/EventLoopThread.h>
@@ -28,7 +28,7 @@ struct NudgeSweepReport {
 // admin endpoint can rehearse it at an arbitrary instant, dry or wet.
 class NudgeSweep {
 public:
-  NudgeSweep(NudgeRepository& nudges, EmailSender& email, TokenGenerator& tokens, Clock& clock,
+  NudgeSweep(NudgeRepository& nudges, NudgeMailSender& mail, TokenGenerator& tokens, Clock& clock,
              NudgeArming arming, std::string appBaseUrl);
 
   void start();                                          // arm the ticker (jittered first tick, then periodic)
@@ -41,7 +41,7 @@ private:
   bool deliver(const NudgeDueUser& due, const std::string& pauseSecret);
 
   NudgeRepository& nudges_;
-  EmailSender& email_;
+  NudgeMailSender& mail_;
   TokenGenerator& tokens_;
   Clock& clock_;
   NudgeArming arming_;
