@@ -3,12 +3,14 @@
 // above the switcher is the canvas; nothing stands between the writer and the cursor.
 
 import React, { useEffect, useState } from 'react';
-import { Search } from 'lucide-react';
+import { Search, Bell } from 'lucide-react';
 import { ProductSwitcher } from '../../shell/ProductSwitcher.jsx';
 import { Canvas } from './Canvas.jsx';
 import { SearchOverlay } from './search/SearchOverlay.jsx';
 import { EchoCard } from './EchoCard.jsx';
+import { NudgePanel } from './NudgePanel.jsx';
 import { useEchoes } from './useEchoes.js';
+import { useNudge } from './useNudge.js';
 import './journal.css';
 
 // A position is a URL (canon §11): #/journal is today, #/journal/2026-07-20 flies the canvas to
@@ -22,7 +24,9 @@ export function JournalApp({ hash }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [flyTo, setFlyTo] = useState(null);
   const [openEcho, setOpenEcho] = useState(null);
+  const [nudgeOpen, setNudgeOpen] = useState(false);
   const { byTriggerDay, dismiss } = useEchoes();
+  const nudge = useNudge();
 
   // ⌘K / Ctrl-K opens search — the one shortcut, never in the writer's way.
   useEffect(() => {
@@ -45,15 +49,28 @@ export function JournalApp({ hash }) {
         onOpenEcho={(triggerDay) => setOpenEcho(byTriggerDay.get(triggerDay) || null)}
       />
       <div className="journal-lamp" aria-hidden="true" />
-      <button
-        type="button"
-        className="journal-search-open"
-        onClick={() => setSearchOpen(true)}
-        aria-label="Search a feeling"
-        title="Search a feeling (⌘K)"
-      >
-        <Search size={18} strokeWidth={1.9} aria-hidden="true" />
-      </button>
+      <div className="journal-tools">
+        {nudge.armed && (
+          <button
+            type="button"
+            className="journal-tool"
+            onClick={() => setNudgeOpen(true)}
+            aria-label="Nudges"
+            title="Nudges"
+          >
+            <Bell size={18} strokeWidth={1.9} aria-hidden="true" />
+          </button>
+        )}
+        <button
+          type="button"
+          className="journal-tool journal-search-open"
+          onClick={() => setSearchOpen(true)}
+          aria-label="Search a feeling"
+          title="Search a feeling (⌘K)"
+        >
+          <Search size={18} strokeWidth={1.9} aria-hidden="true" />
+        </button>
+      </div>
       <SearchOverlay
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
@@ -70,6 +87,7 @@ export function JournalApp({ hash }) {
           onDismiss={(triggerDay) => { dismiss(triggerDay); setOpenEcho(null); }}
         />
       )}
+      {nudgeOpen && <NudgePanel nudge={nudge} onClose={() => setNudgeOpen(false)} />}
       <div className="journal-switch">
         <ProductSwitcher current="journal" />
       </div>

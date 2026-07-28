@@ -334,10 +334,18 @@
 /* ── Search — the ⌘K overlay, its results, and the passage a hit flies to ──────────────────── */
 
 /* The floating affordance: a quiet lamp-ringed glyph, out of the writer's way, bottom-right. */
-.journal-search-open {
+/* The floating tool rail — search always, nudges when the engine is armed. Stacked bottom-right,
+   clear of the product switcher. */
+.journal-tools {
   position: fixed;
   right: 20px;
   bottom: 84px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 40;
+}
+.journal-tool {
   width: 44px;
   height: 44px;
   display: grid;
@@ -349,9 +357,8 @@
   cursor: pointer;
   backdrop-filter: blur(8px);
   transition: border-color 180ms var(--ease-standard), transform 180ms var(--ease-standard);
-  z-index: 40;
 }
-.journal-search-open:hover { border-color: var(--lamp-400); transform: translateY(-1px); }
+.journal-tool:hover { border-color: var(--lamp-400); transform: translateY(-1px); }
 
 /* The overlay: a dim wash over the night, a card floated over the canvas. */
 .journal-search {
@@ -557,4 +564,109 @@
 @media (prefers-reduced-motion: reduce) {
   .journal-echo { animation: none; }
   .journal-echo-glyph { animation: none; }
+}
+
+/* ── Nudges ───────────────────────────────────────────────────────────────
+   A small honest panel, only present when the engine is armed. One switch, the
+   learned hour, a channel, a week's pause — and the line that keeps the promise. */
+.journal-nudge {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, #000 46%, transparent);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  z-index: 60;
+  animation: journal-fade-in-up 220ms var(--ease-soft);
+}
+.journal-nudge-panel {
+  width: min(420px, 100%);
+  background: var(--surface-card);
+  border: 1px solid color-mix(in srgb, var(--lamp-400) 22%, transparent);
+  border-radius: var(--radius-lg, 16px);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  padding: 26px 26px 20px;
+}
+.journal-nudge-lead {
+  margin: 0 0 18px;
+  color: var(--lamp-400);
+  font: 400 11px/1.5 var(--font-mono), ui-monospace, monospace;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.journal-nudge-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: var(--journal-ink, #F2ECDE);
+  font: 500 16px/1.2 var(--font-body), sans-serif;
+}
+.journal-nudge-knob {
+  position: relative;
+  flex: none;
+  width: 42px;
+  height: 24px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--journal-ink-dim, #8A98AC) 30%, transparent);
+  transition: background var(--duration-base, 280ms) var(--ease-standard);
+}
+.journal-nudge-knob::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--journal-ink, #F2ECDE);
+  transition: transform var(--duration-base, 280ms) var(--ease-soft);
+}
+.journal-nudge-toggle.is-on .journal-nudge-knob { background: color-mix(in srgb, var(--lamp-400) 70%, transparent); }
+.journal-nudge-toggle.is-on .journal-nudge-knob::after { transform: translateX(18px); }
+.journal-nudge-when {
+  margin: 14px 0 0;
+  color: var(--lamp-400);
+  font: 400 13px/1.5 var(--font-body), sans-serif;
+}
+.journal-nudge-channel { display: flex; gap: 8px; margin-top: 18px; }
+.journal-nudge-chip {
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--journal-ink-dim, #8A98AC) 30%, transparent);
+  background: none;
+  color: var(--journal-ink-dim, #8A98AC);
+  font: 500 13px/1 var(--font-body), sans-serif;
+  cursor: pointer;
+  transition: border-color var(--duration-fast, 150ms) var(--ease-standard), color var(--duration-fast, 150ms) var(--ease-standard);
+}
+.journal-nudge-chip.is-on { border-color: var(--lamp-400); color: var(--lamp-400); }
+.journal-nudge-snooze {
+  margin-top: 18px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--journal-ink-dim, #8A98AC);
+  font: 400 13px/1 var(--font-body), sans-serif;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.journal-nudge-snooze:hover { color: var(--journal-ink, #F2ECDE); }
+.journal-nudge-foot {
+  margin: 22px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid color-mix(in srgb, var(--neutral-300) 22%, transparent);
+  color: color-mix(in srgb, var(--neutral-300) 78%, transparent);
+  font: 400 11px/1.6 var(--font-mono), ui-monospace, monospace;
+  letter-spacing: 0.02em;
+}
+@media (prefers-reduced-motion: reduce) {
+  .journal-nudge { animation: none; }
+  .journal-nudge-knob::after { transition: none; }
 }
