@@ -121,6 +121,9 @@ jobs:
           fi
           docker compose pull
           docker compose up -d
+          # The Caddyfile is bind-mounted, so `up -d` won't recreate caddy when only the file's content
+          # changed — reload it explicitly so routing edits (e.g. try_files) take effect this deploy.
+          docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile || docker compose restart caddy
           rm -f .env.bak
-          echo "deployed: .env rendered (DB password preserved), image pulled, stack up"
+          echo "deployed: .env rendered (DB password preserved), image pulled, stack up + caddy reloaded"
           REMOTE
