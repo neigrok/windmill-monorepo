@@ -3,12 +3,13 @@
 // above the switcher is the canvas; nothing stands between the writer and the cursor.
 
 import React, { useEffect, useState } from 'react';
-import { Search, Bell } from 'lucide-react';
+import { Search, Bell, CalendarRange } from 'lucide-react';
 import { ProductSwitcher } from '../../shell/ProductSwitcher.jsx';
 import { Canvas } from './Canvas.jsx';
 import { SearchOverlay } from './search/SearchOverlay.jsx';
 import { EchoCard } from './EchoCard.jsx';
 import { NudgePanel } from './NudgePanel.jsx';
+import { ZoomView } from './zoom/ZoomView.jsx';
 import { useEchoes } from './useEchoes.js';
 import { useNudge } from './useNudge.js';
 import './journal.css';
@@ -25,6 +26,7 @@ export function JournalApp({ hash }) {
   const [flyTo, setFlyTo] = useState(null);
   const [openEcho, setOpenEcho] = useState(null);
   const [nudgeOpen, setNudgeOpen] = useState(false);
+  const [zoomOpen, setZoomOpen] = useState(false);
   const { byTriggerDay, dismiss } = useEchoes();
   const nudge = useNudge();
 
@@ -50,6 +52,15 @@ export function JournalApp({ hash }) {
       />
       <div className="journal-lamp" aria-hidden="true" />
       <div className="journal-tools">
+        <button
+          type="button"
+          className="journal-tool"
+          onClick={() => setZoomOpen(true)}
+          aria-label="Zoom out to your months"
+          title="Zoom out"
+        >
+          <CalendarRange size={18} strokeWidth={1.9} aria-hidden="true" />
+        </button>
         {nudge.armed && (
           <button
             type="button"
@@ -88,6 +99,12 @@ export function JournalApp({ hash }) {
         />
       )}
       {nudgeOpen && <NudgePanel nudge={nudge} onClose={() => setNudgeOpen(false)} />}
+      {zoomOpen && (
+        <ZoomView
+          onClose={() => setZoomOpen(false)}
+          onPick={(date) => { setFlyTo({ day: date, at: Date.now() }); setZoomOpen(false); }}
+        />
+      )}
       <div className="journal-switch">
         <ProductSwitcher current="journal" />
       </div>

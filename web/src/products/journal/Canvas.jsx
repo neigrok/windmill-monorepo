@@ -77,22 +77,23 @@ export function Canvas({ focusDate = null, flyTo = null, echoDays = new Map(), o
   useEffect(() => {
     if (!flyTo || loading) return;
     let cancelled = false;
-    setHighlight(flyTo);
+    const hasSpan = flyTo.lo != null;   // a search hit or an echo lights a span; a picked day just lands
+    if (hasSpan) setHighlight(flyTo);
     (async () => {
       await extendTo(flyTo.day);
       if (cancelled) return;
       requestAnimationFrame(() => {
         if (cancelled) return;
         scrollToDay(flyTo.day, 'center');
-        if (flyTo.day === today && textareaRef.current) {
+        if (hasSpan && flyTo.day === today && textareaRef.current) {
           const field = textareaRef.current;
           field.focus({ preventScroll: true });
           field.setSelectionRange(flyTo.lo, flyTo.hi);
         }
       });
     })();
-    const fade = setTimeout(() => setHighlight(null), 2600);
-    return () => { cancelled = true; clearTimeout(fade); };
+    const fade = hasSpan ? setTimeout(() => setHighlight(null), 2600) : null;
+    return () => { cancelled = true; if (fade) clearTimeout(fade); };
   }, [flyTo, loading, extendTo, today]);
 
   const rendered = [];
