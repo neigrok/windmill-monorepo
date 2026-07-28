@@ -7,13 +7,16 @@
   "scripts": {
     "dev": "vite",
     "test": "node --test test/",
+    "prebuild": "node scripts/fetch-model.mjs",
     "build": "node --test test/ && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:model": "node scripts/verify-model.mjs"
   },
   "dependencies": {
     "@fontsource/baloo-2": "^5.2.7",
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@fontsource/nunito": "^5.2.7",
+    "@huggingface/transformers": "^3",
     "lucide-react": "^0.400.0",
     "mediabunny": "^1.51.0",
     "mp4-muxer": "^5.2.2",

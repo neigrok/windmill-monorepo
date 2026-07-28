@@ -428,6 +428,16 @@
   font: 400 11px/1.5 var(--font-mono), 'JetBrains Mono', ui-monospace, monospace;
   letter-spacing: 0.03em;
 }
+/* While the meaning model loads and re-embeds in the background, the footer breathes in the lamp —
+   a quiet sign that results are about to sharpen, never a spinner or a blocking state. */
+.journal-search-foot.is-sharpening {
+  color: color-mix(in srgb, var(--lamp-400) 72%, transparent);
+  animation: journal-sharpen 1600ms var(--ease-soft) infinite;
+}
+@keyframes journal-sharpen {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
 
 /* The passage a search flew to — lit for a beat with the lamp, then eased back to the page. */
 .journal-highlight {
@@ -446,4 +456,5 @@
 @media (prefers-reduced-motion: reduce) {
   .journal-search { animation: none; }
   .journal-highlight { animation: none; background: color-mix(in srgb, var(--lamp-400) 22%, transparent); }
+  .journal-search-foot.is-sharpening { animation: none; opacity: 1; }
 }

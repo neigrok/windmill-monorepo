@@ -1,44 +1,69 @@
-// Owns the on-device index for the canvas. On the first time search opens it pulls the whole corpus
-// once via the delta feed and embeds it ("reading your pages · one time"), then holds it in memory
-// for instant, offline, private queries — the query never leaves the device. Passing active=false
-// keeps it dormant, so a journal that is never searched pays nothing; the build latches on the first
-// open and survives every close after.
+// Owns the on-device index for the canvas, and sharpens it in place. The first time search opens it
+// pulls the whole corpus once and builds the instant lexical index, so ⌘K answers immediately. Then,
+// in the background, it loads the neural model and rebuilds the same corpus as a meaning index; when
+// that's ready it swaps in and bumps `version`, so a query already on screen re-ranks from "shares your
+// words" to "shares your meaning" without a flicker. If the model never loads, search simply stays
+// lexical — there's no broken state to explain. The query never leaves the device either way.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { journalApi } from '../journalApi.js';
 import { SearchIndex } from './searchIndex.js';
+import { LexicalEmbedder } from './embedders.js';
+import { NeuralEmbedder } from './neural/neuralEmbedder.js';
 
 export function useSearch(active) {
-  const indexRef = useRef(null);
+  const activeIndexRef = useRef(null);
+  const neuralRef = useRef(null);
+  const aliveRef = useRef(true);
   const startedRef = useRef(false);
-  const [ready, setReady] = useState(false);
-  const [indexing, setIndexing] = useState(false);
-  const [count, setCount] = useState(0);
+  const [ready, setReady] = useState(false);      // lexical index built — search is usable
+  const [indexing, setIndexing] = useState(false); // the one-time lexical build
+  const [sharpening, setSharpening] = useState(false); // neural index building in the background
+  const [mode, setMode] = useState('lexical');    // which embedder the active index uses
+  const [version, setVersion] = useState(0);       // bumps when the active index changes, to re-rank
 
   useEffect(() => {
-    if (!active || startedRef.current) return undefined;
+    if (!active || startedRef.current) return;
     startedRef.current = true;
-    let cancelled = false;
-    setIndexing(true);
-    const index = new SearchIndex();
-    indexRef.current = index;
-    journalApi.since('0:0:', 5000)
-      .then((pages) => {
-        if (cancelled) return;
-        index.ingest(pages);
-        setCount(index.size);
-        setReady(true);
-        setIndexing(false);
-      })
-      .catch(() => { if (!cancelled) { setReady(true); setIndexing(false); } });
-    return () => { cancelled = true; };
+    (async () => {
+      setIndexing(true);
+      const pages = await journalApi.since('0:0:', 5000).catch(() => []);
+      if (!aliveRef.current) return;
+
+      const lexical = new SearchIndex(new LexicalEmbedder());
+      await lexical.ingest(pages);
+      if (!aliveRef.current) return;
+      activeIndexRef.current = lexical;
+      setReady(true);
+      setIndexing(false);
+      setVersion((v) => v + 1);
+
+      try {
+        const neural = new NeuralEmbedder();
+        neuralRef.current = neural;
+        await neural.ready;
+        if (!aliveRef.current) return;
+        setSharpening(true);
+        const meaning = new SearchIndex(neural);
+        await meaning.ingest(pages);
+        if (!aliveRef.current) return;
+        activeIndexRef.current = meaning;
+        setMode('neural');
+        setSharpening(false);
+        setVersion((v) => v + 1);
+      } catch {
+        if (aliveRef.current) setSharpening(false);   // no model — search stays lexical, silently
+      }
+    })();
   }, [active]);
 
-  const search = useCallback((text) => {
-    const index = indexRef.current;
+  useEffect(() => () => { aliveRef.current = false; neuralRef.current?.dispose(); }, []);
+
+  const search = useCallback(async (text) => {
+    const index = activeIndexRef.current;
     if (!index || !text.trim()) return [];
     return index.query(text.trim());
   }, []);
 
-  return { ready, indexing, count, search };
+  return { ready, indexing, sharpening, mode, version, search };
 }

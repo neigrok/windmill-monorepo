@@ -1,9 +1,10 @@
 // Search — semantic and on-device. A feeling finds the passage that never used the word; every hit
-// states why it matched and, when chosen, flies the canvas to that spot (it never opens a detail
-// view — that is the whole payoff of never paginating). The query and the vectors never leave the
-// device, and the footer says so plainly.
+// states why it matched and, when chosen, flies the canvas to that spot (it never opens a detail view
+// — that is the whole payoff of never paginating). It answers instantly on the lexical index and, once
+// the meaning model has loaded, re-ranks the same query in place — the results sharpen while you read
+// them. The query and the vectors never leave the device, and the footer says so plainly.
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useSearch } from './useSearch.js';
 
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
@@ -16,19 +17,22 @@ function dateLabel(iso) {
 }
 
 export function SearchOverlay({ open, onClose, onSelect }) {
-  const { ready, indexing, count, search } = useSearch(open);
+  const { ready, indexing, sharpening, mode, version, search } = useSearch(open);
   const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
   const inputRef = useRef(null);
 
   useEffect(() => { if (open) inputRef.current?.focus(); }, [open]);
-  useEffect(() => { if (!open) setQuery(''); }, [open]);
+  useEffect(() => { if (!open) { setQuery(''); setResults([]); } }, [open]);
 
-  // `count` moves 0 → N when the one-time index build finishes; without it a query typed mid-build
-  // would keep showing its empty result even after the corpus is ready.
-  const results = useMemo(
-    () => (open && query.trim() ? search(query) : []),
-    [open, query, search, count],
-  );
+  // Run the query against whatever index is active; re-run when the neural index swaps in (version)
+  // so the ranking sharpens under a query already on screen. A token drops stale async results.
+  useEffect(() => {
+    if (!open || !query.trim()) { setResults([]); return undefined; }
+    let live = true;
+    search(query).then((hits) => { if (live) setResults(hits); });
+    return () => { live = false; };
+  }, [open, query, version, search]);
 
   if (!open) return null;
 
@@ -63,12 +67,17 @@ export function SearchOverlay({ open, onClose, onSelect }) {
             </button>
           ))}
         </div>
-        <p className="journal-search-foot">
-          {indexing
-            ? 'reading your pages · one time'
-            : 'Matched by meaning, on your device. Nothing is sent anywhere to search.'}
+        <p className={'journal-search-foot' + (sharpening ? ' is-sharpening' : '')}>
+          {footNote(indexing, sharpening, mode)}
         </p>
       </div>
     </div>
   );
+}
+
+function footNote(indexing, sharpening, mode) {
+  if (indexing) return 'reading your pages · one time';
+  if (sharpening) return 'sharpening · matching by meaning now';
+  if (mode === 'neural') return 'Matched by meaning, on your device. Nothing is sent anywhere to search.';
+  return 'Matched on your device. Nothing is sent anywhere to search.';
 }
