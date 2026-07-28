@@ -52,6 +52,9 @@ services:
       # Paste-import LLM escalation (/v1/compose). Empty → the route answers 503 compose-unavailable
       # and the client hides the handle.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Journal voice (Talk), bought from OpenAI gpt-4o-transcribe. Empty → the transcribe route
+      # answers 503 and the client hides Talk. Set it to arm voice for Windmill One subscribers.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # Tending (server-side agent edits). Ships DARK: empty/absent → every run refuses with
       # "not turned on", the designed first face. Set to "true" to arm it once the agent loop lands.
       TENDING_ENABLED: ${TENDING_ENABLED:-}
