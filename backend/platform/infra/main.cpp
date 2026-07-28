@@ -6,7 +6,8 @@
 #include "platform/adapters/email/ResendClient.h"
 #include "platform/adapters/email/ResendEmailSender.h"
 #include "platform/adapters/sentry/SentryClient.h"
-#include "products/roadmap/adapters/http/AuthApi.h"
+#include "platform/adapters/http/AuthApi.h"
+#include "products/roadmap/adapters/auth/ForkSignup.h"
 #include "platform/adapters/http/EventsApi.h"
 #include "platform/adapters/http/FeedbackApi.h"
 #include "platform/adapters/http/McpKeyApi.h"
@@ -128,7 +129,11 @@ int main() {
   auto googleClient = std::make_shared<GoogleOAuthClient>(googleClientId ? googleClientId : "",
                                                           googleClientSecret ? googleClientSecret : "",
                                                           apiBaseUrl + "/v1/auth/google/callback");
-  auto authApi = std::make_shared<AuthApi>(authService, forkService, secureCookies, cookieDomain,
+  // The auth surface is product-neutral; the one product-shaped thing sign-in does — planting a
+  // fork when a fork link is followed — rides in behind the SignupFork port. Roadmap injects its
+  // ForkService here; a notes/gym-only deploy would pass nullptr and the fork steps no-op.
+  auto forkSignup = std::make_shared<ForkSignup>(*forkService);
+  auto authApi = std::make_shared<AuthApi>(authService, forkSignup, secureCookies, cookieDomain,
                                            googleClient, appBaseUrl);
   auto mcpKeyApi = std::make_shared<McpKeyApi>(authService, mcpKeyService);
   auto oauthApi = std::make_shared<OAuthApi>(oauthService, authService, apiBaseUrl, appBaseUrl, "/#/oauth/authorize");

@@ -1,4 +1,4 @@
-#include "products/roadmap/adapters/http/AuthApi.h"
+#include "platform/adapters/http/AuthApi.h"
 
 #include "platform/adapters/http/JsonReply.h"
 #include "platform/adapters/http/RateLimiter.h"  // clientIp
@@ -101,9 +101,9 @@ std::string isoUtc(UnixMs ms) {
 }
 }
 
-AuthApi::AuthApi(std::shared_ptr<AuthService> auth, std::shared_ptr<ForkService> fork, bool secureCookies,
+AuthApi::AuthApi(std::shared_ptr<AuthService> auth, std::shared_ptr<SignupFork> signupFork, bool secureCookies,
                  std::string cookieDomain, std::shared_ptr<GoogleOAuthClient> google, std::string appUrl)
-    : auth_(std::move(auth)), fork_(std::move(fork)), secureCookies_(secureCookies),
+    : auth_(std::move(auth)), signupFork_(std::move(signupFork)), secureCookies_(secureCookies),
       cookieDomain_(std::move(cookieDomain)), google_(std::move(google)), appUrl_(std::move(appUrl)) {}
 
 void AuthApi::requestLink(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
@@ -122,13 +122,11 @@ void AuthApi::requestLink(const drogon::HttpRequestPtr& req, HttpCallback&& call
   if (forkOf.size() > 64) forkOf.clear();  // a tree id, not a payload — drop junk quietly
 
   // A fork mail must name the tree it plants, so resolve the source's face here — the auth
-  // pipeline stays tree-free. A source we can't read stays undescribed: the mail falls back
-  // to the plain template rather than promise a tree it can't name.
+  // pipeline stays product-free, asking the injected port rather than any tree type. A deploy with
+  // no forkable product injects nothing, and a source we can't read stays undescribed: the mail
+  // falls back to the plain template rather than promise a tree it can't name.
   std::optional<AuthService::ForkDescription> forkedTree;
-  if (!forkOf.empty()) {
-    if (std::optional<ForkService::Description> source = fork_->describe(TreeId{forkOf}))
-      forkedTree = AuthService::ForkDescription{source->title, source->steps};
-  }
+  if (!forkOf.empty() && signupFork_) forkedTree = signupFork_->describe(forkOf);
 
   // The send is async, so the verdict rides back through the callback — fired inline for
   // invalid / rate-limited, or off the sender's loop once the Resend call settles. The
@@ -189,17 +187,13 @@ void AuthApi::verify(const drogon::HttpRequestPtr& req, HttpCallback&& callback)
   Json::Value body(Json::objectValue);
   body["user"] = userJson(signedIn.user);
 
-  // A pending fork rides the link: execute it into the fresh session. Failure degrades to
-  // a plain sign-in — the fork never blocks the door — but the link is already spent, so a
-  // dropped fork is unrecoverable and must at least leave a trace in the log.
-  if (!completion.forkSource.empty()) {
-    try {
-      ForkService::Result forked = fork_->fork(TreeId{completion.forkSource}, "", "", signedIn.user.id);
-      if (forked.outcome == ForkService::Outcome::forked) body["forkedTree"] = forked.data.id.str();
-      else LOG_WARN << "pending fork of " << completion.forkSource << " dropped: source missing or id taken";
-    } catch (const std::exception& e) {
-      LOG_ERROR << "pending fork of " << completion.forkSource << " failed: " << e.what();
-    }
+  // A pending fork rides the link: plant it into the fresh session through the injected port.
+  // Failure degrades to a plain sign-in — the fork never blocks the door — and the port owns the
+  // logging (the link is already spent, so a dropped fork is unrecoverable and must leave a trace).
+  // A deploy with no forkable product injects nothing, so the branch simply falls through.
+  if (!completion.forkSource.empty() && signupFork_) {
+    if (std::optional<std::string> planted = signupFork_->plant(completion.forkSource, signedIn.user.id))
+      body["forkedTree"] = *planted;
   }
 
   auto response = jsonResponse(body);

@@ -147,6 +147,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     platform/adapters/json/JsonText.cpp
     platform/adapters/http/PageShell.cpp
     platform/adapters/http/Caller.cpp
+    platform/adapters/http/AuthApi.cpp
     platform/adapters/http/OAuthApi.cpp
     platform/adapters/http/McpKeyApi.cpp
     platform/adapters/http/EventsApi.cpp
@@ -175,6 +176,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
   # the LLM edges, the JSON boundary, and the roadmap postgres/http surfaces. They reach the vendor
   # deps through windmill_platform (linked PUBLIC above).
   target_sources(windmill_roadmap PRIVATE
+    products/roadmap/adapters/auth/ForkSignup.cpp
     products/roadmap/adapters/email/ResendReminderSender.cpp
     products/roadmap/adapters/json/TreeJson.cpp
     products/roadmap/adapters/json/SubgraphJson.cpp
@@ -191,7 +193,6 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     products/roadmap/adapters/http/GalleryApi.cpp
     products/roadmap/adapters/http/OgImageApi.cpp
     products/roadmap/adapters/http/OgVideoApi.cpp
-    products/roadmap/adapters/http/AuthApi.cpp
     products/roadmap/adapters/http/ComposeApi.cpp
     products/roadmap/adapters/http/TreeRegistryApi.cpp
     products/roadmap/adapters/http/TendingApi.cpp

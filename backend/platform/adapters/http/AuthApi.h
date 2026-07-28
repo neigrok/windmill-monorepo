@@ -2,7 +2,7 @@
 
 #include "platform/adapters/google/GoogleOAuthClient.h"
 #include "platform/application/AuthService.h"
-#include "products/roadmap/application/ForkService.h"
+#include "platform/ports/SignupFork.h"
 
 #include <drogon/HttpRequest.h>
 #include <drogon/HttpResponse.h>
@@ -22,7 +22,7 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // mint the identical cookie, so an account reached via Google or a magic link is one account.
 class AuthApi {
 public:
-  AuthApi(std::shared_ptr<AuthService> auth, std::shared_ptr<ForkService> fork, bool secureCookies,
+  AuthApi(std::shared_ptr<AuthService> auth, std::shared_ptr<SignupFork> signupFork, bool secureCookies,
           std::string cookieDomain, std::shared_ptr<GoogleOAuthClient> google = nullptr,
           std::string appUrl = "");
 
@@ -41,7 +41,7 @@ public:
 
 private:
   std::shared_ptr<AuthService> auth_;
-  std::shared_ptr<ForkService> fork_;
+  std::shared_ptr<SignupFork> signupFork_;  // null on a deploy with no forkable product — both fork steps no-op
   bool secureCookies_;
   std::string cookieDomain_;
   std::shared_ptr<GoogleOAuthClient> google_;  // null when Google sign-in is unconfigured
