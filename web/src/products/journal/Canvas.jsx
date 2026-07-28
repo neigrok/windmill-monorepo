@@ -20,7 +20,7 @@ function wordCount(body) {
   return trimmed ? trimmed.split(/\s+/).length : 0;
 }
 
-export function Canvas({ focusDate = null, flyTo = null }) {
+export function Canvas({ focusDate = null, flyTo = null, echoDays = new Map(), onOpenEcho = () => {} }) {
   const {
     today, history, loading, firstRun,
     body, mood, energy, saveState, saveTick,
@@ -104,7 +104,16 @@ export function Canvas({ focusDate = null, flyTo = null }) {
       lastMonth = month;
     }
     const dayHighlight = highlight && highlight.day === day.date ? highlight : null;
-    rendered.push(<DayBlock key={day.date} day={day} born={isBorn(day.date)} highlight={dayHighlight} />);
+    rendered.push(
+      <DayBlock
+        key={day.date}
+        day={day}
+        born={isBorn(day.date)}
+        highlight={dayHighlight}
+        hasEcho={echoDays.has(day.date)}
+        onOpenEcho={onOpenEcho}
+      />,
+    );
   }
   const todayMonth = today.slice(0, 7);
   if (todayMonth !== lastMonth) rendered.push(<MonthDivider key={`m-${todayMonth}`} iso={today} />);
@@ -150,14 +159,26 @@ function MonthDivider({ iso }) {
   return <div className="journal-month">{MONTHS[month - 1]} {year}</div>;
 }
 
-function DayBlock({ day, born, highlight = null }) {
+function DayBlock({ day, born, highlight = null, hasEcho = false, onOpenEcho }) {
+  const echoMark = hasEcho ? <EchoMark onClick={() => onOpenEcho(day.date)} /> : null;
   return (
     <article className={'journal-day' + (born ? ' journal-born' : '')} data-date={day.date}>
-      <DayMarker date={day.date} mood={day.mood} energy={day.energy} written={day.written} wordCount={wordCount(day.body)} />
+      <DayMarker date={day.date} mood={day.mood} energy={day.energy} written={day.written} wordCount={wordCount(day.body)} trailing={echoMark} />
       {day.written
         ? <div className="journal-prose">{highlight ? markSpan(day.body, highlight) : day.body}</div>
         : <div className="journal-gap">nothing written</div>}
     </article>
+  );
+}
+
+// The echo's whole presence on the canvas: a small lamp glyph on the day that resonated. Never a
+// count, never a badge with a number — a light left on. Tapping it opens the echo (JournalApp).
+function EchoMark({ onClick }) {
+  return (
+    <button type="button" className="journal-echo-mark" onClick={onClick} aria-label="An echo — you wrote something like this before">
+      <span className="journal-echo-glyph" aria-hidden="true" />
+      echo
+    </button>
   );
 }
 

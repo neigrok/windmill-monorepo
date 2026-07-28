@@ -458,3 +458,103 @@
   .journal-highlight { animation: none; background: color-mix(in srgb, var(--lamp-400) 22%, transparent); }
   .journal-search-foot.is-sharpening { animation: none; opacity: 1; }
 }
+
+/* ── Echoes ───────────────────────────────────────────────────────────────
+   A day that quietly repeats something older wears a small lamp in its marker —
+   a light left on, never a count. Opening it floats a warm card that quotes the
+   older line and offers to read it (fly there) or let it fade. */
+.journal-echo-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 12px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: var(--lamp-400);
+  font: inherit;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.82;
+  transition: opacity var(--duration-fast, 150ms) var(--ease-standard);
+}
+.journal-echo-mark:hover { opacity: 1; }
+.journal-echo-glyph {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--lamp-400);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lamp-400) 22%, transparent);
+  animation: journal-echo-breathe 3200ms var(--ease-standard) infinite;
+}
+@keyframes journal-echo-breathe {
+  0%, 100% { box-shadow: 0 0 0 2px color-mix(in srgb, var(--lamp-400) 26%, transparent); }
+  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--lamp-400) 8%, transparent); }
+}
+
+.journal-echo {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, #000 46%, transparent);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  z-index: 60;
+  animation: journal-fade-in-up 220ms var(--ease-soft);
+}
+.journal-echo-panel {
+  width: min(460px, 100%);
+  background: var(--surface-card);
+  border: 1px solid color-mix(in srgb, var(--lamp-400) 22%, transparent);
+  border-radius: var(--radius-lg, 16px);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  padding: 28px 28px 22px;
+}
+.journal-echo-lead {
+  margin: 0 0 16px;
+  color: var(--lamp-400);
+  font: 400 11px/1.5 var(--font-mono), ui-monospace, monospace;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.journal-echo-quote {
+  margin: 0;
+  color: var(--journal-ink, #F2ECDE);
+  font: 400 19px/1.55 var(--font-body), Georgia, serif;
+}
+.journal-echo-loading { color: var(--journal-ink-dim, #8A98AC); font-style: italic; }
+.journal-echo-when {
+  margin: 14px 0 22px;
+  color: var(--journal-ink-dim, #8A98AC);
+  font: 400 12px/1.4 var(--font-mono), ui-monospace, monospace;
+  letter-spacing: 0.06em;
+}
+.journal-echo-actions { display: flex; gap: 12px; }
+.journal-echo-read,
+.journal-echo-fade {
+  padding: 9px 18px;
+  border-radius: 999px;
+  font: 500 13px/1 var(--font-body), sans-serif;
+  cursor: pointer;
+  transition: transform var(--duration-fast, 150ms) var(--ease-standard),
+              background var(--duration-fast, 150ms) var(--ease-standard);
+}
+.journal-echo-read {
+  border: 1px solid var(--lamp-400);
+  background: color-mix(in srgb, var(--lamp-400) 16%, transparent);
+  color: var(--lamp-400);
+}
+.journal-echo-read:hover { background: color-mix(in srgb, var(--lamp-400) 26%, transparent); transform: translateY(-1px); }
+.journal-echo-fade {
+  border: 1px solid transparent;
+  background: none;
+  color: var(--journal-ink-dim, #8A98AC);
+}
+.journal-echo-fade:hover { color: var(--journal-ink, #F2ECDE); }
+
+@media (prefers-reduced-motion: reduce) {
+  .journal-echo { animation: none; }
+  .journal-echo-glyph { animation: none; }
+}

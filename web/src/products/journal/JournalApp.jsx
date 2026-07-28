@@ -7,6 +7,8 @@ import { Search } from 'lucide-react';
 import { ProductSwitcher } from '../../shell/ProductSwitcher.jsx';
 import { Canvas } from './Canvas.jsx';
 import { SearchOverlay } from './search/SearchOverlay.jsx';
+import { EchoCard } from './EchoCard.jsx';
+import { useEchoes } from './useEchoes.js';
 import './journal.css';
 
 // A position is a URL (canon §11): #/journal is today, #/journal/2026-07-20 flies the canvas to
@@ -19,6 +21,8 @@ function focusDateOf(hash) {
 export function JournalApp({ hash }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [flyTo, setFlyTo] = useState(null);
+  const [openEcho, setOpenEcho] = useState(null);
+  const { byTriggerDay, dismiss } = useEchoes();
 
   // ⌘K / Ctrl-K opens search — the one shortcut, never in the writer's way.
   useEffect(() => {
@@ -34,7 +38,12 @@ export function JournalApp({ hash }) {
 
   return (
     <div className="journal-root" data-theme="dark">
-      <Canvas focusDate={focusDateOf(hash)} flyTo={flyTo} />
+      <Canvas
+        focusDate={focusDateOf(hash)}
+        flyTo={flyTo}
+        echoDays={byTriggerDay}
+        onOpenEcho={(triggerDay) => setOpenEcho(byTriggerDay.get(triggerDay) || null)}
+      />
       <div className="journal-lamp" aria-hidden="true" />
       <button
         type="button"
@@ -50,6 +59,17 @@ export function JournalApp({ hash }) {
         onClose={() => setSearchOpen(false)}
         onSelect={(hit) => { setFlyTo({ ...hit, at: Date.now() }); setSearchOpen(false); }}
       />
+      {openEcho && (
+        <EchoCard
+          echo={openEcho}
+          onClose={() => setOpenEcho(null)}
+          onRead={(echo) => {
+            setFlyTo({ day: echo.matchDay, lo: echo.matchSpan[0], hi: echo.matchSpan[1], at: Date.now() });
+            setOpenEcho(null);
+          }}
+          onDismiss={(triggerDay) => { dismiss(triggerDay); setOpenEcho(null); }}
+        />
+      )}
       <div className="journal-switch">
         <ProductSwitcher current="journal" />
       </div>
