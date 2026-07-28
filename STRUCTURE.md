@@ -58,16 +58,21 @@ prematurely abstracted — the second consumer earns the abstraction.
 ## Known follow-ups from the split
 
 The restructure was a behavior-identical relocation; these are the honest edges where a pure
-platform boundary wasn't reached, each green and zero-logic today:
+platform boundary wasn't reached.
 
-- **`backend`: `AuthApi` lives in `products/roadmap`** — auth's HTTP surface forks a tree on
-  signup (`ForkService`). A notes-only deployment would have no auth routes until a platform
-  `SignupHook` port is extracted and roadmap injects it.
-- **`backend`: the MCP `Resources` catalog stays in `platform`** — the transport engine reads it
-  statically. Inject the catalog into `McpServer` so its roadmap-flavored content moves to roadmap.
-- **`backend`: `platform/ports/EmailSender.h` includes `roadmap/domain/Reminders.h`** (compile-only,
-  no link edge) for `sendReminder`. Split a roadmap-side reminder-mail port so platform email is
-  purely magic-link/fork.
+The three **backend** edges are now **closed** (the `platform-purity` bet) — the platform library no
+longer depends on any product, so a notes/gym-only backend needs nothing from roadmap:
+
+- `AuthApi` moved to `platform/adapters/http`; the one product-shaped act (planting a tree on a fork
+  sign-in) sits behind a platform `SignupFork` port that roadmap's `ForkSignup` injects. ✓
+- The MCP resource catalog is injected into `McpServer` (`std::vector<McpResource>`); the quickstart
+  content lives in `products/roadmap/adapters/mcp/RoadmapResources`. ✓
+- `platform/ports/EmailSender.h` is magic-link/fork only; the roadmap reminder and journal nudge
+  mails are product-owned ports (`ReminderMailSender`, `NudgeMailSender`) over a neutral `ResendClient`
+  transport. ✓
+
+Still open (**web** + infra):
+
 - **`web`: settings is a spliced page** — `shell/settings/SettingsPage.jsx` imports 4 roadmap
   sections directly to preserve render order. Invert so products register settings sections.
 - **`web`: `shell/marketing/Marketing.jsx`** still reads roadmap trees and its copy is roadmap-only
