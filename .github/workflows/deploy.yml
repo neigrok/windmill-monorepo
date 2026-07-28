@@ -6,8 +6,8 @@ name: Deploy to VPS
 #   secrets  → POSTGRES_PASSWORD, the service API keys, WINDMILL_MCP_TOKEN
 #   variables→ DOMAIN_APP, DOMAIN_API, ACME_EMAIL, CF_IPS, PADDLE_ENV, PADDLE_PRICE_ID, …
 # Anything left unset is written empty and the compose `${VAR:-default}` fallbacks take over, so an
-# absent optional key is safe. The handful whose emptiness would break the site, the database, or the
-# MCP auth are GUARDED below and fail the run before it ever touches the host.
+# absent optional key is safe. The handful whose emptiness would break the site or the database
+# (DOMAIN_*, ACME_EMAIL, POSTGRES_PASSWORD) are GUARDED below and fail the run before it touches the host.
 #
 # Manual (workflow_dispatch) so the first run is watched. The prior .env is backed up and restored if
 # the rendered file won't validate against compose — a bad render can't outlive the job.
@@ -34,12 +34,13 @@ jobs:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
-          # Guarded (emptiness breaks site / DB / MCP-auth):
+          # Guarded (emptiness breaks the site or the DB):
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          WINDMILL_MCP_TOKEN: ${{ secrets.WINDMILL_MCP_TOKEN }}
           DOMAIN_APP: ${{ vars.DOMAIN_APP }}
           DOMAIN_API: ${{ vars.DOMAIN_API }}
           ACME_EMAIL: ${{ vars.ACME_EMAIL }}
+          # Optional shared MCP bearer — /mcp stays gated by OAuth + per-user keys when this is empty:
+          WINDMILL_MCP_TOKEN: ${{ secrets.WINDMILL_MCP_TOKEN }}
           # Service API keys (compose defaults them empty ⇒ that feature stays dark):
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -63,13 +64,15 @@ jobs:
           set -euo pipefail
 
           # Guard: refuse before touching the host if anything whose emptiness would break prod is unset.
+          # (WINDMILL_MCP_TOKEN is NOT here on purpose: /mcp is still gated by OAuth + per-user MCP keys,
+          # so an empty shared token disables only the static-token shortcut, it does not open the endpoint.)
           missing=
-          for key in DOMAIN_APP DOMAIN_API ACME_EMAIL POSTGRES_PASSWORD WINDMILL_MCP_TOKEN; do
+          for key in DOMAIN_APP DOMAIN_API ACME_EMAIL POSTGRES_PASSWORD; do
             [ -n "${!key}" ] || missing="$missing $key"
           done
           if [ -n "$missing" ]; then
             echo "Refusing to render — these required values are unset:$missing"
-            echo "Set them (vars for domains/email, secrets for POSTGRES_PASSWORD + WINDMILL_MCP_TOKEN) and re-run."
+            echo "Set them (variables for the domains/email, the POSTGRES_PASSWORD secret) and re-run."
             exit 1
           fi
 
