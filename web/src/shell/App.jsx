@@ -1,5 +1,6 @@
 import React, { Suspense, lazy } from 'react';
 import AuthProvider, { useAuth } from './auth/AuthProvider.jsx';
+import EntitlementsProvider from './billing/EntitlementsProvider.jsx';
 import { verifyToken } from './auth/AuthClient.js';
 import Marketing from './marketing/Marketing.jsx';
 import { BrandLanding } from './marketing/BrandLanding.jsx';
@@ -139,8 +140,10 @@ function ResumeCheckout() {
 export default function App() {
   return (
     <AuthProvider>
-      <ResumeCheckout />
-      <AppRoutes />
+      <EntitlementsProvider>
+        <ResumeCheckout />
+        <AppRoutes />
+      </EntitlementsProvider>
     </AuthProvider>
   );
 }

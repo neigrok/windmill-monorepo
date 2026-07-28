@@ -1,7 +1,7 @@
 #pragma once
 
+#include "platform/application/Entitlements.h"
 #include "platform/ports/Clock.h"
-#include "platform/ports/SubscriptionRepository.h"
 #include "products/journal/domain/EchoFinder.h"
 #include "products/journal/ports/EchoRepository.h"
 #include "products/journal/ports/Embedder.h"
@@ -28,8 +28,8 @@ struct EchoSweepReport {
 // an arbitrary instant over an arbitrary look-back window.
 class EchoSweep {
 public:
-  EchoSweep(EchoRepository& echoes, Embedder& embedder, SubscriptionRepository& subscriptions,
-            Clock& clock, EchoRules rules);
+  EchoSweep(EchoRepository& echoes, Embedder& embedder, Entitlements& entitlements, Clock& clock,
+            EchoRules rules);
 
   void start();
   EchoSweepReport run(std::uint64_t nowMs, std::uint64_t sinceMs);
@@ -39,7 +39,7 @@ private:
 
   EchoRepository& echoes_;
   Embedder& embedder_;
-  SubscriptionRepository& subscriptions_;
+  Entitlements& entitlements_;
   Clock& clock_;
   EchoRules rules_;
   trantor::EventLoopThread ticker_;   // declared last: destructs first, before the deps it uses

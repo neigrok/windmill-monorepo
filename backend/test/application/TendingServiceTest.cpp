@@ -1,5 +1,6 @@
 #include "products/roadmap/application/TendingService.h"
 
+#include "platform/application/Entitlements.h"
 #include "platform/ports/SubscriptionRepository.h"
 #include "test/application/AuthFakes.h"
 #include "test/testing.h"
@@ -134,6 +135,7 @@ struct Harness {
   FakeClock clock;
   FakeTokens tokens;
   FakeSubscriptionRepository subs;
+  Entitlements entitlements{subs};
 };
 
 // The worker finishes asynchronously; spin on the durable row until it leaves `running`.
@@ -173,7 +175,7 @@ void seedDoneRuns(FakeTendRunRepository& runs, const UserId& user, int count, st
 
 TEST(a_refusal_never_starts_work_and_is_persisted) {
   Harness h;
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.subs, /*enabled=*/false);
+  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/false);
 
   TendRun run = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com","add a testing branch under backend");
 
@@ -189,7 +191,7 @@ TEST(a_refusal_never_starts_work_and_is_persisted) {
 
 TEST(an_empty_prompt_refuses_without_work) {
   Harness h;
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.subs, /*enabled=*/true);
+  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
 
   TendRun blank = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com","");
   CHECK_EQ(blank.status, TendStatus::refused);
@@ -204,7 +206,7 @@ TEST(an_empty_prompt_refuses_without_work) {
 
 TEST(an_over_length_prompt_refuses_without_work) {
   Harness h;
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.subs, /*enabled=*/true);
+  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
 
   const std::string tooLong(kMaxTendPromptBytes + 1, 'x');
   TendRun run = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com",tooLong);
@@ -217,7 +219,7 @@ TEST(an_over_length_prompt_refuses_without_work) {
 TEST(a_spent_free_allowance_refuses_without_work) {
   Harness h;
   seedDoneRuns(h.runs, UserId{"u"}, kFreeMonthlyTendings, h.clock.now);  // 30 this month, no subscription
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.subs, /*enabled=*/true);
+  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
 
   TendRun run = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com", "one more please");
 
@@ -232,7 +234,7 @@ TEST(pro_gets_a_larger_allowance_than_free) {
   h.agent.outcome = ok("grew it", 1);
   // The 30 that would exhaust a Free account leave a Pro account with room to spare.
   seedDoneRuns(h.runs, UserId{"u"}, kFreeMonthlyTendings, h.clock.now);
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.subs, /*enabled=*/true);
+  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
 
   TendRun allowed = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com", "one more please");
   CHECK_EQ(allowed.status, TendStatus::running);  // Pro's 300 is nowhere near spent at 30
@@ -254,7 +256,7 @@ TEST(the_summary_reports_the_plan_budget_reset_and_recent_receipts) {
   refused.status = TendStatus::refused;
   refused.startedAtMs = h.clock.now + 100;
   h.runs.save(refused);
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.subs, /*enabled=*/true);
+  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
 
   const TendingSummary free = service.summaryFor(UserId{"u"}, "u@example.com");
   CHECK(free.enabled);  // this service was built armed; the summary carries the arming signal through
@@ -276,7 +278,7 @@ TEST(the_summary_reports_the_plan_budget_reset_and_recent_receipts) {
 TEST(a_successful_run_persists_done_summary_and_edits) {
   Harness h;
   h.agent.outcome = ok("Added 3 steps under Backend", 3);
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.subs, /*enabled=*/true);
+  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
 
   TendRun started = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com","add a testing branch under backend");
   CHECK_EQ(started.status, TendStatus::running);  // the request is answered while the loop runs on
@@ -295,7 +297,7 @@ TEST(a_throwing_agent_yields_failed_not_a_crash) {
   Harness h;
   h.agent.shouldThrow = true;
   h.agent.throwWhat = "the model would not settle";
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.subs, /*enabled=*/true);
+  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
 
   TendRun started = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com","reshape the whole thing");
   TendRun failed = awaitTerminal(h.runs, started.id);
@@ -311,7 +313,7 @@ TEST(the_seq_range_is_recorded) {
   h.tools.seq = 10;                                  // the head before the agent writes anything
   h.agent.onRun = [&h] { h.tools.seq = 13; };        // the agent advances the head by three ops
   h.agent.outcome = ok("Grew the tree", 3);
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.subs, /*enabled=*/true);
+  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
 
   TendRun started = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com","grow it");
   TendRun done = awaitTerminal(h.runs, started.id);
@@ -349,7 +351,7 @@ TEST(fail_orphaned_runs_settles_running_rows_and_leaves_finished_ones_alone) {
 TEST(the_worker_pool_completes_more_runs_than_it_has_threads) {
   Harness h;
   h.agent.outcome = ok("grew it", 1);
-  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.subs, /*enabled=*/true);
+  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
 
   // Eight runs against a four-thread pool: the excess must queue and still finish, never deadlock
   // or drop. Distinct users so the per-account allowance never trips.

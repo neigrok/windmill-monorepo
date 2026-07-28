@@ -1,7 +1,7 @@
 #pragma once
 
 #include "platform/application/AuthService.h"
-#include "platform/ports/SubscriptionRepository.h"
+#include "platform/application/Entitlements.h"
 #include "products/journal/ports/Transcriber.h"
 
 #include <drogon/HttpRequest.h>
@@ -22,14 +22,14 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // door answers 503 and the client hides Talk.
 class VoiceApi {
 public:
-  VoiceApi(std::shared_ptr<Transcriber> transcriber,
-           std::shared_ptr<SubscriptionRepository> subscriptions, std::shared_ptr<AuthService> auth);
+  VoiceApi(std::shared_ptr<Transcriber> transcriber, std::shared_ptr<Entitlements> entitlements,
+           std::shared_ptr<AuthService> auth);
 
   void transcribe(const drogon::HttpRequestPtr& req, HttpCallback&& cb);   // POST /v1/journal/transcribe
 
 private:
   std::shared_ptr<Transcriber> transcriber_;
-  std::shared_ptr<SubscriptionRepository> subscriptions_;
+  std::shared_ptr<Entitlements> entitlements_;
   std::shared_ptr<AuthService> auth_;
 };
 

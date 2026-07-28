@@ -18,9 +18,9 @@ constexpr double kEchoFirstTickSeconds = 60.0;
 constexpr std::uint64_t kEchoLookbackMs = 24ull * 60 * 60 * 1000;
 }
 
-EchoSweep::EchoSweep(EchoRepository& echoes, Embedder& embedder, SubscriptionRepository& subscriptions,
+EchoSweep::EchoSweep(EchoRepository& echoes, Embedder& embedder, Entitlements& entitlements,
                      Clock& clock, EchoRules rules)
-    : echoes_(echoes), embedder_(embedder), subscriptions_(subscriptions), clock_(clock),
+    : echoes_(echoes), embedder_(embedder), entitlements_(entitlements), clock_(clock),
       rules_(std::move(rules)), ticker_("journal-echo-ticker") {
   // The loop runs from construction, same idiom as the reminder and nudge tickers: an operator pass
   // may be driven onto it before the heartbeat is ever armed, and a loop nobody spun would swallow it.
@@ -64,10 +64,9 @@ EchoSweepReport EchoSweep::run(std::uint64_t nowMs, std::uint64_t sinceMs) {
     const UserId& user = due.user;
 
     // The gate is "do we COMPUTE", not "do we show": a non-subscriber's echo table simply stays
-    // empty, so the read endpoint returns absent rather than a locked state. Same entitlement idiom
-    // as the tending allowance — any access-granting row is enough.
-    const std::optional<PaddleSubscription> sub = subscriptions_.findFor(user, due.email.value);
-    if (!(sub && grantsAccess(sub->status))) {
+    // empty, so the read endpoint returns absent rather than a locked state. Same entitlement seam
+    // as the tending allowance and Talk — one Windmill One rule, asked once.
+    if (!entitlements_.hasWindmillOne(user, due.email.value)) {
       ++report.skippedNotSubscribed;
       continue;
     }

@@ -1,5 +1,6 @@
 #include "products/journal/adapters/http/EchoApi.h"
 
+#include "platform/application/Entitlements.h"
 #include "platform/adapters/json/JsonText.h"
 #include "test/application/AuthFakes.h"
 #include "test/products/journal/Fakes.h"
@@ -29,11 +30,12 @@ struct Harness {
   std::shared_ptr<FakeEchoRepository> echoes = std::make_shared<FakeEchoRepository>();
   FakeEmbedder embedder;
   FakeSubscriptionRepository subscriptions;
+  Entitlements entitlements{subscriptions};
   std::shared_ptr<EchoSweep> sweep;
   std::shared_ptr<EchoApi> api;
 
   explicit Harness(std::string adminToken = "")
-      : sweep(std::make_shared<EchoSweep>(*echoes, embedder, subscriptions, *clock, EchoRules{})),
+      : sweep(std::make_shared<EchoSweep>(*echoes, embedder, entitlements, *clock, EchoRules{})),
         api(std::make_shared<EchoApi>(echoes, sweep, auth, std::move(adminToken))) {}
 
   UserId signIn(const std::string& sessionSecret) {

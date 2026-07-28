@@ -1,7 +1,7 @@
 #pragma once
 
 #include "platform/application/AuthService.h"
-#include "platform/ports/SubscriptionRepository.h"
+#include "platform/application/Entitlements.h"
 #include "products/journal/application/EchoSweep.h"
 #include "products/journal/application/NudgeSweep.h"
 #include "products/journal/application/PageService.h"
@@ -32,7 +32,7 @@ struct JournalDeps {
   std::shared_ptr<EchoSweep> echoSweep;
   std::string echoAdminToken;
   std::shared_ptr<Transcriber> transcriber;
-  std::shared_ptr<SubscriptionRepository> subscriptions;
+  std::shared_ptr<Entitlements> entitlements;
 };
 
 // Mounts the journal product on the shared app: every /v1/journal/* route, owner-scoped, no public

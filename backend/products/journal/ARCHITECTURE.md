@@ -496,7 +496,7 @@ for each subscriber with pages changed since their last echo pass:
   persist the resulting echo rows                                    [repo upsert]
 ```
 
-Entitlement is checked at the top of each user's turn (`findFor(user, email)` + `grantsAccess`),
+Entitlement is checked at the top of each user's turn (`entitlements.hasWindmillOne(user, email)`),
 so **the gate is "do we compute", not "do we show"**:
 
 - **Not subscribed → no rows.** "Echo marks are absent, not locked" falls out of the table being
@@ -571,17 +571,18 @@ neutral axis, not a per-product plan. Journal does **not** invent its own `Plan`
 question the whole brand asks:
 
 ```cpp
-// The single entitlement axis. Product-neutral, so it belongs in platform (platform/domain/Billing.h),
-// read identically by journal echoes/voice, roadmap tending, and anything gym adds later.
-const std::optional<PaddleSubscription> sub = subscriptions_.findFor(caller, email);
-const bool subscribed = sub && grantsAccess(sub->status);   // grantsAccess: active|trialing|past_due
+// The single entitlement axis, asked as a domain question through one platform seam
+// (platform/application/Entitlements.h). The "what grants access" rule (grantsAccess:
+// active|trialing|past_due) lives once, behind this call — no product re-derives it over the mirror.
+const bool subscribed = entitlements.hasWindmillOne(caller, email);
 ```
 
 `subscribed` is the whole gate. Journal's premium surfaces — **echoes** (computed only for
 subscribers; §5) and **voice** (checked before calling the ASR vendor; §8.1) — read exactly this
-boolean, the same one roadmap's premium surfaces read. One subscription, one predicate, three
-products. (The roadmap code's local `enum class Plan { free, pro }` is really a *metering* detail
-sitting behind this same `grantsAccess`; Journal doesn't need its own.)
+boolean, the same one roadmap's premium surfaces (tending) read. `Entitlements` wraps the Paddle
+mirror + `grantsAccess` so Talk, echoes, and tending all gate through one place. One subscription,
+one predicate, three products. (The roadmap code's local `enum class Plan { free, pro }` is really a
+*metering* detail sitting behind this same seam; Journal doesn't need its own.)
 
 Everything else — pages, mood/energy, the canvas and zoom, **search**, threads, trends, the week,
 nudges, and export — asks nothing of billing at all.
@@ -794,7 +795,7 @@ struct JournalDeps {
   std::shared_ptr<NudgeRepository> nudges;
   std::shared_ptr<NudgeSweep> nudgeSweep;
   std::shared_ptr<AuthService> authService;
-  std::shared_ptr<SubscriptionRepository> subscriptions;
+  std::shared_ptr<Entitlements> entitlements;
   std::shared_ptr<TokenGenerator> tokens;
   std::shared_ptr<Clock> clock;
   std::string nudgeAdminToken;
@@ -860,8 +861,8 @@ The canon's four "Still open", plus the backend's own, with recommendations:
    direction chosen. (Supersedes the earlier "server-controlled model" lean in §5.4.)
 6. **Entitlement is one subscription — Windmill One — read by all three products** (§6). Not a
    per-product plan; not per-feature metering. Echoes and voice are simply subscriber features
-   behind one shared `subscribed` predicate (`grantsAccess` over the single subscription), the same
-   one roadmap reads. The canon's old "Pro = a bigger tending allowance" framing is superseded by
+   behind one shared seam (`Entitlements::hasWindmillOne`, which wraps `grantsAccess` over the single
+   subscription), the same one roadmap reads. The canon's old "Pro = a bigger tending allowance" framing is superseded by
    the brand's one-account-one-subscription model. Usage tuning / cost control is explicitly
    **out of scope now** — mission first, money mechanics later, behind the same gate.
 7. **Module rename `notes → journal`** (§1). Recommended; a one-file scaffold move across two

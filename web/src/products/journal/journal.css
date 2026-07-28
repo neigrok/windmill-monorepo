@@ -1,11 +1,14 @@
-/* The journal night — every token and every pixel of the canvas lives here.
-   The surface is dark regardless of the app's global theme: the root carries
-   data-theme="dark" so the design-system's dark ramp resolves inside it, and
-   the combined selector below re-pins the two surfaces to the journal's own
-   deep-blue night plus the lamp hue and the five-step mood scale. Nothing in
-   here uses brick/red — a day is never an error. */
+/* The journal palette — every token and every pixel of the canvas lives here.
+   The surface is night by default and day by choice; it does NOT follow the app's
+   global theme. The root carries data-theme (dark|light) so the design-system's
+   matching ramp resolves inside it, and the two blocks below re-pin the surfaces to
+   the journal's own night / parchment plus the lamp hue and the five-step mood scale.
+   The one warm-gold accent, the scrims, and the panel elevation are tokens too, so a
+   theme is one block to author, not a hunt through the rules. Nothing here uses
+   brick/red — a day is never an error. */
 
 .journal-root[data-theme='dark'] {
+  color-scheme: dark;
   --surface-canvas: #040D19;         /* the night the page floats on */
   --surface-card: #0D1824;
   --lamp-400: #E0B972;               /* the lit "Candle" — the caret, the waiting ember */
@@ -21,6 +24,34 @@
   --mood-3: #B08F4E;
   --mood-4: #C9A75F;
   --mood-5: #E0B972;
+
+  --journal-scrim: color-mix(in srgb, #000 46%, transparent);   /* the wash under a floated card */
+  --journal-panel-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);      /* a card lifted off the night */
+}
+
+/* Day — warm parchment, the same lamp warmed a shade deeper so the gold still reads on light. The
+   design-system light ramp resolves for free here (no data-theme="dark" to override :root), so the
+   neutrals, borders and shadows the account seat and search chrome borrow are already daylight. */
+.journal-root[data-theme='light'] {
+  color-scheme: light;
+  --surface-canvas: #FBF6EA;         /* warm paper the page rests on */
+  --surface-card: #FFFFFF;
+  --lamp-400: #986B1E;               /* the candle, deepened to an ochre that carries at label size on paper */
+
+  --journal-ink: #2A2118;            /* warm near-black prose — ~13:1 on the paper */
+  --journal-ink-dim: #74654F;        /* the mono strip, the margin — ~4.6:1, readable small */
+  --journal-gap: var(--neutral-300, #D3C2A0);        /* a day not written — faint, never counted */
+  --journal-energy: var(--accent-olive-500, #7D8C43);
+
+  /* The same warmth by day: a scale from a pale gold up to a deep, lit ochre. */
+  --mood-1: #E4CF9C;
+  --mood-2: #D3AF66;
+  --mood-3: #BE8F3D;
+  --mood-4: #A5741F;
+  --mood-5: #8A5E12;
+
+  --journal-scrim: color-mix(in srgb, #2A2118 26%, transparent);  /* a warm, lighter wash by day */
+  --journal-panel-shadow: 0 20px 50px rgba(74, 58, 36, 0.18);     /* soft warm elevation on paper */
 }
 
 .journal-root {
@@ -29,7 +60,6 @@
   overflow: hidden;
   background: var(--surface-canvas);
   color: var(--journal-ink);
-  color-scheme: dark;
   font-family: var(--font-body);
 }
 
@@ -61,6 +91,22 @@
 }
 .journal-switch:hover,
 .journal-switch:focus-within {
+  opacity: 1;
+}
+
+/* The account seat — the one unprompted mention of sign-in, floated opposite the switcher. Quiet
+   like the switcher until you reach for it; its menu borrows the design-system chrome, which resolves
+   to the journal's own night or day because the seat lives inside the themed root. */
+.journal-seat {
+  position: fixed;
+  top: 12px;
+  right: 16px;
+  z-index: 6;
+  opacity: 0.72;
+  transition: opacity 200ms var(--ease-standard);
+}
+.journal-seat:hover,
+.journal-seat:focus-within {
   opacity: 1;
 }
 
@@ -364,7 +410,7 @@
 .journal-search {
   position: fixed;
   inset: 0;
-  background: color-mix(in srgb, #000 46%, transparent);
+  background: var(--journal-scrim);
   display: flex;
   justify-content: center;
   align-items: flex-start;
@@ -377,7 +423,7 @@
   background: var(--surface-card);
   border: 1px solid color-mix(in srgb, var(--lamp-400) 18%, transparent);
   border-radius: var(--radius-lg, 16px);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--journal-panel-shadow);
   overflow: hidden;
 }
 .journal-search-input {
@@ -390,7 +436,7 @@
   font: 400 18px/1.4 var(--font-body), 'Nunito', system-ui, sans-serif;
   outline: none;
 }
-.journal-search-input::placeholder { color: color-mix(in srgb, var(--neutral-300) 80%, transparent); }
+.journal-search-input::placeholder { color: color-mix(in srgb, var(--journal-ink-dim) 70%, transparent); }
 
 .journal-search-results { max-height: 52vh; overflow-y: auto; }
 .journal-search-hit {
@@ -420,18 +466,18 @@
   letter-spacing: 0.04em;
 }
 .journal-search-why { color: var(--lamp-400); }
-.journal-search-date { color: color-mix(in srgb, var(--neutral-300) 85%, transparent); white-space: nowrap; }
+.journal-search-date { color: var(--journal-ink-dim); white-space: nowrap; }
 .journal-search-empty {
   padding: 22px 20px;
   margin: 0;
-  color: color-mix(in srgb, var(--neutral-300) 85%, transparent);
+  color: var(--journal-ink-dim);
   font: 400 15px/1.4 var(--font-body), 'Nunito', system-ui, sans-serif;
 }
 .journal-search-foot {
   margin: 0;
   padding: 12px 20px;
   border-top: 1px solid color-mix(in srgb, var(--neutral-300) 22%, transparent);
-  color: color-mix(in srgb, var(--neutral-300) 78%, transparent);
+  color: color-mix(in srgb, var(--journal-ink-dim) 88%, transparent);
   font: 400 11px/1.5 var(--font-mono), 'JetBrains Mono', ui-monospace, monospace;
   letter-spacing: 0.03em;
 }
@@ -503,7 +549,7 @@
 .journal-echo {
   position: fixed;
   inset: 0;
-  background: color-mix(in srgb, #000 46%, transparent);
+  background: var(--journal-scrim);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -516,7 +562,7 @@
   background: var(--surface-card);
   border: 1px solid color-mix(in srgb, var(--lamp-400) 22%, transparent);
   border-radius: var(--radius-lg, 16px);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--journal-panel-shadow);
   padding: 28px 28px 22px;
 }
 .journal-echo-lead {
@@ -572,7 +618,7 @@
 .journal-nudge {
   position: fixed;
   inset: 0;
-  background: color-mix(in srgb, #000 46%, transparent);
+  background: var(--journal-scrim);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -585,7 +631,7 @@
   background: var(--surface-card);
   border: 1px solid color-mix(in srgb, var(--lamp-400) 22%, transparent);
   border-radius: var(--radius-lg, 16px);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--journal-panel-shadow);
   padding: 26px 26px 20px;
 }
 .journal-nudge-lead {
@@ -662,7 +708,7 @@
   margin: 22px 0 0;
   padding-top: 16px;
   border-top: 1px solid color-mix(in srgb, var(--neutral-300) 22%, transparent);
-  color: color-mix(in srgb, var(--neutral-300) 78%, transparent);
+  color: color-mix(in srgb, var(--journal-ink-dim) 88%, transparent);
   font: 400 11px/1.6 var(--font-mono), ui-monospace, monospace;
   letter-spacing: 0.02em;
 }
@@ -789,6 +835,22 @@
   animation: journal-talk-pulse 1400ms var(--ease-standard) infinite;
 }
 .journal-talk-btn.is-working { color: var(--lamp-400); opacity: 0.7; cursor: default; }
+
+/* Locked — the paywall shown up front: the mic wears a small "Windmill One" tag and leads to the
+   door or checkout rather than the recorder. Checking holds a dim, disabled face while the
+   entitlement read is in flight, so a subscriber never sees a locked flash. */
+.journal-talk-btn.is-locked { color: var(--lamp-400); border-color: color-mix(in srgb, var(--lamp-400) 40%, transparent); }
+.journal-talk-btn.is-locked:hover { border-color: var(--lamp-400); color: var(--lamp-400); }
+.journal-talk-btn.is-checking { opacity: 0.55; cursor: default; }
+.journal-talk-tag {
+  font: 600 10px/1 var(--font-mono), ui-monospace, monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: var(--lamp-400);
+  background: color-mix(in srgb, var(--lamp-400) 14%, transparent);
+}
 .journal-talk-note {
   color: var(--journal-ink-dim, #8A98AC);
   font: 400 11px/1 var(--font-mono), ui-monospace, monospace;

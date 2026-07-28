@@ -37,6 +37,7 @@
 #include "products/roadmap/adapters/ws/PresenceHub.h"
 #include "products/roadmap/adapters/ws/WsPresenceBus.h"
 #include "platform/application/AuthService.h"
+#include "platform/application/Entitlements.h"
 #include "products/roadmap/application/ForkService.h"
 #include "platform/application/McpKeyService.h"
 #include "platform/application/OAuthService.h"
@@ -171,6 +172,10 @@ int main() {
   // privacy), so nothing gates visibility on it — it feeds the /v1/subscription read and the
   // tending allowance's free-vs-Pro plan lookup.
   auto subscriptionRepo = std::make_shared<PgSubscriptionRepository>(connString);
+  // Windmill One, asked as a domain question. Every paid feature — Talk, echoes, the tending Pro
+  // plan — gates through this one seam instead of re-deriving the rule over the Paddle mirror, so
+  // "what grants access" lives in exactly one place (platform/application/Entitlements).
+  auto entitlements = std::make_shared<Entitlements>(*subscriptionRepo);
 
   // Funnel telemetry (event-spine): ghosts and signed-in users alike beacon here; the
   // general per-IP apiLimiter below covers this route like every other. Accepted events also
@@ -255,7 +260,7 @@ int main() {
   const bool tendingEnabled =
       (tendingEnabledFlag == "true" || tendingEnabledFlag == "1") && tendingAgent->configured();
   auto tendingService = std::make_shared<TendingService>(*tendRuns, *tendingAgent, *mcpTools,
-                                                         *systemClock, *tokens, *subscriptionRepo,
+                                                         *systemClock, *tokens, *entitlements,
                                                          tendingEnabled);
 
   // Weekly reminders (domain/Reminders.h). The heartbeat is a dedicated thread of the sweep's
@@ -701,19 +706,19 @@ int main() {
   auto journalNudgeSweep = std::make_shared<NudgeSweep>(*journalNudges, *journalNudgeMail, *tokens,
                                                         *systemClock, journalNudgeArming, appBaseUrl);
   journalNudgeSweep->start();
-  // Wave 3 echoes (Windmill One): the nightly reading-across, gated on the one subscription and
-  // reusing the Paddle mirror (subscriptionRepo) the billing edge already keeps. The embedder is
-  // unwired by default (NullEmbedder ⇒ configured() false ⇒ the sweep no-ops) until a vendor or a
-  // self-hosted model is plugged in behind the Embedder port; nothing else in the echo path moves.
+  // Wave 3 echoes (Windmill One): the nightly reading-across, gated on the one entitlement seam the
+  // billing edge already feeds. The embedder is unwired by default (NullEmbedder ⇒ configured()
+  // false ⇒ the sweep no-ops) until a vendor or a self-hosted model is plugged in behind the
+  // Embedder port; nothing else in the echo path moves.
   auto journalEmbedder = std::make_shared<NullEmbedder>();
   auto journalEchoes = std::make_shared<PgEchoRepository>(connString);
   const char* journalEchoAdminEnv = std::getenv("JOURNAL_ECHO_ADMIN_TOKEN");
   auto journalEchoSweep = std::make_shared<EchoSweep>(*journalEchoes, *journalEmbedder,
-                                                      *subscriptionRepo, *systemClock, EchoRules{});
+                                                      *entitlements, *systemClock, EchoRules{});
   journalEchoSweep->start();
   // Voice (Windmill One): bought from OpenAI's gpt-4o-transcribe when OPENAI_API_KEY is set, and
   // unwired otherwise (NullTranscriber ⇒ the endpoint answers 503 and the client hides Talk). Either
-  // way it reuses the same Paddle mirror (subscriptionRepo) for the subscription gate.
+  // way it gates through the same Windmill One entitlement seam as echoes and tending.
   const char* openaiKeyEnv = std::getenv("OPENAI_API_KEY");
   std::shared_ptr<Transcriber> journalTranscriber;
   if (openaiKeyEnv && *openaiKeyEnv) journalTranscriber = std::make_shared<OpenAiTranscriber>(openaiKeyEnv);
@@ -724,7 +729,7 @@ int main() {
                                    .nudgeAdminToken = journalNudgeAdminEnv ? journalNudgeAdminEnv : "",
                                    .echoes = journalEchoes, .echoSweep = journalEchoSweep,
                                    .echoAdminToken = journalEchoAdminEnv ? journalEchoAdminEnv : "",
-                                   .transcriber = journalTranscriber, .subscriptions = subscriptionRepo};
+                                   .transcriber = journalTranscriber, .entitlements = entitlements};
   journal::registerRoutes(app, journalDeps);
 
   const char* portEnv = std::getenv("PORT");

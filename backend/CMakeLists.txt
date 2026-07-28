@@ -27,6 +27,7 @@ add_library(windmill_platform
   platform/domain/Auth.cpp
   platform/domain/OAuth.cpp
   platform/application/AuthService.cpp
+  platform/application/Entitlements.cpp
   platform/application/OAuthService.cpp
   platform/application/McpKeyService.cpp)
 target_include_directories(windmill_platform PUBLIC ${CMAKE_SOURCE_DIR})
@@ -115,6 +116,7 @@ add_executable(windmill_domain_tests
   test/application/ActivityFeedTest.cpp
   test/domain/AuthTest.cpp
   test/application/AuthServiceTest.cpp
+  test/application/EntitlementsTest.cpp
   test/domain/OAuthTest.cpp
   test/application/OAuthServiceTest.cpp
   test/application/McpKeyServiceTest.cpp

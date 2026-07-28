@@ -1,10 +1,16 @@
-// The journal surface — night by design (not the app's global theme), a single continuous canvas,
-// on-device search a keystroke away, and the superapp's switcher to step between rooms. Everything
-// above the switcher is the canvas; nothing stands between the writer and the cursor.
+// The journal surface — night by default (a warm day is a keystroke away in the tool rail), a single
+// continuous canvas, on-device search a keystroke away, and the superapp's switcher to step between
+// rooms. A quiet account seat sits opposite the switcher — the one unprompted mention of sign-in —
+// so a writer can claim their days across devices without ever leaving the page. Everything above the
+// chrome is the canvas; nothing stands between the writer and the cursor.
 
 import React, { useEffect, useState } from 'react';
-import { Search, Bell, CalendarRange } from 'lucide-react';
+import { Search, Bell, CalendarRange, Sun, Moon } from 'lucide-react';
 import { ProductSwitcher } from '../../shell/ProductSwitcher.jsx';
+import { useAuth } from '../../shell/auth/AuthProvider.jsx';
+import { AccountSeat } from '../../shell/auth/AccountSeat.jsx';
+import { SignInDialog } from '../../shell/auth/SignInDialog.jsx';
+import { requestMagicLink } from '../../shell/auth/AuthClient.js';
 import { Canvas } from './Canvas.jsx';
 import { SearchOverlay } from './search/SearchOverlay.jsx';
 import { EchoCard } from './EchoCard.jsx';
@@ -21,14 +27,36 @@ function focusDateOf(hash) {
   return match ? match[1] : null;
 }
 
-export function JournalApp({ hash }) {
+// The surface theme is the device's own choice, kept beside the journal's other per-device state
+// (see hlc.js) — it is deliberately NOT the app's global theme, which stays light everywhere else.
+// Night is the default the journal was designed as; a returning writer paints in their last choice.
+const THEME_KEY = 'windmill:journal-theme';
+
+function readTheme() {
+  try {
+    const saved = localStorage.getItem(THEME_KEY);
+    if (saved === 'light' || saved === 'dark') return saved;
+  } catch { /* storage unavailable — night is the honest default */ }
+  return 'dark';
+}
+
+export function JournalApp({ hash, openSignInSignal = 0 }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [flyTo, setFlyTo] = useState(null);
   const [openEcho, setOpenEcho] = useState(null);
   const [nudgeOpen, setNudgeOpen] = useState(false);
   const [zoomOpen, setZoomOpen] = useState(false);
+  const [theme, setTheme] = useState(readTheme);
+  const [signInOpen, setSignInOpen] = useState(false);
+  const { user, status, signOut } = useAuth();
   const { byTriggerDay, dismiss } = useEchoes();
   const nudge = useNudge();
+
+  const toggleTheme = () => setTheme((current) => {
+    const next = current === 'dark' ? 'light' : 'dark';
+    try { localStorage.setItem(THEME_KEY, next); } catch { /* storage unavailable — the choice is device-local anyway */ }
+    return next;
+  });
 
   // ⌘K / Ctrl-K opens search — the one shortcut, never in the writer's way.
   useEffect(() => {
@@ -42,16 +70,43 @@ export function JournalApp({ hash }) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // An expired magic link asks the active product to open its own door (App.jsx bumps the signal).
+  useEffect(() => {
+    if (openSignInSignal > 0) setSignInOpen(true);
+  }, [openSignInSignal]);
+
   return (
-    <div className="journal-root" data-theme="dark">
+    <div className="journal-root" data-theme={theme}>
       <Canvas
         focusDate={focusDateOf(hash)}
         flyTo={flyTo}
         echoDays={byTriggerDay}
         onOpenEcho={(triggerDay) => setOpenEcho(byTriggerDay.get(triggerDay) || null)}
+        onNeedSignIn={() => setSignInOpen(true)}
       />
       <div className="journal-lamp" aria-hidden="true" />
+      <div className="journal-seat">
+        <AccountSeat
+          user={user}
+          status={status}
+          onSignIn={() => setSignInOpen(true)}
+          onSignOut={signOut}
+          onSettings={() => { window.location.hash = '#/settings'; }}
+          onConnect={() => { window.location.hash = '#/connect'; }}
+        />
+      </div>
       <div className="journal-tools">
+        <button
+          type="button"
+          className="journal-tool"
+          onClick={toggleTheme}
+          aria-label={theme === 'dark' ? 'Switch to day' : 'Switch to night'}
+          title={theme === 'dark' ? 'Day' : 'Night'}
+        >
+          {theme === 'dark'
+            ? <Sun size={18} strokeWidth={1.9} aria-hidden="true" />
+            : <Moon size={18} strokeWidth={1.9} aria-hidden="true" />}
+        </button>
         <button
           type="button"
           className="journal-tool"
@@ -108,6 +163,7 @@ export function JournalApp({ hash }) {
       <div className="journal-switch">
         <ProductSwitcher current="journal" />
       </div>
+      <SignInDialog open={signInOpen} onClose={() => setSignInOpen(false)} onSend={requestMagicLink} />
     </div>
   );
 }

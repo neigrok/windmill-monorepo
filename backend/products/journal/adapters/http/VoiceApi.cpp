@@ -2,7 +2,6 @@
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
-#include "platform/domain/Billing.h"
 
 #include <json/value.h>
 
@@ -12,9 +11,8 @@
 namespace wm {
 
 VoiceApi::VoiceApi(std::shared_ptr<Transcriber> transcriber,
-                   std::shared_ptr<SubscriptionRepository> subscriptions,
-                   std::shared_ptr<AuthService> auth)
-    : transcriber_(std::move(transcriber)), subscriptions_(std::move(subscriptions)),
+                   std::shared_ptr<Entitlements> entitlements, std::shared_ptr<AuthService> auth)
+    : transcriber_(std::move(transcriber)), entitlements_(std::move(entitlements)),
       auth_(std::move(auth)) {}
 
 void VoiceApi::transcribe(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
@@ -23,10 +21,9 @@ void VoiceApi::transcribe(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
     cb(error(drogon::k401Unauthorized, "sign in to talk"));
     return;
   }
-  // The subscription gate is read BEFORE the audio is touched — a non-subscriber's bytes never
-  // reach the vendor, and we never spend on an unpaid request.
-  const std::optional<PaddleSubscription> sub = subscriptions_->findFor(caller->id, caller->email.value);
-  if (!(sub && grantsAccess(sub->status))) {
+  // The entitlement is read BEFORE the audio is touched — a non-subscriber's bytes never reach the
+  // vendor, and we never spend on an unpaid request.
+  if (!entitlements_->hasWindmillOne(caller->id, caller->email.value)) {
     cb(error(drogon::k403Forbidden, "talk is part of Windmill One"));
     return;
   }

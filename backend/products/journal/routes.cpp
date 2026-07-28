@@ -107,9 +107,9 @@ void registerRoutes(drogon::HttpAppFramework& app, const JournalDeps& deps) {
       },
       {drogon::Post});
 
-  // Voice (Windmill One): talk, get text. The subscription is checked before any audio is touched,
-  // and no vendor wired means a plain 503 — the audio never lands anywhere, and no page is made here.
-  auto voiceApi = std::make_shared<VoiceApi>(deps.transcriber, deps.subscriptions, deps.authService);
+  // Voice (Windmill One): talk, get text. The Windmill One entitlement is checked before any audio is
+  // touched, and no vendor wired means a plain 503 — the audio never lands anywhere, and no page is made here.
+  auto voiceApi = std::make_shared<VoiceApi>(deps.transcriber, deps.entitlements, deps.authService);
   app.registerHandler(
       "/v1/journal/transcribe",
       [voiceApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {

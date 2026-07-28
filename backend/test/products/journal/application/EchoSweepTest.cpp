@@ -1,5 +1,6 @@
 #include "products/journal/application/EchoSweep.h"
 
+#include "platform/application/Entitlements.h"
 #include "test/application/AuthFakes.h"
 #include "test/products/journal/Fakes.h"
 #include "test/testing.h"
@@ -37,7 +38,8 @@ TEST(a_subscriber_whose_page_resonates_with_an_older_one_saves_exactly_one_echo)
   armResonantUser(echoes, embedder);
   subs.subscribe(uid("u1"));
 
-  EchoSweep sweep(echoes, embedder, subs, clock, EchoRules{});
+  Entitlements entitlements(subs);
+  EchoSweep sweep(echoes, embedder, entitlements, clock, EchoRules{});
   const EchoSweepReport report = sweep.run(kNow, kNow - kDay);
 
   CHECK_EQ(report.usersScanned, 1);
@@ -59,7 +61,8 @@ TEST(a_non_subscriber_with_the_same_setup_gets_no_echo_and_is_counted_skipped) {
   FakeClock clock;
   armResonantUser(echoes, embedder);
 
-  EchoSweep sweep(echoes, embedder, subs, clock, EchoRules{});
+  Entitlements entitlements(subs);
+  EchoSweep sweep(echoes, embedder, entitlements, clock, EchoRules{});
   const EchoSweepReport report = sweep.run(kNow, kNow - kDay);
 
   CHECK_EQ(report.usersScanned, 1);
@@ -79,7 +82,8 @@ TEST(an_unconfigured_embedder_makes_the_whole_pass_a_no_op) {
   armResonantUser(echoes, embedder);
   subs.subscribe(uid("u1"));
 
-  EchoSweep sweep(echoes, embedder, subs, clock, EchoRules{});
+  Entitlements entitlements(subs);
+  EchoSweep sweep(echoes, embedder, entitlements, clock, EchoRules{});
   const EchoSweepReport report = sweep.run(kNow, kNow - kDay);
 
   CHECK_EQ(report.usersScanned, 0);               // not a single user is scanned
@@ -102,7 +106,8 @@ TEST(a_page_missing_its_vector_is_embedded_before_it_is_matched) {
   echoes.addPageNeedingVector(uid("u1"), ld(kRecentDay), kBody, 4242);           // recent page, no vector yet
   echoes.addTrigger(uid("u1"), ld(kRecentDay));
 
-  EchoSweep sweep(echoes, embedder, subs, clock, EchoRules{});
+  Entitlements entitlements(subs);
+  EchoSweep sweep(echoes, embedder, entitlements, clock, EchoRules{});
   const EchoSweepReport report = sweep.run(kNow, kNow - kDay);
 
   CHECK_EQ(report.vectorsComputed, 1);

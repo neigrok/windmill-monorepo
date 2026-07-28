@@ -21,7 +21,7 @@ function wordCount(body) {
   return trimmed ? trimmed.split(/\s+/).length : 0;
 }
 
-export function Canvas({ focusDate = null, flyTo = null, echoDays = new Map(), onOpenEcho = () => {} }) {
+export function Canvas({ focusDate = null, flyTo = null, echoDays = new Map(), onOpenEcho = () => {}, onNeedSignIn = () => {} }) {
   const {
     today, history, loading, firstRun,
     body, mood, energy, saveState, saveTick,
@@ -148,7 +148,10 @@ export function Canvas({ focusDate = null, flyTo = null, echoDays = new Map(), o
           <div className="journal-controls">
             <MoodDots value={mood} onChange={toggleMood} />
             <EnergyBars value={energy} onChange={toggleEnergy} />
-            <TalkButton onTranscript={(text) => setBody(body ? `${body.replace(/\s+$/, '')} ${text}` : text)} />
+            <TalkButton
+              onTranscript={(text) => setBody(body ? `${body.replace(/\s+$/, '')} ${text}` : text)}
+              onNeedSignIn={onNeedSignIn}
+            />
           </div>
           {firstRun && <p className="journal-privacy">Nobody sees this but you.</p>}
         </article>

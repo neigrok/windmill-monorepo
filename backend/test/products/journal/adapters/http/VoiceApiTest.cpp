@@ -1,5 +1,6 @@
 #include "products/journal/adapters/http/VoiceApi.h"
 
+#include "platform/application/Entitlements.h"
 #include "platform/adapters/json/JsonText.h"
 #include "test/application/AuthFakes.h"
 #include "test/products/journal/Fakes.h"
@@ -26,7 +27,8 @@ struct Harness {
       std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, "https://windmill.works");
   std::shared_ptr<FakeTranscriber> transcriber = std::make_shared<FakeTranscriber>();
   std::shared_ptr<FakeSubscriptionRepository> subs = std::make_shared<FakeSubscriptionRepository>();
-  VoiceApi api{transcriber, subs, auth};
+  std::shared_ptr<Entitlements> entitlements = std::make_shared<Entitlements>(*subs);
+  VoiceApi api{transcriber, entitlements, auth};
 
   UserId signIn(const std::string& sessionSecret) {
     User user = authRepo.createUser(Email{"sam@example.com"}, "sam");

@@ -4,7 +4,7 @@
 #include "products/roadmap/domain/Tending.h"
 #include "platform/ports/Clock.h"
 #include "products/roadmap/ports/PlanAgent.h"
-#include "platform/ports/SubscriptionRepository.h"
+#include "platform/application/Entitlements.h"
 #include "products/roadmap/ports/TendRunRepository.h"
 #include "platform/ports/TokenGenerator.h"
 #include "platform/ports/ToolHost.h"
@@ -32,7 +32,7 @@ namespace wm {
 class TendingService {
 public:
   TendingService(TendRunRepository& runs, PlanAgent& agent, ToolHost& tools, Clock& clock,
-                 TokenGenerator& tokens, SubscriptionRepository& subscriptions, bool enabled);
+                 TokenGenerator& tokens, Entitlements& entitlements, bool enabled);
 
   // Validate → persist → hand off → return. A refusal (not enabled, over the monthly allowance, or
   // an unusable prompt) is persisted as a `refused` run and returned without ever starting work —
@@ -64,7 +64,7 @@ private:
   ToolHost& tools_;
   Clock& clock_;
   TokenGenerator& tokens_;
-  SubscriptionRepository& subscriptions_;
+  Entitlements& entitlements_;
   bool enabled_;
   trantor::EventLoopThreadPool workers_;
 };

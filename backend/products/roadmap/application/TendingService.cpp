@@ -1,7 +1,6 @@
 #include "products/roadmap/application/TendingService.h"
 
 #include "products/roadmap/application/ScopedToolHost.h"
-#include "platform/domain/Billing.h"
 
 #include <trantor/utils/Logger.h>
 
@@ -25,10 +24,10 @@ bool blank(const std::string& text) {
 }
 
 TendingService::TendingService(TendRunRepository& runs, PlanAgent& agent, ToolHost& tools,
-                               Clock& clock, TokenGenerator& tokens,
-                               SubscriptionRepository& subscriptions, bool enabled)
+                               Clock& clock, TokenGenerator& tokens, Entitlements& entitlements,
+                               bool enabled)
     : runs_(runs), agent_(agent), tools_(tools), clock_(clock), tokens_(tokens),
-      subscriptions_(subscriptions), enabled_(enabled), workers_(kTendWorkers, "tend-workers") {
+      entitlements_(entitlements), enabled_(enabled), workers_(kTendWorkers, "tend-workers") {
   workers_.start();
 }
 
@@ -95,8 +94,7 @@ TendingSummary TendingService::summaryFor(const UserId& caller, const std::strin
 // roll between two clock reads.
 TendingAllowance TendingService::allowanceAt(const UserId& caller, const std::string& email,
                                              std::uint64_t nowMs) {
-  const std::optional<PaddleSubscription> subscription = subscriptions_.findFor(caller, email);
-  const Plan plan = subscription && grantsAccess(subscription->status) ? Plan::pro : Plan::free;
+  const Plan plan = entitlements_.hasWindmillOne(caller, email) ? Plan::pro : Plan::free;
   const int used = runs_.countForUser(caller, monthStartMsUtc(nowMs));
   return TendingAllowance{plan, monthlyLimitFor(plan), used};
 }
