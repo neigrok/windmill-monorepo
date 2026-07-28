@@ -5,10 +5,12 @@
 // it asks the active product here, defaulting to the first — the roadmap, for now.
 
 import { roadmapRoutes } from '../products/roadmap/routes.js';
-import { notesRoutes } from '../products/notes/routes.js';
+import { journalRoutes } from '../products/journal/routes.js';
 import { gymRoutes } from '../products/gym/routes.js';
 
-export const PRODUCTS = [roadmapRoutes, notesRoutes, gymRoutes];
+// Journal is the daily-notes product, designed and built out — it takes the second slot the `notes`
+// scaffold reserved. gym stays a scaffold until it grows code.
+export const PRODUCTS = [roadmapRoutes, journalRoutes, gymRoutes];
 
 // The active product is whichever one owns the current hash; on a product-neutral surface
 // (sign-in, settings, connect, the landing) it falls back to the first product. This is the

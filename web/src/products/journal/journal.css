@@ -1,0 +1,332 @@
+/* The journal night — every token and every pixel of the canvas lives here.
+   The surface is dark regardless of the app's global theme: the root carries
+   data-theme="dark" so the design-system's dark ramp resolves inside it, and
+   the combined selector below re-pins the two surfaces to the journal's own
+   deep-blue night plus the lamp hue and the five-step mood scale. Nothing in
+   here uses brick/red — a day is never an error. */
+
+.journal-root[data-theme='dark'] {
+  --surface-canvas: #040D19;         /* the night the page floats on */
+  --surface-card: #0D1824;
+  --lamp-400: #E0B972;               /* the lit "Candle" — the caret, the waiting ember */
+
+  --journal-ink: #F2ECDE;            /* prose the person writes — ~16:1 on the night */
+  --journal-ink-dim: #8A98AC;        /* the mono strip, the margin */
+  --journal-gap: var(--neutral-300, #3C3223);       /* a day not written — dim, never counted */
+  --journal-energy: var(--accent-olive-400, #9AA859);
+
+  /* One warm-gold hue in five steps — a scale from a dim ember to the lamp. */
+  --mood-1: #6E5A34;
+  --mood-2: #8F7440;
+  --mood-3: #B08F4E;
+  --mood-4: #C9A75F;
+  --mood-5: #E0B972;
+}
+
+.journal-root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--surface-canvas);
+  color: var(--journal-ink);
+  color-scheme: dark;
+  font-family: var(--font-body);
+}
+
+/* The lamplight — a soft warm pool at the foot of the canvas, under today. */
+.journal-lamp {
+  position: absolute;
+  left: 50%;
+  bottom: -6%;
+  width: min(820px, 130%);
+  height: 46%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(60% 80% at 50% 100%, color-mix(in srgb, var(--lamp-400) 13%, transparent), transparent 70%);
+  filter: blur(2px);
+}
+
+/* The switcher — the one piece of chrome, floated quietly at the top. Its pills
+   are canvas-coloured, so it blends into the night; it lifts to full presence on
+   hover or focus and never sits in the writer's way. */
+.journal-switch {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  opacity: 0.66;
+  transition: opacity 200ms var(--ease-standard);
+}
+.journal-switch:hover,
+.journal-switch:focus-within {
+  opacity: 1;
+}
+
+.journal-scroll {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* The measure is capped before any margin appears: 640 desktop, full-width−44 phone. */
+.journal-column {
+  width: min(640px, 100% - 44px);
+  margin: 0 auto;
+  padding: 32px 0 clamp(140px, 24vh, 280px);
+}
+
+/* Month separators — the one place the display font (Baloo 2 700) speaks. */
+.journal-month {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  line-height: 26px;
+  letter-spacing: 0.01em;
+  color: var(--journal-ink);
+  opacity: 0.9;
+  margin: 22px 0 14px;
+}
+
+.journal-day {
+  margin-bottom: 34px;
+}
+
+/* Days that arrive AFTER the first paint fade in from below; the initial
+   restore never animates — the cursor waits for nothing. */
+.journal-born {
+  animation: journal-fade-in-up 280ms var(--ease-soft) both;
+}
+
+/* The day marker — mono date + a mood pip + an energy tick. Sticky: it pins
+   to the top edge while its day is under you (never scripted). */
+.journal-marker {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0 6px;
+  background: linear-gradient(var(--surface-canvas) 62%, transparent);
+}
+
+.journal-meta {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: 0.04em;
+  color: var(--journal-ink-dim);
+}
+
+.journal-glyphs {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.journal-pip {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--journal-ink) 26%, transparent);
+  flex: 0 0 auto;
+}
+.journal-pip-hollow {
+  background: transparent;
+  border: 1.5px solid var(--journal-gap);
+}
+/* Today's pip is the one infinite loop on screen — a breathing ember. */
+.journal-pip-today {
+  animation: journal-ember 2000ms var(--ease-standard) infinite;
+}
+
+.journal-tick {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 10px;
+}
+.journal-tick-bar {
+  width: 2.5px;
+  border-radius: 2px;
+  background: var(--journal-gap);
+}
+.journal-tick-bar:nth-child(1) { height: 5px; }
+.journal-tick-bar:nth-child(2) { height: 7px; }
+.journal-tick-bar:nth-child(3) { height: 9px; }
+.journal-tick-bar.is-on { background: var(--journal-energy); }
+
+/* Prose is never mono. */
+.journal-prose {
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 16px;
+  line-height: 28px;
+  color: var(--journal-ink);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  margin-top: 8px;
+}
+
+/* A day not written: "nothing written" at 50% ink. Never red, never apologised for. */
+.journal-gap {
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--journal-ink);
+  opacity: 0.5;
+  margin-top: 6px;
+}
+
+/* ---- Today — the last block; writing happens inline in a growing textarea. ---- */
+.journal-input {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: var(--journal-ink);
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 16px;
+  line-height: 28px;
+  caret-color: var(--lamp-400);
+}
+.journal-input::placeholder {
+  color: color-mix(in srgb, var(--journal-ink) 38%, transparent);
+}
+
+.journal-privacy {
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--journal-ink);
+  opacity: 0.5;
+  margin: 14px 0 0;
+}
+
+/* Mood + energy sit in thumb reach; both optional, skipping costs nothing. */
+.journal-controls {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-top: 16px;
+}
+
+.journal-mood,
+.journal-energy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.journal-mood-dot {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.journal-mood-dot::before {
+  content: '';
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  box-sizing: border-box;
+  border: 1.5px solid color-mix(in srgb, var(--journal-ink) 34%, transparent);
+  background: transparent;
+  transition: background 180ms var(--ease-standard), border-color 180ms var(--ease-standard),
+    box-shadow 180ms var(--ease-standard), transform 180ms var(--ease-standard);
+}
+.journal-mood-dot.is-on::before {
+  background: var(--dot-color);
+  border-color: var(--dot-color);
+  box-shadow: 0 0 10px 0 color-mix(in srgb, var(--dot-color) 55%, transparent);
+}
+.journal-mood-dot:focus-visible::before {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lamp-400) 40%, transparent);
+}
+
+.journal-energy-bar {
+  width: 24px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.journal-energy-bar::before {
+  content: '';
+  width: 8px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--journal-ink) 22%, transparent);
+  transition: background 180ms var(--ease-standard), box-shadow 180ms var(--ease-standard);
+}
+.journal-energy-bar.level-1::before { height: 12px; }
+.journal-energy-bar.level-2::before { height: 20px; }
+.journal-energy-bar.level-3::before { height: 28px; }
+.journal-energy-bar.is-on::before {
+  background: var(--journal-energy);
+  box-shadow: 0 0 10px 0 color-mix(in srgb, var(--journal-energy) 45%, transparent);
+}
+.journal-energy-bar:focus-visible::before {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lamp-400) 40%, transparent);
+}
+
+/* "saved" — mono, cross-fades in after typing stops, then fades. Never a button. */
+.journal-saved {
+  opacity: 0;
+  transition: opacity 240ms var(--ease-standard);
+}
+.journal-saved.is-on {
+  opacity: 1;
+}
+
+@keyframes journal-fade-in-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes journal-ember {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 6px 1px color-mix(in srgb, var(--dot-color) 42%, transparent),
+      0 0 14px 3px color-mix(in srgb, var(--dot-color) 18%, transparent);
+  }
+  50% {
+    transform: scale(1.12);
+    box-shadow: 0 0 10px 2px color-mix(in srgb, var(--dot-color) 62%, transparent),
+      0 0 22px 5px color-mix(in srgb, var(--dot-color) 30%, transparent);
+  }
+}
+
+/* Reduced motion: the ember holds a static face; entrances don't travel.
+   (The global reset already collapses transitions to instant.) */
+@media (prefers-reduced-motion: reduce) {
+  .journal-pip-today {
+    animation: none;
+    box-shadow: 0 0 8px 1px color-mix(in srgb, var(--dot-color) 45%, transparent);
+  }
+  .journal-born {
+    animation: none;
+  }
+}
