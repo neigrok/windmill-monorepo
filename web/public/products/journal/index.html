@@ -1,0 +1,584 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Journal — Windmill</title>
+<meta name="description" content="A private place to notice what happened. Windmill Journal is free-form daily writing that finds the feeling, not the word — search by meaning, echoes that circle back, and no share button, ever. All on your device." />
+<link rel="canonical" href="https://windmill.works/products/journal" />
+<meta name="robots" content="index, follow, max-image-preview:large" />
+<meta name="theme-color" content="#F9F5EB" />
+<meta name="color-scheme" content="light" />
+<link rel="icon" href="/favicon.ico" sizes="32x32" />
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<style>
+  /* Design tokens resolved from the Windmill Design System tokens/*.css to concrete light-theme
+     values — the static pages are light-only and load no external CSS or webfonts (system rounded
+     fallbacks stand in for Baloo 2 / Nunito, matching pricing.html, terms.html and refunds.html). */
+  :root {
+    --font-display: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif;
+    --font-body: 'Nunito', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+    --neutral-25: #FDFBF6;
+    --neutral-50: #F9F5EB;
+    --neutral-100: #F1EADA;
+    --neutral-200: #E5D9C0;
+    --neutral-300: #D3C2A0;
+    --neutral-400: #B29F7B;
+    --neutral-900: #211B13;
+    --surface-canvas: #F9F5EB;
+    --surface-card: #FFFFFF;
+    --surface-hover: #F1EADA;
+    --surface-inverse: #211B13;
+    --border-subtle: #E5D9C0;
+    --border-default: #D3C2A0;
+    --text-primary: #211B13;
+    --text-secondary: #6F5F45;
+    --text-tertiary: #92805F;
+    --text-on-accent: #FFFFFF;
+    --text-link: #9D5330;
+    --text-link-hover: #7C3F23;
+    --color-success: #7D8C43;
+    --color-success-bg: #F3F4E4;
+    --color-warning-bg: #FAF3DF;
+    --color-brand: #BC6C42;
+    --color-brand-hover: #9D5330;
+    --color-brand-soft: #F9EFE9;
+    --accent-terracotta-200: #EAC6B0;
+    --accent-terracotta-400: #D08A5E;
+    --accent-olive-200: #D2DAA5;
+    --accent-olive-400: #9AA859;
+    --accent-gold-50: #FAF3DF;
+    --accent-gold-400: #D9B04C;
+    --accent-gold-600: #A17822;
+    /* Journal's "lamp" mood scale — a warm amber ramp anchored on the product's real
+       --lamp-400 (#E0B972, src/products/journal/journal.css); 200/500/600 are this
+       page's own light/dark steps of that same hue, not yet promoted to tokens/colors.css. */
+    --lamp-200: #F0DEB4;
+    --lamp-400: #E0B972;
+    --lamp-500: #C99A4B;
+    --lamp-600: #AD7E36;
+    --kind-terracotta-glow: rgba(188, 108, 66, 0.5);
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 24px;
+    --radius-2xl: 32px;
+    --radius-full: 999px;
+    --shadow-sm: 0 2px 8px rgba(33, 27, 19, 0.06), 0 1px 2px rgba(33, 27, 19, 0.04);
+    --shadow-md: 0 8px 24px rgba(33, 27, 19, 0.08), 0 2px 6px rgba(33, 27, 19, 0.05);
+    --shadow-lg: 0 16px 40px rgba(33, 27, 19, 0.10), 0 4px 12px rgba(33, 27, 19, 0.06);
+    --duration-base: 280ms;
+    --ease-standard: cubic-bezier(0.16, 1, 0.3, 1);
+    --tracking-tight: -0.02em;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin:0; background:var(--surface-canvas); font-family:var(--font-body), system-ui, sans-serif; color:var(--text-primary); -webkit-font-smoothing:antialiased; }
+  a { color:#BC6C42; text-decoration:none; }
+  a:hover { color:#A85C36; }
+  @keyframes wmn-caret { 0%,49% { opacity:1; } 50%,100% { opacity:0; } }
+  @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } }
+
+  /* Buttons — same system as pricing.html, reused here for brand consistency. */
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:7px; border-radius:999px; font-family:var(--font-body); font-weight:800; font-size:12.5px; padding:7px 15px; text-decoration:none; border:none; cursor:pointer; transition:background 150ms var(--ease-standard), transform 150ms var(--ease-standard); }
+  .btn--pri { background:var(--color-brand); color:var(--text-on-accent); }
+  .btn--pri:hover { background:var(--color-brand-hover); color:var(--text-on-accent); }
+  .btn--pri:active { transform:scale(.97); }
+  .btn--gho { color:var(--text-secondary); background:none; }
+  .btn--gho:hover { background:var(--surface-hover); color:var(--text-primary); }
+  .btn--soft { background:var(--surface-card); color:var(--text-primary); border:1.5px solid var(--border-default); }
+  .btn--soft:hover { background:var(--surface-hover); }
+  .btn--lg { font-size:15px; padding:13px 26px; }
+
+  /* Hover affordances that replaced the design tool's style-hover attribute. */
+  .wmj-hover:hover { background:var(--surface-hover); }
+  .wmj-card-hover:hover { box-shadow:var(--shadow-md); }
+</style>
+  <script>try{var h=JSON.parse(localStorage.getItem("windmill:auth-hint")||"null");document.documentElement.setAttribute("data-auth",h&&h.status==="signed-in"&&h.user?"in":"out")}catch(e){document.documentElement.setAttribute("data-auth","out")}</script>
+  <style>html[data-auth=in] .au-out{display:none}html[data-auth=out] .au-in{display:none}</style>
+  <script defer src="/nav-auth.js"></script>
+</head>
+<body>
+<div style="min-width:1280px;background:var(--surface-canvas)">
+
+<div style="position:sticky;top:0;z-index:40;background:rgba(249,245,235,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--border-subtle)">
+<div style="max-width:1280px;margin:0 auto;padding:0 64px;height:68px;display:flex;align-items:center;gap:40px">
+<a href="/#/" style="font-family:var(--font-display);font-weight:800;font-size:21px;color:var(--text-primary)">Windmill</a>
+<div style="display:flex;gap:28px;font-size:15px;font-weight:700">
+<a href="/products/roadmap" style="color:var(--text-secondary)">Roadmap</a>
+<a href="#top" style="color:var(--color-brand)">Journal</a>
+<a href="/#/" style="color:var(--text-secondary)">Gym</a>
+<a href="/pricing.html" style="color:var(--text-secondary)">Pricing</a>
+</div>
+<div style="margin-left:auto;display:flex;align-items:center;gap:14px">
+<a class="btn btn--gho au-out" href="/#/">Sign in</a>
+<a class="btn btn--pri au-out" href="/#/journal">Start writing</a>
+<a class="btn btn--gho au-in" href="/#/settings" data-authname>My account</a>
+<a class="btn btn--pri au-in" href="/#/journal">Open journal</a>
+</div>
+</div>
+</div>
+
+<div id="top" style="max-width:1280px;margin:0 auto;padding:76px 64px 0;text-align:center">
+<div style="font-size:12.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--color-brand)">Windmill Journal</div>
+<h1 style="font-family:var(--font-display);font-weight:700;font-size:60px;line-height:1.08;color:var(--text-primary);margin:14px 0 0;text-wrap:pretty">A place to notice<br>what happened.</h1>
+<p style="font-size:19px;line-height:1.55;color:var(--text-secondary);max-width:620px;margin:20px auto 0;text-wrap:pretty">Free-form daily writing for people who want to understand themselves, not score themselves. One page a day, yesterday above it, and nothing to fill in.</p>
+<div style="display:flex;gap:14px;justify-content:center;margin-top:30px">
+<a class="btn btn--pri btn--lg" href="/#/journal">Start writing — free</a>
+<a class="btn btn--soft btn--lg" href="#how">See how it works</a>
+</div>
+</div>
+
+<div style="max-width:1280px;margin:0 auto;padding:44px 64px 0">
+<div style="border-radius:var(--radius-2xl);overflow:hidden;box-shadow:0 24px 60px rgba(33,27,19,.22);border:1px solid var(--border-default);background:var(--surface-canvas)">
+<div style="display:flex;height:520px">
+
+<div style="width:60px;flex:none;background:var(--surface-card);border-right:1px solid var(--border-subtle);display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:5px">
+<div style="font-family:var(--font-display);font-weight:800;font-size:19px;color:var(--color-brand);margin-bottom:10px">W</div>
+<div style="width:40px;height:40px;border-radius:var(--radius-full);display:flex;align-items:center;justify-content:center;color:var(--text-tertiary)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4v11"></path><path d="M18 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"></path><path d="M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"></path><path d="M18 10a9 9 0 0 1-9 8"></path></svg></div>
+<div style="width:40px;height:40px;border-radius:var(--radius-full);display:flex;align-items:center;justify-content:center;background:var(--color-brand-soft);color:var(--color-brand)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5A2.5 2.5 0 0 1 4 19.5z"></path><path d="M8 7.5h8"></path><path d="M8 11.5h8"></path><path d="M8 15.5h5"></path></svg></div>
+<div style="width:40px;height:40px;border-radius:var(--radius-full);display:flex;align-items:center;justify-content:center;color:var(--text-tertiary)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M18 8.5a6 6 0 1 0-12 0c0 6.5-3 8.5-3 8.5h18s-3-2-3-8.5"></path><path d="M10.3 20.5a1.94 1.94 0 0 0 3.4 0"></path></svg></div>
+</div>
+
+<div style="flex:1;min-width:0;display:flex;flex-direction:column">
+<div style="height:50px;flex:none;display:flex;align-items:center;gap:12px;padding:0 20px;border-bottom:1px solid var(--border-subtle)">
+<div style="font-family:var(--font-display);font-weight:700;font-size:16px;color:var(--text-primary)">Journal</div>
+<div style="display:flex;align-items:center;gap:5px;padding:3px 8px;border-radius:var(--radius-full);background:var(--neutral-100);color:var(--text-tertiary);font-size:10px;font-weight:700"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5.5 11h13v10.5h-13z"></path><path d="M8.5 11V7a3.5 3.5 0 0 1 7 0v4"></path></svg>Only you</div>
+<div style="margin-left:auto;font-family:var(--font-mono);font-size:11px;color:var(--text-tertiary)">20 words · saved</div>
+</div>
+<div style="flex:1;min-height:0;display:flex;justify-content:center;overflow:hidden;padding:0 24px">
+<div style="width:600px;padding-top:26px">
+<div style="display:flex;gap:18px;opacity:.5;padding-bottom:24px">
+<div style="width:66px;flex:none">
+<div style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-tertiary)">Sat 25</div>
+<div style="display:flex;align-items:center;gap:5px;margin-top:6px"><div style="width:9px;height:9px;border-radius:999px;background:var(--lamp-400)"></div><div style="width:3px;height:12px;border-radius:2px;background:var(--accent-olive-400)"></div></div>
+</div>
+<div style="flex:1;font-size:15.5px;line-height:27px;color:var(--text-primary)">Long walk with no podcast, which I've been avoiding for reasons I don't understand. Twenty minutes in, the noise dropped a level and I could hear what I'd been chewing on all week.</div>
+</div>
+<div style="display:flex;gap:18px">
+<div style="width:66px;flex:none">
+<div style="position:sticky;top:0">
+<div style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--color-brand)">Today</div>
+<div style="display:flex;align-items:center;gap:5px;margin-top:6px"><div style="width:11px;height:11px;border-radius:999px;background:var(--lamp-400);box-shadow:0 0 0 3px var(--color-brand-soft)"></div><div style="width:3px;height:12px;border-radius:2px;background:var(--accent-olive-400)"></div></div>
+</div>
+</div>
+<div style="flex:1;min-width:0">
+<textarea placeholder="Start anywhere. Nothing here is graded." style="width:100%;min-height:150px;border:none;outline:none;background:transparent;resize:none;font-family:var(--font-body);font-size:15.5px;line-height:27px;color:var(--text-primary);padding:0">Woke early without the alarm, which never happens. The week felt less like a pile than it did on Thursday.</textarea>
+<div style="display:flex;align-items:center;gap:20px;margin-top:14px;padding-top:16px;border-top:1px solid var(--border-subtle)">
+<div style="display:flex;align-items:center;gap:9px">
+<span style="font-size:11.5px;font-weight:700;color:var(--text-tertiary)">Felt</span>
+<div style="display:flex;gap:7px">
+<div style="width:26px;height:26px;border-radius:999px;border:1.5px solid var(--border-default);background:var(--lamp-400)"></div>
+<div style="width:26px;height:26px;border-radius:999px;border:1.5px solid var(--border-default);background:var(--lamp-400)"></div>
+<div style="width:26px;height:26px;border-radius:999px;border:1.5px solid var(--border-default);background:var(--lamp-400)"></div>
+<div style="width:26px;height:26px;border-radius:999px;border:1.5px solid var(--border-default);background:var(--lamp-400)"></div>
+<div style="width:26px;height:26px;border-radius:999px;border:1.5px solid var(--border-default);background:transparent"></div>
+</div>
+</div>
+<div class="wmj-hover" style="display:flex;align-items:center;gap:7px;height:32px;padding:0 13px;border-radius:var(--radius-full);border:1px solid var(--border-default);color:var(--text-secondary);font-size:12.5px;font-weight:700;cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 2.5a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0v-6a3 3 0 0 0-3-3z"></path><path d="M19 10.5v1a7 7 0 0 1-14 0v-1"></path><path d="M12 18.5v3"></path></svg>Talk instead</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+<div style="text-align:center;font-size:13px;color:var(--text-tertiary);margin-top:14px">Go on — type in it, tap a dot. This one saves nothing.</div>
+</div>
+
+<div id="how" style="max-width:1280px;margin:0 auto;padding:96px 64px 0">
+<div style="font-size:12.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--color-brand)">The daily loop</div>
+<h2 style="font-family:var(--font-display);font-weight:700;font-size:38px;line-height:1.12;color:var(--text-primary);margin:10px 0 12px">Open it, and the page is already yours.</h2>
+<p style="font-size:17px;line-height:1.55;color:var(--text-secondary);max-width:560px;margin:0">No prompt to answer, no fields to fill. The cursor waits where you left it.</p>
+
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-top:40px">
+
+<div style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:var(--radius-xl);padding:20px;box-shadow:var(--shadow-sm);display:flex;flex-direction:column;gap:16px">
+<div style="background:var(--surface-canvas);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);height:168px;padding:16px 18px;overflow:hidden">
+<div style="opacity:.45">
+<div style="font-family:var(--font-mono);font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-tertiary)">Yesterday</div>
+<div style="font-size:13px;line-height:22px;color:var(--text-primary);margin-top:4px">…I could hear what I'd been chewing on all week.</div>
+</div>
+<div style="margin-top:16px">
+<div style="font-family:var(--font-display);font-weight:700;font-size:15px;color:var(--text-primary)">Today</div>
+<div style="font-size:13px;line-height:22px;color:var(--text-primary);margin-top:4px">Woke early without the alarm, which never happens.<span style="display:inline-block;width:2px;height:14px;background:var(--color-brand);margin-left:2px;vertical-align:-2px;animation:wmn-caret 1.1s steps(1) infinite"></span></div>
+</div>
+</div>
+<div>
+<div style="font-family:var(--font-mono);font-size:12px;color:var(--text-tertiary)">01</div>
+<div style="font-family:var(--font-display);font-weight:700;font-size:20px;color:var(--text-primary);margin:4px 0 6px">Yesterday sits above today</div>
+<p style="font-size:15px;line-height:1.5;color:var(--text-secondary);margin:0">You never start from a blank document. The previous page is right there at half ink, so tonight continues a thought instead of beginning one.</p>
+</div>
+</div>
+
+<div style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:var(--radius-xl);padding:20px;box-shadow:var(--shadow-sm);display:flex;flex-direction:column;gap:16px">
+<div style="background:var(--surface-canvas);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);height:168px;padding:16px 18px;display:flex;flex-direction:column;justify-content:center;gap:18px">
+<div>
+<div style="font-size:11px;font-weight:700;color:var(--text-tertiary);margin-bottom:9px">How did today feel?</div>
+<div style="display:flex;gap:7px">
+<div style="width:28px;height:28px;border-radius:999px;border:1.5px solid var(--border-default);background:var(--lamp-400)"></div>
+<div style="width:28px;height:28px;border-radius:999px;border:1.5px solid var(--border-default);background:var(--lamp-400)"></div>
+<div style="width:28px;height:28px;border-radius:999px;border:1.5px solid var(--border-default);background:var(--lamp-400)"></div>
+<div style="width:28px;height:28px;border-radius:999px;border:1.5px solid var(--border-default);background:var(--lamp-400)"></div>
+<div style="width:28px;height:28px;border-radius:999px;border:1.5px solid var(--border-default)"></div>
+</div>
+</div>
+<div>
+<div style="font-size:11px;font-weight:700;color:var(--text-tertiary);margin-bottom:9px">Energy</div>
+<div style="display:flex;gap:6px;align-items:flex-end;height:28px">
+<div style="width:18px;height:12px;border-radius:5px;background:var(--accent-olive-400)"></div>
+<div style="width:18px;height:20px;border-radius:5px;background:var(--accent-olive-400)"></div>
+<div style="width:18px;height:28px;border-radius:5px;background:var(--neutral-300)"></div>
+</div>
+</div>
+</div>
+<div>
+<div style="font-family:var(--font-mono);font-size:12px;color:var(--text-tertiary)">02</div>
+<div style="font-family:var(--font-display);font-weight:700;font-size:20px;color:var(--text-primary);margin:4px 0 6px">Two taps, both optional</div>
+<p style="font-size:15px;line-height:1.5;color:var(--text-secondary);margin:0">Mood and energy — that's the entire structure. Skip them and nothing complains. There is no form here, ever.</p>
+</div>
+</div>
+
+<div style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:var(--radius-xl);padding:20px;box-shadow:var(--shadow-sm);display:flex;flex-direction:column;gap:16px">
+<div style="background:var(--surface-canvas);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);height:168px;padding:16px 18px;display:flex;flex-direction:column;justify-content:center;gap:14px">
+<div style="font-size:13px;line-height:22px;color:var(--text-primary);background:var(--accent-gold-50);border-radius:var(--radius-md);padding:10px 12px">And then I did the thing where I fill the time with something that looks like work.</div>
+<div style="display:flex;align-items:center;gap:8px">
+<div style="color:var(--accent-olive-400);display:flex"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5l5 5 10-11"></path></svg></div>
+<div style="font-size:11.5px;color:var(--text-secondary)">Transcribed from 0:41. Audio discarded.</div>
+</div>
+</div>
+<div>
+<div style="font-family:var(--font-mono);font-size:12px;color:var(--text-tertiary)">03</div>
+<div style="font-family:var(--font-display);font-weight:700;font-size:20px;color:var(--text-primary);margin:4px 0 6px">Or just say it out loud</div>
+<p style="font-size:15px;line-height:1.5;color:var(--text-secondary);margin:0">Talk when writing is too much. It lands as text you can edit, and the recording is thrown away the moment it's read.</p>
+</div>
+</div>
+
+</div>
+</div>
+
+<div style="margin-top:96px;background:var(--neutral-100);border-top:1px solid var(--border-subtle);border-bottom:1px solid var(--border-subtle)">
+<div style="max-width:1280px;margin:0 auto;padding:80px 64px">
+<div style="font-size:12.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--color-brand)">Search</div>
+<h2 style="font-family:var(--font-display);font-weight:700;font-size:38px;line-height:1.12;color:var(--text-primary);margin:10px 0 12px">Find the feeling, not the word.</h2>
+<p style="font-size:17px;line-height:1.55;color:var(--text-secondary);max-width:600px;margin:0">Search by meaning. "Felt behind" finds the night you wrote that everyone else seemed further along — even though you never typed the word.</p>
+
+<div style="display:flex;gap:32px;margin-top:40px;align-items:flex-start">
+<div style="flex:1;min-width:0;background:var(--surface-card);border:1px solid var(--border-default);border-radius:var(--radius-xl);box-shadow:var(--shadow-lg);overflow:hidden">
+<div style="display:flex;align-items:center;gap:11px;padding:15px 18px;border-bottom:1px solid var(--border-subtle)">
+<div style="color:var(--color-brand);display:flex"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z"></path><path d="M21 21l-4.3-4.3"></path></svg></div>
+<input value="felt behind" placeholder="try: couldn't sleep" style="flex:1;border:none;outline:none;background:transparent;font-family:var(--font-body);font-size:16px;color:var(--text-primary)">
+</div>
+<div style="padding:13px 18px;display:flex;gap:8px;flex-wrap:wrap;border-bottom:1px solid var(--border-subtle)">
+<div style="padding:6px 12px;border-radius:var(--radius-full);font-size:12.5px;font-weight:700;cursor:pointer;background:var(--color-brand-soft);color:var(--color-brand);border:1px solid var(--color-brand)">felt behind</div>
+<div style="padding:6px 12px;border-radius:var(--radius-full);font-size:12.5px;font-weight:700;cursor:pointer;background:transparent;color:var(--text-secondary);border:1px solid var(--border-subtle)">couldn't sleep</div>
+<div style="padding:6px 12px;border-radius:var(--radius-full);font-size:12.5px;font-weight:700;cursor:pointer;background:transparent;color:var(--text-secondary);border:1px solid var(--border-subtle)">said yes again</div>
+<div style="padding:6px 12px;border-radius:var(--radius-full);font-size:12.5px;font-weight:700;cursor:pointer;background:transparent;color:var(--text-secondary);border:1px solid var(--border-subtle)">a good day</div>
+</div>
+<div style="padding:6px 0 8px">
+<div style="padding:8px 18px 6px;font-size:11.5px;color:var(--text-tertiary)">3 passages close to "felt behind"</div>
+<div class="wmj-hover" style="display:flex;gap:14px;padding:11px 18px;cursor:pointer">
+<div style="width:62px;flex:none;font-family:var(--font-mono);font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--text-tertiary);padding-top:3px">Fri 3 Jul</div>
+<div style="flex:1;min-width:0">
+<div style="font-size:14px;line-height:22px;color:var(--text-primary)">Spent the whole afternoon rearranging things that did not need rearranging, and called it preparation.</div>
+<div style="display:flex;align-items:center;gap:7px;margin-top:6px">
+<div style="width:8px;height:8px;border-radius:999px;background:var(--lamp-500)"></div>
+<div style="font-size:11.5px;color:var(--accent-gold-400)">close to · dread about the review</div>
+</div>
+</div>
+</div>
+<div class="wmj-hover" style="display:flex;gap:14px;padding:11px 18px;cursor:pointer">
+<div style="width:62px;flex:none;font-family:var(--font-mono);font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--text-tertiary);padding-top:3px">Fri 24 Jul</div>
+<div style="flex:1;min-width:0">
+<div style="font-size:14px;line-height:22px;color:var(--text-primary)">Everyone else seems further along and I can't tell if that's true or just the shape of my week.</div>
+<div style="display:flex;align-items:center;gap:7px;margin-top:6px">
+<div style="width:8px;height:8px;border-radius:999px;background:var(--lamp-500)"></div>
+<div style="font-size:11.5px;color:var(--accent-gold-400)">close to · dread about the review</div>
+</div>
+</div>
+</div>
+<div class="wmj-hover" style="display:flex;gap:14px;padding:11px 18px;cursor:pointer">
+<div style="width:62px;flex:none;font-family:var(--font-mono);font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--text-tertiary);padding-top:3px">Sun 26 Jul</div>
+<div style="flex:1;min-width:0">
+<div style="font-size:14px;line-height:22px;color:var(--text-primary)">I said yes to the review because saying no felt expensive — that's the pattern, not the review.</div>
+<div style="display:flex;align-items:center;gap:7px;margin-top:6px">
+<div style="width:8px;height:8px;border-radius:999px;background:var(--lamp-400)"></div>
+<div style="font-size:11.5px;color:var(--accent-gold-400)">close to · clear-headed days</div>
+</div>
+</div>
+</div>
+</div>
+<div style="padding:11px 18px;border-top:1px solid var(--border-subtle);font-size:11.5px;color:var(--text-tertiary)">Matched by meaning, on your device. Nothing is sent anywhere to search.</div>
+</div>
+
+<div style="width:340px;flex:none;display:flex;flex-direction:column;gap:22px;padding-top:6px">
+<div>
+<div style="font-family:var(--font-display);font-weight:700;font-size:19px;color:var(--text-primary);margin-bottom:6px">It returns places, not files</div>
+<p style="font-size:15px;line-height:1.5;color:var(--text-secondary);margin:0">Open a result and you land in the canvas at that spot, with the days either side of it intact. You get the context you were actually looking for.</p>
+</div>
+<div>
+<div style="font-family:var(--font-display);font-weight:700;font-size:19px;color:var(--text-primary);margin-bottom:6px">It says why it matched</div>
+<p style="font-size:15px;line-height:1.5;color:var(--text-secondary);margin:0">Every hit shows the thread it belongs to, so you can tell a real echo from a coincidence at a glance.</p>
+</div>
+<div>
+<div style="font-family:var(--font-display);font-weight:700;font-size:19px;color:var(--text-primary);margin-bottom:6px">And it stays with you</div>
+<p style="font-size:15px;line-height:1.5;color:var(--text-secondary);margin:0">Search runs on your device. Your pages are never shipped off to be indexed by anyone, including us.</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<div style="max-width:1280px;margin:0 auto;padding:88px 64px 0">
+<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:40px">
+<div>
+<div style="font-size:12.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--color-brand)">One canvas</div>
+<h2 style="font-family:var(--font-display);font-weight:700;font-size:38px;line-height:1.12;color:var(--text-primary);margin:10px 0 12px">Your whole journal is one scroll.</h2>
+<p style="font-size:17px;line-height:1.55;color:var(--text-secondary);max-width:560px;margin:0">No folders, no files, nothing to name. Scroll up to go back. Zoom out when you want the shape of a year instead of the words in it.</p>
+</div>
+<div style="display:flex;gap:3px;padding:3px;border-radius:var(--radius-full);background:var(--neutral-100);flex:none">
+<div style="padding:7px 16px;border-radius:var(--radius-full);font-size:13px;font-weight:700;background:var(--color-brand);color:var(--text-on-accent)">Read</div>
+<div style="padding:7px 16px;border-radius:var(--radius-full);font-size:13px;font-weight:700;background:transparent;color:var(--text-secondary)">Skim</div>
+<div style="padding:7px 16px;border-radius:var(--radius-full);font-size:13px;font-weight:700;background:transparent;color:var(--text-secondary)">Year</div>
+</div>
+</div>
+
+<div style="margin-top:32px;background:var(--surface-canvas);border:1px solid var(--border-default);border-radius:var(--radius-2xl);box-shadow:0 18px 44px rgba(33,27,19,.18);overflow:hidden;min-height:400px;display:flex">
+<div style="flex:1;padding:26px 30px">
+<div style="display:flex;gap:20px;padding-bottom:22px">
+<div style="width:74px;flex:none">
+<div style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-tertiary)">Wed 10 Jun</div>
+<div style="width:9px;height:9px;border-radius:999px;background:var(--lamp-500);margin-top:6px"></div>
+</div>
+<div style="flex:1;min-width:0;max-width:640px;font-size:15px;line-height:26px;color:var(--text-primary)">Third night under six hours. I keep saying I'll fix it after the launch, and I've now said that about four separate things.</div>
+</div>
+<div style="display:flex;gap:20px;padding-bottom:22px">
+<div style="width:74px;flex:none">
+<div style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-tertiary)">Tue 30 Jun</div>
+<div style="width:9px;height:9px;border-radius:999px;background:var(--lamp-400);margin-top:6px"></div>
+</div>
+<div style="flex:1;min-width:0;max-width:640px;font-size:15px;line-height:26px;color:var(--text-primary)">Sam asked how I was and I said "busy" before the sentence had finished. Busy is not a feeling.</div>
+</div>
+<div style="display:flex;gap:20px;padding-bottom:22px">
+<div style="width:74px;flex:none">
+<div style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-tertiary)">Fri 3 Jul</div>
+<div style="width:9px;height:9px;border-radius:999px;background:var(--lamp-500);margin-top:6px"></div>
+</div>
+<div style="flex:1;min-width:0;max-width:640px;font-size:15px;line-height:26px;color:var(--text-primary)">Spent the whole afternoon rearranging things that did not need rearranging, and called it preparation.</div>
+</div>
+<div style="display:flex;gap:20px;padding-bottom:22px">
+<div style="width:74px;flex:none">
+<div style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-tertiary)">Wed 22 Jul</div>
+<div style="width:9px;height:9px;border-radius:999px;background:var(--lamp-200);margin-top:6px"></div>
+</div>
+<div style="flex:1;min-width:0;max-width:640px;font-size:15px;line-height:26px;color:var(--text-primary)">Clearest day in weeks. I suspect the answer is boring: I slept, and I said no to one thing.</div>
+</div>
+<div style="display:flex;gap:20px;padding-bottom:22px">
+<div style="width:74px;flex:none">
+<div style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-tertiary)">Fri 24 Jul</div>
+<div style="width:9px;height:9px;border-radius:999px;background:var(--lamp-500);margin-top:6px"></div>
+</div>
+<div style="flex:1;min-width:0;max-width:640px;font-size:15px;line-height:26px;color:var(--text-primary)">Everyone else seems further along and I can't tell if that's true or just the shape of my week.</div>
+</div>
+<div style="display:flex;gap:20px;padding-bottom:22px">
+<div style="width:74px;flex:none">
+<div style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-tertiary)">Sat 25 Jul</div>
+<div style="width:9px;height:9px;border-radius:999px;background:var(--lamp-400);margin-top:6px"></div>
+</div>
+<div style="flex:1;min-width:0;max-width:640px;font-size:15px;line-height:26px;color:var(--text-primary)">Long walk with no podcast. Twenty minutes in the noise dropped a level and I could hear what I'd been chewing on.</div>
+</div>
+<div style="display:flex;gap:20px;padding-bottom:22px">
+<div style="width:74px;flex:none">
+<div style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-tertiary)">Sun 26 Jul</div>
+<div style="width:9px;height:9px;border-radius:999px;background:var(--lamp-400);margin-top:6px"></div>
+</div>
+<div style="flex:1;min-width:0;max-width:640px;font-size:15px;line-height:26px;color:var(--text-primary)">I said yes to the review because saying no felt expensive — that's the pattern, not the review.</div>
+</div>
+</div>
+</div>
+<div style="text-align:center;font-size:13px;color:var(--text-tertiary);margin-top:14px">Same canvas, three distances — not three screens.</div>
+</div>
+
+<div style="max-width:1280px;margin:0 auto;padding:88px 64px 0">
+<div style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:var(--radius-2xl);box-shadow:var(--shadow-sm);padding:44px 48px;display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:center">
+<div>
+<div style="display:flex;align-items:center;gap:10px">
+<div style="font-size:12.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--accent-gold-600)">Echoes</div>
+<div style="font-family:var(--font-mono);font-size:9.5px;letter-spacing:.09em;padding:3px 7px;border-radius:5px;background:var(--color-brand-soft);color:var(--color-brand)">ONE</div>
+</div>
+<h2 style="font-family:var(--font-display);font-weight:700;font-size:38px;line-height:1.12;color:var(--text-primary);margin:12px 0 12px">It notices when you circle back.</h2>
+<p style="font-size:17px;line-height:1.55;color:var(--text-secondary);margin:0 0 16px;text-wrap:pretty">An echo is Journal reading across everything you've written and telling you that tonight rhymes with a night in March — with the older line beside it, so you can judge for yourself.</p>
+<p style="font-size:15px;line-height:1.55;color:var(--text-tertiary);margin:0">Everything else on this page is free, forever. Echoes are the one paid thing, because they're the one thing that reads your whole journal for you rather than answering something you asked.</p>
+</div>
+<div style="background:var(--surface-canvas);border:1px solid var(--border-default);border-radius:var(--radius-xl);padding:24px 26px;box-shadow:var(--shadow-md)">
+<div style="display:flex;gap:16px">
+<div style="width:62px;flex:none">
+<div style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--color-brand)">Mon 20</div>
+<div style="width:10px;height:10px;border-radius:999px;background:var(--lamp-400);margin-top:6px;box-shadow:0 0 0 3px var(--color-brand-soft)"></div>
+<div style="display:flex;align-items:center;gap:4px;margin-top:9px;font-size:10px;font-weight:800;color:var(--accent-gold-400)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 21a9 9 0 1 0-9-9"></path><path d="M3 3v5h5"></path></svg>echo</div>
+</div>
+<div style="flex:1;min-width:0">
+<div style="font-size:15px;line-height:26px;color:var(--text-primary)">Said yes to running the review. There was a full second where I knew I didn't want to, and I said it anyway.</div>
+<div style="margin-top:16px;padding:14px 16px;border-radius:var(--radius-lg);background:var(--surface-card);border:1px solid var(--border-subtle)">
+<div style="font-size:10.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--accent-gold-400);margin-bottom:6px">You said it before</div>
+<div style="font-size:14px;line-height:22px;color:var(--text-secondary)">"Sam asked how I was and I said 'busy' before the sentence had finished."</div>
+<div style="margin-top:9px;font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary)">TUE 30 JUN · 20 days earlier</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<div style="max-width:1280px;margin:0 auto;padding:88px 64px 0">
+<div style="display:flex;gap:48px;align-items:flex-start">
+<div style="flex:1;min-width:0">
+<div style="font-size:12.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--color-brand)">Nudges</div>
+<h2 style="font-family:var(--font-display);font-weight:700;font-size:38px;line-height:1.12;color:var(--text-primary);margin:10px 0 12px">One knock, at the hour you actually write.</h2>
+<p style="font-size:17px;line-height:1.55;color:var(--text-secondary);max-width:520px;margin:0 0 22px;text-wrap:pretty">Journal learns your rhythm and shows you what it learned — then knocks there, and drifts with you as it changes.</p>
+<div style="display:flex;flex-direction:column;gap:14px;max-width:520px">
+<div style="display:flex;gap:12px;align-items:flex-start"><div style="width:7px;height:7px;border-radius:999px;background:var(--color-brand);margin-top:7px;flex:none"></div><div style="font-size:15px;line-height:1.5;color:var(--text-secondary)"><b style="color:var(--text-primary)">Never more than one a day.</b> There is no setting that produces a second.</div></div>
+<div style="display:flex;gap:12px;align-items:flex-start"><div style="width:7px;height:7px;border-radius:999px;background:var(--color-brand);margin-top:7px;flex:none"></div><div style="font-size:15px;line-height:1.5;color:var(--text-secondary)"><b style="color:var(--text-primary)">Silent if you already wrote.</b> No congratulating you for showing up.</div></div>
+<div style="display:flex;gap:12px;align-items:flex-start"><div style="width:7px;height:7px;border-radius:999px;background:var(--color-brand);margin-top:7px;flex:none"></div><div style="font-size:15px;line-height:1.5;color:var(--text-secondary)"><b style="color:var(--text-primary)">No streaks, ever.</b> Miss a week and Journal will not mention it.</div></div>
+</div>
+</div>
+<div style="width:440px;flex:none;background:var(--surface-card);border:1px solid var(--border-default);border-radius:var(--radius-xl);padding:22px 24px;box-shadow:var(--shadow-md)">
+<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px">
+<div>
+<div style="font-size:10.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--text-tertiary)">Your rhythm · last 30 days</div>
+<div style="display:flex;align-items:baseline;gap:8px;margin-top:6px">
+<div style="font-family:var(--font-mono);font-size:24px;font-weight:500;color:var(--text-primary)">21:40</div>
+<div style="font-size:12.5px;color:var(--text-secondary)">is where I'll knock</div>
+</div>
+</div>
+<div style="display:flex;align-items:center;gap:5px;padding:4px 9px;border-radius:var(--radius-full);background:var(--color-warning-bg);color:var(--accent-gold-400);font-size:11px;font-weight:700;flex:none"><div style="width:6px;height:6px;border-radius:999px;background:var(--accent-gold-400)"></div>Learning · 11 days</div>
+</div>
+<div style="position:relative;height:78px;margin-top:16px">
+<div style="position:absolute;left:78%;right:8%;top:0;bottom:18px;background:var(--color-brand-soft);border-radius:4px"></div>
+<div style="position:absolute;left:0;right:0;bottom:18px;display:flex;align-items:flex-end;height:58px">
+<div style="flex:1;display:flex;justify-content:center"><div style="width:6px;height:5px;border-radius:3px;background:var(--neutral-300)"></div></div>
+<div style="flex:1;display:flex;justify-content:center"><div style="width:6px;height:8px;border-radius:3px;background:var(--neutral-300)"></div></div>
+<div style="flex:1;display:flex;justify-content:center"><div style="width:6px;height:11px;border-radius:3px;background:var(--neutral-300)"></div></div>
+<div style="flex:1;display:flex;justify-content:center"><div style="width:6px;height:7px;border-radius:3px;background:var(--neutral-300)"></div></div>
+<div style="flex:1;display:flex;justify-content:center"><div style="width:6px;height:5px;border-radius:3px;background:var(--neutral-300)"></div></div>
+<div style="flex:1;display:flex;justify-content:center"><div style="width:6px;height:9px;border-radius:3px;background:var(--neutral-300)"></div></div>
+<div style="flex:1;display:flex;justify-content:center"><div style="width:6px;height:6px;border-radius:3px;background:var(--neutral-300)"></div></div>
+<div style="flex:1;display:flex;justify-content:center"><div style="width:6px;height:10px;border-radius:3px;background:var(--neutral-300)"></div></div>
+<div style="flex:1;display:flex;justify-content:center"><div style="width:6px;height:14px;border-radius:3px;background:var(--neutral-400)"></div></div>
+<div style="flex:1;display:flex;justify-content:center"><div style="width:6px;height:20px;border-radius:3px;background:var(--lamp-600)"></div></div>
+<div style="flex:1;display:flex;justify-content:center"><div style="width:6px;height:32px;border-radius:3px;background:var(--lamp-500)"></div></div>
+<div style="flex:1;display:flex;justify-content:center"><div style="width:6px;height:54px;border-radius:3px;background:var(--lamp-400)"></div></div>
+<div style="flex:1;display:flex;justify-content:center"><div style="width:6px;height:58px;border-radius:3px;background:var(--lamp-400)"></div></div>
+<div style="flex:1;display:flex;justify-content:center"><div style="width:6px;height:27px;border-radius:3px;background:var(--lamp-500)"></div></div>
+<div style="flex:1;display:flex;justify-content:center"><div style="width:6px;height:9px;border-radius:3px;background:var(--neutral-300)"></div></div>
+</div>
+<div style="position:absolute;left:0;right:0;bottom:0;display:flex;font-family:var(--font-mono);font-size:9.5px;color:var(--text-tertiary)">
+<span style="flex:1;text-align:center">07</span><span style="flex:1"></span><span style="flex:1"></span><span style="flex:1;text-align:center">12</span><span style="flex:1"></span><span style="flex:1"></span><span style="flex:1;text-align:center">16</span><span style="flex:1"></span><span style="flex:1"></span><span style="flex:1;text-align:center">20</span><span style="flex:1"></span><span style="flex:1"></span><span style="flex:1;text-align:center">23</span><span style="flex:1"></span><span style="flex:1"></span>
+</div>
+</div>
+<div style="font-size:13px;line-height:20px;color:var(--text-secondary);margin-top:8px">You write after the house goes quiet — 9 of your last 11 pages.</div>
+<div style="margin-top:16px;display:flex;align-items:flex-start;gap:11px;padding:13px 15px;border-radius:var(--radius-lg);background:var(--surface-inverse)">
+<div style="width:28px;height:28px;flex:none;border-radius:var(--radius-sm);background:var(--color-brand);color:var(--text-on-accent);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:800;font-size:14px">W</div>
+<div style="flex:1"><div style="font-size:12.5px;font-weight:800;color:var(--neutral-50)">Windmill</div><div style="font-size:12.5px;line-height:18px;color:var(--neutral-100);margin-top:1px">The house is quiet. Three minutes?</div></div>
+<div style="font-family:var(--font-mono);font-size:10px;color:var(--neutral-400)">now</div>
+</div>
+</div>
+</div>
+</div>
+
+<div style="margin-top:88px;background:var(--neutral-900)">
+<div style="max-width:1280px;margin:0 auto;padding:80px 64px;display:flex;gap:56px;align-items:center">
+<div style="flex:1;min-width:0">
+<div style="font-size:12.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--accent-terracotta-200)">Private</div>
+<h2 style="font-family:var(--font-display);font-weight:700;font-size:38px;line-height:1.12;color:var(--neutral-25);margin:10px 0 14px;text-wrap:pretty">There is no share button. Anywhere.</h2>
+<p style="font-size:17px;line-height:1.6;color:var(--neutral-200);max-width:560px;margin:0">Not greyed out — absent. Journal has no concept of sharing a page, so there is nothing to misconfigure and nothing to leak. It's the one room in Windmill with no audience.</p>
+</div>
+<div style="width:420px;flex:none;display:flex;flex-direction:column;gap:14px">
+<div style="display:flex;gap:13px;align-items:flex-start;background:rgba(249,245,235,.06);border-radius:var(--radius-lg);padding:15px 17px">
+<div style="color:var(--accent-olive-200);display:flex;margin-top:2px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5l5 5 10-11"></path></svg></div>
+<div style="font-size:14.5px;line-height:1.5;color:var(--neutral-100)"><b style="color:#fff">Voice audio is discarded</b> as soon as the transcript exists. Only your text is kept.</div>
+</div>
+<div style="display:flex;gap:13px;align-items:flex-start;background:rgba(249,245,235,.06);border-radius:var(--radius-lg);padding:15px 17px">
+<div style="color:var(--accent-olive-200);display:flex;margin-top:2px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5l5 5 10-11"></path></svg></div>
+<div style="font-size:14.5px;line-height:1.5;color:var(--neutral-100)"><b style="color:#fff">Search runs on your device.</b> Your pages aren't shipped anywhere to be indexed.</div>
+</div>
+<div style="display:flex;gap:13px;align-items:flex-start;background:rgba(249,245,235,.06);border-radius:var(--radius-lg);padding:15px 17px">
+<div style="color:var(--accent-olive-200);display:flex;margin-top:2px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5l5 5 10-11"></path></svg></div>
+<div style="font-size:14.5px;line-height:1.5;color:var(--neutral-100)"><b style="color:#fff">Yours to take.</b> Export the whole journal as plain Markdown whenever you like.</div>
+</div>
+</div>
+</div>
+</div>
+
+<div style="max-width:1280px;margin:0 auto;padding:88px 64px 0">
+<div style="font-size:12.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--color-brand)">One Windmill</div>
+<h2 style="font-family:var(--font-display);font-weight:700;font-size:38px;line-height:1.12;color:var(--text-primary);margin:10px 0 12px">Journal is a room, not an app.</h2>
+<p style="font-size:17px;line-height:1.55;color:var(--text-secondary);max-width:560px;margin:0">One account, one subscription, three rooms. Use one of them or all three — they don't need each other, and Journal never feeds the others.</p>
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-top:40px">
+<a href="/#/" class="wmj-card-hover" style="display:block;background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:var(--radius-xl);padding:24px;box-shadow:var(--shadow-sm)">
+<div style="width:44px;height:44px;border-radius:var(--radius-lg);background:var(--color-brand-soft);display:flex;align-items:center;justify-content:center;color:var(--color-brand-hover);margin-bottom:14px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4v11"></path><path d="M18 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"></path><path d="M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"></path><path d="M18 10a9 9 0 0 1-9 8"></path></svg></div>
+<div style="font-family:var(--font-display);font-weight:700;font-size:19px;color:var(--text-primary)">Roadmap</div>
+<p style="font-size:15px;line-height:1.5;color:var(--text-secondary);margin:6px 0 0">Goals as a skill tree. Plan what you're going to do, and watch a branch light up as you do it.</p>
+</a>
+<div style="background:var(--surface-card);border:1.5px solid var(--color-brand);border-radius:var(--radius-xl);padding:24px;box-shadow:var(--shadow-md)">
+<div style="width:44px;height:44px;border-radius:var(--radius-lg);background:var(--color-brand);display:flex;align-items:center;justify-content:center;color:var(--text-on-accent);margin-bottom:14px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5A2.5 2.5 0 0 1 4 19.5z"></path><path d="M8 7.5h8"></path><path d="M8 11.5h8"></path><path d="M8 15.5h5"></path></svg></div>
+<div style="display:flex;align-items:center;gap:9px"><div style="font-family:var(--font-display);font-weight:700;font-size:19px;color:var(--text-primary)">Journal</div><div style="font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--color-brand);background:var(--color-brand-soft);padding:3px 7px;border-radius:5px">You're here</div></div>
+<p style="font-size:15px;line-height:1.5;color:var(--text-secondary);margin:6px 0 0">Notice what happened. Free-form daily writing, and the patterns you can only see afterwards.</p>
+</div>
+<a href="/#/" class="wmj-card-hover" style="display:block;background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:var(--radius-xl);padding:24px;box-shadow:var(--shadow-sm)">
+<div style="width:44px;height:44px;border-radius:var(--radius-lg);background:var(--color-brand-soft);display:flex;align-items:center;justify-content:center;color:var(--color-brand-hover);margin-bottom:14px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6.5 7v10"></path><path d="M17.5 7v10"></path><path d="M3.5 9.5v5"></path><path d="M20.5 9.5v5"></path><path d="M6.5 12h11"></path></svg></div>
+<div style="font-family:var(--font-display);font-weight:700;font-size:19px;color:var(--text-primary)">Gym</div>
+<p style="font-size:15px;line-height:1.5;color:var(--text-secondary);margin:6px 0 0">A training log that keeps up with you. Sets, weeks, and the progress you'd otherwise forget.</p>
+</a>
+</div>
+</div>
+
+<div id="pricing" style="max-width:1280px;margin:0 auto;padding:88px 64px 0">
+<div style="background:var(--color-brand-soft);border-radius:var(--radius-2xl);padding:56px 48px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center">
+<h2 style="font-family:var(--font-display);font-weight:700;font-size:38px;line-height:1.12;color:var(--text-primary);margin:0;max-width:620px;text-wrap:pretty">Write tonight. Tomorrow you'll have something above the cursor.</h2>
+<p style="font-size:17px;line-height:1.55;color:var(--text-secondary);max-width:520px;margin:8px 0 0">Free forever for the writing, the search and the whole canvas. One is $12 a month when you want echoes.</p>
+<div style="display:flex;gap:14px;margin-top:22px">
+<a class="btn btn--pri btn--lg" href="/#/journal">Start writing — free</a>
+<a class="btn btn--gho btn--lg" href="/pricing.html">See all plans</a>
+</div>
+<div style="font-size:13.5px;color:var(--text-tertiary);margin-top:14px">No card to start. Nothing you write is ever used to train anything.</div>
+</div>
+</div>
+
+<div style="max-width:1280px;margin:0 auto;padding:64px 64px 56px;margin-top:32px;border-top:1px solid var(--border-subtle);display:flex;gap:56px;align-items:flex-start">
+<div style="width:280px;flex:none">
+<div style="font-family:var(--font-display);font-weight:800;font-size:21px;color:var(--text-primary)">Windmill</div>
+<div style="font-size:13.5px;line-height:1.5;color:var(--text-tertiary);margin-top:8px">Three rooms for getting somewhere. One account.</div>
+</div>
+<div style="display:flex;gap:64px;flex:1">
+<div style="display:flex;flex-direction:column;gap:10px">
+<div style="font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--text-tertiary)">Products</div>
+<a href="/products/roadmap" style="font-size:14.5px;color:var(--text-secondary)">Roadmap</a>
+<a href="/#/journal" style="font-size:14.5px;color:var(--text-secondary)">Journal</a>
+<a href="/#/" style="font-size:14.5px;color:var(--text-secondary)">Gym</a>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px">
+<div style="font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--text-tertiary)">Company</div>
+<a href="/pricing.html" style="font-size:14.5px;color:var(--text-secondary)">Pricing</a>
+<a href="/changelog.html" style="font-size:14.5px;color:var(--text-secondary)">Changelog</a>
+<a href="/gallery" style="font-size:14.5px;color:var(--text-secondary)">Gallery</a>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px">
+<div style="font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--text-tertiary)">Legal</div>
+<a href="/privacy.html" style="font-size:14.5px;color:var(--text-secondary)">Privacy</a>
+<a href="/terms.html" style="font-size:14.5px;color:var(--text-secondary)">Terms</a>
+<a href="/refunds.html" style="font-size:14.5px;color:var(--text-secondary)">Refunds</a>
+</div>
+</div>
+<div style="font-size:13px;color:var(--text-tertiary);text-align:right;width:180px;flex:none">© 2026 Windmill</div>
+</div>
+
+</div>
+
+
+</body>
+</html>

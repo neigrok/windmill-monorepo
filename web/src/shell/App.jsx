@@ -2,6 +2,7 @@ import React, { Suspense, lazy } from 'react';
 import AuthProvider, { useAuth } from './auth/AuthProvider.jsx';
 import { verifyToken } from './auth/AuthClient.js';
 import Marketing from './marketing/Marketing.jsx';
+import { BrandLanding } from './marketing/BrandLanding.jsx';
 import { pendingTransactionId, openCheckout } from './billing/checkout.js';
 import { PRODUCTS, activeProduct } from './products.js';
 
@@ -110,8 +111,14 @@ function AppRoutes() {
     }
   }
 
-  // Root and every unclaimed hash (e.g. #/welcome) are the marketing landing.
-  return <Suspense fallback={<RouteFallback />}><Marketing /></Suspense>;
+  // Marketing lives under /products/<name> now: /products/roadmap is the roadmap landing (the
+  // interactive one, kept in the SPA); /products/journal is a static page Caddy serves before this
+  // ever runs. The bare root is the product-neutral brand front door. Both ship eagerly (imported at
+  // the top), so the indexed root paints in one download.
+  if (window.location.pathname.startsWith('/products/roadmap')) {
+    return <Suspense fallback={<RouteFallback />}><Marketing /></Suspense>;
+  }
+  return <BrandLanding />;
 }
 
 // Paddle's payment link lands back on our own origin carrying `?_ptxn=<transaction>` — the signal

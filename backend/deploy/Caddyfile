@@ -43,7 +43,10 @@
 	handle {
 		encode gzip zstd
 		root * /srv/windmill-web
-		try_files {path} /index.html
+		# {path} serves a real file (pricing.html); {path}/index.html serves a static landing directory
+		# (the per-product pages, /products/journal/); else falls to the hash-routed SPA — a path with no
+		# dir index (e.g. /products/roadmap) lands on the SPA, which renders that product's landing.
+		try_files {path} {path}/index.html /index.html
 		file_server
 	}
 }
