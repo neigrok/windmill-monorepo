@@ -1,5 +1,13 @@
 # Windmill — Design briefs · grounded against the Windmill Design System
 
+> **Gym briefs live elsewhere (2026-07-29).** The third product's eight briefs — context, the set
+> logger (G1), the scoped palette (G2), the log (G3), routines and the plan snapshot (G4), the PR
+> moment (G5), the connected log / MCP wedge (G6), and the strength tree (G7) — are in the
+> **"Gym workout plan"** Design project (`7f9591c1-ef04-475d-adea-3cdf2ce9eb3d`), under `briefs/`.
+> No gym canon existed to reconcile against, so every one is a creation brief rather than a
+> build-from-spec pointer. The plan behind them is `docs/PRODUCT_LOG.md` → "Gym — the third
+> product"; the inventory they were written from is `docs/lift-dossier.md`.
+
 The design system lives at claude.ai/design (project `a8e8995c…`, "Windmill Design
 System") — a full token/component/guideline canon with spec codes (X1–X7, F1–F17). This
 doc reconciles the growth plan (dogfood tree `t_9362d9bc883e0a1e`) against that canon:

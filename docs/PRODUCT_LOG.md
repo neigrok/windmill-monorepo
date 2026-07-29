@@ -5,6 +5,22 @@ The product strategy narrative. The **bet ledger lives in the dogfood tree**
 bet id IS the node id, and progress is tracked there — never here. This doc holds what a
 tree node can't: the thesis, the metric contract, the cuts, and the risks.
 
+Everything above the "Gym" heading is **roadmap's** narrative. Journal's design lives in
+`backend/products/journal/ARCHITECTURE.md`; gym's plan is the last section of this file.
+
+> **Status (2026-07-29): two corrections, and the third product gets a plan.**
+> **(a) Monetization is no longer parked — it shipped while this doc said otherwise.** The metric
+> contract below ("deliberately unmeasured this cycle") and the Cuts section ("all monetization —
+> parked behind `funnel-baseline` evidence") are **stale as of the Windmill One work**. One paid
+> tier now exists and gates three live surfaces through one predicate,
+> `Entitlements::hasWindmillOne` (`backend/platform/application/Entitlements.h`, committed in
+> `516ef23`): roadmap's tending, journal's echoes (`EchoSweep.cpp:69`), and journal's Talk
+> (`VoiceApi.cpp:26`). What is still true is the *restraint*: no price is open
+> (`PAID_PLANS_OPEN = false`), and no bet's success is defined by revenue this cycle. Products do
+> not define their own paid axis — they contribute surfaces to the one Windmill One funnel.
+> **(b) Gym has a plan** — see the final section. Written against a code-verified inventory of
+> **Lift**, a shipped standalone iOS training log; the inventory itself is `docs/lift-dossier.md`.
+
 > **Status (2026-07-27): brand restructure.** Windmill became a **monorepo brand of three
 > self-growth products** — `roadmap` (shipped), `notes` and `gym` (scaffolded) — on one shared
 > backend, presented as one superapp per surface (web · iOS · Android), behind one account and one
@@ -310,3 +326,285 @@ Everything below exists to make that line literally true.
 - `settings-seat` (prefs + pause page) · `progress-wire` (server-known progress) ·
   `quest-log` (the deep-link target) · `email-deliverability` (streams + auth) ·
   the shipped `email-reminder` template.
+
+---
+
+# Gym — the third product
+
+> **Status (2026-07-29): planned, nothing built.** `backend/products/gym/` is a README reserving an
+> insertion point — no CMake target, no schema section, no route. `web/src/products/gym/` renders
+> `ComingSoon` behind a working route table already registered third in `web/src/shell/products.js`.
+> This plan is written against a code-verified inventory of **Lift**, a shipped standalone
+> SwiftUI/SwiftData iOS training log with an LLM coach (~8.7k lines of Swift, 35 commits, ~57 tests
+> — one of them red for the last ten commits and nobody noticed). The inventory is
+> `docs/lift-dossier.md`; this section holds only what a dossier and a tree node can't.
+> **Lift is not a codebase we migrate. It is a spec written in Swift and a bug ledger.**
+
+## Who this is for
+
+A lifter who follows a written program — barbell-shaped, 3–5 sessions a week, the same movements for
+months, weight going up in small steps. Not a class-goer, not a runner, not a beginner looking for
+guidance. This is stated first because every cut below follows from it, and because leaving it
+unstated is how a training log becomes a fitness app.
+
+## What Lift established
+
+**Thesis: one value at a time, not a spreadsheet.** Every competitor shows a grid you fill in. Lift
+shows one exercise, one weight, one rep count, one button, and spends all its cleverness making
+those need as few taps as possible. Its best code is the weight ladder
+(`lift:Lift/Shared/Formatters.swift:36-60`): ±1/±5 under 20 kg, ±2/±5 under 50, ±5/±10 above, with
+down-steps evaluated at `weight − 0.01` so stepping down from exactly 20 kg lands on 19, not 18. Its
+second best is the coach's write path — the model cannot mutate anything; it emits a typed diff, the
+agent suspends on a continuation, and the user's tap is fed back as the tool result
+(`lift:Lift/Services/Chat/ChatService.swift:156-187`).
+
+**Where it stopped, structurally:**
+
+1. **Exercise identity is a free-text string, everywhere.** Rename a lift and its history forks.
+   Put the same lift twice in one template and both collapse into one set counter
+   (`uniquingKeysWith`, `lift:Lift/Services/ActiveWorkoutManager.swift:114-117`). The coach can only
+   address exercises by exact string, so "bench press" returns nothing.
+2. **The plan and the log are the same object.** Sessions store `templateId` plus a copied name,
+   never a snapshot. The app can tell you what you did and never what you were supposed to do, and
+   editing a template mid-workout permanently rewrites the program.
+3. **No prefill from last week.** Weights come from a static `startWeight` the user edits by hand.
+   Progressive overload — the entire point of a training log — is unautomated.
+4. **The paid tier never transacted.** `PaidLLMBackend.send` is an unconditional
+   `throw "Lift Intelligence is coming soon"` (`lift:Lift/Services/Chat/PaidLLMBackend.swift:14`)
+   behind a complete StoreKit funnel: $4.99/mo, a 1-week trial, entitlement listening, restore.
+   Worse, `isAvailable` is hardcoded `true` and `ChatService.send()` auto-adopts the backend for any
+   subscriber, so the lock UI never fires and a **paying** user gets an error bubble instead of a
+   gate. **Zero purchases were ever possible: there is no pricing evidence, no conversion data, and
+   no willingness-to-pay signal of any kind.** What Lift produced is a *placement hypothesis* — gate
+   at the post-workout peak, never at the log.
+
+Everything else is device-local: SwiftData, Keychain, `@AppStorage`, chat history as JSON files. No
+account, no sync, no export, no backup. A corrupt store is "recovered" by deleting the user's entire
+training history and retrying (`lift:Lift/LiftApp.swift:18-32`).
+
+## What gym gets free from the platform
+
+Gym writes none of this; it is load-bearing for two products already. Accounts, magic-link sessions
+(90 days), Google sign-in, device list and revoke, soft close with a 30-day revival
+(`backend/platform/application/AuthService.h`). The trust boundary — `callerUserOf`
+(`backend/platform/adapters/http/Caller.h`) — is every handler's first two lines. Billing: Paddle
+webhooks, checkout and the subscription mirror, asked exactly one question,
+`Entitlements::hasWindmillOne` (`backend/platform/application/Entitlements.h`, `516ef23`), the same
+predicate journal's Talk and echoes read. **This is Lift's missing `throw`, already written and
+already tested.** The settings surface composes each product's registered sections off the registry
+(`web/src/shell/settings/SettingsPage.jsx` flatMaps `settingsSections.main` and `.data`), so gym
+contributes a section and rebuilds nothing. Email is one `ResendClient` under a product-owned port
+(journal's `NudgeMailSender` + `ResendNudgeSender` is the two-file template). Plus telemetry, the
+error ledger, CORS, the rate limiter, `pgThreadConnection`, the 18-component design system, and a
+plug-in seam that is one `gym::registerRoutes(app, GymDeps&)` call.
+
+## Thesis
+
+**The log is free. The *connected* log is Windmill One.**
+
+Every competitor sells "tracker free, AI coach paid" — Hevy, Strong, Fitbod, and every wrapper
+shipped since 2023. Building a fifth in-app chatbot is not a product bet, it is a subscription to
+someone else's tokens. Windmill has something none of them do and it is already shipped: an OAuth 2.1
+MCP server with a 27-tool endpoint at `windmill.works/mcp`. This doc already ruled on this once, for
+roadmap: the in-app LLM generator was **retired, not parked**, because "the shipped MCP server is the
+agent path." Gym inherits that ruling rather than quietly reversing it.
+
+So gym's coach is not a chat tab. **Your training log is an endpoint your own Claude or ChatGPT can
+read** — it knows your last twelve weeks of squats, it drafts next block's progression, and the
+changes arrive as a typed diff you tap to apply. We build no SSE parser, no tool loop, no streaming,
+no proposal chrome, and we pay for no tokens. The user brings their own agent. Lift's single most
+portable idea — the model proposes, the human applies — moves from an in-app chat to **MCP writes**,
+where it matters more, because the thing on the other end is not ours.
+
+1. **The log must survive the gym, and the phone.** Lift spent more code protecting data than
+   presenting it and still ships a path that deletes a user's history to stay alive. A training log
+   is a multi-year artifact nobody can regenerate. Server-as-truth is not a feature of gym; it is the
+   reason gym exists here.
+2. **Identity before analytics.** Every structural bug in Lift traces to one line: an exercise is a
+   display string. Stable ids are a schema decision taken in the first migration — never a screen.
+3. **One tap is the product.** The ladder, sticky carry-forward, last-time prefill. The craft is the
+   number being right before you touch it.
+4. **The model proposes; the human applies.** Nothing an agent suggests reaches a program without a
+   typed diff and a tap — the same contract roadmap's tending and journal's echoes hold.
+
+**Gym's version of "the craft is the moat"** is the strength graph. Roadmap is a shipped RPG skill
+tree; strength progression *is* a prerequisite graph — bodyweight dip unlocks weighted dip unlocks
+muscle-up; a 100 kg squat unlocks the next block. A strength tree that lights up from sets you
+actually logged exists nowhere. The rule that keeps it legal: **gym publishes, gym never imports.**
+Gym emits an achievement (weight X for reps Y on exercise id Z) or exports a paste-grammar tree that
+roadmap's already-shipped `paste-import` plants. No product-to-product dependency; the coupling is
+the account and the user's own hand.
+
+Roadmap is the plan you set, journal is the day you noticed, gym is the rep you did.
+
+## The plan
+
+Ordered for shipping. Each bet is a node in `t_9362d9bc883e0a1e`; the bet id is the node id.
+
+**Phase 0 — the seam.** Gym has zero backend. This is the honest cost of the first screen.
+
+| bet | what + why | size | deps |
+|---|---|---|---|
+| `gym-architecture` | `backend/products/gym/ARCHITECTURE.md` before code, on journal's template: what gym owns, what it deliberately does not, the model as annotated SQL, the HTTP table, the wiring, the open decisions. Settles the four things that cost a migration later: exercise ids, session snapshots, set kinds, canonical units. Also settles namespacing — every gym type in `namespace wm::gym`, so `gym::Set` reads right at a call site and bare `Set` reads right inside (journal pays a prefix tax we decline to inherit) | S | — |
+| `gym-schema` | One idempotent `-- ── Gym ──` section in `backend/db/schema.sql`: `gym_exercises` (stable ids, **seeded with ~60 movements in the migration**), `gym_routines`, `gym_sessions` (with a plan snapshot), `gym_sets` (canonical kg, reps, kind, rpe, note, `completed_at`, **client idempotency key**). Metadata columns land now though their UI is phase 2 — Lift's lesson is that this is a schema decision, not a feature decision. All date/time work stays in SQL; no C++ calendar code | S | `gym-architecture` |
+| `gym-backend-seam` | `windmill_gym` in `backend/CMakeLists.txt` (core always; adapters under the `Drogon_FOUND AND libpqxx_FOUND` guard), `domain/ · ports/ · application/ · adapters/ · routes.{h,cpp}`, `gym::registerRoutes` called from `platform/infra/main.cpp`, tests appended to the **existing** executables (a new binary means editing `backend/Dockerfile`'s target list) | M | `gym-schema` |
+| `gym-web-seam` | Replace the `ComingSoon` scaffold: sub-route parsing, `gymApi.js` owning the whole backend conversation (`credentials: 'include'`, a typed `GymError`), `gym.css` scoped to `.gym-root` | S | `gym-backend-seam` |
+| `pwa-shell` | **Platform, and overdue.** `web/public/site.webmanifest` declares `display: standalone` and there is no service worker anywhere in `web/` — an installed Windmill in a basement with no signal renders nothing. App-shell cache + install prompt. Gym is the product that makes this non-optional; all three benefit | M | — |
+
+**Phase 1 — a training log a person uses for a week.** The single feature without which none of this
+is a training log: **a durable set write bound to an account.** Everything else is optional on top of
+that row. Deliberately inverts Lift: **ad-hoc first, routines second** — Lift's "template is the only
+entry path" is why you cannot add face pulls without permanently rewriting your program.
+
+| bet | what + why | size | deps |
+|---|---|---|---|
+| `set-logger` | The product. Pick an exercise, log weight × reps, done — one value at a time on the web. The ladder, sticky carry-forward, tap-to-type (comma parses as decimal), negative weight for band-assisted work, extra sets past target, the completed-set list with wall-clock timestamps. Local-first write with a background flush and a **client-generated idempotency key per set** — a set log is an append-only event stream from one device at a time; there is nothing to converge, so no HLC and no lattice. Workout mode: Wake Lock, no chrome | L | phase 0 |
+| `lift-import` | A one-shot JSON export from the Swift app, imported server-side onto seeded catalog ids. Without it gym launches empty: prefill has nothing to prefill from, charts have one point, and no PR can fire during the entire dogfood period. Small, throwaway, and it turns months of real training into the corpus every later bet is tested against | S | `gym-schema` |
+| `last-time-prefill` | "Last time: 82.5 × 8, 82.5 × 8, 80 × 7" above the input, weight pre-dialled from it. Lift's single biggest missing mechanism — it never once reads last week to seed today | S | `set-logger`, `lift-import` |
+| `training-log` | Session list + detail: per-exercise grouping in first-performed order, per-set rows. **Read-only.** The fix-it path is phase 2 | S | `set-logger` |
+
+Cut from phase 1 against the first draft, deliberately: `exercise-catalog` as a screen (the identity
+decision is a `gym-schema` column and a seeded list; search/create/merge follows the logger — a
+taxonomy screen with nothing to log into is not a first artifact), `unit-preference` (canonical kg at
+rest is already a schema decision; a second untested lb ladder doubles the surface of the one thing
+that must be perfect, and the named user is not American), and `session-resume` as a bet (it becomes
+a domain rule: an open session with no set in N hours auto-closes at its last set's timestamp —
+Lift's three-way recovery UX existed to survive a device-local store that server-as-truth deletes).
+
+**Phase 2 — the fix-it path, the plan, and the public face.**
+
+| bet | what + why | size | deps |
+|---|---|---|---|
+| `set-kinds` | Warmup / working / drop / failure, RPE, per-set note. Ships **before** anything aggregates, because a warmup must not count toward volume and because assisted work logs negative weight — `volume = weight × reps` makes that −200 and silently subtracts from every total. The volume contribution of a set kind is a domain decision, not a formatter bug | S | `set-logger` |
+| `log-editing` | Edit a set, delete with renumbering so history shows no hole, add a missed set cloned from the last. Edits go through a draft and commit on save — Lift binds text fields straight to the persisted model, so Done is decorative and there is no Cancel | S | `training-log` |
+| `rest-timer` | A rest target with a countdown and a Notification-API alert, reset on exercise switch. Lift's counts up forever, has no target, no alert, and never resets | S | `set-logger` |
+| `routines` | Named ordered exercise lists to start a session from, duplicate, reorder. The session **snapshots the plan** at start; mid-session changes are session-scoped with an optional "save to routine". For the named user, the prefill that matters is what the program says today, not what last week said | M | `log-editing` |
+| `pr-line` | e1RM (Epley, `weight × (1 + reps/30)` — already in Lift's coach tool output and never once shown to a user) plus PR detection and a "vs last time" line on the finish screen. The words "PR", "streak" and "record" appear nowhere in Lift's codebase | S | `set-kinds` |
+| `gym-mcp` | **The wedge.** Gym's tools on `windmill.works/mcp`: read the log, read progression, propose a routine change as a typed diff the user applies. Needs a platform bet first — `McpServer` binds exactly one `ToolHost` (`McpServer.h:39`) and `main.cpp` binds roadmap's — and the right shape is a **scoped** composite, where the client's grant selects which products' tools it sees, not a flat union that regresses every roadmap user's `tools/list` right after we fought to shrink it | M | platform scoped ToolHost |
+| `gym-landing` | Flip the Gym card in `BrandLanding.jsx` from `live: false` and add the static product page on journal's template. Not before the product behind it is true | S | `pr-line` |
+| `gym-export` | A `GymDataSection` registered through `gymRoutes.settingsSections.data` — CSV of every set. `SettingsPage.jsx` already composes product sections, so this needs zero platform work. A multi-year artifact with no way out has no trust argument | S | `training-log` |
+
+**Phase 3 — behind a measured gate.** `progress-charts` (one chart: per-exercise e1RM + volume, no
+scrub — charts serve week four, and the craft in Lift's scrub/annotation/tooltip work is a later
+polish bet if retention ever justifies it) · `plan-vs-actual` (adherence against the snapshot;
+impossible in Lift by construction) · `strength-tree` (the brand bet: gym publishes achievements,
+roadmap plants them — designed once, never a product import) · `gym-nudge` ("you usually train
+Tuesday") · `gym-native-shell` (Live Activity, Dynamic Island, App Intents, haptics — parked until a
+native surface exists, named so the single-value model stays a constraint rather than an accident).
+
+**Two platform bets gym depends on and does not own.** Both are promotions, not copies — the second
+consumer earns the abstraction and we are at the third:
+
+- **A shared sweep primitive.** Roadmap's reminder engine and journal's `NudgeSweep` are already two
+  implementations of one skeleton (heartbeat, decide/claim/send, PK mutex, allowlist, suppression).
+  The second build found 13 defects. `gym-nudge` must not be a third copy: the sequence belongs on a
+  platform base with a product-supplied `decide()` and `render()`, journal refactored onto it as the
+  proving move.
+- **`PAID_PLANS_OPEN` must leave roadmap.** It lives at
+  `web/src/products/roadmap/settings/PlanSection.jsx:17` — a brand-wide gate inside one product's
+  settings folder. Gym respecting it means either importing from roadmap (the hard rule violation) or
+  duplicating the constant (drift the day someone flips one). It moves to `web/src/shell/billing/`
+  beside `EntitlementsProvider.jsx`, with roadmap registering the shell's section. **This blocks any
+  gym monetization bet.**
+
+## Metric contract
+
+A training log's activation is not a roadmap's. Roadmap activates on planting something; gym
+activates on **coming back**. One logged session is a trial, not a habit.
+
+- **The dogfood gate (phases 0–2, the only one that can actually run).** Every population metric
+  below is unmeasurable at N≈1 for months, and the working agreement is dogfood-driven. The gate:
+  **the author logs 8 consecutive training sessions on gym without opening Lift or a spreadsheet, and
+  the prefill is right on set one in at least 6 of the 8.** If that fails, no amount of charts saves it.
+- **Activation** (post-`gym-landing`) — an activated lifter logs **≥2 sessions of ≥5 sets within 7
+  days of their first set**. Instrumented on `web/src/telemetry/beacon.js` from the first
+  `set-logger` commit, never retrofitted.
+- **The prefill number** — share of logged sets where the weight was accepted **unchanged, or changed
+  by exactly one ladder step in the progression direction**. The naive version (unchanged only) is
+  backwards: a lifter running linear progression *should* add 2.5 kg every session, so a healthy
+  lifter would score near zero and a stalled one would score 100%. What we are measuring is "the
+  number was right, or one tap away."
+- **Retention** — W1 and W4 return, plus **sessions per active week** (a lifter trains 3–5× a week or
+  the product isn't working).
+- **Correction rate** — share of sessions edited after finishing. Meaningful only from `log-editing`;
+  before that it is structurally zero and will look perfect for the wrong reason.
+- **Monetization — no gym-specific axis.** Gym contributes surfaces to the one Windmill One funnel
+  and sets no price. What gets measured is MCP connect → first agent read → retained connection. No
+  gym bet's success is defined by revenue this cycle.
+
+Numeric targets get set one week after `set-logger` and the beacon produce real data.
+
+**Gym's kill rule.** If the dogfood gate fails twice — the author will not use it for eight sessions
+without falling back — gym is not the third product, and the work stops at phase 2 with the log as a
+personal tool. Every phase-3 bet names its own kill rule when it starts.
+
+## Cut, retired, parked
+
+- **An in-app coach chat — retired, not parked.** This is roadmap's `llm-generator` ruling applied to
+  gym: the MCP server is the agent path. No SSE parser, no tool loop, no proposal chrome, no token
+  bill, and no third agentic loop in a monorepo that already has two
+  (`roadmap/adapters/llm/AnthropicAgent`, journal's). What survives from Lift is the *contract* —
+  propose, don't mutate — applied to MCP writes.
+- **BYO API keys, the four-provider picker, on-device inference — cut permanently.** They exist in
+  Lift only because the hosted tier didn't. The abstraction spanned a ~4k on-device window and a 200k
+  hosted one; without an in-app coach the reason is gone. (Every model id Lift ships is fabricated
+  and 404s.)
+- **StoreKit, IAP, trial mechanics — cut.** Paddle is the rail.
+- **Supersets, circuits, EMOM/AMRAP — cut from v1.** Grouping is a modelling decision worth making
+  once, on evidence.
+- **Cardio, distance, duration, bodyweight-only movements — cut.** Strictly weight × reps. A plank
+  logs as 0 kg and contributes nothing; a second measurement axis is a different product.
+- **Body weight, measurements, progress photos — parked** until the set logger is boring.
+- **Muscle-group volume — cut, and its taxonomy refused.** Lift's is lopsided (one `legs` bucket
+  against biceps/triceps/forearms, so quads vs hamstrings is unrepresentable), double-counts by
+  construction (a bench set credits its full volume to chest *and* triceps, pinned by its own test),
+  is all-time only, and reads attribution from *live* templates so deleting a program erases history's
+  tags. If it returns, tags live on the catalog, weighted primary/secondary, windowed.
+- **Streaks — cut**, exactly as roadmap cut them. `pr-line` is the celebration that earns its place.
+- **Plate calculator, bar weight, warm-up generator, microplates — cut.** Revisit on the correction
+  rate.
+- **Ambient sound — cut**, with two functional exceptions that are not decoration: the set-saved
+  confirmation and the rest-done alert.
+- **Social, leaderboards, human coaching — cut.** Same reason roadmap deferred the gallery.
+- **Dark chrome — cut at the brand level.** If gym wants a night look it is journal's shape: scoped
+  inside `.gym-root`, from canon, never touching the global theme.
+- **Message-count context truncation — refused.** Lift's last-50-*messages* window can split a
+  `tool_use` from its `tool_result`. Moot without an in-app coach; recorded so it is never rebuilt.
+- **One-gesture destruction — refused as a pattern.** Lift will delete an entire training program on
+  a full swipe with no confirm and no undo.
+
+## Risks carried
+
+- **Gym is a README and a placeholder.** No `windmill_gym` target, no `gym_*` table, no route. Every
+  phase-1 bet stacks on phase 0; if phase 0 slips, phase 1 has not started.
+- **Exercise identity is the bug we must not inherit.** Root of Lift's mid-workout crash, its
+  duplicate-name collapse, its rename-forks-history behaviour, and its coach's exact-string failures.
+  It costs one column now and a migration across every set ever logged later.
+- **Negative weight poisons volume.** −20 kg assisted × 10 reps is −200 in `weight × reps`, silently
+  subtracting from totals, charts and trends. Assigned explicitly to `set-kinds`.
+- **An approved proposal is one transaction.** Lift's `ProposalService.apply` is name-keyed and
+  sequential, and one commit fixed rows that were assigned to a relationship but never inserted — an
+  approved change could silently not persist. Its mock could not reproduce it because the fake didn't
+  model the persistence boundary. Gym's fakes apply the **same rule** as the SQL, the way
+  `backend/test/products/journal/Fakes.h` does.
+- **Session creation must be idempotent.** A double-tapped Start in Lift minted a phantom session
+  that polluted history and analytics until a `guard !isActive` was added. `POST /v1/gym/sessions`
+  cannot mint a second session on a retry — which is also why every set write carries a client key.
+- **A green suite is not evidence.** Lift's has been red for ~10 commits and nobody noticed: a test
+  still asserts a clamp deliberately deleted in `0730f4b`. Its riskiest layers have zero tests.
+- **Client-side cache invalidation.** Lift keys chart caches on `sessions.count`, so editing a past
+  session leaves every chart wrong. Invalidate on a data version, never a collection length.
+- **UI hazards banked from Lift's dogfood wave.** Reserve space for optional chrome rather than
+  conditionally mounting it (a target capsule at `.opacity(0/1)` still jumps the header); scrub
+  selection is sticky with a separate dismiss gesture; a floating primary action needs bottom scroll
+  padding; never call a trend computation from inside a view body on the screen users land on.
+- **Silent failure is Lift's house style and must not be ours.** Intents no-op when a singleton is
+  nil, Live Activity failures go to `print`, save failures go to OSLog, a template-less resume deletes
+  logged sets without a word. Lift filed `structured-error-handling` and never built it. Gym's
+  user-visible error surface is defined in `gym-architecture`, before the first handler.
+- **The magic-link return path lands on roadmap.** `activeProduct('#/auth')` matches no `switchHash`
+  and falls back to `PRODUCTS[0]`, so a lifter signing in from gym lands on the skill tree.
+- **CI gotchas that bite a training log specifically.** `pqxx::result[i]` is `row_ref` on macOS and
+  `row` on CI Linux — every mapper is `template <typename Row>`. **All date/time work stays in
+  Postgres**; gym is dates everywhere. jsoncpp writes an infinity no parser reads back. A green local
+  build is not green CI: watch `gh run list` after every backend push, then probe prod.
