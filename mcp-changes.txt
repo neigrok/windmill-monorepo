@@ -186,3 +186,5 @@ the code:
   3. The duplicate-hue import was reproduced by accident while seeding an unrelated
      end-to-end tree — the seeded legend came back with two kinds sharing gold. A live
      stack tells you things a test suite agrees with you about.
+
+2026-07-31 · set_progress arg is "status" but the sibling vocabulary primes "state" (get_tree nodes carry status too, but error-driven discovery cost a round trip). Either accept "state" as an alias or name it in the tool description's first line. (find_nodes' error already does this well — it names the exact missing arg and suggests list_trees.)
