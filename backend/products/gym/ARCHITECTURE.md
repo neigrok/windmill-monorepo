@@ -779,3 +779,114 @@ the local stack → push → watch CI → probe prod).
 
 The order is deliberate: the durable write is the product; everything else is optional on top
 of that row.
+
+**§11 reassigns the surfaces and adds four bets to phase 1–2**: `gym-live-mirror` and
+`gym-backfill` on the web side, `ladder-golden` in `packages/api-contract/`, and the native
+`gym-ios-logger` behind the platform `apple-identity` bet (`backend/AUTH.md`, *Identities*).
+
+---
+
+## 11. Two surfaces — the phone writes, the web reads
+
+The capture device is the **phone app**; the web app is everything else. This is a decision about
+where the product puts a control, not a new rule on the wire.
+
+**The server contract does not change, deliberately.** A surface gate — the backend refusing a set
+that does not carry a device claim — was considered and refused on three counts: `tools/lift-import`
+writes sets over this same public API, `gym-mcp` will write over it too, and making the durable
+write conditional on who is asking inverts §0, where server-as-truth is the reason gym exists here
+at all. The stance lives in the surfaces. Every route stays owner-scoped and surface-blind.
+
+### 11.1 Who owns what
+
+| | Phone (native iOS) | Web |
+|---|---|---|
+| owns | the **open** session | everything retrospective and prospective |
+| | workout mode, keypad, ladder, sticky carry-forward, rest timer, wake lock, the flush queue | the log, progression, routines editor, export, MCP connect, settings, the strength-tree publish, backfill |
+| writes | `gym_sessions` · `gym_sets` | `gym_routines` · `gym_routine_entries`, and past sessions only (§11.4) |
+
+The axis is real rather than arbitrary: everything on the left is **live-state** work needing a
+device that is with you, awake and offline-capable; everything on the right is keyboard work over
+a log that has stopped moving. The schema already splits this way — the plan is relational and
+editable, the session's copy of it is frozen (§2.4, §2.5).
+
+### 11.2 The web shows the mirror, never an absence
+
+Where the logger used to be, web renders **the live session as it happens** — not a disabled Start
+button, not an apology:
+
+```
+Training now · Upper A · 34:12
+Bench press — set 3 · 82.5 × 8 · resting 1:47
+     82.5 × 8   ·   82.5 × 8   ·   60 × 10 (warmup)
+```
+
+On a laptop at a desk that is worth having on its own, and it makes the phone's ownership legible
+without a word of copy. With no session open, the slot reads *"start a workout on your phone"* and
+carries the install door. The lifter never meets a greyed-out control — the one shape that would
+make this feel like a restriction rather than a division of labour.
+
+### 11.3 Sync — four flows, and the new one is not a channel
+
+1. **Phone → server (the write).** Unchanged from §3.3 and already correct in
+   `web/src/products/gym/logger/flushQueue.js`: client-minted `set_<hex>`, offline queue, replay in
+   any order any number of times, `ON CONFLICT DO NOTHING`, flush before finish. The Swift queue is
+   a re-implementation of this contract, and it must branch the three 409 codes the same way —
+   `set-id-taken` re-mints, `session-id-taken` re-mints, `session-finished` drops (§6).
+2. **Server → web (freshness). No new endpoint.** Web boots on the log read — which is also what
+   lazily settles a stale open session (§3.2) — finds the open session, then polls
+   `GET /v1/gym/sessions/{id}`, which already answers `{session, sets}` owner-scoped. Five seconds
+   while the tab is visible, stopped when hidden, refetched on `visibilitychange`. The only backend
+   work is an `ETag` over `(setCount, last completedAt, finishedAt)` so the steady state is a 304.
+
+   **No socket, and that is a decision.** A set lands once every 60–120 seconds. Roadmap already
+   runs a CRDT room cluster for a value that changes per keystroke; a second live transport for one
+   that changes once a minute is unearned, and the polling version is correct as written where a
+   socket only becomes correct after its reconnect-and-replay path does.
+3. **Device ↔ device handoff. Already free, and this is why §2.2 was shaped that way.**
+   `gym_sessions_one_open` plus `start`'s deliberately *untargeted* `ON CONFLICT DO NOTHING` means
+   a second device pressing Start **joins** the open session instead of minting a phantom. A dead
+   phone and a borrowed iPad continue the same workout, no code. The honest gap: carry-forward and
+   the rest countdown are device-local by design, so a handoff resumes the log and not the timer —
+   which the receiving device should say rather than fake.
+4. **Web → server (backfill).** §11.4.
+
+### 11.4 Backfill — the door that keeps the promise
+
+A lifter with a dead phone must not lose a session; gym exists because a training log is a
+multi-year artifact nobody can regenerate. So web keeps one write door, and it is deliberately a
+different door with different vocabulary: **"Add a past workout"**, never *Start*. It mints a
+session with `startedAt` in the past, finishes it in the same flow, and appends sets with past
+`completedAt`. Same routes, no new contract, and no live session ever opens on a laptop.
+
+**Backfill is refused while a session is open**, and this would otherwise ship as a data bug: the
+partial unique index means the backfill's `start` would not fail, it would silently **join** the
+live workout and file yesterday's sets into today's. The refusal is the client's, before the
+request, with the reason said plainly — *"your phone is mid-workout"* — not a 409 the user is left
+to interpret.
+
+### 11.5 Two rules that fall out sharp
+
+**Web never Finishes a live session.** §3.3's finish boundary is that a set which never landed may
+not land after the close, and only the device holding the queue knows everything landed — that is
+the whole content of *flush before you finish*. A Finish pressed on a laptop over a phone holding
+three unflushed sets refuses those sets forever. The fallback is better than the feature anyway:
+auto-close fires at four hours and stamps the end at the **last set** (§3.2), which is truer than a
+manual finish three hours late. Web offers no button and says the session closes itself.
+
+**The ladder must not become copy #2.** §0 cut the ladder to exactly one module because Lift pasted
+it into three targets and let them drift — and a native Swift logger writes copy #2 on its first
+day. The fix is not shared code across a language boundary but shared *truth*: the step table and
+the `weight − 0.01` down-step evaluation become a golden fixture in `packages/api-contract/`, which
+already exists to hold exactly this (wire types plus the genesis-legend golden), and both the JS
+module and the Swift one run it as a test. Drift then fails CI instead of shipping a wrong number
+into the product's single highest-value pixel.
+
+### 11.6 What this costs, honestly
+
+The web logger is written and shipped; §11 demotes it to the mirror plus backfill, which is a
+subtraction. The cost is on the other side: until `gym-ios-logger` exists there is **no capture
+surface at all**, so the phase-1 dogfood gate (8 consecutive real sessions) cannot run, and
+`gym-landing` stays down that much longer. `apple-identity` (`backend/AUTH.md`) is a hard
+prerequisite — shipping Sign in with Apple without `user_identities` forks accounts on the first
+lifter who taps *Hide My Email*, and the fork is unrecoverable once both halves hold sets.

@@ -60,6 +60,131 @@ unknown all collapse to one screen — the remedy is identical and nothing leaks
 ### `POST /v1/auth/logout`
 Drops the session, clears the cookie, `204`. Local copies stay — no confirmation.
 
+## Identities — one account, many doors
+
+The Windmill account is an **email address**: one `users` row, `email citext unique`, and every
+door resolves to it. Magic link is the founding door. Google sign-in was the second, and it holds
+**no provider state at all** — `AuthService::completeGoogle` resolves a Google-verified email the
+same way a link does (found, or created, or revived within its close grace), so `sam@gmail.com`
+through either door is one account. The native app adds Sign in with Apple as the third, and the
+rule that kept the first two free of provider state does not survive it.
+
+### What Apple breaks
+
+Google always returns the real address, so "resolve the verified email" *is* a stable identity.
+Apple gives three reasons it isn't:
+
+- **Hide My Email** returns `<opaque>@privaterelay.appleid.com` — verified, stable for this app,
+  and the human's real address is unknowable to us. Resolved by email, it creates a **second
+  account**, and a lifter's training log then lives half on the phone and half on the web with no
+  path between them. That silent fork is the failure this section exists to prevent.
+- **The name and the real email arrive exactly once**, on the very first authorization for that
+  Apple ID. Every later sign-in carries only `sub`. A first response dropped on the floor loses
+  the name forever — there is no second chance and no endpoint to ask.
+- So the durable key is the **subject**, never the address.
+
+### `user_identities` — the key that outlives an address
+
+```sql
+-- The provider-issued subject IS the identity; the email is only ever a hint, consulted once, to
+-- find an account that already exists. (provider, subject) is the PK, so a provider that changes
+-- the address behind an account — an Apple relay rotated, a Google primary email moved — still
+-- resolves to the same user. Google is backfilled into this table at deploy rather than left on
+-- the email rule: today a Google user who changes their primary address forks their account, and
+-- that is the same bug Apple would ship on day one.
+create table if not exists user_identities (
+  provider      text not null check (provider in ('google','apple')),
+  subject       text not null,
+  user_id       uuid not null references users(id) on delete cascade,
+  email_at_link text not null default '',   -- what the provider said when we linked; never re-read
+  created_at    timestamptz not null default now(),
+  primary key (provider, subject)
+);
+create index if not exists user_identities_user on user_identities (user_id);
+```
+
+### The resolution ladder
+
+One order, both providers, read top to bottom. The first step that answers, answers.
+
+1. **`(provider, subject)` is known** → that user, and the email is never consulted. A relay
+   address that rotated, a Google address that changed, a display name edited since — none of them
+   can move an account once the subject is bound.
+2. **Unknown subject, and the address is verified and real** (anything not
+   `@privaterelay.appleid.com`) → resolve by email exactly as a magic link does, then insert the
+   identity row. This is the whole happy path: someone who signed up on the web and taps *Continue
+   with Apple* without hiding lands on their own account, with no prompt and nothing to explain.
+3. **Unknown subject, relay address** → create a fresh account on the relay address (Apple forwards
+   it, so the magic link still reaches the human) and insert the identity. Then offer the link door
+   below. There is no honest way to tell *which* existing account this is, so we do not guess.
+
+`email_verified == false` never reaches step 2. An unverified provider address that resolved onto
+an existing account is an account takeover by anyone who can type an address — the rule
+`GoogleOAuthClient` already states in its header, extended to every provider.
+
+**A provider sign-in performed while already signed in is an ATTACH, never a resolve.** It binds
+`(provider, subject)` to the caller's current account and returns that account unchanged. This is
+the *Connect Apple* row in settings, and it is why the app must offer *Continue with Apple* as a
+sign-in only while signed out — signing in by link and then tapping Apple must not be able to fork
+the account the user is looking at.
+
+### The link door — and why a merge is refused
+
+Step 3 leaves a real human holding a brand-new empty account while their training log sits under
+another. The remedy is one dismissible line on the app's home — *"Already use Windmill on the web?
+Link this account."* — which runs the ordinary magic-link flow **inside** the app and posts the
+token to `POST /v1/auth/link` while still holding the new account's session.
+
+The server resolves the token to user A and compares it with the caller B:
+
+| Case | Outcome |
+|---|---|
+| A == B | no-op, `200` — the link was already the same account |
+| A != B and **B has no data** | every `user_identities` row of B moves to A, B is deleted, a session for A is returned |
+| A != B and B has data | `409 account-not-empty` — *"this phone already has training logged on it"* |
+
+**Merge only while provably empty, and never write a general account merger.** Two accounts each
+holding trees, pages, sets, a Paddle subscription and their own OAuth grants is a swamp with no
+correct answer — two live subscriptions alone have no defensible resolution — and it would cost
+more than the product it is protecting. Emptiness is decidable, cheap, and true in the only case
+that actually occurs: an account minted minutes ago by a relay sign-in.
+
+Deciding it is the one place this touches products, and it obeys the `STRUCTURE.md` rule the same
+way `SignupFork` does — through a platform port each product implements:
+
+```cpp
+// platform/ports/AccountFootprint.h
+struct AccountFootprint {
+  virtual ~AccountFootprint() = default;
+  virtual bool anyData(const UserId&) = 0;   // one count, scoped to the caller
+};
+```
+
+`main.cpp` composes the vector — roadmap's trees, journal's pages, gym's sets, and platform's own
+(a subscription, an MCP key, an OAuth grant) — and `AuthService` refuses the link the moment any of
+them says yes. Platform still names no product; a fourth product adds one implementation and one
+line, and forgetting it fails **safe** in the wrong direction — a missing footprint would let a
+merge delete data — so a product that registers no footprint is a composition error the server
+refuses to start on, not a default.
+
+### Native surface notes
+
+- **The session transport already exists.** `Caller.cpp` falls back to
+  `Authorization: Bearer <session-secret>` when the `wm_session` cookie is absent, and
+  `AuthService::authenticate` is transport-neutral. The iOS app keeps the secret in the Keychain
+  and needs **no backend change** — the `SameSite=Lax` cookie stays a browser concern.
+- **The in-app magic link** returns through a Universal Link on `${WINDMILL_APP_URL}/#/auth`, which
+  the app claims; the token stays in the fragment for the same reason it does on the web, and the
+  app posts it to `/v1/auth/verify` (sign-in) or `/v1/auth/link` (the merge above).
+- **Guideline 4.8 is not triggered by a magic link.** It applies to third-party and social login,
+  so an app shipping magic link plus Sign in with Apple, and *not* Google, meets it by having
+  nothing to be equivalent to. Confirm against the current guideline text before leaning on it.
+- **Guideline 5.1.1(v)** requires in-app account deletion wherever SIWA ships; settings already has
+  close-with-grace, so this is satisfied by what exists.
+- **Apple's `REVOKE` server-to-server notification** unbinds a door, never an account. The identity
+  row is dropped, the user's data is untouched, and the email door still opens — a revoked
+  provider must never read as a deleted account.
+
 ## The link URL
 
 `AuthService` builds `${WINDMILL_APP_URL}/#/auth?token=<secret>`. The token lives in the URL
