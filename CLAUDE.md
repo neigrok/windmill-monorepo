@@ -12,6 +12,13 @@ reverse; products never depend on each other). Each surface keeps its own `CLAUD
 for detail that only matters inside it (e.g. `backend/CLAUDE.md`, `web/src/skilltree/ARCHITECTURE.md`).
 The design/architecture principles below apply brand-wide.
 
+## Mission
+
+We are mission driven, not money driven. The mission is to make people develop themselves —
+every product, page, and decision serves that. We build exceptional software and are extremely
+honest with customers: no dark patterns, no manufactured urgency, no copy that promises what the
+product doesn't do. When a choice trades user growth or honesty for revenue, the mission wins.
+
 ## Architecture & Design
 Optimize for the reader, not the writer. Code is read far more than it's written — favor the obvious over the clever
 Make structure explicit. A newcomer should infer where things live from folder and file names alone; the directory tree should read like a description of the system
