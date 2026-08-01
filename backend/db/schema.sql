@@ -66,10 +66,9 @@ alter table trees add column if not exists title_ms bigint not null default 0;
 alter table trees add column if not exists title_counter bigint not null default 0;
 -- visibility gates every read (domain/Access.h): 'private' is owner-only, 'unlisted'/'public'
 -- are readable by anyone holding the id. New trees are PRIVATE, which is what someone writing a
--- plan down expects, and sharing is the deliberate act that opens it. This briefly defaulted to
--- 'unlisted' so that setting a tree private could be sold — taking a default away in order to
--- charge for it back, which is not a thing we do. Privacy is free. An existing table keeps
--- whatever each row already says; only the default for new rows moves.
+-- plan down expects, and sharing is the deliberate act that opens it. Older databases briefly
+-- carried a different default; these two lines normalize new rows to 'private'. An existing
+-- table keeps whatever each row already says; only the default for new rows moves.
 alter table trees add column if not exists visibility text not null default 'private';
 alter table trees alter column visibility set default 'private';
 

@@ -25,8 +25,10 @@ ceremony) · unlimited deterministic paste-import · public + unlisted sharing �
 fork in and out · all nine quests · export · mobile · the playable demo and anonymous creation ·
 **the MCP server and one API key**.
 
-### Pro — $12/mo (annual $99 exists, deliberately not surfaced yet)
-**Private trees** · a higher AI-import quota · MCP headroom (more keys, higher rate limit).
+### Pro — superseded
+The paid line is **tending**: one flat plan for a larger monthly allowance of the in-app AI.
+The canonical spec is the Design project's `marketing/guidelines/pricing.md`; this section's
+original 2026-07-19 packaging is withdrawn and deliberately not restated here.
 
 ### The three calls worth arguing with
 1. **MCP stays free.** It's the sharpest differentiator, so the instinct is to charge for it. But
@@ -39,18 +41,9 @@ fork in and out · all nine quests · export · mobile · the playable demo and 
    dunning. Better: give new signups a one-time burst of AI imports at peak intent.
 
 ### Status
-- **SHIPPED** — private trees gated (402 `pro_required`); unlisted/public/fork/share stay free.
-- **SHIPPED** — $12/mo price live; the $9 placeholder is archived; $99/yr created but unsurfaced.
-- **SHIPPED (VETOABLE)** — **new trees now default to `unlisted`, not `private`.** Tree ids carry
-  64 bits of entropy, so an unshared unlisted tree is unreachable in practice, and it makes the paid
-  line coherent (a free account could otherwise hold private trees it wasn't allowed to set). If
-  you'd rather new trees stayed private, this is one SQL default and one gate to reconsider — but
-  then private can't be the paid feature.
-- **OPEN** — the AI-import quota (5/month free, 200 Pro, plus 10 in the first 7 days). Needs a
-  usage counter; not built. Until then AI import is unlimited for everyone.
-- **OPEN** — MCP key/rate headroom as a Pro line. Not built; keys are currently unlimited.
-- **RULE, already true** — a lapsed subscriber's private trees are **never** auto-published. Only
-  *setting* private is gated; existing private trees stay private and owner-readable.
+- Pricing/packaging status now tracks `marketing/guidelines/pricing.md` and the tending flag
+  (`TENDING_ENABLED`); the 2026-07-19 packaging bullets are withdrawn. New trees default to
+  `private` (schema default); visibility is not a billing surface.
 - **OPEN** — silent abuse ceilings (trees/account, nodes/tree). Partially done: the node cap now
   applies on the PUT path too. Never market these as limits.
 

@@ -9,11 +9,9 @@ import { Button } from '../../../design-system';
 import { Section, styles } from '../../../shell/settings/Section.jsx';
 import { beginUpgrade, billingConfigured, fetchSubscription } from '../../../shell/billing/checkout.js';
 
-// Nothing is for sale right now. Private trees were briefly the paid line, which meant the free
-// default had been moved to unlisted so that privacy could be charged for — taking a default away
-// to sell it back. Privacy went back to free, and the paid line will be usage and in-app AI, which
-// cost us something per use. Until one of those ships there is no Upgrade: offering one would take
-// money for nothing. Flip this to true when there is.
+// Nothing is for sale right now. The paid line is tending — the in-app AI, which costs us
+// something per run. Until it ships there is no Upgrade: offering one would take money for
+// nothing. Flip this to true when there is.
 const PAID_PLANS_OPEN = false;
 
 const PLAN_COPY = {
@@ -22,7 +20,7 @@ const PLAN_COPY = {
   past_due: { name: 'Windmill Pro', note: 'The last payment didn’t go through — Paddle is retrying. Nothing is switched off.' },
   paused: { name: 'Paused', note: 'Billing is paused, so Pro is off for now.' },
   canceled: { name: 'Free', note: 'Your Pro subscription has ended.' },
-  none: { name: 'Free', note: 'Everything Windmill does, including private trees and a monthly allowance of AI tending. Windmill Pro — a larger tending allowance — arrives with tending itself.' },
+  none: { name: 'Free', note: 'Everything Windmill does, plus a monthly allowance of AI tending. Windmill Pro — a larger tending allowance — arrives with tending itself.' },
 };
 
 const asDate = (iso) => {
