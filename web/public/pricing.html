@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pricing — Windmill</title>
-<meta name="description" content="Windmill is free — build, share, and keep private trees at no cost. Pay only for tending: the AI that plants and reshapes your tree. $12/month, cancel any time." />
+<meta name="description" content="All three rooms — the roadmap, the journal, the gym log when it opens — are free, including private trees. Pay only for tending: the AI that plants and reshapes your tree. $12 a month for 300 tendings — cancel any time." />
 <link rel="canonical" href="https://windmill.works/pricing.html" />
 <meta name="robots" content="index, follow, max-image-preview:large" />
 <meta name="theme-color" content="#F9F5EB" />
@@ -25,7 +25,7 @@
     --surface-card: #FFFFFF;
     --surface-hover: #F1EADA;
     --border-subtle: #E5D9C0;
-    --border-default: #D3C2A0;
+    --border-strong: #B29F7B;
     --text-primary: #211B13;
     --text-secondary: #6F5F45;
     --text-tertiary: #92805F;
@@ -46,109 +46,99 @@
     --tracking-tight: -0.02em;
   }
   * { box-sizing: border-box; }
-  body { margin:0; font-family:var(--font-body); color:var(--text-primary); background:var(--surface-canvas); -webkit-font-smoothing:antialiased; }
-  .wrap { max-width:1080px; margin:0 auto; padding:0 32px; }
-
-  header { display:flex; align-items:center; justify-content:space-between; padding:24px 0; }
-  .wm { font-family:var(--font-display); font-weight:700; font-size:21px; color:var(--text-primary); text-decoration:none; }
-  .navr { display:flex; align-items:center; gap:10px; }
-  .btn { display:inline-flex; align-items:center; justify-content:center; gap:7px; border-radius:999px; font-family:var(--font-body); font-weight:800; font-size:12.5px; padding:7px 15px; text-decoration:none; border:none; cursor:pointer; transition:background 150ms var(--ease-standard), transform 150ms var(--ease-standard); }
-  .btn--pri { background:var(--color-brand); color:var(--text-on-accent); }
-  .btn--pri:hover { background:var(--color-brand-hover); color:var(--text-on-accent); }
-  .btn--pri:active { transform:scale(.97); }
-  .btn--gho { color:var(--text-secondary); background:none; }
-  .btn--gho:hover { background:var(--surface-hover); color:var(--text-primary); }
-  .btn--soft { background:var(--surface-card); color:var(--text-primary); border:1.5px solid var(--border-default); }
-  .btn--soft:hover { background:var(--surface-hover); }
-  .btn--lg { font-size:15px; padding:13px 26px; }
-
-  footer { border-top:1px solid var(--border-subtle); margin-top:96px; padding:30px 0 40px; display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:12px; }
-  .fl { display:flex; align-items:baseline; gap:10px; color:var(--text-tertiary); font-size:14px; }
-  .fl b { font-family:var(--font-display); font-weight:700; font-size:16px; color:var(--text-secondary); }
-  .fr { display:flex; gap:22px; font-size:14px; flex-wrap:wrap; }
-  .fr a { color:var(--text-tertiary); text-decoration:none; }
-  .fr a:hover { color:var(--text-primary); }
-
-  .hero { padding:60px 0 8px; max-width:820px; }
-  .hero h1 { font-family:var(--font-display); font-weight:700; font-size:60px; line-height:1.02; letter-spacing:var(--tracking-tight); margin:0; }
-  .hero p { font-size:20px; line-height:1.55; color:var(--text-secondary); margin:22px 0 0; max-width:660px; text-wrap:pretty; }
-  .hero p b { color:var(--text-primary); font-weight:700; }
-
-  .sec { padding:64px 0 0; }
-  .eyebrow { font-family:var(--font-mono); font-size:12px; font-weight:600; letter-spacing:0.14em; text-transform:uppercase; color:var(--text-tertiary); }
-  .sec h2 { font-family:var(--font-display); font-weight:700; font-size:34px; letter-spacing:var(--tracking-tight); margin:10px 0 0; }
-  .sec .lede { font-size:17px; line-height:1.6; color:var(--text-secondary); margin:14px 0 0; max-width:640px; text-wrap:pretty; }
-  .sec .lede b { color:var(--text-primary); font-weight:700; }
-
-  /* free grid */
-  .free-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:2px 40px; margin:34px 0 0; }
-  .fi { display:flex; align-items:flex-start; gap:11px; padding:13px 0; border-top:1px solid var(--border-subtle); }
-  .fi:nth-child(-n+3) { border-top:none; }
-  .fi .chk { flex:none; width:22px; height:22px; border-radius:50%; background:var(--color-success-bg); color:var(--color-success); display:flex; align-items:center; justify-content:center; margin-top:1px; }
-  .fi .ft { font-size:15px; line-height:1.35; }
-  .fi .ft b { font-family:var(--font-display); font-weight:700; display:block; color:var(--text-primary); }
-  .fi.hl .chk { background:var(--color-brand-soft); color:var(--color-brand); }
-  .fi.hl .ft b { color:var(--color-brand); }
-  .free-note { font-size:15px; line-height:1.6; color:var(--text-secondary); margin:26px 0 0; max-width:680px; text-wrap:pretty; }
-  .free-note b { color:var(--text-primary); font-weight:700; }
-
-  /* meter */
-  .meter-wrap { display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:40px; align-items:center; margin:34px 0 0; }
-  .meter { background:var(--surface-card); border:1px solid var(--border-subtle); border-radius:22px; padding:24px 26px; box-shadow:var(--shadow-sm); }
-  .meter .mh { display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
-  .meter .mh .lab { font-family:var(--font-mono); font-size:12px; letter-spacing:.08em; color:var(--text-tertiary); text-transform:uppercase; white-space:nowrap; }
-  .meter .mh .lab .eg { font-family:var(--font-body); font-weight:800; font-size:9px; letter-spacing:.06em; text-transform:uppercase; color:var(--color-brand); background:var(--color-brand-soft); border-radius:999px; padding:2px 7px; margin-left:7px; vertical-align:middle; }
-  .meter .mh .cnt { font-family:var(--font-display); font-weight:800; font-size:15px; color:var(--text-primary); }
-  .meter .mh .cnt span { color:var(--text-tertiary); font-weight:600; }
-  .bar { height:14px; border-radius:999px; background:var(--neutral-200); margin:14px 0 0; overflow:hidden; display:flex; }
-  .bar i { display:block; height:100%; }
-  .bar .used { background:linear-gradient(90deg,var(--accent-terracotta-400),var(--color-brand)); width:40%; }
-  .receipts { display:flex; flex-direction:column; gap:9px; margin:20px 0 0; }
-  .rcpt { display:flex; align-items:center; gap:10px; font-size:13.5px; color:var(--text-secondary); }
-  .rcpt .rc { flex:none; width:20px; height:20px; border-radius:6px; background:var(--color-brand-soft); color:var(--color-brand); display:flex; align-items:center; justify-content:center; }
-  .rcpt b { color:var(--text-primary); font-weight:700; }
-  .rcpt .n { margin-left:auto; font-family:var(--font-mono); font-size:11.5px; color:var(--text-tertiary); }
-  .meter-aside .ttl { font-family:var(--font-display); font-weight:700; font-size:19px; }
-  .meter-aside p { font-size:15px; line-height:1.6; color:var(--text-secondary); margin:12px 0 0; text-wrap:pretty; }
-  .meter-aside p b { color:var(--text-primary); font-weight:700; }
-
-  /* pro plan */
-  .pro-wrap { display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:40px; align-items:start; margin:34px 0 0; }
-  .pro { background:var(--color-brand-soft); border:1.5px solid var(--accent-terracotta-200); border-radius:28px; padding:32px 34px 34px; box-shadow:var(--shadow-md); }
-  .pro .mark { width:44px; height:44px; border-radius:13px; background:var(--color-brand); color:var(--text-on-accent); display:flex; align-items:center; justify-content:center; box-shadow:0 4px 14px var(--kind-terracotta-glow); }
-  .pro .price { display:flex; align-items:baseline; gap:9px; margin:20px 0 0; }
-  .pro .price .amt { font-family:var(--font-display); font-weight:800; font-size:52px; line-height:1; color:var(--text-primary); }
-  .pro .price .per { font-family:var(--font-mono); font-size:15px; color:var(--text-secondary); }
-  .pro .price .tax { font-family:var(--font-mono); font-size:11.5px; color:var(--text-tertiary); margin-left:2px; }
-  .pro h3 { font-family:var(--font-display); font-weight:700; font-size:24px; margin:18px 0 0; }
-  .pro .one { font-size:16px; line-height:1.55; color:var(--text-primary); margin:8px 0 0; }
-  .pro .beats2 { margin:22px 0 0; border-top:1px solid var(--accent-terracotta-200); }
-  .beat2 { display:flex; gap:12px; padding:15px 0; border-bottom:1px solid var(--accent-terracotta-200); }
-  .beat2:last-child { border-bottom:none; }
-  .beat2 .bi2 { flex:none; color:var(--color-brand); margin-top:1px; }
-  .beat2 .bt2 { font-size:14px; line-height:1.5; color:var(--text-secondary); }
-  .beat2 .bt2 b { color:var(--text-primary); font-weight:700; display:block; font-size:14.5px; }
-  .pro .cta2 { display:block; width:100%; box-sizing:border-box; margin:24px 0 0; }
-  .pro .guar { display:flex; align-items:center; justify-content:center; gap:8px; margin:14px 0 0; font-size:12.5px; color:var(--text-tertiary); text-align:center; }
-  .pro .guar b { color:var(--text-secondary); font-weight:700; }
-  .pro-aside { position:sticky; top:24px; }
-  .pro-aside .ttl { font-family:var(--font-display); font-weight:700; font-size:18px; }
-  .pro-aside p { font-size:14.5px; line-height:1.65; color:var(--text-secondary); margin:12px 0 0; text-wrap:pretty; }
-  .pro-aside p b { color:var(--text-primary); font-weight:700; }
-
-  /* fine print */
-  .fine { display:grid; grid-template-columns:1fr 1fr; gap:28px 48px; margin:34px 0 0; max-width:900px; }
-  .fp h4 { font-family:var(--font-display); font-weight:700; font-size:16.5px; margin:0; }
-  .fp p { font-size:14.5px; line-height:1.6; color:var(--text-secondary); margin:8px 0 0; text-wrap:pretty; }
-  .fp p a { color:var(--text-link); text-decoration:none; } .fp p a:hover { color:var(--text-link-hover); }
-  a.tlink { color:var(--text-link); text-decoration:none; } a.tlink:hover { color:var(--text-link-hover); }
-
-  @media (max-width:860px) {
-    .hero h1 { font-size:44px; }
-    .hero p { font-size:18px; }
-    .free-grid { grid-template-columns:1fr 1fr; }
-    .meter-wrap, .pro-wrap, .fine { grid-template-columns:1fr; }
-    .pro-aside { position:static; }
+  body{margin:0;font-family:var(--font-body);color:var(--text-primary);background:var(--surface-canvas);-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 32px}
+  a{text-decoration:none}
+  .skip{position:fixed;left:-9999px;top:12px;z-index:60;background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:10px;padding:10px 16px;font-weight:700;font-size:14px;color:var(--text-primary);box-shadow:var(--shadow-md)}
+  .skip:focus{left:12px}
+  header{display:flex;align-items:center;gap:clamp(14px,2.2vw,28px);padding:24px 0;flex-wrap:wrap}
+  .wm{font-family:var(--font-display);font-weight:700;font-size:21px;color:var(--text-primary)}
+  .fam{display:flex;align-items:center;gap:clamp(12px,1.8vw,22px);font-weight:700;font-size:14.5px;flex-wrap:wrap}
+  .fam a{color:var(--text-secondary)}.fam a:hover{color:var(--text-primary)}.fam a.on{color:var(--color-brand)}
+  .navr{margin-left:auto;display:flex;align-items:center;gap:10px}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border-radius:999px;font-family:var(--font-body);font-weight:800;font-size:12.5px;padding:9px 16px;text-decoration:none;border:none;cursor:pointer;transition:background 150ms var(--ease-standard),transform 150ms var(--ease-standard)}
+  .btn--pri{background:var(--color-brand);color:var(--text-on-accent)}.btn--pri:hover{background:var(--color-brand-hover);color:var(--text-on-accent)}.btn--pri:active{transform:scale(.97)}
+  .btn--gho{color:var(--text-secondary);background:none}.btn--gho:hover{background:var(--surface-hover);color:var(--text-primary)}
+  .btn--lg{font-size:15px;padding:13px 26px}
+  .hero{padding:52px 0 8px;max-width:820px}
+  .hero h1{font-family:var(--font-display);font-weight:700;font-size:clamp(40px,5.5vw,60px);line-height:1.02;letter-spacing:var(--tracking-tight);margin:0;text-wrap:pretty}
+  .hero p{font-size:19px;line-height:1.55;color:var(--text-secondary);margin:22px 0 0;max-width:680px;text-wrap:pretty}
+  .hero p b{color:var(--text-primary);font-weight:700}
+  .sec{padding:64px 0 0}
+  .eyebrow{font-family:var(--font-mono);font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--text-tertiary)}
+  .sec h2{font-family:var(--font-display);font-weight:700;font-size:34px;letter-spacing:var(--tracking-tight);margin:10px 0 0}
+  .sec .lede{font-size:17px;line-height:1.6;color:var(--text-secondary);margin:14px 0 0;max-width:640px;text-wrap:pretty}
+  .sec .lede b{color:var(--text-primary);font-weight:700}
+  .free-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:2px 40px;margin:34px 0 0}
+  .fi{display:flex;align-items:flex-start;gap:11px;padding:13px 0;border-top:1px solid var(--border-subtle)}
+  .fi:nth-child(-n+3){border-top:none}
+  .fi .chk{flex:none;width:22px;height:22px;border-radius:50%;background:var(--color-success-bg);color:var(--color-success);display:flex;align-items:center;justify-content:center;margin-top:1px}
+  .fi .ft{font-size:15px;line-height:1.35}
+  .fi .ft b{font-family:var(--font-display);font-weight:700;display:block;color:var(--text-primary)}
+  .fi .ft .tag{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--text-tertiary);border:1px solid var(--border-subtle);border-radius:5px;padding:1px 6px;margin-left:6px;vertical-align:2px}
+  .fi.hl .chk{background:var(--color-brand-soft);color:var(--color-brand)}
+  .fi.hl .ft b{color:var(--color-brand)}
+  .free-note{font-size:15px;line-height:1.6;color:var(--text-secondary);margin:26px 0 0;max-width:680px;text-wrap:pretty}
+  .free-note b{color:var(--text-primary);font-weight:700}
+  .meter-wrap{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:40px;align-items:center;margin:34px 0 0}
+  .meter{background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:22px;padding:24px 26px;box-shadow:var(--shadow-sm)}
+  .meter .mh{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
+  .meter .mh .lab{font-family:var(--font-mono);font-size:12px;letter-spacing:.08em;color:var(--text-tertiary);text-transform:uppercase;white-space:nowrap}
+  .meter .mh .lab .eg{font-family:var(--font-body);font-weight:800;font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--color-brand);background:var(--color-brand-soft);border-radius:999px;padding:2px 7px;margin-left:7px;vertical-align:middle}
+  .meter .mh .cnt{font-family:var(--font-display);font-weight:800;font-size:15px;color:var(--text-primary)}
+  .meter .mh .cnt span{color:var(--text-tertiary);font-weight:600}
+  .bar{height:14px;border-radius:999px;background:var(--neutral-200);margin:14px 0 0;overflow:hidden;display:flex}
+  .bar i{display:block;height:100%}
+  .bar .used{background:linear-gradient(90deg,var(--accent-terracotta-400),var(--color-brand));width:40%}
+  .receipts{display:flex;flex-direction:column;gap:9px;margin:20px 0 0}
+  .rcpt{display:flex;align-items:center;gap:10px;font-size:13.5px;color:var(--text-secondary)}
+  .rcpt .rc{flex:none;width:20px;height:20px;border-radius:6px;background:var(--color-brand-soft);color:var(--color-brand);display:flex;align-items:center;justify-content:center}
+  .rcpt b{color:var(--text-primary);font-weight:700}
+  .rcpt .n{margin-left:auto;font-family:var(--font-mono);font-size:11.5px;color:var(--text-tertiary)}
+  .meter-aside .ttl{font-family:var(--font-display);font-weight:700;font-size:19px}
+  .meter-aside p{font-size:15px;line-height:1.6;color:var(--text-secondary);margin:12px 0 0;text-wrap:pretty}
+  .meter-aside p b{color:var(--text-primary);font-weight:700}
+  .pro-wrap{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:40px;align-items:start;margin:34px 0 0}
+  .pro{background:var(--color-brand-soft);border:1.5px solid var(--accent-terracotta-200);border-radius:28px;padding:32px 34px 34px;box-shadow:var(--shadow-md)}
+  .pro .mark{width:44px;height:44px;border-radius:13px;background:var(--color-brand);color:var(--text-on-accent);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px var(--kind-terracotta-glow)}
+  .pro .price{display:flex;align-items:baseline;gap:9px;margin:20px 0 0;flex-wrap:wrap}
+  .pro .price .amt{font-family:var(--font-display);font-weight:800;font-size:52px;line-height:1;color:var(--text-primary)}
+  .pro .price .per{font-family:var(--font-mono);font-size:15px;color:var(--text-secondary)}
+  .pro .price .tax{font-family:var(--font-mono);font-size:11.5px;color:var(--text-tertiary);margin-left:2px}
+  .pro .price .open{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-tertiary);border:1px dashed var(--border-strong);border-radius:5px;padding:3px 7px}
+  .pro h3{font-family:var(--font-display);font-weight:700;font-size:24px;margin:18px 0 0}
+  .pro .one{font-size:16px;line-height:1.55;color:var(--text-primary);margin:8px 0 0}
+  .pro .beats2{margin:22px 0 0;border-top:1px solid var(--accent-terracotta-200)}
+  .beat2{display:flex;gap:12px;padding:15px 0;border-bottom:1px solid var(--accent-terracotta-200)}
+  .beat2:last-child{border-bottom:none}
+  .beat2 .bi2{flex:none;color:var(--color-brand);margin-top:1px}
+  .beat2 .bt2{font-size:14px;line-height:1.5;color:var(--text-secondary)}
+  .beat2 .bt2 b{color:var(--text-primary);font-weight:700;display:block;font-size:14.5px}
+  .pro .cta2{display:block;width:100%;box-sizing:border-box;margin:24px 0 0}
+  .pro .guar{display:flex;align-items:center;justify-content:center;gap:8px;margin:14px 0 0;font-size:12.5px;color:var(--text-tertiary);text-align:center}
+  .pro .guar b{color:var(--text-secondary);font-weight:700}
+  .pro-aside{position:sticky;top:24px}
+  .pro-aside .ttl{font-family:var(--font-display);font-weight:700;font-size:18px}
+  .pro-aside p{font-size:14.5px;line-height:1.65;color:var(--text-secondary);margin:12px 0 0;text-wrap:pretty}
+  .pro-aside p b{color:var(--text-primary);font-weight:700}
+  .fine{display:grid;grid-template-columns:1fr 1fr;gap:28px 48px;margin:34px 0 0;max-width:900px}
+  .fp h4{font-family:var(--font-display);font-weight:700;font-size:16.5px;margin:0}
+  .fp p{font-size:14.5px;line-height:1.6;color:var(--text-secondary);margin:8px 0 0;text-wrap:pretty}
+  .fp p a{color:var(--text-link)}.fp p a:hover{color:var(--text-link-hover)}
+  footer{border-top:1px solid var(--border-subtle);margin-top:96px;padding:30px 0 40px;display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px}
+  .fl{display:flex;align-items:baseline;gap:10px;color:var(--text-tertiary);font-size:14px}
+  .fl b{font-family:var(--font-display);font-weight:700;font-size:16px;color:var(--text-secondary)}
+  .fcol{display:flex;flex-direction:column;align-items:flex-end;gap:10px}
+  .fr{display:flex;gap:22px;font-size:14px;flex-wrap:wrap;justify-content:flex-end}
+  .fr a{color:var(--text-tertiary)}
+  .fr a:hover{color:var(--text-primary)}
+  @media (max-width:860px){
+    main{display:flex;flex-direction:column}
+    .hero{order:0}.sec--free{order:1}.sec--pro{order:2}.sec--meter{order:3}.sec--fine{order:4}
+    .hero h1{font-size:44px}.hero p{font-size:18px}
+    .free-grid{grid-template-columns:1fr 1fr}
+    .meter-wrap,.pro-wrap,.fine{grid-template-columns:1fr}
+    .pro-aside{position:static}
   }
 </style>
   <script>try{var h=JSON.parse(localStorage.getItem("windmill:auth-hint")||"null");document.documentElement.setAttribute("data-auth",h&&h.status==="signed-in"&&h.user?"in":"out")}catch(e){document.documentElement.setAttribute("data-auth","out")}</script>
@@ -156,44 +146,51 @@
   <script defer src="/nav-auth.js"></script>
 </head>
 <body>
+<a class="skip" href="#content">Skip to content</a>
 <div class="wrap">
 
 <header>
-  <a class="wm" href="/#/">Windmill</a>
+  <a class="wm" href="/">Windmill</a>
+  <nav class="fam">
+    <a href="/roadmap">Roadmap</a>
+    <a href="/journal">Journal</a>
+    <a href="/gym">Gym</a>
+    <a class="on" href="/pricing.html">Pricing</a>
+    <a href="/changelog.html">Changelog</a>
+  </nav>
   <span class="navr">
-    <a class="btn btn--gho au-out" href="/#/">Log in</a>
-    <a class="btn btn--pri au-out" href="/#/app">Start your tree</a>
+    <a class="btn btn--gho au-out" href="/#/">Sign in</a>
+    <a class="btn btn--pri au-out" href="/#/app/start">Get started</a>
     <a class="btn btn--gho au-in" href="/#/settings" data-authname>My account</a>
-    <a class="btn btn--pri au-in" href="/#/app">My trees</a>
+    <a class="btn btn--pri au-in" href="/app">Open Windmill</a>
   </span>
 </header>
 
-<main>
+<main id="content">
 
 <section class="hero">
   <h1>Free to build.<br>Pay for tending.</h1>
-  <p>The whole product — building, sharing, exporting, even private trees — is free forever. The one thing that costs money is <b>tending</b>: the AI that plants and reshapes your tree for you. One plan, <b>$12 a month for 300 tendings</b> — cancel any time.</p>
+  <p>All three rooms — the roadmap, the journal, the gym log when it opens — are free, including private trees. The one thing that costs money is <b>tending</b>: the AI that plants and reshapes your tree for you. One plan, <b>$12 a month for 300 tendings</b> — cancel any time.</p>
 </section>
 
-<section class="sec">
+<section class="sec sec--free">
   <div class="eyebrow">Free forever</div>
   <h2>The product is free. All of it.</h2>
-  <p class="lede">Including the thing we once thought about charging for — <b>private trees</b>. Your trees are private by default. What you pay for isn't access to Windmill; it's the AI doing the work for you.</p>
+  <p class="lede">Including the thing we once thought about charging for — <b>private trees</b>. What you pay for isn't access to Windmill; it's the AI doing the work for you.</p>
   <div class="free-grid">
-    <div class="fi"><span class="chk"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span class="ft"><b>Unlimited trees &amp; steps</b>No counters, no caps.</span></div>
-    <div class="fi"><span class="chk"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span class="ft"><b>Unlimited hand editing</b>Build &amp; reshape by hand, forever.</span></div>
-    <div class="fi"><span class="chk"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span class="ft"><b>Private by default</b>Yours until you share it.</span></div>
-    <div class="fi"><span class="chk"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span class="ft"><b>Share &amp; fork</b>A link anyone can view or fork.</span></div>
-    <div class="fi"><span class="chk"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span class="ft"><b>All nine starter quests</b>Every seed packet on the shelf.</span></div>
-    <div class="fi"><span class="chk"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span class="ft"><b>Export any time</b>Markdown, paste-ready.</span></div>
-    <div class="fi"><span class="chk"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span class="ft"><b>Phone, tablet, desktop</b>Plant a tree from anywhere.</span></div>
-    <div class="fi"><span class="chk"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span class="ft"><b>MCP server &amp; API key</b>Let your agents build trees too.</span></div>
+    <div class="fi"><span class="chk"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span class="ft"><b>Unlimited trees &amp; steps</b>Hand editing forever — no counters, no caps.</span></div>
+    <div class="fi"><span class="chk"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span class="ft"><b>Private by default, share by link</b>Yours until you send it; anyone can fork.</span></div>
+    <div class="fi"><span class="chk"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span class="ft"><b>Nine quests · export · MCP</b>Every seed packet, Markdown out, agents in.</span></div>
+    <div class="fi"><span class="chk"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span class="ft"><b>The whole journal</b>Write, look back, hear it back — every night.</span></div>
+    <div class="fi"><span class="chk"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span class="ft"><b>Search by meaning</b>On your device; your pages never leave it.</span></div>
+    <div class="fi"><span class="chk"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span class="ft"><b>The gym log — all of it<span class="tag">in design</span></b>Sets, sessions, e1RM — free when Gym opens.</span></div>
+    <div class="fi"><span class="chk"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span class="ft"><b>Every device</b>Phone at the rack, desk between blocks.</span></div>
     <div class="fi hl"><span class="chk"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"></path><path d="M2 21c0-3 1.85-5.36 5.08-6"></path></svg></span><span class="ft"><b>30 tendings a month, free</b>The AI, on the house, every month.</span></div>
   </div>
-  <p class="free-note">There's no usage meter on the product itself — only tending is counted, and <b>every tending is a receipt you can see.</b> Hand editing never costs a thing.</p>
+  <p class="free-note">There's no usage meter on the product itself — only tending is counted, in any room, and <b>every tending is a receipt you can see.</b> Hand editing never costs a thing.</p>
 </section>
 
-<section class="sec">
+<section class="sec sec--meter">
   <div class="eyebrow">The one meter</div>
   <h2>One thing we count: tendings.</h2>
   <p class="lede">A <b>tending</b> is one instruction to the AI — "plant a 10k plan", "add a testing branch", "is this realistic?". One sentence, one tending, one receipt in your ledger. That's the only thing metered anywhere in Windmill.</p>
@@ -210,19 +207,19 @@
     <div class="meter-aside">
       <div class="ttl">You always see what you spent.</div>
       <p>Every tending shows up as a receipt in your ledger — no mystery counter ticking in the background. <b>Hand editing is unlimited and never counted.</b></p>
-      <p style="font-size:13px; color:var(--text-tertiary); margin-top:10px;">The meter above is an example; your own appears once you're signed in.</p>
+      <p style="font-size:13px;color:var(--text-tertiary);margin-top:10px">The meter above is an example; your own appears once you're signed in.</p>
     </div>
   </div>
 </section>
 
-<section class="sec">
+<section class="sec sec--pro">
   <div class="eyebrow">One upgrade</div>
   <h2>More tending, one price.</h2>
   <p class="lede">When 30 a month isn't enough, there's exactly one plan — no tiers to weigh, no usage to forecast. <b>$12 a month for 300 tendings</b>, about ten a day.</p>
   <div class="pro-wrap">
     <div class="pro">
       <span class="mark"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"></path><path d="M2 21c0-3 1.85-5.36 5.08-6"></path></svg></span>
-      <div class="price"><span class="amt">$12</span><span class="per">/ month</span><span class="tax">USD, before tax</span></div>
+      <div class="price"><span class="amt">$12</span><span class="per">/ month</span><span class="tax">USD, before tax</span><span class="open">numbers open</span></div>
       <h3>Windmill Pro</h3>
       <p class="one">300 tendings a month — plant, reshape and review to your heart's content. Everything else was already free.</p>
       <div class="beats2">
@@ -235,39 +232,30 @@
     <aside class="pro-aside">
       <div class="ttl">That's the whole plan.</div>
       <p>One price, one generous allowance. <b>No tiers to climb, no per-run pricing</b> to forecast.</p>
-      <p>When there's something else genuinely worth paying for, it'll appear here — and not a day before.</p>
+      <p>Journal's echoes and Gym's connected log are designed to ride this same plan when they ship — <b>the same subscription, never new tiers</b>. Until then this page sells tending and nothing else.</p>
     </aside>
   </div>
 </section>
 
-<section class="sec">
+<section class="sec sec--fine">
   <div class="eyebrow">The fine print, said plainly</div>
   <h2>No surprises on the receipt.</h2>
   <div class="fine">
-    <div class="fp">
-      <h4>Who you pay</h4>
-      <p>Windmill uses <b>Paddle</b> as its seller of record. Paddle runs the checkout and handles tax; your receipt comes from Paddle, not from us.</p>
-    </div>
-    <div class="fp">
-      <h4>What it costs</h4>
-      <p>$12 per month, in US dollars, before local sales tax or VAT. One plan — 300 tendings a month. No tiers, no per-run pricing to forecast.</p>
-    </div>
-    <div class="fp">
-      <h4>When you run out</h4>
-      <p>Tending pauses when your monthly allowance is used — 30 on Free, 300 on Pro — but <b>hand editing stays free and your trees are untouched.</b> Allowances reset each month.</p>
-    </div>
-    <div class="fp">
-      <h4>Changing your mind</h4>
-      <p>A <b>30-day money-back guarantee</b>: within 30 days, email <a href="mailto:hello@windmill.works">hello@windmill.works</a> and we refund it. After that, cancel any time and keep Pro to the end of the period. <a href="/refunds.html">Full refund policy →</a></p>
-    </div>
+    <div class="fp"><h4>Who you pay</h4><p>Windmill uses <b>Paddle</b> as its seller of record. Paddle runs the checkout and handles tax; your receipt comes from Paddle, not from us.</p></div>
+    <div class="fp"><h4>What it costs</h4><p>$12 per month, in US dollars, before local sales tax or VAT. One plan — 300 tendings a month. No tiers, no per-run pricing to forecast.</p></div>
+    <div class="fp"><h4>When you run out</h4><p>Tending pauses when your monthly allowance is used — 30 on Free, 300 on Pro — but <b>hand editing stays free and your trees are untouched.</b> Allowances reset each month.</p></div>
+    <div class="fp"><h4>Changing your mind</h4><p>A <b>30-day money-back guarantee</b>: within 30 days, email <a href="mailto:hello@windmill.works">hello@windmill.works</a> and we refund it. After that, cancel any time and keep Pro to the end of the period. <a href="/refunds.html">Full refund policy →</a></p></div>
   </div>
 </section>
 
 </main>
 
 <footer>
-  <span class="fl"><b>Windmill</b><span>Any goal, as a skill tree.</span></span>
-  <span class="fr"><a href="/gallery">Gallery</a><a href="/pricing.html">Pricing</a><a href="/refunds.html">Refunds</a><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="/changelog.html">Changelog</a></span>
+  <span class="fl"><b>Windmill</b><span>© 2026</span></span>
+  <span class="fcol">
+    <span class="fr"><a href="/pricing.html">Pricing</a><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="/refunds.html">Refunds</a><a href="/changelog.html">Changelog</a></span>
+    <span class="fr"><a href="/roadmap">Roadmap</a><a href="/journal">Journal</a><a href="/gym">Gym</a></span>
+  </span>
 </footer>
 
 </div>
