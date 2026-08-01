@@ -112,11 +112,13 @@ function AppRoutes() {
     }
   }
 
-  // Marketing lives under /products/<name> now: /products/roadmap is the roadmap landing (the
-  // interactive one, kept in the SPA); /products/journal is a static page Caddy serves before this
-  // ever runs. The bare root is the product-neutral brand front door. Both ship eagerly (imported at
-  // the top), so the indexed root paints in one download.
-  if (window.location.pathname.startsWith('/products/roadmap')) {
+  // Marketing lives at /<product> now: /roadmap is the roadmap landing (the interactive one,
+  // kept in the SPA); /journal and /gym are static pages Caddy serves before this ever runs.
+  // /products/roadmap is the legacy path — Caddy 301s it, and this match is the belt to that
+  // suspender while old tabs and caches drain. The bare root is the product-neutral brand front
+  // door. Both ship eagerly (imported at the top), so the indexed root paints in one download.
+  const { pathname } = window.location;
+  if (pathname.startsWith('/roadmap') || pathname.startsWith('/products/roadmap')) {
     return <Suspense fallback={<RouteFallback />}><Marketing /></Suspense>;
   }
   return <BrandLanding />;

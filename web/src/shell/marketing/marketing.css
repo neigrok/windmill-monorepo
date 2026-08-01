@@ -156,9 +156,11 @@ path.eb { transition: opacity 280ms var(--ease-standard), stroke 280ms var(--eas
 .ctaBand { background: var(--color-brand-soft); border-radius: var(--radius-2xl); padding: 56px 40px; text-align: center;
            display: flex; flex-direction: column; align-items: center; gap: 8px; }
 
-.navlinks { display: flex; gap: 32px; font-family: var(--font-body); font-weight: 700; font-size: 15px; }
+.navlinks { display: flex; align-items: center; flex-wrap: wrap; gap: clamp(14px, 1.8vw, 26px); font-family: var(--font-body); font-weight: 700; font-size: 15px; }
 .navlinks a { color: var(--text-secondary); }
 .navlinks a:hover { color: var(--text-primary); }
+.navlinks a[aria-current='page'] { color: var(--color-brand); }
+.navlinks-divider { width: 1px; height: 16px; background: var(--border-subtle); }
 
 @media (max-width: 1023px) {
   .wrap { padding: 0 40px; }

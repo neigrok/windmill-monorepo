@@ -65,6 +65,11 @@ function Nav({ status, user, newest, treeCount, linkSent, onLogin, onResumeLink,
         <a href="#paths">Paths</a>
         <a href="#/connect">Connect</a>
         <a href="/changelog.html">Changelog</a>
+        <span className="navlinks-divider" aria-hidden="true" />
+        <a href="/roadmap" aria-current="page" style={{ color: 'var(--color-brand)' }}>Roadmap</a>
+        <a href="/journal">Journal</a>
+        <a href="/gym">Gym</a>
+        <a href="/pricing.html">Pricing</a>
       </nav>
       <div style={{ display: 'flex', gap: 10 }}>
         <NavCluster
@@ -396,14 +401,21 @@ function Footer({ onFeedback }) {
         <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16, color: 'var(--text-secondary)' }}>Windmill</span>
         © 2026
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, fontSize: 14, fontFamily: 'var(--font-body)' }}>
-        <button type="button" onClick={onFeedback} style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'var(--text-tertiary)', cursor: 'pointer' }}>Feedback</button>
-        <a href="/pricing.html" style={{ color: 'var(--text-tertiary)' }}>Pricing</a>
-        <a href="/connect.html" style={{ color: 'var(--text-tertiary)' }}>Connect your AI tools</a>
-        <a href="/privacy.html" style={{ color: 'var(--text-tertiary)' }}>Privacy</a>
-        <a href="/terms.html" style={{ color: 'var(--text-tertiary)' }}>Terms</a>
-        <a href="/refunds.html" style={{ color: 'var(--text-tertiary)' }}>Refunds</a>
-        <a href="/changelog.html" style={{ color: 'var(--text-tertiary)' }}>Changelog</a>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 24, fontSize: 14, fontFamily: 'var(--font-body)' }}>
+          <button type="button" onClick={onFeedback} style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'var(--text-tertiary)', cursor: 'pointer' }}>Feedback</button>
+          <a href="/pricing.html" style={{ color: 'var(--text-tertiary)' }}>Pricing</a>
+          <a href="/connect.html" style={{ color: 'var(--text-tertiary)' }}>Connect your AI tools</a>
+          <a href="/privacy.html" style={{ color: 'var(--text-tertiary)' }}>Privacy</a>
+          <a href="/terms.html" style={{ color: 'var(--text-tertiary)' }}>Terms</a>
+          <a href="/refunds.html" style={{ color: 'var(--text-tertiary)' }}>Refunds</a>
+          <a href="/changelog.html" style={{ color: 'var(--text-tertiary)' }}>Changelog</a>
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 24, fontSize: 14, fontFamily: 'var(--font-body)' }}>
+          <a href="/roadmap" style={{ color: 'var(--text-tertiary)' }}>Roadmap</a>
+          <a href="/journal" style={{ color: 'var(--text-tertiary)' }}>Journal</a>
+          <a href="/gym" style={{ color: 'var(--text-tertiary)' }}>Gym</a>
+        </div>
       </div>
     </footer>
   );
@@ -443,6 +455,21 @@ export default function Marketing() {
     landed.current = true;
     track('land', { signedIn: status === 'signed-in' });
   }, [status]);
+
+  // /roadmap is a real crawlable URL now, but the SPA shell ships the brand root's head — swap
+  // the tab title and canonical to this page's own while it is mounted (best-effort for crawlers
+  // that execute JS; the honest fix is a server-side head seam like /t/:id's).
+  useEffect(() => {
+    const prevTitle = document.title;
+    document.title = 'Windmill Roadmap — any goal, as a skill tree';
+    const canonical = document.querySelector('link[rel="canonical"]');
+    const prevHref = canonical?.getAttribute('href');
+    canonical?.setAttribute('href', 'https://windmill.works/roadmap');
+    return () => {
+      document.title = prevTitle;
+      if (canonical && prevHref) canonical.setAttribute('href', prevHref);
+    };
+  }, []);
 
   // Every status flip re-reads the link-sent record (sign-out clears it), and a fresh
   // signed-in status is the one moment the registry gets asked who owns what.

@@ -1,5 +1,5 @@
 // The brand front door at the bare root — product-neutral, unlike the roadmap landing it replaced
-// (which now lives at /products/roadmap). Windmill is one brand of three self-growth tools behind one
+// (which now lives at /roadmap). Windmill is one brand of three self-growth tools behind one
 // account and one subscription; this page says that and points into each product. It stays the eager,
 // indexed root, so it ships with the entry chunk like the old landing did. A v1 scaffold: honest brand
 // copy on the design system, to be deepened when the brand landing gets its own canon.
@@ -16,7 +16,7 @@ const PRODUCTS = [
     name: 'Roadmap',
     tagline: 'Map what you’re learning',
     body: 'Author a learning path as an RPG skill tree — real prerequisites, ownership gates lifetimes, fundamentals gate frameworks. Grow it one checked-off node at a time.',
-    href: '/products/roadmap',
+    href: '/roadmap',
     cta: 'Explore Roadmap',
     live: true,
   },
@@ -25,7 +25,7 @@ const PRODUCTS = [
     name: 'Journal',
     tagline: 'Notice what happened',
     body: 'Free-form daily writing for people who want to understand themselves, not score themselves. One page a day, yesterday above it — and search that finds the feeling, not the word.',
-    href: '/products/journal',
+    href: '/journal',
     cta: 'Explore Journal',
     live: true,
   },
@@ -34,8 +34,8 @@ const PRODUCTS = [
     name: 'Gym',
     tagline: 'Keep a training log',
     body: 'A quiet record of how you’re moving — sets, sessions, the long line of showing up. Built on the same account, arriving soon.',
-    href: null,
-    cta: 'Coming soon',
+    href: '/gym',
+    cta: 'See what’s coming',
     live: false,
   },
 ];
@@ -57,11 +57,11 @@ function ProductCard({ product }) {
       </div>
       <p style={{ margin: 0, flex: 1, fontFamily: 'var(--font-body)', fontSize: 'var(--text-base)', lineHeight: 1.6, color: 'var(--text-secondary)' }}>{product.body}</p>
       <span style={{ marginTop: 6, fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 'var(--text-sm)', color: product.live ? 'var(--color-brand)' : 'var(--text-tertiary)' }}>
-        {product.cta}{product.live ? ' →' : ''}
+        {product.cta} →
       </span>
     </div>
   );
-  if (!product.live) return card;
+  if (!product.href) return card;
   return <a href={product.href} style={{ textDecoration: 'none' }} className="wm-brand-cardlink">{card}</a>;
 }
 
@@ -79,18 +79,19 @@ export function BrandLanding() {
         .wm-brand-nav a:hover { color: var(--text-primary); }
       `}</style>
 
-      <nav className="wm-brand-nav" style={{ display: 'flex', alignItems: 'center', gap: 24, padding: '18px max(20px, 5vw)', maxWidth: 1160, margin: '0 auto' }}>
+      <nav className="wm-brand-nav" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', rowGap: 10, gap: 24, padding: '18px max(20px, 5vw)', maxWidth: 1160, margin: '0 auto' }}>
         <a href="/#/" style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'var(--text-lg)', color: 'var(--text-primary)' }}>Windmill</a>
         <div style={{ display: 'flex', gap: 18, fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)', fontWeight: 600 }}>
-          <a href="/products/roadmap">Roadmap</a>
-          <a href="/products/journal">Journal</a>
+          <a href="/roadmap">Roadmap</a>
+          <a href="/journal">Journal</a>
+          <a href="/gym">Gym</a>
           <a href="/pricing.html">Pricing</a>
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
           {signedIn
             ? <a href="#/settings"><Button variant="ghost" size="sm">My account</Button></a>
             : (status === 'ghost' && <Button variant="ghost" size="sm" onClick={() => setSignInOpen(true)}>Sign in</Button>)}
-          <a href="/products/journal"><Button variant="primary" size="sm">Start</Button></a>
+          <a href="/journal"><Button variant="primary" size="sm">Start</Button></a>
         </div>
       </nav>
 

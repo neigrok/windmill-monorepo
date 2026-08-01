@@ -36,6 +36,17 @@
 	# /og/:id.png unfurl cards the og:image tags point at. Hash-routed SPA otherwise (try_files is
 	# a net). NOTE /gallery is exact — the static gallery.html beside it must keep being served by
 	# the file server, or the template would recursively proxy to itself.
+	# The product landings moved from /products/<name> to /<name> (2026-08-01). 301 so old
+	# links, bookmarks and search results follow; the static dirs moved with them. The /*
+	# arms catch old deep links (/products/journal/index.html was live); {query} keeps UTM
+	# params (Caddy emits a bare trailing ? when the query is empty — harmless).
+	@oldRoadmap path /products/roadmap /products/roadmap/*
+	redir @oldRoadmap /roadmap?{query} permanent
+	@oldJournal path /products/journal /products/journal/*
+	redir @oldJournal /journal?{query} permanent
+	@oldGym path /products/gym /products/gym/*
+	redir @oldGym /gym?{query} permanent
+
 	@backend path /v1/* /t/* /og/* /gallery /mcp /mcp/* /oauth/* /.well-known/oauth-authorization-server /.well-known/oauth-authorization-server/* /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/* /.well-known/openid-configuration /.well-known/openid-configuration/*
 	handle @backend {
 		reverse_proxy server:8080
@@ -44,8 +55,8 @@
 		encode gzip zstd
 		root * /srv/windmill-web
 		# {path} serves a real file (pricing.html); {path}/index.html serves a static landing directory
-		# (the per-product pages, /products/journal/); else falls to the hash-routed SPA — a path with no
-		# dir index (e.g. /products/roadmap) lands on the SPA, which renders that product's landing.
+		# (the per-product pages, /journal/ and /gym/); else falls to the hash-routed SPA — a path with
+		# no dir index (e.g. /roadmap) lands on the SPA, which renders that product's landing.
 		try_files {path} {path}/index.html /index.html
 		file_server
 	}

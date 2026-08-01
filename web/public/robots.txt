@@ -1,9 +1,11 @@
 # https://windmill.works/robots.txt
-# Windmill is a single-page app plus a few static pages (connect, privacy,
-# terms, changelog). connect.html is the crawlable MCP works-with page; the
-# interactive workbench lives at the #/connect hash route. Hash routes
-# (#/app, #/t/:id, #/connect, #/showcase, #/welcome) are URL fragments, never
-# sent to the server, so there is nothing per-route to allow or block.
+# Windmill is a single-page app plus static pages: the product landings
+# (/roadmap via the SPA, /journal and /gym as static files) and the shelf
+# (connect, privacy, terms, changelog). connect.html is the crawlable MCP
+# works-with page; the interactive workbench lives at the #/connect hash
+# route. Hash routes (#/app, #/t/:id, #/connect, #/showcase, #/welcome) are
+# URL fragments, never sent to the server, so there is nothing per-route to
+# allow or block. The old /products/<name> URLs 301 to /<name>.
 #
 # /gallery and /t/:id are server-rendered, not static files: the gallery lists
 # every tree its owner chose to list (as real anchors, which is how a crawler
