@@ -7,24 +7,32 @@ description: Run the full Windmill stack locally (Postgres + C++ backend + vite)
 
 ## Launch
 
+Paths are the **monorepo's** (`backend/`, `web/`) — the old `windmill-backend/` ·
+`windmill-frontend/` split is gone.
+
 ```sh
 # 1. Postgres (usually already running; db `windmill` exists)
 pg_isready
 # schema drifts behind the binary — always safe to re-apply (idempotent):
-psql windmill -f windmill-backend/db/schema.sql
+psql windmill -f backend/db/schema.sql
 
 # 2. Backend — REBUILD FIRST; a stale binary silently lacks newer wiring (e.g. MCP→ws fan-out)
-cd windmill-backend && cmake --build build --target windmill_server -j 8
-# Env comes from windmill-backend/.env (gitignored; .env.example documents every variable).
+cmake --build backend/build --target windmill_server -j 8
+# Env comes from backend/.env (gitignored; .env.example documents every variable).
 # Do NOT paste an eight-variable incantation onto the command line — the owner asked for
 # this explicitly on 2026-07-25.
-set -a && . ./.env && set +a && ./build/windmill_server
+cd backend && set -a && . ./.env && set +a && ./build/windmill_server
 # Overriding one variable for a session is fine — source, then override just that one:
-set -a && . ./.env && set +a && WINDMILL_MCP_USER=<uuid> ./build/windmill_server
+cd backend && set -a && . ./.env && set +a && WINDMILL_MCP_USER=<uuid> ./build/windmill_server
 
 # 3. Frontend
-cd windmill-frontend && npx vite --port 5173
+cd web && npx vite --port 5173
 ```
+
+**Stopping the server: kill BY PORT, never `pkill -f windmill_server`.** Waves run several
+agents at once and they share this machine — on 2026-08-01 one reviewer's `pkill` killed
+three other agents' backends mid-probe. `lsof -ti tcp:<port> | xargs kill` only takes yours.
+Take a port nobody else has (agents in a wave should be handed disjoint ranges).
 
 - `WINDMILL_ALLOWED_ORIGINS` is required — without it the dev page's credentialed fetches fail CORS ("Failed to fetch").
 - `WINDMILL_MCP_USER` must be a real uuid in `users` (the default "dev" 500s on create_tree; owner_id is uuid). The uuid above is the seeded `dev@localhost` user in the local db.
@@ -94,6 +102,61 @@ raw-CDP driver does navigation, phone emulation, taps, typing and screenshots. L
 - The extension blocks returning big base64 strings; POST captures to a local HTTP sink (simple python http.server on 127.0.0.1) and Read the PNGs.
 - A hidden tab has rAF suspended — activate the tab via AppleScript (`tell application "Google Chrome" …`) before capturing.
 - macOS Reduce Motion propagates into the app (`prefers-reduced-motion`) and turns all motion into snaps by design — check `matchMedia('(prefers-reduced-motion: reduce)').matches` before judging animation. The live scene instance is reachable for pokes via React fiber internals from `canvas.st-canvas`.
+
+## Signing in without mail — the two-line recipe every wave re-derives
+
+Local mail can't send (502, no Resend key). Every agent that needs an authenticated caller
+has independently rediscovered this; it is written down once so nobody derives it again.
+`sessions.token_hash` is a plain `sha256(secret)` hex digest, so mint your own session and
+skip the magic-link flow entirely:
+
+```sh
+SECRET=$(openssl rand -hex 24); HASH=$(printf '%s' "$SECRET" | shasum -a 256 | awk '{print $1}')
+UID=$(uuidgen | tr 'A-Z' 'a-z')
+NOW=$(python3 -c "import time;print(int(time.time()*1000))")
+psql windmill -q -c "INSERT INTO users (id,email) VALUES ('$UID','probe-$RANDOM@example.com')"
+psql windmill -q -c "INSERT INTO sessions (token_hash,user_id,expires_ms) \
+  VALUES ('$HASH','$UID',$((NOW+86400000)))"
+# then either header works — the caller seam reads the cookie OR the bearer:
+curl -s localhost:8088/v1/gym/exercises -H "Authorization: Bearer $SECRET"
+```
+
+Clean up afterwards: deleting the `users` row cascades to sessions and to every product's
+rows. **Prefix anything you seed** (`ses_probe*`, `set_probe*`) so a parallel agent's cleanup
+never takes your rows and yours never takes theirs.
+
+## Gym (products/gym) — driving the training log
+
+Everything is owner-scoped and idempotent by **client-minted id**, which makes it pleasant to
+drive by hand: re-running a POST is a no-op that hands back the stored row, so a script can be
+replayed freely.
+
+```sh
+C="Authorization: Bearer $SECRET"; J='content-type: application/json'
+curl -s localhost:8088/v1/gym/exercises -H "$C"                     # 64 seeded movements
+curl -s -X POST localhost:8088/v1/gym/sessions -H "$C" -H "$J" \
+  -d '{"id":"ses_probe0001","startedAt":1785600000000}'
+curl -s -X POST localhost:8088/v1/gym/sessions/ses_probe0001/sets -H "$C" -H "$J" \
+  -d '{"id":"set_probe0001","exerciseId":"bench-press","weightKg":82.5,"reps":8,"completedAt":1785600060000}'
+curl -s -X POST localhost:8088/v1/gym/sessions/ses_probe0001/finish -H "$C" -H "$J" \
+  -d '{"finishedAt":1785603600000}'
+curl -s "localhost:8088/v1/gym/last?exercise=bench-press" -H "$C"    # the prefill read
+```
+
+Traps worth knowing before you burn an hour on them:
+
+- **`POST /v1/gym/sessions` JOINS an already-open session** rather than failing, so the reply
+  can carry a *different* id than you sent. Always compare — a script that ignores this pours
+  its sets into whatever session was already open.
+- **One open session per user** is a partial unique index, and an idle one auto-closes after
+  4 h *of no activity* (measured from the last set, not from the start).
+- A **new** set into a finished session is refused `409 session-finished`; a **replay** of one
+  that already landed still returns `200` with the stored row. That asymmetry is the whole
+  offline story — flush before you finish.
+- The three 409s are told apart by the machine `code`, never by the sentence:
+  `session-finished` · `set-id-taken` · `session-id-taken`.
+- The schema seeds the catalog with `ON CONFLICT DO NOTHING`, so re-applying `schema.sql`
+  never clobbers a renamed display name — and re-applying twice is the idempotency test.
 
 ## Known gotchas
 
