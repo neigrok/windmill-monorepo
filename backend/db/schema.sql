@@ -724,3 +724,187 @@ create table if not exists journal_page_vector (
   created_at    timestamptz not null default now(),
   primary key (user_id, day)
 );
+
+-- ── Gym (products/gym) ───────────────────────────────────────────────────────────────────────
+-- The third room in the superapp: a training log whose one load-bearing feature is the durable
+-- set write. Tables are gym_*, every row owner-scoped, and account deletion is the cascade — as
+-- in journal, there is deliberately NO visibility column and no share entity, so a session is
+-- legible to exactly one account by construction. All date/time work stays in SQL (to_timestamp,
+-- extract(epoch …)); instants cross the wire and the domain as epoch-ms. Create order is FK
+-- order: exercises → routines → routine_entries → sessions → sets (the architecture doc reads
+-- sessions first; the DDL cannot, because gym_sessions.routine_id references gym_routines).
+
+-- The identity table. id is a STABLE slug ('back-squat'), never renamed, never displayed;
+-- name is the mutable display string. That separation IS the fix for Lift's worst bug family:
+-- rename forked history, a typo forked history, 'Bench press' vs 'Bench Press' were two lifts
+-- forever, and the coach could only address exercises by exact string. Here a rename is a
+-- metadata edit on one row and every set keeps pointing at the same id.
+-- Seeded with 64 movements in this migration (ON CONFLICT DO NOTHING — re-runnable, and user
+-- edits to name survive redeploys). created_by NULL marks a seed; phase-2 custom exercises
+-- land as rows with created_by = the owner, visible only to them — a column now, not a
+-- migration later.
+create table if not exists gym_exercises (
+  id          text primary key,
+  name        text not null,
+  pattern     text not null check (pattern in
+                ('squat','hinge','press','pull','carry','core','isolation')),
+  equipment   text not null check (equipment in
+                ('barbell','dumbbell','machine','cable','bodyweight','kettlebell')),
+  step_kg     numeric(4,2) not null default 2.5,   -- the default ladder increment; the
+                                                   -- range-adaptive ladder layers on top, client-side
+  created_by  uuid references users(id) on delete cascade,   -- null = catalog seed
+  created_at  timestamptz not null default now()
+);
+
+-- Phase-2 UI, phase-0 schema. Entries are RELATIONAL, not a JSON blob — Lift persisted
+-- per-set pyramid targets as an opaque blob ("the database can never query or aggregate it")
+-- and decode failures silently returned [], losing the program. The one legitimate blob is
+-- the session's frozen snapshot (below), which is a copy by definition.
+create table if not exists gym_routines (
+  id          text primary key,                     -- client-minted 'rt_<hex>'
+  user_id     uuid not null references users(id) on delete cascade,
+  name        text not null,
+  position    int  not null default 0,
+  created_at  timestamptz not null default now()
+);
+create index if not exists gym_routines_user on gym_routines (user_id, position);
+
+-- The same movement twice in one routine — bench heavy, then bench back-off — is two rows with
+-- two positions (Lift collapsed them into one set counter). rest_seconds is the phase-2
+-- rest-timer's reserved column; a null target weight means "last time".
+create table if not exists gym_routine_entries (
+  routine_id       text not null references gym_routines(id) on delete cascade,
+  position         int  not null check (position >= 1),
+  exercise_id      text not null references gym_exercises(id),
+  target_sets      int  not null default 3 check (target_sets between 1 and 20),
+  target_reps      int  not null default 8 check (target_reps between 1 and 100),
+  target_weight_kg numeric(6,2) check (target_weight_kg between -500 and 500),  -- null = last time
+  rest_seconds     int check (rest_seconds between 15 and 900),                 -- null = client default
+  primary key (routine_id, position)
+);
+
+-- A session is started by the device with a CLIENT-MINTED id ('ses_<hex>'). The id IS the
+-- idempotency key: a double-tapped Start, an offline replay, a retried POST all conflict on
+-- the PK and no-op — Lift minted a phantom session from a double-tap and needed a guard
+-- nobody wrote for a year. One open session per user is enforced by the partial unique index,
+-- not by application memory: starting while another is open JOINS the open session.
+-- plan is a FROZEN jsonb copy of the routine at start (null = ad-hoc). Lift stored templateId
+-- + a copied name, so it could say what you did and never what you were supposed to do, and
+-- editing a template mid-workout rewrote the program's past. A snapshot is what makes
+-- phase-3 plan-vs-actual possible at all. routine_id is informational (set null on delete);
+-- the snapshot is the truth. started_at/finished_at are client wall-clock instants — offline
+-- logging means the device's clock is the only honest one, and this is the owner's own data.
+create table if not exists gym_sessions (
+  id          text primary key,
+  user_id     uuid not null references users(id) on delete cascade,
+  routine_id  text references gym_routines(id) on delete set null,
+  plan        jsonb,
+  started_at  timestamptz not null,
+  finished_at timestamptz
+);
+create index if not exists gym_sessions_log on gym_sessions (user_id, started_at desc);
+create unique index if not exists gym_sessions_one_open on gym_sessions (user_id)
+  where finished_at is null;
+
+-- The unit of the whole product: an append-only event stream from one device at a time.
+-- Nothing to converge, so no HLC and no lattice — the client-minted id ('set_<hex>') makes
+-- the background-flush queue replayable (ON CONFLICT DO NOTHING), which is all offline needs.
+-- kind / rpe / note land NOW though their UI is phase 2 — Lift's lesson is that this is a
+-- schema decision, not a feature decision: a warmup must not count toward volume, and
+-- band-assisted work logs NEGATIVE kg, which naive volume = weight × reps silently subtracts
+-- from every total (Lift shipped exactly that). The volume contribution of a set kind is a
+-- domain decision, deferred to the first aggregating bet; the storage is decided here.
+-- set_number is server-assigned max+1 per (session, exercise) — not count+1: after a phase-2
+-- delete + renumber, count+1 would mint a duplicate (a bug Lift's own spec had backwards).
+-- Canonical unit is kg, numeric(6,2) so 72.5 is 72.5 forever; there is no lb column.
+create table if not exists gym_sets (
+  id           text primary key,
+  session_id   text not null references gym_sessions(id) on delete cascade,
+  user_id      uuid not null references users(id) on delete cascade,
+  exercise_id  text not null references gym_exercises(id),
+  set_number   int  not null check (set_number >= 1),
+  weight_kg    numeric(6,2) not null check (weight_kg between -500 and 500),
+  reps         int  not null check (reps between 1 and 500),
+  kind         text not null default 'working' check (kind in
+                 ('warmup','working','drop','failure')),
+  rpe          numeric(3,1) check (rpe between 1 and 10),
+  note         text not null default '',
+  completed_at timestamptz not null
+);
+create index if not exists gym_sets_session  on gym_sets (session_id, set_number);
+-- the prefill read and every per-exercise history: newest sets of one movement, one index
+create index if not exists gym_sets_history  on gym_sets (user_id, exercise_id, completed_at desc);
+
+-- The catalog seed: 64 movements across the seven patterns (the flat legs-vs-three-arm-buckets
+-- lopsidedness of Lift's taxonomy is refused; pattern is the only classification). Steps by
+-- equipment: barbell 2.5 (smallest plate pair), dumbbell 2.0 (rack gap), machine 5.0 (pin),
+-- cable 2.5, bodyweight 2.5 (belt plate — and negative weight is legal for band-assisted work),
+-- kettlebell 4.0. dip, pull-up and muscle-up are distinct ids with "weighted" expressed by
+-- load, not identity — that keeps the phase-3 strength-tree chain expressible from logged sets.
+-- ON CONFLICT (id) DO NOTHING so a redeploy never clobbers a renamed display name.
+insert into gym_exercises (id, name, pattern, equipment, step_kg) values
+  ('back-squat',                 'Back Squat',                 'squat',     'barbell',    2.5),
+  ('front-squat',                'Front Squat',                'squat',     'barbell',    2.5),
+  ('goblet-squat',               'Goblet Squat',               'squat',     'dumbbell',   2.0),
+  ('bulgarian-split-squat',      'Bulgarian Split Squat',      'squat',     'dumbbell',   2.0),
+  ('walking-lunge',              'Walking Lunge',              'squat',     'dumbbell',   2.0),
+  ('step-up',                    'Step Up',                    'squat',     'dumbbell',   2.0),
+  ('leg-press',                  'Leg Press',                  'squat',     'machine',    5.0),
+  ('hack-squat',                 'Hack Squat',                 'squat',     'machine',    5.0),
+  ('deadlift',                   'Deadlift',                   'hinge',     'barbell',    2.5),
+  ('sumo-deadlift',              'Sumo Deadlift',              'hinge',     'barbell',    2.5),
+  ('romanian-deadlift',          'Romanian Deadlift',          'hinge',     'barbell',    2.5),
+  ('trap-bar-deadlift',          'Trap Bar Deadlift',          'hinge',     'barbell',    2.5),
+  ('good-morning',               'Good Morning',               'hinge',     'barbell',    2.5),
+  ('hip-thrust',                 'Hip Thrust',                 'hinge',     'barbell',    2.5),
+  ('back-extension',             'Back Extension',             'hinge',     'bodyweight', 2.5),
+  ('kettlebell-swing',           'Kettlebell Swing',           'hinge',     'kettlebell', 4.0),
+  ('bench-press',                'Bench Press',                'press',     'barbell',    2.5),
+  ('incline-bench-press',        'Incline Bench Press',        'press',     'barbell',    2.5),
+  ('close-grip-bench-press',     'Close Grip Bench Press',     'press',     'barbell',    2.5),
+  ('overhead-press',             'Overhead Press',             'press',     'barbell',    2.5),
+  ('push-press',                 'Push Press',                 'press',     'barbell',    2.5),
+  ('dumbbell-bench-press',       'Dumbbell Bench Press',       'press',     'dumbbell',   2.0),
+  ('incline-dumbbell-press',     'Incline Dumbbell Press',     'press',     'dumbbell',   2.0),
+  ('dumbbell-shoulder-press',    'Dumbbell Shoulder Press',    'press',     'dumbbell',   2.0),
+  ('machine-chest-press',        'Machine Chest Press',        'press',     'machine',    5.0),
+  ('machine-shoulder-press',     'Machine Shoulder Press',     'press',     'machine',    5.0),
+  ('dip',                        'Dip',                        'press',     'bodyweight', 2.5),
+  ('push-up',                    'Push Up',                    'press',     'bodyweight', 2.5),
+  ('pull-up',                    'Pull Up',                    'pull',      'bodyweight', 2.5),
+  ('chin-up',                    'Chin Up',                    'pull',      'bodyweight', 2.5),
+  ('muscle-up',                  'Muscle Up',                  'pull',      'bodyweight', 2.5),
+  ('lat-pulldown',               'Lat Pulldown',               'pull',      'cable',      2.5),
+  ('barbell-row',                'Barbell Row',                'pull',      'barbell',    2.5),
+  ('dumbbell-row',               'Dumbbell Row',               'pull',      'dumbbell',   2.0),
+  ('chest-supported-row',        'Chest Supported Row',        'pull',      'machine',    5.0),
+  ('seated-cable-row',           'Seated Cable Row',           'pull',      'cable',      2.5),
+  ('face-pull',                  'Face Pull',                  'pull',      'cable',      2.5),
+  ('barbell-shrug',              'Barbell Shrug',              'pull',      'barbell',    2.5),
+  ('inverted-row',               'Inverted Row',               'pull',      'bodyweight', 2.5),
+  ('farmers-carry',              'Farmers Carry',              'carry',     'dumbbell',   2.0),
+  ('suitcase-carry',             'Suitcase Carry',             'carry',     'dumbbell',   2.0),
+  ('overhead-carry',             'Overhead Carry',             'carry',     'dumbbell',   2.0),
+  ('plank',                      'Plank',                      'core',      'bodyweight', 2.5),
+  ('hanging-leg-raise',          'Hanging Leg Raise',          'core',      'bodyweight', 2.5),
+  ('ab-wheel-rollout',           'Ab Wheel Rollout',           'core',      'bodyweight', 2.5),
+  ('cable-crunch',               'Cable Crunch',               'core',      'cable',      2.5),
+  ('pallof-press',               'Pallof Press',               'core',      'cable',      2.5),
+  ('weighted-sit-up',            'Weighted Sit Up',            'core',      'bodyweight', 2.5),
+  ('barbell-curl',               'Barbell Curl',               'isolation', 'barbell',    2.5),
+  ('dumbbell-curl',              'Dumbbell Curl',              'isolation', 'dumbbell',   2.0),
+  ('hammer-curl',                'Hammer Curl',                'isolation', 'dumbbell',   2.0),
+  ('triceps-pushdown',           'Triceps Pushdown',           'isolation', 'cable',      2.5),
+  ('skull-crusher',              'Skull Crusher',              'isolation', 'barbell',    2.5),
+  ('overhead-triceps-extension', 'Overhead Triceps Extension', 'isolation', 'dumbbell',   2.0),
+  ('lateral-raise',              'Lateral Raise',              'isolation', 'dumbbell',   2.0),
+  ('rear-delt-fly',              'Rear Delt Fly',              'isolation', 'dumbbell',   2.0),
+  ('dumbbell-fly',               'Dumbbell Fly',               'isolation', 'dumbbell',   2.0),
+  ('cable-fly',                  'Cable Fly',                  'isolation', 'cable',      2.5),
+  ('leg-extension',              'Leg Extension',              'isolation', 'machine',    5.0),
+  ('lying-leg-curl',             'Lying Leg Curl',             'isolation', 'machine',    5.0),
+  ('standing-calf-raise',        'Standing Calf Raise',        'isolation', 'machine',    5.0),
+  ('seated-calf-raise',          'Seated Calf Raise',          'isolation', 'machine',    5.0),
+  ('wrist-curl',                 'Wrist Curl',                 'isolation', 'barbell',    2.5),
+  ('hip-abduction',              'Hip Abduction',              'isolation', 'machine',    5.0)
+on conflict (id) do nothing;

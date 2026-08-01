@@ -73,6 +73,15 @@ add_library(windmill_journal
 target_include_directories(windmill_journal PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(windmill_journal PUBLIC windmill_platform)
 
+# --- gym product CORE (domain + application). Same one-way rule: windmill_platform only, never
+# another product. The adapters (Pg, http, json) fold into this same library under the Drogon
+# guard below, so gym stays one lib whether or not the vendor edges are present.
+add_library(windmill_gym
+  products/gym/domain/Training.cpp
+  products/gym/application/LogService.cpp)
+target_include_directories(windmill_gym PUBLIC ${CMAKE_SOURCE_DIR})
+target_link_libraries(windmill_gym PUBLIC windmill_platform)
+
 # Drogon + libpqxx gate the real adapters (SPEC §11). Found here, up front, because Drogon also
 # exports Trantor and jsoncpp as imported targets — and TendingService (in the roadmap core) needs
 # both: its agent loop runs on a private trantor event-loop thread so the durable half can answer
@@ -131,8 +140,10 @@ add_executable(windmill_domain_tests
   test/products/journal/domain/EchoFinderTest.cpp
   test/products/journal/application/PageServiceTest.cpp
   test/products/journal/application/NudgeSweepTest.cpp
-  test/products/journal/application/EchoSweepTest.cpp)
-target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_journal)
+  test/products/journal/application/EchoSweepTest.cpp
+  test/products/gym/domain/TrainingTest.cpp
+  test/products/gym/application/LogServiceTest.cpp)
+target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_journal windmill_gym)
 
 enable_testing()
 add_test(NAME domain COMMAND windmill_domain_tests)
@@ -227,11 +238,19 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     products/journal/adapters/llm/OpenAiTranscriber.cpp
     products/journal/routes.cpp)
 
+  # Gym adapters: the Pg storage, the JSON wire boundary, the REST surface, and the route seam.
+  # They reach Drogon + libpqxx through windmill_platform (linked PUBLIC by the core lib above).
+  target_sources(windmill_gym PRIVATE
+    products/gym/adapters/json/TrainingJson.cpp
+    products/gym/adapters/postgres/PgTrainingRepository.cpp
+    products/gym/adapters/http/GymApi.cpp
+    products/gym/routes.cpp)
+
   # One process serves REST, the collab socket, AND MCP over the same rooms. main.cpp is the
   # composition root: it builds platform + roadmap singletons, mounts the shared MCP endpoint, and
   # calls roadmap::registerRoutes for the product half (products/roadmap/routes.h).
   add_executable(windmill_server platform/infra/main.cpp)
-  target_link_libraries(windmill_server PRIVATE windmill_roadmap windmill_journal)
+  target_link_libraries(windmill_server PRIVATE windmill_roadmap windmill_journal windmill_gym)
   message(STATUS "windmill_server enabled (Drogon + libpqxx found)")
 
   add_executable(windmill_mcp platform/infra/mcp_main.cpp)            # stdio transport (local hosts)
@@ -278,8 +297,10 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/products/journal/adapters/http/NudgeApiTest.cpp
     test/products/journal/adapters/http/EchoApiTest.cpp
     test/products/journal/adapters/http/VoiceApiTest.cpp
-    test/products/journal/adapters/postgres/PgJournalRepositoryTest.cpp)
-  target_link_libraries(windmill_adapters_tests PRIVATE windmill_roadmap windmill_journal)
+    test/products/journal/adapters/postgres/PgJournalRepositoryTest.cpp
+    test/products/gym/adapters/http/GymApiTest.cpp
+    test/products/gym/adapters/postgres/PgTrainingRepositoryTest.cpp)
+  target_link_libraries(windmill_adapters_tests PRIVATE windmill_roadmap windmill_journal windmill_gym)
   add_test(NAME adapters COMMAND windmill_adapters_tests)
 else()
   message(STATUS "Drogon/libpqxx not found — building core + tests only; run 'brew install drogon libpqxx' to enable windmill_server")

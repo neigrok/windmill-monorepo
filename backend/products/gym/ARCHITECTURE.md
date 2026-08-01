@@ -184,6 +184,12 @@ clock is the only honest one, and this is the owner's own data.
 -- domain decision, deferred to the first aggregating bet; the storage is decided here.
 -- set_number is server-assigned max+1 per (session, exercise) — not count+1: after a phase-2
 -- delete + renumber, count+1 would mint a duplicate (a bug Lift's own spec had backwards).
+-- max+1 is only unique if two appends to one session cannot read the same max, and READ COMMITTED
+-- lets them: a parallel flush of six sets minted four "set 1"s. The invariant is held by a
+-- FOR UPDATE on the session row taken as its own statement before the insert (§3.3) — appends to
+-- one session serialize behind it. No unique index on (session_id, exercise_id, set_number) yet:
+-- it would be a second arbiter to reconcile with the phase-2 renumber, and the lock already
+-- makes the duplicate unreachable.
 create table if not exists gym_sets (
   id           text primary key,
   session_id   text not null references gym_sessions(id) on delete cascade,
@@ -287,14 +293,33 @@ struct Set      { SetId id; SessionId session; ExerciseId exercise; int setNumbe
 Real constructors, never aggregate init (the house rule): `Set`'s constructor validates reps,
 weight bounds, rpe range, note length, and a non-empty id, throwing `InvalidTraining` — so an
 invalid set cannot exist in memory, and the HTTP layer's 400 is the constructor's throw caught
-at the boundary. Codec free functions colocate in the header: `toString(SetKind)` /
+at the boundary. Two of those rules are about what *storage* can hold, and they belong here for
+exactly that reason:
+
+```cpp
+// 9999-12-31T23:59:59Z, the furthest instant a timestamptz can hold.
+constexpr std::uint64_t kMaxInstantMs = 253402300799000ull;
+```
+
+**Every instant is bounded to `(0, kMaxInstantMs]`** — `startedAtMs`, `finishedAtMs`,
+`completedAtMs`. A device that sends nanoseconds, or serializes an int64 `-1` as a uint64, wraps
+to a negative epoch and commits a 1969 row that *every later read of that account throws on*: the
+log, the detail, the next start, all dead, with no delete route to recover through. The refusal
+happens at construction, before SQL sees the value. The Postgres mapper clamps on the way back
+too (§3.4), so a row written before this rule existed can still be read.
+
+**A note may not hold a NUL byte.** Postgres text stops at one and would store the head of the
+note as if it were the whole note — silently shortening a lifter's words is worse than refusing
+them, and the wire is the only place a NUL can come from.
+
+Codec free functions colocate in the header: `toString(SetKind)` /
 `parseSetKind(string_view)` — **strict on write** (an unknown kind in a request is a 400, never
 a silent downgrade of user data) — and `setKindFromStored` clamping to `working` on read, so a
 future kind added by a newer deploy can't crash an older reader. Id shape validation is one
 rule: `^[A-Za-z0-9_-]{8,64}$`, recommended prefixes `ses_` / `set_` / `rt_` (client-minted,
 opaque to the server; the same client-supplied-id move the tree import uses).
 
-### 3.2 The one pure rule — auto-close
+### 3.2 The two pure session rules — auto-close and the legal end
 
 Lift had a three-way crash-recovery UX because its store was device-local. Server-as-truth
 deletes the problem, and `session-resume` was deliberately cut as a bet and kept as a rule:
@@ -313,28 +338,76 @@ its last set instant → `autoCloseAt` → persist the close if the domain says 
 sweep, no heartbeat thread: gym phase 0–2 arms **zero** tickers, which is why its `main.cpp`
 block is four lines.
 
+The explicit finish is the other end of the same story, and it gets the same treatment — a rule
+beside `autoCloseAt`, not a check buried in a parser:
+
+```cpp
+// A workout cannot end before it began, at zero, or past what the store can hold.
+bool canFinishAt(const Session&, std::uint64_t finishedAtMs);
+```
+
+It needs the stored session, so the wire cannot enforce it alone — only the row knows when the
+session began. And it has to be right the first time: `close` is `WHERE finished_at IS NULL`,
+first-writer-wins by design, so the first instant that lands is the session's end **forever**.
+A client whose clock was unset sends `0`, the session ends in 1970, `finishedAt: 0` is falsy in
+JS and the row renders "in progress" for the rest of time, unfixable until phase-2 log-editing.
+That is one refusal's worth of work.
+
 ### 3.3 The write path (`application/LogService`)
 
 `LogService` holds `TrainingRepository&` and reads top-to-bottom like the plain-English rule:
 
-- **`start(user, SessionStart)`** — auto-close any stale open session (§3.2) → insert
-  `ON CONFLICT (id) DO NOTHING` → load whichever session is now open for this user and return
-  it. A replayed POST returns the same session; a double-tap that minted two ids returns the
-  first tap's session (the partial unique index refuses the second insert, and the service
-  reads back the truth). Idempotent by construction, no guard flag anywhere.
-- **`append(user, SetWrite)`** — load the session (absent or another's → not found; finished →
-  409 at the edge) → construct the domain `Set` (throws → 400) → insert with
-  `set_number = max+1` for that (session, exercise) computed in the same statement →
-  `ON CONFLICT (id) DO NOTHING` → re-read the stored row and return it. The device's
-  background flush can replay the queue in any order, any number of times; the log converges
-  on exactly one row per minted id. One device at a time is the stated model — a concurrent
-  same-exercise append from a second device could race max+1, and that is accepted, recorded,
-  and not defended against with a lattice.
-- **`finish(user, session, finishedAtMs)`** — set `finished_at` if null; replay returns the
-  stored session unchanged. Finishing an already-auto-closed session is the same no-op.
+Each write answers with a small outcome — `StartOutcome` / `AppendOutcome` / `FinishOutcome`, a
+resolved row plus a typed refusal — because every refusal here is a *fact*, not an exception:
+flow control never travels as a throw, and `InvalidTraining` stays reserved for malformed input.
+
+- **`start(user, SessionStart)`** — auto-close any stale open session (§3.2) → insert with a
+  bare `ON CONFLICT DO NOTHING` (deliberately untargeted: the insert must no-op on *either*
+  arbiter — the PK replay *and* the one-open partial unique index; `ON CONFLICT (id)` would
+  raise on the double-tap instead of converging it) → load whichever session is now open for
+  this user, else the stored row under that id, and return it. A replayed POST returns the same
+  session; a double-tap that minted two ids returns the first tap's session (the partial unique
+  index refuses the second insert, and the service reads back the truth); a start replayed after
+  the session was finished returns the finished row. Idempotent by construction, no guard flag
+  anywhere. When **nothing** of this caller's resolves, the insert no-oped on a row owned by
+  someone else: `StartError::idTaken` → 409, mint a new id. The service never invents a session
+  the store did not accept — a fabricated 200 leaves a client logging into a session that exists
+  nowhere, and every set it posts 404s forever with no way to notice.
+- **`append(user, SetWrite)`** — load the session (absent or another's → not found) → construct
+  the domain `Set` (throws → 400) → **resolve the replay before any refusal**: the owner-scoped
+  `setOf(user, id)`. A row already stored under that id *in this session* is the answer, whatever
+  state the session is in now. A row stored under that id in a **different** session is
+  `AppendError::idTaken` → 409 — the caller's own earlier session or a stranger's, told apart by
+  nobody, because the reply carries the fact that the id is spent and never the row. Only a
+  genuinely new id reaches the finished refusal (`AppendError::finished` → 409) and then the
+  insert: `FOR UPDATE` on the session row, then `set_number = max+1` for that (session, exercise)
+  computed in the next statement, `ON CONFLICT (id) DO NOTHING`, then a read-back scoped to
+  **(id, session_id)** — which is the row returned. The device's background flush can replay the
+  queue in any order, any number of times; the log converges on exactly one row per minted id.
+  A concurrent same-exercise append no longer races the numbering (§2.3): appends to one session
+  serialize behind its row, which costs one lock on a write that is already one round trip.
+  The insert's own two refusals come back beside the row as `SetInsertError` (§3.4) and the service
+  passes them through untouched: `unknownExercise` when the set names a movement no catalog holds
+  → `AppendError::unknownExercise` → 400, and `idTaken` when the scoped read-back finds nothing.
+  Neither is ever an exception in flight — the catalog is storage's to know, and storage says so in
+  a value.
+
+  **The finish boundary, decided.** A set that already landed lands again — idempotency outlives
+  the session's close, so a queue that treats 409 as terminal can never drop a row it in fact
+  delivered. A set that **never** landed may **not** land after the session is closed: it is
+  refused 409 `finished`, and the client drops it. The rule that follows for the device is the
+  contract of the phase-1 flush queue: **flush before you finish** — finishing is the client's
+  statement that everything it holds is already delivered. The exposed case is the one the device
+  cannot see coming: an auto-close (§3.2) that fires while sets sit unflushed in a queue older
+  than four hours. `set-logger` owns making that visible — flush on reconnect before anything
+  else, and surface the refusal rather than swallowing it.
+- **`finish(user, session, finishedAtMs)`** — load the session → `canFinishAt` (§3.2) or
+  `FinishError::badInstant` → 400 → set `finished_at` if null; replay returns the stored session
+  unchanged. Finishing an already-auto-closed session is the same no-op.
 
 Every write returns the resolved row (journal's `PageService::write` lesson): a client that
-lost a race or replayed sees the winning truth in one round trip.
+lost a race or replayed sees the winning truth in one round trip — and when there is no row it
+is entitled to, it gets a refusal, never a row it is not.
 
 ### 3.4 The port (`ports/TrainingRepository.h`)
 
@@ -344,21 +417,52 @@ struct TrainingRepository {
   virtual std::vector<Exercise> catalog(const UserId&) = 0;          // seeds + own customs
   virtual std::optional<Session> open(const UserId&) = 0;
   virtual std::optional<Session> session(const UserId&, const SessionId&) = 0;
+  virtual std::optional<Set> setOf(const UserId&, const SetId&) = 0; // owner-scoped: the replay lookup
   virtual std::optional<std::uint64_t> lastActivity(const SessionId&) = 0;
   virtual void insertSession(const Session&) = 0;                    // conflict = no-op
   virtual void close(const SessionId&, std::uint64_t finishedAtMs) = 0;
-  virtual Set insertSet(const Set& incoming) = 0;                    // assigns number; replay returns stored
-  virtual std::vector<SessionSummary> log(const UserId&, std::uint64_t beforeMs, int limit) = 0;
+  virtual SetInsertOutcome insertSet(const Set& incoming) = 0;       // assigns number; replay returns
+                                                                     // stored; refusals as values
+  virtual std::vector<SessionSummary> log(const UserId&, const LogCursor&) = 0;
   virtual std::vector<Set> setsOf(const SessionId&) = 0;
 };
 
 struct SessionSummary { Session session; int setCount; std::vector<std::string> exerciseNames; };
+struct LogCursor { std::uint64_t beforeMs; std::optional<SessionId> beforeId; int limit; };
+
+enum class SetInsertError { none, idTaken, unknownExercise };
+struct SetInsertOutcome { std::optional<Set> set; SetInsertError error; };
 ```
 
-DTOs live with the port (the house convention). The `Fakes.h` twin applies the **same rules as
-the SQL** — the PK no-op, the partial-unique open-session refusal, max+1 numbering — because
-Lift's proposal-apply bug survived precisely as long as its mock didn't model the persistence
-boundary.
+DTOs live with the port (the house convention). **Every method that can resolve a row carries the
+`UserId` that may see it** — including `setOf`, the one lookup keyed by a client-minted set id:
+an id is a guess anyone can make, so the scope has to travel with it. `insertSet`'s `idTaken` is
+the same rule applied to the write: its read-back is scoped to `(id, session_id)`, so an id already
+spent outside this session resolves to *nothing* rather than to that row. The unscoped version of
+that one read handed a stranger's weight, rpe and free-text note to whoever guessed the id, and
+reported a 200 for a set it had silently dropped.
+
+**Both refusals cross the port as values, and that is a structural rule, not a preference.** The
+exercise FK is a fact only storage can know, and it arrived as a `pqxx::foreign_key_violation`
+caught at the *HTTP edge* — which made the wire layer include a database header and know which
+store gym is kept in, and cost a divergence immediately: the fake could only imitate the throw with
+`InvalidTraining`, so under test that path said "could not read that set" while the live server
+said "no such exercise", and no test pinned either sentence. The translation belongs where every
+other adapter puts it — inside the Pg adapter, beside the statements that already know what
+Postgres is (`PgTreeRepository` catching `unique_violation`, `PgReminderRepository` catching
+`sql_error`). Everything the store has no answer for rides past untranslated to the house 500.
+
+The Postgres mapper also **clamps every instant it reads** into the band §3.1 accepts. The write
+path makes new poison impossible; the read path makes old poison survivable — one 1969 row must
+never take down every read of that account's log.
+
+The `Fakes.h` twin applies the **same rules as the SQL** — the PK no-op, the partial-unique
+open-session refusal, max+1 numbering, the owner scope on every read, the session-scoped read-back,
+and the exercise FK reported as the same typed fact — because Lift's proposal-apply bug survived
+precisely as long as its mock didn't model the persistence boundary. A fake that mirrors a leak is
+worse than no fake: it makes the suite green *because* the bug is faithfully reproduced. Typing the
+fact is what keeps the two honest **by construction** — they now return one enum, so they cannot
+hold different opinions about what an unknown movement means.
 
 ---
 
@@ -380,10 +484,21 @@ query, ordered by pattern then name. Identity rules, stated once:
 
 ## 5. Capability 3 — the reads
 
-- **The log** (`log` + `setsOf`) — sessions newest-first, keyset-paged on `started_at`
-  (`?before=<ms>&limit=`, default 50, cap 200), summaries carrying set count and exercise
-  names; detail is per-exercise grouping in first-performed order, assembled client-side from
-  numbered sets. Read-only in phase 1 — the fix-it path is phase 2's `log-editing`.
+- **The log** (`log` + `setsOf`) — sessions newest-first, keyset-paged on the **pair**
+  `(started_at, id)` (`?before=<ms>&beforeId=<id>&limit=`, default 50, cap 200), summaries
+  carrying set count and exercise names; detail is per-exercise grouping in first-performed
+  order, assembled client-side from numbered sets. Read-only in phase 1 — the fix-it path is
+  phase 2's `log-editing`.
+
+  The cursor is the previous page's **last row, both halves**, because `started_at` alone is not
+  unique: two sessions started in the same millisecond straddling a page edge, and an exclusive
+  instant cursor puts one of them in no page, ever — silently, and differently at each page size.
+  Ties are near-certain the moment phase-1 `lift-import` bulk-loads coarse timestamps. A client
+  that sends only `before` gets what it asks for — strictly before that instant — which cannot
+  express a tie; **both halves travel or the walk is lossy**, and `beforeId` without `before`
+  names no row and is a bad cursor. The summary's movement names come back as one row per
+  movement, not as one string a separator has to be picked out of: a display name is user text
+  (phase-2 rename), and hand-rolled framing turns one movement holding the separator into two.
 - **Last-time prefill** (phase 1, `last-time-prefill` bet) — one route over the
   `gym_sets_history` index: the most recent *finished* session containing the exercise, its
   sets in order. "Last time: 82.5 × 8, 82.5 × 8, 80 × 7", weight pre-dialled. The metric that
@@ -403,7 +518,7 @@ query, ordered by pattern then name. Identity rules, stated once:
 | `POST /v1/gym/sessions` | start — `{id, startedAt}`, idempotent, joins an open session | 0 |
 | `POST /v1/gym/sessions/{id}/sets` | append a set — `{id, exerciseId, weightKg, reps, completedAt, kind?, rpe?, note?}` | 0 |
 | `POST /v1/gym/sessions/{id}/finish` | close — `{finishedAt}`, idempotent | 0 |
-| `GET  /v1/gym/sessions?before=&limit=` | the log, newest first | 0 |
+| `GET  /v1/gym/sessions?before=&beforeId=&limit=` | the log, newest first | 0 |
 | `GET  /v1/gym/sessions/{id}` | one session with its sets | 0 |
 | `GET  /v1/gym/last?exercise=` | last-time prefill | 1 |
 | `GET  /v1/gym/export` | every set, CSV | 2 |
@@ -415,11 +530,67 @@ numbers in kg, sets serialize as
 `{id, exerciseId, setNumber, weightKg, reps, kind, rpe?, note, completedAt}`, sessions as
 `{id, startedAt, finishedAt?, routineId?, plan?}`; list replies wrap (`{"exercises":[…]}`,
 `{"sessions":[…]}`, detail `{"session":…, "sets":[…]}`). Parsing type-checks every jsoncpp
-field before `.as*()` and throws `InvalidTraining` → 400; the auth ladder is the house one —
-`callerOf` → 401 `"sign in to open your training log"` first, absent → 404 (a fact, not a
-fault), malformed → 400, never a leaked 500. Finished-session append is the one gym-specific
-edge: 409 `"that session is finished"` — the client's flush queue treats it as terminal, not
-retryable. There are no admin doors and no uncredentialed doors: nothing sweeps, nothing mails.
+field before `.as*()` and throws `InvalidTraining` → 400.
+
+**Instants are bounded at the wire, all three the same way.** `startedAt`, `completedAt` and
+`finishedAt` go through one rule in the codec: a UInt64, never `0` (an unset device clock is
+not a moment), never past `kMaxInstantMs` = `253402300799000` (9999-12-31T23:59:59Z, the
+furthest a `timestamptz` holds). `finishedAt` was once the one instant nothing checked, and a
+single `{"finishedAt":0}` closed a 2026 workout in 1970 — permanently, because `close` is
+first-writer-wins. The ceiling is what keeps a nanosecond stamp or a `UInt64.max` sentinel from
+reaching `to_timestamp()` and overflowing mid-transaction. The same constant is the log
+cursor's "no cursor: from now".
+
+**The status ladder.** The status alone is not enough for the flush queue to act on: of the three
+409s, two mean *mint a new id and send it again* and one means *drop this set forever*. So every
+refusal a client must branch on carries a machine word under `code` beside the human sentence:
+
+| Status | `code` | When | Sentence | What the client does |
+|---|---|---|---|---|
+| 401 | — | no caller | `sign in to open your training log` | sign in, then replay the write |
+| 404 | — | the session is absent **or** another account's — one fact, not two | `no such session` | terminal — drop it |
+| 400 | — | the request is unreadable or unstorable *as written*: bad json, bad field type, a malformed id, an instant outside the bounds above | `could not read that session` / `… that set` / `… that finish` | terminal — retrying never makes a body readable |
+| 400 | `unknown-exercise` | the set names a movement no catalog holds (the exercise FK, §3.4) | `no such exercise` | terminal — the movement has to be resolved against `GET /v1/gym/exercises` first |
+| 400 | — | the close instant runs backwards against the stored start | `a session cannot finish before it began` | terminal — send an instant the session could have ended at |
+| 400 | — | the log cursor is not a digits-only instant plus, optionally, a well-formed id beside it | `bad cursor` | terminal, and a read-path fault — never the queue's |
+| 409 | `session-id-taken` | start with a session id already spent | `that session id is taken` | mint a NEW session id and start again |
+| 409 | `set-id-taken` | append a NEW set id already spent by a row outside this session | `that set id is already used` | mint a NEW set id and send the same set again |
+| 409 | `session-finished` | append a NEW set to a session already finished | `that session is finished` | terminal — this set will never land here |
+| 500 | — | a storage failure — a dropped connection, a statement timeout, a deadlock | `internal error` (the house handler) | retryable — keep the set queued |
+
+**The code is the contract; the sentence is for a human reading a log.** The wording is copy and may
+be edited any day; a client that told the three 409s apart by string-comparing it degrades to
+"terminal, reason unknown" the first time one is reworded — and drops a set it should have re-minted
+an id for. Only those four refusals carry a code, on purpose (`platform/adapters/http/JsonReply.h`):
+most refusals have exactly one cause and the sentence is the whole of it, and a key that is
+sometimes an empty string would make a client test it twice.
+
+All three 409s name a fact about an id, never about an owner: a caller learns that an id is spent
+and nothing else, so absent stays byte-identical to forbidden. They are the honest answer where
+the edge used to fabricate a 200 — a start that returned a session the store never accepted
+(every set into it then 404'd forever), and an append that returned the *stranger's* row sitting
+under the colliding id.
+
+`409 that session is finished` answers **new** ids only. A set that already landed replays 200
+with its stored row even after the session closes — the flush queue's whole premise is replay in
+any order, any number of times, converging on one row per minted id, and a queue told 409 for a
+set it had already delivered would drop it and count the loss as intended.
+
+The 400s are the client's, and terminal: retrying an unreadable body never makes it readable.
+The 500 is the server's, and retryable — which is why the write handlers catch **only**
+`InvalidTraining`, one catch, one meaning, and no vendor type among them. A
+`catch (const std::exception&)` around the same call told a queue that a five-second lock wait was
+a malformed set, and the lifter's set would have been dropped forever. There are no admin doors
+and no uncredentialed doors: nothing sweeps, nothing mails.
+
+**The log cursor carries both halves of the sort key.** The page order is `(startedAt, id)`
+descending, and only the pair is unique, so the cursor is the previous page's last row in full:
+`before=<epoch-ms>` and `beforeId=<that row's id>`. `before` is digits-only and clamps at
+`kMaxInstantMs`; `beforeId` obeys the one id-shape rule and is refused without a `before` beside
+it — an id with no instant names no row. Anything else is `400 bad cursor`. A first page passes
+neither. On a bare instant cursor, two workouts that started in the same millisecond straddling
+a page edge lost one of the pair to every paged read, silently, forever; `limit` defaults to 50
+and caps at 200.
 
 Telemetry: activation (`≥2 sessions of ≥5 sets within 7 days of the first set`) is instrumented
 from the first `set-logger` commit via the existing web beacon — a product event on session

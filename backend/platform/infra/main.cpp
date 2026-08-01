@@ -56,6 +56,9 @@
 #include "products/journal/adapters/postgres/PgNudgeRepository.h"
 #include "products/journal/application/PageService.h"
 #include "products/journal/routes.h"
+#include "products/gym/adapters/postgres/PgTrainingRepository.h"
+#include "products/gym/application/LogService.h"
+#include "products/gym/routes.h"
 
 #include <drogon/drogon.h>
 
@@ -731,6 +734,15 @@ int main() {
                                    .echoAdminToken = journalEchoAdminEnv ? journalEchoAdminEnv : "",
                                    .transcriber = journalTranscriber, .entitlements = entitlements};
   journal::registerRoutes(app, journalDeps);
+
+  // The gym product — the third room — mounted behind its own seam (products/gym/routes.h). Phase 0
+  // is the durable set write: owner-scoped, idempotent by client-minted id, auto-close applied
+  // lazily by the service. No env vars, no arming flags, no sweeps, no vendor keys — the seam's
+  // whole surface area is the absence in this block.
+  auto gymRepository = std::make_shared<gym::PgTrainingRepository>(connString);
+  auto logService = std::make_shared<gym::LogService>(*gymRepository, *systemClock);
+  gym::GymDeps gymDeps{.logService = logService, .authService = authService};
+  gym::registerRoutes(app, gymDeps);
 
   const char* portEnv = std::getenv("PORT");
   int port = portEnv ? std::atoi(portEnv) : 8080;
