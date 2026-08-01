@@ -13,7 +13,8 @@ struct Harness {
   FakeTokens tokens;
   FakeClock clock;
   OAuthService oauth{oauthRepo, tokens, clock};
-  AuthService service{repo, email, tokens, clock, oauth, "https://windmill.works"};
+  FakeAccountFootprint footprint;
+  AuthService service{repo, email, tokens, clock, oauth, footprint, "https://windmill.works"};
 
   // requestLink is async now: the verdict rides a callback, not a return value. The fake
   // sender resolves inline, so this reads the verdict back as a value — and the callback
@@ -26,6 +27,14 @@ struct Harness {
                         [&](AuthService::RequestResult result) { verdict = result; });
     CHECK(verdict.has_value());  // the callback shape is void(RequestResult), fired exactly once
     return *verdict;
+  }
+
+  // The secret out of the last mail, rather than a hand-counted "s4" — every session mint moves the
+  // counter, so counting by hand silently hands a later test a SESSION secret and calls the pass a
+  // proof. Read what the human would have clicked.
+  std::string lastLinkSecret() const {
+    const std::string& url = email.sent.back().url;
+    return url.substr(url.find("token=") + 6);
   }
 };
 }
@@ -158,18 +167,34 @@ TEST(revalidate_refuses_an_expired_session_and_an_unknown_digest) {
   CHECK_FALSE(h.service.revalidate("").has_value());
 }
 
+namespace {
+ProviderIdentity googleId(const std::string& subject, const std::string& email, const std::string& name = "") {
+  return ProviderIdentity{Provider::google, subject, *parseEmail(email), name, true, false};
+}
+ProviderIdentity appleId(const std::string& subject, const std::string& email, const std::string& name = "") {
+  return ProviderIdentity{Provider::apple, subject, *parseEmail(email), name, true, false};
+}
+constexpr const char* kRelay = "abc123@privaterelay.appleid.com";
+}
+
 TEST(google_sign_in_creates_the_account_and_a_session_for_a_new_email) {
   Harness h;
-  AuthService::SignedIn signedIn = h.service.completeGoogle(*parseEmail("sam@example.com"), "Sam Gold");
-  CHECK_EQ(signedIn.user.email.value, std::string("sam@example.com"));
-  CHECK_EQ(signedIn.user.name, std::string("Sam Gold"));  // Google's name, not the email-derived one
+  std::optional<AuthService::ProviderSignIn> signIn = h.service.completeProvider(googleId("g-1", "sam@example.com", "Sam Gold"));
+  CHECK(signIn.has_value());
+  CHECK_EQ(signIn->signedIn.user.email.value, std::string("sam@example.com"));
+  CHECK_EQ(signIn->signedIn.user.name, std::string("Sam Gold"));  // Google's name, not the email-derived one
+  CHECK(signIn->created);
+  CHECK_FALSE(signIn->privateEmail);
 
   // No link to consume, so the session secret is the first mint (s1), stored under its digest 90 days out.
-  CHECK_EQ(signedIn.sessionSecret, std::string("s1"));
+  CHECK_EQ(signIn->signedIn.sessionSecret, std::string("s1"));
   std::optional<StoredSession> session = h.repo.findSession("d1");
   CHECK(session.has_value());
-  CHECK_EQ(session->user.str(), signedIn.user.id.str());
+  CHECK_EQ(session->user.str(), signIn->signedIn.user.id.str());
   CHECK_EQ(session->expiresAt, h.clock.now + AuthPolicy::sessionLifetimeMs);
+  // The door is bound on the way through — which is the only way this table ever fills, since no
+  // provider subject was ever stored to migrate.
+  CHECK_EQ(h.repo.findIdentity(Provider::google, "g-1")->str(), signIn->signedIn.user.id.str());
 }
 
 // The load-bearing account-linking guarantee: one email, either door, ONE account. A Google-verified
@@ -179,8 +204,10 @@ TEST(google_sign_in_links_to_the_same_account_a_magic_link_created) {
   h.requestLink("sam@example.com");
   const UserId viaLink = h.service.completeLink("s1").signedIn->user.id;
 
-  AuthService::SignedIn viaGoogle = h.service.completeGoogle(*parseEmail("Sam@Example.com"), "Sam");
-  CHECK_EQ(viaGoogle.user.id.str(), viaLink.str());
+  std::optional<AuthService::ProviderSignIn> viaGoogle = h.service.completeProvider(googleId("g-1", "Sam@Example.com", "Sam"));
+  CHECK(viaGoogle.has_value());
+  CHECK_EQ(viaGoogle->signedIn.user.id.str(), viaLink.str());
+  CHECK_FALSE(viaGoogle->created);
   CHECK_EQ(h.repo.usersById.size(), 1u);  // one account, two doors — no duplicate
 }
 
@@ -191,10 +218,177 @@ TEST(google_sign_in_revives_a_within_grace_closed_account) {
   h.service.closeAccount(account);
   CHECK(h.repo.usersById.at(account.str()).deletedAt.has_value());  // closed, within grace
 
-  AuthService::SignedIn revived = h.service.completeGoogle(*parseEmail("sam@example.com"), "Sam");
-  CHECK_EQ(revived.user.id.str(), account.str());  // same account — signing in is the undo
-  CHECK_FALSE(revived.user.deletedAt.has_value());
+  std::optional<AuthService::ProviderSignIn> revived = h.service.completeProvider(googleId("g-1", "sam@example.com", "Sam"));
+  CHECK(revived.has_value());
+  CHECK_EQ(revived->signedIn.user.id.str(), account.str());  // same account — signing in is the undo
+  CHECK_FALSE(revived->signedIn.user.deletedAt.has_value());
   CHECK_FALSE(h.repo.usersById.at(account.str()).deletedAt.has_value());
+}
+
+// Step one of the ladder, and the whole reason the table exists: once a door is bound, the address
+// behind it stops mattering. This is the case the old email-only rule got wrong — a changed Google
+// primary address forked the account.
+TEST(a_bound_door_resolves_the_same_account_after_the_address_moves) {
+  Harness h;
+  const UserId first = h.service.completeProvider(googleId("g-1", "sam@example.com"))->signedIn.user.id;
+
+  std::optional<AuthService::ProviderSignIn> later = h.service.completeProvider(googleId("g-1", "sam@newjob.com"));
+  CHECK(later.has_value());
+  CHECK_EQ(later->signedIn.user.id.str(), first.str());
+  CHECK_FALSE(later->created);
+  CHECK_EQ(h.repo.usersById.size(), 1u);  // the new address created nothing
+}
+
+// Apple without Hide My Email: a real verified address, so step two resolves the account the human
+// already has on the web, exactly as Google does. No prompt, nothing to explain.
+TEST(apple_with_a_real_address_lands_on_the_existing_web_account) {
+  Harness h;
+  h.requestLink("sam@example.com");
+  const UserId viaLink = h.service.completeLink("s1").signedIn->user.id;
+
+  std::optional<AuthService::ProviderSignIn> viaApple = h.service.completeProvider(appleId("a-1", "sam@example.com", "Sam"));
+  CHECK(viaApple.has_value());
+  CHECK_EQ(viaApple->signedIn.user.id.str(), viaLink.str());
+  CHECK_FALSE(viaApple->privateEmail);
+  CHECK_EQ(h.repo.usersById.size(), 1u);
+}
+
+// Hide My Email: a relay can never find the account on the web, so a NEW one opens and the caller
+// is told both facts the link door is offered on. The fork is real — it is made recoverable, not
+// prevented, because there is no honest way to guess which account this is.
+TEST(apple_with_hide_my_email_opens_a_new_account_and_flags_the_link_door) {
+  Harness h;
+  h.requestLink("sam@example.com");
+  const UserId web = h.service.completeLink("s1").signedIn->user.id;
+
+  std::optional<AuthService::ProviderSignIn> phone = h.service.completeProvider(appleId("a-1", kRelay, "Sam"));
+  CHECK(phone.has_value());
+  CHECK(phone->created);
+  CHECK(phone->privateEmail);
+  CHECK(phone->signedIn.user.id.str() != web.str());
+  CHECK_EQ(h.repo.usersById.size(), 2u);
+}
+
+// The relay is stable for this app, so a returning Apple user re-finds the account they opened —
+// even with the door unbound, which is what an Apple REVOKE leaves behind.
+TEST(a_returning_relay_address_never_opens_a_third_account) {
+  Harness h;
+  const UserId phone = h.service.completeProvider(appleId("a-1", kRelay))->signedIn.user.id;
+  h.repo.identities.clear();  // the door revoked; the address is all that is left
+
+  std::optional<AuthService::ProviderSignIn> again = h.service.completeProvider(appleId("a-1", kRelay));
+  CHECK(again.has_value());
+  CHECK_EQ(again->signedIn.user.id.str(), phone.str());
+  CHECK_EQ(h.repo.usersById.size(), 1u);
+}
+
+// An unverified address must never touch an account: resolving one would be a takeover by anyone
+// who can type it.
+TEST(an_unverified_provider_address_is_refused_outright) {
+  Harness h;
+  ProviderIdentity unverified = googleId("g-1", "sam@example.com");
+  unverified.emailVerified = false;
+  CHECK_FALSE(h.service.completeProvider(unverified).has_value());
+  CHECK_EQ(h.repo.usersById.size(), 0u);
+
+  ProviderIdentity subjectless = googleId("", "sam@example.com");
+  CHECK_FALSE(h.service.completeProvider(subjectless).has_value());
+  CHECK_EQ(h.repo.usersById.size(), 0u);
+}
+
+// The rule that stops "sign in by link, then tap Apple" from forking the account on screen.
+TEST(a_provider_sign_in_while_signed_in_attaches_rather_than_resolving) {
+  Harness h;
+  h.requestLink("sam@example.com");
+  const UserId account = h.service.completeLink("s1").signedIn->user.id;
+
+  CHECK(h.service.attachIdentity(account, appleId("a-1", kRelay)) == AuthService::AttachOutcome::attached);
+  CHECK_EQ(h.repo.usersById.size(), 1u);  // no second account, though the address is a relay
+  CHECK_EQ(h.repo.findIdentity(Provider::apple, "a-1")->str(), account.str());
+
+  // Idempotent, and never a theft: the same door again is mine; someone else's stays theirs.
+  CHECK(h.service.attachIdentity(account, appleId("a-1", kRelay)) == AuthService::AttachOutcome::alreadyMine);
+  const UserId other = h.service.completeProvider(googleId("g-9", "other@example.com"))->signedIn.user.id;
+  CHECK(h.service.attachIdentity(other, appleId("a-1", kRelay)) == AuthService::AttachOutcome::takenByAnother);
+  CHECK_EQ(h.repo.findIdentity(Provider::apple, "a-1")->str(), account.str());
+}
+
+// The link door, end to end: the phone's empty account folds into the web account and its Apple
+// door comes with it, so the next Apple sign-in lands on the surviving row.
+TEST(linking_moves_the_doors_and_deletes_the_empty_account) {
+  Harness h;
+  h.requestLink("sam@example.com");
+  const UserId web = h.service.completeLink("s1").signedIn->user.id;
+  const UserId phone = h.service.completeProvider(appleId("a-1", kRelay))->signedIn.user.id;
+  CHECK_EQ(h.repo.usersById.size(), 2u);
+
+  h.requestLink("sam@example.com");  // the in-app link the human asks for, minting s3/d3
+  AuthService::LinkResult result = h.service.linkAccount(phone, h.lastLinkSecret());
+  CHECK(result.outcome == AuthService::LinkOutcome::linked);
+  CHECK(result.signedIn.has_value());
+  CHECK_EQ(result.signedIn->user.id.str(), web.str());
+
+  CHECK_EQ(h.repo.usersById.size(), 1u);                 // the empty row is gone
+  CHECK_FALSE(h.repo.findUserById(phone).has_value());
+  CHECK_EQ(h.repo.findIdentity(Provider::apple, "a-1")->str(), web.str());  // the door moved
+  // And the door now proves it: the same Apple ID resolves the web account outright.
+  CHECK_EQ(h.service.completeProvider(appleId("a-1", kRelay))->signedIn.user.id.str(), web.str());
+}
+
+// The one precondition. An account holding anything at all is never folded away — which is exactly
+// what keeps a general account merger from ever having to be written.
+TEST(linking_is_refused_when_the_callers_account_holds_data) {
+  Harness h;
+  h.requestLink("sam@example.com");
+  const UserId web = h.service.completeLink("s1").signedIn->user.id;
+  const UserId phone = h.service.completeProvider(appleId("a-1", kRelay))->signedIn.user.id;
+  h.footprint.withData.insert(phone.str());  // a workout was logged before the human linked
+
+  h.requestLink("sam@example.com");
+  const std::string secret = h.lastLinkSecret();
+  AuthService::LinkResult result = h.service.linkAccount(phone, secret);
+  CHECK(result.outcome == AuthService::LinkOutcome::notEmpty);
+  CHECK_FALSE(result.signedIn.has_value());
+  CHECK_EQ(h.repo.usersById.size(), 2u);  // both rows stand, both logs intact
+  CHECK(h.repo.findUserById(phone).has_value());
+  CHECK_EQ(h.repo.findIdentity(Provider::apple, "a-1")->str(), phone.str());
+
+  // And the link is UNSPENT: a permanent refusal must not cost the human their credential, so the
+  // same link still works the moment the reason for the refusal is gone.
+  CHECK_FALSE(h.repo.findLink(h.service.digestOf(secret))->consumed);
+  h.footprint.withData.clear();
+  CHECK(h.service.linkAccount(phone, secret).outcome == AuthService::LinkOutcome::linked);
+}
+
+TEST(linking_to_the_account_you_are_already_on_is_a_no_op) {
+  Harness h;
+  h.requestLink("sam@example.com");
+  const UserId account = h.service.completeLink("s1").signedIn->user.id;
+
+  h.requestLink("sam@example.com");
+  AuthService::LinkResult result = h.service.linkAccount(account, h.lastLinkSecret());
+  CHECK(result.outcome == AuthService::LinkOutcome::sameAccount);
+  CHECK_FALSE(result.signedIn.has_value());
+  CHECK_EQ(h.repo.usersById.size(), 1u);
+  CHECK(h.repo.findUserById(account).has_value());  // emphatically not deleted
+}
+
+// A link is a link: spent, expired or never issued, it opens nothing — and it must not be possible
+// to fold an account away with one.
+TEST(linking_refuses_a_spent_or_unknown_link) {
+  Harness h;
+  h.requestLink("sam@example.com");
+  const UserId web = h.service.completeLink("s1").signedIn->user.id;
+  const UserId phone = h.service.completeProvider(appleId("a-1", kRelay))->signedIn.user.id;
+
+  CHECK(h.service.linkAccount(phone, "s1").outcome == AuthService::LinkOutcome::badLink);  // already spent
+  CHECK(h.service.linkAccount(phone, "s-never").outcome == AuthService::LinkOutcome::badLink);
+
+  h.requestLink("sam@example.com");
+  h.clock.now += AuthPolicy::linkLifetimeMs;
+  CHECK(h.service.linkAccount(phone, h.lastLinkSecret()).outcome == AuthService::LinkOutcome::badLink);  // lapsed
+  CHECK_EQ(h.repo.usersById.size(), 2u);
+  CHECK_EQ(h.repo.findIdentity(Provider::apple, "a-1")->str(), phone.str());
 }
 
 TEST(a_fork_request_sends_the_fork_mail_naming_the_source_tree) {
@@ -272,7 +466,8 @@ TEST(complete_link_loses_the_race_when_a_concurrent_verify_already_spent_it) {
   FakeTokens tokens;
   FakeClock clock;
   OAuthService oauth{oauthRepo, tokens, clock};
-  AuthService service{repo, email, tokens, clock, oauth, "https://windmill.works"};
+  FakeAccountFootprint footprint;
+  AuthService service{repo, email, tokens, clock, oauth, footprint, "https://windmill.works"};
   repo.insertLink("d1", Email{"sam@example.com"}, clock.now, clock.now + AuthPolicy::linkLifetimeMs, "");
 
   AuthService::Completion done = service.completeLink("s1");  // digestOf("s1") == "d1"

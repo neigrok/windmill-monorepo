@@ -81,3 +81,44 @@ TEST(verify_link_distinguishes_every_outcome) {
   CHECK(verifyLink(true, false, now - 1, now) == LinkVerdict::expired);
   CHECK(verifyLink(true, true, now - 1, now) == LinkVerdict::alreadyUsed);  // used beats expired
 }
+
+TEST(provider_names_round_trip_through_the_stored_spelling) {
+  CHECK_EQ(toString(Provider::google), std::string("google"));
+  CHECK_EQ(toString(Provider::apple), std::string("apple"));
+  CHECK(parseProvider("google") == std::optional<Provider>{Provider::google});
+  CHECK(parseProvider("apple") == std::optional<Provider>{Provider::apple});
+  CHECK_FALSE(parseProvider("Apple").has_value());  // the column's check constraint is lowercase
+  CHECK_FALSE(parseProvider("").has_value());
+  CHECK_FALSE(parseProvider("facebook").has_value());
+}
+
+TEST(the_apple_relay_domain_is_recognised_and_nothing_else_is) {
+  CHECK(isPrivateRelay(Email{"abc123@privaterelay.appleid.com"}));
+  CHECK_FALSE(isPrivateRelay(Email{"sam@example.com"}));
+  CHECK_FALSE(isPrivateRelay(Email{"sam@appleid.com"}));
+  CHECK_FALSE(isPrivateRelay(Email{"sam@privaterelay.appleid.com.example.com"}));
+  // The suffix alone is not an address — a bare domain names no human.
+  CHECK_FALSE(isPrivateRelay(Email{"@privaterelay.appleid.com"}));
+}
+
+// The whole trust ladder as a table. Only `unusable` refuses; `appOnly` is a full sign-in that also
+// tells the client to offer the link door, because a relay can never find the human's web account.
+TEST(address_trust_separates_refusal_from_the_link_door) {
+  ProviderIdentity real{Provider::google, "g-1", Email{"sam@example.com"}, "Sam", true, false};
+  CHECK(trustOf(real) == AddressTrust::crossDoor);
+
+  ProviderIdentity relayByDomain{Provider::apple, "a-1", Email{"abc@privaterelay.appleid.com"}, "", true, false};
+  CHECK(trustOf(relayByDomain) == AddressTrust::appOnly);
+
+  // The provider's own claim stands even on an address whose domain we don't recognise, so a future
+  // relay domain can't quietly downgrade to crossDoor.
+  ProviderIdentity relayByClaim{Provider::apple, "a-2", Email{"abc@newrelay.example"}, "", true, true};
+  CHECK(trustOf(relayByClaim) == AddressTrust::appOnly);
+
+  ProviderIdentity unverified = real;
+  unverified.emailVerified = false;
+  CHECK(trustOf(unverified) == AddressTrust::unusable);
+
+  ProviderIdentity unparseable{Provider::apple, "a-3", Email{"sam@example"}, "", true, false};
+  CHECK(trustOf(unparseable) == AddressTrust::unusable);
+}

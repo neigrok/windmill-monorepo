@@ -1,6 +1,8 @@
 #include "platform/adapters/amplitude/AmplitudeClient.h"
 #include "platform/adapters/clock/SystemClock.h"
-#include "platform/adapters/google/GoogleOAuthClient.h"
+#include "platform/adapters/oidc/AppleOAuthClient.h"
+#include "platform/adapters/oidc/GoogleOAuthClient.h"
+#include "platform/adapters/postgres/PgAccountFootprint.h"
 #include "platform/adapters/paddle/BillingApi.h"
 #include "platform/adapters/crypto/OpenSslTokenGenerator.h"
 #include "platform/adapters/email/ResendClient.h"
@@ -122,8 +124,24 @@ int main() {
   auto mcpKeyRepo = std::make_shared<PgMcpKeyRepository>(connString);
   auto mcpKeyService = std::make_shared<McpKeyService>(*mcpKeyRepo, *tokens, *systemClock);
 
-  auto authService =
-      std::make_shared<AuthService>(*authRepo, *emailSender, *tokens, *systemClock, *oauthService, appBaseUrl);
+  // "Does this account hold anything?" — the one precondition on the link door (backend/AUTH.md).
+  // Products are named HERE, in the composition root that composes them anyway, so platform never
+  // learns a product's schema and a probe stays one table plus the column that owns its rows.
+  // EVERY product must appear: one missing from this list reports an account empty that is not,
+  // and the link door would then delete real data.
+  auto accountFootprint = std::make_shared<PgAccountFootprint>(
+      connString, std::vector<OwnedTable>{
+                      {"trees", "owner_id"},                // roadmap
+                      {"journal_page", "user_id"},          // journal
+                      {"gym_sessions", "user_id"},          // gym — a workout with no sets is still a workout
+                      {"gym_sets", "user_id"},              // gym
+                      {"gym_routines", "user_id"},          // gym
+                      {"paddle_subscriptions", "user_id"},  // platform — never fold away a payer
+                      {"mcp_keys", "user_id"},              // platform
+                      {"oauth_grants", "user_id"},          // platform
+                  });
+  auto authService = std::make_shared<AuthService>(*authRepo, *emailSender, *tokens, *systemClock,
+                                                   *oauthService, *accountFootprint, appBaseUrl);
   auto forkService = std::make_shared<ForkService>(*registry, *trees, *tokens);
   // Google sign-in (second door onto wm_session). Empty client id/secret → configured() is false and
   // the routes bounce to the app, so the feature is dark until GOOGLE_CLIENT_ID/SECRET are set. The
@@ -136,9 +154,18 @@ int main() {
   // The auth surface is product-neutral; the one product-shaped thing sign-in does — planting a
   // fork when a fork link is followed — rides in behind the SignupFork port. Roadmap injects its
   // ForkService here; a notes/gym-only deploy would pass nullptr and the fork steps no-op.
+  // Apple sign-in (the native door). Dark until all four land — the bundle id the app ships, the
+  // team, the key id, and the .p8 key itself as PEM — and then the route 404s rather than half-works.
+  const char* appleClientId = std::getenv("APPLE_CLIENT_ID");
+  const char* appleTeamId = std::getenv("APPLE_TEAM_ID");
+  const char* appleKeyId = std::getenv("APPLE_KEY_ID");
+  const char* applePrivateKey = std::getenv("APPLE_PRIVATE_KEY");
+  auto appleClient = std::make_shared<AppleOAuthClient>(
+      appleClientId ? appleClientId : "", appleTeamId ? appleTeamId : "", appleKeyId ? appleKeyId : "",
+      applePrivateKey ? applePrivateKey : "");
   auto forkSignup = std::make_shared<ForkSignup>(*forkService);
   auto authApi = std::make_shared<AuthApi>(authService, forkSignup, secureCookies, cookieDomain,
-                                           googleClient, appBaseUrl);
+                                           googleClient, appBaseUrl, appleClient);
   auto mcpKeyApi = std::make_shared<McpKeyApi>(authService, mcpKeyService);
   auto oauthApi = std::make_shared<OAuthApi>(oauthService, authService, apiBaseUrl, appBaseUrl, "/#/oauth/authorize");
 
@@ -510,6 +537,17 @@ int main() {
         authApi->googleCallback(req, std::move(cb));
       },
       {drogon::Get});
+  // Apple sign-in: one POST, no redirect — the native app ran the authorization itself. Signed in
+  // already, the same call attaches the door instead of resolving an account.
+  app.registerHandler(
+      "/v1/auth/apple",
+      [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->apple(req, std::move(cb)); },
+      {drogon::Post});
+  // The link door: fold this (empty) account into the one the magic link names.
+  app.registerHandler(
+      "/v1/auth/link",
+      [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->link(req, std::move(cb)); },
+      {drogon::Post});
   app.registerHandler(
       "/v1/auth/logout",
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {

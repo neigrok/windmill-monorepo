@@ -63,7 +63,8 @@ struct Harness {
   FakeClock clock;
   FakeOAuthRepository oauthRepo;
   OAuthService oauth{oauthRepo, tokens, clock};
-  AuthService auth{authRepo, email, tokens, clock, oauth, "https://windmill.works"};
+  FakeAccountFootprint footprint;
+  AuthService auth{authRepo, email, tokens, clock, oauth, footprint, "https://windmill.works"};
   PresenceHub presence;
   Collab collab{rooms, ops, bus, progress, auth, presence, clock};
 

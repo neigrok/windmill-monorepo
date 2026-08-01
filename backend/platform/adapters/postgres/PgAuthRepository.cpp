@@ -68,6 +68,45 @@ void PgAuthRepository::reviveUser(const UserId& userId) {
   txn.commit();
 }
 
+void PgAuthRepository::deleteUser(const UserId& userId) {
+  pqxx::work txn{pgThreadConnection(connString_)};
+  txn.exec_params("DELETE FROM users WHERE id = $1::uuid", userId.str());
+  txn.commit();
+}
+
+std::optional<UserId> PgAuthRepository::findIdentity(Provider provider, const std::string& subject) {
+  pqxx::work txn{pgThreadConnection(connString_)};
+  pqxx::result rows = txn.exec_params(
+      "SELECT user_id::text FROM user_identities WHERE provider = $1 AND subject = $2",
+      toString(provider), subject);
+  if (rows.empty()) return std::nullopt;
+  return UserId{rows[0][0].as<std::string>()};
+}
+
+void PgAuthRepository::bindIdentity(Provider provider, const std::string& subject, const UserId& userId,
+                                    const std::string& emailAtLink) {
+  // DO UPDATE, not DO NOTHING: the service only reaches this after resolving whatever the door was
+  // already bound to, so re-binding is the door following its account rather than overwriting one.
+  pqxx::work txn{pgThreadConnection(connString_)};
+  txn.exec_params(
+      "INSERT INTO user_identities (provider, subject, user_id, email_at_link) "
+      "VALUES ($1, $2, $3::uuid, $4) "
+      "ON CONFLICT (provider, subject) DO UPDATE SET user_id = excluded.user_id, "
+      "email_at_link = excluded.email_at_link",
+      toString(provider), subject, userId.str(), emailAtLink);
+  txn.commit();
+}
+
+void PgAuthRepository::moveIdentities(const UserId& from, const UserId& to) {
+  // The destination may already hold a door for the same provider (they signed in with Google on
+  // the web and Apple on the phone); the pair is the key, and only the loser's own doors move, so
+  // a collision is impossible — two rows for one provider differ by subject.
+  pqxx::work txn{pgThreadConnection(connString_)};
+  txn.exec_params("UPDATE user_identities SET user_id = $2::uuid WHERE user_id = $1::uuid",
+                  from.str(), to.str());
+  txn.commit();
+}
+
 void PgAuthRepository::insertLink(const std::string& digest, const Email& email, UnixMs createdAt,
                                   UnixMs expiresAt, const std::string& forkSource) {
   pqxx::work txn{pgThreadConnection(connString_)};

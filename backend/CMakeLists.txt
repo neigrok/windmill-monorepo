@@ -166,6 +166,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     platform/adapters/http/EventsApi.cpp
     platform/adapters/http/FeedbackApi.cpp
     platform/adapters/postgres/PgAuthRepository.cpp
+    platform/adapters/postgres/PgAccountFootprint.cpp
     platform/adapters/postgres/PgOAuthRepository.cpp
     platform/adapters/postgres/PgMcpKeyRepository.cpp
     platform/adapters/postgres/PgSubscriptionRepository.cpp
@@ -175,7 +176,9 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     platform/adapters/crypto/OpenSslTokenGenerator.cpp
     platform/adapters/email/ResendClient.cpp
     platform/adapters/email/ResendEmailSender.cpp
-    platform/adapters/google/GoogleOAuthClient.cpp
+    platform/adapters/oidc/IdToken.cpp
+    platform/adapters/oidc/GoogleOAuthClient.cpp
+    platform/adapters/oidc/AppleOAuthClient.cpp
     platform/adapters/sentry/SentryClient.cpp
     platform/adapters/amplitude/AmplitudeClient.cpp
     platform/adapters/paddle/PaddleSignature.cpp

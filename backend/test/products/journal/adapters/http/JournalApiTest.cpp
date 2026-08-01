@@ -40,8 +40,9 @@ struct Harness {
   FakeClock clock;
   FakeOAuthRepository oauthRepo;
   OAuthService oauth{oauthRepo, tokens, clock};
+  FakeAccountFootprint footprint;
   std::shared_ptr<AuthService> auth =
-      std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, "https://windmill.works");
+      std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, footprint, "https://windmill.works");
   FakeJournalRepository repo;
   std::shared_ptr<PageService> pages = std::make_shared<PageService>(repo);
   JournalApi api{pages, auth};

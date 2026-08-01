@@ -23,8 +23,9 @@ struct Harness {
   FakeClock clock;
   FakeOAuthRepository oauthRepo;
   OAuthService oauth{oauthRepo, tokens, clock};
+  FakeAccountFootprint footprint;
   std::shared_ptr<AuthService> auth =
-      std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, "https://windmill.works");
+      std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, footprint, "https://windmill.works");
   std::shared_ptr<FakeTranscriber> transcriber = std::make_shared<FakeTranscriber>();
   std::shared_ptr<FakeSubscriptionRepository> subs = std::make_shared<FakeSubscriptionRepository>();
   std::shared_ptr<Entitlements> entitlements = std::make_shared<Entitlements>(*subs);

@@ -84,4 +84,38 @@ inline UnixMs effectiveLastSeen(UnixMs lastSeenMs, UnixMs createdMs) {
 enum class LinkVerdict { valid, expired, alreadyUsed, unknown };
 LinkVerdict verifyLink(bool found, bool consumed, UnixMs expiresAt, UnixMs now);
 
+// The doors a sign-in can arrive through besides the magic link. The stored spelling is the
+// `provider` column's check constraint, so parse and toString are the wire and the schema at once.
+enum class Provider { google, apple };
+std::string toString(Provider provider);
+std::optional<Provider> parseProvider(std::string_view raw);
+
+// What a provider told us about the human at the end of a completed exchange. `subject` is the
+// provider-issued stable key for this app — it is the identity, it never renders, and it is the
+// only field that may resolve an account on its own. `name` is present only when the provider
+// chose to send it (Apple sends it exactly once, on the first authorization ever), so it seeds a
+// new account and never overwrites an existing one.
+struct ProviderIdentity {
+  Provider provider = Provider::google;
+  std::string subject;
+  Email email;
+  std::string name;
+  bool emailVerified = false;
+  bool relayEmail = false;  // the provider said so itself (Apple's is_private_email)
+};
+
+// Apple's Hide My Email address: verified, and stable for this app, but a relay nobody else can
+// recognise the human by. The domain is fixed and published, so the suffix is the whole test — it
+// stands behind the provider's own claim, for a provider that stops sending one.
+bool isPrivateRelay(const Email& email);
+
+// How far a provider's address can be trusted to name the human:
+//   crossDoor — a real verified address, so it resolves the account they already have on the web
+//   appOnly   — a relay: it re-finds the same person here, and can never find them anywhere else,
+//               so a sign-in behind one has to OFFER the link door rather than pretend it resolved
+//   unusable  — unverified or unparseable; it must not touch an account at all, because an
+//               unverified address that resolved one is an account takeover by anyone who can type
+enum class AddressTrust { crossDoor, appOnly, unusable };
+AddressTrust trustOf(const ProviderIdentity& identity);
+
 }

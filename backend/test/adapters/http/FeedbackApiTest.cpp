@@ -37,8 +37,9 @@ struct Harness {
   FakeClock clock;
   FakeOAuthRepository oauthRepo;
   OAuthService oauth{oauthRepo, tokens, clock};
+  FakeAccountFootprint footprint;
   std::shared_ptr<AuthService> auth =
-      std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, "https://windmill.works");
+      std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, footprint, "https://windmill.works");
   std::shared_ptr<FakeFeedbackRepository> repo = std::make_shared<FakeFeedbackRepository>();
   FeedbackApi api{repo, auth};
 

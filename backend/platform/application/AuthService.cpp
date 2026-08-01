@@ -3,8 +3,8 @@
 namespace wm {
 
 AuthService::AuthService(AuthRepository& repo, EmailSender& email, TokenGenerator& tokens, Clock& clock,
-                         OAuthService& oauth, std::string appBaseUrl)
-    : repo_(repo), email_(email), tokens_(tokens), clock_(clock), oauth_(oauth),
+                         OAuthService& oauth, AccountFootprint& footprint, std::string appBaseUrl)
+    : repo_(repo), email_(email), tokens_(tokens), clock_(clock), oauth_(oauth), footprint_(footprint),
       appBaseUrl_(std::move(appBaseUrl)) {}
 
 void AuthService::requestLink(const std::string& rawEmail, const std::string& forkSource,
@@ -57,26 +57,100 @@ AuthService::Completion AuthService::completeLink(const std::string& linkSecret,
   return {verdict, mintSessionFor(link->email, nameFromEmail(link->email), ctx, now), link->forkSource};
 }
 
-AuthService::SignedIn AuthService::completeGoogle(const Email& verifiedEmail, const std::string& name,
-                                                  const SessionContext& ctx) {
+std::optional<AuthService::ProviderSignIn> AuthService::completeProvider(const ProviderIdentity& identity,
+                                                                        const SessionContext& ctx) {
+  const AddressTrust trust = trustOf(identity);
+  if (trust == AddressTrust::unusable || identity.subject.empty()) return std::nullopt;
+
   const UnixMs now = clock_.nowMs();
-  // No link to verify or consume: the caller proved the email via Google's OAuth. Everything else
-  // — revival, account-linking-by-email, session mint — is the shared tail.
-  const std::string safeName = name.empty() ? nameFromEmail(verifiedEmail) : name;
-  return mintSessionFor(verifiedEmail, safeName, ctx, now);
+  const bool privateEmail = trust == AddressTrust::appOnly;
+
+  // Step one, and the only step that can answer on its own: the subject IS the identity. Whatever
+  // address the provider is sending today, a bound door opens the account it was bound to.
+  if (const std::optional<UserId> bound = repo_.findIdentity(identity.provider, identity.subject)) {
+    if (const std::optional<User> user = repo_.findUserById(*bound))
+      return ProviderSignIn{mintSession(revived(*user), ctx, now), false, privateEmail};
+  }
+
+  // Step two: no door is bound, so the verified address gets to find an account exactly as a magic
+  // link would — and binding the door here is what backfills the table for every account that
+  // predates it, since no provider subject was ever stored to migrate. A relay address runs the
+  // same path and is just as safe: it is stable for this app, so it re-finds the same human and
+  // can collide with no one else. What it cannot do is find the account they have on the web, and
+  // that is what `privateEmail` sends the client to the link door for.
+  // A provider's name is unvetted text and only ever seeds a NEW account, so it goes through the
+  // same gate the settings rename does — cap and all — rather than reaching a row unchecked.
+  const bool created = !repo_.findUserByEmail(identity.email).has_value();
+  const std::optional<std::string> offered = parseName(identity.name);
+  const SignedIn signedIn =
+      mintSessionFor(identity.email, offered ? *offered : nameFromEmail(identity.email), ctx, now);
+  repo_.bindIdentity(identity.provider, identity.subject, signedIn.user.id, identity.email.value);
+  return ProviderSignIn{signedIn, created, privateEmail};
+}
+
+AuthService::AttachOutcome AuthService::attachIdentity(const UserId& userId,
+                                                       const ProviderIdentity& identity) {
+  if (trustOf(identity) == AddressTrust::unusable || identity.subject.empty())
+    return AttachOutcome::refused;
+
+  const std::optional<UserId> bound = repo_.findIdentity(identity.provider, identity.subject);
+  if (bound && *bound == userId) return AttachOutcome::alreadyMine;
+  if (bound) return AttachOutcome::takenByAnother;  // a door opens one account; it is never stolen
+
+  repo_.bindIdentity(identity.provider, identity.subject, userId, identity.email.value);
+  return AttachOutcome::attached;
+}
+
+AuthService::LinkResult AuthService::linkAccount(const UserId& caller, const std::string& linkSecret,
+                                                 const SessionContext& ctx) {
+  const std::string digest = tokens_.digestOf(linkSecret);
+  const UnixMs now = clock_.nowMs();
+
+  const std::optional<StoredLink> link = repo_.findLink(digest);
+  if (verifyLink(link.has_value(), link && link->consumed, link ? link->expiresAt : 0, now) !=
+      LinkVerdict::valid)
+    return {LinkOutcome::badLink, std::nullopt};
+
+  // The link names the account that survives. Resolved before it is spent, because two of the three
+  // answers below cost the caller nothing and must not burn a single-use credential to reach.
+  const std::optional<User> target = repo_.findUserByEmail(link->email);
+  const bool linkingToSelf = target && target->id == caller;
+
+  // The one precondition, and the reason no account merger exists: the caller's row must hold
+  // nothing, so folding it away destroys nothing and nothing has to be reconciled. Checked BEFORE
+  // the link is spent — it is a permanent refusal, and a human who meets it would otherwise have to
+  // request a fresh link to be told the same thing again.
+  if (!linkingToSelf && footprint_.anyData(caller)) return {LinkOutcome::notEmpty, std::nullopt};
+
+  // Spend it. A concurrent verify that won the row means this one never held a valid link at all.
+  if (!repo_.consumeLink(digest, now)) return {LinkOutcome::badLink, std::nullopt};
+  if (linkingToSelf) return {LinkOutcome::sameAccount, std::nullopt};
+
+  // Created here when the address has never signed in, so linking to it is still a link and not a
+  // dead end — and only now, once the link is proven spendable and the caller proven empty.
+  const User surviving = target ? revived(*target) : repo_.createUser(link->email, nameFromEmail(link->email));
+  repo_.moveIdentities(caller, surviving.id);
+  repo_.deleteUser(caller);  // empty by proof; the cascade takes the caller's own session with it
+  return {LinkOutcome::linked, mintSession(surviving, ctx, now)};
 }
 
 AuthService::SignedIn AuthService::mintSessionFor(const Email& email, const std::string& name,
                                                   const SessionContext& ctx, UnixMs now) {
-  // Signing in is the undo: a within-grace closed account revives before the session is
-  // minted, so the door reopens onto exactly the trees and grants the close left in place.
-  std::optional<User> existing = repo_.findUserByEmail(email);
-  if (existing && existing->deletedAt) {
-    repo_.reviveUser(existing->id);
-    existing->deletedAt = std::nullopt;
-  }
-  const User user = existing ? *existing : repo_.createUser(email, name);
+  const std::optional<User> existing = repo_.findUserByEmail(email);
+  if (existing) return mintSession(revived(*existing), ctx, now);
+  return mintSession(repo_.createUser(email, name), ctx, now);
+}
 
+User AuthService::revived(User user) {
+  // Signing in is the undo: a within-grace closed account revives before the session is minted,
+  // so the door reopens onto exactly the trees and grants the close left in place.
+  if (!user.deletedAt) return user;
+  repo_.reviveUser(user.id);
+  user.deletedAt = std::nullopt;
+  return user;
+}
+
+AuthService::SignedIn AuthService::mintSession(const User& user, const SessionContext& ctx, UnixMs now) {
   const MintedToken session = tokens_.mint();
   repo_.insertSession(session.digest, user.id, sessionExpiry(now), ctx.userAgent, ctx.ip, now);
   return SignedIn{user, session.secret};

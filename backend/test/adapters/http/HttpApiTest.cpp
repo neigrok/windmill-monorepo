@@ -26,8 +26,9 @@ struct Harness {
   std::shared_ptr<RoomRegistry> rooms = std::make_shared<RoomRegistry>(*trees, *ops, bus);
   FakeOAuthRepository oauthRepo;
   OAuthService oauth{oauthRepo, tokens, clock};
+  FakeAccountFootprint footprint;
   std::shared_ptr<AuthService> auth =
-      std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, "https://windmill.works");
+      std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, footprint, "https://windmill.works");
   std::shared_ptr<ForkService> fork = std::make_shared<ForkService>(*rooms, *trees, tokens);
   HttpApi api{rooms, trees, progress, ops, Hlc{1, 0, "genesis"}, auth, fork};
 

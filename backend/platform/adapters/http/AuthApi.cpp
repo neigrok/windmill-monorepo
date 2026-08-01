@@ -102,9 +102,11 @@ std::string isoUtc(UnixMs ms) {
 }
 
 AuthApi::AuthApi(std::shared_ptr<AuthService> auth, std::shared_ptr<SignupFork> signupFork, bool secureCookies,
-                 std::string cookieDomain, std::shared_ptr<GoogleOAuthClient> google, std::string appUrl)
+                 std::string cookieDomain, std::shared_ptr<GoogleOAuthClient> google, std::string appUrl,
+                 std::shared_ptr<AppleOAuthClient> apple)
     : auth_(std::move(auth)), signupFork_(std::move(signupFork)), secureCookies_(secureCookies),
-      cookieDomain_(std::move(cookieDomain)), google_(std::move(google)), appUrl_(std::move(appUrl)) {}
+      cookieDomain_(std::move(cookieDomain)), google_(std::move(google)), appUrl_(std::move(appUrl)),
+      apple_(std::move(apple)) {}
 
 void AuthApi::requestLink(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
   // One door in: parse the address, defer the verdict to the service, translate to the doc's copy.
@@ -251,19 +253,142 @@ void AuthApi::googleCallback(const drogon::HttpRequestPtr& req, HttpCallback&& c
   const SessionContext ctx = contextOf(req);
   google_->exchangeCode(
       code, [auth = auth_, secure = secureCookies_, domain = cookieDomain_, appUrl = appUrl_,
-             callback = std::move(callback), ctx](std::optional<GoogleIdentity> identity) mutable {
-        if (!identity) {
+             callback = std::move(callback), ctx](std::optional<ProviderIdentity> identity) mutable {
+        const std::optional<AuthService::ProviderSignIn> signIn =
+            identity ? auth->completeProvider(*identity, ctx) : std::nullopt;
+        if (!signIn) {
           auto response = drogon::HttpResponse::newRedirectionResponse(appUrl + "/#/?signin=google_failed");
           expireStateCookie(response, domain);
           callback(response);
           return;
         }
-        const AuthService::SignedIn signedIn = auth->completeGoogle(identity->email, identity->name, ctx);
         auto response = drogon::HttpResponse::newRedirectionResponse(appUrl + "/#/");
-        setSessionCookie(response, signedIn.sessionSecret, secure, domain);
+        setSessionCookie(response, signIn->signedIn.sessionSecret, secure, domain);
         expireStateCookie(response, domain);
         callback(response);
       });
+}
+
+// Apple sign-in, the native door: the app has already run ASAuthorizationController and posts
+// { authorizationCode, name? }. There is no redirect and no state cookie — the app is the user
+// agent, and the session comes back as JSON for the Keychain rather than as a Set-Cookie the app
+// would have to keep a jar for (the cookie is still set, so a browser caller works unchanged).
+//
+// The caller's session is read BEFORE the exchange, because holding one changes what this route
+// means: a provider sign-in taken while already signed in ATTACHES the door to that account and
+// never resolves one, which is what stops "sign in by link, then tap Apple" from forking the
+// account the user is looking at.
+void AuthApi::apple(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
+  if (!apple_ || !apple_->configured()) {
+    callback(error(drogon::k404NotFound, "apple sign-in is not configured"));
+    return;
+  }
+  std::shared_ptr<Json::Value> json = req->getJsonObject();
+  const std::string code = json ? json->get("authorizationCode", "").asString() : "";
+  if (code.empty()) {
+    callback(error(drogon::k400BadRequest, "missing authorization code"));
+    return;
+  }
+  // Apple hands the app a name exactly once, on the first authorization ever, so it arrives here or
+  // never. It seeds a NEW account and is never allowed to overwrite the name on an existing one.
+  std::string name = json ? json->get("name", "").asString() : "";
+  if (name.size() > 200) name.clear();
+
+  const SessionContext ctx = contextOf(req);
+  const std::optional<User> caller = auth_->authenticate(sessionSecret(req), ctx);
+
+  apple_->exchangeCode(
+      code, [auth = auth_, secure = secureCookies_, domain = cookieDomain_, name, caller, ctx,
+             callback = std::move(callback)](std::optional<ProviderIdentity> identity) mutable {
+        if (!identity) {
+          callback(error(drogon::k401Unauthorized, "apple sign-in could not be completed"));
+          return;
+        }
+        identity->name = name;
+
+        if (caller) {
+          const AuthService::AttachOutcome outcome = auth->attachIdentity(caller->id, *identity);
+          if (outcome == AuthService::AttachOutcome::takenByAnother) {
+            callback(error(drogon::k409Conflict, "that Apple ID already opens another account",
+                           "identity-taken"));
+            return;
+          }
+          if (outcome == AuthService::AttachOutcome::refused) {
+            callback(error(drogon::k401Unauthorized, "apple sign-in could not be completed"));
+            return;
+          }
+          Json::Value body(Json::objectValue);
+          body["user"] = userJson(*caller);
+          body["attached"] = true;
+          callback(jsonResponse(body));
+          return;
+        }
+
+        const std::optional<AuthService::ProviderSignIn> signIn = auth->completeProvider(*identity, ctx);
+        if (!signIn) {
+          callback(error(drogon::k401Unauthorized, "apple sign-in could not be completed"));
+          return;
+        }
+        Json::Value body(Json::objectValue);
+        body["user"] = userJson(signIn->signedIn.user);
+        body["session"] = signIn->signedIn.sessionSecret;  // the app's Bearer credential
+        body["created"] = signIn->created;
+        // The two facts together are the link door's condition, and the client owns the decision:
+        // a relay address can never find the account this human has on the web.
+        body["privateEmail"] = signIn->privateEmail;
+        auto response = jsonResponse(body);
+        setSessionCookie(response, signIn->signedIn.sessionSecret, secure, domain);
+        callback(response);
+      });
+}
+
+// The link door: the caller's account folds into the one this magic link names, carrying its
+// provider doors with it. Refused unless the caller's account is empty — the merge is a delete of
+// nothing, never a reconciliation, which is why no account merger exists to go wrong.
+void AuthApi::link(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
+  const SessionContext ctx = contextOf(req);
+  const std::optional<User> caller = auth_->authenticate(sessionSecret(req), ctx);
+  if (!caller) {
+    callback(error(drogon::k401Unauthorized, "sign in to link this account"));
+    return;
+  }
+  std::shared_ptr<Json::Value> json = req->getJsonObject();
+  const std::string token = json ? json->get("token", "").asString() : "";
+  if (token.empty()) {
+    callback(error(drogon::k400BadRequest, "missing token"));
+    return;
+  }
+
+  const AuthService::LinkResult result = auth_->linkAccount(caller->id, token, ctx);
+  if (result.outcome == AuthService::LinkOutcome::badLink) {
+    Json::Value body(Json::objectValue);
+    body["error"] = "That link has expired";
+    body["detail"] = "Links work once and last 15 minutes.";
+    body["code"] = "expired";
+    callback(jsonResponse(body, drogon::k410Gone));
+    return;
+  }
+  if (result.outcome == AuthService::LinkOutcome::notEmpty) {
+    callback(error(drogon::k409Conflict, "this account already holds data of its own",
+                   "account-not-empty"));
+    return;
+  }
+  if (result.outcome == AuthService::LinkOutcome::sameAccount) {
+    Json::Value body(Json::objectValue);
+    body["user"] = userJson(*caller);
+    body["linked"] = false;  // already one account; the link was spent proving it
+    callback(jsonResponse(body));
+    return;
+  }
+
+  const AuthService::SignedIn& signedIn = *result.signedIn;
+  Json::Value body(Json::objectValue);
+  body["user"] = userJson(signedIn.user);
+  body["session"] = signedIn.sessionSecret;  // the caller's own row is gone, and its session with it
+  body["linked"] = true;
+  auto response = jsonResponse(body);
+  setSessionCookie(response, signedIn.sessionSecret, secureCookies_, cookieDomain_);
+  callback(response);
 }
 
 void AuthApi::me(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {

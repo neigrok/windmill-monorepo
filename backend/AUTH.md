@@ -60,6 +60,37 @@ unknown all collapse to one screen — the remedy is identical and nothing leaks
 ### `POST /v1/auth/logout`
 Drops the session, clears the cookie, `204`. Local copies stay — no confirmation.
 
+### `POST /v1/auth/apple` — the native door
+Request `{ "authorizationCode": "<from ASAuthorizationController>", "name": "Sam Gold" }`. The name
+is Apple's, and Apple sends it exactly once — on the very first authorization for that Apple ID — so
+it arrives here or never; it seeds a NEW account and never renames an existing one.
+
+| Result | Status | Body |
+|---|---|---|
+| Signed in | `200` | `{ "user": {…}, "session": "<secret>", "created": bool, "privateEmail": bool }` + `Set-Cookie` |
+| Already signed in — the door was bound to the caller | `200` | `{ "user": {…}, "attached": true }` |
+| That Apple ID already opens another account | `409` | `{ "error": …, "code": "identity-taken" }` |
+| Apple refused, or the identity is unusable | `401` | `{ "error": "apple sign-in could not be completed" }` |
+| Not configured (any of the four env vars missing) | `404` | `{ "error": "apple sign-in is not configured" }` |
+
+`session` is the same secret as the cookie, returned in the body because a native app keeps it in the
+Keychain and sends it as `Authorization: Bearer` rather than holding a cookie jar. `created` **and**
+`privateEmail` together are the condition the app offers the link door on.
+
+### `POST /v1/auth/link` — fold this account into the one the link names
+Request `{ "token": "<the secret from an emailed URL>" }`, sent **while holding a session**.
+
+| Result | Status | Body |
+|---|---|---|
+| Linked | `200` | `{ "user": {…}, "session": "<secret>", "linked": true }` + `Set-Cookie` |
+| Already the same account | `200` | `{ "user": {…}, "linked": false }` |
+| The caller's account holds data | `409` | `{ "error": …, "code": "account-not-empty" }` |
+| Expired / used / unknown link | `410` | `{ "error": "That link has expired", "code": "expired" }` |
+| No caller | `401` | `{ "error": "sign in to link this account" }` |
+
+The caller's row is deleted on success, and its session with it — which is why a fresh one comes
+back in the reply.
+
 ## Identities — one account, many doors
 
 The Windmill account is an **email address**: one `users` row, `email citext unique`, and every
@@ -89,9 +120,9 @@ Apple gives three reasons it isn't:
 -- The provider-issued subject IS the identity; the email is only ever a hint, consulted once, to
 -- find an account that already exists. (provider, subject) is the PK, so a provider that changes
 -- the address behind an account — an Apple relay rotated, a Google primary email moved — still
--- resolves to the same user. Google is backfilled into this table at deploy rather than left on
--- the email rule: today a Google user who changes their primary address forks their account, and
--- that is the same bug Apple would ship on day one.
+-- resolves to the same user. Google rides here too, not just Apple: a Google user who changes
+-- their primary address forks their account under the email-only rule, which is the same bug
+-- Apple would ship on day one.
 create table if not exists user_identities (
   provider      text not null check (provider in ('google','apple')),
   subject       text not null,
@@ -103,6 +134,12 @@ create table if not exists user_identities (
 create index if not exists user_identities_user on user_identities (user_id);
 ```
 
+**There is no backfill statement, and there cannot be one.** No Google subject was ever stored, so
+there is nothing on disk to migrate — the table fills itself as each account's next provider sign-in
+comes through step 2 below and binds its door on the way past. Until that happens an existing Google
+user resolves by verified email exactly as they always did, which is why step 2 is not a legacy path
+to be removed later but the permanent on-ramp onto step 1.
+
 ### The resolution ladder
 
 One order, both providers, read top to bottom. The first step that answers, answers.
@@ -110,13 +147,16 @@ One order, both providers, read top to bottom. The first step that answers, answ
 1. **`(provider, subject)` is known** → that user, and the email is never consulted. A relay
    address that rotated, a Google address that changed, a display name edited since — none of them
    can move an account once the subject is bound.
-2. **Unknown subject, and the address is verified and real** (anything not
-   `@privaterelay.appleid.com`) → resolve by email exactly as a magic link does, then insert the
-   identity row. This is the whole happy path: someone who signed up on the web and taps *Continue
-   with Apple* without hiding lands on their own account, with no prompt and nothing to explain.
-3. **Unknown subject, relay address** → create a fresh account on the relay address (Apple forwards
-   it, so the magic link still reaches the human) and insert the identity. Then offer the link door
-   below. There is no honest way to tell *which* existing account this is, so we do not guess.
+2. **No door bound** → the verified address finds or creates an account exactly as a magic link
+   does, and the door is bound on the way through. Someone who signed up on the web and taps
+   *Continue with Apple* without hiding lands on their own account, with no prompt and nothing to
+   explain.
+
+A **relay address runs step 2 unchanged**, and that is deliberate: it is stable for this app, so it
+re-finds the same human and can collide with no one else. What it cannot do is find the account they
+already have on the web — so the reply carries `privateEmail: true` beside `created`, and those two
+facts together are what the client offers the link door on. The fork is made *recoverable*, not
+prevented, because there is no honest way to guess which existing account a relay belongs to.
 
 `email_verified == false` never reaches step 2. An unverified provider address that resolved onto
 an existing account is an account takeover by anyone who can type an address — the rule
@@ -130,10 +170,10 @@ the account the user is looking at.
 
 ### The link door — and why a merge is refused
 
-Step 3 leaves a real human holding a brand-new empty account while their training log sits under
-another. The remedy is one dismissible line on the app's home — *"Already use Windmill on the web?
-Link this account."* — which runs the ordinary magic-link flow **inside** the app and posts the
-token to `POST /v1/auth/link` while still holding the new account's session.
+A relay sign-in can leave a real human holding a brand-new empty account while their training log
+sits under another. The remedy is one dismissible line on the app's home — *"Already use Windmill on
+the web? Link this account."* — which runs the ordinary magic-link flow **inside** the app and posts
+the token to `POST /v1/auth/link` while still holding the new account's session.
 
 The server resolves the token to user A and compares it with the caller B:
 
@@ -150,22 +190,27 @@ more than the product it is protecting. Emptiness is decidable, cheap, and true 
 that actually occurs: an account minted minutes ago by a relay sign-in.
 
 Deciding it is the one place this touches products, and it obeys the `STRUCTURE.md` rule the same
-way `SignupFork` does — through a platform port each product implements:
+way `SignupFork` does — `AuthService` asks a platform port and never a table:
 
 ```cpp
 // platform/ports/AccountFootprint.h
 struct AccountFootprint {
   virtual ~AccountFootprint() = default;
-  virtual bool anyData(const UserId&) = 0;   // one count, scoped to the caller
+  virtual bool anyData(const UserId&) = 0;
 };
 ```
 
-`main.cpp` composes the vector — roadmap's trees, journal's pages, gym's sets, and platform's own
-(a subscription, an MCP key, an OAuth grant) — and `AuthService` refuses the link the moment any of
-them says yes. Platform still names no product; a fourth product adds one implementation and one
-line, and forgetting it fails **safe** in the wrong direction — a missing footprint would let a
-merge delete data — so a product that registers no footprint is a composition error the server
-refuses to start on, not a default.
+There is **one** implementation rather than one per product, because every product's answer has the
+same shape — a bounded existence check on a table it owns — and four six-line classes would earn
+nothing. `PgAccountFootprint` takes a list of `{table, ownerColumn}` probes and runs them as one
+`UNION ALL`; the probes are named in `main.cpp`, which composes products by nature, so platform
+learns that a probe is a table and never which tables a product keeps. Identifiers can't be bound as
+parameters, so the constructor validates each against a plain `[a-z_][a-z0-9_]*` and throws — a
+malformed probe takes the server down at boot rather than reaching a query.
+
+The failure direction is what to watch: a product **missing** from that list reports an account
+empty that is not, and the link door then deletes real data. So the list is the review surface, an
+empty one is refused at construction, and a fourth product adds one line to it.
 
 ### Native surface notes
 
@@ -213,6 +258,14 @@ the prior tree/zoom/selection (auth.md §3, "the landing").
 | `WINDMILL_APP_URL` | Base for the magic-link URL; always a trusted CORS origin | `http://localhost:5183` (compose: `https://${DOMAIN_APP}`) |
 | `WINDMILL_COOKIE_DOMAIN` | Cookie `Domain`; empty = host-only | compose: `${DOMAIN_APP}` |
 | `WINDMILL_ALLOWED_ORIGINS` | Extra credentialed-CORS origins, comma-separated | — |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google sign-in; unset → the routes bounce to the app | — |
+| `APPLE_CLIENT_ID` | The iOS app's **bundle identifier** (the native flow's client id) | — |
+| `APPLE_TEAM_ID` · `APPLE_KEY_ID` | The team, and the id of the Sign-in-with-Apple key | — |
+| `APPLE_PRIVATE_KEY` | The `.p8` key's PEM contents, used to sign each ES256 client secret | — |
+
+Apple stays dark until all four land: `configured()` is false and `/v1/auth/apple` answers `404`
+rather than half-working. The client secret is minted per exchange (ES256, one-hour life) rather
+than stored, so there is no long-lived secret to rotate.
 
 ## The Resend template
 

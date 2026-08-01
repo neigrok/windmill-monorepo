@@ -19,6 +19,12 @@ public:
   void updateName(const UserId& userId, const std::string& name) override;
   void markUserDeleted(const UserId& userId, UnixMs now) override;
   void reviveUser(const UserId& userId) override;
+  void deleteUser(const UserId& userId) override;
+
+  std::optional<UserId> findIdentity(Provider provider, const std::string& subject) override;
+  void bindIdentity(Provider provider, const std::string& subject, const UserId& userId,
+                    const std::string& emailAtLink) override;
+  void moveIdentities(const UserId& from, const UserId& to) override;
 
   void insertLink(const std::string& digest, const Email& email, UnixMs createdAt, UnixMs expiresAt,
                   const std::string& forkSource) override;

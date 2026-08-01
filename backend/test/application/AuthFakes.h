@@ -1,5 +1,6 @@
 #pragma once
 
+#include "platform/ports/AccountFootprint.h"
 #include "platform/ports/AuthRepository.h"
 #include "platform/ports/Clock.h"
 #include "platform/ports/EmailSender.h"
@@ -11,6 +12,7 @@
 #include <functional>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -97,6 +99,9 @@ struct FakeAuthRepository : AuthRepository {
   std::map<std::string, SessionRecord> sessions;    // digest -> record
   std::map<std::string, User> usersByEmail;         // email  -> user
   std::map<std::string, User> usersById;            // id     -> user
+  // (provider, subject) -> user, exactly the real table's primary key — so the fake cannot hold a
+  // different opinion about what "one door opens one account" means.
+  std::map<std::pair<std::string, std::string>, UserId> identities;
   int nextUserId = 0;
   int nextSessionId = 0;
 
@@ -124,6 +129,33 @@ struct FakeAuthRepository : AuthRepository {
   }
   void markUserDeleted(const UserId& userId, UnixMs now) override { setDeleted(userId, now); }
   void reviveUser(const UserId& userId) override { setDeleted(userId, std::nullopt); }
+  void deleteUser(const UserId& userId) override {
+    auto it = usersById.find(userId.str());
+    if (it == usersById.end()) return;
+    usersByEmail.erase(it->second.email.value);
+    usersById.erase(it);
+    // The real row cascades; the fake models it, or a merged-away account's sessions would keep
+    // resolving here and the suite would be green over a live credential.
+    revokeAllSessions(userId);
+    for (auto row = identities.begin(); row != identities.end();) {
+      if (row->second == userId) row = identities.erase(row);
+      else ++row;
+    }
+  }
+
+  std::optional<UserId> findIdentity(Provider provider, const std::string& subject) override {
+    auto it = identities.find({toString(provider), subject});
+    if (it == identities.end()) return std::nullopt;
+    return it->second;
+  }
+  void bindIdentity(Provider provider, const std::string& subject, const UserId& userId,
+                    const std::string&) override {
+    identities.insert_or_assign({toString(provider), subject}, userId);
+  }
+  void moveIdentities(const UserId& from, const UserId& to) override {
+    for (auto& [key, owner] : identities)
+      if (owner == from) owner = to;
+  }
 
   void insertLink(const std::string& digest, const Email& email, UnixMs createdAt,
                   UnixMs expiresAt, const std::string& forkSource) override {
@@ -208,6 +240,13 @@ struct FakeAuthRepository : AuthRepository {
     it->second.deletedAt = at;
     usersByEmail[it->second.email.value].deletedAt = at;
   }
+};
+
+// The link door's precondition, as a set the test fills by hand: every account named here holds
+// something a merge would destroy. The real one is a UNION of per-product existence probes.
+struct FakeAccountFootprint : AccountFootprint {
+  std::set<std::string> withData;
+  bool anyData(const UserId& userId) override { return withData.count(userId.str()) > 0; }
 };
 
 // Personal MCP API keys as a fake: the digest→row map the real table keys on, plus the public

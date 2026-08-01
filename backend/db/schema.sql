@@ -236,6 +236,25 @@ alter table sessions add column if not exists last_seen_ms bigint not null defau
 alter table sessions add column if not exists ip text not null default '';
 create unique index if not exists sessions_id on sessions (id);
 
+-- provider sign-in doors (backend/AUTH.md, "Identities — one account, many doors"). The
+-- provider-issued SUBJECT is the identity; the email is only ever a hint, consulted once, to find
+-- an account that already exists. (provider, subject) is the primary key, so a provider that
+-- changes the address behind an account — an Apple Hide-My-Email relay rotated, a Google primary
+-- address moved — still resolves to the same user. There is no backfill statement here and there
+-- cannot be one: no Google subject was ever stored, so this table fills itself on each account's
+-- next provider sign-in, which is exactly what the resolve-by-verified-email step is for.
+-- email_at_link is what the provider said at the moment the door was bound; it is never re-read
+-- to resolve anyone, and exists so a human can see which address a door came in on.
+create table if not exists user_identities (
+  provider      text not null check (provider in ('google','apple')),
+  subject       text not null,
+  user_id       uuid not null references users(id) on delete cascade,
+  email_at_link text not null default '',
+  created_at    timestamptz not null default now(),
+  primary key (provider, subject)
+);
+create index if not exists user_identities_user on user_identities (user_id);
+
 -- settings: personal MCP API keys. A long-lived per-user bearer token that authenticates MCP
 -- requests as a static-token fallback for OAuth-less clients. Show-once, hash-at-rest: the key is
 -- keyed by the digest of its secret (the raw token is never stored), listable and revocable,

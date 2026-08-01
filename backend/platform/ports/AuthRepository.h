@@ -50,6 +50,17 @@ struct AuthRepository {
   // The settings §4 soft close and its undo: stamp / clear users.deleted_at.
   virtual void markUserDeleted(const UserId& userId, UnixMs now) = 0;
   virtual void reviveUser(const UserId& userId) = 0;
+  // The row itself, gone. Reserved for the link merge, whose whole precondition is an account
+  // proven to hold nothing — every other close in the product is the soft one above.
+  virtual void deleteUser(const UserId& userId) = 0;
+
+  // Provider doors (backend/AUTH.md, "Identities"). Keyed by the provider's subject, never by an
+  // address, so a rotated relay or a moved primary email still opens the same account.
+  virtual std::optional<UserId> findIdentity(Provider provider, const std::string& subject) = 0;
+  virtual void bindIdentity(Provider provider, const std::string& subject, const UserId& userId,
+                            const std::string& emailAtLink) = 0;
+  // The merge: every door of `from` now opens `to`. Called only once `from` is provably empty.
+  virtual void moveIdentities(const UserId& from, const UserId& to) = 0;
 
   virtual void insertLink(const std::string& digest, const Email& email, UnixMs createdAt,
                           UnixMs expiresAt, const std::string& forkSource) = 0;

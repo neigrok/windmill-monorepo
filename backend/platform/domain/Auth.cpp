@@ -79,4 +79,27 @@ LinkVerdict verifyLink(bool found, bool consumed, UnixMs expiresAt, UnixMs now) 
   return LinkVerdict::valid;
 }
 
+std::string toString(Provider provider) {
+  return provider == Provider::apple ? "apple" : "google";
+}
+
+std::optional<Provider> parseProvider(std::string_view raw) {
+  if (raw == "google") return Provider::google;
+  if (raw == "apple") return Provider::apple;
+  return std::nullopt;
+}
+
+bool isPrivateRelay(const Email& email) {
+  static constexpr std::string_view suffix = "@privaterelay.appleid.com";
+  // parseEmail has already lowercased, so a plain suffix match is the whole test.
+  return email.value.size() > suffix.size() && email.value.ends_with(suffix);
+}
+
+AddressTrust trustOf(const ProviderIdentity& identity) {
+  if (!identity.emailVerified) return AddressTrust::unusable;
+  if (!parseEmail(identity.email.value)) return AddressTrust::unusable;
+  if (identity.relayEmail || isPrivateRelay(identity.email)) return AddressTrust::appOnly;
+  return AddressTrust::crossDoor;
+}
+
 }

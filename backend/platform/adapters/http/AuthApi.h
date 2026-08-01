@@ -1,6 +1,7 @@
 #pragma once
 
-#include "platform/adapters/google/GoogleOAuthClient.h"
+#include "platform/adapters/oidc/AppleOAuthClient.h"
+#include "platform/adapters/oidc/GoogleOAuthClient.h"
 #include "platform/application/AuthService.h"
 #include "platform/ports/SignupFork.h"
 
@@ -20,16 +21,20 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // token is also honoured for API and test callers. Every reply uses the doc's exact copy.
 // Google sign-in is a second door onto the same `wm_session`: two top-level redirects that
 // mint the identical cookie, so an account reached via Google or a magic link is one account.
+// Apple is the third, and the native one — the app posts an authorization code rather than being
+// redirected — with the link door beside it for the relay-address case (backend/AUTH.md).
 class AuthApi {
 public:
   AuthApi(std::shared_ptr<AuthService> auth, std::shared_ptr<SignupFork> signupFork, bool secureCookies,
           std::string cookieDomain, std::shared_ptr<GoogleOAuthClient> google = nullptr,
-          std::string appUrl = "");
+          std::string appUrl = "", std::shared_ptr<AppleOAuthClient> apple = nullptr);
 
   void requestLink(const drogon::HttpRequestPtr& req, HttpCallback&& callback);  // POST   /v1/auth/magic-link
   void verify(const drogon::HttpRequestPtr& req, HttpCallback&& callback);       // POST   /v1/auth/verify
   void googleStart(const drogon::HttpRequestPtr& req, HttpCallback&& callback);    // GET  /v1/auth/google/start
   void googleCallback(const drogon::HttpRequestPtr& req, HttpCallback&& callback); // GET  /v1/auth/google/callback
+  void apple(const drogon::HttpRequestPtr& req, HttpCallback&& callback);        // POST   /v1/auth/apple
+  void link(const drogon::HttpRequestPtr& req, HttpCallback&& callback);         // POST   /v1/auth/link
   void me(const drogon::HttpRequestPtr& req, HttpCallback&& callback);           // GET    /v1/me
   void logout(const drogon::HttpRequestPtr& req, HttpCallback&& callback);       // POST   /v1/auth/logout
   void patchMe(const drogon::HttpRequestPtr& req, HttpCallback&& callback);      // PATCH  /v1/me
@@ -46,6 +51,7 @@ private:
   std::string cookieDomain_;
   std::shared_ptr<GoogleOAuthClient> google_;  // null when Google sign-in is unconfigured
   std::string appUrl_;                         // where the Google callback lands the browser
+  std::shared_ptr<AppleOAuthClient> apple_;    // null when Apple sign-in is unconfigured
 };
 
 }

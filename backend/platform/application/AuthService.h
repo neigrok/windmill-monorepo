@@ -2,6 +2,7 @@
 
 #include "platform/application/OAuthService.h"
 #include "platform/domain/Auth.h"
+#include "platform/ports/AccountFootprint.h"
 #include "platform/ports/AuthRepository.h"
 #include "platform/ports/Clock.h"
 #include "platform/ports/EmailSender.h"
@@ -43,7 +44,7 @@ struct SessionView {
 class AuthService {
 public:
   AuthService(AuthRepository& repo, EmailSender& email, TokenGenerator& tokens, Clock& clock,
-              OAuthService& oauth, std::string appBaseUrl);
+              OAuthService& oauth, AccountFootprint& footprint, std::string appBaseUrl);
 
   enum class RequestResult { sent, invalidEmail, rateLimited, unreachable };
 
@@ -82,12 +83,40 @@ public:
   // metadata (ctx).
   Completion completeLink(const std::string& linkSecret, const SessionContext& ctx = {});
 
-  // Sign in a Google-verified identity. The email is resolved to an account the same way a magic
-  // link is — found or created, revived if within its close grace — so a Google email and a
-  // magic-link email that match land on ONE account (users.email is unique), with no new provider
-  // state. The caller must have proven the email is Google-verified before calling this.
-  SignedIn completeGoogle(const Email& verifiedEmail, const std::string& name,
-                          const SessionContext& ctx = {});
+  // A completed provider sign-in. `created` says this call minted the account; `privateEmail` says
+  // the address behind it is a relay that can never find the human's other account — together they
+  // are exactly the condition the client shows the link door on, and the server keeps no flag of
+  // its own about it.
+  struct ProviderSignIn {
+    SignedIn signedIn;
+    bool created = false;
+    bool privateEmail = false;
+  };
+  // Sign in through a provider door, on the ladder in backend/AUTH.md: the subject resolves the
+  // account outright, and only when no door is bound does the verified address get to find one —
+  // which is also what fills this table in for every account that predates it. nullopt is an
+  // identity the domain refused (unverified or unparseable address), never a storage failure.
+  // The caller must have proven the identity with the provider before calling this.
+  std::optional<ProviderSignIn> completeProvider(const ProviderIdentity& identity,
+                                                 const SessionContext& ctx = {});
+
+  // A provider sign-in taken while ALREADY signed in binds the door to the caller's account rather
+  // than resolving one. It is why signing in by link and then tapping Apple cannot fork the account
+  // the user is looking at. A door already bound elsewhere is refused, never stolen.
+  enum class AttachOutcome { attached, alreadyMine, takenByAnother, refused };
+  AttachOutcome attachIdentity(const UserId& userId, const ProviderIdentity& identity);
+
+  // The link door: the caller's account folds into the one the magic link names, and its provider
+  // doors come with it. Refused unless the caller's account holds nothing — the merge is a delete
+  // of an empty row, never a reconciliation. `linked` carries a session for the surviving account,
+  // because the caller's own died with the row.
+  enum class LinkOutcome { linked, sameAccount, notEmpty, badLink };
+  struct LinkResult {
+    LinkOutcome outcome;
+    std::optional<SignedIn> signedIn;
+  };
+  LinkResult linkAccount(const UserId& caller, const std::string& linkSecret,
+                         const SessionContext& ctx = {});
 
   // Resolve a session secret to its user, rolling the 90-day window forward on each use and
   // healing the row's metadata from ctx. A closed account is refused (nullopt) even if a
@@ -122,17 +151,22 @@ public:
   UnixMs closeAccount(const UserId& userId);
 
 private:
-  // The shared session-mint tail behind both doors: find-or-create the user by email, revive a
+  // The shared session-mint tail behind every door: find-or-create the user by email, revive a
   // within-grace closed account, then mint + persist a session. Every sign-in path funnels here so
   // the revival rule and account-linking-by-email hold identically.
   SignedIn mintSessionFor(const Email& email, const std::string& name, const SessionContext& ctx,
                           UnixMs now);
+  // Its two halves, reached directly by the paths that already hold the account: signing in is the
+  // undo, so a within-grace close clears before any session is minted onto it.
+  User revived(User user);
+  SignedIn mintSession(const User& user, const SessionContext& ctx, UnixMs now);
 
   AuthRepository& repo_;
   EmailSender& email_;
   TokenGenerator& tokens_;
   Clock& clock_;
   OAuthService& oauth_;
+  AccountFootprint& footprint_;
   std::string appBaseUrl_;
 };
 
