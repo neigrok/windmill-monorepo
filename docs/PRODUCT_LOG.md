@@ -540,6 +540,22 @@ activates on **coming back**. One logged session is a trial, not a habit.
   backwards: a lifter running linear progression *should* add 2.5 kg every session, so a healthy
   lifter would score near zero and a stalled one would score 100%. What we are measuring is "the
   number was right, or one tap away."
+
+  > **Open conflict this metric depends on (consistency ledger 0d).** The ladder inherited from Lift
+  > offers no ±2.5 step at any load — at 100 kg it gives ±5/±10 — while the named user's program
+  > step *is* +2.5 kg. So a healthy lifter's most common action isn't one ladder step, and the
+  > metric above cannot be measured as written.
+  >
+  > The resolution, and why it is ours to take: **Lift's load-adaptive tiers are a workaround for
+  > not having exercise identity.** With only free-text names it could not know whether you were
+  > holding a barbell or a dumbbell, so it guessed the plausible step from the load. Gym knows —
+  > `gym_exercises.step_kg` is seeded per movement (2.5 barbell, 2.0 dumbbell, 5.0 machine/stack,
+  > 4.0 kettlebell) and already ships. So the **small step should come from the exercise** and the
+  > load-adaptive tier should supply only the **large** step, which is for warm-up ramping. At
+  > 100 kg on a bar that reads −2.5 / −10 / +2.5 / +10: the program step under the thumb, the big
+  > jumps still there. Not built — `set-logger` builds the canon ladder as drawn, because canon
+  > wins over a suggestion of mine, and the ladder lives in one module so this is a one-file change.
+  > Decide it on dogfood evidence, then fix canon and the ledger together.
 - **Retention** — W1 and W4 return, plus **sessions per active week** (a lifter trains 3–5× a week or
   the product isn't working).
 - **Correction rate** — share of sessions edited after finishing. Meaningful only from `log-editing`;
