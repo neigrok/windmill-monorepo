@@ -523,6 +523,43 @@ consumer earns the abstraction and we are at the third:
   beside `EntitlementsProvider.jsx`, with roadmap registering the shell's section. **This blocks any
   gym monetization bet.**
 
+## What the canon filed back at us (2026-08-01)
+
+The gym design board carries a card titled *"Where I think the briefs are wrong."* A designer who
+argues with the brief is doing the job; these are decisions to take, not things to code around.
+Recorded here because a scratchpad does not survive the session.
+
+- **Bodyweight lifts have no honest number — a schema gap, and `pr-line` depends on it.** Chin-ups
+  log at 0 kg, so Epley is undefined; the design already handles it in words ("bodyweight — no
+  e1RM") rather than showing a confident wrong number. But *"without a bodyweight field on the
+  account, a third of this user's sets can never be compared."* Note the tension with our own plan:
+  body weight is **parked** until the set logger is boring. Both stand — the park is a product
+  decision, this is its cost, and `pr-line` is where it gets paid. If it returns it is a time series
+  (bodyweight moves) plus a per-exercise *bodyweight-loadable* flag, not an account field.
+- **"A four-hour auto-close will eat real sessions" — checked, and it does not.** The finding
+  assumes a session-length cap; `autoCloseAt` measures from **last activity**, so a two-hour squat
+  session with ten-minute rests has a ten-minute idle and never trips it. Tripping it takes four
+  hours of silence between sets, which is an abandoned session by any reading. **No setting is
+  needed**, and this is written down so nobody builds the dial the finding asked for.
+- **The copy promises what phase 0 cannot do.** The drawn delete sheet and its toast say *Trash,
+  recoverable for 30 days in Settings*, and the draft editor assumes update/delete for sets and
+  sessions — the phase-0 contract is POST-only. This is a mission line, not a nit: no copy that
+  promises what the product doesn't do. `log-editing` either builds the endpoints and the trash, or
+  the copy changes before it ships. It must not ship as drawn.
+- **The plan wins the prefill — a deliberate deviation from G1**, flagged as such by the designer:
+  plan snapshot → else last time → else 20 kg, *and last time is never hidden*. The brief said dial
+  in last time; a lifter on a written program wants what the program says today. The compensation is
+  part of the deal.
+- **Reps needed typing** — the brief asked the question, the canon answered it: an AMRAP of 14 is
+  twelve taps on +1 and two on a keypad.
+- **Comparison is top-set e1RM, never volume** — *"volume says four light sets beat three heavy
+  ones."* Up is olive, down is plain ink, never red.
+- **Two filed at the platform rather than at gym:** the daylight skin is *demonstrated, not proven*
+  until the shell owns theme scope (until then no gym template may read a brand semantic directly —
+  always through a gym-named token restated in both skins); and re-pointing a brand hue onto olive
+  would make "the accent" and "logged" the same colour, *"silently deleting the distinction the log
+  depends on."*
+
 ## Metric contract
 
 A training log's activation is not a roadmap's. Roadmap activates on planting something; gym
