@@ -1,0 +1,64 @@
+{
+  "app": "lift",
+  "version": 1,
+  "exportedAt": 1785000000000,
+  "sessions": [
+    {
+      "id": "02ABC6B9-6887-4D29-985C-36981FC66C21",
+      "name": "Upper A",
+      "templateId": "852C9DEE-293D-4704-BEEC-ADC8D113A134",
+      "startedAt": 1777914000000,
+      "finishedAt": 1777917900000,
+      "sets": [
+        { "id": "4B92DCD7-791A-49E4-8DE2-2CA54B57152D", "exerciseName": "Bench Press", "setNumber": 1, "weight": 82.5, "reps": 8, "completedAt": 1777914300000 },
+        { "id": "353BFCE2-4904-4EFB-B433-F57209F351EC", "exerciseName": "Bench press", "setNumber": 2, "weight": 82.5, "reps": 8, "completedAt": 1777914600000 },
+        { "id": "9A76186C-4C1D-4B30-BA86-E95743124C0F", "exerciseName": "bench press", "setNumber": 3, "weight": 80.0, "reps": 7, "completedAt": 1777914900000 },
+        { "id": "A6C397C0-9F8D-404F-9FB3-7C9538798F16", "exerciseName": "Pull Ups", "setNumber": 1, "weight": -22.5, "reps": 10, "completedAt": 1777915500000 },
+        { "id": "2B63FF9F-3956-4B4E-A768-24A01B77B2C5", "exerciseName": "Pull-ups", "setNumber": 2, "weight": 0, "reps": 6, "completedAt": 1777915900000 }
+      ]
+    },
+    {
+      "id": "7AE583FB-62C9-4204-95F5-0843C9A5DEAB",
+      "name": "Lower A",
+      "templateId": null,
+      "startedAt": 1778086920000,
+      "finishedAt": 1778090400000,
+      "sets": [
+        { "id": "F72A07AD-C283-40EE-AD34-2EAF53F2144E", "exerciseName": "Back Squat", "setNumber": 1, "weight": 110.0, "reps": 5, "completedAt": 1778087220000 },
+        { "id": "530F02BC-1147-4A2F-80E0-2984F909CEFB", "exerciseName": "Back Squat", "setNumber": 2, "weight": 110.0, "reps": 5, "completedAt": 1778087520000 },
+        { "id": "7ECBCC2B-AD19-49B7-8287-CBA97CDF6513", "exerciseName": "Back Squat", "setNumber": 3, "weight": 110.0, "reps": 0, "completedAt": 1778087820000 },
+        { "id": "3BF5DEFE-7743-486D-8BE7-6C350716EDFE", "exerciseName": "Romanian Deadlift", "setNumber": 1, "weight": 900.0, "reps": 8, "completedAt": 1778088420000 }
+      ]
+    },
+    {
+      "id": "BC79C70B-2B46-4AC1-B0C5-F652C98781A8",
+      "name": "Upper B",
+      "templateId": null,
+      "startedAt": 1778261400000,
+      "finishedAt": null,
+      "sets": [
+        { "id": "6C3502B8-3913-4182-97B6-61F1EFAEC7B4", "exerciseName": "Overhead Press", "setNumber": 1, "weight": 47.5, "reps": 6, "completedAt": 1778261700000 },
+        { "id": "7812F91E-59C5-4999-B363-5323A424657F", "exerciseName": "Barbell Row", "setNumber": 1, "weight": 72.5, "reps": 9, "completedAt": 1778262600000 }
+      ]
+    },
+    {
+      "id": "18BF5327-F7D2-4929-BFA4-5EBB809B2B1A",
+      "name": "Upper A",
+      "templateId": "852C9DEE-293D-4704-BEEC-ADC8D113A134",
+      "startedAt": 1778522400000,
+      "finishedAt": 1778522460000,
+      "sets": []
+    },
+    {
+      "id": "D0032AC3-DC65-4EB9-A15E-8190758ABFA6",
+      "name": "Lower B",
+      "templateId": null,
+      "startedAt": 1778608800000,
+      "finishedAt": 1778600000000,
+      "sets": [
+        { "id": "FCB9DD84-D7E8-4013-A87D-8FF0ACEAB59C", "exerciseName": "Deadlift", "setNumber": 1, "weight": 142.5, "reps": 3, "completedAt": 1778609100000 },
+        { "id": "F6E5046B-4461-4D48-9ACC-BAA12ADF7B58", "exerciseName": "Farmer's Carry", "setNumber": 1, "weight": 32.0, "reps": 2, "completedAt": 1778610000000 }
+      ]
+    }
+  ]
+}

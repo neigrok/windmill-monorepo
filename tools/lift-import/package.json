@@ -1,0 +1,9 @@
+{
+  "name": "lift-import",
+  "private": true,
+  "type": "module",
+  "description": "One-shot import of the Lift training log into Windmill gym. No dependencies on purpose.",
+  "scripts": {
+    "test": "node --test test/"
+  }
+}

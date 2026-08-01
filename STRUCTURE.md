@@ -34,6 +34,9 @@ packages/    cross-surface shared assets (consumed by more than one surface)
   api-contract/   wire types + the genesis-legend golden (single source of truth)
   design-tokens/  raw color/space/type scales web CSS and native both mirror
 
+tools/       one-shot scripts kept for the record, never a product surface
+  lift-import/    the author's Lift training history into the gym log, over the public API
+
 docs/        brand-level narrative + design canon
 .github/     root workflows: backend.yml (context backend/) · web.yml (workdir web/)
 .attic/      pre-restructure repos, kept as a local recovery net (gitignored)
