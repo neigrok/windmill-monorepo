@@ -1,34 +1,58 @@
 // THE LADDER — the one place in Windmill where a weight moves by a tap. Lift had the same rule
-// pasted into three targets and let them drift; here every button, every label and every test
-// reads these four functions, and there is no second copy to disagree with.
+// pasted into three targets and let them drift; here every button and every label reads these four
+// functions, and the cases they must answer live in packages/api-contract/gym-ladder.json, which
+// the native logger runs as a test too.
 //
-// The bands are read off the MAGNITUDE, so the ladder behaves the same on the negative side of
-// zero — band-assisted pull-ups sit at −20 kg, which is a point on the number line and never a
-// mode. The step buttons do not clamp; only typed entry is bounded (see entry.js).
+// The bands are read off the MAGNITUDE and never the sign — a band-assisted pull-up sits at −20 kg,
+// which is a point on the number line and never a mode. So the ladder is a mirror, exactly:
+// bump(−w, −direction, big) === −bump(w, direction, big) for every weight, direction and size. The
+// step buttons do not clamp; only typed entry is bounded (see entry.js).
 
-export function steps(weight) {
+const BANDS = [
+  { under: 20, small: 1, large: 5 },
+  { under: 50, small: 2, large: 5 },
+  { under: Infinity, small: 5, large: 10 },
+];
+
+// A step that LIGHTENS the load is sized by the band just below the magnitude rather than the one
+// it sits in — one comparison tightening from < to <=, which is the limit of |weight| − ε with no
+// epsilon to pick. What it buys is that a step LANDING on a boundary is undone by its opposite: the
+// +1 that carried you 19 → 20 is answered by a −1 back to 19, never a −2 down to 18. It buys no
+// more than that — 49 +2→ 51 −5→ 46 crosses the boundary rather than landing on it, and does not
+// come back. Reversibility at the edge, not everywhere.
+//
+// The find falls back because NaN and Infinity compare false against every band, and a weight is
+// not always a number a lifter typed: it is rehydrated from localStorage, where a blob written by
+// an older build can arrive shaped wrong. Throwing here would white-screen the logger mid-workout
+// on every reload until storage was cleared by hand.
+export function steps(weight, lightening = false) {
   const load = Math.abs(weight);
-  if (load < 20) return [1, 5];
-  if (load < 50) return [2, 5];
-  return [5, 10];
+  const top = BANDS[BANDS.length - 1];
+  const band = BANDS.find(({ under }) => (lightening ? load <= under : load < under)) ?? top;
+  return [band.small, band.large];
 }
 
+// Rounding is HALF AWAY FROM ZERO, so it mirrors like everything else here. Math.round alone is
+// half-UP — it sends 2.505 to 2.51 but −2.505 to −2.5 — and the keypad reaches that: typing −2.505
+// would store one weight on the web and another on the phone, whose Swift copy rounds the magnitude.
+// Rounding the magnitude and reapplying the sign is the whole fix.
 export function round(weight) {
-  return Math.round(weight * 100) / 100;
+  return Math.sign(weight) * Math.round(Math.abs(weight) * 100) / 100;
 }
 
-// The down-step is evaluated JUST BELOW the current weight, so stepping down from exactly 20 kg
-// lands on 19 and not 18 — you land back inside the band you came from. The visible consequence
-// is that at 20 kg the row reads −5 · −1 · +2 · +5, and that asymmetry is the proof the rule is
-// working, not a bug to straighten.
+// Lightening is REDUCING THE MAGNITUDE, not going down — which is what carries the rule across zero
+// without a toggle in sight. At +20 kg the row reads −5 · −1 · +2 · +5, so at −20 kg it must read
+// −5 · −2 · +1 · +5; at 0 no direction lightens, and both sides read the smallest band.
 export function bump(weight, direction, big) {
-  const [small, large] = steps(direction < 0 ? weight - 0.001 : weight);
+  const [small, large] = steps(weight, direction * weight < 0);
   return round(weight + direction * (big ? large : small));
 }
 
 export function ladderLabels(weight) {
-  const [downSmall, downLarge] = steps(weight - 0.001);
-  const [upSmall, upLarge] = steps(weight);
+  // direction × weight < 0, specialised for the two buttons: down lightens a loaded bar, up
+  // lightens an assisted one, and at zero neither of them does.
+  const [downSmall, downLarge] = steps(weight, weight > 0);
+  const [upSmall, upLarge] = steps(weight, weight < 0);
   return [`−${downLarge}`, `−${downSmall}`, `+${upSmall}`, `+${upLarge}`];
 }
 

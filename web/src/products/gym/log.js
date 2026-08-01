@@ -4,6 +4,8 @@
 // and the session detail all read from here, so there is exactly one way a weight, a day and a
 // duration are spelled in this product; the tests read the same rules without a browser.
 
+import { round } from './logger/ladder.js';
+
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -78,8 +80,10 @@ export function durLabel(ms) {
 
 // Weights print with trailing zeros stripped and a real U+2212 minus, because a negative load is
 // a normal point on the number line here — band-assisted work sits below zero.
+// The grid is the ladder's, not a second opinion: this read the magnitude to two decimals itself
+// until the two spellings disagreed on a negative half-cent, and one of them has a golden.
 export function fmt(weight) {
-  return (weight < 0 ? '−' : '') + String(Math.round(Math.abs(weight) * 100) / 100);
+  return (weight < 0 ? '−' : '') + String(Math.abs(round(weight)));
 }
 
 export function setCountLabel(count) {

@@ -1,0 +1,49 @@
+{
+  "note": "THE WEIGHT LADDER — the contract every Windmill surface answers to. Lift pasted this rule into three targets and let them drift; here it is written down once, and web and iOS each run this file as a test. See README.md for the rule in prose.",
+  "grid": 0.01,
+  "bands": [
+    { "under": 20, "small": 1, "large": 5 },
+    { "under": 50, "small": 2, "large": 5 },
+    { "under": null, "small": 5, "large": 10 }
+  ],
+  "weightCases": [
+    { "weight": 0, "labels": ["−5", "−1", "+1", "+5"], "down": -1, "downBig": -5, "up": 1, "upBig": 5 },
+    { "weight": 0.5, "labels": ["−5", "−1", "+1", "+5"], "down": -0.5, "downBig": -4.5, "up": 1.5, "upBig": 5.5 },
+    { "weight": -0.5, "labels": ["−5", "−1", "+1", "+5"], "down": -1.5, "downBig": -5.5, "up": 0.5, "upBig": 4.5 },
+    { "weight": 2.5, "labels": ["−5", "−1", "+1", "+5"], "down": 1.5, "downBig": -2.5, "up": 3.5, "upBig": 7.5 },
+    { "weight": 17.5, "labels": ["−5", "−1", "+1", "+5"], "down": 16.5, "downBig": 12.5, "up": 18.5, "upBig": 22.5 },
+    { "weight": 19, "labels": ["−5", "−1", "+1", "+5"], "down": 18, "downBig": 14, "up": 20, "upBig": 24 },
+    { "weight": 19.999, "labels": ["−5", "−1", "+1", "+5"], "down": 19, "downBig": 15, "up": 21, "upBig": 25 },
+    { "weight": 20, "labels": ["−5", "−1", "+2", "+5"], "down": 19, "downBig": 15, "up": 22, "upBig": 25 },
+    { "weight": 20.01, "labels": ["−5", "−2", "+2", "+5"], "down": 18.01, "downBig": 15.01, "up": 22.01, "upBig": 25.01 },
+    { "weight": 49, "labels": ["−5", "−2", "+2", "+5"], "down": 47, "downBig": 44, "up": 51, "upBig": 54 },
+    { "weight": 50, "labels": ["−5", "−2", "+5", "+10"], "down": 48, "downBig": 45, "up": 55, "upBig": 60 },
+    { "weight": 50.01, "labels": ["−10", "−5", "+5", "+10"], "down": 45.01, "downBig": 40.01, "up": 55.01, "upBig": 60.01 },
+    { "weight": 102.5, "labels": ["−10", "−5", "+5", "+10"], "down": 97.5, "downBig": 92.5, "up": 107.5, "upBig": 112.5 },
+    { "weight": 500, "labels": ["−10", "−5", "+5", "+10"], "down": 495, "downBig": 490, "up": 505, "upBig": 510 },
+    { "weight": -1, "labels": ["−5", "−1", "+1", "+5"], "down": -2, "downBig": -6, "up": 0, "upBig": 4 },
+    { "weight": -19, "labels": ["−5", "−1", "+1", "+5"], "down": -20, "downBig": -24, "up": -18, "upBig": -14 },
+    { "weight": -20, "labels": ["−5", "−2", "+1", "+5"], "down": -22, "downBig": -25, "up": -19, "upBig": -15 },
+    { "weight": -20.01, "labels": ["−5", "−2", "+2", "+5"], "down": -22.01, "downBig": -25.01, "up": -18.01, "upBig": -15.01 },
+    { "weight": -49, "labels": ["−5", "−2", "+2", "+5"], "down": -51, "downBig": -54, "up": -47, "upBig": -44 },
+    { "weight": -50, "labels": ["−10", "−5", "+2", "+5"], "down": -55, "downBig": -60, "up": -48, "upBig": -45 },
+    { "weight": -102.5, "labels": ["−10", "−5", "+5", "+10"], "down": -107.5, "downBig": -112.5, "up": -97.5, "upBig": -92.5 },
+    { "weight": -500, "labels": ["−10", "−5", "+5", "+10"], "down": -505, "downBig": -510, "up": -495, "upBig": -490 }
+  ],
+  "roundCases": [
+    { "value": 102.505, "rounded": 102.51 },
+    { "value": -102.505, "rounded": -102.51 },
+    { "value": 2.505, "rounded": 2.51 },
+    { "value": -2.505, "rounded": -2.51 },
+    { "value": 0.005, "rounded": 0.01 },
+    { "value": -0.005, "rounded": -0.01 },
+    { "value": 19.005, "rounded": 19.01 },
+    { "value": -19.005, "rounded": -19.01 }
+  ],
+  "repCases": [
+    { "reps": 0, "down": 0, "up": 1 },
+    { "reps": 1, "down": 0, "up": 2 },
+    { "reps": 5, "down": 4, "up": 6 },
+    { "reps": 99, "down": 98, "up": 100 }
+  ]
+}

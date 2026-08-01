@@ -1,0 +1,48 @@
+name: iOS CI
+
+# Monorepo: the native superapp lives under apps/ios. Build and test only — this workflow ships
+# nothing; App Store delivery is a later wave. Path-filtered to apps/ios and packages/api-contract:
+# the weight ladder's truth is packages/api-contract/gym-ladder.json and both copies of the rule
+# (Swift and web) run it as a test, so editing the golden fires this workflow AND web.yml, whose
+# `npm run build` runs the JS suite first. That is the drift gate doing its job — a rule changed in
+# one language fails in the other. Both halves arm on push and on pull_request, so neither language
+# can be the only one watching.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/ios/**'
+      - 'packages/api-contract/**'
+      - '.github/workflows/ios.yml'
+  pull_request:
+    paths:
+      - 'apps/ios/**'
+      - 'packages/api-contract/**'
+      - '.github/workflows/ios.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ios-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: apps/ios
+
+jobs:
+  build-and-test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Swift ships with the runner image — no toolchain setup step. Printed so a red build can be
+      # read against the exact compiler that produced it.
+      - run: swift --version
+
+      - run: swift build
+
+      # The tests read the golden out of the checkout by walking up from #filePath, so the whole
+      # repo must be present — never a bundled resource copy.
+      - name: Test (the ladder against packages/api-contract/gym-ladder.json)
+        run: swift test

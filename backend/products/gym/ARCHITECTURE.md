@@ -42,11 +42,13 @@ happens on the device. The backend's job is narrow and load-bearing:
 
 **What the backend deliberately does NOT do — it stays on the device:**
 
-- **The weight ladder** (±1/±5 under 20 kg, ±2/±5 under 50, ±5/±10 above, down-steps evaluated
-  at `weight − 0.01`) is presentation. Lift's best code — and Lift pasted it into three targets
-  and let them drift. Gym's rule: the ladder lives in exactly **one** web module; the server
-  only stores what was logged plus each exercise's default step. Same for comma-as-decimal
-  parsing, sticky carry-forward, tap-to-type.
+- **The weight ladder** (±1/±5 under 20 kg, ±2/±5 under 50, ±5/±10 above, bands read off the
+  **magnitude**, and a step that lightens the load sized by the band just below it) is
+  presentation. Lift's best code — and Lift pasted it into three targets and let them drift.
+  Gym's rule was "exactly **one** module," which held only while there was one language; it is
+  now one module *per language*, both answering `packages/api-contract/gym-ladder.json` as a
+  test (§11.5). The server only stores what was logged plus each exercise's default step. Same
+  for comma-as-decimal parsing, sticky carry-forward, tap-to-type.
 - **The rest timer** — a countdown against a target with a Notification-API alert is device
   behavior; the server reserves the target column (§2.5) and stores the wall-clock timestamps
   the device already writes.
@@ -877,10 +879,33 @@ manual finish three hours late. Web offers no button and says the session closes
 **The ladder must not become copy #2.** §0 cut the ladder to exactly one module because Lift pasted
 it into three targets and let them drift — and a native Swift logger writes copy #2 on its first
 day. The fix is not shared code across a language boundary but shared *truth*: the step table and
-the `weight − 0.01` down-step evaluation become a golden fixture in `packages/api-contract/`, which
-already exists to hold exactly this (wire types plus the genesis-legend golden), and both the JS
+the down-step rule became a golden fixture in `packages/api-contract/gym-ladder.json`, which
+already existed to hold exactly this (wire types plus the genesis-legend golden), and both the JS
 module and the Swift one run it as a test. Drift then fails CI instead of shipping a wrong number
 into the product's single highest-value pixel.
+
+**Shipped (`ladder-golden`), and writing the contract down caught two defects the single copy had
+been hiding.** Copy #2 exists today, ahead of the logger that needs it, precisely so the logger
+inherits a proven ladder instead of a fresh transcription.
+
+- **The assisted side was not the mirror of the loaded side.** The rule was implemented as "the
+  down-step is evaluated at `weight − ε`" — just below the *signed* weight, which below zero is
+  just *above* the magnitude. So +20 kg stepped down to 19, and its mirror −20 kg stepped up to
+  −18 instead of −19: from −19 a lifter could reach −20 and had no button back. The rule is now
+  stated on magnitude — a step that **lightens the load** reads the band just below it — and the
+  epsilon disappears into one comparison tightening from `<` to `<=`. The law is exact and
+  testable: `bump(−w, −direction, big) == −bump(w, direction, big)`. The epsilon was what hid the
+  bug, and the sign convention hid it from the module's own hand-written tests, which asserted the
+  wrong answer with a comment claiming the negative side "behaves identically."
+- **The two languages rounded differently, on a value a lifter can type.** JS `Math.round` is
+  half-*up* and Swift's `.rounded()` is half-*away-from-zero*; they part company at exactly `.5`,
+  and `parseEntry` calls `round` on typed keypad weight, where `−2.505` fits well inside the
+  8-character buffer. Web would have stored −2.5 and the phone −2.51 for the same string. Half
+  away from zero is now pinned, because it is the same mirror law one level down: `round(−x)`
+  must equal `−round(x)`, which half-up violates. Swift was the copy that had it right.
+
+Neither defect is reachable from the loaded side of the number line, which is why one copy and a
+year of use would never have found them. A second implementation is a second opinion.
 
 ### 11.6 What this costs, honestly
 

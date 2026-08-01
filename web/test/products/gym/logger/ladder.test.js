@@ -1,88 +1,123 @@
 // THE LADDER, pinned at every boundary. Lift pasted this rule into three targets and let them
-// drift; the table below is the design canon's own worked cases, and it is the only thing standing
-// between a lifter and a phone that adds the wrong plate.
+// drift; the table now lives in packages/api-contract/gym-ladder.json — hand-written from the rule,
+// read from the repo rather than copied in here, and run as a test by iOS too. It is the only thing
+// standing between a lifter and a phone that adds the wrong plate.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
-import { bump, bumpReps, ladderLabels, round, steps } from '../../../../src/products/gym/logger/ladder.js';
+import { LADDER_KEYS, bump, bumpReps, ladderLabels, round, steps } from '../../../../src/products/gym/logger/ladder.js';
 
-test('steps — three bands, read off the magnitude so the negative side behaves identically', () => {
-  assert.deepEqual(steps(0), [1, 5]);
-  assert.deepEqual(steps(19.999), [1, 5]);
-  assert.deepEqual(steps(20), [2, 5]);
-  assert.deepEqual(steps(49.999), [2, 5]);
-  assert.deepEqual(steps(50), [5, 10]);
-  assert.deepEqual(steps(500), [5, 10]);
-  assert.deepEqual(steps(-19.999), [1, 5]);
-  assert.deepEqual(steps(-20), [2, 5]);
-  assert.deepEqual(steps(-49.999), [2, 5]);
-  assert.deepEqual(steps(-50), [5, 10]);
+const goldenPath = new URL('../../../../../packages/api-contract/gym-ladder.json', import.meta.url);
+const golden = JSON.parse(readFileSync(goldenPath, 'utf8'));
+
+// `under: null` is the top band, open above — JSON has no Infinity to write.
+const bands = golden.bands.map((band) => ({ ...band, under: band.under ?? Infinity }));
+
+// A loop over an empty array is a green test, so every case-driven suite below is only as honest as
+// the fixture is full. Emptying it is exactly the move someone makes to turn a red build green, and
+// it disarms BOTH languages at once from a file neither of them owns.
+test('the golden still carries its cases — an emptied fixture is not a passing one', () => {
+  assert.equal(bands.length, 3);
+  assert.ok(golden.weightCases.length >= 22, `weightCases shrank to ${golden.weightCases.length}`);
+  assert.ok(golden.roundCases.length >= 8, `roundCases shrank to ${golden.roundCases.length}`);
+  assert.ok(golden.repCases.length >= 4, `repCases shrank to ${golden.repCases.length}`);
+  // Both signs must survive. The assisted rows are the only ones that kill a rule read off the
+  // SIGNED weight, which makes them the first thing a pruner mistakes for redundant.
+  assert.ok(golden.weightCases.some(({ weight }) => weight < 0), 'no assisted weights left');
+  assert.ok(golden.weightCases.some(({ weight }) => weight > 0), 'no loaded weights left');
 });
 
-test('ladderLabels — the four buttons re-derive themselves, minus sign and all', () => {
-  assert.deepEqual(ladderLabels(17.5), ['−5', '−1', '+1', '+5']);
-  assert.deepEqual(ladderLabels(19.999), ['−5', '−1', '+1', '+5']);
-  assert.deepEqual(ladderLabels(20), ['−5', '−1', '+2', '+5']);
-  assert.deepEqual(ladderLabels(50), ['−5', '−2', '+5', '+10']);
-  assert.deepEqual(ladderLabels(60), ['−10', '−5', '+5', '+10']);
-  assert.deepEqual(ladderLabels(102.5), ['−10', '−5', '+5', '+10']);
-  assert.deepEqual(ladderLabels(0), ['−5', '−1', '+1', '+5']);
-  assert.deepEqual(ladderLabels(-20), ['−5', '−2', '+2', '+5']);
-  assert.equal(ladderLabels(20)[0].charCodeAt(0), 0x2212);
+// A weight is rehydrated from localStorage, so it is not always a number a lifter typed. Before the
+// band table it fell through to an unconditional `return [5, 10]`; the table must not regress that
+// into a throw, which Logger.jsx would take during render and repeat on every reload.
+test('steps is total — a weight that is not a number gets the top band, never an exception', () => {
+  for (const value of [Infinity, -Infinity, NaN, undefined]) {
+    assert.deepEqual(steps(value, false), [5, 10], `steps of ${value}`);
+    assert.deepEqual(steps(value, true), [5, 10], `lightening steps of ${value}`);
+    assert.deepEqual(ladderLabels(value), ['−10', '−5', '+5', '+10'], `labels of ${value}`);
+  }
 });
 
-// The asymmetry at 20 kg is the visible proof that the down-step respects the band you are
-// leaving: the row reads −5 · −1 · +2 · +5, and stepping down lands on 19 rather than 18.
-test('bump — the down-step is evaluated just below the current weight', () => {
-  assert.equal(bump(20, -1, false), 19);
-  assert.equal(bump(20, -1, true), 15);
-  assert.equal(bump(20, 1, false), 22);
-  assert.equal(bump(20, 1, true), 25);
+test('the bands are the golden’s bands — every boundary, loaded and lightening, both signs', () => {
+  bands.forEach((band, index) => {
+    const pair = [band.small, band.large];
+    const floor = index === 0 ? 0 : bands[index - 1].under;
+    const top = Number.isFinite(band.under) ? band.under : floor + 1000;
 
-  assert.equal(bump(50, -1, false), 48);
-  assert.equal(bump(50, -1, true), 45);
-  assert.equal(bump(50, 1, false), 55);
-  assert.equal(bump(50, 1, true), 60);
-
-  assert.equal(bump(17.5, -1, false), 16.5);
-  assert.equal(bump(17.5, 1, true), 22.5);
-  assert.equal(bump(60, -1, false), 55);
-  assert.equal(bump(102.5, -1, false), 97.5);
-  assert.equal(bump(102.5, 1, true), 112.5);
+    for (const sign of [1, -1]) {
+      assert.deepEqual(steps(sign * floor, false), pair, `loaded at ${sign * floor}`);
+      assert.deepEqual(steps(sign * (top - golden.grid), false), pair, `loaded at ${sign * (top - golden.grid)}`);
+      assert.deepEqual(steps(sign * (floor + golden.grid), true), pair, `lightening at ${sign * (floor + golden.grid)}`);
+      if (Number.isFinite(band.under)) assert.deepEqual(steps(sign * band.under, true), pair, `lightening at ${sign * band.under}`);
+    }
+  });
 });
 
-// A chin-up logs at 0 kg and a band-assisted pull-up at −20: the sign is data, never a mode, so
-// the ladder walks straight through zero without a toggle in sight.
-test('bump — zero and the negative side are ordinary points on the number line', () => {
-  assert.equal(bump(0, -1, false), -1);
-  assert.equal(bump(0, -1, true), -5);
-  assert.equal(bump(0, 1, false), 1);
-  assert.equal(bump(-20, -1, false), -22);
-  assert.equal(bump(-20, -1, true), -25);
-  assert.equal(bump(-20, 1, false), -18);
-  assert.equal(bump(-20, 1, true), -15);
-  assert.equal(bump(-1, 1, false), 0);
-  assert.equal(bump(-50, -1, false), -55);
-  assert.equal(bump(-50, 1, false), -45);
+test('every weight in the golden — the four labels and the four steps under them', () => {
+  for (const item of golden.weightCases) {
+    assert.deepEqual(ladderLabels(item.weight), item.labels, `labels at ${item.weight}`);
+    assert.equal(bump(item.weight, -1, false), item.down, `down from ${item.weight}`);
+    assert.equal(bump(item.weight, -1, true), item.downBig, `down big from ${item.weight}`);
+    assert.equal(bump(item.weight, 1, false), item.up, `up from ${item.weight}`);
+    assert.equal(bump(item.weight, 1, true), item.upBig, `up big from ${item.weight}`);
+  }
+  // The golden's minus is U+2212, not a hyphen — a label mismatch above can otherwise look identical.
+  assert.equal(golden.weightCases[0].labels[0].charCodeAt(0), 0x2212);
 });
 
-// The buttons do not clamp — only typed entry is bounded. A step off the top is the lifter's to
-// take back with the button beside it.
-test('bump — the step buttons never clamp, and every result is stored to two decimals', () => {
-  assert.equal(bump(500, 1, true), 510);
-  assert.equal(bump(-500, -1, true), -510);
+// Every value here is an exact IEEE tie — |value| × 100 lands on .5 with no float slack — so the
+// answer is a choice, not an artefact, and the keypad reaches all of them: MAX_BUFFER is 8 and
+// parseEntry rounds what you type. Half away from zero is the pinned choice.
+test('every rounding tie in the golden — the keypad can type all of them', () => {
+  for (const item of golden.roundCases) {
+    assert.equal(round(item.value), item.rounded, `round of ${item.value}`);
+  }
+});
+
+test('every rep case in the golden — floored at zero on the way down, unbounded on the way up', () => {
+  for (const item of golden.repCases) {
+    assert.equal(bumpReps(item.reps, -1), item.down, `reps down from ${item.reps}`);
+    assert.equal(bumpReps(item.reps, 1), item.up, `reps up from ${item.reps}`);
+  }
+});
+
+// The law that ties the loaded side to the assisted one, checked as a property over every weight the
+// golden names and all four buttons. −0 and 0 are the same weight to a lifter and assert/strict
+// compares with Object.is, so `+ 0` folds the sign of zero away before the two sides meet.
+test('mirror symmetry — the assisted side is the loaded side reflected through zero', () => {
+  for (const { weight } of golden.weightCases) {
+    for (const { direction, big } of LADDER_KEYS) {
+      const step = big ? 'big' : 'small';
+      const reflected = bump(-weight, -direction, big) + 0;
+      assert.equal(reflected, -bump(weight, direction, big) + 0, `mirror of ${weight} by ${direction} ${step}`);
+    }
+  }
+  // The same law one level down, on the rounding the ladder is built out of: half away from zero is
+  // the only tie-break that survives a reflection, and half-up is the one that does not.
+  for (const { value } of golden.roundCases) {
+    assert.equal(round(-value) + 0, -round(value) + 0, `round mirrors at ${value}`);
+  }
+});
+
+// What is left after the ties moved into the golden — they are pinned there because the keypad
+// reaches them, not excluded as unreachable. These two are JS's own: float noise a step leaves
+// behind, and a negative that rounds to nothing, where JS keeps the sign and the shared file has no
+// way to say −0.
+test('round — the float noise a step leaves behind, and the zero that keeps its sign', () => {
   assert.equal(round(18.999000000000002), 19);
-  assert.equal(bump(19.999, -1, false), 19);
-  assert.equal(bump(0.5, -1, false), -0.5);
-  assert.equal(round(102.505), 102.51);
+  assert.equal(round(20.01 - 2), 18.01);
   assert.equal(round(-0.001), -0);
 });
 
-test('bumpReps — floored at zero on the way down, unbounded from the button on the way up', () => {
-  assert.equal(bumpReps(5, -1), 4);
-  assert.equal(bumpReps(1, -1), 0);
-  assert.equal(bumpReps(0, -1), 0);
-  assert.equal(bumpReps(5, 1), 6);
-  assert.equal(bumpReps(99, 1), 100);
+test('LADDER_KEYS — DOM order, the small steps loudest in the middle', () => {
+  assert.deepEqual(LADDER_KEYS, [
+    { direction: -1, big: true, weight: 'outer' },
+    { direction: -1, big: false, weight: 'inner' },
+    { direction: 1, big: false, weight: 'inner' },
+    { direction: 1, big: true, weight: 'outer' },
+  ]);
+  // Logger.jsx reads the keys and the labels side by side, so the two must agree on order.
+  assert.deepEqual(ladderLabels(20).map((label) => label[0]), ['−', '−', '+', '+']);
 });

@@ -27,18 +27,21 @@ web/         one Vite/React superapp; product modules lazy-loaded behind a switc
       roadmap/  journal/  gym/  (notes/ is journal's empty pre-rename scaffold)
 
 apps/        native superapps (one per OS; roadmap/notes/gym are mountable module libraries)
-  ios/         Swift — compilable SwiftPM scaffold (WindmillPlatform + Roadmap/Notes/Gym + app)
+  ios/         Swift — SwiftPM package (WindmillPlatform + Roadmap/Notes/Gym + app); the gym
+               ladder is the first real product logic, tested against packages/api-contract
   android/     Kotlin — structured scaffold (Gradle project is a later native wave)
 
 packages/    cross-surface shared assets (consumed by more than one surface)
-  api-contract/   wire types + the genesis-legend golden (single source of truth)
+  api-contract/   one truth several languages must state separately — wire types, the
+                  genesis-legend golden, the gym weight-ladder golden (web + iOS each test it)
   design-tokens/  raw color/space/type scales web CSS and native both mirror
 
 tools/       one-shot scripts kept for the record, never a product surface
   lift-import/    the author's Lift training history into the gym log, over the public API
 
 docs/        brand-level narrative + design canon
-.github/     root workflows: backend.yml (context backend/) · web.yml (workdir web/)
+.github/     root workflows: backend.yml (context backend/) · web.yml (workdir web/) ·
+             ios.yml (workdir apps/ios — build + test only, ships nothing)
 .attic/      pre-restructure repos, kept as a local recovery net (gitignored)
 ```
 

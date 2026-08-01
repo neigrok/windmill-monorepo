@@ -4,9 +4,18 @@ name: Web Deploy
 # where the same Caddy that fronts the backend serves ~/windmill/web at $DOMAIN_APP.
 # Path-filtered so a backend-only change never redeploys the web assets.
 
+# `npm run build` runs `node --test test/` before Vite, so this workflow is also where the web half
+# of the ladder drift gate fires (packages/api-contract/gym-ladder.json — see ios.yml). It therefore
+# runs on pull_request too, where it builds and tests but does not ship: the rsync step is gated on
+# the event, so a PR proves the build without touching the VPS.
 on:
   push:
     branches: [main]
+    paths:
+      - 'web/**'
+      - 'packages/**'
+      - '.github/workflows/web.yml'
+  pull_request:
     paths:
       - 'web/**'
       - 'packages/**'
@@ -60,6 +69,7 @@ jobs:
         run: npm run build
 
       - name: Rsync dist to the VPS
+        if: github.event_name != 'pull_request'
         env:
           SSH_KEY: ${{ secrets.SSH_KEY }}
           SSH_HOST: ${{ secrets.SSH_HOST }}
