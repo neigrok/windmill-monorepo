@@ -24,14 +24,14 @@ import { FeedbackSection } from './FeedbackSection.jsx';
 const PRODUCT_MAIN_SECTIONS = PRODUCTS.flatMap((product) => product.settingsSections?.main ?? []);
 const PRODUCT_DATA_SECTIONS = PRODUCTS.flatMap((product) => product.settingsSections?.data ?? []);
 
-export function SettingsPage() {
+export function SettingsPage({ inShell = false }) {
   const { user, status } = useAuth();
   const signedIn = status === 'signed-in' && Boolean(user);
   const [signInOpen, setSignInOpen] = useState(false);
 
   return (
     <>
-      <AccountChrome width={540} backHash={homeHash()}>
+      <AccountChrome width={540} backHash={homeHash()} bare={inShell}>
         <h1 style={title}>Account settings</h1>
 
         {status === 'loading' ? null : signedIn ? (

@@ -1,8 +1,11 @@
 // The product registry — the one place the shell learns which products exist. Each product
-// exports a uniform route table (id · label · switchHash · home · render); the shell composes
-// them in this order and renders the switcher from the same list. The shell hard-codes no
-// product: when a neutral surface (account, sign-in landing) needs to know where "home" is,
-// it asks the active product here, defaulting to the first — the roadmap, for now.
+// exports a uniform route table (id · label · switchHash · home · render, plus the `shell`
+// manifest the /app chrome reads: icon · room · scope · status · landingHref · HomeCard); the
+// shell composes them in this order and renders the rail from the same list. The shell
+// hard-codes no product: when a neutral surface (account, sign-in landing) needs to know where
+// "home" is, it asks the active product here, defaulting to the first — the roadmap, for now.
+// This registry is the ONLY meeting point between chrome and products — the boundary test
+// (test/shell-boundaries.test.mjs) enforces that from both sides.
 
 import { roadmapRoutes } from '../products/roadmap/routes.js';
 import { journalRoutes } from '../products/journal/routes.js';

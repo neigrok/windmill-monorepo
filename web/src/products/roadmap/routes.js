@@ -9,6 +9,7 @@ import { DEMO_TREE_ID } from './demo/demoStage.js';
 
 const SkillTreeApp = lazy(() => import('./index.js').then((m) => ({ default: m.SkillTreeApp })));
 const BrowsePage = lazy(() => import('./browse/BrowsePage.jsx').then((m) => ({ default: m.BrowsePage })));
+const HomeCard = lazy(() => import('./HomeCard.jsx').then((m) => ({ default: m.HomeCard })));
 
 // The roadmap's account-settings sections — registered here so the neutral settings page composes
 // them without ever naming the roadmap (shell/settings/SettingsPage.jsx reads settingsSections off
@@ -94,4 +95,12 @@ export const roadmapRoutes = {
   landingAfterSignIn,
   render,
   settingsSections: { main: [ReminderSection, PlanSection, TendingSection], data: [YourDataSection] },
+  shell: {
+    icon: 'route',
+    room: '/app/roadmap',
+    scope: { theme: null, brand: 'clay' },
+    status: 'open',
+    landingHref: '/roadmap',
+    HomeCard,
+  },
 };

@@ -13,7 +13,9 @@ import { Avatar } from '../../design-system';
 // Product-neutral account frame: where "back/home" goes is the shell's call, not this
 // frame's. The shell hands in `backHash` from the active product's home (see shell/products.js);
 // the account surfaces (/settings, /connect) pass it down, so notes/gym can slot in unchanged.
-export function AccountChrome({ width = 460, backHash = '#/app', children }) {
+// `bare` is the /app-shell mode: the same card at the same measure, minus the wordmark head,
+// the back door and its Esc twin — the shell's rail is the chrome there, not this frame.
+export function AccountChrome({ width = 460, backHash = '#/app', bare = false, children }) {
   const { user, status } = useAuth();
   const signedIn = status === 'signed-in' && Boolean(user);
   const name = signedIn ? (user.name?.trim() || user.email) : '';
@@ -23,6 +25,7 @@ export function AccountChrome({ width = 460, backHash = '#/app', children }) {
   // capture-phase Esc still wins (closes the dialog first); skipped while typing in a field so
   // Esc mid-edit stays the field's own, not a navigation that discards the edit.
   React.useEffect(() => {
+    if (bare) return undefined; // no back door in the shell — its rail owns navigation
     const onKey = (event) => {
       if (event.key !== 'Escape') return;
       const el = document.activeElement;
@@ -31,7 +34,11 @@ export function AccountChrome({ width = 460, backHash = '#/app', children }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [backHash]);
+  }, [backHash, bare]);
+
+  if (bare) {
+    return <div style={{ ...card, width }}>{children}</div>;
+  }
 
   return (
     <div style={shell}>

@@ -12,10 +12,19 @@ function render({ hash }) {
   return null;
 }
 
+// Pre-open: no HomeCard and no room of its own yet — the shell renders its own no-door cell
+// from label + landingHref, and /app/gym redirects to the landing.
 export const gymRoutes = {
   id: 'gym',
   label: 'Gym',
   switchHash: '#/gym',
   home,
   render,
+  shell: {
+    icon: 'dumbbell',
+    room: '/app/gym',
+    scope: { theme: 'dark', brand: 'gym' },
+    status: 'pre-open',
+    landingHref: '/gym',
+  },
 };

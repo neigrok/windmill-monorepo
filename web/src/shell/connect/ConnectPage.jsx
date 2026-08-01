@@ -71,7 +71,7 @@ function Snippet({ text }) {
   });
 }
 
-export function ConnectPage() {
+export function ConnectPage({ inShell = false }) {
   const { user, status } = useAuth();
   const signedIn = status === 'signed-in' && Boolean(user);
   const [active, setActive] = useState(1); // Claude Code
@@ -91,7 +91,7 @@ export function ConnectPage() {
 
   return (
     <>
-      <AccountChrome backHash={homeHash()}>
+      <AccountChrome backHash={homeHash()} bare={inShell}>
         <style>{CSS}</style>
 
         <h1 style={title}>Connect your LLM tools</h1>

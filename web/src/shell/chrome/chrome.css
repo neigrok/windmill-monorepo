@@ -1,0 +1,286 @@
+/* The /app shell chrome. Tokens only — the scope swap (data-brand/data-theme on .wm-shell)
+   re-points every colour, so a literal here would refuse to tint with the room. */
+
+.wm-shell {
+  font-family: var(--font-body);
+  background: var(--surface-canvas);
+  color: var(--text-primary);
+  min-height: 100vh;
+  display: flex;
+  transition: background var(--duration-base) var(--ease-standard);
+}
+
+/* ---- Rail ---- */
+
+.wm-rail {
+  width: 68px;
+  flex: none;
+  background: var(--surface-card);
+  border-right: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 0;
+  gap: 6px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  transition: background var(--duration-base) var(--ease-standard), border-color var(--duration-base) var(--ease-standard);
+}
+
+.wm-rail-wordmark {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 21px;
+  color: var(--color-brand);
+  margin-bottom: 12px;
+}
+
+.wm-rail-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+}
+
+.wm-rail-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+}
+
+.wm-rail-btn[aria-current='page'] {
+  background: var(--color-brand-soft);
+  color: var(--color-brand-hover);
+}
+
+.wm-rail-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.wm-rail-btn--quiet {
+  width: 38px;
+  height: 38px;
+}
+
+.wm-rail-foot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ---- Top bar ---- */
+
+.wm-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.wm-topbar {
+  height: 56px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-card);
+  transition: background var(--duration-base) var(--ease-standard), border-color var(--duration-base) var(--ease-standard);
+}
+
+.wm-topbar-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 16.5px;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.wm-topbar-url {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  padding: 4px 11px;
+  background: var(--surface-canvas);
+  max-width: 40vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wm-topbar-note {
+  margin-left: auto;
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* ---- Room ---- */
+
+.wm-room {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  /* The room IS the viewport for whatever mounts inside: containment makes this element the
+     containing block for position:fixed product roots (.st-root, .journal-root, their sheets)
+     and a stacking boundary, so a full-bleed product fills the room — never the rail or the
+     top bar — without the shell ever naming a product class. */
+  contain: layout paint;
+}
+
+.wm-room > * {
+  flex: 1;
+  min-height: 0;
+}
+
+.wm-room-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40vh;
+  color: var(--text-tertiary);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--text-xl);
+  letter-spacing: var(--tracking-wide);
+}
+
+/* ---- Home room ---- */
+
+.wm-home {
+  padding: clamp(20px, 3vw, 36px);
+}
+
+.wm-home-status {
+  font-size: 13.5px;
+  color: var(--text-tertiary);
+  margin: 0 0 18px;
+}
+
+.wm-home-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 18px;
+  max-width: 1020px;
+}
+
+.wm-home-cell {
+  text-align: left;
+  background: var(--surface-card);
+  border-radius: var(--radius-xl);
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wm-home-cell--resolving {
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-sm);
+  min-height: 118px;
+}
+
+.wm-home-cell--preopen {
+  border: 1px dashed var(--border-strong);
+  opacity: 0.75;
+}
+
+.wm-home-cell-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.wm-home-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--border-strong);
+}
+
+.wm-home-cell-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 17px;
+  color: var(--text-primary);
+}
+
+.wm-home-cell-tag {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+}
+
+.wm-home-cell-body {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.wm-home-cell-link {
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--text-link);
+}
+
+/* ---- Mobile: the rail becomes a bottom bar; the top bar stays ---- */
+
+@media (max-width: 743px) {
+  .wm-rail {
+    position: fixed;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+    align-items: center;
+    border-right: none;
+    border-top: 1px solid var(--border-subtle);
+    padding: 8px max(12px, env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+    z-index: 30;
+  }
+
+  .wm-rail-wordmark {
+    margin: 0 6px 0 0;
+  }
+
+  .wm-rail-foot {
+    margin-top: 0;
+    margin-left: auto;
+    flex-direction: row;
+  }
+
+  .wm-body {
+    padding-bottom: calc(64px + env(safe-area-inset-bottom));
+  }
+
+  .wm-topbar {
+    padding: 0 16px;
+  }
+
+  .wm-topbar-note {
+    display: none;
+  }
+
+  /* AccountSeat's popover is inline-positioned to open downward; in the bottom bar it must
+     open upward or it falls off-screen. */
+  .wm-rail [role='menu'] {
+    top: auto !important;
+    bottom: calc(100% + 8px) !important;
+  }
+}

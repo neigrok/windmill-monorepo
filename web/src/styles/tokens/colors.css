@@ -136,6 +136,18 @@
   --color-leaf: var(--accent-olive-500);
   --color-leaf-light: var(--accent-olive-400);
   --color-leaf-vein: var(--accent-olive-600);
+
+  /* ---- Candle lamp: the journal's lit hue. Authored, never aliased onto --accent-gold-*
+     (gold feeds --kind-gold, and a product without kinds must not inherit kind vocabulary).
+     The ramp is the design system's (tokens/colors.css) — brands.css reads it for the journal
+     brand scope, so it must resolve at :root, not only inside .journal-root. 400/600 are the
+     shipped fixed points; a product may still re-point steps inside its own scope. ---- */
+  --lamp-100: #F3E4C6;
+  --lamp-200: #EBD3A2;
+  --lamp-400: #E0B972;
+  --lamp-500: #C29A4E;
+  --lamp-600: #986B1E;
+  --lamp-glow: rgba(224, 185, 114, 0.5);
 }
 
 /* ============================================================
@@ -240,4 +252,8 @@
   --color-leaf: var(--accent-olive-400);
   --color-leaf-light: var(--accent-olive-200);
   --color-leaf-vein: var(--accent-olive-500);
+
+  /* ---- Candle lamp: the ramp holds, only the glow intensifies — matching how every
+     --kind-*-glow deepens from 0.5 to 0.8 on dark ---- */
+  --lamp-glow: rgba(224, 185, 114, 0.8);
 }

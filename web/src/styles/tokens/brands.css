@@ -1,0 +1,171 @@
+/* ============================================================
+   BRAND THEMES — sibling products in the same family
+   ------------------------------------------------------------
+   Scope mirrors the dark theme: set data-brand="<name>" on <html>
+   (it composes with data-theme="dark"). Nothing here fires unless
+   the attribute is present; the default brand lives in colors.css.
+
+   A sibling product re-points ONE thing: which hue is the brand.
+   Surfaces, borders, text roles, shadows, radii, spacing, type and
+   motion are the family and never move. Semantic hues never move
+   either: olive = success, gold = warning, brick = danger,
+   sky = info. Which is why the brand hue must come from a
+   NON-semantic hue (terracotta, plum) or from one new hue authored
+   to the recipe in guidelines/system-architecture.md §4.
+
+   ONE documented exception: a product whose surface is night-default
+   may re-point the NEUTRAL RAMP under its dark scope — see journal
+   below, and §4a of guidelines/system-architecture.md. It re-points
+   nothing in light, and it must re-point the ramp as a whole so every
+   surface/border/text role that reads through var(--neutral-*) stays
+   consistent. Semantics are not part of the exception.
+   ============================================================ */
+
+/* ---- clay · the Windmill default (terracotta). Setting it is a no-op;
+        it exists so every product names its brand explicitly. ---- */
+[data-brand="clay"] {
+  --color-brand: var(--accent-terracotta-500);
+  --color-brand-hover: var(--accent-terracotta-600);
+  --color-brand-active: var(--accent-terracotta-700);
+  --color-brand-soft: var(--accent-terracotta-50);
+  --text-link: var(--accent-terracotta-600);
+  --text-link-hover: var(--accent-terracotta-700);
+}
+[data-theme="dark"][data-brand="clay"] {
+  --color-brand: var(--accent-terracotta-500);
+  --color-brand-hover: var(--accent-terracotta-400);
+  --color-brand-active: var(--accent-terracotta-600);
+  --color-brand-soft: rgba(188, 108, 66, 0.18);
+  --text-link: var(--accent-terracotta-400);
+  --text-link-hover: #E7A87B;
+}
+
+/* ---- plum · a sibling built from a hue the palette already holds.
+        Zero new tokens: proof that the family absorbs a second product
+        without inventing colour. ---- */
+[data-brand="plum"] {
+  --color-brand: var(--accent-plum-500);
+  --color-brand-hover: var(--accent-plum-600);
+  --color-brand-active: #5A3054;
+  --color-brand-soft: var(--accent-plum-50);
+  --text-link: var(--accent-plum-600);
+  --text-link-hover: #5A3054;
+}
+[data-theme="dark"][data-brand="plum"] {
+  --color-brand: var(--accent-plum-300);       /* 6.84:1 on dark ink */
+  --color-brand-hover: var(--accent-plum-200);
+  --color-brand-active: var(--accent-plum-400);
+  --color-brand-soft: rgba(141, 79, 131, 0.20);
+  --text-link: var(--accent-plum-300);
+  --text-link-hover: var(--accent-plum-200);
+}
+
+/* ---- Ramp extensions used only by dark brands: the lightest step that
+        clears 4.5:1 against --text-on-accent (#1B1408) at button-label size.
+        clay needs none (its 400 clears at 4.66); plum and iris do. ---- */
+:root {
+  --accent-plum-300: #C08FB8;   /* on #1B1408 = 6.84:1 */
+  --accent-iris-300: #9A90BE;   /* on #1B1408 = 6.18:1 */
+}
+
+/* ---- iris · the worked example of a NEW hue, authored to the recipe:
+        muted toward earth, seven steps, 500 base / 200 soft fill /
+        600 ink-on-soft. Hue sits at ~265°, clear of sky (200°) and
+        plum (315°) so it can never be mistaken for "info". ---- */
+:root {
+  --accent-iris-50:  #EDEBF3;
+  --accent-iris-100: #DBD7E7;
+  --accent-iris-200: #BFB8D2;
+  --accent-iris-400: #7E74A4;
+  --accent-iris-500: #635892;
+  --accent-iris-600: #4C4374;
+  --accent-iris-700: #3A3358;
+}
+[data-brand="iris"] {
+  --color-brand: var(--accent-iris-500);
+  --color-brand-hover: var(--accent-iris-600);
+  --color-brand-active: var(--accent-iris-700);
+  --color-brand-soft: var(--accent-iris-50);
+  --text-link: var(--accent-iris-600);
+  --text-link-hover: var(--accent-iris-700);
+}
+[data-theme="dark"][data-brand="iris"] {
+  --color-brand: var(--accent-iris-300);       /* 6.18:1 on dark ink */
+  --color-brand-hover: var(--accent-iris-200);
+  --color-brand-active: var(--accent-iris-400);
+  --color-brand-soft: rgba(126, 116, 164, 0.22);
+  --text-link: var(--accent-iris-300);
+  --text-link-hover: var(--accent-iris-200);
+}
+
+/* ---- journal · the night-default sibling (candle lamp on a cool dusk).
+        The only brand that re-points the neutral ramp, and only on dark —
+        Journal's surface is expected to be night, and the family's warm
+        brown-black reads as lamplight rather than dusk behind it. Light
+        mode re-points the brand hue only, like every other sibling. ---- */
+[data-brand="journal"] {
+  --color-brand: var(--lamp-500);
+  --color-brand-hover: var(--lamp-600);
+  --color-brand-active: #6E5526;               /* no --lamp-700 step exists */
+  --color-brand-soft: var(--lamp-100);
+  --text-link: var(--lamp-600);
+  --text-link-hover: #6E5526;
+}
+
+[data-theme="dark"][data-brand="journal"] {
+  /* The dusk ramp — 12 of the 14 cool values tuned in the Journal canvas,
+     mapped onto the family's steps in luminance order (two near-duplicates
+     dropped). Surfaces, borders and text roles are declared as
+     var(--neutral-*) in colors.css, so they follow this re-point and are
+     not restated here. */
+  --neutral-50: #040D19;                       /* canvas — the darkest step */
+  --neutral-25: #0B1218;
+  --neutral-0: #0D1824;                        /* card, elevated over canvas */
+  --neutral-100: #152029;
+  --neutral-200: #1C2932;
+  --neutral-300: #26343E;
+  --neutral-400: #32444F;
+  --neutral-500: #4D6472;
+  --neutral-600: #7E94A1;
+  --neutral-700: #A7B9C2;
+  --neutral-800: #C9D7DD;
+  --neutral-900: #E3ECEF;
+
+  /* The two dark surfaces colours.css states as literals rather than
+     through var(--neutral-*), so they need re-pointing by hand. */
+  --surface-sunken: #020810;
+  --surface-overlay: rgba(2, 6, 12, 0.68);
+
+  --color-brand: var(--lamp-400);
+  --color-brand-hover: var(--lamp-200);
+  --color-brand-active: var(--lamp-500);
+  --color-brand-soft: rgba(227, 179, 65, 0.18);
+  --text-link: var(--lamp-400);
+  --text-link-hover: var(--lamp-200);
+
+  --focus-ring: 0 0 0 4px rgba(227, 179, 65, 0.4);
+}
+
+/* ---- gym · steel — the palette's Tuscan-sky promoted from info to brand
+        (brief G2; values mirror gym/gym-tokens.css exactly). The one sibling
+        whose brand doubles as a semantic hue — legal under the sibling
+        contract by G2's decision, ledgered in consistency.md §1: watch
+        shared surfaces where sky-as-brand and sky-as-info could meet.
+        Sky stops at 600, so pressed states mix toward ink rather than
+        inventing a 700 step. ---- */
+[data-brand="gym"] {
+  --color-brand: var(--accent-sky-600);
+  --color-brand-hover: color-mix(in oklab, var(--accent-sky-600) 88%, #211B13);
+  --color-brand-active: color-mix(in oklab, var(--accent-sky-600) 74%, #211B13);
+  --color-brand-soft: rgba(74, 104, 117, 0.12);
+  --text-link: var(--accent-sky-600);
+  --text-link-hover: color-mix(in oklab, var(--accent-sky-600) 88%, #211B13);
+}
+[data-theme="dark"][data-brand="gym"] {
+  --color-brand: var(--accent-sky-400);
+  --color-brand-hover: var(--accent-sky-200);
+  --color-brand-active: var(--accent-sky-500);
+  --color-brand-soft: rgba(127, 160, 174, 0.18);
+  --text-link: var(--accent-sky-400);
+  --text-link-hover: var(--accent-sky-200);
+}

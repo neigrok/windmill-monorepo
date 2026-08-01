@@ -7,6 +7,7 @@
 import { lazy } from 'react';
 
 const JournalApp = lazy(() => import('./JournalApp.jsx').then((m) => ({ default: m.JournalApp })));
+const HomeCard = lazy(() => import('./HomeCard.jsx').then((m) => ({ default: m.HomeCard })));
 
 function home() {
   return '#/journal';
@@ -32,4 +33,12 @@ export const journalRoutes = {
   home,
   landingAfterSignIn,
   render,
+  shell: {
+    icon: 'notebook-pen',
+    room: '/app/journal',
+    scope: { theme: 'dark', brand: 'journal' },
+    status: 'open',
+    landingHref: '/journal',
+    HomeCard,
+  },
 };
