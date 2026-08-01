@@ -59,6 +59,23 @@ function RoomLink({ href, label, icon, active, quiet = false }) {
   );
 }
 
+// The mobile tab — same door as a rail button, but the label rides under the icon (the
+// board's 20px glyph / 11px label column). Room tabs only: settings and the seat live in
+// the top bar's mobile cluster, and pre-open products get no tab, same as no rail button.
+function TabLink({ href, label, icon, active }) {
+  const onClick = (e) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    navigate(href);
+  };
+  return (
+    <a className="wm-tab" href={href} aria-current={active ? 'page' : undefined} onClick={onClick}>
+      <Icon name={icon} size={20} />
+      <span>{label}</span>
+    </a>
+  );
+}
+
 const HOME_SCOPE = { theme: null, brand: 'clay' };
 
 // The decision table: neutral prop → that room verbatim; /app → home; an open product's
@@ -141,12 +158,32 @@ export function Shell({ location, ctx = {}, neutral = null }) {
         <div className="wm-topbar">
           <div className="wm-topbar-title">{room.title}</div>
           <span className="wm-topbar-url">{location.pathname}</span>
-          <div className="wm-topbar-note">One account · one history</div>
+          <div className="wm-topbar-side">
+            <div className="wm-topbar-note">One account · one history</div>
+            <div className="wm-topbar-seat">
+              <AccountSeat
+                user={user}
+                status={status}
+                size={34}
+                treeCount={null}
+                onSignIn={() => setSignInOpen(true)}
+                onSettings={() => navigate('/app/settings')}
+                onConnect={() => navigate('/app/connect')}
+                onSignOut={signOut}
+              />
+            </div>
+          </div>
         </div>
         <main className="wm-room">
           <RoomContent room={room} location={location} ctx={ctx} />
         </main>
       </div>
+      <nav className="wm-tabs" aria-label="Rooms">
+        <TabLink href="/app" label="Home" icon="layout-grid" active={room.kind === 'home' && !redirect} />
+        {PRODUCTS.filter((p) => p.shell?.status === 'open').map((p) => (
+          <TabLink key={p.id} href={p.shell.room} label={p.label} icon={p.shell.icon} active={room.product?.id === p.id} />
+        ))}
+      </nav>
       <SignInDialog open={signInOpen} onClose={() => setSignInOpen(false)} onSend={requestMagicLink} />
     </div>
   );
