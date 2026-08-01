@@ -54,13 +54,25 @@
 	handle {
 		encode gzip zstd
 		root * /srv/windmill-web
-		# The service worker is the one file whose bugs are sticky: a browser replaces it only when
-		# it fetches bytes that differ, so a stale copy keeps serving its old caching policy to a
-		# phone that already has it. Caddy sent no Cache-Control here, which let Cloudflare fill in
-		# its 4-hour default for .js — four hours before a fix reaches an installed client. no-cache
-		# means revalidate, not don't-store; the etag makes that check a 304.
+		# Two files' worth of caching policy, stated at the origin because guessing is worse.
+		#
+		# /sw.js must never be stale: a browser replaces a service worker only when it fetches bytes
+		# that differ, so a stale copy keeps serving its old caching policy to a phone that already
+		# has it. no-cache means revalidate, not don't-store; the etag makes that check a 304.
+		#
+		# /assets/* is the opposite: vite content-hashes every filename, so a given URL's bytes can
+		# never change. A year, immutable, and the browser stops revalidating them entirely.
+		#
+		# NOTE (2026-08-02): these are correct and currently INERT. Cloudflare's Browser Cache TTL
+		# is set to 4 hours in the dashboard and rewrites both — measured: /sw.js AND a hashed
+		# /assets/*.js both come back max-age=14400 with cf-cache-status MISS, i.e. the override
+		# happens on the way out, not from an edge hit. Flip that setting to "Respect Existing
+		# Headers" and these two lines start doing their jobs; until then the origin at least states
+		# the truth rather than leaving Cloudflare to invent it.
 		@serviceWorker path /sw.js
 		header @serviceWorker Cache-Control "no-cache"
+		@hashedAssets path /assets/*
+		header @hashedAssets Cache-Control "public, max-age=31536000, immutable"
 		# {path} serves a real file (pricing.html); {path}/index.html serves a static landing directory
 		# (the per-product pages, /journal/ and /gym/); else falls to the hash-routed SPA — a path with
 		# no dir index (e.g. /roadmap) lands on the SPA, which renders that product's landing.
