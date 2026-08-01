@@ -28,6 +28,7 @@ public:
   SetInsertOutcome insertSet(const Set& incoming) override;
   std::vector<SessionSummary> log(const UserId& user, const LogCursor& cursor) override;
   std::vector<Set> setsOf(const SessionId& id) override;
+  LastTimeOutcome lastTime(const UserId& user, const ExerciseId& exercise) override;
 
 private:
   std::string connString_;

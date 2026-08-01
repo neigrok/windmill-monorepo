@@ -623,6 +623,164 @@ TEST(gym_session_detail_wraps_the_session_and_its_sets) {
                        R"("setNumber":1,"weightKg":82.5}]})"));
 }
 
+// ---- last time: the prefill read ----------------------------------------------------------
+
+TEST(gym_last_answers_the_newest_finished_session_with_its_block) {
+  Harness h;
+  h.signIn("s-live");
+  send(h.api, &GymApi::startSession, postRequest("/v1/gym/sessions", startBody(), "s-live"));
+  send(h.api, &GymApi::appendSet,
+       postRequest("/v1/gym/sessions/ses_11111111/sets", setBody(), "s-live"), "ses_11111111");
+  send(h.api, &GymApi::finishSession,
+       postRequest("/v1/gym/sessions/ses_11111111/finish", finishBody(1'700'000'100'000), "s-live"),
+       "ses_11111111");
+  // No phase-0 write path mints a plan (§2.2), so the frozen snapshot the name is read out of is
+  // placed on the stored row the way phase 2 will write it — and it rides the reply as an object.
+  h.repo.sessions[0].planJson = R"({"routine":"Bench day","entries":[]})";
+  // Today's live session benches heavier. It is the today list, not last time.
+  send(h.api, &GymApi::startSession,
+       postRequest("/v1/gym/sessions", startBody("ses_22222222", 1'700'000'110'000), "s-live"));
+  send(h.api, &GymApi::appendSet,
+       postRequest("/v1/gym/sessions/ses_22222222/sets",
+                   setBody("set_22222222", "bench-press", 100.0, 1'700'000'120'000), "s-live"),
+       "ses_22222222");
+
+  drogon::HttpRequestPtr request = getRequest("/v1/gym/last", "s-live");
+  request->setParameter("exercise", "bench-press");
+  drogon::HttpResponsePtr response = send(h.api, &GymApi::lastTime, request);
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  // The movement is echoed so a reply that lands after the lifter has moved on is discardable; the
+  // routine is the name that session was trained under, which is what the card's cross-routine
+  // suffix says out loud.
+  CHECK_EQ(dump(bodyOf(response)),
+           std::string(R"({"exerciseId":"bench-press","routine":"Bench day",)"
+                       R"("session":{"finishedAt":1700000100000,"id":"ses_11111111",)"
+                       R"("plan":{"entries":[],"routine":"Bench day"},)"
+                       R"("startedAt":1700000000000},)"
+                       R"("sets":[{"completedAt":1700000060000,"exerciseId":"bench-press",)"
+                       R"("id":"set_11111111","kind":"working","note":"","reps":8,)"
+                       R"("setNumber":1,"weightKg":82.5}]})"));
+}
+
+// A snapshot is client data, so the suffix the card prints is a string or nothing at all: an object
+// under `routine` reaches jsonb as text, and `{"nested": 1}` would land in the product's
+// highest-value pixel as the day of the program this session was trained on.
+TEST(gym_last_omits_a_routine_the_snapshot_does_not_hold_as_a_string) {
+  Harness h;
+  h.signIn("s-live");
+  send(h.api, &GymApi::startSession, postRequest("/v1/gym/sessions", startBody(), "s-live"));
+  send(h.api, &GymApi::appendSet,
+       postRequest("/v1/gym/sessions/ses_11111111/sets", setBody(), "s-live"), "ses_11111111");
+  send(h.api, &GymApi::finishSession,
+       postRequest("/v1/gym/sessions/ses_11111111/finish", finishBody(1'700'000'100'000), "s-live"),
+       "ses_11111111");
+  h.repo.sessions[0].planJson = R"({"routine":{"nested":1},"entries":[]})";
+
+  drogon::HttpRequestPtr request = getRequest("/v1/gym/last", "s-live");
+  request->setParameter("exercise", "bench-press");
+  drogon::HttpResponsePtr response = send(h.api, &GymApi::lastTime, request);
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_FALSE(bodyOf(response).isMember("routine"));
+  CHECK_EQ(dump(bodyOf(response)),
+           std::string(R"({"exerciseId":"bench-press",)"
+                       R"("session":{"finishedAt":1700000100000,"id":"ses_11111111",)"
+                       R"("plan":{"entries":[],"routine":{"nested":1}},)"
+                       R"("startedAt":1700000000000},)"
+                       R"("sets":[{"completedAt":1700000060000,"exerciseId":"bench-press",)"
+                       R"("id":"set_11111111","kind":"working","note":"","reps":8,)"
+                       R"("setNumber":1,"weightKg":82.5}]})"));
+}
+
+// The prefill is fired on every movement change, so it must not be the thing that ends the workout
+// it is prefilling. A device whose clock runs behind stamps its sets past the auto-close window;
+// the read answers with the session before, leaves the live one open, and the next set still lands.
+TEST(gym_last_never_closes_the_live_session_it_is_prefilling) {
+  Harness h;
+  h.signIn("s-live");
+  send(h.api, &GymApi::startSession, postRequest("/v1/gym/sessions", startBody(), "s-live"));
+  send(h.api, &GymApi::appendSet,
+       postRequest("/v1/gym/sessions/ses_11111111/sets", setBody(), "s-live"), "ses_11111111");
+  send(h.api, &GymApi::finishSession,
+       postRequest("/v1/gym/sessions/ses_11111111/finish", finishBody(1'700'000'100'000), "s-live"),
+       "ses_11111111");
+  send(h.api, &GymApi::startSession,
+       postRequest("/v1/gym/sessions", startBody("ses_22222222", 1'700'000'110'000), "s-live"));
+  send(h.api, &GymApi::appendSet,
+       postRequest("/v1/gym/sessions/ses_22222222/sets",
+                   setBody("set_22222222", "bench-press", 100.0, 1'700'000'120'000), "s-live"),
+       "ses_22222222");
+  h.clock.now = 1'700'000'120'000 + kAutoCloseMs;   // the live workout reads as idle past the window
+
+  drogon::HttpRequestPtr request = getRequest("/v1/gym/last", "s-live");
+  request->setParameter("exercise", "bench-press");
+  drogon::HttpResponsePtr prefill = send(h.api, &GymApi::lastTime, request);
+  drogon::HttpResponsePtr next =
+      send(h.api, &GymApi::appendSet,
+           postRequest("/v1/gym/sessions/ses_22222222/sets",
+                       setBody("set_33333333", "bench-press", 102.5, 1'700'000'130'000), "s-live"),
+           "ses_22222222");
+
+  CHECK_EQ(prefill->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(bodyOf(prefill)["session"]["id"].asString(), std::string("ses_11111111"));
+  CHECK_EQ(h.repo.sessions[1].id, sid("ses_22222222"));
+  CHECK_EQ(h.repo.sessions[1].finishedAtMs, std::optional<std::uint64_t>{});
+  CHECK_EQ(next->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(bodyOf(next)["setNumber"].asInt(), 2);
+}
+
+// A first-ever movement is answered, not refused: 200 naming the movement and nothing else. A 404
+// would say the movement does not exist, which is a different and false thing.
+TEST(gym_last_for_a_first_ever_movement_is_a_fact_not_a_fault) {
+  Harness h;
+  h.signIn("s-live");
+  send(h.api, &GymApi::startSession, postRequest("/v1/gym/sessions", startBody(), "s-live"));
+  send(h.api, &GymApi::appendSet,
+       postRequest("/v1/gym/sessions/ses_11111111/sets", setBody(), "s-live"), "ses_11111111");
+  send(h.api, &GymApi::finishSession,
+       postRequest("/v1/gym/sessions/ses_11111111/finish", finishBody(1'700'000'100'000), "s-live"),
+       "ses_11111111");
+
+  drogon::HttpRequestPtr request = getRequest("/v1/gym/last", "s-live");
+  request->setParameter("exercise", "back-squat");
+  drogon::HttpResponsePtr response = send(h.api, &GymApi::lastTime, request);
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"exerciseId":"back-squat"})"));
+}
+
+TEST(gym_last_of_a_movement_no_catalog_holds_is_400_no_such_exercise) {
+  Harness h;
+  h.signIn("s-live");
+
+  drogon::HttpRequestPtr unknown = getRequest("/v1/gym/last", "s-live");
+  unknown->setParameter("exercise", "zercher-squat");
+  drogon::HttpRequestPtr unnamed = getRequest("/v1/gym/last", "s-live");
+
+  drogon::HttpResponsePtr unknownReply = send(h.api, &GymApi::lastTime, unknown);
+  drogon::HttpResponsePtr unnamedReply = send(h.api, &GymApi::lastTime, unnamed);
+
+  CHECK_EQ(unknownReply->getStatusCode(), drogon::k400BadRequest);
+  // The same fact the write path names, under the same machine word: the movement has to be
+  // resolved against GET /v1/gym/exercises first.
+  CHECK_EQ(dump(bodyOf(unknownReply)),
+           std::string(R"({"code":"unknown-exercise","error":"no such exercise"})"));
+  CHECK_EQ(unnamedReply->getStatusCode(), drogon::k400BadRequest);
+  CHECK_EQ(dump(bodyOf(unnamedReply)), std::string(R"({"error":"bad exercise"})"));
+}
+
+TEST(gym_last_without_a_session_is_401) {
+  Harness h;
+
+  drogon::HttpRequestPtr request = getRequest("/v1/gym/last");
+  request->setParameter("exercise", "bench-press");
+  drogon::HttpResponsePtr response = send(h.api, &GymApi::lastTime, request);
+
+  CHECK_EQ(response->getStatusCode(), drogon::k401Unauthorized);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"sign in to open your training log"})"));
+}
+
 TEST(gym_unknown_session_detail_is_404) {
   Harness h;
   h.signIn("s-live");

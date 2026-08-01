@@ -2,7 +2,10 @@
 
 #include "products/gym/ports/TrainingRepository.h"
 
+#include <json/json.h>
+
 #include <algorithm>
+#include <memory>
 #include <optional>
 #include <set>
 #include <string>
@@ -28,7 +31,8 @@ inline Exercise backSquat() {
 // duplicate id, the one-open-session refusal that makes a second insert a no-op, max+1-per-
 // exercise numbering, the owner scope on every read, the read-back scoped to the session (a set id
 // spent elsewhere resolves to NOTHING, never to that row), the FK that refuses a set naming no
-// known exercise, and the IS NULL guard that makes close first-writer-wins. Lift's proposal-apply
+// known exercise, the routine name derived from the session's own frozen snapshot, and the IS NULL
+// guard that makes close first-writer-wins. Lift's proposal-apply
 // bug survived precisely as long as its mock didn't model the persistence boundary, so this
 // fidelity is an architecture requirement: the service tests can never quietly disagree with the
 // adapter about what a replay returns — and a fake that mirrors a leak hides it behind green.
@@ -169,7 +173,59 @@ public:
     return out;
   }
 
+  // The same walk the SQL does: this account's finished sessions newest first on (startedAt, id),
+  // stopping at the first that holds a non-warmup set of the movement. The open session is stepped
+  // over — today's sets are today's, not last time — and another account's is invisible, so nothing
+  // here can answer with a session the caller may not read.
+  LastTimeOutcome lastTime(const UserId& user, const ExerciseId& exercise) override {
+    std::optional<Session> newest;
+    for (const Session& session : sessions) {
+      if (!(session.user == user) || !session.finishedAtMs) continue;
+      if (newest && std::pair(session.startedAtMs, session.id.str()) <
+                        std::pair(newest->startedAtMs, newest->id.str()))
+        continue;
+      for (const Set& set : sets) {
+        if (!(set.session == session.id) || !(set.exercise == exercise)) continue;
+        if (set.kind == SetKind::warmup) continue;
+        newest = session;
+        break;
+      }
+    }
+    if (!newest) {
+      // Scoped exactly like the catalog read the adapter checks against: another account's custom
+      // movement is unknown here, never merely unlogged.
+      for (const Exercise& known : catalog(user))
+        if (known.id == exercise) return {std::nullopt, LastTimeError::none};
+      return {std::nullopt, LastTimeError::unknownExercise};
+    }
+    std::vector<Set> block;
+    for (const Set& set : sets)
+      if (set.session == newest->id && set.exercise == exercise && set.kind != SetKind::warmup)
+        block.push_back(set);
+    std::sort(block.begin(), block.end(),
+              [](const Set& a, const Set& b) { return a.setNumber < b.setNumber; });
+    return {LastTime{*newest, routineNameOf(*newest), block}, LastTimeError::none};
+  }
+
 private:
+  // Derived from the session's own frozen snapshot, exactly like the adapter's
+  // `CASE WHEN jsonb_typeof(plan->'routine') = 'string' THEN plan->>'routine' ELSE '' END` — never
+  // from a side map a test author fills in, which is how a fake comes to agree with an answer the
+  // real store cannot produce. Anything that is not a string in an object plan is no name at all.
+  std::string routineNameOf(const Session& session) const {
+    if (session.planJson.empty()) return "";
+    Json::Value plan;
+    Json::CharReaderBuilder builder;
+    const std::unique_ptr<Json::CharReader> reader{builder.newCharReader()};
+    const char* begin = session.planJson.data();
+    std::string errors;
+    if (!reader->parse(begin, begin + session.planJson.size(), &plan, &errors)) return "";
+    if (!plan.isObject()) return "";
+    const Json::Value routine = plan.get("routine", Json::Value());
+    if (!routine.isString()) return "";
+    return routine.asString();
+  }
+
   std::optional<std::string> nameOf(const ExerciseId& id) const {
     for (const Exercise& exercise : seeds)
       if (exercise.id == id) return exercise.name;

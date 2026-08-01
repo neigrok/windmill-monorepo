@@ -37,6 +37,7 @@ public:
   void listSessions(const drogon::HttpRequestPtr& req, HttpCallback&& cb);    // GET  /v1/gym/sessions?before=&limit=
   void getSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                   const std::string& id);                                     // GET  /v1/gym/sessions/{id}
+  void lastTime(const drogon::HttpRequestPtr& req, HttpCallback&& cb);        // GET  /v1/gym/last?exercise=
 
 private:
   std::shared_ptr<LogService> log_;

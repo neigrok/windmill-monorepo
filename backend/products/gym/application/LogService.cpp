@@ -5,7 +5,8 @@ namespace wm::gym {
 namespace {
 // The lazy half of §3.2: load the user's open session and its last set instant, ask the pure rule,
 // persist the close if the domain says the session is over. Called before a start and before a log
-// read — the only two moments staleness could be observed — so no ticker ever runs for gym.
+// read — the two routes whose reply carries the session state a close rewrites — so no ticker ever
+// runs for gym, and no close ever lands where the client cannot see it.
 void settleOpen(TrainingRepository& repo, const UserId& user, std::uint64_t nowMs) {
   std::optional<Session> open = repo.open(user);
   if (!open) return;
@@ -83,6 +84,19 @@ std::optional<SessionDetail> LogService::detail(const UserId& user, const Sessio
 
 std::vector<Exercise> LogService::catalog(const UserId& user) {
   return repo_.catalog(user);
+}
+
+// The number the logger puts in front of a lifter before they touch anything — and the one route
+// fired on every movement change, so it settles nothing and writes nothing. The only session
+// settleOpen could reach from here is the caller's OWN live one (the partial unique index allows no
+// other), and closing that mid-workout refuses every set after it while this reply, which carries
+// no session state, says nothing about it. Staleness is still settled before the prefill can be
+// read: a start settles it, and so does the log read the client boots on — and until one of them
+// stamps it the session is open, which is already not a last time. The store's own two facts come
+// back untouched: no history at all, and no such movement, which look identical from here and are
+// not the same thing to a client.
+LastTimeOutcome LogService::lastTime(const UserId& user, const ExerciseId& exercise) {
+  return repo_.lastTime(user, exercise);
 }
 
 }

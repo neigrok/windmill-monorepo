@@ -14,6 +14,9 @@
 //                                           newest first, keyset-paged on (startedAt, id)
 //   GET  /v1/gym/sessions/:id            -> { session, sets } — or null on 404 (absent and
 //                                           another's are the same byte)
+//   GET  /v1/gym/last?exercise=          -> { exerciseId, session?, routine?, sets? } — the prefill:
+//                                           the newest FINISHED session holding that movement and
+//                                           its working sets in order, warmups excluded
 // Sessions serialize as {id, startedAt, finishedAt?, routineId?, plan?}; instants are epoch-ms
 // numbers, weights are numbers in kg, ids are client-minted ('ses_<hex>' / 'set_<hex>').
 
@@ -120,5 +123,20 @@ export const gymApi = {
     const response = await call(`/sessions/${id}`);
     if (response.status === 404) return null;
     return json(response);
+  },
+
+  // The prefill, resolved by the store: the whole history is behind this one read, so the answer
+  // never depends on how far the page of sessions in hand happens to reach back.
+  //
+  // A movement trained for the first time is answered 200 with the movement and nothing else — a
+  // fact, not a fault — so the reply is always an object and its `session` is what says whether
+  // there is history. Which leaves an absent reply free to mean the only other thing it can: the
+  // log has not answered. The one refusal is 400 `unknown-exercise`, the same word the write path
+  // uses, and a client that read its ids out of the catalog cannot reach it.
+  //
+  // The movement is echoed back because the logger re-reads this on every movement change, and a
+  // reply that lands after the lifter has moved on has to be discardable.
+  async lastTime(exerciseId) {
+    return json(await call(`/last?exercise=${encodeURIComponent(exerciseId)}`));
   },
 };

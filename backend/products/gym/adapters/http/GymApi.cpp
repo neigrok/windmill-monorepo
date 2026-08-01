@@ -218,4 +218,45 @@ void GymApi::getSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
   cb(jsonResponse(body));
 }
 
+// The prefill: what this account did the last time it trained this movement, which is the number
+// the logger puts on screen before the lifter touches anything.
+//
+//   { "exerciseId": "bench-press",
+//     "session": { "id", "startedAt", "finishedAt", … },   omitted when there is no last time
+//     "routine": "Bench day",                              omitted when that session was ad-hoc
+//     "sets":    [ … ] }                                   omitted with the session; never empty
+//
+// The movement is echoed back because the client re-reads this on every movement change and a reply
+// that arrives after the lifter has moved on must be discardable. A first-ever movement is answered
+// 200 with the movement and nothing else — a fact, not a fault; 404 would say the movement does not
+// exist, which is a different and false thing, and the client draws "First time logging this" from
+// the absence. A movement no catalog holds is the ONE fault here, and it is the same fact the write
+// path already names, so it keeps the same word: a client that got this id from GET /v1/gym/exercises
+// cannot reach it.
+void GymApi::lastTime(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
+    return;
+  }
+  const std::string exercise = req->getParameter("exercise");
+  if (exercise.empty()) {
+    cb(error(drogon::k400BadRequest, "bad exercise"));
+    return;
+  }
+  LastTimeOutcome outcome = log_->lastTime(*caller, ExerciseId{exercise});
+  if (outcome.error == LastTimeError::unknownExercise) {
+    cb(error(drogon::k400BadRequest, "no such exercise", "unknown-exercise"));
+    return;
+  }
+  Json::Value body(Json::objectValue);
+  body["exerciseId"] = exercise;
+  if (outcome.lastTime) {
+    body["session"] = toJson(outcome.lastTime->session);
+    if (!outcome.lastTime->routineName.empty()) body["routine"] = outcome.lastTime->routineName;
+    body["sets"] = toJson(outcome.lastTime->sets);
+  }
+  cb(jsonResponse(body));
+}
+
 }

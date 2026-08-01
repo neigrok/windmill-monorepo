@@ -383,6 +383,252 @@ TEST(detail_returns_the_session_with_its_sets_in_completion_order) {
   CHECK_EQ(h.service.detail(uid("u2"), sid()), std::optional<SessionDetail>());
 }
 
+// ---- last time: the number on screen before the lifter touches anything --------------------
+
+TEST(last_time_is_the_most_recent_finished_session_never_the_open_one) {
+  Harness h;
+  h.startAt(h.clock.now, "ses_00000001");
+  h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 80.0, h.clock.now + 1));
+  h.service.finish(uid(), sid("ses_00000001"), h.clock.now + 2);
+  h.clock.now += 10'000;
+  h.startAt(h.clock.now, "ses_00000002");
+  AppendOutcome top =
+      h.service.append(uid(), sid("ses_00000002"), h.bench("set_00000002", 82.5, h.clock.now + 1));
+  AppendOutcome backOff =
+      h.service.append(uid(), sid("ses_00000002"), h.bench("set_00000003", 80.0, h.clock.now + 2));
+  h.service.finish(uid(), sid("ses_00000002"), h.clock.now + 3);
+  // Today, live, heavier: these sets are the today list, and an unfinished session is not a last
+  // time — otherwise the prefill would read back the number the lifter is standing under.
+  h.clock.now += 10'000;
+  h.startAt(h.clock.now, "ses_00000003");
+  h.service.append(uid(), sid("ses_00000003"), h.bench("set_00000004", 100.0, h.clock.now + 1));
+
+  LastTimeOutcome last = h.service.lastTime(uid(), ExerciseId{"bench-press"});
+
+  CHECK(last.error == LastTimeError::none);
+  CHECK_EQ(last.lastTime->session.id, sid("ses_00000002"));
+  CHECK_EQ(last.lastTime->routineName, std::string(""));
+  CHECK_EQ(last.lastTime->sets, (std::vector<Set>{*top.set, *backOff.set}));
+  CHECK_EQ(h.repo.sessions[2].finishedAtMs, std::optional<std::uint64_t>());
+}
+
+TEST(last_time_is_the_working_block_in_set_order_and_never_the_warmups) {
+  Harness h;
+  h.startAt(h.clock.now, "ses_00000001");
+  h.service.append(uid(), sid("ses_00000001"),
+                   SetWrite{setId("set_00000001"), ExerciseId{"bench-press"}, 40.0, 10,
+                            SetKind::warmup, std::nullopt, "", h.clock.now + 1});
+  AppendOutcome first =
+      h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000002", 82.5, h.clock.now + 2));
+  AppendOutcome second =
+      h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000003", 82.5, h.clock.now + 3));
+  AppendOutcome third =
+      h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000004", 80.0, h.clock.now + 4));
+  h.service.append(uid(), sid("ses_00000001"),
+                   SetWrite{setId("set_00000005"), ExerciseId{"back-squat"}, 100.0, 5,
+                            SetKind::working, std::nullopt, "", h.clock.now + 5});
+  h.service.finish(uid(), sid("ses_00000001"), h.clock.now + 6);
+  // No phase-0 write path mints a plan (§2.2 — parseSessionStart reads id and startedAt only), so
+  // the snapshot is placed on the stored row the way phase 2 will write it.
+  h.repo.sessions[0].planJson = R"({"routine":"Bench day","entries":[]})";
+
+  LastTimeOutcome last = h.service.lastTime(uid(), ExerciseId{"bench-press"});
+
+  CHECK(last.error == LastTimeError::none);
+  CHECK_EQ(last.lastTime->routineName, std::string("Bench day"));
+  CHECK_EQ(last.lastTime->sets, (std::vector<Set>{*first.set, *second.set, *third.set}));
+  // Numbering counts the warmup (max+1 per session and exercise, whatever the kind), so the block
+  // starts at 2: leaving warmups out of the answer is a filter, never a renumbering of the log.
+  CHECK_EQ(last.lastTime->sets[0].setNumber, 2);
+}
+
+TEST(last_time_steps_over_a_session_that_only_warmed_this_movement_up) {
+  Harness h;
+  h.startAt(h.clock.now, "ses_00000001");
+  AppendOutcome worked =
+      h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 82.5, h.clock.now + 1));
+  h.service.finish(uid(), sid("ses_00000001"), h.clock.now + 2);
+  // A later session that ramped up on bench, changed its mind and trained something else. A 40 kg
+  // ramp-up single is not an answer to "what did I do last time".
+  h.clock.now += 10'000;
+  h.startAt(h.clock.now, "ses_00000002");
+  h.service.append(uid(), sid("ses_00000002"),
+                   SetWrite{setId("set_00000002"), ExerciseId{"bench-press"}, 40.0, 10,
+                            SetKind::warmup, std::nullopt, "", h.clock.now + 1});
+  h.service.finish(uid(), sid("ses_00000002"), h.clock.now + 2);
+
+  LastTimeOutcome last = h.service.lastTime(uid(), ExerciseId{"bench-press"});
+
+  CHECK(last.error == LastTimeError::none);
+  CHECK_EQ(last.lastTime->session.id, sid("ses_00000001"));
+  CHECK_EQ(last.lastTime->sets, std::vector<Set>{*worked.set});
+}
+
+TEST(last_time_never_reaches_into_another_accounts_log) {
+  Harness h;
+  h.startAt(h.clock.now, "ses_00000001");
+  AppendOutcome mine =
+      h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 82.5, h.clock.now + 1));
+  h.service.finish(uid(), sid("ses_00000001"), h.clock.now + 2);
+  // The other lifter benched more recently, and heavier. It is their log.
+  h.repo.sessions.push_back(
+      Session{sid("ses_00000009"), uid("u2"), h.clock.now + 10, h.clock.now + 30});
+  h.repo.sets.push_back(Set{setId("set_00000009"), sid("ses_00000009"), ExerciseId{"bench-press"},
+                            1, 142.5, 3, SetKind::working, std::nullopt, "", h.clock.now + 20});
+
+  LastTimeOutcome ours = h.service.lastTime(uid(), ExerciseId{"bench-press"});
+  LastTimeOutcome theirs = h.service.lastTime(uid("u2"), ExerciseId{"bench-press"});
+
+  CHECK(ours.error == LastTimeError::none);
+  CHECK_EQ(ours.lastTime->session.id, sid("ses_00000001"));
+  CHECK_EQ(ours.lastTime->sets, std::vector<Set>{*mine.set});
+  CHECK(theirs.error == LastTimeError::none);
+  CHECK_EQ(theirs.lastTime->session.id, sid("ses_00000009"));
+  CHECK_EQ(theirs.lastTime->sets, std::vector<Set>{h.repo.sets[1]});
+}
+
+// The two ways an answer can be empty, and they are not the same thing: a movement you have never
+// trained is a fact the card renders as "First time logging this"; a movement no catalog holds is
+// a client fault, and only the store can tell them apart.
+TEST(last_time_of_a_first_ever_movement_is_a_fact_and_of_an_unknown_one_is_a_fault) {
+  Harness h;
+  h.startAt(h.clock.now);
+  h.service.append(uid(), sid(), h.bench("set_00000001", 82.5, h.clock.now + 1));
+  h.service.finish(uid(), sid(), h.clock.now + 2);
+  h.repo.seedCustom(uid("u2"), Exercise{ExerciseId{"landmine-press"}, "Landmine Press",
+                                        Pattern::press, Equipment::barbell, 2.5, true});
+
+  LastTimeOutcome firstEver = h.service.lastTime(uid(), ExerciseId{"back-squat"});
+  LastTimeOutcome unknown = h.service.lastTime(uid(), ExerciseId{"zercher-squat"});
+  LastTimeOutcome anothersCustom = h.service.lastTime(uid(), ExerciseId{"landmine-press"});
+
+  CHECK(firstEver.error == LastTimeError::none);
+  CHECK_FALSE(firstEver.lastTime.has_value());
+  CHECK(unknown.error == LastTimeError::unknownExercise);
+  CHECK_FALSE(unknown.lastTime.has_value());
+  CHECK(anothersCustom.error == LastTimeError::unknownExercise);
+  CHECK_FALSE(anothersCustom.lastTime.has_value());
+}
+
+// The prefill fires on every movement change, and the only session it could ever settle is the one
+// the lifter is standing in — one open session per account is the store's rule. A device whose
+// clock runs behind stamps its sets past the auto-close window (instants are the device's own,
+// §2.2), so the read must leave the workout open, refuse to answer with it, and let the next set
+// land: the reply carries no session state, and a close nobody can see refuses every set after it.
+TEST(last_time_never_closes_the_session_the_lifter_is_in) {
+  Harness h;
+  const std::uint64_t started = h.clock.now;
+  h.startAt(started, "ses_00000001");
+  AppendOutcome lastWeek =
+      h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 82.5, started + 1));
+  h.service.finish(uid(), sid("ses_00000001"), started + 2);
+  const std::uint64_t liveSetAt = started + 4;
+  h.clock.now = started + 3;
+  h.startAt(h.clock.now, "ses_00000002");
+  h.service.append(uid(), sid("ses_00000002"), h.bench("set_00000002", 100.0, liveSetAt));
+  h.clock.now = liveSetAt + kAutoCloseMs;   // the live workout now reads as idle past the window
+
+  LastTimeOutcome last = h.service.lastTime(uid(), ExerciseId{"bench-press"});
+  AppendOutcome next =
+      h.service.append(uid(), sid("ses_00000002"), h.bench("set_00000003", 102.5, h.clock.now + 1));
+
+  CHECK(last.error == LastTimeError::none);
+  CHECK_EQ(last.lastTime->session.id, sid("ses_00000001"));   // never the live one, closed or not
+  CHECK_EQ(last.lastTime->sets, std::vector<Set>{*lastWeek.set});
+  CHECK_EQ(h.repo.sessions[1].finishedAtMs, std::optional<std::uint64_t>());
+  CHECK(next.error == AppendError::none);
+  CHECK_EQ(next.set->setNumber, 2);
+}
+
+// And dropping the settle from the prefill does not let it reach past a session abandoned with the
+// tab shut: the log read the client boots on closes that one first, and a closed session is a last
+// time like any other. Until then it is open, which is already not a last time.
+TEST(last_time_sees_a_stale_session_once_the_log_read_has_settled_it) {
+  Harness h;
+  const std::uint64_t started = h.clock.now;
+  h.startAt(started, "ses_00000001");
+  AppendOutcome older =
+      h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 80.0, started + 1));
+  h.service.finish(uid(), sid("ses_00000001"), started + 2);
+  const std::uint64_t abandonedStart = started + 10'000;
+  const std::uint64_t abandonedSetAt = abandonedStart + 1;
+  h.clock.now = abandonedStart;
+  h.startAt(abandonedStart, "ses_00000002");
+  AppendOutcome abandoned =
+      h.service.append(uid(), sid("ses_00000002"), h.bench("set_00000002", 82.5, abandonedSetAt));
+  h.clock.now = abandonedSetAt + kAutoCloseMs;
+
+  LastTimeOutcome beforeTheLogRead = h.service.lastTime(uid(), ExerciseId{"bench-press"});
+  h.logBefore(h.clock.now + 1);
+  LastTimeOutcome afterTheLogRead = h.service.lastTime(uid(), ExerciseId{"bench-press"});
+
+  CHECK_EQ(beforeTheLogRead.lastTime->session.id, sid("ses_00000001"));
+  CHECK_EQ(beforeTheLogRead.lastTime->sets, std::vector<Set>{*older.set});
+  CHECK_EQ(afterTheLogRead.lastTime->session.id, sid("ses_00000002"));
+  CHECK_EQ(afterTheLogRead.lastTime->session.finishedAtMs,
+           std::optional<std::uint64_t>(abandonedSetAt));
+  CHECK_EQ(afterTheLogRead.lastTime->sets, std::vector<Set>{*abandoned.set});
+}
+
+// Last time is the newest SESSION, never the newest set instant. completedAt is the device's wall
+// clock and nothing ties it to the session holding it, so one future-stamped set would otherwise
+// pin the answer to a week-old session while the log listed a fresher one above it — the same
+// product, two reads, two different answers to "what did I do last time".
+TEST(last_time_is_the_newest_session_even_when_an_older_one_holds_a_future_stamped_set) {
+  Harness h;
+  const std::uint64_t day = 86'400'000;
+  const std::uint64_t weekAgo = h.clock.now;
+  h.startAt(weekAgo, "ses_00000001");
+  h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 60.0, weekAgo + 30 * day));
+  h.service.finish(uid(), sid("ses_00000001"), weekAgo + 1'000);
+  h.clock.now = weekAgo + 7 * day;
+  h.startAt(h.clock.now, "ses_00000002");
+  AppendOutcome yesterday =
+      h.service.append(uid(), sid("ses_00000002"), h.bench("set_00000002", 100.0, h.clock.now + 1));
+  h.service.finish(uid(), sid("ses_00000002"), h.clock.now + 2);
+
+  LastTimeOutcome last = h.service.lastTime(uid(), ExerciseId{"bench-press"});
+  std::vector<SessionSummary> listed = h.logBefore(h.clock.now + 10'000);
+
+  CHECK(last.error == LastTimeError::none);
+  CHECK_EQ(last.lastTime->session.id, sid("ses_00000002"));
+  CHECK_EQ(last.lastTime->sets, std::vector<Set>{*yesterday.set});
+  CHECK_EQ(listed[0].session.id, last.lastTime->session.id);   // the two reads agree, by the key
+}
+
+// The name is read off the session's own frozen snapshot, and a snapshot is client data — so only
+// a string is a routine name. jsonb renders an object, an array or a number as text, and that text
+// would be printed verbatim into the card's cross-routine suffix.
+TEST(last_time_names_the_routine_only_when_the_snapshot_holds_a_string) {
+  const std::vector<std::pair<std::string, std::string>> snapshots{
+      {R"({"routine":"Bench day","entries":[]})", "Bench day"},
+      {R"({"routine":42})", ""},
+      {R"({"routine":{"nested":1}})", ""},
+      {R"({"routine":["a","b"]})", ""},
+      {R"({"routine":null})", ""},
+      {R"({"entries":[]})", ""},
+      {R"(["a","b"])", ""},
+      {R"("just a string")", ""},
+      {"{not json at all", ""},
+      {"", ""},
+  };
+
+  for (const auto& [snapshot, name] : snapshots) {
+    Harness h;
+    h.startAt(h.clock.now, "ses_00000001");
+    AppendOutcome landed =
+        h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 82.5, h.clock.now + 1));
+    h.service.finish(uid(), sid("ses_00000001"), h.clock.now + 2);
+    h.repo.sessions[0].planJson = snapshot;
+
+    LastTimeOutcome last = h.service.lastTime(uid(), ExerciseId{"bench-press"});
+
+    CHECK(last.error == LastTimeError::none);
+    CHECK_EQ(last.lastTime->routineName, name);
+    CHECK_EQ(last.lastTime->sets, std::vector<Set>{*landed.set});
+  }
+}
+
 TEST(catalog_serves_seeds_plus_own_customs_ordered_by_pattern_then_name) {
   Harness h;
   Exercise mine{ExerciseId{"landmine-press"}, "Landmine Press", Pattern::press,

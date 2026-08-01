@@ -1,7 +1,8 @@
-// Gym — the training log's web surface, in the instrument skin. Phase 0 is the seam made real:
-// the account door, the read-only log (canon G3) at #/gym and one session read whole at
-// #/gym/session/<id>. The set logger is the next bet — Start is rendered but waits for it,
-// because a session nothing can land in would be a trap, not a feature.
+// Gym — the training log's web surface, in the instrument skin. Three rooms behind one door:
+// Today (start a session, or the live logger itself), The log (read-only, newest first) and one
+// session read whole. The live session IS workout mode — while it runs the tabs and the shell's own
+// chrome are not drawn, the only ways out are Finish and the resume banner, and the screen is held
+// awake. Nothing here decides anything: the rules live in log.js and logger/.
 
 import React, { useEffect, useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
@@ -12,15 +13,16 @@ import { SignInDialog } from '../../shell/auth/SignInDialog.jsx';
 import { requestMagicLink } from '../../shell/auth/AuthClient.js';
 import { gymApi } from './gymApi.js';
 import {
-  dayLabel, durationLabel, groupByExercise, isFinished, routineNameOf,
-  sessionHref, sessionIdOf, setCountLabel, timeLabel, whenLabel,
+  clockOf, dayLabel, durLabel, fmt, groupByExercise, isFinished, nameOfMovement, routineNameOf,
+  screenOf, sessionHref, sessionIdOf, sessionMetaLabel, setCountLabel, timeLabel, whenLabel,
 } from './log.js';
+import { Logger } from './logger/Logger.jsx';
+import { useLiveSession } from './logger/useLiveSession.js';
 import './gym.css';
 
 export function GymApp({ hash, openSignInSignal = 0 }) {
   const [signInOpen, setSignInOpen] = useState(false);
   const { user, status, signOut } = useAuth();
-  const sessionId = sessionIdOf(hash);
 
   // An expired magic link asks the active product to open its own door (App.jsx bumps the signal).
   useEffect(() => {
@@ -29,28 +31,40 @@ export function GymApp({ hash, openSignInSignal = 0 }) {
 
   return (
     <div className="gym-root" data-theme="dark">
+      {/* Three auth states, three rooms — a first visit resolves through 'loading' with no stored
+          hint, and an empty room would read as a broken app. */}
+      {status === 'loading' && <main className="gym-column"><p className="gym-quiet">Opening the log…</p></main>}
+      {status === 'ghost' && (
+        <>
+          <Chrome user={user} status={status} onSignIn={() => setSignInOpen(true)} onSignOut={signOut} />
+          <main className="gym-column"><SignInDoor onSignIn={() => setSignInOpen(true)} /></main>
+        </>
+      )}
+      {status === 'signed-in' && (
+        <TrainingRoom hash={hash} user={user} status={status} onSignIn={() => setSignInOpen(true)} onSignOut={signOut} />
+      )}
+      <SignInDialog open={signInOpen} onClose={() => setSignInOpen(false)} onSend={requestMagicLink} />
+    </div>
+  );
+}
+
+function Chrome({ user, status, onSignIn, onSignOut }) {
+  return (
+    <>
       <div className="gym-seat">
         <AccountSeat
           user={user}
           status={status}
-          onSignIn={() => setSignInOpen(true)}
-          onSignOut={signOut}
+          onSignIn={onSignIn}
+          onSignOut={onSignOut}
           onSettings={() => { window.location.hash = '#/settings'; }}
           onConnect={() => { window.location.hash = '#/connect'; }}
         />
       </div>
-      <main className="gym-column">
-        {/* Three auth states, three rooms — a first visit resolves through 'loading' with no
-            stored hint, and an empty room would read as a broken app. */}
-        {status === 'loading' && <p className="gym-quiet">Opening the log…</p>}
-        {status === 'ghost' && <SignInDoor onSignIn={() => setSignInOpen(true)} />}
-        {status === 'signed-in' && (sessionId ? <SessionDetail id={sessionId} /> : <LogHome />)}
-      </main>
       <div className="gym-switch">
         <ProductSwitcher current="gym" />
       </div>
-      <SignInDialog open={signInOpen} onClose={() => setSignInOpen(false)} onSend={requestMagicLink} />
-    </div>
+    </>
   );
 }
 
@@ -64,41 +78,95 @@ function SignInDoor({ onSignIn }) {
   );
 }
 
-function LogHome() {
-  const [log, setLog] = useState({ phase: 'loading', sessions: [] });
-  const [attempt, setAttempt] = useState(0);
-
-  useEffect(() => {
-    let live = true;
-    setLog({ phase: 'loading', sessions: [] });
-    gymApi.sessions()
-      .then((sessions) => { if (live) setLog({ phase: 'ready', sessions }); })
-      .catch(() => { if (live) setLog({ phase: 'failed', sessions: [] }); });
-    return () => { live = false; };
-  }, [attempt]);
+function TrainingRoom({ hash, user, status, onSignIn, onSignOut }) {
+  const live = useLiveSession();
+  const screen = screenOf(hash);
+  const sessionId = sessionIdOf(hash);
+  const logging = live.phase === 'live' && screen === 'today';
 
   return (
     <>
-      <header className="gym-head">
-        <h1 className="gym-title">Training log</h1>
-        <div className="gym-start">
-          <button type="button" className="gym-start-button" disabled>Start session</button>
-          <p className="gym-start-note">Waits for the set logger — it lands next.</p>
-        </div>
-      </header>
-      {log.phase === 'loading' && <p className="gym-quiet">Opening the log…</p>}
-      {log.phase === 'failed' && (
-        <p className="gym-alarm">
-          The log didn’t load.
-          <button type="button" className="gym-retry" onClick={() => setAttempt((n) => n + 1)}>Retry</button>
+      {!logging && <Chrome user={user} status={status} onSignIn={onSignIn} onSignOut={onSignOut} />}
+      {logging && <Logger live={live} />}
+      {!logging && (
+        <main className="gym-column">
+          {screen === 'session' && <SessionDetail id={sessionId} />}
+          {screen === 'log' && <LogList live={live} />}
+          {screen === 'today' && <StartScreen live={live} />}
+        </main>
+      )}
+      {!logging && screen !== 'session' && <TabBar screen={screen} />}
+      {live.refusals.length > 0 && (
+        <p className="gym-refused">
+          {`${live.refusals.map((each) => `${nameOfMovement(live.catalog, each.exerciseId)} ${fmt(each.weightKg)} × ${each.reps}`).join(', ')} never reached the log — ${live.refusals[0].reason}. Log ${live.refusals.length === 1 ? 'it' : 'them'} again to keep ${live.refusals.length === 1 ? 'it' : 'them'}.`}
+          <button type="button" className="gym-refused-clear" onClick={live.clearRefusals}>Dismiss</button>
         </p>
       )}
-      {log.phase === 'ready' && log.sessions.length === 0 && (
-        <p className="gym-quiet">No sessions yet. The first one lands here when you log a set.</p>
+      {live.toast && (
+        <div className="gym-toast" role="status">
+          <span>{live.toast.text}</span>
+          <button type="button" className="gym-toast-close" onClick={live.dismissToast} aria-label="Dismiss">×</button>
+        </div>
       )}
-      {log.phase === 'ready' && log.sessions.length > 0 && (
+    </>
+  );
+}
+
+function TabBar({ screen }) {
+  return (
+    <nav className="gym-tabs">
+      <a className={screen === 'today' ? 'gym-tab is-on' : 'gym-tab'} href="#/gym">Today</a>
+      <a className={screen === 'log' ? 'gym-tab is-on' : 'gym-tab'} href="#/gym/log">The log</a>
+    </nav>
+  );
+}
+
+// No session running. One card per way in — and with no routines yet, that is the ad-hoc start:
+// the log has no plan to snapshot, and pretending otherwise would be a promise the product can't keep.
+function StartScreen({ live }) {
+  if (live.phase === 'loading') return <p className="gym-quiet">Opening the log…</p>;
+  if (live.phase === 'failed') return <p className="gym-read-failed">The log didn’t load. Open it again when you have signal.</p>;
+  return (
+    <section className="gym-start-screen">
+      <h1 className="gym-title">Today</h1>
+      <p className="gym-quiet">Nothing running. Start where you left off.</p>
+      <button type="button" className="gym-start-adhoc" onClick={live.start}>Start without a routine</button>
+      {live.summaries.length > 0 && (
+        <p className="gym-start-last">
+          {`Last trained ${dayLabel(live.summaries[0].startedAt)} · ${setCountLabel(live.summaries[0].setCount ?? 0)}`}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function LogList({ live }) {
+  const { phase, summaries, session, elapsed, sets } = live;
+  return (
+    <>
+      <header className="gym-head">
+        <h1 className="gym-title">The log</h1>
+      </header>
+      {session && (
+        <a className="gym-resume" href="#/gym">
+          <span className="gym-live-dot" aria-hidden="true" />
+          <span className="gym-resume-text">
+            {`${routineNameOf(session) ?? 'Ad-hoc session'}  ·  ${clockOf(elapsed)}  ·  ${setCountLabel(sets.length)}`}
+          </span>
+          <span className="gym-resume-go">Resume ›</span>
+        </a>
+      )}
+      {phase === 'loading' && <p className="gym-quiet">Opening the log…</p>}
+      {phase === 'failed' && <p className="gym-read-failed">The log didn’t load. Open it again when you have signal.</p>}
+      {phase !== 'loading' && phase !== 'failed' && summaries.length === 0 && (
+        <>
+          <p className="gym-quiet">No sessions yet.</p>
+          <p className="gym-quiet">The first one you log lands here, newest first.</p>
+        </>
+      )}
+      {summaries.length > 0 && (
         <ul className="gym-sessions">
-          {log.sessions.map((summary) => <SessionRow key={summary.id} summary={summary} />)}
+          {summaries.map((summary) => <SessionRow key={summary.id} summary={summary} />)}
         </ul>
       )}
     </>
@@ -108,20 +176,19 @@ function LogHome() {
 function SessionRow({ summary }) {
   const routine = routineNameOf(summary);
   const exercises = summary.exercises ?? [];
-  const title = routine ?? (exercises.length > 0 ? exercises.join(' · ') : 'No sets');
   return (
     <li>
       <a className="gym-row" href={sessionHref(summary.id)}>
         <div className="gym-row-top">
           <span>{whenLabel(summary.startedAt)}</span>
           <span className={isFinished(summary) ? 'gym-row-length' : 'gym-row-open'}>
-            {isFinished(summary) ? durationLabel(summary.startedAt, summary.finishedAt) : 'in progress'}
+            {isFinished(summary) ? durLabel(summary.finishedAt - summary.startedAt) : 'in progress'}
           </span>
         </div>
-        <div className="gym-row-title">{title}</div>
+        <div className={routine ? 'gym-row-title' : 'gym-row-title is-adhoc'}>{routine ?? 'Ad-hoc'}</div>
         <div className="gym-row-meta">
-          {setCountLabel(summary.setCount)}
-          {routine && exercises.length > 0 && ` · ${exercises.join(' · ')}`}
+          {setCountLabel(summary.setCount ?? 0)}
+          {exercises.length > 0 && `   ·   ${exercises.join('   ·   ')}`}
         </div>
       </a>
     </li>
@@ -145,6 +212,7 @@ function SessionDetail({ id }) {
         setView({
           phase: 'ready',
           session: detail.session,
+          count: detail.sets.length,
           groups: groupByExercise(detail.sets),
           names: new Map(catalog.map((exercise) => [exercise.id, exercise.name])),
         });
@@ -157,7 +225,7 @@ function SessionDetail({ id }) {
   if (view.phase === 'absent') {
     return (
       <>
-        <a className="gym-back" href="#/gym"><ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> Log</a>
+        <a className="gym-back" href="#/gym/log"><ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> Log</a>
         <p className="gym-quiet">This session isn’t in your log.</p>
       </>
     );
@@ -165,8 +233,8 @@ function SessionDetail({ id }) {
   if (view.phase === 'failed') {
     return (
       <>
-        <a className="gym-back" href="#/gym"><ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> Log</a>
-        <p className="gym-alarm">
+        <a className="gym-back" href="#/gym/log"><ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> Log</a>
+        <p className="gym-read-failed">
           The session didn’t load.
           <button type="button" className="gym-retry" onClick={() => setAttempt((n) => n + 1)}>Retry</button>
         </p>
@@ -174,17 +242,17 @@ function SessionDetail({ id }) {
     );
   }
 
-  const { session, groups, names } = view;
+  const { session, count, groups, names } = view;
   const routine = routineNameOf(session);
   return (
     <>
       <header className="gym-detail-head">
-        <a className="gym-back" href="#/gym"><ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> Log</a>
-        <h1 className="gym-title">{routine ?? dayLabel(session.startedAt)}</h1>
-        <p className="gym-detail-when">
-          {whenLabel(session.startedAt)}
-          {isFinished(session) ? ` · ${durationLabel(session.startedAt, session.finishedAt)}` : ' · in progress'}
-        </p>
+        <a className="gym-back" href="#/gym/log"><ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> Log</a>
+        <h1 className="gym-title">
+          {dayLabel(session.startedAt)}
+          <span className="gym-detail-routine">{`  ·  ${routine ?? 'Ad-hoc'}`}</span>
+        </h1>
+        <p className="gym-detail-when">{sessionMetaLabel(session, count)}</p>
       </header>
       {groups.length === 0 && <p className="gym-quiet">No sets in this session.</p>}
       {groups.map(([exerciseId, sets]) => (
@@ -194,7 +262,7 @@ function SessionDetail({ id }) {
             {sets.map((set) => (
               <li key={set.id} className={set.kind === 'warmup' ? 'gym-set gym-set-warmup' : 'gym-set'}>
                 <span className="gym-set-number">{set.setNumber}</span>
-                <span className="gym-set-load">{set.weightKg} kg × {set.reps}</span>
+                <span className="gym-set-load">{`${fmt(set.weightKg)} × ${set.reps}`}</span>
                 {set.kind !== 'working' && <span className="gym-set-kind">{set.kind}</span>}
                 {set.rpe != null && <span className="gym-set-rpe">rpe {set.rpe}</span>}
                 <span className="gym-set-time">{timeLabel(set.completedAt)}</span>

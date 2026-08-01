@@ -103,6 +103,64 @@ test('session — an absent session is null, not an error: absent and another ow
   assert.deepEqual(await gymApi.session('ses_1'), detail);
 });
 
+// The bytes below are what the running server answered on the probe of this route: the movement
+// echoed back, the finished session, the routine frozen in its plan snapshot, and the working sets
+// in order with the warmup already dropped.
+test('lastTime — one read, and the answer arrives whole', async () => {
+  const reply = {
+    exerciseId: 'back-squat',
+    session: { id: 'ses_probe_old', startedAt: 1_900_001_000_000, finishedAt: 1_900_001_360_000 },
+    routine: 'Squat day',
+    sets: [
+      { id: 'set_probe_s1', exerciseId: 'back-squat', setNumber: 2, weightKg: 100, reps: 8, kind: 'working', note: '', completedAt: 1_900_001_120_000 },
+      { id: 'set_probe_s2', exerciseId: 'back-squat', setNumber: 3, weightKg: 100, reps: 7, kind: 'working', note: '', completedAt: 1_900_001_180_000 },
+      { id: 'set_probe_s3', exerciseId: 'back-squat', setNumber: 4, weightKg: 97.5, reps: 5, kind: 'working', note: 'grindy', rpe: 9, completedAt: 1_900_001_240_000 },
+    ],
+  };
+  serve(ok(reply));
+  assert.deepEqual(await gymApi.lastTime('back-squat'), reply);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/gym/last?exercise=back-squat',
+    method: 'GET',
+    credentials: 'include',
+    contentType: 'application/json',
+    body: undefined,
+  });
+
+  serve(ok({ exerciseId: 'ez-bar curl' }));
+  await gymApi.lastTime('ez-bar curl');
+  assert.equal(wireOf(calls[0]).path, '/v1/gym/last?exercise=ez-bar%20curl');
+});
+
+// A movement trained for the first time is a fact, not a fault: the server names it and stops, and
+// the answer must survive as an answer — a client that treated it as a failure would show the same
+// card for "you have never squatted" as for "the log did not reply".
+test('lastTime — a first-ever movement answers 200 with the movement and nothing else', async () => {
+  serve(ok({ exerciseId: 'deadlift' }));
+  assert.deepEqual(await gymApi.lastTime('deadlift'), { exerciseId: 'deadlift' });
+});
+
+test('lastTime — a movement no catalog holds is the one refusal, and it is the write path’s word', async () => {
+  serve(refusal(400, 'no such exercise', 'unknown-exercise'));
+  await assert.rejects(() => gymApi.lastTime('zercher-squat'), (error) => {
+    assert.deepEqual(flagsOf(error), {
+      name: 'GymError',
+      status: 400,
+      message: 'no such exercise',
+      detail: 'no such exercise',
+      code: 'unknown-exercise',
+      terminal: true,
+      retryable: false,
+      sessionFinished: false,
+      setIdTaken: false,
+      sessionIdTaken: false,
+      unknownExercise: true,
+    });
+    return true;
+  });
+});
+
 test('appendSet — a replay of a stored set answers 200 with the stored row, finished or not', async () => {
   const stored = {
     id: 'set_1', exerciseId: 'back-squat', setNumber: 3, weightKg: 82.5, reps: 8,

@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 // Opt-in integration test: it needs a live local Postgres with the schema applied. It runs only
@@ -311,6 +312,198 @@ TEST(pg_gym_log_names_a_movement_whose_display_name_holds_a_newline_once) {
   CHECK_EQ(listed.size(), static_cast<std::size_t>(1));
   CHECK_EQ(listed[0].setCount, 2);
   CHECK_EQ(listed[0].exerciseNames, (std::vector<std::string>{"Bench Press", "Zercher\nSquat"}));
+}
+
+// The prefill read, against the real index. What has to hold: the most recent FINISHED session
+// wins (the live one never does), warmups are not history, the block comes back in set_number
+// order, the routine name is the one frozen in the session's own plan snapshot, and another
+// account's identical movement is invisible.
+TEST(pg_gym_last_time_is_the_newest_finished_session_of_that_movement) {
+  if (!std::getenv("WM_PG_TEST")) return;
+  reset();
+  PgTrainingRepository repo{connString()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  repo.insertSet(benchSet("set_pg000001", 80.0, t1 + 1'000));
+  repo.close(SessionId{"ses_pg000001"}, t1 + 2'000);
+
+  repo.insertSession(Session{SessionId{"ses_pg000002"}, wm::UserId{kUser}, t1 + 10'000,
+                             std::nullopt, std::nullopt,
+                             R"({"routine":"Bench day","entries":[]})"});
+  repo.insertSet(Set{SetId{"set_pg000002"}, SessionId{"ses_pg000002"}, ExerciseId{"bench-press"}, 0,
+                     40.0, 10, SetKind::warmup, std::nullopt, "", t1 + 11'000});
+  SetInsertOutcome top = repo.insertSet(benchSet("set_pg000003", 82.5, t1 + 12'000, "ses_pg000002"));
+  SetInsertOutcome backOff =
+      repo.insertSet(benchSet("set_pg000004", 80.0, t1 + 13'000, "ses_pg000002"));
+  repo.insertSet(Set{SetId{"set_pg000005"}, SessionId{"ses_pg000002"}, ExerciseId{"back-squat"}, 0,
+                     100.0, 5, SetKind::working, std::nullopt, "", t1 + 14'000});
+  repo.close(SessionId{"ses_pg000002"}, t1 + 15'000);
+
+  // Today, live and heavier: an unfinished session is never a last time.
+  repo.insertSession(sessionAt("ses_pg000003", t1 + 20'000));
+  repo.insertSet(benchSet("set_pg000006", 100.0, t1 + 21'000, "ses_pg000003"));
+  // And another account's newer, heavier bench, which this caller must never see.
+  repo.insertSession(Session{SessionId{"ses_pg000004"}, wm::UserId{kOther}, t1 + 30'000});
+  repo.insertSet(benchSet("set_pg000007", 142.5, t1 + 31'000, "ses_pg000004"));
+  repo.close(SessionId{"ses_pg000004"}, t1 + 32'000);
+
+  LastTimeOutcome last = repo.lastTime(wm::UserId{kUser}, ExerciseId{"bench-press"});
+
+  CHECK(last.error == LastTimeError::none);
+  CHECK_EQ(last.lastTime->session.id, SessionId{"ses_pg000002"});
+  CHECK_EQ(last.lastTime->session.finishedAtMs, std::optional<std::uint64_t>(t1 + 15'000));
+  CHECK_EQ(last.lastTime->routineName, std::string("Bench day"));
+  CHECK_EQ(last.lastTime->sets, (std::vector<Set>{*top.set, *backOff.set}));
+  // The warmup is set 1 of that movement, so the block starts at 2: a filter, not a renumbering.
+  CHECK_EQ(last.lastTime->sets[0].setNumber, 2);
+
+  // The other account reads its own log, and only that.
+  LastTimeOutcome theirs = repo.lastTime(wm::UserId{kOther}, ExerciseId{"bench-press"});
+  CHECK(theirs.error == LastTimeError::none);
+  CHECK_EQ(theirs.lastTime->session.id, SessionId{"ses_pg000004"});
+  CHECK_EQ(theirs.lastTime->routineName, std::string(""));
+  CHECK_EQ(theirs.lastTime->sets.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(theirs.lastTime->sets[0].weightKg, 142.5);
+}
+
+// A movement that was only ever warmed up has no last time — the same answer as one never touched.
+TEST(pg_gym_last_time_of_a_first_ever_movement_is_empty_and_of_an_unknown_one_is_a_refusal) {
+  if (!std::getenv("WM_PG_TEST")) return;
+  reset();
+  PgTrainingRepository repo{connString()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  repo.insertSet(Set{SetId{"set_pg000001"}, SessionId{"ses_pg000001"}, ExerciseId{"back-squat"}, 0,
+                     60.0, 10, SetKind::warmup, std::nullopt, "", t1 + 1'000});
+  repo.close(SessionId{"ses_pg000001"}, t1 + 2'000);
+  {
+    pqxx::connection c{connString()};
+    pqxx::work w{c};
+    w.exec_params("INSERT INTO gym_exercises (id, name, pattern, equipment, created_by) "
+                  "VALUES ($1, $2, 'squat', 'barbell', $3::uuid)",
+                  "pg-zercher-squat", "Zercher Squat", kOther);
+    w.commit();
+  }
+
+  LastTimeOutcome neverLogged = repo.lastTime(wm::UserId{kUser}, ExerciseId{"deadlift"});
+  LastTimeOutcome onlyWarmed = repo.lastTime(wm::UserId{kUser}, ExerciseId{"back-squat"});
+  LastTimeOutcome unknown = repo.lastTime(wm::UserId{kUser}, ExerciseId{"pg-no-such-movement"});
+  LastTimeOutcome anothersCustom = repo.lastTime(wm::UserId{kUser}, ExerciseId{"pg-zercher-squat"});
+
+  CHECK(neverLogged.error == LastTimeError::none);
+  CHECK_EQ(neverLogged.lastTime, std::optional<LastTime>());
+  CHECK(onlyWarmed.error == LastTimeError::none);
+  CHECK_EQ(onlyWarmed.lastTime, std::optional<LastTime>());
+  CHECK(unknown.error == LastTimeError::unknownExercise);
+  CHECK_EQ(unknown.lastTime, std::optional<LastTime>());
+  // Owner-scoped exactly like the catalog read: another account's custom movement is unknown here,
+  // never merely unlogged, so absent stays byte-identical to forbidden.
+  CHECK(anothersCustom.error == LastTimeError::unknownExercise);
+  CHECK_EQ(anothersCustom.lastTime, std::optional<LastTime>());
+}
+
+// Last time is the newest SESSION, not the newest set instant. completed_at is the device's wall
+// clock (§2.2) and nothing ties it to the session holding it, so a single future-stamped set would
+// otherwise pin the prefill to a week-old session while the log listed a fresher one above it —
+// and with no cutoff on how far last time reaches, it would answer for the next thirty days.
+TEST(pg_gym_last_time_walks_sessions_not_set_instants) {
+  if (!std::getenv("WM_PG_TEST")) return;
+  reset();
+  PgTrainingRepository repo{connString()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+  const std::uint64_t day = 86'400'000;
+
+  repo.insertSession(sessionAt("ses_pg000001", t1));                       // a week ago
+  repo.insertSet(benchSet("set_pg000001", 60.0, t1 + 30 * day));           // stamped 30 days ahead
+  repo.close(SessionId{"ses_pg000001"}, t1 + 1'000);
+  repo.insertSession(sessionAt("ses_pg000002", t1 + 6 * day));             // yesterday
+  SetInsertOutcome honest =
+      repo.insertSet(benchSet("set_pg000002", 100.0, t1 + 6 * day + 1'000, "ses_pg000002"));
+  repo.close(SessionId{"ses_pg000002"}, t1 + 6 * day + 2'000);
+
+  LastTimeOutcome last = repo.lastTime(wm::UserId{kUser}, ExerciseId{"bench-press"});
+  std::vector<SessionSummary> listed = repo.log(wm::UserId{kUser}, page(t1 + 7 * day, 50));
+
+  CHECK(last.error == LastTimeError::none);
+  CHECK_EQ(last.lastTime->session.id, SessionId{"ses_pg000002"});
+  CHECK_EQ(last.lastTime->sets, std::vector<Set>{*honest.set});
+  // The two reads sort on the same key, so they can never name a different newest session.
+  CHECK_EQ(listed[0].session.id, last.lastTime->session.id);
+}
+
+// The one read whose session lookup used to be scoped only transitively — through the invariant
+// that insertSet copies its session's owner. One mis-owned set row is all it took to hand back a
+// stranger's session and the whole frozen plan inside it, while every sibling read refused.
+TEST(pg_gym_last_time_never_answers_with_a_session_the_caller_does_not_own) {
+  if (!std::getenv("WM_PG_TEST")) return;
+  reset();
+  PgTrainingRepository repo{connString()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+  repo.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, t1, std::nullopt,
+                             std::nullopt, R"({"routine":"A private routine","entries":[]})"});
+  repo.insertSet(benchSet("set_pg000001", 142.5, t1 + 1'000));
+  repo.close(SessionId{"ses_pg000001"}, t1 + 2'000);
+  {
+    // A set row inside the owner's session carrying ANOTHER account's user_id. No API path mints
+    // one today; the read must not depend on that staying true.
+    pqxx::connection c{connString()};
+    pqxx::work w{c};
+    w.exec_params("INSERT INTO gym_sets (id, session_id, user_id, exercise_id, set_number, "
+                  "weight_kg, reps, kind, completed_at) "
+                  "VALUES ($1, 'ses_pg000001', $2::uuid, 'bench-press', 9, 60, 5, 'working', "
+                  "        to_timestamp($3::bigint / 1000.0))",
+                  "set_pg000009", kOther, static_cast<long long>(t1 + 3'000));
+    w.commit();
+  }
+
+  LastTimeOutcome theirs = repo.lastTime(wm::UserId{kOther}, ExerciseId{"bench-press"});
+  LastTimeOutcome ours = repo.lastTime(wm::UserId{kUser}, ExerciseId{"bench-press"});
+
+  CHECK(theirs.error == LastTimeError::none);
+  CHECK_EQ(theirs.lastTime, std::optional<LastTime>());
+  CHECK_EQ(repo.session(wm::UserId{kOther}, SessionId{"ses_pg000001"}), std::optional<Session>());
+  // And the owner's own answer holds only the rows that are theirs — a located session always has
+  // a block, so the locator's probe filters exactly what the block read filters.
+  CHECK(ours.error == LastTimeError::none);
+  CHECK_EQ(ours.lastTime->session.id, SessionId{"ses_pg000001"});
+  CHECK_EQ(ours.lastTime->routineName, std::string("A private routine"));
+  CHECK_EQ(ours.lastTime->sets.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(ours.lastTime->sets[0].id, SetId{"set_pg000001"});
+}
+
+// The same table the fake is pinned to (LogServiceTest), against real jsonb: `->>` renders an
+// object, an array or a number as TEXT, and that text would be printed verbatim as the prefill
+// card's cross-routine suffix. Only a string is a routine name.
+TEST(pg_gym_last_time_names_the_routine_only_when_the_snapshot_holds_a_string) {
+  if (!std::getenv("WM_PG_TEST")) return;
+  const std::vector<std::pair<std::string, std::string>> snapshots{
+      {R"({"routine":"Bench day","entries":[]})", "Bench day"},
+      {R"({"routine":42})", ""},
+      {R"({"routine":{"nested":1}})", ""},
+      {R"({"routine":["a","b"]})", ""},
+      {R"({"routine":null})", ""},
+      {R"({"entries":[]})", ""},
+      {R"(["a","b"])", ""},
+      {R"("just a string")", ""},
+      {"", ""},
+  };
+  const std::uint64_t t1 = 1'700'000'000'123;
+
+  for (const auto& [snapshot, name] : snapshots) {
+    reset();
+    PgTrainingRepository repo{connString()};
+    repo.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, t1, std::nullopt,
+                               std::nullopt, snapshot});
+    SetInsertOutcome landed = repo.insertSet(benchSet("set_pg000001", 82.5, t1 + 1'000));
+    repo.close(SessionId{"ses_pg000001"}, t1 + 2'000);
+
+    LastTimeOutcome last = repo.lastTime(wm::UserId{kUser}, ExerciseId{"bench-press"});
+
+    CHECK(last.error == LastTimeError::none);
+    CHECK_EQ(last.lastTime->routineName, name);
+    CHECK_EQ(last.lastTime->sets, std::vector<Set>{*landed.set});
+  }
 }
 
 // A row written before the instant band was enforced still reads: it is clamped into the band

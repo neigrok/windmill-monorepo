@@ -300,6 +300,67 @@ std::vector<SessionSummary> PgTrainingRepository::log(const UserId& user,
   return out;
 }
 
+LastTimeOutcome PgTrainingRepository::lastTime(const UserId& user, const ExerciseId& exercise) {
+  // The locator walks SESSIONS newest first — gym_sessions_log (user_id, started_at desc) — and
+  // stops at the first finished one holding a working set of the movement, which is the rule as the
+  // product states it and the same (started_at, id) key the log read pages on, so the two reads can
+  // never disagree about which session is the newest. Walking the SETS newest first instead was one
+  // index cheaper and wrong: completed_at is the device's wall clock (§2.2) and nothing ties it to
+  // its session, so a single future-stamped set pinned "last time" to a week-old session while the
+  // log listed a fresher one above it. The EXISTS probe carries the same predicates as the block
+  // read below, so a located session always has a block — LastTime's is never empty.
+  //
+  // Owner-scoped on both halves and by construction, never through the invariant that a set row
+  // inherits its session's owner: this is the one read in the module where a single mis-owned set
+  // row could otherwise hand back a stranger's session and its whole frozen plan.
+  //
+  // The name comes out of the session's own frozen snapshot, not out of gym_routines: routine_id is
+  // informational and nulls on delete, while the snapshot is what the session was trained under
+  // (§2.2). The type check is the same one the codec applies to every field it reads: ->> renders
+  // an object, an array or a number as JSON text, and that text would be printed verbatim as the
+  // card's cross-routine suffix.
+  std::optional<LastTime> found;
+  {
+    pqxx::work txn{pgThreadConnection(connString_)};
+    pqxx::result sessions = txn.exec_params(
+        "SELECT " + std::string(kSessionColumns) +
+            ", CASE WHEN jsonb_typeof(plan->'routine') = 'string' THEN plan->>'routine' "
+            "       ELSE '' END AS routine "
+            "FROM gym_sessions WHERE user_id = $1::uuid AND id = ("
+            "  SELECT s.id FROM gym_sessions s "
+            "  WHERE s.user_id = $1::uuid AND s.finished_at IS NOT NULL "
+            "        AND EXISTS (SELECT 1 FROM gym_sets st WHERE st.session_id = s.id "
+            "                    AND st.user_id = $1::uuid AND st.exercise_id = $2 "
+            "                    AND st.kind <> 'warmup') "
+            "  ORDER BY s.started_at DESC, s.id DESC LIMIT 1)",
+        user.str(), exercise.str());
+    if (sessions.empty()) {
+      // Only with no history to return is the catalog consulted, so the answered path costs two
+      // statements and never three. Scoped like the catalog read: another account's custom movement
+      // is unknown here, which is the same absent-is-forbidden rule every other read obeys.
+      if (txn.exec_params("SELECT 1 FROM gym_exercises "
+                          "WHERE id = $1 AND (created_by IS NULL OR created_by = $2::uuid)",
+                          exercise.str(), user.str())
+              .empty())
+        return {std::nullopt, LastTimeError::unknownExercise};
+      return {std::nullopt, LastTimeError::none};
+    }
+    // Warmups are excluded for the same reason they never advance the set counter or enter an
+    // e1RM: a ramp-up single is not what you did last time, and the prefill dials the weight off
+    // the last row of this block.
+    pqxx::result block = txn.exec_params(
+        "SELECT " + std::string(kSetColumns) +
+            " FROM gym_sets WHERE user_id = $1::uuid AND session_id = $2 AND exercise_id = $3 "
+            "AND kind <> 'warmup' ORDER BY set_number ASC",
+        user.str(), sessions[0]["id"].as<std::string>(), exercise.str());
+    std::vector<Set> sets;
+    for (const auto& row : block) sets.push_back(setFrom(row));
+    found = LastTime{sessionFrom(sessions[0]), sessions[0]["routine"].as<std::string>(),
+                     std::move(sets)};
+  }
+  return {found, LastTimeError::none};
+}
+
 std::vector<Set> PgTrainingRepository::setsOf(const SessionId& id) {
   // Chronological — the client assembles per-exercise groups in first-performed order from the
   // numbered sets; the server just hands the stream back in the order it was lived.

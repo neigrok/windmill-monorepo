@@ -19,6 +19,35 @@ struct SessionSummary {
   bool operator==(const SessionSummary&) const = default;
 };
 
+// What "last time" is, once resolved: the most recent FINISHED session holding a non-warmup set of
+// the movement, the name that session was trained under, and its sets of that movement in
+// set_number order. Most recent is the session's own (startedAt, id) — the log read's sort key, so
+// the two reads can never disagree about which session is newest, whatever instants the device
+// stamped on the sets inside it. The block is never empty — the session is chosen BY holding one of
+// those sets.
+// routineName is the name frozen in the session's plan snapshot ("" when the session was ad-hoc),
+// never the routine's name today: the prefill card says which day of the program you did it on, and
+// a routine renamed since must not rewrite what the log says about the past.
+struct LastTime {
+  Session session;
+  std::string routineName;
+  std::vector<Set> sets;
+
+  bool operator==(const LastTime&) const = default;
+};
+
+// A first-ever movement has no last time, and that is a fact, not a fault — it comes back as an
+// empty outcome with no error. unknownExercise is the other thing an empty answer could mean and
+// the store is the only layer that can tell them apart, so it says which in a value, exactly as
+// insertSet does: "you have never trained this" and "no catalog holds this" are different sentences
+// and different moves for the client.
+enum class LastTimeError { none, unknownExercise };
+
+struct LastTimeOutcome {
+  std::optional<LastTime> lastTime;
+  LastTimeError error;
+};
+
 // Where a page of the log resumes and how wide it is. The sort key is (startedAt, id), descending
 // and UNIQUE end to end — a plain started_at cursor drops a session whose start instant ties with
 // another's across a page edge, and it is then in no page, ever. beforeId is the second half of
@@ -61,6 +90,9 @@ struct TrainingRepository {
   virtual SetInsertOutcome insertSet(const Set& incoming) = 0;
   virtual std::vector<SessionSummary> log(const UserId& user, const LogCursor& cursor) = 0;
   virtual std::vector<Set> setsOf(const SessionId& id) = 0;
+  // The prefill read: what this account did the last time it trained this movement. Fired on every
+  // movement change, and the one read in this port with no write behind it anywhere.
+  virtual LastTimeOutcome lastTime(const UserId& user, const ExerciseId& exercise) = 0;
 };
 
 }

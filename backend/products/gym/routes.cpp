@@ -52,6 +52,12 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
         api->getSession(req, std::move(cb), id);
       },
       {drogon::Get});
+  app.registerHandler(
+      "/v1/gym/last",
+      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        api->lastTime(req, std::move(cb));
+      },
+      {drogon::Get});
 }
 
 }

@@ -74,6 +74,7 @@ public:
   std::vector<SessionSummary> log(const UserId& user, const LogCursor& cursor);
   std::optional<SessionDetail> detail(const UserId& user, const SessionId& session);
   std::vector<Exercise> catalog(const UserId& user);
+  LastTimeOutcome lastTime(const UserId& user, const ExerciseId& exercise);
 
 private:
   TrainingRepository& repo_;

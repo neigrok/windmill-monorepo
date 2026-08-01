@@ -425,6 +425,7 @@ struct TrainingRepository {
                                                                      // stored; refusals as values
   virtual std::vector<SessionSummary> log(const UserId&, const LogCursor&) = 0;
   virtual std::vector<Set> setsOf(const SessionId&) = 0;
+  virtual LastTimeOutcome lastTime(const UserId&, const ExerciseId&) = 0;  // the prefill read (§5)
 };
 
 struct SessionSummary { Session session; int setCount; std::vector<std::string> exerciseNames; };
@@ -432,6 +433,10 @@ struct LogCursor { std::uint64_t beforeMs; std::optional<SessionId> beforeId; in
 
 enum class SetInsertError { none, idTaken, unknownExercise };
 struct SetInsertOutcome { std::optional<Set> set; SetInsertError error; };
+
+struct LastTime { Session session; std::string routineName; std::vector<Set> sets; };
+enum class LastTimeError { none, unknownExercise };
+struct LastTimeOutcome { std::optional<LastTime> lastTime; LastTimeError error; };
 ```
 
 DTOs live with the port (the house convention). **Every method that can resolve a row carries the
@@ -451,6 +456,12 @@ said "no such exercise", and no test pinned either sentence. The translation bel
 other adapter puts it — inside the Pg adapter, beside the statements that already know what
 Postgres is (`PgTreeRepository` catching `unique_violation`, `PgReminderRepository` catching
 `sql_error`). Everything the store has no answer for rides past untranslated to the house 500.
+
+`LastTimeOutcome` is that same rule reaching the *reads*: `lastTime` has two empty answers — never
+trained and no such movement — and the store is the only layer that can tell them apart, so it says
+which in a value rather than leaving the caller to guess from a `nullopt`. An empty `LastTime` is
+never one of them: the session is chosen *by* holding a non-warmup set of the movement, so a present
+block always has sets, and `routineName` is `""` for a session trained ad-hoc.
 
 The Postgres mapper also **clamps every instant it reads** into the band §3.1 accepts. The write
 path makes new poison impossible; the read path makes old poison survivable — one 1969 row must
@@ -499,11 +510,53 @@ query, ordered by pattern then name. Identity rules, stated once:
   names no row and is a bad cursor. The summary's movement names come back as one row per
   movement, not as one string a separator has to be picked out of: a display name is user text
   (phase-2 rename), and hand-rolled framing turns one movement holding the separator into two.
-- **Last-time prefill** (phase 1, `last-time-prefill` bet) — one route over the
-  `gym_sets_history` index: the most recent *finished* session containing the exercise, its
-  sets in order. "Last time: 82.5 × 8, 82.5 × 8, 80 × 7", weight pre-dialled. The metric that
-  judges it: accepted unchanged, **or changed by exactly one ladder step in the progression
-  direction** — a healthy lifter on linear progression should be one tap up.
+- **Last-time prefill** (phase 1, `last-time-prefill` bet) — `GET /v1/gym/last?exercise=`, one
+  route over the two gym indexes: the most recent *finished* session containing the exercise, its
+  sets in order. "Last time: 82.5 × 8, 82.5 × 8, 80 × 7", weight pre-dialled. The
+  metric that judges it: accepted unchanged, **or changed by exactly one ladder step in the
+  progression direction** — a healthy lifter on linear progression should be one tap up.
+
+  Four decisions, one per thing this read could have got wrong:
+
+  - **The locator walks SESSIONS, newest first.** `gym_sessions_log (user_id, started_at desc)`
+    in order, `LIMIT 1` at the first finished session holding a non-warmup set of the movement —
+    the rule as the product states it, on the same `(started_at, id)` key the log read pages on, so
+    the two reads can never name a different newest session. It first walked the SETS newest first
+    over `gym_sets_history`, which was one index cheaper and wrong: `completed_at` is the device's
+    wall clock (§2.2) and nothing ties it to its session, so a single future-stamped set pinned
+    "last time" to a week-old session while the log listed a fresher one above it — and with no
+    cutoff on how far last time reaches, for as long as that stamp stayed in the future. Both
+    indexes still do the work, and the planner picks by selectivity: measured on 2 000 bench sets
+    across 400 sessions, a movement trained every session is a semi-join driven by
+    `gym_sessions_log` that stops at **2 sessions** (9 buffers, 0.07 ms); a movement trained only
+    in the oldest of the 400 flips to `gym_sets_history` and probes the session by PK (**1 set
+    row**, 12 buffers, 0.09 ms). Ties on the pair are impossible — the id breaks them — so unlike
+    the log cursor's tie (§6) nothing is arbitrary and nothing is lost.
+  - **Finished, never open — and this read settles nothing.** Today's live session is the today
+    list; a last time is a previous session, and an open session is already excluded by the
+    locator. Staleness is settled by a start and by the log read (§3.2), never here: this route
+    fires on **every movement change**, the only open session it could reach is the caller's own
+    live workout (one open per account), and closing that mid-workout refuses every set after it
+    while this reply — which carries no session state — says nothing about it. A session abandoned
+    with the tab shut is still settled before the prefill can be read: the client boots on the log
+    read, and both doors into a workout settle before they answer.
+  - **Warmups are not history.** The block is the session's non-warmup sets. Every consumer of
+    last time excludes them — the card body, the weight prefill (its last row), the reps prefill
+    (its first row), e1RM — and a 40 kg ramp-up single answering "what did I do last time" would be
+    a lie in the product's single highest-value pixel. The filter is not a renumbering: `set_number`
+    counts every set of that movement, so a block behind a warmup starts at 2.
+  - **The routine name comes out of the frozen snapshot**, never out of `gym_routines`. The
+    prefill card's cross-routine suffix names the day of the program that session *was*, as it was
+    called then; `routine_id` is informational and nulls on delete, and a routine renamed since must
+    not rewrite what the log says about the past. The snapshot is client data, so the read
+    type-checks it exactly like the codec type-checks a wire field — only
+    `jsonb_typeof(plan->'routine') = 'string'` is a name. Bare `->>` renders an object, an array or
+    a number as TEXT, and `{"nested": 1}` would have been printed verbatim into the product's
+    highest-value pixel as the day of the program.
+
+  No domain rule was added, on purpose: last time is a query, not a calculation. The prefill
+  *arithmetic* — plan snapshot → last time → 20 kg, with today's sticky carry-forward on top — is
+  client state the server cannot see and must not guess at. The server hands back the block.
 - **Export** (phase 2, `gym-export` bet) — CSV of every set, served through the settings
   `data` section gym registers on its web route table. Zero platform work; the section seam
   already composes.
@@ -532,6 +585,22 @@ numbers in kg, sets serialize as
 `{"sessions":[…]}`, detail `{"session":…, "sets":[…]}`). Parsing type-checks every jsoncpp
 field before `.as*()` and throws `InvalidTraining` → 400.
 
+The prefill reply is the one read whose *absence* is part of the shape:
+
+```json
+{ "exerciseId": "bench-press",
+  "session":  { "id": "ses_…", "startedAt": …, "finishedAt": … },
+  "routine":  "Bench day",
+  "sets":     [ { … }, { … } ] }
+```
+
+The movement is echoed because the client re-reads this on every movement change, and a reply that
+lands after the lifter has moved on has to be discardable. `routine` is omitted when that session
+was ad-hoc, and `session`/`sets` are omitted together for a first-ever movement — **200 naming the
+movement and nothing else**. That absence is a fact, not a fault, and it is what the card draws
+"First time logging this" from; a 404 would say the movement does not exist, which is a different
+and false thing. `sets` is never present and empty: the session is chosen *by* holding one.
+
 **Instants are bounded at the wire, all three the same way.** `startedAt`, `completedAt` and
 `finishedAt` go through one rule in the codec: a UInt64, never `0` (an unset device clock is
 not a moment), never past `kMaxInstantMs` = `253402300799000` (9999-12-31T23:59:59Z, the
@@ -550,7 +619,8 @@ refusal a client must branch on carries a machine word under `code` beside the h
 | 401 | — | no caller | `sign in to open your training log` | sign in, then replay the write |
 | 404 | — | the session is absent **or** another account's — one fact, not two | `no such session` | terminal — drop it |
 | 400 | — | the request is unreadable or unstorable *as written*: bad json, bad field type, a malformed id, an instant outside the bounds above | `could not read that session` / `… that set` / `… that finish` | terminal — retrying never makes a body readable |
-| 400 | `unknown-exercise` | the set names a movement no catalog holds (the exercise FK, §3.4) | `no such exercise` | terminal — the movement has to be resolved against `GET /v1/gym/exercises` first |
+| 400 | `unknown-exercise` | a set — or the prefill read — names a movement no catalog holds (the exercise FK, §3.4) | `no such exercise` | terminal — the movement has to be resolved against `GET /v1/gym/exercises` first |
+| 400 | — | the prefill read names no movement at all | `bad exercise` | terminal, and a read-path fault — never the queue's |
 | 400 | — | the close instant runs backwards against the stored start | `a session cannot finish before it began` | terminal — send an instant the session could have ended at |
 | 400 | — | the log cursor is not a digits-only instant plus, optionally, a well-formed id beside it | `bad cursor` | terminal, and a read-path fault — never the queue's |
 | 409 | `session-id-taken` | start with a session id already spent | `that session id is taken` | mint a NEW session id and start again |
@@ -575,6 +645,12 @@ under the colliding id.
 with its stored row even after the session closes — the flush queue's whole premise is replay in
 any order, any number of times, converging on one row per minted id, and a queue told 409 for a
 set it had already delivered would drop it and count the loss as intended.
+
+`unknown-exercise` is the one refusal that crosses from the writes to a read, deliberately: telling
+a caller that names a movement no catalog holds "you have never trained this" is a small lie that
+hides a real client fault — a stale id after a phase-2 merge, a typo in a hand-written tool call —
+behind the very pixels a first-ever movement draws. The prefill read consults the catalog **only
+when it has no history to return**, so the answered path costs two statements and never three.
 
 The 400s are the client's, and terminal: retrying an unreadable body never makes it readable.
 The 500 is the server's, and retryable — which is why the write handlers catch **only**
