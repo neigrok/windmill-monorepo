@@ -1,7 +1,7 @@
 {
   "name": "Windmill",
   "short_name": "Windmill",
-  "description": "Any goal, as a skill tree.",
+  "description": "Self-growth in one place — roadmap, journal, and gym.",
   "start_url": "/",
   "scope": "/",
   "icons": [

@@ -5,6 +5,7 @@
 
 import React, { Suspense } from 'react';
 import { PRODUCTS } from '../products.js';
+import { InstallChip } from '../pwa/InstallChip.jsx';
 
 function joinLabels(labels) {
   if (labels.length <= 1) return labels[0] ?? '';
@@ -49,6 +50,7 @@ export function ShellHome() {
           </div>
         ))}
       </div>
+      <InstallChip />
     </div>
   );
 }
