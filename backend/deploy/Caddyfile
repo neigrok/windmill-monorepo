@@ -54,6 +54,13 @@
 	handle {
 		encode gzip zstd
 		root * /srv/windmill-web
+		# The service worker is the one file whose bugs are sticky: a browser replaces it only when
+		# it fetches bytes that differ, so a stale copy keeps serving its old caching policy to a
+		# phone that already has it. Caddy sent no Cache-Control here, which let Cloudflare fill in
+		# its 4-hour default for .js — four hours before a fix reaches an installed client. no-cache
+		# means revalidate, not don't-store; the etag makes that check a 304.
+		@serviceWorker path /sw.js
+		header @serviceWorker Cache-Control "no-cache"
 		# {path} serves a real file (pricing.html); {path}/index.html serves a static landing directory
 		# (the per-product pages, /journal/ and /gym/); else falls to the hash-routed SPA — a path with
 		# no dir index (e.g. /roadmap) lands on the SPA, which renders that product's landing.
