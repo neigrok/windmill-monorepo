@@ -141,7 +141,7 @@ function StartScreen({ live }) {
 }
 
 function LogList({ live }) {
-  const { phase, summaries, session, elapsed, sets } = live;
+  const { phase, summaries, older, session, elapsed, sets } = live;
   return (
     <>
       <header className="gym-head">
@@ -165,11 +165,48 @@ function LogList({ live }) {
         </>
       )}
       {summaries.length > 0 && (
-        <ul className="gym-sessions">
-          {summaries.map((summary) => <SessionRow key={summary.id} summary={summary} />)}
-        </ul>
+        <>
+          <ul className="gym-sessions">
+            {summaries.map((summary) => <SessionRow key={summary.id} summary={summary} />)}
+          </ul>
+          {/* The rows stay when the read failed — they are real sessions and worth reading. The foot
+              does not: a screen already admitting it could not load has not earned the right to also
+              say the log ends here, least of all to someone checking whether an import came across. */}
+          {phase !== 'failed' && <OlderSessions older={older} />}
+        </>
       )}
     </>
+  );
+}
+
+// The foot of the log. One page deeper per press, in words rather than a spinner — everything else
+// in gym says it is waiting by saying so. The bottom is stated out loud because it is a real answer:
+// a lifter who has just imported years of training is reading this list to find out whether all of
+// it came across.
+function OlderSessions({ older }) {
+  if (older.status === 'end') return <p className="gym-log-bottom">That’s the start of your log.</p>;
+  if (older.status === 'failed') {
+    return (
+      <p className="gym-read-failed gym-older-failed">
+        The older sessions didn’t load.
+        <button type="button" className="gym-retry" onClick={older.load}>Try again</button>
+      </p>
+    );
+  }
+  return (
+    // aria-disabled rather than disabled: a real `disabled` drops focus to the body on every press,
+    // so a keyboard reader walking a long log loses their place once per page and tabs back down
+    // past everything they just loaded. What actually makes a second press safe is loadOlder's own
+    // early return, never the attribute.
+    <button
+      type="button"
+      className="gym-older"
+      onClick={older.load}
+      aria-disabled={older.status === 'loading'}
+      aria-busy={older.status === 'loading'}
+    >
+      {older.status === 'loading' ? 'Loading older sessions…' : 'Load older sessions'}
+    </button>
   );
 }
 

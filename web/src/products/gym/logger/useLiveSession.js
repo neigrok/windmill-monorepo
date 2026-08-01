@@ -27,6 +27,9 @@ const QUEUE_KEY = 'windmill.gym.queue';
 const BEAT_MS = 500;
 const FLUSH_MS = 4000;
 const TOAST_MS = 5000;
+// Must stay at or under the server's own ceiling: the handler clamps limit to 200, so a larger page
+// size here would come back short of what was asked for and read as the bottom of the log — half a
+// lifter's history hidden under "that's the start of your log".
 const LOG_PAGE = 50;
 
 function readLive() {
@@ -46,11 +49,21 @@ function writeLive(state) {
   }
 }
 
+// A page shorter than the one asked for is the bottom of the log. The read carries no total, so the
+// count of what came back is the only signal there is — and a full page only ever means "maybe more".
+function olderAfter(page) {
+  if (page.length < LOG_PAGE) return 'end';
+  return 'more';
+}
+
 export function useLiveSession({ api = gymApi } = {}) {
   const [phase, setPhase] = useState('loading');
   const [session, setSession] = useState(null);
   const [catalog, setCatalog] = useState([]);
   const [summaries, setSummaries] = useState([]);
+  // 'more' until a read says otherwise, so the boot page is what settles this and not the initial
+  // value agreeing with it by luck. The foot is never drawn on an empty list, so it is unobservable.
+  const [olderStatus, setOlderStatus] = useState('more');
   const [sets, setSets] = useState([]);
   const [order, setOrder] = useState([]);
   const [exIdx, setExIdx] = useState(0);
@@ -67,6 +80,10 @@ export function useLiveSession({ api = gymApi } = {}) {
   const [, setBeat] = useState(0);
 
   const lastTimes = useRef(new Map());
+  // The log can be re-read from the top while an older page is still in the air — finishing does
+  // exactly that. The walk is stamped, so a page fetched against the old list's tail is dropped
+  // rather than appended onto a list it no longer continues.
+  const walk = useRef(0);
   const alerted = useRef(false);
   const restored = useRef(null);
   const touched = useRef(false);
@@ -196,7 +213,14 @@ export function useLiveSession({ api = gymApi } = {}) {
         const [exercises, log] = await Promise.all([api.exercises(), api.sessions({ limit: LOG_PAGE })]);
         if (!live) return;
         setCatalog(exercises);
+        // Every wholesale replacement of the list bumps the walk, without exception — an older page
+        // in flight continues a tail that this read has just thrown away. Today the deps are stable
+        // enough that this effect runs once, which makes the bump free; the rule is total so that it
+        // stays correct if they ever stop being.
+        walk.current += 1;
         setSummaries(log);
+        // The first page settles this too: a log of three sessions must not offer to load older ones.
+        setOlderStatus(olderAfter(log));
         const open = log.find((summary) => summary.finishedAt == null);
         const detail = open ? await api.session(open.id) : null;
         if (!live) return;
@@ -208,6 +232,33 @@ export function useLiveSession({ api = gymApi } = {}) {
     })();
     return () => { live = false; };
   }, [api, adopt]);
+
+  // Deeper into the log, one page at a time. The cursor is the last row IN HAND and it is BOTH
+  // halves of it, always: `startedAt` alone is not unique, so two sessions that share an instant
+  // across a page edge leave one of them in no page, ever — silently, and differently at every page
+  // size. Ties are near-certain now that lift-import has bulk-loaded coarse timestamps, and this is
+  // that log. The server refuses `beforeId` without `before` for the same reason: an id with no
+  // instant names no row (backend/products/gym/ARCHITECTURE.md §5).
+  //
+  // A page that does not come back is a failure of THIS page and nothing else: the sessions already
+  // read stay on screen, `phase` is untouched, and the lifter is offered the same step again.
+  const loadOlder = useCallback(async () => {
+    const last = summaries[summaries.length - 1];
+    if (!last || olderStatus === 'loading') return;
+    const mine = walk.current;
+    setOlderStatus('loading');
+    try {
+      const page = await api.sessions({ before: last.startedAt, beforeId: last.id, limit: LOG_PAGE });
+      if (walk.current !== mine) return;
+      // Appended, never merged: (startedAt, id) is stable — a session's start instant never moves —
+      // so no row can cross a page edge between two reads. An id-filter here would buy nothing and
+      // hide a broken cursor instead of fixing one.
+      setSummaries((current) => [...current, ...page]);
+      setOlderStatus(olderAfter(page));
+    } catch {
+      if (walk.current === mine) setOlderStatus('failed');
+    }
+  }, [api, summaries, olderStatus]);
 
   // Last time is ONE read, and the store answers it: the newest finished session holding this
   // movement, warmups already dropped. Walking it here instead cost a request per candidate
@@ -459,8 +510,19 @@ export function useLiveSession({ api = gymApi } = {}) {
     setLastTime(null);
     say(`Session saved · ${durLabel(finishedAt - session.startedAt)} · ${total} sets`);
     // Finishing hands the lifter to the log, where the session they just trained is now the top row.
+    // The list goes back to page one, so the walk down it goes back with it — a log the lifter had
+    // read to the bottom is truncated by this read, and "there is nothing older" would be a lie.
     window.location.hash = '#/gym/log';
-    api.sessions({ limit: LOG_PAGE }).then(setSummaries).catch(() => {});
+    walk.current += 1;
+    // The catch has to speak. Bumping the walk above orphans any older page already in the air, and
+    // that page's own arms both fall silent once they see they are stale — so if this read is the
+    // one that fails, nothing is left to release the status and the foot stays disabled at
+    // "Loading older sessions…" until a reload. 'more' is the honest guess: the list on screen is
+    // whatever survived, and asking again is exactly the recovery.
+    api.sessions({ limit: LOG_PAGE }).then((log) => {
+      setSummaries(log);
+      setOlderStatus(olderAfter(log));
+    }).catch(() => setOlderStatus('more'));
   }, [api, session, finishing, say]);
 
   // The toast is the one thing here that is counted rather than derived, because it has no instant
@@ -478,6 +540,8 @@ export function useLiveSession({ api = gymApi } = {}) {
     routine,
     catalog,
     summaries,
+    // One page of the log is on screen; this is everything the surface needs to walk further down it.
+    older: { status: olderStatus, load: loadOlder },
     order,
     exIdx,
     exercise,

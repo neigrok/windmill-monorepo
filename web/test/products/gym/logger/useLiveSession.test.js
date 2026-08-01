@@ -6,6 +6,8 @@
 //   · every set still in the queue draws as saved on this device, attempted or not;
 //   · nothing can be logged into a session that is closing, and pocketing the phone does not
 //     spend the undo window.
+// And one read that loses history rather than sets: the walk down the log pages on the PAIR
+// (startedAt, id), because an instant-only cursor leaves a tied session in no page, ever.
 //
 // React is driven through its own dispatcher rather than a DOM: the hook is the unit under test,
 // effects run where React runs them, and every state change re-renders synchronously.
@@ -19,7 +21,10 @@ import { GymError } from '../../../../src/products/gym/gymApi.js';
 const { ReactCurrentDispatcher } = React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
 const HOUR = 3600_000;
 
-function renderHook(run) {
+// Teardown is registered with the runner at mount, never trailed at the end of a test body: a
+// thrown assertion skips the rest of the body, and the hook's intervals would then hold the event
+// loop open — the runner hangs forever instead of reporting the failure.
+function renderHook(t, run) {
   const cells = [];
   const queued = [];
   let cursor = 0;
@@ -86,9 +91,9 @@ function renderHook(run) {
   }
 
   render();
+  t.after(() => cells.forEach((cell) => cell.cleanup?.()));
   return {
     get live() { return result; },
-    unmount() { cells.forEach((cell) => cell.cleanup?.()); },
   };
 }
 
@@ -167,9 +172,69 @@ function logThatSettles({ startedAt, lastActivityAt, sets = [] }) {
   };
 }
 
-async function open(api) {
+// A log deep enough to page, answering exactly as the shipped read does: newest first on the PAIR
+// (startedAt, id), strictly before the whole cursor, and `beforeId` without `before` refused as a
+// bad cursor rather than half-honoured. Every query it was asked is kept, because the cursor the
+// client sends IS the thing under test.
+function deepLog(rows) {
+  const asked = [];
+  const log = rows.map((row) => ({ ...row }));
+  return {
+    asked,
+    log,
+    api: {
+      async exercises() {
+        return [{ id: 'back-squat', name: 'Back Squat' }];
+      },
+      async sessions(query = {}) {
+        asked.push(query);
+        if (query.beforeId !== undefined && query.before === undefined) throw new GymError(400, 'bad cursor');
+        const before = query.before ?? Infinity;
+        const beforeId = query.beforeId ?? '';
+        return log.slice()
+          .sort((left, right) => right.startedAt - left.startedAt || (left.id < right.id ? 1 : -1))
+          .filter((row) => row.startedAt < before || (row.startedAt === before && row.id < beforeId))
+          // The handler's own ceiling (GymApi.cpp: std::min(value, 200)), mirrored because the whole
+          // `end` signal is a page coming back short of what was asked for. A LOG_PAGE raised past
+          // 200 would be answered 200 by the real server and read as the bottom of the log — a fake
+          // that hands back everything it was asked for would keep the suite green through it.
+          .slice(0, Math.min(query.limit ?? 50, 200))
+          .map((row) => ({ ...row, setCount: 0, exercises: [] }));
+      },
+      async session(id) {
+        const row = log.find((each) => each.id === id);
+        return row ? { session: { ...row }, sets: [] } : null;
+      },
+      async startSession({ id, startedAt }) {
+        const open = log.find((row) => row.finishedAt == null);
+        if (open) return { ...open };
+        log.push({ id, startedAt, finishedAt: null });
+        return { ...log[log.length - 1] };
+      },
+      async finishSession(id, { finishedAt }) {
+        const row = log.find((each) => each.id === id);
+        row.finishedAt = finishedAt;
+        return { ...row };
+      },
+      async lastTime(exerciseId) {
+        return { exerciseId };
+      },
+    },
+  };
+}
+
+const PAGE = 50;
+
+function finishedRows(count, newest, mark = 'a') {
+  return Array.from({ length: count }, (each, index) => {
+    const startedAt = newest - index * 86400_000;
+    return { id: `ses_${mark}${String(index).padStart(3, '0')}`, startedAt, finishedAt: startedAt + HOUR };
+  });
+}
+
+async function open(t, api) {
   const { useLiveSession } = await import('../../../../src/products/gym/logger/useLiveSession.js');
-  const view = renderHook(() => useLiveSession({ api }));
+  const view = renderHook(t, () => useLiveSession({ api }));
   await settle();
   return view;
 }
@@ -192,13 +257,13 @@ function heldSet(index, at) {
 // LOGGED IN A BASEMENT, OPENED IN THE MORNING. GET /sessions settles a session idle four hours, so
 // the app's own first read is what closes the session the queued sets belong to — and a set that
 // arrives after that close is refused forever. Order alone decides whether three sets live or die.
-test('the queue goes out before the boot read, so an auto-close cannot eat the night’s sets', async () => {
+test('the queue goes out before the boot read, so an auto-close cannot eat the night’s sets', async (t) => {
   const now = Date.now();
   const held = [0, 1, 2].map((index) => heldSet(index, now - 5 * HOUR + index * 60_000));
   const browser = browserWith({ queue: held });
   const backend = logThatSettles({ startedAt: now - 5 * HOUR, lastActivityAt: now - 5 * HOUR + 120_000 });
 
-  const view = await open(backend.api);
+  const view = await open(t, backend.api);
 
   assert.deepEqual(backend.wire, [
     'POST sets set_offline0',
@@ -212,13 +277,12 @@ test('the queue goes out before the boot read, so an auto-close cannot eat the n
   ]);
   assert.deepEqual(view.live.refusals, []);
   assert.deepEqual(browser.held(), []);
-  view.unmount();
 });
 
 // THE NUMBER UNDER THE THUMB. The 64px button reads the weight back because a gym is loud and
 // there are no haptics — so an answer that lands late and relabels it is the one thing that can
 // write a set the lifter did not perform. The log has no update and no delete.
-test('a late last-time reply never moves a weight the lifter has already dialled', async () => {
+test('a late last-time reply never moves a weight the lifter has already dialled', async (t) => {
   const now = Date.now();
   browserWith({});
   const backend = logThatSettles({ startedAt: now - 60_000, lastActivityAt: now - 60_000 });
@@ -234,7 +298,7 @@ test('a late last-time reply never moves a weight the lifter has already dialled
     });
   });
 
-  const view = await open(backend.api);
+  const view = await open(t, backend.api);
   view.live.chooseMovement('back-squat');
   await settle();
   assert.deepEqual([view.live.weight, view.live.reps], [20, 5]);
@@ -249,10 +313,9 @@ test('a late last-time reply never moves a weight the lifter has already dialled
   assert.deepEqual([view.live.weight, view.live.reps], [24, 6]);
   // The card is the log's to correct; the dial is not.
   assert.equal(view.live.lastTime.session.id, 'ses_last');
-  view.unmount();
 });
 
-test('a late last-time reply never moves a weight the lifter typed on the keypad', async () => {
+test('a late last-time reply never moves a weight the lifter typed on the keypad', async (t) => {
   const now = Date.now();
   browserWith({});
   const backend = logThatSettles({ startedAt: now - 60_000, lastActivityAt: now - 60_000 });
@@ -265,7 +328,7 @@ test('a late last-time reply never moves a weight the lifter typed on the keypad
     });
   });
 
-  const view = await open(backend.api);
+  const view = await open(t, backend.api);
   view.live.chooseMovement('back-squat');
   await settle();
   view.live.setWeight(60);
@@ -273,12 +336,11 @@ test('a late last-time reply never moves a weight the lifter typed on the keypad
   answer();
   await settle();
   assert.deepEqual([view.live.weight, view.live.reps], [60, 3]);
-  view.unmount();
 });
 
 // The other half of the same rule: an untouched movement MUST take the answer, or the prefill —
 // the product's soul, on screen before you touch anything — stops working.
-test('an untouched movement still dials to what the log answers', async () => {
+test('an untouched movement still dials to what the log answers', async (t) => {
   const now = Date.now();
   browserWith({});
   const backend = logThatSettles({ startedAt: now - 60_000, lastActivityAt: now - 60_000 });
@@ -291,22 +353,21 @@ test('an untouched movement still dials to what the log answers', async () => {
     ],
   });
 
-  const view = await open(backend.api);
+  const view = await open(t, backend.api);
   view.live.chooseMovement('back-squat');
   await settle();
   // The weight comes from the LAST working set, the reps from the FIRST — §4.1's deliberate asymmetry.
   assert.deepEqual([view.live.weight, view.live.reps], [97.5, 9]);
-  view.unmount();
 });
 
-test('an answer for the movement the lifter has left never dials the one they moved to', async () => {
+test('an answer for the movement the lifter has left never dials the one they moved to', async (t) => {
   const now = Date.now();
   browserWith({});
   const backend = logThatSettles({ startedAt: now - 60_000, lastActivityAt: now - 60_000 });
   const gates = new Map();
   backend.api.lastTime = (exerciseId) => new Promise((resolve) => gates.set(exerciseId, resolve));
 
-  const view = await open(backend.api);
+  const view = await open(t, backend.api);
   view.live.chooseMovement('back-squat');
   await settle();
   view.live.chooseMovement('bench-press');
@@ -322,19 +383,18 @@ test('an answer for the movement the lifter has left never dials the one they mo
   assert.equal(view.live.exercise.id, 'bench-press');
   assert.deepEqual([view.live.weight, view.live.reps], [20, 5]);
   assert.equal(view.live.lastTime, null);
-  view.unmount();
 });
 
 // `on this device` is the product's one durability-honesty surface. Driven off a retry counter, a
 // set inside its undo window and a set behind a jam both read as durable — they have been
 // attempted zero times, and neither has left the phone.
-test('every set still in the queue draws as saved on this device, attempted or not', async () => {
+test('every set still in the queue draws as saved on this device, attempted or not', async (t) => {
   const now = Date.now();
   browserWith({});
   const backend = logThatSettles({ startedAt: now - 60_000, lastActivityAt: now - 60_000 });
   backend.api.appendSet = async () => { throw new GymError(503, 'internal error'); };
 
-  const view = await open(backend.api);
+  const view = await open(t, backend.api);
   view.live.chooseMovement('back-squat');
   await settle();
   view.live.logSet();
@@ -346,12 +406,11 @@ test('every set still in the queue draws as saved on this device, attempted or n
   assert.equal(queued.length, 3);
   assert.deepEqual(queued.map((set) => view.live.stalled.has(set.id)), [true, true, true]);
   assert.equal(view.live.offline, false);
-  view.unmount();
 });
 
 // Finish is a round trip. A set logged into it lands in a session that closes underneath, and the
 // next flush is answered 409 session-finished — terminal, and the set is gone.
-test('nothing can be logged into a session that is closing, and the lifter is told where it goes', async () => {
+test('nothing can be logged into a session that is closing, and the lifter is told where it goes', async (t) => {
   const now = Date.now();
   const browser = browserWith({});
   const backend = logThatSettles({ startedAt: now - 60_000, lastActivityAt: now - 60_000 });
@@ -360,7 +419,7 @@ test('nothing can be logged into a session that is closing, and the lifter is to
   const finishSession = backend.api.finishSession;
   backend.api.finishSession = async (...args) => { await closing; return finishSession(...args); };
 
-  const view = await open(backend.api);
+  const view = await open(t, backend.api);
   view.live.chooseMovement('back-squat');
   await settle();
 
@@ -378,17 +437,16 @@ test('nothing can be logged into a session that is closing, and the lifter is to
   await settle();
   assert.equal(view.live.finishing, false);
   assert.deepEqual(backend.stored, []);
-  view.unmount();
 });
 
 // Pocketing the phone used to force the queue out, which made the set durable inside the window
 // the canon promises Undo — the pill stayed drawn and could only answer that the log already had it.
-test('pocketing the phone does not spend the undo window', async () => {
+test('pocketing the phone does not spend the undo window', async (t) => {
   const now = Date.now();
   const browser = browserWith({});
   const backend = logThatSettles({ startedAt: now - 60_000, lastActivityAt: now - 60_000 });
 
-  const view = await open(backend.api);
+  const view = await open(t, backend.api);
   view.live.chooseMovement('back-squat');
   await settle();
   view.live.logSet();
@@ -405,13 +463,12 @@ test('pocketing the phone does not spend the undo window', async () => {
   assert.equal(view.live.toast.text, 'Set removed');
   assert.deepEqual(view.live.sets, []);
   assert.deepEqual(browser.held(), []);
-  view.unmount();
 });
 
 // The one case where Undo cannot win: the send was already in the air — which is reachable exactly
 // when the store refused the bytes and the hold went with it. The log is append-only, so the row
 // comes back rather than the history holding a set the screen denies.
-test('a set that reached the log while Undo was taking it back comes back to the screen', async () => {
+test('a set that reached the log while Undo was taking it back comes back to the screen', async (t) => {
   const now = Date.now();
   const browser = browserWith({});
   const backend = logThatSettles({ startedAt: now - 60_000, lastActivityAt: now - 60_000 });
@@ -420,7 +477,7 @@ test('a set that reached the log while Undo was taking it back comes back to the
   const appendSet = backend.api.appendSet;
   backend.api.appendSet = async (...args) => { await inFlight; return appendSet(...args); };
 
-  const view = await open(backend.api);
+  const view = await open(t, backend.api);
   view.live.chooseMovement('back-squat');
   await settle();
   globalThis.window.localStorage.setItem = () => { throw new Error('quota'); };
@@ -438,18 +495,17 @@ test('a set that reached the log while Undo was taking it back comes back to the
   assert.deepEqual(view.live.sets.map((set) => [set.weightKg, set.reps, set.queued]), [[20, 5, false]]);
   assert.equal(view.live.toast.text, 'That set already reached the log — it stays in your history.');
   assert.deepEqual(browser.held(), []);
-  view.unmount();
 });
 
 // The harmful sentence: Finish telling the lifter a set is "saved on this device" and to wait,
 // when the device refused it and the only copy is this tab's memory — which waiting is what loses.
-test('Finish never claims a set is saved on a device that refused to store it', async () => {
+test('Finish never claims a set is saved on a device that refused to store it', async (t) => {
   const now = Date.now();
   browserWith({});
   const backend = logThatSettles({ startedAt: now - 60_000, lastActivityAt: now - 60_000 });
   backend.api.appendSet = async () => { throw new GymError(503, 'internal error'); };
 
-  const view = await open(backend.api);
+  const view = await open(t, backend.api);
   view.live.chooseMovement('back-squat');
   await settle();
   globalThis.window.localStorage.setItem = () => { throw new Error('quota'); };
@@ -464,18 +520,17 @@ test('Finish never claims a set is saved on a device that refused to store it', 
   );
   assert.equal(view.live.finishing, false);
   assert.equal(backend.session.finishedAt, null);
-  view.unmount();
 });
 
 // A store that refused the bytes is holding nothing: the row would read `on this device` while the
 // only copy of the set is this tab's memory. Say so, and send it now rather than after the hold.
-test('a device that will not store the set says so, and the set goes out at once', async () => {
+test('a device that will not store the set says so, and the set goes out at once', async (t) => {
   const now = Date.now();
   browserWith({});
   globalThis.window.localStorage.setItem = () => { throw new Error('quota'); };
   const backend = logThatSettles({ startedAt: now - 60_000, lastActivityAt: now - 60_000 });
 
-  const view = await open(backend.api);
+  const view = await open(t, backend.api);
   view.live.chooseMovement('back-squat');
   await settle();
   view.live.logSet();
@@ -486,5 +541,275 @@ test('a device that will not store the set says so, and the set goes out at once
 
   await settle();
   assert.deepEqual(backend.stored.map((set) => [set.weightKg, set.reps]), [[20, 5]]);
-  view.unmount();
+});
+
+// THE WALK DOWN THE LOG. The cursor is the last row in hand and BOTH halves of it — the server
+// refuses an id with no instant, and an instant with no id cannot express a tie.
+test('the next page is asked for with both halves of the cursor, taken from the last row in hand', async (t) => {
+  const now = Date.now();
+  browserWith({});
+  const rows = finishedRows(120, now);
+  const backend = deepLog(rows);
+
+  const view = await open(t, backend.api);
+  assert.equal(view.live.older.status, 'more');
+  assert.deepEqual(view.live.summaries.map((each) => each.id), rows.slice(0, PAGE).map((each) => each.id));
+
+  const tail = rows[PAGE - 1];
+  await view.live.older.load();
+  await settle();
+
+  assert.deepEqual(backend.asked, [
+    { limit: PAGE },
+    { before: tail.startedAt, beforeId: tail.id, limit: PAGE },
+  ]);
+  // Appended, nothing merged: the pair is stable, so no row crosses a page edge between two reads.
+  assert.deepEqual(view.live.summaries.map((each) => each.id), rows.slice(0, 2 * PAGE).map((each) => each.id));
+  assert.equal(view.live.older.status, 'more');
+});
+
+// A first page of three sessions is the whole log. Offering to load older ones over it is a promise
+// the read has already answered.
+test('a first page shorter than one full page is the bottom of the log', async (t) => {
+  const now = Date.now();
+  browserWith({});
+  const rows = finishedRows(3, now);
+  const backend = deepLog(rows);
+
+  const view = await open(t, backend.api);
+
+  assert.deepEqual(backend.asked, [{ limit: PAGE }]);
+  assert.deepEqual(view.live.summaries.map((each) => each.id), rows.map((each) => each.id));
+  assert.equal(view.live.older.status, 'end');
+});
+
+// The exactly-divisible log: a full page can only mean "maybe more", and the empty page under it is
+// what settles the question. Nothing here can tell them apart in advance.
+test('a full first page offers more, and the empty page under it is the bottom', async (t) => {
+  const now = Date.now();
+  browserWith({});
+  const rows = finishedRows(PAGE, now);
+  const backend = deepLog(rows);
+
+  const view = await open(t, backend.api);
+  assert.equal(view.live.older.status, 'more');
+
+  const tail = rows[PAGE - 1];
+  await view.live.older.load();
+  await settle();
+
+  assert.deepEqual(backend.asked, [
+    { limit: PAGE },
+    { before: tail.startedAt, beforeId: tail.id, limit: PAGE },
+  ]);
+  assert.deepEqual(view.live.summaries.map((each) => each.id), rows.map((each) => each.id));
+  assert.equal(view.live.older.status, 'end');
+});
+
+// THE CASE THE ID HALF EXISTS FOR. Two sessions share a start instant and the page edge falls
+// between them — near-certain now that lift-import has bulk-loaded coarse timestamps.
+test('two sessions sharing an instant across a page edge both land, in order and once each', async (t) => {
+  const now = Date.now();
+  browserWith({});
+  const tie = now - 90 * 86400_000;
+  const rows = [
+    ...finishedRows(PAGE - 1, now),
+    { id: 'ses_tieB', startedAt: tie, finishedAt: tie + HOUR },
+    { id: 'ses_tieA', startedAt: tie, finishedAt: tie + HOUR },
+    ...finishedRows(2, tie - 86400_000, 'z'),
+  ];
+  const backend = deepLog(rows);
+
+  const view = await open(t, backend.api);
+  await view.live.older.load();
+  await settle();
+
+  // The harm first: a broken cursor is a session that vanished out of the lifter's history, and the
+  // failure should say that rather than report a changed query string.
+  const walked = view.live.summaries.map((each) => each.id);
+  assert.deepEqual(walked, rows.map((each) => each.id));
+  assert.equal(new Set(walked).size, rows.length);
+  assert.equal(view.live.older.status, 'end');
+  assert.deepEqual(backend.asked, [
+    { limit: PAGE },
+    { before: tie, beforeId: 'ses_tieB', limit: PAGE },
+  ]);
+
+  // What the id half buys, stated against the same server: an instant-only cursor puts ses_tieA in
+  // no page, ever — it is not before the instant, and page one stopped above it.
+  const halfCursor = await backend.api.sessions({ before: tie, limit: PAGE });
+  assert.deepEqual(halfCursor.map((each) => each.id), ['ses_z000', 'ses_z001']);
+});
+
+// An older page is its own read. Failing it must not blank the sessions already on screen, and must
+// not say the LOG failed — the log is right there, and only the step deeper did not come back.
+test('an older page that does not come back leaves the log on screen, and can be asked again', async (t) => {
+  const now = Date.now();
+  browserWith({});
+  const rows = finishedRows(60, now);
+  const backend = deepLog(rows);
+  let signal = false;
+  const answering = backend.api.sessions;
+  backend.api.sessions = async (query) => {
+    if (!signal && query.before !== undefined) {
+      backend.asked.push(query);
+      throw new GymError(503, 'internal error');
+    }
+    return answering(query);
+  };
+
+  const view = await open(t, backend.api);
+  await view.live.older.load();
+  await settle();
+
+  assert.equal(view.live.older.status, 'failed');
+  assert.equal(view.live.phase, 'idle');
+  assert.deepEqual(view.live.summaries.map((each) => each.id), rows.slice(0, PAGE).map((each) => each.id));
+
+  signal = true;
+  await view.live.older.load();
+  await settle();
+
+  const tail = rows[PAGE - 1];
+  assert.deepEqual(backend.asked, [
+    { limit: PAGE },
+    { before: tail.startedAt, beforeId: tail.id, limit: PAGE },
+    { before: tail.startedAt, beforeId: tail.id, limit: PAGE },
+  ]);
+  assert.deepEqual(view.live.summaries.map((each) => each.id), rows.map((each) => each.id));
+  assert.equal(view.live.older.status, 'end');
+});
+
+// Finishing hands the lifter to the log with their new session on top — which truncates a list they
+// had already read to the bottom. The walk resets with the list, or the log keeps saying there is
+// nothing older over rows it has just dropped.
+test('finishing resets the list to page one and the walk down it with the list', async (t) => {
+  const now = Date.now();
+  browserWith({});
+  const rows = finishedRows(60, now - 86400_000);
+  const backend = deepLog(rows);
+
+  const view = await open(t, backend.api);
+  await view.live.older.load();
+  await settle();
+  assert.deepEqual(view.live.summaries.map((each) => each.id), rows.map((each) => each.id));
+  assert.equal(view.live.older.status, 'end');
+
+  await view.live.start();
+  await settle();
+  assert.equal(view.live.phase, 'live');
+  const trained = view.live.session.id;
+
+  await view.live.finish();
+  await settle();
+
+  assert.equal(view.live.phase, 'idle');
+  assert.deepEqual(
+    view.live.summaries.map((each) => each.id),
+    [trained, ...rows.slice(0, PAGE - 1).map((each) => each.id)],
+  );
+  assert.equal(view.live.older.status, 'more');
+});
+
+// The same reset, with an older page already in the air: that page continues a list that no longer
+// exists — page one has a new session on top of it now — so appending it would silently drop the
+// session the new top row pushed off the end. It is dropped instead.
+test('an older page in flight when the log is re-read from the top is not appended to the new list', async (t) => {
+  const now = Date.now();
+  browserWith({});
+  const rows = finishedRows(60, now - 86400_000);
+  const backend = deepLog(rows);
+  let release;
+  const gated = new Promise((resolve) => { release = resolve; });
+  const answering = backend.api.sessions;
+  backend.api.sessions = async (query) => {
+    if (query.before !== undefined) await gated;
+    return answering(query);
+  };
+
+  const view = await open(t, backend.api);
+  const walking = view.live.older.load();
+  await settle();
+  assert.equal(view.live.older.status, 'loading');
+
+  await view.live.start();
+  await settle();
+  const trained = view.live.session.id;
+  await view.live.finish();
+  await settle();
+
+  release();
+  await walking;
+  await settle();
+
+  assert.deepEqual(
+    view.live.summaries.map((each) => each.id),
+    [trained, ...rows.slice(0, PAGE - 1).map((each) => each.id)],
+  );
+  assert.equal(view.live.older.status, 'more');
+});
+
+// A second press while the first page is still in the air. The cursor has not moved — the list has
+// not grown yet — so an unguarded second call asks the identical question and appends the same fifty
+// sessions twice: the one way this walk can put a duplicate in a lifter's history. The guard is read
+// off the state the caller last saw, which is what a press after the busy state is drawn holds.
+test('a second press while a page is in the air sends nothing, and the page lands once', async (t) => {
+  const now = Date.now();
+  browserWith({});
+  const rows = finishedRows(120, now);
+  const backend = deepLog(rows);
+
+  const view = await open(t, backend.api);
+  const pressed = view.live.older.load();
+  assert.equal(view.live.older.status, 'loading');
+  const again = view.live.older.load();
+  await Promise.all([pressed, again]);
+  await settle();
+
+  const walked = view.live.summaries.map((each) => each.id);
+  assert.deepEqual(walked, rows.slice(0, 2 * PAGE).map((each) => each.id));
+  assert.equal(new Set(walked).size, 2 * PAGE);
+  const tail = rows[PAGE - 1];
+  assert.deepEqual(backend.asked, [
+    { limit: PAGE },
+    { before: tail.startedAt, beforeId: tail.id, limit: PAGE },
+  ]);
+});
+
+// The knot the two guards tie between them: an older page is in the air, finishing orphans it, and
+// the re-read meant to replace the list fails too. The stale page drops silently by design — so if
+// the failed re-read is also silent, nothing is left to release the foot and it sits at "Loading
+// older sessions…" until a reload, over a log the lifter can still walk.
+test('a failed re-read after finishing still releases the foot of the log', async (t) => {
+  const now = Date.now();
+  browserWith({});
+  const rows = finishedRows(60, now - 86400_000);
+  const backend = deepLog(rows);
+  let release;
+  const gated = new Promise((resolve) => { release = resolve; });
+  let refuseTop = false;
+  const answering = backend.api.sessions;
+  backend.api.sessions = async (query) => {
+    if (query.before !== undefined) await gated;
+    if (query.before === undefined && refuseTop) throw new GymError(503, 'internal error');
+    return answering(query);
+  };
+
+  const view = await open(t, backend.api);
+  const walking = view.live.older.load();
+  await settle();
+  assert.equal(view.live.older.status, 'loading');
+
+  refuseTop = true;
+  await view.live.start();
+  await settle();
+  await view.live.finish();
+  await settle();
+
+  release();
+  await walking;
+  await settle();
+
+  assert.equal(view.live.older.status, 'more');
+  assert.deepEqual(view.live.summaries.map((each) => each.id), rows.slice(0, PAGE).map((each) => each.id));
 });

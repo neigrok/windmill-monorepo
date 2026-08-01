@@ -6,9 +6,9 @@
   "description": "Windmill — roadmap tracker that renders any roadmap as an RPG skill tree. Design-system component library.",
   "scripts": {
     "dev": "vite",
-    "test": "node --test test/",
+    "test": "node --test --test-timeout=30000 test/",
     "prebuild": "node scripts/fetch-model.mjs",
-    "build": "node --test test/ && vite build && node scripts/build-roadmap-shell.mjs",
+    "build": "node --test --test-timeout=30000 test/ && vite build && node scripts/build-roadmap-shell.mjs",
     "preview": "vite preview",
     "test:model": "node scripts/verify-model.mjs"
   },

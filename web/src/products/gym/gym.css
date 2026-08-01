@@ -355,6 +355,45 @@
   white-space: nowrap;
 }
 
+/* The foot of the log — one page deeper, or the bottom said out loud. Quieter than a session row:
+   it is a way further down, not something that happened. */
+.gym-older {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 12px;
+  border: 1px solid var(--gym-line);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--gym-ink-dim);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 140ms var(--ease-standard), border-color 140ms var(--ease-standard);
+}
+.gym-older:hover {
+  background: var(--gym-surface);
+  border-color: var(--gym-line-strong);
+  color: var(--gym-ink);
+}
+/* Busy overrides hover, and must repeat every property hover sets — a phone leaves :hover stuck
+   after the tap, so without these the button stays lit as pressable for the whole load. */
+.gym-older[aria-disabled='true'],
+.gym-older[aria-disabled='true']:hover {
+  cursor: default;
+  background: transparent;
+  border-color: var(--gym-line);
+  color: var(--gym-ink-faint);
+}
+.gym-older-failed {
+  margin-top: 14px;
+}
+.gym-log-bottom {
+  margin: 16px 0 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--gym-ink-faint);
+}
+
 /* Session detail — sets grouped by exercise in first-performed order, read-only. */
 .gym-back {
   display: inline-flex;
