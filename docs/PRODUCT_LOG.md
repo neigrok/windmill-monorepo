@@ -331,10 +331,26 @@ Everything below exists to make that line literally true.
 
 # Gym — the third product
 
-> **Status (2026-07-29): planned, nothing built.** `backend/products/gym/` is a README reserving an
-> insertion point — no CMake target, no schema section, no route. `web/src/products/gym/` renders
-> `ComingSoon` behind a working route table already registered third in `web/src/shell/products.js`.
-> This plan is written against a code-verified inventory of **Lift**, a shipped standalone
+> **Status (2026-08-01): phase 0 is built.** `gym-architecture` shipped the contract before any code
+> (`backend/products/gym/ARCHITECTURE.md`); `gym-schema` (five tables, 64 seeded movements),
+> `gym-backend-seam` (`windmill_gym`, six routes, four lines in `main.cpp`) and `gym-web-seam` (the
+> module shell at `#/gym`, `pwa-shell` beside it) followed in one wave. The seam is real: a set
+> logged by curl survives a server restart. The shell `status` stays `'pre-open'` until the logger
+> exists — `/app/gym` still redirects to the landing, and the author dogfoods at `#/gym`.
+>
+> **What the gauntlet cost, and why it was worth it.** Four executing reviewers found 21 defects,
+> every one reproduced independently by a second agent before it was believed. One was a **blocker**:
+> `insertSet` read its row back by id alone, so replaying another lifter's set id returned their
+> weight, reps, RPE and free-text note — and silently dropped the caller's own write. 376 green
+> tests missed it because `Fakes.h` mirrored the same unscoped lookup. That is Lift's proposal-apply
+> bug, the one this plan banked as a risk ("its mock could not reproduce it because the fake didn't
+> model the persistence boundary"), reproduced by us, in our own code, in the first wave — the rule
+> now holds by construction and the fake enforces it. A second lesson: the reviewers' proposed
+> one-liner for the duplicate-set-number race (`FOR UPDATE` inside the INSERT…SELECT) was **proved
+> not to work** under READ COMMITTED, and only fell to a two-statement lock. A fix nobody executes
+> is a guess.
+>
+> This plan was written against a code-verified inventory of **Lift**, a shipped standalone
 > SwiftUI/SwiftData iOS training log with an LLM coach (~8.7k lines of Swift, 35 commits, ~57 tests
 > — one of them red for the last ten commits and nobody noticed). The inventory is
 > `docs/lift-dossier.md`; this section holds only what a dossier and a tree node can't.

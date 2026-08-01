@@ -1,10 +1,11 @@
 ## Project
 
 Windmill is a brand of three self-growth products — **roadmap** (a highly animated RPG skill
-tree, rendered with a hand-rolled WebGL2 renderer, no three.js), **notes** (daily notes), and
-**gym** (training log) — served by one shared backend and presented as one superapp per surface
-(web · iOS · Android), behind one account and one subscription. Roadmap is the original and
-only built product; notes and gym are scaffolded.
+tree, rendered with a hand-rolled WebGL2 renderer, no three.js), **journal** (a night-canvas
+daily journal), and **gym** (training log) — served by one shared backend and presented as one
+superapp per surface (web · iOS · Android), behind one account and one subscription. Roadmap is
+the original product and journal shipped second; gym is in build (the phase-0 seam is real —
+see `backend/products/gym/ARCHITECTURE.md`).
 
 This is a monorepo grouped by surface, then product. **Read `STRUCTURE.md` for the layout and
 the one dependency rule** (platform is product-neutral; products depend on platform, never the
