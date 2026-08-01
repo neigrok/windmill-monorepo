@@ -1,0 +1,439 @@
+/* ============================================================
+   Windmill Gym — scoped palette (brief G2)
+   ------------------------------------------------------------
+   Scoped to .gym-root. Nothing here touches the shell, the
+   account seat, settings, roadmap or journal.
+
+   ALIGNMENT NOTE (v2)
+   The first pass invented its own dark surfaces — a canvas at
+   #0B0A07 where the system's night sky is #0D0B07, borders one
+   step off the ramp, and a pure-white numeral. The system's
+   dark theme is a re-authored ramp, not an inversion, and it
+   already ships every surface, border and text step gym needs.
+   So this file now DERIVES from the dark theme's semantic
+   tokens and re-points exactly one hue. Two consequences:
+     · gym inherits any future correction to the night sky
+     · gym cannot drift warmer or colder than its siblings
+   Product meanings still get product names (--set-done,
+   --target-ink) so no surface reads a raw ramp index.
+   ============================================================ */
+
+/* ── Instrument — the system's night sky, one hue re-pointed ── */
+.gym-root[data-theme="dark"] {
+  /* The one re-pointed hue. Six declarations, per the sibling
+     contract in guidelines/system-architecture.md. Steel is the
+     palette's Tuscan-sky, promoted from info to brand: roadmap
+     keeps terracotta, journal keeps candle gold. */
+  --color-brand: var(--accent-sky-400);
+  --color-brand-hover: var(--accent-sky-200);
+  --color-brand-active: var(--accent-sky-500);
+  --color-brand-soft: rgba(127, 160, 174, 0.18);
+  --text-link: var(--color-brand);
+  --text-link-hover: var(--color-brand-hover);
+
+  /* Every DS semantic the template paints with gets a gym name,
+     restated in BOTH skins. Reading --text-on-accent or
+     --surface-overlay directly is what let the light skin
+     inherit dark values for the primary CTA and the scrim. */
+  --gym-on-accent: #1B1408;                      /* dark ink on the bright accent — 6.6:1 */
+  --gym-scrim: rgba(4, 3, 1, 0.68);
+  --alarm-fill: var(--accent-brick-500);         /* destructive FILL — brick-400 is too light
+                                                    to carry white at 5.5:1, so the fill uses
+                                                    500 in both skins while --alarm-ink keeps
+                                                    the per-skin step for text */
+  --gym-on-alarm: #FFFFFF;
+
+  /* Surfaces — the night sky as authored. No new values. */
+  --gym-canvas: var(--surface-canvas);
+  --gym-surface: var(--surface-card);
+  --gym-raised: var(--surface-hover);
+  --gym-sunken: var(--surface-sunken);
+  --gym-line: var(--border-subtle);
+  --gym-line-strong: var(--border-default);
+
+  /* Ink. The weight is the brightest thing in the product, but
+     bright here means the ramp's top step — a warm near-white.
+     Pure #FFF is the one thing the dark theme forbids, and at
+     104px Baloo 800 the ramp top is already the loudest pixel
+     on the screen. */
+  --weight-ink: var(--neutral-900);
+  --gym-ink: var(--text-primary);
+  --gym-ink-dim: var(--text-secondary);
+  --gym-ink-faint: var(--text-tertiary);
+
+  /* Product states — mapped onto the system's semantics, so a
+     gym surface never invents a meaning the brand already has. */
+  --set-done: var(--color-success);              /* logged. settled, not celebrated */
+  --set-done-soft: var(--color-success-bg);
+  --set-done-glow: rgba(154, 168, 89, 0.8);      /* dark-theme glow depth, per --kind-*-glow */
+  --warmup-ink: var(--neutral-500);              /* does not count toward volume */
+  --target-ink: var(--color-brand);              /* what the plan said */
+  --pr-ink: var(--color-warning);                /* gold as a KIND of moment, not a state */
+  --pr-soft: var(--color-warning-bg);
+  --unsynced-ink: var(--neutral-500);            /* saved on this device only */
+  --alarm-ink: var(--color-danger);              /* a write that failed. nothing else */
+  --alarm-soft: var(--color-danger-bg);
+
+  /* Numeral treatment — the one place gym extends rather than
+     re-points, because the type scale stops at 60px. */
+  --weight-size: 104px;
+  --weight-leading: 92px;
+  --reps-size: 54px;
+  --readout-size: 15px;
+}
+
+/* ── Daylight — the same product on an outdoor rack ───────────
+   Not the shipping skin, and NOT self-sufficient the way the
+   instrument skin is. The instrument derives from semantic
+   tokens because it agrees with the scope it sits in; a light
+   subtree inside a dark ancestor cannot, since --surface-canvas
+   and friends still hold their dark values there. So this block
+   restates the light ramp values it needs.
+
+   That restatement is a real cost: these literals are the only
+   place in gym that can silently fall out of step with the
+   brand. They are duplicated deliberately, and the honest fix
+   is for the SHELL to own theme scope (one data-theme high in
+   the tree) rather than for gym to fight its ancestor. Until
+   that exists, treat this block as demonstrated-under-a-light-
+   ancestor, not proven anywhere.                             */
+.gym-root[data-theme="light"] {
+  /* sky stops at 600 — there is no 700 step, so the pressed
+     state is a mix rather than an invented ramp index */
+  --color-brand: var(--accent-sky-600);
+  --color-brand-hover: color-mix(in oklab, var(--accent-sky-600) 88%, #211B13);
+  --color-brand-active: color-mix(in oklab, var(--accent-sky-600) 74%, #211B13);
+  --color-brand-soft: rgba(74, 104, 117, 0.12);
+  --text-link: var(--color-brand);
+  --text-link-hover: var(--color-brand-hover);
+
+  --gym-on-accent: #FFFFFF;                      /* white on sky-600 — 5.8:1 */
+  --gym-scrim: rgba(33, 27, 19, 0.45);
+  --alarm-fill: var(--accent-brick-500);
+  --gym-on-alarm: #FFFFFF;
+
+  /* light ramp, restated — mirrors :root in tokens/colors.css */
+  --gym-canvas: #F9F5EB;
+  --gym-surface: #FFFFFF;
+  --gym-raised: #F1EADA;
+  --gym-sunken: #F1EADA;
+  --gym-line: #E5D9C0;
+  --gym-line-strong: #D3C2A0;
+
+  --weight-ink: #211B13;
+  --gym-ink: #211B13;
+  --gym-ink-dim: #6F5F45;
+  --gym-ink-faint: #92805F;
+
+  --set-done: var(--accent-olive-500);
+  --set-done-soft: rgba(125, 140, 67, 0.12);
+  --set-done-glow: rgba(125, 140, 67, 0.4);
+  --warmup-ink: #92805F;
+  --target-ink: var(--color-brand);
+  --pr-ink: var(--accent-gold-600);
+  --pr-soft: rgba(161, 120, 34, 0.14);
+  --unsynced-ink: #92805F;
+  --alarm-ink: var(--accent-brick-500);
+  --alarm-soft: rgba(168, 78, 53, 0.12);
+
+  --weight-size: 104px;
+  --weight-leading: 92px;
+  --reps-size: 54px;
+  --readout-size: 15px;
+}
+
+/* ============================================================
+   Module styles — the log surface (canon G3, the phase-0
+   skeleton). Everything below paints with the tokens above and
+   stays scoped under .gym-root; the shell, its seat and its
+   dialogs keep their own chrome.
+   ============================================================ */
+
+.gym-root {
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--gym-canvas);
+  color: var(--gym-ink);
+  font-family: var(--font-body);
+}
+
+/* The switcher and the seat — the same two quiet pieces of chrome journal floats,
+   at the same posts, so stepping between rooms feels like one building. */
+.gym-switch {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  opacity: 0.66;
+  transition: opacity 200ms var(--ease-standard);
+}
+.gym-switch:hover,
+.gym-switch:focus-within {
+  opacity: 1;
+}
+
+.gym-seat {
+  position: fixed;
+  top: 12px;
+  right: 16px;
+  z-index: 6;
+  opacity: 0.72;
+  transition: opacity 200ms var(--ease-standard);
+}
+.gym-seat:hover,
+.gym-seat:focus-within {
+  opacity: 1;
+}
+
+/* One centred column on every device — arm's-length legible on a phone,
+   never a sprawl on a desk. */
+.gym-column {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 76px 16px 96px;
+}
+
+.gym-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--gym-ink);
+}
+
+.gym-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.gym-start {
+  text-align: right;
+}
+.gym-start-button {
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 10px;
+  background: var(--gym-raised);
+  color: var(--gym-ink-dim);
+  font: inherit;
+  font-weight: 600;
+}
+.gym-start-button:disabled {
+  cursor: default;
+}
+.gym-start-note {
+  margin: 6px 0 0;
+  max-width: 190px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--gym-ink-faint);
+}
+
+.gym-quiet {
+  margin: 0;
+  font-size: 15px;
+  color: var(--gym-ink-dim);
+}
+
+.gym-alarm {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  color: var(--alarm-ink);
+}
+.gym-retry {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 8px;
+  background: var(--gym-surface);
+  color: var(--gym-ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.gym-retry:hover {
+  background: var(--gym-raised);
+}
+
+/* The sign-in door — the log is account-bound; this is the whole pitch. */
+.gym-door {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding-top: 18vh;
+  text-align: center;
+}
+.gym-door-line {
+  margin: 0;
+  font-size: 15px;
+  color: var(--gym-ink-dim);
+}
+.gym-door-button {
+  min-height: 44px;
+  padding: 0 22px;
+  border: none;
+  border-radius: 10px;
+  background: var(--color-brand);
+  color: var(--gym-on-accent);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gym-door-button:hover {
+  background: var(--color-brand-hover);
+}
+.gym-door-button:active {
+  background: var(--color-brand-active);
+}
+
+/* The log — one row per session, recognisable without opening. */
+.gym-sessions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.gym-row {
+  display: block;
+  padding: 14px 16px;
+  border: 1px solid var(--gym-line);
+  border-radius: 12px;
+  background: var(--gym-surface);
+  color: var(--gym-ink);
+  text-decoration: none;
+  transition: background 140ms var(--ease-standard), border-color 140ms var(--ease-standard);
+}
+.gym-row:hover {
+  background: var(--gym-raised);
+  border-color: var(--gym-line-strong);
+}
+.gym-row-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--gym-ink-dim);
+  font-variant-numeric: tabular-nums;
+}
+.gym-row-length {
+  color: var(--gym-ink-faint);
+}
+.gym-row-open {
+  color: var(--color-brand);
+}
+.gym-row-title {
+  margin-top: 6px;
+  font-size: 16px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gym-row-meta {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--gym-ink-faint);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Session detail — sets grouped by exercise in first-performed order, read-only. */
+.gym-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  color: var(--text-link);
+  text-decoration: none;
+  font-size: 14px;
+}
+.gym-back:hover {
+  color: var(--text-link-hover);
+}
+.gym-detail-head {
+  margin-bottom: 18px;
+}
+.gym-detail-when {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--gym-ink-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.gym-exercise {
+  margin-bottom: 22px;
+}
+.gym-exercise-name {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--gym-ink);
+}
+.gym-sets {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--gym-line);
+  border-radius: 12px;
+  background: var(--gym-surface);
+  overflow: hidden;
+}
+.gym-set {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--gym-line);
+  font-variant-numeric: tabular-nums;
+}
+.gym-set:last-child {
+  border-bottom: none;
+}
+.gym-set-number {
+  width: 18px;
+  font-size: 13px;
+  color: var(--gym-ink-faint);
+}
+.gym-set-load {
+  font-size: var(--readout-size);
+  font-weight: 600;
+}
+.gym-set-kind,
+.gym-set-rpe {
+  font-size: 12px;
+  color: var(--gym-ink-faint);
+}
+.gym-set-time {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--gym-ink-faint);
+}
+.gym-set-note {
+  flex-basis: 100%;
+  margin-left: 28px;
+  font-size: 13px;
+  color: var(--gym-ink-dim);
+}
+.gym-set-warmup .gym-set-load {
+  color: var(--warmup-ink);
+  font-weight: 500;
+}
+.gym-set-warmup .gym-set-kind {
+  color: var(--warmup-ink);
+}
