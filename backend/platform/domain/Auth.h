@@ -50,7 +50,12 @@ struct AuthPolicy {
   static constexpr UnixMs linkLifetimeMs = 15ull * 60 * 1000;
   static constexpr UnixMs sessionLifetimeMs = 90ull * 24 * 60 * 60 * 1000;
   static constexpr UnixMs rateWindowMs = 10ull * 60 * 1000;
-  static constexpr int maxLinksPerWindow = 3;
+  // Nine, not three. Three assumed every retry was impatience, but a person retries because the
+  // last link never arrived — spam folder, slow relay, a typo they went back to fix — and the cap
+  // then punishes the one failure mode it cannot distinguish from abuse. The window is unchanged,
+  // so "try again in 10 minutes" stays true; the per-IP and global ceilings in main.cpp are what
+  // actually price a flood, and they are untouched.
+  static constexpr int maxLinksPerWindow = 9;
   static constexpr std::size_t nameMaxBytes = 80;                  // settings §5 profile name cap
   static constexpr UnixMs closeGraceMs = 30ull * 24 * 60 * 60 * 1000;  // settings §4 delete grace
 };
