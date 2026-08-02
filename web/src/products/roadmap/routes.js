@@ -6,6 +6,7 @@
 import { lazy } from 'react';
 import { PlaceStore } from './persistence/PlaceStore.js';
 import { DEMO_TREE_ID } from './demo/demoStage.js';
+import { paidPlansOpen } from '../../shell/billing/checkout.js';
 
 const SkillTreeApp = lazy(() => import('./index.js').then((m) => ({ default: m.SkillTreeApp })));
 const BrowsePage = lazy(() => import('./browse/BrowsePage.jsx').then((m) => ({ default: m.BrowsePage })));
@@ -94,7 +95,12 @@ export const roadmapRoutes = {
   home,
   landingAfterSignIn,
   render,
-  settingsSections: { main: [ReminderSection, PlanSection, TendingSection], data: [YourDataSection] },
+  // Plan only joins the list once there is something to be on — while paid plans are shut it is
+  // never mounted, so it costs neither a chunk nor a subscription read (see billing/checkout.js).
+  settingsSections: {
+    main: paidPlansOpen() ? [ReminderSection, PlanSection, TendingSection] : [ReminderSection, TendingSection],
+    data: [YourDataSection],
+  },
   shell: {
     icon: 'route',
     room: '/app/roadmap',

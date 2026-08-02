@@ -105,7 +105,11 @@ export function Dialog({ open, onClose, title, children, footer, width = 420 }) 
             {title}
           </div>
         )}
-        <div style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-base)', color: 'var(--text-secondary)', flex: '1 1 auto', minHeight: 0, overflowY: 'auto' }}>
+        {/* Scrolling makes this a clip box on BOTH axes — CSS computes the paired overflow-x up
+            from `visible` to `auto` — and a field paints its focus ring outside its own box, so a
+            full-width one had the ring shaved flat down each side. Borrow the card's padding back
+            as this element's own: the clip edge lands on the card wall, clear of what it holds. */}
+        <div style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-base)', color: 'var(--text-secondary)', flex: '1 1 auto', minHeight: 0, overflowY: 'auto', margin: 'calc(-1 * var(--space-1)) calc(-1 * var(--space-8))', padding: 'var(--space-1) var(--space-8)' }}>
           {children}
         </div>
         {footer && <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>{footer}</div>}

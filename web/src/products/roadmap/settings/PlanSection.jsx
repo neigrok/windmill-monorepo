@@ -2,17 +2,14 @@
 //
 // The state comes from our own database (the Paddle webhook mirrors it there), so this renders
 // without touching Paddle. Upgrading asks the server for a checkout — the browser never names a
-// price, an email, or an account — and opens it in place.
+// price, an email, or an account — and opens it in place. The product registry only lists this
+// section while paid plans are open (roadmap/routes.js), so reaching here means there is a plan
+// to be on — no second gate needed.
 
 import React from 'react';
 import { Button } from '../../../design-system';
 import { Section, styles } from '../../../shell/settings/Section.jsx';
 import { beginUpgrade, billingConfigured, fetchSubscription } from '../../../shell/billing/checkout.js';
-
-// Nothing is for sale right now. The paid line is tending — the in-app AI, which costs us
-// something per run. Until it ships there is no Upgrade: offering one would take money for
-// nothing. Flip this to true when there is.
-const PAID_PLANS_OPEN = false;
 
 const PLAN_COPY = {
   active: { name: 'Windmill Pro', note: 'Thanks for backing the work.' },
@@ -68,7 +65,7 @@ export function PlanSection() {
           )}
         </div>
         {!loading && subscription?.active && !ending && <span style={styles.tag}>ACTIVE</span>}
-        {PAID_PLANS_OPEN && !loading && !subscription?.active && (
+        {!loading && !subscription?.active && (
           <Button size="sm" onClick={upgrade} disabled={opening}>
             {opening ? 'Opening…' : 'Upgrade'}
           </Button>

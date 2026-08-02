@@ -22,6 +22,14 @@ export function billingConfigured() {
   return !!TOKEN;
 }
 
+// Nothing is for sale right now. The paid line is tending — the in-app AI, which costs us
+// something per run. Until it ships there is no plan to be on and no Upgrade, so the settings
+// page carries no Plan section at all: naming a tier nobody can buy is an advertisement, not a
+// setting. Flip this to true when tending arms, and the section comes back with it.
+export function paidPlansOpen() {
+  return false;
+}
+
 export async function fetchSubscription() {
   try {
     const response = await fetch(`${API_BASE}/v1/subscription`, { credentials: 'include' });
