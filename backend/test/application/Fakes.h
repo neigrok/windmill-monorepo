@@ -187,10 +187,6 @@ struct FakeTreeRepository : TreeRepository {
     if (it == byId.end() || deletedIds.count(tree.str())) return;
     if (title.stamp > it->second.title.stamp) it->second.title = title;  // the same LWW guard as save
   }
-  void claim(const TreeId& tree, const UserId& owner) override {
-    auto it = byId.find(tree.str());
-    if (it != byId.end() && !it->second.owner) it->second.owner = owner;
-  }
   void setVisibility(const TreeId& tree, Visibility visibility) override {
     auto it = byId.find(tree.str());
     if (it == byId.end() || deletedIds.count(tree.str())) return;  // guarded like the real column write

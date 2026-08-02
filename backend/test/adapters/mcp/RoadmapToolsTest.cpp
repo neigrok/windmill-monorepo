@@ -670,6 +670,102 @@ TEST(mcp_read_tools_allow_your_own_private_tree) {
   CHECK_FALSE(h.call("get_diagnostics", Json::Value(Json::objectValue)).isError);
 }
 
+// The seeded demo tree's exact shape: owner NULL, visibility public. Every mutating path used to
+// gate on "deny only if someone ELSE owns it" — a no-op on a row nobody owns — so any agent could
+// edit the hosted demo AND permanently take ownership of it by writing once. An unowned tree is
+// nobody's to write: all three write paths refuse, and the row stays unowned and untouched.
+TEST(mcp_write_tools_refuse_an_unowned_public_tree_and_never_take_it) {
+  Harness h;
+  h.trees.byId["demo"] = StoredTree{LooseGraph().exportState(), LegendState{},
+                                    {"Learn to sail", {}}, 0, std::nullopt, Visibility::public_};
+  const StoredTree before = h.trees.byId["demo"];
+
+  Json::Value edit(Json::objectValue);
+  edit["treeId"] = "demo";
+  edit["label"] = "Mine now";
+  Json::Value graft(Json::objectValue);
+  graft["treeId"] = "demo";
+  graft["nodes"] = Json::Value(Json::arrayValue);
+  graft["nodes"].append(node("seized", "Seized"));
+  Json::Value preview = graft;
+  preview["dryRun"] = true;
+  Json::Value sweep(Json::objectValue);
+  sweep["treeId"] = "demo";
+
+  // And the refusal tells the truth about WHY. "Belongs to another account" would be false of a
+  // row nobody owns, and list_trees — keyed on owner_id — could never surface it, so the sentence
+  // would send the caller hunting for an account and a listing that do not exist.
+  const std::vector<std::pair<const char*, Json::Value>> writes = {
+      {"create_node", edit}, {"import_subgraph", graft}, {"import_subgraph", preview}, {"prune", sweep}};
+  for (const auto& [tool, args] : writes) {
+    ToolResult refused = h.tools.callTool(tool, args, h.caller);
+    CHECK(refused.isError);
+    CHECK_EQ(message(refused),
+             std::string(tool) + ": no account owns this tree, so it cannot be edited. You can "
+                                 "still read it with get_tree, and copy it into a roadmap of your "
+                                 "own with create_tree then import_subgraph.");
+  }
+
+  CHECK_FALSE(h.trees.byId["demo"].owner.has_value());  // still nobody's — the claim is gone
+  CHECK(h.trees.byId["demo"] == before);                // and nothing was written
+  CHECK(h.ops.byTree["demo"].empty());
+  CHECK(h.bus.subgraphBroadcasts.empty());
+
+  // And it is still the demo: a stranger reads it exactly as before.
+  ToolResult read = h.tools.callTool("get_tree", with("treeId", "demo"), h.caller);
+  CHECK_FALSE(read.isError);
+  CHECK_EQ(body(read)["tree"]["nodes"].size(), 0u);
+}
+
+// The same rule on an unowned tree that is merely UNLISTED — writable by nobody for the same
+// reason, and the refusal still names the truth, because "this tree exists" is not a secret
+// about a tree anyone holding the id may read.
+TEST(mcp_write_tools_refuse_an_unowned_unlisted_tree) {
+  Harness h;
+  h.trees.byId["orphan"] = StoredTree{LooseGraph().exportState(), LegendState{},
+                                      {"Orphan", {}}, 0, std::nullopt, Visibility::unlisted};
+
+  Json::Value edit(Json::objectValue);
+  edit["treeId"] = "orphan";
+  edit["label"] = "Mine now";
+  ToolResult refused = h.tools.callTool("create_node", edit, h.caller);
+
+  CHECK(refused.isError);
+  CHECK_EQ(message(refused),
+           std::string("create_node: no account owns this tree, so it cannot be edited. You can "
+                       "still read it with get_tree, and copy it into a roadmap of your own with "
+                       "create_tree then import_subgraph."));
+  CHECK_FALSE(h.trees.byId["orphan"].owner.has_value());
+}
+
+// The two refusals stay apart: a tree someone ELSE owns is still answered with the sentence that
+// names an owner and a listing, because for that tree both are real.
+TEST(mcp_a_tree_another_account_owns_is_still_refused_by_name) {
+  Harness h;
+  h.trees.byId["theirs"] = StoredTree{LooseGraph().exportState(), LegendState{},
+                                      {"Theirs", {}}, 0, uid("someone-else"), Visibility::unlisted};
+
+  Json::Value edit(Json::objectValue);
+  edit["treeId"] = "theirs";
+  edit["label"] = "Mine now";
+  ToolResult refused = h.tools.callTool("create_node", edit, h.caller);
+
+  CHECK(refused.isError);
+  CHECK_EQ(message(refused), std::string("create_node: this tree belongs to another account. Call "
+                                         "list_trees to see the roadmaps you own."));
+}
+
+// The gate did not over-narrow: the owner still writes their own tree, and the receipt is the
+// same one it always was.
+TEST(mcp_the_owner_still_writes_their_own_tree) {
+  Harness h;  // "t" is owned by the caller
+  ToolResult created = h.call("create_node", node("keel", "Keel"));
+  CHECK_FALSE(created.isError);
+  CHECK(body(created)["applied"].asBool());
+  CHECK_EQ(body(created)["id"].asString(), std::string("keel"));
+  CHECK(h.trees.byId["t"].owner == std::optional<UserId>(h.caller));
+}
+
 TEST(mcp_prune_clears_dangling_edges_and_orphan_progress) {
   Harness h;
   h.call("create_node", node("a", "A"));

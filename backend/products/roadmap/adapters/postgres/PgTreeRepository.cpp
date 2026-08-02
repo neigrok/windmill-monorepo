@@ -381,13 +381,6 @@ void PgTreeRepository::rename(const TreeId& tree, const Lww<std::string>& title)
   txn.commit();
 }
 
-void PgTreeRepository::claim(const TreeId& tree, const UserId& owner) {
-  pqxx::work txn{pgThreadConnection(connString_)};
-  txn.exec_params("UPDATE trees SET owner_id = $2::uuid WHERE id = $1 AND owner_id IS NULL",
-                  tree.str(), owner.str());
-  txn.commit();
-}
-
 void PgTreeRepository::setVisibility(const TreeId& tree, Visibility visibility) {
   pqxx::work txn{pgThreadConnection(connString_)};
   // Deliberately does NOT touch updated_at. The gallery folds that column into last-active, so a

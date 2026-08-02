@@ -196,10 +196,25 @@ constexpr char kSeedStatusMoved[] =
     ".status is your own mark on this surface, not the document's — the authored baseline every "
     "reader sees is \"seedStatus\", and your own progress goes in \"progress\": [{nodeId, status}].";
 
-// The one refusal that is about who you are rather than what you sent, so it says what to do
-// next instead of naming an argument.
+// The two refusals that are about who you are rather than what you sent, so they say what to do
+// next instead of naming an argument — and they are two, not one, because the truths differ.
+// A tree SOMEONE ELSE owns is in that account's list_trees, so naming that tool is a real
+// remedy. A tree NOBODY owns — the seeded demo, a legacy row nothing mints any more — is in no
+// account's list at all (listOwnedBy keys on owner_id), so pointing at list_trees would send the
+// caller looking for something that cannot be there. The honest sentence says the tree has no
+// owner, and names the path that does exist: read it, and copy it into a roadmap of your own.
 constexpr char kNotYours[] = "this tree belongs to another account. Call list_trees to see the "
                              "roadmaps you own.";
+constexpr char kNobodysTree[] = "no account owns this tree, so it cannot be edited. You can still "
+                                "read it with get_tree, and copy it into a roadmap of your own "
+                                "with create_tree then import_subgraph.";
+
+// Which of the two a refused write has earned. The gate is canWrite either way; this only picks
+// the sentence, so the two can never drift into naming the same case.
+const char* writeRefusal(const std::optional<UserId>& owner) {
+  if (!owner) return kNobodysTree;
+  return kNotYours;
+}
 
 Json::Value tool(const char* name, const char* description, Json::Value properties,
                  std::vector<const char*> required) {
@@ -554,10 +569,10 @@ ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::stri
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
     // The read gate comes first, and answers exactly as an absent tree does: "belongs to another
     // account" on a private tree the caller cannot read would confirm the id names something.
+    // Then the write gate, which admits the owner alone — an unowned tree is nobody's to edit.
     if (!canRead(actor, room.owner(), room.visibility()))
       return ToolResult::failure("no such tree \"" + tree.str() + "\"");
-    if (room.owner() && *room.owner() != actor)
-      return ToolResult::failure(kNotYours);
+    if (!canWrite(actor, room.owner())) return ToolResult::failure(writeRefusal(room.owner()));
     if (tool == "create_node" && payload.get("id", "").asString().empty()) {
       std::set<std::string> present;
       for (const NodeSpec& node : room.snapshot().nodes) present.insert(node.id.str());
@@ -578,7 +593,6 @@ ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::stri
     // tree gains between these two reads, this command gained it.
     const TreeDiagnostics before = room.diagnose();
     Seq seq = room.applyCommand(*command, clock.nowMs(), actor);
-    if (!room.owner()) registry.claim(tree, actor);  // first authenticated writer claims the tree
     registry.persist(tree);  // flush the dirty rows so the web reader sees this edit
 
     Json::Value out(Json::objectValue);
@@ -808,12 +822,12 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
   const bool dryRun = args["dryRun"].asBool();
 
   ToolResult grafted = withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    // A read gate before the write gate: an UNOWNED private tree is claimable by first-write,
-    // but its dry-run collision list would leak its node/kind ids to a non-reader first.
+    // A read gate before the write gate, and for its own reason: a dry run answers with a
+    // collision list, which would leak this tree's node and kind ids to a non-reader before the
+    // ownership refusal ever ran. Then canWrite — an unowned tree grafts nothing.
     if (!canRead(actor, room.owner(), room.visibility()))
       return ToolResult::failure("no such tree \"" + tree.str() + "\"");
-    if (room.owner() && *room.owner() != actor)
-      return ToolResult::failure(kNotYours);
+    if (!canWrite(actor, room.owner())) return ToolResult::failure(writeRefusal(room.owner()));
 
     TreeData current = room.snapshot();  // collision = an incoming id already present (an upsert overwrites it)
     if (std::optional<std::string> bad = checkMergedLegend(current.kinds, incoming.kinds))
@@ -857,7 +871,6 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
     // A graft can dangle an edge per node it carries; the receipt says which of them are new.
     const TreeDiagnostics before = room.diagnose();
     Seq seq = room.importTree(incoming, clock.nowMs(), actor);
-    if (!room.owner()) registry.claim(tree, actor);  // first authenticated writer claims the tree
     registry.persist(tree);
     out["imported"] = true;
     out["seq"] = static_cast<Json::Int64>(seq);
@@ -892,11 +905,10 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
 ToolResult pruneTree(RoomRegistry& registry, ProgressService& progress, const TreeId& tree,
                      Clock& clock, const UserId& actor) {
   ToolResult cleaned = withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    // The read gate first, byte-identical to absent — see applyEdit.
+    // The read gate first, byte-identical to absent — then the write gate. See applyEdit.
     if (!canRead(actor, room.owner(), room.visibility()))
       return ToolResult::failure("no such tree \"" + tree.str() + "\"");
-    if (room.owner() && *room.owner() != actor)
-      return ToolResult::failure(kNotYours);
+    if (!canWrite(actor, room.owner())) return ToolResult::failure(writeRefusal(room.owner()));
 
     TreeDiagnostics before = room.diagnose();
     int prunedEdges = static_cast<int>(before.dangling.size() + before.selfEdges.size());

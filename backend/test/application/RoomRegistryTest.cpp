@@ -125,7 +125,10 @@ TEST(registry_persist_saves_only_the_dirty_slice_and_never_clobbers_the_rest) {
   CHECK_EQ(repo.savedNodeCounts.back(), 1u);       // only the renamed node again
 }
 
-TEST(registry_claim_sets_owner_once_and_is_durable) {
+// The registry has no seam that fills in an owner, and writing through a room no longer creates
+// one. An unowned tree is nobody's to write, so a row that reaches the registry ownerless — the
+// seeded demo, a legacy orphan — leaves it ownerless however much is written through it.
+TEST(registry_never_gives_an_unowned_tree_an_owner) {
   FakeTreeRepository repo;
   FakeOpLog log;
   FakeBus bus;
@@ -135,15 +138,30 @@ TEST(registry_claim_sets_owner_once_and_is_durable) {
   TreeRoom& room = *registry.open(tid());
   CHECK_FALSE(room.owner().has_value());
 
-  registry.claim(tid(), UserId{"alice"});
-  CHECK(room.owner().has_value());
-  CHECK_EQ(*room.owner(), UserId{"alice"});           // the live room's cache is updated
-  CHECK(repo.byId["t"].owner.has_value());
-  CHECK_EQ(*repo.byId["t"].owner, UserId{"alice"});   // and it is persisted
+  room.applyCommand(createNode("added"), 10, UserId{"alice"});
+  registry.persist(tid());
 
-  registry.claim(tid(), UserId{"bob"});               // a second claim never overrides an owner
-  CHECK_EQ(*room.owner(), UserId{"alice"});
-  CHECK_EQ(*repo.byId["t"].owner, UserId{"alice"});
+  CHECK_FALSE(room.owner().has_value());            // the live room's cache is still empty
+  CHECK_FALSE(repo.byId["t"].owner.has_value());    // and so is the row
+  CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);    // the write itself did land
+}
+
+// The seam that survived claim's removal, and the reason it exists: a share must reach the LIVE
+// room, or the freshly-shared tree keeps 404-ing until it is evicted and reloaded.
+TEST(registry_set_visibility_flips_the_live_room_and_the_row) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  repo.byId["t"] = oneNodeTree();
+  repo.byId["t"].visibility = Visibility::private_;
+  RoomRegistry registry(repo, log, bus);
+
+  TreeRoom& room = *registry.open(tid());
+  CHECK(room.visibility() == Visibility::private_);
+
+  registry.setVisibility(tid(), Visibility::unlisted);
+  CHECK(room.visibility() == Visibility::unlisted);              // the live room reads shared at once
+  CHECK(repo.byId["t"].visibility == Visibility::unlisted);      // and it is durable
 }
 
 TEST(registry_evict_persists_and_closes) {

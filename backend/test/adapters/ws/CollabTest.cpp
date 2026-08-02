@@ -241,9 +241,8 @@ TEST(ws_write_to_an_unlisted_tree_you_dont_own_says_it_belongs_to_another) {
   CHECK_EQ(rejectReason(conn->sent[0]), std::string("this tree belongs to another account"));
 }
 
-// An unowned private tree — the crash-orphaned row a putTree left between save and claim — is
-// no longer writable or claimable over the socket, matching applyEdit: canRead denies it, so a
-// stranger who knows the id can neither read it nor seize it.
+// An unowned private tree — a crash-orphaned row — is not writable over the socket: canRead
+// denies it, so a stranger who knows the id can neither read it nor seize it.
 TEST(ws_write_to_an_unowned_private_tree_reads_as_absent) {
   Harness h;
   h.signIn("s-other", "other@example.com");
@@ -256,6 +255,41 @@ TEST(ws_write_to_an_unowned_private_tree_reads_as_absent) {
   CHECK_EQ(conn->sent.size(), 1u);
   CHECK_EQ(frameType(conn->sent[0]), std::string("reject"));
   CHECK_EQ(rejectReason(conn->sent[0]), std::string("no such tree \"t_orphan\""));
+}
+
+// The demo tree's exact shape: owner NULL, visibility public. canRead admits it (that is the
+// point of a demo), and the write gate used to be "deny only if someone ELSE owns it" — a
+// no-op on a row nobody owns. So any signed-in visitor could edit the hosted demo AND take
+// permanent ownership of it by doing so, then flip it private or delete it. An unowned tree is
+// nobody's to write: the frame is refused, and the row is left unowned and unchanged. The refusal
+// says so plainly — "belongs to another account" would name an account that does not exist, which
+// on the demo is the one sentence every locked-out visitor would ever read.
+TEST(ws_write_to_an_unowned_public_tree_is_refused_and_never_claims_it) {
+  Harness h;
+  h.signIn("s-visitor", "visitor@example.com");
+  h.trees.byId["t_demo"] =
+      StoredTree{GraphState{}, LegendState{}, {"Learn to sail", {}}, 0, std::nullopt, Visibility::public_};
+  const StoredTree before = h.trees.byId["t_demo"];
+
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-visitor"), conn);
+  h.collab.onMessage(conn, writeFrame("t_demo"));
+
+  CHECK_EQ(conn->sent.size(), 1u);
+  CHECK_EQ(frameType(conn->sent[0]), std::string("reject"));
+  CHECK_EQ(rejectReason(conn->sent[0]),
+           std::string("no account owns this tree, so it cannot be edited — you can still read it, "
+                       "or fork it into a roadmap of your own"));
+  CHECK_FALSE(h.trees.byId["t_demo"].owner.has_value());  // still nobody's
+  CHECK(h.trees.byId["t_demo"] == before);                // and byte-identical: nothing was written
+  CHECK(h.ops.byTree["t_demo"].empty());                  // not even an op logged
+
+  // Still readable by the world — the demo is not broken by being unwritable.
+  auto reader = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade(""), reader);
+  h.collab.onMessage(reader, subscribeFrame("t_demo"));
+  CHECK_EQ(reader->sent.size(), 1u);
+  CHECK_FALSE(frameType(reader->sent[0]) == "reject");
 }
 
 // The whole gate leans on principal.user being an authenticated caller by the time it runs, so a

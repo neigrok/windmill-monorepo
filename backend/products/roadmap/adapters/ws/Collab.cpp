@@ -19,6 +19,16 @@ constexpr double kWsRatePerSec = 50.0;  // sustained frames/sec per connection
 constexpr double kWsBurst = 100.0;      // short-burst allowance
 constexpr std::uint64_t kMaxSkewMs = 5 * 60 * 1000;  // a frame stamped past now+5min is refused whole
 
+// The two sentences a refused write earns, kept apart because the truths are different. A tree
+// someone else owns has an owner to ask. A tree NOBODY owns — the seeded demo, a legacy row
+// nothing mints any more — belongs to no account at all, so "belongs to another account" is
+// simply false, and it sends the writer looking for a person who does not exist. The second
+// sentence says what is true and names the two things that do still work: read it, or fork it.
+constexpr char kNotYours[] = "this tree belongs to another account";
+constexpr char kNobodysTree[] =
+    "no account owns this tree, so it cannot be edited — you can still read it, or fork it into a "
+    "roadmap of your own";
+
 const Principal& principalOf(const drogon::WebSocketConnectionPtr& conn) {
   return conn->getContextRef<Principal>();
 }
@@ -219,33 +229,32 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   }
 
   std::optional<Seq> seq;
-  bool notOwner = false;
-  bool notFound = false;
+  std::string refusal;  // empty while the write is still admissible; otherwise the reject's reason
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     TreeRoom* room = registry_.open(TreeId{treeId});
     // stillAuthorized proved a real signed-in caller above, so principal.user is that user.
     // The read gate comes FIRST, exactly as applyEdit's does: a private tree the caller cannot
     // read is answered "no such tree" — byte-identical to an absent one — so a rejected write
-    // never confirms the id names something. Only a readable-but-unowned tree (unlisted/public)
-    // reaches the ownership message. An unowned private tree fails canRead and so can no longer
-    // be written or claimed over the socket, matching applyEdit.
+    // never confirms the id names something. Only a readable tree reaches canWrite, which admits
+    // its owner and nobody else: an UNOWNED tree — the seeded demo, a crash-orphaned row — is
+    // nobody's to write, and no longer anybody's to seize by writing to it. One gate, two
+    // sentences: canWrite decides, and the owner it read decides which truth to say.
     if (!room || !canRead(principal.user, room->owner(), room->visibility())) {
-      notFound = true;  // a write to an absent-or-unreadable tree is rejected, not a throw that closes the socket
-    } else if (room->owner() && *room->owner() != principal.user) {
-      notOwner = true;
+      refusal = "no such tree \"" + treeId + "\"";  // rejected, not a throw that closes the socket
+    } else if (!canWrite(principal.user, room->owner())) {
+      refusal = room->owner() ? kNotYours : kNobodysTree;  // someone else's, or nobody's at all
     } else {
       seq = room->joinSubgraph(incoming, principal.user);
-      if (!room->owner()) registry_.claim(TreeId{treeId}, principal.user);  // first writer claims it
       if (seq) registry_.persist(TreeId{treeId});  // persist before the ack, so the ack attests durability
     }
   }
-  if (notFound || notOwner) {
+  if (!refusal.empty()) {
     Json::Value reject(Json::objectValue);
     reject["t"] = "reject";
     reject["treeId"] = treeId;
     reject["frameId"] = frameId;
-    reject["reason"] = notFound ? "no such tree \"" + treeId + "\"" : "this tree belongs to another account";
+    reject["reason"] = refusal;
     send(conn, reject);
     return;
   }

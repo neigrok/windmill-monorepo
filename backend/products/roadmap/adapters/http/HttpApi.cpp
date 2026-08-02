@@ -53,9 +53,11 @@ void HttpApi::getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
         // When the tree was planted (epoch ms) — the week-N progress card counts from here,
         // never the calendar week, so the client can't derive it from the document alone.
         body["createdAt"] = static_cast<Json::Int64>(room->createdAt());
-        // The share flip reads these: the current visibility, and whether the caller owns it.
+        // The share flip reads these: the current visibility, and whether this tree is the
+        // caller's to change — which is canWrite exactly, so the client's "mine" and the
+        // server's write gate can never drift apart into a button that refuses itself.
         body["visibility"] = toString(room->visibility());
-        body["mine"] = caller && owner && *caller == *owner;
+        body["mine"] = canWrite(caller, owner);
       }
     } catch (const std::exception&) {
       found = false;
@@ -102,45 +104,69 @@ void HttpApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
   }
   GraphState state = LooseGraph(data, genesis_).exportState();  // seed full state from the posted tree
 
-  Seq head = 0;
-  LegendState legend;
-  bool forbidden = false;
-  {
+  // The whole decision runs under the tree's strand and hands back the reply it earned, so it
+  // reads top to bottom as one fail-fast pipeline — and the callback fires outside the lock.
+  drogon::HttpResponsePtr reply = [&]() -> drogon::HttpResponsePtr {
     std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
-    std::optional<StoredTree> existing = trees_->load(TreeId{treeId});
-    if (existing && existing->owner && *existing->owner != *caller) {
-      forbidden = true;  // someone else's tree — refuse the overwrite
-    } else {
-      registry_->evict(TreeId{treeId});  // drop any live room so the next open reloads this write
-      head = existing ? existing->head : 0;
-      // The legend is part of the document: honour a posted one; otherwise seed the three
-      // defaults for a brand-new tree, or keep the existing legend on an overwrite.
-      if (!data.kinds.empty()) legend = Legend(data.kinds, genesis_).exportState();
-      else if (existing) legend = existing->legend;
-      else legend = Legend::seededDefaults(genesis_).exportState();
-      // The posted document is the new baseline, title included. A brand-new tree's title
-      // starts stampless (the create-time baseline); an overwrite mints past the stored
-      // register so it clears the repository's LWW guard — an overwrite means what it says.
-      Lww<std::string> title{data.title, Hlc{}};
-      if (existing) {
-        HlcClock mint{std::string{TreeRoom::kServerActor}};
-        mint.observe(existing->title.stamp);
-        title.stamp = mint.tick(0);
-      }
-      trees_->save(TreeId{treeId}, state, legend, title, head);
-      trees_->claim(TreeId{treeId}, *caller);  // first writer becomes the owner
-    }
-  }
-  if (forbidden) {
-    callback(error(drogon::k403Forbidden, "this tree belongs to another account"));
-    return;
-  }
+    // Judge first, on the two authorization columns alone, and touch NOTHING until they say yes.
+    // An eviction placed above this gate would flush and close the live room of whatever id a
+    // stranger cared to name — a refusal that costs its victim a cold reopen, on a tree the
+    // caller may not even be allowed to read.
+    std::optional<TreeAccess> access = trees_->loadAccess(TreeId{treeId});
+    // A tree the caller cannot read is answered "no such tree", the same sentence every other
+    // read on this surface gives — a refusal must never state that a private id belongs to
+    // someone. A readable tree the caller does not own names the truth, which is not a secret.
+    if (access && !canRead(caller, access->owner, access->visibility))
+      return error(drogon::k404NotFound, "no such tree");
+    // Two refusals, because there are two truths. Naming an unowned tree as somebody else's is a
+    // lie a reader can act on — they go looking for the account that took it, and there is none.
+    if (access && !canWrite(caller, access->owner))
+      return error(drogon::k403Forbidden, access->owner
+                                              ? "this tree belongs to another account"
+                                              : "no account owns this tree, so it cannot be edited");
 
-  data.kinds = Legend(legend).kinds();  // reflect the authoritative legend back to the client
-  Json::Value body(Json::objectValue);
-  body["seq"] = static_cast<Json::Int64>(head);
-  body["data"] = toJson(data);
-  callback(jsonResponse(body));
+    // Authorized — so now flush and close any live room, and read the row that flush just wrote.
+    // Reading it any earlier would take a row the room has already run past, and lose twice over:
+    // head_seq rewinds under the op log, whose tail then replays straight back over this PUT, and
+    // the title mints past a stamp the room has already moved beyond, so a rename made over the
+    // socket silently outlives the document this PUT answered 200 for.
+    registry_->evict(TreeId{treeId});
+    std::optional<StoredTree> existing = trees_->load(TreeId{treeId});
+
+    // The legend is part of the document: honour a posted one; otherwise seed the three
+    // defaults for a brand-new tree, or keep the existing legend on an overwrite.
+    LegendState legend;
+    if (!data.kinds.empty()) legend = Legend(data.kinds, genesis_).exportState();
+    else if (existing) legend = existing->legend;
+    else legend = Legend::seededDefaults(genesis_).exportState();
+
+    if (!existing) {
+      // Born owned, in one insert. There is no instant at which this row exists without an
+      // owner, so no window in which another account could reach it — the create-then-claim
+      // pair this replaced left exactly that window open on every PUT.
+      try {
+        trees_->create(TreeId{treeId}, state, legend, data.title, *caller);
+      } catch (const DuplicateTree&) {
+        // Lost an insert race, or the id names a soft-deleted row that still holds it (the
+        // standalone MCP binary shares this DB). Either way the id is taken, and not by this PUT.
+        return error(drogon::k409Conflict, "a tree with that id already exists");
+      }
+    } else {
+      // The posted document is the new baseline, title included, minted past the stored
+      // register so it clears the repository's LWW guard — an overwrite means what it says.
+      HlcClock mint{std::string{TreeRoom::kServerActor}};
+      mint.observe(existing->title.stamp);
+      trees_->save(TreeId{treeId}, state, legend, Lww<std::string>{data.title, mint.tick(0)},
+                   existing->head);
+    }
+
+    data.kinds = Legend(legend).kinds();  // reflect the authoritative legend back to the client
+    Json::Value body(Json::objectValue);
+    body["seq"] = static_cast<Json::Int64>(existing ? existing->head : 0);
+    body["data"] = toJson(data);
+    return jsonResponse(body);
+  }();
+  callback(reply);
 }
 
 void HttpApi::forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {

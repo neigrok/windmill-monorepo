@@ -18,6 +18,7 @@
 import { socketUrl } from '../../../shell/apiBase.js';
 import { HlcClock, TreeLattice, VersionVector, hlcText, parseHlc, compareHlc } from './lattice.js';
 import { materialize } from './materialize.js';
+import { isOwnershipRefusal, isSessionRefusal } from './refusals.js';
 import { SyncStore } from './SyncStore.js';
 import { LocalTreeRegistry } from '../persistence/LocalTreeRegistry.js';
 import { GENESIS_STAMP } from '../model/Legend.js';
@@ -289,9 +290,7 @@ export class SyncSession {
 
   receiveReject(frame) {
     if (frame.frameId) this.inFlight.delete(frame.frameId);
-    const forbidden = frame.reason === 'sign in to edit'
-      || frame.reason === 'sign in to track progress'
-      || frame.reason === 'this tree belongs to another account';
+    const forbidden = isOwnershipRefusal(frame.reason) || isSessionRefusal(frame.reason);
     if (!forbidden) { console.warn('[sync] frame rejected —', frame.reason); return; }
     if (frame.reason !== 'sign in to track progress') this.durabilityAtRisk = true; // banked edits stranded until the capability returns
     window.dispatchEvent(new CustomEvent('wm-edit-forbidden', { detail: frame.reason }));

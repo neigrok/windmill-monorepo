@@ -149,6 +149,27 @@ TEST(fork_of_an_unlisted_source_by_a_stranger_succeeds) {
   CHECK(*h.trees.byId["t_d1"].owner == uid("stranger"));
 }
 
+// The demo tree's exact shape — owner NULL, visibility public — and the one thing a visitor is
+// meant to do with it. Forking is a READ of the source plus an insert of a new row owned by the
+// forker, so making the demo unwritable must not make it unforkable: the copy is born owned, the
+// source is left exactly as it was, and it stays nobody's.
+TEST(fork_of_an_unowned_public_source_gives_the_forker_a_copy_and_leaves_the_source_alone) {
+  Harness h;
+  h.seedSource("t_demo", "Learn to sail", uid("placeholder"), Visibility::public_);
+  h.trees.byId["t_demo"].owner = std::nullopt;
+  const StoredTree before = h.trees.byId["t_demo"];
+
+  ForkService::Result result = h.service.fork(TreeId{"t_demo"}, "", "", uid("visitor"));
+
+  CHECK(result.outcome == ForkService::Outcome::forked);
+  CHECK_EQ(result.data.nodes.size(), 2u);
+  CHECK_EQ(h.trees.forkedFrom["t_d1"], std::string("t_demo"));
+  CHECK(*h.trees.byId["t_d1"].owner == uid("visitor"));            // the copy is born owned
+  CHECK(h.trees.byId["t_d1"].visibility == Visibility::private_);  // and born private
+  CHECK(h.trees.byId["t_demo"] == before);                         // the demo is untouched
+  CHECK_FALSE(h.trees.byId["t_demo"].owner.has_value());           // and still nobody's
+}
+
 TEST(describe_names_a_live_source_with_its_step_count) {
   Harness h;
   h.seedSource("t_src", "Learn to sail");

@@ -55,6 +55,7 @@ import { HttpTreeRepository } from './persistence/HttpTreeRepository.js';
 import { API_BASE } from '../../shell/apiBase.js';
 import { listAllTrees, renameTree, deleteTree } from './persistence/TreeRegistry.js';
 import { SyncSession } from './sync/SyncSession.js';
+import { isOwnershipRefusal } from './sync/refusals.js';
 import { SyncStore } from './sync/SyncStore.js';
 import { TreeLattice } from './sync/lattice.js';
 import { claimLocalTrees } from './sync/claimLocalTrees.js';
@@ -244,7 +245,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       setDemotion({ edits: collabRef.current?.pendingEditCount?.() ?? 0, cardOpen: true });
     };
     const onForbidden = (event) => {
-      if (event.detail === 'this tree belongs to another account') {
+      if (isOwnershipRefusal(event.detail)) {
         if (demotedRef.current || waiting) return;
         lastActivityAt = Date.now(); // the rejected gesture itself counts as activity
         demote();

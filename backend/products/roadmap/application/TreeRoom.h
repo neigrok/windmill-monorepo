@@ -101,11 +101,10 @@ public:
   // unlike owner/visibility a live room never has to be told it changed.
   std::uint64_t createdAt() const { return createdAt_; }
 
-  // Authorization: who owns this tree (empty until claimed), and the first-writer claim
-  // that fills it. Writes require the owner (or claim an unowned tree); reads are gated by
-  // visibility() — a private tree is owner-only, unlisted/public readable by id (canRead).
+  // Authorization: who owns this tree — set once, when the row is inserted, and empty only on
+  // a legacy row nobody owns. Writes require the owner and nothing else (canWrite); reads are
+  // gated by visibility() — a private tree is owner-only, unlisted/public readable by id.
   const std::optional<UserId>& owner() const { return owner_; }
-  void claim(const UserId& user) { if (!owner_) owner_ = user; }
   Visibility visibility() const { return visibility_; }
   void setVisibility(Visibility visibility) { visibility_ = visibility; }
 

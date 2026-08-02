@@ -54,3 +54,33 @@ TEST(can_read_a_public_tree_for_anyone_holding_the_id) {
   CHECK(canRead(none, some("u1"), Visibility::public_));
   CHECK(canRead(none, none, Visibility::public_));
 }
+
+TEST(can_write_only_when_caller_is_the_owner) {
+  CHECK(canWrite(some("u1"), some("u1")));         // the owner, and only the owner
+  CHECK_FALSE(canWrite(some("u2"), some("u1")));   // a stranger cannot
+  CHECK_FALSE(canWrite(none, some("u1")));         // anonymous cannot
+  CHECK_FALSE(canWrite(none, none));               // neither known
+}
+
+// The whole of this bet in one assertion: the seeded demo tree is owner-NULL and public, so it
+// is readable by the world and writable by nobody — no signed-in account can edit it, and none
+// can take it by writing to it, because there is no visibility that widens a write.
+TEST(can_write_is_false_for_an_unowned_tree_at_every_visibility) {
+  for (Visibility visibility : {Visibility::private_, Visibility::unlisted, Visibility::public_}) {
+    CHECK(canRead(some("u1"), none, visibility) == (visibility != Visibility::private_));
+    CHECK_FALSE(canWrite(some("u1"), none));
+    CHECK_FALSE(canWrite(none, none));
+  }
+}
+
+// canWrite is strictly narrower than canRead: everything writable is readable, and the two agree
+// only on a private tree's owner. A call site can therefore never widen access by asking the
+// wrong one, and reading the pair top-to-bottom (canRead then canWrite) is always sound.
+TEST(everything_writable_is_readable) {
+  const std::optional<UserId> callers[] = {none, some("u1"), some("u2")};
+  const std::optional<UserId> owners[] = {none, some("u1")};
+  for (const std::optional<UserId>& caller : callers)
+    for (const std::optional<UserId>& owner : owners)
+      for (Visibility visibility : {Visibility::private_, Visibility::unlisted, Visibility::public_})
+        if (canWrite(caller, owner)) CHECK(canRead(caller, owner, visibility));
+}

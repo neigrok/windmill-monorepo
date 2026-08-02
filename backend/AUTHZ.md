@@ -5,13 +5,27 @@ the session is now wired onto the tree / WebSocket / MCP surfaces.
 
 ## Status: implemented
 
-Model — **public read, sign-in to edit**:
-- **Reads** (`GET` tree/progress/diagnostics/activity, WS `subscribe`/presence) are open to anyone;
-  the progress overlay is per-user when a session is present, empty otherwise.
-- **Writes** (`PUT`, `POST …/fork`, WS `cmd`/`undo`/`redo`/`progress`) require a session: anonymous
-  callers get `401`. A tree is owned by its first authenticated writer (claimed on first write / on
-  create / on fork); afterwards only the owner may write, others get `403`. Legacy unowned trees stay
-  editable by any signed-in user until one claims them.
+Model — **visibility-gated read, owner-only write, per-user progress**. Three decisions, not one,
+and the middle one is the narrowest:
+- **Reads** (`GET` tree/progress/diagnostics/activity, WS `subscribe`/presence, MCP `get_tree`)
+  gate on `canRead`: a `private` tree is its owner's alone, an `unlisted` or `public` one is
+  readable by anyone holding the id. A denial is byte-identical to an absent tree, so no id can be
+  probed for existence. `GET …/progress` serves the **owner's** overlay to every reader — a shared
+  tree is shared to show its owner's journey — under the same `canRead` gate.
+- **Document writes** (`PUT`, `POST …/fork`, WS `cmd`/`undo`/`redo`, every mutating MCP tool)
+  require a session (anonymous → `401`) and gate on `canWrite`, which is ownership and nothing
+  else. **A tree is born owned** — the owner is written by the same insert that creates the row
+  (create, fork, `PUT` of an absent id) — so there is no instant at which a row exists without
+  one. **An unowned tree is nobody's to write** (`canWrite` in `platform/domain/Access.h`): the
+  seeded demo tree (`t_9e407a96b5330ebe`, `owner_id NULL`, `public`) and any legacy ownerless row
+  are world-readable and editable by no one — first-writer-claims is gone from every path, so no
+  account can take one. Every write path runs `canRead` first, so a refusal never confirms that a
+  private id names something; a readable tree the caller does not own answers `403`.
+- **Progress marks** (WS `progress`, MCP `set_progress`) are **not** document writes and are not
+  owner-gated. They gate on `canRead` alone, and each caller writes only their **own** per-user
+  overlay (`node_progress` is keyed by `user_id`). So any signed-in reader may mark any tree they
+  can read — the demo included — and nobody's marks are visible in anyone else's overlay. The
+  `canRead` gate is there so a mark cannot confirm which node ids a private tree holds.
 - **MCP-HTTP** (`/mcp`) is gated by a shared bearer token (`WINDMILL_MCP_TOKEN`): no/invalid token →
   `401`; a valid token acts as the configured `WINDMILL_MCP_USER`. Empty token leaves it open with a
   loud startup warning.
@@ -19,8 +33,27 @@ Model — **public read, sign-in to edit**:
 **Operator action:** set a GitHub **secret** `WINDMILL_MCP_TOKEN` (e.g. `openssl rand -hex 32`) so
 prod enforces MCP auth; agents then send `Authorization: Bearer <token>`. Until it's set, `/mcp` stays
 open (the container logs a warning). Optional follow-ups: orgs/roles tenancy (only per-user ownership
-is wired), a private-visibility toggle (all trees are public-read today), and a polished "sign in to
-edit" prompt in the app (the `wm-edit-forbidden` window event is the hook).
+is wired), and a polished "sign in to edit" prompt in the app (the `wm-edit-forbidden` window event
+is the hook).
+
+**Operator action — check for legacy ownerless rows BEFORE this deploy.** Removing first-writer-
+claims removed the last code path that could assign an owner to an existing row: the only two
+writes to `owner_id` that remain are the INSERTs in `create` and `fork`. After this ships, a row
+with `owner_id IS NULL` is permanently unwritable through every surface — HTTP, socket and MCP —
+and can be repaired only by hand, in SQL. That is intended for the seeded demo and for nothing
+else, so count the others first:
+
+```sql
+SELECT id, title, visibility, created_at FROM trees
+WHERE owner_id IS NULL AND deleted_at IS NULL AND id <> 't_9e407a96b5330ebe';
+```
+
+An **empty result closes the risk** — the demo is the only ownerless row and it is meant to stay
+that way. A **non-empty result needs a decision before push**: each row named there belongs to
+somebody who can no longer edit it, and the only remedy is an `UPDATE trees SET owner_id = …`
+run by hand against the account that should hold it. (Verified against
+`adapters/postgres/PgTreeRepository.cpp`: `owner_id` appears in exactly two writes, the `INSERT`
+in `create` and the `INSERT` in `fork` — there is no `UPDATE` of that column anywhere.)
 
 ---
 

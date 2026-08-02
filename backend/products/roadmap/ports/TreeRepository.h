@@ -25,9 +25,9 @@ struct DuplicateTree : std::exception {
 
 // A stored tree: its full loose-graph CRDT state, its legend CRDT state, the title register
 // (an unset stamp means the create-time baseline, never renamed), the seq of the last op
-// folded into the snapshot, its authorization facts — the owner (empty until claimed) and
-// visibility — and when it was planted. Private by default (fail-closed): a tree is
-// owner-only until it is shared.
+// folded into the snapshot, its authorization facts — the owner (set at insert; empty only on
+// a legacy row, which is then nobody's to write) and visibility — and when it was planted.
+// Private by default (fail-closed): a tree is owner-only until it is shared.
 struct StoredTree {
   GraphState state;
   LegendState legend;
@@ -122,11 +122,8 @@ struct TreeRepository {
   // Guarded like save: the write lands only under a dominating stamp, so the caller mints
   // one past the register it just loaded.
   virtual void rename(const TreeId& tree, const Lww<std::string>& title) = 0;
-  // Assign an owner, but only to a tree that has none — the first authenticated writer
-  // claims it; a claim never overrides an existing owner.
-  virtual void claim(const TreeId& tree, const UserId& owner) = 0;
-  // Set a tree's read visibility (the share seam). Guarded like claim — a soft-deleted tree
-  // is left alone; the owner check is the caller's (TreeRegistry), not this write's.
+  // Set a tree's read visibility (the share seam). A soft-deleted tree is left alone; the
+  // owner check is the caller's (TreeRegistry), not this write's.
   virtual void setVisibility(const TreeId& tree, Visibility visibility) = 0;
   // Create `newTree` as a verbatim copy of `source`'s document (nodes, edges and legend
   // kinds), recording provenance and its owner. The copy starts a fresh op log at head 0.

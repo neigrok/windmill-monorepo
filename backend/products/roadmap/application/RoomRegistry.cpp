@@ -87,19 +87,12 @@ void RoomRegistry::rename(const TreeId& id, const std::string& title, std::uint6
   persist(id);                 // durable before the response, like the socket's ack
 }
 
-void RoomRegistry::claim(const TreeId& id, const UserId& owner) {
-  repo_.claim(id, owner);  // durable, and a no-op if the tree already has an owner
-  std::lock_guard<std::mutex> lock(mutex_);
-  auto it = rooms_.find(id);
-  if (it != rooms_.end()) it->second->claim(owner);  // keep the live room's cache in step
-}
-
 void RoomRegistry::setVisibility(const TreeId& id, Visibility visibility) {
   repo_.setVisibility(id, visibility);  // durable
   std::lock_guard<std::mutex> lock(mutex_);
   auto it = rooms_.find(id);
-  // Mirror the claim seam: a just-shared live room's read gate flips immediately, so the
-  // freshly-shared tree stops 404-ing at once — not only after eviction and reload.
+  // A just-shared live room's read gate flips immediately, so the freshly-shared tree stops
+  // 404-ing at once — not only after eviction and reload.
   if (it != rooms_.end()) it->second->setVisibility(visibility);
 }
 

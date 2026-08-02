@@ -522,8 +522,12 @@ create index if not exists reminder_week_decided on reminder_week (decided_at);
 -- The hosted "Learn to sail" roadmap a stranger meets at #/demo — read anonymously over both
 -- HTTP and WS, so the row must exist AND be public or read enforcement 404s it for every visitor.
 -- Seeded as data (idempotent, re-applied each deploy): a lost row self-heals on the next deploy.
--- The demo is read-only for visitors — they fork their own copy — so this seed never races a live
--- edit. Stamps are the genesis HLC ('1:0:genesis'); '0:0:' is the never-set / never-deleted
+-- owner_id is NULL on purpose and that is now what PROTECTS it: an unowned tree is nobody's to
+-- write (canWrite, platform/domain/Access.h), so the demo is world-readable and editable by no
+-- account — visitors fork their own copy, and this seed can never race a live edit. Restoring a
+-- lost row is a re-deploy; the ON CONFLICT means a row that was somehow claimed will NOT self-heal,
+-- so an operator repairs that by hand (UPDATE trees SET owner_id = NULL WHERE id = '...').
+-- Stamps are the genesis HLC ('1:0:genesis'); '0:0:' is the never-set / never-deleted
 -- sentinel and `present` is the writer's add-biased projection flag. Positions are null on purpose:
 -- the client lays the tree out radially from the DAG. Only this one id is pinned public; the
 -- dogfood tree (t_9362d9bc883e0a1e) stays private, owned by the MCP principal.

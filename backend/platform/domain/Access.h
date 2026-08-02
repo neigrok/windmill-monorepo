@@ -38,4 +38,14 @@ inline bool canRead(const std::optional<UserId>& caller, const std::optional<Use
   return caller && owner && *caller == *owner;
 }
 
+// The one write-authorization decision every write path calls — and the whole of it: a tree is
+// its owner's to change and nobody else's. AN UNOWNED TREE IS NOBODY'S TO WRITE, which is what
+// closes the seeded demo tree (owner NULL, public): it can be read by the world and edited by
+// no one, so no account can take it and turn it private. Visibility is deliberately absent from
+// this signature, not ignored in the body: it widens READS only, and a parameter nothing reads
+// would invite the next reader to think a shared tree is a writable one. Pure, like its twin.
+inline bool canWrite(const std::optional<UserId>& caller, const std::optional<UserId>& owner) {
+  return caller && owner && *caller == *owner;
+}
+
 }

@@ -143,7 +143,8 @@ TEST(create_with_an_id_that_is_not_yours_is_taken_and_leaves_the_row_alone) {
         TreeRegistry::Creation::taken);
   CHECK(s.trees.byId["t_00c0ffee00c0ffee"] == before);
 
-  // An unclaimed tree (born ownerless via PUT) is nobody's to resume either.
+  // An unowned tree — the seeded demo, a legacy row; nothing mints one any more — is nobody's
+  // to resume either. It stays ownerless: a create is not a way to claim what nobody owns.
   s.trees.byId["t_deadbeefdeadbeef"] = StoredTree{GraphState{}, LegendState{}, {"Unclaimed", {}}, 0, std::nullopt};
   CHECK(s.registry.create(uid("intruder"), TreeId{"t_deadbeefdeadbeef"}, treeData("Claim it", {})) ==
         TreeRegistry::Creation::taken);

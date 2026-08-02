@@ -28,7 +28,6 @@ public:
   std::set<TreeId> listForkedSources(const UserId& owner) override;
   void softDelete(const TreeId& tree) override;
   void rename(const TreeId& tree, const Lww<std::string>& title) override;
-  void claim(const TreeId& tree, const UserId& owner) override;
   void setVisibility(const TreeId& tree, Visibility visibility) override;
   void fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
             const LegendState& legend, const std::string& title, const UserId& owner) override;
