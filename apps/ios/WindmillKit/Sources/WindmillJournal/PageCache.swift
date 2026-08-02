@@ -63,9 +63,17 @@ public final class PageCache {
         return winner
     }
 
+    // The server has answered for a write we sent. That is just a remote page arriving, so it goes
+    // through the one rule above rather than clearing the debt outright — because by the time a
+    // reply lands the writer may already have typed something newer, and THAT page is still owed.
+    // Clearing it here would drop the last thing someone typed if the app died next.
     public func markPushed(_ day: LocalDay, winner: Page) {
-        let merged = Page.winner(of: winner, and: entries[day.iso]?.page)
-        entries[day.iso] = Entry(page: merged, needsPush: false)
+        let held = entries[day.iso]
+        // Strictly newer, not "at least as new": the acknowledged write usually comes back with the
+        // very stamp we sent, and treating that as unsettled would leave every successful write
+        // owed forever and re-push it on every reconnect.
+        let newerWriteIsWaiting = held?.needsPush == true && (held?.page.stamp ?? .zero) > winner.stamp
+        entries[day.iso] = Entry(page: Page.winner(of: winner, and: held?.page), needsPush: newerWriteIsWaiting)
     }
 
     public func flush() {

@@ -227,6 +227,35 @@ final class PageCacheTests: XCTestCase {
         XCTAssertTrue(cache.pending.isEmpty, "a superseded write is not still owed")
     }
 
+    // The reply to a write is not a receipt for every write. If the writer typed again while the
+    // first PUT was in flight, the second page is still owed when the first one's answer lands —
+    // clearing it there would drop the newest words on the floor if the app died next.
+    func testAReplyToAnEarlierWriteLeavesANewerOneOwed() {
+        let (cache, url) = makeCache()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let day = LocalDay(iso: "2026-07-20")!
+
+        cache.store(Page(day: day, body: "first", stamp: Hlc("100:0:d-a")), needsPush: true)
+        cache.store(Page(day: day, body: "second, typed while the first was in flight",
+                         stamp: Hlc("200:0:d-a")), needsPush: true)
+
+        cache.markPushed(day, winner: Page(day: day, body: "first", stamp: Hlc("100:0:d-a")))
+
+        XCTAssertEqual(cache.page(on: day)?.body, "second, typed while the first was in flight")
+        XCTAssertEqual(cache.pending.count, 1, "the newer write is still owed")
+    }
+
+    func testAReplyCarryingTheWriteWeSentSettlesIt() {
+        let (cache, url) = makeCache()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let day = LocalDay(iso: "2026-07-20")!
+
+        cache.store(Page(day: day, body: "only write", stamp: Hlc("100:0:d-a")), needsPush: true)
+        cache.markPushed(day, winner: Page(day: day, body: "only write", stamp: Hlc("100:0:d-a")))
+
+        XCTAssertTrue(cache.pending.isEmpty)
+    }
+
     func testPendingWritesComeBackOldestFirst() {
         let (cache, url) = makeCache()
         defer { try? FileManager.default.removeItem(at: url) }
