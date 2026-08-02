@@ -95,6 +95,27 @@ raw-CDP driver does navigation, phone emulation, taps, typing and screenshots. L
 - Guard every probe field on its own; one null element otherwise kills the whole run with
   a bare `TypeError: Illegal invocation` and no clue which expression threw. Log the
   failing expression.
+- **A focused input needs `Emulation.setFocusEmulationEnabled {enabled:true}`.** Headless
+  Chrome hands the page no window focus, so `autoFocus` and `.focus()` commit but no
+  `:focus` styling paints — you screenshot a resting field and conclude the ring is fine.
+
+### Firefox (for the bugs Chrome won't show)
+
+`brew install --cask firefox`, then `--headless --window-size=W,H --screenshot <path> <url>`
+is a one-liner for a settled page. **Firefox has no CDP** (Mozilla dropped it); the remote
+agent speaks WebDriver BiDi, so `/json/version` 404s and a CDP driver just hangs.
+
+```sh
+firefox --remote-debugging-port=9223 --profile <scratch> about:blank   # logs the ws:// URL
+```
+
+- Connect to `ws://127.0.0.1:<port>/session`, then `session.new` → `browsingContext.getTree`
+  → `browsingContext.navigate|setViewport|captureScreenshot`, `script.evaluate`.
+- **Always `session.end` before closing the socket.** Closing the WS alone leaves the
+  session live and the next connect dies on "Maximum number of active sessions" — which
+  reads like a bug in your script, not a leak from the last run.
+- `--screenshot` fires on the load event, so it can't catch an animation. Drive BiDi and
+  sleep instead, or the moat/typing scenes are always captured at their static end state.
 
 ## Observing the WebGL canvas
 
