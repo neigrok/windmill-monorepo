@@ -27,6 +27,11 @@ struct Harness {
     return service.start(uid(), SessionStart{sid(std::move(id)), ms});
   }
 
+  // The other Start: "create exactly this session, which is not now" — backfill and lift-import.
+  StartOutcome startExactly(std::uint64_t ms, std::string id) {
+    return service.start(uid(), SessionStart{sid(std::move(id)), ms, false});
+  }
+
   SetWrite bench(std::string id, double weightKg, std::uint64_t completedAtMs) {
     return SetWrite{setId(std::move(id)), ExerciseId{"bench-press"}, weightKg, 8,
                     SetKind::working, std::nullopt, "", completedAtMs};
@@ -131,6 +136,47 @@ TEST(start_leaves_a_live_open_session_alone_and_joins_it) {
 
   CHECK_EQ(*second.session, *first.session);
   CHECK_EQ(h.repo.sessions[0].finishedAtMs, std::optional<std::uint64_t>());
+}
+
+// The corruption this refusal exists for: without it the insert no-ops on the one-open index, the
+// live session comes back with a 200, and the caller appends a past workout's sets into today's.
+TEST(start_that_will_not_join_is_refused_while_another_session_is_open) {
+  Harness h;
+  StartOutcome live = h.startAt(h.clock.now, "ses_00000001");
+
+  StartOutcome backfill = h.startExactly(h.clock.now - kAutoCloseMs, "ses_00000002");
+
+  CHECK(backfill.error == StartError::alreadyOpen);
+  CHECK(!backfill.session.has_value());
+  // The refusal touches nothing: the live session is still the only row, and still open.
+  CHECK_EQ(h.repo.sessions, std::vector<Session>{*live.session});
+  CHECK_EQ(h.repo.sessions[0].finishedAtMs, std::optional<std::uint64_t>());
+}
+
+TEST(start_that_will_not_join_stores_the_session_it_named_when_nothing_is_open) {
+  Harness h;
+  std::uint64_t yesterday = h.clock.now - kAutoCloseMs;
+
+  StartOutcome backfill = h.startExactly(yesterday, "ses_00000002");
+
+  CHECK(backfill.error == StartError::none);
+  CHECK_EQ(*backfill.session, Session(sid("ses_00000002"), uid(), yesterday));
+}
+
+// The subtle one: declining the join must not decline a caller's own replay. A backfill that lost
+// its reply and sent the same body again names the session that IS open, so it answers with itself.
+TEST(start_that_will_not_join_still_replays_its_own_open_session) {
+  Harness h;
+  // Minutes ago, not hours: a start instant a full auto-close window old is stale on arrival, and
+  // the settle in the second call would close it — a true reply, but a different question.
+  std::uint64_t justBefore = h.clock.now - 60'000;
+  StartOutcome first = h.startExactly(justBefore, "ses_00000002");
+
+  StartOutcome replayed = h.startExactly(justBefore, "ses_00000002");
+
+  CHECK(replayed.error == StartError::none);
+  CHECK_EQ(*replayed.session, *first.session);
+  CHECK_EQ(h.repo.sessions.size(), static_cast<std::size_t>(1));
 }
 
 // ---- append: the durable set write --------------------------------------------------------

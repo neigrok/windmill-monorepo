@@ -24,7 +24,16 @@ std::uint64_t instantOf(const Json::Value& body, const char* field) {
 SessionStart parseSessionStart(const Json::Value& body) {
   if (!body.isObject()) throw InvalidTraining("a session start must be a json object");
   if (!body["id"].isString()) throw InvalidTraining("id must be a string");
-  return SessionStart{SessionId{body["id"].asString()}, instantOf(body, "startedAt")};
+  SessionStart start{SessionId{body["id"].asString()}, instantOf(body, "startedAt")};
+  // Omitted (or null) means join — the phone's Start, and what every caller written before this
+  // field existed meant. A PRESENT value parses strictly, exactly like a set's kind: a string where
+  // a boolean belongs is a 400, never a guess at which of the two Starts the caller meant.
+  if (body.isMember("joinOpenSession") && !body["joinOpenSession"].isNull()) {
+    if (!body["joinOpenSession"].isBool())
+      throw InvalidTraining("joinOpenSession must be a boolean");
+    start.joinOpenSession = body["joinOpenSession"].asBool();
+  }
+  return start;
 }
 
 SetWrite parseSetWrite(const Json::Value& body) {

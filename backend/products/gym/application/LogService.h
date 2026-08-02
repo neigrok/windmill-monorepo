@@ -12,9 +12,20 @@ namespace wm::gym {
 
 // The write shapes the wire parses into — everything the client says, nothing the server decides
 // (the set number and the owner are the store's and the session's to assign).
+//
+// joinOpenSession is the one thing about a Start that cannot be read off its other fields. The
+// phone pressing Start means "get me into the open session, whatever it is" — that join is what
+// makes the device-to-device handoff free (§11.3), a dead phone and a borrowed iPad continuing one
+// workout. Backfill and lift-import mean the opposite thing in the same shape: "create exactly this
+// session, which is not now", and for them a join files a past workout's sets into the live one.
+// startedAt cannot tell the two apart — clock skew and a genuinely-ten-minutes-ago handoff read
+// identically — so the caller states which it means, and a silent heuristic never guesses. The
+// default is the join, because that is what every caller written before this field meant. It is not
+// a surface gate (§11): any surface may state either, and the server still never asks who is asking.
 struct SessionStart {
   SessionId id;
   std::uint64_t startedAtMs;
+  bool joinOpenSession = true;
 };
 
 struct SetWrite {
@@ -33,7 +44,10 @@ struct SetWrite {
 // Every refusal is a fact about the caller's own log: idTaken says a client-minted id is already
 // spent, never by whom, so absent stays byte-identical to forbidden. unknownExercise arrives from
 // the store, which is the only layer that knows the catalog, and is passed through untouched.
-enum class StartError { none, idTaken };
+// alreadyOpen is reachable only by a caller that said it would not join: this lifter's own workout
+// is in progress, so the session it asked for could not be created, and the join that would have
+// created the illusion of one is exactly the data corruption it declined.
+enum class StartError { none, idTaken, alreadyOpen };
 enum class AppendError { none, notFound, finished, idTaken, unknownExercise };
 enum class FinishError { none, notFound, badInstant };
 

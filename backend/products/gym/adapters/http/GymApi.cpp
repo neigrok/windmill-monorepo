@@ -64,6 +64,16 @@ void GymApi::startSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
     cb(error(drogon::k409Conflict, "that session id is taken", "session-id-taken"));
     return;
   }
+  if (outcome.error == StartError::alreadyOpen) {
+    // Only a caller that sent `joinOpenSession: false` can reach this: it meant "create exactly this
+    // session, which is not now", and this lifter has a workout in progress. The join the default
+    // would have taken is the corruption — a backfill's or an import's sets filed into today's live
+    // session. Its repair is neither of the other 409s': a fresh id changes nothing while a session
+    // is open, so the open workout gets finished (or auto-closes at four hours) and the same body is
+    // sent again. Hence its own code — a client that read the sentence would branch on prose.
+    cb(error(drogon::k409Conflict, "another session is already open", "session-already-open"));
+    return;
+  }
   cb(jsonResponse(toJson(*outcome.session)));
 }
 

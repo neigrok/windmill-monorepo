@@ -204,6 +204,57 @@ TEST(gym_start_with_an_id_another_account_already_spent_is_409) {
   CHECK_EQ(h.repo.sessions[0].user, uid("another-account"));
 }
 
+TEST(gym_start_that_will_not_join_is_409_while_a_session_is_open) {
+  Harness h;
+  UserId me = h.signIn("s-live");
+  h.repo.sessions.push_back(Session{sid("ses_11111111"), me, 1'700'000'000'000});
+
+  Json::Value backfill = startBody("ses_22222222", 1'699'000'000'000);
+  backfill["joinOpenSession"] = false;
+  drogon::HttpResponsePtr response =
+      send(h.api, &GymApi::startSession, postRequest("/v1/gym/sessions", backfill, "s-live"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k409Conflict);
+  // Its own code, because its repair is neither of the other two 409s': a fresh id changes nothing
+  // while a session is open — the open workout has to end first, then the same body is sent again.
+  CHECK_EQ(dump(bodyOf(response)),
+           std::string(R"({"code":"session-already-open","error":"another session is already open"})"));
+  CHECK_EQ(h.repo.sessions.size(), static_cast<std::size_t>(1));
+}
+
+// Omitted is the join, so every caller written before the field keeps meaning what it meant — and
+// the handoff (§11.3) keeps working: a second device's Start continues the open workout.
+TEST(gym_start_without_the_field_still_joins_the_open_session) {
+  Harness h;
+  UserId me = h.signIn("s-live");
+  h.repo.sessions.push_back(Session{sid("ses_11111111"), me, 1'700'000'000'000});
+
+  drogon::HttpResponsePtr response = send(h.api, &GymApi::startSession,
+                                          postRequest("/v1/gym/sessions",
+                                                      startBody("ses_22222222"), "s-live"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(response)),
+           std::string(R"({"id":"ses_11111111","startedAt":1700000000000})"));
+  CHECK_EQ(h.repo.sessions.size(), static_cast<std::size_t>(1));
+}
+
+// A string where the boolean belongs is a 400, never a guess: the two Starts differ by which sets
+// land in which workout, so the one thing this field may not do is default quietly on a typo.
+TEST(gym_start_with_a_non_boolean_join_is_400) {
+  Harness h;
+  h.signIn("s-live");
+
+  Json::Value body = startBody();
+  body["joinOpenSession"] = "false";
+  drogon::HttpResponsePtr response =
+      send(h.api, &GymApi::startSession, postRequest("/v1/gym/sessions", body, "s-live"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"could not read that session"})"));
+  CHECK(h.repo.sessions.empty());
+}
+
 TEST(gym_start_with_a_malformed_id_is_400) {
   Harness h;
   h.signIn("s-live");

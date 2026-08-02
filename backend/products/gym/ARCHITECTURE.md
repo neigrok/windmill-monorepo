@@ -151,7 +151,8 @@ phase-3 strength-tree chain (dip → weighted dip → muscle-up) expressible fro
 -- idempotency key: a double-tapped Start, an offline replay, a retried POST all conflict on
 -- the PK and no-op — Lift minted a phantom session from a double-tap and needed a guard
 -- nobody wrote for a year. One open session per user is enforced by the partial unique index,
--- not by application memory: starting while another is open JOINS the open session.
+-- not by application memory: starting while another is open JOINS the open session, unless the
+-- caller states it will not join (§11.4), in which case the no-op is reported as a refusal.
 -- plan is a FROZEN jsonb copy of the routine at start (null = ad-hoc). Lift stored templateId
 -- + a copied name, so it could say what you did and never what you were supposed to do, and
 -- editing a template mid-workout rewrote the program's past. A snapshot is what makes
@@ -366,15 +367,25 @@ flow control never travels as a throw, and `InvalidTraining` stays reserved for 
 - **`start(user, SessionStart)`** — auto-close any stale open session (§3.2) → insert with a
   bare `ON CONFLICT DO NOTHING` (deliberately untargeted: the insert must no-op on *either*
   arbiter — the PK replay *and* the one-open partial unique index; `ON CONFLICT (id)` would
-  raise on the double-tap instead of converging it) → load whichever session is now open for
-  this user, else the stored row under that id, and return it. A replayed POST returns the same
-  session; a double-tap that minted two ids returns the first tap's session (the partial unique
-  index refuses the second insert, and the service reads back the truth); a start replayed after
-  the session was finished returns the finished row. Idempotent by construction, no guard flag
-  anywhere. When **nothing** of this caller's resolves, the insert no-oped on a row owned by
-  someone else: `StartError::idTaken` → 409, mint a new id. The service never invents a session
-  the store did not accept — a fabricated 200 leaves a client logging into a session that exists
-  nowhere, and every set it posts 404s forever with no way to notice.
+  raise on the double-tap instead of converging it) → load the caller's **own** row under that id
+  and return it, else whichever session is open for this user, decided by the caller's stated
+  intent. A replayed POST returns the same session — open, finished or auto-closed — and it returns
+  it *whatever else is going on*, because the id is resolved before the open session is ever
+  consulted; a double-tap that minted two ids returns the first tap's session (the partial unique
+  index refuses the second insert, and the service reads back the truth). Idempotent by
+  construction, no guard flag anywhere. When **nothing** of this caller's resolves and nothing is
+  open, the insert no-oped on a row owned by someone else: `StartError::idTaken` → 409, mint a new
+  id. The service never invents a session the store did not accept — a fabricated 200 leaves a
+  client logging into a session that exists nowhere, and every set it posts 404s forever with no
+  way to notice.
+
+  **The join is a caller's intent, and it is stated on the wire** (`joinOpenSession`, default
+  `true`). Reading back the open session is right for the phone and free for the handoff (§11.3),
+  and it is data corruption for a caller writing a *past* session (§11.4) — two intents in one
+  request shape, which the server cannot infer and must not guess at from `startedAt`. A caller
+  that says it will not join and finds another session open gets `StartError::alreadyOpen` → 409
+  `session-already-open`, never a live workout to file yesterday's sets into. Its own id still
+  answers first, so a replay is idempotent in both modes.
 - **`append(user, SetWrite)`** — load the session (absent or another's → not found) → construct
   the domain `Set` (throws → 400) → **resolve the replay before any refusal**: the owner-scoped
   `setOf(user, id)`. A row already stored under that id *in this session* is the answer, whatever
@@ -570,7 +581,7 @@ query, ordered by pattern then name. Identity rules, stated once:
 | Method & path | Purpose | Phase |
 |---|---|---|
 | `GET  /v1/gym/exercises` | the catalog (seeds + own customs) | 0 |
-| `POST /v1/gym/sessions` | start — `{id, startedAt}`, idempotent, joins an open session | 0 |
+| `POST /v1/gym/sessions` | start — `{id, startedAt, joinOpenSession?}`, idempotent; joins an open session unless the caller says it will not (§11.4) | 0 |
 | `POST /v1/gym/sessions/{id}/sets` | append a set — `{id, exerciseId, weightKg, reps, completedAt, kind?, rpe?, note?}` | 0 |
 | `POST /v1/gym/sessions/{id}/finish` | close — `{finishedAt}`, idempotent | 0 |
 | `GET  /v1/gym/sessions?before=&beforeId=&limit=` | the log, newest first | 0 |
@@ -612,9 +623,10 @@ first-writer-wins. The ceiling is what keeps a nanosecond stamp or a `UInt64.max
 reaching `to_timestamp()` and overflowing mid-transaction. The same constant is the log
 cursor's "no cursor: from now".
 
-**The status ladder.** The status alone is not enough for the flush queue to act on: of the three
-409s, two mean *mint a new id and send it again* and one means *drop this set forever*. So every
-refusal a client must branch on carries a machine word under `code` beside the human sentence:
+**The status ladder.** The status alone is not enough for the flush queue to act on: of the four
+409s, two mean *mint a new id and send it again*, one means *drop this set forever*, and one means
+*a new id will not help — wait for the open workout to end*. So every refusal a client must branch
+on carries a machine word under `code` beside the human sentence:
 
 | Status | `code` | When | Sentence | What the client does |
 |---|---|---|---|---|
@@ -626,6 +638,7 @@ refusal a client must branch on carries a machine word under `code` beside the h
 | 400 | — | the close instant runs backwards against the stored start | `a session cannot finish before it began` | terminal — send an instant the session could have ended at |
 | 400 | — | the log cursor is not a digits-only instant plus, optionally, a well-formed id beside it | `bad cursor` | terminal, and a read-path fault — never the queue's |
 | 409 | `session-id-taken` | start with a session id already spent | `that session id is taken` | mint a NEW session id and start again |
+| 409 | `session-already-open` | start that said `joinOpenSession: false` while another of this lifter's sessions is open | `another session is already open` | terminal until the open workout ends — a new id changes nothing; finish it (or let the four-hour auto-close fire) and send the same body again |
 | 409 | `set-id-taken` | append a NEW set id already spent by a row outside this session | `that set id is already used` | mint a NEW set id and send the same set again |
 | 409 | `session-finished` | append a NEW set to a session already finished | `that session is finished` | terminal — this set will never land here |
 | 500 | — | a storage failure — a dropped connection, a statement timeout, a deadlock | `internal error` (the house handler) | retryable — keep the set queued |
@@ -633,15 +646,18 @@ refusal a client must branch on carries a machine word under `code` beside the h
 **The code is the contract; the sentence is for a human reading a log.** The wording is copy and may
 be edited any day; a client that told the three 409s apart by string-comparing it degrades to
 "terminal, reason unknown" the first time one is reworded — and drops a set it should have re-minted
-an id for. Only those four refusals carry a code, on purpose (`platform/adapters/http/JsonReply.h`):
+an id for. Only those five refusals carry a code, on purpose (`platform/adapters/http/JsonReply.h`):
 most refusals have exactly one cause and the sentence is the whole of it, and a key that is
 sometimes an empty string would make a client test it twice.
 
-All three 409s name a fact about an id, never about an owner: a caller learns that an id is spent
-and nothing else, so absent stays byte-identical to forbidden. They are the honest answer where
-the edge used to fabricate a 200 — a start that returned a session the store never accepted
+Three of the four 409s name a fact about an id, never about an owner: a caller learns that an id is
+spent and nothing else, so absent stays byte-identical to forbidden. They are the honest answer
+where the edge used to fabricate a 200 — a start that returned a session the store never accepted
 (every set into it then 404'd forever), and an append that returned the *stranger's* row sitting
-under the colliding id.
+under the colliding id. `session-already-open` is the fourth and it names a different kind of fact,
+one about the caller's **own** log: only this account's open session can produce it, so it leaks
+nothing either — and it is the same family of honesty, a refusal where the edge used to answer 200
+with a session the caller never asked for.
 
 `409 that session is finished` answers **new** ids only. A set that already landed replays 200
 with its stored row even after the session closes — the flush queue's whole premise is replay in
@@ -861,11 +877,38 @@ different door with different vocabulary: **"Add a past workout"**, never *Start
 session with `startedAt` in the past, finishes it in the same flow, and appends sets with past
 `completedAt`. Same routes, no new contract, and no live session ever opens on a laptop.
 
-**Backfill is refused while a session is open**, and this would otherwise ship as a data bug: the
-partial unique index means the backfill's `start` would not fail, it would silently **join** the
-live workout and file yesterday's sets into today's. The refusal is the client's, before the
-request, with the reason said plainly — *"your phone is mid-workout"* — not a 409 the user is left
-to interpret.
+**Backfill is refused while a session is open**, and this shipped as a data bug before it shipped as
+a rule: the partial unique index means the backfill's `start` did not fail, it silently **joined**
+the live workout, and the sets of a session logged last Tuesday landed in today's. `lift-import`
+posts to the same route to create past sessions, so the exposure was real and not hypothetical.
+
+The refusal is the client's *and* the server's, and the division is the interesting part. Web
+refuses before the request, with the reason said plainly — *"your phone is mid-workout"*, not a 409
+the user is left to interpret. But a client-side rule is not a guarantee: `lift-import` and
+`gym-mcp` write over this same public API, and the one durable write gym exists for cannot depend on
+every caller remembering. So the rule is stated on the wire and enforced by the store's own truth:
+**`{"joinOpenSession": false}` on the start, and 409 `session-already-open` when another session is
+open.**
+
+**The join stays, and stays the default.** It is not a legacy accident to be tidied away — flow 3
+above is *built* on it, and it is why §2.2 was shaped the way it was: a dead phone and a borrowed
+iPad continue one workout because the second Start no-ops on the one-open index and reads back the
+open session. The bug was never the join. The bug was that two callers meaning opposite things sent
+byte-identical requests, so the server had to guess — and a server that guesses is how a past
+workout's sets end up in a live one.
+
+Three things this rule is deliberately **not**:
+
+- **Not a surface gate.** §11's refusal stands: the server never asks who is calling, and any
+  surface may state either intent — the phone could backfill, an MCP tool could join. What changed
+  is that the caller *says* what it means, which is the opposite of the server inferring it from the
+  caller's identity.
+- **Not a heuristic on `startedAt`.** A past instant looks exactly like clock skew, and a handoff ten
+  minutes into a workout looks exactly like a backfill. Silent inference is what produced the bug.
+- **Not "refuse when the id that comes back is not the one I sent".** That is the tempting rule and
+  it is wrong: the ids differing is precisely the *handoff*, the case that must keep working. A
+  caller's own id is resolved before the open session either way, so a replay stays idempotent in
+  both modes (§3.3).
 
 ### 11.5 Two rules that fall out sharp
 

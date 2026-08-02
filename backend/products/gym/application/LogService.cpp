@@ -18,19 +18,24 @@ void settleOpen(TrainingRepository& repo, const UserId& user, std::uint64_t nowM
 
 LogService::LogService(TrainingRepository& repo, Clock& clock) : repo_(repo), clock_(clock) {}
 
-// Idempotent by construction, no guard flag anywhere: a replayed POST no-ops on the PK and reads
-// back its own session; a double-tap that minted two ids no-ops on the one-open index and reads
-// back the first tap's; the replay of an already-finished start finds nothing open and the stored
-// row answers. When NOTHING of this caller's resolves, the insert no-oped on a row owned by
-// someone else — the reply is a refusal, never a session the store never accepted.
+// Idempotent by construction, no guard flag anywhere, and the caller's OWN id is resolved first: a
+// replayed POST reads back the session it minted — open, finished or auto-closed — so a replay
+// never depends on what else happens to be open, and it is idempotent whichever Start it meant.
+// Only when nothing landed under that id does the open session enter the story, and there the
+// caller's intent decides: a double-tap that minted a second id no-ops on the one-open index and
+// joins the first tap's session (so does the borrowed iPad, §11.3), while a caller that said it
+// will not join is refused rather than handed a live workout it would file a past session's sets
+// into. When NOTHING resolves and nothing is open, the insert no-oped on a row owned by someone
+// else — the reply is a refusal, never a session the store never accepted.
 StartOutcome LogService::start(const UserId& user, const SessionStart& incoming) {
   settleOpen(repo_, user, clock_.nowMs());
   repo_.insertSession(Session{incoming.id, user, incoming.startedAtMs});
-  std::optional<Session> open = repo_.open(user);
-  if (open) return {*open, StartError::none};
   std::optional<Session> stored = repo_.session(user, incoming.id);
   if (stored) return {*stored, StartError::none};
-  return {std::nullopt, StartError::idTaken};
+  std::optional<Session> open = repo_.open(user);
+  if (!open) return {std::nullopt, StartError::idTaken};
+  if (incoming.joinOpenSession) return {*open, StartError::none};
+  return {std::nullopt, StartError::alreadyOpen};
 }
 
 // No auto-close here on purpose: the background flush replays offline sets into whatever session

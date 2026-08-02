@@ -91,10 +91,16 @@ export const gymApi = {
     return (await json(await call('/exercises'))).exercises;
   },
 
-  // The client mints the id and the id IS the idempotency key: the reply is whichever session is
-  // open for this account after the insert, so a lost race still sees the truth in one round trip.
-  async startSession({ id, startedAt }) {
-    return json(await call('/sessions', { method: 'POST', body: JSON.stringify({ id, startedAt }) }));
+  // The client mints the id and the id IS the idempotency key. Two Starts share this route and they
+  // differ only in what the caller means, which is why the caller has to say it: the default JOINS
+  // whatever session is open, so a lost race and a borrowed second device both land in the live
+  // workout in one round trip (ARCHITECTURE §11.3 — the handoff is free because of this). Pass
+  // joinOpenSession: false to mean "create exactly this session, which is not now" — backfill and
+  // the Lift import — and a live workout refuses it 409 `session-already-open` instead of handing
+  // back today's session for a past workout's sets to be filed into.
+  async startSession({ id, startedAt, joinOpenSession = true }) {
+    const body = joinOpenSession ? { id, startedAt } : { id, startedAt, joinOpenSession: false };
+    return json(await call('/sessions', { method: 'POST', body: JSON.stringify(body) }));
   },
 
   // Converges on exactly one row per minted id — a replay returns the stored set, byte-identical,

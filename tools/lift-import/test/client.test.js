@@ -36,7 +36,10 @@ describe('the conversation', () => {
     strictEqual(calls[0].url, 'http://localhost:8080/v1/gym/sessions');
     strictEqual(calls[0].method, 'POST');
     strictEqual(calls[0].headers.authorization, 'Bearer secret');
-    strictEqual(calls[0].body, '{"id":"ses_x","startedAt":7}');
+    // joinOpenSession: false is not decoration. Every session this tool writes is a past one, and
+    // without the flag an import run during a live workout is handed that workout and files years of
+    // history into it. If this assertion ever reads as noise, read tools/lift-import/client.js.
+    strictEqual(calls[0].body, '{"id":"ses_x","startedAt":7,"joinOpenSession":false}');
   });
 
   it('unwraps the catalog', async () => {

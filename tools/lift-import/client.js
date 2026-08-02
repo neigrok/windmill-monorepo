@@ -71,8 +71,12 @@ export class GymClient {
     return body?.exercises ?? [];
   }
 
+  // Every session this tool writes is a past one, so it must never join: without the flag, an import
+  // run while the lifter has a workout open no-ops on the one-open index, is handed the LIVE session
+  // with a 200, and files years of history into today's workout. The refusal is 409
+  // `session-already-open`, and its repair is to run again once that workout has ended.
   async startSession(id, startedAt) {
-    return this.send('POST', '/v1/gym/sessions', { id, startedAt });
+    return this.send('POST', '/v1/gym/sessions', { id, startedAt, joinOpenSession: false });
   }
 
   async appendSet(sessionId, set) {
