@@ -7,6 +7,7 @@
 #include "platform/adapters/crypto/OpenSslTokenGenerator.h"
 #include "platform/adapters/email/ResendClient.h"
 #include "platform/adapters/email/ResendEmailSender.h"
+#include "platform/adapters/http/AccessLog.h"
 #include "platform/adapters/sentry/LogTee.h"
 #include "platform/adapters/sentry/SentryClient.h"
 #include "platform/adapters/http/AuthApi.h"
@@ -362,6 +363,11 @@ int main() {
   }
 
   auto& app = drogon::app();
+
+  // One line per request — every route this server serves, writes included — from the two advice
+  // hooks rather than from any handler, because the hooks see them all and a handler should not have
+  // to remember. Registered first so it wraps everything registered after it.
+  installAccessLog(app);
 
   // Safety net for uncaught exceptions: setExceptionHandler replaces ONLY drogon's default
   // uncaught-exception path — a handler that already catches its own error (EventsApi, McpKeyApi,

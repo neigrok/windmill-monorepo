@@ -1,11 +1,12 @@
 #include "platform/adapters/paddle/PaddleApiClient.h"
 
+#include "platform/adapters/http/VendorCall.h"
+
 #include <drogon/HttpClient.h>
 #include <drogon/HttpRequest.h>
 #include <drogon/HttpResponse.h>
 
 #include <json/json.h>
-#include <trantor/utils/Logger.h>
 
 #include <memory>
 #include <utility>
@@ -39,7 +40,7 @@ PaddleApiClient::PaddleApiClient(std::string apiKey, const std::string& environm
   loop_.run();
 }
 
-void PaddleApiClient::request(int method, const std::string& path,
+void PaddleApiClient::request(int method, const std::string& op, const std::string& path,
                               const std::vector<std::pair<std::string, std::string>>& query,
                               const std::string& body,
                               std::function<void(std::optional<std::string>)> done) {
@@ -56,15 +57,14 @@ void PaddleApiClient::request(int method, const std::string& path,
     req->setBody(body);
   }
 
+  // The status and the operation are enough to triage; the body can echo request detail — the
+  // customer's address above all — and the key never appears in either.
+  VendorCall call("paddle", op);
   client->sendRequest(
       req,
-      [client, path, done = std::move(done)](drogon::ReqResult result,
-                                             const drogon::HttpResponsePtr& resp) {
-        const int status = resp ? static_cast<int>(resp->getStatusCode()) : 0;
-        if (result != drogon::ReqResult::Ok || status < 200 || status >= 300) {
-          // The status and path are enough to triage; the body can echo request detail, and the key
-          // never appears in either.
-          LOG_ERROR << "Paddle API " << path << " failed (status " << status << ")";
+      [client, call, done = std::move(done)](drogon::ReqResult result,
+                                             const drogon::HttpResponsePtr& resp) mutable {
+        if (!call.succeeded(result, resp)) {
           done(std::nullopt);
           return;
         }
@@ -85,7 +85,7 @@ void PaddleApiClient::createTransaction(const std::string& customerId, const std
   // The stamp that makes the webhook's binding authoritative rather than inferred.
   transaction["custom_data"]["user_id"] = userId;
 
-  request(drogon::Post, "/transactions", {}, dump(transaction),
+  request(drogon::Post, "transactions.create", "/transactions", {}, dump(transaction),
           [done = std::move(done)](std::optional<std::string> body) {
             const std::optional<Json::Value> json = body ? parse(*body) : std::nullopt;
             if (!json) {
@@ -114,7 +114,7 @@ void PaddleApiClient::startCheckout(const std::string& email, const std::string&
 
   // Reuse the customer this email already has, so a returning subscriber keeps one Paddle identity
   // (and one billing history) instead of collecting a customer per checkout.
-  request(drogon::Get, "/customers", {{"email", email}}, "",
+  request(drogon::Get, "customers.find", "/customers", {{"email", email}}, "",
           [this, email, userId, priceId, done = std::move(done)](std::optional<std::string> body) mutable {
             const std::optional<Json::Value> json = body ? parse(*body) : std::nullopt;
             if (json) {
@@ -130,7 +130,7 @@ void PaddleApiClient::startCheckout(const std::string& email, const std::string&
 
             Json::Value create(Json::objectValue);
             create["email"] = email;
-            request(drogon::Post, "/customers", {}, dump(create),
+            request(drogon::Post, "customers.create", "/customers", {}, dump(create),
                     [this, userId, priceId, done = std::move(done)](std::optional<std::string> made) mutable {
                       const std::optional<Json::Value> json = made ? parse(*made) : std::nullopt;
                       if (!json) {

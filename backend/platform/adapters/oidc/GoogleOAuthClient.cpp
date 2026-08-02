@@ -1,5 +1,6 @@
 #include "platform/adapters/oidc/GoogleOAuthClient.h"
 
+#include "platform/adapters/http/VendorCall.h"
 #include "platform/adapters/oidc/IdToken.h"
 
 #include <drogon/HttpClient.h>
@@ -7,7 +8,6 @@
 #include <drogon/HttpResponse.h>
 
 #include <json/json.h>
-#include <trantor/utils/Logger.h>
 
 #include <memory>
 #include <utility>
@@ -83,12 +83,12 @@ void GoogleOAuthClient::exchangeCode(const std::string& code,
   req->setBody(form);
 
   const std::string clientId = clientId_;
+  VendorCall call("google", "exchange");
   client->sendRequest(
       req,
-      [client, clientId, done = std::move(done)](drogon::ReqResult result, const drogon::HttpResponsePtr& resp) {
-        const int status = resp ? static_cast<int>(resp->getStatusCode()) : 0;
-        if (result != drogon::ReqResult::Ok || status < 200 || status >= 300) {
-          LOG_ERROR << "Google token exchange failed (status " << status << ")";
+      [client, clientId, call, done = std::move(done)](drogon::ReqResult result,
+                                                       const drogon::HttpResponsePtr& resp) mutable {
+        if (!call.succeeded(result, resp)) {
           done(std::nullopt);
           return;
         }

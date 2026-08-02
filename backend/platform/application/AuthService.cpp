@@ -1,5 +1,7 @@
 #include "platform/application/AuthService.h"
 
+#include <trantor/utils/Logger.h>
+
 namespace wm {
 
 AuthService::AuthService(AuthRepository& repo, EmailSender& email, TokenGenerator& tokens, Clock& clock,
@@ -68,8 +70,11 @@ std::optional<AuthService::ProviderSignIn> AuthService::completeProvider(const P
   // Step one, and the only step that can answer on its own: the subject IS the identity. Whatever
   // address the provider is sending today, a bound door opens the account it was bound to.
   if (const std::optional<UserId> bound = repo_.findIdentity(identity.provider, identity.subject)) {
-    if (const std::optional<User> user = repo_.findUserById(*bound))
+    if (const std::optional<User> user = repo_.findUserById(*bound)) {
+      LOG_INFO << "auth: provider sign-in by bound door provider=" << toString(identity.provider)
+               << " user=" << user->id.str();
       return ProviderSignIn{mintSession(revived(*user), ctx, now), false, privateEmail};
+    }
   }
 
   // Step two: no door is bound, so the verified address gets to find an account exactly as a magic
@@ -85,6 +90,10 @@ std::optional<AuthService::ProviderSignIn> AuthService::completeProvider(const P
   const SignedIn signedIn =
       mintSessionFor(identity.email, offered ? *offered : nameFromEmail(identity.email), ctx, now);
   repo_.bindIdentity(identity.provider, identity.subject, signedIn.user.id, identity.email.value);
+  // The address, never the subject: a subject is an opaque provider id, an address is the person.
+  LOG_INFO << "auth: provider sign-in bound a door provider=" << toString(identity.provider)
+           << " user=" << signedIn.user.id.str() << " created=" << (created ? "yes" : "no")
+           << " relay=" << (privateEmail ? "yes" : "no");
   return ProviderSignIn{signedIn, created, privateEmail};
 }
 
@@ -98,6 +107,8 @@ AuthService::AttachOutcome AuthService::attachIdentity(const UserId& userId,
   if (bound) return AttachOutcome::takenByAnother;  // a door opens one account; it is never stolen
 
   repo_.bindIdentity(identity.provider, identity.subject, userId, identity.email.value);
+  LOG_INFO << "auth: provider door attached provider=" << toString(identity.provider)
+           << " user=" << userId.str();
   return AttachOutcome::attached;
 }
 
@@ -131,6 +142,10 @@ AuthService::LinkResult AuthService::linkAccount(const UserId& caller, const std
   const User surviving = target ? revived(*target) : repo_.createUser(link->email, nameFromEmail(link->email));
   repo_.moveIdentities(caller, surviving.id);
   repo_.deleteUser(caller);  // empty by proof; the cascade takes the caller's own session with it
+  // The only path that deletes an account as a side effect of a sign-in. Both ids, because
+  // afterwards one of them names nothing and this line is the only place the pair was ever true.
+  LOG_INFO << "auth: empty account folded into another folded=" << caller.str()
+           << " surviving=" << surviving.id.str();
   return {LinkOutcome::linked, mintSession(surviving, ctx, now)};
 }
 
@@ -210,10 +225,15 @@ AuthService::RevokeOutcome AuthService::revokeSession(const UserId& userId, cons
 
 void AuthService::signOutEverywhere(const UserId& userId, const std::string& currentSecret) {
   repo_.revokeSessionsExcept(userId, tokens_.digestOf(currentSecret));
+  // What a stolen-laptop panic looks like from the server: worth being able to find afterwards.
+  LOG_INFO << "auth: signed out everywhere user=" << userId.str();
 }
 
 UnixMs AuthService::closeAccount(const UserId& userId) {
   const UnixMs now = clock_.nowMs();
+  // The most destructive write this server does, and the one whose absence from a log is least
+  // forgivable: after the grace window there is nothing left to ask what happened.
+  LOG_INFO << "auth: account closed user=" << userId.str();
   // Tear down every credential BEFORE stamping the close, so "deleted ⇒ no live access" holds
   // with no window: the MCP token path has no deletedAt guard of its own, and stamping first
   // would let a token resolve for an already-closed account until disconnectAll landed.

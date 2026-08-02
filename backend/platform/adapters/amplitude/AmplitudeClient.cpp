@@ -1,11 +1,12 @@
 #include "platform/adapters/amplitude/AmplitudeClient.h"
 
+#include "platform/adapters/http/VendorCall.h"
+
 #include <drogon/HttpClient.h>
 #include <drogon/HttpRequest.h>
 #include <drogon/HttpResponse.h>
 
 #include <json/json.h>
-#include <trantor/utils/Logger.h>
 
 #include <memory>
 #include <utility>
@@ -67,12 +68,13 @@ void AmplitudeClient::forward(const std::string& sessionKey, const std::optional
   req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
   req->setBody(body);
 
+  // Fire and forget: nobody waits on a funnel forward, so reporting the outcome is the only
+  // way a batch quietly stopping arriving is ever noticed.
+  VendorCall call("amplitude", "forward");
   client->sendRequest(
       req,
-      [client](drogon::ReqResult result, const drogon::HttpResponsePtr& resp) {
-        const int status = resp ? static_cast<int>(resp->getStatusCode()) : 0;
-        if (result != drogon::ReqResult::Ok || status < 200 || status >= 300)
-          LOG_ERROR << "Amplitude forward failed (status " << status << ")";
+      [client, call](drogon::ReqResult result, const drogon::HttpResponsePtr& resp) mutable {
+        call.succeeded(result, resp);
       },
       10.0);
 }

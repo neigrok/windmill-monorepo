@@ -36,6 +36,9 @@ public:
   void feed(const char* data, std::size_t length);
   void finish();
   bool done() const { return phase_ == Phase::Done; }
+  // What the reply's head said, or 0 while none has landed. The transport reports the call's
+  // outcome, so the decoder exposes the status rather than growing a log seam of its own.
+  int status() const { return status_; }
 
 private:
   enum class Phase { Headers, ChunkSize, ChunkData, ChunkGap, PlainBody, Done };
@@ -49,6 +52,7 @@ private:
   std::function<void(bool)> onDone_;
   Reporter onFailure_;
   Phase phase_ = Phase::Headers;
+  int status_ = 0;
   std::string raw_;
   std::size_t chunkLeft_ = 0;
   std::string sse_;

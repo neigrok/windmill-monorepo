@@ -1,5 +1,6 @@
 #include "platform/adapters/oidc/AppleOAuthClient.h"
 
+#include "platform/adapters/http/VendorCall.h"
 #include "platform/adapters/json/JsonText.h"
 #include "platform/adapters/oidc/IdToken.h"
 
@@ -158,12 +159,12 @@ void AppleOAuthClient::exchangeCode(const std::string& code,
   req->setBody(form);
 
   const std::string clientId = clientId_;
+  VendorCall call("apple", "exchange");
   client->sendRequest(
       req,
-      [client, clientId, done = std::move(done)](drogon::ReqResult result, const drogon::HttpResponsePtr& resp) {
-        const int status = resp ? static_cast<int>(resp->getStatusCode()) : 0;
-        if (result != drogon::ReqResult::Ok || status < 200 || status >= 300) {
-          LOG_ERROR << "Apple token exchange failed (status " << status << ")";
+      [client, clientId, call, done = std::move(done)](drogon::ReqResult result,
+                                                       const drogon::HttpResponsePtr& resp) mutable {
+        if (!call.succeeded(result, resp)) {
           done(std::nullopt);
           return;
         }

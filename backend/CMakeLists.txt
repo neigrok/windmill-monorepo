@@ -165,6 +165,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     platform/adapters/http/McpKeyApi.cpp
     platform/adapters/http/EventsApi.cpp
     platform/adapters/http/FeedbackApi.cpp
+    platform/adapters/http/VendorCall.cpp
     platform/adapters/postgres/PgAuthRepository.cpp
     platform/adapters/postgres/PgAccountFootprint.cpp
     platform/adapters/postgres/PgOAuthRepository.cpp
@@ -181,6 +182,8 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     platform/adapters/oidc/AppleOAuthClient.cpp
     platform/adapters/sentry/SentryClient.cpp
     platform/adapters/sentry/LogTee.cpp
+    platform/adapters/http/AccessLog.cpp
+    platform/adapters/http/LogFormat.cpp
     platform/adapters/amplitude/AmplitudeClient.cpp
     platform/adapters/paddle/PaddleSignature.cpp
     platform/adapters/paddle/PaddleApiClient.cpp
@@ -292,9 +295,11 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/adapters/http/OgVideoApiTest.cpp
     test/adapters/http/TreeRegistryApiTest.cpp
     test/adapters/http/RemindersApiTest.cpp
+    test/adapters/http/VendorCallTest.cpp
     test/adapters/ws/CollabTest.cpp
     test/adapters/email/ResendEmailSenderTest.cpp
     test/adapters/sentry/LogTeeTest.cpp
+    test/adapters/http/AccessLogTest.cpp
     test/adapters/paddle/PaddleSignatureTest.cpp
     test/adapters/llm/AnthropicComposerTest.cpp
     test/adapters/llm/AnthropicAgentTest.cpp

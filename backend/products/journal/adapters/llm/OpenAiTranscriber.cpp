@@ -1,5 +1,7 @@
 #include "products/journal/adapters/llm/OpenAiTranscriber.h"
 
+#include "platform/adapters/http/VendorCall.h"
+
 #include <drogon/HttpClient.h>
 #include <drogon/HttpRequest.h>
 #include <drogon/HttpResponse.h>
@@ -54,13 +56,12 @@ Transcript OpenAiTranscriber::transcribe(const std::string& audio, const std::st
   req->setContentTypeString("multipart/form-data; boundary=" + boundary);
   req->setBody(std::move(form));
 
+  // The one blocking vendor call in the backend, and the one carrying a person's voice: the call
+  // reports its vendor, operation, status and cost, and never a byte of the audio or the transcript.
+  VendorCall call("openai", "transcribe");
   const std::pair<drogon::ReqResult, drogon::HttpResponsePtr> outcome = client->sendRequest(req, 60.0);
   const drogon::HttpResponsePtr& resp = outcome.second;
-  const int status = resp ? static_cast<int>(resp->getStatusCode()) : 0;
-  if (outcome.first != drogon::ReqResult::Ok || status < 200 || status >= 300) {
-    LOG_ERROR << "OpenAI transcribe failed (status " << status << ")";  // status only — never the audio
-    return {};
-  }
+  if (!call.succeeded(outcome.first, resp)) return {};
 
   Json::Value parsed;
   Json::Reader reader;

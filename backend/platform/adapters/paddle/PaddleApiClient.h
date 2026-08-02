@@ -33,7 +33,9 @@ public:
                      std::function<void(std::optional<PaddleCheckout>)> done);
 
 private:
-  void request(int method, const std::string& path,
+  // `op` names the operation for the call's log line — one path serves two of them (a customer
+  // lookup and a customer create), and "which Paddle call is failing" is the whole question.
+  void request(int method, const std::string& op, const std::string& path,
                const std::vector<std::pair<std::string, std::string>>& query, const std::string& body,
                std::function<void(std::optional<std::string>)> done);
   void createTransaction(const std::string& customerId, const std::string& userId,

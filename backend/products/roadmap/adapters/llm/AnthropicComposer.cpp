@@ -1,5 +1,7 @@
 #include "products/roadmap/adapters/llm/AnthropicComposer.h"
 
+#include "platform/adapters/http/VendorCall.h"
+
 #include <drogon/HttpClient.h>
 #include <drogon/HttpRequest.h>
 #include <drogon/HttpResponse.h>
@@ -91,11 +93,17 @@ struct StreamCall : public std::enable_shared_from_this<StreamCall> {
   std::shared_ptr<trantor::TcpClient> client;
   std::unique_ptr<AnthropicStreamParser> parser;
   std::shared_ptr<StreamCall> self;
+  // The clock starts when the call object does, ahead of the resolve, so the cost reported is the
+  // whole call: dns, handshake, and every second the model spent writing.
+  VendorCall vendor{"anthropic", "compose.stream"};
   bool settled = false;
 
   void hangUp() {
     if (settled) return;
     settled = true;
+    // The one place a stream ends is the one place its outcome is reported. A transport failure has
+    // already named itself by now and wins; a cancelled stream still cost the time it cost.
+    vendor.answered(parser->status());
     if (client) client->disconnect();
     loop->queueInLoop([anchor = std::move(self), client = std::move(client)]() {});
   }
@@ -116,13 +124,13 @@ struct StreamCall : public std::enable_shared_from_this<StreamCall> {
     client->setConnectionErrorCallback([weak]() {
       auto call = weak.lock();
       if (!call || call->settled) return;
-      LOG_ERROR << "compose stream could not reach upstream";
+      call->vendor.lost(VendorFault::network);
       call->parser->finish();
     });
     client->setSSLErrorCallback([weak](trantor::SSLError) {
       auto call = weak.lock();
       if (!call || call->settled) return;
-      LOG_ERROR << "compose stream TLS handshake failed";
+      call->vendor.lost(VendorFault::tls);
       call->parser->finish();
     });
     client->setMessageCallback([weak](const trantor::TcpConnectionPtr&, trantor::MsgBuffer* buffer) {
@@ -217,10 +225,9 @@ bool AnthropicStreamParser::consumeHeaders() {
   raw_.erase(0, end + 4);
   for (char& c : head) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
   const std::size_t space = head.find(' ');
-  const int status = space == std::string::npos ? 0 : std::atoi(head.c_str() + space + 1);
-  if (status != 200) {
-    LOG_ERROR << "compose stream upstream answered status " << status;
-    settle(false);
+  status_ = space == std::string::npos ? 0 : std::atoi(head.c_str() + space + 1);
+  if (status_ != 200) {
+    settle(false);  // the status itself is reported by the call, which knows what it cost
     return false;
   }
   // RFC 7230 permits `transfer-encoding:chunked`, extra whitespace, or a list — look for
@@ -277,7 +284,6 @@ void AnthropicStreamParser::dispatch(const std::string& event, const std::string
   }
   if (event == "error") {
     if (onFailure_) onFailure_("compose.stream", "upstream error event: " + data);
-    LOG_ERROR << "compose stream upstream errored: " << data;
     settle(false);
     return;
   }
@@ -290,7 +296,6 @@ void AnthropicStreamParser::dispatch(const std::string& event, const std::string
   if (!reader->parse(data.data(), data.data() + data.size(), &payload, &errors) ||
       !payload.isObject()) {
     if (onFailure_) onFailure_("compose.stream", "unreadable " + event + " frame");
-    LOG_ERROR << "compose stream upstream sent an unreadable " << event << " frame";
     settle(false);
     return;
   }
@@ -336,13 +341,14 @@ void AnthropicComposer::compose(const std::string& text,
   req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
   req->setBody(messagesPayload(text, false));
 
+  // The status and the cost are all the line carries: the reply body holds the person's plan and
+  // an upstream 400 quotes the paste that caused it.
+  VendorCall call("anthropic", "compose");
   client->sendRequest(
       req,
-      [client, report = reporter(), done = std::move(done)](drogon::ReqResult result, const drogon::HttpResponsePtr& resp) {
-        const int status = resp ? static_cast<int>(resp->getStatusCode()) : 0;
-        if (result != drogon::ReqResult::Ok || status < 200 || status >= 300) {  // accept any 2xx
-          const std::string detail = resp ? std::string(resp->getBody()) : std::string("no response");
-          LOG_ERROR << "compose upstream failed (status " << status << "): " << detail;
+      [client, call, report = reporter(), done = std::move(done)](
+          drogon::ReqResult result, const drogon::HttpResponsePtr& resp) mutable {
+        if (!call.succeeded(result, resp)) {
           done(std::nullopt);
           return;
         }
@@ -436,7 +442,7 @@ std::function<void()> AnthropicComposer::composeStream(
         auto call = weak.lock();
         if (!call || call->settled) return;
         if (resolved.isUnspecified() || resolved.toIp() == "0.0.0.0") {
-          LOG_ERROR << "compose stream could not resolve upstream";
+          call->vendor.lost(VendorFault::dns);
           call->parser->finish();
           return;
         }
@@ -446,7 +452,7 @@ std::function<void()> AnthropicComposer::composeStream(
     call->loop->runAfter(kStreamDeadlineSeconds, [weak]() {
       auto call = weak.lock();
       if (!call || call->settled) return;
-      LOG_ERROR << "compose stream hit the " << kStreamDeadlineSeconds << "s deadline";
+      call->vendor.lost(VendorFault::timeout);  // the kStreamDeadlineSeconds whole-stream deadline
       call->parser->finish();
     });
   });

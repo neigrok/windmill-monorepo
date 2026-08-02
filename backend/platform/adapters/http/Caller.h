@@ -10,6 +10,10 @@
 
 namespace wm {
 
+// Where a resolved caller is left on the request for anything downstream that needs to know who it
+// was without re-deciding it — today, the access log (adapters/http/AccessLog.h).
+inline constexpr char kCallerAttribute[] = "wm.caller";
+
 // Who is behind this request: the wm_session cookie, or a Bearer token, resolved to an account —
 // empty for an anonymous caller. One home for the trust boundary, shared by every REST surface so
 // "who is the caller" is decided in exactly one place.

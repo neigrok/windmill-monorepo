@@ -1,5 +1,7 @@
 #include "products/roadmap/adapters/llm/AnthropicAgent.h"
 
+#include "platform/adapters/http/VendorCall.h"
+
 #include <drogon/HttpClient.h>
 #include <drogon/HttpRequest.h>
 #include <drogon/HttpResponse.h>
@@ -397,12 +399,14 @@ AgentOutcome AnthropicAgent::run(const std::string& prompt, const TreeId& tree, 
       Json::StreamWriterBuilder builder;
       builder["indentation"] = "";
       req->setBody(Json::writeString(builder, request));
+      // One line per model turn, so a run that took a minute can be read as the four calls it was.
+      // The prompt and the tree it edits are in the request body and reach no log.
+      VendorCall call("anthropic", "tend");
       client->sendRequest(
           req,
-          [client, promise](drogon::ReqResult result, const drogon::HttpResponsePtr& resp) {
-            const int status = resp ? static_cast<int>(resp->getStatusCode()) : 0;
-            if (result != drogon::ReqResult::Ok || status < 200 || status >= 300) {
-              LOG_ERROR << "tend upstream failed (status " << status << ")";
+          [client, call, promise](drogon::ReqResult result,
+                                  const drogon::HttpResponsePtr& resp) mutable {
+            if (!call.succeeded(result, resp)) {
               promise->set_value(std::nullopt);
               return;
             }

@@ -1,10 +1,10 @@
 #include "platform/adapters/email/ResendClient.h"
 
+#include "platform/adapters/http/VendorCall.h"
+
 #include <drogon/HttpClient.h>
 #include <drogon/HttpRequest.h>
 #include <drogon/HttpResponse.h>
-
-#include <trantor/utils/Logger.h>
 
 #include <utility>
 
@@ -71,20 +71,17 @@ void ResendClient::send(const Email& to, const std::string& templateId,
   req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
   req->setBody(payload);
 
+  VendorCall call("resend", "send");
+
   // The async overload runs the whole call on the private loop and answers on it, so the
   // calling handler thread is freed the instant this returns. client rides in the callback
-  // to outlive the send; done carries the 2xx verdict back to the edge.
+  // to outlive the send; done carries the 2xx verdict back to the edge, and the same verdict
+  // is what the call reports. Resend's failure body is never read: it quotes the `to` field.
   client->sendRequest(
       req,
-      [client, done = std::move(done)](drogon::ReqResult result, const drogon::HttpResponsePtr& resp) {
-        const int status = resp ? static_cast<int>(resp->getStatusCode()) : 0;
-        if (result != drogon::ReqResult::Ok || status < 200 || status >= 300) {  // accept any 2xx
-          const std::string detail = resp ? std::string(resp->getBody()) : std::string("no response");
-          LOG_ERROR << "Resend send failed (status " << status << "): " << detail;
-          done(false);
-          return;
-        }
-        done(true);
+      [client, call, done = std::move(done)](drogon::ReqResult result,
+                                             const drogon::HttpResponsePtr& resp) mutable {
+        done(call.succeeded(result, resp));
       },
       10.0);
 }
