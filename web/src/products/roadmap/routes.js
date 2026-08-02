@@ -65,15 +65,13 @@ export function pathTarget(pathname = typeof window === 'undefined' ? '' : windo
 // The route table the shell mounts. Returns a { Component, props } descriptor for any hash/path
 // the roadmap owns, or null to let the next product (or the shell's landing) answer. Returning a
 // descriptor (not an element) keeps this a plain .js module; the shell instantiates it.
-function render({ hash, pathname, search }, ctx = {}) {
-  const { openSignInSignal } = ctx;
-
+function render({ hash, pathname, search }) {
   // The real share path (/t/:id) renders the same read-only view as the #/t/:id hash — so a
   // link unfurls as itself (the backend rewrites its OG meta) yet still boots the SPA. The
   // hash wins if it names an app destination (e.g. a fork just navigated to #/app/:id).
   const pathShare = pathTarget(pathname);
   if (pathShare && !hash.startsWith('#/')) {
-    return { Component: SkillTreeApp, props: { treeId: pathShare.treeId, birth: false, start: false, demo: false, openSignInSignal } };
+    return { Component: SkillTreeApp, props: { treeId: pathShare.treeId, birth: false, start: false, demo: false } };
   }
 
   // The in-product public wall (public-gallery §2) — the client-rendered reader of the ranked
@@ -85,7 +83,7 @@ function render({ hash, pathname, search }, ctx = {}) {
   if (!isApp) return null;
 
   const target = appTarget(hash);
-  return { Component: SkillTreeApp, props: { treeId: target.treeId, birth: target.birth, start: target.start, demo: target.demo, openSignInSignal } };
+  return { Component: SkillTreeApp, props: { treeId: target.treeId, birth: target.birth, start: target.start, demo: target.demo } };
 }
 
 export const roadmapRoutes = {

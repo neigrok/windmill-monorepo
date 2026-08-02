@@ -9,8 +9,7 @@ import { Search, Bell, CalendarRange, Sun, Moon } from 'lucide-react';
 import { ProductSwitcher } from '../../shell/ProductSwitcher.jsx';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
 import { AccountSeat } from '../../shell/auth/AccountSeat.jsx';
-import { SignInDialog } from '../../shell/auth/SignInDialog.jsx';
-import { requestMagicLink } from '../../shell/auth/AuthClient.js';
+import { useSignInDoor, useSignInDoorHost } from '../../shell/auth/SignInDoor.jsx';
 import { Canvas } from './Canvas.jsx';
 import { SearchOverlay } from './search/SearchOverlay.jsx';
 import { EchoCard } from './EchoCard.jsx';
@@ -40,14 +39,15 @@ function readTheme() {
   return 'dark';
 }
 
-export function JournalApp({ hash, openSignInSignal = 0 }) {
+export function JournalApp({ hash }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [flyTo, setFlyTo] = useState(null);
   const [openEcho, setOpenEcho] = useState(null);
   const [nudgeOpen, setNudgeOpen] = useState(false);
   const [zoomOpen, setZoomOpen] = useState(false);
   const [theme, setTheme] = useState(readTheme);
-  const [signInOpen, setSignInOpen] = useState(false);
+  const openSignInDoor = useSignInDoor();
+  const lendDoorSkin = useSignInDoorHost();
   const { user, status, signOut } = useAuth();
   const { byTriggerDay, dismiss } = useEchoes();
   const nudge = useNudge();
@@ -70,26 +70,21 @@ export function JournalApp({ hash, openSignInSignal = 0 }) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // An expired magic link asks the active product to open its own door (App.jsx bumps the signal).
-  useEffect(() => {
-    if (openSignInSignal > 0) setSignInOpen(true);
-  }, [openSignInSignal]);
-
   return (
-    <div className="journal-root" data-theme={theme}>
+    <div className="journal-root" ref={lendDoorSkin} data-theme={theme}>
       <Canvas
         focusDate={focusDateOf(hash)}
         flyTo={flyTo}
         echoDays={byTriggerDay}
         onOpenEcho={(triggerDay) => setOpenEcho(byTriggerDay.get(triggerDay) || null)}
-        onNeedSignIn={() => setSignInOpen(true)}
+        onNeedSignIn={openSignInDoor}
       />
       <div className="journal-lamp" aria-hidden="true" />
       <div className="journal-seat">
         <AccountSeat
           user={user}
           status={status}
-          onSignIn={() => setSignInOpen(true)}
+          onSignIn={openSignInDoor}
           onSignOut={signOut}
           onSettings={() => { window.location.hash = '#/settings'; }}
           onConnect={() => { window.location.hash = '#/connect'; }}
@@ -163,7 +158,6 @@ export function JournalApp({ hash, openSignInSignal = 0 }) {
       <div className="journal-switch">
         <ProductSwitcher current="journal" />
       </div>
-      <SignInDialog open={signInOpen} onClose={() => setSignInOpen(false)} onSend={requestMagicLink} />
     </div>
   );
 }

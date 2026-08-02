@@ -1,6 +1,7 @@
 import React, { Suspense, lazy } from 'react';
 import AuthProvider, { useAuth } from './auth/AuthProvider.jsx';
 import EntitlementsProvider from './billing/EntitlementsProvider.jsx';
+import SignInDoorProvider, { useSignInDoor } from './auth/SignInDoor.jsx';
 import { verifyToken } from './auth/AuthClient.js';
 import Marketing from './marketing/Marketing.jsx';
 import { BrandLanding } from './marketing/BrandLanding.jsx';
@@ -90,11 +91,11 @@ function RouteFallback() {
 // The magic link lands on #/auth?token=… (token in the fragment); AuthLanding verifies it, signs
 // us in, and hands the post-sign-in destination to the ACTIVE product — the roadmap-specific
 // "go to your fork" lives there, not here, so the shell stays product-agnostic. An expired link
-// bumps a one-shot signal that opens the sign-in door once the active product is back.
+// sends us back to that product and asks the one door (auth/SignInDoor.jsx) to open.
 function AppRoutes() {
   const route = useHashRoute();
   const { signIn } = useAuth();
-  const [openSignInSignal, setOpenSignInSignal] = React.useState(0);
+  const openSignInDoor = useSignInDoor();
 
   // A legacy door upgrades this very render — the URL bar catches up in the effect, the route
   // decision below never sees the old shape, and nothing reloads or flashes.
@@ -110,7 +111,7 @@ function AppRoutes() {
         <AuthLanding
           onVerify={verifyToken}
           onSignedIn={(user, forkedTree) => { signIn(user); window.location.hash = activeProduct(route).landingAfterSignIn(forkedTree); }}
-          onOpenDoor={() => { setOpenSignInSignal((n) => n + 1); window.location.hash = activeProduct(route).switchHash; }}
+          onOpenDoor={() => { window.location.hash = activeProduct(route).switchHash; openSignInDoor(); }}
         />
       </Suspense>
     );
@@ -137,7 +138,6 @@ function AppRoutes() {
       <Suspense fallback={<RouteFallback />}>
         <Shell
           location={{ pathname, hash: route, search: window.location.search }}
-          ctx={{ openSignInSignal }}
           neutral={neutral}
         />
       </Suspense>
@@ -156,9 +156,8 @@ function AppRoutes() {
   // { Component, props } descriptor (or null to pass); one Suspense boundary covers whichever
   // answers, and the components are lazy so only the claimed product's chunk downloads.
   const location = { hash: route, pathname: window.location.pathname, search: window.location.search };
-  const ctx = { openSignInSignal };
   for (const product of PRODUCTS) {
-    const match = product.render(location, ctx);
+    const match = product.render(location);
     if (match) {
       const { Component, props } = match;
       return <Suspense fallback={<RouteFallback />}><Component {...props} /></Suspense>;
@@ -195,8 +194,10 @@ export default function App() {
   return (
     <AuthProvider>
       <EntitlementsProvider>
-        <ResumeCheckout />
-        <AppRoutes />
+        <SignInDoorProvider>
+          <ResumeCheckout />
+          <AppRoutes />
+        </SignInDoorProvider>
       </EntitlementsProvider>
     </AuthProvider>
   );

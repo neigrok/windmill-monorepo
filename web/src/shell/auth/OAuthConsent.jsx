@@ -14,8 +14,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar, Icon } from '../../design-system';
 import { useAuth } from './AuthProvider.jsx';
-import { requestMagicLink } from './AuthClient.js';
-import { SignInDialog } from './SignInDialog.jsx';
+import { useSignInDoor } from './SignInDoor.jsx';
 import { fetchConsentClient, postDecision } from './OAuthClient.js';
 
 const reduced = () =>
@@ -58,7 +57,7 @@ export function OAuthConsent() {
   const [client, setClient] = useState(null);
   const [failure, setFailure] = useState(null); // null | 'unknown_client' | 'bad_redirect' | 'expired' | 'unreachable'
   const [phase, setPhase] = useState('idle');    // idle | approving | denying
-  const [signInOpen, setSignInOpen] = useState(false);
+  const openSignInDoor = useSignInDoor();
   const pendingApprove = useRef(null);           // a decision waiting on a re-auth
 
   const signedIn = status === 'signed-in' && Boolean(user);
@@ -94,18 +93,17 @@ export function OAuthConsent() {
       window.location.href = redirect; // hands the browser back to the MCP client — we're done
     } catch (err) {
       setPhase('idle');
-      if (err.code === 'unauthenticated') { pendingApprove.current = approve; refresh(); setSignInOpen(true); }
+      if (err.code === 'unauthenticated') { pendingApprove.current = approve; refresh(); openSignInDoor(); }
       else if (err.code === 'expired') setFailure('expired');
       else setFailure('unreachable');
     }
   }, [params, refresh]);
 
-  // Sign-in resolves in another tab (magic link) and AuthProvider flips this one. When
-  // that lands, close the door and — if a decision was mid-flight when the session
-  // lapsed — replay it. Nothing in the client re-runs; the params never left the URL.
+  // Sign-in resolves in another tab (magic link) and AuthProvider flips this one. The door
+  // shuts itself on that flip; what's ours is the replay — if a decision was mid-flight when
+  // the session lapsed, run it again. Nothing in the client re-runs; the params never left the URL.
   useEffect(() => {
     if (!signedIn) return;
-    setSignInOpen(false);
     if (pendingApprove.current !== null) {
       const approve = pendingApprove.current;
       pendingApprove.current = null;
@@ -119,8 +117,7 @@ export function OAuthConsent() {
   if (!signedIn) {
     return (
       <Shell>
-        <GateCard onSignIn={() => setSignInOpen(true)} />
-        <SignInDialog open={signInOpen} onClose={() => setSignInOpen(false)} onSend={requestMagicLink} />
+        <GateCard onSignIn={openSignInDoor} />
       </Shell>
     );
   }

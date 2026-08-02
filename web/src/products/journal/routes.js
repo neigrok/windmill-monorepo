@@ -19,10 +19,8 @@ function landingAfterSignIn() {
   return home();
 }
 
-function render({ hash }, ctx = {}) {
-  if (hash.startsWith('#/journal')) {
-    return { Component: JournalApp, props: { hash, openSignInSignal: ctx.openSignInSignal } };
-  }
+function render({ hash }) {
+  if (hash.startsWith('#/journal')) return { Component: JournalApp, props: { hash } };
   return null;
 }
 

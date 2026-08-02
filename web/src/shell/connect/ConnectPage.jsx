@@ -9,8 +9,7 @@
 
 import React, { useState } from 'react';
 import { useAuth } from '../auth/AuthProvider.jsx';
-import { requestMagicLink } from '../auth/AuthClient.js';
-import { SignInDialog } from '../auth/SignInDialog.jsx';
+import { useSignInDoor } from '../auth/SignInDoor.jsx';
 import { AccountChrome } from '../account/AccountChrome.jsx';
 import { McpKeyPanel } from './McpKeyPanel.jsx';
 import { homeHash } from '../products.js';
@@ -76,14 +75,14 @@ export function ConnectPage({ inShell = false }) {
   const signedIn = status === 'signed-in' && Boolean(user);
   const [active, setActive] = useState(1); // Claude Code
   const [copied, setCopied] = useState(false);
-  const [signInOpen, setSignInOpen] = useState(false);
+  const openSignInDoor = useSignInDoor();
   const [advOpen, setAdvOpen] = useState(false);
   const client = CLIENTS[active];
 
   // Copy is the sign-in gate: connecting needs an account, so a signed-out Copy opens the
   // door instead of copying (§2). Signed in, it copies and flips to olive "Copied" for 1.4s.
   const onCopy = () => {
-    if (!signedIn) { setSignInOpen(true); return; }
+    if (!signedIn) { openSignInDoor(); return; }
     try { navigator.clipboard?.writeText(client.copy); } catch { /* clipboard unavailable */ }
     setCopied(true);
     setTimeout(() => setCopied(false), 1400);
@@ -153,14 +152,13 @@ export function ConnectPage({ inShell = false }) {
                 OAuth above is the way in — first connect opens your browser, no keys to paste. A static key is a
                 fallback for clients that can't run that flow: a credential you paste yourself, so guard it like a password.
               </p>
-              <McpKeyPanel signedIn={signedIn} onRequireSignIn={() => setSignInOpen(true)} />
+              <McpKeyPanel signedIn={signedIn} onRequireSignIn={openSignInDoor} />
               <a href="#/settings" style={advManage}>Manage your keys in Settings → API keys</a>
             </div>
           )}
         </div>
       </AccountChrome>
 
-      <SignInDialog open={signInOpen} onClose={() => setSignInOpen(false)} onSend={requestMagicLink} />
     </>
   );
 }

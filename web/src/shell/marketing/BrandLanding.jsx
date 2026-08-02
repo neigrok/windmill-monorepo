@@ -4,10 +4,9 @@
 // indexed root, so it ships with the entry chunk like the old landing did. A v1 scaffold: honest brand
 // copy on the design system, to be deepened when the brand landing gets its own canon.
 
-import React, { useState } from 'react';
+import React from 'react';
 import { useAuth } from '../auth/AuthProvider.jsx';
-import { requestMagicLink } from '../auth/AuthClient.js';
-import { SignInDialog } from '../auth/SignInDialog.jsx';
+import { useSignInDoor } from '../auth/SignInDoor.jsx';
 import { Button } from '../../design-system';
 
 const PRODUCTS = [
@@ -67,7 +66,7 @@ function ProductCard({ product }) {
 
 export function BrandLanding() {
   const { user, status } = useAuth();
-  const [signInOpen, setSignInOpen] = useState(false);
+  const openSignInDoor = useSignInDoor();
   const signedIn = status === 'signed-in' && Boolean(user);
 
   return (
@@ -90,7 +89,7 @@ export function BrandLanding() {
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
           {signedIn
             ? <a href="#/settings"><Button variant="ghost" size="sm">My account</Button></a>
-            : (status === 'ghost' && <Button variant="ghost" size="sm" onClick={() => setSignInOpen(true)}>Sign in</Button>)}
+            : (status === 'ghost' && <Button variant="ghost" size="sm" onClick={openSignInDoor}>Sign in</Button>)}
           <a href="/journal"><Button variant="primary" size="sm">Start</Button></a>
         </div>
       </nav>
@@ -116,7 +115,6 @@ export function BrandLanding() {
         <a href="#/connect" style={{ color: 'var(--text-tertiary)' }}>Connect your tools</a>
       </footer>
 
-      <SignInDialog open={signInOpen} onClose={() => setSignInOpen(false)} onSend={requestMagicLink} />
     </div>
   );
 }

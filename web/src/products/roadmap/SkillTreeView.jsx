@@ -31,8 +31,7 @@ import { markDoneTargets } from './selection/bulkSelection.js';
 import { ForkDoor } from './ui/mobile/ForkDoor.jsx';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
 import { AccountSeat } from '../../shell/auth/AccountSeat.jsx';
-import { SignInDialog } from '../../shell/auth/SignInDialog.jsx';
-import { requestMagicLink } from '../../shell/auth/AuthClient.js';
+import { useSignInDoor } from '../../shell/auth/SignInDoor.jsx';
 import { ShareDialog } from './share/ShareDialog.jsx';
 import { ShareStats } from './share/ShareStats.js';
 import { buildOgCardSvg } from './share/ogCard.js';
@@ -118,7 +117,8 @@ function consumeSessionFlag(key) {
   }
 }
 
-export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
+export function SkillTreeView({ treeId, demo = false }) {
+  const openSignInDoor = useSignInDoor(); // the one door (shell/auth/SignInDoor.jsx) — the seat, the list notice and an expired landing all ask it
   const { breakpoint, readOnly: viewReadOnly, shared } = useViewMode();
   const { user, status, signOut, refresh } = useAuth(); // the account seat's source of truth (X6)
 
@@ -411,7 +411,6 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   const [treeVisibility, setTreeVisibility] = useState(null); // server stance on this tree: 'private'|'unlisted'|'public'|null
   const [treeMine, setTreeMine] = useState(false); // is the signed-in caller this tree's owner
   const [forkOpen, setForkOpen] = useState(false); // the fork "door" (read-only — the page's one verb)
-  const [signInOpen, setSignInOpen] = useState(false); // the one sign-in door (X6) — opened by the seat or an expired landing
   const [panning, setPanning] = useState(false); // the scene is being panned; mobile chrome yields (§chrome)
   const [recenterAvailable, setRecenterAvailable] = useState(false); // the tree left the safe frame — offer Recenter
   const [aim, setAim] = useState(null); // connect aim mode (M3): { sourceId, direction: 'unlocks'|'needs' } | null
@@ -1739,10 +1738,6 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   useEffect(() => { readOnlyRef.current = readOnly; }, [readOnly]);
   useEffect(() => { composerOpenRef.current = composerOpen; }, [composerOpen]);
 
-  // An expired magic-link landing routes back here and bumps this signal to summon
-  // the sign-in door — the same one door the seat opens. Zero is the resting value.
-  useEffect(() => { if (openSignInSignal > 0) setSignInOpen(true); }, [openSignInSignal]);
-
   // The coach's eligibility (F4 §03): a stranger who hasn't seen it. The once-ever note
   // and the signed-out case resolve synchronously; a signed-in visitor is a stranger only
   // with no trees of their own — a tree-owner is never coached, so we wait on that check.
@@ -2012,7 +2007,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
   // The anon owner's honest "sign in to keep it" line is the list header's own notice row (F3) —
   // the plaque nudge's list-view home. Same door the tree-view plaque nudge opens.
   const listNotice = status === 'ghost' && treeMine && !demo ? (
-    <button type="button" className="st-list-notice" onClick={() => setSignInOpen(true)}>
+    <button type="button" className="st-list-notice" onClick={openSignInDoor}>
       <span className="st-list-notice-text">Saved on this device — sign in to keep it</span>
       <span className="st-list-notice-chevron" aria-hidden>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
@@ -2573,7 +2568,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
           ctaEcho={ctaEcho}
           dominantKind={shareStats?.dominantKind}
           onFork={(shared || !!demotion) && !demotion?.cardOpen ? () => setForkOpen(true) : undefined}
-          onSignInToKeep={status === 'ghost' && treeMine && !demo ? () => setSignInOpen(true) : undefined}
+          onSignInToKeep={status === 'ghost' && treeMine && !demo ? openSignInDoor : undefined}
           onRecenter={handleRecenter}
           showRecenter={recenterAvailable}
           tablet={breakpoint === 'tablet'}
@@ -2666,7 +2661,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
             status={status}
             expired={lapsed}
             claimBusy={claimBusy}
-            onSignIn={() => setSignInOpen(true)}
+            onSignIn={openSignInDoor}
             onSignOut={signOut}
             onConnect={() => { window.location.hash = '#/connect'; }}
             onSettings={() => { window.location.hash = '#/settings'; }}
@@ -2938,7 +2933,7 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
           author={tree?.author}
           onFork={() => { setDemotion((d) => d && { ...d, cardOpen: false }); setForkOpen(true); }}
           onDismiss={() => setDemotion((d) => d && { ...d, cardOpen: false })}
-          onSignIn={() => setSignInOpen(true)}
+          onSignIn={openSignInDoor}
         />
       )}
 
@@ -3045,8 +3040,6 @@ export function SkillTreeView({ treeId, demo = false, openSignInSignal = 0 }) {
       )}
 
       <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} readOnly={readOnly} />
-
-      <SignInDialog open={signInOpen} onClose={() => setSignInOpen(false)} onSend={requestMagicLink} />
 
       <ShareDialog
         open={shareOpen}

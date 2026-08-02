@@ -11,7 +11,7 @@ import { NewTreeBirth } from './ui/NewTreeBirth.jsx';
 import { QuestShelf } from './quests/QuestShelf.jsx';
 import { listAllTrees } from './persistence/TreeRegistry.js';
 
-export function SkillTreeApp({ treeId, birth, start, demo = false, openSignInSignal }) {
+export function SkillTreeApp({ treeId, birth, start, demo = false }) {
   // Bare #/app has no tree named: send it to the newest tree of the union — server or
   // local — or to the quest shelf when there is none. Runs only while unresolved.
   useEffect(() => {
@@ -29,7 +29,7 @@ export function SkillTreeApp({ treeId, birth, start, demo = false, openSignInSig
   if (!treeId) return <Resolving />;
   // A different tree is a different world: keying by treeId lets demotion, lapse,
   // fork state, and the scene's mode die with the old tree instead of leaking across.
-  return <SkillTreeView key={treeId} treeId={treeId} demo={demo} openSignInSignal={openSignInSignal} />;
+  return <SkillTreeView key={treeId} treeId={treeId} demo={demo} />;
 }
 
 export default SkillTreeApp;

@@ -9,8 +9,7 @@ import { ArrowLeft } from 'lucide-react';
 import { ProductSwitcher } from '../../shell/ProductSwitcher.jsx';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
 import { AccountSeat } from '../../shell/auth/AccountSeat.jsx';
-import { SignInDialog } from '../../shell/auth/SignInDialog.jsx';
-import { requestMagicLink } from '../../shell/auth/AuthClient.js';
+import { useSignInDoor, useSignInDoorHost } from '../../shell/auth/SignInDoor.jsx';
 import { gymApi } from './gymApi.js';
 import {
   clockOf, dayLabel, durLabel, fmt, groupByExercise, isFinished, nameOfMovement, routineNameOf,
@@ -20,30 +19,25 @@ import { Logger } from './logger/Logger.jsx';
 import { useLiveSession } from './logger/useLiveSession.js';
 import './gym.css';
 
-export function GymApp({ hash, openSignInSignal = 0 }) {
-  const [signInOpen, setSignInOpen] = useState(false);
+export function GymApp({ hash }) {
   const { user, status, signOut } = useAuth();
-
-  // An expired magic link asks the active product to open its own door (App.jsx bumps the signal).
-  useEffect(() => {
-    if (openSignInSignal > 0) setSignInOpen(true);
-  }, [openSignInSignal]);
+  const openSignInDoor = useSignInDoor();
+  const lendDoorSkin = useSignInDoorHost();
 
   return (
-    <div className="gym-root" data-theme="dark">
+    <div className="gym-root" ref={lendDoorSkin} data-theme="dark">
       {/* Three auth states, three rooms — a first visit resolves through 'loading' with no stored
           hint, and an empty room would read as a broken app. */}
       {status === 'loading' && <main className="gym-column"><p className="gym-quiet">Opening the log…</p></main>}
       {status === 'ghost' && (
         <>
-          <Chrome user={user} status={status} onSignIn={() => setSignInOpen(true)} onSignOut={signOut} />
-          <main className="gym-column"><SignInDoor onSignIn={() => setSignInOpen(true)} /></main>
+          <Chrome user={user} status={status} onSignIn={openSignInDoor} onSignOut={signOut} />
+          <main className="gym-column"><SignInPitch onSignIn={openSignInDoor} /></main>
         </>
       )}
       {status === 'signed-in' && (
-        <TrainingRoom hash={hash} user={user} status={status} onSignIn={() => setSignInOpen(true)} onSignOut={signOut} />
+        <TrainingRoom hash={hash} user={user} status={status} onSignIn={openSignInDoor} onSignOut={signOut} />
       )}
-      <SignInDialog open={signInOpen} onClose={() => setSignInOpen(false)} onSend={requestMagicLink} />
     </div>
   );
 }
@@ -68,7 +62,7 @@ function Chrome({ user, status, onSignIn, onSignOut }) {
   );
 }
 
-function SignInDoor({ onSignIn }) {
+function SignInPitch({ onSignIn }) {
   return (
     <section className="gym-door">
       <h1 className="gym-title">Training log</h1>

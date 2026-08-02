@@ -4,12 +4,11 @@
 // and are stamped on the shell root, so the rail tints with the room. The shell itself runs
 // zero infinite animations — the calm ceiling is the room's budget.
 
-import React, { Suspense, useEffect, useState } from 'react';
+import React, { Suspense, useEffect } from 'react';
 import { PRODUCTS } from '../products.js';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { AccountSeat } from '../auth/AccountSeat.jsx';
-import { SignInDialog } from '../auth/SignInDialog.jsx';
-import { requestMagicLink } from '../auth/AuthClient.js';
+import { useSignInDoor, useSignInDoorHost } from '../auth/SignInDoor.jsx';
 import { ShellHome } from './ShellHome.jsx';
 import './chrome.css';
 
@@ -98,7 +97,7 @@ function RoomFallback() {
   return <div className="wm-room-fallback">Windmill</div>;
 }
 
-function RoomContent({ room, location, ctx }) {
+function RoomContent({ room, location }) {
   if (room.kind === 'redirect') return null;
   if (room.kind === 'home') return <ShellHome />;
   if (room.kind === 'neutral') {
@@ -108,15 +107,16 @@ function RoomContent({ room, location, ctx }) {
   const { product } = room;
   const spot = { hash: location.hash, pathname: location.pathname, search: location.search };
   // A bare room URL mounts the product at its own home — synthesized, never written to the URL.
-  const match = product.render(spot, ctx) ?? product.render({ ...spot, hash: product.home() }, ctx);
+  const match = product.render(spot) ?? product.render({ ...spot, hash: product.home() });
   if (!match) return null;
   const { Component, props } = match;
   return <Suspense fallback={<RoomFallback />}><Component {...props} /></Suspense>;
 }
 
-export function Shell({ location, ctx = {}, neutral = null }) {
+export function Shell({ location, neutral = null }) {
   const { user, status, signOut } = useAuth();
-  const [signInOpen, setSignInOpen] = useState(false);
+  const openSignInDoor = useSignInDoor();
+  const lendDoorSkin = useSignInDoorHost();
   const room = resolveRoom(location.pathname, neutral);
   const redirect = room.redirect ?? null;
 
@@ -127,7 +127,7 @@ export function Shell({ location, ctx = {}, neutral = null }) {
   }, [redirect?.href, redirect?.external]);
 
   return (
-    <div className="wm-shell" data-brand={room.scope.brand} data-theme={room.scope.theme ?? undefined}>
+    <div className="wm-shell" ref={lendDoorSkin} data-brand={room.scope.brand} data-theme={room.scope.theme ?? undefined}>
       <aside className="wm-rail">
         <a className="wm-rail-wordmark" href="/" title="Windmill">W</a>
         <RoomLink href="/app" label="Home" icon="layout-grid" active={room.kind === 'home' && !redirect} />
@@ -147,7 +147,7 @@ export function Shell({ location, ctx = {}, neutral = null }) {
             status={status}
             size={36}
             treeCount={null}
-            onSignIn={() => setSignInOpen(true)}
+            onSignIn={openSignInDoor}
             onSettings={() => navigate('/app/settings')}
             onConnect={() => navigate('/app/connect')}
             onSignOut={signOut}
@@ -166,7 +166,7 @@ export function Shell({ location, ctx = {}, neutral = null }) {
                 status={status}
                 size={34}
                 treeCount={null}
-                onSignIn={() => setSignInOpen(true)}
+                onSignIn={openSignInDoor}
                 onSettings={() => navigate('/app/settings')}
                 onConnect={() => navigate('/app/connect')}
                 onSignOut={signOut}
@@ -175,7 +175,7 @@ export function Shell({ location, ctx = {}, neutral = null }) {
           </div>
         </div>
         <main className="wm-room">
-          <RoomContent room={room} location={location} ctx={ctx} />
+          <RoomContent room={room} location={location} />
         </main>
       </div>
       <nav className="wm-tabs" aria-label="Rooms">
@@ -184,7 +184,6 @@ export function Shell({ location, ctx = {}, neutral = null }) {
           <TabLink key={p.id} href={p.shell.room} label={p.label} icon={p.shell.icon} active={room.product?.id === p.id} />
         ))}
       </nav>
-      <SignInDialog open={signInOpen} onClose={() => setSignInOpen(false)} onSend={requestMagicLink} />
     </div>
   );
 }

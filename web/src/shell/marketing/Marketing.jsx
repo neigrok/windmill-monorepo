@@ -7,9 +7,9 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Badge } from '../../design-system';
-import { SignInDialog } from '../auth/SignInDialog.jsx';
+import { useSignInDoor } from '../auth/SignInDoor.jsx';
 import { FeedbackDialog } from '../feedback/FeedbackDialog.jsx';
-import { requestMagicLink, pendingMagicLink } from '../auth/AuthClient.js';
+import { pendingMagicLink } from '../auth/AuthClient.js';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { AccountSeat } from '../auth/AccountSeat.jsx';
 import { listTrees } from '../../products/roadmap/persistence/TreeRegistry.js';
@@ -442,8 +442,7 @@ function writeTreesCache(email, rows) {
 }
 
 export default function Marketing() {
-  const [signInOpen, setSignInOpen] = useState(false);
-  const [signInResume, setSignInResume] = useState(null); // the chip reopens the door on its wait panel; Log in opens fresh
+  const openSignInDoor = useSignInDoor();
   const [feedbackOpen, setFeedbackOpen] = useState(false); // the footer's contact door — posts anon, no account needed
   const { user, status, signOut } = useAuth();
   const [trees, setTrees] = useState(() => readTreesCache(user?.email)); // seeded from cache, then the registry corrects it
@@ -489,11 +488,9 @@ export default function Marketing() {
   }, [pendingLink]);
 
   const newest = status === 'signed-in' && trees?.length ? trees[0] : null;
-  const sendLink = async (email) => {
-    const result = await requestMagicLink(email);
-    setPendingLink(pendingMagicLink());
-    return result;
-  };
+  // The chip is this page's own reading of the link-sent record, so it re-reads whenever the
+  // one door reports a link went out. Resume reopens that door straight onto its wait panel.
+  const noteLinkSent = () => setPendingLink(pendingMagicLink());
 
   return (
     <div className="wm-landing" style={{ fontFamily: 'var(--font-body)' }}>
@@ -504,8 +501,8 @@ export default function Marketing() {
         newest={newest}
         treeCount={trees ? trees.length : null}
         linkSent={Boolean(pendingLink)}
-        onLogin={() => { setSignInResume(null); setSignInOpen(true); }}
-        onResumeLink={() => { setSignInResume(pendingMagicLink()); setSignInOpen(true); }}
+        onLogin={() => openSignInDoor({ onSent: noteLinkSent })}
+        onResumeLink={() => openSignInDoor({ resume: pendingMagicLink(), onSent: noteLinkSent })}
         onSignOut={signOut}
         onMyTrees={() => { window.location.hash = newest ? `#/app/${newest.id}` : '#/app'; }}
       />
@@ -518,7 +515,6 @@ export default function Marketing() {
         <CtaBand planted={Boolean(newest)} />
       </main>
       <Footer onFeedback={() => setFeedbackOpen(true)} />
-      <SignInDialog open={signInOpen} resume={signInResume} onClose={() => setSignInOpen(false)} onSend={sendLink} />
       <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
     </div>
   );

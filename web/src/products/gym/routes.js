@@ -18,10 +18,8 @@ function landingAfterSignIn() {
   return home();
 }
 
-function render({ hash }, ctx = {}) {
-  if (hash.startsWith('#/gym')) {
-    return { Component: GymApp, props: { hash, openSignInSignal: ctx.openSignInSignal } };
-  }
+function render({ hash }) {
+  if (hash.startsWith('#/gym')) return { Component: GymApp, props: { hash } };
   return null;
 }
 
