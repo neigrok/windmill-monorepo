@@ -5,9 +5,11 @@ name: Deploy to VPS
 # image, and brings the stack up. Every value the compose reads is written here from exactly one source:
 #   secrets  → POSTGRES_PASSWORD, the service API keys, WINDMILL_MCP_TOKEN
 #   variables→ DOMAIN_APP, DOMAIN_API, ACME_EMAIL, CF_IPS, PADDLE_ENV, PADDLE_PRICE_ID, …
-# Anything left unset is written empty and the compose `${VAR:-default}` fallbacks take over, so an
-# absent optional key is safe. The handful whose emptiness would break the site or the database
-# (DOMAIN_*, ACME_EMAIL, POSTGRES_PASSWORD) are GUARDED below and fail the run before it touches the host.
+# Anything left unset is written empty and the compose `${VAR:-default}` fallbacks take over — safe only
+# where the fallback is genuinely production-worthy, which is the judgement to make per key rather than
+# assume. The handful whose emptiness would break the site, the database, or the front door
+# (DOMAIN_*, ACME_EMAIL, POSTGRES_PASSWORD, RESEND_FROM) are GUARDED below and fail the run before it
+# touches the host.
 #
 # Manual (workflow_dispatch) so the first run is watched. The prior .env is backed up and restored if
 # the rendered file won't validate against compose — a bad render can't outlive the job.
@@ -71,13 +73,21 @@ jobs:
           # Guard: refuse before touching the host if anything whose emptiness would break prod is unset.
           # (WINDMILL_MCP_TOKEN is NOT here on purpose: /mcp is still gated by OAuth + per-user MCP keys,
           # so an empty shared token disables only the static-token shortcut, it does not open the endpoint.)
+          #
+          # RESEND_FROM is here because its compose fallback is the one default that LOOKS safe and is not:
+          # `onboarding@resend.dev` is Resend's shared test sender, and Resend refuses it for every
+          # recipient except the account owner. An empty value therefore does not disable sign-in mail, it
+          # narrows it to one address — the owner's — so the deploy stays green, every probe the owner
+          # runs passes, and only strangers are locked out. That is the failure this render already caused
+          # once: it overwrites ~/windmill/.env wholesale (only POSTGRES_PASSWORD is preserved), so an
+          # unset variable silently reverted a working sender and no one but the owner could sign up.
           missing=
-          for key in DOMAIN_APP DOMAIN_API ACME_EMAIL POSTGRES_PASSWORD; do
+          for key in DOMAIN_APP DOMAIN_API ACME_EMAIL POSTGRES_PASSWORD RESEND_FROM; do
             [ -n "${!key}" ] || missing="$missing $key"
           done
           if [ -n "$missing" ]; then
             echo "Refusing to render — these required values are unset:$missing"
-            echo "Set them (variables for the domains/email, the POSTGRES_PASSWORD secret) and re-run."
+            echo "Set them (variables for the domains/email/sender, the POSTGRES_PASSWORD secret) and re-run."
             exit 1
           fi
 

@@ -254,7 +254,7 @@ the prior tree/zoom/selection (auth.md §3, "the landing").
 | Var | Purpose | Default |
 |---|---|---|
 | `RESEND_API_KEY` | Resend key; without it, sends throw → `502` | — |
-| `RESEND_FROM` | Verified sender | `Windmill <onboarding@resend.dev>` |
+| `RESEND_FROM` | Verified sender, on a domain verified in Resend. Never Resend's shared `onboarding@resend.dev` outside a scratch box: Resend accepts it only for the account owner and rejects every other recipient `422`, so sign-up breaks for everyone **except** the person testing it. The deploy guards it for that reason | — |
 | `WINDMILL_APP_URL` | Base for the magic-link URL; always a trusted CORS origin | `http://localhost:5183` (compose: `https://${DOMAIN_APP}`) |
 | `WINDMILL_COOKIE_DOMAIN` | Cookie `Domain`; empty = host-only | compose: `${DOMAIN_APP}` |
 | `WINDMILL_ALLOWED_ORIGINS` | Extra credentialed-CORS origins, comma-separated | — |

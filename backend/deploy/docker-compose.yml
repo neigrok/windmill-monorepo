@@ -47,8 +47,12 @@ services:
       DATABASE_URL: postgresql://windmill:${POSTGRES_PASSWORD}@db:5432/windmill
       PORT: "8080"
       RESEND_API_KEY: ${RESEND_API_KEY:-}
-      # Verified Resend sender; defaults to Resend's shared test sender until the domain is set up.
-      RESEND_FROM: ${RESEND_FROM:-Windmill <onboarding@resend.dev>}
+      # Verified Resend sender, and the one key here with no fallback on purpose. Every other empty value
+      # below turns its feature honestly dark; Resend's shared `onboarding@resend.dev` would instead keep
+      # sign-in mail working for exactly one recipient — the account owner — and reject every stranger,
+      # which is an outage that passes every check the owner can run. Empty fails for everyone or not at
+      # all; the deploy guard keeps it from ever rendering empty here.
+      RESEND_FROM: ${RESEND_FROM:-}
       # Paste-import LLM escalation (/v1/compose). Empty → the route answers 503 compose-unavailable
       # and the client hides the handle.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
