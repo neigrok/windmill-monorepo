@@ -208,6 +208,28 @@ void PgNudgeRepository::upsertSettings(const UserId& user, const NudgeSettings& 
   txn.commit();
 }
 
+bool PgNudgeRepository::stopMailing(const Email& address) {
+  // One statement, and idempotent because the value it writes is a constant: a redelivered webhook
+  // performs the identical write and changes nothing, which is what makes a dedup table unnecessary
+  // rather than merely absent. The mirror of roadmap's PgReminderRepository::stopMailing, on the
+  // one table journal mails from.
+  //
+  // It INSERTS when there is no row, and that is deliberate. A journal_nudge row appears the first
+  // time a device pushes a schedule, so most accounts have none — yet a bounce on their sign-in
+  // mail still proves the mailbox is gone. Without the insert, the day a phone turns nudges on we
+  // would knock at a dead address for a night before learning it again. `enabled` is left exactly
+  // as its owner set it. users.email is citext, so the address matches however the provider cased
+  // it back to us.
+  pqxx::work txn{pgThreadConnection(connString_)};
+  pqxx::result changed = txn.exec_params(
+      "INSERT INTO journal_nudge (user_id, suppressed) "
+      "SELECT id, true FROM users WHERE email = $1::citext AND deleted_at IS NULL "
+      "ON CONFLICT (user_id) DO UPDATE SET suppressed = true, updated_at = now() RETURNING user_id",
+      address.value);
+  txn.commit();
+  return !changed.empty();
+}
+
 void PgNudgeRepository::setPauseDigest(const UserId& user, const std::string& digest) {
   pqxx::work txn{pgThreadConnection(connString_)};
   txn.exec_params("UPDATE journal_nudge SET pause_digest = $2 WHERE user_id = $1::uuid",

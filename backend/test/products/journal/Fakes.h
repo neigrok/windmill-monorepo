@@ -171,7 +171,23 @@ public:
     return it->second;
   }
   void upsertSettings(const UserId& user, const NudgeSettings& row) override {
+    // The real one writes every column BUT `suppressed`, so a settings PATCH can never lift a
+    // provider's verdict — mirrored here, or a test could pass against a fake that can.
+    const bool suppressed = settings[user.str()].suppressed;
     settings[user.str()] = row;
+    settings[user.str()].suppressed = suppressed;
+  }
+
+  // MailSuppression, keyed by address exactly like the real one: a provider event carries nothing
+  // else. An address nobody owns writes nothing and answers false, and the row is created when it
+  // is missing so an account whose device never pushed a schedule still remembers the mailbox died.
+  bool stopMailing(const Email& address) override {
+    for (const auto& [user, owned] : emails)
+      if (owned.value == address.value) {
+        settings[user].suppressed = true;
+        return true;
+      }
+    return false;
   }
 
   void setPauseDigest(const UserId& user, const std::string& digest) override {

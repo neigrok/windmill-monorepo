@@ -62,6 +62,18 @@ services:
       # Tending (server-side agent edits). Ships DARK: empty/absent → every run refuses with
       # "not turned on", the designed first face. Set to "true" to arm it once the agent loop lands.
       TENDING_ENABLED: ${TENDING_ENABLED:-}
+      # Resend's Svix signing secret for the delivery webhook: a permanent bounce or a spam complaint
+      # suppresses that address's weekly reminder. Empty → POST /v1/resend/webhook refuses every
+      # delivery, so the door is dark rather than forgeable (the PADDLE_WEBHOOK_SECRET stance).
+      RESEND_WEBHOOK_SECRET: ${RESEND_WEBHOOK_SECRET:-}
+      # The reminder engine's arming pair, plus the manual-sweep bearer. All three were MISSING here
+      # until 2026-08-02, so the engine could not be armed in prod at all — the allowlist was
+      # unreachable rather than empty. Defaults keep it dark: nothing sends while ENABLED is unset,
+      # and an empty ALLOWLIST means NOBODY by design, not by accident. Unset ADMIN_TOKEN 404s the
+      # manual sweep route, which is its resting state — the heartbeat does not need it.
+      REMINDERS_ENABLED: ${REMINDERS_ENABLED:-}
+      REMINDERS_ALLOWLIST: ${REMINDERS_ALLOWLIST:-}
+      REMINDERS_ADMIN_TOKEN: ${REMINDERS_ADMIN_TOKEN:-}
       # Observability: uncaught server exceptions AND every LOG_* line ship to Sentry (empty DSN →
       # both no-op; stdout is never affected, so `docker logs` stays whole either way). LOG_LEVEL is
       # the volume knob, ENVIRONMENT keeps a non-prod run out of the environment you page on, and

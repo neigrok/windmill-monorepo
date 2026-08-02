@@ -7,6 +7,7 @@
 #include "platform/adapters/crypto/OpenSslTokenGenerator.h"
 #include "platform/adapters/email/ResendClient.h"
 #include "platform/adapters/email/ResendEmailSender.h"
+#include "platform/adapters/email/ResendWebhookApi.h"
 #include "platform/adapters/http/AccessLog.h"
 #include "platform/adapters/sentry/LogTee.h"
 #include "platform/adapters/sentry/SentryClient.h"
@@ -463,11 +464,13 @@ int main() {
         std::string path = req->path();
         std::transform(path.begin(), path.end(), path.begin(),
                        [](unsigned char c) { return std::tolower(c); });
-        // The Paddle webhook authenticates every byte by HMAC, and Paddle delivers a whole event
-        // burst from a small IP set behind Cloudflare — which collapses onto ONE bucket here. A 429
-        // is a failed delivery that burns one of Paddle's ~60 retries, so shedding a billing event
-        // to rate-limit an endpoint that already verifies its own signature is a bad trade.
-        if (path == "/v1/paddle/webhook") return nullptr;
+        // The vendor webhooks authenticate every byte by HMAC before they do anything, and both
+        // vendors deliver a whole event burst from a small egress pool — which collapses onto ONE
+        // bucket here. A 429 is a failed delivery that burns one of the vendor's retries, so
+        // shedding an event to rate-limit a door that already verifies its own signature is a bad
+        // trade twice over: a billing burst and a bounce burst are both exactly the traffic you
+        // must not drop. An unsigned flood costs a signature check and nothing else.
+        if (path == "/v1/paddle/webhook" || path == "/v1/resend/webhook") return nullptr;
         bool ok = apiLimiter->allow(ip);
         if (ok && path == "/v1/auth/magic-link")
           ok = magicPerIp->allow(ip) && magicGlobal->allow("global");
@@ -801,6 +804,31 @@ int main() {
   auto logService = std::make_shared<gym::LogService>(*gymRepository, *systemClock);
   gym::GymDeps gymDeps{.logService = logService, .authService = authService};
   gym::registerRoutes(app, gymDeps);
+
+  // Resend's delivery webhook, mounted LAST because it is the one door that speaks for all of them.
+  // There is one Resend account, so one signing secret and one stream of feedback about every mail
+  // this brand sends — and a permanent bounce is a fact about a MAILBOX, not about a product. The
+  // platform receiver verifies the Svix signature, parses, and makes the one pure verdict
+  // (platform/domain/Mail.h); each product says what IT stops, and one bounce writes them all.
+  //
+  // EVERY product that sends mail must appear in this list — the same rule as the account-footprint
+  // tables above, and the same failure if it is broken: one missing keeps mailing an address the
+  // provider has already called dead, spending the deliverability the magic link depends on. Gym
+  // sends nothing today and so contributes nothing, which is the honest entry for it.
+  //
+  // Empty secret refuses every delivery (Svix retries), so the door is dark rather than forgeable
+  // until the secret lands — mirroring PADDLE_WEBHOOK_SECRET exactly. Set the secret FIRST, then
+  // register the endpoint in Resend, or every genuine delivery is refused and burns a retry.
+  const char* resendWebhookSecretEnv = std::getenv("RESEND_WEBHOOK_SECRET");
+  auto resendWebhookApi = std::make_shared<ResendWebhookApi>(
+      std::vector<MailStream>{{"roadmap reminder", reminderRepo}, {"journal nudge", journalNudges}},
+      systemClock, resendWebhookSecretEnv ? resendWebhookSecretEnv : "");
+  app.registerHandler(
+      "/v1/resend/webhook",
+      [resendWebhookApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        resendWebhookApi->webhook(req, std::move(cb));
+      },
+      {drogon::Post});
 
   const char* portEnv = std::getenv("PORT");
   int port = portEnv ? std::atoi(portEnv) : 8080;

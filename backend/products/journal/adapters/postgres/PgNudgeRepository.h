@@ -24,6 +24,7 @@ public:
   void closeDay(const UserId& user, const LocalDate& slotDay, DayOutcome outcome) override;
   std::optional<NudgeSettings> settingsFor(const UserId& user) override;
   void upsertSettings(const UserId& user, const NudgeSettings& settings) override;
+  bool stopMailing(const Email& address) override;
   void setPauseDigest(const UserId& user, const std::string& digest) override;
   std::optional<UserId> userByPauseDigest(const std::string& digest) override;
   void pause(const UserId& user, std::uint64_t untilMs) override;

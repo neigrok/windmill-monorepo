@@ -48,10 +48,40 @@ export function ReminderSection() {
   // could do.
   if (loading || !settings || !settings.armed) return null;
 
-  // `settings.suppressed` rides the wire and is deliberately not rendered: nothing anywhere can
-  // set it yet — there is no bounce or complaint webhook — so "we stopped mailing this address"
-  // is a state that cannot occur, and copy for a state that cannot occur is copy that lies.
-  // The branch comes back here the day the webhook lands.
+  // We will not send, and the person did not ask us to stop. That is the one thing this section
+  // must say out loud — a switch still reading "on" over a stream that no longer runs is the
+  // dishonest version of this state. The switch is gone rather than disabled because flipping it
+  // would change a stored preference and nothing a reader could observe. Nothing here clears the
+  // flag, and the copy says so rather than implying a retry we do not run.
+  //
+  // The copy says "can't send", never "stopped sending", because suppression can reach an account
+  // that never turned reminders on: the webhook writes the row if it is missing, and the bounce
+  // may have been a magic link rather than a reminder. "We stopped sending" would then be a lie
+  // told to someone who never got one. Kept BELOW the `armed` guard for the same reason — while
+  // the engine cannot reach them there is nothing to explain.
+  if (settings.suppressed) {
+    return (
+      <Section title="Reminders">
+        <div style={{ padding: '2px 0 4px' }}>
+          <p style={{ ...styles.primaryText, whiteSpace: 'normal' }}>
+            We can't send reminders to your email address.
+          </p>
+          <p style={{ ...styles.metaText, marginTop: 8 }}>
+            Mail we sent came back permanently undeliverable, or was reported as spam. Either way
+            we stopped writing to an address that can't receive it, rather than keep trying.
+          </p>
+          <p style={styles.metaText}>
+            Sign-in email is unaffected — magic links still go to this address, so you can always
+            get back in.
+          </p>
+          <p style={styles.metaText}>
+            There's no way to clear this from here yet, and we won't retry on our own. If the
+            address works again, send us a note below and we'll lift it.
+          </p>
+        </div>
+      </Section>
+    );
+  }
 
   const toggle = async (next) => {
     if (phase === 'saving') return;

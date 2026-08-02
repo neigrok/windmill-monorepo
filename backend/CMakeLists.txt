@@ -25,6 +25,7 @@ endif()
 # vendor edges) are folded into these same two libraries below, once Drogon + libpqxx are found.
 add_library(windmill_platform
   platform/domain/Auth.cpp
+  platform/domain/Mail.cpp
   platform/domain/OAuth.cpp
   platform/application/AuthService.cpp
   platform/application/Entitlements.cpp
@@ -124,6 +125,7 @@ add_executable(windmill_domain_tests
   test/application/ProgressServiceTest.cpp
   test/application/ActivityFeedTest.cpp
   test/domain/AuthTest.cpp
+  test/domain/MailTest.cpp
   test/application/AuthServiceTest.cpp
   test/application/EntitlementsTest.cpp
   test/domain/OAuthTest.cpp
@@ -177,6 +179,8 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     platform/adapters/crypto/OpenSslTokenGenerator.cpp
     platform/adapters/email/ResendClient.cpp
     platform/adapters/email/ResendEmailSender.cpp
+    platform/adapters/email/ResendSignature.cpp
+    platform/adapters/email/ResendWebhookApi.cpp
     platform/adapters/oidc/IdToken.cpp
     platform/adapters/oidc/GoogleOAuthClient.cpp
     platform/adapters/oidc/AppleOAuthClient.cpp
@@ -298,6 +302,8 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/adapters/http/VendorCallTest.cpp
     test/adapters/ws/CollabTest.cpp
     test/adapters/email/ResendEmailSenderTest.cpp
+    test/adapters/email/ResendSignatureTest.cpp
+    test/adapters/email/ResendWebhookApiTest.cpp
     test/adapters/sentry/LogTeeTest.cpp
     test/adapters/http/AccessLogTest.cpp
     test/adapters/paddle/PaddleSignatureTest.cpp

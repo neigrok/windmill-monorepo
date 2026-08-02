@@ -39,6 +39,7 @@ public:
 
   std::optional<ReminderSettings> settingsFor(const UserId& user) override;
   bool upsertSettings(const UserId& user, bool enabled, const std::string& ianaTz) override;
+  bool stopMailing(const Email& address) override;
 
   void setPauseDigest(const UserId& user, const std::string& digest) override;
   std::optional<UserId> userByPauseDigest(const std::string& digest) override;

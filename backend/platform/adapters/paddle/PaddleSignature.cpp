@@ -1,10 +1,11 @@
 #include "platform/adapters/paddle/PaddleSignature.h"
 
+#include "platform/adapters/http/WebhookFreshness.h"
+
 #include <openssl/crypto.h>
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
 
-#include <cstdlib>
 #include <vector>
 
 namespace wm {
@@ -19,14 +20,6 @@ std::string hexOf(const unsigned char* bytes, unsigned int length) {
     out.push_back(digits[bytes[i] & 0x0F]);
   }
   return out;
-}
-
-// Unix seconds only, and short enough that the millisecond conversion can't overflow.
-bool isTimestamp(const std::string& value) {
-  if (value.empty() || value.size() > 12) return false;
-  for (char c : value)
-    if (c < '0' || c > '9') return false;
-  return true;
 }
 }
 
@@ -51,14 +44,10 @@ bool verifyPaddleSignature(const std::string& body, const std::string& signature
     if (end == std::string::npos) break;
     at = end + 1;
   }
-  if (!isTimestamp(timestamp) || offered.empty()) return false;
-
-  // Refuse a stale signature, so a delivery captured off the wire can't be replayed later.
-  if (toleranceMs > 0) {
-    const std::int64_t signedAtMs = std::strtoll(timestamp.c_str(), nullptr, 10) * 1000;
-    const std::int64_t drift = nowMs > signedAtMs ? nowMs - signedAtMs : signedAtMs - nowMs;
-    if (drift > toleranceMs) return false;
-  }
+  if (offered.empty()) return false;
+  // Refuse a stale signature, so a delivery captured off the wire can't be replayed later — one
+  // window, shared with the Svix verifier (adapters/http/WebhookFreshness.h).
+  if (!signedWithinWindow(timestamp, nowMs, toleranceMs)) return false;
 
   const std::string signedPayload = timestamp + ":" + body;
   unsigned char mac[EVP_MAX_MD_SIZE];

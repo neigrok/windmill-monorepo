@@ -125,7 +125,8 @@ TEST(nudge_get_without_a_row_answers_the_defaults) {
 
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
   CHECK_EQ(dump(*response->getJsonObject()),
-           std::string(R"({"adaptive":false,"armed":false,"channel":"email","enabled":false})"));
+           std::string(R"({"adaptive":false,"armed":false,"channel":"email","enabled":false,)"
+                       R"("suppressed":false})"));
 }
 
 TEST(nudge_patch_turns_on_and_stores_the_device_schedule) {
@@ -142,7 +143,7 @@ TEST(nudge_patch_turns_on_and_stores_the_device_schedule) {
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
   CHECK_EQ(dump(*response->getJsonObject()),
            std::string(R"({"adaptive":true,"armed":false,"channel":"email",)"
-                       R"("enabled":true,"nextDueAt":1700000900000})"));
+                       R"("enabled":true,"nextDueAt":1700000900000,"suppressed":false})"));
   std::optional<NudgeSettings> stored = h.nudges->settingsFor(me);
   CHECK(stored.has_value());
   CHECK(stored->enabled);
@@ -245,4 +246,39 @@ TEST(admin_sweep_with_the_right_token_reports) {
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
   CHECK_EQ(dump(*response->getJsonObject()),
            std::string(R"({"failed":0,"held":0,"sent":0,"skipped":0})"));
+}
+
+TEST(nudge_get_reports_a_mailbox_the_provider_called_dead) {
+  // The one fact on this surface the reader did not choose. Someone whose nudges silently stopped
+  // is owed the reason: a settings page answering `enabled: true` while nothing ever arrives is
+  // lying to them, and the flag is the only thing that can tell them the truth.
+  Harness h;
+  UserId me = h.signIn("s-live");
+  NudgeSettings on;
+  on.enabled = true;
+  on.nextDueAtMs = h.clock->now + 3'600'000;
+  on.slotDay = ld("2026-07-28");
+  h.nudges->upsertSettings(me, on);
+  h.nudges->emails[me.str()] = Email{"sam@example.com"};
+
+  CHECK(h.nudges->stopMailing(Email{"sam@example.com"}));
+
+  drogon::HttpResponsePtr response =
+      getSettings(h, request(drogon::Get, "/v1/journal/nudge", "", "s-live"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(*response->getJsonObject()),
+           std::string(R"({"adaptive":true,"armed":false,"channel":"email","enabled":true,)"
+                       R"("nextDueAt":1700003600000,"suppressed":true})"));
+  // And nothing a settings PATCH can say lifts it: the flag is the provider's fact, not a
+  // preference, so what its owner asked for survives beside it rather than instead of it.
+  Json::Value patch(Json::objectValue);
+  patch["enabled"] = false;
+  CHECK_EQ(patchSettings(h, request(drogon::Patch, "/v1/journal/nudge", dump(patch), "s-live"))
+               ->getStatusCode(),
+           drogon::k200OK);
+  CHECK(h.nudges->settingsFor(me)->suppressed);
+  // An address no account owns writes nothing and says so, which is what keeps the webhook from
+  // being an account-existence oracle.
+  CHECK_FALSE(h.nudges->stopMailing(Email{"stranger@example.com"}));
 }

@@ -343,6 +343,27 @@ bool PgReminderRepository::upsertSettings(const UserId& user, bool enabled,
   return true;
 }
 
+bool PgReminderRepository::stopMailing(const Email& address) {
+  // One statement, and idempotent because the value it writes is a constant: a redelivered webhook
+  // performs the identical write and changes nothing, which is what makes a dedup table unnecessary
+  // rather than merely absent.
+  //
+  // It INSERTS when there is no row, and that is deliberate. Most accounts have never opened the
+  // reminder settings, and a bounce on their sign-in mail still proves the mailbox is gone; without
+  // the insert, the day they turn reminders on we would mail a dead address for a week before
+  // learning it again. `enabled` is left exactly as its owner set it — suppression is our fact
+  // about the mailbox, never an edit to their choice, so lifting it restores what they asked for.
+  // users.email is citext, so the address matches however the provider cased it back to us.
+  pqxx::work txn{pgThreadConnection(connString_)};
+  pqxx::result changed = txn.exec_params(
+      "INSERT INTO reminder_subscription (user_id, suppressed) "
+      "SELECT id, true FROM users WHERE email = $1::citext AND deleted_at IS NULL "
+      "ON CONFLICT (user_id) DO UPDATE SET suppressed = true RETURNING user_id",
+      address.value);
+  txn.commit();
+  return !changed.empty();
+}
+
 void PgReminderRepository::setPauseDigest(const UserId& user, const std::string& digest) {
   pqxx::work txn{pgThreadConnection(connString_)};
   txn.exec_params("UPDATE reminder_subscription SET pause_digest = $2 WHERE user_id = $1::uuid",

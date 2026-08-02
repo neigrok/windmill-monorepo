@@ -1,6 +1,7 @@
 #pragma once
 
 #include "platform/domain/Auth.h"
+#include "platform/ports/MailSuppression.h"
 #include "products/journal/domain/NudgePlan.h"
 
 #include <cstdint>
@@ -41,9 +42,11 @@ enum class DayOutcome { delivered, refused, held };
 // "at most one per day" guarantee: the ledger primary key IS the mutex, re-checking eligibility
 // inside its own transaction, and it clears next_due_at in the same breath so the served instant
 // can never fire twice.
-struct NudgeRepository {
-  virtual ~NudgeRepository() = default;
-
+//
+// It is also journal's MailSuppression (platform/ports/MailSuppression.h): the store that decides
+// who gets the nightly knock is the store that can stop it, so the platform webhook needs nothing
+// from this product but this one inherited verb.
+struct NudgeRepository : MailSuppression {
   virtual bool tryLockSweep() = 0;               // pg advisory lock — work dedup, NOT correctness
   virtual void unlockSweep() = 0;
 
@@ -55,6 +58,12 @@ struct NudgeRepository {
 
   virtual std::optional<NudgeSettings> settingsFor(const UserId& user) = 0;
   virtual void upsertSettings(const UserId& user, const NudgeSettings& settings) = 0;
+
+  // MailSuppression: end the nightly nudge for whoever owns that address. What the platform webhook
+  // calls after a hard bounce or a spam complaint, and journal's only writer of
+  // journal_nudge.suppressed. It never touches `enabled` — what its owner asked for survives, so
+  // lifting the flag one day restores their choice rather than a default.
+  bool stopMailing(const Email& address) override = 0;
 
   virtual void setPauseDigest(const UserId& user, const std::string& digest) = 0;
   virtual std::optional<UserId> userByPauseDigest(const std::string& digest) = 0;

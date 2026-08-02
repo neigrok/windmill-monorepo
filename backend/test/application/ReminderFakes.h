@@ -45,7 +45,8 @@ struct FakeReminders : ReminderRepository {
   std::vector<Close> closes;
   std::map<std::string, std::string> pauseDigests;
   std::map<std::string, ReminderSettings> settings;
-  std::set<std::string> unknownTimezones;  // names Postgres would refuse
+  std::set<std::string> unknownTimezones;      // names Postgres would refuse
+  std::map<std::string, std::string> owners;   // address -> user id, the webhook's only way in
 
   bool tryLockSweep() override {
     if (!lockFree) return false;
@@ -84,6 +85,16 @@ struct FakeReminders : ReminderRepository {
     ReminderSettings& row = settings[user.str()];
     row.enabled = enabled;
     row.timezone = ianaTz;
+    return true;
+  }
+
+  // MailSuppression, keyed by address exactly like the real one: a provider event carries nothing
+  // else. An address nobody owns writes nothing and answers false, and the row is created when it
+  // is missing so an account that never opened settings still remembers that its mailbox is gone.
+  bool stopMailing(const Email& address) override {
+    auto owner = owners.find(address.value);
+    if (owner == owners.end()) return false;
+    settings[owner->second].suppressed = true;
     return true;
   }
 

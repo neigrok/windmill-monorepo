@@ -45,6 +45,10 @@ jobs:
           WINDMILL_MCP_TOKEN: ${{ secrets.WINDMILL_MCP_TOKEN }}
           # Service API keys (compose defaults them empty ⇒ that feature stays dark):
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          # Resend's Svix signing secret for the delivery webhook (hard bounce / spam complaint ⇒
+          # reminders suppressed). Empty ⇒ the endpoint refuses every delivery, so it is dark rather
+          # than forgeable — the same stance PADDLE_WEBHOOK_SECRET takes.
+          RESEND_WEBHOOK_SECRET: ${{ secrets.RESEND_WEBHOOK_SECRET }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           AMPLITUDE_API_KEY: ${{ secrets.AMPLITUDE_API_KEY }}
@@ -58,6 +62,9 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
           PADDLE_WEBHOOK_SECRET: ${{ secrets.PADDLE_WEBHOOK_SECRET }}
+          # Bearer for POST /v1/admin/reminders/sweep. Unset ⇒ that route 404s, which is the
+          # resting state — the sweep runs on its own heartbeat and this only forces one by hand.
+          REMINDERS_ADMIN_TOKEN: ${{ secrets.REMINDERS_ADMIN_TOKEN }}
           # Config (variables; safe compose defaults when unset):
           CF_IPS: ${{ vars.CF_IPS }}
           PADDLE_ENV: ${{ vars.PADDLE_ENV }}
@@ -65,6 +72,12 @@ jobs:
           RESEND_FROM: ${{ vars.RESEND_FROM }}
           AMPLITUDE_HOST: ${{ vars.AMPLITUDE_HOST }}
           TENDING_ENABLED: ${{ vars.TENDING_ENABLED }}
+          # The reminder engine's arming pair. It has shipped dark since wave 1 and until now could
+          # not be armed AT ALL from here — neither name reached the container, so the allowlist was
+          # unreachable rather than merely empty. Both stay unset until the owner arms it; empty
+          # allowlist still means NOBODY, which is the designed resting state, not a misconfiguration.
+          REMINDERS_ENABLED: ${{ vars.REMINDERS_ENABLED }}
+          REMINDERS_ALLOWLIST: ${{ vars.REMINDERS_ALLOWLIST }}
           WINDMILL_MCP_ALLOWED_ORIGINS: ${{ vars.WINDMILL_MCP_ALLOWED_ORIGINS }}
           IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
@@ -97,11 +110,12 @@ jobs:
           {
             printf 'IMAGE_TAG=%s\n' "${IMAGE_TAG:-latest}"
             for key in POSTGRES_PASSWORD DOMAIN_APP DOMAIN_API ACME_EMAIL CF_IPS \
-                       RESEND_API_KEY RESEND_FROM ANTHROPIC_API_KEY OPENAI_API_KEY \
+                       RESEND_API_KEY RESEND_FROM RESEND_WEBHOOK_SECRET ANTHROPIC_API_KEY OPENAI_API_KEY \
                        TENDING_ENABLED SENTRY_DSN SENTRY_ENVIRONMENT SENTRY_LOG_LEVEL \
                        SENTRY_RELEASE AMPLITUDE_API_KEY AMPLITUDE_HOST \
                        GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
                        PADDLE_WEBHOOK_SECRET PADDLE_API_KEY PADDLE_ENV PADDLE_PRICE_ID \
+                       REMINDERS_ENABLED REMINDERS_ALLOWLIST REMINDERS_ADMIN_TOKEN \
                        WINDMILL_MCP_ALLOWED_ORIGINS WINDMILL_MCP_TOKEN; do
               printf '%s=%s\n' "$key" "${!key}"
             done

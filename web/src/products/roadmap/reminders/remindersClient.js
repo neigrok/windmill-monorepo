@@ -16,8 +16,9 @@ export async function fetchReminders() {
   try {
     const response = await fetch(`${API_BASE}/v1/reminders`, { credentials: 'include' });
     if (!response.ok) return null;
-    // { armed, enabled, timezone, slotDow, slotMinute, suppressed } — suppressed rides along
-    // unread until a bounce/complaint webhook exists to set it.
+    // { armed, enabled, timezone, slotDow, slotMinute, suppressed }. `suppressed` is set by Resend's
+    // delivery webhook after a hard bounce or a spam complaint — never by anything the reader did —
+    // and the section renders its own face when it is true.
     return await response.json();
   } catch {
     return null;

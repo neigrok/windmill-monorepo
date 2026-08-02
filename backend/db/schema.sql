@@ -475,10 +475,16 @@ create table if not exists reminder_subscription (
   slot_dow     int not null default 2 check (slot_dow between 1 and 7),      -- 1=Mon .. 7=Sun
   slot_minute  int not null default 540 check (slot_minute between 480 and 660),
   next_due_at  timestamptz,
-  -- Hard bounce / spam complaint. NOTHING WRITES THIS YET: the bounce webhook that would set it
-  -- is wave 2, so the column and the dueNow filter are the hook waiting for it, and a
-  -- hard-bouncing address is still mailed every week until that handler exists. Nowhere may claim
-  -- otherwise to a reader — a state that cannot occur must never be described as if it can.
+  -- Hard bounce / spam complaint, set by Resend's delivery webhook
+  -- (platform/adapters/email/ResendWebhookApi.h) and by nothing else. One Resend account means one
+  -- webhook for every mail the brand sends, so the receiver is platform's and each product
+  -- registers a MailStream: this row is what a dead mailbox stops for roadmap, and journal_nudge is
+  -- its counterpart. Only a PERMANENT bounce or a complaint gets here — a transient bounce (full
+  -- mailbox, throttled, oversized) must never suppress anyone, and that rule lives in
+  -- platform/domain/Mail.h, not in SQL. It is our fact about the MAILBOX, never an edit to `enabled`:
+  -- what its owner asked for survives untouched, so clearing the flag restores their choice rather
+  -- than a default. It gates reminders only — nothing in the sign-in path reads it, so magic links
+  -- still reach the address and someone who fixes it can come back. Nothing lifts the flag today.
   suppressed   boolean not null default false,
   pause_digest text not null default '',
   created_at   timestamptz not null default now()
@@ -683,7 +689,18 @@ create table if not exists journal_nudge (
   next_due_at  timestamptz,                       -- device-materialised; NULL ⇒ never send
   slot_day     date,                              -- the LOCAL day next_due_at belongs to
   paused_until timestamptz,                       -- "pause for a week", one tap
-  suppressed   boolean not null default false,    -- hard bounce / spam complaint (nothing writes it yet)
+  -- Hard bounce / spam complaint, set by Resend's delivery webhook
+  -- (platform/adapters/email/ResendWebhookApi.h) and by nothing else. There is ONE Resend account,
+  -- so ONE webhook carries feedback about every mail Windmill sends: a dead mailbox stops this and
+  -- reminder_subscription.suppressed in the same delivery, because a bounce on the sign-in link is
+  -- the same dead mailbox as a bounce on the nightly knock. Only a PERMANENT bounce or a complaint
+  -- gets here — a transient bounce (full mailbox, throttled, oversized) must never suppress anyone,
+  -- and that rule lives in platform/domain/Mail.h, not in SQL. It is our fact about the MAILBOX,
+  -- never an edit to `enabled`: what its owner asked for survives untouched, so clearing the flag
+  -- restores their choice rather than a default. It gates nudges only — nothing in the sign-in path
+  -- reads it, so magic links still reach the address and someone who fixes it can come back.
+  -- Nothing lifts the flag today.
+  suppressed   boolean not null default false,
   pause_digest text not null default '',
   updated_at   timestamptz not null default now(),
   created_at   timestamptz not null default now()

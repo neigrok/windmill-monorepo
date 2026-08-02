@@ -1,6 +1,7 @@
 #pragma once
 
 #include "platform/domain/Auth.h"
+#include "platform/ports/MailSuppression.h"
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/domain/Reminders.h"
 
@@ -43,8 +44,11 @@ enum class WeekOutcome { held, delivered, refused };
 // Every read and write the reminder engine makes. The ordering the implementation must honour
 // is DECIDE → CLAIM → SEND: `claimWeek` commits the ledger row that is the permission slip to
 // perform I/O, and only a claim that returned true may be followed by a mail.
-struct ReminderRepository {
-  virtual ~ReminderRepository() = default;
+//
+// It is also roadmap's MailSuppression (platform/ports/MailSuppression.h): the store that decides
+// who gets the weekly mail is the store that can stop it, so the platform webhook needs nothing
+// from this product but this one inherited verb.
+struct ReminderRepository : MailSuppression {
 
   // A fleet-wide mutex so two processes sharing one database cannot duplicate the WORK. It is
   // deliberately not the correctness mechanism — the claim below is — so the sweep stays correct
@@ -78,6 +82,12 @@ struct ReminderRepository {
   virtual std::optional<ReminderSettings> settingsFor(const UserId& user) = 0;
   // False when the timezone is not one Postgres knows — the only way this write fails.
   virtual bool upsertSettings(const UserId& user, bool enabled, const std::string& ianaTz) = 0;
+
+  // MailSuppression: end the weekly reminder for whoever owns that address. What the platform
+  // webhook calls after a hard bounce or a spam complaint, and roadmap's only writer of
+  // reminder_subscription.suppressed. Nothing in the sign-in path reads that column, so the magic
+  // link keeps reaching an address this silenced — it is the one door back into the account.
+  bool stopMailing(const Email& address) override = 0;
 
   // The pause link's credential, stored exactly like every other secret in this codebase: the
   // digest at rest, the secret only ever in the mail that carries it.

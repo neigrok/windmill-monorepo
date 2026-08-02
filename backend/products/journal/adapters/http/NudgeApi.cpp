@@ -27,6 +27,11 @@ drogon::HttpResponsePtr noContent() {
 // it is how a device says "never". `armed` is whether the engine can reach THIS caller (the
 // dark-launch flag and their place on the allowlist), kept apart from `enabled` for the same reason
 // roadmap keeps them apart: the caller's ask and the fleet's switch are different facts.
+//
+// `suppressed` is the third of those facts and the only one the reader did not choose: the provider
+// told us their mailbox is gone (platform/adapters/email/ResendWebhookApi.h). It rides here for the
+// same reason roadmap's does — someone whose nudges silently stopped is owed the reason, and a
+// settings page that showed `enabled: true` while nothing ever arrived would be lying to them.
 Json::Value toJson(const NudgeSettings& settings, bool armed) {
   Json::Value body(Json::objectValue);
   body["enabled"] = settings.enabled;
@@ -34,6 +39,7 @@ Json::Value toJson(const NudgeSettings& settings, bool armed) {
   body["adaptive"] = settings.nextDueAtMs.has_value();
   if (settings.nextDueAtMs) body["nextDueAt"] = Json::Value::UInt64(*settings.nextDueAtMs);
   body["armed"] = armed;
+  body["suppressed"] = settings.suppressed;
   return body;
 }
 

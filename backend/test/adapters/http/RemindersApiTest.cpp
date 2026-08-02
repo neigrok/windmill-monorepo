@@ -418,3 +418,26 @@ TEST(reminders_an_admin_sweep_of_the_wrong_shape_is_a_400) {
 
   CHECK_EQ(h.reminders->claims.size(), std::size_t{0});
 }
+
+TEST(reminders_the_settings_surface_reports_a_mailbox_the_provider_called_dead) {
+  // The one fact on this surface the reader did not choose. Someone whose weekly mail silently
+  // stopped is owed the reason: a settings page answering `enabled: true` while nothing ever
+  // arrives is lying to them, and the flag is the only thing that can tell them the truth.
+  Harness h;
+  UserId me = h.signIn("s-live");
+  h.reminders->settings[me.str()].enabled = true;
+  h.reminders->settings[me.str()].timezone = "Europe/Berlin";
+  h.reminders->owners["sam@example.com"] = me.str();
+
+  CHECK(h.reminders->stopMailing(Email{"sam@example.com"}));
+
+  const Json::Value body = bodyOf(get(h, signedIn(drogon::Get, "/v1/reminders", "")));
+  CHECK(body["suppressed"].asBool());
+  // And only the suppression: what its owner asked for is untouched, so lifting the flag one day
+  // restores their choice rather than a default.
+  CHECK(body["enabled"].asBool());
+  CHECK_EQ(body["timezone"].asString(), std::string("Europe/Berlin"));
+  // An address no account owns writes nothing and says so, which is what keeps the webhook from
+  // being an account-existence oracle.
+  CHECK_FALSE(h.reminders->stopMailing(Email{"stranger@example.com"}));
+}
