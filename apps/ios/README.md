@@ -65,9 +65,26 @@ lands on the device first and is marked owed; the network is what happens next, 
 sign-in. Signing in *claims* what is already there (additive, per page, by HLC stamp). Offline says
 `offline · saved here`; signed out says `saved on this device`.
 
-**Roadmap and gym are mounted but not built for the phone.** They render one honest line about where
-they do live and a door to it — not a mock screen, and not a "coming soon" that counts nobody's
-interest.
+**All three products are shipping as rooms in this app.** Journal is the one that is built. Roadmap
+and gym are mounted and render one honest line about where they work today plus a door to it — not
+a mock screen, and not a "coming soon" that counts nobody's interest. When their native rooms land
+they replace that line and nothing else in the shell changes.
+
+**Sign in with Apple is the primary door** (one tap, no address to type), with the emailed link
+beside it rather than behind it: the link is the only way a Hide My Email account can reach the
+account that person already has on the web, and the only door that keeps one account across phone
+and browser. Apple is gated off until it is configured — see `docs/IOS_APPLE_SIGNIN.md`.
+
+## The tab bar is provisional
+
+It is a runnable placeholder, not a design — **do not build on it**. Each product brings its own
+internal navigation (roadmap alone has a tree canvas, a list view, a node workspace and a gallery),
+and a bottom tab bar spends the one piece of furniture every product needs for itself on the switch
+between them. Proper designs are being made.
+
+The seam underneath is not provisional: `ProductModule.room()` returns a whole surface and knows
+nothing about how it was reached, so whatever the switcher becomes, `Shell.swift` is the only file
+that changes and no product moves.
 
 ## Known gaps (wave 2)
 

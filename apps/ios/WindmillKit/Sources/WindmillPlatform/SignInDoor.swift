@@ -63,21 +63,33 @@ public struct SignInDoor: View {
         }
     }
 
+    // Apple leads on this surface — one tap, no address to type, no mail to go and find. The
+    // emailed link stays beside it rather than behind it, and not out of politeness: it is the only
+    // way a Hide My Email account can ever reach the account that person already has on the web
+    // (AUTH.md's link door), and the only door that keeps one account across phone and browser.
+    //
+    // Until Apple is configured the link is the ONLY door, so it takes the primary treatment back.
+    // A door with no primary button is a door nobody knows how to open.
     private var asking: some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x5) {
+            if Self.appleSignInEnabled {
+                SignInWithAppleButton(.continue, onRequest: { request in
+                    request.requestedScopes = [.fullName, .email]
+                }, onCompletion: { result in
+                    Task { await completeApple(result) }
+                })
+                .signInWithAppleButtonStyle(.black)
+                .frame(height: 50)
+                .disabled(working)
+            }
+
             Text("New here? Same door — your account is created the first time.")
                 .font(WindmillFont.body(15))
                 .foregroundStyle(WindmillColor.textSecondary)
 
-            TextField("", text: $email, prompt: Text("you@example.com").foregroundStyle(WindmillColor.textTertiary))
+            DoorField(placeholder: "you@example.com", text: $email)
                 .textContentType(.emailAddress)
                 .keyboardType(.emailAddress)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .padding(WindmillSpace.x3)
-                .background(RoundedRectangle(cornerRadius: WindmillRadius.sm).fill(WindmillColor.surfaceCard))
-                .overlay(RoundedRectangle(cornerRadius: WindmillRadius.sm)
-                    .strokeBorder(WindmillColor.borderDefault, lineWidth: 1))
 
             Button {
                 Task { await requestLink() }
@@ -87,23 +99,23 @@ public struct SignInDoor: View {
                     .foregroundStyle(WindmillColor.neutral900)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, WindmillSpace.x3)
-                    .background(Capsule().fill(WindmillColor.gold400))
+                    .background(linkDoorBackground)
             }
             .disabled(working || email.isEmpty)
-
-            if Self.appleSignInEnabled {
-                SignInWithAppleButton(.continue, onRequest: { request in
-                    request.requestedScopes = [.fullName, .email]
-                }, onCompletion: { result in
-                    Task { await completeApple(result) }
-                })
-                .signInWithAppleButtonStyle(.black)
-                .frame(height: 48)
-            }
 
             Text("No password. Signed out, Windmill still works — what you write lives on this device.")
                 .font(WindmillFont.body(13))
                 .foregroundStyle(WindmillColor.textTertiary)
+        }
+    }
+
+    // Gold when the link is the only way in; a quiet outline once Apple carries the primary weight.
+    @ViewBuilder
+    private var linkDoorBackground: some View {
+        if Self.appleSignInEnabled {
+            Capsule().strokeBorder(WindmillColor.borderDefault, lineWidth: 1)
+        } else {
+            Capsule().fill(WindmillColor.gold400)
         }
     }
 
@@ -123,13 +135,7 @@ public struct SignInDoor: View {
                 .font(WindmillFont.body(15))
                 .foregroundStyle(WindmillColor.textSecondary)
 
-            TextField("Paste the link", text: $pasted)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .padding(WindmillSpace.x3)
-                .background(RoundedRectangle(cornerRadius: WindmillRadius.sm).fill(WindmillColor.surfaceCard))
-                .overlay(RoundedRectangle(cornerRadius: WindmillRadius.sm)
-                    .strokeBorder(WindmillColor.borderDefault, lineWidth: 1))
+            DoorField(placeholder: "Paste the link", text: $pasted)
 
             Button {
                 Task { await completeLink() }
@@ -172,13 +178,7 @@ public struct SignInDoor: View {
                 .font(WindmillFont.body(15))
                 .foregroundStyle(WindmillColor.textSecondary)
 
-            TextField("Paste the link", text: $pasted)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .padding(WindmillSpace.x3)
-                .background(RoundedRectangle(cornerRadius: WindmillRadius.sm).fill(WindmillColor.surfaceCard))
-                .overlay(RoundedRectangle(cornerRadius: WindmillRadius.sm)
-                    .strokeBorder(WindmillColor.borderDefault, lineWidth: 1))
+            DoorField(placeholder: "Paste the link", text: $pasted)
 
             Button {
                 Task { await linkAccount() }
@@ -264,5 +264,37 @@ public struct SignInDoor: View {
     // not locked" rule the product uses everywhere else.
     static var appleSignInEnabled: Bool {
         Bundle.main.object(forInfoDictionaryKey: "WMAppleSignInEnabled") as? Bool ?? false
+    }
+}
+
+// The one field this door uses, in all three places it needs one (the address, and the pasted link
+// on two different screens).
+//
+// The placeholder is DRAWN rather than handed to `prompt:` because SwiftUI colours a prompt with the
+// accent, and a sheet does not reliably inherit its presenter's tint — which is how a door built
+// entirely out of brand neutrals still came up with an iOS-blue placeholder sitting in the middle
+// of it. Drawing it is the only way to be sure what colour it is.
+struct DoorField: View {
+    let placeholder: String
+    @Binding var text: String
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            if text.isEmpty {
+                Text(placeholder)
+                    .font(WindmillFont.body(16))
+                    .foregroundStyle(WindmillColor.textTertiary)
+            }
+            TextField("", text: $text)
+                .font(WindmillFont.body(16))
+                .foregroundStyle(WindmillColor.textPrimary)
+                .tint(WindmillColor.neutral900)
+        }
+        .textInputAutocapitalization(.never)
+        .autocorrectionDisabled()
+        .padding(WindmillSpace.x3)
+        .background(RoundedRectangle(cornerRadius: WindmillRadius.sm).fill(WindmillColor.surfaceCard))
+        .overlay(RoundedRectangle(cornerRadius: WindmillRadius.sm)
+            .strokeBorder(WindmillColor.borderDefault, lineWidth: 1))
     }
 }

@@ -3,6 +3,18 @@ import SwiftUI
 // The app frame — one switcher over whichever products were mounted, and the seat. The native
 // mirror of web/src/shell: it composes products off a registry and hard-codes none of them, so
 // adding a fourth product is one line in the composition root and nothing here.
+//
+// THE TAB BAR IS PROVISIONAL and is being redesigned — do not build on it.
+//
+// All three products are shipping as rooms in this app, and each of them brings its own internal
+// navigation (roadmap alone has a tree canvas, a list view, a node workspace and a gallery). A
+// bottom tab bar spends the one piece of screen furniture every product needs for ITSELF on the
+// switch between them, and a product that then wants its own bottom bar has nowhere to put it.
+// Designs are being made; this is a runnable placeholder until they land.
+//
+// What is NOT provisional is the seam: `ProductModule.room()` hands back a whole surface and knows
+// nothing about how it was reached. Whatever the switcher becomes — a drawer, a title-bar picker, a
+// gesture — it is this one file that changes, and no product moves.
 
 @MainActor
 public struct SuperappView: View {
