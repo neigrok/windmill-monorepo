@@ -34,6 +34,17 @@ agents at once and they share this machine — on 2026-08-01 one reviewer's `pki
 three other agents' backends mid-probe. `lsof -ti tcp:<port> | xargs kill` only takes yours.
 Take a port nobody else has (agents in a wave should be handed disjoint ranges).
 
+- **The two ports are not free choices — pin them.** `web/src/shell/apiBase.js` HARD-CODES
+  `http://localhost:8088` (and `ws://localhost:8088/v1/socket`) in dev, and `backend/.env` sets
+  `WINDMILL_ALLOWED_ORIGINS=http://localhost:5173`. So the backend must be on **8088** and vite on
+  **5173**, or the page loads, renders chrome, and says *"Couldn't load this roadmap. It may have
+  moved, or the server is unreachable"* — which reads exactly like a broken tree and is really a
+  wrong port. Both halves bite separately: a backend on another port is a silent connection
+  failure, a vite on another port is a CORS rejection. If a parallel agent already holds 8088,
+  don't move the backend — override the origin instead (`WINDMILL_ALLOWED_ORIGINS=http://localhost:5174`)
+  AND accept that the page still talks to 8088, i.e. you cannot run two full stacks without
+  editing apiBase. Give agents disjoint ports for *backend-only* probing (curl/MCP), and keep
+  8088+5173 for whoever needs the browser.
 - `WINDMILL_ALLOWED_ORIGINS` is required — without it the dev page's credentialed fetches fail CORS ("Failed to fetch").
 - `WINDMILL_MCP_USER` must be a real uuid in `users` (the default "dev" 500s on create_tree; owner_id is uuid). The uuid above is the seeded `dev@localhost` user in the local db.
 
