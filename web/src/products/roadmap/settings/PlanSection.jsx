@@ -12,12 +12,12 @@ import { Section, styles } from '../../../shell/settings/Section.jsx';
 import { beginUpgrade, billingConfigured, fetchSubscription } from '../../../shell/billing/checkout.js';
 
 const PLAN_COPY = {
-  active: { name: 'Windmill Pro', note: 'Thanks for backing the work.' },
-  trialing: { name: 'Windmill Pro', note: 'You’re on a trial.' },
-  past_due: { name: 'Windmill Pro', note: 'The last payment didn’t go through — Paddle is retrying. Nothing is switched off.' },
-  paused: { name: 'Paused', note: 'Billing is paused, so Pro is off for now.' },
-  canceled: { name: 'Free', note: 'Your Pro subscription has ended.' },
-  none: { name: 'Free', note: 'Everything Windmill does, plus a monthly allowance of AI tending. Windmill Pro — a larger tending allowance — arrives with tending itself.' },
+  active: { name: 'Windmill One', note: 'Thanks for backing the work.' },
+  trialing: { name: 'Windmill One', note: 'You’re on a trial.' },
+  past_due: { name: 'Windmill One', note: 'The last payment didn’t go through — Paddle is retrying. Nothing is switched off.' },
+  paused: { name: 'Paused', note: 'Billing is paused, so Windmill One is off for now.' },
+  canceled: { name: 'Free', note: 'Your Windmill One subscription has ended.' },
+  none: { name: 'Free', note: 'Everything Windmill does, plus a monthly allowance of AI tending. Windmill One — a larger tending allowance — arrives with tending itself.' },
 };
 
 const asDate = (iso) => {
@@ -60,7 +60,7 @@ export function PlanSection() {
           <div style={styles.primaryText}>{loading ? 'Checking…' : copy.name}</div>
           {!loading && (
             <div style={styles.metaText}>
-              {ending ? `Pro until ${ending}, then Free.` : copy.note}
+              {ending ? `Windmill One until ${ending}, then Free.` : copy.note}
             </div>
           )}
         </div>

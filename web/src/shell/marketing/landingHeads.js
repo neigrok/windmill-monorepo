@@ -88,7 +88,7 @@ export const LANDING_HEADS = [
             'name': 'How much does Windmill cost?',
             'acceptedAnswer': {
               '@type': 'Answer',
-              'text': 'Windmill is free — building, sharing, exporting, and keeping a tree private cost nothing, and no account is needed to start. The one paid thing is tending: the AI that plants and reshapes your tree for you. Every account gets a free monthly allowance; Windmill Pro is $12 a month for a larger one, billed monthly, cancellable any time, with a 30-day money-back guarantee. Nothing that is free today moves behind the paywall.',
+              'text': 'Windmill is free — building, sharing, exporting, and keeping a tree private cost nothing, and no account is needed to start. The one paid thing is tending: the AI that plants and reshapes your tree for you. Every account gets a free monthly allowance; Windmill One is $12 a month for a larger one, billed monthly, cancellable any time, with a 30-day money-back guarantee. Nothing that is free today moves behind the paywall.',
             },
           },
           {
@@ -186,7 +186,7 @@ export const LANDING_HEADS = [
           },
           {
             '@type': 'Offer',
-            'name': 'Windmill Pro',
+            'name': 'Windmill One',
             'price': '12',
             'priceCurrency': 'USD',
             'availability': 'https://schema.org/InStock',

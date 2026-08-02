@@ -101,7 +101,7 @@ export async function openCheckout(transactionId, { onCompleted } = {}) {
   }
 }
 
-// The whole upgrade ceremony, so every door into Pro behaves the same: mint a fresh transaction,
+// The whole upgrade ceremony, so every door into Windmill One behaves the same: mint a fresh transaction,
 // open the overlay, and fall back to Paddle's own hosted page when the overlay can't open (blocked
 // script, stubborn browser). False means there is nothing left to try and the caller should say so.
 export async function beginUpgrade({ onCompleted } = {}) {

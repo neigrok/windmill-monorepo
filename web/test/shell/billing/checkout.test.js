@@ -8,7 +8,7 @@ const realWindow = global.window;
 
 test.afterEach(() => { global.fetch = realFetch; global.window = realWindow; });
 
-// beginUpgrade is the one ceremony behind every door into Pro, so what matters is which way it
+// beginUpgrade is the one ceremony behind every door into Windmill One, so what matters is which way it
 // falls when the overlay can't open — silently doing nothing would read as a broken button.
 test('beginUpgrade — reports failure when no checkout can be minted', async () => {
   global.fetch = async () => ({ ok: false, status: 500 });

@@ -79,7 +79,7 @@ test('setVisibility — a 402 carries the code AND the detail through to the dia
     ok: false,
     status: 402,
     json: async () => ({
-      error: 'Private trees are part of Windmill Pro',
+      error: 'Private trees are part of Windmill One',
       detail: 'Unlisted keeps this tree reachable only by its link, and stays free.',
       code: 'pro_required',
     }),
@@ -88,7 +88,7 @@ test('setVisibility — a 402 carries the code AND the detail through to the dia
     assert.ok(err instanceof AuthError);
     assert.equal(err.code, 'pro_required');
     assert.equal(err.status, 402);
-    assert.equal(err.message, 'Private trees are part of Windmill Pro');
+    assert.equal(err.message, 'Private trees are part of Windmill One');
     assert.equal(err.detail, 'Unlisted keeps this tree reachable only by its link, and stays free.');
     return true;
   });
