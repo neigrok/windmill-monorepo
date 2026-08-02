@@ -8,13 +8,15 @@ import { PlaceStore } from './persistence/PlaceStore.js';
 import { DEMO_TREE_ID } from './demo/demoStage.js';
 import { paidPlansOpen } from '../../shell/billing/checkout.js';
 
-const SkillTreeApp = lazy(() => import('./index.js').then((m) => ({ default: m.SkillTreeApp })));
+const importSkillTreeApp = () => import('./index.js').then((m) => ({ default: m.SkillTreeApp }));
+const SkillTreeApp = lazy(importSkillTreeApp);
 const BrowsePage = lazy(() => import('./browse/BrowsePage.jsx').then((m) => ({ default: m.BrowsePage })));
 const HomeCard = lazy(() => import('./HomeCard.jsx').then((m) => ({ default: m.HomeCard })));
 
 // The roadmap's own landing at /roadmap. It lives here rather than in the shell because a landing
 // speaks its product's vocabulary — the shell only knows the pathname to hand it, off the registry.
-const RoadmapLanding = lazy(() => import('./marketing/RoadmapLanding.jsx').then((m) => ({ default: m.RoadmapLanding })));
+const importRoadmapLanding = () => import('./marketing/RoadmapLanding.jsx').then((m) => ({ default: m.RoadmapLanding }));
+const RoadmapLanding = lazy(importRoadmapLanding);
 
 // The roadmap's account-settings sections — registered here so the neutral settings page composes
 // them without ever naming the roadmap (shell/settings/SettingsPage.jsx reads settingsSections off
@@ -97,6 +99,7 @@ export const roadmapRoutes = {
   home,
   landingAfterSignIn,
   render,
+  preloadApp: importSkillTreeApp,
   // Plan only joins the list once there is something to be on — while paid plans are shut it is
   // never mounted, so it costs neither a chunk nor a subscription read (see billing/checkout.js).
   settingsSections: {
@@ -108,6 +111,7 @@ export const roadmapRoutes = {
   landing: {
     href: '/roadmap',
     Component: RoadmapLanding,
+    preload: importRoadmapLanding,
     tagline: 'Map what you’re learning',
     summary: 'Author a learning path as an RPG skill tree — real prerequisites, ownership gates lifetimes, fundamentals gate frameworks. Grow it one checked-off node at a time.',
   },

@@ -29,6 +29,9 @@ export default defineConfig({
     fs: { allow: ['.', '../packages'] },
   },
   build: {
+    // scripts/build-landing-shells.mjs reads the manifest to find each landing's own hashed chunk,
+    // so a shell can preload it instead of leaving the visitor to watch it be discovered.
+    manifest: true,
     rollupOptions: {
       output: {
         // Keep React in its own long-lived chunk so app-code changes don't bust

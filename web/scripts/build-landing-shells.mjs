@@ -114,6 +114,20 @@ ${notes.join('\n')}
 // shell that lost them would unfurl every shared tree as the landing it was built from.
 const UNFURL_SENTINELS = ['<!-- meta:unfurl:start -->', '<!-- meta:unfurl:end -->'];
 
+// The shell already preloads the entry and its static imports; a landing's own chunk is a dynamic
+// import, so nothing in the HTML mentions it and the browser only learns it exists once the entry
+// has arrived and run. On a phone that is a whole serial round trip spent looking at the fallback.
+// Naming it here moves the request into the same flight as the rest of the page.
+const manifest = JSON.parse(readFileSync(join(dist, '.vite', 'manifest.json'), 'utf8'));
+
+function preloadTags(head) {
+  const entry = manifest[head.module];
+  if (!entry) throw new Error(`build-landing-shells: ${head.path} names the module ${head.module}, which is not in the Vite manifest — rename it in landingHeads.js or the shell preloads nothing`);
+  const tags = [`<link rel="modulepreload" crossorigin href="/${entry.file}">`];
+  for (const css of entry.css ?? []) tags.push(`<link rel="stylesheet" crossorigin href="/${css}">`);
+  return `${tags.join('\n    ')}\n  </head>`;
+}
+
 const rootSchema = renderSchema(root);
 const rootFallback = renderFallback(root);
 
@@ -134,6 +148,7 @@ for (const head of LANDING_HEADS) {
   html = swapInTag(html, 'name="twitter:image:alt"', root.imageAlt, head.imageAlt);
   html = swapOnce(html, rootSchema, renderSchema(head), 'dist/index.html at the JSON-LD block');
   html = swapOnce(html, rootFallback, renderFallback(head), 'dist/index.html at the no-JS fallback body');
+  html = swapOnce(html, '</head>', preloadTags(head), 'dist/index.html at </head>');
 
   for (const sentinel of UNFURL_SENTINELS) {
     const at = html.indexOf(sentinel);

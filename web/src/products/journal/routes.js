@@ -6,12 +6,14 @@
 
 import { lazy } from 'react';
 
-const JournalApp = lazy(() => import('./JournalApp.jsx').then((m) => ({ default: m.JournalApp })));
+const importJournalApp = () => import('./JournalApp.jsx').then((m) => ({ default: m.JournalApp }));
+const JournalApp = lazy(importJournalApp);
 const HomeCard = lazy(() => import('./HomeCard.jsx').then((m) => ({ default: m.HomeCard })));
 
 // The journal's own landing at /journal — React now, not a static page, because a visitor who is
 // already signed in has to be recognised on the first frame, and no static file can do that.
-const JournalLanding = lazy(() => import('./marketing/JournalLanding.jsx').then((m) => ({ default: m.JournalLanding })));
+const importJournalLanding = () => import('./marketing/JournalLanding.jsx').then((m) => ({ default: m.JournalLanding }));
+const JournalLanding = lazy(importJournalLanding);
 
 function home() {
   return '#/journal';
@@ -35,10 +37,12 @@ export const journalRoutes = {
   home,
   landingAfterSignIn,
   render,
+  preloadApp: importJournalApp,
   // The words the brand root's door for the journal is made of — the product's own, not the shell's.
   landing: {
     href: '/journal',
     Component: JournalLanding,
+    preload: importJournalLanding,
     tagline: 'Notice what happened',
     summary: 'Free-form daily writing for people who want to understand themselves, not score themselves. One page a day, yesterday above it — and search that finds the feeling, not the word.',
   },

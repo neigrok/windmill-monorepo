@@ -9,6 +9,10 @@
 // fails the build, so the lie cannot be shipped by omission.
 //
 // The '/' row is the exact shell web/index.html holds; edit them together, or the build says so.
+//
+// `module` is the landing's own source file. The build script looks it up in Vite's manifest and
+// preloads that chunk from the shell, so the request goes out with the HTML instead of waiting for
+// the entry chunk to download, parse and discover it — one serial round trip the visitor watches.
 
 export const SITE_ORIGIN = 'https://windmill.works';
 
@@ -125,6 +129,7 @@ export const LANDING_HEADS = [
   },
   {
     path: '/roadmap',
+    module: 'src/products/roadmap/marketing/RoadmapLanding.jsx',
     title: 'Windmill Roadmap — any goal, as a skill tree',
     description: 'Turn any goal or learning roadmap into an animated RPG skill tree. Finish a step, unlock the next branch. Free, no account — plant your first tree.',
     ogTitle: 'Windmill — Any goal, as a skill tree',
@@ -195,6 +200,7 @@ export const LANDING_HEADS = [
   },
   {
     path: '/journal',
+    module: 'src/products/journal/marketing/JournalLanding.jsx',
     title: 'Windmill Journal — a place to notice what happened',
     description: 'A place to notice what happened. One continuous canvas — oldest at the top, tonight at the bottom, the cursor already waiting. Write to understand yourself, not to score yourself.',
     ogTitle: 'Windmill Journal — a place to notice what happened',
@@ -234,6 +240,7 @@ export const LANDING_HEADS = [
   },
   {
     path: '/gym',
+    module: 'src/products/gym/marketing/GymLanding.jsx',
     title: 'Windmill Gym — it remembers what you lifted',
     description: 'A training log for barbell programs — squat, bench, deadlift, press, rows, chins. Two taps between sets, and next session opens with last week’s numbers already in the field. In design — Gym joins the Windmill account and subscription when it opens.',
     ogTitle: 'Windmill Gym — it remembers what you lifted',
