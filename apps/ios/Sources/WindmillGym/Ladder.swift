@@ -66,8 +66,12 @@ public enum Ladder {
         return String(step)
     }
 
+    // A set of zero reps is not a set, and the server says so — Training.cpp refuses reps < 1 — so a
+    // ladder that floored at 0 offered a tap the log could only answer with a refusal. The floor is a
+    // CLAMP INTO the range and never a hold at the value: a stored 0 from an older build is climbed
+    // out of by whichever button the thumb finds first. repCases pins that answer for both languages.
     public static func bumpReps(_ reps: Int, direction: Int) -> Int {
-        if direction < 0 { return max(0, reps - 1) }
+        if direction < 0 { return max(1, reps - 1) }
         return reps + 1
     }
 }

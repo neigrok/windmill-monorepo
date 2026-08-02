@@ -12,6 +12,7 @@
 // the lifter actually ended up, and the reps from the FIRST, before fatigue cut them.
 
 import { agoLabel, dayLabel, fmt, planOf } from '../log.js';
+import { REPS_FLOOR } from './ladder.js';
 
 export const EMPTY_BAR_KG = 20;
 export const EMPTY_BAR_REPS = 5;
@@ -30,13 +31,18 @@ export function workingSetsOf(sets, exerciseId) {
 // back as the log goes. An answer that names the movement and nothing else is a lifter who has
 // never trained it, so an absent block and an absent answer fall through to the same place here,
 // and only the card below has to tell them apart.
+// The rep floor belongs where the number is MINTED, not only on the two buttons that move it. Every
+// source here is someone else's data — a queued set from a build before the floor moved, a plan
+// snapshot, a session logged months ago — and a 0 arriving from any of them opens the pad on a value
+// typed entry now refuses, in alarm ink, on a gesture the lifter never made. Weight gets no such
+// clamp on purpose: it is signed and unbounded by design (see ladder.js).
 export function prefillFor({ todaySets = [], planEntry = null, lastTime = null }) {
   const sticky = todaySets.length > 0 ? todaySets[todaySets.length - 1] : null;
-  if (sticky) return { weight: sticky.weightKg, reps: sticky.reps };
+  if (sticky) return { weight: sticky.weightKg, reps: Math.max(REPS_FLOOR, sticky.reps) };
   const last = lastTime?.sets ?? null;
   return {
     weight: planEntry?.weightKg ?? (last ? last[last.length - 1].weightKg : EMPTY_BAR_KG),
-    reps: planEntry?.reps ?? (last ? last[0].reps : EMPTY_BAR_REPS),
+    reps: Math.max(REPS_FLOOR, planEntry?.reps ?? (last ? last[0].reps : EMPTY_BAR_REPS)),
   };
 }
 

@@ -76,11 +76,15 @@ test('every rounding tie in the golden — the keypad can type all of them', () 
   }
 });
 
-test('every rep case in the golden — floored at zero on the way down, unbounded on the way up', () => {
+test('every rep case in the golden — floored at one on the way down, unbounded on the way up', () => {
   for (const item of golden.repCases) {
     assert.equal(bumpReps(item.reps, -1), item.down, `reps down from ${item.reps}`);
     assert.equal(bumpReps(item.reps, 1), item.up, `reps up from ${item.reps}`);
   }
+  // The floor is 1 because the server refuses reps < 1: at 0 the logger drew a tappable "60 kg × 0"
+  // that could only come back as a refusal. The golden pins 1 and the stored 0; anything below that
+  // is unreachable through the UI, and the down key still answers there — by climbing, not throwing.
+  assert.equal(bumpReps(-3, -1), 1);
 });
 
 // The law that ties the loaded side to the assisted one, checked as a property over every weight the

@@ -41,9 +41,9 @@
     { "value": -19.005, "rounded": -19.01 }
   ],
   "repCases": [
-    { "reps": 0, "down": 0, "up": 1 },
-    { "reps": 1, "down": 0, "up": 2 },
+    { "reps": 1, "down": 1, "up": 2 },
     { "reps": 5, "down": 4, "up": 6 },
-    { "reps": 99, "down": 98, "up": 100 }
+    { "reps": 99, "down": 98, "up": 100 },
+    { "reps": 0, "down": 1, "up": 1 }
   ]
 }

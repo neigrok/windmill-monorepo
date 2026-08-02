@@ -125,6 +125,10 @@ final class LadderTests: XCTestCase {
             XCTAssertEqual(Ladder.bumpReps(expected.reps, direction: -1), expected.down, "down from \(expected.reps) reps")
             XCTAssertEqual(Ladder.bumpReps(expected.reps, direction: 1), expected.up, "up from \(expected.reps) reps")
         }
+        // The floor is 1 because the server refuses reps < 1: at 0 the logger drew a tappable set the
+        // log could only answer with a refusal. The golden pins 1 and the stored 0; anything below
+        // that is unreachable through the UI, and the down key still answers there — by climbing.
+        XCTAssertEqual(Ladder.bumpReps(-3, direction: -1), 1)
     }
 
     // The law that makes one rule serve both sides of zero: bump(−w, −direction, big) is exactly

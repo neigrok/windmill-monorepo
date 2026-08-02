@@ -8,6 +8,8 @@
 //     spend the undo window.
 // And one read that loses history rather than sets: the walk down the log pages on the PAIR
 // (startedAt, id), because an instant-only cursor leaves a tied session in no page, ever.
+// And one door that decides what a reload is allowed to believe: the resume blob typechecks or it
+// is discarded out loud — and because that blob holds no sets, a discard can never be one.
 //
 // React is driven through its own dispatcher rather than a DOM: the hook is the unit under test,
 // effects run where React runs them, and every state change re-renders synchronously.
@@ -101,9 +103,13 @@ const settle = async (turns = 4) => {
   for (let turn = 0; turn < turns; turn += 1) await new Promise((resolve) => setImmediate(resolve));
 };
 
-function browserWith({ queue = [] } = {}) {
+// `live` is seeded as RAW BYTES, never as an object to be stringified: half of what the resume door
+// has to survive is a blob that is not JSON at all, and a fake that could only express well-formed
+// values would be unable to ask the question.
+function browserWith({ queue = [], live = null } = {}) {
   const disk = new Map();
   if (queue.length > 0) disk.set('windmill.gym.queue', JSON.stringify(queue));
+  if (live !== null) disk.set('windmill.gym.live', live);
   const listeners = new Map();
   const bind = (type, fn) => listeners.set(type, [...(listeners.get(type) ?? []), fn]);
   const unbind = (type, fn) => listeners.set(type, (listeners.get(type) ?? []).filter((each) => each !== fn));
@@ -121,6 +127,7 @@ function browserWith({ queue = [] } = {}) {
   globalThis.navigator = { onLine: true };
   return {
     held: () => JSON.parse(disk.get('windmill.gym.queue') ?? '[]'),
+    kept: () => disk.get('windmill.gym.live') ?? null,
     hide: () => {
       globalThis.document.visibilityState = 'hidden';
       (listeners.get('visibilitychange') ?? []).forEach((fn) => fn());
@@ -238,6 +245,35 @@ async function open(t, api) {
   await settle();
   return view;
 }
+
+// The blob `writeLive` actually writes, with one thing at a time replaceable — every resume test
+// below reads as "that blob, except this field is wrong", which is exactly the shape of the harm.
+function liveBlob(fields) {
+  return JSON.stringify({
+    sessionId: 'ses_probe',
+    order: ['back-squat'],
+    exIdx: 0,
+    weight: 82.5,
+    reps: 8,
+    restStartedAt: null,
+    ...fields,
+  });
+}
+
+// A set the log already holds, exactly as `GET /sessions/:id` hands it back.
+function loggedSet(index, at, weightKg) {
+  return {
+    id: `set_stored${index}`,
+    exerciseId: 'back-squat',
+    weightKg,
+    reps: 5,
+    kind: 'working',
+    completedAt: at,
+    setNumber: index + 1,
+  };
+}
+
+const RESUME_LOST = 'Couldn’t read where you left off — that’s the weight and the movement, never a set.';
 
 function heldSet(index, at) {
   return {
@@ -812,4 +848,221 @@ test('a failed re-read after finishing still releases the foot of the log', asyn
 
   assert.equal(view.live.older.status, 'more');
   assert.deepEqual(view.live.summaries.map((each) => each.id), rows.slice(0, PAGE).map((each) => each.id));
+});
+
+// THE RESUME DOOR. A phone reloads mid-workout — the tab is discarded under a locked screen, the
+// browser updates, the lifter pulls to refresh — and everything about where they were comes back
+// through one `JSON.parse` of a key any build may have written. The regression that matters most is
+// this one: a well-formed blob still restores exactly as it always did.
+test('a well-formed resume blob comes back exactly as it was written', async (t) => {
+  const now = Date.now();
+  const restStartedAt = now - 300_000;
+  const browser = browserWith({
+    live: liveBlob({ order: ['bench-press', 'back-squat'], exIdx: 0, weight: 82.5, reps: 8, restStartedAt }),
+  });
+  const backend = logThatSettles({
+    startedAt: now - HOUR,
+    lastActivityAt: now - 120_000,
+    sets: [loggedSet(0, now - 120_000, 100)],
+  });
+
+  const view = await open(t, backend.api);
+
+  assert.equal(view.live.phase, 'live');
+  assert.deepEqual(view.live.order, ['bench-press', 'back-squat']);
+  assert.equal(view.live.exIdx, 0);
+  assert.equal(view.live.exercise.id, 'bench-press');
+  // The dial is the lifter's and the prefill stayed out of its way — an untouched bench-press
+  // would read the empty bar, 20 × 5.
+  assert.deepEqual([view.live.weight, view.live.reps], [82.5, 8]);
+  assert.equal(view.live.rest.label, 'rest done · target 3:00');
+  assert.equal(view.live.rest.overrun, true);
+  assert.equal(view.live.toast, null);
+  // Every field the writer writes, back out of the store unchanged after the restore.
+  assert.deepEqual(JSON.parse(browser.kept()), {
+    sessionId: 'ses_probe',
+    order: ['bench-press', 'back-squat'],
+    exIdx: 0,
+    weight: 82.5,
+    reps: 8,
+    restStartedAt,
+  });
+});
+
+// A load is signed here — band-assisted work sits below zero — so a door that quietly required a
+// positive number would throw away every chin-up session on the first reload.
+test('a band-assisted weight is a point on the number line, and survives the door as one', async (t) => {
+  const now = Date.now();
+  browserWith({ live: liveBlob({ order: ['chin-up'], weight: -20, reps: 6 }) });
+  const backend = logThatSettles({ startedAt: now - HOUR, lastActivityAt: now - 120_000 });
+
+  const view = await open(t, backend.api);
+
+  assert.equal(view.live.exercise.id, 'chin-up');
+  assert.deepEqual([view.live.weight, view.live.reps], [-20, 6]);
+  assert.equal(view.live.toast, null);
+});
+
+// Not JSON at all: a write a killed tab cut in half. Nothing can be salvaged, so nothing is — and
+// the session is rebuilt from the log, which is where the sets were the whole time.
+test('a resume blob that is not JSON is discarded, and the session comes back off the log', async (t) => {
+  const now = Date.now();
+  browserWith({ live: '{"sessionId":"ses_probe","order":["back-' });
+  const backend = logThatSettles({
+    startedAt: now - HOUR,
+    lastActivityAt: now - 120_000,
+    sets: [loggedSet(0, now - 180_000, 100), loggedSet(1, now - 120_000, 105)],
+  });
+
+  const view = await open(t, backend.api);
+
+  assert.equal(view.live.phase, 'live');
+  assert.deepEqual(view.live.sets.map((set) => [set.id, set.weightKg, set.queued]), [
+    ['set_stored0', 100, false], ['set_stored1', 105, false],
+  ]);
+  assert.deepEqual(view.live.order, ['back-squat']);
+  // The prefill is the recovery: today's own last set is a better number than any default.
+  assert.deepEqual([view.live.weight, view.live.reps], [105, 5]);
+  assert.equal(view.live.toast.text, RESUME_LOST);
+});
+
+// Valid JSON, wrong type. `setWeight('82.5')` reaches `ladderLabels` during render and prints a
+// ladder read off a string; the 64px button under the thumb then reads back a weight nobody dialled.
+test('a weight that is not a number never reaches the ladder', async (t) => {
+  const now = Date.now();
+  browserWith({ live: liveBlob({ weight: '82.5' }) });
+  const backend = logThatSettles({ startedAt: now - HOUR, lastActivityAt: now - 120_000 });
+
+  const view = await open(t, backend.api);
+
+  // The place survived — only the dial did not.
+  assert.deepEqual(view.live.order, ['back-squat']);
+  assert.equal(view.live.exercise.id, 'back-squat');
+  assert.deepEqual([view.live.weight, view.live.reps], [20, 5]);
+  assert.equal(view.live.toast.text, RESUME_LOST);
+});
+
+// The dial is ONE gesture. Restoring the half that typechecks and prefilling the other half puts a
+// pair on the button that the lifter never dialled — 82.5 × 5 when they were about to do 82.5 × 8.
+test('the dial comes back whole or not at all', async (t) => {
+  const now = Date.now();
+  browserWith({ live: liveBlob({ weight: 82.5, reps: null }) });
+  const backend = logThatSettles({ startedAt: now - HOUR, lastActivityAt: now - 120_000 });
+
+  const view = await open(t, backend.api);
+
+  assert.deepEqual([view.live.weight, view.live.reps], [20, 5]);
+  assert.equal(view.live.toast.text, RESUME_LOST);
+});
+
+// A blob written before the rep floor moved can hold reps: 0 — a value the ladder no longer reaches
+// and parseEntry now refuses. Restoring it would open the pad in alarm ink on a gesture the lifter
+// never made, so it fails the same way any other broken dial does: the pair goes, the prefill answers.
+test('a stored rep count the server would refuse takes the dial down with it', async (t) => {
+  const now = Date.now();
+  browserWith({ live: liveBlob({ weight: 82.5, reps: 0 }) });
+  const backend = logThatSettles({ startedAt: now - HOUR, lastActivityAt: now - 120_000 });
+
+  const view = await open(t, backend.api);
+
+  assert.deepEqual([view.live.weight, view.live.reps], [20, 5]);
+  assert.equal(view.live.toast.text, RESUME_LOST);
+});
+
+// A movement list that is a bare string spreads into its own characters, and the logger opens on a
+// movement called "b". The list is the one thing here that can rebuild itself, so it does.
+test('a movement list that is not a list is rebuilt from the sets that were performed', async (t) => {
+  const now = Date.now();
+  browserWith({ live: liveBlob({ order: 'back-squat' }) });
+  const backend = logThatSettles({
+    startedAt: now - HOUR,
+    lastActivityAt: now - 120_000,
+    sets: [loggedSet(0, now - 120_000, 100)],
+  });
+
+  const view = await open(t, backend.api);
+
+  assert.deepEqual(view.live.order, ['back-squat']);
+  assert.equal(view.live.exercise.id, 'back-squat');
+  // The place and the dial are separate facts: losing the list does not cost the number.
+  assert.deepEqual([view.live.weight, view.live.reps], [82.5, 8]);
+  assert.equal(view.live.toast.text, RESUME_LOST);
+});
+
+// An index is a pointer INTO the list, and a build that once wrote the movement id there leaves one
+// that reads as NaN through the clamp — which selects no movement at all and draws the ad-hoc
+// screen over a live session. The list outlives the index; the index falls back to the movement
+// last performed, which is where a session with no blob at all opens.
+test('an index that is not an index costs the index and not the list', async (t) => {
+  const now = Date.now();
+  browserWith({ live: liveBlob({ order: ['bench-press', 'back-squat'], exIdx: 'back-squat' }) });
+  const backend = logThatSettles({ startedAt: now - HOUR, lastActivityAt: now - 120_000 });
+
+  const view = await open(t, backend.api);
+
+  assert.deepEqual(view.live.order, ['bench-press', 'back-squat']);
+  assert.equal(view.live.exIdx, 1);
+  assert.equal(view.live.exercise.id, 'back-squat');
+  assert.deepEqual([view.live.weight, view.live.reps], [82.5, 8]);
+  assert.equal(view.live.toast.text, RESUME_LOST);
+});
+
+// THE ONE THAT MATTERS. The resume blob and the flush queue are DIFFERENT KEYS, and only the queue
+// holds sets — so a blob thrown away at the door cannot take a set with it. Proved with the network
+// refusing every write, which is the state where those sets exist on this device and nowhere else.
+test('a discarded resume blob cannot drop a set the queue is still holding', async (t) => {
+  const now = Date.now();
+  const held = [0, 1, 2].map((index) => heldSet(index, now - 600_000 + index * 60_000));
+  const browser = browserWith({ queue: held, live: 'not json, not anything' });
+  const backend = logThatSettles({ startedAt: now - HOUR, lastActivityAt: now - 120_000 });
+  backend.api.appendSet = async () => { throw new GymError(503, 'internal error'); };
+
+  const view = await open(t, backend.api);
+
+  assert.equal(view.live.phase, 'live');
+  assert.deepEqual(view.live.sets.map((set) => [set.id, set.weightKg, set.queued]), [
+    ['set_offline0', 100, true], ['set_offline1', 102.5, true], ['set_offline2', 105, true],
+  ]);
+  assert.deepEqual([...view.live.stalled], ['set_offline0', 'set_offline1', 'set_offline2']);
+  assert.deepEqual(browser.held().map((entry) => entry.setId), [
+    'set_offline0', 'set_offline1', 'set_offline2',
+  ]);
+  assert.deepEqual(view.live.refusals, []);
+  // The queued sets rebuilt the list AND the number: the discard cost the dial, and they replaced it.
+  assert.deepEqual(view.live.order, ['back-squat']);
+  assert.deepEqual([view.live.weight, view.live.reps], [105, 5]);
+  assert.equal(view.live.toast.text, RESUME_LOST);
+});
+
+// A blob that names some other session is not damage and never was — a session finished on the
+// phone leaves one behind, and the web opening a different session simply starts from the log.
+// Nothing was lost, so nothing is said.
+test('a resume blob for a session that is not this one is ignored without a word', async (t) => {
+  const now = Date.now();
+  browserWith({ live: liveBlob({ sessionId: 'ses_elsewhere', order: ['bench-press'] }) });
+  const backend = logThatSettles({
+    startedAt: now - HOUR,
+    lastActivityAt: now - 120_000,
+    sets: [loggedSet(0, now - 120_000, 100)],
+  });
+
+  const view = await open(t, backend.api);
+
+  assert.deepEqual(view.live.order, ['back-squat']);
+  assert.deepEqual([view.live.weight, view.live.reps], [100, 5]);
+  assert.equal(view.live.toast, null);
+});
+
+// A list naming the same movement twice shortens under adopt's dedupe while the index keeps counting
+// the long version, so the lifter resumes on the wrong lift. The list is repairable; the pointer into
+// it is not, and the collapse is said rather than swallowed.
+test('a movement listed twice costs the index, not the list, and is not silent', async (t) => {
+  const now = Date.now();
+  browserWith({ live: liveBlob({ order: ['bench-press', 'bench-press', 'back-squat'], exIdx: 1 }) });
+  const backend = logThatSettles({ startedAt: now - HOUR, lastActivityAt: now - 120_000 });
+
+  const view = await open(t, backend.api);
+
+  assert.deepEqual(view.live.order, ['bench-press', 'back-squat']);
+  assert.equal(view.live.toast.text, RESUME_LOST);
 });

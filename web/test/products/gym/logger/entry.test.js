@@ -123,18 +123,23 @@ test('the alarm state is reachable only by a buffer the lifter emptied themselve
   assert.equal(echoOf(cleared), '—');
 });
 
-test('parseEntry — reps are whole, 0 to 99, and the comma cannot reach them', () => {
+test('parseEntry — reps are whole, 1 to 99, and the comma cannot reach them', () => {
   assert.deepEqual(parseEntry(pad('14'), 'reps', 5), { valid: true, value: 14, message: REPS_HINT });
-  assert.deepEqual(parseEntry(pad('0'), 'reps', 5), { valid: true, value: 0, message: REPS_HINT });
+  assert.deepEqual(parseEntry(pad('1'), 'reps', 5), { valid: true, value: 1, message: REPS_HINT });
   assert.deepEqual(parseEntry(pad('99'), 'reps', 5), { valid: true, value: 99, message: REPS_HINT });
+  // The refusal that was the defect: 0 read as valid here and the server refuses reps < 1, so the
+  // only word the lifter got was a refusal banner after the set had already failed to land.
+  assert.deepEqual(parseEntry(pad('0'), 'reps', 5), {
+    valid: false, value: null, message: 'Whole reps, 1 to 99',
+  });
   assert.deepEqual(parseEntry(pad('100'), 'reps', 5), {
-    valid: false, value: null, message: 'Whole reps, 0 to 99',
+    valid: false, value: null, message: 'Whole reps, 1 to 99',
   });
   assert.deepEqual(parseEntry(pad('-1'), 'reps', 5), {
-    valid: false, value: null, message: 'Whole reps, 0 to 99',
+    valid: false, value: null, message: 'Whole reps, 1 to 99',
   });
   assert.deepEqual(parseEntry(pad('8.5'), 'reps', 5), {
-    valid: false, value: null, message: 'Whole reps, 0 to 99',
+    valid: false, value: null, message: 'Whole reps, 1 to 99',
   });
   assert.deepEqual(parseEntry(pad(''), 'reps', 8), {
     valid: false, value: null, message: 'Enter a number, or cancel to keep 8',

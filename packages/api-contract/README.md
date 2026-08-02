@@ -58,6 +58,17 @@ a half to a weight already on the grid — but **typed entry does**: the keypad 
 under the two default rules the web would store `−2.5` where the phone stored `−2.51`, for the same
 string typed by the same lifter. `roundCases` pins it. Round the magnitude and reapply the sign.
 
+**The rep floor.** Reps ride the same file because they ride the same buttons, and they have one
+rule the weight does not: a set of zero reps is not a set. The backend says so — `Training.cpp`
+refuses `reps < 1` — so a logger whose ladder floored at 0 drew a tappable `60 kg × 0` that the log
+could only answer with a refusal. The floor is **1**, on the ladder and in typed entry both. What
+`repCases` has to pin, and the reason it names 0 at all, is that the floor is a **clamp into the
+range and not a hold at the value**: `bumpReps(0, −1)` is **1**, not 0, so a 0 rehydrated from a
+live blob written before the floor moved is climbed out of by whichever button the thumb finds
+first, and the down key is never the thing preserving an unloggable number. Two defensible answers,
+one written down. The ceiling is the other way round on purpose: the keypad stops at 99 where the
+server allows 500, because 99 is a keypad bound — two digits, no third — and not a contract one.
+
 Read that as **`round(x × 100) ÷ 100` evaluated in IEEE-754 doubles**, not as decimal rounding of
 the typed string — the two are different answers and `roundCases` pins the first. `2.505` is not
 `2.505` as a double, it is `2.50499999…`, so a decimal reading rounds it *down* to `2.50` while

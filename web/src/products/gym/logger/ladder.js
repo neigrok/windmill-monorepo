@@ -65,7 +65,14 @@ export const LADDER_KEYS = [
   { direction: 1, big: true, weight: 'outer' },
 ];
 
+// A set of zero reps is not a set, and the server says so — Training.cpp refuses reps < 1 — so a
+// ladder that floored at 0 offered a tap the log could only answer with a refusal. The floor is a
+// CLAMP INTO the range and never a hold at the value: a 0 rehydrated from a live blob written before
+// the floor moved is climbed out of by whichever button the thumb finds first, so the down key can
+// never be the thing preserving an unloggable number. repCases pins that answer for both languages.
+export const REPS_FLOOR = 1;
+
 export function bumpReps(reps, direction) {
-  if (direction < 0) return Math.max(0, reps - 1);
+  if (direction < 0) return Math.max(REPS_FLOOR, reps - 1);
   return reps + 1;
 }

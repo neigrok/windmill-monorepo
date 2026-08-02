@@ -3,9 +3,12 @@
 // the ladder moves the weight, prefill picks the number, the queue owns durability — so this file
 // is the plumbing and none of the meaning.
 //
-// Three rules it exists to keep:
+// Four rules it exists to keep:
 //   · the clock is DERIVED. A 500ms beat forces a re-render and increments nothing, so a locked
 //     phone, a backgrounded tab and a full reload all come back to the true elapsed time.
+//   · the store is a FOREIGN INPUT. What comes back from `windmill.gym.live` was written by some
+//     build, possibly not this one and possibly not all of it, and it becomes React state one line
+//     later — so it typechecks at the door or it does not get in.
 //   · the queue flushes FIRST — before the boot read, and the moment the signal returns — because
 //     reading the log SETTLES a stale open session, and a set that arrives after that close is
 //     refused forever. An auto-close over an unflushed queue is the one loss the device cannot
@@ -32,12 +35,67 @@ const TOAST_MS = 5000;
 // lifter's history hidden under "that's the start of your log".
 const LOG_PAGE = 50;
 
+// THE ONE DOOR. Whatever is behind this key is a foreign input — an older build's shape, a write a
+// killed tab truncated, a hand edit — and one line past this function it is state, and then it is a
+// render. So it typechecks here, and what comes back out is either trustworthy or nothing.
+//
+// Nothing in this blob is a set. Every set the lifter has logged is on the log or in the QUEUE,
+// under its own key that this function never touches, and `adopt` re-joins that queue by session id
+// — so no discard below can cost a set. What is here is where the lifter was standing: the movement
+// list, the number under the thumb, the rest clock.
+//
+// Which is why exactly one field takes the whole blob down with it, and every other repairs:
+//   · IDENTITY has no fallback. A blob that cannot name its session cannot be matched to one, and
+//     matching it to the wrong session would put another workout's number under the thumb.
+//   · THE DIAL is one gesture. Half restored and half prefilled is a number nobody chose, which is
+//     the one thing this screen may never draw — so both come back, or neither does and the prefill
+//     takes over, exactly as it does on a movement just walked into.
+//   · THE PLACE rebuilds itself from the sets that were actually performed, so losing it costs at
+//     most a movement chosen and not yet lifted. The index is a pointer INTO that list and cannot
+//     outlive it; the list is perfectly meaningful without the index, and defaults to the movement
+//     last performed just as a first read of the session does.
 function readLive() {
+  let stored = null;
   try {
-    return JSON.parse(window.localStorage.getItem(LIVE_KEY));
+    stored = JSON.parse(window.localStorage.getItem(LIVE_KEY));
   } catch {
-    return null;
+    return { live: null, lost: true };
   }
+  if (stored == null) return { live: null, lost: false };
+  if (typeof stored.sessionId !== 'string' || stored.sessionId === '') return { live: null, lost: true };
+
+  const listed = Array.isArray(stored.order) && stored.order.every((id) => typeof id === 'string' && id !== '')
+    ? stored.order
+    : null;
+  // Duplicates are the one flaw the door has to catch rather than pass on, because adopt dedupes the
+  // list downstream and the index does not move with it: an order naming a movement twice quietly
+  // shortens under a pointer still counting the long version, and the lifter resumes on the wrong
+  // lift with nothing said. The list survives deduped; the pointer into it does not.
+  const order = listed === null ? null : [...new Set(listed)];
+  const shortened = order !== null && order.length !== listed.length;
+  const exIdx = order !== null && !shortened && Number.isInteger(stored.exIdx) && stored.exIdx >= 0
+    ? stored.exIdx
+    : null;
+  // Finite is the whole rule for a weight: the load is signed, because band-assisted work sits below
+  // zero, and the ladder's step buttons deliberately do not clamp — so a magnitude ceiling here
+  // would refuse a bar the product's own buttons can reach.
+  // Reps floor at 1 here for the same reason the ladder does: a set of zero is not a set, the server
+  // refuses it, and a 0 written by a build from before that floor moved would otherwise come back and
+  // open the pad in alarm ink on a gesture the lifter never made. Dropping the pair rather than
+  // clamping the 0 is the same rule as everywhere else here — a half-restored dial is a set nobody
+  // dialled, and the prefill is a better answer than a repaired one.
+  const dial = Number.isFinite(stored.weight) && Number.isInteger(stored.reps) && stored.reps >= 1
+    ? { weight: stored.weight, reps: stored.reps }
+    : null;
+  // null is a legal rest clock — it is how "not resting" is written — so this is the one field that
+  // has to tell a written absence from a broken value.
+  const restStartedAt = Number.isFinite(stored.restStartedAt) ? stored.restStartedAt : null;
+  const clockBroken = stored.restStartedAt != null && restStartedAt === null;
+
+  return {
+    live: { sessionId: stored.sessionId, order: order ?? [], exIdx, dial, restStartedAt },
+    lost: order === null || exIdx === null || dial === null || clockBroken,
+  };
 }
 
 function writeLive(state) {
@@ -164,7 +222,7 @@ export function useLiveSession({ api = gymApi } = {}) {
   }, [session]);
 
   const adopt = useCallback((row, storedSets) => {
-    const kept = readLive();
+    const { live: kept, lost } = readLive();
     const mine = kept && kept.sessionId === row.id ? kept : null;
     const held = queue.current.pending.filter((entry) => entry.sessionId === row.id);
     const merged = [
@@ -183,21 +241,28 @@ export function useLiveSession({ api = gymApi } = {}) {
     const performed = merged.slice().sort((left, right) => left.completedAt - right.completedAt)
       .map((set) => set.exerciseId);
     const nextOrder = [...new Set([...(mine?.order ?? []), ...performed])];
+    const landing = Math.max(0, Math.min(mine?.exIdx ?? nextOrder.length - 1, nextOrder.length - 1));
     setSession(row);
     setSets(merged);
     setOrder(nextOrder);
-    setExIdx(Math.max(0, Math.min(mine?.exIdx ?? nextOrder.length - 1, nextOrder.length - 1)));
+    setExIdx(landing);
     setRestStartedAt(mine?.restStartedAt ?? null);
     // A reload is not a movement change: the number the lifter had dialled comes back as it was,
-    // and the prefill stays out of the way for exactly that one resume.
-    if (mine) {
-      setWeight(mine.weight);
-      setReps(mine.reps);
-      restored.current = nextOrder[Math.max(0, Math.min(mine.exIdx ?? nextOrder.length - 1, nextOrder.length - 1))] ?? null;
+    // and the prefill stays out of the way for exactly that one resume. When the dial did not
+    // survive the door the prefill IS the recovery, so the suppression goes with it.
+    if (mine?.dial) {
+      setWeight(mine.dial.weight);
+      setReps(mine.dial.reps);
+      restored.current = nextOrder[landing] ?? null;
     }
     setPending(queue.current.pending);
     setPhase('live');
-  }, []);
+    // Said out loud rather than starting quietly blank — and said even when the wreck named some
+    // other session, because a note this device wrote and cannot read back is still a note about
+    // where the lifter left off. The sentence can promise what it promises because the blob holds
+    // no sets: the log has them, or the queue does.
+    if (lost) say('Couldn’t read where you left off — that’s the weight and the movement, never a set.');
+  }, [say]);
 
   // The queue goes out BEFORE the first read, and it is not an optimisation: GET /sessions settles
   // a stale open session, and a set that arrives after that close is refused forever. Logged in a

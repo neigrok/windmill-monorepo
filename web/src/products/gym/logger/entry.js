@@ -73,8 +73,10 @@ export function parseEntry(pad, mode, current) {
   if (mode === 'weight' && Math.abs(value) > 500) {
     return { valid: false, value: null, message: 'Over 500 kg — check the number' };
   }
-  if (mode === 'reps' && (value < 0 || value > 99 || value % 1 !== 0)) {
-    return { valid: false, value: null, message: 'Whole reps, 0 to 99' };
+  // 1 and not 0: the server refuses reps < 1, so a pad that accepted 0 handed back a number the log
+  // could only refuse — the one entry that looked legal here and died at the wire.
+  if (mode === 'reps' && (value < 1 || value > 99 || value % 1 !== 0)) {
+    return { valid: false, value: null, message: 'Whole reps, 1 to 99' };
   }
   if (mode === 'weight') return { valid: true, value: round(value), message: WEIGHT_HINT };
   return { valid: true, value, message: REPS_HINT };
