@@ -20,6 +20,28 @@ every product, page, and decision serves that. We build exceptional software and
 honest with customers: no dark patterns, no manufactured urgency, no copy that promises what the
 product doesn't do. When a choice trades user growth or honesty for revenue, the mission wins.
 
+## No misinformation — including to ourselves
+
+**We do not tolerate stale or wrong information anywhere: docs, canon, briefs, comments, READMEs,
+commit trails, task ledgers, or product copy.** The honesty we owe customers is the same honesty we
+owe the next person to read the repo — and that person is usually us, six weeks later, building
+from a sentence that quietly stopped being true.
+
+A stale line is worse than a missing one. Missing information gets looked up; wrong information gets
+*believed*, and it does its damage before anyone thinks to check. Docs are read **before** work
+starts, which is precisely when a false line is most expensive.
+
+So: **when you make a line false, you fix it in the same wave that made it false.** Proactively,
+without being asked, as part of the change rather than as follow-up. Correct it or delete it —
+never leave it standing with a correction pinned beside it, and never let "that's just the old copy"
+be a reason to keep it. If a fix is genuinely not yours to make (someone else's canon, an open
+product decision), record it where that owner will see it — the design project's `consistency.md`
+ledger for design/canon drift, a node in the dogfood tree for build work — and say so plainly in
+your summary. Silence is not a handoff.
+
+This cuts both ways: do not write a claim you have not verified. "Tested", "fixed" and "works" mean
+you ran it. If you could not verify something, say which part and why, in the doc and in the summary.
+
 ## Architecture & Design
 Optimize for the reader, not the writer. Code is read far more than it's written — favor the obvious over the clever
 Make structure explicit. A newcomer should infer where things live from folder and file names alone; the directory tree should read like a description of the system
