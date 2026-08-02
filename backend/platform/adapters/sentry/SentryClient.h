@@ -6,8 +6,14 @@
 #include <trantor/net/EventLoopThread.h>
 
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <string>
+#include <vector>
+
+namespace drogon {
+class HttpClient;
+}
 
 namespace wm {
 
@@ -28,9 +34,23 @@ public:
   // go red here whether or not it took the request down with it.
   void report(const std::string& kind, const std::string& where, const std::string& detail) override;
 
+  // The other half of what this project sees: the server's own log lines, as Sentry structured logs
+  // (envelope item type `log`). Buffered rather than shipped one POST per line — a log line is
+  // orders of magnitude more frequent than an exception, and a TLS handshake per line would put the
+  // reporter on the hot path of every request. Flushed on a timer, or early once a batch fills.
+  enum class Level { trace, debug, info, warn, error, fatal };
+  void log(Level level, std::string body, std::string source);
+
+  // True on this client's own loop thread. The tee asks before forwarding, so a diagnostic this
+  // client emits about a failed send can never be teed back into the buffer it was reporting on —
+  // no other work runs on that thread, so the test has no false negatives.
+  bool onReportingThread() const;
+
 private:
   Json::Value newEvent(const std::string& id, const std::string& kind) const;
   void ship(const std::string& id, const Json::Value& event);
+  void post(std::string body);
+  void flushLogs();
 
   // A per-minute cap: an error storm (a broken endpoint at high RPS) must not mint one outbound TLS
   // connection per failed request on the single loop thread. Excess reports drop; the DB
@@ -46,6 +66,16 @@ private:
   std::mutex rateMutex_;
   std::int64_t windowStartMs_ = 0;
   int windowCount_ = 0;
+
+  // One trace for the whole process run, so "every log line this server emitted since it booted" is
+  // one query in Sentry. A per-line trace would be honest too and useless — without real tracing
+  // there is nothing to correlate, and a million one-span traces is not a searchable shape.
+  std::string runTraceId_;
+  std::shared_ptr<drogon::HttpClient> client_;
+  std::mutex logMutex_;
+  std::vector<Json::Value> logItems_;
+  std::int64_t logDropped_ = 0;
+
   trantor::EventLoopThread loop_;
 };
 

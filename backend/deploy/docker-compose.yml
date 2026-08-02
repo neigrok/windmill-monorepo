@@ -58,9 +58,15 @@ services:
       # Tending (server-side agent edits). Ships DARK: empty/absent → every run refuses with
       # "not turned on", the designed first face. Set to "true" to arm it once the agent loop lands.
       TENDING_ENABLED: ${TENDING_ENABLED:-}
-      # Observability: uncaught server exceptions ship to Sentry (empty → no-op). Funnel events
-      # forward to Amplitude with the resolved user_id (empty key → skipped); HOST picks the region.
+      # Observability: uncaught server exceptions AND every LOG_* line ship to Sentry (empty DSN →
+      # both no-op; stdout is never affected, so `docker logs` stays whole either way). LOG_LEVEL is
+      # the volume knob, ENVIRONMENT keeps a non-prod run out of the environment you page on, and
+      # RELEASE is the deployed sha. Funnel events forward to Amplitude with the resolved user_id
+      # (empty key → skipped); HOST picks the region.
       SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_LOG_LEVEL: ${SENTRY_LOG_LEVEL:-info}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
       AMPLITUDE_API_KEY: ${AMPLITUDE_API_KEY:-}
       AMPLITUDE_HOST: ${AMPLITUDE_HOST:-api2.amplitude.com}
       # Google sign-in (second door onto wm_session). Empty → the /auth/google routes stay dark.

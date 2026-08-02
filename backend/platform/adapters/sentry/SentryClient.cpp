@@ -9,6 +9,7 @@
 
 #include <chrono>
 #include <random>
+#include <utility>
 
 namespace wm {
 
@@ -29,6 +30,32 @@ bool parseDsn(const std::string& dsn, std::string& host, std::string& projectId,
   return !publicKey.empty() && !host.empty() && !projectId.empty();
 }
 
+// A batch leaves when it fills or when the timer fires, whichever comes first: the cap bounds the
+// envelope, the interval bounds how long a line waits to become visible during an incident.
+constexpr std::size_t kLogBatch = 100;
+constexpr std::size_t kLogBufferCap = 2000;
+constexpr double kLogFlushSeconds = 5.0;
+
+const char* levelName(SentryClient::Level level) {
+  switch (level) {
+    case SentryClient::Level::trace: return "trace";
+    case SentryClient::Level::debug: return "debug";
+    case SentryClient::Level::info: return "info";
+    case SentryClient::Level::warn: return "warn";
+    case SentryClient::Level::error: return "error";
+    case SentryClient::Level::fatal: return "fatal";
+  }
+  return "info";
+}
+
+// Sentry's log attributes are typed, not bare scalars: { "value": …, "type": "string" }.
+Json::Value stringAttribute(std::string value) {
+  Json::Value attribute(Json::objectValue);
+  attribute["value"] = std::move(value);
+  attribute["type"] = "string";
+  return attribute;
+}
+
 std::string hex32() {
   static thread_local std::mt19937_64 rng{std::random_device{}()};
   std::uniform_int_distribution<int> nibble(0, 15);
@@ -43,6 +70,15 @@ SentryClient::SentryClient(const std::string& dsn, std::string environment, std:
     : environment_(std::move(environment)), release_(std::move(release)) {
   enabled_ = parseDsn(dsn, host_, projectId_, publicKey_);
   loop_.run();
+  if (!enabled_) return;
+  runTraceId_ = hex32();
+  // One client for the life of the process, not one per envelope. Exceptions are rare enough that
+  // the churn never showed; a log batch every few seconds would have opened a fresh TLS connection
+  // all day for the same host.
+  client_ = drogon::HttpClient::newHttpClient("https://" + host_, loop_.getLoop());
+  // The timer is what makes a quiet server still report: a batch that never fills would otherwise sit
+  // in memory until the next busy minute, which is exactly the minute nobody is watching.
+  loop_.getLoop()->runEvery(kLogFlushSeconds, [this] { flushLogs(); });
 }
 
 bool SentryClient::allow() {
@@ -107,11 +143,14 @@ void SentryClient::ship(const std::string& id, const Json::Value& event) {
   envelopeHeader["event_id"] = id;
   Json::Value itemHeader(Json::objectValue);
   itemHeader["type"] = "event";
-  const std::string body = Json::writeString(builder, envelopeHeader) + "\n" +
-                           Json::writeString(builder, itemHeader) + "\n" +
-                           Json::writeString(builder, event);
+  post(Json::writeString(builder, envelopeHeader) + "\n" + Json::writeString(builder, itemHeader) +
+       "\n" + Json::writeString(builder, event));
+}
 
-  auto client = drogon::HttpClient::newHttpClient("https://" + host_, loop_.getLoop());
+// One envelope, one POST. Events and logs differ only in the items above this line — the endpoint,
+// the auth header and the failure contract are the same, so they are written once.
+void SentryClient::post(std::string body) {
+  if (!client_) return;
   auto req = drogon::HttpRequest::newHttpRequest();
   req->setMethod(drogon::Post);
   req->setPath("/api/" + projectId_ + "/envelope/");
@@ -122,14 +161,90 @@ void SentryClient::ship(const std::string& id, const Json::Value& event) {
 
   // Async on the private loop: the calling handler thread is freed the instant this returns, and a
   // failed report only logs — it can never re-enter the exception path it was reporting.
-  client->sendRequest(
+  client_->sendRequest(
       req,
-      [client](drogon::ReqResult result, const drogon::HttpResponsePtr& resp) {
+      [](drogon::ReqResult result, const drogon::HttpResponsePtr& resp) {
         const int status = resp ? static_cast<int>(resp->getStatusCode()) : 0;
         if (result != drogon::ReqResult::Ok || status < 200 || status >= 300)
           LOG_ERROR << "Sentry capture failed (status " << status << ")";
       },
       10.0);
+}
+
+bool SentryClient::onReportingThread() const {
+  return enabled_ && loop_.getLoop() && loop_.getLoop()->isInLoopThread();
+}
+
+void SentryClient::log(Level level, std::string body, std::string source) {
+  if (!enabled_ || body.empty()) return;
+
+  Json::Value item(Json::objectValue);
+  item["timestamp"] =
+      std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
+  item["trace_id"] = runTraceId_;
+  item["level"] = levelName(level);
+  item["body"] = std::move(body);
+  Json::Value attributes(Json::objectValue);
+  attributes["sentry.environment"] = stringAttribute(environment_);
+  if (!release_.empty()) attributes["sentry.release"] = stringAttribute(release_);
+  // The file:line trantor appends is metadata, not prose: in the body it would defeat Sentry's own
+  // grouping of a repeated message, and as an attribute it is filterable.
+  if (!source.empty()) attributes["code.location"] = stringAttribute(std::move(source));
+  item["attributes"] = std::move(attributes);
+
+  bool full = false;
+  {
+    std::lock_guard<std::mutex> lock(logMutex_);
+    // The buffer is a ceiling, not a queue to grow: an unreachable Sentry plus a log storm must cost
+    // bounded memory. What is dropped is counted and confessed on the next flush that lands, because
+    // a gap nobody is told about is worse than the lines themselves.
+    if (logItems_.size() >= kLogBufferCap) {
+      ++logDropped_;
+      return;
+    }
+    logItems_.push_back(std::move(item));
+    full = logItems_.size() >= kLogBatch;
+  }
+  if (full) loop_.getLoop()->queueInLoop([this] { flushLogs(); });
+}
+
+void SentryClient::flushLogs() {
+  std::vector<Json::Value> batch;
+  std::int64_t dropped = 0;
+  {
+    std::lock_guard<std::mutex> lock(logMutex_);
+    if (logItems_.empty() && logDropped_ == 0) return;
+    batch.swap(logItems_);
+    dropped = std::exchange(logDropped_, 0);
+  }
+
+  Json::Value items(Json::arrayValue);
+  for (Json::Value& item : batch) items.append(std::move(item));
+  if (dropped > 0) {
+    Json::Value note(Json::objectValue);
+    note["timestamp"] =
+        std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
+    note["trace_id"] = runTraceId_;
+    note["level"] = "warn";
+    note["body"] = "windmill log buffer overflowed — " + std::to_string(dropped) + " line(s) dropped";
+    note["attributes"]["sentry.environment"] = stringAttribute(environment_);
+    items.append(std::move(note));
+  }
+
+  Json::StreamWriterBuilder builder;
+  builder["indentation"] = "";
+  Json::Value payload(Json::objectValue);
+  payload["items"] = std::move(items);
+  const std::string encoded = Json::writeString(builder, payload);
+
+  Json::Value envelopeHeader(Json::objectValue);
+  Json::Value itemHeader(Json::objectValue);
+  itemHeader["type"] = "log";
+  itemHeader["item_count"] = static_cast<Json::UInt64>(payload["items"].size());
+  itemHeader["content_type"] = "application/vnd.sentry.items.log+json";
+  itemHeader["length"] = static_cast<Json::UInt64>(encoded.size());
+  post(Json::writeString(builder, envelopeHeader) + "\n" + Json::writeString(builder, itemHeader) +
+       "\n" + encoded);
 }
 
 }

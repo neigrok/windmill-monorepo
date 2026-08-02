@@ -7,6 +7,7 @@
 #include "platform/adapters/crypto/OpenSslTokenGenerator.h"
 #include "platform/adapters/email/ResendClient.h"
 #include "platform/adapters/email/ResendEmailSender.h"
+#include "platform/adapters/sentry/LogTee.h"
 #include "platform/adapters/sentry/SentryClient.h"
 #include "platform/adapters/http/AuthApi.h"
 #include "products/roadmap/adapters/auth/ForkSignup.h"
@@ -243,7 +244,20 @@ int main() {
   // SENTRY_DSN is set (empty → a no-op client, mirroring the Resend/Anthropic key guards).
   auto serverErrors = std::make_shared<PgServerErrorRepository>(connString);
   const char* sentryDsn = std::getenv("SENTRY_DSN");
-  auto sentry = std::make_shared<SentryClient>(sentryDsn ? sentryDsn : "");
+  // The environment is a variable, not a constant, and logs are why it had to become one: exceptions
+  // were rare enough that a laptop run with the DSN set was a curiosity, whereas a laptop teeing
+  // every log line into the production environment would bury the thing it is there to surface.
+  const char* sentryEnv = std::getenv("SENTRY_ENVIRONMENT");
+  const char* sentryRelease = std::getenv("SENTRY_RELEASE");
+  auto sentry = std::make_shared<SentryClient>(sentryDsn ? sentryDsn : "",
+                                               sentryEnv ? sentryEnv : "production",
+                                               sentryRelease ? sentryRelease : "");
+
+  // The other half of the same project: every LOG_* line, ours and drogon's, teed to Sentry as a
+  // structured log. It goes in HERE, before anything else logs, so a failure during the rest of this
+  // composition is already on the wire rather than only in a stdout nobody tails. stdout is
+  // untouched either way; SENTRY_LOG_LEVEL (default info) is the volume knob.
+  installLogTee(sentry, logLevelFromEnv(std::getenv("SENTRY_LOG_LEVEL")));
 
   // Paste-import escalation (F3): the model rewrites arbitrary prose into the paste grammar
   // and the client re-parses it deterministically — text in, text out, never a door into the

@@ -47,6 +47,11 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           AMPLITUDE_API_KEY: ${{ secrets.AMPLITUDE_API_KEY }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          # Not secrets: which environment the events land in, how much log volume is forwarded, and
+          # the commit they came from. The release is the sha so a regression names the deploy.
+          SENTRY_ENVIRONMENT: ${{ vars.SENTRY_ENVIRONMENT || 'production' }}
+          SENTRY_LOG_LEVEL: ${{ vars.SENTRY_LOG_LEVEL || 'info' }}
+          SENTRY_RELEASE: ${{ github.sha }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
@@ -83,7 +88,8 @@ jobs:
             printf 'IMAGE_TAG=%s\n' "${IMAGE_TAG:-latest}"
             for key in POSTGRES_PASSWORD DOMAIN_APP DOMAIN_API ACME_EMAIL CF_IPS \
                        RESEND_API_KEY RESEND_FROM ANTHROPIC_API_KEY OPENAI_API_KEY \
-                       TENDING_ENABLED SENTRY_DSN AMPLITUDE_API_KEY AMPLITUDE_HOST \
+                       TENDING_ENABLED SENTRY_DSN SENTRY_ENVIRONMENT SENTRY_LOG_LEVEL \
+                       SENTRY_RELEASE AMPLITUDE_API_KEY AMPLITUDE_HOST \
                        GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
                        PADDLE_WEBHOOK_SECRET PADDLE_API_KEY PADDLE_ENV PADDLE_PRICE_ID \
                        WINDMILL_MCP_ALLOWED_ORIGINS WINDMILL_MCP_TOKEN; do

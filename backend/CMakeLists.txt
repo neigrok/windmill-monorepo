@@ -180,6 +180,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     platform/adapters/oidc/GoogleOAuthClient.cpp
     platform/adapters/oidc/AppleOAuthClient.cpp
     platform/adapters/sentry/SentryClient.cpp
+    platform/adapters/sentry/LogTee.cpp
     platform/adapters/amplitude/AmplitudeClient.cpp
     platform/adapters/paddle/PaddleSignature.cpp
     platform/adapters/paddle/PaddleApiClient.cpp
@@ -293,6 +294,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/adapters/http/RemindersApiTest.cpp
     test/adapters/ws/CollabTest.cpp
     test/adapters/email/ResendEmailSenderTest.cpp
+    test/adapters/sentry/LogTeeTest.cpp
     test/adapters/paddle/PaddleSignatureTest.cpp
     test/adapters/llm/AnthropicComposerTest.cpp
     test/adapters/llm/AnthropicAgentTest.cpp
