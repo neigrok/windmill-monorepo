@@ -1,0 +1,61 @@
+/* The journal landing's own visual language — what the family chrome and landing.css don't own:
+   the window of night in the moat, the year dots, the week columns, the scene frames. The static
+   page baked the design tokens into a :root block because it could not import a stylesheet; here
+   the tokens are the real ones, and the window of night wears the design system's journal dusk
+   scope (data-theme + data-brand on that one element) instead of a copy of its values. */
+
+/* The cursor already waiting — the moat's one continuous motion. */
+.jn-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 18px;
+  background: var(--lamp-400);
+  margin-left: 2px;
+  vertical-align: -3px;
+  animation: jnBreathe var(--duration-glow) var(--ease-glow) infinite;
+}
+
+@keyframes jnBreathe { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+@keyframes jnEchoIn { 0% { opacity: 0; transform: translateY(8px) scale(.99); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes jnRise { 0% { opacity: 0; transform: translateY(6px); } 100% { opacity: 1; transform: translateY(0); } }
+.jn-echo-in { animation: jnEchoIn 480ms var(--ease-soft); }
+.jn-rise { animation: jnRise 280ms var(--ease-soft); }
+
+/* The three loop scenes share one frame: a page-shaped panel, clipped, that replays on click. */
+.jn-scene {
+  position: relative;
+  height: 190px;
+  padding: 18px 20px;
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+  background: var(--surface-canvas);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+/* Year-grid dots (beat 02) — one class per lamp step. A day nobody wrote stays hollow: drawn as
+   a gap rather than filled in, because it is a gap. */
+.jn-day { aspect-ratio: 1; border-radius: 50%; }
+.jn-day--lamp2 { background: var(--lamp-200); }
+.jn-day--lamp4 { background: var(--lamp-400); }
+.jn-day--lamp5 { background: var(--lamp-500); }
+.jn-day--lamp6 { background: var(--lamp-600); }
+.jn-day--empty { border: 1px solid var(--neutral-300); }
+
+.jn-weekday {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  transition: opacity 280ms var(--ease-standard);
+}
+
+/* Below 1024 the beat card turns into a row (landing.css); the scene keeps its size there. */
+@media (max-width: 1023px) {
+  .beat .jn-scene { flex-shrink: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jn-cursor { animation: none !important; opacity: 1 !important; }
+}

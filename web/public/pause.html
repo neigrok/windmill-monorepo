@@ -12,20 +12,13 @@
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="stylesheet" href="/fonts.css" />
+    <link rel="stylesheet" href="/chrome.css" />
     <style>
-      /* Design tokens resolved from src/styles/tokens/{fonts,colors,typography,motion}.css — system fallback stacks, no bundled woff2. */
-      * { box-sizing: border-box; }
-      body { margin: 0; background: #F9F5EB; color: #211B13; font-family: 'Nunito', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
-      .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
-      .hdr { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 24px; padding-bottom: 24px; }
-      .mark { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 21px; color: #211B13; text-decoration: none; }
-      .acts { display: flex; align-items: center; gap: 10px; }
-      .btn { display: inline-block; border: 0; border-radius: 999px; font-family: inherit; font-weight: 800; font-size: 12.5px; padding: 7px 15px; text-decoration: none; cursor: pointer; transition: background 150ms cubic-bezier(0.16, 1, 0.3, 1), color 150ms cubic-bezier(0.16, 1, 0.3, 1); }
-      .btn--pri { background: #BC6C42; color: #FFFFFF; }
-      .btn--pri:hover { background: #9D5330; }
-      .btn--gho { color: #6F5F45; }
-      .btn--gho:hover { background: #F1EADA; color: #211B13; }
-      .btn--lg { font-size: 15px; padding: 13px 26px; }
+      /* This page's own type only. The family chrome — frame, header, buttons, footer — and the
+         faces both arrive on the two sheets linked above, served by scripts/staticPageAssets.js so
+         all eight static pages wear one geometry. Colours are light-theme token values resolved
+         from src/styles/tokens/*.css; these pages are light-only. */
       .doc { max-width: 560px; padding: 56px 0 24px; }
       .doc h1 { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 34px; letter-spacing: -0.02em; margin: 0; }
       .doc p { font-size: 15.5px; line-height: 1.65; color: #6F5F45; margin: 14px 0 0; }
@@ -35,12 +28,6 @@
       .doc .btn--pri, .doc .btn--pri:hover { color: #FFFFFF; }
       .act { margin-top: 26px; }
       .doc .note { font-size: 13px; line-height: 1.6; color: #92805F; margin-top: 16px; }
-      .ftr { border-top: 1px solid #E5D9C0; margin-top: 72px; padding-top: 28px; padding-bottom: 40px; display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 12px; }
-      .fmark { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 16px; color: #6F5F45; }
-      .ftag { font-size: 13.5px; color: #92805F; margin-left: 10px; }
-      .flinks { display: flex; gap: 24px; font-size: 14px; flex-wrap: wrap; }
-      .flinks a { color: #92805F; text-decoration: none; }
-      .flinks a:hover { color: #211B13; }
 
       /* One document, five faces. The face is chosen by <html data-pause>, stamped before first
          paint below, so the reader never sees the button flash past a state it isn't in. With no
@@ -60,17 +47,24 @@
     <script defer src="/nav-auth.js"></script>
   </head>
   <body>
-    <header class="wrap hdr">
-      <a class="mark" href="/#/">Windmill</a>
-      <div class="acts">
+    <a class="skip" href="#content">Skip to content</a>
+    <header>
+      <a class="wm" href="/">Windmill</a>
+      <nav class="fam">
+        <a href="/roadmap">Roadmap</a>
+        <a href="/journal">Journal</a>
+        <a href="/gym">Gym</a>
+        <a href="/pricing.html">Pricing</a>
+      </nav>
+      <span class="navr">
         <a class="btn btn--gho au-out" href="/?signin">Sign in</a>
         <a class="btn btn--pri au-out" href="/#/app">Start your tree</a>
         <a class="btn btn--gho au-in" href="/#/settings" data-authname>My account</a>
         <a class="btn btn--pri au-in" href="/#/app">My trees</a>
-      </div>
+      </span>
     </header>
 
-    <main class="wrap">
+    <main class="wrap" id="content">
       <article class="doc">
         <noscript>
           <h1>Pause reminders</h1>
@@ -112,16 +106,11 @@
       </article>
     </main>
 
-    <footer class="wrap ftr">
-      <div><span class="fmark">Windmill</span><span class="ftag">Any goal, as a skill tree.</span></div>
-      <nav class="flinks">
-        <a href="/gallery">Gallery</a>
-        <a href="/pricing.html">Pricing</a>
-        <a href="/connect.html">Connect your AI tools</a>
-        <a href="/privacy.html">Privacy</a>
-        <a href="/terms.html">Terms</a>
-        <a href="/refunds.html">Refunds</a>
-        <a href="/changelog.html">Changelog</a>
+    <footer>
+      <span class="fl"><b>Windmill</b><span>© 2026</span></span>
+      <nav class="fcol">
+        <span class="fr"><a href="/pricing.html">Pricing</a><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="/refunds.html">Refunds</a><a href="/changelog.html">Changelog</a></span>
+        <span class="fr"><a href="/roadmap">Roadmap</a><a href="/journal">Journal</a><a href="/gym">Gym</a><a href="/gallery">Gallery</a><a href="/connect.html">Connect</a></span>
       </nav>
     </footer>
 

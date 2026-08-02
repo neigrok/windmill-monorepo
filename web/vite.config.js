@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { staticPageAssets } from './scripts/staticPageAssets.js';
 import { DEFAULT_KINDS, GENESIS_STAMP } from './src/products/roadmap/model/Legend.js';
 import { GENESIS_GOLDEN } from '../packages/api-contract/genesis.js';
 
@@ -16,7 +17,9 @@ if (JSON.stringify({ stamp: GENESIS_STAMP, kinds: DEFAULT_KINDS }) !== GENESIS_G
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  // staticPageAssets serves/emits /fonts.css and /chrome.css for the plain-HTML pages in public/,
+  // which never enter the module graph the SPA entry gets its faces and its chrome from.
+  plugins: [react(), staticPageAssets()],
   server: {
     port: 5173,
     open: false,

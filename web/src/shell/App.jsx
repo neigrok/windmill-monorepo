@@ -3,16 +3,15 @@ import AuthProvider, { useAuth } from './auth/AuthProvider.jsx';
 import EntitlementsProvider from './billing/EntitlementsProvider.jsx';
 import SignInDoorProvider, { useSignInDoor } from './auth/SignInDoor.jsx';
 import { verifyToken } from './auth/AuthClient.js';
-import Marketing from './marketing/Marketing.jsx';
 import { BrandLanding } from './marketing/BrandLanding.jsx';
 import { pendingTransactionId, openCheckout } from './billing/checkout.js';
 import { PRODUCTS, activeProduct } from './products.js';
 
-// Marketing is the site root and our one crawlable/indexable URL, so it ships eagerly with
-// the entry chunk — the landing paints in a single download (best LCP). Everything else loads
-// on demand behind a Suspense fallback: each product's routes (the heavy WebGL tree, the public
-// wall) lazy-load themselves, and the signed-in platform surfaces below do too — none of which
-// a first-time visitor to the landing ever renders, so their code stays out of the entry chunk.
+// The brand root is the one view imported eagerly: it answers our most-indexed URL, so it paints
+// in a single download (best LCP). Everything else loads on demand behind a Suspense fallback —
+// each product's routes (the heavy WebGL tree, the public wall), each product's landing, and the
+// signed-in platform surfaces below — none of which a visitor to the root ever renders, so their
+// code stays out of the entry chunk.
 const Showcase = lazy(() => import('../Showcase.jsx'));
 const AuthLanding = lazy(() => import('./auth/AuthLanding.jsx').then((m) => ({ default: m.AuthLanding })));
 const OAuthConsent = lazy(() => import('./auth/OAuthConsent.jsx').then((m) => ({ default: m.OAuthConsent })));
@@ -164,13 +163,15 @@ function AppRoutes() {
     }
   }
 
-  // Marketing lives at /<product> now: /roadmap is the roadmap landing (the interactive one,
-  // kept in the SPA); /journal and /gym are static pages Caddy serves before this ever runs.
-  // /products/roadmap is the legacy path — Caddy 301s it, and this match is the belt to that
-  // suspender while old tabs and caches drain. The bare root is the product-neutral brand front
-  // door. Both ship eagerly (imported at the top), so the indexed root paints in one download.
-  if (pathname.startsWith('/roadmap') || pathname.startsWith('/products/roadmap')) {
-    return <Suspense fallback={<RouteFallback />}><Marketing /></Suspense>;
+  // Every landing lives at /<product> and belongs to that product, so the shell names none of
+  // them: the registry says which pathname each one answers on. /products/<product> is the shape
+  // from before the rename — Caddy 301s it, and dropping the prefix here is the belt to that
+  // suspender while old tabs and caches drain. The bare root is the product-neutral front door.
+  const landingPath = pathname.startsWith('/products/') ? pathname.slice('/products'.length) : pathname;
+  const landing = PRODUCTS.find((p) => landingPath === p.landing.href || landingPath.startsWith(`${p.landing.href}/`));
+  if (landing) {
+    const { Component } = landing.landing;
+    return <Suspense fallback={<RouteFallback />}><Component /></Suspense>;
   }
   return <BrandLanding />;
 }

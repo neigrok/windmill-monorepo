@@ -8,6 +8,10 @@ import { lazy } from 'react';
 
 const GymApp = lazy(() => import('./GymApp.jsx').then((m) => ({ default: m.GymApp })));
 
+// The gym's own landing at /gym. Pre-open it still has to recognise a signed-in visitor on the
+// first frame, which is why it is React here and no longer a static page under public/.
+const GymLanding = lazy(() => import('./marketing/GymLanding.jsx').then((m) => ({ default: m.GymLanding })));
+
 function home() {
   return '#/gym';
 }
@@ -30,6 +34,14 @@ export const gymRoutes = {
   home,
   landingAfterSignIn,
   render,
+  // The words the brand root's door for the gym is made of, and pre-open they carry their own
+  // caveat in the same breath — the brand root reads the state off `shell.status` below.
+  landing: {
+    href: '/gym',
+    Component: GymLanding,
+    tagline: 'Keep a training log',
+    summary: 'A quiet record of how you’re moving — sets, sessions, the long line of showing up. Built on the same account, when it opens.',
+  },
   shell: {
     icon: 'dumbbell',
     room: '/app/gym',

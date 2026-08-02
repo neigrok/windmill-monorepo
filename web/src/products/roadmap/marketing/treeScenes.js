@@ -3,6 +3,9 @@
 // self-play unlock = #4 verbatim, reset = a downward change (plain 280ms dim, no beat).
 // Ported from the design system's ui_kits/marketing/tree-scenes.js: the IIFE/window.WMScenes
 // wrapper became ES exports, and the hero Fork CTA points at the real read-only demo route.
+// Every mount hands back a teardown that puts the container back the way React rendered it —
+// empty, unstyled, unclassed. This landing is lazily routed now, so a scene that outlives its
+// page is an observer, a timer chain and a world left running for the rest of the session.
 
 const PRM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const KIND = {
@@ -170,12 +173,12 @@ export function mountHero(wrap) {
     stage.style.transform = `translateX(-50%) scale(${s})`;
     // Phones floor the world at .60×, where the tree fills the moat right down to where the
     // Fork CTA floats — its lowest branch reads as stuck to the button. Give the button a clear
-    // band below the tree (matched in marketing.css's 743px reserve so mounting doesn't shift).
+    // band below the tree (matched in roadmapLanding.css's 743px reserve so mounting doesn't shift).
     const pad = w < 744 ? 72 : 0;
     wrap.style.height = Math.round(HH * s + pad) + 'px';
     wrap.classList.toggle('labels-off', s < 0.8);
   };
-  new ResizeObserver(fit).observe(wrap); fit();
+  const ro = new ResizeObserver(fit); ro.observe(wrap); fit();
 
   const io = new IntersectionObserver(en => { visible = en[0].isIntersecting; }, { threshold: .25 });
   io.observe(wrap);
@@ -249,7 +252,7 @@ export function mountHero(wrap) {
   if (PRM) {                                          // reduced: no cascade, no loop; click still works
     build(false); plq.classList.add('in');
   } else {
-    setTimeout(arrival, 500);
+    K.T(500, arrival);                                // the settle before the cascade — K owns it, so teardown can cancel it
   }
   return {
     setAutoplay(b) {
@@ -257,6 +260,17 @@ export function mountHero(wrap) {
       if (!autoplay) clearTimeout(cycleT);
       else if (!unlocked) schedule(2400, fire);
       else schedule(6000, reset);
+    },
+    // The loop is self-rescheduling, so silencing it takes both: stop the cycle from booking its
+    // next turn, then cancel the one already booked.
+    teardown() {
+      autoplay = false;
+      clearTimeout(cycleT);
+      K.clear();
+      ro.disconnect(); io.disconnect();
+      wrap.innerHTML = '';
+      wrap.classList.remove('heroWrap', 'labels-off');
+      wrap.style.height = '';
     },
   };
 }
@@ -341,7 +355,7 @@ export function mountBeat(stage, kind) {
   // shrinks too and the card never overflows. Mirrors the hero's fit().
   const frame = stage.parentElement;
   const fitBeat = () => { stage.style.zoom = Math.min(1, frame.clientWidth / BEAT_W); };
-  new ResizeObserver(fitBeat).observe(frame); fitBeat();
+  const ro = new ResizeObserver(fitBeat); ro.observe(frame); fitBeat();
   let W, played = false;
   function build(pre) {
     K.clear(); stage.innerHTML = '';
@@ -364,6 +378,13 @@ export function mountBeat(stage, kind) {
   }, { threshold: .5 });
   build(true); io.observe(stage);
   stage.addEventListener('click', play);
+  return () => {
+    ro.disconnect(); io.disconnect();
+    stage.removeEventListener('click', play);
+    K.clear();
+    stage.innerHTML = '';
+    stage.removeAttribute('style');
+  };
 }
 
 // ============================================================
@@ -409,6 +430,9 @@ export function mountThumb(stage, quest) {
   stage.style.cssText += `position:relative; width:${TH_W}px; height:${TH_H}px;`;
   buildWorld(stage, { w: TH_W, h: TH_H, s: 1, ox: 0, oy: 0, nodes: w.nodes, edges: w.edges,
     states: w.states, sizes: [15, 10, 7, 6], labels: 'none' });
+  // Nothing on the shelf moves, so the packet is one world and one teardown: unbuild it. Without
+  // this a remount stacked a second world on top of the first, and every thumb drew twice.
+  return () => { stage.innerHTML = ''; stage.removeAttribute('style'); };
 }
 
 export { KIND };

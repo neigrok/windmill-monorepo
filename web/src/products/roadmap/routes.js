@@ -12,6 +12,10 @@ const SkillTreeApp = lazy(() => import('./index.js').then((m) => ({ default: m.S
 const BrowsePage = lazy(() => import('./browse/BrowsePage.jsx').then((m) => ({ default: m.BrowsePage })));
 const HomeCard = lazy(() => import('./HomeCard.jsx').then((m) => ({ default: m.HomeCard })));
 
+// The roadmap's own landing at /roadmap. It lives here rather than in the shell because a landing
+// speaks its product's vocabulary — the shell only knows the pathname to hand it, off the registry.
+const RoadmapLanding = lazy(() => import('./marketing/RoadmapLanding.jsx').then((m) => ({ default: m.RoadmapLanding })));
+
 // The roadmap's account-settings sections — registered here so the neutral settings page composes
 // them without ever naming the roadmap (shell/settings/SettingsPage.jsx reads settingsSections off
 // the product registry). Lazy, so they keep their own chunks and never weigh on first paint. `main`
@@ -98,6 +102,14 @@ export const roadmapRoutes = {
   settingsSections: {
     main: paidPlansOpen() ? [ReminderSection, PlanSection, TendingSection] : [ReminderSection, TendingSection],
     data: [YourDataSection],
+  },
+  // tagline + summary are the words the brand root's door for this product is made of. They live
+  // here for the same reason the landing does: the shell must not hold a sentence about roadmaps.
+  landing: {
+    href: '/roadmap',
+    Component: RoadmapLanding,
+    tagline: 'Map what you’re learning',
+    summary: 'Author a learning path as an RPG skill tree — real prerequisites, ownership gates lifetimes, fundamentals gate frameworks. Grow it one checked-off node at a time.',
   },
   shell: {
     icon: 'route',

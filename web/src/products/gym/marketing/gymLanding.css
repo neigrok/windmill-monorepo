@@ -1,0 +1,112 @@
+/* Gym's own visual language on the landing: the dark instrument window opened inside a light
+   page. Everything the family shares — wrap, section type, beats, trio, ctaBand, the auth
+   cluster — lives in landing.css and the chrome owns it. What is here is only the skin the
+   moat wears: the chips, the set rows, the weight readout, the e1RM cards.
+
+   The token block mirrors src/products/gym/gym.css's .gym-root[data-theme="dark"] — the same
+   derivation from the dark ramp, cut down to what the landing actually paints with. The old
+   static page hardcoded these as hex, which is how a landing drifts away from the product it
+   is advertising; derived, the moat inherits any future correction to the night sky. */
+
+.gyw[data-theme="dark"] {
+  --color-brand: var(--accent-sky-400);
+  --gym-on-accent: #1B1408;
+
+  --gym-canvas: var(--surface-canvas);
+  --gym-surface: var(--surface-card);
+  --gym-raised: var(--surface-hover);
+  --gym-sunken: var(--surface-sunken);
+  --gym-line: var(--border-subtle);
+  --gym-line-strong: var(--border-default);
+
+  --weight-ink: var(--neutral-900);
+  --gym-ink: var(--text-primary);
+  --gym-ink-dim: var(--text-secondary);
+  --gym-ink-faint: var(--text-tertiary);
+
+  --set-done: var(--color-success);
+  --warmup-ink: var(--neutral-500);
+  --target-ink: var(--color-brand);
+  --alarm-ink: var(--color-danger);
+}
+
+/* ---- the moat: one instrument panel, floated over the cream page ---- */
+.gyMoat {
+  width: min(720px, 100%);
+  background: var(--gym-canvas);
+  border: 1px solid var(--gym-line);
+  border-radius: var(--radius-2xl);
+  box-shadow: 0 24px 60px rgba(10, 8, 5, .4);
+  padding: clamp(22px, 3.5vw, 32px);
+  text-align: left;
+}
+
+/* ---- the three beat stages: the same window, card-sized ---- */
+.gyStage {
+  background: var(--gym-canvas);
+  border: 1px solid var(--gym-line);
+  border-radius: var(--radius-lg);
+  height: 190px;
+  padding: 18px 20px;
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+}
+
+.gyLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--gym-ink-faint);
+}
+
+/* ---- the set logger's controls ---- */
+.gychip {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 52px; height: 44px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--gym-line-strong);
+  background: var(--gym-raised);
+  font-family: var(--font-mono); font-size: 14.5px; color: var(--gym-ink);
+  transition: background 150ms var(--ease-standard), color 150ms var(--ease-standard);
+}
+.gychip--sm { min-width: 48px; height: 40px; font-size: 13.5px; }
+.gyrep {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--gym-line-strong);
+  background: var(--gym-raised);
+  font-family: var(--font-mono); font-size: 17px; color: var(--gym-ink);
+}
+.gym-pressed {
+  background: var(--color-brand) !important;
+  color: var(--gym-on-accent) !important;
+  border-color: var(--color-brand) !important;
+}
+
+/* ---- the log itself ---- */
+.gyset { display: flex; align-items: center; gap: 12px; padding: 8px 0; font-family: var(--font-mono); font-size: 13px; }
+.gyck { margin-left: auto; color: var(--set-done); }
+.gycard {
+  background: var(--gym-canvas);
+  border: 1px solid var(--gym-line);
+  border-radius: var(--radius-xl);
+  padding: 16px 18px;
+  text-align: left;
+}
+
+/* Arrivals ride classes, not inline styles, so the reduced-motion block below can actually
+   outrank them. */
+.gyFade { animation: wmgFade 280ms var(--ease-standard); }
+.gyRise { animation: wmgRise 480ms var(--ease-soft); }
+@keyframes wmgFade { 0% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes wmgRise { 0% { opacity: 0; transform: translateY(6px); } 100% { opacity: 1; transform: translateY(0); } }
+
+@media (max-width: 1023px) {
+  .gyStage { flex-shrink: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gyFade, .gyRise { animation: none; }
+}

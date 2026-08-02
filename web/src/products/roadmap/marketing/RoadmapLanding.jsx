@@ -1,23 +1,31 @@
-// The marketing landing page (ported from the design system's ui_kits/marketing/index.html).
-// The live moat — a self-playing demo tree, three how-it-works beats, developer quest
-// thumbnails — comes from treeScenes.js; the rest reuses the app's Button/Badge. The
-// design-time tweaks panel is dropped; the "Any goal" headline is fixed. The landing is the
-// site root; CTAs point at the app (Start → #/app/start, the quest shelf — never bare #/app, which
-// RESUMES the newest tree; Try the demo → the read-only hosted demo tree) and the X6 sign-in door.
+// The roadmap's landing at /roadmap. The live moat — a self-playing demo tree, three
+// how-it-works beats, developer quest thumbnails — comes from treeScenes.js; the rest reuses the
+// app's Button/Badge. The family chrome (nav, auth cluster, legal shelf, Feedback door) comes from
+// the shell's LandingPage, so what lives here is the roadmap's own sections plus the verbs its nav
+// wears. CTAs point at the app (Start → #/app/start, the quest shelf — never bare #/app, which
+// RESUMES the newest tree; Try the demo → the read-only hosted demo tree).
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Button, Badge } from '../../design-system';
-import { useSignInDoor } from '../auth/SignInDoor.jsx';
-import { FeedbackDialog } from '../feedback/FeedbackDialog.jsx';
-import { pendingMagicLink } from '../auth/AuthClient.js';
-import { useAuth } from '../auth/AuthProvider.jsx';
-import { AccountSeat } from '../auth/AccountSeat.jsx';
-import { listTrees } from '../../products/roadmap/persistence/TreeRegistry.js';
-import { track } from '../../telemetry/beacon.js';
+import { Button, Badge } from '../../../design-system';
+import { LandingPage, useScene } from '../../../shell/marketing/LandingChrome.jsx';
+import { useAuth } from '../../../shell/auth/AuthProvider.jsx';
+import { listTrees } from '../persistence/TreeRegistry.js';
+import { track } from '../../../telemetry/beacon.js';
 import { mountHero, mountBeat, mountThumb } from './treeScenes.js';
-import './marketing.css';
+import './roadmapLanding.css';
 
-// The six kind hues marketing.css bridges to :root — the fact line's dot reads them.
+// This page's own anchors, which the chrome hangs left of the nav divider. The family cross-nav
+// right of it is built from the product registry and is none of the roadmap's business.
+const SECTION_LINKS = [
+  { href: '#how', label: 'How it works' },
+  { href: '#paths', label: 'Paths' },
+  { href: '#/connect', label: 'Connect' },
+  { href: '/changelog.html', label: 'Changelog' },
+];
+
+const START_CTA = { href: '#/app/start', label: 'Start your tree' };
+
+// The six kind hues roadmapLanding.css bridges to :root — the fact line's dot reads them.
 const KIND_DOT = {
   terracotta: 'var(--kind-terracotta)',
   olive: 'var(--kind-olive)',
@@ -56,132 +64,15 @@ function Icon({ name, size = 18 }) {
   );
 }
 
-function Nav({ status, user, newest, treeCount, linkSent, onLogin, onResumeLink, onSignOut, onMyTrees }) {
-  return (
-    <header className="wrap" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 24, paddingBottom: 24 }}>
-      <a href="#/" style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 22, color: 'var(--text-primary)' }}>Windmill</a>
-      <nav className="navlinks">
-        <a href="#how">How it works</a>
-        <a href="#paths">Paths</a>
-        <a href="#/connect">Connect</a>
-        <a href="/changelog.html">Changelog</a>
-        <span className="navlinks-divider" aria-hidden="true" />
-        <a href="/roadmap" aria-current="page" style={{ color: 'var(--color-brand)' }}>Roadmap</a>
-        <a href="/journal">Journal</a>
-        <a href="/gym">Gym</a>
-        <a href="/pricing.html">Pricing</a>
-      </nav>
-      <div style={{ display: 'flex', gap: 10 }}>
-        <NavCluster
-          status={status}
-          user={user}
-          newest={newest}
-          treeCount={treeCount}
-          linkSent={linkSent}
-          onLogin={onLogin}
-          onResumeLink={onResumeLink}
-          onSignOut={onSignOut}
-          onMyTrees={onMyTrees}
-        />
-      </div>
-    </header>
-  );
-}
-
-// The nav's right cluster — the one place the signed-in front door changes (§03).
-// Signed out it is today's pair, byte for byte; while auth resolves — or while a fresh
-// sign-in is still waiting on the registry — the Log in slot keeps its exact box but
-// stays invisible so no face flashes or jumps. The four real faces render only from
-// resolved data: a signed-in nav never claims zero trees before the registry answers.
-function NavCluster({ status, user, newest, treeCount, linkSent, onLogin, onResumeLink, onSignOut, onMyTrees }) {
-  const resolving = status === 'loading' || (status === 'signed-in' && treeCount === null);
-  if (status === 'signed-in' && user && !resolving) {
-    return (
-      <>
-        {newest
-          ? <a href={`#/app/${newest.id}`}><Button variant="primary" size="sm">My trees</Button></a>
-          : <a href="#/app/start"><Button variant="primary" size="sm">Start your tree</Button></a>}
-        <span style={{ display: 'flex', alignItems: 'center' }}>
-          <AccountSeat
-            user={user}
-            status={status}
-            size={28}
-            treeCount={treeCount}
-            onMyTrees={onMyTrees}
-            onSettings={() => { window.location.hash = '#/settings'; }}
-            onSignOut={onSignOut}
-            footer="Signing out keeps your trees on this device."
-          />
-        </span>
-      </>
-    );
-  }
-  return (
-    <>
-      {resolving && (
-        <span style={{ visibility: 'hidden' }} aria-hidden="true"><Button variant="ghost" size="sm">Sign in</Button></span>
-      )}
-      {status === 'ghost' && (linkSent
-        ? <LinkSentChip onClick={onResumeLink} />
-        : <Button variant="ghost" size="sm" onClick={onLogin}>Sign in</Button>)}
-      <a href="#/app/start"><Button variant="primary" size="sm">Start your tree</Button></a>
-    </>
-  );
-}
-
-// Lives exactly where Log in lived — same slot, same size class (§02.2). Clicking it
-// reopens the sign-in door on its wait panel — the ceremony resumes; it never resends by itself.
-function LinkSentChip({ onClick }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 8,
-        padding: '8px 14px',
-        border: '1px solid var(--border-subtle)',
-        borderRadius: 'var(--radius-full)',
-        background: 'var(--surface-card)',
-        boxShadow: 'var(--shadow-xs)',
-        cursor: 'pointer',
-        fontFamily: 'var(--font-body)',
-        fontWeight: 600,
-        fontSize: 'var(--text-sm)',
-        color: 'var(--text-secondary)',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      <span
-        aria-hidden="true"
-        style={{
-          width: 8,
-          height: 8,
-          borderRadius: 'var(--radius-full)',
-          background: 'var(--accent-gold-500)',
-          ['--nd-glow']: 'var(--kind-gold-glow)',
-          animation: 'wm-ember var(--duration-glow) var(--ease-glow) infinite',
-        }}
-      />
-      Link sent — check your email
-    </button>
-  );
-}
-
+// useScene keeps the family's moat rule: the scene is built off the critical path and taken down
+// again on the way out. Whether it may *play* is treeScenes' business — an IntersectionObserver
+// and document.hidden gate the loop there.
 function HeroBand() {
-  const ref = useRef(null);
-  // Defer the WebGL hero off the critical path so building its DOM/SVG doesn't
-  // compete with first input (INP). The self-play loop is already gated by an
-  // IntersectionObserver + document.hidden inside treeScenes.
-  useEffect(() => {
-    const el = ref.current;
-    const start = () => { mountHero(el).setAutoplay(true); };
-    const id = 'requestIdleCallback' in window
-      ? requestIdleCallback(start, { timeout: 500 })
-      : setTimeout(start, 200);
-    return () => { ('cancelIdleCallback' in window) ? cancelIdleCallback(id) : clearTimeout(id); };
-  }, []);
+  const ref = useScene((el) => {
+    const hero = mountHero(el);
+    hero.setAutoplay(true);
+    return hero.teardown;
+  });
   return <div className="heroBleed" aria-hidden="true"><div ref={ref}></div></div>;
 }
 
@@ -234,8 +125,7 @@ function Hero({ resume }) {
 }
 
 function BeatStage({ kind }) {
-  const ref = useRef(null);
-  useEffect(() => { mountBeat(ref.current, kind); }, [kind]);
+  const ref = useScene((el) => mountBeat(el, kind), [kind]);
   return <div className="beatStage" title="Click to replay" aria-hidden="true"><div ref={ref}></div></div>;
 }
 
@@ -267,8 +157,7 @@ function HowItWorks() {
 }
 
 function QuestThumb({ quest }) {
-  const ref = useRef(null);
-  useEffect(() => { mountThumb(ref.current, quest); }, [quest]);
+  const ref = useScene((el) => mountThumb(el, quest), [quest]);
   return <div className="questThumb" aria-hidden="true"><div ref={ref}></div></div>;
 }
 
@@ -394,33 +283,6 @@ function CtaBand({ planted }) {
   );
 }
 
-function Footer({ onFeedback }) {
-  return (
-    <footer className="wrap" style={{ borderTop: '1px solid var(--border-subtle)', marginTop: 80, paddingTop: 32, paddingBottom: 32, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, color: 'var(--text-tertiary)', fontSize: 14, fontFamily: 'var(--font-body)' }}>
-        <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16, color: 'var(--text-secondary)' }}>Windmill</span>
-        © 2026
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10 }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 24, fontSize: 14, fontFamily: 'var(--font-body)' }}>
-          <button type="button" onClick={onFeedback} style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'var(--text-tertiary)', cursor: 'pointer' }}>Feedback</button>
-          <a href="/pricing.html" style={{ color: 'var(--text-tertiary)' }}>Pricing</a>
-          <a href="/connect.html" style={{ color: 'var(--text-tertiary)' }}>Connect your AI tools</a>
-          <a href="/privacy.html" style={{ color: 'var(--text-tertiary)' }}>Privacy</a>
-          <a href="/terms.html" style={{ color: 'var(--text-tertiary)' }}>Terms</a>
-          <a href="/refunds.html" style={{ color: 'var(--text-tertiary)' }}>Refunds</a>
-          <a href="/changelog.html" style={{ color: 'var(--text-tertiary)' }}>Changelog</a>
-        </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 24, fontSize: 14, fontFamily: 'var(--font-body)' }}>
-          <a href="/roadmap" style={{ color: 'var(--text-tertiary)' }}>Roadmap</a>
-          <a href="/journal" style={{ color: 'var(--text-tertiary)' }}>Journal</a>
-          <a href="/gym" style={{ color: 'var(--text-tertiary)' }}>Gym</a>
-        </div>
-      </div>
-    </footer>
-  );
-}
-
 // The last tree list this account saw, kept per-email so a returning signed-in tab paints its
 // real hero and nav on the first frame instead of the signed-out ones — the registry still
 // answers on boot and replaces this. Keyed by email so one device never shows another account's
@@ -441,12 +303,9 @@ function writeTreesCache(email, rows) {
   catch { /* storage unavailable — the cache is never load-bearing */ }
 }
 
-export default function Marketing() {
-  const openSignInDoor = useSignInDoor();
-  const [feedbackOpen, setFeedbackOpen] = useState(false); // the footer's contact door — posts anon, no account needed
-  const { user, status, signOut } = useAuth();
+export function RoadmapLanding() {
+  const { user, status } = useAuth();
   const [trees, setTrees] = useState(() => readTreesCache(user?.email)); // seeded from cache, then the registry corrects it
-  const [pendingLink, setPendingLink] = useState(pendingMagicLink);
   const landed = useRef(false);
 
   useEffect(() => {
@@ -455,67 +314,42 @@ export default function Marketing() {
     track('land', { signedIn: status === 'signed-in' });
   }, [status]);
 
-  // /roadmap is a real crawlable URL now, but the SPA shell ships the brand root's head — swap
-  // the tab title and canonical to this page's own while it is mounted (best-effort for crawlers
-  // that execute JS; the honest fix is a server-side head seam like /t/:id's).
+  // A fresh signed-in status is the one moment the registry gets asked who owns what; every other
+  // flip — sign-out included — drops the page back to the verbs a stranger sees.
   useEffect(() => {
-    const prevTitle = document.title;
-    document.title = 'Windmill Roadmap — any goal, as a skill tree';
-    const canonical = document.querySelector('link[rel="canonical"]');
-    const prevHref = canonical?.getAttribute('href');
-    canonical?.setAttribute('href', 'https://windmill.works/roadmap');
-    return () => {
-      document.title = prevTitle;
-      if (canonical && prevHref) canonical.setAttribute('href', prevHref);
-    };
-  }, []);
-
-  // Every status flip re-reads the link-sent record (sign-out clears it), and a fresh
-  // signed-in status is the one moment the registry gets asked who owns what.
-  useEffect(() => {
-    setPendingLink(pendingMagicLink());
     if (status !== 'signed-in') { setTrees(null); return undefined; }
     let cancelled = false;
     listTrees().then((rows) => { if (!cancelled) { setTrees(rows); writeTreesCache(user?.email, rows); } });
     return () => { cancelled = true; };
   }, [status]);
 
-  // The chip expires with the link: when the record's 15 minutes lapse, quietly re-read.
-  useEffect(() => {
-    if (!pendingLink) return undefined;
-    const timer = setTimeout(() => setPendingLink(pendingMagicLink()), Math.max(0, pendingLink.expiresAt - Date.now()) + 250);
-    return () => clearTimeout(timer);
-  }, [pendingLink]);
-
+  // Role 9, the roadmap's reading of it: the newest tree is what the nav resumes and what the hero
+  // greets you with. No tree yet — signed in or not — and both fall back to Start your tree.
   const newest = status === 'signed-in' && trees?.length ? trees[0] : null;
-  // The chip is this page's own reading of the link-sent record, so it re-reads whenever the
-  // one door reports a link went out. Resume reopens that door straight onto its wait panel.
-  const noteLinkSent = () => setPendingLink(pendingMagicLink());
+
+  // Signed in with the registry still out: we do not yet know whether this account has trees, and
+  // "Start your tree" would be claiming zero. The chrome keeps the cluster's box and waits.
+  const resolving = status === 'signed-in' && trees === null;
+
+  // The seat's count and its parting line are roadmap sentences — the chrome makes no claim about
+  // anybody's trees — so this page says both, or a landing that has nothing true to say says none.
+  const seat = { count: trees?.length ?? null, note: 'Signing out keeps your trees on this device.' };
 
   return (
-    <div className="wm-landing" style={{ fontFamily: 'var(--font-body)' }}>
-      <a href="#main" className="skip-link">Skip to content</a>
-      <Nav
-        status={status}
-        user={user}
-        newest={newest}
-        treeCount={trees ? trees.length : null}
-        linkSent={Boolean(pendingLink)}
-        onLogin={() => openSignInDoor({ onSent: noteLinkSent })}
-        onResumeLink={() => openSignInDoor({ resume: pendingMagicLink(), onSent: noteLinkSent })}
-        onSignOut={signOut}
-        onMyTrees={() => { window.location.hash = newest ? `#/app/${newest.id}` : '#/app'; }}
-      />
-      <main id="main">
-        <Hero resume={newest} />
-        <HowItWorks />
-        <Paths />
-        <AiTools />
-        <Story />
-        <CtaBand planted={Boolean(newest)} />
-      </main>
-      <Footer onFeedback={() => setFeedbackOpen(true)} />
-      <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
-    </div>
+    <LandingPage
+      product="roadmap"
+      links={SECTION_LINKS}
+      cta={START_CTA}
+      resume={newest ? { href: `#/app/${newest.id}`, label: 'My trees' } : null}
+      resolving={resolving}
+      seat={seat}
+    >
+      <Hero resume={newest} />
+      <HowItWorks />
+      <Paths />
+      <AiTools />
+      <Story />
+      <CtaBand planted={Boolean(newest)} />
+    </LandingPage>
   );
 }
