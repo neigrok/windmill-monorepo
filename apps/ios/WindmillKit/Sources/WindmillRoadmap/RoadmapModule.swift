@@ -26,4 +26,10 @@ public struct RoadmapModule: ProductModule {
     public func room(_ account: Account) -> AnyView {
         AnyView(ElsewhereRoom(product: self))
     }
+
+    // The one line it lends the hub. Until the room is built this says where the product works
+    // today — the front door must not imply a room that opens onto nothing.
+    public func hubLine(_ account: Account) -> HubLine {
+        HubLine(eyebrow: "Next up", headline: "Your trees are on the web.", meta: "not on the phone yet")
+    }
 }

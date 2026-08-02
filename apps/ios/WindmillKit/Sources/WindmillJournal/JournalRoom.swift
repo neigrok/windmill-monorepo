@@ -42,7 +42,7 @@ public struct JournalRoom: View {
             // The measure, capped before any margin appears: full width − 44 on a phone (canon §4).
             .padding(.horizontal, 22)
             .padding(.top, WindmillSpace.x8)
-            .padding(.bottom, 160)
+            .padding(.bottom, 150)
         }
         .defaultScrollAnchor(.bottom)
         .scrollDismissesKeyboard(.interactively)
@@ -51,15 +51,14 @@ public struct JournalRoom: View {
         // it, and the day markers then pin beneath the status bar and land on top of the prose.
         .overlay(alignment: .top) { statusBarScrim }
         .overlay(alignment: .bottom) { lamplight }
-        .overlay(alignment: .bottomTrailing) { themeToggle }
+        .overlay(alignment: .bottom) { bar }
         .background(skin.canvas.ignoresSafeArea())
         .environment(\.journalSkin, skin)
-        // The room owns its chrome inside its own scope and nowhere else — the tab bar is dressed
-        // for the night while journal is on screen, and the shell and the other products are
-        // untouched by it (canon §10, the same rule the web skin follows with .journal-root).
-        .toolbarBackground(skin.canvas, for: .tabBar)
-        .toolbarBackground(.visible, for: .tabBar)
-        .toolbarColorScheme(theme == .night ? .dark : .light, for: .tabBar)
+        // The room owns its skin inside its own scope and nowhere else (canon §10, the same rule
+        // the web follows with .journal-root). `roomChrome` is the one thing it says outward: the
+        // shell reads it to dress the capsule in the lane journal reserves and never paints.
+        .environment(\.colorScheme, theme == .night ? .dark : .light)
+        .roomChrome(theme == .night ? .dark : .light)
         // Re-runs whenever who is signed in changes: on sign-in this claims what was written on the
         // device before there was an account, then loads the window.
         .task(id: account.user?.id) { await store.connect(to: account) }
@@ -157,8 +156,9 @@ public struct JournalRoom: View {
     // gradient the web puts behind its day marker, doing the same job here: prose dissolves into
     // the night before it can collide with the clock.
     private var statusBarScrim: some View {
-        LinearGradient(colors: [skin.canvas, skin.canvas.opacity(0)], startPoint: .top, endPoint: .bottom)
-            .frame(height: 54)
+        LinearGradient(colors: [skin.canvas, skin.canvas, skin.canvas.opacity(0)],
+                       startPoint: .top, endPoint: .bottom)
+            .frame(height: 96)
             .allowsHitTesting(false)
             .ignoresSafeArea(edges: .top)
     }
@@ -172,6 +172,19 @@ public struct JournalRoom: View {
         .frame(height: 320)
         .allowsHitTesting(false)
         .ignoresSafeArea()
+    }
+
+    // Journal has no tabs, so its one bottom bar carries its own single control and then hands the
+    // last slot to the shell: the You seat sits at the same right edge it sits at in every other
+    // app, past a hairline, so it reads as the shell's and not as journal's (the shell contract).
+    private var bar: some View {
+        HStack(spacing: WindmillSpace.x4) {
+            themeToggle
+            Spacer(minLength: 0)
+            YouSeat()
+        }
+        .padding(.horizontal, WindmillSpace.x5)
+        .padding(.bottom, WindmillSpace.x2)
     }
 
     // The one control on the surface, out of the writer's way. Power lives in the margins (canon §3.5).
@@ -190,8 +203,6 @@ public struct JournalRoom: View {
                 )
         }
         .accessibilityLabel("Switch to \(theme.otherLabel.lowercased())")
-        .padding(.trailing, WindmillSpace.x5)
-        .padding(.bottom, WindmillSpace.x5)
     }
 }
 
