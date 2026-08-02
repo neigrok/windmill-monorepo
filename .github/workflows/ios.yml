@@ -7,6 +7,10 @@ name: iOS CI
 # `npm run build` runs the JS suite first. That is the drift gate doing its job — a rule changed in
 # one language fails in the other. Both halves arm on push and on pull_request, so neither language
 # can be the only one watching.
+#
+# This runs xcodebuild against a simulator rather than `swift build`: the package is iOS-only (see
+# apps/ios/README.md), and building the app target is a far stronger gate than compiling the
+# libraries was — it proves project.yml, the generated Info.plist and the module wiring too.
 
 on:
   push:
@@ -36,13 +40,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Swift ships with the runner image — no toolchain setup step. Printed so a red build can be
-      # read against the exact compiler that produced it.
-      - run: swift --version
+      # Printed so a red build can be read against the exact toolchain that produced it.
+      - run: xcodebuild -version
 
-      - run: swift build
+      # Windmill.xcodeproj is generated, never committed — a pbxproj nobody can review is a merge
+      # conflict waiting to happen. project.yml is the reviewable half.
+      - name: Generate the project from project.yml
+        run: |
+          brew install xcodegen
+          xcodegen generate
 
-      # The tests read the golden out of the checkout by walking up from #filePath, so the whole
-      # repo must be present — never a bundled resource copy.
-      - name: Test (the ladder against packages/api-contract/gym-ladder.json)
-        run: swift test
+      # Resolve a simulator by capability rather than by name: the runner image's device list moves
+      # with every Xcode release, and a hard-coded "iPhone 16" is a build that breaks on a date
+      # nobody chose.
+      - name: Pick a simulator
+        id: sim
+        run: |
+          udid=$(xcrun simctl list devices available --json \
+            | python3 -c "import json,sys;ds=json.load(sys.stdin)['devices'];print(next(d['udid'] for rs in ds.values() for d in rs if d['name'].startswith('iPhone')))")
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          xcrun simctl list devices available | grep -m1 iPhone
+
+      # The app target: proves project.yml, the generated Info.plist and the module wiring.
+      - name: Build the app
+        run: |
+          xcodebuild build -project Windmill.xcodeproj -scheme Windmill \
+            -destination "id=${{ steps.sim.outputs.udid }}" CODE_SIGNING_ALLOWED=NO
+
+      # The suites, including the ladder against packages/api-contract/gym-ladder.json. That test
+      # reads the golden out of the checkout by walking up from #filePath, so the whole repo must be
+      # present — never a bundled resource copy.
+      # Run from the package directory: WindmillKit-Package is the package's own implicit scheme and
+      # does not exist in Windmill.xcodeproj.
+      - name: Test WindmillKit
+        working-directory: apps/ios/WindmillKit
+        run: |
+          xcodebuild test -scheme WindmillKit-Package \
+            -destination "id=${{ steps.sim.outputs.udid }}"

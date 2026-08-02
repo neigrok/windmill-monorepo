@@ -44,13 +44,19 @@ final class LadderTests: XCTestCase {
     // representation, never for the rule.
     let tolerance = 1e-9
 
-    static let goldenURL = URL(fileURLWithPath: #filePath)
-        .deletingLastPathComponent()   // Tests/WindmillGymTests
-        .deletingLastPathComponent()   // Tests
-        .deletingLastPathComponent()   // apps/ios
-        .deletingLastPathComponent()   // apps
-        .deletingLastPathComponent()   // repo root
-        .appendingPathComponent("packages/api-contract/gym-ladder.json")
+    // Walk up from this file until the golden turns up, rather than counting directories: a
+    // hard-coded depth is a tripwire that fires the day the package moves, and this suite is
+    // exactly the thing that must not quietly stop finding its contract when that happens.
+    static let goldenURL: URL = {
+        let relative = "packages/api-contract/gym-ladder.json"
+        var directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        while directory.path != "/" {
+            let candidate = directory.appendingPathComponent(relative)
+            if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+            directory = directory.deletingLastPathComponent()
+        }
+        return URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent(relative)
+    }()
 
     var golden: Golden!
 

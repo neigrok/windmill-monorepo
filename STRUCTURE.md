@@ -26,9 +26,12 @@ web/         one Vite/React superapp; product modules lazy-loaded behind a switc
     products/       one front-end per product
       roadmap/  journal/  gym/  (notes/ is journal's empty pre-rename scaffold)
 
-apps/        native superapps (one per OS; roadmap/notes/gym are mountable module libraries)
-  ios/         Swift — SwiftPM package (WindmillPlatform + Roadmap/Notes/Gym + app); the gym
-               ladder is the first real product logic, tested against packages/api-contract
+apps/        native superapps (one per OS; journal/roadmap/gym are mountable module libraries)
+  ios/         Swift — a real SwiftUI app. project.yml (XcodeGen) declares the app target;
+               App/ is the composition root; WindmillKit/ is the package (WindmillPlatform +
+               Journal/Roadmap/Gym). Journal is the built room — the night canvas, offline-first,
+               claimed on sign-in; roadmap and gym mount and say where they do live. iOS-only:
+               builds and tests through xcodebuild against a simulator, never `swift build`
   android/     Kotlin — structured scaffold (Gradle project is a later native wave)
 
 packages/    cross-surface shared assets (consumed by more than one surface)
