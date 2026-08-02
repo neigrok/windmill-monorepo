@@ -75,7 +75,11 @@ longer depends on any product, so a notes/gym-only backend needs nothing from ro
   content lives in `products/roadmap/adapters/mcp/RoadmapResources`. ✓
 - `platform/ports/EmailSender.h` is magic-link/fork only; the roadmap reminder and journal nudge
   mails are product-owned ports (`ReminderMailSender`, `NudgeMailSender`) over a neutral `ResendClient`
-  transport. ✓
+  transport. ✓ Mail comes BACK the same way: one Resend account means one webhook
+  (`platform/adapters/email/ResendWebhookApi`) carrying feedback about every mail the brand sends, so
+  the signature check, the parse and the pure verdict (`platform/domain/Mail.h`) are platform's, and
+  each product registers a `MailStream` saying what a dead mailbox stops (`platform/ports/MailSuppression.h`).
+  One bounce writes them all; gym registers none. ✓
 
 Still open (**web** + infra):
 
@@ -83,9 +87,19 @@ Still open (**web** + infra):
   on the route table (`settingsSections: { main, data }`); `shell/settings/SettingsPage.jsx` composes
   them off the product registry and imports no product section. (`YourDataSection` still lives in
   roadmap — its export is tree-shaped; moving it to shell with a product-contributed exporter is a
-  follow-up.)
-- **`web`: `shell/marketing/Marketing.jsx`** still reads roadmap trees and its copy is roadmap-only
-  — it's the brand landing to be revised for three products.
+  follow-up. It also fuses in **account closure**, which is brand-wide: deleting your Windmill
+  account is presently reachable only through a roadmap-owned section. And `PLAN_COPY` — the tier
+  vocabulary for the one brand-wide subscription — is still roadmap's. The gate left; the words
+  stayed.)
+- ~~**`web`: `shell/marketing/Marketing.jsx`** reads roadmap trees and its copy is roadmap-only~~
+  **closed** — the file is gone (`934a241`). The brand root is `BrandLanding.jsx`, which builds its
+  three doors by mapping the registry, and each product's landing lives in its own folder. What
+  survives is softer and the import graph cannot see it: `shell/marketing/landingHeads.js` holds
+  hard-coded **paths into product source trees** (`src/products/*/marketing/*.jsx`) and a
+  roadmap-flavoured `/` fallback whose CTA is hard-coded where `BrandLanding` derives it — the same
+  fact stated twice, on both sides of the boundary, free to disagree the day gym opens. Same species:
+  `App.jsx`'s `LEGACY_DOORS` (which already omits `#/gym`), `AccountSeat`'s `treeCount` / "My trees",
+  and `OAuthConsent`'s roadmap-only scope words on a platform surface.
 - **`backend/infra`** (the composition-root executables) sit under `platform/infra`; they depend on
   roadmap by nature (they compose it). Fine today; revisit if a neutral app-assembly layer is wanted.
 

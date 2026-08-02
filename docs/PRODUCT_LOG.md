@@ -16,7 +16,9 @@ Everything above the "Gym" heading is **roadmap's** narrative. Journal's design 
 > `Entitlements::hasWindmillOne` (`backend/platform/application/Entitlements.h`, committed in
 > `516ef23`): roadmap's tending, journal's echoes (`EchoSweep.cpp:69`), and journal's Talk
 > (`VoiceApi.cpp:26`). What is still true is the *restraint*: no price is open
-> (`PAID_PLANS_OPEN = false`), and no bet's success is defined by revenue this cycle. Products do
+> (`paidPlansOpen()` in `web/src/shell/billing/checkout.js` still returns `false` — the constant
+> `PAID_PLANS_OPEN` this line used to name is gone, see the shell-inversion note below), and no
+> bet's success is defined by revenue this cycle. Products do
 > not define their own paid axis — they contribute surfaces to the one Windmill One funnel.
 > **(b) Gym has a plan** — see the final section. Written against a code-verified inventory of
 > **Lift**, a shipped standalone iOS training log; the inventory itself is `docs/lift-dossier.md`.
@@ -516,12 +518,15 @@ consumer earns the abstraction and we are at the third:
   The second build found 13 defects. `gym-nudge` must not be a third copy: the sequence belongs on a
   platform base with a product-supplied `decide()` and `render()`, journal refactored onto it as the
   proving move.
-- **`PAID_PLANS_OPEN` must leave roadmap.** It lives at
-  `web/src/products/roadmap/settings/PlanSection.jsx:17` — a brand-wide gate inside one product's
-  settings folder. Gym respecting it means either importing from roadmap (the hard rule violation) or
-  duplicating the constant (drift the day someone flips one). It moves to `web/src/shell/billing/`
-  beside `EntitlementsProvider.jsx`, with roadmap registering the shell's section. **This blocks any
-  gym monetization bet.**
+- ~~**`PAID_PLANS_OPEN` must leave roadmap.**~~ **DONE (`97e1f1b`), and better than asked.** The
+  constant no longer exists anywhere in `web/`; the predicate is `paidPlansOpen()` in
+  `web/src/shell/billing/checkout.js`, beside `EntitlementsProvider.jsx` exactly as specified. The
+  improvement on the brief: the gate moved *up* from inside the component's render to the registry
+  (`products/roadmap/routes.js`), so while plans are shut `PlanSection` is never mounted — no chunk
+  fetched, no subscription read. **Gym monetization is no longer blocked by this.** The residual
+  edge is smaller and is recorded in `STRUCTURE.md`: `PLAN_COPY`, the tier vocabulary for the one
+  brand-wide subscription, is still in roadmap's settings folder. The second consumer earns that
+  move; today there is none.
 
 ## What the canon filed back at us (2026-08-01)
 

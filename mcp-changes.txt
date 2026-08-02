@@ -188,3 +188,28 @@ the code:
      stack tells you things a test suite agrees with you about.
 
 2026-07-31 · set_progress arg is "status" but the sibling vocabulary primes "state" (get_tree nodes carry status too, but error-driven discovery cost a round trip). Either accept "state" as an alias or name it in the tool description's first line. (find_nodes' error already does this well — it names the exact missing arg and suggests list_trees.)
+
+2026-08-02 · THE PRODUCT'S CENTRAL CONCEPT IS THE ONE THING A READ CANNOT RETURN. Windmill's
+whole idea is the derived unlock cascade — a node is locked, available, or done, DERIVED from
+its prerequisites' progress. Over MCP that derivation is not readable anywhere. `get_tree`'s
+`fields` offers id, label, icon, color, order, prerequisites, position, status, seedStatus,
+description, links — `status` being the caller's own raw mark, never the derived state. So an
+agent asking the only question that matters to a roadmap, "what can I work on right now?", must
+pull every node with prerequisites + status and re-implement the cascade client-side.
+
+Cost, measured on the dogfood tree this session: one 308-node get_tree (the full graph, because
+readiness is a whole-graph property — no projection can narrow it), then a hand-rolled
+prerequisites-all-complete pass in a scratch script, to learn that ~14 of 308 nodes were actually
+ready. Two orders of magnitude of payload for the answer, and a re-derivation the server already
+does for its own UI. Worse, it is re-derivation the client can get WRONG and never notice: my
+pass had to be told that `deletedAt` is the string "0:0:" rather than absent for a live node, and
+a wrong guess there silently answers about a tree of tombstones.
+
+The fix is small and it is a READ, not a new verb: add `available` (or `derived`) to the `fields`
+enum, and let `find_nodes` filter on it. Then "what's ready" is one call returning a handful of
+nodes instead of the entire graph. It is also the read every OTHER agent wants first — the
+quickstart resource tells clients to plant and connect, then leaves them no way to ask what the
+plant unlocked.
+
+Related, same wave: `get_progress` returns marks, `get_diagnostics` returns structural damage,
+and neither answers the frontier. The frontier is the product.
