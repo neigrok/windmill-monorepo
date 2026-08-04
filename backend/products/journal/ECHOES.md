@@ -1,5 +1,13 @@
 # Echoes
 
+> **Provenance, because the commit trail does not say so.** The bulk of this feature — the schema,
+> the port and adapter, `Passage` / `SpanReconcile` / `EchoSelection`, the rewritten `EchoSweep`,
+> `EchoApi`, the curator, the embedder sidecar, and the web surface — landed in **`c5ff152`**, whose
+> message reads *"journal: one control for light or dark, and it is the one in settings"*. That
+> message describes an unrelated theme change the commit also carried; the two waves were swept
+> together. It was already pushed when this was noticed, so the history is not being rewritten.
+> Anyone bisecting for when echoes arrived should look there and not trust the subject line.
+
 ## The idea
 
 An echo is your journal remembering for you.
@@ -285,14 +293,35 @@ relation between two passages is recomputed from the passages themselves.
 | Route | Purpose |
 |---|---|
 | `GET /v1/journal/echoes?from=&to=` | echoes on pages in the range, grouped by page, owner only |
-| `POST /v1/journal/echoes/:triggerDay/:matchDay/dismiss` | "Not useful" — retire one passage pair |
-| `POST /v1/journal/echoes/:triggerDay/offer/dismiss` | "Not now" — retire the offer for this page |
+| `POST /v1/journal/echoes/:triggerDay/dismiss` | "Not useful" — retire every pairing on this page |
+| `POST /v1/journal/echoes/:triggerDay/:matchDay/dismiss` | retire one passage pair |
+| `POST /v1/journal/echoes/:triggerDay/offer/dismiss` | "Not now" — retire the offer for this page *(not built)* |
 | `POST /v1/journal/echoes/:triggerDay/:matchDay/opened` | the relevance signal (see *Measurement*) |
 | `POST /v1/admin/journal/echo/sweep` | operator rehearsal of one pass, admin token |
 
-The read sends passage **text and ISO days**, never char offsets — the client re-locates by text and
+"Not useful" is **panel-level on the surface, so it is one request** — nine matches must not cost
+nine round trips, each able to fail on its own and leave a page half faded. Both dismissal doors
+write the same content-hash key, and both answer 204 however many times they are pressed.
+
+The read sends passage **text and ISO days**, never an offset — the client re-locates by text and
 formats distance itself. Offsets are byte counts and the browser slices UTF-16 code units; the two
-diverge on the first non-ASCII character in a page.
+diverge on the first non-ASCII character in a page, and a codepoint offset diverges again at the
+first emoji. What the read does send, per match, is `occurrenceHint`: **which occurrence of that
+text the passage is** — 0 for the first in the match page's body, 1 for the second. It has no
+encoding in it to disagree about, and it is what stops a page saying "i don't know." twice from
+anchoring the quote to the wrong one. It stays a hint: absent when the body has moved under the
+passage, absent under the honest cut (the text served there is a prefix), and always subordinate to
+the text check, which is what actually decides whether the quote is shown.
+
+The read also carries `pagesWritten` at the top level — how many pages the reader has words on.
+The ~20-page corpus floor below is a rule about the whole corpus, and the browser cannot count
+pages it has not synced, so the floor is unenforceable unless the server states it.
+
+**`firstEchoEver` is not derivable and is not served.** `journal_echo.created_at` records when a
+row was *written*, not when anyone *saw* it, and the once-ever card is about the second. Nothing
+here records delivery — `opened` is logged, not tabled — so the honest options are a `seen` record
+the client writes once, or no card. A device-local flag is not one of them: it cannot know an echo
+already arrived on another device.
 
 ### Entitlement — moved, and this needs the owner's ruling
 
@@ -399,8 +428,9 @@ Replaces the shipped page-level cosine implementation. Landing it invalidates:
 - `ports/EchoRepository.h`; `test/products/journal/Fakes.h` (needs a `Curator` fake)
 - `test/e2e/journal_echo.sh`
 - `db/schema.sql` — `journal_page_vector` → `journal_span`; `journal_echo` re-keyed
-- `web/src/products/journal/{EchoCard.jsx,useEchoes.js}` — plural, page-anchored, chainable, and
-  `EchoCard`'s `body.slice(lo, hi)` becomes verified re-location
+- `web/src/products/journal/echoes/**` — the surface, rebuilt as its own feature package beside
+  `search/` and `zoom/`. The old root-level `EchoCard.jsx` and `useEchoes.js` are gone; quotes are
+  re-located by text against the live body rather than sliced by stored offset
 - `ARCHITECTURE.md` §5.1–5.4, the `journal_echo` row of the entity table at §265, and **§5.2's "rows
   are never deleted"**, which this design contradicts
 
@@ -459,7 +489,7 @@ documents. None blocks the build; each needs a designer's decision before ship.
 | identity-survival suite (append / insert-top / insert-mid / delete / split / merge / segmenter bump) | **100%** |
 | render-time re-locate failure rate, and 0% mis-anchored | <2% |
 | corpus load per user per night | <5 MB, <1 s |
-| median age of shown echoes | ≥90 days — the card says "212 days earlier" |
+| median age of shown echoes | ≥90 days — the card sells distance ("five months ago") |
 | hubness: max share of a user's pages any one passage appears on | ≤5% |
 
 Persist the **"Read it"** tap alongside dismissals, with cosine, z, family size and age attached.

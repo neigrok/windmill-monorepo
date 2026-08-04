@@ -11,6 +11,7 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <string>
 #include <utility>
 
@@ -100,18 +101,25 @@ std::string statusText(CurationStatus status) {
 
 // Templated on the row type: pqxx names it row_ref on macOS and row on the CI's Linux build, so
 // binding it concretely compiles on one and fails on the other.
+//
+// The anchoring hint is computed against the LIVE match body rather than read out of storage,
+// which is what makes it worth sending: a passage whose page has been edited under it produces -1
+// here and the client goes back to searching, instead of being handed a confident wrong sentence.
 template <typename Row>
-EchoView viewFrom(const Row& row) {
+EchoView viewFrom(const Row& row, const std::string& matchBody) {
+  std::string matchText = row["match_text"].template as<std::string>();
+  const int occurrence = occurrenceAt(matchBody, matchText, row["match_lo"].template as<int>());
   return EchoView{
       LocalDate{row["trigger_day"].template as<std::string>()},
       row["trigger_span_id"].template as<std::int64_t>(),
       row["trigger_text"].template as<std::string>(),
       LocalDate{row["match_day"].template as<std::string>()},
       row["match_span_id"].template as<std::int64_t>(),
-      row["match_text"].template as<std::string>(),
+      std::move(matchText),
       row["match_is_self"].template as<bool>(),
       parseSource(row["match_source"].template as<std::string>()),
-      row["days_earlier"].template as<int>()};
+      row["days_earlier"].template as<int>(),
+      occurrence};
 }
 }
 
@@ -279,6 +287,27 @@ void PgEchoRepository::dismiss(const UserId& user, std::int64_t triggerSpanId,
   txn.commit();
 }
 
+void PgEchoRepository::dismissPage(const UserId& user, const LocalDate& triggerDay) {
+  // The whole panel in one statement, on the same content hashes the pair-level door writes — a
+  // position-keyed dismissal would resurrect itself the moment a sentence is inserted above it,
+  // which is the failure this feature can least afford. DISTINCT because two spans on a page can
+  // carry the same text and therefore the same hash pair; ON CONFLICT because pressing "Not useful"
+  // twice has to be the same as pressing it once.
+  //
+  // Scoped by e.user_id and nothing else: a forged day reaches this caller's rows or no rows.
+  pqxx::work txn{pgThreadConnection(connString_)};
+  txn.exec_params(
+      "INSERT INTO journal_echo_dismissal (user_id, trigger_hash, match_hash) "
+      "SELECT DISTINCT e.user_id, st.text_sha256, sm.text_sha256 "
+      "FROM journal_echo e "
+      "JOIN journal_span st ON st.user_id = e.user_id AND st.span_id = e.trigger_span_id "
+      "JOIN journal_span sm ON sm.user_id = e.user_id AND sm.span_id = e.match_span_id "
+      "WHERE e.user_id = $1::uuid AND e.trigger_day = $2::date "
+      "ON CONFLICT DO NOTHING",
+      user.str(), triggerDay.iso());
+  txn.commit();
+}
+
 void PgEchoRepository::replaceEchoes(const UserId& user, const LocalDate& triggerDay,
                                      const CuratedEchoes& curated) {
   // Replace, additively. What goes is only what can no longer be shown — a row whose trigger or
@@ -370,9 +399,24 @@ std::vector<EchoView> PgEchoRepository::echoesFor(const UserId& user, const Loca
   // top-down that list is reach ("this goes back to 2024"); newest-first the same rows read as
   // accumulation ("and again, and again"). Same data, opposite rhetoric.
   pqxx::work txn{pgThreadConnection(connString_)};
+
+  // The match pages' bodies, once each, so the anchoring hint can be counted against the page the
+  // reader will actually walk back to. Its own query rather than a column on the one below: ten
+  // echoes into one January page would otherwise ship that page's text ten times.
+  pqxx::result bodyRows = txn.exec_params(
+      "SELECT DISTINCT mp.day::text AS day, mp.body "
+      "FROM journal_echo e "
+      "JOIN journal_page mp ON mp.user_id = e.user_id AND mp.day = e.match_day "
+      "WHERE e.user_id = $1::uuid AND e.trigger_day BETWEEN $2::date AND $3::date",
+      user.str(), from.iso(), to.iso());
+
+  std::map<std::string, std::string> bodies;
+  for (const auto& row : bodyRows)
+    bodies.emplace(row["day"].as<std::string>(), row["body"].as<std::string>());
+
   pqxx::result rows = txn.exec_params(
       "SELECT e.trigger_day::text AS trigger_day, e.trigger_span_id, st.text AS trigger_text, "
-      "e.match_day::text AS match_day, e.match_span_id, sm.text AS match_text, "
+      "e.match_day::text AS match_day, e.match_span_id, sm.text AS match_text, sm.lo AS match_lo, "
       "e.match_is_self, mp.source AS match_source, "
       "(e.trigger_day - e.match_day) AS days_earlier "
       "FROM journal_echo e "
@@ -388,8 +432,23 @@ std::vector<EchoView> PgEchoRepository::echoesFor(const UserId& user, const Loca
 
   std::vector<EchoView> echoes;
   echoes.reserve(rows.size());
-  for (const auto& row : rows) echoes.push_back(viewFrom(row));
+  for (const auto& row : rows) {
+    auto body = bodies.find(row["match_day"].as<std::string>());
+    echoes.push_back(viewFrom(row, body == bodies.end() ? std::string{} : body->second));
+  }
   return echoes;
+}
+
+int PgEchoRepository::pagesWritten(const UserId& user) {
+  // Pages the user has actually written on — a row holding only whitespace is a page they opened,
+  // not one they wrote. This is the number the ~20-page corpus floor is judged against, and the
+  // reason it is served at all is that the browser cannot count what it has not synced.
+  pqxx::work txn{pgThreadConnection(connString_)};
+  pqxx::result rows = txn.exec_params(
+      "SELECT count(*)::int AS pages FROM journal_page "
+      "WHERE user_id = $1::uuid AND btrim(body, E' \\t\\r\\n') <> ''",
+      user.str());
+  return rows.empty() ? 0 : rows[0]["pages"].as<int>();
 }
 
 }

@@ -49,6 +49,11 @@ void appendMatch(Json::Value& into, const EchoView& echo, bool entitled) {
   if (entitled) {
     match["text"] = echo.matchText;
     match["withheldWords"] = 0;
+    // Which occurrence of that text the passage is, 0 for the first. Absent when the server has
+    // nothing honest to say — the body moved under the passage — and absent for the honest cut
+    // below, where the text served is a prefix and an occurrence count of the whole passage would
+    // be a number about a string the reader was never handed.
+    if (echo.matchOccurrenceHint >= 0) match["occurrenceHint"] = echo.matchOccurrenceHint;
     into.append(match);
     return;
   }
@@ -151,8 +156,12 @@ void EchoApi::listEchoes(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
     pages.append(page);
   }
 
+  // How many pages the reader has written on, whether or not any of them carries an echo. The
+  // surface owes them no mark and no offer below a ~20-page corpus floor, and the browser cannot
+  // count pages it has not synced — so the floor is unenforceable unless the count is served.
   Json::Value body(Json::objectValue);
   body["pages"] = pages;
+  body["pagesWritten"] = echoes_->pagesWritten(caller->id);
   cb(jsonResponse(body));
 }
 
@@ -182,6 +191,28 @@ void EchoApi::dismiss(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     echoes_->dismiss(*caller, echo.triggerSpanId, echo.matchSpanId);
   }
   cb(noContent());   // idempotent: a pairing that is already gone dismisses nothing, and says 204
+}
+
+void EchoApi::dismissPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                          const std::string& triggerDay) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to dismiss an echo"));
+    return;
+  }
+  std::optional<LocalDate> trigger;
+  try {
+    trigger = LocalDate{triggerDay};
+  } catch (const InvalidPage&) {
+    cb(error(drogon::k400BadRequest, "bad date"));
+    return;
+  }
+
+  // "Not useful" is one tap on a panel, so it is one request. The pair-level door stays — a reader
+  // retiring a single match still has one — but nine matches must not cost nine round trips, each
+  // of which can fail on its own and leave the page half faded.
+  echoes_->dismissPage(*caller, *trigger);
+  cb(noContent());   // idempotent: a page with nothing left to retire dismisses nothing, and says 204
 }
 
 void EchoApi::opened(const drogon::HttpRequestPtr& req, HttpCallback&& cb,

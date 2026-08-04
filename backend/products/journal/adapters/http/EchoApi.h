@@ -23,8 +23,11 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // Reverting to "absent, not locked" is one branch in `listEchoes`, not a rebuild.
 //
 // Passages travel as TEXT and days as ISO strings. The client re-locates the quote in the live page
-// body and renders the distance itself: byte offsets would not survive the trip (C++ counts bytes,
-// JavaScript slices UTF-16 code units) and "212 days" is not how anyone reads a year.
+// body and renders the distance itself: no offset would survive the trip (C++ counts bytes,
+// JavaScript slices UTF-16 code units) and "212 days" is not how anyone reads a year. What does
+// travel is `occurrenceHint` — which occurrence of that text the passage is — because a page that
+// says "i don't know." twice gives a text search no way to pick the right one. It is a hint: the
+// client still verifies by text, and re-locating is still what decides whether the quote is shown.
 class EchoApi {
 public:
   EchoApi(std::shared_ptr<EchoRepository> echoes, std::shared_ptr<EchoSweep> sweep,
@@ -34,6 +37,8 @@ public:
   void listEchoes(const drogon::HttpRequestPtr& req, HttpCallback&& cb);
   void dismiss(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                const std::string& triggerDay, const std::string& matchDay);
+  void dismissPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                   const std::string& triggerDay);
   void opened(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
               const std::string& triggerDay, const std::string& matchDay);
   void adminSweep(const drogon::HttpRequestPtr& req, HttpCallback&& cb);

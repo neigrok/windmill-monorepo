@@ -304,8 +304,12 @@ public:
 
   std::vector<EchoUser> users;
   std::map<std::string, std::vector<DuePage>> due;
+  std::map<std::string, std::string> bodies;   // "user|day" -> the page as it stands right now
   std::map<std::string, std::vector<StoredSpan>> spans;
-  std::map<std::string, std::vector<SpanPair>> dismissed;
+  // Waved-away pairs, keyed on the two passages' NORMALISED TEXT and scoped to one user, exactly
+  // as the SQL keys them on their content hashes. Storing span ids here instead would let a test
+  // pass while production resurrected a dismissed echo the first time a sentence moved.
+  std::map<std::string, std::set<std::pair<std::string, std::string>>> dismissals;
   std::map<std::string, CuratedEchoes> echoesByPage;   // "user|day" -> what the pass wrote
   std::vector<CurationOutcome> outcomes;
   std::map<std::string, std::vector<LocalDate>> inbound;
@@ -317,15 +321,24 @@ public:
   }
 
   void addUser(const UserId& user, const Email& email) { users.push_back(EchoUser{user, email}); }
+  void plantPage(const UserId& user, const LocalDate& day, const std::string& body) {
+    bodies[pageKey(user, day)] = body;
+  }
   void addDuePage(const UserId& user, const LocalDate& day, const std::string& body) {
     due[user.str()].push_back(DuePage{day, body, Source::typed, stamp, 0});
+    plantPage(user, day, body);
   }
   // Plant an already-derived page, the way a night that ran before this one would have left it.
+  // `lo` is the passage's byte offset into that page's body, which is what tells two identical
+  // sentences apart — the default puts the passage at the top, which is where a one-passage page
+  // has it anyway.
   void plantSpan(const UserId& user, const LocalDate& day, std::int64_t spanId,
-                 const std::string& text, const std::vector<float>& vector) {
+                 const std::string& text, const std::vector<float>& vector, int lo = 0) {
     spans[user.str()].push_back(
-        StoredSpan{day, SpanWrite{spanId, Passage{0, 0, static_cast<int>(text.size()), text},
-                                  vector}, "fake-embedder-v1"});
+        StoredSpan{day,
+                   SpanWrite{spanId, Passage{0, lo, lo + static_cast<int>(text.size()), text},
+                             vector},
+                   "fake-embedder-v1"});
   }
 
   std::vector<EchoUser> activeSince(std::uint64_t) override { return users; }
@@ -370,18 +383,53 @@ public:
     return corpus;
   }
 
-  std::vector<SpanPair> dismissalsOn(const UserId& user, const LocalDate& day) override {
-    auto it = dismissed.find(pageKey(user, day));
-    if (it == dismissed.end()) return {};
-    return it->second;
+  // One span by identity, or nothing at all — the same INNER join the SQL does, so an echo aimed
+  // at a passage that died with the last re-derivation is invisible here too.
+  const StoredSpan* spanOf(const UserId& user, std::int64_t spanId) const {
+    auto it = spans.find(user.str());
+    if (it == spans.end()) return nullptr;
+    for (const StoredSpan& stored : it->second)
+      if (stored.write.spanId == spanId) return &stored;
+    return nullptr;
   }
-  void dismiss(const UserId& user, std::int64_t triggerSpanId, std::int64_t matchSpanId) override {
-    for (const auto& [key, page] : echoesByPage) {
-      if (key.rfind(user.str() + "|", 0) != 0) continue;
-      for (const EchoRow& row : page.rows)
-        if (row.triggerSpanId == triggerSpanId && row.matchSpanId == matchSpanId)
-          dismissed[key].push_back(SpanPair{triggerSpanId, matchSpanId});
+
+  bool isDismissed(const UserId& user, const std::string& triggerText,
+                   const std::string& matchText) const {
+    auto it = dismissals.find(user.str());
+    if (it == dismissals.end()) return false;
+    return it->second.count({normalizedForIdentity(triggerText), normalizedForIdentity(matchText)});
+  }
+
+  std::vector<SpanPair> dismissalsOn(const UserId& user, const LocalDate& day) override {
+    // Content in, identities out: every span on this page carrying dismissed text is dismissed
+    // against every earlier span carrying its partner's text, which is what makes a dismissal
+    // survive a re-segmentation that minted brand new span ids.
+    std::vector<SpanPair> pairs;
+    auto it = spans.find(user.str());
+    if (it == spans.end()) return pairs;
+    for (const StoredSpan& trigger : it->second) {
+      if (!(trigger.day == day)) continue;
+      for (const StoredSpan& match : it->second) {
+        if (!(match.day < day)) continue;
+        if (!isDismissed(user, trigger.write.passage.text, match.write.passage.text)) continue;
+        pairs.push_back(SpanPair{trigger.write.spanId, match.write.spanId});
+      }
     }
+    return pairs;
+  }
+
+  void dismiss(const UserId& user, std::int64_t triggerSpanId, std::int64_t matchSpanId) override {
+    const StoredSpan* trigger = spanOf(user, triggerSpanId);
+    const StoredSpan* match = spanOf(user, matchSpanId);
+    if (!trigger || !match) return;   // a passage that is already gone is already unshown
+    dismissals[user.str()].insert({normalizedForIdentity(trigger->write.passage.text),
+                                   normalizedForIdentity(match->write.passage.text)});
+  }
+
+  void dismissPage(const UserId& user, const LocalDate& triggerDay) override {
+    auto it = echoesByPage.find(pageKey(user, triggerDay));
+    if (it == echoesByPage.end()) return;
+    for (const EchoRow& row : it->second.rows) dismiss(user, row.triggerSpanId, row.matchSpanId);
   }
 
   void replaceEchoes(const UserId& user, const LocalDate& day,
@@ -398,6 +446,9 @@ public:
     return it->second;
   }
 
+  // The reader's view, assembled the way the SQL assembles it: both spans join INNER, dismissed
+  // pairs are gone, the passages travel as text, and the anchoring hint is counted against the
+  // match page as it stands right now — so a body edited under a passage yields -1 here too.
   std::vector<EchoView> echoesFor(const UserId& user, const LocalDate& from,
                                   const LocalDate& to) override {
     std::vector<EchoView> views;
@@ -405,11 +456,30 @@ public:
       if (key.rfind(user.str() + "|", 0) != 0) continue;
       const LocalDate triggerDay{key.substr(user.str().size() + 1)};
       if (triggerDay < from || to < triggerDay) continue;
-      for (const EchoRow& row : page.rows)
-        views.push_back(EchoView{triggerDay, row.triggerSpanId, "", row.matchDay, row.matchSpanId,
-                                 "", row.matchIsSelf, Source::typed, 0});
+      for (const EchoRow& row : page.rows) {
+        const StoredSpan* trigger = spanOf(user, row.triggerSpanId);
+        const StoredSpan* match = spanOf(user, row.matchSpanId);
+        if (!trigger || !match) continue;
+        if (isDismissed(user, trigger->write.passage.text, match->write.passage.text)) continue;
+        auto body = bodies.find(pageKey(user, row.matchDay));
+        views.push_back(EchoView{
+            triggerDay, row.triggerSpanId, trigger->write.passage.text, row.matchDay,
+            row.matchSpanId, match->write.passage.text, row.matchIsSelf, Source::typed, 0,
+            body == bodies.end()
+                ? -1
+                : occurrenceAt(body->second, match->write.passage.text, match->write.passage.lo)});
+      }
     }
     return views;
+  }
+
+  int pagesWritten(const UserId& user) override {
+    int written = 0;
+    for (const auto& [key, body] : bodies)
+      if (key.rfind(user.str() + "|", 0) == 0 &&
+          body.find_first_not_of(" \t\r\n") != std::string::npos)
+        ++written;
+    return written;
   }
 
   // What one page ended up carrying, for a test that wants to assert the whole set at once.

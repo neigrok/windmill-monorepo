@@ -12,6 +12,7 @@ import { DayMarker } from './DayMarker.jsx';
 import { MoodDots } from './MoodDots.jsx';
 import { EnergyBars } from './EnergyBars.jsx';
 import { TalkButton } from './TalkButton.jsx';
+import { PageEchoes } from './echoes/PageEchoes.jsx';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
@@ -21,7 +22,7 @@ function wordCount(body) {
   return trimmed ? trimmed.split(/\s+/).length : 0;
 }
 
-export function Canvas({ focusDate = null, flyTo = null, echoDays = new Map(), onOpenEcho = () => {}, onNeedSignIn = () => {} }) {
+export function Canvas({ focusDate = null, flyTo = null, echoes = null, onNeedSignIn = () => {} }) {
   const {
     today, history, loading, firstRun,
     body, mood, energy, saveState, saveTick,
@@ -112,8 +113,7 @@ export function Canvas({ focusDate = null, flyTo = null, echoDays = new Map(), o
         day={day}
         born={isBorn(day.date)}
         highlight={dayHighlight}
-        hasEcho={echoDays.has(day.date)}
-        onOpenEcho={onOpenEcho}
+        echoes={echoes}
       />,
     );
   }
@@ -145,6 +145,7 @@ export function Canvas({ focusDate = null, flyTo = null, echoDays = new Map(), o
             aria-label="Write today"
             spellCheck
           />
+          {echoes && <PageEchoes echoes={echoes} day={today} />}
           <div className="journal-controls">
             <MoodDots value={mood} onChange={toggleMood} />
             <EnergyBars value={energy} onChange={toggleEnergy} />
@@ -165,26 +166,17 @@ function MonthDivider({ iso }) {
   return <div className="journal-month">{MONTHS[month - 1]} {year}</div>;
 }
 
-function DayBlock({ day, born, highlight = null, hasEcho = false, onOpenEcho }) {
-  const echoMark = hasEcho ? <EchoMark onClick={() => onOpenEcho(day.date)} /> : null;
+// The echo mark belongs UNDER the paragraph it points at — never above the cursor, never a badge on
+// the day chip — so it is the last thing in the block, after the writing it reaches back from.
+function DayBlock({ day, born, highlight = null, echoes = null }) {
   return (
     <article className={'journal-day' + (born ? ' journal-born' : '')} data-date={day.date}>
-      <DayMarker date={day.date} mood={day.mood} energy={day.energy} written={day.written} wordCount={wordCount(day.body)} trailing={echoMark} />
+      <DayMarker date={day.date} mood={day.mood} energy={day.energy} written={day.written} wordCount={wordCount(day.body)} />
       {day.written
         ? <div className="journal-prose">{highlight ? markSpan(day.body, highlight) : day.body}</div>
         : <div className="journal-gap">nothing written</div>}
+      {echoes && <PageEchoes echoes={echoes} day={day.date} />}
     </article>
-  );
-}
-
-// The echo's whole presence on the canvas: a small lamp glyph on the day that resonated. Never a
-// count, never a badge with a number — a light left on. Tapping it opens the echo (JournalApp).
-function EchoMark({ onClick }) {
-  return (
-    <button type="button" className="journal-echo-mark" onClick={onClick} aria-label="An echo — you wrote something like this before">
-      <span className="journal-echo-glyph" aria-hidden="true" />
-      echo
-    </button>
   );
 }
 

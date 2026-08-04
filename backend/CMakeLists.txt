@@ -324,6 +324,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/products/journal/adapters/http/VoiceApiTest.cpp
     test/products/journal/adapters/llm/AnthropicCuratorTest.cpp
     test/products/journal/adapters/postgres/PgJournalRepositoryTest.cpp
+    test/products/journal/adapters/postgres/PgEchoRepositoryTest.cpp
     test/products/gym/adapters/http/GymApiTest.cpp
     test/products/gym/adapters/postgres/PgTrainingRepositoryTest.cpp)
   target_link_libraries(windmill_adapters_tests PRIVATE windmill_roadmap windmill_journal windmill_gym)

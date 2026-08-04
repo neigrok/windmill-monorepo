@@ -95,6 +95,16 @@ void registerRoutes(drogon::HttpAppFramework& app, const JournalDeps& deps) {
         echoApi->listEchoes(req, std::move(cb));
       },
       {drogon::Get});
+  // Two dismissal doors, and the difference is the surface's, not a convenience: "Not useful" sits
+  // on the panel and retires the page, while a single pairing is retired by naming both days. Both
+  // land on the same content-hash key, so neither can be undone by inserting a sentence.
+  app.registerHandler(
+      "/v1/journal/echoes/{triggerDay}/dismiss",
+      [echoApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                const std::string& triggerDay) {
+        echoApi->dismissPage(req, std::move(cb), triggerDay);
+      },
+      {drogon::Post});
   app.registerHandler(
       "/v1/journal/echoes/{triggerDay}/{matchDay}/dismiss",
       [echoApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb,

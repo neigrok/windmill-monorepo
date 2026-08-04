@@ -1,7 +1,8 @@
 // The /app shell — the common ground behind the landings. One chrome (rail · top bar · room)
 // hosts every product as a room; the registry (../products.js) is the only window into them.
-// The shell owns theme scope: data-brand/data-theme come from the active room's registry scope
-// and are stamped on the shell root, so the rail tints with the room. The shell itself runs
+// The shell owns theme scope: data-brand comes from the active room's registry scope, and
+// data-theme is the app's one appearance choice (shell/appearance.js) unless the room PINS its own
+// — both stamped on the shell root, so the rail tints with the room. The shell itself runs
 // zero infinite animations — the calm ceiling is the room's budget.
 
 import React, { Suspense, useEffect } from 'react';
@@ -9,6 +10,7 @@ import { PRODUCTS } from '../products.js';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { AccountSeat } from '../auth/AccountSeat.jsx';
 import { useSignInDoor, useSignInDoorHost } from '../auth/SignInDoor.jsx';
+import { useAppearance } from '../useAppearance.js';
 import { ShellHome } from './ShellHome.jsx';
 import './chrome.css';
 
@@ -117,6 +119,9 @@ export function Shell({ location, neutral = null }) {
   const { user, status, signOut } = useAuth();
   const openSignInDoor = useSignInDoor();
   const lendDoorSkin = useSignInDoorHost();
+  // A room may PIN its theme (gym's instrument skin is steel whatever this says); a room that pins
+  // nothing follows the app's one appearance choice.
+  const { resolved: appearance } = useAppearance();
   const room = resolveRoom(location.pathname, neutral);
   const redirect = room.redirect ?? null;
 
@@ -127,7 +132,7 @@ export function Shell({ location, neutral = null }) {
   }, [redirect?.href, redirect?.external]);
 
   return (
-    <div className="wm-shell" ref={lendDoorSkin} data-brand={room.scope.brand} data-theme={room.scope.theme ?? undefined}>
+    <div className="wm-shell" ref={lendDoorSkin} data-brand={room.scope.brand} data-theme={room.scope.theme ?? appearance}>
       <aside className="wm-rail">
         <a className="wm-rail-wordmark" href="/" title="Windmill">W</a>
         <RoomLink href="/app" label="Home" icon="layout-grid" active={room.kind === 'home' && !redirect} />

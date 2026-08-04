@@ -12,6 +12,7 @@ import { useSignInDoor } from '../auth/SignInDoor.jsx';
 import { homeHash, PRODUCTS } from '../products.js';
 import { Button } from '../../design-system';
 import { ProfileSection } from './ProfileSection.jsx';
+import { AppearanceSection } from './AppearanceSection.jsx';
 import { ConnectedToolsSection } from './ConnectedToolsSection.jsx';
 import { ApiKeysSection } from './ApiKeysSection.jsx';
 import { SessionsSection } from './SessionsSection.jsx';
@@ -53,6 +54,10 @@ export function SettingsPage({ inShell = false }) {
             <Button variant="primary" size="sm" onClick={openSignInDoor}>Sign in</Button>
           </div>
         )}
+
+        {/* Outside the sign-in branch on purpose: appearance is a preference of this device, not of
+            an account, so it is here whether or not anyone is signed in. */}
+        <AppearanceSection />
       </AccountChrome>
 
     </>

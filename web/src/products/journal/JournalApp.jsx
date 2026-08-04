@@ -5,17 +5,20 @@
 // chrome is the canvas; nothing stands between the writer and the cursor.
 
 import React, { useEffect, useState } from 'react';
-import { Search, Bell, CalendarRange, Sun, Moon } from 'lucide-react';
+import { Search, Bell, CalendarRange } from 'lucide-react';
 import { ProductSwitcher } from '../../shell/ProductSwitcher.jsx';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
 import { AccountSeat } from '../../shell/auth/AccountSeat.jsx';
 import { useSignInDoor, useSignInDoorHost } from '../../shell/auth/SignInDoor.jsx';
+import { useAppearance } from '../../shell/useAppearance.js';
 import { Canvas } from './Canvas.jsx';
 import { SearchOverlay } from './search/SearchOverlay.jsx';
-import { EchoCard } from './EchoCard.jsx';
 import { NudgePanel } from './NudgePanel.jsx';
 import { ZoomView } from './zoom/ZoomView.jsx';
-import { useEchoes } from './useEchoes.js';
+import { EchoPanel, EchoMargin } from './echoes/EchoPanel.jsx';
+import { EchoTrail, BackToTonight } from './echoes/EchoTrail.jsx';
+import { OneSheet } from './echoes/OneSheet.jsx';
+import { useEchoes } from './echoes/useEchoes.js';
 import { useNudge } from './useNudge.js';
 import './journal.css';
 
@@ -26,37 +29,31 @@ function focusDateOf(hash) {
   return match ? match[1] : null;
 }
 
-// The surface theme is the device's own choice, kept beside the journal's other per-device state
-// (see hlc.js) — it is deliberately NOT the app's global theme, which stays light everywhere else.
-// Night is the default the journal was designed as; a returning writer paints in their last choice.
-const THEME_KEY = 'windmill:journal-theme';
-
-function readTheme() {
-  try {
-    const saved = localStorage.getItem(THEME_KEY);
-    if (saved === 'light' || saved === 'dark') return saved;
-  } catch { /* storage unavailable — night is the honest default */ }
-  return 'dark';
-}
+// Light or dark is NOT journal's choice: the superapp's one Appearance setting decides for the
+// whole app (shell/appearance.js), and journal maps it onto its own two skins — dark is the night
+// canvas, light is the warm parchment. Journal carried its own toggle in the tool rail until
+// 2026-08-05; it meant the setting in Account settings could not reach this room, and the app had
+// two controls for one thing. Night is still what this surface was designed as — the app's dark is
+// simply what selects it now.
 
 export function JournalApp({ hash }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [flyTo, setFlyTo] = useState(null);
-  const [openEcho, setOpenEcho] = useState(null);
   const [nudgeOpen, setNudgeOpen] = useState(false);
   const [zoomOpen, setZoomOpen] = useState(false);
-  const [theme, setTheme] = useState(readTheme);
+  const { resolved: theme } = useAppearance();
   const openSignInDoor = useSignInDoor();
   const lendDoorSkin = useSignInDoorHost();
   const { user, status, signOut } = useAuth();
-  const { byTriggerDay, dismiss } = useEchoes();
+  // Walking an echo is a position change, so the hook hands the canvas the same flight a search hit
+  // gets: load the day if it is older than the window, centre it, and light the passage for a beat.
+  const echoes = useEchoes({ onFly: (target) => setFlyTo({ ...target, at: Date.now() }) });
   const nudge = useNudge();
 
-  const toggleTheme = () => setTheme((current) => {
-    const next = current === 'dark' ? 'light' : 'dark';
-    try { localStorage.setItem(THEME_KEY, next); } catch { /* storage unavailable — the choice is device-local anyway */ }
-    return next;
-  });
+  const focusDate = focusDateOf(hash);
+  const panelPage = echoes.panelDay ? echoes.pageOf(echoes.panelDay) : null;
+  const sheetPage = echoes.sheetDay ? echoes.pageOf(echoes.sheetDay) : null;
+  const marginPage = echoes.followedDay ? echoes.pageOf(echoes.followedDay) : null;
 
   // ⌘K / Ctrl-K opens search — the one shortcut, never in the writer's way.
   useEffect(() => {
@@ -71,14 +68,20 @@ export function JournalApp({ hash }) {
   }, []);
 
   return (
-    <div className="journal-root" ref={lendDoorSkin} data-theme={theme}>
+    <div
+      className={'journal-root' + (marginPage ? ' has-margin' : '') + (sheetPage ? ' is-sheeted' : '')}
+      ref={lendDoorSkin}
+      data-theme={theme}
+    >
       <Canvas
-        focusDate={focusDateOf(hash)}
+        focusDate={focusDate}
         flyTo={flyTo}
-        echoDays={byTriggerDay}
-        onOpenEcho={(triggerDay) => setOpenEcho(byTriggerDay.get(triggerDay) || null)}
+        echoes={echoes}
         onNeedSignIn={openSignInDoor}
       />
+      {marginPage && <EchoMargin echoes={echoes} page={marginPage} />}
+      <EchoTrail echoes={echoes} current={focusDate || echoes.today} />
+      <BackToTonight echoes={echoes} />
       <div className="journal-lamp" aria-hidden="true" />
       <div className="journal-seat">
         <AccountSeat
@@ -91,17 +94,6 @@ export function JournalApp({ hash }) {
         />
       </div>
       <div className="journal-tools">
-        <button
-          type="button"
-          className="journal-tool"
-          onClick={toggleTheme}
-          aria-label={theme === 'dark' ? 'Switch to day' : 'Switch to night'}
-          title={theme === 'dark' ? 'Day' : 'Night'}
-        >
-          {theme === 'dark'
-            ? <Sun size={18} strokeWidth={1.9} aria-hidden="true" />
-            : <Moon size={18} strokeWidth={1.9} aria-hidden="true" />}
-        </button>
         <button
           type="button"
           className="journal-tool"
@@ -137,15 +129,13 @@ export function JournalApp({ hash }) {
         onClose={() => setSearchOpen(false)}
         onSelect={(hit) => { setFlyTo({ ...hit, at: Date.now() }); setSearchOpen(false); }}
       />
-      {openEcho && (
-        <EchoCard
-          echo={openEcho}
-          onClose={() => setOpenEcho(null)}
-          onRead={(echo) => {
-            setFlyTo({ day: echo.matchDay, lo: echo.matchSpan[0], hi: echo.matchSpan[1], at: Date.now() });
-            setOpenEcho(null);
-          }}
-          onDismiss={(triggerDay) => { dismiss(triggerDay); setOpenEcho(null); }}
+      {panelPage && <EchoPanel echoes={echoes} page={panelPage} />}
+      {sheetPage && (
+        <OneSheet
+          page={sheetPage}
+          today={echoes.today}
+          onClose={echoes.closeSheet}
+          onNeedSignIn={openSignInDoor}
         />
       )}
       {nudgeOpen && <NudgePanel nudge={nudge} onClose={() => setNudgeOpen(false)} />}

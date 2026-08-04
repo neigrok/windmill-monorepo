@@ -88,7 +88,7 @@ function NightWindow() {
         </p>
         <div data-echo style={{ marginTop: 20, maxWidth: 600, background: 'var(--surface-card)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', padding: '15px 17px' }}>
           <div style={{ fontSize: 14.5, lineHeight: 1.6, color: 'var(--text-secondary)' }}>Walked back past the bakery for no reason except the light. Some detours are the point.</div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--lamp-400)', marginTop: 9 }}>you wrote something close · 212 days ago</div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--lamp-400)', marginTop: 9 }}>07 JAN 2026 · seven months ago</div>
         </div>
       </div>
     </div>
@@ -321,10 +321,10 @@ function Echoes() {
       <h2 className="sectionTitle">Echoes</h2>
       <div style={{ maxWidth: 620 }}>
         <p style={{ fontSize: 17, lineHeight: 1.6, color: 'var(--text-secondary)', margin: 0, textWrap: 'pretty' }}>
-          When tonight rhymes with something you wrote months ago, Journal says it back — the older line itself, and the distance: “you wrote something close · 212 days ago”. It never interprets. It just remembers with you.
+          When tonight rhymes with something you wrote months ago, Journal says it back — the older line itself, its date, and how far back it was: “07 JAN 2026 · seven months ago”. It never interprets. It just remembers with you.
         </p>
         <p style={{ fontSize: 15.5, lineHeight: 1.6, color: 'var(--text-secondary)', margin: '14px 0 0', textWrap: 'pretty' }}>
-          Echoes come with the paid layer — and talk, where the product gates it. Without it they are simply not there; the canvas just stays quiet. If it ever lapses, the echoes you have stay yours.
+          The mark on the page is the same for everyone. One is what read across everything you have ever written to find it — without One the nearest passage stops mid-sentence and the words it held back are counted out loud, and that older page is still yours to scroll to, free. Talk comes with One too. If One ever lapses, the echoes you already have stay.
         </p>
       </div>
     </section>

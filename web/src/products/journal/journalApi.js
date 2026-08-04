@@ -5,8 +5,10 @@
 //   PUT  /v1/journal/page/:date        -> the WINNING page after a last-writer-wins upsert
 //   GET  /v1/journal/pages?since=|from=&to=  -> { pages: [...] } (the delta feed / a window)
 //   GET  /v1/journal/export            -> { pages: [...] }
-//   GET  /v1/journal/echoes?from=&to=  -> { echoes: [...] }  (empty unless subscribed)
-//   POST /v1/journal/echoes/:date/dismiss
+//   GET  /v1/journal/echoes?from=&to=  -> { pages: [...], pagesWritten, firstEchoEver }
+//   POST /v1/journal/echoes/:trigger/:match/dismiss     ("Not useful" — retire that pairing)
+//   POST /v1/journal/echoes/:trigger/offer/dismiss      ("Not now" — retire the offer for that page)
+//   POST /v1/journal/echoes/:trigger/:match/opened      (the relevance signal)
 //   GET/PATCH /v1/journal/nudge
 //   POST /v1/journal/transcribe (audio body) -> { text }
 
@@ -67,12 +69,28 @@ export const journalApi = {
     return (await json(await call('/export'))).pages;
   },
 
+  // The whole envelope, not just the pages: `pagesWritten` is what suppresses marks under the ~20-page
+  // floor, and `firstEchoEver` is the once-ever card's only honest source (a device flag can withhold
+  // that card, never assert it — the first echo may have arrived on another device).
   async echoes(from, to) {
-    return (await json(await call(`/echoes?from=${from}&to=${to}`))).echoes;
+    return json(await call(`/echoes?from=${from}&to=${to}`));
   },
 
-  async dismissEcho(date) {
-    await call(`/echoes/${date}/dismiss`, { method: 'POST' });
+  // "Not useful" — retire this pairing. Keyed on both days: a dismissal survives re-derivation.
+  async dismissEcho(triggerDay, matchDay) {
+    await call(`/echoes/${triggerDay}/${matchDay}/dismiss`, { method: 'POST' });
+  },
+
+  // "Not now" — retire the offer for this page. The echo still opens; nothing re-asks a page that
+  // was answered, and nothing counts the decline.
+  async dismissEchoOffer(triggerDay) {
+    await call(`/echoes/${triggerDay}/offer/dismiss`, { method: 'POST' });
+  },
+
+  // Opening a match's page is the one positive signal this feature has — the design has no "Read it"
+  // button, so the row tap is it. Fire-and-forget: a failed beacon must never cost the walk.
+  async echoOpened(triggerDay, matchDay) {
+    await call(`/echoes/${triggerDay}/${matchDay}/opened`, { method: 'POST' });
   },
 
   async nudge() {

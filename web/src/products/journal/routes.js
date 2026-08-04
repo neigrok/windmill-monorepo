@@ -25,7 +25,15 @@ function landingAfterSignIn() {
   return home();
 }
 
+// The echo fixtures live behind a dev-only door: a corpus with two and a half years of echoes in it
+// is the only way to look at the feature without a backend. `import.meta.env.DEV` is a literal false
+// in a production build, so neither the route nor the fixtures reach a shipped bundle.
+const EchoLab = import.meta.env && import.meta.env.DEV
+  ? lazy(() => import('./echoes/EchoLab.jsx').then((m) => ({ default: m.EchoLab })))
+  : null;
+
 function render({ hash }) {
+  if (EchoLab && hash.startsWith('#/journal/echoes-lab')) return { Component: EchoLab, props: { hash } };
   if (hash.startsWith('#/journal')) return { Component: JournalApp, props: { hash } };
   return null;
 }
@@ -49,7 +57,9 @@ export const journalRoutes = {
   shell: {
     icon: 'notebook-pen',
     room: '/app/journal',
-    scope: { theme: 'dark', brand: 'journal' },
+    // No pinned theme: journal follows the app's appearance and maps it onto its own two
+    // skins (night, warm parchment). Gym pins steel; journal does not pin.
+    scope: { brand: 'journal' },
     status: 'open',
     landingHref: '/journal',
     HomeCard,
