@@ -11,15 +11,20 @@ import SwiftUI
 //  · It says "Windmill Pro". The name was settled as **Windmill One** on 2026-08-02 (the design
 //    project's own consistency ledger, entry 0 — the backend, every legal surface and the live
 //    Paddle product were all renamed). The board is behind; the name here is the settled one.
-//  · The board shows a plan meter and an Appearance row. This client has no entitlements call and
-//    the shell has no appearance of its own to set, so neither is drawn. A meter that invented a
-//    number, or a control that changed nothing, would both be worse than the gap.
+//  · The board shows a plan meter. This client has no entitlements call, so it is not drawn — a
+//    meter that invented a number would be worse than the gap.
+//
+// Appearance IS drawn, and it works: the shell's role tokens are aliases onto an adaptive ramp
+// (Tokens.swift), so choosing Dark actually darkens the hub, the switcher, this screen and every
+// sheet. It was left out while that was untrue, on the rule that a control which changes nothing is
+// worse than an absent one.
 
 struct YouScreen: View {
     @ObservedObject var auth: AuthStore
     let products: [any ProductModule]
 
     @Environment(\.dismiss) private var dismiss
+    @AppStorage(Appearance.storageKey) private var appearance = Appearance.system.rawValue
     @State private var doorOpen = false
     @State private var proUp = false
 
@@ -64,6 +69,21 @@ struct YouScreen: View {
                             LabeledContent(label, value: holdings.phrase)
                         }
                     }
+                }
+
+                Section {
+                    Picker("Appearance", selection: $appearance) {
+                        ForEach(Appearance.allCases, id: \.rawValue) { choice in
+                            Text(choice.label).tag(choice.rawValue)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .listRowInsets(EdgeInsets(top: WindmillSpace.x3, leading: WindmillSpace.x4,
+                                              bottom: WindmillSpace.x3, trailing: WindmillSpace.x4))
+                } header: {
+                    Text("Appearance")
+                } footer: {
+                    Text("Sets the shell — hub, switcher, You, and every sheet. Rooms keep their own skin: journal's night-or-day choice lives in journal.")
                 }
 
                 Section {

@@ -89,3 +89,23 @@ final class HoldingsTests: XCTestCase {
         XCTAssertFalse(Holdings(count: 1, noun: "page").isEmpty)
     }
 }
+
+// Appearance sets the SHELL. The mapping matters because "System" is not a third palette — it is
+// the absence of an override, and getting that wrong pins the app to one skin forever.
+final class AppearanceTests: XCTestCase {
+    func testSystemHandsTheChoiceBackToTheOS() {
+        XCTAssertNil(Appearance.system.scheme)
+        XCTAssertEqual(Appearance.light.scheme, .light)
+        XCTAssertEqual(Appearance.dark.scheme, .dark)
+    }
+
+    func testEveryChoiceIsOfferedAndLabelled() {
+        XCTAssertEqual(Appearance.allCases.map(\.label), ["Light", "Dark", "System"])
+    }
+
+    // Stored as a raw string, so an unreadable value must fall back rather than crash a launch.
+    func testAnUnknownStoredValueIsNotAnAppearance() {
+        XCTAssertNil(Appearance(rawValue: "sepia"))
+        XCTAssertEqual(Appearance(rawValue: "dark"), .dark)
+    }
+}

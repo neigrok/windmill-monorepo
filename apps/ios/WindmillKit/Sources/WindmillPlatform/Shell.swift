@@ -25,6 +25,7 @@ public struct SuperappView: View {
     @State private var switcherUp = false
     @State private var youUp = false
     @State private var houseUp = false
+    @AppStorage(Appearance.storageKey) private var appearance = Appearance.system.rawValue
 
     public init(products: [any ProductModule], auth: AuthStore = AuthStore(),
                 journey: Journey = Journey()) {
@@ -64,6 +65,9 @@ public struct SuperappView: View {
             goHome: { leave() }
         ))
         .tint(WindmillColor.neutral900)
+        // The shell's appearance, applied once at its root so the hub, the switcher, You, One and
+        // every sheet follow together. A room paints its own skin inside this and is unaffected.
+        .preferredColorScheme(Appearance(rawValue: appearance)?.scheme ?? nil)
         .sheet(isPresented: $switcherUp) {
             SwitcherSheet(products: products, account: account, here: openRoom,
                           onPick: { enter($0) }, onHome: { leave() })

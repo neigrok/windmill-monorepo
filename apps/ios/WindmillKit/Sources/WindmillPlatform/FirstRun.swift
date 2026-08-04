@@ -206,3 +206,37 @@ struct HouseSheet: View {
         .background(WindmillColor.surfaceCard)
     }
 }
+
+// What the shell looks like — hub, switcher, You, Windmill One, and every sheet. NOT what a room
+// looks like: a product owns its own skin, and journal's night-or-day choice stays in journal
+// (`guidelines/superapp-shell.md` §5). Device-local, like everything else the shell remembers.
+public enum Appearance: String, CaseIterable {
+    case light, dark, system
+
+    public static let storageKey = "windmill.appearance"
+
+    public var label: String {
+        switch self {
+        case .light: return "Light"
+        case .dark: return "Dark"
+        case .system: return "System"
+        }
+    }
+
+    public var symbol: String? {
+        switch self {
+        case .light: return "sun.max"
+        case .dark: return "moon"
+        case .system: return nil
+        }
+    }
+
+    // nil hands the choice back to the OS, which is what "System" means — not a third palette.
+    public var scheme: ColorScheme? {
+        switch self {
+        case .light: return .light
+        case .dark: return .dark
+        case .system: return nil
+        }
+    }
+}

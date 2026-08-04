@@ -1,27 +1,39 @@
 import SwiftUI
+import UIKit
 
 // The brand's raw scales, mirrored for native — the same values web/src/styles/tokens/*.css holds,
 // which is what packages/design-tokens exists to keep honest. Product-neutral by construction: a
 // product that needs its own surface (journal's night, gym's palette) overrides these inside its
 // own scope, exactly as the web products override role tokens inside their own class.
 
+// The ramp is ADAPTIVE and the roles below are aliases onto it — the same structure
+// web/src/styles/tokens/colors.css uses, where `[data-theme="dark"]` re-authors the ramp and every
+// role token that references it follows for free. That is why turning the shell dark needed no
+// change at a single call site: `surfaceCanvas` IS `neutral50`, in both skins.
+//
+// The dark ramp is re-authored, never a linear inversion: low indices stay deep warm surfaces and
+// high indices become warm off-whites for text, so a role that meant "canvas" still means canvas.
 public enum WindmillColor {
-    public static let neutral0 = Color(hex: 0xFFFFFF)
-    public static let neutral25 = Color(hex: 0xFDFBF6)
-    public static let neutral50 = Color(hex: 0xF9F5EB)
-    public static let neutral100 = Color(hex: 0xF1EADA)
-    public static let neutral200 = Color(hex: 0xE5D9C0)
-    public static let neutral300 = Color(hex: 0xD3C2A0)
-    public static let neutral400 = Color(hex: 0xB29F7B)
-    public static let neutral500 = Color(hex: 0x92805F)
-    public static let neutral600 = Color(hex: 0x6F5F45)
-    public static let neutral700 = Color(hex: 0x514431)
-    public static let neutral800 = Color(hex: 0x372E21)
-    public static let neutral900 = Color(hex: 0x211B13)
+    public static let neutral0 = Color(light: 0xFFFFFF, dark: 0x17120B)
+    public static let neutral25 = Color(light: 0xFDFBF6, dark: 0x14100A)
+    public static let neutral50 = Color(light: 0xF9F5EB, dark: 0x0D0B07)
+    public static let neutral100 = Color(light: 0xF1EADA, dark: 0x221B12)
+    public static let neutral200 = Color(light: 0xE5D9C0, dark: 0x2E2618)
+    public static let neutral300 = Color(light: 0xD3C2A0, dark: 0x3C3223)
+    public static let neutral400 = Color(light: 0xB29F7B, dark: 0x574A35)
+    public static let neutral500 = Color(light: 0x92805F, dark: 0x8A785A)
+    public static let neutral600 = Color(light: 0x6F5F45, dark: 0xAE9A75)
+    public static let neutral700 = Color(light: 0x514431, dark: 0xCDBC97)
+    public static let neutral800 = Color(light: 0x372E21, dark: 0xE6DAC1)
+    public static let neutral900 = Color(light: 0x211B13, dark: 0xF4EEDF)
 
     public static let gold400 = Color(hex: 0xD9B04C)
     public static let olive400 = Color(hex: 0x9AA859)
     public static let olive500 = Color(hex: 0x7D8C43)
+
+    // Ink for text that sits ON a bright accent fill. Fixed in both skins: the fill is the same
+    // gold either way, so the ink on it must be too.
+    public static let onAccent = Color(hex: 0x1B1408)
 
     public static let surfaceCanvas = neutral50
     public static let surfaceCard = neutral0
@@ -72,6 +84,14 @@ public enum WindmillRadius {
 }
 
 public extension Color {
+    // One token, two skins, resolved by the trait environment rather than by a branch at the call
+    // site — so a view never has to ask which appearance it is in.
+    init(light: UInt32, dark: UInt32) {
+        self.init(UIColor { traits in
+            UIColor(Color(hex: traits.userInterfaceStyle == .dark ? dark : light))
+        })
+    }
+
     init(hex: UInt32) {
         self.init(
             .sRGB,

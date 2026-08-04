@@ -68,6 +68,9 @@ add_library(windmill_journal
   products/journal/domain/Page.cpp
   products/journal/domain/NudgePlan.cpp
   products/journal/domain/EchoFinder.cpp
+  products/journal/domain/Passage.cpp
+  products/journal/domain/SpanReconcile.cpp
+  products/journal/domain/EchoSelection.cpp
   products/journal/application/PageService.cpp
   products/journal/application/NudgeSweep.cpp
   products/journal/application/EchoSweep.cpp)
@@ -140,6 +143,9 @@ add_executable(windmill_domain_tests
   test/products/journal/domain/PageTest.cpp
   test/products/journal/domain/NudgePlanTest.cpp
   test/products/journal/domain/EchoFinderTest.cpp
+  test/products/journal/domain/PassageTest.cpp
+  test/products/journal/domain/SpanReconcileTest.cpp
+  test/products/journal/domain/EchoSelectionTest.cpp
   test/products/journal/application/PageServiceTest.cpp
   test/products/journal/application/NudgeSweepTest.cpp
   test/products/journal/application/EchoSweepTest.cpp

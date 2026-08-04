@@ -281,12 +281,37 @@ relation between two passages is recomputed from the passages themselves.
 
 | Route | Purpose |
 |---|---|
-| `GET /v1/journal/echoes?from=&to=` | echoes on pages in the range, owner only |
-| `POST /v1/journal/echoes/:trigger/:match/dismiss` | retire one passage pair |
+| `GET /v1/journal/echoes?from=&to=` | echoes on pages in the range, grouped by page, owner only |
+| `POST /v1/journal/echoes/:triggerDay/:matchDay/dismiss` | "Not useful" — retire one passage pair |
+| `POST /v1/journal/echoes/:triggerDay/offer/dismiss` | "Not now" — retire the offer for this page |
+| `POST /v1/journal/echoes/:triggerDay/:matchDay/opened` | the relevance signal (see *Measurement*) |
 | `POST /v1/admin/journal/echo/sweep` | operator rehearsal of one pass, admin token |
 
-Entitlement stays where it is: checked in the sweep, so a non-subscriber's table is simply empty.
-Absent, not locked.
+The read sends passage **text and ISO days**, never char offsets — the client re-locates by text and
+formats distance itself. Offsets are byte counts and the browser slices UTF-16 code units; the two
+diverge on the first non-ASCII character in a page.
+
+### Entitlement — moved, and this needs the owner's ruling
+
+Previously: checked in the sweep, so a non-subscriber's table stayed empty. *Absent, not locked.*
+
+The design canon supersedes this. Its "honest cut" state shows a non-subscriber the mark, the count,
+the **real opening words** of the nearest passage, the withheld word count, and every match's date
+and distance. That cannot be served from an empty table, so **the sweep runs for everyone and the
+gate moves to the read layer** — entitled serves full text, unentitled serves a prefix plus
+`withheldWords`.
+
+Two consequences the owner should weigh rather than inherit:
+
+- **Cost.** Computing for every user, not only subscribers, multiplies the nightly embed and curate
+  spend by the free-to-paid ratio.
+- **Feel.** "Absent, not locked" hid the feature entirely; the honest cut instead shows someone
+  their own words and withholds the rest of them. It is arguably the more honest of the two — it
+  tells the truth about what exists rather than concealing it — but it is a different promise, and
+  the mission rule ("no dark patterns") deserves a deliberate answer rather than a default.
+
+**Built so the answer is a policy flip, not a rebuild:** the sweep is entitlement-blind and the
+serialiser owns the cut. Reverting to absent-not-locked is one branch in the read path.
 
 ## The surface
 
@@ -295,13 +320,24 @@ principle is that the journal never speaks on its own initiative, and an unreque
 is speaking on its own initiative even when the content is reactive. It also avoids framing tonight's
 entry with last night's retrieval before the user has written.
 
-- **Anchor the mark to the trigger passage**, not the page. Then both halves of the relation are on
-  screen, in context, without ever building a before/after diptych.
-- **Oldest first.** Read top-down, a list becomes reach ("this goes back to 2024"). Newest-first, the
-  same data becomes accumulation ("and again, and again"). Same rows, opposite rhetoric.
-- **Render ~3, the rest behind an expand.** A stack of ten is a verdict; three with a door is a door.
-- **"212 days earlier"**, computed from the trigger day — not "ago", which is deictic and wrong on
-  every page but tonight's.
+The canon defines six states — the mark at rest, the honest cut, the panel of all matches, walking
+back, the desktop margin panel, and the One sheet — plus a once-ever first-echo card. It is
+authoritative for the surface; what follows is only what the backend must honour.
+
+- **Newest first**, oldest at the bottom, matching every other list in the journal. *(I argued the
+  opposite — oldest-first reads as reach, newest-first as accumulation — and the canon overruled it
+  on consistency grounds. Recorded so the reasoning survives; it is one function to invert.)*
+- **Distance is rendered client-side from the two ISO days**, in the canon's own units — "five months
+  ago" on tonight's page, "eight months earlier" on a walked page, "1 yr 2 mo" in the desktop
+  margin. Not days: nobody thinks in 212 of them. The "ago"/"earlier" split by position is the
+  canon's, and it is the right instinct — "ago" is deictic and false on any page but tonight's.
+- **The count renders only when every counted match is on screen.** "9 times, back to 1 January
+  2024" is honest exactly when all nine are listed and tappable, and dishonest the moment it
+  summarises something the reader cannot check. Truncated list, no total.
+- **`count` is computed after re-location succeeds**, so the mark and the card can never disagree
+  about how many there are.
+- **No marks below a ~20-page corpus floor** — and no offer either. A journal with nothing to reach
+  back into should not advertise reaching back.
 - **Label non-self passages** — `speaker: other` renders as *"something you copied down, 14 Feb"*.
   Presence is not the harm; misattribution is. Same for `source = 'spoken'`: *"from your voice note"*,
   because quoting an ASR mishearing as the user's own sentence is a fabrication they cannot falsify.
@@ -378,10 +414,32 @@ vectors solely for search. Decide before the migration.
    the two passages. No anchor, no echo, whatever the cosine says. The C++ case passes on "c++".
 2. **Nothing is ever inferred from absence.** No predicate reads a gap; the `CHECK` forbids forward
    reach. Corollary for the surface: never render an empty "no echoes" state, and never present a
-   list as *the* times — it is the closest ten, and no total is ever computed or shown.
+   list as *the* times. A total may be shown only when every item it counts is on screen and
+   tappable; a truncated list gets no number.
 3. **A quote is re-located and verified in the live page at render, or not shown.** Verified means
    the span's text still hashes to what the echo was built from — locating alone is not enough,
    because after an edit the wrong text locates successfully.
+
+## Filed back to design
+
+Three things the canon does not yet answer, recorded here so they are not lost between the two
+documents. None blocks the build; each needs a designer's decision before ship.
+
+1. **No slot for attribution.** A passage the writer *copied down* — a pasted message, a lyric, a
+   line said to them in session — is verbatim page text and locates perfectly, so nothing in the
+   pipeline can catch it. Same for a passage from an unedited voice transcript. Surfacing either
+   under "you wrote this" is a false attribution the reader cannot falsify. The card header is
+   `date · distance` with nowhere to say otherwise. The backend supplies `isSelf` and `source`; the
+   surface needs somewhere to put them.
+2. **A stray verdict inside the E4 frame.** The walked-page mock renders *"Two years of the same
+   idea, and the oldest one is eleven words long."* That is a conclusion about the writer, which
+   every rule in both documents forbids. It reads like a caption that drifted inside the device
+   frame. **Not being built** pending confirmation.
+3. **Ordering was overruled and should be a conscious choice.** The canon runs newest-first for
+   consistency with every other list in the journal. Read top-down, oldest-first says *reach*
+   ("this goes back to 2024") and newest-first says *accumulation* ("and again, and again") — the
+   same rows, opposite rhetoric. Consistency is a good reason; it should just be the reason chosen,
+   not the reason defaulted to.
 
 ## Before a paying user sees this
 

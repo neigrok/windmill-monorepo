@@ -97,6 +97,12 @@ The capsule lane is reserved by the shell with a safe-area inset rather than an 
 shell reserves cannot be forgotten by an app. A room says what colour it is with `roomChrome(_:)` and
 the shell dresses the capsule to match — the one thing a room tells the shell about its skin.
 
+**Appearance** (You → Light · Dark · System) sets the shell and only the shell: the hub, the
+switcher, You, Windmill One and every sheet. Rooms keep their own skin — journal's night-or-day
+choice stays in journal's bar. It needs no branch at any call site because the role tokens are
+aliases onto an *adaptive* neutral ramp, the same structure `tokens/colors.css` uses under
+`[data-theme="dark"]`: `surfaceCanvas` IS `neutral50`, in both skins.
+
 ## The journey
 
 Built to `guidelines/superapp-shell.md` §9. **Cold launch → one question → straight into that app →
@@ -135,6 +141,8 @@ open the door at that tap and resume after, exactly as `auth.md` §2 defines for
   claims `windmill.works` links with an associated domain, pasting is the honest finish. The same
   field keeps working once universal links land.
 - **No app icon or launch asset yet.**
+- **The plan meter in You is still not drawn.** The board shows one; this client has no entitlements
+  call, and a meter that invented a number is worse than the gap. It arrives when the data does.
 - **The entry question orders by registry, the hub orders bottom-up.** The same three cards appear
   in opposite orders on two adjacent screens. The hub's reversal is canon (reach order = priority
   order); the entry question is read top-down as a question, so it keeps registry order. If that
