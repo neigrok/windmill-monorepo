@@ -12,6 +12,8 @@ public struct JournalRoom: View {
 
     @StateObject private var store = PageStore()
     @AppStorage(JournalTheme.storageKey) private var theme = JournalTheme.night
+    // The one teaching moment in the whole product, and it retires the first time it is answered.
+    @AppStorage("windmill:journal-scales-taught") private var scalesTaught = false
     @Environment(\.scenePhase) private var scenePhase
     @FocusState private var writing: Bool
 
@@ -97,8 +99,39 @@ public struct JournalRoom: View {
                     .font(WindmillFont.body(13))
                     .foregroundStyle(skin.ink.opacity(0.5))
             }
+
+            // Appears once the first page is saved, and teaches the one thing the canvas cannot say
+            // for itself: the two scales are optional, and skipping them costs nothing. Dismissed
+            // once is dismissed forever — this is the only card journal ever shows.
+            if showScalesCard { scalesCard }
         }
         .padding(.bottom, WindmillSpace.x8)
+    }
+
+    private var showScalesCard: Bool {
+        !scalesTaught && !store.isFirstRun && !store.body.isEmpty
+    }
+
+    private var scalesCard: some View {
+        VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+            Text("Two taps, if you ever want them: how the day felt, and how much you had in the tank. Skipping costs nothing.")
+                .font(WindmillFont.body(14))
+                .foregroundStyle(skin.ink.opacity(0.82))
+                .lineSpacing(3)
+
+            HStack(spacing: WindmillSpace.x2) {
+                Text("mood").modifier(ScaleChip(skin: skin))
+                Text("energy").modifier(ScaleChip(skin: skin))
+                Spacer(minLength: 0)
+                Button("Not now") { scalesTaught = true }
+                    .font(WindmillFont.body(12.5, .bold))
+                    .foregroundStyle(skin.inkDim)
+            }
+        }
+        .padding(WindmillSpace.x4)
+        .background(RoundedRectangle(cornerRadius: 18).fill(skin.card))
+        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(skin.gap.opacity(0.6), lineWidth: 1))
+        .padding(.top, WindmillSpace.x2)
     }
 
     private func past(_ day: PageStore.CanvasDay) -> some View {

@@ -164,3 +164,18 @@ struct EnergyBars: View {
         .accessibilityLabel("Energy")
     }
 }
+
+// The two scale names as the teaching card wears them — lamp-ringed, so the card points at the
+// controls directly under it rather than describing them.
+struct ScaleChip: ViewModifier {
+    let skin: JournalSkin
+
+    func body(content: Content) -> some View {
+        content
+            .font(WindmillFont.body(11.5, .bold))
+            .foregroundStyle(skin.lamp)
+            .padding(.horizontal, WindmillSpace.x3)
+            .padding(.vertical, 7)
+            .background(Capsule().strokeBorder(skin.lamp, lineWidth: 1))
+    }
+}

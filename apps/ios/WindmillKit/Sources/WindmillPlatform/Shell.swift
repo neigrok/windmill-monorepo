@@ -20,17 +20,32 @@ public struct SuperappView: View {
     private let products: [any ProductModule]
 
     @StateObject private var auth: AuthStore
+    @State private var journey: Journey
     @State private var openRoom: String?          // nil = the hub
     @State private var switcherUp = false
     @State private var youUp = false
+    @State private var houseUp = false
 
-    public init(products: [any ProductModule], auth: AuthStore = AuthStore()) {
+    public init(products: [any ProductModule], auth: AuthStore = AuthStore(),
+                journey: Journey = Journey()) {
         self.products = products
         _auth = StateObject(wrappedValue: auth)
+        _journey = State(initialValue: journey)
     }
 
     public var body: some View {
         ZStack {
+            // The one question is the first screen, once ever. Not the hub: a hub of three empty
+            // rooms is a chore list, and an empty state is the worst first impression a superapp
+            // can make (guidelines/superapp-shell.md §9).
+            if !journey.asked {
+                EntryQuestionView(products: products,
+                                  onPick: { journey.answeredFirstQuestion(); enter($0) },
+                                  onSkip: { journey.answeredFirstQuestion() })
+                    .transition(.opacity)
+                    .zIndex(2)
+            }
+
             HubView(products: products, account: account, user: auth.status.user,
                     onEnter: { enter($0) }, onYou: { youUp = true })
 
@@ -45,7 +60,7 @@ public struct SuperappView: View {
         .animation(.easeInOut(duration: 0.28), value: openRoom)
         .environment(\.shellActions, ShellActions(
             openYou: { youUp = true },
-            openSwitcher: { switcherUp = true },
+            openSwitcher: { tappedCapsule() },
             goHome: { leave() }
         ))
         .tint(WindmillColor.neutral900)
@@ -56,9 +71,13 @@ public struct SuperappView: View {
                 .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $youUp) { YouScreen(auth: auth, products: products) }
+        .sheet(isPresented: $houseUp) { house }
         // The seat resolves once on launch. Until it answers, products run signed out — a real
         // state, not a loading state, so nothing is blocked while it happens.
         .task { await auth.restore() }
+        // Launch reopens the last room you stood in, not the hub — the hub is a place you go, never
+        // a toll gate. Only after the one question has been answered; before that it owns the screen.
+        .onAppear { if journey.asked { openRoom = journey.lastRoom } }
     }
 
     private var account: Account {
@@ -77,12 +96,42 @@ public struct SuperappView: View {
 
     private func enter(_ id: String) {
         switcherUp = false
+        houseUp = false
         openRoom = id
+        journey.stood(in: id)
     }
 
     private func leave() {
         switcherUp = false
+        houseUp = false
         openRoom = nil
+        journey.stood(in: nil)   // going home is itself an answer: the hub is where they chose to be
+    }
+
+    // A capsule tap opens the switcher — except for the one tap that comes after the first real
+    // thing exists, which introduces the house instead. See Journey.shouldIntroduceHouse for why
+    // the two triggers the board describes are really one.
+    private func tappedCapsule() {
+        guard let here = openRoom, let product = products.first(where: { $0.id == here }),
+              journey.shouldIntroduceHouse(madeSomething: !product.holdings(account).isEmpty,
+                                           otherRooms: products.count - 1) else {
+            switcherUp = true
+            return
+        }
+        journey.houseWasShown()
+        houseUp = true
+    }
+
+    @ViewBuilder
+    private var house: some View {
+        if let here = openRoom, let product = products.first(where: { $0.id == here }) {
+            HouseSheet(madeIn: product,
+                       others: products.filter { $0.id != here },
+                       onOpen: { enter($0) },
+                       onDismiss: { houseUp = false })
+                .presentationDetents([.height(CGFloat(products.count - 1) * 78 + 250)])
+                .presentationDragIndicator(.visible)
+        }
     }
 }
 
@@ -110,13 +159,17 @@ private struct RoomHost<Room: View>: View {
             // A safe-area inset rather than an overlay, because the contract says the capsule gets
             // "one lane every app reserves" — and a lane reserved by the SHELL cannot be forgotten
             // by an app, where an overlay just lands on top of whatever was already there.
+            // Read the room's skin BEFORE the capsule is added, not after. A preference reduces
+            // over the whole observed subtree, so with the inset inside it the capsule's own
+            // default (light) lands last and clobbers the room's answer — which is exactly how a
+            // night canvas ended up wearing a daylight capsule.
+            .onPreferenceChange(RoomChromePreference.self) { chrome = $0 }
             .safeAreaInset(edge: .top, alignment: .leading, spacing: 0) {
                 CapsuleButton(elsewhereRunning: elsewhereRunning)
                     .environment(\.colorScheme, chrome)
                     .padding(.leading, WindmillSpace.x4)
                     .padding(.bottom, WindmillSpace.x2)
             }
-            .onPreferenceChange(RoomChromePreference.self) { chrome = $0 }
             .offset(x: drag)
             .simultaneousGesture(
                 DragGesture(minimumDistance: 12, coordinateSpace: .global)

@@ -12,6 +12,19 @@ public struct JournalModule: ProductModule {
 
     public init() {}
 
+    // Plain verbs, and journal's own vocabulary: a page, never an "entry" (canon §9 forbids the
+    // word). The flow board's "3 entries" is the shell borrowing a word this product doesn't use.
+    public let entry = EntryDoor(
+        verb: "Write tonight",
+        line: "a blank page that remembers",
+        made: "Your first page is written.",
+        back: "Back to writing"
+    )
+
+    public func holdings(_ account: Account) -> Holdings {
+        Holdings(count: PageCache().pages.filter(\.isWritten).count, noun: "page")
+    }
+
     public func room(_ account: Account) -> AnyView {
         AnyView(JournalRoom(account: account))
     }

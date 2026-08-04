@@ -32,4 +32,11 @@ public struct RoadmapModule: ProductModule {
     public func hubLine(_ account: Account) -> HubLine {
         HubLine(eyebrow: "Next up", headline: "Your trees are on the web.", meta: "not on the phone yet")
     }
+
+    public let entry = EntryDoor(
+        verb: "Plan something big",
+        line: "a goal, broken into steps you can see",
+        made: "Your tree is planted.",
+        back: "Back to my tree"
+    )
 }

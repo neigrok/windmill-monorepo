@@ -55,6 +55,17 @@ struct YouScreen: View {
                     Text("Windmill is free. One buys tending — the AI that plants and reshapes your plans.")
                 }
 
+                // The honest version of a save-your-work nudge: it states what is actually at
+                // stake, once, where someone came to look — instead of interrupting to say it.
+                // Only while signed out; once there is an account the pages are in it.
+                if auth.status.user == nil, !held.isEmpty {
+                    Section("On this device") {
+                        ForEach(held, id: \.0) { label, holdings in
+                            LabeledContent(label, value: holdings.phrase)
+                        }
+                    }
+                }
+
                 Section {
                     Link("Connected tools · MCP", destination: URL(string: "https://windmill.works/#/connect")!)
                     Link("Sessions & data", destination: URL(string: "https://windmill.works/#/settings")!)
@@ -87,6 +98,15 @@ struct YouScreen: View {
             .sheet(isPresented: $proUp) { ProScreen() }
         }
         .tint(WindmillColor.neutral900)
+    }
+
+    // Only products that actually hold something appear — a row reading "0 pages" would be the app
+    // telling someone their empty room is at risk.
+    private var held: [(String, Holdings)] {
+        products.compactMap { product in
+            let holdings = product.holdings(Account(api: auth.api, user: auth.status.user))
+            return holdings.isEmpty ? nil : (product.label, holdings)
+        }
     }
 
     private var subtitle: String {

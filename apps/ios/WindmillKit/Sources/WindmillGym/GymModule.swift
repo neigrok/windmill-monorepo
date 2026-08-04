@@ -29,4 +29,11 @@ public struct GymModule: ProductModule {
     public func hubLine(_ account: Account) -> HubLine {
         HubLine(eyebrow: "The log", headline: "Your log is on the web.", meta: "not on the phone yet")
     }
+
+    public let entry = EntryDoor(
+        verb: "Log a workout",
+        line: "sets and weights, two taps each",
+        made: "Your first session is logged.",
+        back: "Back to the log"
+    )
 }

@@ -20,6 +20,51 @@ public protocol ProductModule {
     // The one line this product lends the hub — the shell contract's phrase, and the whole of what
     // the front door knows about it. The shell never reaches into a product for state; it asks.
     func hubLine(_ account: Account) -> HubLine
+
+    // What this product calls itself on the way in, and on the way out of the first run.
+    var entry: EntryDoor { get }
+
+    // How much of this product is on THIS device. Two screens spend it: the "on this device" list
+    // in signed-out You (the honest version of a save-your-work nudge — it states what is at stake
+    // where someone came to look, instead of interrupting to say it), and the house sheet's
+    // trigger, which waits until something real exists.
+    func holdings(_ account: Account) -> Holdings
+}
+
+// The words a product uses in the shell's own first-run screens. They are the product's, not the
+// shell's, because only the product knows what its first real thing is called.
+public struct EntryDoor {
+    public let verb: String     // "Write tonight" — the door, in a plain verb
+    public let line: String     // "a blank page that remembers"
+    public let made: String     // "Your first page is written." — the house sheet opens with this
+    public let back: String     // "Back to writing" — dismissing the house returns you to work
+
+    public init(verb: String, line: String, made: String, back: String) {
+        self.verb = verb
+        self.line = line
+        self.made = made
+        self.back = back
+    }
+}
+
+// A count and the word for one of them. The noun is the PRODUCT's vocabulary and nothing else may
+// choose it: journal counts pages, never "entries" (`journal/journal.md` §9 forbids the word), a
+// roadmap counts trees, a gym counts sessions.
+public struct Holdings: Equatable {
+    public let count: Int
+    public let noun: String
+
+    public init(count: Int, noun: String) {
+        self.count = count
+        self.noun = noun
+    }
+
+    public static let none = Holdings(count: 0, noun: "")
+    public var isEmpty: Bool { count == 0 }
+
+    // "3 pages" · "1 tree". Naive pluralisation, and deliberately so: every noun these products own
+    // takes a plain -s, and a product that ever needs otherwise can say so in its own word.
+    public var phrase: String { "\(count) \(noun)\(count == 1 ? "" : "s")" }
 }
 
 // What a product says on the front door: the line that decides whether you go in. `running` is the
@@ -94,6 +139,10 @@ public enum Presence {
 
 public extension ProductModule {
     var presence: Presence { .here }
+
+    // A product with no native room holds nothing on this device, and that is the truth rather than
+    // a stub — there is no surface here through which anything could have been made.
+    func holdings(_ account: Account) -> Holdings { .none }
 }
 
 // One sign-in, one subscription, one API host — handed to every product so no module invents its

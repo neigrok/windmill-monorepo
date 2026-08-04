@@ -97,6 +97,29 @@ The capsule lane is reserved by the shell with a safe-area inset rather than an 
 shell reserves cannot be forgotten by an app. A room says what colour it is with `roomChrome(_:)` and
 the shell dresses the capsule to match — the one thing a room tells the shell about its skin.
 
+## The journey
+
+Built to `guidelines/superapp-shell.md` §9. **Cold launch → one question → straight into that app →
+the first real thing → the house, once.**
+
+- **The one question** is the first screen, once ever — not the hub, because a hub of three empty
+  rooms is a chore list. Three doors in plain verbs, each in its product's skin, one skip.
+- **Launch reopens the last room you stood in.** Going home clears it: the hub is where you chose to
+  be, so the next launch honours that rather than dragging you back in.
+- **The house fires on the first capsule tap after something real exists**, and never again. The
+  board describes two triggers (its map says first capsule tap, its caption says first artifact);
+  this makes both true at once and needs no polling or channel out of a room.
+- **Signed-out You states what is at stake** — "on this device · Journal · 2 pages" — the honest
+  version of a save-your-work nudge: it says it once, where someone came to look. Products holding
+  nothing are absent rather than shown as zero.
+- **Journal's one teaching card** appears after the first page is saved and retires forever when
+  answered. It is the only card journal ever shows.
+
+**Tending is the one account verb.** It needs an account (30/month free signed in, 300 on Windmill
+One); there is no anonymous tending. That is not a wall — everything done by hand works signed out
+forever, and journal's first run spends nothing. Roadmap's "Plant it" and Gym's "Build my routine"
+open the door at that tap and resume after, exactly as `auth.md` §2 defines for Share and Connect.
+
 ## Known gaps (wave 2)
 
 - **The day marker does not pin.** Canon §4 wants it sticky on phone. SwiftUI pins `LazyVStack`
@@ -112,6 +135,10 @@ the shell dresses the capsule to match — the one thing a room tells the shell 
   claims `windmill.works` links with an associated domain, pasting is the honest finish. The same
   field keeps working once universal links land.
 - **No app icon or launch asset yet.**
+- **The entry question orders by registry, the hub orders bottom-up.** The same three cards appear
+  in opposite orders on two adjacent screens. The hub's reversal is canon (reach order = priority
+  order); the entry question is read top-down as a question, so it keeps registry order. If that
+  reads as arbitrary in someone's hands, the entry question is the one to change.
 - **The hub's summary line and plan meter are absent.** The board shows a one-line digest under the
   date ("One step marked done. No entry yet. Push day still waiting.") and a plan meter in You. Two
   of three products have no phone-side state to report and this client has no entitlements call, so
