@@ -1,12 +1,12 @@
 #include "products/journal/application/EchoSweep.h"
 
-#include "platform/application/Entitlements.h"
 #include "test/application/AuthFakes.h"
 #include "test/products/journal/Fakes.h"
 #include "test/testing.h"
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 using namespace wm;
 using namespace wm::fake;
@@ -15,113 +15,231 @@ namespace {
 
 constexpr std::uint64_t kNow = 1'700'000'000'000;
 constexpr std::uint64_t kDay = 24ull * 60 * 60 * 1000;
-const std::string kOldDay = "2026-06-01";
-const std::string kRecentDay = "2026-07-01";                 // thirty days on, well past the reach
-const std::string kBody = "the same reflection returns tonight";
 
-// One user whose recent page already carries a vector that resonates with an older one — the whole
-// resonance in place, so a test can vary only the entitlement or the embedder around it.
-void armResonantUser(FakeEchoRepository& echoes, FakeEmbedder& embedder) {
+const std::string kOldDay = "2026-01-01";
+const std::string kNewDay = "2026-05-01";
+const std::string kOldLine = "i want to learn kotlin properly this time, not just skimming it.";
+const std::string kNewLine = "i like kotlin now and the work is finally fun to sit down with.";
+
+// A user whose tonight genuinely reaches back: one older page already derived, one page due, and
+// the two lines share a subject and an anchor word. Everything else in a test varies around this.
+void armReachingBack(FakeEchoRepository& echoes, FakeEmbedder& embedder) {
   echoes.addUser(uid("u1"), Email{"writer@example.com"});
-  echoes.addCorpusEntry(uid("u1"), ld(kOldDay), embedder.embed(kBody), kBody);
-  echoes.addCorpusEntry(uid("u1"), ld(kRecentDay), embedder.embed(kBody), kBody);
-  echoes.addTrigger(uid("u1"), ld(kRecentDay));
+  echoes.plantSpan(uid("u1"), ld(kOldDay), 11, kOldLine, embedder.embed({kOldLine})[0]);
+  echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine);
+}
+
+EchoSweep sweepOver(FakeEchoRepository& echoes, FakeEmbedder& embedder, FakeCurator& curator,
+                    FakeClock& clock) {
+  return EchoSweep{echoes, embedder, curator, clock, SelectionRules{}, SweepBudget{}};
 }
 
 }
 
-TEST(a_subscriber_whose_page_resonates_with_an_older_one_saves_exactly_one_echo) {
+TEST(a_page_that_reaches_back_writes_an_echo_pointing_at_the_older_passage) {
   FakeEchoRepository echoes;
   FakeEmbedder embedder;
-  FakeSubscriptionRepository subs;
+  FakeCurator curator;
   FakeClock clock;
-  armResonantUser(echoes, embedder);
-  subs.subscribe(uid("u1"));
+  armReachingBack(echoes, embedder);
 
-  Entitlements entitlements(subs);
-  EchoSweep sweep(echoes, embedder, entitlements, clock, EchoRules{});
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
   const EchoSweepReport report = sweep.run(kNow, kNow - kDay);
 
   CHECK_EQ(report.usersScanned, 1);
-  CHECK_EQ(report.vectorsComputed, 0);          // both pages were already vectored
-  CHECK_EQ(report.echoesFound, 1);
-  CHECK_EQ(report.skippedNotSubscribed, 0);
+  CHECK_EQ(report.pagesDerived, 1);
+  CHECK_EQ(report.pagesFailed, 0);
+  CHECK_EQ(report.echoesWritten, 1);
 
-  CHECK_EQ(echoes.savedEchoes.size(), std::size_t{1});
-  CHECK_EQ(echoes.savedEchoes[0].user, uid("u1"));
-  CHECK(echoes.savedEchoes[0].triggerDay == ld(kRecentDay));
-  CHECK(echoes.savedEchoes[0].match.matchDay == ld(kOldDay));
-  CHECK(echoes.savedEchoes[0].match.score > 0.99f);
+  const std::vector<EchoRow> rows = echoes.rowsOn(uid("u1"), ld(kNewDay));
+  CHECK_EQ(rows.size(), std::size_t{1});
+  CHECK_EQ(rows[0].matchSpanId, std::int64_t{11});
+  CHECK(rows[0].matchDay == ld(kOldDay));
+  CHECK(rows[0].matchIsSelf);
 }
 
-TEST(a_non_subscriber_with_the_same_setup_gets_no_echo_and_is_counted_skipped) {
+TEST(an_unwired_embedder_makes_the_whole_pass_a_no_op) {
   FakeEchoRepository echoes;
   FakeEmbedder embedder;
-  FakeSubscriptionRepository subs;                // no subscribe(): unentitled
+  FakeCurator curator;
   FakeClock clock;
-  armResonantUser(echoes, embedder);
+  armReachingBack(echoes, embedder);
+  embedder.isConfigured = false;
 
-  Entitlements entitlements(subs);
-  EchoSweep sweep(echoes, embedder, entitlements, clock, EchoRules{});
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
   const EchoSweepReport report = sweep.run(kNow, kNow - kDay);
 
-  CHECK_EQ(report.usersScanned, 1);
-  CHECK_EQ(report.skippedNotSubscribed, 1);
-  CHECK_EQ(report.echoesFound, 0);
-  CHECK_EQ(report.vectorsComputed, 0);
-  CHECK_EQ(echoes.savedEchoes.size(), std::size_t{0});
-  CHECK_EQ(echoes.savedVectors.size(), std::size_t{0});   // an unentitled user is never even read
+  CHECK_EQ(report.usersScanned, 0);   // not a single user is scanned
+  CHECK_EQ(report.pagesDerived, 0);
+  CHECK_EQ(curator.calls, 0);
+  CHECK_EQ(echoes.outcomes.size(), std::size_t{0});
 }
 
-TEST(an_unconfigured_embedder_makes_the_whole_pass_a_no_op) {
+TEST(an_unwired_curator_makes_the_whole_pass_a_no_op) {
   FakeEchoRepository echoes;
   FakeEmbedder embedder;
-  embedder.isConfigured = false;                  // no upstream wired
-  FakeSubscriptionRepository subs;
+  FakeCurator curator;
   FakeClock clock;
-  armResonantUser(echoes, embedder);
-  subs.subscribe(uid("u1"));
+  armReachingBack(echoes, embedder);
+  curator.isConfigured = false;
 
-  Entitlements entitlements(subs);
-  EchoSweep sweep(echoes, embedder, entitlements, clock, EchoRules{});
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
   const EchoSweepReport report = sweep.run(kNow, kNow - kDay);
 
-  CHECK_EQ(report.usersScanned, 0);               // not a single user is scanned
-  CHECK_EQ(report.vectorsComputed, 0);
-  CHECK_EQ(report.echoesFound, 0);
-  CHECK_EQ(report.skippedNotSubscribed, 0);
-  CHECK_EQ(echoes.savedEchoes.size(), std::size_t{0});
-  CHECK_EQ(echoes.savedVectors.size(), std::size_t{0});
+  CHECK_EQ(report.usersScanned, 0);
+  CHECK_EQ(report.pagesDerived, 0);
+  CHECK_EQ(echoes.outcomes.size(), std::size_t{0});
 }
 
-TEST(a_page_missing_its_vector_is_embedded_before_it_is_matched) {
+// The distinction the whole failure taxonomy exists for. A page the curator never answered for is
+// owed another night; a page it answered "nothing here" for is finished. Storing them the same way
+// loses the first one to a transient blip at 02:14, permanently.
+TEST(a_failed_curate_is_recorded_as_a_failure_and_never_as_an_empty_page) {
   FakeEchoRepository echoes;
   FakeEmbedder embedder;
-  FakeSubscriptionRepository subs;
+  FakeCurator curator;
   FakeClock clock;
+  armReachingBack(echoes, embedder);
+  curator.callSucceeds = false;
+  curator.failure = "rate_limited";
 
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
+  const EchoSweepReport report = sweep.run(kNow, kNow - kDay);
+
+  CHECK_EQ(report.pagesFailed, 1);
+  CHECK_EQ(report.pagesDerived, 0);
+  CHECK_EQ(report.echoesWritten, 0);
+  CHECK_EQ(echoes.outcomes.size(), std::size_t{1});
+  CHECK(echoes.outcomes[0].status == CurationStatus::rateLimited);
+  CHECK(!isSuccess(echoes.outcomes[0].status));
+}
+
+TEST(a_curator_that_finds_nothing_finishes_the_page_rather_than_failing_it) {
+  FakeEchoRepository echoes;
+  FakeEmbedder embedder;
+  FakeCurator curator;
+  FakeClock clock;
+  armReachingBack(echoes, embedder);
+  curator.keepEverything = false;   // it answered; it just kept nothing
+
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
+  const EchoSweepReport report = sweep.run(kNow, kNow - kDay);
+
+  CHECK_EQ(report.pagesFailed, 0);
+  CHECK_EQ(report.pagesDerived, 1);
+  CHECK_EQ(report.echoesWritten, 0);
+  CHECK(echoes.outcomes[0].status == CurationStatus::emptyOk);
+  CHECK(isSuccess(echoes.outcomes[0].status));
+}
+
+TEST(a_short_embedder_result_is_a_failed_call_not_a_page_with_fewer_passages) {
+  FakeEchoRepository echoes;
+  FakeEmbedder embedder;
+  FakeCurator curator;
+  FakeClock clock;
+  armReachingBack(echoes, embedder);
+  embedder.failNext = true;
+
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
+  const EchoSweepReport report = sweep.run(kNow, kNow - kDay);
+
+  CHECK_EQ(report.pagesFailed, 1);
+  CHECK_EQ(curator.calls, 0);   // nothing is spent downstream of a failed embed
+  CHECK(echoes.outcomes[0].status == CurationStatus::transport);
+}
+
+// Reconciliation, exercised through the whole pass rather than in isolation: the older page keeps
+// its identity when its body is re-derived, so the echo aimed at it still resolves.
+TEST(re_deriving_the_older_page_keeps_the_identity_the_echo_points_at) {
+  FakeEchoRepository echoes;
+  FakeEmbedder embedder;
+  FakeCurator curator;
+  FakeClock clock;
+  armReachingBack(echoes, embedder);
+
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
+  sweep.run(kNow, kNow - kDay);
+  CHECK_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay))[0].matchSpanId, std::int64_t{11});
+
+  // Someone opens the January page and adds a line above the one that echoes.
+  echoes.due.clear();
+  echoes.addDuePage(uid("u1"), ld(kOldDay), "slept badly last night.\n" + kOldLine);
+  sweep.run(kNow, kNow - kDay);
+
+  const std::vector<KnownSpan> after = echoes.spansOf(uid("u1"), ld(kOldDay));
+  CHECK_EQ(after.size(), std::size_t{2});
+  // The inserted line minted a fresh identity; the echoing line kept the one it had.
+  CHECK_EQ(after[1].spanId, std::int64_t{11});
+}
+
+TEST(a_pairing_the_reader_waved_away_is_never_proposed_again) {
+  FakeEchoRepository echoes;
+  FakeEmbedder embedder;
+  FakeCurator curator;
+  FakeClock clock;
+  armReachingBack(echoes, embedder);
+
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
+  sweep.run(kNow, kNow - kDay);
+  const std::vector<EchoRow> first = echoes.rowsOn(uid("u1"), ld(kNewDay));
+  CHECK_EQ(first.size(), std::size_t{1});
+
+  echoes.dismiss(uid("u1"), first[0].triggerSpanId, first[0].matchSpanId);
+  echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine);   // the page comes round again
+  sweep.run(kNow, kNow - kDay);
+
+  CHECK_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay)).size(), std::size_t{0});
+}
+
+TEST(a_page_within_the_gap_is_too_near_to_echo) {
+  FakeEchoRepository echoes;
+  FakeEmbedder embedder;
+  FakeCurator curator;
+  FakeClock clock;
   echoes.addUser(uid("u1"), Email{"writer@example.com"});
-  subs.subscribe(uid("u1"));
-  echoes.addCorpusEntry(uid("u1"), ld(kOldDay), embedder.embed(kBody), kBody);  // old page, already vectored
-  echoes.addPageNeedingVector(uid("u1"), ld(kRecentDay), kBody, 4242);           // recent page, no vector yet
-  echoes.addTrigger(uid("u1"), ld(kRecentDay));
+  echoes.plantSpan(uid("u1"), ld("2026-04-28"), 11, kOldLine, embedder.embed({kOldLine})[0]);
+  echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine);   // three days later
 
-  Entitlements entitlements(subs);
-  EchoSweep sweep(echoes, embedder, entitlements, clock, EchoRules{});
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
   const EchoSweepReport report = sweep.run(kNow, kNow - kDay);
 
-  CHECK_EQ(report.vectorsComputed, 1);
-  CHECK_EQ(report.echoesFound, 1);
+  CHECK_EQ(report.pagesDerived, 1);
+  CHECK_EQ(report.echoesWritten, 0);
+  CHECK_EQ(curator.calls, 0);   // nothing survived retrieval, so nothing was paid for
+}
 
-  // The vector was computed from the page's body and stamped with the page's HLC ms.
-  CHECK_EQ(echoes.savedVectors.size(), std::size_t{1});
-  CHECK_EQ(echoes.savedVectors[0].user, uid("u1"));
-  CHECK(echoes.savedVectors[0].day == ld(kRecentDay));
-  CHECK_EQ(echoes.savedVectors[0].stampMs, std::uint64_t{4242});
-  CHECK_EQ(echoes.savedVectors[0].vector, embedder.embed(kBody));
+TEST(an_empty_page_is_finished_without_spending_anything) {
+  FakeEchoRepository echoes;
+  FakeEmbedder embedder;
+  FakeCurator curator;
+  FakeClock clock;
+  echoes.addUser(uid("u1"), Email{"writer@example.com"});
+  echoes.addDuePage(uid("u1"), ld(kNewDay), "   \n  ");
 
-  // And that freshly-embedded page then resonated with the older one.
-  CHECK_EQ(echoes.savedEchoes.size(), std::size_t{1});
-  CHECK(echoes.savedEchoes[0].triggerDay == ld(kRecentDay));
-  CHECK(echoes.savedEchoes[0].match.matchDay == ld(kOldDay));
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
+  const EchoSweepReport report = sweep.run(kNow, kNow - kDay);
+
+  CHECK_EQ(report.pagesDerived, 1);
+  CHECK_EQ(report.passagesEmbedded, 0);
+  CHECK_EQ(curator.calls, 0);
+  CHECK(echoes.outcomes[0].status == CurationStatus::emptyOk);
+}
+
+// A three-hundred-page cleanup pass must drain over several nights rather than bill in one.
+TEST(a_night_stops_at_the_page_budget_and_says_how_much_it_left) {
+  FakeEchoRepository echoes;
+  FakeEmbedder embedder;
+  FakeCurator curator;
+  FakeClock clock;
+  echoes.addUser(uid("u1"), Email{"writer@example.com"});
+  for (int i = 1; i <= 12; ++i) {
+    const std::string day = "2026-06-" + std::string(i < 10 ? "0" : "") + std::to_string(i);
+    echoes.addDuePage(uid("u1"), ld(day), kNewLine);
+  }
+
+  EchoSweep sweep{echoes, embedder, curator, clock, SelectionRules{}, SweepBudget{5, 20}};
+  const EchoSweepReport report = sweep.run(kNow, kNow - kDay);
+
+  CHECK_EQ(report.pagesDerived, 5);
+  CHECK_EQ(report.pagesOverBudget, 7);
 }

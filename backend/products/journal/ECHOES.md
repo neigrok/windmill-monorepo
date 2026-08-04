@@ -69,7 +69,7 @@ Nightly, for each page whose body changed since its last derivation:
 2  embed      each passage                 → vector                    [Embedder]
 3  reconcile  new passages vs. old         → carry span_id forward      [pure]
 4  retrieve   stratified by age band       → ~40 candidates             [repo]
-5  select     dedup, quota, diversify      → ≤12 for curation           [pure]
+5  select     dedup, quota, diversify      → ≤10 per trigger, ≤10 per page  [pure]
 6  curate     tonight's + candidates       → related pairs + speaker    [Curator]
 7  persist    ≤10 echoes, replacing the page's prior set                [repo]
 ```
@@ -147,7 +147,7 @@ doing safety work, and removing it exposed what retrieval does during a hard str
 nightly through the worst month of their life otherwise receives ten near-copies of last week, every
 night, forever.
 
-1. **Trigger gate.** `crowd(t) = |{c : cos(t,c) > 0.80}|`. If `crowd(t) ≥ 5`, the passage is a
+1. **Trigger gate.** `crowd(t) = |{c : cos(t,c) >= 0.80}|`, excluding the trigger's own row. If `crowd(t) ≥ 5`, the passage is a
    refrain ("tired again", "long day") — emit nothing for it. Measured: "tired again today" has 22
    candidates above 0.80; every genuine echo trigger has 0–6.
 2. **Family collapse.** Cluster candidates at cos ≥ 0.85 (single-link); keep the **oldest** member
@@ -155,7 +155,10 @@ night, forever.
 3. **Drop restatements.** `cos ≥ 0.97` to the trigger is not a memory.
 4. **Recency quota.** At most 2 of the shown set from the last 30 days.
 5. **Spread.** At most 2 from any single calendar month.
-6. **Guarantee the earliest.** The oldest qualifying passage always gets a slot. The whole thesis is
+6. **Cap the page, not just the trigger.** Every rule above bounds ONE trigger passage's
+   pairings. A page with eight triggering passages would otherwise carry eighty echoes, so the
+   sweep takes the page's ten best by score — the only place a whole page is in view.
+7. **Guarantee the earliest.** The oldest qualifying passage always gets a slot. The whole thesis is
    *"you may have forgotten you ever planned it"* — the first time is the payload, and nothing else
    in the ranking protects it.
 
@@ -401,9 +404,12 @@ Replaces the shipped page-level cosine implementation. Landing it invalidates:
 - `ARCHITECTURE.md` §5.1–5.4, the `journal_echo` row of the entity table at §265, and **§5.2's "rows
   are never deleted"**, which this design contradicts
 
-`GET /v1/journal/vectors` (§8.2) seeds the on-device search index from `journal_page_vector`, which
-this removes. **Open:** serve span vectors instead (likely better for search too), or keep page
-vectors solely for search. Decide before the migration.
+**Closed, and it was never open.** An earlier draft of this spec flagged `GET /v1/journal/vectors`
+as a coupling to resolve — the docs describe it as seeding the on-device search index from
+`journal_page_vector`. It does not exist: no route, no handler, no repository method, and nothing in
+`web/src` calls it. The browser builds its own index. Dropping `journal_page_vector` therefore
+breaks nothing. `ARCHITECTURE.md` §8.2 and its endpoint table still describe the route as real and
+are corrected in the same wave.
 
 ## Rules that hold
 

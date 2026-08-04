@@ -11,17 +11,20 @@ public struct JournalRoom: View {
     private let account: Account
 
     @StateObject private var store = PageStore()
-    @AppStorage(JournalTheme.storageKey) private var theme = JournalTheme.night
     // The one teaching moment in the whole product, and it retires the first time it is answered.
     @AppStorage("windmill:journal-scales-taught") private var scalesTaught = false
     @Environment(\.scenePhase) private var scenePhase
+    // Journal follows the app's Appearance (You → Light · Dark · System) like every other surface.
+    // It used to own a night/day toggle of its own, which meant the setting in You did not reach
+    // the room and the app carried two controls for one thing.
+    @Environment(\.colorScheme) private var colorScheme
     @FocusState private var writing: Bool
 
     public init(account: Account) {
         self.account = account
     }
 
-    private var skin: JournalSkin { theme.skin }
+    private var skin: JournalSkin { colorScheme == .dark ? .night : .day }
 
     public var body: some View {
         ScrollView {
@@ -59,8 +62,7 @@ public struct JournalRoom: View {
         // The room owns its skin inside its own scope and nowhere else (canon §10, the same rule
         // the web follows with .journal-root). `roomChrome` is the one thing it says outward: the
         // shell reads it to dress the capsule in the lane journal reserves and never paints.
-        .environment(\.colorScheme, theme == .night ? .dark : .light)
-        .roomChrome(theme == .night ? .dark : .light)
+        .roomChrome(colorScheme)
         // Re-runs whenever who is signed in changes: on sign-in this claims what was written on the
         // device before there was an account, then loads the window.
         .task(id: account.user?.id) { await store.connect(to: account) }
@@ -175,6 +177,17 @@ public struct JournalRoom: View {
         return "\(months[max(0, min(11, index))]) \(pieces[0])"
     }
 
+    // Journal has no tabs and now no controls of its own, so its one bottom bar carries just the
+    // shell's seat, at the same right edge it sits at in every other app, past a hairline.
+    private var bar: some View {
+        HStack {
+            Spacer(minLength: 0)
+            YouSeat()
+        }
+        .padding(.horizontal, WindmillSpace.x5)
+        .padding(.bottom, WindmillSpace.x2)
+    }
+
     // The canvas scrolls under the status bar, as everything on this platform does. This is the
     // gradient the web puts behind its day marker, doing the same job here: prose dissolves into
     // the night before it can collide with the clock.
@@ -197,36 +210,6 @@ public struct JournalRoom: View {
         .ignoresSafeArea()
     }
 
-    // Journal has no tabs, so its one bottom bar carries its own single control and then hands the
-    // last slot to the shell: the You seat sits at the same right edge it sits at in every other
-    // app, past a hairline, so it reads as the shell's and not as journal's (the shell contract).
-    private var bar: some View {
-        HStack(spacing: WindmillSpace.x4) {
-            themeToggle
-            Spacer(minLength: 0)
-            YouSeat()
-        }
-        .padding(.horizontal, WindmillSpace.x5)
-        .padding(.bottom, WindmillSpace.x2)
-    }
-
-    // The one control on the surface, out of the writer's way. Power lives in the margins (canon §3.5).
-    private var themeToggle: some View {
-        Button {
-            theme = theme.flipped
-        } label: {
-            Image(systemName: theme.otherSymbol)
-                .font(.system(size: 17, weight: .medium))
-                .foregroundStyle(skin.lamp)
-                .frame(width: 44, height: 44)
-                .background(
-                    Circle()
-                        .fill(skin.card.opacity(0.88))
-                        .overlay(Circle().strokeBorder(skin.lamp.opacity(0.3), lineWidth: 1))
-                )
-        }
-        .accessibilityLabel("Switch to \(theme.otherLabel.lowercased())")
-    }
 }
 
 // Mono "saved" that fades in on each write and eases back out — never a button, never a spinner,

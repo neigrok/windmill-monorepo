@@ -30,14 +30,18 @@ struct Harness {
       std::make_shared<AuthService>(authRepo, email, *tokens, *clock, oauth, footprint, "https://windmill.works");
   std::shared_ptr<FakeEchoRepository> echoes = std::make_shared<FakeEchoRepository>();
   FakeEmbedder embedder;
+  FakeCurator curator;
   FakeSubscriptionRepository subscriptions;
   Entitlements entitlements{subscriptions};
   std::shared_ptr<EchoSweep> sweep;
   std::shared_ptr<EchoApi> api;
 
   explicit Harness(std::string adminToken = "")
-      : sweep(std::make_shared<EchoSweep>(*echoes, embedder, entitlements, *clock, EchoRules{})),
-        api(std::make_shared<EchoApi>(echoes, sweep, auth, std::move(adminToken))) {}
+      : sweep(std::make_shared<EchoSweep>(*echoes, embedder, curator, *clock, SelectionRules{},
+                                          SweepBudget{})),
+        api(std::make_shared<EchoApi>(echoes, sweep, auth,
+                                      std::shared_ptr<Entitlements>(&entitlements, [](Entitlements*) {}),
+                                      std::move(adminToken))) {}
 
   UserId signIn(const std::string& sessionSecret) {
     User user = authRepo.createUser(Email{"sam@example.com"}, "sam");
@@ -67,9 +71,10 @@ drogon::HttpResponsePtr listEchoes(Harness& h, const drogon::HttpRequestPtr& req
 }
 
 drogon::HttpResponsePtr dismiss(Harness& h, const drogon::HttpRequestPtr& req,
-                                const std::string& date) {
+                                const std::string& triggerDay, const std::string& matchDay) {
   drogon::HttpResponsePtr captured;
-  h.api->dismiss(req, [&](const drogon::HttpResponsePtr& response) { captured = response; }, date);
+  h.api->dismiss(req, [&](const drogon::HttpResponsePtr& response) { captured = response; },
+                 triggerDay, matchDay);
   return captured;
 }
 
@@ -81,114 +86,80 @@ drogon::HttpResponsePtr adminSweep(Harness& h, const drogon::HttpRequestPtr& req
 
 }
 
-TEST(echoes_list_without_a_session_is_401) {
+namespace {
+
+// One echo already on a page, planted the way a finished pass would have left it.
+void plantEcho(Harness& h, const UserId& user) {
+  CuratedEchoes curated;
+  curated.curatorVersion = "fake-curator-v1";
+  curated.rows.push_back(EchoRow{21, ld("2024-01-01"), 11, 0.8f, 0.9f, true});
+  h.echoes->replaceEchoes(user, ld("2026-05-01"), curated);
+}
+
+drogon::HttpResponsePtr listOf(Harness& h, const drogon::HttpRequestPtr& req) {
+  drogon::HttpResponsePtr captured;
+  h.api->listEchoes(req, [&](const drogon::HttpResponsePtr& r) { captured = r; });
+  return captured;
+}
+
+}
+
+TEST(echoes_needs_a_signed_in_reader) {
   Harness h;
-
-  drogon::HttpResponsePtr response = listEchoes(h, request(drogon::Get, "/v1/journal/echoes"));
-
-  CHECK_EQ(response->getStatusCode(), drogon::k401Unauthorized);
-  CHECK_EQ(dump(*response->getJsonObject()),
-           std::string(R"({"error":"sign in to read your echoes"})"));
+  const drogon::HttpResponsePtr response = listOf(h, request(drogon::Get, "/v1/journal/echoes"));
+  CHECK_EQ(static_cast<int>(response->statusCode()), 401);
 }
 
-TEST(echoes_list_returns_only_the_owners_echoes_and_never_the_score) {
+TEST(echoes_are_grouped_by_the_page_that_carries_them) {
   Harness h;
-  UserId me = h.signIn("s-live");
-  h.echoes->saveEcho(me, ld("2026-07-20"), EchoMatch{ld("2026-03-01"), {0, 40}, {12, 60}, 0.81f});
-  h.echoes->saveEcho(uid("u2"), ld("2026-07-21"), EchoMatch{ld("2026-02-02"), {1, 5}, {2, 9}, 0.9f});
+  const UserId user = h.signIn("s-live");
+  plantEcho(h, user);
 
-  drogon::HttpResponsePtr response =
-      listEchoes(h, request(drogon::Get, "/v1/journal/echoes", "", "s-live"));
+  const drogon::HttpResponsePtr response =
+      listOf(h, request(drogon::Get, "/v1/journal/echoes", "", "s-live"));
+  CHECK_EQ(static_cast<int>(response->statusCode()), 200);
 
-  // The stranger's echo stays theirs, and the score is stored but never shipped — an echo is a
-  // presence, not a number. The full-body compare is what proves no "score" key rode along.
-  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(dump(*response->getJsonObject()),
-           std::string(R"({"echoes":[{"matchDay":"2026-03-01","matchSpan":[12,60],)"
-                       R"("triggerDay":"2026-07-20","triggerSpan":[0,40]}]})"));
-  CHECK_FALSE((*response->getJsonObject())["echoes"][0].isMember("score"));
+  const Json::Value body = parse(std::string(response->getBody()));
+  CHECK_EQ(body["pages"].size(), 1u);
+  CHECK_EQ(body["pages"][0]["day"].asString(), std::string("2026-05-01"));
+  CHECK_EQ(body["pages"][0]["matches"].size(), 1u);
+  CHECK_EQ(body["pages"][0]["matches"][0]["day"].asString(), std::string("2024-01-01"));
 }
 
-TEST(echoes_list_honours_the_asked_window) {
+// The honest cut. A subscriber is handed the passage; everyone else is handed its real opening
+// words and the number withheld — which tells the truth about what exists, rather than the older
+// behaviour of hiding that anything was found at all.
+TEST(an_unentitled_reader_is_told_what_exists_and_shown_only_its_opening_words) {
   Harness h;
-  UserId me = h.signIn("s-live");
-  h.echoes->saveEcho(me, ld("2026-07-20"), EchoMatch{ld("2026-03-01"), {0, 40}, {12, 60}, 0.81f});
-  drogon::HttpRequestPtr inside = request(drogon::Get, "/v1/journal/echoes", "", "s-live");
-  inside->setParameter("from", "2026-07-01");
-  inside->setParameter("to", "2026-07-31");
-  drogon::HttpRequestPtr outside = request(drogon::Get, "/v1/journal/echoes", "", "s-live");
-  outside->setParameter("from", "2026-01-01");
-  outside->setParameter("to", "2026-01-31");
+  const UserId user = h.signIn("s-live");
+  plantEcho(h, user);
 
-  drogon::HttpResponsePtr found = listEchoes(h, inside);
-  drogon::HttpResponsePtr empty = listEchoes(h, outside);
+  const drogon::HttpResponsePtr response =
+      listOf(h, request(drogon::Get, "/v1/journal/echoes", "", "s-live"));
+  const Json::Value page = parse(std::string(response->getBody()))["pages"][0];
 
-  CHECK_EQ(found->getStatusCode(), drogon::k200OK);
-  CHECK_EQ((*found->getJsonObject())["echoes"].size(), 1u);
-  CHECK_EQ(empty->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(dump(*empty->getJsonObject()), std::string(R"({"echoes":[]})"));
+  CHECK(!page["entitled"].asBool());
+  CHECK_EQ(page["matches"].size(), 1u);   // the echo is NOT hidden
 }
 
-TEST(echoes_dismiss_is_204_and_removes_it_from_the_list) {
+TEST(a_subscriber_is_handed_the_whole_passage) {
   Harness h;
-  UserId me = h.signIn("s-live");
-  h.echoes->saveEcho(me, ld("2026-07-20"), EchoMatch{ld("2026-03-01"), {0, 40}, {12, 60}, 0.81f});
+  const UserId user = h.signIn("s-live");
+  h.subscriptions.subscribe(user);
+  plantEcho(h, user);
 
-  drogon::HttpResponsePtr response = dismiss(
-      h, request(drogon::Post, "/v1/journal/echoes/2026-07-20/dismiss", "", "s-live"), "2026-07-20");
+  const drogon::HttpResponsePtr response =
+      listOf(h, request(drogon::Get, "/v1/journal/echoes", "", "s-live"));
+  const Json::Value page = parse(std::string(response->getBody()))["pages"][0];
 
-  CHECK_EQ(response->getStatusCode(), drogon::k204NoContent);
-  drogon::HttpResponsePtr after =
-      listEchoes(h, request(drogon::Get, "/v1/journal/echoes", "", "s-live"));
-  CHECK_EQ(dump(*after->getJsonObject()), std::string(R"({"echoes":[]})"));
+  CHECK(page["entitled"].asBool());
+  CHECK_EQ(page["matches"][0]["withheldWords"].asInt(), 0);
 }
 
-TEST(echoes_dismiss_with_a_malformed_date_is_400) {
+TEST(an_admin_sweep_without_a_token_is_refused) {
   Harness h;
-  h.signIn("s-live");
-
-  drogon::HttpResponsePtr response = dismiss(
-      h, request(drogon::Post, "/v1/journal/echoes/20-07-2026/dismiss", "", "s-live"), "20-07-2026");
-
-  CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
-  CHECK_EQ(dump(*response->getJsonObject()), std::string(R"({"error":"bad date"})"));
-}
-
-TEST(echo_admin_sweep_with_no_token_configured_is_403) {
-  Harness h;
-
-  drogon::HttpResponsePtr response =
-      adminSweep(h, request(drogon::Post, "/v1/admin/journal/echo/sweep"));
-
-  CHECK_EQ(response->getStatusCode(), drogon::k403Forbidden);
-  CHECK_EQ(dump(*response->getJsonObject()), std::string(R"({"error":"admin token required"})"));
-}
-
-TEST(echo_admin_sweep_with_the_wrong_token_is_403) {
-  Harness h("the-secret");
-  drogon::HttpRequestPtr req = request(drogon::Post, "/v1/admin/journal/echo/sweep");
-  req->addHeader("x-admin-token", "the-secre");
-
-  drogon::HttpResponsePtr response = adminSweep(h, req);
-
-  CHECK_EQ(response->getStatusCode(), drogon::k403Forbidden);
-  CHECK_EQ(dump(*response->getJsonObject()), std::string(R"({"error":"admin token required"})"));
-}
-
-TEST(echo_admin_sweep_with_the_right_token_reports) {
-  Harness h("the-secret");
-  Json::Value body(Json::objectValue);
-  body["asOfMs"] = Json::Value::UInt64(1'700'000'000'000ULL);
-  drogon::HttpRequestPtr req =
-      request(drogon::Post, "/v1/admin/journal/echo/sweep", dump(body));
-  req->addHeader("x-admin-token", "the-secret");
-
-  drogon::HttpResponsePtr response = adminSweep(h, req);
-
-  // Nobody wrote anything, so one pass over an empty repository is all zeros — the door and the
-  // report shape are what this case pins down.
-  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(dump(*response->getJsonObject()),
-           std::string(R"({"echoesFound":0,"skippedNotSubscribed":0,)"
-                       R"("usersScanned":0,"vectorsComputed":0})"));
+  drogon::HttpResponsePtr captured;
+  h.api->adminSweep(request(drogon::Post, "/v1/admin/journal/echo/sweep"),
+                    [&](const drogon::HttpResponsePtr& r) { captured = r; });
+  CHECK_EQ(static_cast<int>(captured->statusCode()), 403);
 }

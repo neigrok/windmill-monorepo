@@ -1,6 +1,7 @@
 #pragma once
 
 #include "platform/application/AuthService.h"
+#include "platform/application/Entitlements.h"
 #include "products/journal/application/EchoSweep.h"
 #include "products/journal/ports/EchoRepository.h"
 
@@ -15,23 +16,33 @@ namespace wm {
 
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
-// The echo read surface. Owner-scoped, and entitlement-free by design: a non-subscriber's echoes
-// are simply an empty list (nothing was ever computed for them), so there is no locked state to
-// render — "absent, not locked". The admin sweep is an operator rehearsal gated by a shared token,
-// able to drive one nightly pass at an arbitrary instant over an arbitrary look-back window.
+// The echo read surface, owner-scoped. Entitlement is asked HERE rather than in the sweep: the
+// design canon's honest-cut state shows a non-subscriber that echoes exist, how many, how far back,
+// and the real opening words of the nearest one — none of which can be served from an empty table.
+// So the sweep derives for everyone and this edge decides how much of a passage a reader is handed.
+// Reverting to "absent, not locked" is one branch in `listEchoes`, not a rebuild.
+//
+// Passages travel as TEXT and days as ISO strings. The client re-locates the quote in the live page
+// body and renders the distance itself: byte offsets would not survive the trip (C++ counts bytes,
+// JavaScript slices UTF-16 code units) and "212 days" is not how anyone reads a year.
 class EchoApi {
 public:
   EchoApi(std::shared_ptr<EchoRepository> echoes, std::shared_ptr<EchoSweep> sweep,
-          std::shared_ptr<AuthService> auth, std::string adminToken);
+          std::shared_ptr<AuthService> auth, std::shared_ptr<Entitlements> entitlements,
+          std::string adminToken);
 
-  void listEchoes(const drogon::HttpRequestPtr& req, HttpCallback&& cb);                  // GET  /v1/journal/echoes?from=&to=
-  void dismiss(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& date);  // POST /v1/journal/echoes/{date}/dismiss
-  void adminSweep(const drogon::HttpRequestPtr& req, HttpCallback&& cb);                  // POST /v1/admin/journal/echo/sweep
+  void listEchoes(const drogon::HttpRequestPtr& req, HttpCallback&& cb);
+  void dismiss(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+               const std::string& triggerDay, const std::string& matchDay);
+  void opened(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+              const std::string& triggerDay, const std::string& matchDay);
+  void adminSweep(const drogon::HttpRequestPtr& req, HttpCallback&& cb);
 
 private:
   std::shared_ptr<EchoRepository> echoes_;
   std::shared_ptr<EchoSweep> sweep_;
   std::shared_ptr<AuthService> auth_;
+  std::shared_ptr<Entitlements> entitlements_;
   std::string adminToken_;
 };
 

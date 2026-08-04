@@ -2,6 +2,7 @@
 
 #include "platform/domain/Billing.h"
 #include "platform/ports/SubscriptionRepository.h"
+#include "products/journal/ports/Curator.h"
 #include "products/journal/ports/EchoRepository.h"
 #include "products/journal/ports/Embedder.h"
 #include "products/journal/ports/JournalRepository.h"
@@ -232,110 +233,190 @@ struct FakeNudgeMail : NudgeMailSender {
 // A deterministic stand-in for the server-side embedding model: normalised per-letter counts over
 // the 26 lowercase letters. Same text embeds to the same vector (cosine 1), text sharing most of its
 // letters cosines close, and text over a disjoint set cosines low — enough for the echo sweep to
-// tell a resonant pair from an unrelated one with no model in sight. `configured` is a settable flag
-// so a test can exercise the "no embedder — the whole pass is a no-op" path.
+// A deterministic stand-in for a real embedding model: a 26-dim letter-frequency vector, unit
+// normalised, so two passages sharing letters sit close and a test can reason about cosine without
+// a model. `isConfigured` flips so a test can exercise the "unwired — the whole pass is a no-op"
+// path, and `failNext` returns short so a test can prove a failed embed never marks a page done.
 struct FakeEmbedder : Embedder {
   bool isConfigured = true;
+  bool failNext = false;
 
   bool configured() const override { return isConfigured; }
-  std::vector<float> embed(const std::string& body) override {
-    std::vector<float> counts(26, 0.0f);
-    for (char raw : body) {
-      const char c = static_cast<char>(std::tolower(static_cast<unsigned char>(raw)));
-      if (c >= 'a' && c <= 'z') counts[c - 'a'] += 1.0f;
-    }
-    double norm = 0.0;
-    for (float v : counts) norm += static_cast<double>(v) * v;
-    if (norm == 0.0) return counts;   // an empty/letterless body has no direction; leave it zero
-    for (float& v : counts) v = static_cast<float>(v / std::sqrt(norm));
-    return counts;
-  }
-};
+  std::string version() const override { return "fake-embedder-v1"; }
 
-// An in-memory EchoRepository the sweep's tests drive by hand. The reads (activeSince, triggersSince)
-// ignore their window and return what the test planted — the sweep's windowing is the real adapter's
-// job, not the fake's — while the writes (saveVector, saveEcho) are RECORDED so a test asserts what
-// the pass did. A saved vector also joins the corpus, exactly as the real corpusOf would see it on
-// the next read, so "embed a missing vector, then match against it" works end to end.
-class FakeEchoRepository : public EchoRepository {
-public:
-  struct SavedVector {
-    UserId user;
-    LocalDate day;
-    std::vector<float> vector;
-    std::uint64_t stampMs;
-  };
-  struct SavedEcho {
-    UserId user;
-    LocalDate triggerDay;
-    EchoMatch match;
-  };
-
-  std::vector<EchoUser> users;                                // activeSince returns these, in order
-  std::map<std::string, std::vector<PageText>> needing;      // user -> pages still needing a vector
-  std::map<std::string, std::vector<EchoCandidate>> corpus;  // user -> already-vectored pages
-  std::map<std::string, std::vector<LocalDate>> triggers;    // user -> recently-changed days
-  std::vector<SavedVector> savedVectors;
-  std::vector<SavedEcho> savedEchoes;
-
-  void addUser(const UserId& user, const Email& email) { users.push_back(EchoUser{user, email}); }
-  void addPageNeedingVector(const UserId& user, const LocalDate& day, const std::string& body,
-                            std::uint64_t stampMs) {
-    needing[user.str()].push_back(PageText{day, body, stampMs});
-  }
-  void addCorpusEntry(const UserId& user, const LocalDate& day, const std::vector<float>& vector,
-                      const std::string& body) {
-    corpus[user.str()].push_back(EchoCandidate{day, vector, body});
-  }
-  void addTrigger(const UserId& user, const LocalDate& day) { triggers[user.str()].push_back(day); }
-
-  std::vector<EchoUser> activeSince(std::uint64_t) override { return users; }
-  std::vector<PageText> pagesNeedingVector(const UserId& user) override {
-    auto it = needing.find(user.str());
-    if (it == needing.end()) return {};
-    return it->second;
-  }
-  void saveVector(const UserId& user, const LocalDate& day, const std::vector<float>& vector,
-                  std::uint64_t bodyStampMs) override {
-    savedVectors.push_back(SavedVector{user, day, vector, bodyStampMs});
-    corpus[user.str()].push_back(EchoCandidate{day, vector, ""});   // now visible to corpusOf
-    auto it = needing.find(user.str());
-    if (it == needing.end()) return;
-    it->second.erase(std::remove_if(it->second.begin(), it->second.end(),
-                                    [&](const PageText& p) { return p.day == day; }),
-                     it->second.end());
-  }
-  std::vector<EchoCandidate> corpusOf(const UserId& user) override {
-    auto it = corpus.find(user.str());
-    if (it == corpus.end()) return {};
-    return it->second;
-  }
-  std::vector<LocalDate> triggersSince(const UserId& user, std::uint64_t) override {
-    auto it = triggers.find(user.str());
-    if (it == triggers.end()) return {};
-    return it->second;
-  }
-  void saveEcho(const UserId& user, const LocalDate& triggerDay, const EchoMatch& match) override {
-    savedEchoes.push_back(SavedEcho{user, triggerDay, match});
-  }
-
-  std::vector<StoredEcho> echoesFor(const UserId& user, const LocalDate& from,
-                                    const LocalDate& to) override {
-    std::vector<StoredEcho> out;
-    for (const SavedEcho& e : savedEchoes) {
-      if (!(e.user == user)) continue;
-      if (e.triggerDay < from || to < e.triggerDay) continue;
-      out.push_back(StoredEcho{e.triggerDay, e.match.matchDay, e.match.triggerSpan, e.match.matchSpan,
-                               e.match.score});
+  std::vector<std::vector<float>> embed(const std::vector<std::string>& passages) override {
+    if (failNext) return {};
+    std::vector<std::vector<float>> out;
+    out.reserve(passages.size());
+    for (const std::string& body : passages) {
+      std::vector<float> counts(26, 0.0f);
+      for (char raw : body) {
+        const char c = static_cast<char>(std::tolower(static_cast<unsigned char>(raw)));
+        if (c >= 'a' && c <= 'z') counts[c - 'a'] += 1.0f;
+      }
+      double norm = 0.0;
+      for (float v : counts) norm += static_cast<double>(v) * v;
+      if (norm > 0.0)
+        for (float& v : counts) v = static_cast<float>(v / std::sqrt(norm));
+      out.push_back(counts);
     }
     return out;
   }
-  void dismiss(const UserId& user, const LocalDate& triggerDay) override {
-    savedEchoes.erase(std::remove_if(savedEchoes.begin(), savedEchoes.end(),
-                                     [&](const SavedEcho& e) {
-                                       return e.user == user && e.triggerDay == triggerDay;
-                                     }),
-                      savedEchoes.end());
+};
+
+// Keeps or rejects every pairing wholesale, and can fail the CALL — which the sweep must treat as
+// completely different from finding nothing, since only one of the two owes the page a retry.
+struct FakeCurator : Curator {
+  bool isConfigured = true;
+  bool callSucceeds = true;
+  std::string failure = "transport";
+  bool keepEverything = true;
+  bool speakerIsSelf = true;
+  int calls = 0;
+
+  bool configured() const override { return isConfigured; }
+  std::string version() const override { return "fake-curator-v1"; }
+
+  Curation curate(const std::vector<Vectored>&, const std::vector<Vectored>&,
+                  const std::vector<Pairing>& proposed) override {
+    ++calls;
+    Curation curation;
+    curation.ok = callSucceeds;
+    curation.failure = failure;
+    if (!callSucceeds) return curation;
+    for (const Pairing& pairing : proposed)
+      curation.verdicts.push_back(Verdict{pairing.triggerSpanId, pairing.matchSpanId,
+                                          keepEverything, 0.9f, speakerIsSelf});
+    return curation;
+  }
+};
+
+// An in-memory EchoRepository the sweep's tests drive by hand. Spans and echoes are stored the way
+// the real adapter stores them — replace-a-page-atomically, identities minted on demand — so a test
+// asserting "the pass carried this identity forward" is asserting the same thing production does.
+class FakeEchoRepository : public EchoRepository {
+public:
+  struct StoredSpan {
+    LocalDate day;
+    SpanWrite write;
+    std::string embedVersion;
+  };
+
+  std::vector<EchoUser> users;
+  std::map<std::string, std::vector<DuePage>> due;
+  std::map<std::string, std::vector<StoredSpan>> spans;
+  std::map<std::string, std::vector<SpanPair>> dismissed;
+  std::map<std::string, CuratedEchoes> echoesByPage;   // "user|day" -> what the pass wrote
+  std::vector<CurationOutcome> outcomes;
+  std::map<std::string, std::vector<LocalDate>> inbound;
+  std::uint64_t stamp = 1;
+  std::int64_t nextSpanId = 100;
+
+  static std::string pageKey(const UserId& user, const LocalDate& day) {
+    return user.str() + "|" + day.iso();
+  }
+
+  void addUser(const UserId& user, const Email& email) { users.push_back(EchoUser{user, email}); }
+  void addDuePage(const UserId& user, const LocalDate& day, const std::string& body) {
+    due[user.str()].push_back(DuePage{day, body, Source::typed, stamp, 0});
+  }
+  // Plant an already-derived page, the way a night that ran before this one would have left it.
+  void plantSpan(const UserId& user, const LocalDate& day, std::int64_t spanId,
+                 const std::string& text, const std::vector<float>& vector) {
+    spans[user.str()].push_back(
+        StoredSpan{day, SpanWrite{spanId, Passage{0, 0, static_cast<int>(text.size()), text},
+                                  vector}, "fake-embedder-v1"});
+  }
+
+  std::vector<EchoUser> activeSince(std::uint64_t) override { return users; }
+  std::uint64_t corpusStamp(const UserId&) override { return stamp; }
+
+  std::vector<DuePage> duePages(const UserId& user, std::uint64_t) override {
+    auto it = due.find(user.str());
+    if (it == due.end()) return {};
+    return it->second;
+  }
+
+  std::vector<KnownSpan> spansOf(const UserId& user, const LocalDate& day) override {
+    std::vector<KnownSpan> known;
+    auto it = spans.find(user.str());
+    if (it == spans.end()) return known;
+    for (const StoredSpan& stored : it->second)
+      if (stored.day == day) known.push_back(KnownSpan{stored.write.spanId, stored.write.passage.text});
+    return known;
+  }
+
+  void replaceSpans(const UserId& user, const LocalDate& day, const std::vector<SpanWrite>& writes,
+                    const std::string& embedVersion, std::uint64_t) override {
+    std::vector<StoredSpan>& all = spans[user.str()];
+    all.erase(std::remove_if(all.begin(), all.end(),
+                             [&](const StoredSpan& s) { return s.day == day; }),
+              all.end());
+    for (SpanWrite write : writes) {
+      if (write.spanId == 0) write.spanId = nextSpanId++;
+      all.push_back(StoredSpan{day, write, embedVersion});
+    }
+  }
+
+  std::vector<Vectored> corpusOf(const UserId& user, const std::string& embedVersion) override {
+    std::vector<Vectored> corpus;
+    auto it = spans.find(user.str());
+    if (it == spans.end()) return corpus;
+    for (const StoredSpan& stored : it->second) {
+      if (stored.embedVersion != embedVersion) continue;
+      corpus.push_back(Vectored{stored.write.spanId, stored.day, stored.write.passage.text,
+                                stored.write.vector});
+    }
+    return corpus;
+  }
+
+  std::vector<SpanPair> dismissalsOn(const UserId& user, const LocalDate& day) override {
+    auto it = dismissed.find(pageKey(user, day));
+    if (it == dismissed.end()) return {};
+    return it->second;
+  }
+  void dismiss(const UserId& user, std::int64_t triggerSpanId, std::int64_t matchSpanId) override {
+    for (const auto& [key, page] : echoesByPage) {
+      if (key.rfind(user.str() + "|", 0) != 0) continue;
+      for (const EchoRow& row : page.rows)
+        if (row.triggerSpanId == triggerSpanId && row.matchSpanId == matchSpanId)
+          dismissed[key].push_back(SpanPair{triggerSpanId, matchSpanId});
+    }
+  }
+
+  void replaceEchoes(const UserId& user, const LocalDate& day,
+                     const CuratedEchoes& curated) override {
+    echoesByPage[pageKey(user, day)] = curated;
+  }
+  void recordCuration(const UserId&, const LocalDate&, const CurationOutcome& outcome) override {
+    outcomes.push_back(outcome);
+  }
+
+  std::vector<LocalDate> inboundPages(const UserId& user, const LocalDate& day) override {
+    auto it = inbound.find(pageKey(user, day));
+    if (it == inbound.end()) return {};
+    return it->second;
+  }
+
+  std::vector<EchoView> echoesFor(const UserId& user, const LocalDate& from,
+                                  const LocalDate& to) override {
+    std::vector<EchoView> views;
+    for (const auto& [key, page] : echoesByPage) {
+      if (key.rfind(user.str() + "|", 0) != 0) continue;
+      const LocalDate triggerDay{key.substr(user.str().size() + 1)};
+      if (triggerDay < from || to < triggerDay) continue;
+      for (const EchoRow& row : page.rows)
+        views.push_back(EchoView{triggerDay, row.triggerSpanId, "", row.matchDay, row.matchSpanId,
+                                 "", row.matchIsSelf, Source::typed, 0});
+    }
+    return views;
+  }
+
+  // What one page ended up carrying, for a test that wants to assert the whole set at once.
+  std::vector<EchoRow> rowsOn(const UserId& user, const LocalDate& day) {
+    auto it = echoesByPage.find(pageKey(user, day));
+    if (it == echoesByPage.end()) return {};
+    return it->second.rows;
   }
 };
 

@@ -3,17 +3,26 @@
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
 
+#include <trantor/utils/Logger.h>
+
 #include <chrono>
 #include <cstdint>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace wm {
 
 namespace {
 constexpr std::uint64_t kDayMs = 24ULL * 60 * 60 * 1000;
+
+// How much of a passage an unentitled reader is shown. Enough to recognise their own sentence and
+// know it is genuinely theirs; not enough to be the feature. The withheld count travels with it so
+// the cut is stated rather than disguised.
+constexpr std::size_t kFreeWords = 8;
 
 drogon::HttpResponsePtr noContent() {
   auto response = drogon::HttpResponse::newHttpResponse();
@@ -21,31 +30,51 @@ drogon::HttpResponsePtr noContent() {
   return response;
 }
 
-// One echo as the reader sees it. The score never leaves the server: canon says an echo is a
-// presence, not a number — the row's ranking stays a storage concern, and the reply carries only
-// the two days and the two spans the surface underlines.
-Json::Value toJson(const StoredEcho& echo) {
-  Json::Value span(Json::arrayValue);
-  span.append(echo.triggerSpan.first);
-  span.append(echo.triggerSpan.second);
-  Json::Value matchSpan(Json::arrayValue);
-  matchSpan.append(echo.matchSpan.first);
-  matchSpan.append(echo.matchSpan.second);
+std::vector<std::string> wordsOf(const std::string& text) {
+  std::istringstream stream(text);
+  std::vector<std::string> words;
+  for (std::string word; stream >> word;) words.push_back(word);
+  return words;
+}
 
-  Json::Value body(Json::objectValue);
-  body["triggerDay"] = echo.triggerDay.iso();
-  body["matchDay"] = echo.matchDay.iso();
-  body["triggerSpan"] = span;
-  body["matchSpan"] = matchSpan;
-  return body;
+// The honest cut. An entitled reader gets the passage; everyone else gets its real opening words
+// and the number withheld — which is the truth about what exists, rather than the older behaviour
+// of hiding that anything was found at all.
+void appendMatch(Json::Value& into, const EchoView& echo, bool entitled) {
+  Json::Value match(Json::objectValue);
+  match["day"] = echo.matchDay.iso();
+  match["isSelf"] = echo.matchIsSelf;
+  match["source"] = echo.matchSource == Source::spoken ? "spoken" : "typed";
+
+  if (entitled) {
+    match["text"] = echo.matchText;
+    match["withheldWords"] = 0;
+    into.append(match);
+    return;
+  }
+
+  const std::vector<std::string> words = wordsOf(echo.matchText);
+  const std::size_t shown = words.size() < kFreeWords ? words.size() : kFreeWords;
+  std::string prefix;
+  for (std::size_t i = 0; i < shown; ++i) {
+    if (i > 0) prefix += ' ';
+    prefix += words[i];
+  }
+  match["text"] = prefix;
+  match["withheldWords"] = static_cast<int>(words.size() - shown);
+  into.append(match);
 }
 
 Json::Value toJson(const EchoSweepReport& report) {
   Json::Value body(Json::objectValue);
   body["usersScanned"] = report.usersScanned;
-  body["vectorsComputed"] = report.vectorsComputed;
-  body["echoesFound"] = report.echoesFound;
-  body["skippedNotSubscribed"] = report.skippedNotSubscribed;
+  body["pagesDerived"] = report.pagesDerived;
+  body["pagesSkippedRefrain"] = report.pagesSkippedRefrain;
+  body["passagesEmbedded"] = report.passagesEmbedded;
+  body["echoesWritten"] = report.echoesWritten;
+  body["pagesFailed"] = report.pagesFailed;
+  body["inboundEnqueued"] = report.inboundEnqueued;
+  body["pagesOverBudget"] = report.pagesOverBudget;
   return body;
 }
 
@@ -70,18 +99,18 @@ std::optional<std::uint64_t> msOf(const drogon::HttpRequestPtr& req,
 }
 
 EchoApi::EchoApi(std::shared_ptr<EchoRepository> echoes, std::shared_ptr<EchoSweep> sweep,
-                 std::shared_ptr<AuthService> auth, std::string adminToken)
+                 std::shared_ptr<AuthService> auth, std::shared_ptr<Entitlements> entitlements,
+                 std::string adminToken)
     : echoes_(std::move(echoes)), sweep_(std::move(sweep)), auth_(std::move(auth)),
-      adminToken_(std::move(adminToken)) {}
+      entitlements_(std::move(entitlements)), adminToken_(std::move(adminToken)) {}
 
 void EchoApi::listEchoes(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<User> caller = callerUserOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to read your echoes"));
     return;
   }
-  // No window asked for means the whole shelf. A non-subscriber's list is empty because nothing
-  // was ever computed for them — "absent, not locked" needs no entitlement check here.
+
   const std::string from = req->getParameter("from");
   const std::string to = req->getParameter("to");
   std::optional<LocalDate> first;
@@ -94,30 +123,80 @@ void EchoApi::listEchoes(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
     return;
   }
 
-  Json::Value echoes(Json::arrayValue);
-  for (const StoredEcho& echo : echoes_->echoesFor(*caller, *first, *last))
-    echoes.append(toJson(echo));
+  const bool entitled = entitlements_->hasWindmillOne(caller->id, caller->email.value);
+
+  // Grouped by the page that carries them: the canon renders one card per page, and the ordering
+  // the repository returns (newest trigger first, then each page's matches newest first) is the
+  // order the surface draws.
+  Json::Value pages(Json::arrayValue);
+  std::string openDay;
+  Json::Value page(Json::objectValue);
+  Json::Value matches(Json::arrayValue);
+  for (const EchoView& echo : echoes_->echoesFor(caller->id, *first, *last)) {
+    if (echo.triggerDay.iso() != openDay) {
+      if (!openDay.empty()) {
+        page["matches"] = matches;
+        pages.append(page);
+      }
+      openDay = echo.triggerDay.iso();
+      page = Json::Value(Json::objectValue);
+      page["day"] = openDay;
+      page["entitled"] = entitled;
+      matches = Json::Value(Json::arrayValue);
+    }
+    appendMatch(matches, echo, entitled);
+  }
+  if (!openDay.empty()) {
+    page["matches"] = matches;
+    pages.append(page);
+  }
+
   Json::Value body(Json::objectValue);
-  body["echoes"] = echoes;
+  body["pages"] = pages;
   cb(jsonResponse(body));
 }
 
 void EchoApi::dismiss(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
-                      const std::string& date) {
+                      const std::string& triggerDay, const std::string& matchDay) {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to dismiss an echo"));
     return;
   }
-  std::optional<LocalDate> day;
+  std::optional<LocalDate> trigger;
+  std::optional<LocalDate> match;
   try {
-    day = LocalDate{date};
+    trigger = LocalDate{triggerDay};
+    match = LocalDate{matchDay};
   } catch (const InvalidPage&) {
     cb(error(drogon::k400BadRequest, "bad date"));
     return;
   }
-  // Owner-scoped and idempotent: a day with no echo dismisses nothing, and answers the same 204.
-  echoes_->dismiss(*caller, *day);
+
+  // The reader waves away a pairing between two DAYS; storage keys dismissal on the passage pair,
+  // because an ordinal shifts the moment a sentence is inserted and a position-keyed dismissal
+  // would quietly resurrect the very echo they retired. Resolving here keeps that detail out of
+  // the surface without letting it leak into the URL.
+  for (const EchoView& echo : echoes_->echoesFor(*caller, *trigger, *trigger)) {
+    if (echo.matchDay.iso() != match->iso()) continue;
+    echoes_->dismiss(*caller, echo.triggerSpanId, echo.matchSpanId);
+  }
+  cb(noContent());   // idempotent: a pairing that is already gone dismisses nothing, and says 204
+}
+
+void EchoApi::opened(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                     const std::string& triggerDay, const std::string& matchDay) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in"));
+    return;
+  }
+  // The one positive relevance signal this feature has. Dismissal alone cannot tell "wrong match"
+  // from "right match, bad night", so a tap that opened the older page is the only clean label
+  // available — and it is on screen already. Logged rather than tabled for now; it wants its own
+  // table before anyone tries to learn from it.
+  LOG_INFO << "journal echo opened: user=" << caller->str() << " trigger=" << triggerDay
+           << " match=" << matchDay;
   cb(noContent());
 }
 
@@ -144,8 +223,7 @@ void EchoApi::adminSweep(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   }
 
   // An unstated instant is the real one — this edge owns no Clock, and the operator door reading
-  // the wall on the way in is exactly the boundary's job. The look-back defaults to one nightly
-  // window: everything touched in the last 24 hours.
+  // the wall on the way in is exactly the boundary's job.
   std::uint64_t asOfMs = *asOf;
   if (asOfMs == 0)
     asOfMs = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(

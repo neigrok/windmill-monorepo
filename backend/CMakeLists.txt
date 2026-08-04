@@ -184,6 +184,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     platform/adapters/postgres/PgServerErrorRepository.cpp
     platform/adapters/crypto/OpenSslTokenGenerator.cpp
     platform/adapters/email/ResendClient.cpp
+    platform/adapters/llm/AnthropicClient.cpp
     platform/adapters/email/ResendEmailSender.cpp
     platform/adapters/email/ResendSignature.cpp
     platform/adapters/email/ResendWebhookApi.cpp
@@ -253,6 +254,8 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     products/journal/adapters/http/EchoApi.cpp
     products/journal/adapters/http/VoiceApi.cpp
     products/journal/adapters/llm/OpenAiTranscriber.cpp
+    products/journal/adapters/llm/AnthropicCurator.cpp
+    products/journal/adapters/llm/HttpEmbedder.cpp
     products/journal/routes.cpp)
 
   # Gym adapters: the Pg storage, the JSON wire boundary, the REST surface, and the route seam.
@@ -319,6 +322,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/products/journal/adapters/http/NudgeApiTest.cpp
     test/products/journal/adapters/http/EchoApiTest.cpp
     test/products/journal/adapters/http/VoiceApiTest.cpp
+    test/products/journal/adapters/llm/AnthropicCuratorTest.cpp
     test/products/journal/adapters/postgres/PgJournalRepositoryTest.cpp
     test/products/gym/adapters/http/GymApiTest.cpp
     test/products/gym/adapters/postgres/PgTrainingRepositoryTest.cpp)

@@ -3,6 +3,15 @@
 // served from our own origin (env below), so building the index and running a query never send a byte
 // about the writer anywhere.
 //
+// KNOWN GAP, and the sentence above is narrower than it looks. No writer data leaves — but the
+// WASM RUNTIME does not come from our origin. `env.backends.onnx.wasm.wasmPaths` is left at its
+// default, which is a jsdelivr CDN URL, so onnxruntime-web fetches its .wasm from a third party at
+// first use. Proven by blocking DNS: "no available backend found. ERR: [wasm] Failed to fetch
+// dynamically imported module: https://cdn.jsdelivr.net/npm/@huggingface/transformers@.../
+// ort-wasm-simd-threaded.jsep.mjs". If jsdelivr is unreachable the neural index silently never
+// builds and search falls back to lexical with no visible failure. Closing it: copy the two ORT
+// wasm files into public/ and set `env.backends.onnx.wasm.wasmPaths` beside the lines below.
+//
 // Runs on wasm (CPU), deliberately not WebGPU: onnxruntime-web's WebGPU path miscomputes this
 // quantized model — it returns plausible but wrong embeddings that collapse the ranking (verified
 // in-browser: unrelated lines outscored real matches under WebGPU, matched node exactly under wasm).

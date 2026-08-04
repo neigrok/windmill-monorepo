@@ -97,9 +97,15 @@ The capsule lane is reserved by the shell with a safe-area inset rather than an 
 shell reserves cannot be forgotten by an app. A room says what colour it is with `roomChrome(_:)` and
 the shell dresses the capsule to match — the one thing a room tells the shell about its skin.
 
-**Appearance** (You → Light · Dark · System) sets the shell and only the shell: the hub, the
-switcher, You, Windmill One and every sheet. Rooms keep their own skin — journal's night-or-day
-choice stays in journal's bar. It needs no branch at any call site because the role tokens are
+**Appearance** (You → Light · Dark · System) is the one place light-or-dark is chosen, for the whole
+app: the hub, the switcher, You, Windmill One, every sheet **and every room**. A room owns its
+palette — journal answers dark with its night canvas and light with warm parchment — but not the
+choice, and no room carries a theme control of its own.
+
+The shell states the scheme **twice**, and both are load-bearing: `preferredColorScheme` travels up
+to the window (flipping the UIKit traits, and with them every adaptive token) but does not write
+`\.colorScheme` back into the subtree that declared it. Only the environment override reaches the
+rooms. Journal stayed night under Light until that was added. It needs no branch at any call site because the role tokens are
 aliases onto an *adaptive* neutral ramp, the same structure `tokens/colors.css` uses under
 `[data-theme="dark"]`: `surfaceCanvas` IS `neutral50`, in both skins.
 

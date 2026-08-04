@@ -30,3 +30,4 @@ apps/android/local.properties
 # Secrets — never commit
 .env
 *.local
+build-*/

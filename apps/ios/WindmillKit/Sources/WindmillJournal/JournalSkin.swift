@@ -47,21 +47,6 @@ public struct JournalSkin {
 
 extension JournalSkin: Equatable {}
 
-// Which skin is on. Device-local and deliberately NOT the app's global appearance — the journal is
-// the one room that is night by default while everything else stays as the system left it.
-public enum JournalTheme: String, CaseIterable {
-    case night, day
-
-    public static let storageKey = "windmill:journal-theme"
-
-    public var skin: JournalSkin { self == .night ? .night : .day }
-    public var flipped: JournalTheme { self == .night ? .day : .night }
-
-    // What the control offers, which is the other side — a button says where it takes you.
-    public var otherLabel: String { self == .night ? "Day" : "Night" }
-    public var otherSymbol: String { self == .night ? "sun.max" : "moon" }
-}
-
 // Reading a skin out of the environment keeps every glyph free of a `skin:` parameter it would only
 // pass along. The default is night so a view rendered outside the room still paints correctly.
 private struct JournalSkinKey: EnvironmentKey {

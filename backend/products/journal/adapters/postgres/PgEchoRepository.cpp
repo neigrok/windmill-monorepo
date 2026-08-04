@@ -1,58 +1,117 @@
 #include "products/journal/adapters/postgres/PgEchoRepository.h"
 
 #include "platform/adapters/postgres/PgConnection.h"
+#include "products/journal/domain/Passage.h"
 
 #include <pqxx/pqxx>
 
-#include <cstdio>
-#include <cstdlib>
+#include <openssl/sha.h>
+
+#include <array>
+#include <bit>
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <utility>
 
 namespace wm {
 
 namespace {
-// Vectors cross the wire as text in BOTH directions: written as a "{f,f,...}" literal bound as
-// $n::real[], read back through vector::text and parsed here. pqxx has no portable float-array
-// binding, and one shared text dialect keeps the mac and CI builds off pqxx's array readers
-// entirely — the same reasoning that keeps day::text and epoch-ms bigints everywhere else.
-// %.9g is float's max_digits10, so a stored vector round-trips bit-exact.
-std::string arrayLiteral(const std::vector<float>& vector) {
-  std::string text = "{";
-  char number[32];
-  for (std::size_t i = 0; i < vector.size(); ++i) {
-    std::snprintf(number, sizeof number, "%.9g", static_cast<double>(vector[i]));
-    if (i > 0) text += ',';
-    text += number;
+constexpr char kHexDigits[] = "0123456789abcdef";
+
+std::string hexOf(const unsigned char* bytes, std::size_t count) {
+  std::string hex(count * 2, '0');
+  for (std::size_t at = 0; at < count; ++at) {
+    hex[2 * at] = kHexDigits[bytes[at] >> 4];
+    hex[2 * at + 1] = kHexDigits[bytes[at] & 0x0F];
   }
-  text += '}';
-  return text;
+  return hex;
 }
 
-std::vector<float> parseVector(const std::string& text) {
+unsigned nibbleOf(char digit) {
+  if (digit >= '0' && digit <= '9') return static_cast<unsigned>(digit - '0');
+  if (digit >= 'a' && digit <= 'f') return static_cast<unsigned>(digit - 'a') + 10;
+  if (digit >= 'A' && digit <= 'F') return static_cast<unsigned>(digit - 'A') + 10;
+  return 0;
+}
+
+// A vector is four bytes per dimension, LITTLE-ENDIAN — the low byte of the IEEE-754 bit pattern
+// first — shifted out a byte at a time rather than memcpy'd, so the bytes on disk are the same
+// bytes on any host and a dump stays readable if we ever build somewhere big-endian.
+//
+// It travels as its own hex text with an explicit decode()/encode() at the SQL boundary, not as a
+// bytea literal: that keeps the format independent of the server's bytea_output setting and off
+// pqxx's binary readers entirely, which matters because the dev box is on libpqxx 8 and the CI
+// image builds 7.10. Hex doubles the wire bytes against true binary (24.6 MB against 12.3 MB for
+// a 8,000-passage corpus), and still costs a third of the 39.6 MB the float-array-through-::text
+// dialect did, at roughly a thirtieth of the serialize and parse time. Binary results are an
+// optimisation behind this function, never a schema change.
+std::string hexOfVector(const std::vector<float>& vector) {
+  std::string hex;
+  hex.reserve(vector.size() * 8);
+  for (const float value : vector) {
+    const std::uint32_t bits = std::bit_cast<std::uint32_t>(value);
+    for (int shift = 0; shift < 32; shift += 8) {
+      const unsigned byte = (bits >> shift) & 0xFFu;
+      hex += kHexDigits[byte >> 4];
+      hex += kHexDigits[byte & 0x0F];
+    }
+  }
+  return hex;
+}
+
+std::vector<float> vectorFrom(const std::string& hex) {
   std::vector<float> values;
-  const char* cursor = text.c_str();
-  if (*cursor == '{') ++cursor;
-  while (*cursor != '\0' && *cursor != '}') {
-    char* after = nullptr;
-    const float value = std::strtof(cursor, &after);
-    if (after == cursor) break;   // not a number — stop rather than spin on garbage
-    values.push_back(value);
-    cursor = after;
-    if (*cursor == ',') ++cursor;
+  values.reserve(hex.size() / 8);
+  for (std::size_t at = 0; at + 8 <= hex.size(); at += 8) {
+    std::uint32_t bits = 0;
+    for (int index = 0; index < 4; ++index) {
+      const std::uint32_t byte =
+          (nibbleOf(hex[at + 2 * index]) << 4) | nibbleOf(hex[at + 2 * index + 1]);
+      bits |= byte << (8 * index);
+    }
+    values.push_back(std::bit_cast<float>(bits));
   }
   return values;
 }
 
-// Templated on the row type: pqxx names it row_ref on macOS and row on the CI's Linux build.
+// The identity of a passage, digested. Normalised first — a dismissal keyed on raw text would be
+// undone by a re-flowed line, and a dismissed echo coming back is the one failure this feature
+// cannot afford.
+std::string hashOf(const std::string& text) {
+  const std::string identity = normalizedForIdentity(text);
+  std::array<unsigned char, SHA256_DIGEST_LENGTH> digest{};
+  SHA256(reinterpret_cast<const unsigned char*>(identity.data()), identity.size(), digest.data());
+  return hexOf(digest.data(), digest.size());
+}
+
+std::string statusText(CurationStatus status) {
+  switch (status) {
+    case CurationStatus::ok: return "ok";
+    case CurationStatus::emptyOk: return "empty_ok";
+    case CurationStatus::transport: return "transport";
+    case CurationStatus::rateLimited: return "rate_limited";
+    case CurationStatus::truncated: return "truncated";
+    case CurationStatus::schemaInvalid: return "schema_invalid";
+    case CurationStatus::refused: return "refused";
+  }
+  return "transport";   // an unrecognised status reads as a failure, never as a page that is done
+}
+
+// Templated on the row type: pqxx names it row_ref on macOS and row on the CI's Linux build, so
+// binding it concretely compiles on one and fails on the other.
 template <typename Row>
-StoredEcho echoFrom(const Row& row) {
-  return StoredEcho{
+EchoView viewFrom(const Row& row) {
+  return EchoView{
       LocalDate{row["trigger_day"].template as<std::string>()},
+      row["trigger_span_id"].template as<std::int64_t>(),
+      row["trigger_text"].template as<std::string>(),
       LocalDate{row["match_day"].template as<std::string>()},
-      {row["trigger_lo"].template as<int>(), row["trigger_hi"].template as<int>()},
-      {row["match_lo"].template as<int>(), row["match_hi"].template as<int>()},
-      row["score"].template as<float>()};
+      row["match_span_id"].template as<std::int64_t>(),
+      row["match_text"].template as<std::string>(),
+      row["match_is_self"].template as<bool>(),
+      parseSource(row["match_source"].template as<std::string>()),
+      row["days_earlier"].template as<int>()};
 }
 }
 
@@ -78,64 +137,222 @@ std::vector<EchoUser> PgEchoRepository::activeSince(std::uint64_t sinceMs) {
   return users;
 }
 
-std::vector<PageText> PgEchoRepository::pagesNeedingVector(const UserId& user) {
-  // Missing or stale: no vector row at all, or one computed from an older body (body_stamp_ms
-  // records the page HLC ms the embedding was made from, so staleness is a plain bigint compare).
+std::uint64_t PgEchoRepository::corpusStamp(const UserId& user) {
+  // The corpus stamp IS the newest passage stamp the user has — no separate counter to bump and so
+  // no way for one to drift out of step with the spans it claims to describe. A user with no spans
+  // yet reads 0, which makes every page of theirs stale and is exactly right.
   pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result rows = txn.exec_params(
-      "SELECT p.day::text AS day, p.body, p.stamp_ms "
-      "FROM journal_page p LEFT JOIN journal_page_vector v USING (user_id, day) "
-      "WHERE p.user_id = $1::uuid AND (v.day IS NULL OR v.body_stamp_ms < p.stamp_ms) "
-      "ORDER BY p.day",
+      "SELECT coalesce(max(body_stamp_ms), 0)::bigint AS stamp FROM journal_span "
+      "WHERE user_id = $1::uuid",
       user.str());
+  return rows.empty() ? 0 : rows[0]["stamp"].as<std::uint64_t>();
+}
 
-  std::vector<PageText> pages;
+std::vector<DuePage> PgEchoRepository::duePages(const UserId& user, std::uint64_t corpusStamp) {
+  // Three ways to be owed a pass: never derived, a body that moved past the derivation, or a
+  // corpus that moved past it. The third is what makes a backfill work — write "i like c++" in May,
+  // add the January page in July, and the May page has to learn January exists even though its own
+  // body never changed.
+  pqxx::work txn{pgThreadConnection(connString_)};
+  pqxx::result rows = txn.exec_params(
+      "SELECT p.day::text AS day, p.body, p.source, p.stamp_ms, coalesce(c.attempts, 0) AS attempts "
+      "FROM journal_page p "
+      "LEFT JOIN journal_page_curation c ON c.user_id = p.user_id AND c.day = p.day "
+      "WHERE p.user_id = $1::uuid "
+      "AND (c.day IS NULL OR c.body_stamp_ms < p.stamp_ms OR c.corpus_stamp < $2) "
+      "ORDER BY p.day",
+      user.str(), static_cast<long long>(corpusStamp));
+
+  std::vector<DuePage> pages;
   pages.reserve(rows.size());
   for (const auto& row : rows)
-    pages.push_back(PageText{LocalDate{row["day"].as<std::string>()},
-                             row["body"].as<std::string>(),
-                             row["stamp_ms"].as<std::uint64_t>()});
+    pages.push_back(DuePage{LocalDate{row["day"].as<std::string>()},
+                            row["body"].as<std::string>(),
+                            parseSource(row["source"].as<std::string>()),
+                            row["stamp_ms"].as<std::uint64_t>(),
+                            row["attempts"].as<int>()});
   return pages;
 }
 
-void PgEchoRepository::saveVector(const UserId& user, const LocalDate& day,
-                                  const std::vector<float>& vector, std::uint64_t bodyStampMs) {
+std::vector<KnownSpan> PgEchoRepository::spansOf(const UserId& user, const LocalDate& day) {
+  // Ordered by ord because reconciliation matches duplicated text within a page in document order —
+  // two identical lines have to keep two stable, distinct identities rather than collapse into one.
   pqxx::work txn{pgThreadConnection(connString_)};
-  txn.exec_params(
-      "INSERT INTO journal_page_vector (user_id, day, vector, body_stamp_ms) "
-      "VALUES ($1::uuid, $2::date, $3::real[], $4) "
-      "ON CONFLICT (user_id, day) DO UPDATE "
-      "SET vector = EXCLUDED.vector, body_stamp_ms = EXCLUDED.body_stamp_ms, created_at = now()",
-      user.str(), day.iso(), arrayLiteral(vector), static_cast<long long>(bodyStampMs));
+  pqxx::result rows = txn.exec_params(
+      "SELECT span_id, text FROM journal_span "
+      "WHERE user_id = $1::uuid AND day = $2::date ORDER BY ord",
+      user.str(), day.iso());
+
+  std::vector<KnownSpan> spans;
+  spans.reserve(rows.size());
+  for (const auto& row : rows)
+    spans.push_back(KnownSpan{row["span_id"].as<std::int64_t>(), row["text"].as<std::string>()});
+  return spans;
+}
+
+void PgEchoRepository::replaceSpans(const UserId& user, const LocalDate& day,
+                                    const std::vector<SpanWrite>& spans,
+                                    const std::string& embedVersion, std::uint64_t bodyStampMs) {
+  // Delete then insert, in one transaction: a day's passages are always a complete set, and a
+  // carried span_id is re-inserted under the identity the caller chose. Nothing here decides which
+  // identities survive — that judgement is made in the domain and this only records it.
+  //
+  // No foreign key ties journal_echo to these rows, so an echo aimed at a passage that just died is
+  // orphaned rather than deleted. It is invisible immediately (echoesFor inner-joins both spans) and
+  // is swept when its own page is next derived, which the reverse edge is what schedules.
+  pqxx::work txn{pgThreadConnection(connString_)};
+  txn.exec_params("DELETE FROM journal_span WHERE user_id = $1::uuid AND day = $2::date",
+                  user.str(), day.iso());
+
+  for (const SpanWrite& span : spans)
+    txn.exec_params(
+        "INSERT INTO journal_span "
+        "(user_id, span_id, day, ord, lo, hi, text, text_sha256, vector, embed_version, "
+        "body_stamp_ms) "
+        "VALUES ($1::uuid, coalesce(nullif($2::bigint, 0), nextval('journal_span_id_seq')), "
+        "$3::date, $4, $5, $6, $7, decode($8, 'hex'), decode($9, 'hex'), $10, $11)",
+        user.str(), static_cast<long long>(span.spanId), day.iso(), span.passage.ord,
+        span.passage.lo, span.passage.hi, span.passage.text, hashOf(span.passage.text),
+        hexOfVector(span.vector), embedVersion, static_cast<long long>(bodyStampMs));
+
   txn.commit();
 }
 
-std::vector<EchoCandidate> PgEchoRepository::corpusOf(const UserId& user) {
-  // The whole comparison set in one read — vector and body side by side, so the finder's spans
-  // point into exactly the text the vector was computed from.
+std::vector<Vectored> PgEchoRepository::corpusOf(const UserId& user,
+                                                 const std::string& embedVersion) {
+  // The whole comparison set, and not one page body with it: the corpus load is the entire cost of
+  // a night and a body is dead weight in it — the passage text is already here, and it is the only
+  // text an echo may ever quote.
   pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result rows = txn.exec_params(
-      "SELECT day::text AS day, v.vector::text AS vector, p.body "
-      "FROM journal_page_vector v JOIN journal_page p USING (user_id, day) "
-      "WHERE user_id = $1::uuid ORDER BY day",
-      user.str());
+      "SELECT span_id, day::text AS day, text, encode(vector, 'hex') AS vector "
+      "FROM journal_span WHERE user_id = $1::uuid AND embed_version = $2 ORDER BY day, ord",
+      user.str(), embedVersion);
 
-  std::vector<EchoCandidate> corpus;
+  std::vector<Vectored> corpus;
   corpus.reserve(rows.size());
   for (const auto& row : rows)
-    corpus.push_back(EchoCandidate{LocalDate{row["day"].as<std::string>()},
-                                   parseVector(row["vector"].as<std::string>()),
-                                   row["body"].as<std::string>()});
+    corpus.push_back(Vectored{row["span_id"].as<std::int64_t>(),
+                              LocalDate{row["day"].as<std::string>()},
+                              row["text"].as<std::string>(),
+                              vectorFrom(row["vector"].as<std::string>())});
   return corpus;
 }
 
-std::vector<LocalDate> PgEchoRepository::triggersSince(const UserId& user, std::uint64_t sinceMs) {
+std::vector<SpanPair> PgEchoRepository::dismissalsOn(const UserId& user,
+                                                     const LocalDate& triggerDay) {
+  // Dismissals are keyed on content, so this resolves them back into the span ids the pipeline is
+  // holding. Text repeats: every span carrying dismissed text is dismissed, which is the whole
+  // point of hashing rather than pinning to an id.
   pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result rows = txn.exec_params(
-      "SELECT day::text AS day FROM journal_page "
-      "WHERE user_id = $1::uuid AND (extract(epoch from updated_at) * 1000)::bigint > $2 "
-      "ORDER BY day",
-      user.str(), static_cast<long long>(sinceMs));
+      "SELECT st.span_id AS trigger_span_id, sm.span_id AS match_span_id "
+      "FROM journal_span st "
+      "JOIN journal_echo_dismissal d ON d.user_id = st.user_id AND d.trigger_hash = st.text_sha256 "
+      "JOIN journal_span sm ON sm.user_id = d.user_id AND sm.text_sha256 = d.match_hash "
+      "WHERE st.user_id = $1::uuid AND st.day = $2::date AND sm.day < $2::date",
+      user.str(), triggerDay.iso());
+
+  std::vector<SpanPair> pairs;
+  pairs.reserve(rows.size());
+  for (const auto& row : rows)
+    pairs.push_back(SpanPair{row["trigger_span_id"].as<std::int64_t>(),
+                             row["match_span_id"].as<std::int64_t>()});
+  return pairs;
+}
+
+void PgEchoRepository::dismiss(const UserId& user, std::int64_t triggerSpanId,
+                               std::int64_t matchSpanId) {
+  // Stored as the two passages' content, never as their ids, so the pair stays faded across an
+  // edit, a re-segmentation and a segmenter version bump. If either span has already gone, nothing
+  // is written and nothing needs to be: an echo whose passage no longer exists is already unshown.
+  pqxx::work txn{pgThreadConnection(connString_)};
+  txn.exec_params(
+      "INSERT INTO journal_echo_dismissal (user_id, trigger_hash, match_hash) "
+      "SELECT $1::uuid, st.text_sha256, sm.text_sha256 "
+      "FROM journal_span st, journal_span sm "
+      "WHERE st.user_id = $1::uuid AND st.span_id = $2 "
+      "AND sm.user_id = $1::uuid AND sm.span_id = $3 "
+      "ON CONFLICT DO NOTHING",
+      user.str(), static_cast<long long>(triggerSpanId), static_cast<long long>(matchSpanId));
+  txn.commit();
+}
+
+void PgEchoRepository::replaceEchoes(const UserId& user, const LocalDate& triggerDay,
+                                     const CuratedEchoes& curated) {
+  // Replace, additively. What goes is only what can no longer be shown — a row whose trigger or
+  // match passage died with the last re-derivation. A row the curator simply did not return this
+  // time is KEPT: the curator is not deterministic, and a typo fix must not silently destroy a
+  // chain the reader has already walked. created_at survives an update for the same reason; an
+  // echo re-affirmed tonight has been on the page since the night it was first found.
+  pqxx::work txn{pgThreadConnection(connString_)};
+  txn.exec_params(
+      "DELETE FROM journal_echo e WHERE e.user_id = $1::uuid AND e.trigger_day = $2::date AND ("
+      "NOT EXISTS (SELECT 1 FROM journal_span s "
+      "WHERE s.user_id = e.user_id AND s.span_id = e.trigger_span_id) "
+      "OR NOT EXISTS (SELECT 1 FROM journal_span s "
+      "WHERE s.user_id = e.user_id AND s.span_id = e.match_span_id))",
+      user.str(), triggerDay.iso());
+
+  for (const EchoRow& echo : curated.rows)
+    txn.exec_params(
+        "INSERT INTO journal_echo (user_id, trigger_day, trigger_span_id, match_day, match_span_id, "
+        "cosine, relation, match_is_self, curator_version, prompt_hash) "
+        "VALUES ($1::uuid, $2::date, $3, $4::date, $5, $6, $7, $8, $9, $10) "
+        "ON CONFLICT (user_id, trigger_span_id, match_span_id) DO UPDATE "
+        "SET trigger_day = EXCLUDED.trigger_day, match_day = EXCLUDED.match_day, "
+        "cosine = EXCLUDED.cosine, relation = EXCLUDED.relation, "
+        "match_is_self = EXCLUDED.match_is_self, curator_version = EXCLUDED.curator_version, "
+        "prompt_hash = EXCLUDED.prompt_hash",
+        user.str(), triggerDay.iso(), static_cast<long long>(echo.triggerSpanId),
+        echo.matchDay.iso(), static_cast<long long>(echo.matchSpanId), echo.cosine, echo.relation,
+        echo.matchIsSelf, curated.curatorVersion, curated.promptHash);
+
+  txn.commit();
+}
+
+void PgEchoRepository::recordCuration(const UserId& user, const LocalDate& day,
+                                      const CurationOutcome& outcome) {
+  pqxx::work txn{pgThreadConnection(connString_)};
+
+  // A failed pass records WHAT failed and leaves both stamps exactly where they were, so the page
+  // comes back as due on the next sweep. Advancing them here — the idiom the shipped vector path
+  // used, where completion and success were the same thing — loses the page permanently to one
+  // transient blip at 02:14.
+  if (!isSuccess(outcome.status)) {
+    txn.exec_params(
+        "INSERT INTO journal_page_curation (user_id, day, status, attempts, last_error, updated_at) "
+        "VALUES ($1::uuid, $2::date, $3, 1, $4, now()) "
+        "ON CONFLICT (user_id, day) DO UPDATE "
+        "SET status = EXCLUDED.status, attempts = journal_page_curation.attempts + 1, "
+        "last_error = EXCLUDED.last_error, updated_at = now()",
+        user.str(), day.iso(), statusText(outcome.status), outcome.error);
+    txn.commit();
+    return;
+  }
+
+  txn.exec_params(
+      "INSERT INTO journal_page_curation "
+      "(user_id, day, body_stamp_ms, corpus_stamp, status, attempts, last_error, updated_at) "
+      "VALUES ($1::uuid, $2::date, $3, $4, $5, 0, '', now()) "
+      "ON CONFLICT (user_id, day) DO UPDATE "
+      "SET body_stamp_ms = EXCLUDED.body_stamp_ms, corpus_stamp = EXCLUDED.corpus_stamp, "
+      "status = EXCLUDED.status, attempts = 0, last_error = '', updated_at = now()",
+      user.str(), day.iso(), static_cast<long long>(outcome.bodyStampMs),
+      static_cast<long long>(outcome.corpusStamp), statusText(outcome.status));
+  txn.commit();
+}
+
+std::vector<LocalDate> PgEchoRepository::inboundPages(const UserId& user,
+                                                      const LocalDate& matchDay) {
+  // The reverse edge, served by journal_echo_inbound: which pages are reaching into this one, and
+  // therefore have to be derived again now that its passages have moved.
+  pqxx::work txn{pgThreadConnection(connString_)};
+  pqxx::result rows = txn.exec_params(
+      "SELECT DISTINCT trigger_day::text AS day FROM journal_echo "
+      "WHERE user_id = $1::uuid AND match_day = $2::date ORDER BY day",
+      user.str(), matchDay.iso());
 
   std::vector<LocalDate> days;
   days.reserve(rows.size());
@@ -143,48 +360,36 @@ std::vector<LocalDate> PgEchoRepository::triggersSince(const UserId& user, std::
   return days;
 }
 
-void PgEchoRepository::saveEcho(const UserId& user, const LocalDate& triggerDay,
-                                const EchoMatch& match) {
-  // Recomputing a day replaces its echo outright — spans, score, and the dismissed flag alike: a
-  // re-found echo over an edited page is a NEW observation, not the one the reader waved away.
-  pqxx::work txn{pgThreadConnection(connString_)};
-  txn.exec_params(
-      "INSERT INTO journal_echo "
-      "(user_id, trigger_day, match_day, trigger_lo, trigger_hi, match_lo, match_hi, score) "
-      "VALUES ($1::uuid, $2::date, $3::date, $4, $5, $6, $7, $8) "
-      "ON CONFLICT (user_id, trigger_day, match_day) DO UPDATE "
-      "SET trigger_lo = EXCLUDED.trigger_lo, trigger_hi = EXCLUDED.trigger_hi, "
-      "match_lo = EXCLUDED.match_lo, match_hi = EXCLUDED.match_hi, "
-      "score = EXCLUDED.score, dismissed = false, created_at = now()",
-      user.str(), triggerDay.iso(), match.matchDay.iso(),
-      match.triggerSpan.first, match.triggerSpan.second,
-      match.matchSpan.first, match.matchSpan.second, match.score);
-  txn.commit();
-}
-
-std::vector<StoredEcho> PgEchoRepository::echoesFor(const UserId& user, const LocalDate& from,
-                                                    const LocalDate& to) {
+std::vector<EchoView> PgEchoRepository::echoesFor(const UserId& user, const LocalDate& from,
+                                                  const LocalDate& to) {
+  // Both spans join INNER: an echo whose passage no longer exists is not a row to be filtered
+  // later, it simply is not here. The dismissal check runs on content hashes rather than on ids,
+  // which is what makes a waved-away pair stay away through an edit.
+  //
+  // Ordered trigger day, then position on the page, then match day — oldest match first. Read
+  // top-down that list is reach ("this goes back to 2024"); newest-first the same rows read as
+  // accumulation ("and again, and again"). Same data, opposite rhetoric.
   pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result rows = txn.exec_params(
-      "SELECT trigger_day::text AS trigger_day, match_day::text AS match_day, "
-      "trigger_lo, trigger_hi, match_lo, match_hi, score "
-      "FROM journal_echo "
-      "WHERE user_id = $1::uuid AND trigger_day BETWEEN $2::date AND $3::date AND NOT dismissed "
-      "ORDER BY trigger_day DESC",
+      "SELECT e.trigger_day::text AS trigger_day, e.trigger_span_id, st.text AS trigger_text, "
+      "e.match_day::text AS match_day, e.match_span_id, sm.text AS match_text, "
+      "e.match_is_self, mp.source AS match_source, "
+      "(e.trigger_day - e.match_day) AS days_earlier "
+      "FROM journal_echo e "
+      "JOIN journal_span st ON st.user_id = e.user_id AND st.span_id = e.trigger_span_id "
+      "JOIN journal_span sm ON sm.user_id = e.user_id AND sm.span_id = e.match_span_id "
+      "JOIN journal_page mp ON mp.user_id = e.user_id AND mp.day = e.match_day "
+      "WHERE e.user_id = $1::uuid AND e.trigger_day BETWEEN $2::date AND $3::date "
+      "AND NOT EXISTS (SELECT 1 FROM journal_echo_dismissal d "
+      "WHERE d.user_id = e.user_id AND d.trigger_hash = st.text_sha256 "
+      "AND d.match_hash = sm.text_sha256) "
+      "ORDER BY e.trigger_day, st.ord, e.match_day",
       user.str(), from.iso(), to.iso());
 
-  std::vector<StoredEcho> echoes;
+  std::vector<EchoView> echoes;
   echoes.reserve(rows.size());
-  for (const auto& row : rows) echoes.push_back(echoFrom(row));
+  for (const auto& row : rows) echoes.push_back(viewFrom(row));
   return echoes;
-}
-
-void PgEchoRepository::dismiss(const UserId& user, const LocalDate& triggerDay) {
-  pqxx::work txn{pgThreadConnection(connString_)};
-  txn.exec_params(
-      "UPDATE journal_echo SET dismissed = true WHERE user_id = $1::uuid AND trigger_day = $2::date",
-      user.str(), triggerDay.iso());
-  txn.commit();
 }
 
 }

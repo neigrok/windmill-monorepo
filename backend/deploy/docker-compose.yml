@@ -43,6 +43,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      embedder:
+        condition: service_started
     environment:
       DATABASE_URL: postgresql://windmill:${POSTGRES_PASSWORD}@db:5432/windmill
       PORT: "8080"
@@ -59,6 +61,13 @@ services:
       # Journal voice (Talk), bought from OpenAI gpt-4o-transcribe. Empty → the transcribe route
       # answers 503 and the client hides Talk. Set it to arm voice for Windmill One subscribers.
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Journal echoes. BOTH boundaries must be wired or the nightly pass is a quiet no-op: the
+      # embedder sidecar below, and ANTHROPIC_API_KEY above (shared with paste-import — one account,
+      # two products asking it different questions). Unset URL → echoes stay dark, and nothing is
+      # written, so arming later costs a re-derivation and never a wrong row.
+      JOURNAL_EMBEDDER_URL: ${JOURNAL_EMBEDDER_URL:-http://embedder:8081}
+      # The operator's rehearsal door for one nightly pass. Unset → the route 403s, its resting state.
+      JOURNAL_ECHO_ADMIN_TOKEN: ${JOURNAL_ECHO_ADMIN_TOKEN:-}
       # Tending (server-side agent edits). Ships DARK: empty/absent → every run refuses with
       # "not turned on", the designed first face. Set to "true" to arm it once the agent loop lands.
       TENDING_ENABLED: ${TENDING_ENABLED:-}
@@ -119,6 +128,32 @@ services:
   # The standalone `mcp` service is retired: windmill_server now serves REST, the collab socket,
   # and MCP from one process against a single RoomRegistry, so an agent's edits and the web reader
   # share the same live room. (The windmill_mcp_http binary still builds for local/standalone use.)
+
+  # The journal echo embedder. Runs the SAME bge-small weights the browser downloads — the model
+  # is bind-mounted from ./web, the built site Caddy already serves, so the sidecar reads the exact
+  # bytes the device does. Measured server-vs-browser agreement is 0.999978 cosine against a float32
+  # ceiling of 0.9999995; reimplementing the pooling in C++ would have risked a silent divergence
+  # that raises no error and just makes retrieval quietly worse forever.
+  #
+  # Consequence worth knowing: on a fresh host the WEB deploy must land before this service starts,
+  # or the mount is empty and /health reports 503 naming the missing path (the container stays up).
+  embedder:
+    image: node:22-slim
+    restart: unless-stopped
+    working_dir: /app
+    environment:
+      PORT: "8081"
+      MODEL_DIR: /models
+    volumes:
+      - ../../services/embedder:/app:ro
+      - ./web/models:/models:ro
+    command: ["node", "server.js"]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8081/health').then(r=>r.json()).then(j=>process.exit(j.status==='ready'?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
 
   caddy:
     image: caddy:2

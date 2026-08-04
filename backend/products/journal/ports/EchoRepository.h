@@ -18,9 +18,10 @@ struct EchoUser {
 };
 
 // A page owed a derivation — its body moved past what was last derived from it, or the corpus
-// around it did. `source` rides along because spoken pages have no reliable sentence boundaries
-// and segment differently; `attempts` is how many passes in a row have failed on this page, so the
-// sweep can back off a page the vendor keeps refusing instead of billing for it every night.
+// around it did. `source` rides along because spoken pages have no reliable sentence boundaries and
+// have to segment differently. `attempts` is how many passes in a row have failed on this page: it
+// is here so the sweep can back off one the vendor keeps refusing rather than billing for it every
+// night, and nothing backs off on it yet.
 struct DuePage {
   LocalDate day;
   std::string body;

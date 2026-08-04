@@ -82,12 +82,13 @@ void registerRoutes(drogon::HttpAppFramework& app, const JournalDeps& deps) {
       },
       {drogon::Post});
 
-  // The echo read surface (Windmill One). Entitlement-free by design: only the nightly sweep ever
-  // computes echoes, and it computes none for a non-subscriber, so their list is simply empty —
-  // "absent, not locked" needs no gate here. The admin sweep is the operator's rehearsal of one
-  // nightly pass, closed unless the deploy set a token.
+  // The echo read surface (Windmill One). The sweep derives for everyone and the ENTITLEMENT IS
+  // ASKED HERE: the canon's honest-cut state has to show a non-subscriber that echoes exist, how
+  // many, and the real opening words of the nearest one, none of which survives an empty table.
+  // The admin sweep is the operator's rehearsal of one nightly pass, closed unless the deploy set
+  // a token.
   auto echoApi = std::make_shared<EchoApi>(deps.echoes, deps.echoSweep, deps.authService,
-                                           deps.echoAdminToken);
+                                           deps.entitlements, deps.echoAdminToken);
   app.registerHandler(
       "/v1/journal/echoes",
       [echoApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
@@ -95,9 +96,17 @@ void registerRoutes(drogon::HttpAppFramework& app, const JournalDeps& deps) {
       },
       {drogon::Get});
   app.registerHandler(
-      "/v1/journal/echoes/{date}/dismiss",
-      [echoApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& date) {
-        echoApi->dismiss(req, std::move(cb), date);
+      "/v1/journal/echoes/{triggerDay}/{matchDay}/dismiss",
+      [echoApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                const std::string& triggerDay, const std::string& matchDay) {
+        echoApi->dismiss(req, std::move(cb), triggerDay, matchDay);
+      },
+      {drogon::Post});
+  app.registerHandler(
+      "/v1/journal/echoes/{triggerDay}/{matchDay}/opened",
+      [echoApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                const std::string& triggerDay, const std::string& matchDay) {
+        echoApi->opened(req, std::move(cb), triggerDay, matchDay);
       },
       {drogon::Post});
   app.registerHandler(

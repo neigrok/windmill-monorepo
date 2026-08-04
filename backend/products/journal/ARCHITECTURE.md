@@ -621,7 +621,7 @@ genuinely cannot do itself:
 | `PUT /v1/journal/page/:date` | write a page (LWW upsert; carries the HLC stamp) | owner only |
 | `WS /v1/journal/transcribe` | streaming voice → live transcript deltas; audio ephemeral, discarded on success (§8.1) | owner only |
 | `POST /v1/journal/transcribe` | one-shot voice → `{ text }` (the robust v1 before streaming) | owner only |
-| `GET /v1/journal/vectors?since=` | *(search accelerator)* server echo-vectors to seed the on-device index; never takes a query (§8.2) | owner only |
+| ~~`GET /v1/journal/vectors?since=`~~ | **NEVER BUILT.** Designed as a search accelerator seeding the on-device index; no route, handler or caller has ever existed, and the browser embeds its own corpus. Kept here struck through rather than deleted so the idea is findable, not so it is believed. | — |
 | `GET /v1/journal/echoes?from=&to=` | echoes for a range (empty for non-subscribers) | owner only |
 | `POST /v1/journal/echoes/:day/dismiss` | retire an echo/offer for a page (client-set) | owner only |
 | `GET /v1/journal/export` | all pages, JSON (client renders markdown) | owner only |
@@ -772,12 +772,15 @@ owes the on-device engine exactly three things — none of which is a search API
    must work **offline** whether or not the nightly server pass has run — but sharing the *model*
    puts both in the same vector space, which unlocks the WOW on first run:
 
-   > **Seed the device index from the server.** The canon's "reading your pages · one time" is the
-   > one slow moment in on-device search — embedding a long back-catalog on a phone. Because echoes
-   > already embedded that corpus server-side in the *same* space, the server can ship those vectors
-   > down (`GET /v1/journal/vectors?since=…`, owner-only) to **seed** the index, so the device
-   > embeds only what the server hasn't yet, and first search is near-instant instead of a progress
-   > bar. The **query is still embedded and matched entirely on-device** — nothing about the search
+   > **Seed the device index from the server — PROPOSED, NEVER BUILT.** The canon's "reading your
+   > pages · one time" is the one slow moment in on-device search — embedding a long back-catalog on
+   > a phone. Because echoes embed that corpus server-side, the server *could* ship those vectors
+   > down (`GET /v1/journal/vectors?since=…`, owner-only) to **seed** the index, so the device embeds
+   > only what the server hasn't yet. No such route, handler or caller has ever existed; the browser
+   > embeds its whole corpus itself and always has. Read the rest of this paragraph as a design
+   > sketch, not as a description of the system. If it is ever built it must serve `journal_span`
+   > vectors and match the sidecar's `embed_version` — a seed from a different embedding space is
+   > not degraded, it is meaningless. The **query is still embedded and matched entirely on-device** — nothing about the search
    > leaves — so the P3 promise holds; only already-stored page vectors come down, and page bodies
    > were already on the device via sync. This is opt-in per the design's progress-line moment, and
    > it is the difference between a good first run and a magic one.

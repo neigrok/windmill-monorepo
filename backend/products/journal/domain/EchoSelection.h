@@ -21,7 +21,9 @@ struct Vectored {
 // The defaults are the shipped policy; nothing else in the codebase may hardcode these numbers.
 struct SelectionRules {
   int minDayGap = 7;              // a page younger than a week is not an echo
-  int shown = 10;                 // the cap on what one page carries
+  int shown = 10;                 // the cap on ONE TRIGGER's pairings — not the page's. A page with
+                                  // eight triggering passages is capped by SweepBudget::echoesPerPage,
+                                  // which is the only place a whole page is in view.
 
   double refrainRadius = 0.80;    // a candidate this close counts toward the crowd
   int refrainCrowd = 5;           // this many neighbours and the trigger is a refrain, not a thought
@@ -58,10 +60,14 @@ long daysBetween(const LocalDate& earlier, const LocalDate& later);
 // word, something outside the common-word list?
 //
 // This is the enforcement mechanism for "an echo may only assert something the user can CHECK from
-// what is on screen". Two pronoun-only passages — "he was awful again tonight. i just went to bed."
-// written eighteen months apart about two different men — sit at near-identical cosine and offer
-// the reader no way at all to tell whether the pairing is right. Maximum apparent evidence, zero
-// checkable evidence. No anchor, no echo, whatever the cosine says.
+// what is on screen". The case it exists for is two passages that reach near-identical cosine
+// through DIFFERENT words, about different subjects — maximum apparent evidence, and no way at all
+// for the reader to tell whether the pairing is right. Requiring one shared uncommon word means
+// they can always see why two passages were put together. No anchor, no echo, whatever the cosine
+// says.
+//
+// (Two verbatim copies of a pronoun-only line do share words, so they pass — the rule bites on
+// different-words collisions, which is the real failure and the stronger claim.)
 bool sharesAnchor(const std::string& a, const std::string& b);
 
 // Is this trigger a refrain ("tired again", "long day, nothing to report") rather than a thought?

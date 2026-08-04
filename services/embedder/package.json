@@ -1,0 +1,20 @@
+{
+  "name": "@windmill/embedder",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Journal echoes embedding sidecar — bge-small-en-v1.5 q8 over the same model files the browser loads.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "check": "node check/server.mjs",
+    "check:fixture": "node check/fixture.mjs",
+    "check:browser": "node check/browser.mjs",
+    "fixture:write": "node check/fixture.mjs --write"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "3.8.1"
+  }
+}

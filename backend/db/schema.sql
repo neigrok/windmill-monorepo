@@ -731,39 +731,145 @@ create table if not exists journal_nudge_day (
 create index if not exists journal_nudge_day_decided on journal_nudge_day (decided_at);
 
 -- ── Journal echoes (Windmill One, computed server-side, nightly) ─────────────────────────────
--- An echo is Journal noticing that today repeats something written months ago. Produced only by
--- the nightly EchoSweep, only for subscribers. trigger_day is the page that prompted it; match_day
--- the older page. The char spans are WHOLE-PAGE today — EchoFinder matches page-level vectors and
--- returns [0, body.size()) for both — so a rendered "quote" is the entire page, not a passage.
--- Passage-level spans arrive with the replacement in products/journal/ECHOES.md. Score is stored
--- but shown only as presence (never a number). "absent, not locked" for non-subscribers falls out of this
--- table simply being empty for them. dismissed retires an echo/offer for that page (client-set).
-create table if not exists journal_echo (
-  user_id      uuid not null references users(id) on delete cascade,
-  trigger_day  date not null,
-  match_day    date not null,
-  trigger_lo   int not null default 0,      -- char span in the trigger page [lo, hi)
-  trigger_hi   int not null default 0,
-  match_lo     int not null default 0,      -- char span in the older page
-  match_hi     int not null default 0,
-  score        real not null default 0,
-  dismissed    boolean not null default false,
-  created_at   timestamptz not null default now(),
-  primary key (user_id, trigger_day, match_day)
-);
-create index if not exists journal_echo_trigger on journal_echo (user_id, trigger_day)
-  where not dismissed;
+-- An echo is the journal reaching back: a passage written tonight set beside an older passage of
+-- the writer's own about the same thing, and the distance between them. It never speaks on its own
+-- initiative and nothing here is ever inferred from silence — products/journal/ECHOES.md is the
+-- contract. Produced only by the nightly EchoSweep, only for subscribers, so "absent, not locked"
+-- for everyone else falls out of these tables simply staying empty for them.
+--
+-- Everything is PASSAGE-level. The shipped page-level pair is dropped rather than migrated: the
+-- feature has never run (a NullEmbedder is wired, so no row anywhere was computed from a real
+-- model), and a page-level "quote" could only ever read a whole page back at its writer.
 
--- Per-page embedding used ONLY by the nightly echo pass (NOT search — search embeds on-device).
--- Stored as float4[] and matched in-memory by the pure EchoFinder; no pgvector dependency. The
--- vector is recomputed when the page body changes, tracked by body_stamp_ms (the page's HLC ms the
--- vector was computed from) — a vector staler than the page is re-embedded before it is trusted.
-create table if not exists journal_page_vector (
+-- Same name, different key, different columns. Dropped ONCE, guarded on a column only the old
+-- shape has: this file is re-applied on every deploy, and an unguarded drop would delete real
+-- echoes every time we ship.
+do $$ begin
+  if exists (select 1 from information_schema.columns
+             where table_name = 'journal_echo' and column_name = 'trigger_lo') then
+    drop table journal_echo;
+  end if;
+end $$;
+
+-- Per-page embeddings, replaced by journal_span's per-passage ones. Nothing in the server reads
+-- this table: GET /v1/journal/vectors (the on-device search index seed) is described in
+-- ARCHITECTURE.md §8.2 and in ECHOES.md's migration list, but no route, handler or repository
+-- method for it has ever been written — the browser embeds its own index locally. So this drop
+-- costs nothing today, and whenever that endpoint IS built it seeds from journal_span.vector,
+-- which ECHOES.md judges likely better for search anyway.
+drop table if exists journal_page_vector;
+
+-- Fresh passage identities. A sequence and not max(span_id)+1 per user: the nightly heartbeat and
+-- an operator rehearsal can overlap, and a read-then-increment across two passes is a race with
+-- nothing holding a lock.
+create sequence if not exists journal_span_id_seq;
+
+-- One segmented passage of one page — the unit everything else keys on.
+--
+-- span_id is the IDENTITY; (day, ord) is only a coordinate. Insert a sentence at the top of a page
+-- and every ordinal shifts by one, which would silently re-point every inbound echo at its
+-- neighbouring sentence and render it confidently, because the wrong text still locates in the live
+-- body. So re-derivation matches old passages to new by normalised TEXT and carries span_id forward
+-- for survivors (products/journal/domain/SpanReconcile.h); only genuinely new text mints.
+--
+-- vector is float32, LITTLE-ENDIAN, four bytes per dimension, in a bytea — never a real[] rendered
+-- through ::text. Measured at 8,000 passages x 384 dims, the text-array dialect the page-vector
+-- table used cost 39.6 MB per user per night, 419 ms to serialize and 73 ms to parse, against 14 ms
+-- of actual cosine. The arithmetic was never the cost; the wire format was.
+--
+-- text_sha256 digests the NORMALISED text (outer whitespace trimmed, internal runs collapsed), not
+-- the raw text, because dismissals key on it: a dismissed pair must not come back through a
+-- re-segmentation or a whitespace edit.
+--
+-- embed_version is not decoration. Cosine between two different embedding spaces is not degraded,
+-- it is meaningless, and nothing about it looks like an error — retrieval reads one version only.
+create table if not exists journal_span (
+  user_id       uuid not null references users(id) on delete cascade,
+  span_id       bigint not null,
+  day           date not null,
+  ord           int not null,
+  lo            int not null,                    -- BYTE offsets into the page body [lo, hi); they
+  hi            int not null,                    -- never leave the server (JS slices UTF-16)
+  text          text not null,
+  text_sha256   bytea not null,
+  vector        bytea not null,
+  embed_version text not null,
+  body_stamp_ms bigint not null default 0,       -- the page HLC ms this derivation read
+  primary key (user_id, span_id)
+);
+-- the page read (reconciliation walks a day's spans in document order)
+create index if not exists journal_span_page on journal_span (user_id, day, ord);
+-- the dismissal join: hash → span, so "has this pair been waved away" is a lookup, never a scan
+create index if not exists journal_span_hash on journal_span (user_id, text_sha256);
+
+-- One kept pair. cosine is what retrieval measured; relation is the curator's judgement and is
+-- comparative WITHIN one call only — each call mints its own private scale, so two rows' relation
+-- values are never meaningfully ordered against each other. curator_version and prompt_hash are
+-- what make a chain of mixed vintage debuggable and selectively rebuildable years later.
+--
+-- match_is_self carries the curator's speaker verdict: false means the older passage is something
+-- the writer copied down — a pasted message, a lyric, a line said in session. Those are verbatim
+-- page text and locate perfectly, so nothing else in the pipeline can catch them, and surfacing
+-- one under "you wrote this" is a false attribution.
+--
+-- check (match_day < trigger_day) makes reaching FORWARD unrepresentable rather than merely
+-- unimplemented: the journal may only ever remember, never predict or track.
+create table if not exists journal_echo (
+  user_id         uuid not null references users(id) on delete cascade,
+  trigger_day     date not null,
+  trigger_span_id bigint not null,
+  match_day       date not null,
+  match_span_id   bigint not null,
+  cosine          real not null default 0,
+  relation        real not null default 0,
+  match_is_self   boolean not null default true,
+  curator_version text not null default '',
+  prompt_hash     text not null default '',
+  created_at      timestamptz not null default now(),
+  primary key (user_id, trigger_span_id, match_span_id),
+  check (match_day < trigger_day)
+);
+-- the read endpoint: a range of pages and what each carries
+create index if not exists journal_echo_page on journal_echo (user_id, trigger_day);
+-- the reverse edge. When a page's passages change, every page holding an echo INTO it must be
+-- re-derived, or fixing one typo in a January page permanently kills every echo pointing at it and
+-- the graph decays with the user's own care for their archive. This index is what makes that a
+-- lookup rather than a scan of the user's whole history.
+create index if not exists journal_echo_inbound on journal_echo (user_id, match_day);
+
+-- The user told it to fade. Keyed on the CONTENT of both passages, never on span ids or days, so a
+-- dismissal survives re-derivation, re-segmentation and a segmenter version bump. A dismissed echo
+-- returning is the most trust-destroying failure this feature has, and it is the one failure that
+-- an id-keyed table would guarantee.
+create table if not exists journal_echo_dismissal (
+  user_id      uuid not null references users(id) on delete cascade,
+  trigger_hash bytea not null,
+  match_hash   bytea not null,
+  created_at   timestamptz not null default now(),
+  primary key (user_id, trigger_hash, match_hash)
+);
+
+-- What happened to this page on its last pass, and what it was judged against. body_stamp_ms is the
+-- page HLC ms the derivation read; corpus_stamp is the user-level corpus stamp (the newest
+-- body_stamp_ms across all their spans) the curation was run against — a page whose echoes were
+-- computed against an older corpus is stale even though its own body never moved, which is what
+-- makes a backfilled year reach the pages that were already written.
+--
+-- These two stamps ARE the "am I done" record, so: NEVER advance them on a failed curate. status
+-- is ok | empty_ok | transport | rate_limited | truncated | schema_invalid | refused; only the
+-- first two advance. The shipped vector path advanced its stamp on completion, and porting that
+-- idiom naively loses a page that failed at 02:14 forever. attempts counts consecutive failures and
+-- rides out on every due page so the sweep can back off one the vendor keeps refusing; nothing
+-- backs off on it yet, so today it is a diagnostic.
+create table if not exists journal_page_curation (
   user_id       uuid not null references users(id) on delete cascade,
   day           date not null,
-  vector        real[] not null,
   body_stamp_ms bigint not null default 0,
-  created_at    timestamptz not null default now(),
+  corpus_stamp  bigint not null default 0,
+  status        text not null default '',
+  attempts      int not null default 0,
+  last_error    text not null default '',
+  updated_at    timestamptz not null default now(),
   primary key (user_id, day)
 );
 

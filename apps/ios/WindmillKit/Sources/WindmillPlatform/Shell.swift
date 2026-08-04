@@ -65,9 +65,13 @@ public struct SuperappView: View {
             goHome: { leave() }
         ))
         .tint(WindmillColor.neutral900)
-        // The shell's appearance, applied once at its root so the hub, the switcher, You, One and
-        // every sheet follow together. A room paints its own skin inside this and is unaffected.
-        .preferredColorScheme(Appearance(rawValue: appearance)?.scheme ?? nil)
+        // The shell's appearance, said TWICE on purpose. `preferredColorScheme` travels up to the
+        // window — which flips the UIKit traits, and with them every adaptive token — but it does
+        // NOT write `\.colorScheme` back into the subtree that declared it. So a room reading the
+        // environment would still see the system's answer, which is exactly how the journal stayed
+        // night with Light selected. The environment override is what actually reaches the rooms.
+        .preferredColorScheme(chosenScheme)
+        .modifier(SchemeOverride(scheme: chosenScheme))
         .sheet(isPresented: $switcherUp) {
             SwitcherSheet(products: products, account: account, here: openRoom,
                           onPick: { enter($0) }, onHome: { leave() })
@@ -83,6 +87,8 @@ public struct SuperappView: View {
         // a toll gate. Only after the one question has been answered; before that it owns the screen.
         .onAppear { if journey.asked { openRoom = journey.lastRoom } }
     }
+
+    private var chosenScheme: ColorScheme? { Appearance(rawValue: appearance)?.scheme }
 
     private var account: Account {
         Account(api: auth.api, user: auth.status.user)
@@ -135,6 +141,21 @@ public struct SuperappView: View {
                        onDismiss: { houseUp = false })
                 .presentationDetents([.height(CGFloat(products.count - 1) * 78 + 250)])
                 .presentationDragIndicator(.visible)
+        }
+    }
+}
+
+// Applies the chosen scheme to the subtree, and nothing at all under "System" — where the absence
+// of an override IS the setting, and forcing a value would quietly make System mean "whatever it
+// was when the app launched".
+private struct SchemeOverride: ViewModifier {
+    let scheme: ColorScheme?
+
+    func body(content: Content) -> some View {
+        if let scheme {
+            content.environment(\.colorScheme, scheme)
+        } else {
+            content
         }
     }
 }

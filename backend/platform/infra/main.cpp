@@ -53,6 +53,10 @@
 #include "products/roadmap/application/ReminderSweep.h"
 #include "products/roadmap/routes.h"
 #include "products/journal/adapters/email/ResendNudgeSender.h"
+#include "platform/adapters/llm/AnthropicClient.h"
+#include "products/journal/adapters/llm/AnthropicCurator.h"
+#include "products/journal/adapters/llm/HttpEmbedder.h"
+#include "products/journal/adapters/llm/NullCurator.h"
 #include "products/journal/adapters/llm/NullEmbedder.h"
 #include "products/journal/adapters/llm/NullTranscriber.h"
 #include "products/journal/adapters/llm/OpenAiTranscriber.h"
@@ -770,15 +774,35 @@ int main() {
   auto journalNudgeSweep = std::make_shared<NudgeSweep>(*journalNudges, *journalNudgeMail, *tokens,
                                                         *systemClock, journalNudgeArming, appBaseUrl);
   journalNudgeSweep->start();
-  // Wave 3 echoes (Windmill One): the nightly reading-across, gated on the one entitlement seam the
-  // billing edge already feeds. The embedder is unwired by default (NullEmbedder ⇒ configured()
-  // false ⇒ the sweep no-ops) until a vendor or a self-hosted model is plugged in behind the
-  // Embedder port; nothing else in the echo path moves.
-  auto journalEmbedder = std::make_shared<NullEmbedder>();
+  // Echoes: the nightly reaching-back. Two boundaries, and either one unwired makes the whole pass
+  // a quiet no-op — NullEmbedder and NullCurator both answer configured() false. The sweep itself
+  // is deliberately ENTITLEMENT-BLIND: it derives for every user, and EchoApi decides how much of
+  // a passage a given reader is served, because the honest-cut surface has to show a non-subscriber
+  // that echoes exist at all.
+  // The sidecar runs the same bge-small weights the browser downloads, so a server vector and an
+  // on-device one are interchangeable — measured at 0.999978 cosine, against a float32 ceiling of
+  // 0.9999995. Unset URL means unwired, which means the whole pass no-ops.
+  const char* embedderUrlEnv = std::getenv("JOURNAL_EMBEDDER_URL");
+  std::shared_ptr<Embedder> journalEmbedder;
+  if (embedderUrlEnv && *embedderUrlEnv)
+    journalEmbedder = std::make_shared<HttpEmbedder>(embedderUrlEnv);
+  else
+    journalEmbedder = std::make_shared<NullEmbedder>();
+
+  // Same key as the roadmap composer — one Anthropic account, one credential, two products asking
+  // it different questions.
+  const char* anthropicKeyEnv = std::getenv("ANTHROPIC_API_KEY");
+  std::shared_ptr<Curator> journalCurator;
+  if (anthropicKeyEnv && *anthropicKeyEnv)
+    journalCurator = std::make_shared<AnthropicCurator>(
+        std::make_shared<AnthropicClient>(anthropicKeyEnv));
+  else
+    journalCurator = std::make_shared<NullCurator>();
   auto journalEchoes = std::make_shared<PgEchoRepository>(connString);
   const char* journalEchoAdminEnv = std::getenv("JOURNAL_ECHO_ADMIN_TOKEN");
   auto journalEchoSweep = std::make_shared<EchoSweep>(*journalEchoes, *journalEmbedder,
-                                                      *entitlements, *systemClock, EchoRules{});
+                                                      *journalCurator, *systemClock,
+                                                      SelectionRules{}, SweepBudget{});
   journalEchoSweep->start();
   // Voice (Windmill One): bought from OpenAI's gpt-4o-transcribe when OPENAI_API_KEY is set, and
   // unwired otherwise (NullTranscriber ⇒ the endpoint answers 503 and the client hides Talk). Either
