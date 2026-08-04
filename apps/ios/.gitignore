@@ -6,3 +6,6 @@ App/Info.generated.plist
 .build/
 .swiftpm/
 DerivedData/
+
+# A live session secret for LiveBackendTests — never committed.
+.live-backend.json

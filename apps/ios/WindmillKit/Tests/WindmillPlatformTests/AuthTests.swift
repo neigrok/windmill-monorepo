@@ -88,3 +88,37 @@ final class RefusalTests: XCTestCase {
         XCTAssertFalse(WindmillApiError.offline.isUnauthorized)
     }
 }
+
+// The one part of a request no other test can see. Every seam above the wire is faked, so a URL
+// built wrongly is invisible until a real server answers 404 — which is exactly how the window read
+// and the delta feed shipped broken: `appendingPathComponent` treats the whole string as ONE path
+// segment and percent-encodes the query into it.
+final class RequestURLTests: XCTestCase {
+    private let base = URL(string: "http://localhost:8088")!
+
+    func testAPlainPathResolves() {
+        XCTAssertEqual(WindmillApi.url(for: "/v1/me", base: base)?.absoluteString,
+                       "http://localhost:8088/v1/me")
+    }
+
+    func testAQueryStringStaysAQueryString() {
+        let url = WindmillApi.url(for: "/v1/journal/pages?from=2026-08-01&to=2026-08-31", base: base)
+        XCTAssertEqual(url?.absoluteString,
+                       "http://localhost:8088/v1/journal/pages?from=2026-08-01&to=2026-08-31")
+        XCTAssertEqual(url?.path, "/v1/journal/pages", "the query must not become part of the path")
+        XCTAssertEqual(url?.query, "from=2026-08-01&to=2026-08-31")
+    }
+
+    // The delta feed's cursor is an HLC — "ms:counter:actor" — and its colons must survive as an
+    // encoded query value rather than being read as a scheme separator.
+    func testTheDeltaCursorSurvivesEncoding() {
+        let url = WindmillApi.url(for: "/v1/journal/pages?since=0%3A0%3A&limit=500", base: base)
+        XCTAssertEqual(url?.path, "/v1/journal/pages")
+        XCTAssertEqual(url?.query, "since=0%3A0%3A&limit=500")
+    }
+
+    func testADayPathKeepsItsSegments() {
+        XCTAssertEqual(WindmillApi.url(for: "/v1/journal/page/2026-08-04", base: base)?.path,
+                       "/v1/journal/page/2026-08-04")
+    }
+}

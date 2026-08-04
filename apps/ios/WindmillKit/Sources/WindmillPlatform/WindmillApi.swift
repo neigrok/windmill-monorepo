@@ -54,6 +54,12 @@ public struct WindmillApi: Sendable {
         return (try decode(reply, from: answer.body), Self.sessionCookie(in: answer.response, for: baseURL))
     }
 
+    // Exposed for the test that pins the rule above. A URL is the one part of a request that no
+    // unit test could otherwise see, because everything else about a call is mocked at the seam.
+    static func url(for path: String, base: URL) -> URL? {
+        URL(string: path, relativeTo: base)
+    }
+
     static func sessionCookie(in response: HTTPURLResponse, for url: URL) -> String? {
         let headers = response.allHeaderFields as? [String: String] ?? [:]
         return HTTPCookie.cookies(withResponseHeaderFields: headers, for: url)
@@ -62,7 +68,12 @@ public struct WindmillApi: Sendable {
     }
 
     private func request(_ method: String, _ path: String, json body: (any Encodable)? = nil) throws -> URLRequest {
-        var request = URLRequest(url: baseURL.appendingPathComponent(path))
+        // Resolved as a RELATIVE URL, never appendingPathComponent: that method treats the whole
+        // string as one path segment and percent-encodes `?` and `&` into it, so every endpoint
+        // carrying a query — the window read and the delta feed — silently became a 404 path.
+        // It cost nothing at the call site and broke half the journal's reads.
+        guard let url = URL(string: path, relativeTo: baseURL) else { throw WindmillApiError.malformed }
+        var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let secret = credential() {
