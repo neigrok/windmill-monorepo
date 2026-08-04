@@ -45,14 +45,15 @@ public final class PageStore: ObservableObject {
         self.sync = sync
     }
 
-    // A day the canvas draws. A gap is a day with `written == false` — drawn, never counted, never
-    // coloured as failure (canon §3.3).
+    // A day the canvas draws — and only days that were actually written. A day nobody wrote is not
+    // drawn at all: the canvas is what you wrote, not a calendar with holes in it. Saying nothing
+    // about a missed day is the strongest reading of "no scoring" (canon §3.3) — an unwritten day
+    // cannot be counted, coloured, or apologised for if it was never put on the page.
     public struct CanvasDay: Identifiable, Equatable {
         public let day: LocalDay
         public let body: String
         public let mood: Mood
         public let energy: Energy
-        public let written: Bool
         public var id: String { day.iso }
         public var wordCount: Int { body.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count }
     }
@@ -78,7 +79,7 @@ public final class PageStore: ObservableObject {
     // Nothing written, ever — the first-run surface (P9). Computed rather than stored so it cannot
     // be left true by a code path that forgot to clear it.
     public var isFirstRun: Bool {
-        !isLoading && days.allSatisfy { !$0.written } && body.isEmpty && !mood.isSet && !energy.isSet
+        !isLoading && days.isEmpty && body.isEmpty && !mood.isSet && !energy.isSet
     }
 
     // Called on launch and on every change of who is signed in. Draws from the device first and
@@ -217,21 +218,11 @@ public final class PageStore: ObservableObject {
         energy = page.energy
     }
 
-    // Fold what the device holds onto the calendar: from the earliest written day up to yesterday,
-    // every day in between drawn, written or not. Today is never in `days` — it is the draft.
+    // The days that were written, oldest first. Today is never here — it is the draft.
     private func drawFromCache() {
-        let history = cache.pages.filter { $0.day < today && $0.isWritten }
-        guard let earliest = history.first?.day else {
-            days = []
-            return
-        }
-        let held = Dictionary(uniqueKeysWithValues: history.map { ($0.day.iso, $0) })
-        days = LocalDay.span(from: earliest, to: today.advanced(by: -1)).map { day in
-            guard let page = held[day.iso] else {
-                return CanvasDay(day: day, body: "", mood: .none, energy: .none, written: false)
-            }
-            return CanvasDay(day: day, body: page.body, mood: page.mood, energy: page.energy, written: true)
-        }
+        days = cache.pages
+            .filter { $0.day < today && $0.isWritten }
+            .map { CanvasDay(day: $0.day, body: $0.body, mood: $0.mood, energy: $0.energy) }
         if let mine = cache.page(on: today), !touched { adoptDraft(from: mine) }
     }
 }

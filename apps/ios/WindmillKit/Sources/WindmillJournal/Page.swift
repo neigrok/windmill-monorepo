@@ -35,23 +35,6 @@ public struct LocalDay: Hashable, Comparable, Codable, Sendable, CustomStringCon
         return LocalDay(date, calendar: calendar)
     }
 
-    public func days(since earlier: LocalDay, calendar: Calendar = .current) -> Int {
-        calendar.dateComponents([.day], from: earlier.startOfDay(calendar), to: startOfDay(calendar)).day ?? 0
-    }
-
-    // The inclusive run of days [from, to], oldest first — the calendar the canvas draws, gaps and
-    // all. Empty when the range is inverted, which is what makes an empty history renderable.
-    public static func span(from: LocalDay, to: LocalDay, calendar: Calendar = .current) -> [LocalDay] {
-        guard from <= to else { return [] }
-        var days: [LocalDay] = []
-        var cursor = from
-        while cursor <= to {
-            days.append(cursor)
-            cursor = cursor.advanced(by: 1, calendar: calendar)
-        }
-        return days
-    }
-
     func startOfDay(_ calendar: Calendar = .current) -> Date {
         var parts = DateComponents()
         let pieces = iso.split(separator: "-")
@@ -132,7 +115,7 @@ public struct Page: Equatable, Codable, Sendable {
     }
 
     // A day the writer touched at all. A page with a mood and no words was still a day someone
-    // showed up for, so it is written — and an empty page is a gap, never a failure.
+    // showed up for, so it counts — and a day nobody touched is simply not drawn.
     public var isWritten: Bool { !body.isEmpty || mood.isSet || energy.isSet }
 
     public var wordCount: Int {

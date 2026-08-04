@@ -733,8 +733,10 @@ create index if not exists journal_nudge_day_decided on journal_nudge_day (decid
 -- ── Journal echoes (Windmill One, computed server-side, nightly) ─────────────────────────────
 -- An echo is Journal noticing that today repeats something written months ago. Produced only by
 -- the nightly EchoSweep, only for subscribers. trigger_day is the page that prompted it; match_day
--- the older page; the char spans locate the resonant passage in each; score is stored but shown
--- only as presence (never a number). "absent, not locked" for non-subscribers falls out of this
+-- the older page. The char spans are WHOLE-PAGE today — EchoFinder matches page-level vectors and
+-- returns [0, body.size()) for both — so a rendered "quote" is the entire page, not a passage.
+-- Passage-level spans arrive with the replacement in products/journal/ECHOES.md. Score is stored
+-- but shown only as presence (never a number). "absent, not locked" for non-subscribers falls out of this
 -- table simply being empty for them. dismissed retires an echo/offer for that page (client-set).
 create table if not exists journal_echo (
   user_id      uuid not null references users(id) on delete cascade,

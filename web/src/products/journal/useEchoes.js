@@ -28,7 +28,11 @@ export function useEchoes() {
       next.delete(triggerDay);
       return next;
     });
-    journalApi.dismissEcho(triggerDay).catch(() => { /* the mark is already gone; the sweep won't re-add it */ });
+    // KNOWN DEFECT: the sweep CAN re-add this. saveEcho's upsert resets dismissed = false, and a page
+    // stays a trigger for every pass inside the 24h look-back — so a dismissal made today can be undone
+    // by tonight's sweep and the echo returns on the next load. Fixed by the ECHOES.md replacement,
+    // where dismissals are keyed to the passage pair and survive re-derivation.
+    journalApi.dismissEcho(triggerDay).catch(() => { /* the mark is already gone locally */ });
   }, []);
 
   return { byTriggerDay, dismiss };

@@ -11,7 +11,6 @@ struct DayMarkerView<Trailing: View>: View {
     let day: LocalDay
     var mood: Mood = .none
     var energy: Energy = .none
-    var written = false
     var wordCount = 0
     var isToday = false
     @ViewBuilder var trailing: Trailing
@@ -34,7 +33,7 @@ struct DayMarkerView<Trailing: View>: View {
             Spacer(minLength: WindmillSpace.x2)
 
             HStack(spacing: WindmillSpace.x3) {
-                MoodPip(mood: mood, written: written, isToday: isToday)
+                MoodPip(mood: mood, isToday: isToday)
                 EnergyTick(energy: energy)
             }
         }
@@ -55,16 +54,15 @@ struct DayMarkerView<Trailing: View>: View {
 }
 
 extension DayMarkerView where Trailing == EmptyView {
-    init(day: LocalDay, mood: Mood = .none, energy: Energy = .none, written: Bool = false,
+    init(day: LocalDay, mood: Mood = .none, energy: Energy = .none,
          wordCount: Int = 0, isToday: Bool = false) {
-        self.init(day: day, mood: mood, energy: energy, written: written,
+        self.init(day: day, mood: mood, energy: energy,
                   wordCount: wordCount, isToday: isToday) { EmptyView() }
     }
 }
 
 private struct MoodPip: View {
     let mood: Mood
-    let written: Bool
     let isToday: Bool
 
     @Environment(\.journalSkin) private var skin
@@ -82,10 +80,6 @@ private struct MoodPip: View {
                 .animation(reduceMotion ? nil : .easeInOut(duration: 1).repeatForever(autoreverses: true),
                            value: breathing)
                 .onAppear { if !reduceMotion { breathing = true } }
-        } else if !written {
-            Circle()
-                .strokeBorder(skin.gap, lineWidth: 1.5)
-                .frame(width: 10, height: 10)
         } else {
             Circle()
                 .fill(skin.mood(mood))

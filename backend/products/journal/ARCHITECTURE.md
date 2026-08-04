@@ -476,6 +476,13 @@ An echo is Journal noticing that today repeats something written months ago, and
 the older line. It is the only feature that puts the backend in front of an inference model, and —
 with voice — one of Journal's two Windmill One features.
 
+> **§5.1–5.4 below describe the implementation that shipped: whole-page cosine over
+> `journal_page_vector`, one match per trigger.** That implementation is currently **dark** — no
+> `Embedder` is wired in `platform/infra/main.cpp`, so `configured()` is false and the sweep never
+> writes a row. Its agreed replacement — passage-level reaching-back, plural, persisted and
+> navigable — is specified in `ECHOES.md` and lands in its own wave. Read `ECHOES.md` for what is
+> being built; read below for what is running.
+
 ### 5.1 Why nightly, and what that decides
 
 The canon leaves this open (§ "Still open" 3): nightly batch vs on-write. **Recommended: nightly
@@ -557,9 +564,12 @@ page text to that vendor — which sits uneasily under "Only you". Two options:
    in the privacy copy.
 
 The `Embedder` port makes this swappable and testable (a fake returns fixed vectors); the choice
-is a product/privacy call, not a code constraint. It is the same "new power, not a re-sold
-default" test the canon applies — and it should be resolved before echoes ship, alongside the
-pricing coupling in §10.
+is a product/privacy call, not a code constraint.
+
+**Decided (owner):** option 2 — vendor inference is permitted, under a no-retention agreement, and
+quality is the priority over minimising egress. Page text may reach an inference vendor. The
+privacy copy must say so plainly before the feature is armed. This supersedes the "recommended"
+marker on option 1 above; it is recorded here rather than deleted so the reasoning stays legible.
 
 ---
 

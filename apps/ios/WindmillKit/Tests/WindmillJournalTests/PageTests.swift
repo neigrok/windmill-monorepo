@@ -21,26 +21,6 @@ final class LocalDayTests: XCTestCase {
                        ["2025-12-31", "2026-01-01", "2026-07-09", "2026-07-10"])
     }
 
-    func testTheSpanIsInclusiveAndOldestFirst() {
-        let from = LocalDay(iso: "2026-07-18")!
-        let to = LocalDay(iso: "2026-07-21")!
-        XCTAssertEqual(LocalDay.span(from: from, to: to).map(\.iso),
-                       ["2026-07-18", "2026-07-19", "2026-07-20", "2026-07-21"])
-    }
-
-    // An inverted range is empty rather than infinite. This is what makes "a canvas with no history
-    // yet" renderable instead of a hang.
-    func testAnInvertedSpanIsEmpty() {
-        let from = LocalDay(iso: "2026-07-21")!
-        let to = LocalDay(iso: "2026-07-18")!
-        XCTAssertEqual(LocalDay.span(from: from, to: to), [])
-    }
-
-    func testASpanOfOneDayIsThatDay() {
-        let day = LocalDay(iso: "2026-07-20")!
-        XCTAssertEqual(LocalDay.span(from: day, to: day), [day])
-    }
-
     func testWalkingBackwardsCrossesMonthAndYearBoundaries() {
         XCTAssertEqual(LocalDay(iso: "2026-03-01")!.advanced(by: -1).iso, "2026-02-28")
         XCTAssertEqual(LocalDay(iso: "2026-01-01")!.advanced(by: -1).iso, "2025-12-31")
@@ -48,13 +28,10 @@ final class LocalDayTests: XCTestCase {
     }
 
     // The window the canvas loads is "today back sixty days", and it must be sixty days whichever
-    // side of a month end today falls on.
+    // side of a month end — and a year end — today falls on.
     func testTheSixtyDayWindowIsSixtyDays() {
-        let today = LocalDay(iso: "2026-01-15")!
-        let edge = today.advanced(by: -60)
-        XCTAssertEqual(edge.iso, "2025-11-16")
-        XCTAssertEqual(today.days(since: edge), 60)
-        XCTAssertEqual(LocalDay.span(from: edge, to: today).count, 61, "inclusive of both ends")
+        XCTAssertEqual(LocalDay(iso: "2026-01-15")!.advanced(by: -60).iso, "2025-11-16")
+        XCTAssertEqual(LocalDay(iso: "2026-03-01")!.advanced(by: -60).iso, "2025-12-31")
     }
 
     // A day is the device's calendar day, and a page opened at 23:04 or 00:10 is not the same page.
@@ -98,7 +75,7 @@ final class PageConvergenceTests: XCTestCase {
     func testAWrittenDayIsAnyDaySomeoneShowedUpFor() {
         XCTAssertFalse(Page(day: LocalDay(iso: "2026-07-20")!).isWritten)
         XCTAssertTrue(Page(day: LocalDay(iso: "2026-07-20")!, body: "a line").isWritten)
-        // A mood with no words is still a day that was lived, and must not be drawn as a gap.
+        // A mood with no words is still a day that was lived, and is still drawn.
         XCTAssertTrue(Page(day: LocalDay(iso: "2026-07-20")!, mood: .m3).isWritten)
         XCTAssertTrue(Page(day: LocalDay(iso: "2026-07-20")!, energy: .e1).isWritten)
     }

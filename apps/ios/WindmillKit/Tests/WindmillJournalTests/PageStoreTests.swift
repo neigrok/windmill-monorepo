@@ -111,9 +111,9 @@ final class PageStoreTests: XCTestCase {
         XCTAssertTrue(PageCache(url: cacheURL).pending.isEmpty)
     }
 
-    // The canvas draws every day from the earliest written one up to yesterday, gaps included —
-    // and a gap is drawn as a gap, never skipped and never coloured as a failure.
-    func testTheCanvasDrawsGapsBetweenTheDaysThatWereWritten() async {
+    // The canvas is what you wrote, not a calendar with holes in it: a day nobody wrote is not
+    // drawn at all. Unwritten days used to appear as a marker and the words "nothing written".
+    func testOnlyTheDaysThatWereWrittenAreDrawn() async {
         let server = FakeSync()
         server.seed(day: "2026-07-16", body: "monday")
         server.seed(day: "2026-07-19", body: "thursday")
@@ -121,10 +121,20 @@ final class PageStoreTests: XCTestCase {
         let store = makeStore(sync: server)
         await store.connect(to: account(signedIn: true))
 
-        XCTAssertEqual(store.days.map(\.day.iso),
-                       ["2026-07-16", "2026-07-17", "2026-07-18", "2026-07-19"])
-        XCTAssertEqual(store.days.map(\.written), [true, false, false, true])
+        XCTAssertEqual(store.days.map(\.day.iso), ["2026-07-16", "2026-07-19"],
+                       "the three days between them were never written and are not the canvas's business")
         XCTAssertFalse(store.days.contains { $0.day.iso == "2026-07-20" }, "today is the draft, never history")
+    }
+
+    // A page carrying only a mood is still a day someone showed up for, so it is still drawn.
+    func testADayWithOnlyAMoodIsStillDrawn() async {
+        let server = FakeSync()
+        server.seed(day: "2026-07-18", body: "", mood: .m3)
+
+        let store = makeStore(sync: server)
+        await store.connect(to: account(signedIn: true))
+
+        XCTAssertEqual(store.days.map(\.day.iso), ["2026-07-18"])
     }
 
     // Today's page comes down into the draft so a second device continues the same page rather than

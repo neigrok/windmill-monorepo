@@ -29,13 +29,13 @@ public struct JournalRoom: View {
                 ForEach(Array(store.days.enumerated()), id: \.element.id) { index, day in
                     if opensMonth(at: index) { monthDivider(day.day) }
                     DayMarkerView(day: day.day, mood: day.mood, energy: day.energy,
-                                  written: day.written, wordCount: day.wordCount)
+                                  wordCount: day.wordCount)
                     past(day)
                 }
 
                 if todayOpensMonth { monthDivider(store.today) }
                 DayMarkerView(day: store.today, mood: store.mood, energy: store.energy,
-                              written: true, wordCount: store.body.split(whereSeparator: \.isWhitespace).count,
+                              wordCount: store.body.split(whereSeparator: \.isWhitespace).count,
                               isToday: true) {
                     SavedNote(state: store.saveState, tick: store.saveTick)
                 }
@@ -135,24 +135,14 @@ public struct JournalRoom: View {
     }
 
     private func past(_ day: PageStore.CanvasDay) -> some View {
-        Group {
-            if day.written {
-                Text(day.body)
-                    .font(WindmillFont.body(16))
-                    .lineSpacing(9)
-                    .foregroundStyle(skin.ink)
-                    .textSelection(.enabled)
-                    .padding(.top, WindmillSpace.x2)
-            } else {
-                // A day not written, said plainly and never apologised for.
-                Text("nothing written")
-                    .font(WindmillFont.body(13))
-                    .foregroundStyle(skin.ink.opacity(0.5))
-                    .padding(.top, 6)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.bottom, 34)
+        Text(day.body)
+            .font(WindmillFont.body(16))
+            .lineSpacing(9)
+            .foregroundStyle(skin.ink)
+            .textSelection(.enabled)
+            .padding(.top, WindmillSpace.x2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, 34)
     }
 
     // The month confirms itself as you scroll into it, rather than needing a rail of its own.
