@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PRODUCTS } from '../src/shell/products.js';
+import { LANDING_HEADS } from '../src/shell/marketing/landingHeads.js';
 
 const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src');
 const PRODUCTS_DIR = path.join(SRC, 'products') + path.sep;
@@ -131,4 +132,36 @@ const doorCopyMissing = PRODUCTS
 
 test('every product brings the words its door on the brand root is made of', () => {
   assert.deepEqual(doorCopyMissing, []);
+});
+
+// The crawlable seam. LANDING_HEADS used to be a hand-written list on the shell side that restated,
+// for every product, its pathname and a path into its source tree — the import graph could not see
+// it, so nothing here could either, and the only thing that caught a stale module path was the
+// bundler. It is composed off the registry now, and these three assertions are what makes that
+// composition load-bearing rather than incidental.
+test('the crawlable shells are exactly the brand root plus every product, in registry order', () => {
+  assert.deepEqual(
+    LANDING_HEADS.map((head) => head.path),
+    ['/', ...PRODUCTS.map((product) => product.landing.href)],
+  );
+});
+
+// A head names the module the build script preloads from the shell. It is stated beside the landing
+// it names, so a rename moves both together — but only if something checks the file is really there.
+const modulesMissing = PRODUCTS
+  .filter((product) => !fs.existsSync(path.resolve(SRC, '..', product.landing.head.module)))
+  .map((p) => `product "${p.id}" names the landing module ${p.landing.head.module}, which does not exist — the build would preload nothing and throw on the Vite manifest lookup`);
+
+test('every product names a landing module that exists', () => {
+  assert.deepEqual(modulesMissing, []);
+});
+
+// The brand root's hero is one fact — the front door — and it used to be written out by hand in
+// landingHeads.js, in web/index.html and derived a third time in BrandLanding. They agreed only
+// because someone kept them agreeing. The static shell now derives from the same registry the
+// running page does, so this pins them to each other rather than to a string.
+test('the brand root shell offers the first open product, and names it', () => {
+  const open = PRODUCTS.find((product) => product.shell.status === 'open');
+  const root = LANDING_HEADS.find((head) => head.path === '/');
+  assert.deepEqual(root.fallback.actions, [{ href: open.landing.href, label: `Start with ${open.label}` }]);
 });

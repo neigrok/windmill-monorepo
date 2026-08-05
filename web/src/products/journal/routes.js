@@ -5,6 +5,7 @@
 // neutral surface never downloads it.
 
 import { lazy } from 'react';
+import { journalLandingHead } from './marketing/landingHead.js';
 
 const importJournalApp = () => import('./JournalApp.jsx').then((m) => ({ default: m.JournalApp }));
 const JournalApp = lazy(importJournalApp);
@@ -48,6 +49,7 @@ export const journalRoutes = {
   preloadApp: importJournalApp,
   // The words the brand root's door for the journal is made of — the product's own, not the shell's.
   landing: {
+    head: journalLandingHead,
     href: '/journal',
     Component: JournalLanding,
     preload: importJournalLanding,

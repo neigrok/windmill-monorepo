@@ -27,11 +27,16 @@ const Shell = lazy(importShell);
 // sibling's room (that is how cross-room switching works). Inside its own room the hash is the
 // product's private space and never fires — #/app/t_x inside /app/roadmap is tree navigation,
 // not a door. "#/" exact is the exit: back to the brand root. Public surfaces are not doors:
-// #/demo, #/t/:id, #/browse, #/auth, #/oauth, #/showcase, #/gym (pre-open); a landing's own
-// anchors (/roadmap#how) never match because doors start with "#/".
+// #/demo, #/t/:id, #/browse, #/auth, #/oauth, #/showcase; a landing's own anchors (/roadmap#how)
+// never match because doors start with "#/".
+//
+// The product rows are DERIVED — switchHash and shell.room are already on the registry, and writing
+// them out here made the shell restate a product fact it does not own. Only OPEN products get a
+// door, which is the rule that used to be an omission: #/gym renders its app but does not upgrade
+// into /app/gym, so gym stays outside the room chrome until its status flips. That is now something
+// the code says rather than something a reader has to notice is missing.
 const LEGACY_DOORS = [
-  ['#/app', '/app/roadmap'],
-  ['#/journal', '/app/journal'],
+  ...PRODUCTS.filter((product) => product.shell.status === 'open').map((product) => [product.switchHash, product.shell.room]),
   ['#/settings', '/app/settings'],
   ['#/connect', '/app/connect'],
 ];

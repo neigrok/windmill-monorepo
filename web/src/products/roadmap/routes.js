@@ -7,6 +7,7 @@ import { lazy } from 'react';
 import { PlaceStore } from './persistence/PlaceStore.js';
 import { DEMO_TREE_ID } from './demo/demoStage.js';
 import { paidPlansOpen } from '../../shell/billing/checkout.js';
+import { roadmapLandingHead } from './marketing/landingHead.js';
 
 const importSkillTreeApp = () => import('./index.js').then((m) => ({ default: m.SkillTreeApp }));
 const SkillTreeApp = lazy(importSkillTreeApp);
@@ -109,6 +110,7 @@ export const roadmapRoutes = {
   // tagline + summary are the words the brand root's door for this product is made of. They live
   // here for the same reason the landing does: the shell must not hold a sentence about roadmaps.
   landing: {
+    head: roadmapLandingHead,
     href: '/roadmap',
     Component: RoadmapLanding,
     preload: importRoadmapLanding,

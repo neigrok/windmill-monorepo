@@ -5,6 +5,7 @@
 // the landing, and the author dogfoods at #/gym; the flip to 'open' is gym-landing's move.
 
 import { lazy } from 'react';
+import { gymLandingHead } from './marketing/landingHead.js';
 
 const importGymApp = () => import('./GymApp.jsx').then((m) => ({ default: m.GymApp }));
 const GymApp = lazy(importGymApp);
@@ -40,6 +41,7 @@ export const gymRoutes = {
   // The words the brand root's door for the gym is made of, and pre-open they carry their own
   // caveat in the same breath — the brand root reads the state off `shell.status` below.
   landing: {
+    head: gymLandingHead,
     href: '/gym',
     Component: GymLanding,
     preload: importGymLanding,
