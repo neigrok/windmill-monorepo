@@ -8,24 +8,30 @@
 // to a write that actually failed.
 
 import React, { useState } from 'react';
-import { clockOf, fmt, setCountLabel, timeLabel } from '../log.js';
+import { clockOf, fmt, NO_ROUTINE, sessionMovementMeta, timeLabel, workingSetsOf } from '../log.js';
 import { LADDER_KEYS, ladderLabels } from './ladder.js';
-import { movementOptions } from './movements.js';
 import { counterLine, planEntryFor, prefillCard } from './prefill.js';
 import { Keypad } from './Keypad.jsx';
+import { MovementPicker } from './MovementPicker.jsx';
 
 export function Logger({ live }) {
   const {
     session, routine, catalog, order, exIdx, exercise, sets, todaySets, workingToday, planEntry,
-    lastTime, lastTimeFailed, weight, reps, rest, undo, stalled, offline, elapsed,
-    chooseMovement, jumpTo, stepWeight, stepReps, setWeight, setReps, logSet, undoLast, resetRest,
-    finish, finishing,
+    lastTime, lastTimeFailed, weight, reps, rest, undo, stalled, offline, elapsed, deviation,
+    chooseMovement, createMovement, jumpTo, stepWeight, stepReps, setWeight, setReps, logSet,
+    undoLast, resetRest, saveDeviation, dismissDeviation, finish, finishing,
   } = live;
 
   const [typing, setTyping] = useState(null);
   const [jump, setJump] = useState(false);
   const [picker, setPicker] = useState(false);
   const [query, setQuery] = useState('');
+  // THE NEXT SET'S KIND, armed and then spent. A ramp-up logged as working becomes the mark to beat
+  // and the number the next set carries forward, so the logger has to be able to say a set was a
+  // warmup — and the chip that says it is backfill's own, not a second affordance for one word.
+  // It disarms on the set it armed and on no other, which is why `logSet` answers whether one
+  // happened: a lifter told the session is closing has not spent the gesture.
+  const [warmup, setWarmup] = useState(false);
 
   const labels = ladderLabels(weight);
   const counter = counterLine({ workingSetsToday: workingToday, planEntry });
@@ -45,7 +51,7 @@ export function Logger({ live }) {
     <div className="gym-stage">
       <header className="gym-bar">
         <span className="gym-live-dot" aria-hidden="true" />
-        <span className="gym-bar-routine">{routine ?? 'Ad-hoc session'}</span>
+        <span className="gym-bar-routine">{routine ?? NO_ROUTINE}</span>
         <span className="gym-bar-clock">{clockOf(elapsed)}</span>
         <button type="button" className="gym-finish" onClick={finish}>Finish</button>
       </header>
@@ -59,7 +65,7 @@ export function Logger({ live }) {
 
       {!exercise && (
         <section className="gym-adhoc">
-          <h1 className="gym-adhoc-title">{routine ?? 'Ad-hoc session'}</h1>
+          <h1 className="gym-adhoc-title">{routine ?? NO_ROUTINE}</h1>
           <p className="gym-adhoc-line">No routine, no plan snapshot. Pick what you are about to lift.</p>
           <button type="button" className="gym-adhoc-choose" onClick={openPicker}>Choose a movement</button>
         </section>
@@ -121,11 +127,32 @@ export function Logger({ live }) {
             </div>
           )}
 
+          {/* Backfill's own chip, and it sits on its own line rather than inside the reps row: the
+              big weight, the ladder, the reps and the 64px primary action keep one geometry for the
+              whole session, and a control appearing between them would move the thumb. */}
+          <div className="gym-kind">
+            <button
+              type="button"
+              className={warmup ? 'gym-line-kind is-warmup' : 'gym-line-kind'}
+              aria-pressed={warmup}
+              onClick={() => setWarmup(!warmup)}
+            >
+              warmup
+            </button>
+          </div>
+
           <div className="gym-primary">
             {/* The hook refuses a set once Finish is in flight; the button has to say so before the
-                tap, or the surface looks live and answers with a refusal the lifter didn't earn. */}
-            <button type="button" className="gym-log-set" onClick={() => logSet('working')} disabled={finishing}>
-              {`Log set  ·  ${fmt(weight)} × ${reps}`}
+                tap, or the surface looks live and answers with a refusal the lifter didn't earn.
+                It also says which KIND it is about to write, because the chip is small and the
+                write is not: a warmup counts toward no target, no record and no carry-forward. */}
+            <button
+              type="button"
+              className="gym-log-set"
+              onClick={() => { if (logSet(warmup ? 'warmup' : 'working')) setWarmup(false); }}
+              disabled={finishing}
+            >
+              {`Log ${warmup ? 'warmup' : 'set'}  ·  ${fmt(weight)} × ${reps}`}
             </button>
           </div>
         </>
@@ -158,8 +185,24 @@ export function Logger({ live }) {
           query={query}
           onQuery={setQuery}
           onPick={(id) => { setPicker(false); chooseMovement(id); }}
+          onCreate={createMovement}
           onClose={() => setPicker(false)}
         />
+      )}
+
+      {/* Two answers and no third: the sheet has no scrim to tap through and no close button,
+          because dismissing it without answering would leave the lifter's own question hanging over
+          a program they are mid-way through training. Both answers cost nothing — the session
+          already has the weight either way. */}
+      {deviation && (
+        <div className="gym-sheet-catch" role="presentation">
+          <div className="gym-sheet gym-deviation" role="dialog" aria-label={deviation.title}>
+            <h2 className="gym-deviation-title">{deviation.title}</h2>
+            <p className="gym-deviation-body">{deviation.body}</p>
+            <button type="button" className="gym-deviation-save" onClick={saveDeviation}>{deviation.save}</button>
+            <button type="button" className="gym-deviation-keep" onClick={dismissDeviation}>{deviation.keep}</button>
+          </div>
+        </div>
       )}
 
       {typing && (
@@ -203,8 +246,10 @@ function TodayList({ sets, offline, stalled }) {
   );
 }
 
-// Moving on is the lifter's decision, never the app's: nothing advances when a plan's set count is
-// reached, and nothing advances when a rest lands.
+// THE SESSION LIST, which is also where the next movement gets appended (canon screen 2): adding one
+// is a rest-time action taken from the list of what has been done so far, not a setup task done
+// before the first set. Moving on is the lifter's decision, never the app's — nothing advances when
+// a plan's set count is reached, and nothing advances when a rest lands.
 function JumpSheet({ order, exIdx, catalog, sets, session, onJump, onAdd, onClose }) {
   const names = new Map(catalog.map((each) => [each.id, each.name]));
   return (
@@ -215,7 +260,7 @@ function JumpSheet({ order, exIdx, catalog, sets, session, onJump, onAdd, onClos
           <button type="button" className="gym-sheet-close" onClick={onClose} aria-label="Close">×</button>
         </div>
         {order.map((id, index) => {
-          const done = sets.filter((set) => set.exerciseId === id && set.kind !== 'warmup').length;
+          const done = workingSetsOf(sets, id).length;
           const planned = planEntryFor(session, id)?.sets ?? null;
           return (
             <button
@@ -225,44 +270,12 @@ function JumpSheet({ order, exIdx, catalog, sets, session, onJump, onAdd, onClos
               onClick={() => onJump(index)}
             >
               <span className="gym-sheet-name">{names.get(id) ?? id}</span>
-              <span className="gym-sheet-meta">{planned ? `${done} of ${planned} sets` : setCountLabel(done)}</span>
+              <span className="gym-sheet-meta">{sessionMovementMeta({ done, planned })}</span>
             </button>
           );
         })}
-        <button type="button" className="gym-sheet-add" onClick={onAdd}>Add a movement to today</button>
+        <button type="button" className="gym-sheet-add" onClick={onAdd}>+ Add next movement</button>
       </div>
-    </div>
-  );
-}
-
-function MovementPicker({ catalog, order, query, onQuery, onPick, onClose }) {
-  const { matches, empty } = movementOptions({ catalog, order, query });
-  return (
-    <div className="gym-picker" role="dialog" aria-label="Movements">
-      <div className="gym-picker-head">
-        <span className="gym-picker-title">Movements</span>
-        <button type="button" className="gym-sheet-close" onClick={onClose} aria-label="Close">×</button>
-      </div>
-      <input
-        className="gym-picker-search"
-        type="search"
-        value={query}
-        placeholder="Search movements"
-        aria-label="Search movements"
-        onChange={(event) => onQuery(event.target.value)}
-        autoFocus
-      />
-      <ul className="gym-picker-list">
-        {matches.map((each) => (
-          <li key={each.id}>
-            <button type="button" className="gym-picker-row" onClick={() => onPick(each.id)}>
-              <span>{each.name}</span>
-              {each.custom && <span className="gym-picker-tag">yours</span>}
-            </button>
-          </li>
-        ))}
-      </ul>
-      {empty && <p className="gym-picker-empty">{empty}</p>}
     </div>
   );
 }

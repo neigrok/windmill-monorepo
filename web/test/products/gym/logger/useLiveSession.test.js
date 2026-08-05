@@ -1066,3 +1066,274 @@ test('a movement listed twice costs the index, not the list, and is not silent',
   assert.deepEqual(view.live.order, ['bench-press', 'back-squat']);
   assert.equal(view.live.toast.text, RESUME_LOST);
 });
+
+// THE CARD MUST NOT KEEP CLAIMING TO BE READING. A prefill read that never came back leaves the
+// only surface that could say so saying "reading your log…" instead — for the rest of the session,
+// over a movement whose history the log never denied. The hook is the only thing that knows, so it
+// is the hook that has to say it.
+test('a last-time read that never answers is surfaced, not swallowed', async (t) => {
+  const now = Date.now();
+  browserWith({});
+  const backend = logThatSettles({ startedAt: now - 60_000, lastActivityAt: now - 60_000 });
+  backend.api.lastTime = async () => { throw new GymError(503, 'could not read the log'); };
+
+  const view = await open(t, backend.api);
+  view.live.chooseMovement('back-squat');
+  await settle();
+
+  assert.equal(view.live.lastTime, null);
+  assert.equal(view.live.lastTimeFailed, true);
+  // The dial is the empty bar either way: a failure is not a training fact, and the prefill has
+  // nothing better to offer than the number it opens on.
+  assert.deepEqual([view.live.weight, view.live.reps], [20, 5]);
+});
+
+// The flag belongs to the movement under the thumb. A failure that lands after the lifter has
+// walked to the next one would otherwise draw "the log didn't answer" over a read still in flight.
+test('a failure for the movement the lifter has left never marks the one they moved to', async (t) => {
+  const now = Date.now();
+  browserWith({});
+  const backend = logThatSettles({ startedAt: now - 60_000, lastActivityAt: now - 60_000 });
+  const gates = new Map();
+  backend.api.lastTime = (exerciseId) => new Promise((resolve, reject) => gates.set(exerciseId, reject));
+
+  const view = await open(t, backend.api);
+  view.live.chooseMovement('back-squat');
+  await settle();
+  view.live.chooseMovement('bench-press');
+  await settle();
+
+  gates.get('back-squat')(new GymError(503, 'could not read the log'));
+  await settle();
+
+  assert.equal(view.live.exercise.id, 'bench-press');
+  assert.equal(view.live.lastTimeFailed, false);
+
+  // And the movement that is standing there when its own read fails does raise it.
+  gates.get('bench-press')(new GymError(503, 'could not read the log'));
+  await settle();
+  assert.equal(view.live.lastTimeFailed, true);
+});
+
+// A session running against a frozen plan, and the routine that plan was frozen FROM — the two
+// halves the mid-session question needs. It notices the bar disagreed by reading the snapshot, and
+// changes the program by re-reading the routine, because the snapshot stopped moving at the start.
+function planned({ startedAt }) {
+  const wire = [];
+  const session = {
+    id: 'ses_plan',
+    startedAt,
+    finishedAt: null,
+    routineId: 'rt_push_a',
+    plan: {
+      routine: 'Push A',
+      entries: [
+        { exerciseId: 'bench-press', sets: 5, reps: 5, weightKg: 82.5 },
+        { exerciseId: 'chin-up', sets: 3, reps: 8 },
+      ],
+    },
+  };
+  const routine = {
+    id: 'rt_push_a',
+    name: 'Push A',
+    position: 0,
+    lastTrainedAt: startedAt,
+    entries: [
+      { position: 1, exerciseId: 'bench-press', targetSets: 5, targetReps: 5, targetWeightKg: 82.5, restSeconds: 180 },
+      { position: 2, exerciseId: 'chin-up', targetSets: 3, targetReps: 8 },
+    ],
+  };
+  const stored = [];
+  return {
+    wire,
+    session,
+    stored,
+    api: {
+      async exercises() {
+        return [{ id: 'bench-press', name: 'Bench Press' }, { id: 'chin-up', name: 'Chin-up' }];
+      },
+      async sessions() {
+        return [{ ...session, setCount: stored.length, exercises: [] }];
+      },
+      async session() {
+        return { session: { ...session }, sets: stored.slice() };
+      },
+      async appendSet(sessionId, body) {
+        stored.push({ ...body, setNumber: stored.length + 1 });
+        return stored[stored.length - 1];
+      },
+      async finishSession(id, { finishedAt }) {
+        session.finishedAt = finishedAt;
+        return { ...session };
+      },
+      async lastTime(exerciseId) {
+        return { exerciseId };
+      },
+      async routine(id) {
+        wire.push(`GET routine ${id}`);
+        return JSON.parse(JSON.stringify(routine));
+      },
+      async replaceRoutine(id, body) {
+        wire.push(`PUT routine ${id}`);
+        wire.push(body);
+        return { ...routine };
+      },
+    },
+  };
+}
+
+// THE ONE QUESTION THE LOGGER ASKS, at the boundary it is asked at. The answer is a read-modify-write
+// of the WHOLE routine: a PUT carrying only the changed entry would delete the rest of the program.
+test('a heavier day is asked about when the movement changes, and answering rewrites the whole routine', async (t) => {
+  const now = Date.now();
+  browserWith();
+  const store = planned({ startedAt: now - HOUR });
+  const view = await open(t, store.api);
+  assert.equal(view.live.phase, 'live');
+  assert.equal(view.live.deviation, null);
+
+  view.live.chooseMovement('bench-press');
+  await settle();
+  view.live.setWeight(87.5);
+  view.live.logSet();
+  await settle();
+  // Standing on the movement is not leaving it: nothing is asked until the lifter moves on.
+  assert.equal(view.live.deviation, null);
+
+  view.live.chooseMovement('chin-up');
+  await settle();
+  assert.deepEqual(view.live.deviation, {
+    exerciseId: 'bench-press',
+    position: 1,
+    weightKg: 87.5,
+    title: 'Heavier than the plan',
+    body: 'Today’s Bench Press ran at 87.5 against a planned 82.5. Today’s session already has it. Push A does not.',
+    save: 'Save 87.5 to Push A',
+    keep: 'Today only',
+  });
+
+  await view.live.saveDeviation();
+  await settle();
+  assert.equal(view.live.deviation, null);
+  assert.deepEqual(store.wire.slice(0, 2), ['GET routine rt_push_a', 'PUT routine rt_push_a']);
+  assert.deepEqual(store.wire[2], {
+    id: 'rt_push_a',
+    name: 'Push A',
+    position: 0,
+    entries: [
+      { exerciseId: 'bench-press', targetSets: 5, targetReps: 5, targetWeightKg: 87.5, restSeconds: 180 },
+      { exerciseId: 'chin-up', targetSets: 3, targetReps: 8 },
+    ],
+  });
+
+  // Once a session, whatever the answer was: the lifter came back, went heavier again, and left
+  // again — and the sheet does not return.
+  view.live.chooseMovement('bench-press');
+  await settle();
+  view.live.setWeight(92.5);
+  view.live.logSet();
+  await settle();
+  view.live.chooseMovement('chin-up');
+  await settle();
+  assert.equal(view.live.deviation, null);
+  assert.equal(store.wire.length, 3);
+});
+
+// The finish screen replaces the redirect-and-a-toast: what happened is a whole surface now, and
+// saying it twice — once quietly, over the screen that says it properly — is the thing being fixed.
+test('finishing lands on the end of the session it just closed, and says nothing on the way', async (t) => {
+  const now = Date.now();
+  const browser = browserWith();
+  const store = logThatSettles({ startedAt: now - HOUR, lastActivityAt: now - 60_000 });
+  const view = await open(t, store.api);
+  assert.equal(view.live.phase, 'live');
+
+  view.live.chooseMovement('back-squat');
+  await settle();
+  view.live.logSet();
+  await settle();
+
+  await view.live.finish();
+  await settle();
+  assert.equal(view.live.phase, 'idle');
+  assert.equal(view.live.session, null);
+  assert.equal(globalThis.window.location.hash, '#/gym/finish/ses_probe');
+  assert.equal(view.live.toast, null);
+  // The resume blob goes with the session, and the queue is empty because Finish waited for it.
+  assert.equal(browser.kept(), null);
+  assert.deepEqual(browser.held(), []);
+});
+
+// THE LOGGER CAN WRITE A WARMUP, which neither live logger could until 2026-08-06 — only backfill
+// and the Lift import ever set a kind. It was a phase-2 gap and a correctness bug: the record rules
+// read `kind == 'working'` and the prefill read exists precisely to exclude warmups, so a 40 kg
+// ramp-up logged as working became the prior mark to beat and the number the next set carried
+// forward — the product's single highest-value pixel, answered with a lie.
+test('a warmup is logged as one, counts toward no target, and is never carried forward', async (t) => {
+  const now = Date.now();
+  browserWith();
+  const store = planned({ startedAt: now - HOUR });
+  const view = await open(t, store.api);
+  view.live.chooseMovement('bench-press');
+  await settle();
+
+  // The plan holds the opening number, and no working set has happened yet.
+  assert.deepEqual([view.live.weight, view.live.reps], [82.5, 5]);
+  assert.equal(view.live.workingToday, 0);
+
+  view.live.setWeight(40);
+  view.live.setReps(10);
+  assert.equal(view.live.logSet('warmup'), true);
+  await settle();
+  assert.deepEqual(view.live.sets.map((set) => [set.weightKg, set.reps, set.kind]), [[40, 10, 'warmup']]);
+  // It advances no counter, and it is not the weight the next set starts from: the plan still is.
+  assert.equal(view.live.workingToday, 0);
+  assert.deepEqual(view.live.todaySets.map((set) => set.kind), ['warmup']);
+
+  view.live.chooseMovement('chin-up');
+  await settle();
+  view.live.chooseMovement('bench-press');
+  await settle();
+  assert.deepEqual([view.live.weight, view.live.reps], [82.5, 5]);
+
+  // A working set does all three of those things, from the same door.
+  view.live.setWeight(85);
+  view.live.setReps(5);
+  assert.equal(view.live.logSet('working'), true);
+  await settle();
+  assert.equal(view.live.workingToday, 1);
+
+  view.live.chooseMovement('chin-up');
+  await settle();
+  view.live.chooseMovement('bench-press');
+  await settle();
+  assert.deepEqual([view.live.weight, view.live.reps], [85, 5]);
+});
+
+// The chip disarms on the set it armed and on no other, so the answer has to say whether one
+// happened: a lifter told the session is closing has not spent the gesture, and the next tap in the
+// next session would otherwise write a working set they had asked to be a warmup.
+test('logSet answers whether a set happened, so an armed warmup is not spent on a refusal', async (t) => {
+  const now = Date.now();
+  browserWith({});
+  const backend = logThatSettles({ startedAt: now - 60_000, lastActivityAt: now - 60_000 });
+  let release;
+  const closing = new Promise((resolve) => { release = resolve; });
+  const finishSession = backend.api.finishSession;
+  backend.api.finishSession = async (...args) => { await closing; return finishSession(...args); };
+
+  const view = await open(t, backend.api);
+  view.live.chooseMovement('back-squat');
+  await settle();
+  assert.equal(view.live.logSet('working'), true);
+  await settle();
+
+  const finishing = view.live.finish();
+  await settle();
+  assert.equal(view.live.finishing, true);
+  assert.equal(view.live.logSet('warmup'), false);
+  assert.equal(view.live.toast.text, 'The session is closing — log that set in the next one.');
+  release();
+  await finishing;
+  await settle();
+});

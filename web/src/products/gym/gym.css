@@ -261,8 +261,12 @@
   flex-direction: column;
   gap: 10px;
 }
+/* What the session was on the left, what it lifted on the right (G8). The top set gets a column of
+   its own because it is the one number a lifter scans a log for. */
 .gym-row {
-  display: block;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
   padding: 14px 16px;
   border: 1px solid var(--gym-line);
   border-radius: 12px;
@@ -275,13 +279,41 @@
   background: var(--gym-raised);
   border-color: var(--gym-line-strong);
 }
+.gym-row-body {
+  flex: 1;
+  min-width: 0;
+}
 .gym-row-top {
   display: flex;
-  justify-content: space-between;
   gap: 12px;
   font-size: 13px;
   color: var(--gym-ink-dim);
   font-variant-numeric: tabular-nums;
+}
+.gym-row-top-set {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.gym-row-top-value {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--gym-ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.gym-row-top-label {
+  font-size: 11px;
+  color: var(--gym-ink-faint);
+}
+/* A close nobody pressed is a fact about the session, never a fault of it. */
+.gym-row-closed {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--gym-ink-faint);
 }
 .gym-row-length {
   color: var(--gym-ink-faint);
@@ -289,22 +321,38 @@
 .gym-row-open {
   color: var(--color-brand);
 }
+/* The day leads and the routine sits beside it on the same line (G8): a lifter looking for a
+   session knows when it was before they know what it was. The length and the set count live one
+   line down, in the meta, and are not repeated up here. */
+.gym-row-day {
+  flex: none;
+}
 .gym-row-title {
-  margin-top: 6px;
-  font-size: 16px;
+  min-width: 0;
+  font-size: 14px;
   font-weight: 600;
+  color: var(--gym-ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .gym-row-meta {
-  margin-top: 4px;
+  margin-top: 5px;
   font-size: 13px;
-  color: var(--gym-ink-faint);
+  color: var(--gym-ink-dim);
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+  white-space: pre;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+}
+.gym-row-movements {
+  margin-top: 3px;
+  font-size: 12.5px;
+  color: var(--gym-ink-faint);
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* The foot of the log — one page deeper, or the bottom said out loud. Quieter than a session row:
@@ -362,8 +410,8 @@
 .gym-detail-head {
   margin-bottom: 18px;
 }
-/* The routine sits beside the day, never instead of it: a session is a date first, and an ad-hoc
-   one reads one step quieter rather than looking degraded. */
+/* The routine sits beside the day, never instead of it: a session is a date first, and one with no
+   routine reads one step quieter rather than looking degraded. */
 .gym-detail-routine {
   font-size: 15px;
   font-weight: 600;
@@ -851,6 +899,13 @@
 
 /* 64px, full width, in the thumb zone, and it says the weight back — the confirmation has to
    survive a room where the tone is inaudible and a hand that feels no haptic. */
+/* The kind of the next set, armed on the way to the primary action — backfill's own chip, at
+   backfill's own weight, so one word means one thing in both places. */
+.gym-kind {
+  flex: none;
+  display: flex;
+  padding: 10px 14px 0;
+}
 .gym-primary {
   flex: none;
   padding: 11px 14px 8px;
@@ -1212,7 +1267,7 @@
   width: min(402px, 100vw);
   box-sizing: border-box;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   padding: 0 14px 22px;
   background: linear-gradient(to bottom, transparent, var(--gym-canvas) 40%);
 }
@@ -1285,7 +1340,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* An ad-hoc session is one step quieter, never degraded. */
+/* A session with no routine is one step quieter, never degraded. */
 .gym-row-title.is-adhoc {
   color: var(--gym-ink-dim);
 }
@@ -1299,4 +1354,1078 @@
 .gym-picker-search:focus {
   outline: none;
   border-color: var(--color-brand);
+}
+
+/* ============================================================
+   The rooms around the logger (canon A/B/C and G8) — Today,
+   Routines and its editor, the finish screen, the past-workout
+   form. Every one of them is drawn in .gym-column, the 560px
+   centred column the log has always used, and NOT in the
+   402px .gym-stage slab: the slab exists so a chalked thumb
+   finds the same geometry mid-set, and none of these screens
+   are touched mid-set. The one exception is the mid-session
+   sheet at the bottom of this file, which is the logger's.
+   ============================================================ */
+
+/* One header shape wherever a title has a door beside it: the log's
+   past-workout door and the routines list's New. Both are ghosts —
+   findable because the header never scrolls far, never competing
+   with the thing the room is for. */
+.gym-log-head {
+  justify-content: space-between;
+  align-items: baseline;
+}
+.gym-door-past {
+  min-height: 36px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--gym-line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--gym-ink-dim);
+  font: inherit;
+  font-size: 13px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.gym-door-past:hover {
+  background: var(--gym-raised);
+  border-color: var(--gym-line-strong);
+  color: var(--gym-ink);
+}
+
+/* Nothing failed, so this is not the alarm: the live dot and the
+   surface of an ordinary card, never --alarm-ink. The workout is
+   simply still running. */
+.gym-refusal {
+  margin: 14px 0;
+  padding: 13px 14px;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 13px;
+  background: var(--gym-surface);
+}
+.gym-refusal-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+.gym-refusal-body {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--gym-ink-dim);
+}
+.gym-refusal-close {
+  min-height: 36px;
+  margin-top: 10px;
+  padding: 0 14px;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--gym-ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* The two facts a session only tells you once its sets are in hand,
+   and the log row cannot: what the top set was, and whether anybody
+   pressed Finish. */
+.gym-detail-top {
+  margin: 4px 0 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--gym-ink-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: pre;
+}
+.gym-detail-closed {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  color: var(--gym-ink-faint);
+}
+
+/* ── Today ─────────────────────────────────────────────────── */
+
+.gym-today-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.gym-today-line {
+  margin: 2px 0 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--gym-ink-dim);
+}
+
+/* The routine that has waited longest. It is a card and not a
+   banner: it names a routine and when it was last trained, and
+   nothing on it claims a workout is due on a date. */
+.gym-due {
+  padding: 15px 16px 16px;
+  border: 1px solid var(--gym-line);
+  border-radius: 14px;
+  background: var(--gym-surface);
+}
+.gym-due-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.gym-due-name {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--gym-ink);
+  text-decoration: none;
+}
+.gym-due-name:hover {
+  color: var(--color-brand);
+}
+.gym-due-when {
+  font-size: 12.5px;
+  color: var(--gym-ink-faint);
+  white-space: nowrap;
+}
+.gym-due-entries {
+  list-style: none;
+  margin: 12px 0 14px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.gym-due-entry {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+}
+.gym-due-target,
+.gym-due-more {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--gym-ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.gym-start {
+  width: 100%;
+  height: 56px;
+  border: none;
+  border-radius: 17px;
+  background: var(--color-brand);
+  color: var(--gym-on-accent);
+  font: inherit;
+  font-size: 17px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.gym-start:hover {
+  background: var(--color-brand-hover);
+}
+.gym-start:active {
+  background: var(--color-brand-active);
+}
+/* The second way in is always a way in, never a lesser one: it is
+   quiet because a plan is a plan, not because logging without one
+   is worse. */
+a.gym-start-adhoc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.gym-last {
+  margin-top: 8px;
+}
+.gym-last-head {
+  margin: 0 0 8px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--gym-ink-dim);
+}
+.gym-last-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--gym-line);
+  border-radius: 12px;
+  background: var(--gym-surface);
+  color: var(--gym-ink);
+  text-decoration: none;
+}
+.gym-last-row:hover {
+  background: var(--gym-raised);
+  border-color: var(--gym-line-strong);
+}
+.gym-last-name {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+.gym-last-meta {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--gym-ink-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gym-last-go {
+  margin-left: auto;
+  color: var(--color-brand);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+/* ── Routines, and one of them under the hand ──────────────── */
+
+.gym-routines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.gym-routine {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--gym-line);
+  border-radius: 12px;
+  background: var(--gym-surface);
+  overflow: hidden;
+}
+.gym-routine:hover {
+  border-color: var(--gym-line-strong);
+}
+.gym-routine-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  color: var(--gym-ink);
+  text-decoration: none;
+}
+.gym-routine-open:hover {
+  background: var(--gym-raised);
+}
+.gym-routine-name {
+  font-size: 16px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gym-routine-meta {
+  font-size: 13px;
+  color: var(--gym-ink-faint);
+}
+/* Duplicating is deliberate and semi-destructive in the way every
+   copy is — it makes a thing that then has to be named — so it is
+   the smaller target of the two, exactly as the logger's chips are. */
+.gym-routine-copy {
+  flex: none;
+  width: 46px;
+  border: none;
+  border-left: 1px solid var(--gym-line);
+  background: transparent;
+  color: var(--gym-ink-faint);
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+.gym-routine-copy:hover {
+  background: var(--gym-raised);
+  color: var(--gym-ink);
+}
+
+.gym-editor-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.gym-editor-name {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--gym-line);
+  border-radius: 11px;
+  background: var(--gym-surface);
+  color: var(--gym-ink);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+}
+.gym-editor-name:focus {
+  outline: none;
+  border-color: var(--color-brand);
+}
+.gym-editor-done {
+  flex: none;
+  height: 44px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 11px;
+  background: var(--color-brand);
+  color: var(--gym-on-accent);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+/* Inert rather than absent, and the line beneath says which of the
+   two things is missing: a Done that vanishes leaves a lifter
+   pressing at nothing to find out why. */
+.gym-editor-done.is-inert {
+  background: var(--gym-raised);
+  color: var(--gym-ink-faint);
+}
+.gym-editor-missing {
+  margin: -8px 0 12px;
+  font-size: 12.5px;
+  color: var(--gym-ink-faint);
+}
+
+.gym-entries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gym-entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--gym-line);
+  border-radius: 12px;
+  background: var(--gym-surface);
+}
+/* Lifted while it is under the finger, and it must not be caught by
+   the pointer test of the rows it passes over. */
+.gym-entry.is-dragging {
+  position: relative;
+  z-index: 3;
+  border-color: var(--color-brand);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+.gym-entry-rail {
+  flex: none;
+  width: 28px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--gym-ink-faint);
+  font-size: 15px;
+  cursor: grab;
+  /* The browser must not take the drag for a scroll: a rail that
+     scrolls the page instead of moving the row is a rail that does
+     nothing at all on a phone. */
+  touch-action: none;
+}
+.gym-entry.is-dragging .gym-entry-rail {
+  pointer-events: auto;
+  cursor: grabbing;
+}
+.gym-entry-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gym-entry-target {
+  flex: none;
+  height: 34px;
+  padding: 0 11px;
+  border: 1px solid var(--gym-line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--gym-ink-dim);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.gym-entry-target:hover {
+  border-color: var(--color-brand);
+  color: var(--color-brand);
+}
+.gym-entry-drop {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 99px;
+  background: transparent;
+  color: var(--gym-ink-faint);
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+.gym-entry-drop:hover {
+  color: var(--alarm-ink);
+}
+.gym-editor-add {
+  width: 100%;
+  height: 50px;
+  margin-top: 12px;
+  border: 1px dashed var(--gym-line-strong);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--gym-ink-dim);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gym-editor-add:hover {
+  border-color: var(--color-brand);
+  color: var(--color-brand);
+}
+.gym-editor-foot {
+  display: flex;
+  gap: 10px;
+  margin-top: 22px;
+}
+.gym-editor-duplicate {
+  height: 50px;
+  padding: 0 18px;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 13px;
+  background: transparent;
+  color: var(--gym-ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+/* Inert on exactly what Done is inert on: a copy of a draft the store would refuse is a refusal
+   this screen can already see coming, and the missing line above it says which half. */
+.gym-editor-duplicate.is-inert {
+  border-color: var(--gym-line);
+  color: var(--gym-ink-faint);
+}
+.gym-editor-start {
+  flex: 1;
+  height: 50px;
+  border: none;
+  border-radius: 13px;
+  background: var(--color-brand);
+  color: var(--gym-on-accent);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+/* The target sheet — two counts under a thumb and the weight on the
+   keypad every other number in this product is typed on. */
+.gym-target-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--gym-line);
+}
+.gym-target-label {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gym-ink-dim);
+}
+.gym-target-step {
+  width: 46px;
+  height: 42px;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 12px;
+  background: var(--gym-raised);
+  color: var(--gym-ink);
+  font-family: var(--font-mono);
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gym-target-value {
+  min-width: 40px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 19px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.gym-target-weight {
+  height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 12px;
+  background: var(--gym-surface);
+  color: var(--gym-ink);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.gym-target-clear {
+  height: 42px;
+  padding: 0 10px;
+  border: none;
+  background: transparent;
+  color: var(--gym-ink-faint);
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ── The end of a session ──────────────────────────────────── */
+
+.gym-finish-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.gym-finish-subtitle {
+  margin: 2px 0 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--gym-ink-dim);
+}
+.gym-finish-when {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--gym-ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Three facts, and the third is a dash when there is no honest one-rep
+   estimate to print — a chin-up at zero and a band-assisted pull-up
+   at −20 have none. */
+.gym-stats {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin: 18px 0 4px;
+  padding: 0;
+}
+.gym-stat {
+  padding: 14px 12px;
+  border: 1px solid var(--gym-line);
+  border-radius: 13px;
+  background: var(--gym-surface);
+  text-align: center;
+}
+.gym-stat-value {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--gym-ink);
+  font-variant-numeric: tabular-nums;
+}
+.gym-stat-label {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--gym-ink-faint);
+}
+
+/* Gold as a KIND of moment, not a state, and it is the only loud
+   thing here. On the ~190 sessions in 200 that earn nothing, this
+   block is absent and NOTHING takes its place. */
+.gym-record {
+  margin-top: 14px;
+  padding: 13px 14px;
+  border: 1px solid var(--pr-ink);
+  border-radius: 13px;
+  background: var(--pr-soft);
+}
+.gym-record-title {
+  margin: 0;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--pr-ink);
+}
+.gym-record-line {
+  margin: 5px 0 0;
+  font-size: 14.5px;
+  line-height: 1.45;
+  color: var(--gym-ink);
+}
+
+/* A fact with a direction, never a grade: no percentage, no arrow
+   coloured for the direction it points, nothing green and nothing
+   red. */
+.gym-against {
+  margin-top: 20px;
+}
+.gym-against-title {
+  margin: 0 0 8px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--gym-ink-dim);
+}
+.gym-against-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--gym-line);
+  border-radius: 12px;
+  background: var(--gym-surface);
+  overflow: hidden;
+}
+.gym-against-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 11px 13px;
+  border-bottom: 1px solid var(--gym-line);
+}
+.gym-against-row:last-child {
+  border-bottom: none;
+}
+.gym-against-movement {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gym-against-detail {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--gym-ink-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.gym-finish-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 22px;
+}
+.gym-finish-detail,
+.gym-short-keep,
+.gym-keep-decline,
+.gym-overlap-fix,
+.gym-save-cancel {
+  height: 50px;
+  padding: 0 18px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 13px;
+  background: transparent;
+  color: var(--gym-ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+.gym-finish-done,
+.gym-keep-save,
+.gym-save-do {
+  flex: 1;
+  height: 50px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 13px;
+  background: var(--color-brand);
+  color: var(--gym-on-accent);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+}
+.gym-keep-save.is-inert,
+.gym-save-do.is-inert {
+  background: var(--gym-raised);
+  color: var(--gym-ink-faint);
+}
+
+/* The only destructive action in the product. Alarm ink is earned
+   here in the one way it is earned anywhere: what this button does
+   cannot be undone. */
+.gym-short {
+  margin-top: 18px;
+}
+.gym-short-line {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--gym-ink-dim);
+}
+.gym-short-discard {
+  flex: 1;
+  height: 50px;
+  border: 1px solid var(--alarm-ink);
+  border-radius: 13px;
+  background: transparent;
+  color: var(--alarm-ink);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.gym-short-discard:hover {
+  background: var(--alarm-fill);
+  border-color: var(--alarm-fill);
+  color: var(--gym-on-alarm);
+}
+
+/* Offered, never taken: nothing is created until Save is tapped, and
+   declining costs nothing because the offer comes back next session. */
+.gym-keep {
+  margin-top: 22px;
+  padding: 16px;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 14px;
+  background: var(--gym-surface);
+}
+.gym-keep-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+.gym-keep-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+.gym-keep-input {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--gym-line);
+  border-radius: 11px;
+  background: var(--gym-canvas);
+  color: var(--gym-ink);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+}
+.gym-keep-input:focus {
+  outline: none;
+  border-color: var(--color-brand);
+}
+.gym-keep-hint {
+  font-size: 11.5px;
+  color: var(--gym-ink-faint);
+  white-space: nowrap;
+}
+.gym-keep-entries {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.gym-keep-entry {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+}
+.gym-keep-target {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--gym-ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.gym-keep-line {
+  margin: 14px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--gym-ink-faint);
+}
+
+/* ── Add a past workout ────────────────────────────────────── */
+
+.gym-when {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 18px 0 6px;
+}
+.gym-when-word {
+  font-size: 13px;
+  color: var(--gym-ink-faint);
+}
+.gym-chip,
+.gym-when-time {
+  height: 40px;
+  padding: 0 13px;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 11px;
+  background: var(--gym-surface);
+  color: var(--gym-ink);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.gym-chip.is-on {
+  border-color: var(--color-brand);
+  background: var(--color-brand-soft);
+  color: var(--gym-ink);
+  font-weight: 700;
+}
+.gym-when-time {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.gym-block {
+  margin-top: 16px;
+}
+.gym-block-name {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 700;
+}
+/* One remembered fact per row — weight × reps × how many — and the
+   two numerals are separate targets because the keypad takes one
+   value at a time, here as in the logger. */
+.gym-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 9px 10px;
+  border: 1px solid var(--gym-line);
+  border-radius: 12px;
+  background: var(--gym-surface);
+  margin-bottom: 7px;
+}
+.gym-line-value {
+  height: 38px;
+  min-width: 54px;
+  padding: 0 10px;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 10px;
+  background: var(--gym-raised);
+  color: var(--gym-ink);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.gym-line-kind {
+  height: 38px;
+  padding: 0 11px;
+  border: 1px solid var(--gym-line);
+  border-radius: 99px;
+  background: transparent;
+  color: var(--gym-ink-faint);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.gym-line-kind.is-warmup {
+  border-color: var(--gym-line-strong);
+  background: var(--gym-raised);
+  color: var(--warmup-ink);
+  font-weight: 700;
+}
+.gym-line-count {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.gym-line-step {
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 10px;
+  background: var(--gym-raised);
+  color: var(--gym-ink);
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gym-line-sets {
+  min-width: 34px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--gym-ink-dim);
+  font-variant-numeric: tabular-nums;
+}
+.gym-line-drop {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 99px;
+  background: transparent;
+  color: var(--gym-ink-faint);
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+.gym-line-drop:hover {
+  color: var(--alarm-ink);
+}
+.gym-line-add {
+  height: 38px;
+  padding: 0 13px;
+  border: 1px dashed var(--gym-line-strong);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--gym-ink-dim);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Overlapping times usually mean that visit is already half-logged,
+   so the answer is not "pick another time" but "that one is already
+   here" — and the way out of it opens that session. */
+.gym-overlap {
+  margin: 18px 0 0;
+  padding: 13px 14px;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 13px;
+  background: var(--gym-surface);
+}
+.gym-overlap-title {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 700;
+}
+.gym-overlap-body {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--gym-ink-dim);
+}
+.gym-overlap-open {
+  flex: 1;
+  height: 50px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 13px;
+  background: var(--color-brand-soft);
+  color: var(--color-brand);
+  font-size: 14px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.gym-save {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 24px;
+}
+.gym-save-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--gym-ink-faint);
+}
+
+/* ── The one question the logger asks (canon screen 8) ──────── */
+
+/* Inside the logger's slab, so it wears the sheet chrome the jump
+   list and the keypad already wear. Two answers and no third: there
+   is no close button and no scrim to tap through, because both
+   answers are free and neither is a dismissal. */
+.gym-deviation {
+  padding-bottom: 26px;
+}
+.gym-deviation-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 800;
+}
+.gym-deviation-body {
+  margin: 8px 0 16px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--gym-ink-dim);
+}
+.gym-deviation-save {
+  width: 100%;
+  height: 54px;
+  border: none;
+  border-radius: 15px;
+  background: var(--color-brand);
+  color: var(--gym-on-accent);
+  font-size: 16px;
+  font-weight: 800;
+}
+.gym-deviation-keep {
+  width: 100%;
+  height: 48px;
+  margin-top: 8px;
+  border: none;
+  border-radius: 15px;
+  background: transparent;
+  color: var(--gym-ink-dim);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* The door out of the picker's last silence: it quotes what was
+   typed, because that string is about to become an identity. */
+.gym-picker-create {
+  width: 100%;
+  height: 50px;
+  margin-top: 10px;
+  border: 1px dashed var(--gym-line-strong);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--gym-ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gym-picker-create:hover {
+  border-color: var(--color-brand);
+  color: var(--color-brand);
 }

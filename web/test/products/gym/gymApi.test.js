@@ -1,13 +1,17 @@
 // The gym wire contract from the client's side — what each status means to a flush queue that has
-// to decide, without a human, whether a set is lost, retryable, or already durable, and which of
-// the four machine codes tells it how to repair the one that isn't. The sentences here are
-// deliberately not the ones the server ships: a refusal reworded overnight must classify the same.
+// to decide, without a human, whether a set is lost, retryable, or already durable, and which
+// machine code tells it how to repair the one that isn't. The sentences here are deliberately not
+// the ones the server ships: a refusal reworded overnight must classify the same.
+//
+// The routine, review and discard routes are here too, with the three refusals they brought. A
+// client branches on those by hand rather than in a queue, and it reads them the same way it reads
+// the other four: the code, never the English.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { API_BASE } from '../../../src/shell/apiBase.js';
-import { gymApi, GymError } from '../../../src/products/gym/gymApi.js';
+import { failureReason, gymApi, GymError } from '../../../src/products/gym/gymApi.js';
 
 const realFetch = global.fetch;
 let calls = [];
@@ -25,6 +29,12 @@ function serve(...answers) {
 
 function ok(body) {
   return { ok: true, status: 200, json: async () => body };
+}
+
+// A 204 with a body that cannot be parsed, because the client must never try: the two deletes
+// answer with no bytes at all, and a reply asked for its json would fail on the success.
+function nothing() {
+  return { ok: true, status: 204, json: async () => { throw new SyntaxError('Unexpected end of JSON input'); } };
 }
 
 function refusal(status, error, code) {
@@ -58,6 +68,10 @@ function flagsOf(error) {
     setIdTaken: error.setIdTaken,
     sessionIdTaken: error.sessionIdTaken,
     unknownExercise: error.unknownExercise,
+    routineIdTaken: error.routineIdTaken,
+    exerciseIdTaken: error.exerciseIdTaken,
+    sessionOpen: error.sessionOpen,
+    sessionAlreadyOpen: error.sessionAlreadyOpen,
   };
 }
 
@@ -156,6 +170,10 @@ test('lastTime — a movement no catalog holds is the one refusal, and it is the
       setIdTaken: false,
       sessionIdTaken: false,
       unknownExercise: true,
+      routineIdTaken: false,
+      exerciseIdTaken: false,
+      sessionOpen: false,
+      sessionAlreadyOpen: false,
     });
     return true;
   });
@@ -194,6 +212,10 @@ test('session-finished — the code, not the sentence, says this set will never 
       setIdTaken: false,
       sessionIdTaken: false,
       unknownExercise: false,
+      routineIdTaken: false,
+      exerciseIdTaken: false,
+      sessionOpen: false,
+      sessionAlreadyOpen: false,
     });
     return true;
   });
@@ -214,6 +236,10 @@ test('set-id-taken — the code says mint a fresh set id, so a reword can never 
       setIdTaken: true,
       sessionIdTaken: false,
       unknownExercise: false,
+      routineIdTaken: false,
+      exerciseIdTaken: false,
+      sessionOpen: false,
+      sessionAlreadyOpen: false,
     });
     return true;
   });
@@ -234,6 +260,10 @@ test('session-id-taken — the code says mint a fresh session id', async () => {
       setIdTaken: false,
       sessionIdTaken: true,
       unknownExercise: false,
+      routineIdTaken: false,
+      exerciseIdTaken: false,
+      sessionOpen: false,
+      sessionAlreadyOpen: false,
     });
     return true;
   });
@@ -254,6 +284,10 @@ test('unknown-exercise — a 400 with a repair of its own: reload the catalog, n
       setIdTaken: false,
       sessionIdTaken: false,
       unknownExercise: true,
+      routineIdTaken: false,
+      exerciseIdTaken: false,
+      sessionOpen: false,
+      sessionAlreadyOpen: false,
     });
     return true;
   });
@@ -284,6 +318,10 @@ test('a codeless refusal still classifies by the sentence it shipped with', asyn
         setIdTaken: code === 'set-id-taken',
         sessionIdTaken: code === 'session-id-taken',
         unknownExercise: code === 'unknown-exercise',
+        routineIdTaken: code === 'routine-id-taken',
+        exerciseIdTaken: code === 'exercise-id-taken',
+        sessionOpen: code === 'session-open',
+        sessionAlreadyOpen: code === 'session-already-open',
       });
       return true;
     });
@@ -307,6 +345,10 @@ test('a 409 with an unknown code, or none at all, is terminal but unrepairable',
       setIdTaken: false,
       sessionIdTaken: false,
       unknownExercise: false,
+      routineIdTaken: false,
+      exerciseIdTaken: false,
+      sessionOpen: false,
+      sessionAlreadyOpen: false,
     });
     return true;
   });
@@ -325,6 +367,10 @@ test('a 409 with an unknown code, or none at all, is terminal but unrepairable',
       setIdTaken: false,
       sessionIdTaken: false,
       unknownExercise: false,
+      routineIdTaken: false,
+      exerciseIdTaken: false,
+      sessionOpen: false,
+      sessionAlreadyOpen: false,
     });
     return true;
   });
@@ -345,6 +391,10 @@ test('400 is terminal and 5xx is retryable — a busy store never reads as a bad
       setIdTaken: false,
       sessionIdTaken: false,
       unknownExercise: false,
+      routineIdTaken: false,
+      exerciseIdTaken: false,
+      sessionOpen: false,
+      sessionAlreadyOpen: false,
     });
     return true;
   });
@@ -363,6 +413,10 @@ test('400 is terminal and 5xx is retryable — a busy store never reads as a bad
       setIdTaken: false,
       sessionIdTaken: false,
       unknownExercise: false,
+      routineIdTaken: false,
+      exerciseIdTaken: false,
+      sessionOpen: false,
+      sessionAlreadyOpen: false,
     });
     return true;
   });
@@ -384,6 +438,10 @@ test('a refusal with no readable body still carries its status', async () => {
       setIdTaken: false,
       sessionIdTaken: false,
       unknownExercise: false,
+      routineIdTaken: false,
+      exerciseIdTaken: false,
+      sessionOpen: false,
+      sessionAlreadyOpen: false,
     });
     return true;
   });
@@ -404,6 +462,10 @@ test('401 and 404 are neither terminal nor retryable — they wait for a sign-in
       setIdTaken: false,
       sessionIdTaken: false,
       unknownExercise: false,
+      routineIdTaken: false,
+      exerciseIdTaken: false,
+      sessionOpen: false,
+      sessionAlreadyOpen: false,
     });
     return true;
   });
@@ -422,7 +484,358 @@ test('401 and 404 are neither terminal nor retryable — they wait for a sign-in
       setIdTaken: false,
       sessionIdTaken: false,
       unknownExercise: false,
+      routineIdTaken: false,
+      exerciseIdTaken: false,
+      sessionOpen: false,
+      sessionAlreadyOpen: false,
     });
     return true;
   });
+});
+
+// The plan snapshot is the SERVER's: `routineId` asks for one, and what comes back is frozen. A
+// client that composed the snapshot itself would freeze whatever it last read, which is exactly the
+// staleness the snapshot exists to prevent.
+test('startSession — routineId travels, and an unasked option is absent rather than false', async () => {
+  const open = {
+    id: 'ses_1',
+    startedAt: 1_900_000_000_000,
+    routineId: 'rt_push_a',
+    plan: { routine: 'Push A', entries: [{ exerciseId: 'bench-press', sets: 5, reps: 5, weightKg: 82.5, restSeconds: 180 }] },
+  };
+  serve(ok(open));
+  assert.deepEqual(await gymApi.startSession({ id: 'ses_1', startedAt: 1_900_000_000_000, routineId: 'rt_push_a' }), open);
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/gym/sessions',
+    method: 'POST',
+    credentials: 'include',
+    contentType: 'application/json',
+    body: '{"id":"ses_1","startedAt":1900000000000,"routineId":"rt_push_a"}',
+  });
+
+  serve(ok(open));
+  await gymApi.startSession({ id: 'ses_1', startedAt: 1_900_000_000_000 });
+  assert.equal(wireOf(calls[0]).body, '{"id":"ses_1","startedAt":1900000000000}');
+
+  serve(ok(open));
+  await gymApi.startSession({ id: 'ses_2', startedAt: 1_900_000_000_000, joinOpenSession: false, routineId: 'rt_push_a' });
+  assert.equal(wireOf(calls[0]).body, '{"id":"ses_2","startedAt":1900000000000,"joinOpenSession":false,"routineId":"rt_push_a"}');
+});
+
+test('createExercise — a movement the lifter minted, with the equipment default left out', async () => {
+  const stored = { id: 'ex_31ab', name: 'Zercher Squat', pattern: 'squat', equipment: 'barbell', stepKg: 2.5, custom: true };
+  serve(ok(stored));
+  assert.deepEqual(await gymApi.createExercise({ id: 'ex_31ab', name: 'Zercher Squat', pattern: 'squat', equipment: 'barbell' }), stored);
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/gym/exercises',
+    method: 'POST',
+    credentials: 'include',
+    contentType: 'application/json',
+    body: '{"id":"ex_31ab","name":"Zercher Squat","pattern":"squat","equipment":"barbell"}',
+  });
+});
+
+// Every number on the finish screen arrives computed. The client renders this and decides none of
+// it, so web and iOS cannot disagree about which line is the loud one.
+test('review — the finish screen arrives whole, and omissions are omissions', async () => {
+  const review = {
+    stats: { durationMs: 3_720_000, workingSets: 16, topE1rm: 122.5 },
+    slight: false,
+    record: {
+      kind: 'e1rm',
+      exerciseId: 'back-squat',
+      value: 122.5,
+      weightKg: 105,
+      reps: 5,
+      previous: 116.7,
+      previousAt: 1_750_723_200_000,
+    },
+    against: {
+      sessionId: 'ses_older',
+      routine: 'Legs',
+      startedAt: 1_750_723_200_000,
+      movements: [{
+        exerciseId: 'back-squat',
+        now: { weightKg: 105, reps: 5, sets: 5 },
+        before: { weightKg: 102.5, reps: 5, sets: 5 },
+      }],
+    },
+  };
+  serve(ok(review));
+  assert.deepEqual(await gymApi.review('ses_1'), review);
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/gym/sessions/ses_1/review',
+    method: 'GET',
+    credentials: 'include',
+    contentType: 'application/json',
+    body: undefined,
+  });
+
+  const slight = { stats: { durationMs: 660_000, workingSets: 3 }, slight: true };
+  serve(ok(slight));
+  assert.deepEqual(await gymApi.review('ses_short'), slight);
+});
+
+test('discardSession — the one destructive call, and 204 is read as a status and never as bytes', async () => {
+  serve(nothing());
+  assert.equal(await gymApi.discardSession('ses_short'), null);
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/gym/sessions/ses_short',
+    method: 'DELETE',
+    credentials: 'include',
+    contentType: 'application/json',
+    body: undefined,
+  });
+});
+
+// Only the device holding the offline queue knows every set landed, so a workout somebody is still
+// logging into cannot be deleted out from under it — the refusal is a fact about the session, not
+// about the request, and the client branches on the code to say so.
+test('session-open — a discard against a live session is refused, and it is not repairable', async () => {
+  serve(refusal(409, 'that session is still running', 'session-open'));
+  await assert.rejects(() => gymApi.discardSession('ses_live'), (error) => {
+    assert.deepEqual(flagsOf(error), {
+      name: 'GymError',
+      status: 409,
+      message: 'that session is still running',
+      detail: 'that session is still running',
+      code: 'session-open',
+      terminal: true,
+      retryable: false,
+      sessionFinished: false,
+      setIdTaken: false,
+      sessionIdTaken: false,
+      unknownExercise: false,
+      routineIdTaken: false,
+      exerciseIdTaken: false,
+      sessionOpen: true,
+      sessionAlreadyOpen: false,
+    });
+    return true;
+  });
+});
+
+test('routines — the list, the read, and an absent routine answered the way an absent session is', async () => {
+  const routine = {
+    id: 'rt_push_a',
+    name: 'Push A',
+    position: 0,
+    lastTrainedAt: 1_754_300_000_000,
+    entries: [{ position: 1, exerciseId: 'bench-press', targetSets: 5, targetReps: 5, targetWeightKg: 82.5, restSeconds: 180 }],
+  };
+  serve(ok({ routines: [routine] }));
+  assert.deepEqual(await gymApi.routines(), [routine]);
+  assert.equal(wireOf(calls[0]).path, '/v1/gym/routines');
+
+  serve(ok(routine));
+  assert.deepEqual(await gymApi.routine('rt_push_a'), routine);
+  assert.equal(wireOf(calls[0]).path, '/v1/gym/routines/rt_push_a');
+
+  serve(refusal(404, 'no such routine'));
+  assert.equal(await gymApi.routine('rt_someone_elses'), null);
+});
+
+// A write carries the entry ORDER and no entry positions; what comes back carries both, because the
+// store numbered them. PUT replaces the whole document, which is why the editor reads before it
+// writes — sending one changed entry would delete the rest of the program.
+test('routines — create sends the document, replace sends it whole, delete answers 204', async () => {
+  const write = {
+    id: 'rt_pull_a',
+    name: 'Pull A',
+    position: 1,
+    entries: [{ exerciseId: 'barbell-row', targetSets: 4, targetReps: 8, targetWeightKg: 70 }],
+  };
+  const stored = {
+    ...write,
+    entries: [{ position: 1, exerciseId: 'barbell-row', targetSets: 4, targetReps: 8, targetWeightKg: 70 }],
+  };
+  serve(ok(stored));
+  assert.deepEqual(await gymApi.createRoutine(write), stored);
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/gym/routines',
+    method: 'POST',
+    credentials: 'include',
+    contentType: 'application/json',
+    body: JSON.stringify(write),
+  });
+
+  serve(ok(stored));
+  assert.deepEqual(await gymApi.replaceRoutine('rt_pull_a', write), stored);
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/gym/routines/rt_pull_a',
+    method: 'PUT',
+    credentials: 'include',
+    contentType: 'application/json',
+    body: JSON.stringify(write),
+  });
+
+  serve(nothing());
+  assert.equal(await gymApi.deleteRoutine('rt_pull_a'), null);
+  assert.equal(wireOf(calls[0]).method, 'DELETE');
+  assert.equal(wireOf(calls[0]).path, '/v1/gym/routines/rt_pull_a');
+});
+
+// The two id conflicts share one repair — mint another and send the same document again — and they
+// are told apart only by which id was spent. A client that read "409" alone would have to guess.
+test('routine-id-taken and exercise-id-taken — a spent id, and the same repair on each', async () => {
+  serve(refusal(409, 'that routine id is taken', 'routine-id-taken'));
+  await assert.rejects(() => gymApi.createRoutine({ id: 'rt_push_a', name: 'Push A', position: 0, entries: [] }), (error) => {
+    assert.deepEqual(flagsOf(error), {
+      name: 'GymError',
+      status: 409,
+      message: 'that routine id is taken',
+      detail: 'that routine id is taken',
+      code: 'routine-id-taken',
+      terminal: true,
+      retryable: false,
+      sessionFinished: false,
+      setIdTaken: false,
+      sessionIdTaken: false,
+      unknownExercise: false,
+      routineIdTaken: true,
+      exerciseIdTaken: false,
+      sessionOpen: false,
+      sessionAlreadyOpen: false,
+    });
+    return true;
+  });
+
+  serve(refusal(409, 'that movement id is taken', 'exercise-id-taken'));
+  await assert.rejects(() => gymApi.createExercise({ id: 'ex_31ab', name: 'Zercher Squat' }), (error) => {
+    assert.deepEqual(flagsOf(error), {
+      name: 'GymError',
+      status: 409,
+      message: 'that movement id is taken',
+      detail: 'that movement id is taken',
+      code: 'exercise-id-taken',
+      terminal: true,
+      retryable: false,
+      sessionFinished: false,
+      setIdTaken: false,
+      sessionIdTaken: false,
+      unknownExercise: false,
+      routineIdTaken: false,
+      exerciseIdTaken: true,
+      sessionOpen: false,
+      sessionAlreadyOpen: false,
+    });
+    return true;
+  });
+});
+
+// A routine entry naming a movement no catalog holds is the WRITE path's refusal, reused: the same
+// code the queue already repairs by reloading the catalog, and the same 400 that says this body
+// never lands however many times it is sent.
+test('unknown-exercise — a routine entry can reach the same refusal a set can', async () => {
+  serve(refusal(400, 'no such exercise', 'unknown-exercise'));
+  await assert.rejects(
+    () => gymApi.replaceRoutine('rt_push_a', { id: 'rt_push_a', name: 'Push A', position: 0, entries: [{ exerciseId: 'zercher-squat', targetSets: 3 }] }),
+    (error) => {
+      assert.deepEqual(flagsOf(error), {
+        name: 'GymError',
+        status: 400,
+        message: 'no such exercise',
+        detail: 'no such exercise',
+        code: 'unknown-exercise',
+        terminal: true,
+        retryable: false,
+        sessionFinished: false,
+        setIdTaken: false,
+        sessionIdTaken: false,
+        unknownExercise: true,
+        routineIdTaken: false,
+        exerciseIdTaken: false,
+        sessionOpen: false,
+        sessionAlreadyOpen: false,
+      });
+      return true;
+    },
+  );
+});
+
+// The map is exhaustive on purpose: classification never depends on which of the two fields the
+// server it reached happened to fill in, so a refusal that arrives as a sentence alone raises the
+// same flag as the one that arrives with its code.
+test('the three routine-era refusals classify from the sentence alone as well', async () => {
+  const sentences = [
+    ['that routine id is taken', 'routine-id-taken'],
+    ['that movement id is taken', 'exercise-id-taken'],
+    ['that session is still running', 'session-open'],
+  ];
+  for (const [sentence, code] of sentences) {
+    serve(refusal(409, sentence));
+    await assert.rejects(() => gymApi.discardSession('ses_1'), (error) => {
+      assert.deepEqual(flagsOf(error), {
+        name: 'GymError',
+        status: 409,
+        message: sentence,
+        detail: sentence,
+        code,
+        terminal: true,
+        retryable: false,
+        sessionFinished: false,
+        setIdTaken: false,
+        sessionIdTaken: false,
+        unknownExercise: false,
+        routineIdTaken: code === 'routine-id-taken',
+        exerciseIdTaken: code === 'exercise-id-taken',
+        sessionOpen: code === 'session-open',
+        sessionAlreadyOpen: code === 'session-already-open',
+      });
+      return true;
+    });
+  }
+});
+
+// THE EIGHTH CODED REFUSAL, which had no flag and no sentence in the map. It is what a start
+// carrying `joinOpenSession: false` gets when a workout is running — the backfill form's own
+// request — and the only way to tell it apart from `session-id-taken` was the status both share, so
+// a colliding id spoke the mid-workout refusal's words and a stale tab could read either as either.
+test('session-already-open — a backfill that met a live workout is its own refusal, not a 409', async () => {
+  for (const answer of [
+    refusal(409, 'another session is already open', 'session-already-open'),
+    refusal(409, 'another session is already open'),
+  ]) {
+    serve(answer);
+    await assert.rejects(() => gymApi.startSession({ id: 'ses_1', startedAt: 1, joinOpenSession: false }), (error) => {
+      assert.deepEqual(flagsOf(error), {
+        name: 'GymError',
+        status: 409,
+        message: 'another session is already open',
+        detail: 'another session is already open',
+        code: 'session-already-open',
+        terminal: true,
+        retryable: false,
+        sessionFinished: false,
+        setIdTaken: false,
+        sessionIdTaken: false,
+        unknownExercise: false,
+        routineIdTaken: false,
+        exerciseIdTaken: false,
+        sessionOpen: false,
+        sessionAlreadyOpen: true,
+      });
+      return true;
+    });
+  }
+  // The one it used to be indistinguishable from, on the same status.
+  serve(refusal(409, 'that session id is taken', 'session-id-taken'));
+  await assert.rejects(() => gymApi.startSession({ id: 'ses_1', startedAt: 1, joinOpenSession: false }), (error) => {
+    assert.equal(error.sessionAlreadyOpen, false);
+    assert.equal(error.sessionIdTaken, true);
+    return true;
+  });
+});
+
+// A 400 or a 409 is the store REFUSING the document, and telling a lifter with full signal to try
+// again when they have some is the app blaming the network for its own answer — on a retry that
+// fails identically forever.
+test('failureReason — a refusal and a silence do not get the same sentence', async () => {
+  assert.equal(failureReason(new GymError(400, 'a routine needs at least one movement')), 'the log wouldn’t take it as written');
+  assert.equal(failureReason(new GymError(409, 'that routine id is taken', 'routine-id-taken')), 'the log wouldn’t take it as written');
+  assert.equal(failureReason(new GymError(503, '')), 'the log didn’t answer. Try again when you have signal');
+  assert.equal(failureReason(new GymError(401, '')), 'the log didn’t answer. Try again when you have signal');
+  // A request that never produced a response rejects before a GymError exists at all.
+  assert.equal(failureReason(new TypeError('Failed to fetch')), 'the log didn’t answer. Try again when you have signal');
+  assert.equal(failureReason(undefined), 'the log didn’t answer. Try again when you have signal');
 });

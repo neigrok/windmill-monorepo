@@ -1,7 +1,8 @@
 // THE PREFILL — the number in front of you before you touch anything, and the reason this is a
 // training log and not a form. Three sources in a fixed order, and the one that loses is still on
-// screen: today's own last set wins (sticky carry-forward), then the plan snapshot, then last
-// time, then the empty bar.
+// screen: today's own last WORKING set wins (sticky carry-forward), then the plan snapshot, then
+// last time, then the empty bar. Working, because a 40 kg ramp-up is not the weight the next set
+// starts from.
 //
 // Every rule here is pure, and "last time" arrives already resolved — it is one read of the store
 // (`GET /v1/gym/last`), which owns the walk back through the history and the warmup filter. This
@@ -11,20 +12,22 @@
 // The asymmetry in "last time" is deliberate: the weight comes from the LAST working set, where
 // the lifter actually ended up, and the reps from the FIRST, before fatigue cut them.
 
-import { agoLabel, dayLabel, fmt, planOf } from '../log.js';
+import { agoLabel, dayLabel, fmt, planOf, workingSetsOf } from '../log.js';
 import { REPS_FLOOR } from './ladder.js';
 
 export const EMPTY_BAR_KG = 20;
 export const EMPTY_BAR_REPS = 5;
 
+// The snapshot's entries are frozen in the routine's own order, so where a line sits in them IS the
+// position it had when the session started — the wire spells the routine's positions 1-based and
+// dense (gymApi.js). It travels with the entry because the mid-session write-back addresses a line
+// and not a movement: a routine may name one lift twice (routines.js).
 export function planEntryFor(session, exerciseId) {
   const entries = planOf(session)?.entries;
   if (!Array.isArray(entries)) return null;
-  return entries.find((entry) => entry.exerciseId === exerciseId) ?? null;
-}
-
-export function workingSetsOf(sets, exerciseId) {
-  return sets.filter((set) => set.exerciseId === exerciseId && set.kind !== 'warmup');
+  const at = entries.findIndex((entry) => entry.exerciseId === exerciseId);
+  if (at === -1) return null;
+  return { ...entries[at], position: at + 1 };
 }
 
 // Last time is a SESSION, not a set — you get the whole block back, and there is no cutoff: as far
@@ -37,7 +40,8 @@ export function workingSetsOf(sets, exerciseId) {
 // typed entry now refuses, in alarm ink, on a gesture the lifter never made. Weight gets no such
 // clamp on purpose: it is signed and unbounded by design (see ladder.js).
 export function prefillFor({ todaySets = [], planEntry = null, lastTime = null }) {
-  const sticky = todaySets.length > 0 ? todaySets[todaySets.length - 1] : null;
+  const performed = workingSetsOf(todaySets);
+  const sticky = performed.length > 0 ? performed[performed.length - 1] : null;
   if (sticky) return { weight: sticky.weightKg, reps: Math.max(REPS_FLOOR, sticky.reps) };
   const last = lastTime?.sets ?? null;
   return {
@@ -79,13 +83,17 @@ export function prefillCard({
 
 // "set 4 of 3" is legal, normal and drawn in exactly the same ink as "set 3 of 5". The plan is a
 // snapshot of what was written down, the log is what happened, and when they disagree the log is
-// right — so the counter never warns and the target is never hidden. Warmups never advance it.
+// right — so the counter never warns and the target is never hidden. Only working sets advance it:
+// a warmup, a drop and a failure are all things the plan never asked for (log.js).
+//
+// A plan that names no rep target asks for `max` — chin-ups to whatever they give that day — and
+// that is a target like any other, printed the way every other surface prints it.
 export function counterLine({ workingSetsToday = 0, planEntry = null }) {
   if (!planEntry) return { count: `set ${workingSetsToday + 1}`, tail: '  ·  no target' };
   const weight = planEntry.weightKg;
   const target = weight == null ? '' : ` @ ${fmt(weight)}`;
   return {
     count: `set ${workingSetsToday + 1} of ${planEntry.sets}`,
-    tail: `  ·  plan ${planEntry.sets} × ${planEntry.reps}${target}`,
+    tail: `  ·  plan ${planEntry.sets} × ${planEntry.reps ?? 'max'}${target}`,
   };
 }

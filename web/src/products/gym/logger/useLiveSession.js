@@ -18,10 +18,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { gymApi } from '../gymApi.js';
-import { durLabel, planOf } from '../log.js';
+import { finishHref, nameOfMovement, planOf, workingSetsOf } from '../log.js';
+import { deviationAsk, withEntryWeight } from '../routines.js';
 import { FlushQueue, localStore, mintId, UNDO_WINDOW_MS } from './flushQueue.js';
 import { bump, bumpReps } from './ladder.js';
-import { EMPTY_BAR_KG, EMPTY_BAR_REPS, planEntryFor, prefillFor, workingSetsOf } from './prefill.js';
+import { CREATED_MOVEMENT } from './movements.js';
+import { EMPTY_BAR_KG, EMPTY_BAR_REPS, planEntryFor, prefillFor } from './prefill.js';
 import { restReadout, restTargetFor } from './rest.js';
 import { playRestLanded, playSetLogged } from './sound.js';
 
@@ -133,6 +135,8 @@ export function useLiveSession({ api = gymApi } = {}) {
   const [refusals, setRefusals] = useState([]);
   const [pending, setPending] = useState([]);
   const [lastTime, setLastTime] = useState(null);
+  const [lastTimeFailed, setLastTimeFailed] = useState(false);
+  const [deviation, setDeviation] = useState(null);
   const [finishing, setFinishing] = useState(false);
   const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine));
   const [, setBeat] = useState(0);
@@ -145,6 +149,11 @@ export function useLiveSession({ api = gymApi } = {}) {
   const alerted = useRef(false);
   const restored = useRef(null);
   const touched = useRef(false);
+  // The mid-session question's memory, and it belongs to the session rather than to the rule that
+  // asks it: which movement the lifter is standing on, and which ones have already been asked about.
+  // Neither survives a reload, and neither needs to — nothing here is a set.
+  const standingOn = useRef(null);
+  const asked = useRef([]);
   const setsNow = useRef(sets);
   setsNow.current = sets;
   const orderNow = useRef(order);
@@ -246,6 +255,11 @@ export function useLiveSession({ api = gymApi } = {}) {
     setSets(merged);
     setOrder(nextOrder);
     setExIdx(landing);
+    // A session walked into is a session nothing has been asked about yet, and the movement it lands
+    // on is not one the lifter has left.
+    standingOn.current = null;
+    asked.current = [];
+    setDeviation(null);
     setRestStartedAt(mine?.restStartedAt ?? null);
     // A reload is not a movement change: the number the lifter had dialled comes back as it was,
     // and the prefill stays out of the way for exactly that one resume. When the dial did not
@@ -325,6 +339,27 @@ export function useLiveSession({ api = gymApi } = {}) {
     }
   }, [api, summaries, olderStatus]);
 
+  // The log, re-read from the top — after a session closes, and after one is discarded. Both change
+  // what the first page IS, so the list goes back to page one and the walk down it goes back with
+  // it: a log the lifter had read to the bottom is truncated by this read, and leaving the foot
+  // saying "there is nothing older" would be a lie about the middle of their history.
+  //
+  // The catch has to speak. The walk bump above orphans any older page already in the air, and that
+  // page's own arms fall silent once they see they are stale — so if this read is the one that
+  // fails, nothing is left to release the foot and it stays at "Loading older sessions…" until a
+  // reload. 'more' is the honest guess: the list on screen is whatever survived, and asking again is
+  // exactly the recovery.
+  const reloadLog = useCallback(async () => {
+    walk.current += 1;
+    try {
+      const log = await api.sessions({ limit: LOG_PAGE });
+      setSummaries(log);
+      setOlderStatus(olderAfter(log));
+    } catch {
+      setOlderStatus('more');
+    }
+  }, [api]);
+
   // Last time is ONE read, and the store answers it: the newest finished session holding this
   // movement, warmups already dropped. Walking it here instead cost a request per candidate
   // session and could still only see as far back as the page of summaries in hand — a movement
@@ -340,6 +375,11 @@ export function useLiveSession({ api = gymApi } = {}) {
   // But only the CARD is the log's to correct. Once the lifter has moved the number by hand, that
   // number is theirs: a reply landing seconds later must never relabel the button under the thumb
   // that is already on it, because the write is unrecoverable — the log has no update and no delete.
+  //
+  // A read that never came back is SAID, because the card has a sentence for it and the alternative
+  // is "reading your log…" standing there for the rest of the session — the same lie told quietly
+  // (prefill.js). The flag is this movement's alone: it is lowered on the way in, and a failure that
+  // lands after the lifter has walked to the next movement is dropped with the effect that asked.
   useEffect(() => {
     if (phase !== 'live' || !exerciseId) return undefined;
     let live = true;
@@ -348,14 +388,19 @@ export function useLiveSession({ api = gymApi } = {}) {
     touched.current = false;
     const known = lastTimes.current.get(exerciseId) ?? null;
     setLastTime(known);
+    setLastTimeFailed(false);
     if (!resuming) dial(exerciseId, known);
     if (known) return undefined;
     (async () => {
       const answer = await api.lastTime(exerciseId).catch(() => null);
+      if (!live) return;
+      if (answer == null) {
+        setLastTimeFailed(true);
+        return;
+      }
       // The movement is echoed back for this: a reply for the movement the lifter has already left
-      // is dropped, and so is a read that never came back — which leaves the card saying it is
-      // still reading rather than claiming a history the log never denied.
-      if (!live || answer?.exerciseId !== exerciseId) return;
+      // is dropped, and it is not a failure of the one they are standing on.
+      if (answer.exerciseId !== exerciseId) return;
       lastTimes.current.set(exerciseId, answer);
       setLastTime(answer);
       if (!resuming && !touched.current) dial(exerciseId, answer);
@@ -365,6 +410,35 @@ export function useLiveSession({ api = gymApi } = {}) {
     // re-render that rebuilt `dial` would re-dial a number the lifter has since moved by hand.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, exerciseId, session?.id]);
+
+  // THE ONE QUESTION THE LOGGER ASKS (screen 8), and the boundary it is asked at: the movement under
+  // the thumb changing IS leaving the last one, whether that was a jump, a pick, or a movement added
+  // between sets. Deciding it here rather than inside the two actions that move the lifter means one
+  // place asks and neither of them can forget to.
+  //
+  // Only ever on the way to another movement. The end of a session is not a boundary this question
+  // belongs at: the finish screen is a whole surface, and a sheet over it would be a sheet over the
+  // wrong thing. Everything else — that a lighter day is not a question, that it is asked once — is
+  // the rule's (routines.js).
+  useEffect(() => {
+    if (phase !== 'live' || !exerciseId) return;
+    const left = standingOn.current;
+    standingOn.current = exerciseId;
+    if (left === null || left === exerciseId) return;
+    const ask = deviationAsk({
+      routine,
+      planEntry: planEntryFor(session, left),
+      movement: nameOfMovement(catalog, left),
+      sets: setsNow.current,
+      asked: asked.current,
+    });
+    if (!ask) return;
+    asked.current = [...asked.current, ask.exerciseId];
+    setDeviation(ask);
+    // The boundary is the movement changing and nothing else. Widening these deps would re-ask on a
+    // re-render, and "asked once" is the whole of what makes the question bearable mid-workout.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, exerciseId]);
 
   // The queue outlives the session: a set stranded by a four-hour auto-close has to flush (or be
   // refused out loud) the next time the app opens, whether or not anything is running now.
@@ -431,18 +505,25 @@ export function useLiveSession({ api = gymApi } = {}) {
     playRestLanded();
   }, [justLanded]);
 
-  const start = useCallback(async () => {
+  // Start is pressed from three places — Today's routine card, Today's ad-hoc button and a routine's
+  // own editor — so it ends by walking into the logger rather than assuming the lifter was already
+  // standing in it. `routineId` asks the SERVER to freeze that routine onto the session; the client
+  // never composes a snapshot (gymApi.js).
+  const start = useCallback(async ({ routineId } = {}) => {
     const startedAt = Date.now();
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const id = mintId('ses_');
       try {
-        const opened = await api.startSession({ id, startedAt });
+        const opened = await api.startSession({ id, startedAt, routineId });
         // A start JOINS whatever session is already open, so the id that comes back is the truth
         // and may not be the one we sent. Adopting the stranger's sets silently would log this
         // workout into a session the lifter thinks is closed.
         const joined = opened.id !== id;
         const detail = joined ? await api.session(opened.id) : null;
         adopt(detail?.session ?? opened, detail?.sets ?? []);
+        window.location.hash = '#/gym';
+        // A join comes back with the running session's own snapshot whatever was asked for, so this
+        // says which workout the lifter is now in rather than the one they pressed for.
         if (joined) say('A session was already open — you’re back in it.');
         return;
       } catch (error) {
@@ -454,6 +535,50 @@ export function useLiveSession({ api = gymApi } = {}) {
     }
     say('The session didn’t start. Try again when you have signal.');
   }, [api, adopt, say]);
+
+  // A movement the catalog does not hold, minted from the picker's own search box (screen 7). It
+  // lands in the catalog here, in the one instance of it this product has, so the movement the
+  // lifter just created is on every picker in the app a render later — the logger's, the routine
+  // editor's and the backfill form's.
+  const createMovement = useCallback(async (name) => {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const made = await api.createExercise({ id: mintId('ex_'), name: name.trim(), ...CREATED_MOVEMENT });
+        setCatalog((current) => [...current, made]);
+        return made;
+      } catch (error) {
+        if (!error.exerciseIdTaken) {
+          say('That movement wasn’t created — the log didn’t answer. Try again when you have signal.');
+          return null;
+        }
+      }
+    }
+    say('That movement wasn’t created — the log didn’t answer. Try again when you have signal.');
+    return null;
+  }, [api, say]);
+
+  // "Save 87.5 to Push A" — a read-modify-write of the WHOLE routine (gymApi.js), because a PUT that
+  // sent only the changed entry would delete the rest of the program. The routine is re-read here
+  // and never taken from the session's plan: the snapshot was frozen at the start and the program
+  // has kept moving since.
+  //
+  // Both failures say what is still true rather than what went wrong, because what went wrong
+  // changes nothing about today: the session already has the weight, whatever the routine does.
+  const saveDeviation = useCallback(async () => {
+    const ask = deviation;
+    setDeviation(null);
+    if (!ask || !session?.routineId) return;
+    try {
+      const stored = await api.routine(session.routineId);
+      if (!stored) {
+        say(`${routine} isn’t in your routines any more. Today’s session keeps the weight.`);
+        return;
+      }
+      await api.replaceRoutine(stored.id, withEntryWeight(stored, ask, ask.weightKg));
+    } catch {
+      say(`${routine} didn’t change. Today’s session keeps the weight either way.`);
+    }
+  }, [api, deviation, routine, session, say]);
 
   const chooseMovement = useCallback((movement) => {
     const next = orderNow.current.includes(movement) ? orderNow.current : [...orderNow.current, movement];
@@ -484,13 +609,17 @@ export function useLiveSession({ api = gymApi } = {}) {
 
   // Local-first: the tone plays, the row lands and the rest starts before the network is consulted
   // at all. Nothing about the flow changes offline.
+  //
+  // It answers whether a set actually happened, because the warmup chip disarms on the set it armed
+  // and must not disarm on one that was refused — a lifter who armed it and was told the session is
+  // closing has not spent the gesture.
   const logSet = useCallback((kind = 'working') => {
-    if (!session || !exerciseId) return;
+    if (!session || !exerciseId) return false;
     // Finish is a round trip, and a set logged into a session that closes under it is refused
     // forever. The lifter is told, in the same breath, where that set can still go.
     if (finishing) {
       say('The session is closing — log that set in the next one.');
-      return;
+      return false;
     }
     playSetLogged();
     const completedAt = Date.now();
@@ -517,6 +646,7 @@ export function useLiveSession({ api = gymApi } = {}) {
       queue.current.flush();
       say('This device wouldn’t store that set — keep the app open until it reaches the log.');
     }
+    return true;
   }, [session, exerciseId, weight, reps, finishing, say]);
 
   // The mistake seconds ago. The window IS the queue's hold, so a set the lifter takes back never
@@ -559,7 +689,6 @@ export function useLiveSession({ api = gymApi } = {}) {
       say('The session is still open — the log didn’t answer. Try again when you have signal.');
       return;
     }
-    const total = setsNow.current.length;
     setFinishing(false);
     writeLive(null);
     // The session that just closed is the next last time for every movement in it, so nothing that
@@ -573,22 +702,16 @@ export function useLiveSession({ api = gymApi } = {}) {
     setRestStartedAt(null);
     setUndo(null);
     setLastTime(null);
-    say(`Session saved · ${durLabel(finishedAt - session.startedAt)} · ${total} sets`);
-    // Finishing hands the lifter to the log, where the session they just trained is now the top row.
-    // The list goes back to page one, so the walk down it goes back with it — a log the lifter had
-    // read to the bottom is truncated by this read, and "there is nothing older" would be a lie.
-    window.location.hash = '#/gym/log';
-    walk.current += 1;
-    // The catch has to speak. Bumping the walk above orphans any older page already in the air, and
-    // that page's own arms both fall silent once they see they are stale — so if this read is the
-    // one that fails, nothing is left to release the status and the foot stays disabled at
-    // "Loading older sessions…" until a reload. 'more' is the honest guess: the list on screen is
-    // whatever survived, and asking again is exactly the recovery.
-    api.sessions({ limit: LOG_PAGE }).then((log) => {
-      setSummaries(log);
-      setOlderStatus(olderAfter(log));
-    }).catch(() => setOlderStatus('more'));
-  }, [api, session, finishing, say]);
+    setLastTimeFailed(false);
+    setDeviation(null);
+    standingOn.current = null;
+    asked.current = [];
+    // Finishing hands the lifter to the end of the session they just trained — three facts, at most
+    // one line of meaning, and the way back into the log under it. Nothing is said in a toast on the
+    // way: the screen it lands on IS what happened, and a toast would be that said twice, quieter.
+    window.location.hash = finishHref(session.id);
+    reloadLog();
+  }, [api, session, finishing, reloadLog, say]);
 
   // The toast is the one thing here that is counted rather than derived, because it has no instant
   // worth surviving a reload: five seconds after it was said, it has been read or it has not.
@@ -615,6 +738,11 @@ export function useLiveSession({ api = gymApi } = {}) {
     workingToday: workingSetsOf(todaySets, exerciseId).length,
     planEntry,
     lastTime,
+    // The card has four states and only two of them are a training fact: this is the one that says
+    // the log did not answer, which nothing else on the screen can tell from a read still in flight.
+    lastTimeFailed,
+    // The mid-session question, standing or absent. Absent is the normal state of a workout.
+    deviation,
     weight,
     reps,
     rest,
@@ -630,6 +758,7 @@ export function useLiveSession({ api = gymApi } = {}) {
     finishing,
     elapsed: session ? now - session.startedAt : 0,
     start,
+    createMovement,
     chooseMovement,
     jumpTo,
     stepWeight,
@@ -640,6 +769,16 @@ export function useLiveSession({ api = gymApi } = {}) {
     undoLast,
     resetRest: () => setRestStartedAt(null),
     finish,
+    saveDeviation,
+    // "Today only" — the session already has the weight, so declining changes nothing and costs
+    // nothing. It is not asked again about this movement either way.
+    dismissDeviation: () => setDeviation(null),
+    // The log, re-read: the finish screen's discard and the backfill form both change what the
+    // first page is, and neither of them owns the list.
+    reloadLog,
+    // The one voice in the product. Handed out so a surface that is not this hook — a discard, a
+    // backfill that half-landed — says what happened in the same place everything else does.
+    say,
     dismissToast: () => setToast(null),
     clearRefusals: () => setRefusals([]),
   };

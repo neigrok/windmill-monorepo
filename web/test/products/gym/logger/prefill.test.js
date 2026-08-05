@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  counterLine, planEntryFor, prefillCard, prefillFor, workingSetsOf,
+  counterLine, planEntryFor, prefillCard, prefillFor,
 } from '../../../../src/products/gym/logger/prefill.js';
 
 // Local instants on purpose: a day label and an "N days ago" are read off the lifter's own clock,
@@ -77,27 +77,43 @@ test('prefillFor — a plan with no weight falls through for the weight alone', 
   );
 });
 
-test('planEntryFor — the frozen snapshot reads the same parsed or as stored json', () => {
+// The entry carries WHERE IT SITS. The snapshot froze the routine's entries in the routine's own
+// order, so the index is the position that line had at the session's start — and the mid-session
+// write-back addresses a line, never a movement, because a routine may name one lift twice.
+test('planEntryFor — the frozen snapshot reads the same parsed or as stored json, and says which line', () => {
   const entries = [{ exerciseId: 'back-squat', sets: 5, reps: 5, weightKg: 102.5 }];
-  assert.deepEqual(planEntryFor({ plan: { routine: 'Squat day', entries } }, 'back-squat'), entries[0]);
-  assert.deepEqual(planEntryFor({ plan: JSON.stringify({ routine: 'Squat day', entries }) }, 'back-squat'), entries[0]);
+  assert.deepEqual(planEntryFor({ plan: { routine: 'Squat day', entries } }, 'back-squat'), { ...entries[0], position: 1 });
+  assert.deepEqual(planEntryFor({ plan: JSON.stringify({ routine: 'Squat day', entries }) }, 'back-squat'), { ...entries[0], position: 1 });
   assert.equal(planEntryFor({ plan: { routine: 'Squat day', entries } }, 'bench-press'), null);
   assert.equal(planEntryFor({ plan: null }, 'back-squat'), null);
   assert.equal(planEntryFor(null, 'back-squat'), null);
+
+  // The heavy line and the back-off line: the first is the one a set is measured against, and its
+  // position is the one the write-back edits.
+  const twice = [
+    { exerciseId: 'bench-press', sets: 5, reps: 5, weightKg: 100 },
+    { exerciseId: 'back-squat', sets: 3, reps: 5, weightKg: 120 },
+    { exerciseId: 'bench-press', sets: 3, reps: 10, weightKg: 70 },
+  ];
+  assert.deepEqual(planEntryFor({ plan: { routine: 'Push A', entries: twice } }, 'bench-press'), { ...twice[0], position: 1 });
+  assert.deepEqual(planEntryFor({ plan: { routine: 'Push A', entries: twice } }, 'back-squat'), { ...twice[1], position: 2 });
 });
 
-// Today's own sets are the one thing still filtered here: the warmups in last time were dropped by
-// the store before the block ever reached the wire.
-test('workingSetsOf — a warmup is not a set of the day’s work', () => {
-  const sets = [
-    set('back-squat', 60, 5, TUESDAY + 1000, 'warmup'),
-    set('back-squat', 100, 5, TUESDAY + 2000),
-    set('bench-press', 80, 5, TUESDAY + 3000),
+// The carry-forward is the last WORKING set. A 40 kg ramp-up is not the weight the next set starts
+// from, and carrying it would answer "what am I about to lift" with a warmup — in the one pixel
+// this product exists for.
+test('prefillFor — a warmup is never what today carried forward', () => {
+  const planEntry = { exerciseId: 'back-squat', sets: 5, reps: 5, weightKg: 102.5 };
+  const todaySets = [
+    set('back-squat', 100, 5, TUESDAY + 1000),
+    set('back-squat', 60, 10, TUESDAY + 2000, 'warmup'),
   ];
-  assert.deepEqual(workingSetsOf(sets, 'back-squat'), [sets[1]]);
-  assert.deepEqual(workingSetsOf(sets, 'bench-press'), [sets[2]]);
-  assert.deepEqual(workingSetsOf(sets, 'deadlift'), []);
-  assert.deepEqual(workingSetsOf([sets[0]], 'back-squat'), []);
+  assert.deepEqual(prefillFor({ todaySets, planEntry }), { weight: 100, reps: 5 });
+  // With nothing but warmups today, there is no carry-forward at all and the plan holds the number.
+  assert.deepEqual(
+    prefillFor({ todaySets: [set('back-squat', 60, 10, TUESDAY + 1000, 'warmup')], planEntry }),
+    { weight: 102.5, reps: 5 },
+  );
 });
 
 test('prefillCard — the day, how long ago, and which routine it happened on', () => {
@@ -213,5 +229,13 @@ test('counterLine — the plan is always visible, and never scolds', () => {
   });
   assert.deepEqual(counterLine({ workingSetsToday: 1, planEntry: { sets: 3, reps: 8 } }), {
     count: 'set 2 of 3', tail: '  ·  plan 3 × 8',
+  });
+  // A plan that names no rep target asks for `max` — chin-ups to whatever they give that day —
+  // spelled here the way every other surface spells it, and never as an undefined.
+  assert.deepEqual(counterLine({ workingSetsToday: 0, planEntry: { sets: 3 } }), {
+    count: 'set 1 of 3', tail: '  ·  plan 3 × max',
+  });
+  assert.deepEqual(counterLine({ workingSetsToday: 2, planEntry: { sets: 3, weightKg: 20 } }), {
+    count: 'set 3 of 3', tail: '  ·  plan 3 × max @ 20',
   });
 });
