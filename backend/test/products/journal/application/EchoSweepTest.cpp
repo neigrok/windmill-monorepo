@@ -52,7 +52,7 @@ TEST(a_page_that_reaches_back_writes_an_echo_pointing_at_the_older_passage) {
   CHECK_EQ(report.echoesWritten, 1);
 
   const std::vector<EchoRow> rows = echoes.rowsOn(uid("u1"), ld(kNewDay));
-  CHECK_EQ(rows.size(), std::size_t{1});
+  REQUIRE_EQ(rows.size(), std::size_t{1});
   CHECK_EQ(rows[0].matchSpanId, std::int64_t{11});
   CHECK(rows[0].matchDay == ld(kOldDay));
   CHECK(rows[0].matchIsSelf);
@@ -109,7 +109,7 @@ TEST(a_failed_curate_is_recorded_as_a_failure_and_never_as_an_empty_page) {
   CHECK_EQ(report.pagesFailed, 1);
   CHECK_EQ(report.pagesDerived, 0);
   CHECK_EQ(report.echoesWritten, 0);
-  CHECK_EQ(echoes.outcomes.size(), std::size_t{1});
+  REQUIRE_EQ(echoes.outcomes.size(), std::size_t{1});
   CHECK(echoes.outcomes[0].status == CurationStatus::rateLimited);
   CHECK(!isSuccess(echoes.outcomes[0].status));
 }
@@ -167,7 +167,7 @@ TEST(re_deriving_the_older_page_keeps_the_identity_the_echo_points_at) {
   sweep.run(kNow - kDay);
 
   const std::vector<KnownSpan> after = echoes.spansOf(uid("u1"), ld(kOldDay));
-  CHECK_EQ(after.size(), std::size_t{2});
+  REQUIRE_EQ(after.size(), std::size_t{2});
   // The inserted line minted a fresh identity; the echoing line kept the one it had.
   CHECK_EQ(after[1].spanId, std::int64_t{11});
 }
@@ -182,7 +182,7 @@ TEST(a_pairing_the_reader_waved_away_is_never_proposed_again) {
   EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
   sweep.run(kNow - kDay);
   const std::vector<EchoRow> first = echoes.rowsOn(uid("u1"), ld(kNewDay));
-  CHECK_EQ(first.size(), std::size_t{1});
+  REQUIRE_EQ(first.size(), std::size_t{1});
 
   echoes.dismiss(uid("u1"), first[0].triggerSpanId, first[0].matchSpanId);
   echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine);   // the page comes round again

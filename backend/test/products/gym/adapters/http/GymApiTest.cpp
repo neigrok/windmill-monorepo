@@ -200,7 +200,7 @@ TEST(gym_start_with_an_id_another_account_already_spent_is_409) {
   // unknown" the first time one was reworded — and dropped a set it should have re-minted an id for.
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"code":"session-id-taken","error":"that session id is taken"})"));
-  CHECK_EQ(h.repo.sessions.size(), static_cast<std::size_t>(1));
+  REQUIRE_EQ(h.repo.sessions.size(), static_cast<std::size_t>(1));
   CHECK_EQ(h.repo.sessions[0].user, uid("another-account"));
 }
 
@@ -354,7 +354,7 @@ TEST(gym_append_naming_a_movement_no_catalog_holds_is_400_no_such_exercise) {
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"code":"unknown-exercise","error":"no such exercise"})"));
   CHECK(h.repo.sets.empty());
-  CHECK_EQ(h.repo.sessions.size(), static_cast<std::size_t>(1));
+  REQUIRE_EQ(h.repo.sessions.size(), static_cast<std::size_t>(1));
   CHECK_EQ(h.repo.sessions[0].finishedAtMs, std::optional<std::uint64_t>{});
 }
 
@@ -429,7 +429,7 @@ TEST(gym_append_with_a_set_id_already_spent_elsewhere_is_409) {
   CHECK_EQ(response->getStatusCode(), drogon::k409Conflict);
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"code":"set-id-taken","error":"that set id is already used"})"));
-  CHECK_EQ(h.repo.sets.size(), static_cast<std::size_t>(1));
+  REQUIRE_EQ(h.repo.sets.size(), static_cast<std::size_t>(1));
   CHECK_EQ(h.repo.sets[0].session, sid("ses_99999999"));
   CHECK_EQ(h.repo.sets[0].note, std::string("knee felt off"));
   CHECK_EQ(user, h.repo.sessions[0].user);
@@ -475,7 +475,7 @@ TEST(gym_finish_at_a_zero_instant_is_400_and_leaves_the_session_open) {
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"could not read that finish"})"));
   // An unset device clock closed the session permanently at 1970 — first-writer-wins made it
   // unrepairable. The refusal is the repair: nothing was written.
-  CHECK_EQ(h.repo.sessions.size(), static_cast<std::size_t>(1));
+  REQUIRE_EQ(h.repo.sessions.size(), static_cast<std::size_t>(1));
   CHECK_EQ(h.repo.sessions[0].finishedAtMs, std::optional<std::uint64_t>{});
 }
 
@@ -525,7 +525,7 @@ TEST(gym_an_instant_past_the_end_of_time_is_400_on_every_write) {
   // to_timestamp() as an uncaught pqxx error.
   CHECK_EQ(finish->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(dump(bodyOf(finish)), std::string(R"({"error":"could not read that finish"})"));
-  CHECK_EQ(h.repo.sessions.size(), static_cast<std::size_t>(1));
+  REQUIRE_EQ(h.repo.sessions.size(), static_cast<std::size_t>(1));
   CHECK_EQ(h.repo.sessions[0].finishedAtMs, std::optional<std::uint64_t>{});
   CHECK(h.repo.sets.empty());
 }
@@ -647,11 +647,11 @@ TEST(gym_list_sessions_pages_past_a_tied_start_instant_without_losing_one) {
   drogon::HttpResponsePtr two = send(h.api, &GymApi::listSessions, secondPage);
 
   CHECK_EQ(one->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(bodyOf(one)["sessions"].size(), 2u);
+  REQUIRE_EQ(bodyOf(one)["sessions"].size(), 2u);
   CHECK_EQ(bodyOf(one)["sessions"][0]["id"].asString(), std::string("ses_aaaaaaa4"));
   CHECK_EQ(bodyOf(one)["sessions"][1]["id"].asString(), std::string("ses_aaaaaaa3"));
   CHECK_EQ(two->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(bodyOf(two)["sessions"].size(), 2u);
+  REQUIRE_EQ(bodyOf(two)["sessions"].size(), 2u);
   CHECK_EQ(bodyOf(two)["sessions"][0]["id"].asString(), std::string("ses_aaaaaaa2"));
   CHECK_EQ(bodyOf(two)["sessions"][1]["id"].asString(), std::string("ses_aaaaaaa1"));
 }

@@ -95,7 +95,7 @@ TEST(masked_delta_round_trips_its_unset_stamps) {
   delta.frameId = "d_2";
   delta.actor = "srv";
 
-  CHECK_EQ(delta.graph.nodes.size(), 1u);
+  REQUIRE_EQ(delta.graph.nodes.size(), 1u);
   CHECK_EQ(delta.graph.nodes[0].createdAt, Hlc{});  // masked to no-information
   Subgraph back = roundTrip(delta);
   CHECK(back == delta);  // the unset "0:0:" stamps survive the round trip

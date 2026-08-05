@@ -19,16 +19,16 @@ TEST(node_description_and_links_survive_the_document_codec) {
   data.nodes.push_back(node);
 
   TreeData back = treeFromJson(parse(dump(toJson(data))), TreeId{"t"});
-  CHECK_EQ(back.nodes.size(), 1u);
+  REQUIRE_EQ(back.nodes.size(), 1u);
   CHECK_EQ(back.nodes[0].description, std::string("notes"));
-  CHECK_EQ(back.nodes[0].links.size(), 2u);
+  REQUIRE_EQ(back.nodes[0].links.size(), 2u);
   CHECK_EQ(back.nodes[0].links[0], (Link{"Doc", "https://d"}));
   CHECK_EQ(back.nodes[0].links[1].url, std::string("https://e"));
 }
 
 TEST(a_bare_url_string_parses_as_a_labelless_link) {
   std::vector<Link> links = linksFromJson(parse("[\"https://x\", {\"url\": \"https://y\", \"label\": \"Y\"}]"));
-  CHECK_EQ(links.size(), 2u);
+  REQUIRE_EQ(links.size(), 2u);
   CHECK_EQ(links[0], (Link{"", "https://x"}));
   CHECK_EQ(links[1], (Link{"Y", "https://y"}));
 }
@@ -66,6 +66,6 @@ TEST(tree_document_round_trips_the_order_key) {
   data.nodes.push_back(node);
 
   TreeData back = treeFromJson(parse(dump(toJson(data))), TreeId{"t"});
-  CHECK_EQ(back.nodes.size(), 1u);
+  REQUIRE_EQ(back.nodes.size(), 1u);
   CHECK_EQ(back.nodes[0].order, std::string("a7"));
 }

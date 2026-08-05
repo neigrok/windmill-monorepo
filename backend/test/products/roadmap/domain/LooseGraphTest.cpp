@@ -40,7 +40,7 @@ TEST(project_present_nodes_and_edges) {
 
   auto child = g.nodeView(nid("child"));
   REQUIRE(child.has_value());
-  CHECK_EQ(child->prerequisites.size(), 1u);
+  REQUIRE_EQ(child->prerequisites.size(), 1u);
   CHECK_EQ(child->prerequisites[0], nid("root"));
   CHECK(child->position.has_value());
   CHECK_EQ(child->color, NodeColor::gold);
@@ -135,7 +135,7 @@ TEST(description_and_links_round_trip_and_merge_by_lww) {
   LooseGraph reloaded(g.exportState());  // full-state round-trip carries both fields + stamps
   NodeSpec view = *reloaded.nodeView(nid("a"));
   CHECK_EQ(view.description, std::string("first"));
-  CHECK_EQ(view.links.size(), 2u);
+  REQUIRE_EQ(view.links.size(), 2u);
   CHECK_EQ(view.links[1].url, std::string("https://e"));
 
   reloaded.setDescription(nid("a"), "stale", at(1));  // an older stamp loses

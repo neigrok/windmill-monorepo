@@ -481,7 +481,7 @@ TEST(put_to_an_absent_id_creates_a_tree_owned_by_the_caller) {
   CHECK_EQ(body["data"]["title"].asString(), std::string("Learn to sail"));
   CHECK_EQ(body["data"]["kinds"].size(), 3u);  // a brand-new tree gets the three seeded defaults
 
-  CHECK_EQ(h.trees->byId.count("t_new"), std::size_t{1});
+  REQUIRE_EQ(h.trees->byId.count("t_new"), std::size_t{1});
   CHECK(h.trees->byId["t_new"].owner == std::optional<UserId>(me));
   CHECK(h.trees->byId["t_new"].visibility == Visibility::private_);  // born private, like every tree
   CHECK_EQ(h.trees->byId["t_new"].title.value, std::string("Learn to sail"));

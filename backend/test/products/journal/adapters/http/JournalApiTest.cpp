@@ -218,7 +218,7 @@ TEST(journal_put_then_get_round_trips_the_stored_page) {
 
   CHECK_EQ(stored->getStatusCode(), drogon::k200OK);
   CHECK_EQ(dump(bodyOf(stored)), wire);
-  CHECK_EQ(h.repo.byKey.size(), 1u);
+  REQUIRE_EQ(h.repo.byKey.size(), 1u);
   const FakeJournalRepository::Key key{me.str(), "2026-07-27"};
   CHECK(h.repo.byKey.at(key).user == me);
 

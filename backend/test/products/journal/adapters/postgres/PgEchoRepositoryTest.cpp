@@ -113,7 +113,7 @@ TEST(pg_echo_a_repeated_passage_carries_the_occurrence_it_is) {
   repo.replaceEchoes(UserId{kMine}, LocalDate{"2026-05-01"}, curated);
 
   const std::vector<EchoView> echoes = echoesOn(repo, kMine, "2026-05-01");
-  CHECK_EQ(echoes.size(), std::size_t{1});
+  REQUIRE_EQ(echoes.size(), std::size_t{1});
   CHECK_EQ(echoes[0].matchText, kLine);
   CHECK_EQ(echoes[0].matchOccurrenceHint, 1);   // the second, not the first
   CHECK_EQ(echoes[0].daysEarlier, 851);
@@ -144,7 +144,7 @@ TEST(pg_echo_the_hint_is_the_one_number_both_sides_agree_on) {
   repo.replaceEchoes(UserId{kMine}, LocalDate{"2026-05-01"}, curated);
 
   const std::vector<EchoView> echoes = echoesOn(repo, kMine, "2026-05-01");
-  CHECK_EQ(echoes.size(), std::size_t{1});
+  REQUIRE_EQ(echoes.size(), std::size_t{1});
   CHECK_EQ(echoes[0].matchOccurrenceHint, 1);
 }
 
@@ -237,7 +237,7 @@ TEST(pg_echo_declining_the_offer_keeps_every_echo_and_outlives_a_re_derivation) 
   CHECK_EQ(echoesOn(repo, kMine, "2026-05-01").size(), std::size_t{3});   // not one echo lost
   std::vector<LocalDate> retired =
       repo.retiredOffers(UserId{kMine}, LocalDate{"2026-01-01"}, LocalDate{"2026-12-31"});
-  CHECK_EQ(retired.size(), std::size_t{1});
+  REQUIRE_EQ(retired.size(), std::size_t{1});
   CHECK_EQ(retired[0].iso(), std::string("2026-05-01"));
 
   // The page is re-derived from scratch: new span ids, new offsets, every sentence rewritten.
@@ -261,7 +261,7 @@ TEST(pg_echo_declining_one_offer_leaves_another_day_and_another_account_asking) 
 
   std::vector<LocalDate> mine =
       repo.retiredOffers(UserId{kMine}, LocalDate{"0001-01-01"}, LocalDate{"9999-12-31"});
-  CHECK_EQ(mine.size(), std::size_t{1});
+  REQUIRE_EQ(mine.size(), std::size_t{1});
   CHECK_EQ(mine[0].iso(), std::string("2026-05-01"));
   CHECK_EQ(repo.retiredOffers(UserId{kTheirs}, LocalDate{"0001-01-01"}, LocalDate{"9999-12-31"}).size(),
            std::size_t{0});

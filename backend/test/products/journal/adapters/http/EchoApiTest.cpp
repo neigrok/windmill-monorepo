@@ -183,10 +183,10 @@ TEST(echoes_are_grouped_by_the_page_that_carries_them) {
   plantEcho(h, user);
 
   const Json::Value body = listOf(h, "s-live");
-  CHECK_EQ(body["pages"].size(), 1u);
+  REQUIRE_EQ(body["pages"].size(), 1u);
   CHECK_EQ(body["pages"][0]["day"].asString(), std::string("2026-05-01"));
   CHECK(!body["pages"][0]["offerRetired"].asBool());   // nobody has said "not now" here
-  CHECK_EQ(body["pages"][0]["matches"].size(), 1u);
+  REQUIRE_EQ(body["pages"][0]["matches"].size(), 1u);
   CHECK_EQ(body["pages"][0]["matches"][0]["day"].asString(), std::string("2024-01-01"));
 }
 
@@ -201,7 +201,7 @@ TEST(an_unentitled_reader_is_told_what_exists_and_shown_only_its_opening_words) 
   const Json::Value page = listOf(h, "s-live")["pages"][0];
 
   CHECK(!page["entitled"].asBool());
-  CHECK_EQ(page["matches"].size(), 1u);   // the echo is NOT hidden
+  REQUIRE_EQ(page["matches"].size(), 1u);   // the echo is NOT hidden
   CHECK_EQ(page["matches"][0]["text"].asString(),
            std::string("i want to learn c++ properly one of"));
   CHECK_EQ(page["matches"][0]["withheldWords"].asInt(), 2);

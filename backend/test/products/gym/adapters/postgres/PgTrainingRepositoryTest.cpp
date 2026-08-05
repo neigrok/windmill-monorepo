@@ -65,7 +65,7 @@ TEST(pg_gym_catalog_serves_the_seeded_64_in_pattern_then_name_order) {
 
   std::vector<Exercise> catalog = repo.catalog(wm::UserId{kUser});
 
-  CHECK_EQ(catalog.size(), static_cast<std::size_t>(64));
+  REQUIRE_EQ(catalog.size(), static_cast<std::size_t>(64));
   CHECK_EQ(catalog.front(), Exercise(ExerciseId{"farmers-carry"}, "Farmers Carry", Pattern::carry,
                                      Equipment::dumbbell, 2.0, false));
   CHECK_EQ(catalog.back(), Exercise(ExerciseId{"walking-lunge"}, "Walking Lunge", Pattern::squat,
@@ -244,7 +244,7 @@ TEST(pg_gym_log_pages_newest_first_with_counts_and_names) {
 
   std::vector<SessionSummary> listed = repo.log(wm::UserId{kUser}, page(t2 + 1, 50));
 
-  CHECK_EQ(listed.size(), static_cast<std::size_t>(2));
+  REQUIRE_EQ(listed.size(), static_cast<std::size_t>(2));
   CHECK_EQ(listed[0].session.id.str(), std::string("ses_pg000002"));
   CHECK_EQ(listed[0].setCount, 0);
   CHECK_EQ(listed[0].exerciseNames, std::vector<std::string>{});
@@ -254,7 +254,7 @@ TEST(pg_gym_log_pages_newest_first_with_counts_and_names) {
 
   // The keyset cursor: strictly-before t2 drops the newer session from the page.
   std::vector<SessionSummary> older = repo.log(wm::UserId{kUser}, page(t2, 50));
-  CHECK_EQ(older.size(), static_cast<std::size_t>(1));
+  REQUIRE_EQ(older.size(), static_cast<std::size_t>(1));
   CHECK_EQ(older[0].session.id.str(), std::string("ses_pg000001"));
 }
 
@@ -280,10 +280,10 @@ TEST(pg_gym_log_walks_a_tied_start_instant_across_a_page_boundary) {
   std::vector<SessionSummary> third = repo.log(
       wm::UserId{kUser}, LogCursor{second.back().session.startedAtMs, second.back().session.id, 2});
 
-  CHECK_EQ(first.size(), static_cast<std::size_t>(2));
+  REQUIRE_EQ(first.size(), static_cast<std::size_t>(2));
   CHECK_EQ(first[0].session.id.str(), std::string("ses_pg000001"));
   CHECK_EQ(first[1].session.id.str(), std::string("ses_pg000003"));
-  CHECK_EQ(second.size(), static_cast<std::size_t>(2));
+  REQUIRE_EQ(second.size(), static_cast<std::size_t>(2));
   CHECK_EQ(second[0].session.id.str(), std::string("ses_pg000002"));
   CHECK_EQ(second[1].session.id.str(), std::string("ses_pg000004"));
   CHECK(third.empty());
@@ -312,7 +312,7 @@ TEST(pg_gym_log_names_a_movement_whose_display_name_holds_a_newline_once) {
 
   std::vector<SessionSummary> listed = repo.log(wm::UserId{kUser}, page(t1 + 9'000, 50));
 
-  CHECK_EQ(listed.size(), static_cast<std::size_t>(1));
+  REQUIRE_EQ(listed.size(), static_cast<std::size_t>(1));
   CHECK_EQ(listed[0].setCount, 2);
   CHECK_EQ(listed[0].exerciseNames, (std::vector<std::string>{"Bench Press", "Zercher\nSquat"}));
 }
@@ -366,7 +366,7 @@ TEST(pg_gym_last_time_is_the_newest_finished_session_of_that_movement) {
   CHECK(theirs.error == LastTimeError::none);
   CHECK_EQ(theirs.lastTime->session.id, SessionId{"ses_pg000004"});
   CHECK_EQ(theirs.lastTime->routineName, std::string(""));
-  CHECK_EQ(theirs.lastTime->sets.size(), static_cast<std::size_t>(1));
+  REQUIRE_EQ(theirs.lastTime->sets.size(), static_cast<std::size_t>(1));
   CHECK_EQ(theirs.lastTime->sets[0].weightKg, 142.5);
 }
 
@@ -471,7 +471,7 @@ TEST(pg_gym_last_time_never_answers_with_a_session_the_caller_does_not_own) {
   CHECK(ours.error == LastTimeError::none);
   CHECK_EQ(ours.lastTime->session.id, SessionId{"ses_pg000001"});
   CHECK_EQ(ours.lastTime->routineName, std::string("A private routine"));
-  CHECK_EQ(ours.lastTime->sets.size(), static_cast<std::size_t>(1));
+  REQUIRE_EQ(ours.lastTime->sets.size(), static_cast<std::size_t>(1));
   CHECK_EQ(ours.lastTime->sets[0].id, SetId{"set_pg000001"});
 }
 
@@ -527,7 +527,7 @@ TEST(pg_gym_reads_a_pre_1970_legacy_row_instead_of_failing_the_whole_log) {
 
   std::vector<SessionSummary> listed = repo.log(wm::UserId{kUser}, page(t1 + 9'000, 50));
 
-  CHECK_EQ(listed.size(), static_cast<std::size_t>(2));
+  REQUIRE_EQ(listed.size(), static_cast<std::size_t>(2));
   CHECK_EQ(listed[0].session.id.str(), std::string("ses_pg000001"));
   CHECK_EQ(listed[1].session.id.str(), std::string("ses_pg000002"));
   CHECK_EQ(listed[1].session.startedAtMs, static_cast<std::uint64_t>(1));

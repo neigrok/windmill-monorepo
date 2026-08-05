@@ -147,7 +147,7 @@ TEST(curation_prompt_presents_candidates_oldest_first_and_carries_no_score) {
                        "2. T1 with E3\n"
                        "3. T2 with E1\n"));
 
-  CHECK_EQ(prompt.numbered.size(), std::size_t{3});
+  REQUIRE_EQ(prompt.numbered.size(), std::size_t{3});
   CHECK_EQ(prompt.numbered[0].matchSpanId, std::int64_t{21});
   CHECK_EQ(prompt.numbered[1].matchSpanId, std::int64_t{22});
   CHECK_EQ(prompt.numbered[2].matchSpanId, std::int64_t{23});
@@ -183,7 +183,7 @@ TEST(curator_reads_a_clean_multi_verdict_reply) {
 
   CHECK(curation.ok);
   CHECK_EQ(curation.failure, std::string(""));
-  CHECK_EQ(curation.verdicts.size(), std::size_t{3});
+  REQUIRE_EQ(curation.verdicts.size(), std::size_t{3});
 
   CHECK_EQ(curation.verdicts[0].triggerSpanId, std::int64_t{11});
   CHECK_EQ(curation.verdicts[0].matchSpanId, std::int64_t{21});
@@ -269,7 +269,7 @@ TEST(curator_drops_a_verdict_naming_a_pairing_nobody_proposed) {
   const Curation curation = curator.curate(tonight(), candidates(), proposed());
 
   CHECK(curation.ok);
-  CHECK_EQ(curation.verdicts.size(), std::size_t{1});
+  REQUIRE_EQ(curation.verdicts.size(), std::size_t{1});
   CHECK_EQ(curation.verdicts[0].triggerSpanId, std::int64_t{11});
   CHECK_EQ(curation.verdicts[0].matchSpanId, std::int64_t{22});
   CHECK(curation.verdicts[0].related);
@@ -308,7 +308,7 @@ TEST(curator_request_honours_the_reasoning_model_traps) {
   AnthropicCurator curator(transport);
   curator.curate(tonight(), candidates(), proposed());
 
-  CHECK_EQ(transport->sent.size(), std::size_t{1});
+  REQUIRE_EQ(transport->sent.size(), std::size_t{1});
   const MessagesRequest& request = transport->sent.front();
   CHECK_EQ(request.model, std::string("claude-opus-5"));
   CHECK_EQ(request.effort, std::string("high"));
@@ -340,7 +340,7 @@ TEST(curator_request_honours_the_reasoning_model_traps) {
   CHECK_FALSE(body.isMember("top_k"));
   CHECK_FALSE(body["thinking"].isMember("budget_tokens"));
   // One cached block, and the page's own words nowhere near it.
-  CHECK_EQ(body["system"].size(), Json::ArrayIndex{1});
+  REQUIRE_EQ(body["system"].size(), Json::ArrayIndex{1});
   CHECK_EQ(body["system"][0]["cache_control"]["type"].asString(), std::string("ephemeral"));
   CHECK_EQ(body["messages"][0]["role"].asString(), std::string("user"));
   CHECK(body["messages"][0]["content"].asString().find("i like c++") != std::string::npos);
@@ -355,7 +355,7 @@ TEST(curator_sends_a_byte_stable_system_block_across_pages) {
   curator.curate({passage(31, "2026-08-05", "different night, different words.")},
                  {passage(41, "2024-02-02", "and a different memory.")}, {pairing(31, 41)});
 
-  CHECK_EQ(transport->sent.size(), std::size_t{2});
+  REQUIRE_EQ(transport->sent.size(), std::size_t{2});
   // The cache is a prefix match: one interpolated byte and it silently never reads again.
   CHECK_EQ(transport->sent[0].system, transport->sent[1].system);
   CHECK(transport->sent[0].system.find("i like c++. the work is finally fun.") == std::string::npos);

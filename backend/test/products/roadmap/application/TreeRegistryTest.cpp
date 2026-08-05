@@ -85,7 +85,7 @@ TEST(create_accepts_an_initial_tree_document) {
       {spec("html", NodeColor::olive), spec("css", NodeColor::olive, {nid("html")})}));
 
   std::vector<TreeSummary> rows = s.registry.list(me);
-  CHECK_EQ(rows.size(), 1u);
+  REQUIRE_EQ(rows.size(), 1u);
   CHECK_EQ(rows[0].id, id);
   CHECK_EQ(rows[0].title, std::string("Frontend"));
   CHECK_EQ(rows[0].stats.total, 2);  // the posted nodes are planted with the tree
@@ -175,7 +175,7 @@ TEST(list_orders_owned_trees_newest_first_and_excludes_other_owners) {
 
   std::vector<TreeSummary> rows = s.registry.list(me);
 
-  CHECK_EQ(rows.size(), 2u);
+  REQUIRE_EQ(rows.size(), 2u);
   CHECK_EQ(rows[0].id, TreeId{std::string("fresh")});
   CHECK_EQ(rows[0].createdAt, 290u);
   CHECK_EQ(rows[0].updatedAt, 300u);
@@ -226,7 +226,7 @@ TEST(rename_retitles_an_owned_tree_trimmed_and_the_list_shows_it) {
   // A closed tree takes the column write, freshly stamped past the (unset) stored register.
   CHECK(s.trees.byId["t"].title == (Lww<std::string>{"Autumn plans", Hlc{1'700'000'000'000, 0, "srv"}}));
   std::vector<TreeSummary> rows = s.registry.list(me);
-  CHECK_EQ(rows.size(), 1u);
+  REQUIRE_EQ(rows.size(), 1u);
   CHECK_EQ(rows[0].title, std::string("Autumn plans"));
   CHECK_EQ(s.bus.subgraphBroadcasts.size(), 0u);  // no room was live — nothing to broadcast
 }
@@ -277,7 +277,7 @@ TEST(rename_of_a_live_tree_flows_through_the_room_and_reaches_subscribers) {
   const Lww<std::string> renamed{"Second wind", Hlc{1'700'000'000'000, 0, "srv"}};
   CHECK(room.title() == renamed);             // the live room followed, stamped by its clock
   CHECK(s.trees.byId["t"].title == renamed);  // persisted through the room's save, stamp included
-  CHECK_EQ(s.bus.subgraphBroadcasts.size(), 1u);
+  REQUIRE_EQ(s.bus.subgraphBroadcasts.size(), 1u);
   const FakeBus::SubgraphBroadcast& broadcast = s.bus.subgraphBroadcasts[0];
   CHECK_EQ(broadcast.tree, std::string("t"));
   CHECK_EQ(broadcast.seq, room.head());  // a title frame takes a seq like any joined frame

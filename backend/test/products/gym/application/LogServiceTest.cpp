@@ -111,7 +111,7 @@ TEST(start_auto_closes_a_stale_setless_session_at_its_start_instant) {
   StartOutcome second = h.startAt(h.clock.now, "ses_00000002");
 
   CHECK_EQ(second.session->id, sid("ses_00000002"));
-  CHECK_EQ(h.repo.sessions.size(), static_cast<std::size_t>(2));
+  REQUIRE_EQ(h.repo.sessions.size(), static_cast<std::size_t>(2));
   CHECK_EQ(h.repo.sessions[0].finishedAtMs, std::optional<std::uint64_t>(firstStart));
 }
 
@@ -244,7 +244,7 @@ TEST(append_refuses_a_set_id_minted_by_another_account) {
 
   CHECK(outcome.error == AppendError::idTaken);
   CHECK_FALSE(outcome.set.has_value());   // never the stranger's row, not even to say it exists
-  CHECK_EQ(h.repo.sets.size(), static_cast<std::size_t>(1));
+  REQUIRE_EQ(h.repo.sets.size(), static_cast<std::size_t>(1));
   CHECK_EQ(h.repo.sets[0].weightKg, 142.5);
   CHECK_EQ(h.service.detail(uid(), sid())->sets, std::vector<Set>{});
 }
@@ -310,7 +310,7 @@ TEST(append_replay_returns_the_stored_row_byte_for_byte) {
 
   CHECK(replayed.error == AppendError::none);
   CHECK_EQ(*replayed.set, *first.set);
-  CHECK_EQ(h.repo.sets.size(), static_cast<std::size_t>(1));
+  REQUIRE_EQ(h.repo.sets.size(), static_cast<std::size_t>(1));
   CHECK_EQ(h.repo.sets[0].weightKg, 80.0);
 }
 
@@ -363,7 +363,7 @@ TEST(log_auto_closes_the_stale_open_session_before_listing) {
 
   std::vector<SessionSummary> listed = h.logBefore(h.clock.now + 1);
 
-  CHECK_EQ(listed.size(), static_cast<std::size_t>(1));
+  REQUIRE_EQ(listed.size(), static_cast<std::size_t>(1));
   CHECK_EQ(listed[0].session.finishedAtMs, std::optional<std::uint64_t>(started));
   CHECK_EQ(h.repo.sessions[0].finishedAtMs, std::optional<std::uint64_t>(started));
 }
@@ -381,7 +381,7 @@ TEST(log_lists_newest_first_with_counts_and_sorted_names) {
 
   std::vector<SessionSummary> listed = h.logBefore(h.clock.now + 1);
 
-  CHECK_EQ(listed.size(), static_cast<std::size_t>(2));
+  REQUIRE_EQ(listed.size(), static_cast<std::size_t>(2));
   CHECK_EQ(listed[0].session.id.str(), std::string("ses_00000002"));
   CHECK_EQ(listed[0].setCount, 0);
   CHECK_EQ(listed[0].exerciseNames, std::vector<std::string>{});
@@ -406,10 +406,10 @@ TEST(log_pages_across_a_tied_start_instant_without_losing_a_session) {
   std::vector<SessionSummary> third = h.service.log(
       uid(), LogCursor{second.back().session.startedAtMs, second.back().session.id, 2});
 
-  CHECK_EQ(first.size(), static_cast<std::size_t>(2));
+  REQUIRE_EQ(first.size(), static_cast<std::size_t>(2));
   CHECK_EQ(first[0].session.id, sid("ses_00000001"));
   CHECK_EQ(first[1].session.id, sid("ses_00000003"));
-  CHECK_EQ(second.size(), static_cast<std::size_t>(2));
+  REQUIRE_EQ(second.size(), static_cast<std::size_t>(2));
   CHECK_EQ(second[0].session.id, sid("ses_00000002"));   // the tie-mate the old cursor skipped
   CHECK_EQ(second[1].session.id, sid("ses_00000004"));
   CHECK(third.empty());

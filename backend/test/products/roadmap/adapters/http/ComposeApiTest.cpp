@@ -183,7 +183,7 @@ TEST(compose_upstream_failure_is_502_compose_failed) {
 
   CHECK_EQ(response->getStatusCode(), drogon::k502BadGateway);
   CHECK_EQ(bodyOf(response), std::string(R"({"code":"compose-failed"})"));
-  CHECK_EQ(h.composer->composed.size(), 1u);
+  REQUIRE_EQ(h.composer->composed.size(), 1u);
   CHECK_EQ(h.composer->composed[0], std::string("learn to sail"));
 }
 
@@ -197,7 +197,7 @@ TEST(compose_happy_path_returns_the_plan_verbatim) {
   CHECK_EQ(body["plan"].asString(),
            std::string("# Learn to sail\n\n## Basics\n- [x] Read the theory\n1. Rig the boat\n  2. Leave the harbour"));
   CHECK_EQ(body.size(), 1u);
-  CHECK_EQ(h.composer->composed.size(), 1u);
+  REQUIRE_EQ(h.composer->composed.size(), 1u);
   CHECK_EQ(h.composer->composed[0], std::string("i want to learn to sail. already read the theory"));
 }
 
@@ -233,7 +233,7 @@ TEST(compose_stream_happy_path_frames_each_delta_then_done) {
                        "event: delta\ndata: {\"text\":\" the boat\"}\n\n"
                        "event: done\ndata: {}\n\n"));
   CHECK(wire.closed);
-  CHECK_EQ(h.composer->streamed.size(), 1u);
+  REQUIRE_EQ(h.composer->streamed.size(), 1u);
   CHECK_EQ(h.composer->streamed[0], std::string("i want to learn to sail"));
   CHECK_EQ(h.composer->composed.size(), 0u);
   CHECK_EQ(h.composer->cancels, 0);

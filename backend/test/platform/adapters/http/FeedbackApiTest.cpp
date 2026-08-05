@@ -82,8 +82,7 @@ TEST(feedback_a_valid_note_is_accepted_and_stored_trimmed) {
 
   CHECK_EQ(response->getStatusCode(), drogon::k202Accepted);
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"ok":true})"));
-  CHECK_EQ(h.repo->rows.size(), 1u);
-  if (h.repo->rows.empty()) return;
+  REQUIRE_EQ(h.repo->rows.size(), 1u);
   const FakeFeedbackRepository::Row& stored = h.repo->rows[0];
   CHECK_EQ(stored.message, std::string("the tree is beautiful"));
   CHECK_EQ(stored.sessionKey, std::string(""));
@@ -102,8 +101,7 @@ TEST(feedback_email_and_context_are_carried_and_the_session_key_when_well_formed
   drogon::HttpResponsePtr response = send(h.api, post(body));
 
   CHECK_EQ(response->getStatusCode(), drogon::k202Accepted);
-  CHECK_EQ(h.repo->rows.size(), 1u);
-  if (h.repo->rows.empty()) return;
+  REQUIRE_EQ(h.repo->rows.size(), 1u);
   const FakeFeedbackRepository::Row& stored = h.repo->rows[0];
   CHECK_EQ(stored.message, std::string("bug on the map"));
   CHECK_EQ(stored.email, std::string("sam@example.com"));
@@ -120,8 +118,7 @@ TEST(feedback_over_length_email_and_context_are_truncated_not_rejected) {
   drogon::HttpResponsePtr response = send(h.api, post(body));
 
   CHECK_EQ(response->getStatusCode(), drogon::k202Accepted);
-  CHECK_EQ(h.repo->rows.size(), 1u);
-  if (h.repo->rows.empty()) return;
+  REQUIRE_EQ(h.repo->rows.size(), 1u);
   const FakeFeedbackRepository::Row& stored = h.repo->rows[0];
   CHECK_EQ(stored.email, std::string(200, 'a'));
   CHECK_EQ(stored.context, std::string(200, 'b'));
@@ -135,8 +132,7 @@ TEST(feedback_a_malformed_session_key_is_dropped_to_empty_not_rejected) {
   drogon::HttpResponsePtr response = send(h.api, post(body));
 
   CHECK_EQ(response->getStatusCode(), drogon::k202Accepted);
-  CHECK_EQ(h.repo->rows.size(), 1u);
-  if (h.repo->rows.empty()) return;
+  REQUIRE_EQ(h.repo->rows.size(), 1u);
   CHECK_EQ(h.repo->rows[0].sessionKey, std::string(""));
 }
 
@@ -146,8 +142,7 @@ TEST(feedback_a_two_thousand_char_message_is_accepted_at_the_boundary) {
   drogon::HttpResponsePtr response = send(h.api, post(note(std::string(2000, 'x'))));
 
   CHECK_EQ(response->getStatusCode(), drogon::k202Accepted);
-  CHECK_EQ(h.repo->rows.size(), 1u);
-  if (h.repo->rows.empty()) return;
+  REQUIRE_EQ(h.repo->rows.size(), 1u);
   CHECK_EQ(h.repo->rows[0].message, std::string(2000, 'x'));
 }
 
@@ -187,8 +182,7 @@ TEST(feedback_an_anonymous_caller_is_stored_without_a_user) {
   drogon::HttpResponsePtr response = send(h.api, post(note("ghost feedback")));
 
   CHECK_EQ(response->getStatusCode(), drogon::k202Accepted);
-  CHECK_EQ(h.repo->rows.size(), 1u);
-  if (h.repo->rows.empty()) return;
+  REQUIRE_EQ(h.repo->rows.size(), 1u);
   CHECK(h.repo->rows[0].user == std::nullopt);
 }
 
@@ -203,8 +197,7 @@ TEST(feedback_an_authenticated_caller_is_attributed_from_the_session_not_the_bod
   drogon::HttpResponsePtr response = send(h.api, request);
 
   CHECK_EQ(response->getStatusCode(), drogon::k202Accepted);
-  CHECK_EQ(h.repo->rows.size(), 1u);
-  if (h.repo->rows.empty()) return;
+  REQUIRE_EQ(h.repo->rows.size(), 1u);
   CHECK(h.repo->rows[0].user == std::optional<UserId>(user));
 }
 
@@ -217,7 +210,6 @@ TEST(feedback_a_session_cookie_attributes_like_bearer) {
   drogon::HttpResponsePtr response = send(h.api, request);
 
   CHECK_EQ(response->getStatusCode(), drogon::k202Accepted);
-  CHECK_EQ(h.repo->rows.size(), 1u);
-  if (h.repo->rows.empty()) return;
+  REQUIRE_EQ(h.repo->rows.size(), 1u);
   CHECK(h.repo->rows[0].user == std::optional<UserId>(user));
 }

@@ -134,10 +134,13 @@ inline int run() {
 #define CHECK_FALSE(cond) CHECK(!(cond))
 #define CHECK_EQ(a, b) do { if (!((a) == (b))) ::testing::fail(#a " == " #b, __FILE__, __LINE__); } while (0)
 
-// REQUIRE is CHECK that leaves the case. Use it wherever the next line depends on the check —
-// dereferencing an optional, indexing a container — so a regression reports one failure instead of
-// trapping and taking every later case in the binary down with it.
+// REQUIRE is CHECK that leaves the case, and REQUIRE_EQ is CHECK_EQ that leaves it. Use them
+// wherever the next line depends on the check — dereferencing an optional, indexing a container
+// past a size assertion — so a regression reports one failure at the line that is actually wrong,
+// instead of reading garbage into every later assertion or trapping and taking the whole binary
+// down with it.
 #define REQUIRE(cond) do { if (!::testing::required(static_cast<bool>(cond), #cond, __FILE__, __LINE__)) return; } while (0)
+#define REQUIRE_EQ(a, b) do { if (!::testing::required(static_cast<bool>((a) == (b)), #a " == " #b, __FILE__, __LINE__)) return; } while (0)
 
 // A case the environment cannot run. The summary counts it as skipped and never as passed.
 #define SKIP(reason) do { ::testing::skip(reason); return; } while (0)

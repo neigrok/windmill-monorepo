@@ -95,7 +95,7 @@ TEST(put_stores_the_card_for_the_owner_and_answers_204) {
   drogon::HttpResponsePtr resp = sendPut(api, "s-me", "t_mine", PNG);
 
   CHECK_EQ(resp->getStatusCode(), drogon::k204NoContent);
-  CHECK_EQ(h.images->byId.count("t_mine"), std::size_t{1});
+  REQUIRE_EQ(h.images->byId.count("t_mine"), std::size_t{1});
   CHECK_EQ(h.images->byId["t_mine"], PNG);
 }
 

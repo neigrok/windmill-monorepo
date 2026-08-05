@@ -106,7 +106,7 @@ TEST(oauth_grant_is_recorded_on_exchange_and_listed_with_the_client_name) {
   CHECK(svc.exchangeCode(code, client->clientId, kRedirect, verifier, kResource).error == OAuthService::GrantError::ok);
 
   std::vector<GrantView> grants = svc.listGrants(UserId{"u1"});
-  CHECK_EQ(grants.size(), 1u);
+  REQUIRE_EQ(grants.size(), 1u);
   CHECK_EQ(grants[0].clientId, client->clientId);
   CHECK_EQ(grants[0].clientName, std::string("Claude"));
   CHECK_EQ(grants[0].grantedMs, grantedAt);
@@ -143,7 +143,7 @@ TEST(oauth_grant_date_is_stable_across_refresh_rotation_and_last_used_advances) 
   // The rotated token now acts: last-used advances past the throttle; granted is unchanged.
   CHECK(svc.resolveAccessToken(rotated.tokens->accessToken, kResource).has_value());
   std::vector<GrantView> grants = svc.listGrants(UserId{"u1"});
-  CHECK_EQ(grants.size(), 1u);
+  REQUIRE_EQ(grants.size(), 1u);
   CHECK_EQ(grants[0].grantedMs, grantedAt);
   CHECK_EQ(grants[0].lastUsedMs, usedAt);
 }

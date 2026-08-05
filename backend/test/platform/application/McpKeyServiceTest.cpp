@@ -79,7 +79,7 @@ TEST(list_returns_keys_newest_first_without_the_token_and_reflects_a_touch) {
   MintedKey newer = svc.mint(UserId{"u1"}, "Newer");
 
   std::vector<McpKeyView> keys = svc.list(UserId{"u1"});
-  CHECK_EQ(keys.size(), 2u);
+  REQUIRE_EQ(keys.size(), 2u);
   CHECK_EQ(keys[0].id, newer.id);  // newest first
   CHECK_EQ(keys[0].name, std::string("Newer"));
   CHECK_EQ(keys[1].id, older.id);
@@ -92,7 +92,7 @@ TEST(list_returns_keys_newest_first_without_the_token_and_reflects_a_touch) {
   CHECK(svc.resolveKey(newer.token).has_value());
 
   std::vector<McpKeyView> after = svc.list(UserId{"u1"});
-  CHECK_EQ(after.size(), 2u);
+  REQUIRE_EQ(after.size(), 2u);
   CHECK_EQ(after[0].id, newer.id);
   REQUIRE(after[0].lastUsedMs.has_value());
   CHECK_EQ(*after[0].lastUsedMs, usedAt);

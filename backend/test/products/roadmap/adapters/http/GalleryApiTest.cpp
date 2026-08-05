@@ -210,7 +210,7 @@ TEST(the_json_index_serves_an_anonymous_caller_the_walls_own_rows) {
   const Json::Value body = bodyOf(sendIndex(h.api, galleryReq()));
 
   CHECK_EQ(body["count"].asUInt(), 2u);  // never the unlisted or the private tree
-  CHECK_EQ(body["entries"].size(), 2u);
+  REQUIRE_EQ(body["entries"].size(), 2u);
   CHECK_EQ(body["entries"][0]["id"].asString(), std::string("t_popular"));  // one fork outranks none
   CHECK_EQ(body["entries"][0]["title"].asString(), std::string("Popular"));
   CHECK_EQ(body["entries"][0]["total"].asInt(), 5);
@@ -302,14 +302,14 @@ TEST(the_json_index_pages_with_a_cursor_and_never_reshuffles) {
 
   const Json::Value first = bodyOf(sendIndex(h.api, galleryReq("", "2")));
   CHECK_EQ(first["count"].asUInt(), 3u);  // the whole index, not this page
-  CHECK_EQ(first["entries"].size(), 2u);
+  REQUIRE_EQ(first["entries"].size(), 2u);
   CHECK_EQ(first["entries"][0]["id"].asString(), std::string("t_a"));
   CHECK_EQ(first["entries"][1]["id"].asString(), std::string("t_b"));
   CHECK_EQ(first["nextCursor"].asString(), std::string("t_b"));
 
   const Json::Value second = bodyOf(sendIndex(h.api, galleryReq("", "2", first["nextCursor"].asString())));
   CHECK_EQ(second["count"].asUInt(), 3u);
-  CHECK_EQ(second["entries"].size(), 1u);
+  REQUIRE_EQ(second["entries"].size(), 1u);
   CHECK_EQ(second["entries"][0]["id"].asString(), std::string("t_c"));
   CHECK_FALSE(second.isMember("nextCursor"));
 }

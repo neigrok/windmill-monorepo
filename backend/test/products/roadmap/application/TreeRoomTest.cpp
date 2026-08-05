@@ -92,7 +92,7 @@ TEST(room_join_subgraph_folds_assigns_seq_and_broadcasts) {
   CHECK_EQ(*seq, static_cast<Seq>(1));
   CHECK_EQ(room.head(), static_cast<Seq>(1));
   CHECK_EQ(room.snapshot().nodes.size(), 1u);
-  CHECK_EQ(bus.subgraphBroadcasts.size(), 1u);
+  REQUIRE_EQ(bus.subgraphBroadcasts.size(), 1u);
   CHECK_EQ(bus.subgraphBroadcasts[0].seq, static_cast<Seq>(1));
 }
 
@@ -102,7 +102,7 @@ TEST(room_join_subgraph_logs_its_headline_for_the_feed) {
   TreeRoom room = makeRoom(log, bus);
 
   Seq seq = *room.joinSubgraph(frameWith("f1", nid("a"), at(7)), uid());
-  CHECK_EQ(log.byTree["t"].size(), 1u);            // a browser edit reaches the feed like an agent's
+  REQUIRE_EQ(log.byTree["t"].size(), 1u);            // a browser edit reaches the feed like an agent's
   const AppliedOp& op = log.byTree["t"].front();
   CHECK_EQ(op.seq, seq);                           // logged at the seq the frame took
   CHECK_EQ(op.opId, std::string("f1"));            // keyed on the frameId, so a re-gossip can't double-count
@@ -146,7 +146,7 @@ TEST(room_join_subgraph_edge_frame_logs_a_link) {
   frame.graph.edges.push_back(link);
 
   room.joinSubgraph(frame, uid());
-  CHECK_EQ(log.byTree["t"].size(), 1u);
+  REQUIRE_EQ(log.byTree["t"].size(), 1u);
   const AddEdge* deed = std::get_if<AddEdge>(&log.byTree["t"].front().command);
   REQUIRE(deed != nullptr);
   CHECK_EQ(deed->from, nid("a"));
@@ -192,7 +192,7 @@ TEST(room_never_rejects_and_surfaces_cycle) {
 
   auto report = room.diagnose();
   CHECK_FALSE(report.clean());
-  CHECK_EQ(report.cycles.size(), 1u);
+  REQUIRE_EQ(report.cycles.size(), 1u);
   CHECK_EQ(report.cycles[0].members.size(), 2u);
 }
 
@@ -218,7 +218,7 @@ TEST(room_snapshot_carries_the_legend) {
   apply(room, RenameKind{KindId{"sky"}, "Infra"}, 2);
 
   TreeData snapshot = room.snapshot();
-  CHECK_EQ(snapshot.kinds.size(), 1u);
+  REQUIRE_EQ(snapshot.kinds.size(), 1u);
   CHECK_EQ(snapshot.kinds[0].id, KindId{"sky"});
   CHECK_EQ(snapshot.kinds[0].hue, NodeColor::sky);
   CHECK_EQ(snapshot.kinds[0].label, std::string("Infra"));
@@ -245,7 +245,7 @@ TEST(room_recolor_kind_repaints_nodes) {
   apply(room, RecolorKind{KindId{"learn"}, NodeColor::brick}, 3);
 
   TreeData snapshot = room.snapshot();
-  CHECK_EQ(snapshot.nodes.size(), 1u);
+  REQUIRE_EQ(snapshot.nodes.size(), 1u);
   CHECK_EQ(snapshot.nodes[0].color, NodeColor::brick);   // node followed its kind
   CHECK_EQ(snapshot.kinds[0].hue, NodeColor::brick);
 }
@@ -260,7 +260,7 @@ TEST(room_tracks_exactly_the_dirty_entries_and_cleans_after_save) {
 
   apply(room, RenameNode{nid("b"), "B2"}, 3);  // touch one node only
   auto [graph, legend] = room.dirtyState();
-  CHECK_EQ(graph.nodes.size(), 1u);            // just b — not the whole tree
+  REQUIRE_EQ(graph.nodes.size(), 1u);            // just b — not the whole tree
   CHECK_EQ(graph.nodes[0].id, nid("b"));
   CHECK_EQ(graph.nodes[0].label, std::string("B2"));
   CHECK_EQ(graph.edges.size(), 0u);
@@ -269,7 +269,7 @@ TEST(room_tracks_exactly_the_dirty_entries_and_cleans_after_save) {
   apply(room, AddEdge{nid("a"), nid("b")}, 4);
   auto [withEdge, legendStill] = room.dirtyState();
   CHECK_EQ(withEdge.nodes.size(), 1u);         // b still pending
-  CHECK_EQ(withEdge.edges.size(), 1u);         // plus the new edge
+  REQUIRE_EQ(withEdge.edges.size(), 1u);         // plus the new edge
   CHECK_EQ(withEdge.edges[0].edge, (Edge{nid("a"), nid("b")}));
   CHECK_EQ(legendStill.kinds.size(), 0u);
 

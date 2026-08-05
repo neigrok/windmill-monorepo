@@ -120,7 +120,7 @@ TEST(mcp_the_catalog_publishes_nodeId_and_keeps_id_as_a_deprecated_alias) {
   CHECK_EQ(row["type"].asString(), std::string("object"));
   CHECK_EQ(row["properties"]["nodeId"]["type"].asString(), std::string("string"));
   CHECK(row["properties"]["id"]["deprecated"].asBool());
-  CHECK_EQ(row["required"].size(), 2u);
+  REQUIRE_EQ(row["required"].size(), 2u);
   CHECK_EQ(row["required"][0].asString(), std::string("nodeId"));
   CHECK_EQ(row["required"][1].asString(), std::string("status"));
 
@@ -326,7 +326,7 @@ TEST(mcp_an_imported_node_carries_a_seed_status_and_never_the_callers_mark) {
   const Json::Value* import = toolNamed(catalog, "import_subgraph");
   REQUIRE(import != nullptr);
   const Json::Value& carried = (*import)["inputSchema"]["properties"]["nodes"]["items"]["properties"];
-  CHECK_EQ(carried["seedStatus"]["enum"].size(), 3u);
+  REQUIRE_EQ(carried["seedStatus"]["enum"].size(), 3u);
   CHECK_EQ(carried["seedStatus"]["enum"][0].asString(), std::string("active"));
   CHECK_FALSE(carried.isMember("status"));
 }
@@ -493,7 +493,7 @@ TEST(mcp_a_null_argument_is_absent_and_never_a_command_to_clear) {
   read["fields"] = list({"id", "description", "links", "position"});
   const Json::Value a = body(h.call("get_tree", read))["tree"]["nodes"][0];
   CHECK_EQ(a["description"].asString(), std::string("a new note"));
-  CHECK_EQ(a["links"].size(), 1u);
+  REQUIRE_EQ(a["links"].size(), 1u);
   CHECK_EQ(a["links"][0]["url"].asString(), std::string("https://spec"));
 
   // …and a null position is no position, rather than the origin every node would stack on.
@@ -763,7 +763,7 @@ TEST(mcp_every_write_tool_denies_a_private_tree_exactly_as_it_denies_an_absent_o
 TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
   Harness h;
   const std::vector<McpResource> catalog = roadmapResources();
-  CHECK_EQ(catalog.size(), 1u);
+  REQUIRE_EQ(catalog.size(), 1u);
   CHECK_EQ(catalog[0].uri, std::string("windmill://quickstart"));
   CHECK_EQ(catalog[0].mimeType, std::string("text/markdown"));
 

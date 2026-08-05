@@ -37,14 +37,14 @@ TEST(skilltree_indexes_edges_roots_children) {
   };
   SkillTree tree(data);
 
-  CHECK_EQ(tree.roots().size(), 1u);
+  REQUIRE_EQ(tree.roots().size(), 1u);
   CHECK_EQ(tree.roots()[0]->id, nid("root"));
   CHECK_EQ(tree.edges().size(), 2u);
-  CHECK_EQ(tree.childrenOf(nid("root")).size(), 1u);
+  REQUIRE_EQ(tree.childrenOf(nid("root")).size(), 1u);
   CHECK_EQ(tree.childrenOf(nid("root"))[0]->id, nid("a"));
-  CHECK_EQ(tree.parentsOf(nid("b")).size(), 1u);
+  REQUIRE_EQ(tree.parentsOf(nid("b")).size(), 1u);
   CHECK_EQ(tree.parentsOf(nid("b"))[0]->id, nid("a"));
-  CHECK_EQ(tree.topoOrder().size(), 3u);
+  REQUIRE_EQ(tree.topoOrder().size(), 3u);
   CHECK_EQ(tree.topoOrder()[0], nid("root"));
 }
 

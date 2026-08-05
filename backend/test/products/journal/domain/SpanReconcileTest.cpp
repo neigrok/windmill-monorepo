@@ -26,7 +26,7 @@ TEST(an_unchanged_page_keeps_every_identity) {
   const std::vector<IdentifiedPassage> carried =
       reconcile(stored, page({"i want to learn c++.", "rain all evening."}));
 
-  CHECK_EQ(carried.size(), std::size_t{2});
+  REQUIRE_EQ(carried.size(), std::size_t{2});
   CHECK_EQ(carried[0].spanId, std::int64_t{11});
   CHECK_EQ(carried[1].spanId, std::int64_t{12});
 }
@@ -38,7 +38,7 @@ TEST(a_sentence_inserted_at_the_top_shifts_no_identity) {
   const std::vector<IdentifiedPassage> carried =
       reconcile(stored, page({"slept badly.", "i want to learn c++.", "rain all evening."}));
 
-  CHECK_EQ(carried.size(), std::size_t{3});
+  REQUIRE_EQ(carried.size(), std::size_t{3});
   CHECK_EQ(carried[0].spanId, std::int64_t{0});      // the new line mints
   CHECK_EQ(carried[1].spanId, std::int64_t{11});     // and the old ones are untouched
   CHECK_EQ(carried[2].spanId, std::int64_t{12});
@@ -52,7 +52,7 @@ TEST(a_deleted_line_leaves_the_survivors_alone) {
   const std::vector<IdentifiedPassage> carried =
       reconcile(stored, page({"slept badly.", "rain all evening."}));
 
-  CHECK_EQ(carried.size(), std::size_t{2});
+  REQUIRE_EQ(carried.size(), std::size_t{2});
   CHECK_EQ(carried[0].spanId, std::int64_t{11});
   CHECK_EQ(carried[1].spanId, std::int64_t{13});
 }
@@ -72,7 +72,7 @@ TEST(reflowed_whitespace_is_the_same_passage) {
   const std::vector<IdentifiedPassage> carried =
       reconcile(stored, page({"  i want   to learn c++.  "}));
 
-  CHECK_EQ(carried.size(), std::size_t{1});
+  REQUIRE_EQ(carried.size(), std::size_t{1});
   CHECK_EQ(carried[0].spanId, std::int64_t{11});
 }
 
@@ -97,7 +97,7 @@ TEST(a_third_copy_of_a_duplicated_line_mints_rather_than_stealing) {
 TEST(a_first_derivation_mints_everything) {
   const std::vector<IdentifiedPassage> carried = reconcile({}, page({"slept badly.", "rain."}));
 
-  CHECK_EQ(carried.size(), std::size_t{2});
+  REQUIRE_EQ(carried.size(), std::size_t{2});
   CHECK_EQ(carried[0].spanId, std::int64_t{0});
   CHECK_EQ(carried[1].spanId, std::int64_t{0});
 }
@@ -114,6 +114,6 @@ TEST(reconciling_twice_is_stable) {
   const std::vector<IdentifiedPassage> once = reconcile(stored, fresh);
   const std::vector<IdentifiedPassage> twice = reconcile(stored, fresh);
 
-  CHECK_EQ(once.size(), twice.size());
+  REQUIRE_EQ(once.size(), twice.size());
   for (std::size_t i = 0; i < once.size(); ++i) CHECK_EQ(once[i].spanId, twice[i].spanId);
 }

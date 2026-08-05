@@ -9,7 +9,7 @@ static Hlc at(std::uint64_t ms, const char* actor = "a") { return Hlc{ms, 0, act
 TEST(seeded_defaults_are_three_kinds_in_order) {
   Legend legend = Legend::seededDefaults(at(1));
   std::vector<Kind> kinds = legend.kinds();
-  CHECK_EQ(kinds.size(), 3u);
+  REQUIRE_EQ(kinds.size(), 3u);
   CHECK_EQ(kinds[0].id, kid("build"));
   CHECK_EQ(kinds[0].hue, NodeColor::terracotta);
   CHECK_EQ(kinds[0].label, std::string("Build"));

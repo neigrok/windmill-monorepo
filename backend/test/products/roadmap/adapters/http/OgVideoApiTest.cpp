@@ -86,7 +86,7 @@ TEST(put_stores_an_mp4_for_the_owner_as_video_mp4_and_answers_204) {
   drogon::HttpResponsePtr resp = sendPut(api, "s-me", "t_mine", MP4);
 
   CHECK_EQ(resp->getStatusCode(), drogon::k204NoContent);
-  CHECK_EQ(h.videos->byId.count("t_mine"), std::size_t{1});
+  REQUIRE_EQ(h.videos->byId.count("t_mine"), std::size_t{1});
   CHECK_EQ(h.videos->byId["t_mine"].bytes, MP4);
   CHECK_EQ(h.videos->byId["t_mine"].mime, std::string("video/mp4"));
 }

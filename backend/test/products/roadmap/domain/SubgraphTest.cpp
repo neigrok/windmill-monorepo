@@ -111,7 +111,7 @@ TEST(delta_masks_fields_the_peer_already_covers) {
   peer.observe(Hlc{3, 0, "a"});  // covers the create (t=1), not the recolor (t=5)
 
   Subgraph delta = deltaBetween(source.exportState(), Legend{}.exportState(), peer);
-  CHECK_EQ(delta.graph.nodes.size(), 1u);
+  REQUIRE_EQ(delta.graph.nodes.size(), 1u);
   const NodeStateEntry& node = delta.graph.nodes[0];
   CHECK_EQ(node.id, nid("a"));
   CHECK_EQ(node.createdAt, Hlc{});             // covered → masked to no-information
@@ -138,7 +138,7 @@ TEST(delta_carries_an_order_write_the_peer_has_not_yet_seen) {
   peer.observe(at(3));  // covers the create (t=1), not the order write (t=5)
 
   Subgraph delta = deltaBetween(source.exportState(), Legend{}.exportState(), peer);
-  CHECK_EQ(delta.graph.nodes.size(), 1u);
+  REQUIRE_EQ(delta.graph.nodes.size(), 1u);
   const NodeStateEntry& node = delta.graph.nodes[0];
   CHECK_EQ(node.createdAt, Hlc{});         // covered → masked to no-information
   CHECK_EQ(node.colorAt, Hlc{});           // covered → masked

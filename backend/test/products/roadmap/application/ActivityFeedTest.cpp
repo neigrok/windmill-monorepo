@@ -46,7 +46,7 @@ std::vector<AppliedOp> log() {
 TEST(activity_projects_ops_to_human_events_skipping_nudges) {
   std::vector<ActivityEvent> events = activityFeed(currentTree(), log(), 100);
 
-  CHECK_EQ(events.size(), 5u);  // the RepositionNode is dropped
+  REQUIRE_EQ(events.size(), 5u);  // the RepositionNode is dropped
 
   CHECK_EQ(events[0].seq, 1u);
   CHECK_EQ(events[0].verb, std::string("added"));
@@ -75,7 +75,7 @@ TEST(activity_projects_ops_to_human_events_skipping_nudges) {
 
 TEST(activity_keeps_the_most_recent_when_over_limit) {
   std::vector<ActivityEvent> events = activityFeed(currentTree(), log(), 2);
-  CHECK_EQ(events.size(), 2u);
+  REQUIRE_EQ(events.size(), 2u);
   CHECK_EQ(events[0].seq, 5u);  // removed
   CHECK_EQ(events[1].seq, 6u);  // tidied
 }

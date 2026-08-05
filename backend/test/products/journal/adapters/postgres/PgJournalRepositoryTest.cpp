@@ -128,6 +128,6 @@ TEST(pg_journal_through_pageservice_on_a_worker_thread) {
 
   REQUIRE(got.has_value());
   CHECK_EQ(got->body, std::string("off-thread"));
-  CHECK_EQ(listed.size(), static_cast<std::size_t>(1));
+  REQUIRE_EQ(listed.size(), static_cast<std::size_t>(1));
   CHECK_EQ(listed.front().body, std::string("off-thread"));
 }

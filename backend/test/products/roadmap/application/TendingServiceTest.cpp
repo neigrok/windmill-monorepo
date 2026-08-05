@@ -242,7 +242,7 @@ TEST(the_summary_reports_the_plan_budget_reset_and_recent_receipts) {
   CHECK_EQ(free.allowance.used, 3);
   CHECK_EQ(free.allowance.remaining(), 27);
   CHECK_EQ(free.resetAtMs, nextMonthStartMsUtc(h.clock.now));
-  CHECK_EQ(free.recent.size(), static_cast<std::size_t>(3));
+  REQUIRE_EQ(free.recent.size(), static_cast<std::size_t>(3));
   CHECK_EQ(free.recent.front().summary, std::string("receipt 2"));  // newest first
 
   h.subs.subscribe(UserId{"u"});

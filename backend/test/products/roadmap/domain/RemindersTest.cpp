@@ -54,7 +54,7 @@ TEST(a_ready_tree_earns_a_send) {
   CHECK_EQ(decision.content.total, 10);
   CHECK_EQ(decision.content.done, 4);
   CHECK_EQ(decision.content.readyCount, 1);
-  CHECK_EQ(decision.content.steps.size(), std::size_t{1});
+  REQUIRE_EQ(decision.content.steps.size(), std::size_t{1});
   CHECK_EQ(decision.content.steps[0].id, NodeId{"rigging"});
   CHECK_EQ(decision.content.otherReadyTrees, 0);
 }
@@ -218,7 +218,7 @@ TEST(the_mail_names_at_most_three_steps_and_counts_the_rest) {
   const ReminderDecision decision = decide(candidate, kNow);
 
   CHECK_EQ(decision.content.readyCount, 5);
-  CHECK_EQ(decision.content.steps.size(), std::size_t{kMaxSteps});
+  REQUIRE_EQ(decision.content.steps.size(), std::size_t{kMaxSteps});
   CHECK_EQ(decision.content.steps[0].id, NodeId{"one"});
   CHECK_EQ(decision.content.steps[1].id, NodeId{"two"});
   CHECK_EQ(decision.content.steps[2].id, NodeId{"three"});

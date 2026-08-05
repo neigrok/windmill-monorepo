@@ -33,7 +33,7 @@ TEST(select_nodes_by_color) {
   NodeFilter filter;
   filter.color = NodeColor::sky;
   std::vector<NodeSpec> matches = selectNodes(sampleTree(), filter);
-  CHECK_EQ(matches.size(), 2u);
+  REQUIRE_EQ(matches.size(), 2u);
   CHECK_EQ(matches[0].id, nid("renderer"));
   CHECK_EQ(matches[1].id, nid("camera"));
 }
@@ -42,7 +42,7 @@ TEST(select_nodes_by_kind_resolves_through_the_legend) {
   NodeFilter filter;
   filter.kind = kid("backend");
   std::vector<NodeSpec> matches = selectNodes(sampleTree(), filter);
-  CHECK_EQ(matches.size(), 1u);
+  REQUIRE_EQ(matches.size(), 1u);
   CHECK_EQ(matches[0].id, nid("domain"));
 }
 
@@ -56,13 +56,13 @@ TEST(select_nodes_by_substring_is_case_insensitive_over_label_and_description) {
   NodeFilter byLabel;
   byLabel.query = "renderer";  // lower-case matches "WebGL2 Renderer"
   std::vector<NodeSpec> labelMatches = selectNodes(sampleTree(), byLabel);
-  CHECK_EQ(labelMatches.size(), 1u);
+  REQUIRE_EQ(labelMatches.size(), 1u);
   CHECK_EQ(labelMatches[0].id, nid("renderer"));
 
   NodeFilter byDescription;
   byDescription.query = "INERTIA";  // upper-case matches the "inertia and easing" description
   std::vector<NodeSpec> descriptionMatches = selectNodes(sampleTree(), byDescription);
-  CHECK_EQ(descriptionMatches.size(), 1u);
+  REQUIRE_EQ(descriptionMatches.size(), 1u);
   CHECK_EQ(descriptionMatches[0].id, nid("camera"));
 }
 
@@ -71,7 +71,7 @@ TEST(select_nodes_ands_every_criterion) {
   filter.color = NodeColor::sky;
   filter.query = "zoom";  // only "Pan & Zoom" is both sky and matches
   std::vector<NodeSpec> matches = selectNodes(sampleTree(), filter);
-  CHECK_EQ(matches.size(), 1u);
+  REQUIRE_EQ(matches.size(), 1u);
   CHECK_EQ(matches[0].id, nid("camera"));
 }
 

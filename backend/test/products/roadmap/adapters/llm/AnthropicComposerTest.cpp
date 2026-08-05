@@ -121,7 +121,7 @@ TEST(stream_parser_forwards_text_deltas_and_finishes_clean_on_end_turn) {
 
   observed.feedBytewise(wire);  // one byte at a time: every split point is exercised
 
-  CHECK_EQ(observed.deltas.size(), 2u);
+  REQUIRE_EQ(observed.deltas.size(), 2u);
   CHECK_EQ(observed.deltas[0], std::string("# Learn to sail\n"));
   CHECK_EQ(observed.deltas[1], std::string("- Rig the boat"));
   CHECK_EQ(observed.doneCalls, 1);
@@ -138,7 +138,7 @@ TEST(stream_parser_fails_on_a_truncating_stop_reason_after_the_deltas) {
       chunk(sse("message_delta", R"({"type":"message_delta","delta":{"stop_reason":"max_tokens"}})")) +
       chunk(sse("message_stop", R"({"type":"message_stop"})")));
 
-  CHECK_EQ(observed.deltas.size(), 1u);
+  REQUIRE_EQ(observed.deltas.size(), 1u);
   CHECK_EQ(observed.deltas[0], std::string("# Half a"));
   CHECK_EQ(observed.doneCalls, 1);
   CHECK_FALSE(observed.ok);
@@ -176,7 +176,7 @@ TEST(stream_parser_fails_when_the_connection_closes_before_message_stop) {
 
   observed.parser.finish();
 
-  CHECK_EQ(observed.deltas.size(), 1u);
+  REQUIRE_EQ(observed.deltas.size(), 1u);
   CHECK_EQ(observed.deltas[0], std::string("# Learn"));
   CHECK_EQ(observed.doneCalls, 1);
   CHECK_FALSE(observed.ok);
@@ -191,7 +191,7 @@ TEST(stream_parser_handles_a_plain_unchunked_body_too) {
       sse("message_delta", R"({"type":"message_delta","delta":{"stop_reason":"end_turn"}})") +
       sse("message_stop", R"({"type":"message_stop"})"));
 
-  CHECK_EQ(observed.deltas.size(), 1u);
+  REQUIRE_EQ(observed.deltas.size(), 1u);
   CHECK_EQ(observed.deltas[0], std::string("# Plan"));
   CHECK_EQ(observed.doneCalls, 1);
   CHECK(observed.ok);
@@ -209,7 +209,7 @@ TEST(stream_parser_names_a_truncated_plan_to_the_operator) {
 
   CHECK_EQ(observed.doneCalls, 1);
   CHECK_FALSE(observed.ok);
-  CHECK_EQ(observed.failures.size(), 1u);
+  REQUIRE_EQ(observed.failures.size(), 1u);
   CHECK_EQ(observed.failures[0], std::string("compose.stream | stopped early (stop_reason: max_tokens)"));
 }
 
@@ -219,7 +219,7 @@ TEST(stream_parser_names_an_upstream_error_to_the_operator) {
       std::string(kStreamHeaders) +
       chunk(sse("error", R"({"type":"error","error":{"type":"overloaded_error"}})")));
 
-  CHECK_EQ(observed.failures.size(), 1u);
+  REQUIRE_EQ(observed.failures.size(), 1u);
   CHECK(observed.failures[0].find("compose.stream | upstream error event:") == 0);
   CHECK(observed.failures[0].find("overloaded_error") != std::string::npos);
 }

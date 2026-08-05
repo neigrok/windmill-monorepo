@@ -36,7 +36,7 @@ TEST(wall_ranks_by_forks_then_freshness_then_id) {
 
   std::vector<GalleryEntry> wall = publicWall(candidates, ANONYMOUS);
 
-  CHECK_EQ(wall.size(), std::size_t{4});
+  REQUIRE_EQ(wall.size(), std::size_t{4});
   CHECK_EQ(wall[0].id, TreeId{"t_b"});  // 7 forks
   CHECK_EQ(wall[1].id, TreeId{"t_d"});  // 3 forks
   CHECK_EQ(wall[2].id, TreeId{"t_a"});  // 1 fork, tie broken by id
@@ -53,7 +53,7 @@ TEST(a_tended_tree_outranks_a_structurally_newer_one_nobody_has_opened) {
 
   std::vector<GalleryEntry> wall = publicWall({abandoned, tended}, ANONYMOUS);
 
-  CHECK_EQ(wall.size(), std::size_t{2});
+  REQUIRE_EQ(wall.size(), std::size_t{2});
   CHECK_EQ(wall[0].id, TreeId{"t_tended"});
   CHECK_EQ(wall[0].updatedAt, std::uint64_t{900});  // the row wears last-active, not the stamp
   CHECK_EQ(wall[1].id, TreeId{"t_abandoned"});
@@ -69,7 +69,7 @@ TEST(last_active_is_the_freshest_of_the_two_stamps_in_either_direction) {
 
   std::vector<GalleryEntry> wall = publicWall({marked, edited}, ANONYMOUS);
 
-  CHECK_EQ(wall.size(), std::size_t{2});
+  REQUIRE_EQ(wall.size(), std::size_t{2});
   CHECK_EQ(wall[0].id, TreeId{"t_edited"});
   CHECK_EQ(wall[0].updatedAt, std::uint64_t{900});
   CHECK_EQ(wall[1].id, TreeId{"t_marked"});
@@ -85,7 +85,7 @@ TEST(forks_still_outrank_freshness) {
 
   std::vector<GalleryEntry> wall = publicWall({busy, popular}, ANONYMOUS);
 
-  CHECK_EQ(wall.size(), std::size_t{2});
+  REQUIRE_EQ(wall.size(), std::size_t{2});
   CHECK_EQ(wall[0].id, TreeId{"t_popular"});
   CHECK_EQ(wall[1].id, TreeId{"t_busy"});
 }
@@ -98,7 +98,7 @@ TEST(wall_drops_a_tree_too_small_to_read_as_a_plan) {
 
   std::vector<GalleryEntry> wall = publicWall(candidates, ANONYMOUS);
 
-  CHECK_EQ(wall.size(), std::size_t{1});
+  REQUIRE_EQ(wall.size(), std::size_t{1});
   CHECK_EQ(wall[0].id, TreeId{"t_plan"});  // the stub's 99 forks don't buy it a place
 }
 
@@ -111,7 +111,7 @@ TEST(wall_drops_an_unnamed_tree) {
 
   std::vector<GalleryEntry> wall = publicWall(candidates, ANONYMOUS);
 
-  CHECK_EQ(wall.size(), std::size_t{1});
+  REQUIRE_EQ(wall.size(), std::size_t{1});
   CHECK_EQ(wall[0].id, TreeId{"t_named"});
 }
 
@@ -120,7 +120,7 @@ TEST(wall_keeps_an_unstarted_plan) {
   // rather than being gated off the wall.
   std::vector<GalleryEntry> wall = publicWall({candidate("t_new", "Untouched", 5, 0, 100)}, ANONYMOUS);
 
-  CHECK_EQ(wall.size(), std::size_t{1});
+  REQUIRE_EQ(wall.size(), std::size_t{1});
   CHECK_EQ(wall[0].stats.done, 0);
 }
 
@@ -136,7 +136,7 @@ TEST(an_entry_carries_the_owners_progress_and_dominant_kind) {
 
   std::vector<GalleryEntry> wall = publicWall({listed}, ANONYMOUS);
 
-  CHECK_EQ(wall.size(), std::size_t{1});
+  REQUIRE_EQ(wall.size(), std::size_t{1});
   CHECK_EQ(wall[0].id, TreeId{"t_x"});
   CHECK_EQ(wall[0].title, std::string("Learn Rust"));
   CHECK_EQ(wall[0].stats.total, 4);
@@ -155,7 +155,7 @@ TEST(an_entry_names_the_tree_it_was_forked_from) {
 
   std::vector<GalleryEntry> wall = publicWall({listed}, ANONYMOUS);
 
-  CHECK_EQ(wall.size(), std::size_t{1});
+  REQUIRE_EQ(wall.size(), std::size_t{1});
   CHECK_EQ(wall[0].sourceTitle, std::string("Learn Rust"));
 }
 
@@ -171,7 +171,7 @@ TEST(the_anonymous_reader_owns_nothing_and_has_forked_nothing) {
 
   std::vector<GalleryEntry> wall = publicWall({mine, taken}, ANONYMOUS);
 
-  CHECK_EQ(wall.size(), std::size_t{2});
+  REQUIRE_EQ(wall.size(), std::size_t{2});
   CHECK_FALSE(wall[0].mine);
   CHECK_FALSE(wall[0].forked);
   CHECK_FALSE(wall[1].mine);
@@ -189,7 +189,7 @@ TEST(a_signed_in_reader_sees_which_rows_are_theirs_and_which_they_took) {
   const Viewer sam{UserId{"u_sam"}, {TreeId{"t_taken"}}};
   std::vector<GalleryEntry> wall = publicWall({mine, taken, stranger}, sam);
 
-  CHECK_EQ(wall.size(), std::size_t{3});
+  REQUIRE_EQ(wall.size(), std::size_t{3});
   CHECK_EQ(wall[0].id, TreeId{"t_mine"});
   CHECK(wall[0].mine);
   CHECK_FALSE(wall[0].forked);
@@ -213,7 +213,7 @@ TEST(who_is_reading_never_changes_the_ranking) {
   std::vector<GalleryEntry> anonymousWall = publicWall(candidates, Viewer{});
   std::vector<GalleryEntry> samsWall = publicWall(candidates, sam);
 
-  CHECK_EQ(anonymousWall.size(), samsWall.size());
+  REQUIRE_EQ(anonymousWall.size(), samsWall.size());
   for (std::size_t i = 0; i < samsWall.size(); ++i) CHECK_EQ(anonymousWall[i].id, samsWall[i].id);
 }
 
@@ -225,7 +225,7 @@ TEST(a_page_is_the_first_limit_entries_and_the_token_that_resumes_it) {
   std::optional<WallPage> first = wallPage(wall, "", 2);
 
   REQUIRE(first.has_value());
-  CHECK_EQ(first->entries.size(), std::size_t{2});
+  REQUIRE_EQ(first->entries.size(), std::size_t{2});
   CHECK_EQ(first->entries[0].id, TreeId{"t_a"});
   CHECK_EQ(first->entries[1].id, TreeId{"t_b"});
   CHECK_EQ(first->nextCursor, std::string("t_b"));
@@ -233,7 +233,7 @@ TEST(a_page_is_the_first_limit_entries_and_the_token_that_resumes_it) {
   std::optional<WallPage> second = wallPage(wall, first->nextCursor, 2);
 
   REQUIRE(second.has_value());
-  CHECK_EQ(second->entries.size(), std::size_t{1});
+  REQUIRE_EQ(second->entries.size(), std::size_t{1});
   CHECK_EQ(second->entries[0].id, TreeId{"t_c"});
   CHECK_EQ(second->nextCursor, std::string(""));  // the last page never invites another
 }

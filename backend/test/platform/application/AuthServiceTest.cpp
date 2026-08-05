@@ -43,7 +43,7 @@ TEST(request_link_sends_a_link_that_carries_the_minted_secret) {
   Harness h;
   CHECK(h.requestLink("Sam@Example.com") == AuthService::RequestResult::sent);
 
-  CHECK_EQ(h.email.sent.size(), 1u);
+  REQUIRE_EQ(h.email.sent.size(), 1u);
   CHECK_EQ(h.email.sent[0].to.value, std::string("sam@example.com"));
   CHECK_EQ(h.email.sent[0].url, std::string("https://windmill.works/#/auth?token=s1"));
   CHECK_EQ(h.email.sent[0].templateId, std::string("magic-link"));
@@ -396,7 +396,7 @@ TEST(a_fork_request_sends_the_fork_mail_naming_the_source) {
   ForkDescription source{"Learn to sail", "12 steps"};
   CHECK(h.requestLink("sam@example.com", "t_source", source) == AuthService::RequestResult::sent);
 
-  CHECK_EQ(h.email.sent.size(), 1u);
+  REQUIRE_EQ(h.email.sent.size(), 1u);
   CHECK_EQ(h.email.sent[0].to.value, std::string("sam@example.com"));
   CHECK_EQ(h.email.sent[0].url, std::string("https://windmill.works/#/auth?token=s1"));
   CHECK_EQ(h.email.sent[0].templateId, std::string("magic-link-fork"));
@@ -413,7 +413,7 @@ TEST(a_fork_description_is_forwarded_word_for_word) {
   ForkDescription source{"Plant one seed", "1 step"};
   CHECK(h.requestLink("sam@example.com", "t_source", source) == AuthService::RequestResult::sent);
 
-  CHECK_EQ(h.email.sent.size(), 1u);
+  REQUIRE_EQ(h.email.sent.size(), 1u);
   CHECK_EQ(h.email.sent[0].sourceTitle, std::string("Plant one seed"));
   CHECK_EQ(h.email.sent[0].sourceMeta, std::string("1 step"));
 }
@@ -422,7 +422,7 @@ TEST(a_fork_request_with_an_unreadable_source_falls_back_to_the_plain_mail) {
   Harness h;
   CHECK(h.requestLink("sam@example.com", "t_ghost", std::nullopt) == AuthService::RequestResult::sent);
 
-  CHECK_EQ(h.email.sent.size(), 1u);
+  REQUIRE_EQ(h.email.sent.size(), 1u);
   CHECK_EQ(h.email.sent[0].templateId, std::string("magic-link"));
   CHECK_EQ(h.email.sent[0].sourceTitle, std::string(""));
   CHECK_EQ(h.email.sent[0].sourceMeta, std::string(""));
@@ -586,7 +586,7 @@ TEST(list_sessions_coalesces_a_zero_last_seen_to_the_created_time) {
   h.repo.sessions["d2"].lastSeenMs = 0;
 
   std::vector<SessionView> list = h.service.listSessions(account, current);
-  CHECK_EQ(list.size(), 1u);
+  REQUIRE_EQ(list.size(), 1u);
   CHECK_EQ(list[0].createdMs, createdAt);
   CHECK_EQ(list[0].lastSeenMs, createdAt);  // coalesced from 0 to the created time
   CHECK(list[0].current);
@@ -607,7 +607,7 @@ TEST(authenticate_heals_a_pre_migration_rows_user_agent_and_last_seen) {
   CHECK(h.service.authenticate(current, SessionContext{"Firefox/128", "203.0.113.7"}).has_value());
 
   std::vector<SessionView> list = h.service.listSessions(account, current);
-  CHECK_EQ(list.size(), 1u);
+  REQUIRE_EQ(list.size(), 1u);
   CHECK_EQ(list[0].userAgent, std::string("Firefox/128"));
   CHECK_EQ(list[0].ip, std::string("203.0.113.7"));
   CHECK_EQ(list[0].lastSeenMs, seenAt);
@@ -728,7 +728,7 @@ TEST(a_within_grace_magic_link_sign_in_revives_the_account_and_reissues_a_sessio
   CHECK(revived.verdict == LinkVerdict::valid);
   REQUIRE(revived.signedIn.has_value());
   CHECK_EQ(revived.signedIn->user.id.str(), account.str());   // same account — its trees stay owned by it
-  CHECK_EQ(h.repo.usersById.size(), 1u);
+  REQUIRE_EQ(h.repo.usersById.size(), 1u);
   CHECK_FALSE(h.repo.usersById[account.str()].deletedAt.has_value());  // the close is undone
   CHECK_FALSE(revived.signedIn->user.deletedAt.has_value());          // and the handed-back user is live
 

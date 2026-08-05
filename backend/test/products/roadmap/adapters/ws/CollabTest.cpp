@@ -136,7 +136,7 @@ TEST(ws_owner_of_a_private_tree_subscribes_and_receives_the_delta) {
   h.collab.onOpen(h.upgrade("s-owner"), conn);
   h.collab.onMessage(conn, subscribeFrame("t_priv"));
 
-  CHECK_EQ(conn->sent.size(), 1u);
+  REQUIRE_EQ(conn->sent.size(), 1u);
   CHECK_FALSE(frameType(conn->sent[0]) == "reject");  // the delta, not a rejection
 
   broadcastTo(h.bus, "t_priv");
@@ -151,7 +151,7 @@ TEST(ws_anon_on_a_private_tree_is_rejected_and_never_joins_the_bus) {
   h.collab.onOpen(h.upgrade(""), conn);  // no cookie — an anonymous guest
   h.collab.onMessage(conn, subscribeFrame("t_priv"));
 
-  CHECK_EQ(conn->sent.size(), 1u);
+  REQUIRE_EQ(conn->sent.size(), 1u);
   CHECK_EQ(frameType(conn->sent[0]), std::string("reject"));
   CHECK_EQ(parse(conn->sent[0])["treeId"].asString(), std::string("t_priv"));
 
@@ -170,7 +170,7 @@ TEST(ws_non_owner_on_a_private_tree_is_rejected_and_never_joins_the_bus) {
   h.collab.onOpen(h.upgrade("s-other"), conn);
   h.collab.onMessage(conn, subscribeFrame("t_priv"));
 
-  CHECK_EQ(conn->sent.size(), 1u);
+  REQUIRE_EQ(conn->sent.size(), 1u);
   CHECK_EQ(frameType(conn->sent[0]), std::string("reject"));
 
   broadcastTo(h.bus, "t_priv");
@@ -185,7 +185,7 @@ TEST(ws_anon_on_an_unlisted_tree_receives_the_delta_and_joins_the_bus) {
   h.collab.onOpen(h.upgrade(""), conn);  // anonymous, but unlisted is readable by id
   h.collab.onMessage(conn, subscribeFrame("t_shared"));
 
-  CHECK_EQ(conn->sent.size(), 1u);
+  REQUIRE_EQ(conn->sent.size(), 1u);
   CHECK_FALSE(frameType(conn->sent[0]) == "reject");
 
   broadcastTo(h.bus, "t_shared");
@@ -198,7 +198,7 @@ TEST(ws_subscribe_to_an_absent_tree_is_rejected) {
   h.collab.onOpen(h.upgrade(""), conn);
   h.collab.onMessage(conn, subscribeFrame("t_ghost"));
 
-  CHECK_EQ(conn->sent.size(), 1u);
+  REQUIRE_EQ(conn->sent.size(), 1u);
   CHECK_EQ(frameType(conn->sent[0]), std::string("reject"));
 }
 
@@ -219,7 +219,7 @@ TEST(ws_write_to_a_private_tree_you_dont_own_reads_as_absent) {
   h.collab.onOpen(h.upgrade("s-other"), onAbsent);
   h.collab.onMessage(onAbsent, writeFrame("t_ghost"));
 
-  CHECK_EQ(onPrivate->sent.size(), 1u);
+  REQUIRE_EQ(onPrivate->sent.size(), 1u);
   CHECK_EQ(frameType(onPrivate->sent[0]), std::string("reject"));
   CHECK_EQ(rejectReason(onPrivate->sent[0]), std::string("no such tree \"t_priv\""));
   CHECK_EQ(rejectReason(onAbsent->sent[0]), std::string("no such tree \"t_ghost\""));
@@ -236,7 +236,7 @@ TEST(ws_write_to_an_unlisted_tree_you_dont_own_says_it_belongs_to_another) {
   h.collab.onOpen(h.upgrade("s-other"), conn);
   h.collab.onMessage(conn, writeFrame("t_shared"));
 
-  CHECK_EQ(conn->sent.size(), 1u);
+  REQUIRE_EQ(conn->sent.size(), 1u);
   CHECK_EQ(frameType(conn->sent[0]), std::string("reject"));
   CHECK_EQ(rejectReason(conn->sent[0]), std::string("this tree belongs to another account"));
 }
@@ -252,7 +252,7 @@ TEST(ws_write_to_an_unowned_private_tree_reads_as_absent) {
   h.collab.onOpen(h.upgrade("s-other"), conn);
   h.collab.onMessage(conn, writeFrame("t_orphan"));
 
-  CHECK_EQ(conn->sent.size(), 1u);
+  REQUIRE_EQ(conn->sent.size(), 1u);
   CHECK_EQ(frameType(conn->sent[0]), std::string("reject"));
   CHECK_EQ(rejectReason(conn->sent[0]), std::string("no such tree \"t_orphan\""));
 }
@@ -275,7 +275,7 @@ TEST(ws_write_to_an_unowned_public_tree_is_refused_and_never_claims_it) {
   h.collab.onOpen(h.upgrade("s-visitor"), conn);
   h.collab.onMessage(conn, writeFrame("t_demo"));
 
-  CHECK_EQ(conn->sent.size(), 1u);
+  REQUIRE_EQ(conn->sent.size(), 1u);
   CHECK_EQ(frameType(conn->sent[0]), std::string("reject"));
   CHECK_EQ(rejectReason(conn->sent[0]),
            std::string("no account owns this tree, so it cannot be edited — you can still read it, "
@@ -288,7 +288,7 @@ TEST(ws_write_to_an_unowned_public_tree_is_refused_and_never_claims_it) {
   auto reader = std::make_shared<FakeSocket>();
   h.collab.onOpen(h.upgrade(""), reader);
   h.collab.onMessage(reader, subscribeFrame("t_demo"));
-  CHECK_EQ(reader->sent.size(), 1u);
+  REQUIRE_EQ(reader->sent.size(), 1u);
   CHECK_FALSE(frameType(reader->sent[0]) == "reject");
 }
 
@@ -321,7 +321,7 @@ TEST(ws_owner_writes_to_their_own_private_tree_and_is_acked) {
   h.collab.onOpen(h.upgrade("s-owner"), conn);
   h.collab.onMessage(conn, writeFrame("t_priv"));
 
-  CHECK_EQ(conn->sent.size(), 1u);
+  REQUIRE_EQ(conn->sent.size(), 1u);
   CHECK_EQ(frameType(conn->sent[0]), std::string("subgraphAck"));
 }
 

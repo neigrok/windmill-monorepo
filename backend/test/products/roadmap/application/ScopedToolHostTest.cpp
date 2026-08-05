@@ -73,7 +73,7 @@ TEST(scoped_tool_host_forces_the_target_tree_id_over_any_the_agent_supplied) {
   args["label"] = "New step";
   scoped.callTool("create_node", args, UserId{"u1"});
 
-  CHECK_EQ(inner.calls.size(), std::size_t{1});
+  REQUIRE_EQ(inner.calls.size(), std::size_t{1});
   CHECK_EQ(inner.calls[0].name, std::string("create_node"));
   CHECK_EQ(inner.calls[0].args["treeId"].asString(), std::string("t_target"));  // redirected home
   CHECK_EQ(inner.calls[0].args["label"].asString(), std::string("New step"));   // other args intact

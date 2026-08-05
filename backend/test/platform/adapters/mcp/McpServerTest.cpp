@@ -80,7 +80,7 @@ TEST(mcp_resources_list_publishes_the_injected_catalog) {
 
   REQUIRE(reply.has_value());
   const Json::Value listing = (*reply)["result"]["resources"];
-  CHECK_EQ(listing.size(), 1u);
+  REQUIRE_EQ(listing.size(), 1u);
   CHECK_EQ(listing[0]["uri"].asString(), std::string("test://doc"));
   CHECK_EQ(listing[0]["name"].asString(), std::string("doc"));
   CHECK_EQ(listing[0]["title"].asString(), std::string("Test document"));
@@ -108,7 +108,7 @@ TEST(mcp_resources_read_answers_the_injected_body) {
 
   REQUIRE(reply.has_value());
   const Json::Value contents = (*reply)["result"]["contents"];
-  CHECK_EQ(contents.size(), 1u);
+  REQUIRE_EQ(contents.size(), 1u);
   CHECK_EQ(contents[0]["uri"].asString(), std::string("test://doc"));
   CHECK_EQ(contents[0]["mimeType"].asString(), std::string("text/markdown"));
   CHECK_EQ(contents[0]["text"].asString(), std::string("FIXTURE BODY"));
@@ -152,7 +152,7 @@ TEST(mcp_tools_list_passes_through_the_host_catalog) {
   McpServer server = make(host);
   std::optional<Json::Value> reply = server.handle(request("tools/list", Json::nullValue, 3));
   REQUIRE(reply.has_value());
-  CHECK_EQ((*reply)["result"]["tools"].size(), 1u);
+  REQUIRE_EQ((*reply)["result"]["tools"].size(), 1u);
   CHECK_EQ((*reply)["result"]["tools"][0]["name"].asString(), std::string("echo"));
 }
 

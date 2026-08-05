@@ -40,7 +40,7 @@ TEST(dangling_edge_detected) {
   g.addEdge(nid("a"), nid("b"), at(2));
   g.deleteNode(nid("b"), at(3));
   auto report = TreeDiagnostics::assess(g);
-  CHECK_EQ(report.dangling.size(), 1u);
+  REQUIRE_EQ(report.dangling.size(), 1u);
   CHECK_EQ(report.dangling[0], (Edge{nid("a"), nid("b")}));
   CHECK_FALSE(report.clean());
 }
@@ -54,7 +54,7 @@ TEST(masked_work_flags_a_tombstoned_parent_with_a_live_child) {
   g.addEdge(nid("parent"), nid("child"), at(21)); // a live child hangs off the tombstone
 
   auto report = TreeDiagnostics::assess(g);
-  CHECK_EQ(report.maskedWork.size(), 1u);
+  REQUIRE_EQ(report.maskedWork.size(), 1u);
   CHECK_EQ(report.maskedWork[0], nid("parent"));
 
   // Resurrecting the parent clears the masked-work signal — the child is re-connected.
@@ -80,8 +80,8 @@ TEST(cycle_detected_with_members) {
   g.addEdge(nid("b"), nid("c"), at(2));
   g.addEdge(nid("c"), nid("a"), at(2));
   auto report = TreeDiagnostics::assess(g);
-  CHECK_EQ(report.cycles.size(), 1u);
-  CHECK_EQ(report.cycles[0].members.size(), 3u);
+  REQUIRE_EQ(report.cycles.size(), 1u);
+  REQUIRE_EQ(report.cycles[0].members.size(), 3u);
   CHECK_EQ(report.cycles[0].members[0], nid("a"));
   CHECK_EQ(report.cycles[0].members[1], nid("b"));
   CHECK_EQ(report.cycles[0].members[2], nid("c"));
@@ -95,7 +95,7 @@ TEST(two_node_cycle_detected) {
   g.addEdge(nid("a"), nid("b"), at(2));
   g.addEdge(nid("b"), nid("a"), at(2));
   auto report = TreeDiagnostics::assess(g);
-  CHECK_EQ(report.cycles.size(), 1u);
+  REQUIRE_EQ(report.cycles.size(), 1u);
   CHECK_EQ(report.cycles[0].members.size(), 2u);
 }
 

@@ -30,7 +30,7 @@ TEST(transitive_reduction_drops_redundant_edge) {
   g.addEdge(nid("a"), nid("c"), at(2));  // redundant: a reaches c through b
 
   auto redundant = g.redundantEdges();
-  CHECK_EQ(redundant.size(), 1u);
+  REQUIRE_EQ(redundant.size(), 1u);
   CHECK_EQ(redundant[0], (Edge{nid("a"), nid("c")}));
 
   merge(g, legend, Command{TransitiveReduction{}}, at(5));
@@ -235,7 +235,7 @@ TEST(create_node_wires_every_prerequisite_and_seeds_annotation) {
   CHECK(g.edgePresent(nid("b"), nid("c")));
   NodeSpec view = *g.nodeView(nid("c"));
   CHECK_EQ(view.description, std::string("notes"));
-  CHECK_EQ(view.links.size(), 1u);
+  REQUIRE_EQ(view.links.size(), 1u);
   CHECK_EQ(view.links[0], (Link{"Doc", "https://d"}));
 }
 
@@ -248,7 +248,7 @@ TEST(annotate_node_sets_only_the_fields_it_carries) {
 
   NodeSpec view = *g.nodeView(nid("a"));
   CHECK_EQ(view.description, std::string("body"));  // set at at(2), untouched by the links-only frame
-  CHECK_EQ(view.links.size(), 1u);
+  REQUIRE_EQ(view.links.size(), 1u);
   CHECK_EQ(view.links[0].url, std::string("u"));
 
   merge(g, legend, Command{AnnotateNode{nid("a"), std::string("newer"), std::nullopt}}, at(4));

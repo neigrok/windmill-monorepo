@@ -156,9 +156,9 @@ TEST(oauth_discovery_advertises_s256_only_and_a_client_secret_nobody_holds) {
   CHECK_EQ(body["authorization_endpoint"].asString(), kIssuer + "/oauth/authorize");
   CHECK_EQ(body["token_endpoint"].asString(), kIssuer + "/oauth/token");
   CHECK_EQ(body["registration_endpoint"].asString(), kIssuer + "/oauth/register");
-  CHECK_EQ(body["code_challenge_methods_supported"].size(), 1u);
+  REQUIRE_EQ(body["code_challenge_methods_supported"].size(), 1u);
   CHECK_EQ(body["code_challenge_methods_supported"][0].asString(), std::string("S256"));
-  CHECK_EQ(body["token_endpoint_auth_methods_supported"].size(), 1u);
+  REQUIRE_EQ(body["token_endpoint_auth_methods_supported"].size(), 1u);
   CHECK_EQ(body["token_endpoint_auth_methods_supported"][0].asString(), std::string("none"));
   CHECK_EQ(body["response_types_supported"][0].asString(), std::string("code"));
   CHECK_EQ(body["grant_types_supported"].size(), 2u);
@@ -188,7 +188,7 @@ TEST(oauth_registration_refuses_a_redirect_that_is_neither_https_nor_loopback) {
   CHECK_EQ(created->getStatusCode(), drogon::k201Created);
   const Json::Value body = *created->getJsonObject();
   CHECK_EQ(body["client_name"].asString(), std::string("Claude"));
-  CHECK_EQ(body["redirect_uris"].size(), 1u);
+  REQUIRE_EQ(body["redirect_uris"].size(), 1u);
   CHECK_EQ(body["redirect_uris"][0].asString(), kRedirect);
   CHECK_EQ(body["token_endpoint_auth_method"].asString(), std::string("none"));
   CHECK(!body["client_id"].asString().empty());
@@ -319,7 +319,7 @@ TEST(oauth_the_consent_screen_reads_the_registered_client_and_never_a_supplied_o
   CHECK_EQ(captured->getStatusCode(), drogon::k200OK);
   CHECK_EQ(body["client_id"].asString(), clientId);
   CHECK_EQ(body["client_name"].asString(), std::string("Claude"));
-  CHECK_EQ(body["redirect_uris"].size(), 1u);
+  REQUIRE_EQ(body["redirect_uris"].size(), 1u);
   CHECK_EQ(body["redirect_uris"][0].asString(), kRedirect);
 
   auto unknown = get("/v1/oauth/client");
@@ -496,7 +496,7 @@ TEST(oauth_the_connected_tools_list_is_the_caller_s_own_and_disconnecting_is_ide
   };
 
   const Json::Value body = *list("s-mine")->getJsonObject();
-  CHECK_EQ(body["grants"].size(), 1u);
+  REQUIRE_EQ(body["grants"].size(), 1u);
   CHECK_EQ(body["grants"][0]["clientId"].asString(), clientId);
   CHECK_EQ(body["grants"][0]["name"].asString(), std::string("Claude"));
   CHECK_EQ(body["grants"][0]["grantedMs"].asInt64(), static_cast<Json::Int64>(h.clock->now));

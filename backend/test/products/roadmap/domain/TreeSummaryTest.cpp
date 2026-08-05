@@ -62,7 +62,7 @@ TEST(registry_orders_by_recency_then_id_and_a_progress_mark_bumps_a_row) {
   loaded.push_back({tree("a", {}), 30, 200, Progress{}, 0});    // recency 200
 
   std::vector<TreeSummary> summaries = registrySummaries(loaded);
-  CHECK_EQ(summaries.size(), 3u);
+  REQUIRE_EQ(summaries.size(), 3u);
   CHECK_EQ(summaries[0].id, TreeId{std::string("a")});  // 200, ties broken by id (a < b)
   CHECK_EQ(summaries[1].id, TreeId{std::string("b")});  // 200, from its progress mark
   CHECK_EQ(summaries[2].id, TreeId{std::string("c")});  // 100
@@ -78,7 +78,7 @@ TEST(registry_carries_the_planting_time_untouched_by_recency) {
   loaded.push_back({tree("c", {}), 0, 0, Progress{}, 0});              // no recorded planting -> 0
 
   std::vector<TreeSummary> summaries = registrySummaries(loaded);
-  CHECK_EQ(summaries.size(), 3u);
+  REQUIRE_EQ(summaries.size(), 3u);
   CHECK_EQ(summaries[0].id, TreeId{std::string("b")});
   CHECK_EQ(summaries[0].createdAt, 2'000u);  // the mark bumped updatedAt, never the birth stamp
   CHECK_EQ(summaries[0].updatedAt, 9'000u);

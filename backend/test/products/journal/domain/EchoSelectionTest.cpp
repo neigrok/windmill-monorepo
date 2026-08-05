@@ -180,7 +180,7 @@ TEST(a_candidate_inside_the_minimum_day_gap_is_never_retrieved) {
 
   const std::vector<Vectored> retrieved = stratify(trigger, corpus, SelectionRules{});
 
-  CHECK_EQ(retrieved.size(), std::size_t{1});
+  REQUIRE_EQ(retrieved.size(), std::size_t{1});
   CHECK_EQ(retrieved[0].spanId, std::int64_t{12});
 }
 
@@ -212,7 +212,7 @@ TEST(the_bands_split_on_day_counts_and_each_contributes_at_most_perBand) {
 
   const std::vector<Vectored> retrieved = stratify(trigger, corpus, rules);
 
-  CHECK_EQ(retrieved.size(), std::size_t{5});   // five bands, one apiece, youngest band first
+  REQUIRE_EQ(retrieved.size(), std::size_t{5});   // five bands, one apiece, youngest band first
   CHECK_EQ(retrieved[0].spanId, std::int64_t{30});
   CHECK_EQ(retrieved[1].spanId, std::int64_t{91});
   CHECK_EQ(retrieved[2].spanId, std::int64_t{365});
@@ -237,7 +237,7 @@ TEST(a_band_takes_its_top_perBand_by_cosine) {
 
   const std::vector<Vectored> retrieved = stratify(trigger, corpus, rules);
 
-  CHECK_EQ(retrieved.size(), std::size_t{4});
+  REQUIRE_EQ(retrieved.size(), std::size_t{4});
   CHECK_EQ(retrieved[0].spanId, std::int64_t{11});
   CHECK_EQ(retrieved[1].spanId, std::int64_t{12});
   CHECK_EQ(retrieved[2].spanId, std::int64_t{21});
@@ -258,7 +258,7 @@ TEST(a_lone_four_year_old_candidate_survives_forty_recent_ones) {
 
   const std::vector<Vectored> retrieved = stratify(trigger, corpus, rules);
 
-  CHECK_EQ(retrieved.size(), std::size_t{9});          // eight out of 7-30d, one out of 3y+
+  REQUIRE_EQ(retrieved.size(), std::size_t{9});          // eight out of 7-30d, one out of 3y+
   CHECK_EQ(retrieved[8].spanId, std::int64_t{999});
 }
 
@@ -273,7 +273,7 @@ TEST(a_restatement_is_dropped_and_the_memory_beside_it_is_kept) {
 
   const std::vector<Pairing> pairings = select(trigger, candidates, SelectionRules{});
 
-  CHECK_EQ(pairings.size(), std::size_t{1});
+  REQUIRE_EQ(pairings.size(), std::size_t{1});
   CHECK_EQ(pairings[0].triggerSpanId, std::int64_t{1});
   CHECK_EQ(pairings[0].matchSpanId, std::int64_t{12});
   CHECK_EQ(pairings[0].familySize, 1);
@@ -315,7 +315,7 @@ TEST(ten_near_identical_candidates_collapse_into_one_family_led_by_the_oldest) {
 
   const std::vector<Pairing> pairings = select(trigger, candidates, SelectionRules{});
 
-  CHECK_EQ(pairings.size(), std::size_t{1});
+  REQUIRE_EQ(pairings.size(), std::size_t{1});
   CHECK_EQ(pairings[0].matchSpanId, std::int64_t{10});
   CHECK_EQ(pairings[0].familySize, 10);
   CHECK(std::abs(pairings[0].cosine - 0.9164f) < 1e-3f);
@@ -458,7 +458,7 @@ TEST(identical_inputs_yield_identical_pairings_down_to_the_tie_break) {
   const std::vector<Pairing> second = select(trigger, candidates, SelectionRules{});
 
   CHECK_EQ(matchIds(first), (std::vector<std::int64_t>{11, 12, 13}));
-  CHECK_EQ(first.size(), second.size());
+  REQUIRE_EQ(first.size(), second.size());
   for (std::size_t i = 0; i < first.size(); ++i) {
     CHECK_EQ(first[i].triggerSpanId, second[i].triggerSpanId);
     CHECK_EQ(first[i].matchSpanId, second[i].matchSpanId);

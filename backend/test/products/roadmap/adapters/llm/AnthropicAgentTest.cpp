@@ -115,7 +115,7 @@ TEST(agent_tools_rename_inputSchema_to_input_schema_and_keep_the_rest) {
 
   const Json::Value translated = agentTools(catalog);
 
-  CHECK_EQ(translated.size(), 2u);
+  REQUIRE_EQ(translated.size(), 2u);
   CHECK_EQ(translated[0]["name"].asString(), std::string("get_tree"));
   CHECK_EQ(translated[0]["description"].asString(), std::string("Read a roadmap."));
   CHECK_EQ(translated[0]["input_schema"], catalog[0]["inputSchema"]);
@@ -191,19 +191,19 @@ TEST(drive_agent_runs_the_tools_and_returns_the_receipt_on_end_turn) {
   CHECK_EQ(rec.failures.size(), 0u);
 
   // One step fired, as it happened, for the one tool the model asked for.
-  CHECK_EQ(rec.steps.size(), 1u);
+  REQUIRE_EQ(rec.steps.size(), 1u);
   CHECK_EQ(rec.steps[0].tool, std::string("create_node"));
   CHECK(rec.steps[0].changedTree);
   CHECK_FALSE(rec.steps[0].failed);
   CHECK_EQ(rec.steps[0].note, std::string("create_node"));
 
   // get_tree first (the read), then the create the model asked for.
-  CHECK_EQ(host.calls.size(), 2u);
+  REQUIRE_EQ(host.calls.size(), 2u);
   CHECK_EQ(host.calls[0].first, std::string("get_tree"));
   CHECK_EQ(host.calls[1].first, std::string("create_node"));
 
   // The first request carried the translated catalog, the Sonnet model, and the sentence.
-  CHECK_EQ(model.requests.size(), 2u);
+  REQUIRE_EQ(model.requests.size(), 2u);
   CHECK_EQ(model.requests[0]["model"].asString(), std::string("claude-sonnet-5"));
   CHECK_EQ(model.requests[0]["max_tokens"].asInt(), 8000);
   CHECK_EQ(model.requests[0]["tools"], agentTools(host.catalog));
@@ -267,7 +267,7 @@ TEST(drive_agent_counts_only_successful_mutations_as_edits) {
 
   CHECK(outcome.ok);
   CHECK_EQ(outcome.edits, 0);  // a failed mutation changed nothing
-  CHECK_EQ(rec.steps.size(), 1u);
+  REQUIRE_EQ(rec.steps.size(), 1u);
   CHECK(rec.steps[0].failed);
   CHECK_FALSE(rec.steps[0].changedTree);
   CHECK_EQ(rec.steps[0].note, std::string("delete_node failed: node carries progress"));
@@ -287,7 +287,7 @@ TEST(drive_agent_treats_the_iteration_cap_as_a_failure) {
   CHECK_EQ(outcome.edits, 12);
   CHECK_EQ(model.requests.size(), 12u);  // stopped at the cap, not one more
   CHECK_EQ(rec.steps.size(), 12u);
-  CHECK_EQ(rec.failures.size(), 1u);
+  REQUIRE_EQ(rec.failures.size(), 1u);
   CHECK_EQ(rec.failures[0], std::string("agent.run | hit the 12-iteration cap without the model finishing"));
 }
 
@@ -302,7 +302,7 @@ TEST(drive_agent_fails_and_reports_when_the_model_stops_early) {
 
   CHECK_FALSE(outcome.ok);
   CHECK_EQ(outcome.error, std::string("the model stopped early (stop_reason: max_tokens)"));
-  CHECK_EQ(rec.failures.size(), 1u);
+  REQUIRE_EQ(rec.failures.size(), 1u);
   CHECK_EQ(rec.failures[0], std::string("agent.run | the model stopped early (stop_reason: max_tokens)"));
 }
 
@@ -333,7 +333,7 @@ TEST(drive_agent_fails_when_the_tree_cannot_be_read) {
   CHECK_FALSE(outcome.ok);
   CHECK_EQ(outcome.error, std::string("could not read the tree before tending"));
   CHECK_EQ(model.requests.size(), 0u);  // never reached the model
-  CHECK_EQ(rec.failures.size(), 1u);
+  REQUIRE_EQ(rec.failures.size(), 1u);
   CHECK_EQ(rec.failures[0], std::string("agent.setup | could not read the tree before tending"));
 }
 

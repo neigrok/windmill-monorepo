@@ -40,14 +40,14 @@ TEST(a_due_writer_who_has_not_written_is_nudged_once_and_the_day_is_closed_deliv
   CHECK_EQ(report.failed, 0);
 
   // DECIDE → CLAIM → SEND: the day is claimed with the send decision it will act on.
-  CHECK_EQ(nudges.claims.size(), std::size_t{1});
+  REQUIRE_EQ(nudges.claims.size(), std::size_t{1});
   CHECK_EQ(nudges.claims[0].user, uid("u1"));
   CHECK(nudges.claims[0].slotDay == ld(kSlotDay));
   CHECK_EQ(nudges.claims[0].decision.outcome, NudgeOutcome::send);
   CHECK_EQ(nudges.claims[0].decision.reason, NudgeSkipReason::none);
 
   // One nudge mail, carrying the three links the mailer only binds.
-  CHECK_EQ(email.sent.size(), std::size_t{1});
+  REQUIRE_EQ(email.sent.size(), std::size_t{1});
   CHECK_EQ(email.sent[0].to, Email{"writer@example.com"});
   const JournalNudgeMail& mail = email.sent[0].mail;
   CHECK_EQ(mail.settingsUrl, std::string("https://windmill.works/#/settings/nudges"));
@@ -57,7 +57,7 @@ TEST(a_due_writer_who_has_not_written_is_nudged_once_and_the_day_is_closed_deliv
 
   // The pause credential rotates only on a mail that actually left, and the day is closed delivered.
   CHECK_EQ(nudges.pauseDigests[uid("u1").str()], std::string("d1"));
-  CHECK_EQ(nudges.closes.size(), std::size_t{1});
+  REQUIRE_EQ(nudges.closes.size(), std::size_t{1});
   CHECK_EQ(nudges.closes[0].user, uid("u1"));
   CHECK(nudges.closes[0].slotDay == ld(kSlotDay));
   CHECK_EQ(nudges.closes[0].outcome, DayOutcome::delivered);
@@ -81,7 +81,7 @@ TEST(a_writer_who_already_wrote_today_is_skipped_with_no_mail) {
   CHECK_EQ(email.sent.size(), std::size_t{0});
 
   // The day is still claimed so the decision is recorded, but a skip closes no outcome row.
-  CHECK_EQ(nudges.claims.size(), std::size_t{1});
+  REQUIRE_EQ(nudges.claims.size(), std::size_t{1});
   CHECK_EQ(nudges.claims[0].decision.outcome, NudgeOutcome::skip);
   CHECK_EQ(nudges.claims[0].decision.reason, NudgeSkipReason::alreadyWrote);
   CHECK_EQ(nudges.closes.size(), std::size_t{0});
@@ -102,7 +102,7 @@ TEST(a_paused_writer_is_skipped_with_no_mail) {
   CHECK_EQ(report.sent, 0);
   CHECK_EQ(report.skipped, 1);
   CHECK_EQ(email.sent.size(), std::size_t{0});
-  CHECK_EQ(nudges.claims.size(), std::size_t{1});
+  REQUIRE_EQ(nudges.claims.size(), std::size_t{1});
   CHECK_EQ(nudges.claims[0].decision.outcome, NudgeOutcome::skip);
   CHECK_EQ(nudges.claims[0].decision.reason, NudgeSkipReason::paused);
   CHECK_EQ(nudges.closes.size(), std::size_t{0});
@@ -127,9 +127,9 @@ TEST(a_writer_off_the_allowlist_has_the_send_held_and_the_day_closed_held) {
   CHECK_EQ(email.sent.size(), std::size_t{0});
 
   // The ledger says what we DECIDED, not what the flag allowed — a send, then closed held.
-  CHECK_EQ(nudges.claims.size(), std::size_t{1});
+  REQUIRE_EQ(nudges.claims.size(), std::size_t{1});
   CHECK_EQ(nudges.claims[0].decision.outcome, NudgeOutcome::send);
-  CHECK_EQ(nudges.closes.size(), std::size_t{1});
+  REQUIRE_EQ(nudges.closes.size(), std::size_t{1});
   CHECK_EQ(nudges.closes[0].outcome, DayOutcome::held);
   // Nothing left, so no pause credential was rotated.
   CHECK_EQ(nudges.pauseDigests.size(), std::size_t{0});

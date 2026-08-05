@@ -53,7 +53,7 @@ TEST(mcp_create_node_mints_a_slug_id_and_get_tree_shows_it) {
   ToolResult read = h.call("get_tree", Json::Value(Json::objectValue));
   CHECK_FALSE(read.isError);
   const Json::Value got = body(read);
-  CHECK_EQ(got["tree"]["nodes"].size(), 1u);
+  REQUIRE_EQ(got["tree"]["nodes"].size(), 1u);
   CHECK_EQ(got["tree"]["nodes"][0]["id"].asString(), std::string("renderer-core"));
   CHECK_EQ(got["tree"]["nodes"][0]["label"].asString(), std::string("Renderer Core"));
 }
@@ -127,7 +127,7 @@ TEST(mcp_set_progress_records_and_flags_unmet_prerequisites) {
   CHECK_EQ(body(h.call("get_progress", Json::Value(Json::objectValue)))["completed"].size(), 2u);
 
   // Each set_progress echoes to the caller's live web sessions — here three marks (b, a, b).
-  CHECK_EQ(h.bus.progressBroadcasts.size(), 3u);
+  REQUIRE_EQ(h.bus.progressBroadcasts.size(), 3u);
   const FakeBus::ProgressBroadcast& last = h.bus.progressBroadcasts.back();
   CHECK_EQ(last.node, std::string("b"));
   CHECK_EQ(last.user, h.caller.str());
@@ -169,7 +169,7 @@ TEST(mcp_add_kind_shows_in_legend_and_rejects_a_taken_hue) {
   CHECK(body(added)["applied"].asBool());
 
   const Json::Value got = body(h.call("get_tree", Json::Value(Json::objectValue)));
-  CHECK_EQ(got["tree"]["kinds"].size(), 1u);
+  REQUIRE_EQ(got["tree"]["kinds"].size(), 1u);
   CHECK_EQ(got["tree"]["kinds"][0]["id"].asString(), std::string("infra"));
   CHECK_EQ(got["tree"]["kinds"][0]["hue"].asString(), std::string("sky"));
 
@@ -240,7 +240,7 @@ TEST(mcp_list_trees_returns_the_callers_owned_rows) {
   ToolResult result = h.tools.callTool("list_trees", Json::Value(Json::objectValue), h.caller);
   CHECK_FALSE(result.isError);
   const Json::Value trees = body(result)["trees"];
-  CHECK_EQ(trees.size(), 1u);
+  REQUIRE_EQ(trees.size(), 1u);
   CHECK_EQ(trees[0]["id"].asString(), std::string("t"));
   CHECK_EQ(trees[0]["title"].asString(), std::string("Test Roadmap"));
   CHECK_EQ(trees[0]["total"].asInt(), 2);
@@ -252,7 +252,7 @@ TEST(mcp_list_trees_returns_the_callers_owned_rows) {
 TEST(mcp_list_trees_reports_zero_for_a_tree_with_no_recorded_planting) {
   Harness h;  // "t" is seeded without a createdAt
   const Json::Value trees = body(h.tools.callTool("list_trees", Json::Value(Json::objectValue), h.caller))["trees"];
-  CHECK_EQ(trees.size(), 1u);
+  REQUIRE_EQ(trees.size(), 1u);
   CHECK(trees[0].isMember("createdAt"));  // present and 0 — never a missing key, never null
   CHECK_EQ(trees[0]["createdAt"].asInt64(), 0);
 }
@@ -304,7 +304,7 @@ TEST(mcp_create_node_wires_prerequisites_description_and_links) {
   REQUIRE(cNode != nullptr);
   CHECK_EQ((*cNode)["prerequisites"].size(), 2u);
   CHECK_EQ((*cNode)["description"].asString(), std::string("the payoff node"));
-  CHECK_EQ((*cNode)["links"].size(), 1u);
+  REQUIRE_EQ((*cNode)["links"].size(), 1u);
   CHECK_EQ((*cNode)["links"][0]["url"].asString(), std::string("https://spec"));
   CHECK_EQ((*cNode)["links"][0]["label"].asString(), std::string("Spec"));
 }
@@ -329,7 +329,7 @@ TEST(mcp_annotate_node_sets_and_leaves_untouched_fields_alone) {
   args["fields"] = list({"id", "description", "links"});
   const Json::Value a = body(h.call("get_tree", args))["tree"]["nodes"][0];
   CHECK_EQ(a["description"].asString(), std::string("first pass"));  // survived the links-only update
-  CHECK_EQ(a["links"].size(), 1u);
+  REQUIRE_EQ(a["links"].size(), 1u);
   CHECK_EQ(a["links"][0]["url"].asString(), std::string("https://only-a-url"));
 }
 
@@ -369,7 +369,7 @@ TEST(mcp_import_subgraph_bulk_upserts_and_reports_collisions) {
   CHECK(imported["imported"].asBool());
   CHECK_EQ(imported["nodes"].asInt(), 2);
   CHECK_EQ(imported["newNodes"].asInt(), 1);
-  CHECK_EQ(imported["nodeCollisions"].size(), 1u);
+  REQUIRE_EQ(imported["nodeCollisions"].size(), 1u);
   CHECK_EQ(imported["nodeCollisions"][0].asString(), std::string("a"));
   CHECK(imported["diagnosticsClean"].asBool());
 
@@ -401,7 +401,7 @@ TEST(mcp_import_subgraph_dry_run_reports_without_applying) {
   CHECK_FALSE(preview.isMember("imported"));
 
   const Json::Value got = body(h.call("get_tree", kNoArgs));  // nothing changed
-  CHECK_EQ(got["tree"]["nodes"].size(), 1u);
+  REQUIRE_EQ(got["tree"]["nodes"].size(), 1u);
   CHECK_EQ(got["tree"]["nodes"][0]["label"].asString(), std::string("A"));
 }
 
@@ -491,9 +491,9 @@ TEST(mcp_import_subgraph_reports_carried_progress_that_named_no_node) {
   CHECK_FALSE(result.isError);  // a dangling reference is surfaced, not refused
   const Json::Value imported = body(result);
   CHECK(imported["imported"].asBool());
-  CHECK_EQ(imported["progress"].size(), 1u);  // only the real mark applied
+  REQUIRE_EQ(imported["progress"].size(), 1u);  // only the real mark applied
   CHECK_EQ(imported["progress"][0]["nodeId"].asString(), std::string("a"));
-  CHECK_EQ(imported["progressSkipped"].size(), 1u);
+  REQUIRE_EQ(imported["progressSkipped"].size(), 1u);
   CHECK_EQ(imported["progressSkipped"][0].asString(), std::string("ghost"));
   CHECK_EQ(body(h.call("get_progress", kNoArgs))["completed"].size(), 1u);
 }
@@ -514,7 +514,7 @@ TEST(mcp_import_subgraph_dry_run_previews_progress_that_would_skip) {
   CHECK_FALSE(result.isError);
   const Json::Value preview = body(result);
   CHECK(preview["dryRun"].asBool());
-  CHECK_EQ(preview["progressSkipped"].size(), 1u);
+  REQUIRE_EQ(preview["progressSkipped"].size(), 1u);
   CHECK_EQ(preview["progressSkipped"][0].asString(), std::string("ghost"));
   CHECK_FALSE(preview.isMember("progress"));  // a preview applies nothing
   CHECK_FALSE(preview.isMember("imported"));
@@ -871,7 +871,7 @@ TEST(mcp_fields_round_trips_every_field_of_a_node) {
   CHECK_EQ(b["icon"].asString(), std::string("anchor"));
   CHECK_EQ(b["color"].asString(), std::string("plum"));
   CHECK_EQ(b["order"].asString(), std::string("a0"));
-  CHECK_EQ(b["prerequisites"].size(), 1u);
+  REQUIRE_EQ(b["prerequisites"].size(), 1u);
   CHECK_EQ(b["prerequisites"][0].asString(), std::string("a"));
   CHECK_EQ(b["position"]["x"].asDouble(), 12.0);
   CHECK_EQ(b["position"]["y"].asDouble(), 34.0);
@@ -900,14 +900,14 @@ TEST(mcp_get_progress_reaches_the_cleared_tombstones_through_fields) {
 
   const Json::Value lean = body(h.call("get_progress", kNoArgs));
   CHECK_EQ(keys(lean), (std::vector<std::string>{"completed", "inProgress"}));
-  CHECK_EQ(lean["completed"].size(), 1u);
+  REQUIRE_EQ(lean["completed"].size(), 1u);
   CHECK_EQ(lean["completed"][0].asString(), std::string("a"));
 
   Json::Value args(Json::objectValue);
   args["fields"] = list({"completed", "inProgress", "cleared"});
   const Json::Value whole = body(h.call("get_progress", args));
   CHECK_EQ(keys(whole), (std::vector<std::string>{"cleared", "completed", "inProgress"}));
-  CHECK_EQ(whole["cleared"].size(), 1u);
+  REQUIRE_EQ(whole["cleared"].size(), 1u);
   CHECK_EQ(whole["cleared"][0].asString(), std::string("b"));
 }
 
@@ -977,7 +977,7 @@ TEST(mcp_limit_and_cursor_walk_the_whole_set_exactly_once) {
   restArgs["cursor"] = "c";
   const Json::Value rest = body(h.call("get_tree", restArgs));
   CHECK_EQ(rest["count"].asInt(), 5);
-  CHECK_EQ(rest["tree"]["nodes"].size(), 2u);
+  REQUIRE_EQ(rest["tree"]["nodes"].size(), 2u);
   CHECK_FALSE(rest.isMember("nextCursor"));
   CHECK_EQ(rest["tree"]["nodes"][0]["id"].asString(), std::string("d"));
   CHECK_EQ(rest["tree"]["nodes"][1]["id"].asString(), std::string("e"));

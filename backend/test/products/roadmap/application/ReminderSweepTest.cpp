@@ -75,15 +75,15 @@ TEST(a_sweep_decides_claims_and_only_then_mails) {
   CHECK_EQ(reminders.locksTaken, 1);
   CHECK_EQ(reminders.locksReleased, 1);
 
-  CHECK_EQ(reminders.claims.size(), std::size_t{1});
+  REQUIRE_EQ(reminders.claims.size(), std::size_t{1});
   CHECK_EQ(reminders.claims[0].user, UserId{"u1"});
   CHECK_EQ(reminders.claims[0].slotDate, kSlotDate);
   CHECK_EQ(reminders.claims[0].decision.outcome, ReminderOutcome::send);
   CHECK_EQ(reminders.claims[0].decision.content.treeId, TreeId{"t_a"});
 
-  CHECK_EQ(email.sent.size(), std::size_t{1});
+  REQUIRE_EQ(email.sent.size(), std::size_t{1});
   CHECK_EQ(email.sent[0].to, Email{"sailor@example.com"});
-  CHECK_EQ(reminders.closes.size(), std::size_t{1});
+  REQUIRE_EQ(reminders.closes.size(), std::size_t{1});
   CHECK_EQ(reminders.closes[0].user, UserId{"u1"});
   CHECK_EQ(reminders.closes[0].slotDate, kSlotDate);
   CHECK_EQ(reminders.closes[0].outcome, WeekOutcome::delivered);
@@ -100,7 +100,7 @@ TEST(the_mail_carries_the_links_the_counters_and_the_coloured_slots) {
                       "https://windmill.works");
   sweep.run(kNow, false);
 
-  CHECK_EQ(email.sent.size(), std::size_t{1});
+  REQUIRE_EQ(email.sent.size(), std::size_t{1});
   const ReminderMail& mail = email.sent[0].mail;
   CHECK_EQ(mail.treeName, std::string("Learn to sail"));
   // The OWNER's tree (#/app/:id), never the public share page (/t/:id) — this mail goes to the
@@ -148,7 +148,7 @@ TEST(the_mail_names_the_in_tree_remainder_and_the_other_trees_separately) {
                       "https://windmill.works");
   sweep.run(kNow, false);
 
-  CHECK_EQ(email.sent.size(), std::size_t{1});
+  REQUIRE_EQ(email.sent.size(), std::size_t{1});
   const ReminderMail& mail = email.sent[0].mail;
   CHECK_EQ(mail.readyPhrase, std::string("5 steps"));
   CHECK_EQ(mail.moreOnTree, std::string("…and 2 more on this tree"));
@@ -216,7 +216,7 @@ TEST(a_skip_still_claims_its_week_so_the_ledger_stays_complete) {
   CHECK_EQ(report.skipped, 1);
   CHECK_EQ(report.claimed, 1);
   CHECK_EQ(report.sent, 0);
-  CHECK_EQ(reminders.claims.size(), std::size_t{1});
+  REQUIRE_EQ(reminders.claims.size(), std::size_t{1});
   CHECK_EQ(reminders.claims[0].decision.outcome, ReminderOutcome::skip);
   CHECK_EQ(reminders.claims[0].decision.reason, SkipReason::noReadySteps);
   CHECK_EQ(email.sent.size(), std::size_t{0});
@@ -243,7 +243,7 @@ TEST(a_dark_engine_records_an_honest_send_holds_it_and_delivers_nothing) {
   CHECK_EQ(reminders.claims[0].decision.outcome, ReminderOutcome::send);
   // And the week is CLOSED as held, so this row can never be read as a crash between the claim
   // and the send. Every row of a dark rollout would otherwise look exactly like that.
-  CHECK_EQ(reminders.closes.size(), std::size_t{1});
+  REQUIRE_EQ(reminders.closes.size(), std::size_t{1});
   CHECK_EQ(reminders.closes[0].outcome, WeekOutcome::held);
   CHECK_EQ(email.sent.size(), std::size_t{0});
   // Nothing left, so last week's pause link — whatever it was — is untouched.
@@ -270,7 +270,7 @@ TEST(an_armed_engine_still_mails_only_the_allowlist) {
   CHECK_EQ(report.claimed, 2);
   CHECK_EQ(report.sent, 1);
   CHECK_EQ(report.held, 1);
-  CHECK_EQ(email.sent.size(), std::size_t{1});
+  REQUIRE_EQ(email.sent.size(), std::size_t{1});
   CHECK_EQ(email.sent[0].to, Email{"sailor@example.com"});
 }
 
@@ -291,7 +291,7 @@ TEST(a_refused_send_is_recorded_never_retried_and_leaves_the_old_pause_link_aliv
   CHECK_EQ(report.failed, 1);
   CHECK_EQ(report.sent, 0);
   CHECK_EQ(email.sent.size(), std::size_t{0});
-  CHECK_EQ(reminders.closes.size(), std::size_t{1});
+  REQUIRE_EQ(reminders.closes.size(), std::size_t{1});
   CHECK_EQ(reminders.closes[0].outcome, WeekOutcome::refused);
   // The credential rotates only on a mail that actually left. Rotating first would kill a pause
   // link still sitting in someone's inbox on behalf of a replacement that never arrived.
@@ -339,7 +339,7 @@ TEST(a_user_whose_facts_cannot_be_read_still_claims_the_week_and_moves_on) {
   CHECK_EQ(report.skipped, 1);
   CHECK_EQ(report.sent, 1);
 
-  CHECK_EQ(reminders.claims.size(), std::size_t{2});
+  REQUIRE_EQ(reminders.claims.size(), std::size_t{2});
   CHECK_EQ(reminders.claims[0].user, UserId{"u0"});
   CHECK_EQ(reminders.claims[0].slotDate, kSlotDate);
   CHECK_EQ(reminders.claims[0].decision.outcome, ReminderOutcome::skip);
@@ -348,7 +348,7 @@ TEST(a_user_whose_facts_cannot_be_read_still_claims_the_week_and_moves_on) {
   CHECK_EQ(reminders.claims[1].user, UserId{"u1"});
 
   // And the rest of the batch is served as if nothing had happened.
-  CHECK_EQ(email.sent.size(), std::size_t{1});
+  REQUIRE_EQ(email.sent.size(), std::size_t{1});
   CHECK_EQ(email.sent[0].to, Email{"sailor@example.com"});
   CHECK_EQ(reminders.locksReleased, 1);  // and the fleet lock is still handed back
 }

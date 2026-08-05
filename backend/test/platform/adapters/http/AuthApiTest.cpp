@@ -342,7 +342,7 @@ TEST(auth_closing_an_account_clears_this_device_s_cookie_and_names_the_day_it_en
   const Json::Value body = *response->getJsonObject();
   const UnixMs closesMs = static_cast<UnixMs>(body["closesMs"].asInt64());
   CHECK_EQ(closesMs, h.clock->now + 30ull * 24 * 60 * 60 * 1000);   // the 30-day grace
-  CHECK_EQ(body["closingOn"].asString().size(), std::size_t{20});   // ISO 8601 UTC, to the second
+  REQUIRE_EQ(body["closingOn"].asString().size(), std::size_t{20});   // ISO 8601 UTC, to the second
   CHECK_EQ(body["closingOn"].asString().back(), 'Z');
   CHECK(h.authRepo.sessions.empty());
 }

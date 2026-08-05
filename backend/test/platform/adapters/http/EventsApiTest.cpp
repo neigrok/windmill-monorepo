@@ -89,12 +89,11 @@ TEST(events_batch_caps_at_fifty_and_the_fifty_first_is_dropped) {
 
   CHECK_EQ(response->getStatusCode(), drogon::k202Accepted);
   CHECK_EQ(bodyOf(response)["accepted"].asInt(), 50);
-  CHECK_EQ(h.repo->appended.size(), 1u);
-  if (h.repo->appended.empty()) return;  // the CHECK already failed; don't segfault the suite
+  REQUIRE_EQ(h.repo->appended.size(), 1u);
   const FakeEventRepository::Batch& stored = h.repo->appended[0];
   CHECK_EQ(stored.sessionKey, std::string("browser-abc"));
   CHECK(stored.user == std::nullopt);
-  CHECK_EQ(stored.events.size(), 50u);
+  REQUIRE_EQ(stored.events.size(), 50u);
   for (int i = 0; i < 50; ++i) {
     CHECK_EQ(stored.events[i].name, "step_" + std::to_string(i));
     CHECK_EQ(stored.events[i].clientMs, 1000 + i);
@@ -151,10 +150,9 @@ TEST(events_malformed_entries_drop_alone_while_valid_siblings_persist) {
 
   CHECK_EQ(response->getStatusCode(), drogon::k202Accepted);
   CHECK_EQ(bodyOf(response)["accepted"].asInt(), 2);
-  CHECK_EQ(h.repo->appended.size(), 1u);
-  if (h.repo->appended.empty()) return;  // the CHECK already failed; don't segfault the suite
+  REQUIRE_EQ(h.repo->appended.size(), 1u);
   const FakeEventRepository::Batch& stored = h.repo->appended[0];
-  CHECK_EQ(stored.events.size(), 2u);
+  REQUIRE_EQ(stored.events.size(), 2u);
   CHECK_EQ(stored.events[0].name, std::string("tree_opened"));
   CHECK_EQ(stored.events[0].clientMs, 1000);
   CHECK_EQ(stored.events[0].props, std::string(R"({"source":"landing"})"));
@@ -172,7 +170,7 @@ TEST(events_anonymous_caller_is_stored_without_a_user) {
 
   CHECK_EQ(response->getStatusCode(), drogon::k202Accepted);
   CHECK_EQ(bodyOf(response)["accepted"].asInt(), 1);
-  CHECK_EQ(h.repo->appended.size(), 1u);
+  REQUIRE_EQ(h.repo->appended.size(), 1u);
   CHECK_EQ(h.repo->appended[0].sessionKey, std::string("ghost-1"));
   CHECK(h.repo->appended[0].user == std::nullopt);
 }
@@ -192,7 +190,7 @@ TEST(events_authenticated_caller_is_attributed_from_the_session_not_the_body) {
 
   CHECK_EQ(response->getStatusCode(), drogon::k202Accepted);
   CHECK_EQ(bodyOf(response)["accepted"].asInt(), 1);
-  CHECK_EQ(h.repo->appended.size(), 1u);
+  REQUIRE_EQ(h.repo->appended.size(), 1u);
   CHECK(h.repo->appended[0].user == std::optional<UserId>(user));
 }
 
@@ -207,7 +205,7 @@ TEST(events_session_cookie_attributes_like_bearer) {
   drogon::HttpResponsePtr response = send(h.api, request);
 
   CHECK_EQ(response->getStatusCode(), drogon::k202Accepted);
-  CHECK_EQ(h.repo->appended.size(), 1u);
+  REQUIRE_EQ(h.repo->appended.size(), 1u);
   CHECK(h.repo->appended[0].user == std::optional<UserId>(user));
 }
 
