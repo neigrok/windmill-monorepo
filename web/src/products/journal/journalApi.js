@@ -16,6 +16,11 @@ import { API_BASE } from '../../shell/apiBase.js';
 
 const base = `${API_BASE}/v1/journal`;
 
+// The HLC that precedes every write, so the delta feed hands back the whole history; and the most
+// days one read will carry — about fourteen years of daily pages.
+const ZERO_CURSOR = '0:0:';
+const CORPUS_CEILING = 5000;
+
 async function call(path, options = {}) {
   const response = await fetch(`${base}${path}`, {
     credentials: 'include',
@@ -59,10 +64,12 @@ export const journalApi = {
     return (await json(await call(`/pages?from=${from}&to=${to}`))).pages;
   },
 
-  // The delta feed: everything past an HLC cursor, ascending — the one read that maintains the
-  // offline cache and the on-device search index. Pass '0:0:' for the whole history.
-  async since(cursor, limit = 500) {
-    return (await json(await call(`/pages?since=${encodeURIComponent(cursor)}&limit=${limit}`))).pages;
+  // The whole corpus, ascending — what search indexes, what the zoom draws a year out of, and what
+  // the nudge reads a rhythm from. It rides the delta feed from the zero HLC cursor, which is the
+  // only cursor any caller has ever passed; the ceiling is one decision made here rather than three
+  // chances to disagree about how much history the journal has.
+  async allPages() {
+    return (await json(await call(`/pages?since=${encodeURIComponent(ZERO_CURSOR)}&limit=${CORPUS_CEILING}`))).pages;
   },
 
   async exportAll() {

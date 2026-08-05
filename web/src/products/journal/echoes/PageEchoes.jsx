@@ -75,18 +75,18 @@ function EdgeTab({ count, state, onClick }) {
 function PageInk({ echoes, page }) {
   const [nearest, ...rest] = page.matches;
   const ref = useRef(null);
+  const scroller = echoes.canvas?.scroller ?? null;
 
   // "The surface grows downward and tonight's text moves up" — the canvas has to actually move, or
   // a tap on the tab appends something below the fold and looks like nothing happened. Forward only,
   // and only within a screen of where you already are: a page you tapped gets nudged into view, a
   // page you are still flying to is the flight's business and this must not fight it.
   useEffect(() => {
-    const scroller = ref.current?.closest('.journal-scroll');
-    if (!scroller) return;
+    if (!scroller || !ref.current) return;
     const frame = scroller.getBoundingClientRect();
     const rise = ref.current.getBoundingClientRect().top - (frame.top + frame.height * 0.42);
     if (rise > 0 && rise < frame.height) scroller.scrollTop += rise;
-  }, [page.day]);
+  }, [scroller, page.day]);
 
   if (page.entitled) {
     return (

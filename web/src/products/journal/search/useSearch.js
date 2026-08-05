@@ -27,7 +27,7 @@ export function useSearch(active) {
     startedRef.current = true;
     (async () => {
       setIndexing(true);
-      const pages = await journalApi.since('0:0:', 5000).catch(() => []);
+      const pages = await journalApi.allPages().catch(() => []);
       if (!aliveRef.current) return;
 
       const lexical = new SearchIndex(new LexicalEmbedder());

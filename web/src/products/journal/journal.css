@@ -1,6 +1,7 @@
 /* The journal palette — every token and every pixel of the canvas lives here.
-   The surface is night by default and day by choice; it does NOT follow the app's
-   global theme. The root carries data-theme (dark|light) so the design-system's
+   The surface is night by default and warm parchment by choice, and since 2026-08-05 that
+   choice is the app's one Appearance setting (shell/appearance.js) rather than a toggle of
+   journal's own. The root carries data-theme (dark|light) so the design-system's
    matching ramp resolves inside it, and the two blocks below re-pin the surfaces to
    the journal's own night / parchment plus the lamp hue and the five-step mood scale.
    The one warm-gold accent, the scrims, and the panel elevation are tokens too, so a
@@ -128,38 +129,12 @@
   filter: blur(2px);
 }
 
-/* The switcher — the one piece of chrome, floated quietly at the top. Its pills
-   are canvas-coloured, so it blends into the night; it lifts to full presence on
-   hover or focus and never sits in the writer's way. */
-.journal-switch {
-  position: fixed;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 5;
-  opacity: 0.66;
-  transition: opacity 200ms var(--ease-standard);
-}
-.journal-switch:hover,
-.journal-switch:focus-within {
-  opacity: 1;
-}
-
-/* The account seat — the one unprompted mention of sign-in, floated opposite the switcher. Quiet
-   like the switcher until you reach for it; its menu borrows the design-system chrome, which resolves
-   to the journal's own night or day because the seat lives inside the themed root. */
-.journal-seat {
-  position: fixed;
-  top: 12px;
-  right: 16px;
-  z-index: 6;
-  opacity: 0.72;
-  transition: opacity 200ms var(--ease-standard);
-}
-.journal-seat:hover,
-.journal-seat:focus-within {
-  opacity: 1;
-}
+/* The switcher and the account seat — the one piece of chrome and the one unprompted mention of
+   sign-in — ride the shared posts (.wm-post, styles/global.css), so they stand where they stand in
+   gym too. Their pills are canvas-coloured, so they blend into the night; the seat's menu borrows
+   the design-system chrome, which resolves to the journal's own night or day because the seat lives
+   inside the themed root. `.journal-seat` survives for the one thing only this room does: the
+   desktop margin slides it left (below, at 1240px). */
 
 .journal-scroll {
   position: relative;

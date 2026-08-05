@@ -87,7 +87,7 @@ export function JournalApp({ hash }) {
       <EchoTrail echoes={echoes} current={focusDate || echoes.today} />
       <BackToTonight echoes={echoes} />
       <div className="journal-lamp" aria-hidden="true" />
-      <div className="journal-seat">
+      <div className="wm-post wm-post-seat journal-seat">
         <AccountSeat
           user={user}
           status={status}
@@ -148,7 +148,7 @@ export function JournalApp({ hash }) {
           onPick={(date) => { setFlyTo({ day: date, at: Date.now() }); setZoomOpen(false); }}
         />
       )}
-      <div className="journal-switch">
+      <div className="wm-post wm-post-switch">
         <ProductSwitcher current="journal" />
       </div>
     </div>

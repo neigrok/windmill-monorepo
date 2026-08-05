@@ -87,29 +87,28 @@ export function FreePath({ match }) {
 // there and never asks why: no reason picker, no confirm, nothing counting declines.
 export function InkFooter({ echoes, page }) {
   const [unread, setUnread] = useState(0);
+  const scroller = echoes.canvas?.scroller ?? null;
 
   // Every match is one element on screen, whether it opened as a passage or sits in the run of
   // dates, so the number below the fold is a count of things and not an estimate of rows. A match
   // that has BEGUN is one you can see — only the ones that haven't started yet are still to come.
   const measure = useCallback(() => {
-    const scroller = document.querySelector('.journal-scroll');
     if (!scroller) return;
     const fold = scroller.getBoundingClientRect().bottom;
     const below = [...scroller.querySelectorAll('.je-ink [data-je-match]')]
       .filter((node) => node.getBoundingClientRect().top > fold - 1);
     setUnread(below.length);
-  }, []);
+  }, [scroller]);
 
   useEffect(() => {
     measure();
-    const scroller = document.querySelector('.journal-scroll');
     scroller?.addEventListener('scroll', measure, { passive: true });
     window.addEventListener('resize', measure);
     return () => {
       scroller?.removeEventListener('scroll', measure);
       window.removeEventListener('resize', measure);
     };
-  }, [measure, page]);
+  }, [measure, scroller, page]);
 
   return (
     <div className="je-ink-foot">

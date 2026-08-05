@@ -29,7 +29,7 @@ export function ZoomView({ onClose, onPick }) {
 
   useEffect(() => {
     let cancelled = false;
-    journalApi.since('0:0:', 5000)
+    journalApi.allPages()
       .then((loaded) => { if (!cancelled) setPages(loaded); })
       .catch(() => { if (!cancelled) setPages([]); });
     return () => { cancelled = true; };

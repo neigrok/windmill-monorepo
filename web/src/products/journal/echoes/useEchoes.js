@@ -54,6 +54,11 @@ export function useEchoes({ today = localDay(), onFly = () => {} } = {}) {
   const [sheetDay, setSheetDay] = useState(null);
   const [hops, setHops] = useState([]);                // the walk, tonight first — a receipt, not a wizard
   const [followedDay, setFollowedDay] = useState(null); // which page the desktop margin sits beside
+  // The canvas, handed over by Canvas.jsx when it mounts: its scroller and its own day lookup.
+  // Every echo surface measures through this — none of them knows what the canvas's markup is
+  // called, and none of them can be left querying a class that has been renamed.
+  const [canvas, setCanvas] = useState(null);
+  const holdCanvas = useCallback((next) => setCanvas(next), []);
 
   const pagesRef = useRef(pages);
   pagesRef.current = pages;
@@ -196,15 +201,15 @@ export function useEchoes({ today = localDay(), onFly = () => {} } = {}) {
   // nothing to say and the panel goes.
   useEffect(() => {
     if (!pages.size) { setFollowedDay(null); return undefined; }
-    const scroller = document.querySelector('.journal-scroll');
-    if (!scroller) return undefined;
+    if (!canvas) return undefined;
+    const { scroller, dayElement } = canvas;
     // The page you are reading is the last one whose day row has passed the upper half of the canvas —
     // the same page a sticky day marker is showing. Nothing on screen, nothing to sit beside.
     const pick = () => {
       const frame = scroller.getBoundingClientRect();
       const waterline = frame.top + frame.height * 0.55;
       const visible = [...pages.keys()]
-        .map((day) => [day, scroller.querySelector(`[data-date="${day}"]`)?.getBoundingClientRect()])
+        .map((day) => [day, dayElement(day)?.getBoundingClientRect()])
         .filter(([, box]) => box && box.bottom > frame.top && box.top < frame.bottom)
         .sort((a, b) => a[1].top - b[1].top);
       const reading = visible.filter(([, box]) => box.top <= waterline).pop();
@@ -217,12 +222,14 @@ export function useEchoes({ today = localDay(), onFly = () => {} } = {}) {
       scroller.removeEventListener('scroll', pick);
       window.removeEventListener('resize', pick);
     };
-  }, [pages]);
+  }, [pages, canvas]);
 
   const pageOf = useCallback((day) => (floored ? null : pages.get(day) || null), [floored, pages]);
 
   return {
     today,
+    canvas,
+    holdCanvas,
     pageOf,
     verify,
     openDay,

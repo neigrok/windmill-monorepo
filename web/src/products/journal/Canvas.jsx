@@ -43,10 +43,23 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, onNeedSi
   }
   const isBorn = (date) => (bornSet.current ? !bornSet.current.has(date) : false);
 
+  const dayElement = (date) => scrollRef.current?.querySelector(`[data-date="${date}"]`) ?? null;
+
   const scrollToDay = (date, block = 'start') => {
-    const el = scrollRef.current?.querySelector(`[data-date="${date}"]`);
+    const el = dayElement(date);
     if (el) el.scrollIntoView({ block });
   };
+
+  // The echoes surfaces measure inside this canvas from outside it — the margin follows the scroll,
+  // the ink footer counts what is below the fold — so the canvas hands them the scroller it already
+  // holds and the lookup it already does. Nothing out there names `.journal-scroll` or `[data-date]`
+  // any more: a rename here is a compile-time move, not a silent no-op three files away.
+  const { holdCanvas } = echoes || {};
+  useEffect(() => {
+    if (!holdCanvas) return undefined;
+    holdCanvas({ scroller: scrollRef.current, dayElement });
+    return () => holdCanvas(null);
+  }, [holdCanvas]);
 
   // Grow the composer to its content. Runs before the restore below, so the
   // bottom is measured at the field's full height.

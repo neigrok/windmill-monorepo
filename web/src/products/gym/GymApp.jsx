@@ -45,7 +45,7 @@ export function GymApp({ hash }) {
 function Chrome({ user, status, onSignIn, onSignOut }) {
   return (
     <>
-      <div className="gym-seat">
+      <div className="wm-post wm-post-seat">
         <AccountSeat
           user={user}
           status={status}
@@ -55,7 +55,7 @@ function Chrome({ user, status, onSignIn, onSignOut }) {
           onConnect={() => { window.location.hash = '#/connect'; }}
         />
       </div>
-      <div className="gym-switch">
+      <div className="wm-post wm-post-switch">
         <ProductSwitcher current="gym" />
       </div>
     </>

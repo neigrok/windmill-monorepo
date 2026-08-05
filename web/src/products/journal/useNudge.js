@@ -29,7 +29,7 @@ export function useNudge() {
   }, []);
 
   const enable = useCallback(async () => {
-    const pages = await journalApi.since('0:0:', 5000).catch(() => []);
+    const pages = await journalApi.allPages().catch(() => []);
     const { nextDueAt, slotDay } = nextNudge(pages, Date.now());
     await apply({ enabled: true, nextDueAt, slotDay });
   }, [apply]);

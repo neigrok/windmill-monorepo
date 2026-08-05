@@ -159,34 +159,9 @@
   font-family: var(--font-body);
 }
 
-/* The switcher and the seat — the same two quiet pieces of chrome journal floats,
-   at the same posts, so stepping between rooms feels like one building. */
-.gym-switch {
-  position: fixed;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 5;
-  opacity: 0.66;
-  transition: opacity 200ms var(--ease-standard);
-}
-.gym-switch:hover,
-.gym-switch:focus-within {
-  opacity: 1;
-}
-
-.gym-seat {
-  position: fixed;
-  top: 12px;
-  right: 16px;
-  z-index: 6;
-  opacity: 0.72;
-  transition: opacity 200ms var(--ease-standard);
-}
-.gym-seat:hover,
-.gym-seat:focus-within {
-  opacity: 1;
-}
+/* The switcher and the seat ride the shared posts (.wm-post, styles/global.css) — the same two
+   coordinates journal floats them on, now said once instead of twice, so "one building" is a rule
+   the markup obeys rather than a claim a comment made. */
 
 /* One centred column on every device — arm's-length legible on a phone,
    never a sprawl on a desk. */
@@ -204,36 +179,13 @@
   color: var(--gym-ink);
 }
 
+/* One title and nothing beside it since the set logger landed — the placeholder Start block that
+   sat opposite it is gone, and so is the space-between that held them apart. */
 .gym-head {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
   gap: 16px;
   margin-bottom: 20px;
-}
-
-.gym-start {
-  text-align: right;
-}
-.gym-start-button {
-  min-height: 44px;
-  padding: 0 18px;
-  border: 1px solid var(--gym-line-strong);
-  border-radius: 10px;
-  background: var(--gym-raised);
-  color: var(--gym-ink-dim);
-  font: inherit;
-  font-weight: 600;
-}
-.gym-start-button:disabled {
-  cursor: default;
-}
-.gym-start-note {
-  margin: 6px 0 0;
-  max-width: 190px;
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--gym-ink-faint);
 }
 
 .gym-quiet {
