@@ -2,6 +2,19 @@
 
 _Audited 2026-07-12. Domain: `https://windmill.works`. Method: 7 parallel specialist audits of the live codebase (head/meta, crawlability, structured data, content/keywords, social, Core Web Vitals, semantic/a11y), reconciled into one plan. 47 findings._
 
+> **Read as a record of that day, not of today (checked 2026-08-05).** Its file paths are
+> pre-monorepo (`src/App.jsx`, `src/marketing/Marketing.jsx` — the second no longer exists,
+> `934a241`), and most of what it lists below as *not done* has since shipped:
+> `public/og-image.png` (1200×630), `apple-touch-icon.png`, `favicon.ico`, `icon-192.png` /
+> `icon-512.png`, and real `privacy.html` / `terms.html` / `changelog.html` pages (follow-ups
+> 1 and 2); per-path landings for `/roadmap`, `/journal` and `/gym`, each built as its own
+> static shell with its own head and no-JS body by `scripts/build-landing-shells.mjs`
+> (follow-up 5, in part). The architectural ceiling closed too: `/t/:id` and `/gallery` are
+> now real server-served paths — Caddy routes them to the backend, which splices each tree's
+> own unfurl meta into the built shell — so a shared tree does get its own card, and
+> `sitemap.xml` lists eleven URLs where it once listed the root alone. Follow-ups 3, 4 and
+> the SSG half of 5 are still open.
+
 ## Executive summary
 
 Windmill is a client-rendered React/Vite **SPA with hash routing**, so to any crawler there is exactly **one fetchable URL** — the root landing. That single page shipped with essentially **no SEO surface**: the `<title>` still said "Design System", there were no Open Graph/Twitter cards, no canonical, no structured data, no `robots.txt`/`sitemap.xml`, no favicon/manifest, and an empty `#root` (crawlers and social scrapers saw a blank body behind the wrong title).

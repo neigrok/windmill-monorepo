@@ -2,6 +2,20 @@
 
 Status: draft v1 · Target: C++20 service · Scope: full platform · Collaboration: real-time
 
+> **This is a founding design document, not a status record (banner added 2026-08-05).**
+> It is kept for the model and the reasoning — the loose graph, the convergence argument,
+> the command taxonomy, the collaboration crux — which still hold and are still worth
+> reading. Do not read it for what is built, what the endpoints are, or where a file lives.
+> It was written before accounts, before journal and gym, and before the monorepo split, so
+> its paths predate it too: the frontend it calls `src/skilltree/` is
+> `web/src/products/roadmap/`. §10 carries its own supersession banner.
+>
+> For the live answers: `db/schema.sql` (data model) · `AUTH.md` (authentication) ·
+> `AUTHZ.md` (tree authorization) · `RUNNING.md` (endpoints, local run) ·
+> `products/journal/ARCHITECTURE.md` and `products/gym/ARCHITECTURE.md` (the other two
+> products, which this document does not know about) · `../STRUCTURE.md` (layout) ·
+> `NOTES.md` and the dogfood tree `t_9362d9bc883e0a1e` (what shipped, in order).
+
 The founding document for `windmill-backend` — the authoritative server behind the
 Windmill skill-tree app. The frontend (`src/skilltree/`) is a hand-rolled WebGL2
 roadmap editor that today runs entirely in the browser against a mock repository and
@@ -726,55 +740,17 @@ becomes the bottleneck a fast renderer is waiting on.
 
 ## 13. Migration & rollout phases
 
-Each phase is independently shippable and leaves the app working.
+The rule this section was built on held: each phase was independently shippable and left
+the app working. The sequence did not. Real-time collaboration was built ahead of accounts,
+journal and gym arrived as whole products the plan never contemplated, and sharing shipped
+as per-tree visibility plus a public gallery rather than the per-user role matrix §10
+sketches — there is no `tree_shares` table.
 
-**Status as built.** Phases 0 and 2 are done — real-time collaboration was built *ahead*
-of accounts, so **Phase 1 was leapfrogged** and the system currently runs as a single
-fixed `dev` user. Completed increments are logged in `NOTES.md` and dogfooded as nodes
-in the `windmill-roadmap` tree itself (the deed DAG); the upcoming work is added there as
-planned nodes, so the roadmap doubles as the forward plan.
-
-- **Phase 0 — Contract & scaffolding.** ✅ **Done.** C++ skeleton (domain port +
-  ports/adapters + the `trees.document` JSONB column); `GET /trees/:id` → `{seq, data}`,
-  `GET /trees/:id/progress`, `GET /trees/:id/diagnostics`, `PUT /trees/:id`. Frontend
-  `HttpTreeRepository` loads the dogfood roadmap from the server.
-
-- **Phase 2 — Op log & real-time.** ✅ **Done** (built before Phase 1). `tree_ops` log,
-  `TreeRoom` actor, the WebSocket protocol, optimistic apply + merge, the client's
-  loose-graph render path, live two-tab co-editing (every edit incl. delete-sync via
-  DeleteNode + re-tether), and — beyond the original scope — full-CRDT-state persistence
-  with a snapshot cadence, HTTP reads routed through rooms, and collaborative undo/redo.
-  **Remaining Phase 2 edges (not yet done):**
-    - **Progress write-path** — marking a node complete is still *local only*.
-      `ProgressService` (P1/P2) exists but nothing writes progress: no `{t:'progress'}`
-      handler on the socket, no write endpoint. The visible "should work but doesn't."
-    - **Presence** — the relay (`broadcastRaw`) exists, but no cursor/selection frames,
-      overlay, or ≤ 20 Hz coalescing (§12).
-    - **Undo grouping** — undo is per-op, so a compound delete takes several undos.
-    - **Cycle-edge visual** — invalid edges are dropped for layout and named in a toast;
-      drawing them red needs a `ConnectorBatch` shader change.
-
-- **Phase 1 — Accounts & auth.** ⏭ **Skipped so far — the biggest gap.** `users`,
-  register/login/refresh (Argon2id + JWT), the WebSocket presenting a token at connect,
-  per-room authorization, and real per-user progress (pairs with the write-path above).
-  Until this lands, "multi-user" is notional. **Exit:** two devices, one account, shared
-  progress.
-
-- **Phase 3 — Sharing & orgs.** ☐ **Not started.** `orgs`, `org_members`, `tree_shares`,
-  visibility, the authz matrix (§10). Depends on Phase 1 (needs real identities). Note:
-  the frontend `share/` work is *visual* export (a postcard/gallery), a different concern
-  from these permissions. **Exit:** invite a teammate as editor/viewer; org-visible trees.
-
-- **Phase 4 — Templates, forking & activity.** ☐ **Not started.** Publish a tree as a
-  template, fork it, and the activity feed (`GET /trees/:id/activity`) derived from
-  `tree_ops` with `TrunkTree` context — the frontend `ActivityFeed` UI is already waiting
-  for it. **Exit:** the full platform.
-
-- **Hardening — cross-cutting (§12).** ☐ **Not started.** Cross-node Redis/NATS bus +
-  sticky routing for horizontal scale; a real `asio::strand` (today a coarse per-tree
-  mutex); Postgres connection pooling; command rate limits + size-cap enforcement;
-  observability. Logged debts: unbounded in-memory dedupe set, text-vs-uuid ids,
-  projection-snapshot compaction, and the stale frontend `ports.js` contract.
+The per-phase status list that used to sit here is **deleted rather than corrected**, for
+the reason in the banner at the top of this file: nothing was keeping it true, and a stale
+✅ is read as fact. What shipped, and in what order, is `NOTES.md` and the dogfood tree
+(`t_9362d9bc883e0a1e`); the endpoints that exist today are `RUNNING.md`; the tables that
+exist today are `db/schema.sql`.
 
 ---
 

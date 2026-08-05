@@ -80,7 +80,7 @@ correctly and implemented wrongly.
 Read as a test by:
 
 - `web/test/products/gym/logger/ladder.test.js` → `web/src/products/gym/logger/ladder.js`
-- `apps/ios/Tests/WindmillGymTests/LadderTests.swift` → `apps/ios/Sources/WindmillGym/Ladder.swift`
+- `apps/ios/WindmillKit/Tests/WindmillGymTests/LadderTests.swift` → `apps/ios/WindmillKit/Sources/WindmillGym/Ladder.swift`
 
 Both read *this* file from the repo rather than a bundled copy — a copied fixture is a copy, and
 copies are the thing this package exists to prevent.

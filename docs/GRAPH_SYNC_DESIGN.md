@@ -4,6 +4,14 @@ Status: design, approved direction. Pre-production, so this is written as the **
 architecture**, not a compatibility-preserving migration. We delete the old wire; we do
 not bridge it.
 
+> **Largely built; the paths below are pre-monorepo (checked 2026-08-05).** Read
+> `src/skilltree/sync/` as `web/src/products/roadmap/sync/` — which exists, with
+> `lattice.js`, `materialize.js`, `SyncStore.js` and `SyncSession.js` in it — and
+> `test/domain/SubgraphTest.cpp` as `backend/test/products/roadmap/domain/SubgraphTest.cpp`.
+> The shared golden corpus is `backend/test/golden/`. This document is kept for the design
+> argument, not as a status record; `backend/NOTES.md`'s nine "Graph sync — Step N" sections
+> are what actually landed, in order.
+
 This document is the single source of truth for how a Windmill tree stays consistent
 across the frontend, the backend, and — later — offline devices that edit while
 disconnected and reconcile afterward.

@@ -8,7 +8,8 @@ surface. The directory tree is meant to read like a description of the system: g
 backend/     one C++ modular-monolith binary
   platform/    shared, product-neutral: auth · oauth · billing · mcp engine · email ·
                users · telemetry · access · generic id/crdt primitives · http host
-  products/    one module per product, each plugging routes + mcp tools into the host
+  products/    one module per product, each plugging its routes into the host (mcp tools
+               are roadmap's alone so far)
     roadmap/     the RPG skill-tree app (the original Windmill)
     journal/     the night-canvas daily journal (shipped)
     gym/         training log (phase 0 built — see its ARCHITECTURE.md)
@@ -37,14 +38,32 @@ apps/        native superapps (one per OS; journal/roadmap/gym are mountable mod
 packages/    cross-surface shared assets (consumed by more than one surface)
   api-contract/   one truth several languages must state separately — wire types, the
                   genesis-legend golden, the gym weight-ladder golden (web + iOS each test it)
-  design-tokens/  raw color/space/type scales web CSS and native both mirror
+  design-tokens/  a README and nothing else — no tokens, no consumers. The intended home for
+                  the raw color/space/type scales, which today live in web/src/styles/tokens
+                  and are mirrored by hand in iOS's WindmillPlatform/Tokens.swift
+
+services/    sidecars the backend calls out to, deployed beside it in the same compose file
+  embedder/       Node + transformers.js, running the same bge-small weights the browser
+                  downloads, so a journal echo's vectors share the browser's space. Journal's
+                  nightly echo pass is dark without it (backend/products/journal/ports/Embedder.h)
 
 tools/       one-shot scripts kept for the record, never a product surface
-  lift-import/    the author's Lift training history into the gym log, over the public API
+  lift-import/          the author's Lift training history into the gym log, over the public API
+  resend-webhook-probe/ sends one genuinely-signed bounce for a .invalid address to prove the
+                        Resend delivery webhook is armed in prod (dark and forgeable both 401)
 
-docs/        brand-level narrative + design canon
-.github/     root workflows: backend.yml (context backend/) · web.yml (workdir web/) ·
-             ios.yml (workdir apps/ios — build + test only, ships nothing)
+docs/        brand-level narrative: PRODUCT_LOG (strategy) · DESIGN_BRIEFS (the design-facing
+             half of the plan; the canon itself lives in the claude.ai Design project) · LAUNCH
+             · per-topic design/exploration notes
+.github/     root workflows: backend.yml (context backend/ — test, build, push the image) ·
+             web.yml (workdir web/ — test, build, rsync dist/ to the VPS) · ios.yml (workdir
+             apps/ios — build + test only, ships nothing) · deploy.yml (manual: renders
+             ~/windmill/.env on the VPS from GitHub secrets + variables, then compose up) ·
+             embedder.yml (path-filtered: the sidecar and the on-device worker it must agree
+             with) · tools.yml (path-filtered: tools/). The last two ship nothing either.
+             A backend push publishes an image; it does not deploy. On a fresh host the WEB
+             deploy must land before the backend one — the embedder bind-mounts its model
+             weights out of the served web directory (services/embedder/README.md).
 .attic/      pre-restructure repos, kept as a local recovery net (gitignored)
 ```
 
@@ -59,8 +78,10 @@ prematurely abstracted — the second consumer earns the abstraction.
 
 ## How a product plugs in
 
-- **Backend:** each product exposes `<product>::registerRoutes(app, deps)` and
-  `<product>::makeTools()`. `backend/platform/infra` composes the shared host and calls each.
+- **Backend:** each product exposes `<product>::registerRoutes(app, deps)` over a `…Deps`
+  struct it declares in its own `routes.h`. `backend/platform/infra` composes the shared host
+  and calls each. MCP tools are not part of that seam yet — roadmap's `RoadmapTools`
+  implements `platform/ports/ToolHost.h` and `main.cpp` hands it to `McpServer` directly.
 - **Web:** each product exports a route table; `web/shell` composes them and renders the
   product switcher. The shell knows an "active product home" — it hard-codes no product.
 

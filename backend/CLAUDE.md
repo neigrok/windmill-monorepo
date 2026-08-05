@@ -1,53 +1,67 @@
-## Project
+# backend — the C++ surface
 
-Windmill is a highly animated and performant app for building roadmaps in the form of an RPG skill tree, rendered with a hand-rolled WebGL2 renderer (no three.js).
+One C++20 modular-monolith binary serving every product. Brand-wide rules live in the root
+`CLAUDE.md` and the monorepo map in `STRUCTURE.md`; this file is only what is true inside
+this tree.
 
-## Architecture & Design
-Optimize for the reader, not the writer. Code is read far more than it's written — favor the obvious over the clever
-Make structure explicit. A newcomer should infer where things live from folder and file names alone; the directory tree should read like a description of the system
-Push complexity to the edges, keep the core small. Business logic stays pure and dependency-light; messy details (I/O, vendors, frameworks) live at the boundary
-try to place vast amount of logic into domain layer, rather than other layers. try to shape the code so you have Action that loads data using repositories and then passes it into domain layer. Domain layer does the calc and returns an object for persistence via Batch. If you need to load additional data inside the domain logic - split it into 2 phases, 1st phase load data from repo and call domain layer, then using the result load new data and call domain layer again
-Keep dependency graph between modules clear, not just domain in the center, but like that entities can't depend on helper objects.
-think about the shape, there are a lot of ways to write working code - real professionalism is defined by the shape
-Try to make each module and each class excellent from the way it looks and the way it naturally fits the system. Aim for readable code over performant or conciese. Performance can be optimized later
-We are here for the beautiful design, we are mission oriented and it's our number 1 priority. Features is 2nd priority.
-Don't be afraid to spend more time thinking and refactoring system to fit the solution naturally. Beautify more than in the scope so the overall it looks better
-Behave like elite level software engineer
-Structure is the most important part of any system, structure decides whether the system is buggy and hard to evolve or is quite explicit, easy to read, understand and modify. Well structured code simply does not allow bugs sometimes, because structure makes them impossible. Structure the app in a right way 
-Prefer composition over inheritance. Reserve inheritance for genuine interface/template relationships
-Inject collaborators through constructors/factories. Make dependencies explicit and swappable — so tests substitute fakes for free, with no patching
-Express a functions as an explicit, ordered, fail-fast pipeline of steps that reads top-to-bottom easily like a plain english
-When several implementations share a fixed sequence of steps, put the sequence as a concrete method on the shared abstract base, and let each implementation override only the piece that actually varies. Don't let sibling classes each re-implement the same skeleton.
-Audit for single-call-site indirection during refactors: if a function, method, or file has exactly one caller left, inline it into the caller. A separate file needs more than one consumer — or a name that genuinely earns its place — to justify existing.
-For a small, self-contained feature area (one file format, one integration), prefer grouping all of its code — including the parsing/serialization boundary — under one feature-named package, rather than scattering it across domain/ vs infra-style layers. Reserve the layered split for logic that's genuinely reused by more than one feature.
+## Layering
 
-## Conventions
+`platform/` is the product-neutral half — auth, oauth, billing, the MCP engine, email,
+telemetry, access, the HTTP host. `products/<p>/` is one product each (roadmap, journal,
+gym), and every product repeats the same four layers: `domain/` (pure), `application/`
+(services over ports), `ports/` (the abstractions), `adapters/` (one subfolder per messy
+edge it actually has — `http` and `postgres` everywhere, plus `ws`/`mcp`/`llm`/`email`
+where a product needs them).
 
-use constructors on entities instead of helper functions
-When working with API endpoints, for models that come in name them with Request suffix, for outgoing name with Response suffix.
-Dont write docstrings or multiline commentaries.
+The composition roots are `platform/infra/main.cpp` — REST, the collab socket and MCP in
+one process — plus `mcp_main.cpp` (stdio transport) and `mcp_http_main.cpp` (standalone
+HTTP transport, kept for local/standalone runs).
 
-If you have an abstraction with different implementations. put abstraction and all required data structures in a single file, but all implementations should be contained in their own files. Unless implementations are small and can be placed in a single file
-Don't make a lot of small files/classes. there should be a very good reason to have class lesser than 40 lines of code
-Give each module one reason to exist. Group small related classes by kind in one predictable file (all DTOs together, all exceptions together) rather than scattering them
+## How a product plugs in
 
-You shouldn't write private (starting with underscore) helper functions unless you have a great reason why. The logic should be either inlined or folded into the solution naturally
+Each product owns a `routes.h` that declares one `…Deps` struct and
+`registerRoutes(drogon::HttpAppFramework&, const Deps&)`. `main.cpp` builds the
+collaborators and calls each in its own namespace — `registerRoutes` (roadmap),
+`journal::registerRoutes`, `gym::registerRoutes`. MCP tools are roadmap's alone today:
+`RoadmapTools` implements `platform/ports/ToolHost.h` and is handed to `McpServer`
+together with `roadmapResources()`. There is no per-product tool factory.
 
-## Testing
+`db/schema.sql` is one file for every product, applied in order and idempotent
+(`create … if not exists`), so the deploy re-applies it every time.
 
-Layout of the test folder should mirror project layout.
-In tests prefer full assertions, rather than partial assertions like
+## Build and test
 
-## Code Style
+```sh
+cmake -S . -B build                             # RelWithDebInfo by default (see CMakeLists.txt:7)
+cmake --build build -j8
+ctest --test-dir build --output-on-failure      # three binaries: domain · mcp · adapters
+```
 
-in if-else statements do early returns rather then assigning variables
+Drogon and libpqxx are the two vendor dependencies (`brew install drogon libpqxx`).
+Without them CMake still builds the core libraries and the domain tests and *skips the
+server* — read the configure status line rather than assuming. Never build `-O0`: an
+un-inlined call chain overflows Drogon's worker-thread stack and corrupts return values
+with no crash, which is why the default build type is forced.
 
-## Workflow & Tooling
+Every test file is named by hand in one of three `add_executable` lists in
+`CMakeLists.txt`. A new test file that is not in a list is a test that never runs.
 
-Stage your changes when you're done with the phase (or iteration)
-After each phase note observarions you had that can enhance overall structure of the program or/and performance
-Keep a running log of such observations in .md file and execute ones you find most important
+`RUNNING.md` is the local walkthrough (deps, database, run, exercise). `deploy/README.md`
+is the production runbook. `SPEC.md` is the founding design document, superseded in
+places — check its banner before building from it.
 
-If you seek for an advice, you can spin up an agent that has no access to the code, so he can give you unbiased advice on architecture or ideas
+## A green local build is not a green CI
 
-Keep the running log of product progress in the Windmill dogfood tree (id t_9362d9bc883e0a1e) via the windmill MCP — create/connect nodes for new work and set_progress as it lands; inspect with get_tree/get_diagnostics. Every node you plant carries a description — a sentence or two on what the work is and why — passed inline to create_node, or backfilled with annotate_node. (Replaces the old src/skilltree/mock/roadmapTree.js log, now dumped into the tree.)
+macOS/Homebrew and the CI's Linux image disagree on two things that each compile green on
+one side and fail on the other:
+
+- **libpqxx** names a result row `pqxx::row_ref` on macOS and `pqxx::row` on Linux. Read
+  rows through `pqxx::result`, or take the row as a template parameter — never bind a
+  `pqxx::row` (`PgTreeRepository.cpp:179`, `PgTendRunRepository.cpp:129`).
+- **jsoncpp** writes a non-finite double as a token no parser reads back, and older builds
+  throw on it instead, so the two toolchains can disagree on the same value
+  (`ToolArgs.cpp:69` names such a value rather than rendering it).
+
+So: watch `gh run list` after every backend push. And a push is not a deploy — CI builds
+and publishes the image (`.github/workflows/backend.yml`); the VPS deploy
+(`.github/workflows/deploy.yml`) is manual.

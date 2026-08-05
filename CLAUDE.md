@@ -10,7 +10,8 @@ see `backend/products/gym/ARCHITECTURE.md`).
 This is a monorepo grouped by surface, then product. **Read `STRUCTURE.md` for the layout and
 the one dependency rule** (platform is product-neutral; products depend on platform, never the
 reverse; products never depend on each other). Each surface keeps its own `CLAUDE.md`/`NOTES.md`
-for detail that only matters inside it (e.g. `backend/CLAUDE.md`, `web/src/skilltree/ARCHITECTURE.md`).
+for detail that only matters inside it (`backend/CLAUDE.md`, `web/CLAUDE.md`), and each product its
+own `ARCHITECTURE.md` (e.g. `web/src/products/roadmap/ARCHITECTURE.md`).
 The design/architecture principles below apply brand-wide.
 
 ## Mission

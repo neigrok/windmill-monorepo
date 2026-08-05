@@ -1,8 +1,14 @@
 # design-tokens
 
-Raw, framework-neutral scales — color hues, spacing, type — that both the web CSS and the
-native apps mirror, so a brand color is defined in exactly one place. `web/design-system`
-consumes these as CSS variables; the native apps mirror them per platform.
+**Empty on purpose — this package is this README and nothing else.** No tokens live here and
+nothing consumes it.
 
-Status: **scaffold** — the web design system currently owns its tokens under
-`web/styles/tokens`. Lift the product-neutral scales here when the native apps need them.
+The intent: raw, framework-neutral scales — color hues, spacing, type — that both the web CSS
+and the native apps mirror, so a brand color is defined in exactly one place.
+
+Today web owns its own scales as CSS variables under `web/src/styles/tokens/` (`colors.css`,
+`spacing.css`, `typography.css`, `radius.css`, `shadows.css`, `motion.css`, `brands.css`,
+`fonts.css`), and iOS restates them in
+`apps/ios/WindmillKit/Sources/WindmillPlatform/Tokens.swift`. That is two copies free to
+disagree, which is the reason this slot exists. Lift the product-neutral scales here when a
+third surface — or a drift — makes it worth the move; until then, edit the two real files.

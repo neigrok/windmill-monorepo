@@ -1,21 +1,8 @@
 # Windmill Backend — running notes
 
-## For you: frontend contract drift (handle later)
-
-`SPEC.md` §2 names `windmill-frontend/src/skilltree/model/ports.js` as "the contract",
-but that JSDoc typedef has drifted from the code the app actually runs:
-
-- **Colors.** `ports.js` `NodeColor` lists 5 (`terracotta|olive|gold|sky|brick`). The
-  real set is 6 — `theme.js` `NODE_COLOR_NAMES` includes `plum`. SPEC (and this backend)
-  follow `theme.js`.
-- **`status` field.** `ports.js` `NodeSpec` omits `status`, but `mock/roadmapTree.js`
-  nodes carry `status: 'complete'` (an authoring-time seed; runtime status is per-user
-  via `Progress`). SPEC treats it as an optional authoring seed.
-
-Action for the frontend: make `theme.js` `NODE_COLOR_NAMES` the single source of truth
-for the color set and patch the `ports.js` typedef (add `plum`, add optional `status`).
-The backend's `NodeColor` enum already uses the 6-color set; boundary JSON parsing will
-map unknown color strings to a rejected/flagged value.
+A chronological build log: what was done, and the lessons worth carrying. It is not a
+contract — `AUTH.md`, `AUTHZ.md`, `db/schema.sql` and `RUNNING.md` are, and the sections
+below defer to them rather than restating them.
 
 ## Task log
 

@@ -11,7 +11,11 @@ import { GENESIS_GOLDEN } from '../packages/api-contract/genesis.js';
 // this build re-asserts the roadmap model still consumes exactly it, so a drift refuses.
 if (JSON.stringify({ stamp: GENESIS_STAMP, kinds: DEFAULT_KINDS }) !== GENESIS_GOLDEN) {
   throw new Error(
-    'DEFAULT_KINDS/GENESIS_STAMP drifted from the backend genesis legend (Legend::seededDefaults, Hlc{1,0,"genesis"}) — change both repos together or local-born trees silently diverge.',
+    "roadmap's DEFAULT_KINDS/GENESIS_STAMP no longer match packages/api-contract/genesis.js — " +
+      'src/products/roadmap/model/Legend.js must re-export that golden, never define its own seed. ' +
+      'The backend plants from the same bytes (Legend::seededDefaults at Hlc{1,0,"genesis"}, pinned ' +
+      'by TreeRegistryTest), so a local seed makes a tree born offline diverge from the server\'s ' +
+      'empty tree the moment it is claimed — silently, and only for that user.',
   );
 }
 

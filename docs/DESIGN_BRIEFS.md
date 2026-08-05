@@ -35,15 +35,12 @@ involvement is review, not creation.
 
 ## Part 2 — The actual design asks
 
-**D1 · OG hero card + app icons + trust pages** — node `truth-pass` · *now, fastest win*
-Every unfurl of windmill.works serves a broken image; the HTML head already promises the
-card. Design the static `/og-image.png` (1200×630) from the X2 share-identity family —
-alt text is the brief: hand-drawn RPG skill tree on cream, terracotta/gold/sky nodes,
-wordmark, "Any goal, as a skill tree." Plus apple-touch-icon (180), favicon.ico (32),
-manifest PNGs (192/512), and Privacy/Terms/Changelog page shells in the marketing kit's
-register. Must read at feed-thumbnail size; light theme.
+~~**D1 · OG hero card + app icons + trust pages**~~ — **delivered.** `web/public/` holds
+`og-image.png` (1200×630), `apple-touch-icon.png`, `favicon.ico`, `icon-192.png` /
+`icon-512.png` + `site.webmanifest`, and the `privacy.html` / `terms.html` /
+`changelog.html` shells. Nothing left to design here.
 
-**D2 · Quest log — the "next 3" frontier panel** — node `quest-log` · *next* (no spec exists)
+**D2 · Quest log — the "next 3" frontier panel** — node `quest-log` · *now, fastest win* (no spec exists)
 The return-visit surface, and the reminder email's deep-link target. A calm dock panel:
 the derived ready-now set, up to 3 featured, fly-to-frontier on tap, on-open behavior when
 steps are ready, the two empty states (all done vs. nothing unlocked), cohabitation with
@@ -84,6 +81,8 @@ fonts + a mark file, or formally bless the stand-ins and the wordmark-only locku
 - **Still open repo-side:** the available-tier shader re-sync (white fruit + solid kind
   ring, no saturated fill), and re-copying `src/components/` + `tokens/colors.css` from
   the system (the repo holds stale pre-kind×tier forks).
-- **Spec-side updates:** MCP endpoint moved to `windmill.works/mcp` (F17); the auth spec's
-  Google ghost button exists in the repo as a disabled placeholder — decide when it goes
-  live; X6's new-tab-restores-place / old-tab-wakes behaviors are unbuilt.
+- **Spec-side updates:** MCP endpoint moved to `windmill.works/mcp` (F17); X6's
+  new-tab-restores-place / old-tab-wakes behaviors are unbuilt. The Google button is **no
+  longer a placeholder** — `SignInDialog.jsx:131` navigates to `/v1/auth/google/start` and
+  the backend serves the start + callback pair; if the auth spec still draws it disabled,
+  that is spec-side drift and belongs in the canon's `consistency.md`.
