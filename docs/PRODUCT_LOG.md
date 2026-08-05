@@ -649,8 +649,22 @@ personal tool. Every phase-3 bet names its own kill rule when it starts.
 
 ## Risks carried
 
-- **Gym is a README and a placeholder.** No `windmill_gym` target, no `gym_*` table, no route. Every
-  phase-1 bet stacks on phase 0; if phase 0 slips, phase 1 has not started.
+- ~~**Gym is a README and a placeholder.**~~ **Retired 2026-08-06.** Phase 0 and phase 1 shipped
+  (`windmill_gym`, the five `gym_*` tables, sixteen routes), and the 2026-08-06 wave took the decided
+  design across all three surfaces: routines and the server-frozen plan snapshot, start-from-a-routine,
+  the mid-session save-to-routine, the finish screen with its record rule and its comparison, discard,
+  a warmup that can actually be logged, the web's backfill door — and the **iOS room**, which is the
+  one that matters, because until it existed no surface owned the open session and the phase-1 dogfood
+  gate could not run at all. What remains open is named below and in the tree, not here.
+- **The dogfood gate is now runnable and has not been run.** Eight consecutive real sessions on the
+  phone without falling back to Lift, prefill right on set one in at least six. Every claim about
+  whether gym is good is unearned until that happens; the wave that unblocked it did not run it.
+- **Section D has no surface and the landing already sells it.** `gym-mcp` waits on the platform
+  scoped-composite ToolHost, so the connected log — the product's whole paid thesis — is drawn in the
+  design and absent from the build. `/gym` is pre-open and says so, but `marketing/GymLanding.jsx`
+  states the capability in the present tense ("Works with Claude Desktop…"), which stops being
+  honest on the day gym opens. Either that section moves to the future tense or gym does not open
+  without it.
 - **Exercise identity is the bug we must not inherit.** Root of Lift's mid-workout crash, its
   duplicate-name collapse, its rename-forks-history behaviour, and its coach's exact-string failures.
   It costs one column now and a migration across every set ever logged later.

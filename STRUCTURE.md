@@ -34,9 +34,11 @@ web/         one Vite/React superapp; product modules lazy-loaded behind a switc
 apps/        native superapps (one per OS; journal/roadmap/gym are mountable module libraries)
   ios/         Swift — a real SwiftUI app. project.yml (XcodeGen) declares the app target;
                App/ is the composition root; WindmillKit/ is the package (WindmillPlatform +
-               Journal/Roadmap/Gym). Journal is the built room — the night canvas, offline-first,
-               claimed on sign-in; roadmap and gym mount and say where they do live. iOS-only:
-               builds and tests through xcodebuild against a simulator, never `swift build`
+               Journal/Roadmap/Gym). Journal and gym are the built rooms — the night canvas,
+               offline-first, claimed on sign-in; and the training log, which is here because the
+               phone is the only device that can own an open session. Roadmap mounts and says where
+               it does live. iOS-only: builds and tests through xcodebuild against a simulator,
+               never `swift build`
   android/     Kotlin — structured scaffold (Gradle project is a later native wave)
 
 packages/    cross-surface shared assets (consumed by more than one surface)

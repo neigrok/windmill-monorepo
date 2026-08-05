@@ -198,20 +198,45 @@ curl -s -X POST localhost:8088/v1/gym/sessions/ses_probe0001/sets -H "$C" -H "$J
 curl -s -X POST localhost:8088/v1/gym/sessions/ses_probe0001/finish -H "$C" -H "$J" \
   -d '{"finishedAt":1785603600000}'
 curl -s "localhost:8088/v1/gym/last?exercise=bench-press" -H "$C"    # the prefill read
+
+# Routines, the plan snapshot, and the end of a session. A rep target may be OMITTED — that is
+# how "3 × max" is expressed, and it is the one field whose absence means something.
+curl -s -X POST localhost:8088/v1/gym/routines -H "$C" -H "$J" -d '{"id":"rt_probe00001",
+  "name":"Push A","position":0,"entries":[
+    {"exerciseId":"bench-press","targetSets":5,"targetReps":5,"targetWeightKg":82.5},
+    {"exerciseId":"chin-up","targetSets":3}]}'
+curl -s -X POST localhost:8088/v1/gym/sessions -H "$C" -H "$J" \
+  -d '{"id":"ses_probe0002","startedAt":1785686400000,"routineId":"rt_probe00001"}'   # freezes `plan`
+curl -s localhost:8088/v1/gym/sessions/ses_probe0002/review -H "$C"   # stats · record? · against?
+curl -s -X DELETE localhost:8088/v1/gym/sessions/ses_probe0002 -H "$C"               # 204, or 409 open
 ```
 
 Traps worth knowing before you burn an hour on them:
 
 - **`POST /v1/gym/sessions` JOINS an already-open session** rather than failing, so the reply
   can carry a *different* id than you sent. Always compare — a script that ignores this pours
-  its sets into whatever session was already open.
+  its sets into whatever session was already open. Send `{"joinOpenSession": false}` to mean
+  "create exactly this session, which is not now" (backfill, `lift-import`); a live workout then
+  refuses it `409 session-already-open` instead of handing you today's session to file into.
+- **A `routineId` is only read on the path that actually creates a session.** A replay and a join
+  are being handed a session that already exists, so neither 404s on a routine deleted since — and
+  neither re-plans a running workout. Pressing Start again cannot change what today is aiming at.
 - **One open session per user** is a partial unique index, and an idle one auto-closes after
-  4 h *of no activity* (measured from the last set, not from the start).
+  4 h *of no activity* (measured from the last set, not from the start). The log row's
+  `closedItself` is *inferred* from `finished_at` landing exactly on the last set's instant, which
+  is what that rule stamps — there is no column.
 - A **new** set into a finished session is refused `409 session-finished`; a **replay** of one
   that already landed still returns `200` with the stored row. That asymmetry is the whole
   offline story — flush before you finish.
-- The three 409s are told apart by the machine `code`, never by the sentence:
-  `session-finished` · `set-id-taken` · `session-id-taken`.
+- **A replayed create is a 200 with the stored row, everywhere** — sessions, sets, routines and
+  custom movements alike. Only an id already spent by *another* account is a 409. Re-minting on a
+  lost reply is what forks an identity, which is the one thing `gym_exercises` exists to prevent.
+- The 409s are told apart by the machine `code`, never by the sentence: `session-finished` ·
+  `set-id-taken` · `session-id-taken` · `session-already-open` · `routine-id-taken` ·
+  `exercise-id-taken` · `session-open` (discarding a workout that is still running).
+- **The review is read after the finish, and it excludes the session from its own history** — the
+  window is on the `(started_at, id)` pair. Without that every set ties itself and the record
+  silently vanishes on the only read anyone ever makes.
 - The schema seeds the catalog with `ON CONFLICT DO NOTHING`, so re-applying `schema.sql`
   never clobbers a renamed display name — and re-applying twice is the idempotency test.
 
