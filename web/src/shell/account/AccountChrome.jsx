@@ -12,7 +12,7 @@ import { Avatar } from '../../design-system';
 
 // Product-neutral account frame: where "back/home" goes is the shell's call, not this
 // frame's. The shell hands in `backHash` from the active product's home (see shell/products.js);
-// the account surfaces (/settings, /connect) pass it down, so notes/gym can slot in unchanged.
+// the account surfaces (/settings, /connect) pass it down, so a new product slots in unchanged.
 // `bare` is the /app-shell mode: the same card at the same measure, minus the wordmark head,
 // the back door and its Esc twin — the shell's rail is the chrome there, not this frame.
 export function AccountChrome({ width = 460, backHash = '#/app', bare = false, children }) {

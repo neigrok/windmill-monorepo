@@ -21,7 +21,7 @@ struct ServerInfo {
 // An MCP resource: a document a client may read on connect, addressed by uri. It costs no tool slot,
 // which is why the things agents reliably get backwards live here rather than in a tool description no
 // one re-reads. The struct is the neutral wire shape; the CONTENT is a product's to supply (a roadmap
-// deployment injects its quickstart, a notes-only one need inject nothing).
+// deployment injects its quickstart, a journal-only one need inject nothing).
 struct McpResource {
   std::string uri;
   std::string name;

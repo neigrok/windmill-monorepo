@@ -1,4 +1,4 @@
-// The journal product's route table — the same uniform shape roadmap/notes/gym export, so the shell
+// The journal product's route table — the same uniform shape roadmap and gym export, so the shell
 // composes all products through one loop. A position is a URL (canon §11): #/journal is today,
 // #/journal/2026-07-20 is that day in the canvas, #/journal/search, #/journal/year/2026, etc. The
 // canvas resolves the exact position off the hash; the heavy view stays lazy so a first paint of a

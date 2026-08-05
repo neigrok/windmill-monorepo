@@ -1,4 +1,4 @@
-// The roadmap product's route table — the shell composes this beside notes/gym and its own
+// The roadmap product's route table — the shell composes this beside journal/gym and its own
 // platform routes (see shell/App.jsx). Everything the roadmap owns lives here: the #/app
 // family, the #/t/:id share (hash and real path), #/demo, ?view, and #/browse. The heavy
 // tree view and the public wall stay lazy so a first-paint of the landing never downloads them.

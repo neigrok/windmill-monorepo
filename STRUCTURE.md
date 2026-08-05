@@ -70,7 +70,7 @@ The restructure was a behavior-identical relocation; these are the honest edges 
 platform boundary wasn't reached.
 
 The three **backend** edges are now **closed** (the `platform-purity` bet) — the platform library no
-longer depends on any product, so a notes/gym-only backend needs nothing from roadmap:
+longer depends on any product, so a journal/gym-only backend needs nothing from roadmap:
 
 - `AuthApi` moved to `platform/adapters/http`; the one product-shaped act (planting a tree on a fork
   sign-in) sits behind a platform `SignupFork` port that roadmap's `ForkSignup` injects. ✓

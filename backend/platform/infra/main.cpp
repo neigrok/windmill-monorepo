@@ -160,7 +160,7 @@ int main() {
                                                           apiBaseUrl + "/v1/auth/google/callback");
   // The auth surface is product-neutral; the one product-shaped thing sign-in does — planting a
   // fork when a fork link is followed — rides in behind the SignupFork port. Roadmap injects its
-  // ForkService here; a notes/gym-only deploy would pass nullptr and the fork steps no-op.
+  // ForkService here; a journal/gym-only deploy would pass nullptr and the fork steps no-op.
   // Apple sign-in (the native door). Dark until all four land — the bundle id the app ships, the
   // team, the key id, and the .p8 key itself as PEM — and then the route 404s rather than half-works.
   const char* appleClientId = std::getenv("APPLE_CLIENT_ID");
