@@ -13,7 +13,7 @@ export function createProgram(gl, vertexSource, fragmentSource) {
   return program;
 }
 
-export function compileShader(gl, type, source) {
+function compileShader(gl, type, source) {
   const shader = gl.createShader(type);
   gl.shaderSource(shader, source);
   gl.compileShader(shader);

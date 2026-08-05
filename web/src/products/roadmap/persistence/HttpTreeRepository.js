@@ -1,6 +1,7 @@
 // The TreeRepository: loads the authored tree and this user's progress from the
 // windmill-backend server, per treeId. Implements the `TreeRepository` port
-// (loadTree / loadProgress / loadActivity) that the load pipeline drives.
+// (loadTree / loadProgress / loadServerProgress / loadActivity) that the load
+// pipeline drives.
 
 import { TreeRepository } from '../model/ports.js';
 import { API_BASE } from '../../../shell/apiBase.js';
@@ -25,28 +26,43 @@ export class HttpTreeRepository extends TreeRepository {
     return { ...body.data, visibility: body.visibility ?? null, mine: body.mine ?? false, createdAt: body.createdAt ?? 0 };
   }
 
-  async loadProgress(treeData) {
-    // Credentialed so the server returns *this* signed-in user's overlay (anonymous and
-    // offline/local-born trees both fall back to the document's authoring seeds below).
-    let response = null;
+  // The account's own overlay, exactly as the server holds it — three id arrays, or null
+  // when the server did not answer (unreachable, or a status that isn't 200). Credentialed
+  // so it is *this* signed-in user's overlay. Two callers: loadProgress below seeds from
+  // the document when this comes back empty, and the collab reconcile needs it unseeded,
+  // because "the server has no row for this mark" is the only thing that makes a push safe.
+  async loadServerProgress() {
     try {
-      response = await fetch(`${this.baseUrl}/v1/trees/${this.treeId}/progress`, { credentials: 'include' });
-    } catch { /* unreachable — the seed statuses answer */ }
-    const server = response?.ok ? await response.json() : { completed: [], inProgress: [], cleared: [] };
-    if (server.completed.length > 0 || server.inProgress.length > 0 || (server.cleared?.length ?? 0) > 0) {
+      const response = await fetch(`${this.baseUrl}/v1/trees/${this.treeId}/progress`, { credentials: 'include' });
+      if (!response.ok) return null;
+      const body = await response.json();
+      return {
+        completed: body.completed ?? [],
+        inProgress: body.inProgress ?? [],
+        cleared: body.cleared ?? [],
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async loadProgress(treeData) {
+    const server = (await this.loadServerProgress()) ?? { completed: [], inProgress: [], cleared: [] };
+    if (server.completed.length > 0 || server.inProgress.length > 0 || server.cleared.length > 0) {
       // `server: true` marks this as the account's real overlay — the load pipeline lets
       // it win over stale localStorage. `cleared` carries the tombstones so a cleared
       // node is never mistaken for a never-marked one.
       return {
         completed: new Set(server.completed),
         inProgress: new Set(server.inProgress),
-        cleared: new Set(server.cleared ?? []),
+        cleared: new Set(server.cleared),
         server: true,
       };
     }
 
-    // No per-user progress on the server yet — fall back to the document's authoring
-    // seeds, matching the mock's first paint (Phase 0; real progress lands in Phase 1).
+    // The server holds no overlay for this caller on this tree — an anonymous reader, a
+    // fresh account, or a local-born tree it has never seen. Fall back to the document's
+    // own authoring seeds so a quest still opens at the state its author staged.
     return {
       completed: new Set(treeData.nodes.filter((node) => node.status === 'complete').map((node) => node.id)),
       inProgress: new Set(treeData.nodes.filter((node) => node.status === 'active').map((node) => node.id)),

@@ -39,8 +39,7 @@ import { buildProgressCardSvg } from './share/progressCard.js';
 import { considerProgressShare } from './share/progressOffer.js';
 import { ProgressPeriod, newThisPeriod, ledgerDeltas, sinceLabel } from './share/progressPeriod.js';
 import { svgToPngBlob } from './share/rasterize.js';
-import { uploadOgImage } from './share/OgImageClient.js';
-import { uploadOgVideo } from './share/OgVideoClient.js';
+import { uploadOgImage, uploadOgVideo } from './share/ogUpload.js';
 import { ActivityFeed } from './activity/ActivityFeed.jsx';
 import { NextUp, considerAutoOpen } from './ui/NextUp.jsx';
 import { planNextUp } from './ui/nextUpPlan.js';
@@ -52,7 +51,6 @@ import { makeRenderable } from './model/renderableGraph.js';
 import { UnlockRules } from './model/UnlockRules.js';
 import { RadialLayoutEngine } from './layout/RadialLayoutEngine.js';
 import { HttpTreeRepository } from './persistence/HttpTreeRepository.js';
-import { API_BASE } from '../../shell/apiBase.js';
 import { listAllTrees, renameTree, deleteTree } from './persistence/TreeRegistry.js';
 import { SyncSession } from './sync/SyncSession.js';
 import { isOwnershipRefusal } from './sync/refusals.js';
@@ -146,6 +144,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const pinnedRef = useRef(false);
   const unseenIdsRef = useRef(new Set()); // events that arrived while the feed wasn't visible
   const seedRef = useRef(null); // the authored seed for the current tree (persistence baseline)
+  const repoRef = useRef(null); // the TreeRepository for the current tree — the one door to its server reads
   const collabRef = useRef(null); // live socket to windmill-backend (dogfood roadmap only)
   const peersRef = useRef(new Map()); // actor -> { name, color, cursor, selection } for the presence overlay
   const onTreeChangedRef = useRef(null); // always points at the latest onTreeChanged
@@ -1347,6 +1346,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     setTreeVisibility(null); // the stance is unknown until the server answers — never claim a stale one
     setTreeMine(false);
     plantedAtRef.current = 0; // …and neither is the planting time: never count a new tree's weeks from an old one's
+    repoRef.current = null;   // the outgoing tree's repository is not this one's; the reconcile waits for the new seed
 
     async function loadTree() {
       // The routed tree comes from the backend, per treeId — but the server is only the
@@ -1447,6 +1447,9 @@ export function SkillTreeView({ treeId, demo = false }) {
 
       editorRef.current = new TreeEditor(treeData);
       seedRef.current = seed;
+      // Published beside the seed it loaded, so the reconcile can never read one tree's
+      // server rows against another tree's local marks.
+      repoRef.current = repo;
       plantedAtRef.current = seed.createdAt ?? 0; // the period clock: week N counts from here, never the calendar
       cardCacheRef.current = { key: '', png: null }; // another tree, another card
       progressRef.current = progress;
@@ -2296,23 +2299,18 @@ export function SkillTreeView({ treeId, demo = false }) {
     handleSetState(id, target, { fromRemote: true }); // the server already knows — don't echo it back
   };
 
-  // Reconciliation (progress-wire, anti-clobber): after each subscribe graft, fetch the server's
-  // overlay and push only the local marks it holds no row for — absent from BOTH sets means the
-  // server never heard of the mark (made offline or before sign-in), so it's safe to send. A mark
-  // the server knows anything about is never re-pushed; the LWW row there stands.
+  // Reconciliation (progress-wire, anti-clobber): after each subscribe graft, read the server's
+  // own overlay and push only the local marks it holds no row for — absent from all three sets
+  // (completed, in-progress and the cleared tombstones) means the server never heard of the mark
+  // at all (made offline or before sign-in), so it is safe to send. A mark the server knows
+  // anything about is never re-pushed; the LWW row there stands.
   reconcileProgressRef.current = async () => {
     // Read-only views never write: a signed-in visitor on someone's share page would
     // otherwise push the tree's authored seed marks into their own overlay just by looking.
-    if (status !== 'signed-in' || readOnly || !seedRef.current) return;
-    let server;
-    try {
-      const response = await fetch(`${API_BASE}/v1/trees/${seedRef.current.id}/progress`, { credentials: 'include' });
-      if (!response.ok) return;
-      server = await response.json();
-    } catch {
-      return; // the socket outlived the fetch or vice versa — the next graft reconciles
-    }
-    const known = new Set([...(server.completed ?? []), ...(server.inProgress ?? []), ...(server.cleared ?? [])]);
+    if (status !== 'signed-in' || readOnly || !seedRef.current || !repoRef.current) return;
+    const server = await repoRef.current.loadServerProgress();
+    if (!server) return; // the socket outlived the read or vice versa — the next graft reconciles
+    const known = new Set([...server.completed, ...server.inProgress, ...server.cleared]);
     for (const id of completedRef.current) {
       if (!known.has(id)) collabRef.current?.sendProgress(id, 'complete');
     }

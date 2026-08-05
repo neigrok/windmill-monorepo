@@ -19,7 +19,7 @@ export const PERIOD_MS = 7 * 24 * 60 * 60 * 1000;
 export const DAY_MS = 24 * 60 * 60 * 1000;
 export const WEEK_UNIT = 'week';
 export const DAY_UNIT = 'day';
-export const LEDGER_PERIODS = 5; // the ticks BEFORE this one — the card appends its own, to six
+const LEDGER_PERIODS = 5; // the ticks BEFORE this one — the card appends its own, to six
 
 // The period a tree is living in at `now`. `index` is 1 on planting day and rises every seven days;
 // 0 means the planting time is unknown, and the entity says so by naming itself after the ordinal

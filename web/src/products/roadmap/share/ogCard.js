@@ -3,7 +3,7 @@
 // the app's own RenderModel, so the card the scrapers show is the tree the owner sees.
 //
 // Pure and DOM-free: it returns an SVG string. `rasterize.js` turns that into a PNG and
-// `OgImageClient.js` uploads it. Everything scales off k = W/1200 (k=2 here). Light only —
+// `ogUpload.js` uploads it. Everything scales off k = W/1200 (k=2 here). Light only —
 // scrapers ignore theme — so every color is a literal light value read from SHARE_PALETTE.
 //
 // The fit is the whole trick: the portrait's viewBox is the tree's own node positions, grown

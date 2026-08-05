@@ -60,7 +60,7 @@ function appTarget(hash) {
 // Which tree a real /t/:id path names — the indexable, unfurlable twin of the #/t/:id share
 // hash. Returns the decoded id (trailing slash ignored), or null for any other path. Pure:
 // pass a pathname to test it; the default reads the live location.
-export function pathTarget(pathname = typeof window === 'undefined' ? '' : window.location.pathname) {
+function pathTarget(pathname = typeof window === 'undefined' ? '' : window.location.pathname) {
   const match = /^\/t\/([^/]+)\/?$/.exec(pathname);
   if (!match) return null;
   let id;

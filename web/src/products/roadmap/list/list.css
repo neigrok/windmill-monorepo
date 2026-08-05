@@ -1088,12 +1088,7 @@
   box-shadow: 0 0 0 3px var(--text-primary);
 }
 
-/* ---- Add-a-need ghost chip + the add-step ghost row ---- */
-.st-list-chip--add {
-  gap: 4px;
-  border-style: dashed;
-  color: var(--color-bark);
-}
+/* ---- The add-step ghost row ---- */
 .st-list-addrow {
   display: flex;
   align-items: center;
@@ -1120,7 +1115,6 @@
 .st-list-name-btn:active,
 .st-list-desc-edit:active,
 .st-list-swatch-hit:active,
-.st-list-chip--add:active,
 .st-list-picker-close:active {
   background: var(--surface-hover);
 }

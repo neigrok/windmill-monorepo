@@ -90,23 +90,6 @@ export function removeKind(legend, id) {
   return legend.filter((kind) => kind.id !== id);
 }
 
-// Reorder the legend to match `order` (a list of kind ids). Ids absent from `order`
-// keep their relative position at the end. Legend order is generation priority.
-export function reorderKinds(legend, order) {
-  const byId = new Map(legend.map((kind) => [kind.id, kind]));
-  const seen = new Set();
-  const ordered = [];
-  for (const id of order) {
-    const kind = byId.get(id);
-    if (kind && !seen.has(id)) {
-      ordered.push(kind);
-      seen.add(id);
-    }
-  }
-  for (const kind of legend) if (!seen.has(kind.id)) ordered.push(kind);
-  return ordered;
-}
-
 // Swap a kind's hue to a free one, returning the old and new hues so the caller can
 // repaint every node of the old hue to the new. A no-op ({ oldHue, newHue } null) if
 // the kind is missing or the target hue is already taken by another kind.

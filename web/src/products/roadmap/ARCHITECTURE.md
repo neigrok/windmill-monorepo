@@ -1,272 +1,385 @@
-# Skill-tree feature — architecture
+# Roadmap — architecture (web)
 
-One self-contained feature package: `src/skilltree/`. Renders a Windmill roadmap
-(a **DAG** — nodes can have multiple prerequisites) as a painterly RPG skill tree,
-using a **hand-rolled WebGL2 renderer** (no three.js). Target: **60fps at 5,000+
-nodes, 2 GPU draw calls** (one instanced node draw + one connector draw; labels are
-pooled DOM), with pan/zoom, hover, and click-to-complete.
+One product package: `web/src/products/roadmap/`. It renders a Windmill roadmap (a **DAG** —
+a step can have several prerequisites) as a painterly RPG skill tree on a **hand-rolled WebGL2
+renderer** (no three.js). Target: **60fps at 5,000+ nodes, 2 GPU draw calls** — one instanced
+node draw plus one connector draw, with labels and near-LOD icons as a pooled DOM overlay —
+with pan/zoom, hover, direct-manipulation editing and live collaboration.
 
-The renderer began on three.js and was rewritten in raw WebGL2 — the reasons and
-the lesson live in `NOTES.md`. Three.js, troika, and later dagre were all removed;
-the feature has no runtime deps beyond React (layout is the hand-rolled radial engine).
+The renderer began on three.js and was rewritten in raw WebGL2; the reasons and the lesson live
+in `NOTES.md`, which is this package's chronological build log and is *history* — where it and
+this file disagree about the present, this file is the one being maintained. Three.js, troika
+and dagre are all gone (layout is the hand-rolled radial engine). What is left beyond React:
+`lucide-react` reaches the scene through the design system's `Icon`, `mediabunny` encodes the
+share video, and `@fontsource` woff2 files are embedded into exported cards.
 
-## The pipeline (this is the whole app, top to bottom)
+The shell learns this package exists through `routes.js` and the product registry alone (see
+`web/CLAUDE.md`). Nothing here may import another product, and `test/shell-boundaries.test.mjs`
+walks every import in `src/` to keep it that way.
 
-Lives in `SkillTreeView.jsx`. Reads like plain English:
+## The pipeline (this is the load, top to bottom)
+
+Lives in `SkillTreeView.jsx`, in the effect keyed on `[reloadKey, treeId, demo]`:
 
 ```
-const tree      = new SkillTree(await repo.loadTree());       // entity + DAG validation
-const progress  = await repo.loadProgress(tree.id);           // {completed, inProgress}
-const states    = UnlockRules.derive(tree, progress);         // Map<id, NodeState>
-const positions = applyNudges(await layout.layout(tree), tree); // Map<id, Vec2> (worker)
-const model     = tree.toRenderModel(positions, states);      // RenderModel
-scene.setModel(model);                                        // GPU build + fit
-// on click-to-complete: mutate progress → states = derive(...) → scene.applyStates(states)
+const repo      = new HttpTreeRepository({ treeId });
+const seed      = await repo.loadTree();              // …or the local lattice blob, offline
+const tree      = new SkillTree(seed);                // entity + DAG validation
+const progress  = await repo.loadProgress(seed);      // {completed, inProgress, cleared, server}
+const states    = UnlockRules.derive(tree, progress); // Map<id, NodeState>
+const positions = layoutPositions(tree);              // Map<id, Vec2> — synchronous, memoized
+const model     = tree.toRenderModel(positions, states);
+scene.setModel(model);                                // GPU build + fit
+// then: new SyncSession(...) — the lattice becomes truth and every later edit flows through it
 ```
 
-Repository loads → domain computes → scene renders. No business logic in the scene
-or React layers. Layout runs off the main thread, so `layout.layout(tree)` is awaited.
+Repository loads → domain computes → scene renders. **Layout is synchronous** — no worker, no
+promise: `layoutPositions` re-runs `RadialLayoutEngine` inline whenever the node/edge/order
+signature changes and serves a cached copy otherwise, so a live edit re-lays the tree in the
+same tick it was made. No business logic lives in the scene; the React layer wires data
+through, with the honest exceptions `NOTES.md` records and Wave 17 is scheduled to extract.
+
+After the first paint the load pipeline is not the update path. A `SyncSession` owns the tree's
+CRDT lattice; a local gesture and a remote frame both land as a new projection, which re-enters
+through `syncStructure()` (re-derive → `scene.applyModel`).
+
+## Map of the package
+
+Every directory, one line. The six marked **↓** have a section of their own below.
+
+| | |
+|---|---|
+| `model/` | Pure domain: the tree entity, unlock rules, the legend, spatial index. **↓** |
+| `layout/` | The one layout engine — radial, synchronous, deterministic. **↓** |
+| `scene/` | The WebGL2 renderer, its DOM overlays and pointer tools. **↓** |
+| `sync/` | The client half of the graph CRDT: lattice, gestures, socket, IndexedDB. **↓** |
+| `share/` | Everything that leaves the app: the link, the cards, the video, the offers. **↓** |
+| `editing/` | `TreeEditor` — the holder for the current projection. Undo lives in `sync/`. **↓** |
+| `persistence/` | The `TreeRepository` over HTTP, the account tree registry, and the per-tree localStorage ledgers (progress, workspaces, legend, last place, return/milestone/share baselines, view prefs). |
+| `ui/` | The desktop overlay chrome above the canvas: control bar, step panel, minimap, tree switcher, birth canvas, the Next-up ranking and the honesty chrome. |
+| `ui/tree/` | The step's own components — kind legend, checklist, workspace body — plus `SkillNode`/`SkillConnector`/`ProgressBar`, the canon's DOM reference implementation of the tree metaphor, whose consumer is the `#/showcase` gallery. |
+| `ui/mobile/` | The phone/tablet surfaces: bottom sheets, the editor sheet, aim + bulk bars, the action lane, the read-only chrome and the fork door. |
+| `list/` | The phone's second view of the same model (X8): the tree as an outline, with its own pure outline/editing/explore rules. |
+| `activity/` | The activity log domain plus the one presentation grammar (verb hues, sentences, rows) every feed surface speaks. |
+| `ceremony/` | `CeremonyDirector` — sequences the motion language's camera → travel → bloom → pulse → toast into one ceremony at a time. |
+| `selection/` | The multi-selection predicates (a set of two or more is one thing, not N picks). |
+| `shortcuts/` | The canonical keyboard map and the reference dialog built from it. |
+| `presence/` | The live-collaboration cursor layer, drawn on its own rAF loop above the canvas. |
+| `paste/` | Paste-import: the deterministic plan grammar, the composer, the ghost preview, the graft rule, the AI-compose stream, and the ZIP writer the data export shares. |
+| `quests/` | The nine authored starter quests (`roster/`) and the shelf + seed-packet thumbnails that plant them. |
+| `browse/` | The in-product public wall `#/browse` — the client-rendered twin of the marketing gallery. |
+| `demo/` | The playable demo (`#/demo`): the staged tree constants and the once-ever coach chip. |
+| `tending/` | The Tend bar, its client, and the pure receipt/meter copy behind settings' ledger. |
+| `reminders/` | The weekly-nudge preference client (its settings section lives in `settings/`). |
+| `settings/` | The product's own settings sections — plan, reminders, tending, your-data — plus the export archive builder. |
+| `marketing/` | The `/roadmap` landing, its crawlable `<head>`, its stylesheet and the self-playing tree scenes. |
+
+Root files: `routes.js` (the route table the shell composes), `SkillTreeApp.jsx` (resolves *which*
+tree before the heavy view mounts), `SkillTreeView.jsx`, `HomeCard.jsx` (the `/app` home cell),
+`theme.js`, `index.js`, `skilltree.css`, `NOTES.md`.
 
 ## Contracts
 
-- `model/ports.js` — data shapes (`NodeSpec`, `TreeData`, `Progress`, `RenderNode`,
-  `RenderEdge`, `RenderModel`, `Bounds`, `Vec2`, `NodeState`) + base ports
-  `TreeRepository`, `LayoutEngine` (`layout` may return a `Map` or a `Promise` of one).
-- `theme.js` — resolved hex palette, pulled from the design system's `--kind-*`
-  tokens + the `dag-clean-colors` exploration. A node's look is two orthogonal
-  dimensions: `NODE_COLORS` / `NODE_COLOR_NAMES` (its *kind* — six hues
-  terracotta/olive/gold/brick/sky/plum → `base` accent-500, `ring` accent-600,
-  `soft` accent-200, `glow`; the shader + swatches size themselves off the name
-  list, so a new kind is a one-line addition) and one of three
-  `nodeTier(state)` tiers — `unavailable` (locked → low-opacity wash, no glow),
-  `available` (saturated fill + ring, glow on hover), `activated` (active/complete
-  → + an outer ring + a breathing glow). `isDone(state)` (complete only) still
-  drives edge growth. Also `CONNECTOR`, `LEAF`, `BACKGROUND`, `NODE_SIZE`. Scene +
-  atlas use these so the GPU look matches the design-system tree.
+- `model/ports.js` — the data shapes (`NodeSpec`, `Kind`, `TreeData`, `Progress`, `RenderNode`,
+  `RenderEdge`, `RenderModel`, `Bounds`, `Vec2`, `NodeState`) plus the two base ports
+  `TreeRepository` (`loadTree` / `loadProgress` / `loadServerProgress` / `loadActivity`) and
+  `LayoutEngine` (`layout` is synchronous). The C++ server answers these same shapes, so this
+  file is the contract both sides are held to — when a field moves, it moves in both.
+- `theme.js` — the resolved hex palette, because WebGL cannot read CSS custom properties. A
+  node's look is two orthogonal dimensions:
+  - its **kind**, `NODE_COLORS` / `NODE_COLOR_NAMES` — six hues, terracotta · olive · gold ·
+    brick · sky · plum, each `base` (accent-500), `ring` (accent-600), `soft` (accent-200) and
+    `glow`. The shader and the swatch rows size themselves off the name list, so a seventh hue
+    would be a one-line addition.
+  - its **tier**, `nodeTier(state)` — **four**: `unavailable` (locked → low-opacity wash, no
+    glow), `available` (saturated fill + ring, glow on hover), `inprogress` (the ember — a soft
+    glow breathing at half the crown, a calm third read that is not a re-hue), `activated`
+    (complete → an outer ring + a breathing halo). Indices rise with progress, so a state diff
+    reads growth as a rise in tier. `isDone(state)` (complete only) drives edge growth.
 
-Positions are in **world units** where a node is `NODE_SIZE` (56) units in diameter.
-Everything in `model/` is pure JS — no WebGL, no React.
+  A third, structural axis is `nodeForm(label, parents, children)` — `linked` · `bud` (born,
+  unnamed) · `unlinked` (a stray with no branches left) — which the editing gestures reveal as a
+  dashed ring. Also `CONNECTOR`, `BACKGROUND`, `BARK` / `BARK_CREAM` (the neutral tool + grouped
+  selection treatment) and `NODE_SIZE`.
+
+Positions are in **world units** where a node is `NODE_SIZE` (56) across. Everything in `model/`
+is pure JS — no WebGL, no React.
 
 ## `model/`  (pure JS)
 
-- `model/SkillTree.js` — `class SkillTree`. Constructor validates the DAG (throws on
-  duplicate id, dangling prereq, or cycle), indexes `nodesById` + `childrenIndex`,
-  and precomputes `topoOrder()` and `ranks()` (longest-path depth). Getters `id`,
-  `title`, `nodes`, `edges`; graph ops `roots()`, `parentsOf`, `childrenOf`,
-  `ancestorsOf`, `topoOrder`, `ranks`. `toRenderModel(positions, states)` →
-  `RenderModel`: each node gets `x,y` from `positions`, `state` from `states`,
-  `layer = rank % 3`, `glowSeed` = a stable FNV hash of `id` in 0..1; edges get
-  `active = states.get(from) === 'complete'`; `bounds` = node extent padded by NODE_SIZE.
-- `model/UnlockRules.js` — `class UnlockRules`, static `derive(tree, progress)`:
-  `complete` if completed, else `active` if inProgress, else `available` if every
-  prerequisite is complete (roots qualify vacuously), else `locked`.
-- `model/SpatialGrid.js` — `class SpatialGrid`. Buckets node ids by cell. `nearest(x,
-  y, maxRadius)` → id | null (scans the 3×3 neighborhood, so keep `cellSize ≥ pickRadius`);
-  `within(minX, minY, maxX, maxY)` → id[] for LOD label selection; `move(id, x, y)`
-  re-buckets a node after a live drag so picking follows it.
+- `model/SkillTree.js` — `class SkillTree`. The constructor validates the DAG (throws on a
+  duplicate id, a dangling prerequisite, or a cycle), indexes `nodesById` + `childrenIndex`,
+  precomputes `topoOrder()` and `ranks()` (longest-path depth) and elects the `TrunkTree`.
+  Getters `id`, `title`, `nodes`, `edges`, `trunk`; graph ops `roots()`, `parentsOf`,
+  `childrenOf`, `ancestorsOf`. `toRenderModel(positions, states)` → `RenderModel`: each node
+  takes `x,y` from `positions`, `state` from `states`, `layer = rank % 3`, `form` from
+  `nodeForm`, `glowSeed` = a stable FNV hash of `id` in 0..1, `branch` + `emphasis` from the
+  trunk; each edge takes only `{from, to, kind}` — **an edge carries no state of its own**, it
+  inherits its source node, which is how `ConnectorBatch` grows it. `bounds` is the node extent
+  padded by NODE_SIZE.
+- `model/renderableGraph.js` — `makeRenderable(treeData)`: the backend permits an invalid graph
+  and surfaces it, so the client mirrors that rather than throwing. Drops the cycle edges,
+  returns the best-effort projection plus what was wrong.
+- `model/TrunkTree.js` — elects one primary ("trunk") parent per node, a spanning arborescence
+  over the DAG, and derives each node's sector: branch root, trunk depth, leaf weight. Same-kind
+  parents win; ties go to the shallowest, then the smallest id. Trunk children keep sibling order
+  (the fractional-index key, then creation stamp), which is what the layout sweeps.
+- `model/UnlockRules.js` — `UnlockRules.derive(tree, progress)`: `complete` if completed, else
+  `active` if in progress, else `available` if every prerequisite is complete (roots qualify
+  vacuously), else `locked`. Every state transition routes through here; nothing hand-sets a state.
+- `model/Legend.js` — the tree's ordered kinds (F6). Pure: every op takes a legend and returns a
+  new one. `deriveLegend` reconciles the server's kinds with the hues actually worn; `withCounts`,
+  `inUseCount`, `freeHue`, `renameKind`, `describeKind`, `addKind`, `removeKind`, `recolorKind`.
+  **Legend ORDER is not held here.** Order is generation priority and lives in the lattice as a
+  per-kind rank: the live legend re-derives from `seed.kinds`, and a reorder is the `ReorderKinds`
+  gesture (`sync/materialize.js`), which is also what the MCP's `reorder_kinds` tool writes. The
+  pure array ops above survive because `paste/PasteComposer` edits a *draft* legend that is not in
+  the lattice yet; there is no draft reorder and no live one, so there is no `reorderKinds` here.
+  `GENESIS_STAMP` / `DEFAULT_KINDS` are re-exported from `packages/api-contract/genesis.js` — the
+  seed shared byte-for-byte with the backend, re-asserted by `vite.config.js` on every build.
+- `model/NodeWorkspace.js` — a step's sub-tasks, note and links (F13), same pure discipline.
+- `model/SpatialGrid.js` — a uniform bucket grid over placed nodes. `nearest(x, y, maxRadius)`
+  scans the 3×3 neighborhood (so keep `cellSize ≥ pickRadius`); `within(...)` selects the
+  viewport's nodes for LOD labels; `move(id, x, y)` re-buckets after a live drag.
+- `model/milestones.js` — `detectMilestones`: the structural moment worth sharing — a whole
+  branch turning to light, or the crown — never a single step. Pure, so the offer conduct
+  (owner-only, once-ever) lives at the call site.
 
 ## `layout/`
 
-- `layout/RadialLayoutEngine.js` — `class RadialLayoutEngine extends LayoutEngine`. The
-  one engine: each node sits on the ring for its trunk depth, centered in an angular
-  wedge split among trunk children by subtree leaf count. Synchronous and deterministic
-  (trunk children are id-ordered), so load and live emissions project identical pixels —
-  SkillTreeView re-runs it inline whenever the node/edge signature changes.
-- `layout/applyNudges.js` — `applyNudges(positions, tree)` → a new `Map` where any node
-  with a `position` override replaces the computed coordinate. Pure, returns a copy.
+- `layout/RadialLayoutEngine.js` — `class RadialLayoutEngine extends LayoutEngine`, the one
+  engine. Each node sits on the ring for its trunk depth, centred in an angular wedge split
+  among trunk children by subtree leaf count; a ring is pushed outward until its closest pair of
+  neighbours has room, so a crowded ring spreads rather than clumps. **Synchronous** and
+  deterministic (siblings sort by their fractional-index key), so a load and a live emission
+  project identical pixels.
 
 ## `scene/`  (raw WebGL2)
 
-- `scene/glcore.js` — tiny GL helpers: compile/link programs, resolve uniform/attrib
-  locations, upload a canvas as a texture (`createTextureFromCanvas`).
-- `scene/Camera2D.js` — pure ortho 2D camera; world↔screen is scale (`zoom`) + translate,
+- `scene/glcore.js` — the narrow GL slice this feature needs: link a program, resolve
+  uniform/attrib locations, upload a canvas as a texture.
+- `scene/Camera2D.js` — a pure ortho 2D camera; world↔screen is scale (`zoom`) + translate,
   Y-down. `screenToWorld` is the exact inverse of the shader projection, so picking is
-  pixel-accurate. `pan`, `zoomAt` (cursor-anchored), `zoomBy`, `panTo`, `focus`,
-  `fitToView(bounds,w,h)`, `launchInertia`, `update(dt)` (glides + decays inertia, returns
-  whether it moved), `getViewport()`.
-- `scene/NodeBatch.js` — **one instanced draw** for all fruit. A base quad drawn N times;
-  per-instance attributes (offset/state/glowSeed/selected/iconCell). Fruit body is
-  procedural (disc + gradient + ring); glow pulses from `uTime`; the icon atlas is sampled
-  and tinted per state (`uIconColor`), fading in with zoom and back out over the DOM-icon
-  handoff band so the baked raster never has to hold up under extreme zoom. `setInstances`,
-  `setStates`, `setSelected`, `setIconAtlas`, and `moveInstance(id, x, y)` (a ranged
-  `bufferSubData` write of one node's offset — the live-drag fast path).
-- `scene/ConnectorBatch.js` — **one draw** for all edges; bézier ribbons packed into one
-  buffer. Activation replays as a GPU color/growth sweep driven by `uTime`; `setModel`
-  rebuilds geometry, `setStates` only rewrites the active/grow attributes. `moveNode(id,
-  x, y)` re-tessellates just that node's incident edges (via an internal node→edge index)
-  and re-uploads their vertex ranges — no full rebuild, so it's cheap under a live drag.
-- `scene/IconAtlas.js` — rasterizes lucide glyphs (via the app's Icon registry) into an
-  alpha-mask canvas atlas (192px cells) for the **far/mid LOD**, where thousands of small
-  icons draw in the single node instanced call; the scene uploads it as a GL texture and
-  re-uploads once async glyph decode completes (`onReady`). Exposes `canvas`, `cols`, `rows`.
-- `scene/NodeOverlay.js` — DOM overlays above the canvas: an abstract `NodeOverlay` owns one
-  placement skeleton (a **fixed pool of ~64** absolutely-positioned elements on the nodes
-  nearest the viewport center, LOD-gated by zoom, positioned via CSS `transform` so a frame
-  costs no layout), and two subclasses override only element / visibility band / draw:
-  - `LabelOverlay` — captions (`<span>` text) below the node; visible above a zoom threshold.
-  - `IconOverlay` — the **near LOD** for icons: live `<Icon>` SVG (crisp at any zoom, tinted
-    per state to match the fruit) that cross-fades in as the baked atlas fades out over the
-    handoff band. `setStates` re-tints on completion; only near nodes get a DOM element.
-- `scene/AffordanceLayer.js` — the **calm edit chrome**: a DOM layer that fades a bark-and-cream
-  plus chip + ports onto the **selected** node (spec v2 — hover shows no structure; invisible at
-  rest, 150ms fade). The plus sits on the node's outward rim (opposite its parents), ports at the
-  widest gaps between branches; repositioned per frame so it tracks the camera and drags. Tools are
-  neutral — never a kind hue. A **grace window** keeps the chrome alive briefly after deselect so
-  the plus stays reachable. The plus is live (`onCreate`); each port starts a `ConnectGesture`.
-- `scene/HoverLabel.js` — the **hover name tip** (spec v2 §1.1): hovering a node shows only its
-  label on a dark bark pill below the disc — never structural chrome. A scene overlay repositioned
-  from the render loop; inline-styled, so it owns no CSS. Hidden when nothing is hovered / unnamed.
-- `scene/EdgeChrome.js` — the **selected-edge** chrome (spec v2 §4.2): a clicked branch turns bark
-  and grows two endpoint handles + a midpoint × (delete). Selection-gated, not hover — `setSelectedEdge`
-  shows it, handles hand `(edge, end)` to the shared `ConnectGesture` (reconnect), the × fires `onDeleteEdge`.
-- `scene/ConnectGesture.js` — dragging a dependency from a port (or an edge handle) to another node: a
-  dashed SVG **ghost branch** follows the cursor; the node under it gets an **olive ring** (valid) or a
-  **brick ring + "would create a loop" tip** (a cycle). The whole cycle-closing set is collected up front
-  and **faded to 30%** for the drag (`onFadeNodes` → `NodeBatch.setFaded`); that same set is the cyclic
-  predicate, so a faded node can never take the drop. A valid release fires `onConnect`/`onReconnect`.
-- `scene/input/` — pointer interaction, extracted so the scene isn't a god-object and edit
-  tools plug in without touching event plumbing. `InputController` owns the canvas listeners
-  + pointer capture + single-pointer bookkeeping, forwards down/drag/move/up/leave to the
-  active `Tool`, and handles wheel-zoom globally. `tools.js`: the `Tool` contract + its
-  impls sharing a small scene context (`camera`, `pick`, `select`, `hover`) — `NavigateTool`
-  (drag-pan + inertia, click-select, throttled hover) is both the viewer behaviour and the
-  editing default, and `ReadOnlyTool` (shared-tree viewer: 1:1 pan, tap-select, no fling).
-  The scene defaults to `NavigateTool` and can `input.setTool(...)` later.
-- `scene/SkillTreeScene.js` — orchestrator: owns the GL context, the `Camera2D`, both
-  batches, the `IconAtlas`, the label + icon overlays, and the `InputController`. The rAF loop
-  advances `uTime` and the camera; **whenever the camera moved (or a node moved) that frame it
-  updates both overlays**, and on camera move emits the viewport to per-frame
-  `subscribeViewport` listeners (the minimap) — no throttle, so overlays track the GPU at frame
-  rate. Exposes scene-state hooks the active tool drives (`select`/`selectEdge` — node and edge
-  selection are mutually exclusive; `hover`, `hoverEdge`, `pick`, `pickEdge`) and incremental edit
-  APIs. Selection is mirrored two ways: `select` drives it from the canvas and notifies the shell;
-  `setSelection` lets the shell mirror an Esc/close/create deselect back to the scene without echoing.
-  Live panel previews: `previewKind`/`restoreKind`, `previewDeleteCost`/`clearDeleteCost`. Public API
-  (renderer-agnostic, so the React shell never touches GL): `setModel` (full load, fits camera),
-  `applyModel` (re-derived graph — add/remove/relayout — preserving camera + selection, reusing the
-  atlas unless a new icon appears), `moveNode` (live per-instance reposition of a node + its edges),
-  `applyStates`, `fitToView`, `focusNode`, `panTo`, `zoomBy`, `subscribeViewport`, `getBounds`,
-  `getViewport`, `resize`, `start`, `stop`, `dispose`.
+  pixel-accurate. `pan`, `zoomAt` (cursor-anchored), `zoomBy`, `panTo`, `focus`, `fitToView`,
+  `glideTo`, `launchInertia`, `update(dt)` (glides + decays inertia, answers whether it moved).
+- `scene/NodeBatch.js` — **one instanced draw** for every fruit: a base quad drawn N times with
+  per-instance attributes — offset, colour, tier, form, glow seed, selection, icon cell, plus the
+  animation stamps the ceremonies and the feedback treatments write. The body is
+  procedural (disc + gradient + ring); the glow pulses from `uTime`; the icon atlas is sampled
+  and tinted per tier, fading out across the handoff band where the DOM icons take over.
+  `moveInstance(id, x, y)` is a ranged `bufferSubData` write — the live-drag fast path.
+- `scene/ConnectorBatch.js` — **one draw** for all edges, bézier ribbons packed into one buffer.
+  A branch inherits its source: once that node is complete it lights in the source's kind hue
+  with a GPU colour/growth sweep driven by `uTime`. `setStates` rewrites only the grow attributes;
+  `moveNode` re-tessellates just that node's incident edges.
+- `scene/IconAtlas.js` — rasterizes lucide glyphs (through the app's `Icon` registry) into an
+  alpha-mask canvas atlas (192px cells) for the far/mid LOD, and re-uploads once async glyph
+  decode completes.
+- `scene/NodeOverlay.js` — DOM above the canvas: an abstract `NodeOverlay` owns one placement
+  skeleton (a **fixed pool of ~64** absolutely-positioned elements on the nodes nearest the
+  viewport centre, LOD-gated by zoom, moved by CSS `transform` so a frame costs no layout), and
+  two subclasses override only element / visibility band / draw — `LabelOverlay` (captions) and
+  `IconOverlay` (the near LOD: live `<Icon>` SVG that cross-fades in as the baked atlas fades out).
+- `scene/AffordanceLayer.js` — the calm edit chrome: a bark-and-cream plus chip + ports fading
+  onto the **selected** node (hover shows no structure). The plus sits on the node's outward rim,
+  ports at the widest gaps; repositioned per frame so it tracks camera and drags. A grace window
+  keeps it reachable just after a deselect. The plus fires `onCreate`; each port starts a
+  `ConnectGesture`.
+- `scene/HoverLabel.js` — the hover name tip: a dark bark pill under the disc, never structural
+  chrome. Inline-styled, so it owns no CSS.
+- `scene/EdgeChrome.js` — the selected-edge chrome: a clicked branch turns bark and grows two
+  endpoint handles plus a midpoint × (delete). Selection-gated, not hover.
+- `scene/ConnectGesture.js` — dragging a dependency from a port (or an edge handle) to another
+  node: a dashed SVG ghost follows the cursor; the target rings olive (valid) or brick with a
+  "would create a loop" tip. The whole cycle-closing set is collected up front and faded to 30%,
+  and that same set is the cyclic predicate — so a faded node can never take the drop.
+- `scene/MarqueeOverlay.js` · `scene/ReorderSlot.js` · `scene/ArrivalChevron.js` — three small
+  DOM overlays in the same family: the Shift-drag rubber band, the dashed insertion ring for
+  angular reorder, and the viewport-edge pill that points at off-screen births.
+- `scene/edgeKey.js` — an edge has no id; its identity is the ordered `(from, to)` pair. This is
+  the one place that folds those into a stable key and back, so React selection and the GPU
+  highlight can never disagree about what "this edge" is.
+- `scene/input/` — pointer interaction, extracted so the scene is not a god-object and edit tools
+  plug in without touching event plumbing. `InputController` owns the canvas listeners, pointer
+  capture and single-pointer bookkeeping, drives two-finger pinch itself, and forwards
+  down/drag/move/up/leave to the active `Tool`. `tools.js` holds the `Tool` contract plus
+  `NavigateTool` (drag-pan + inertia, click-select, throttled hover — both the viewer behaviour
+  and the editing default) and `ReadOnlyTool` (1:1 pan, tap-select, no fling).
+  `reorderGeometry.js` is the angular-reorder math, kept pure so it is testable without a scene.
+- `scene/SkillTreeScene.js` — the orchestrator: owns the GL context, the `Camera2D`, both
+  batches, the `IconAtlas`, every overlay above, the `CeremonyDirector` and the
+  `InputController`. Its **rAF loop** advances `uTime` and the camera, steps any settle glide,
+  considers the pending auto-frame, repositions every overlay on a frame that moved, emits the
+  viewport to `subscribeViewport` listeners (the minimap) and draws the two batches — no
+  throttle, so the overlays track the GPU at frame rate.
 
-Perf rules (non-negotiable): constant draw calls regardless of node count; no per-node JS
-in the animation loop except the LOD-gated, bounded overlay pick; no per-frame allocation;
-instanced attribute updates flag their buffer rather than reallocating. Ortho camera keeps
-world↔screen linear.
+  Its motion surface, which the React shell arms and the loop then owns:
+  - **arrival** — `setModel` paints the tree dim and hands the director a BFS ring plan from the
+    crowned root, so light wakes the roadmap outward and travels each edge as its ring enters.
+    `setArrivalNoun` / `setArrivalSummary` / `suppressArrivalToast` are one-shot intents consumed
+    by that plan (a quest plant, a fork re-plant, the demo's silent bloom).
+  - **return recap** — `armReturnRecap(sinceIds, summary)` before the model installs makes the
+    next state push replay only the steps finished since the last visit, cascading parent→child
+    by depth within the since-subgraph, instead of the generic arrival.
+  - **settle** — `applyModel` diffs positions and glides every displaced node from where it
+    stands to its new seat, staggered nearest-the-change first, so a live edit reads as the new
+    work pushing the tree open. `finishSettle` lands them instantly the moment a pointer arrives.
+  - **auto-frame** — an off-screen birth never yanks the camera: the chevron points, and only a
+    plainly idle viewer gets one capped breath outward once the settle has landed.
 
-## `editing/`  (pure edit logic)
+  Public API (renderer-agnostic, so the React shell never touches GL): `setModel`, `applyModel`,
+  `applyStates`, `moveNode`, `fitToView`, `focusNode`, `frameNodes`, `panTo`, `zoomBy`,
+  `getViewpoint` / `restoreViewpoint`, `subscribeViewport`, `getBounds`, `getViewport`, `resize`,
+  `start`, `stop`, `dispose`; the selection hooks the active tool drives (`select` / `selectEdge`
+  — node and edge selection are mutually exclusive — `setSelection` for the shell's mirror,
+  `setSelectedSet`, `toggleSelect`, `hover`, `pick`, `pickEdge`); and the live previews the panels
+  lean on (`previewKind` / `restoreKind`, `previewDeleteCost` / `clearDeleteCost`, `setFaded`,
+  `highlightKind`, `spotlightNode`, `pulseNode`).
 
-Direct-manipulation editing of the tree. Pure and dependency-light — the view drives it
-and feeds results back through the render pipeline.
-- `editing/TreeEditor.js` — `class TreeEditor`. Session edit history: a `present` TreeData
-  plus undo/redo stacks. `commit(next)` records one step (and clears redo — linear history),
-  `undo()`/`redo()` swap snapshots, `canUndo`/`canRedo`. Snapshots share unchanged node
-  objects, so a compound edit is one step and keeping many is cheap.
-- `editing/edits.js` — pure `TreeData → TreeData` transforms with structural sharing (only
-  touched nodes replaced). `repositionNode(treeData, id, x, y)` pins a manual position; the
-  structural transforms (add/connect/delete/rename/kind) land here as their features are built.
+Perf rules (non-negotiable): constant draw calls regardless of node count; no per-node JS in the
+animation loop except the LOD-gated, bounded overlay pick; no per-frame allocation; instanced
+attribute updates flag their buffer rather than reallocating. The ortho camera keeps world↔screen
+linear.
+
+## `sync/`  (the lattice is truth)
+
+The tree's durable state is a CRDT lattice, not a `TreeData`. `TreeData` is only its present-time
+projection — what the render pipeline consumes.
+
+- `sync/lattice.js` — the client's half of the graph CRDT: the mirror of the backend's `Crdt.h`
+  + `LooseGraph.h` + `Subgraph.h`. Stamped registers, add-biased life, last-writer-wins fields.
+  The convergence laws are exercised on this side by `test/…/sync/materialize.test.js` and
+  `reorder.test.js`; `backend/test/golden` holds the shared corpus but does not yet run either
+  implementation against it (it reimplements the reference semantics in its own runner).
+- `sync/materialize.js` — the one place gesture semantics execute on the client: each gesture
+  becomes a list of stamped writes (a partial subgraph) computed against the current lattice, all
+  sharing one HLC stamp so the gesture is atomic on the wire. **This retired `editing/edits.js`:**
+  the splice, fan-out and reduction logic lives here now, over the lattice instead of over
+  `TreeData`, and there is exactly one encoding of it.
+- `sync/SyncSession.js` — the one seam `SkillTreeView` talks to for collaboration *and*
+  durability: it owns the lattice, the HLC clock, the socket and the IndexedDB store, and it owns
+  **undo/redo** (it banks each gesture's inverse and re-dispatches it re-stamped). "The lattice is
+  the outbox" — there is no queue; an offline edit is already in the durable frame.
+- `sync/SyncStore.js` — one IndexedDB record per tree, `{frame, lastSeq}` written together so a
+  crash never tears them.
+- `sync/fractionalIndex.js` — jitterless LexoRank-style order keys, so a reorder is one write
+  rather than a sibling renumber.
+- `sync/localTrees.js` · `sync/claimLocalTrees.js` — the signed-out lifecycle of a device-born
+  tree, and the additive claim that adopts it into an account on sign-in.
+- `sync/refusals.js` — the server's write refusals, matched by their exact sentences (a reject
+  frame carries prose, not a code); `test/…/sync/refusals.test.js` reads the C++ constants and
+  asserts the two halves still agree.
+
+## `editing/`
+
+- `editing/TreeEditor.js` — the holder for the current projection: one field, one getter, so
+  every read seam sees the same `TreeData` without threading it through React state. It is not a
+  history — undo is the `SyncSession`'s, over the lattice.
 
 ## `share/`  (the X2 share identity)
 
-Sharing is a **link**: `ShareDialog` copies the read-only tree URL and, when the tree is
-yours and private, flips it to unlisted on copy. The rest of the package renders the
-in-product gallery card and the stats readouts the app chrome shows. Canonical spec: the
-design system's `explorations/share-identity.html`. Grouped as one feature package (not
-split across layers) because it's a self-contained surface. (The image-export recipe —
-`ShareFrame` + the Canvas2D `exportImage` compositor + the PNG/GIF preview — was retired
-2026-07-18; the share surface is a link now, and the OG/unfurl card is a static asset.)
+Sharing is a **link**: `ShareDialog` copies the read-only tree URL and, when the tree is yours and
+private, flips it to unlisted on copy. The rest of the package renders the cards and the stats the
+chrome shows. Canonical spec: the design canon's `explorations/share-identity.html`. Grouped as
+one feature package rather than split across layers because it is a self-contained surface.
 
-- `share/palette.js` — `SHARE_PALETTE` (`light` + `dark`) + `KIND_ORDER`. Light is the
-  design system 1:1 (kinds pulled from `theme.js`); dark is the night skin. Per theme:
-  chrome (`mat/panel/edge/track/brand/grad*`) + per-kind `{c,rgb,soft}`. Read by
-  `ShareStats` (kind order) and `GalleryCard`.
-- `share/ShareStats.js` — `class ShareStats`; `from(tree, states)` → `done/total/percent`
-  and the **dominant kind**: the most common kind among *done* nodes, a shared max (or an
-  empty tree) tying to terracotta. Feeds the plaque, switcher, fork readouts and the card.
-- `share/TreePortrait.js` — `treePortraitSvg(model, palette, box, viewBox, options)`: the tree
-  as a standalone SVG string from the `RenderModel` (glow halos, crowned root, kind hues, done/
-  available/locked looks), self-contained (own xmlns, unique filter ids, no text/urls) so it
-  rasterizes into an `<img>`. Deterministic, resolution-independent, light and dark. Used by
-  `GalleryCard`. `options = {lit}` opens the **period ink**: a four-tier ladder (new work at the
-  in-app look, settled work at 34% with no halo, available, locked) plus the route rule — the
-  edge INTO each new step is drawn in that step's own kind at full alpha. No set, or an empty
-  one, writes nothing, so the default markup every other surface pins is byte-identical.
+- `share/palette.js` — `SHARE_PALETTE` (`light` + `dark`) + `KIND_ORDER`. Light is the design
+  system 1:1 (kinds pulled from `theme.js`); dark is the export-only night skin.
+- `share/ShareStats.js` — `ShareStats.from(tree, states)` → `done/total/percent` plus the
+  **dominant kind**: the most common kind among *done* nodes, a tie (or an empty tree) falling to
+  terracotta. Feeds the plaque, the switcher, the fork readouts and the cards.
+- `share/TreePortrait.js` — `treePortraitSvg(model, palette, box, viewBox, options)`: the tree as
+  a standalone SVG string built from the `RenderModel`, self-contained (own xmlns, unique filter
+  ids, no text or urls) so it rasterizes inside an `<img>`. `options = {lit}` opens the **period
+  ink** — a four-tier ladder plus the route rule that draws the edge INTO each new step in that
+  step's own kind at full alpha. An empty set writes nothing, so the default markup every other
+  surface pins stays byte-identical.
 - `share/ogCard.js` — the unfurl postcard (#12): `buildOgCardSvg` plus the recipe its siblings
-  share — `POSTCARD` (the 2400×1260 measures), `paddedGlowBox`/`clampViewBox` (the glow-inclusive
-  fit) and the `ellipsize`/`escapeXml` text guards. `paddedGlowBox(model, {steady:true})` measures
-  every node as if lit, for a card in a series whose frame must not move as the tree fills.
-  `share/rasterize.js` turns any card into a PNG (fonts embedded as base64 — an `<img>`-drawn SVG
-  can't reach the page's faces).
-- `share/progressCard.js` — the recurring post (#20): the same postcard drawn in period ink, on
-  the steady frame, with a stamp-led strip (`+3` · period chip · title / score · ledger) and its
-  hue taken from the **dominant kind among the new steps** — so two consecutive posts differ by
-  construction. Deliberately the structural opposite of the milestone card, so a feed of someone's
-  posts never reads as the same image twice.
-- `share/progressPeriod.js` — the period math the card counts on, pure: `ProgressPeriod`
-  (index/day/`startedAt`/label, **counted from the tree's planting time, never the calendar week** —
-  seven days a period, "Week 3" or "Day 17" by the reader's choice, `Update #N` when the server has
-  no planting stamp), `newThisPeriod` (the baseline: since the last posted card, else since the
-  period start — with `sinceAt` naming a SKIPPED period so a carried-over card says so), and
-  `ledgerDeltas` (one tick per elapsed period, each the stamp of the card **published** in it, from
-  `ShareLedger`'s history — never from local completion timestamps, which are device-local and would
-  publish a week worked on another device as a quiet one).
+  share — `POSTCARD` (the 2400×1260 measures), `paddedGlowBox` / `clampViewBox` (the glow-inclusive
+  fit) and the `ellipsize` / `escapeXml` text guards. `paddedGlowBox(model, {steady:true})` measures
+  every node as if lit, so a card in a series does not shift frame as the tree fills.
+  `share/rasterize.js` turns any card into a PNG, fonts embedded as base64 (an `<img>`-drawn SVG
+  cannot reach the page's faces).
+- `share/progressCard.js` — the recurring post (#20): the same postcard in period ink on the steady
+  frame, with a stamp-led strip and its hue taken from the **dominant kind among the new steps**, so
+  two consecutive posts differ by construction — deliberately the structural opposite of the
+  milestone card.
+- `share/progressPeriod.js` — the period math, pure: `ProgressPeriod` (counted from the tree's
+  planting time, **never the calendar week** — "Week 3" or "Day 17" by the reader's choice, `Update
+  #N` when the server has no planting stamp), `newThisPeriod`, and `ledgerDeltas` (one tick per
+  elapsed period, each the stamp of the card *published* in it — never a local completion time,
+  which is device-local and would publish a week worked elsewhere as a quiet one).
 - `share/progressOffer.js` — `considerProgressShare(…)`: when that card is worth offering. It rides
   the RETURN, not a completion — the first open after a period closes, once per period, never on the
-  first period, never twice, never without a card already posted. Shaped like `considerAutoOpen`:
-  the ask is spent in `commit()` at fire time, so an offer that loses the lane to a milestone is
-  free. **Two declines in a row retire it for that tree, permanently and silently** — a decline needs
-  no button, since an offer counts as declined the moment it is made and `accept()` clears the count.
-  Its baseline is `persistence/ShareLedger.js`, written **only when a share happens** (unlike
-  `ReturnLedger`, which re-baselines on every completion) — the only honest way to say "since
-  you last shared" while the server's progress API returns no timestamps.
-- `share/ShareDialog.jsx` — the Share surface, in two segments. First the LINK: copies the
-  read-only view URL and, when the tree is yours and private, flips it to unlisted on copy with an
-  honest reach line ("Anyone with this link can view" / "Make private"), plus the gallery listing
-  consent. Then `share/ProgressCardSegment.jsx` — the week's POST: the drawn card, Download / Copy /
-  the OS sheet, the Week/Day segmented control and the ledger toggle (both remembered per tree in
-  `ViewPrefs`). It is also the door back for anyone the offer has retired.
-- `share/GalleryCard.jsx` — the in-product card (#12): drops the mat (it lives inside app
-  chrome) but keeps the kind rule + the same title/readout, presentational, light and dark
-  (renders in the `#/showcase` design gallery).
+  first period, never twice, never without a card already posted. Two declines in a row retire it for
+  that tree, permanently and silently. Its baseline is `persistence/ShareLedger.js`, written **only
+  when a share happens** — the only honest way to say "since you last shared" while the server's
+  progress API returns no timestamps.
+- `share/shareVideoFrame.js` · `share/captureShareVideo.js` — the motion companion (#19): the
+  animated loop's frames as SVG, encoded to a short seamless mp4 in the owner's browser. Best-effort
+  by contract — WebCodecs is not everywhere, so every path returns null and the still stays the
+  poster; a final decode probe means a malformed encode falls back rather than shipping a broken tag.
+- `share/ogUpload.js` — `uploadOgImage` / `uploadOgVideo`: one guarded PUT behind two named doors,
+  with the backend's 3 MB cap stated once. Fire-and-forget by contract — a failed upload must never
+  block or break sharing.
+- `share/ShareDialog.jsx` — the Share surface in two segments. First the LINK: copy the read-only
+  URL and, when the tree is yours and private, flip it to unlisted on copy with an honest reach line,
+  plus the gallery-listing consent. Then `share/ProgressCardSegment.jsx` — the period's POST: the
+  drawn card, Download / Copy / the OS sheet, the Week/Day segmented control and the ledger toggle
+  (both remembered per tree in `ViewPrefs`). It is also the door back for anyone the offer retired.
+- `share/GalleryCard.jsx` — the in-product card (#12): drops the mat (it lives inside app chrome)
+  but keeps the kind rule and the same title/readout. Presentational, light and dark.
 
-`ControlBar` gains a Share button; `SkillTreeView` opens `ShareDialog`. The week's offer is armed
-during the load and fired by `speakCeremony` — the scene's one toast sink — 120ms after whatever
-ceremony closes this open (the welcome-back recap, or the arrival standing in for it), with a cap
-for the paused-scene case. A milestone landing in the same window calls `dropWeekOffer()`: one
-pride moment per open, and the week's ask is dropped rather than queued.
+The period's offer is armed during the load and fired by the scene's one toast sink, 120ms after
+whatever ceremony closes the open (the welcome-back recap, or the arrival standing in for it), with
+a cap for the paused-scene case. A milestone landing in the same window drops it: one pride moment
+per open, and the ask is dropped rather than queued.
 
 ## `SkillTreeView.jsx` + overlay UI
 
-Runs the pipeline above (repo → domain → layout → scene) and owns the edit loop: builds a
-`TreeEditor` from the loaded TreeData, caches the raw layout, and funnels every edit through
-`syncStructure()` (re-derive the model from `editor.treeData` — which re-validates the DAG —
-and `scene.applyModel`). Edits: the
-affordance plus (`onCreateChild` → `addChildNode`, committed as an unnamed bud, auto-selected with
-the panel's name field focused); rename/kind from the step panel (`renameNode`/`setNodeColor`, one
-step each); ⌫/Delete on the selection (`deleteNode`, children splice up, one step + an Undo toast;
-or the scene's selected edge → `removeEdge`). Keys: ⌘Z/⇧⌘Z → `undo`/`redo`, Esc deselects. A
-`selectedId`→`scene.setSelection` effect keeps the canvas chrome in step with React selection. Wires:
+Runs the pipeline above, then hands the tree to a `SyncSession` and hosts every overlay around the
+canvas. Each edit is dispatched as one gesture (`collab.dispatch({kind, …})`), materialized into
+stamped writes, joined into the lattice, persisted, and — when live — sent as one frame; the new
+projection comes back through `onTreeChanged` → `syncStructure()` (re-derive, re-validate, then
+`scene.applyModel`), which is the *same* path a collaborator's frame takes. Keys: ⌘Z/⇧⌘Z →
+`SyncSession.undo`/`redo`, ⌫/Delete on the selection, Esc deselects; a `selectedId` →
+`scene.setSelection` effect keeps the canvas chrome in step with React.
+
+At 3,067 lines it is by far the largest file in the package, and its own header's claim that no
+business logic lives here is not true today — the milestone selection, the progress state machine
+and the remote-frame idempotency policies all live in it. Four extractions are planned; see Wave 17
+in the audit ledger and `NOTES.md`. Read this section as a map of a file that is scheduled to shrink.
+
+Wires:
+
 - A full-viewport `<canvas className="st-canvas">`; constructs `SkillTreeScene` in an effect,
   `setModel` + `start()`, `dispose()` on unmount, `resize()` on container resize (ResizeObserver).
-  Holds the scene in state so overlay children can subscribe once it exists.
-- Overlay UI (`src/components` design system):
-  - `ui/ControlBar.jsx` — zoom in/out, fit-to-view, a demo↔huge (5k) size toggle, link to
-    `#/showcase`.
-  - `ui/StepPanel.jsx` — the one docked panel (spec v2 §01), slides in on node pick: an inline-editable
-    **name**, the six **kind** swatches (hover previews live via `scene.previewKind`, click commits),
-    the **prerequisites** + "Mark complete" (mutates progress → re-derives states → `scene.applyStates`),
-    and an isolated **Delete** at the bottom (hover dims the step via `scene.previewDeleteCost`). It
-    absorbed the old floating action bar, kind fan, inline name field, and `DetailPanel`.
-  - `ui/Minimap.jsx` — two stacked canvases: a **dots** layer (a dot per node, redrawn only on
-    node/state/bounds change) and a **viewport-rectangle** layer redrawn every frame via
-    `scene.subscribeViewport`, so the rectangle tracks the camera without redrawing thousands
-    of dots. Click to `panTo`.
+  The scene is held in state so overlay children can subscribe once it exists.
+- Overlay UI (built from `src/design-system`):
+  - `ui/ControlBar.jsx` — the top bar: the Windmill wordmark linking home, the tree identity plaque
+    (the `TreeSwitcher` docks into `titleSlot`, else a static title), and on the right the Tend chip
+    (owner of an armed tree only), the Activity / "Next · N" chip with its unseen badge, Share, Reset
+    edits (when there are any), the shortcuts button and the zoom-out / zoom-in / fit group. Its key
+    hints come from `shortcuts/shortcutMap.js`, never a duplicated literal.
+  - `ui/StepPanel.jsx` — the one docked panel, slid in on pick: inline-editable name, the state block,
+    the six kind swatches (hover previews live through `scene.previewKind`, click commits), the
+    prerequisite checklist, the per-node workspace and History, and an isolated Delete whose hover
+    dims the cost through `scene.previewDeleteCost`.
+  - `ui/tree/KindLegend.jsx` — the on-canvas colour key that is also its own editor; the parent docks
+    it bottom-left and supplies each kind's count.
+  - `ui/Minimap.jsx` — two stacked canvases: a dots layer redrawn only on node/state/bounds change,
+    and a viewport rectangle redrawn every frame from `scene.subscribeViewport`, so the rectangle
+    tracks the camera without redrawing thousands of dots. Click to `panTo`.
+  - `activity/ActivityFeed.jsx` + `ui/NextUp.jsx` — the docked feed, led by the ready-work section.
+  - `presence/PresenceLayer.jsx`, `tending/TendBar.jsx`, `share/ShareDialog.jsx`,
+    `ui/HonestyChrome.jsx`, and on small screens `list/ListView.jsx` plus the `ui/mobile/` surfaces.
 - All node-state transitions go through `UnlockRules.derive` — never hand-set a node state.
 
 ## Conventions (from CLAUDE.md — honor these)
+
 - Optimize for the reader. Express functions as top-to-bottom fail-fast pipelines.
-- Domain layer is pure and dependency-light; WebGL lives only at the boundary.
+- The domain layer is pure and dependency-light; WebGL lives only at the boundary.
 - Constructors on entities (not factory helpers). Early returns over assign-then-return.
-- No underscore-prefixed private helpers; no docstrings / multiline prose comments.
-- Don't create sub-40-line files without a strong reason; group kin (all shapes in ports.js).
-- Plain JS/JSX only (no TypeScript). No feature runtime deps beyond React.
+- No underscore-prefixed private helpers; no docstrings or multiline prose comments.
+- Don't create sub-40-line files without a strong reason; group kin (all shapes in `ports.js`).
+- Plain JS/JSX only — no TypeScript.

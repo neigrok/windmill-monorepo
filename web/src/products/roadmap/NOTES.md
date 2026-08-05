@@ -1,4 +1,9 @@
-# Skill-tree — build notes & observations
+# Roadmap — build notes & observations
+
+**This file is a log, not a spec.** It records what each wave found and decided, in the
+words that were true when the wave shipped, and it is not rewritten as the code moves on.
+For how the package works *today*, read `ARCHITECTURE.md` — where the two disagree about
+the present, ARCHITECTURE.md is the maintained one.
 
 Renders a Windmill roadmap (a **DAG**) as a painterly RPG skill tree using a
 **hand-rolled WebGL2 renderer** (no three.js). Target: 60fps at 5,000+ nodes with

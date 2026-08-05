@@ -123,22 +123,6 @@
 .st-brand-home:hover .st-brand-name {
   color: var(--color-brand-hover);
 }
-.st-brand-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  flex-shrink: 0;
-  border-radius: var(--radius-full);
-  background: var(--color-brand-soft);
-  color: var(--color-brand-hover);
-}
-.st-brand-text {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.15;
-}
 .st-brand-name {
   font-family: var(--font-display);
   font-weight: 800;

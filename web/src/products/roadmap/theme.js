@@ -28,9 +28,8 @@ export const DEFAULT_NODE_COLOR = 'terracotta';
 // The tree's four visual tiers. Indices are what the shaders receive; higher = more
 // progress, so a state diff reads growth as a rise in tier. In-progress ("ember") is a
 // third calm read between available and complete — not a re-hue and not a fourth read.
-export const NODE_TIERS = ['unavailable', 'available', 'inprogress', 'activated'];
-export const TIER_LOCKED = 0;
-export const TIER_AVAILABLE = 1;
+const TIER_LOCKED = 0;
+const TIER_AVAILABLE = 1;
 export const TIER_EMBER = 2;
 export const TIER_COMPLETE = 3;
 export function nodeTier(state) {
@@ -44,7 +43,6 @@ export function nodeTier(state) {
 // gestures reveal. `bud` is a just-born, still-unnamed tip (grows a name/edges);
 // `unlinked` is a stray with neither parents nor children (a leaf whose last
 // branch was cut) that wants re-attaching. Authored nodes are always `linked`.
-export const NODE_FORMS = ['linked', 'bud', 'unlinked'];
 export function nodeForm(label, parentCount, childCount) {
   if (parentCount === 0 && childCount === 0) return 2; // unlinked — a detached stray
   if (!label || label.trim() === '') return 1; // bud — created but not yet named
@@ -66,8 +64,6 @@ export const CONNECTOR = { inactive: '#D3C2A0' };
 // so the selection reads as one connected shape (quieter than a white single-edge select).
 export const BARK = '#9C6B44';
 export const BARK_CREAM = '#EAD8B0';
-
-export const LEAF = { light: '#9AA859', vein: '#616E33' };
 
 export const BACKGROUND = {
   canvas: '#F9F5EB',

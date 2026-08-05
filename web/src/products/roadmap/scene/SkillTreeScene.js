@@ -1,8 +1,10 @@
 // Orchestrator for the hand-rolled WebGL2 renderer: owns the GL context, the 2D
-// camera, and the node/connector batches. The rAF loop only advances time and
-// the camera; geometry is uploaded once per model and mutated in place on state
-// change. Picking reuses the domain SpatialGrid. Public API is unchanged so the
-// React shell above is renderer-agnostic.
+// camera, the node/connector batches and every DOM overlay above them. The rAF loop
+// advances time and the camera, steps any settle glide, considers the pending
+// auto-frame, and repositions the overlays on a frame that moved; geometry is
+// uploaded once per model and mutated in place on state change. Picking reuses the
+// domain SpatialGrid. Public API is renderer-agnostic, so the React shell never
+// touches GL.
 import { BACKGROUND, NODE_SIZE, nodeTier, TIER_EMBER, TIER_COMPLETE, DEFAULT_NODE_COLOR } from '../theme.js';
 import { SpatialGrid } from '../model/SpatialGrid.js';
 import { CeremonyDirector } from '../ceremony/CeremonyDirector.js';

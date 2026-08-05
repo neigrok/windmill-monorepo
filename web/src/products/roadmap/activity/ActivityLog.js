@@ -4,9 +4,9 @@
 // and reads back grouped or per-node slices. An event snapshots its object's
 // label + kind at emit time, so a row still renders (struck through) after the
 // node is deleted; while the node lives, surfaces resolve its current label from
-// the tree instead of trusting the snapshot.
-
-export const VERBS = ['started', 'completed', 'unlocked', 'added', 'renamed', 'removed'];
+// the tree instead of trusting the snapshot. The verbs themselves are enumerated
+// once, in activity/grammar.jsx's VERB_STYLE — the one place that has to know them,
+// because it is the one place that renders them.
 
 export class ActivityEvent {
   constructor({ id, actor, verb, nodeId, label, kind, at, summary }) {

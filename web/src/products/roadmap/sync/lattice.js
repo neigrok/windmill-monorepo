@@ -22,7 +22,7 @@ export function hlcText(h) {
   return `${h.ms}:${h.counter}:${h.actor}`;
 }
 
-export function hlcIsSet(h) {
+function hlcIsSet(h) {
   return h.ms !== 0 || h.counter !== 0 || h.actor !== '';
 }
 

@@ -23,7 +23,7 @@ const SIZE = 1080;                          // 1:1 primary; the wide 16:9's cent
 const FRAMES = Math.round((LOOP / 1000) * FPS);   // 72
 const MAX_BYTES = 3 * 1024 * 1024;
 
-export function shareVideoSupported() {
+function shareVideoSupported() {
   return typeof window !== 'undefined' && typeof window.VideoEncoder === 'function';
 }
 

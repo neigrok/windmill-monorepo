@@ -35,7 +35,7 @@ export function relativeTime(at, now) {
   return `${Math.round(days / 7)}w`;
 }
 
-export function VerbBadge({ verb, size = 13 }) {
+function VerbBadge({ verb, size = 13 }) {
   const style = VERB_STYLE[verb];
   if (!style) return null;
   return (

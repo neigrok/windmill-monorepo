@@ -8,7 +8,6 @@
 import { NODE_COLORS, NODE_COLOR_NAMES } from '../theme.js';
 
 export const KIND_ORDER = NODE_COLOR_NAMES; // terracotta olive gold brick sky plum
-export const SHARE_THEMES = ['light', 'dark'];
 
 function rgbOf(hex) {
   const n = parseInt(hex.slice(1), 16);
