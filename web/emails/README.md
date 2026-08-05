@@ -102,7 +102,7 @@ images-off fallback. When a mark ships, swap the header cell for
 The auth mails never carry an unsubscribe link (they're strictly transactional). The
 reminder always carries the `Pause reminders` / settings link — keep it when you edit,
 along with the promise line above it. That line ("once a week, only while a tree has
-steps ready") is not decoration: the whole send rule in `windmill-backend/reminders/`
+steps ready") is not decoration: the whole send rule in `backend/products/roadmap/domain/Reminders.h`
 exists to make it literally true, so changing the copy changes a contract. It states a
 *necessary* condition, not the whole rule — the recently-active window and the new-account
 grace also have to pass, and settings §Reminders is where those are spelled out.
