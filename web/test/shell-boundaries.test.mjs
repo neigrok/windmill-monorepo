@@ -35,7 +35,13 @@ const REGISTRY = path.join(SRC, 'shell', 'products.js');
 // other path into a product is still a wall.
 const SHOWCASE_DIR = path.join(SRC, 'showcase') + path.sep;
 const specimensOf = (product) => path.join(PRODUCTS_DIR, product, 'showcase.js');
-const SOURCE_EXTENSIONS = new Set(['.js', '.jsx', '.mjs']);
+// Stylesheets are walked too. A JS file importing a product's CSS was always caught (a bare
+// `import './x.css'` is one of the shapes below), but `@import` from one stylesheet to another
+// crossed every wall in silence — so a product could have pulled in the /app chrome's sheet, or the
+// shell a product's, and the suite would have stayed green while breaking the rule it exists to
+// state. Found 2026-08-05, while looking for a home for a shared class and nearly putting it
+// somewhere that would have needed exactly that import.
+const SOURCE_EXTENSIONS = new Set(['.js', '.jsx', '.mjs', '.css']);
 
 function sourceFiles(dir) {
   const files = [];
@@ -52,6 +58,8 @@ const IMPORT_SHAPES = [
   /\bfrom\s+['"]([^'"]+)['"]/g,
   /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
   /^\s*import\s+['"]([^'"]+)['"]/g,
+  // CSS: `@import 'x'` and `@import url('x')`, with or without a media query after it.
+  /@import\s+(?:url\(\s*)?['"]([^'"]+)['"]/g,
 ];
 
 function importsOf(file) {
