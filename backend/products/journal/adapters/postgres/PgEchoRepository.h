@@ -34,6 +34,7 @@ public:
   std::vector<SpanPair> dismissalsOn(const UserId& user, const LocalDate& triggerDay) override;
   void dismiss(const UserId& user, std::int64_t triggerSpanId, std::int64_t matchSpanId) override;
   void dismissPage(const UserId& user, const LocalDate& triggerDay) override;
+  void dismissOffer(const UserId& user, const LocalDate& day) override;
 
   void replaceEchoes(const UserId& user, const LocalDate& triggerDay,
                      const CuratedEchoes& curated) override;
@@ -44,6 +45,8 @@ public:
 
   std::vector<EchoView> echoesFor(const UserId& user, const LocalDate& from,
                                   const LocalDate& to) override;
+  std::vector<LocalDate> retiredOffers(const UserId& user, const LocalDate& from,
+                                       const LocalDate& to) override;
   int pagesWritten(const UserId& user) override;
 
 private:

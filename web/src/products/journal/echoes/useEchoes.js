@@ -2,14 +2,15 @@
 //
 // Three rules shape this file:
 //
-//   The count is the array. The server sends only matches it verified, so `ECHO · n` is n rows the
-//   reader can tap. Nothing here ever computes a total from something it hasn't got.
+//   The count is the array. The server sends only matches it verified, the client re-locates every
+//   one before the tab draws its number, so the count on the edge of a page is a count of rows the
+//   reader can open. Nothing here ever computes a total from something it hasn't got.
 //
 //   A quote is re-located in the live body at render, or it is not shown. The wire carries passage
-//   TEXT, never offsets, so an edit to an old page can't silently re-point a quote at the wrong
-//   sentence. Locating also yields the char span the canvas lights when you walk there.
+//   TEXT and an occurrence index — never an offset — so an edit to an old page can't silently
+//   re-point a quote at the wrong sentence, and the two sides never disagree about an encoding.
 //
-//   Under ~20 pages, nothing at all. No marks, no offer. There is nothing true to sell yet.
+//   Under ~20 pages, nothing at all. No tabs, no offer. There is nothing true to sell yet.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { journalApi } from '../journalApi.js';
@@ -18,14 +19,22 @@ import { localDay } from '../hlc.js';
 const PAGE_FLOOR = 20;
 const FIRST_ECHO_KEY = 'windmill:journal-first-echo';
 
-// Prefer the span the server remembered, but only if the live text is still standing in it; otherwise
-// fall back to a search. A hit is the passage's char range in this body — nothing is ever sliced blind.
-function locate(body, text, hint) {
+// `occurrenceHint` says WHICH occurrence of this text the passage is — the third "I want to teach",
+// not a character position. It is a hint and nothing more: the server omits it when the body has
+// moved under the passage, and the text search below is what actually decides whether a quote
+// renders. A hit yields the char range in this body, which is what the canvas lights when you walk.
+function locate(body, text, occurrence) {
   if (!body || !text) return null;
-  if (typeof hint === 'number' && body.slice(hint, hint + text.length) === text) return [hint, hint + text.length];
-  const at = body.indexOf(text);
-  if (at < 0) return null;
-  return [at, at + text.length];
+  const want = typeof occurrence === 'number' && occurrence >= 0 ? occurrence : 0;
+  let from = 0;
+  let at = -1;
+  for (let n = 0; n <= want; n += 1) {
+    at = body.indexOf(text, from);
+    if (at < 0) break;
+    from = at + text.length;
+  }
+  if (at < 0) at = body.indexOf(text);      // the hint over-counted — fall back to the first
+  return at < 0 ? null : [at, at + text.length];
 }
 
 function seenFirstEcho() {
@@ -41,10 +50,10 @@ export function useEchoes({ today = localDay(), onFly = () => {} } = {}) {
   const [floored, setFloored] = useState(false);       // fewer than ~20 pages: the canvas stays quiet
   const [firstEver, setFirstEver] = useState(false);
   const [retiredOffers, setRetiredOffers] = useState(new Set());
-  const [panelDay, setPanelDay] = useState(null);
+  const [openDay, setOpenDay] = useState(null);        // the one page whose ink is open
   const [sheetDay, setSheetDay] = useState(null);
   const [hops, setHops] = useState([]);                // the walk, tonight first — a receipt, not a wizard
-  const [followedDay, setFollowedDay] = useState(null); // which page the desktop margin panel is beside
+  const [followedDay, setFollowedDay] = useState(null); // which page the desktop margin sits beside
 
   const pagesRef = useRef(pages);
   pagesRef.current = pages;
@@ -74,8 +83,8 @@ export function useEchoes({ today = localDay(), onFly = () => {} } = {}) {
   }, [today]);
 
   // Fetch the bodies this page's quotes live in, re-locate every one, and drop the ones that no
-  // longer stand. Runs when a card or panel opens; the mark reads the same state, so the two can
-  // never disagree about how many echoes a page has.
+  // longer stand. Runs when a page's tab mounts, because the tab carries the count at rest: a number
+  // that shrank the moment you opened it would be exactly the lie this feature must not tell.
   const verify = useCallback(async (day) => {
     const page = pagesRef.current.get(day);
     if (!page || page.verified || verifying.current.has(day)) return;
@@ -96,7 +105,7 @@ export function useEchoes({ today = localDay(), onFly = () => {} } = {}) {
       if (!held) return current;
       const located = held.matches
         .map((match) => {
-          const span = locate(bodies.current.get(match.day), match.text, match.lo);
+          const span = locate(bodies.current.get(match.day), match.text, match.occurrenceHint);
           return span ? { ...match, lo: span[0], hi: span[1] } : null;
         })
         .filter(Boolean);
@@ -107,34 +116,39 @@ export function useEchoes({ today = localDay(), onFly = () => {} } = {}) {
     });
   }, []);
 
-  const openPanel = useCallback((day) => { verify(day); setPanelDay(day); }, [verify]);
-  const closePanel = useCallback(() => setPanelDay(null), []);
+  const openInk = useCallback((day) => setOpenDay(day), []);
+  const closeInk = useCallback(() => setOpenDay(null), []);
   const openSheet = useCallback((day) => setSheetDay(day), []);
   const closeSheet = useCallback(() => setSheetDay(null), []);
 
-  // "Not now" — the offer goes, the echo stays. Nothing re-asks a page that was answered.
+  // "Not now" — the sheet closes and the page is answered. Nothing on the canvas ever asks, so
+  // there is nothing here to suppress; this is the record that the page was answered, so nothing
+  // ever asks it again. Held locally first and posted after: a server that refuses the decline must
+  // not cost the reader the answer they gave, and must not be told it twice.
   const retireOffer = useCallback((day) => {
+    setSheetDay((current) => (current === day ? null : current));
+    if (retiredOffers.has(day)) return;
     setRetiredOffers((current) => new Set(current).add(day));
-    journalApi.dismissEchoOffer(day).catch(() => { /* the offer is already gone here */ });
-  }, []);
+    journalApi.dismissEchoOffer(day).catch(() => { /* answered here regardless */ });
+  }, [retiredOffers]);
 
   // "Not useful" — the whole set for that page is retired, never asked about, never counted.
   const retireEcho = useCallback((day) => {
     const page = pagesRef.current.get(day);
-    setPanelDay((current) => (current === day ? null : current));
+    setOpenDay((current) => (current === day ? null : current));
     setPages((current) => {
       const next = new Map(current);
       next.delete(day);
       return next;
     });
     page?.matches.forEach((match) => {
-      journalApi.dismissEcho(day, match.day).catch(() => { /* the mark is already gone here */ });
+      journalApi.dismissEcho(day, match.day).catch(() => { /* the tab is already gone here */ });
     });
   }, []);
 
   // Walking back: a position is a URL, so the hop is a hash change; the canvas loads the day and
-  // lights the passage. The trail records where you came from — and folds back on itself rather than
-  // repeating a day you already stood on.
+  // lights the passage. The page you land on has its own ink already open, because every page
+  // reaches further back than the one you came from and that is the whole point of the walk.
   const walkTo = useCallback((triggerDay, match) => {
     journalApi.echoOpened(triggerDay, match.day).catch(() => { /* a lost signal is not the reader's problem */ });
     setHops((current) => {
@@ -142,7 +156,7 @@ export function useEchoes({ today = localDay(), onFly = () => {} } = {}) {
       const seen = trail.indexOf(match.day);
       return seen >= 0 ? trail.slice(0, seen + 1) : [...trail, match.day];
     });
-    setPanelDay(null);
+    setOpenDay(match.day);
     window.location.hash = `#/journal/${match.day}`;
     onFly({ day: match.day, lo: match.lo, hi: match.hi });
   }, [today, onFly]);
@@ -154,12 +168,14 @@ export function useEchoes({ today = localDay(), onFly = () => {} } = {}) {
       const seen = current.indexOf(day);
       return seen <= 0 ? [] : current.slice(0, seen + 1);
     });
+    setOpenDay(null);
     window.location.hash = day === today ? '#/journal' : `#/journal/${day}`;
     onFly({ day });
   }, [today, onFly]);
 
   const backToTonight = useCallback(() => {
     setHops([]);
+    setOpenDay(null);
     window.location.hash = '#/journal';
     onFly({ day: today });
   }, [today, onFly]);
@@ -204,16 +220,14 @@ export function useEchoes({ today = localDay(), onFly = () => {} } = {}) {
   }, [pages]);
 
   const pageOf = useCallback((day) => (floored ? null : pages.get(day) || null), [floored, pages]);
-  const offerRetired = useCallback((day) => retiredOffers.has(day), [retiredOffers]);
 
   return {
     today,
     pageOf,
-    offerRetired,
     verify,
-    panelDay,
-    openPanel,
-    closePanel,
+    openDay,
+    openInk,
+    closeInk,
     sheetDay,
     openSheet,
     closeSheet,

@@ -310,6 +310,7 @@ public:
   // as the SQL keys them on their content hashes. Storing span ids here instead would let a test
   // pass while production resurrected a dismissed echo the first time a sentence moved.
   std::map<std::string, std::set<std::pair<std::string, std::string>>> dismissals;
+  std::set<std::string> offersRetired;   // "user|day" -> the reader answered "not now" here
   std::map<std::string, CuratedEchoes> echoesByPage;   // "user|day" -> what the pass wrote
   std::vector<CurationOutcome> outcomes;
   std::map<std::string, std::vector<LocalDate>> inbound;
@@ -320,7 +321,7 @@ public:
     return user.str() + "|" + day.iso();
   }
 
-  void addUser(const UserId& user, const Email& email) { users.push_back(EchoUser{user, email}); }
+  void addUser(const UserId& user) { users.push_back(EchoUser{user}); }
   void plantPage(const UserId& user, const LocalDate& day, const std::string& body) {
     bodies[pageKey(user, day)] = body;
   }
@@ -432,6 +433,12 @@ public:
     for (const EchoRow& row : it->second.rows) dismiss(user, row.triggerSpanId, row.matchSpanId);
   }
 
+  // "Not now" lives in its own set and touches nothing else — the same separation the SQL keeps,
+  // where declining the offer writes one row in its own table and journal_echo never moves.
+  void dismissOffer(const UserId& user, const LocalDate& day) override {
+    offersRetired.insert(pageKey(user, day));
+  }
+
   void replaceEchoes(const UserId& user, const LocalDate& day,
                      const CuratedEchoes& curated) override {
     echoesByPage[pageKey(user, day)] = curated;
@@ -471,6 +478,18 @@ public:
       }
     }
     return views;
+  }
+
+  std::vector<LocalDate> retiredOffers(const UserId& user, const LocalDate& from,
+                                       const LocalDate& to) override {
+    std::vector<LocalDate> days;
+    for (const std::string& key : offersRetired) {
+      if (key.rfind(user.str() + "|", 0) != 0) continue;
+      const LocalDate day{key.substr(user.str().size() + 1)};
+      if (day < from || to < day) continue;
+      days.push_back(day);
+    }
+    return days;
   }
 
   int pagesWritten(const UserId& user) override {

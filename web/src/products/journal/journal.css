@@ -29,17 +29,19 @@
   --journal-panel-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);      /* a card lifted off the night */
 
   /* Echoes — the lamp held at alpha over the night, authored as literals exactly as the design
-     writes them (#E0B972 is --lamp-400 by night, so these ARE the lamp). */
-  --je-card-border: rgba(224, 185, 114, 0.3);
-  --je-card-fill: rgba(224, 185, 114, 0.055);
-  --je-quiet-border: rgba(224, 185, 114, 0.26);
-  --je-quiet-fill: rgba(224, 185, 114, 0.05);
-  --je-chip-fill: rgba(224, 185, 114, 0.12);
+     writes them (#E0B972 is --lamp-400 by night, so these ARE the lamp). The three tab weights are
+     the whole resting state: aged, the page you're on, and open. */
+  --je-tab-fill: rgba(224, 185, 114, 0.14);
+  --je-tab-line: rgba(224, 185, 114, 0.32);
+  --je-tab-aged-fill: rgba(224, 185, 114, 0.07);
+  --je-tab-aged-line: rgba(224, 185, 114, 0.16);
+  --je-tab-open-fill: rgba(224, 185, 114, 0.26);
+  --je-tab-open-line: rgba(224, 185, 114, 0.45);
   --je-here-fill: rgba(224, 185, 114, 0.16);
   --je-here-border: rgba(224, 185, 114, 0.35);
   --je-hairline: rgba(255, 255, 255, 0.07);
   --je-trail-fill: rgba(255, 255, 255, 0.06);
-  --je-margin-fill: rgba(255, 255, 255, 0.015);
+  --je-grabber: rgba(255, 255, 255, 0.18);
   --je-sheet-lift: 0 -18px 50px rgba(0, 0, 0, 0.45);
 }
 
@@ -78,19 +80,28 @@
   --border-default: color-mix(in srgb, var(--journal-ink) 22%, transparent);
   --shadow-md: 0 8px 24px rgba(74, 58, 36, 0.14);
 
+  /* The two lamp steps an echo reads WITH, not just draws with: --lamp-200 is every older passage's
+     ink and --lamp-500 carries every withheld count. Their :root values (#EBD3A2, #C29A4E) are night
+     values — on parchment the first is invisible and the second will not hold at 9.5px. Re-pointed
+     here to the same warmth at day weight (~7:1 and ~6.3:1 on #FBF6EA); tokens/colors.css sanctions
+     a product re-pointing steps inside its own scope. Nothing here fires in night. */
+  --lamp-200: #6B4D12;
+  --lamp-500: #7A5410;
+
   /* The echo alphas re-derived for paper: the design is authored on the night canvas, where the lamp
      is #E0B972 and a white hairline reads. By day the lamp is an ochre and the hairline must be ink,
-     or the card loses its edge entirely. Same weights, day materials. */
-  --je-card-border: color-mix(in srgb, var(--lamp-400) 34%, transparent);
-  --je-card-fill: color-mix(in srgb, var(--lamp-400) 7%, transparent);
-  --je-quiet-border: color-mix(in srgb, var(--lamp-400) 28%, transparent);
-  --je-quiet-fill: color-mix(in srgb, var(--lamp-400) 6%, transparent);
-  --je-chip-fill: color-mix(in srgb, var(--lamp-400) 13%, transparent);
+     or a tab loses its edge entirely. Same weights, day materials. */
+  --je-tab-fill: color-mix(in srgb, var(--lamp-400) 15%, transparent);
+  --je-tab-line: color-mix(in srgb, var(--lamp-400) 34%, transparent);
+  --je-tab-aged-fill: color-mix(in srgb, var(--lamp-400) 8%, transparent);
+  --je-tab-aged-line: color-mix(in srgb, var(--lamp-400) 18%, transparent);
+  --je-tab-open-fill: color-mix(in srgb, var(--lamp-400) 26%, transparent);
+  --je-tab-open-line: color-mix(in srgb, var(--lamp-400) 46%, transparent);
   --je-here-fill: color-mix(in srgb, var(--lamp-400) 16%, transparent);
   --je-here-border: color-mix(in srgb, var(--lamp-400) 38%, transparent);
   --je-hairline: rgba(42, 33, 24, 0.1);
   --je-trail-fill: rgba(42, 33, 24, 0.05);
-  --je-margin-fill: rgba(42, 33, 24, 0.02);
+  --je-grabber: rgba(42, 33, 24, 0.18);
   --je-sheet-lift: 0 -18px 50px rgba(74, 58, 36, 0.2);
 }
 
@@ -556,216 +567,190 @@
    An echo is the journal remembering for you: you write tonight, it reaches back and shows an older
    passage you wrote, and how long ago. It never concludes, advises or grades.
 
-   The colour law is one line — echo = lamp · buy verb = terracotta · brick never. The mark has no
-   motion: it is present when the page loads and does not arrive. Nothing here fades, blurs or greys
-   out a word; where the free reader stops, a lamp rule closes the line and the withheld words are
-   counted out loud. */
+   Two forms, and only two. At rest it is a TAB on the edge of the page — the way you mark a book —
+   24px wide, lamp-tinted, carrying its count and nothing else, and fainter the older the page.
+   Opened it is INK: a mono date hung in the margin, the older words in lamp ink at reading size, and
+   the canvas stays flat. No card, no border, no fill, no glow, no shadow.
 
-/* --- the mark, at rest ------------------------------------------------- */
-.je-mark {
+   The colour law is one line — echo = lamp · buy verb = terracotta · brick never — and terracotta
+   appears on exactly one surface in this file, the One sheet. Nothing here fades, blurs or greys out
+   a word: where a free reader stops, the sentence ends mid-clause and the withheld words are counted
+   out loud. Neither form has motion; a tab is there when the page loads or not at all. */
+
+/* --- the page an echo hangs off ----------------------------------------- */
+/* The tab runs off the right edge of the measure, so the writing has to be pushed clear of it. That
+   inset — and only on pages that actually have a tab — is the one thing echoes take from the page. */
+.journal-page { position: relative; }
+.journal-page:has(.je-tab) { padding-right: 40px; }
+
+/* --- the tab, at rest ---------------------------------------------------- */
+.je-tab {
+  position: absolute;
+  top: -9px;                    /* the tap row is 44px tall; the ink in it is 26px */
+  right: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
-  gap: 9px;
-  height: 44px;                 /* the tap row is 44px; the ink is 22px */
-  margin-top: 2px;
+  height: 44px;
   padding: 0;
   border: 0;
   background: none;
   cursor: pointer;
 }
-.je-mark-bar {
-  width: 2px;
-  height: 22px;
-  border-radius: 2px;
-  background: var(--lamp-400);
+.je-tab-face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 24px;
+  height: 26px;
+  border: 1px solid var(--je-tab-line);
+  border-right: 0;              /* it runs off the edge rather than sitting near it */
+  border-radius: 8px 0 0 8px;
+  background: var(--je-tab-fill);
+  color: var(--lamp-400);
+  font: 700 9px/1 var(--font-mono), ui-monospace, monospace;
+}
+/* Pages older than the one you're on age back. Nothing ever disappears — the edge of the canvas is
+   a map of where you keep circling, and a map does not drop the places you left. */
+.je-tab-aged .je-tab-face {
+  border-color: var(--je-tab-aged-line);
+  background: var(--je-tab-aged-fill);
   opacity: 0.7;
 }
-.je-mark-label {
-  font: 400 10.5px/1 var(--font-mono), ui-monospace, monospace;
-  letter-spacing: 0.11em;
-  color: var(--lamp-400);
-  opacity: 0.8;
+/* Open: the tab is also the close control, and the only thing on the edge that isn't a number. */
+.je-tab-open .je-tab-face {
+  border-color: var(--je-tab-open-line);
+  background: var(--je-tab-open-fill);
 }
-.je-mark-chevron { color: var(--lamp-400); opacity: 0.55; }
-
-/* --- the opened card --------------------------------------------------- */
-.je-card {
-  margin-top: 14px;
-  padding: 15px 16px 16px;
-  border: 1px solid var(--je-card-border);
-  border-radius: 18px;
-  background: var(--je-card-fill);
-}
-/* A page you walked back to holds its echo more quietly — it is not tonight's news. */
-.je-card-walked {
-  padding: 14px 15px;
-  border-radius: 16px;
-  border-color: var(--je-quiet-border);
-  background: var(--je-quiet-fill);
+/* Below the measure's own width the canvas keeps a fixed 22px gutter, and a tab hanging in it reads
+   as a box with a missing border rather than a tab. Run it out to the screen edge, which is where
+   the design draws it — past this width the gutter is the page's, and the tab holds the measure. */
+@media (max-width: 684px) {
+  .je-tab { right: -22px; }
 }
 
-.je-card-position { display: flex; align-items: center; gap: 9px; }
-.je-card-bar {
-  width: 2px;
-  height: 14px;
-  border-radius: 2px;
-  background: var(--lamp-400);
-}
-.je-card-label {
-  font: 400 10px/1 var(--font-mono), ui-monospace, monospace;
-  letter-spacing: 0.11em;
-  color: var(--lamp-400);
-}
-.je-card-close {
-  margin-left: auto;
-  display: inline-flex;
+/* --- the ink ------------------------------------------------------------- */
+.je-ink { display: flex; flex-direction: column; }
+
+.je-ink-row {
+  display: flex;
+  gap: 14px;
+  width: 100%;
+  margin-top: 26px;
   padding: 0;
   border: 0;
   background: none;
-  color: var(--text-tertiary);
+  text-align: left;
   cursor: pointer;
 }
+.je-ink .je-ink-row + .je-ink-row { margin-top: 22px; }
 
-/* Date and distance: the two facts that make an echo useful, and the two that are never withheld. */
-.je-card-when {
+/* The margin does the labelling — date, distance and nothing else — so the passage itself is never
+   interrupted by chrome. */
+.je-ink-margin {
+  flex: none;
   display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 13px;
+  flex-direction: column;
+  width: 46px;
+  padding-top: 5px;
+  font: 400 9px/15px var(--font-mono), ui-monospace, monospace;
+  letter-spacing: 0.05em;
+  color: var(--lamp-400);
 }
-.je-card-date {
-  font: 600 11px/1.2 var(--font-mono), ui-monospace, monospace;
-  letter-spacing: 0.07em;
-  color: var(--text-secondary);
-}
-.je-card-distance {
-  font: 400 12px/1.2 var(--font-body), sans-serif;
-  color: var(--text-tertiary);
-}
-/* Presence is not the harm; misattribution is — a passage that isn't the writer's own says so. */
-.je-attribution {
-  font: 400 11px/1.2 var(--font-body), sans-serif;
-  color: var(--text-tertiary);
-  opacity: 0.85;
-}
+.je-ink-distance { color: var(--text-tertiary); }
+.je-ink-margin-quiet { padding-top: 0; color: var(--text-tertiary); }
 
-.je-card-passage {
-  margin: 9px 0 0;
-  font: 400 15.5px/27px var(--font-body), sans-serif;
-  color: var(--text-primary);
+.je-ink-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+/* Ink is the only signal: tonight is cool --text-primary, anything older is lamp. */
+.je-ink-passage {
+  font: 400 15.5px/28px var(--font-body), sans-serif;
+  color: var(--lamp-200);
 }
-/* The cut: real words at full contrast, stopping mid-clause, closed by a rule. Never a blur — a blur
-   pretends the text is there and unreadable, and a stated count is simply true. */
-.je-cut {
-  display: inline-block;
-  height: 1.5px;
-  margin-left: 7px;
-  vertical-align: 5px;
-  background: var(--lamp-400);
-  opacity: 0.55;
-}
-.je-withheld {
-  margin: 8px 0 0;
+/* The cut, stated. A blur pretends the words are there and unreadable; a count is simply true. */
+.je-ink-withheld {
+  margin-top: 10px;
   font: 400 10px/1 var(--font-mono), ui-monospace, monospace;
   letter-spacing: 0.1em;
-  color: var(--lamp-400);
-  opacity: 0.85;
+  color: var(--lamp-500);
+}
+/* Presence is not the harm; misattribution is — a passage that isn't the writer's own says so. */
+.je-ink-note {
+  margin-top: 6px;
+  font: 400 11px/1.4 var(--font-body), sans-serif;
+  color: var(--text-tertiary);
 }
 
-.je-rest {
-  display: block;
-  width: 100%;
-  margin: 15px 0 0;
-  padding: 13px 0 0;
-  border: 0;
-  border-top: 1px solid var(--je-hairline);
-  background: none;
-  text-align: left;
-  font: 400 12.5px/1.5 var(--font-body), sans-serif;
+/* The others as one run of dates, in mono so it reads as record rather than prose. Every one is a
+   page you can stand on, which is what lets the tab carry a count at all. */
+.je-ink-run {
+  flex: 1;
+  min-width: 0;
+  font: 400 10px/21px var(--font-mono), ui-monospace, monospace;
+  letter-spacing: 0.07em;
   color: var(--text-secondary);
 }
-.je-rest strong { color: var(--text-primary); font-weight: 700; }
-.je-rest-door { cursor: pointer; }
-
-.je-dates { display: flex; flex-direction: column; gap: 1px; margin-top: 9px; }
-.je-date-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  height: 26px;
+.je-ink-date {
   padding: 0;
   border: 0;
   background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
   cursor: pointer;
-  text-align: left;
-}
-.je-date-day {
-  font: 400 10.5px/1 var(--font-mono), ui-monospace, monospace;
-  letter-spacing: 0.07em;
-  color: var(--text-secondary);
-}
-.je-date-distance {
-  font: 400 11.5px/1 var(--font-body), sans-serif;
-  color: var(--text-tertiary);
-}
-/* Where the list stops, it says where it stops — a boundary, never a summary. */
-.je-date-more {
-  margin: 0;
-  padding-top: 6px;
-  font: 400 10.5px/1 var(--font-mono), ui-monospace, monospace;
-  letter-spacing: 0.07em;
-  color: var(--text-tertiary);
-  opacity: 0.8;
 }
 
-/* --- the offer: one sentence, one verb, one decline, and the free path ---- */
-.je-offer {
-  margin-top: 14px;
-  padding-top: 14px;
+/* The free path: the older page is one scroll away and always has been. Naming it costs a few
+   conversions and buys the right to cut at all. */
+.je-free-path {
+  margin: 24px 0 0;
+  padding-top: 15px;
   border-top: 1px solid var(--je-hairline);
+  font: 400 12.5px/20px var(--font-body), sans-serif;
+  color: var(--text-tertiary);
 }
-.je-offer-line {
-  margin: 0;
-  font: 400 13px/21px var(--font-body), sans-serif;
-  color: var(--text-secondary);
+
+/* What is still below the fold, counted rather than guessed, and the one door out of a set that
+   wasn't worth reading. */
+.je-ink-foot {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px max(22px, calc(50% - 320px)) 12px;
+  background: linear-gradient(transparent, var(--surface-canvas) 45%);
+  pointer-events: none;
 }
-.je-offer-buttons { display: flex; align-items: center; gap: 6px; margin-top: 13px; }
-.je-offer-stacked .je-offer-buttons { flex-direction: column; align-items: flex-start; gap: 8px; }
-.je-buy {
-  height: 44px;
-  padding: 0 17px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--accent-terracotta-400);
-  color: #1B1408;
-  font: 800 13.5px/1 var(--font-body), sans-serif;
-  cursor: pointer;
+.je-ink-more {
+  font: 400 10px/1 var(--font-mono), ui-monospace, monospace;
+  letter-spacing: 0.09em;
+  color: var(--text-tertiary);
 }
-.je-offer-stacked .je-buy { height: 40px; padding: 0 16px; font-size: 13px; }
-.je-not-now {
-  height: 44px;
-  padding: 0 14px;
+/* Always present, and it never asks why: no reason picker, no confirm, nothing counting declines. */
+.je-not-useful {
+  padding: 0;
   border: 0;
   background: none;
   color: var(--text-tertiary);
-  font: 700 12.5px/1 var(--font-body), sans-serif;
+  font: 700 12px/1 var(--font-body), sans-serif;
   cursor: pointer;
+  pointer-events: auto;
 }
-.je-offer-stacked .je-not-now { height: auto; padding: 0; font-size: 12px; }
-.je-free-path {
-  margin: 8px 0 0;
-  font: 400 11.5px/18px var(--font-body), sans-serif;
-  color: var(--text-tertiary);
-}
-.je-offer-stacked .je-free-path { margin-top: 10px; }
+/* The way home lifts clear of the footer when a set is open beneath it. */
+.journal-root:has(.je-ink-foot) .je-home { bottom: 58px; }
 
 /* --- said once: the first echo ever ------------------------------------- */
+/* Below tonight's page, never above the cursor, never in the first run. No motion, no celebration,
+   no "unlocked" — flat on the canvas, which is why it carries no border of its own. */
 .je-first {
-  margin-top: 16px;
-  padding: 16px;
-  border: 1px solid var(--je-hairline);
+  margin-top: 26px;
+  padding: 18px 16px;
   border-radius: 16px;
   background: var(--surface-canvas);
 }
@@ -779,214 +764,37 @@
   font: 400 12.5px/20px var(--font-body), sans-serif;
   color: var(--text-secondary);
 }
-.je-first-when {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 13px;
-  padding-top: 12px;
-  border-top: 1px solid var(--je-hairline);
-}
-.je-first-when .je-card-date { font-size: 10.5px; }
-.je-first-when .je-card-distance { font-size: 11.5px; }
-.je-first-passage {
-  margin: 7px 0 0;
-  font: 400 15px/26px var(--font-body), sans-serif;
-  color: var(--text-primary);
-}
+.je-first .je-ink-row { margin-top: 16px; gap: 12px; }
+.je-first .je-ink-margin { width: 44px; padding-top: 4px; }
+.je-first .je-ink-passage { font-size: 15px; line-height: 27px; }
 
-/* --- the panel of all matches (with One) -------------------------------- */
-.je-panel {
-  position: fixed;
-  inset: 0;
-  z-index: 58;
-  display: flex;
-  flex-direction: column;
-  background: var(--surface-canvas);
-  animation: journal-fade-in-up 200ms var(--ease-soft);
-}
-.je-panel-head {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  padding: 14px 22px 0;
-}
-.je-panel-chip {
-  padding: 6px 11px;
-  border-radius: 999px;
-  background: var(--je-chip-fill);
-  color: var(--lamp-400);
-  font: 400 10px/1 var(--font-mono), ui-monospace, monospace;
-  letter-spacing: 0.1em;
-}
-.je-panel-close {
-  display: inline-flex;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--text-tertiary);
-  cursor: pointer;
-}
-.je-panel-body { flex: 1; overflow-y: auto; padding: 16px 22px 0; }
-.je-panel-title {
-  margin: 0;
-  font: 800 21px/1.25 var(--font-display), sans-serif;
-  color: var(--text-primary);
-}
-.je-panel-sub {
-  margin: 5px 0 0;
-  font: 400 12.5px/19px var(--font-body), sans-serif;
-  color: var(--text-tertiary);
-}
-.je-panel-list { display: flex; flex-direction: column; gap: 16px; margin-top: 16px; padding-bottom: 20px; }
-.je-match {
-  display: block;
-  width: 100%;
-  padding: 0;
-  border: 0;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-}
-.je-match-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
-.je-match-bar {
-  align-self: center;
-  width: 2px;
-  height: 13px;
-  border-radius: 2px;
-  background: var(--lamp-400);
-}
-.je-match-bar-quiet { background: var(--lamp-500); }
-.je-match-date {
-  font: 600 10.5px/1.2 var(--font-mono), ui-monospace, monospace;
-  letter-spacing: 0.07em;
-  color: var(--text-secondary);
-}
-.je-match-distance {
-  font: 400 11.5px/1.2 var(--font-body), sans-serif;
-  color: var(--text-tertiary);
-}
-.je-match-passage {
-  display: block;
-  margin-top: 7px;
-  padding-left: 11px;
-  font: 400 15px/26px var(--font-body), sans-serif;
-  color: var(--text-primary);
-}
-/* A match crossing the fold fades — the list is longer than the screen, and says so. */
-.je-match.is-below { opacity: 0.5; }
-.je-panel-foot {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 22px 10px;
-  border-top: 1px solid var(--border-subtle);
-}
-.je-panel-more {
-  font: 400 10px/1 var(--font-mono), ui-monospace, monospace;
-  letter-spacing: 0.09em;
-  color: var(--text-tertiary);
-}
-/* Always present, and it never asks why: no reason picker, no confirm. */
-.je-not-useful {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--text-tertiary);
-  font: 700 12px/1 var(--font-body), sans-serif;
-  cursor: pointer;
-}
-
-/* --- the desktop margin panel ------------------------------------------- */
+/* --- the desktop margin -------------------------------------------------- */
+/* Beside the canvas, never between the writer and the cursor. Same ink, same mono margin column,
+   same cut — the 74px day gutter and the 640px measure are untouched. */
 .je-margin {
   position: fixed;
   top: 0;
   right: 0;
   bottom: 0;
   z-index: 3;
-  width: 308px;
   box-sizing: border-box;
+  width: 300px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 26px 24px;
+  gap: 18px;
+  padding: 26px 22px;
   overflow-y: auto;
   border-left: 1px solid var(--border-subtle);
-  background: var(--je-margin-fill);
+  background: var(--surface-canvas);
 }
-.je-margin-free { gap: 15px; padding: 24px 24px 26px; }
-.je-margin-head { display: flex; align-items: baseline; gap: 8px; }
-.je-margin-title {
-  font: 800 10px/1 var(--font-mono), ui-monospace, monospace;
-  letter-spacing: 0.1em;
-  color: var(--lamp-400);
-}
-.je-margin-count {
-  font: 400 10px/1 var(--font-mono), ui-monospace, monospace;
-  color: var(--text-tertiary);
-}
-.je-margin-sub {
-  margin: -9px 0 0;
-  font: 400 12.5px/19px var(--font-body), sans-serif;
-  color: var(--text-tertiary);
-}
-.je-margin-when {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  width: 100%;
-  padding: 0;
-  border: 0;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-}
-.je-margin-date {
-  font: 600 10px/1.2 var(--font-mono), ui-monospace, monospace;
-  letter-spacing: 0.07em;
-  color: var(--text-secondary);
-}
-.je-margin-distance {
-  font: 400 11px/1.2 var(--font-body), sans-serif;
-  color: var(--text-tertiary);
-}
-.je-margin-passage {
-  margin: 6px 0 0;
-  font: 400 14px/24px var(--font-body), sans-serif;
-  color: var(--text-primary);
-}
-.je-margin .je-withheld { margin-top: 6px; font-size: 9.5px; }
-.je-margin-rest { padding-top: 13px; border-top: 1px solid var(--je-hairline); }
-.je-margin-rest .je-rest { margin: 0 0 9px; padding: 0; border: 0; }
-.je-margin-dates { display: flex; flex-direction: column; gap: 1px; }
-.je-margin-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  height: 25px;
-  padding: 0;
-  border: 0;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-}
-.je-margin-free .je-margin-row { height: 24px; }
-.je-margin-row .je-margin-date { letter-spacing: 0.06em; }
-.je-margin-more {
-  margin: 2px 0 0;
-  font: 400 10px/1 var(--font-mono), ui-monospace, monospace;
-  letter-spacing: 0.06em;
-  color: var(--text-tertiary);
-  opacity: 0.8;
-}
-.je-margin .je-offer { padding-top: 14px; }
+.je-margin .je-ink-row,
+.je-margin .je-ink .je-ink-row + .je-ink-row { margin-top: 0; }
+.je-ink-desk { gap: 12px; }
+.je-ink-desk .je-ink-margin { width: 44px; padding-top: 4px; }
+.je-ink-desk .je-ink-passage { font-size: 14.5px; line-height: 26px; }
+.je-ink-desk .je-ink-withheld { margin-top: 9px; font-size: 9.5px; }
+.je-ink-desk .je-ink-run { font-size: 9.5px; line-height: 19px; letter-spacing: 0.06em; }
+.je-margin .je-free-path { margin-top: 0; padding-top: 14px; font-size: 12px; line-height: 19px; }
 .je-margin-foot {
   margin: auto 0 0;
   padding-top: 16px;
@@ -994,16 +802,19 @@
   color: var(--text-tertiary);
 }
 
-/* The margin panel only exists where there is a margin to put it in. Below this width the echo opens
-   in place, under the paragraph it belongs to, exactly as it does on a phone — the 640px measure is
-   never squeezed to make room for it, and nothing ever stands between the writer and the cursor. */
+/* The margin only exists where there is a margin to put it in. Below this width the ink opens in
+   place, under the paragraph it belongs to — the 640px measure is never squeezed to make room for
+   it, and nothing ever stands between the writer and the cursor. */
 .je-margin { display: none; }
 @media (min-width: 1240px) {
   .je-margin { display: flex; }
-  .journal-root.has-margin .journal-scroll { padding-right: 308px; }
-  .journal-root.has-margin .journal-tools { right: 328px; }
-  .journal-root.has-margin .journal-seat { right: 324px; }
-  .journal-root.has-margin .je-trail { right: 308px; }
+  /* One ink at a time: where the margin holds it, the page does not repeat it. */
+  .je-ink,
+  .je-ink-foot { display: none; }
+  .journal-root.has-margin .journal-scroll { padding-right: 300px; }
+  .journal-root.has-margin .journal-tools { right: 320px; }
+  .journal-root.has-margin .journal-seat { right: 316px; }
+  .journal-root.has-margin .je-trail { right: 300px; }
 }
 
 /* --- walking back: the trail, and the way home -------------------------- */
@@ -1086,9 +897,10 @@
 }
 
 /* --- the One sheet ------------------------------------------------------ */
-/* A sheet, not a page: the canvas stays behind it and the cursor is never lost. */
+/* A sheet, not a page: the canvas stays behind it and the cursor is never lost. This is the one
+   surface in Journal that asks for money, and the only one terracotta is allowed on. */
 .journal-root.is-sheeted .journal-scroll,
-.journal-root.is-sheeted .je-margin { opacity: 0.28; }
+.journal-root.is-sheeted .je-margin { opacity: 0.26; }
 
 .je-sheet-scrim {
   position: fixed;
@@ -1116,34 +928,23 @@
   height: 4px;
   margin: 0 auto;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--je-grabber);
 }
 .je-sheet-title {
   margin: 16px 0 0;
   font: 800 22px/1.25 var(--font-display), sans-serif;
   color: var(--text-primary);
 }
-.je-sheet-cut {
-  margin-top: 14px;
-  padding: 12px 13px;
-  border: 1px solid var(--je-quiet-border);
-  border-radius: 14px;
-  background: var(--je-quiet-fill);
-}
-.je-sheet-cut .je-card-when { margin-top: 0; }
-.je-sheet-cut .je-card-date { font-weight: 400; font-size: 10px; }
-.je-sheet-cut .je-card-distance { font-size: 11px; }
-.je-sheet-passage {
-  margin: 6px 0 0;
-  font: 400 14px/24px var(--font-body), sans-serif;
-  color: var(--text-primary);
-}
-.je-sheet-counts {
-  margin: 6px 0 0;
-  font: 400 9.5px/1 var(--font-mono), ui-monospace, monospace;
-  letter-spacing: 0.1em;
-  color: var(--lamp-400);
-  opacity: 0.85;
+/* Their cut, opened with — because that is what they are buying the end of. */
+.je-ink-sheet { margin-top: 13px; cursor: default; }
+.je-ink-sheet .je-ink-margin { padding-top: 3px; }
+.je-ink-sheet .je-ink-passage { font-size: 14.5px; line-height: 26px; }
+.je-ink-sheet .je-ink-withheld { margin-top: 7px; font-size: 9.5px; }
+/* What is actually sold: not your words — the pass across them. */
+.je-offer-line {
+  margin: 14px 0 0;
+  font: 400 13px/21px var(--font-body), sans-serif;
+  color: var(--text-secondary);
 }
 .je-plan { display: flex; align-items: baseline; gap: 9px; margin-top: 18px; }
 .je-plan-name {
@@ -1197,7 +998,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .je-panel,
   .je-sheet { animation: none; }
 }
 

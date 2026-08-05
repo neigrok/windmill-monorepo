@@ -849,6 +849,26 @@ create table if not exists journal_echo_dismissal (
   primary key (user_id, trigger_hash, match_hash)
 );
 
+-- "Not now." The reader was shown the upgrade offer on this page and declined it. Distinct from the
+-- dismissal above in every way that matters: that one retires ECHOES, this one retires only the
+-- ASKING. Their echoes and their honest cut stay exactly as they were; the page simply stops
+-- selling.
+--
+-- Keyed on the DAY, not on a passage hash, and deliberately: the offer belongs to the page, not to
+-- any pairing on it. Re-derive the page, re-segment it, rewrite every sentence — the reader still
+-- said no to being asked here, and a content hash would put the question back the moment the text
+-- moved. Do not "fix" this into a hash for consistency with journal_echo_dismissal.
+--
+-- And it is SERVER-side, not a localStorage flag, for the same reason: "we asked you to pay and you
+-- said not now" is exactly the answer that has to survive the trip to another device. Per-device
+-- means the same person gets asked again on their phone, which is nagging we do not do.
+create table if not exists journal_echo_offer_dismissal (
+  user_id    uuid not null references users(id) on delete cascade,
+  day        date not null,
+  created_at timestamptz not null default now(),
+  primary key (user_id, day)
+);
+
 -- What happened to this page on its last pass, and what it was judged against. body_stamp_ms is the
 -- page HLC ms the derivation read; corpus_stamp is the user-level corpus stamp (the newest
 -- body_stamp_ms across all their spans) the curation was run against — a page whose echoes were

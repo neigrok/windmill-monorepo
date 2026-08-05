@@ -15,7 +15,8 @@ import { Canvas } from './Canvas.jsx';
 import { SearchOverlay } from './search/SearchOverlay.jsx';
 import { NudgePanel } from './NudgePanel.jsx';
 import { ZoomView } from './zoom/ZoomView.jsx';
-import { EchoPanel, EchoMargin } from './echoes/EchoPanel.jsx';
+import { EchoMargin } from './echoes/EchoMargin.jsx';
+import { InkFooter } from './echoes/Ink.jsx';
 import { EchoTrail, BackToTonight } from './echoes/EchoTrail.jsx';
 import { OneSheet } from './echoes/OneSheet.jsx';
 import { useEchoes } from './echoes/useEchoes.js';
@@ -51,9 +52,11 @@ export function JournalApp({ hash }) {
   const nudge = useNudge();
 
   const focusDate = focusDateOf(hash);
-  const panelPage = echoes.panelDay ? echoes.pageOf(echoes.panelDay) : null;
+  const openPage = echoes.openDay ? echoes.pageOf(echoes.openDay) : null;
   const sheetPage = echoes.sheetDay ? echoes.pageOf(echoes.sheetDay) : null;
-  const marginPage = echoes.followedDay ? echoes.pageOf(echoes.followedDay) : null;
+  // The margin follows the scroll until a tab is opened, and then it holds that page — so the
+  // sentence at its foot ("this panel follows the scroll") stays true of the state it describes.
+  const marginPage = openPage || (echoes.followedDay ? echoes.pageOf(echoes.followedDay) : null);
 
   // ⌘K / Ctrl-K opens search — the one shortcut, never in the writer's way.
   useEffect(() => {
@@ -80,6 +83,7 @@ export function JournalApp({ hash }) {
         onNeedSignIn={openSignInDoor}
       />
       {marginPage && <EchoMargin echoes={echoes} page={marginPage} />}
+      {openPage && <InkFooter echoes={echoes} page={openPage} />}
       <EchoTrail echoes={echoes} current={focusDate || echoes.today} />
       <BackToTonight echoes={echoes} />
       <div className="journal-lamp" aria-hidden="true" />
@@ -129,12 +133,11 @@ export function JournalApp({ hash }) {
         onClose={() => setSearchOpen(false)}
         onSelect={(hit) => { setFlyTo({ ...hit, at: Date.now() }); setSearchOpen(false); }}
       />
-      {panelPage && <EchoPanel echoes={echoes} page={panelPage} />}
       {sheetPage && (
         <OneSheet
           page={sheetPage}
-          today={echoes.today}
           onClose={echoes.closeSheet}
+          onNotNow={() => echoes.retireOffer(sheetPage.day)}
           onNeedSignIn={openSignInDoor}
         />
       )}

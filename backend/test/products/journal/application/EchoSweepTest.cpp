@@ -24,7 +24,7 @@ const std::string kNewLine = "i like kotlin now and the work is finally fun to s
 // A user whose tonight genuinely reaches back: one older page already derived, one page due, and
 // the two lines share a subject and an anchor word. Everything else in a test varies around this.
 void armReachingBack(FakeEchoRepository& echoes, FakeEmbedder& embedder) {
-  echoes.addUser(uid("u1"), Email{"writer@example.com"});
+  echoes.addUser(uid("u1"));
   echoes.plantSpan(uid("u1"), ld(kOldDay), 11, kOldLine, embedder.embed({kOldLine})[0]);
   echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine);
 }
@@ -196,7 +196,7 @@ TEST(a_page_within_the_gap_is_too_near_to_echo) {
   FakeEmbedder embedder;
   FakeCurator curator;
   FakeClock clock;
-  echoes.addUser(uid("u1"), Email{"writer@example.com"});
+  echoes.addUser(uid("u1"));
   echoes.plantSpan(uid("u1"), ld("2026-04-28"), 11, kOldLine, embedder.embed({kOldLine})[0]);
   echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine);   // three days later
 
@@ -213,7 +213,7 @@ TEST(an_empty_page_is_finished_without_spending_anything) {
   FakeEmbedder embedder;
   FakeCurator curator;
   FakeClock clock;
-  echoes.addUser(uid("u1"), Email{"writer@example.com"});
+  echoes.addUser(uid("u1"));
   echoes.addDuePage(uid("u1"), ld(kNewDay), "   \n  ");
 
   EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
@@ -231,7 +231,7 @@ TEST(a_night_stops_at_the_page_budget_and_says_how_much_it_left) {
   FakeEmbedder embedder;
   FakeCurator curator;
   FakeClock clock;
-  echoes.addUser(uid("u1"), Email{"writer@example.com"});
+  echoes.addUser(uid("u1"));
   for (int i = 1; i <= 12; ++i) {
     const std::string day = "2026-06-" + std::string(i < 10 ? "0" : "") + std::to_string(i);
     echoes.addDuePage(uid("u1"), ld(day), kNewLine);

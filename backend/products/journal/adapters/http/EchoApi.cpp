@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cstdint>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -130,6 +131,13 @@ void EchoApi::listEchoes(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
 
   const bool entitled = entitlements_->hasWindmillOne(caller->id, caller->email.value);
 
+  // Which pages the reader has already answered "not now" on. Served rather than remembered by the
+  // device, because a decline that only one device knows about is a decline the next device ignores
+  // — and being asked again on your phone is precisely the nagging this refuses to do.
+  std::set<std::string> offersRetired;
+  for (const LocalDate& day : echoes_->retiredOffers(caller->id, *first, *last))
+    offersRetired.insert(day.iso());
+
   // Grouped by the page that carries them: the canon renders one card per page, and the ordering
   // the repository returns (newest trigger first, then each page's matches newest first) is the
   // order the surface draws.
@@ -147,6 +155,7 @@ void EchoApi::listEchoes(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
       page = Json::Value(Json::objectValue);
       page["day"] = openDay;
       page["entitled"] = entitled;
+      page["offerRetired"] = offersRetired.count(openDay) > 0;
       matches = Json::Value(Json::arrayValue);
     }
     appendMatch(matches, echo, entitled);
@@ -213,6 +222,28 @@ void EchoApi::dismissPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
   // of which can fail on its own and leave the page half faded.
   echoes_->dismissPage(*caller, *trigger);
   cb(noContent());   // idempotent: a page with nothing left to retire dismisses nothing, and says 204
+}
+
+void EchoApi::dismissOffer(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                           const std::string& triggerDay) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to retire an offer"));
+    return;
+  }
+  std::optional<LocalDate> day;
+  try {
+    day = LocalDate{triggerDay};
+  } catch (const InvalidPage&) {
+    cb(error(drogon::k400BadRequest, "bad date"));
+    return;
+  }
+
+  // "Not now" — a different answer from "Not useful", and it costs the reader nothing. The echoes
+  // on this page stay, the honest cut stays, and only the asking stops. Recorded server-side so the
+  // same person is not asked again from their phone.
+  echoes_->dismissOffer(*caller, *day);
+  cb(noContent());   // idempotent: declining twice is declining once
 }
 
 void EchoApi::opened(const drogon::HttpRequestPtr& req, HttpCallback&& cb,

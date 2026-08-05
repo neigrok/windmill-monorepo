@@ -90,6 +90,15 @@ drogon::HttpResponsePtr dismissPage(Harness& h, const std::string& session,
   return captured;
 }
 
+drogon::HttpResponsePtr dismissOffer(Harness& h, const std::string& session,
+                                     const std::string& triggerDay) {
+  drogon::HttpResponsePtr captured;
+  h.api->dismissOffer(
+      request(drogon::Post, "/v1/journal/echoes/" + triggerDay + "/offer/dismiss", "", session),
+      [&](const drogon::HttpResponsePtr& r) { captured = r; }, triggerDay);
+  return captured;
+}
+
 drogon::HttpResponsePtr adminSweep(Harness& h, const drogon::HttpRequestPtr& req) {
   drogon::HttpResponsePtr captured;
   h.api->adminSweep(req, [&](const drogon::HttpResponsePtr& r) { captured = r; });
@@ -152,6 +161,12 @@ unsigned matchesOn(const Json::Value& body, const std::string& day) {
   return 0;
 }
 
+bool offerRetiredOn(const Json::Value& body, const std::string& day) {
+  for (const Json::Value& page : body["pages"])
+    if (page["day"].asString() == day) return page["offerRetired"].asBool();
+  return false;
+}
+
 }
 
 TEST(echoes_needs_a_signed_in_reader) {
@@ -170,6 +185,7 @@ TEST(echoes_are_grouped_by_the_page_that_carries_them) {
   const Json::Value body = listOf(h, "s-live");
   CHECK_EQ(body["pages"].size(), 1u);
   CHECK_EQ(body["pages"][0]["day"].asString(), std::string("2026-05-01"));
+  CHECK(!body["pages"][0]["offerRetired"].asBool());   // nobody has said "not now" here
   CHECK_EQ(body["pages"][0]["matches"].size(), 1u);
   CHECK_EQ(body["pages"][0]["matches"][0]["day"].asString(), std::string("2024-01-01"));
 }
@@ -386,6 +402,86 @@ TEST(a_dismissed_page_stays_dismissed_when_its_passages_move) {
   h.echoes->replaceEchoes(user, ld("2026-05-01"), curated);
 
   CHECK_EQ(matchesOn(listOf(h, "s-live"), "2026-05-01"), 0u);
+}
+
+// "Not now" is a different answer from "Not useful", and it costs the reader nothing: the offer
+// stops, every echo on the page stays. A page whose offer was declined and whose echoes were then
+// silently dropped would be the feature punishing someone for not buying it.
+TEST(declining_the_offer_retires_the_asking_and_not_one_echo) {
+  Harness h;
+  const UserId user = h.signIn("s-live");
+  plantPanel(h, user, "2026-05-01", "2024", 100);
+  CHECK(!offerRetiredOn(listOf(h, "s-live"), "2026-05-01"));
+
+  CHECK_EQ(static_cast<int>(dismissOffer(h, "s-live", "2026-05-01")->statusCode()), 204);
+
+  const Json::Value body = listOf(h, "s-live");
+  CHECK(offerRetiredOn(body, "2026-05-01"));
+  CHECK_EQ(matchesOn(body, "2026-05-01"), 3u);   // the echoes are untouched
+  CHECK(!body["pages"][0]["entitled"].asBool());   // and so is the honest cut
+}
+
+// Served, never remembered by the device. A decline only one device knows about is a decline the
+// next device ignores, and being asked again on your phone is the nagging this refuses to do.
+TEST(the_read_carries_the_offer_state_back_so_no_device_has_to_remember_it) {
+  Harness h;
+  const UserId user = h.signIn("s-live");
+  plantPanel(h, user, "2026-05-01", "2024", 100);
+  plantPanel(h, user, "2026-06-01", "2023", 200);
+  dismissOffer(h, "s-live", "2026-06-01");
+
+  const Json::Value body = listOf(h, "s-live");
+  CHECK(!offerRetiredOn(body, "2026-05-01"));
+  CHECK(offerRetiredOn(body, "2026-06-01"));
+}
+
+TEST(declining_the_offer_twice_says_the_same_thing_the_first_time_did) {
+  Harness h;
+  const UserId user = h.signIn("s-live");
+  plantPanel(h, user, "2026-05-01", "2024", 100);
+
+  CHECK_EQ(static_cast<int>(dismissOffer(h, "s-live", "2026-05-01")->statusCode()), 204);
+  CHECK_EQ(static_cast<int>(dismissOffer(h, "s-live", "2026-05-01")->statusCode()), 204);
+  CHECK_EQ(h.echoes->offersRetired.size(), std::size_t{1});
+  CHECK(offerRetiredOn(listOf(h, "s-live"), "2026-05-01"));
+}
+
+TEST(declining_one_page_s_offer_leaves_another_day_and_another_account_asking) {
+  Harness h;
+  const UserId mine = h.signIn("s-mine", "sam@example.com");
+  const UserId theirs = h.signIn("s-theirs", "ada@example.com");
+  plantPanel(h, mine, "2026-05-01", "2024", 100);
+  plantPanel(h, mine, "2026-06-01", "2023", 200);
+  plantPanel(h, theirs, "2026-05-01", "2024", 300);
+
+  CHECK_EQ(static_cast<int>(dismissOffer(h, "s-mine", "2026-05-01")->statusCode()), 204);
+
+  const Json::Value mineBody = listOf(h, "s-mine");
+  CHECK(offerRetiredOn(mineBody, "2026-05-01"));
+  CHECK(!offerRetiredOn(mineBody, "2026-06-01"));
+  CHECK(!offerRetiredOn(listOf(h, "s-theirs"), "2026-05-01"));   // a forged day reaches nobody else
+}
+
+// The two answers are independent in both directions: retiring the echoes says nothing about the
+// offer, and declining the offer says nothing about the echoes.
+TEST(retiring_a_page_s_echoes_is_not_an_answer_to_the_offer) {
+  Harness h;
+  const UserId user = h.signIn("s-live");
+  plantPanel(h, user, "2026-05-01", "2024", 100);
+
+  CHECK_EQ(static_cast<int>(dismissPage(h, "s-live", "2026-05-01")->statusCode()), 204);
+  CHECK_EQ(h.echoes->offersRetired.size(), std::size_t{0});
+}
+
+TEST(declining_an_offer_needs_a_signed_in_reader) {
+  Harness h;
+  CHECK_EQ(static_cast<int>(dismissOffer(h, "", "2026-05-01")->statusCode()), 401);
+}
+
+TEST(declining_an_offer_on_something_that_is_not_a_date_is_refused) {
+  Harness h;
+  h.signIn("s-live");
+  CHECK_EQ(static_cast<int>(dismissOffer(h, "s-live", "not-a-day")->statusCode()), 400);
 }
 
 TEST(an_admin_sweep_without_a_token_is_refused) {

@@ -1,60 +1,44 @@
 // Every date and every distance an echo renders, in the exact shapes the design names — and nothing
 // else. The server sends ISO days only; the reading of them is ours.
 //
-// Distance is measured FROM the trigger page's day, never from today. An echo on a page you walked
-// back to is "eight months earlier" than THAT page; saying "ago" there would be a claim about where
-// the reader is standing, and the reader is standing in September 2024.
+// Since the edge-tab revision the surface renders no prose distance at all: a distance is a mono
+// stamp in the ink's margin column ("5 MO", "1 Y 2") or a connector in the trail ("18 MO"). That is
+// why there is no "ago" and no "earlier" here any more — a bare span holds wherever the reader is
+// standing, and every span is still measured FROM the trigger page's day, never from today.
 
-const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const SHORT_MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
 
-// Prose spells its numbers; mono counts them. Past twenty an echo is measured in years anyway.
+// Prose spells its numbers; mono counts them. Past twenty a reach is measured in years anyway.
 const SPELLED = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
   'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'];
 
 function parts(iso) {
   const [year, month, day] = iso.split('-').map(Number);
-  return { year, month, day, weekday: WEEKDAYS[new Date(year, month - 1, day).getDay()] };
+  return { year, month, day };
 }
 
 function pad(n) {
   return String(n).padStart(2, '0');
 }
 
-export function spell(n) {
-  return SPELLED[n] ?? String(n);
+// "14 MAR" / "2026" — the two lines the ink's margin column hangs a passage off.
+export function stampStacked(iso) {
+  const { year, month, day } = parts(iso);
+  return { head: `${pad(day)} ${SHORT_MONTHS[month - 1]}`, year: String(year) };
 }
 
-// SAT 14 MARCH 2026 — the opened card's header, the one place the month is written out in mono.
-export function stampLong(iso) {
-  const { year, month, day, weekday } = parts(iso);
-  return `${weekday} ${pad(day)} ${MONTHS[month - 1].toUpperCase()} ${year}`;
+// 02 NOV 25 — the run of other dates, where the column is narrow and the century is not in doubt.
+export function stampCompact(iso) {
+  const { year, month, day } = parts(iso);
+  return `${pad(day)} ${SHORT_MONTHS[month - 1]} ${String(year).slice(-2)}`;
 }
 
-// SAT 14 MAR 2026 — a match row's header in the panel.
-export function stampShort(iso) {
-  const { year, month, day, weekday } = parts(iso);
-  return `${weekday} ${pad(day)} ${SHORT_MONTHS[month - 1]} ${year}`;
-}
-
-// 14 MAR 2026 — every secondary date row, and every date on the desktop margin panel.
+// 14 MAR 2026 — a trail chip, the one place a date is a position you can stand on again.
 export function stampPlain(iso) {
   const { year, month, day } = parts(iso);
   return `${pad(day)} ${SHORT_MONTHS[month - 1]} ${year}`;
-}
-
-// AUGUST 2026 — the header chip.
-export function stampMonth(iso) {
-  const { year, month } = parts(iso);
-  return `${MONTHS[month - 1].toUpperCase()} ${year}`;
-}
-
-// 1 January 2024 — a date inside a sentence, no leading zero.
-export function proseDate(iso) {
-  const { year, month, day } = parts(iso);
-  return `${day} ${MONTHS[month - 1]} ${year}`;
 }
 
 // 14 March — the free path names the page by day and month, because the year is on screen already.
@@ -85,47 +69,19 @@ function weeksApart(olderIso, newerIso) {
   return Math.max(1, Math.round(days / 7));
 }
 
-function plural(n, word) {
-  return `${spell(n)} ${n === 1 ? word : `${word}s`}`;
-}
-
-// "five months" · "one year, two months" — the spoken span both prose distances are built from.
-function spokenSpan(months) {
+// The third line of the ink's margin column: 5 MO, then 1 Y 2 once a year is in it. Nine characters
+// is the whole budget, so the year is a letter and the leftover months lose their unit.
+export function distanceStamp(matchDay, triggerDay) {
+  const months = monthsApart(matchDay, triggerDay);
+  if (!months) return `${weeksApart(matchDay, triggerDay)} WK`;
+  if (months < 12) return `${months} MO`;
   const years = Math.floor(months / 12);
   const rest = months % 12;
-  if (!years) return plural(months, 'month');
-  if (!rest) return plural(years, 'year');
-  return `${plural(years, 'year')}, ${plural(rest, 'month')}`;
+  return rest ? `${years} Y ${rest}` : `${years} Y`;
 }
 
-// On tonight's page: "five months ago". Past a year the design drops the suffix — "one year, two
-// months" — because at that range the word stops adding anything the date didn't already say.
-export function distanceAgo(matchDay, triggerDay) {
-  const months = monthsApart(matchDay, triggerDay);
-  if (!months) return `${plural(weeksApart(matchDay, triggerDay), 'week')} ago`;
-  if (months < 12) return `${spokenSpan(months)} ago`;
-  return spokenSpan(months);
-}
-
-// On a page you walked back to. "Earlier" is not deictic: it holds wherever the reader is standing.
-export function distanceEarlier(matchDay, triggerDay) {
-  const months = monthsApart(matchDay, triggerDay);
-  if (!months) return `${plural(weeksApart(matchDay, triggerDay), 'week')} earlier`;
-  return `${spokenSpan(months)} earlier`;
-}
-
-// The desktop margin panel, where the column is 308px and every word costs a wrap: "five months",
-// then "1 yr 2 mo" once a year is in it.
-export function distanceCompact(matchDay, triggerDay) {
-  const months = monthsApart(matchDay, triggerDay);
-  if (!months) return `${weeksApart(matchDay, triggerDay)} wk`;
-  if (months < 12) return plural(months, 'month');
-  const years = Math.floor(months / 12);
-  const rest = months % 12;
-  return rest ? `${years} yr ${rest} mo` : `${years} yr`;
-}
-
-// The connector between two chips in the trail: 5 MO.
+// The connector between two chips in the trail. It stays in months however far the walk reaches —
+// "18 MO" is the distance of one hop, and a hop is easier to feel in one unit than in two.
 export function distanceTrail(matchDay, triggerDay) {
   const months = monthsApart(matchDay, triggerDay);
   if (!months) return `${weeksApart(matchDay, triggerDay)} WK`;
@@ -136,9 +92,10 @@ export function distanceTrail(matchDay, triggerDay) {
 // match and the trigger day, never asserted: the sentence is only ever as wide as the dates on screen.
 export function reachInWords(oldestDay, triggerDay) {
   const months = monthsApart(oldestDay, triggerDay);
-  if (months < 12) return plural(months, 'month');
+  const spell = (n) => SPELLED[n] ?? String(n);
+  if (months < 12) return `${spell(months)} ${months === 1 ? 'month' : 'months'}`;
   const halves = Math.round(months / 6) / 2;
   const whole = Math.floor(halves);
-  if (halves === whole) return plural(whole, 'year');
+  if (halves === whole) return `${spell(whole)} ${whole === 1 ? 'year' : 'years'}`;
   return `${spell(whole)} and a half years`;
 }

@@ -95,9 +95,23 @@ void registerRoutes(drogon::HttpAppFramework& app, const JournalDeps& deps) {
         echoApi->listEchoes(req, std::move(cb));
       },
       {drogon::Get});
-  // Two dismissal doors, and the difference is the surface's, not a convenience: "Not useful" sits
-  // on the panel and retires the page, while a single pairing is retired by naming both days. Both
-  // land on the same content-hash key, so neither can be undone by inserting a sentence.
+  // Three dismissal doors, and the differences are the surface's, not conveniences. "Not useful"
+  // sits on the panel and retires a whole page's echoes; naming both days retires one pairing; both
+  // land on the same content-hash key, so neither can be undone by inserting a sentence. "Not now"
+  // is a different answer entirely — it retires only the OFFER, keeps every echo, and keys on the
+  // day because the offer belongs to the page.
+  //
+  // ORDER IS LOAD-BEARING HERE. The offer door must be registered BEFORE the pair door, because
+  // drogon matches these patterns in registration order and `{matchDay}` happily binds the literal
+  // "offer". Swapped, /echoes/2026-07-01/offer/dismiss lands in the pair handler and answers 400
+  // "bad date" — measured against the live server, not reasoned about. Do not sort this block.
+  app.registerHandler(
+      "/v1/journal/echoes/{triggerDay}/offer/dismiss",
+      [echoApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                const std::string& triggerDay) {
+        echoApi->dismissOffer(req, std::move(cb), triggerDay);
+      },
+      {drogon::Post});
   app.registerHandler(
       "/v1/journal/echoes/{triggerDay}/dismiss",
       [echoApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb,

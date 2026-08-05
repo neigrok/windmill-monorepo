@@ -126,12 +126,12 @@ EchoView viewFrom(const Row& row, const std::string& matchBody) {
 PgEchoRepository::PgEchoRepository(std::string connString) : connString_(std::move(connString)) {}
 
 std::vector<EchoUser> PgEchoRepository::activeSince(std::uint64_t sinceMs) {
-  // The nightly candidate list: distinct owners of a recently-touched page, carrying the email the
-  // sweep hands to billing. A soft-closed account never comes up — its echoes stop being computed
-  // the moment the grace period starts.
+  // The nightly candidate list: distinct owners of a recently-touched page. The join to users earns
+  // its place on `deleted_at` alone — a soft-closed account never comes up, so its echoes stop being
+  // computed the moment the grace period starts.
   pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result rows = txn.exec_params(
-      "SELECT DISTINCT p.user_id::text AS user_id, u.email::text AS email "
+      "SELECT DISTINCT p.user_id::text AS user_id "
       "FROM journal_page p JOIN users u ON u.id = p.user_id "
       "WHERE u.deleted_at IS NULL "
       "AND (extract(epoch from p.updated_at) * 1000)::bigint > $1",
@@ -139,9 +139,7 @@ std::vector<EchoUser> PgEchoRepository::activeSince(std::uint64_t sinceMs) {
 
   std::vector<EchoUser> users;
   users.reserve(rows.size());
-  for (const auto& row : rows)
-    users.push_back(EchoUser{UserId{row["user_id"].as<std::string>()},
-                             Email{row["email"].as<std::string>()}});
+  for (const auto& row : rows) users.push_back(EchoUser{UserId{row["user_id"].as<std::string>()}});
   return users;
 }
 
@@ -308,6 +306,23 @@ void PgEchoRepository::dismissPage(const UserId& user, const LocalDate& triggerD
   txn.commit();
 }
 
+void PgEchoRepository::dismissOffer(const UserId& user, const LocalDate& day) {
+  // One row per page, and it does not touch journal_echo at all — declining the offer retires the
+  // ASKING, never the echoes. The reader keeps everything they had, including the honest cut; the
+  // page just stops selling.
+  //
+  // Keyed on the day rather than on a passage hash, unlike both dismissal doors above, because the
+  // offer belongs to the page and not to any pairing on it: re-derive the page and the answer still
+  // stands. Aligning this with the other two would put the question back the moment a sentence
+  // moved, which is the nagging the mission rule forbids.
+  pqxx::work txn{pgThreadConnection(connString_)};
+  txn.exec_params(
+      "INSERT INTO journal_echo_offer_dismissal (user_id, day) VALUES ($1::uuid, $2::date) "
+      "ON CONFLICT DO NOTHING",
+      user.str(), day.iso());
+  txn.commit();
+}
+
 void PgEchoRepository::replaceEchoes(const UserId& user, const LocalDate& triggerDay,
                                      const CuratedEchoes& curated) {
   // Replace, additively. What goes is only what can no longer be shown — a row whose trigger or
@@ -437,6 +452,22 @@ std::vector<EchoView> PgEchoRepository::echoesFor(const UserId& user, const Loca
     echoes.push_back(viewFrom(row, body == bodies.end() ? std::string{} : body->second));
   }
   return echoes;
+}
+
+std::vector<LocalDate> PgEchoRepository::retiredOffers(const UserId& user, const LocalDate& from,
+                                                       const LocalDate& to) {
+  // Which pages in view have already been answered with "not now", so the surface can decline to
+  // ask again. A reader who never declined anything reads zero rows here, which is the whole cost.
+  pqxx::work txn{pgThreadConnection(connString_)};
+  pqxx::result rows = txn.exec_params(
+      "SELECT day::text AS day FROM journal_echo_offer_dismissal "
+      "WHERE user_id = $1::uuid AND day BETWEEN $2::date AND $3::date ORDER BY day",
+      user.str(), from.iso(), to.iso());
+
+  std::vector<LocalDate> days;
+  days.reserve(rows.size());
+  for (const auto& row : rows) days.push_back(LocalDate{row["day"].as<std::string>()});
+  return days;
 }
 
 int PgEchoRepository::pagesWritten(const UserId& user) {

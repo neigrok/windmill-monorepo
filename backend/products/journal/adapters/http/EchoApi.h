@@ -39,6 +39,8 @@ public:
                const std::string& triggerDay, const std::string& matchDay);
   void dismissPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                    const std::string& triggerDay);
+  void dismissOffer(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                    const std::string& triggerDay);
   void opened(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
               const std::string& triggerDay, const std::string& matchDay);
   void adminSweep(const drogon::HttpRequestPtr& req, HttpCallback&& cb);

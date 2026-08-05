@@ -11,13 +11,11 @@
 
 namespace wm {
 
-// A candidate user for a nightly pass: someone with recent page activity. The email rode along
-// when the sweep asked billing whether to derive at all; the entitlement gate moved to the read
-// layer and NOTHING reads this field today. It stays only because dropping it is a port change
-// that buys nothing yet — if a second pass over this port is due, drop it then.
+// A candidate user for a nightly pass: someone with recent page activity. Nothing else — the email
+// used to ride along so the sweep could ask billing whether to derive at all, and the entitlement
+// gate has since moved to the read layer, so the sweep needs to know who and not one thing more.
 struct EchoUser {
   UserId user;
-  Email email;
 };
 
 // A page owed a derivation — its body moved past what was last derived from it, or the corpus
@@ -177,6 +175,13 @@ struct EchoRepository {
   // faded is a page that comes back tomorrow still carrying the thing the reader waved away.
   virtual void dismissPage(const UserId& user, const LocalDate& triggerDay) = 0;
 
+  // "Not now" — the reader declined the UPGRADE OFFER on this page. A different gesture entirely
+  // from the two above: their echoes and their honest cut are untouched, the page just stops
+  // selling. Keyed on the day rather than a passage pair BECAUSE the offer belongs to the page and
+  // not to any pairing on it — re-derive the page and the answer still stands, which a content hash
+  // would not survive. Nobody should later align this with the other two doors.
+  virtual void dismissOffer(const UserId& user, const LocalDate& day) = 0;
+
   virtual void replaceEchoes(const UserId& user, const LocalDate& triggerDay,
                              const CuratedEchoes& curated) = 0;
   virtual void recordCuration(const UserId& user, const LocalDate& day,
@@ -188,6 +193,12 @@ struct EchoRepository {
 
   virtual std::vector<EchoView> echoesFor(const UserId& user, const LocalDate& from,
                                           const LocalDate& to) = 0;
+
+  // The days in this range whose offer the reader already declined. Its own call rather than a flag
+  // on EchoView: the answer is one per PAGE, and hanging it off every echo row would invite a
+  // future where two rows on one page disagree about it.
+  virtual std::vector<LocalDate> retiredOffers(const UserId& user, const LocalDate& from,
+                                               const LocalDate& to) = 0;
 
   // How many pages the user has actually written on. The surface owes the reader nothing below a
   // ~20-page corpus floor — no mark and no offer — and a journal with nothing to reach back into

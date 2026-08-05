@@ -1,12 +1,17 @@
 # Echoes
 
-> **Provenance, because the commit trail does not say so.** The bulk of this feature — the schema,
-> the port and adapter, `Passage` / `SpanReconcile` / `EchoSelection`, the rewritten `EchoSweep`,
-> `EchoApi`, the curator, the embedder sidecar, and the web surface — landed in **`c5ff152`**, whose
-> message reads *"journal: one control for light or dark, and it is the one in settings"*. That
-> message describes an unrelated theme change the commit also carried; the two waves were swept
-> together. It was already pushed when this was noticed, so the history is not being rewritten.
-> Anyone bisecting for when echoes arrived should look there and not trust the subject line.
+> **Provenance, because the commit trail does not say so.** This feature was built in one wave but
+> landed inside two commits whose messages describe unrelated appearance work, because a parallel
+> process committed the shared index while this was in flight:
+>
+> - **`c5ff152`** *"journal: one control for light or dark, and it is the one in settings"* — the
+>   schema, port and adapter, `Passage` / `SpanReconcile` / `EchoSelection`, the rewritten
+>   `EchoSweep`, `EchoApi`, the curator, the embedder sidecar, and the first web surface.
+> - **`3c9906e`** *"web: one appearance, chosen once, and journal stops carrying its own switch"* —
+>   the API-gap round: `occurrenceHint`, `pagesWritten`, and the page-level dismissal.
+>
+> Both were already pushed when this was noticed, so the history is not being rewritten. Anyone
+> bisecting for when echoes arrived should look there and not trust either subject line.
 
 ## The idea
 
@@ -253,6 +258,14 @@ create table journal_echo_dismissal (
   primary key (user_id, trigger_hash, match_hash)
 );
 
+-- "Not now". Keyed on the DAY, not on content — the offer belongs to the page, not to a pairing.
+create table journal_echo_offer_dismissal (
+  user_id    uuid not null references users(id) on delete cascade,
+  day        date not null,
+  created_at timestamptz not null default now(),
+  primary key (user_id, day)
+);
+
 create table journal_page_curation (
   user_id       uuid not null references users(id) on delete cascade,
   day           date not null,
@@ -295,13 +308,33 @@ relation between two passages is recomputed from the passages themselves.
 | `GET /v1/journal/echoes?from=&to=` | echoes on pages in the range, grouped by page, owner only |
 | `POST /v1/journal/echoes/:triggerDay/dismiss` | "Not useful" — retire every pairing on this page |
 | `POST /v1/journal/echoes/:triggerDay/:matchDay/dismiss` | retire one passage pair |
-| `POST /v1/journal/echoes/:triggerDay/offer/dismiss` | "Not now" — retire the offer for this page *(not built)* |
+| `POST /v1/journal/echoes/:triggerDay/offer/dismiss` | "Not now" — retire the offer for this page |
 | `POST /v1/journal/echoes/:triggerDay/:matchDay/opened` | the relevance signal (see *Measurement*) |
 | `POST /v1/admin/journal/echo/sweep` | operator rehearsal of one pass, admin token |
 
 "Not useful" is **panel-level on the surface, so it is one request** — nine matches must not cost
 nine round trips, each able to fail on its own and leave a page half faded. Both dismissal doors
 write the same content-hash key, and both answer 204 however many times they are pressed.
+
+**"Not now" is a different answer and costs the reader nothing.** It retires the *offer*, never the
+echoes: the page keeps every match and its honest cut, and only stops selling. Two decisions in its
+shape are deliberate and should not be tidied away:
+
+- **It is server-side, not a device flag.** "We asked you to pay and you said not now" is precisely
+  the answer that has to survive the trip to another device. A `localStorage` flag means the same
+  person is asked again on their phone, which is manufactured nagging and the mission rule forbids it.
+- **It keys on the DAY, not on a passage hash** — unlike both dismissal doors, and on purpose. The
+  offer belongs to the page, not to any pairing on it, so re-deriving or rewriting the page must not
+  put the question back. Aligning it with `journal_echo_dismissal` "for consistency" would restore
+  exactly the nagging the first point rules out.
+
+The read carries the answer back per page as `offerRetired`, so the surface never has to remember
+it locally — which was the whole problem.
+
+**Route order is load-bearing.** `/:triggerDay/offer/dismiss` must be registered *before*
+`/:triggerDay/:matchDay/dismiss`: drogon matches these in registration order and `{matchDay}` binds
+the literal `offer` quite happily, so the swapped order answers a decline with `400 bad date`.
+Measured against the running server, not reasoned about.
 
 The read sends passage **text and ISO days**, never an offset — the client re-locates by text and
 formats distance itself. Offsets are byte counts and the browser slices UTF-16 code units; the two
@@ -455,6 +488,21 @@ are corrected in the same wave.
 3. **A quote is re-located and verified in the live page at render, or not shown.** Verified means
    the span's text still hashes to what the echo was built from — locating alone is not enough,
    because after an edit the wrong text locates successfully.
+
+## Known follow-ups in the build
+
+Not defects, and neither blocks anything. Recorded so the next reader finds them here rather than
+rediscovering them.
+
+1. **The pair-level dismiss is shaped unlike its two neighbours.** `dismissPage` and `dismissOffer`
+   are each one statement; the pair door instead reads the page back through `echoesFor` to turn two
+   days into a span pair, then writes one row per match. Bounded (one page's matches) and correct,
+   and it needlessly recomputes the anchoring hints it throws away. The tidy version is a
+   `dismissPair(user, triggerDay, matchDay)` on the repository, replacing today's span-id `dismiss`.
+   Deliberately deferred: the surface is being rebuilt against v2 of the design and the churn buys
+   nothing this week.
+2. **`EchoRepository::dismiss` has exactly one production caller** and exists only to serve the
+   above. It goes away with it.
 
 ## Filed back to design
 

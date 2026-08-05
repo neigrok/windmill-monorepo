@@ -17,6 +17,8 @@ import { PageEchoes } from './echoes/PageEchoes.jsx';
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
 
+const SETTLE_FRAMES = 6;   // how long a flight keeps correcting while the canvas grows under it
+
 function wordCount(body) {
   const trimmed = body.trim();
   return trimmed ? trimmed.split(/\s+/).length : 0;
@@ -76,6 +78,11 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, onNeedSi
   // matched passage for a beat — a position, never a detail view. A hit older than the
   // rendered window is loaded first (extendTo), then scrolled once it's in the DOM; a hit
   // on today lands in the composer, its span selected, since today is a field not prose.
+  //
+  // Loading months of history PREPENDS them above the target, which slides it out from under the
+  // flight while it is in the air — so keep re-aiming for a few frames rather than firing once and
+  // hoping the layout was finished. A hundred milliseconds of correction nobody can see, versus
+  // landing at the bottom of the canvas roughly half the time.
   useEffect(() => {
     if (!flyTo || loading) return;
     let cancelled = false;
@@ -84,9 +91,14 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, onNeedSi
     (async () => {
       await extendTo(flyTo.day);
       if (cancelled) return;
-      requestAnimationFrame(() => {
+      const aim = (frames) => {
         if (cancelled) return;
         scrollToDay(flyTo.day, 'center');
+        if (frames > 0) requestAnimationFrame(() => aim(frames - 1));
+      };
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+        aim(SETTLE_FRAMES);
         if (hasSpan && flyTo.day === today && textareaRef.current) {
           const field = textareaRef.current;
           field.focus({ preventScroll: true });
@@ -97,6 +109,10 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, onNeedSi
     const fade = hasSpan ? setTimeout(() => setHighlight(null), 2600) : null;
     return () => { cancelled = true; if (fade) clearTimeout(fade); };
   }, [flyTo, loading, extendTo, today]);
+
+  // The page you are standing on — its tab burns at full weight, every other page's has aged. The
+  // edge of the canvas is a map of where you keep circling, and the map says where you are.
+  const standingOn = focusDate || today;
 
   const rendered = [];
   let lastMonth = null;
@@ -114,6 +130,7 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, onNeedSi
         born={isBorn(day.date)}
         highlight={dayHighlight}
         echoes={echoes}
+        standing={day.date === standingOn}
       />,
     );
   }
@@ -135,17 +152,19 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, onNeedSi
             isToday
             trailing={<SavedNote state={saveState} tick={saveTick} />}
           />
-          <textarea
-            ref={textareaRef}
-            className="journal-input"
-            rows={1}
-            value={body}
-            onChange={(event) => setBody(event.target.value)}
-            placeholder={firstRun ? 'Start anywhere. Nothing here is graded.' : ''}
-            aria-label="Write today"
-            spellCheck
-          />
-          {echoes && <PageEchoes echoes={echoes} day={today} />}
+          <div className="journal-page">
+            <textarea
+              ref={textareaRef}
+              className="journal-input"
+              rows={1}
+              value={body}
+              onChange={(event) => setBody(event.target.value)}
+              placeholder={firstRun ? 'Start anywhere. Nothing here is graded.' : ''}
+              aria-label="Write today"
+              spellCheck
+            />
+            {echoes && <PageEchoes echoes={echoes} day={today} standing={today === standingOn} />}
+          </div>
           <div className="journal-controls">
             <MoodDots value={mood} onChange={toggleMood} />
             <EnergyBars value={energy} onChange={toggleEnergy} />
@@ -166,16 +185,19 @@ function MonthDivider({ iso }) {
   return <div className="journal-month">{MONTHS[month - 1]} {year}</div>;
 }
 
-// The echo mark belongs UNDER the paragraph it points at — never above the cursor, never a badge on
-// the day chip — so it is the last thing in the block, after the writing it reaches back from.
-function DayBlock({ day, born, highlight = null, echoes = null }) {
+// The writing and its echoes share one positioning context — .journal-page — because an echo's tab
+// hangs off the right edge of the paragraph it belongs to, and its ink opens directly under it.
+// Nothing an echo draws is ever above the cursor or on the day chip.
+function DayBlock({ day, born, highlight = null, echoes = null, standing = false }) {
   return (
     <article className={'journal-day' + (born ? ' journal-born' : '')} data-date={day.date}>
       <DayMarker date={day.date} mood={day.mood} energy={day.energy} written={day.written} wordCount={wordCount(day.body)} />
-      {day.written
-        ? <div className="journal-prose">{highlight ? markSpan(day.body, highlight) : day.body}</div>
-        : <div className="journal-gap">nothing written</div>}
-      {echoes && <PageEchoes echoes={echoes} day={day.date} />}
+      <div className="journal-page">
+        {day.written
+          ? <div className="journal-prose">{highlight ? markSpan(day.body, highlight) : day.body}</div>
+          : <div className="journal-gap">nothing written</div>}
+        {echoes && <PageEchoes echoes={echoes} day={day.date} standing={standing} />}
+      </div>
     </article>
   );
 }

@@ -36,8 +36,8 @@ void reset() {
   for (const std::string& user : {kMine, kTheirs}) {
     w.exec("INSERT INTO users (id, email) VALUES ('" + user + "', 'echo-" + user.substr(0, 4) +
            "@example.com') ON CONFLICT (id) DO NOTHING");
-    for (const std::string& table :
-         {"journal_echo_dismissal", "journal_echo", "journal_span", "journal_page"})
+    for (const std::string& table : {"journal_echo_offer_dismissal", "journal_echo_dismissal",
+                                     "journal_echo", "journal_span", "journal_page"})
       w.exec("DELETE FROM " + table + " WHERE user_id = '" + user + "'");
   }
   w.commit();
@@ -215,6 +215,69 @@ TEST(pg_echo_dismissing_a_page_leaves_another_day_and_another_account_untouched)
   CHECK_EQ(echoesOn(repo, kMine, "2026-05-01").size(), std::size_t{0});
   CHECK_EQ(echoesOn(repo, kMine, "2026-06-01").size(), std::size_t{3});
   CHECK_EQ(echoesOn(repo, kTheirs, "2026-05-01").size(), std::size_t{3});   // a forged day reaches nobody else
+}
+
+// "Not now" retires the ASKING and nothing else — the echoes on that page are still there — and it
+// survives a re-derivation, which is the whole reason it keys on the day rather than on a hash of
+// text that is about to move.
+TEST(pg_echo_declining_the_offer_keeps_every_echo_and_outlives_a_re_derivation) {
+  if (!std::getenv("WM_PG_TEST")) return;
+  reset();
+  PgEchoRepository repo{connString()};
+  plantPanel(repo, kMine, "2026-05-01", 100);
+  CHECK_EQ(repo.retiredOffers(UserId{kMine}, LocalDate{"0001-01-01"}, LocalDate{"9999-12-31"}).size(),
+           std::size_t{0});
+
+  repo.dismissOffer(UserId{kMine}, LocalDate{"2026-05-01"});
+  repo.dismissOffer(UserId{kMine}, LocalDate{"2026-05-01"});   // declining twice is declining once
+
+  CHECK_EQ(echoesOn(repo, kMine, "2026-05-01").size(), std::size_t{3});   // not one echo lost
+  std::vector<LocalDate> retired =
+      repo.retiredOffers(UserId{kMine}, LocalDate{"2026-01-01"}, LocalDate{"2026-12-31"});
+  CHECK_EQ(retired.size(), std::size_t{1});
+  CHECK_EQ(retired[0].iso(), std::string("2026-05-01"));
+
+  // The page is re-derived from scratch: new span ids, new offsets, every sentence rewritten.
+  const std::string rewritten = "a completely different sentence tonight, nothing like the last.";
+  writePage(kMine, "2026-05-01", rewritten);
+  repo.replaceSpans(UserId{kMine}, LocalDate{"2026-05-01"}, {span(900, 0, 0, rewritten)}, "v1", 2);
+
+  CHECK_EQ(repo.retiredOffers(UserId{kMine}, LocalDate{"2026-01-01"}, LocalDate{"2026-12-31"}).size(),
+           std::size_t{1});   // the reader still said no to being asked here
+}
+
+TEST(pg_echo_declining_one_offer_leaves_another_day_and_another_account_asking) {
+  if (!std::getenv("WM_PG_TEST")) return;
+  reset();
+  PgEchoRepository repo{connString()};
+  plantPanel(repo, kMine, "2026-05-01", 100);
+  plantPanel(repo, kMine, "2026-06-01", 200);
+  plantPanel(repo, kTheirs, "2026-05-01", 300);
+
+  repo.dismissOffer(UserId{kMine}, LocalDate{"2026-05-01"});
+
+  std::vector<LocalDate> mine =
+      repo.retiredOffers(UserId{kMine}, LocalDate{"0001-01-01"}, LocalDate{"9999-12-31"});
+  CHECK_EQ(mine.size(), std::size_t{1});
+  CHECK_EQ(mine[0].iso(), std::string("2026-05-01"));
+  CHECK_EQ(repo.retiredOffers(UserId{kTheirs}, LocalDate{"0001-01-01"}, LocalDate{"9999-12-31"}).size(),
+           std::size_t{0});
+  // and the window is honoured, so a read of June alone never sees May's answer
+  CHECK_EQ(repo.retiredOffers(UserId{kMine}, LocalDate{"2026-06-01"}, LocalDate{"2026-06-30"}).size(),
+           std::size_t{0});
+}
+
+// The two answers are independent: retiring a page's echoes is not an answer to the offer.
+TEST(pg_echo_retiring_a_pages_echoes_writes_no_offer_row) {
+  if (!std::getenv("WM_PG_TEST")) return;
+  reset();
+  PgEchoRepository repo{connString()};
+  plantPanel(repo, kMine, "2026-05-01", 100);
+
+  repo.dismissPage(UserId{kMine}, LocalDate{"2026-05-01"});
+
+  CHECK_EQ(repo.retiredOffers(UserId{kMine}, LocalDate{"0001-01-01"}, LocalDate{"9999-12-31"}).size(),
+           std::size_t{0});
 }
 
 // Keyed on what the passages SAY. The night re-derives the page with brand new span ids and every
