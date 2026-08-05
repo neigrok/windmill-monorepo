@@ -6,6 +6,7 @@
 #include "platform/ports/EmailSender.h"
 #include "platform/ports/McpKeyRepository.h"
 #include "platform/ports/OAuthRepository.h"
+#include "platform/ports/SubscriptionRepository.h"
 #include "platform/ports/TokenGenerator.h"
 
 #include <algorithm>
@@ -401,6 +402,29 @@ struct FakeOAuthRepository : OAuthRepository {
       if (match(it->second)) it = codes.erase(it);
       else ++it;
     }
+  }
+};
+
+// The billing mirror every access gate reads: one row per user, whatever status the test plants.
+// Nothing here knows the access rule — that is Entitlements' alone. `subscribe` defaults to the
+// live status, so a test that only needs "this account pays" says so in one word.
+struct FakeSubscriptionRepository : SubscriptionRepository {
+  std::map<std::string, PaddleSubscription> byUser;
+
+  void upsertCustomer(const PaddleCustomer&) override {}
+  void upsertSubscription(const PaddleSubscription& subscription) override {
+    byUser[subscription.userId] = subscription;
+  }
+  std::optional<PaddleSubscription> findFor(const UserId& user, const std::string&) override {
+    auto it = byUser.find(user.str());
+    if (it == byUser.end()) return std::nullopt;
+    return it->second;
+  }
+  void subscribe(const UserId& user, const std::string& status = "active") {
+    PaddleSubscription subscription;
+    subscription.userId = user.str();
+    subscription.status = status;
+    byUser[user.str()] = subscription;
   }
 };
 

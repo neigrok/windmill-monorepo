@@ -1,7 +1,7 @@
 #include "products/roadmap/adapters/http/OgVideoApi.h"
 
-#include "test/application/AuthFakes.h"
-#include "test/application/Fakes.h"
+#include "test/platform/Fakes.h"
+#include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
 
 #include <memory>

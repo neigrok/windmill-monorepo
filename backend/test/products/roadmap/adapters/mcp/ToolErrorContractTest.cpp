@@ -2,7 +2,7 @@
 #include "products/roadmap/adapters/mcp/RoadmapResources.h"
 #include "products/roadmap/adapters/mcp/ToolArgs.h"
 #include "products/roadmap/domain/Command.h"
-#include "test/adapters/mcp/ToolsHarness.h"
+#include "test/products/roadmap/adapters/mcp/ToolsHarness.h"
 
 #include "test/testing.h"
 

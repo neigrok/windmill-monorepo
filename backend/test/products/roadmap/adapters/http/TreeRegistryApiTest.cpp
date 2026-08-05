@@ -2,8 +2,8 @@
 
 #include "products/roadmap/adapters/json/TreeJson.h"
 #include "products/roadmap/application/RoomRegistry.h"
-#include "test/application/AuthFakes.h"
-#include "test/application/Fakes.h"
+#include "test/platform/Fakes.h"
+#include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
 
 #include <optional>

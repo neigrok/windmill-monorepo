@@ -1,6 +1,6 @@
 #include "platform/adapters/email/ResendWebhookApi.h"
 
-#include "test/application/AuthFakes.h"
+#include "test/platform/Fakes.h"
 #include "test/testing.h"
 
 #include <drogon/utils/Utilities.h>

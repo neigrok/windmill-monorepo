@@ -1,6 +1,6 @@
 #include "products/journal/application/NudgeSweep.h"
 
-#include "test/application/AuthFakes.h"
+#include "test/platform/Fakes.h"
 #include "test/products/journal/Fakes.h"
 #include "test/testing.h"
 

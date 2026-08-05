@@ -1,47 +1,25 @@
 #include "platform/application/Entitlements.h"
 
+#include "test/platform/Fakes.h"
 #include "test/testing.h"
 
-#include <map>
-#include <optional>
 #include <string>
 
 using namespace wm;
+using namespace wm::fake;
 
 namespace {
 
-// A minimal billing mirror: one row per user, whatever status the test plants. Nothing here knows
-// the access rule — that is exactly what Entitlements is being asked to own.
-struct FakeSubscriptions : SubscriptionRepository {
-  std::map<std::string, PaddleSubscription> byUser;
-
-  void upsertCustomer(const PaddleCustomer&) override {}
-  void upsertSubscription(const PaddleSubscription& subscription) override {
-    byUser[subscription.userId] = subscription;
-  }
-  std::optional<PaddleSubscription> findFor(const UserId& user, const std::string&) override {
-    auto it = byUser.find(user.str());
-    if (it == byUser.end()) return std::nullopt;
-    return it->second;
-  }
-  void plant(const UserId& user, const std::string& status) {
-    PaddleSubscription subscription;
-    subscription.userId = user.str();
-    subscription.status = status;
-    byUser[user.str()] = subscription;
-  }
-};
-
 bool holds(const std::string& status) {
-  FakeSubscriptions subs;
-  subs.plant(UserId{"u"}, status);
+  FakeSubscriptionRepository subs;
+  subs.subscribe(UserId{"u"}, status);
   return Entitlements{subs}.hasWindmillOne(UserId{"u"}, "u@example.com");
 }
 
 }
 
 TEST(an_account_with_no_mirrored_subscription_holds_nothing) {
-  FakeSubscriptions subs;
+  FakeSubscriptionRepository subs;
   CHECK_EQ(Entitlements{subs}.hasWindmillOne(UserId{"u"}, "u@example.com"), false);
 }
 

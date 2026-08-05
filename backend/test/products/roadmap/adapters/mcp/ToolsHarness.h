@@ -7,8 +7,8 @@
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/domain/LooseGraph.h"
 #include "platform/ports/Clock.h"
-#include "test/application/AuthFakes.h"
-#include "test/application/Fakes.h"
+#include "test/platform/Fakes.h"
+#include "test/products/roadmap/Fakes.h"
 
 #include <string>
 #include <vector>

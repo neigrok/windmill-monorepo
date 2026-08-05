@@ -1,7 +1,7 @@
 #include "platform/adapters/http/FeedbackApi.h"
 
-#include "products/roadmap/adapters/json/TreeJson.h"
-#include "test/application/AuthFakes.h"
+#include "platform/adapters/json/JsonText.h"
+#include "test/platform/Fakes.h"
 #include "test/testing.h"
 
 #include <optional>

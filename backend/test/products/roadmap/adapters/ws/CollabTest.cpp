@@ -8,8 +8,8 @@
 #include "products/roadmap/application/RoomRegistry.h"
 #include "platform/domain/Access.h"
 #include "products/roadmap/domain/Subgraph.h"
-#include "test/application/AuthFakes.h"
-#include "test/application/Fakes.h"
+#include "test/platform/Fakes.h"
+#include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
 
 #include <trantor/net/InetAddress.h>

@@ -1,5 +1,5 @@
 #include "platform/application/AuthService.h"
-#include "test/application/AuthFakes.h"
+#include "test/platform/Fakes.h"
 #include "test/testing.h"
 
 using namespace wm;

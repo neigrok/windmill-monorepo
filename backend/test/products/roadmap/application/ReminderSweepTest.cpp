@@ -1,7 +1,7 @@
 #include "products/roadmap/application/ReminderSweep.h"
 
-#include "test/application/AuthFakes.h"
-#include "test/application/ReminderFakes.h"
+#include "test/platform/Fakes.h"
+#include "test/products/roadmap/ReminderFakes.h"
 #include "test/testing.h"
 
 #include <cstdint>

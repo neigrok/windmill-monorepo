@@ -108,38 +108,38 @@ target_link_libraries(windmill_platform PUBLIC Trantor::Trantor JsonCpp::JsonCpp
 
 add_executable(windmill_domain_tests
   test/main.cpp
-  test/domain/AccessTest.cpp
-  test/domain/LooseGraphTest.cpp
-  test/domain/LegendTest.cpp
-  test/domain/SubgraphTest.cpp
-  test/domain/CommandTest.cpp
-  test/domain/NodeQueryTest.cpp
-  test/domain/TreeDiagnosticsTest.cpp
-  test/domain/SkillTreeTest.cpp
-  test/domain/TrunkTreeTest.cpp
-  test/domain/UnlockRulesTest.cpp
-  test/domain/TreeHealthTest.cpp
-  test/domain/TreeSummaryTest.cpp
-  test/domain/GalleryTest.cpp
-  test/application/TreeRegistryTest.cpp
-  test/application/ForkServiceTest.cpp
-  test/application/TreeRoomTest.cpp
-  test/application/RoomRegistryTest.cpp
-  test/application/ProgressServiceTest.cpp
-  test/application/ActivityFeedTest.cpp
-  test/domain/AuthTest.cpp
-  test/domain/MailTest.cpp
-  test/application/AuthServiceTest.cpp
-  test/application/EntitlementsTest.cpp
-  test/domain/OAuthTest.cpp
-  test/application/OAuthServiceTest.cpp
-  test/application/McpKeyServiceTest.cpp
-  test/application/ScopedToolHostTest.cpp
-  test/application/TendingServiceTest.cpp
-  test/domain/TendingTest.cpp
-  test/domain/TreeTest.cpp
-  test/domain/RemindersTest.cpp
-  test/application/ReminderSweepTest.cpp
+  test/platform/domain/AccessTest.cpp
+  test/platform/domain/AuthTest.cpp
+  test/platform/domain/MailTest.cpp
+  test/platform/domain/OAuthTest.cpp
+  test/platform/application/AuthServiceTest.cpp
+  test/platform/application/EntitlementsTest.cpp
+  test/platform/application/OAuthServiceTest.cpp
+  test/platform/application/McpKeyServiceTest.cpp
+  test/products/roadmap/domain/LooseGraphTest.cpp
+  test/products/roadmap/domain/LegendTest.cpp
+  test/products/roadmap/domain/SubgraphTest.cpp
+  test/products/roadmap/domain/CommandTest.cpp
+  test/products/roadmap/domain/NodeQueryTest.cpp
+  test/products/roadmap/domain/TreeDiagnosticsTest.cpp
+  test/products/roadmap/domain/SkillTreeTest.cpp
+  test/products/roadmap/domain/TrunkTreeTest.cpp
+  test/products/roadmap/domain/UnlockRulesTest.cpp
+  test/products/roadmap/domain/TreeHealthTest.cpp
+  test/products/roadmap/domain/TreeSummaryTest.cpp
+  test/products/roadmap/domain/GalleryTest.cpp
+  test/products/roadmap/domain/TendingTest.cpp
+  test/products/roadmap/domain/TreeTest.cpp
+  test/products/roadmap/domain/RemindersTest.cpp
+  test/products/roadmap/application/TreeRegistryTest.cpp
+  test/products/roadmap/application/ForkServiceTest.cpp
+  test/products/roadmap/application/TreeRoomTest.cpp
+  test/products/roadmap/application/RoomRegistryTest.cpp
+  test/products/roadmap/application/ProgressServiceTest.cpp
+  test/products/roadmap/application/ActivityFeedTest.cpp
+  test/products/roadmap/application/ScopedToolHostTest.cpp
+  test/products/roadmap/application/TendingServiceTest.cpp
+  test/products/roadmap/application/ReminderSweepTest.cpp
   test/products/journal/domain/PageTest.cpp
   test/products/journal/domain/NudgePlanTest.cpp
   test/products/journal/domain/EchoFinderTest.cpp
@@ -281,11 +281,11 @@ if(Drogon_FOUND AND libpqxx_FOUND)
 
   add_executable(windmill_mcp_tests
     test/main.cpp
-    test/adapters/mcp/McpServerTest.cpp
-    test/adapters/mcp/RoadmapToolsTest.cpp
-    test/adapters/mcp/ToolErrorContractTest.cpp
-    test/adapters/mcp/WireCorpusTest.cpp
-    test/adapters/mcp/McpHttpEndpointTest.cpp)
+    test/platform/adapters/mcp/McpServerTest.cpp
+    test/platform/adapters/mcp/McpHttpEndpointTest.cpp
+    test/products/roadmap/adapters/mcp/RoadmapToolsTest.cpp
+    test/products/roadmap/adapters/mcp/ToolErrorContractTest.cpp
+    test/products/roadmap/adapters/mcp/WireCorpusTest.cpp)
   target_link_libraries(windmill_mcp_tests PRIVATE windmill_roadmap)
   # The golden MCP wire (WireCorpusTest) lives beside the roadmap tools and is byte-compared against
   # a fresh transcript; the source path is handed in so the check finds it from any build tree.
@@ -295,29 +295,29 @@ if(Drogon_FOUND AND libpqxx_FOUND)
 
   add_executable(windmill_adapters_tests
     test/main.cpp
-    test/adapters/json/SubgraphJsonTest.cpp
-    test/adapters/json/TreeJsonTest.cpp
-    test/adapters/http/EventsApiTest.cpp
-    test/adapters/http/FeedbackApiTest.cpp
-    test/adapters/http/ComposeApiTest.cpp
-    test/adapters/http/RateLimiterTest.cpp
-    test/adapters/http/HttpApiTest.cpp
-    test/adapters/http/SharePageApiTest.cpp
-    test/adapters/http/GalleryApiTest.cpp
-    test/adapters/http/OgImageApiTest.cpp
-    test/adapters/http/OgVideoApiTest.cpp
-    test/adapters/http/TreeRegistryApiTest.cpp
-    test/adapters/http/RemindersApiTest.cpp
-    test/adapters/http/VendorCallTest.cpp
-    test/adapters/ws/CollabTest.cpp
-    test/adapters/email/ResendEmailSenderTest.cpp
-    test/adapters/email/ResendSignatureTest.cpp
-    test/adapters/email/ResendWebhookApiTest.cpp
-    test/adapters/sentry/LogTeeTest.cpp
-    test/adapters/http/AccessLogTest.cpp
-    test/adapters/paddle/PaddleSignatureTest.cpp
-    test/adapters/llm/AnthropicComposerTest.cpp
-    test/adapters/llm/AnthropicAgentTest.cpp
+    test/platform/adapters/http/EventsApiTest.cpp
+    test/platform/adapters/http/FeedbackApiTest.cpp
+    test/platform/adapters/http/RateLimiterTest.cpp
+    test/platform/adapters/http/VendorCallTest.cpp
+    test/platform/adapters/http/AccessLogTest.cpp
+    test/platform/adapters/email/ResendEmailSenderTest.cpp
+    test/platform/adapters/email/ResendSignatureTest.cpp
+    test/platform/adapters/email/ResendWebhookApiTest.cpp
+    test/platform/adapters/sentry/LogTeeTest.cpp
+    test/platform/adapters/paddle/PaddleSignatureTest.cpp
+    test/products/roadmap/adapters/json/SubgraphJsonTest.cpp
+    test/products/roadmap/adapters/json/TreeJsonTest.cpp
+    test/products/roadmap/adapters/http/ComposeApiTest.cpp
+    test/products/roadmap/adapters/http/HttpApiTest.cpp
+    test/products/roadmap/adapters/http/SharePageApiTest.cpp
+    test/products/roadmap/adapters/http/GalleryApiTest.cpp
+    test/products/roadmap/adapters/http/OgImageApiTest.cpp
+    test/products/roadmap/adapters/http/OgVideoApiTest.cpp
+    test/products/roadmap/adapters/http/TreeRegistryApiTest.cpp
+    test/products/roadmap/adapters/http/RemindersApiTest.cpp
+    test/products/roadmap/adapters/ws/CollabTest.cpp
+    test/products/roadmap/adapters/llm/AnthropicComposerTest.cpp
+    test/products/roadmap/adapters/llm/AnthropicAgentTest.cpp
     test/products/journal/adapters/http/JournalApiTest.cpp
     test/products/journal/adapters/http/NudgeApiTest.cpp
     test/products/journal/adapters/http/EchoApiTest.cpp

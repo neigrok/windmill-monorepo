@@ -1,4 +1,4 @@
-#include "test/adapters/mcp/ToolsHarness.h"
+#include "test/products/roadmap/adapters/mcp/ToolsHarness.h"
 
 #include "test/testing.h"
 

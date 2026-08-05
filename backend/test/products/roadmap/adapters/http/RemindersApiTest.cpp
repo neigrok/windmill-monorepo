@@ -1,8 +1,8 @@
 #include "products/roadmap/adapters/http/RemindersApi.h"
 
 #include "products/roadmap/adapters/json/TreeJson.h"
-#include "test/application/AuthFakes.h"
-#include "test/application/ReminderFakes.h"
+#include "test/platform/Fakes.h"
+#include "test/products/roadmap/ReminderFakes.h"
 #include "test/testing.h"
 
 #include <cstdint>

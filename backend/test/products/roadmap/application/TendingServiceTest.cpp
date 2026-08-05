@@ -1,8 +1,7 @@
 #include "products/roadmap/application/TendingService.h"
 
 #include "platform/application/Entitlements.h"
-#include "platform/ports/SubscriptionRepository.h"
-#include "test/application/AuthFakes.h"
+#include "test/platform/Fakes.h"
 #include "test/testing.h"
 
 #include <algorithm>
@@ -103,28 +102,6 @@ struct FakePlanAgent : PlanAgent {
     if (onRun) onRun();
     if (shouldThrow) throw std::runtime_error(throwWhat);
     return outcome;
-  }
-};
-
-// The billing mirror the allowance reads to tell Free from Pro. A user with no row is Free; one
-// granted Pro carries a live `active` status, the same predicate (grantsAccess) production reads.
-struct FakeSubscriptionRepository : SubscriptionRepository {
-  std::map<std::string, PaddleSubscription> byUser;
-
-  void upsertCustomer(const PaddleCustomer&) override {}
-  void upsertSubscription(const PaddleSubscription& subscription) override {
-    byUser[subscription.userId] = subscription;
-  }
-  std::optional<PaddleSubscription> findFor(const UserId& user, const std::string&) override {
-    auto it = byUser.find(user.str());
-    if (it == byUser.end()) return std::nullopt;
-    return it->second;
-  }
-  void grantPro(const UserId& user) {
-    PaddleSubscription subscription;
-    subscription.userId = user.str();
-    subscription.status = "active";
-    byUser[user.str()] = subscription;
   }
 };
 
@@ -230,7 +207,7 @@ TEST(a_spent_free_allowance_refuses_without_work) {
 
 TEST(pro_gets_a_larger_allowance_than_free) {
   Harness h;
-  h.subs.grantPro(UserId{"u"});
+  h.subs.subscribe(UserId{"u"});
   h.agent.outcome = ok("grew it", 1);
   // The 30 that would exhaust a Free account leave a Pro account with room to spare.
   seedDoneRuns(h.runs, UserId{"u"}, kFreeMonthlyTendings, h.clock.now);
@@ -268,7 +245,7 @@ TEST(the_summary_reports_the_plan_budget_reset_and_recent_receipts) {
   CHECK_EQ(free.recent.size(), static_cast<std::size_t>(3));
   CHECK_EQ(free.recent.front().summary, std::string("receipt 2"));  // newest first
 
-  h.subs.grantPro(UserId{"u"});
+  h.subs.subscribe(UserId{"u"});
   const TendingSummary pro = service.summaryFor(UserId{"u"}, "u@example.com");
   CHECK_EQ(pro.allowance.plan, Plan::pro);
   CHECK_EQ(pro.allowance.limit, 300);

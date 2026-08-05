@@ -2,7 +2,7 @@
 
 #include "platform/adapters/json/JsonText.h"
 #include "products/journal/adapters/json/PageJson.h"
-#include "test/application/AuthFakes.h"
+#include "test/platform/Fakes.h"
 #include "test/products/journal/Fakes.h"
 #include "test/testing.h"
 

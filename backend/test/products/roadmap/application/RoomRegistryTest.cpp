@@ -1,6 +1,6 @@
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/domain/LooseGraph.h"
-#include "test/application/Fakes.h"
+#include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
 
 using namespace wm;

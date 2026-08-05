@@ -1,7 +1,5 @@
 #pragma once
 
-#include "platform/domain/Billing.h"
-#include "platform/ports/SubscriptionRepository.h"
 #include "products/journal/ports/Curator.h"
 #include "products/journal/ports/EchoRepository.h"
 #include "products/journal/ports/Embedder.h"
@@ -506,29 +504,6 @@ public:
     auto it = echoesByPage.find(pageKey(user, day));
     if (it == echoesByPage.end()) return {};
     return it->second.rows;
-  }
-};
-
-// The billing mirror the echo sweep reads to tell a subscriber from everyone else. A user with no
-// row is unsubscribed; one who has subscribed carries a live `active` status, the same predicate
-// (grantsAccess) production reads. Mirrors TendingServiceTest's fake, minted email-agnostic.
-struct FakeSubscriptionRepository : SubscriptionRepository {
-  std::map<std::string, PaddleSubscription> byUser;
-
-  void upsertCustomer(const PaddleCustomer&) override {}
-  void upsertSubscription(const PaddleSubscription& subscription) override {
-    byUser[subscription.userId] = subscription;
-  }
-  std::optional<PaddleSubscription> findFor(const UserId& user, const std::string&) override {
-    auto it = byUser.find(user.str());
-    if (it == byUser.end()) return std::nullopt;
-    return it->second;
-  }
-  void subscribe(const UserId& user) {
-    PaddleSubscription subscription;
-    subscription.userId = user.str();
-    subscription.status = "active";
-    byUser[user.str()] = subscription;
   }
 };
 
