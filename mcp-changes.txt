@@ -213,3 +213,43 @@ plant unlocked.
 
 Related, same wave: `get_progress` returns marks, `get_diagnostics` returns structural damage,
 and neither answers the frontier. The frontier is the product.
+
+
+--- 2026-08-05 · unknown arguments are ignored, and one tool promises otherwise ---
+
+Found while a subagent was driving the live stack for something else: it called
+import_subgraph with `edges: [{from, to}, …]`, got back `imported: true, newNodes: 4`, and
+the resulting tree had `prerequisites: []` on every node. The edges silently did not land.
+
+The caller was wrong — import_subgraph takes the get_tree shape, where an edge rides on the
+node it unlocks as `prerequisites`, and there is no top-level `edges`. But `edges: [{from,
+to}]` is the natural guess, because that is EXACTLY the shape `connect` takes, and the
+agent had just been using it.
+
+What makes this worth writing down is not the guess, it is the receipt. No MCP tool here
+rejects an unknown top-level argument. `prepareEdit`'s loop over `getMemberNames` only
+strips nulls; nothing compares the incoming keys against the schema. So a misnamed argument
+is dropped in silence and the write reports success.
+
+And import_subgraph's own description says the opposite, in the tool text every client
+reads before calling it: "The batch is atomic against malformed input — a bad field or a
+repeated id changes nothing and names the offending element". It does that for a bad field
+INSIDE a node (`status` is caught by name, with a message saying it moved to `seedStatus`)
+and not at all for a bad field beside `nodes`. So the one tool whose whole purpose is
+collapsing hundreds of calls into one is also the one that can drop half your intent and
+answer `imported: true`.
+
+The cost is shaped like the tool: a caller who mis-shapes a `connect` loses one edge and
+sees it immediately. A caller who mis-shapes an import loses EVERY edge in the graft, and
+the receipt says it worked. That is the write we most want to be loud.
+
+The fix is one shared check, not a per-tool one: compare the argument object's member names
+against the published schema's properties and refuse the call naming the unknown key —
+"unknown argument \"edges\"; import_subgraph carries edges on each node as
+\"prerequisites\"". The schema is already in the catalog, so the comparison is available at
+the same seam that dispatches. Do it for every tool at once; import_subgraph is where it
+was noticed, not where it is unique.
+
+Worth a receipt field either way: import_subgraph reports newNodes and nodeCollisions but
+no edge count. Even without the schema check, an `edges:` number in the receipt would have
+made this visible on the first call.
