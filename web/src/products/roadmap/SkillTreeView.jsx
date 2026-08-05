@@ -1,7 +1,14 @@
 // Skill-tree view — runs the pipeline (repository → domain → layout → scene)
 // and hosts the overlay UI around the GPU canvas: top controls, the docked
-// step panel, and a minimap. No business logic lives here — every node
-// state comes from UnlockRules.derive; this file only wires data through.
+// step panel, and a minimap. Node state comes from UnlockRules.derive.
+//
+// This used to claim "no business logic lives here — this file only wires data through", which
+// was false in three places and was the sentence that let the file reach three thousand lines.
+// One of the three has moved out: advancing progress and choosing which milestone to announce are
+// pure functions in model/progress.js now, with their own tests. Two are still here — the
+// remote-frame idempotency and anti-clobber reconciliation around the progress push, and the
+// startedAt/completedAt stamping that rides with them. They are named rather than denied, and the
+// next extraction takes them.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './skilltree.css';
@@ -69,6 +76,7 @@ import { ReturnLedger } from './persistence/ReturnLedger.js';
 import { MilestoneLedger } from './persistence/MilestoneLedger.js';
 import { ShareLedger } from './persistence/ShareLedger.js';
 import { detectMilestones } from './model/milestones.js';
+import { advanceProgress, milestoneAnnouncement } from './model/progress.js';
 import { emptyWorkspace, arcFraction, addSubtask, toggleSubtask, editSubtask, deleteSubtask, setNote, addLink, deleteLink } from './model/NodeWorkspace.js';
 import { deriveLegend, withCounts, inUseCount, freeHue, addKind, recolorKind } from './model/Legend.js';
 import { KindLegend } from './ui/tree/KindLegend.jsx';
@@ -2137,18 +2145,15 @@ export function SkillTreeView({ treeId, demo = false }) {
     if (!treeMine || shared || demo || demotion || !tree) return null;
     const fresh = detectMilestones(tree, prevCompleted, nextCompleted)
       .filter((milestone) => !milestoneLedger.has(treeId, milestone.id));
-    if (fresh.length === 0) return null;
-    // Crown wins if it landed; otherwise the biggest limb is the better picture. Every fresh
-    // milestone is marked offered (a diamond step can finish two at once) so none re-offers.
-    const best = fresh.find((milestone) => milestone.kind === 'crown')
-      ?? fresh.reduce((a, b) => (b.done > a.done ? b : a));
+    const announcement = milestoneAnnouncement(fresh);
+    if (!announcement) return null;
+    // Every fresh milestone is marked offered (a diamond step can finish two at once) so none re-offers.
     for (const milestone of fresh) milestoneLedger.markOffered(treeId, milestone.id);
     dropWeekOffer(); // one pride moment per open: the milestone takes the lane, the week's ask is dropped
-    const summary = best.kind === 'crown'
-      ? `Tree complete — ${best.total}/${best.total} steps.`
-      : `Branch complete: ${best.label} · ${best.done}/${best.total} steps`;
-    const label = best.kind === 'crown' ? 'Share it' : 'Share the moment';
-    return { summary, action: { label, run: () => { publishOgImageRef.current?.(); setShareOpen(true); } } };
+    return {
+      summary: announcement.summary,
+      action: { label: announcement.label, run: () => { publishOgImageRef.current?.(); setShareOpen(true); } },
+    };
   }
 
   // The shared completion path the button and the chip menu both take, so they can't
@@ -2156,19 +2161,16 @@ export function SkillTreeView({ treeId, demo = false }) {
   // ceremony — record the beat + its unlocks in the log and hand the scene the summary.
   function completeStep(id, { fromRemote = false } = {}) {
     const node = nodesById.get(id);
-    const nextCompleted = new Set(completed).add(id);
-    const nextInProgress = new Set(inProgress);
-    nextInProgress.delete(id);
-    const nextCompletedAt = { ...completedAt, [id]: Date.now() };
-    setCompleted(nextCompleted);
-    setInProgress(nextInProgress);
-    setCompletedAt(nextCompletedAt);
-    persistProgress({ completed: nextCompleted, inProgress: nextInProgress, startedAt, completedAt: nextCompletedAt });
+    const next = advanceProgress({ completed, inProgress, startedAt, completedAt }, [id], 'complete', Date.now());
+    setCompleted(next.completed);
+    setInProgress(next.inProgress);
+    setCompletedAt(next.completedAt);
+    persistProgress(next);
     if (!fromRemote) pushProgress(id, 'complete');
     // Record every beat in the log (the feed still tells the full story), but keep
     // them off the ticker — one summary toast closes the ceremony instead.
     emit({ verb: 'completed', nodeId: id, label: node?.label, kind: node?.color }, { silent: true });
-    const after = UnlockRules.derive(tree, { completed: nextCompleted, inProgress: nextInProgress });
+    const after = UnlockRules.derive(tree, { completed: next.completed, inProgress: next.inProgress });
     let opened = 0;
     for (const [otherId, nodeState] of after) {
       if (nodeState === 'available' && states.get(otherId) !== 'available') {
@@ -2190,7 +2192,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     // — and a milestone landing in that same window drops it outright rather than queueing it.
     // Only YOUR own completion offers anything: one finished on another device (fromRemote) is the
     // welcome-back recap's moment, not a live "share it" toast.
-    const offer = fromRemote ? null : milestoneOffer(completed, nextCompleted);
+    const offer = fromRemote ? null : milestoneOffer(completed, next.completed);
     const ceremony = offer ? offer.summary : stepSummary;
     const ceremonyOptions = offer ? { action: offer.action } : {};
     // Ceremony plays where you are (X8): the scene is paused under the list, so its director can't
@@ -2220,21 +2222,17 @@ export function SkillTreeView({ treeId, demo = false }) {
   function bulkMarkDone() {
     const targets = markDoneTargets(selectedIdsRef.current, completed);
     if (!targets.length) return;
-    const now = Date.now();
-    const nextCompleted = new Set(completed);
-    const nextInProgress = new Set(inProgress);
-    const nextCompletedAt = { ...completedAt };
-    for (const id of targets) { nextCompleted.add(id); nextInProgress.delete(id); nextCompletedAt[id] = now; }
-    setCompleted(nextCompleted);
-    setInProgress(nextInProgress);
-    setCompletedAt(nextCompletedAt);
-    persistProgress({ completed: nextCompleted, inProgress: nextInProgress, startedAt, completedAt: nextCompletedAt });
+    const next = advanceProgress({ completed, inProgress, startedAt, completedAt }, targets, 'complete', Date.now());
+    setCompleted(next.completed);
+    setInProgress(next.inProgress);
+    setCompletedAt(next.completedAt);
+    persistProgress(next);
     for (const id of targets) {
       pushProgress(id, 'complete');
       const node = nodesById.get(id);
       emit({ verb: 'completed', nodeId: id, label: node?.label, kind: node?.color }, { silent: true });
     }
-    const after = UnlockRules.derive(tree, { completed: nextCompleted, inProgress: nextInProgress });
+    const after = UnlockRules.derive(tree, { completed: next.completed, inProgress: next.inProgress });
     for (const [otherId, nodeState] of after) {
       if (nodeState === 'available' && states.get(otherId) !== 'available') {
         const unlocked = nodesById.get(otherId);
@@ -2244,7 +2242,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     // "Mark all done" stays silent for ordinary steps (the applyStates effect blooms the set), but
     // a milestone it finishes still speaks — that one is a moment, and marking a handful of steps
     // at once is exactly how a branch gets closed.
-    const offer = milestoneOffer(completed, nextCompleted);
+    const offer = milestoneOffer(completed, next.completed);
     if (offer) sceneRef.current?.announceCeremony(offer.summary, { action: offer.action });
   }
 
@@ -2259,26 +2257,12 @@ export function SkillTreeView({ treeId, demo = false }) {
     if (!id) return;
     if (target === 'complete') { completeStep(id, { fromRemote }); return; }
 
-    const nextCompleted = new Set(completed);
-    const nextInProgress = new Set(inProgress);
-    const nextStartedAt = { ...startedAt };
-    const nextCompletedAt = { ...completedAt };
-    if (target === 'notstarted') {
-      nextCompleted.delete(id);
-      nextInProgress.delete(id);
-      delete nextStartedAt[id];
-      delete nextCompletedAt[id];
-    } else {
-      nextInProgress.add(id);
-      nextCompleted.delete(id);
-      if (!nextStartedAt[id]) nextStartedAt[id] = Date.now();
-      delete nextCompletedAt[id];
-    }
-    setCompleted(nextCompleted);
-    setInProgress(nextInProgress);
-    setStartedAt(nextStartedAt);
-    setCompletedAt(nextCompletedAt);
-    persistProgress({ completed: nextCompleted, inProgress: nextInProgress, startedAt: nextStartedAt, completedAt: nextCompletedAt });
+    const next = advanceProgress({ completed, inProgress, startedAt, completedAt }, [id], target, Date.now());
+    setCompleted(next.completed);
+    setInProgress(next.inProgress);
+    setStartedAt(next.startedAt);
+    setCompletedAt(next.completedAt);
+    persistProgress(next);
     if (!fromRemote) pushProgress(id, target === 'notstarted' ? 'none' : 'active');
   }
 
