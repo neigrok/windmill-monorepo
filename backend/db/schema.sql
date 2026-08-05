@@ -5,12 +5,23 @@
 --
 -- Ids are text, matching the domain's string ids (node ids like "renderer", tree slugs
 -- like "windmill-roadmap"). Server-minted uuid ids + slugs arrive with accounts (§13).
+--
+-- Banners (── Platform ──, ── Roadmap ──, ── Journal ──, ── Gym ──) say who owns each run of
+-- tables, and the runs ALTERNATE: this file is applied in order, carries FK dependencies and
+-- interleaves converge `alter table … if not exists` statements with the DDL they patch, so it
+-- is grouped by dependency, not by owner. Every source path cited below is relative to
+-- `backend/` — `AUTH.md`, `platform/domain/Access.h`, `products/roadmap/domain/Tending.h`.
 
 create extension if not exists citext;
 
--- identity & orgs (Phase 1+). Auth is passwordless magic links (guidelines/auth.md):
--- "passwords never exist", so users carry no password_hash and no handle — an editable
--- name seeded from the email is the whole profile in v1.
+-- ── Platform (platform/) ─────────────────────────────────────────────────────────────────────
+-- What one account owns before any product does: identity, sign-in doors, sessions, MCP keys,
+-- OAuth, telemetry, feedback and billing. Every table in a platform run is read and written by
+-- platform/adapters/postgres and never by a product's repository.
+
+-- identity (Phase 1+). Auth is passwordless magic links (AUTH.md): "passwords never exist",
+-- so users carry no password_hash and no handle — an editable name seeded from the email is
+-- the whole profile in v1.
 create table if not exists users (
   id         uuid primary key,
   email      citext unique not null,
@@ -24,6 +35,10 @@ alter table users add column if not exists name text not null default '';
 alter table users drop column if exists password_hash;
 alter table users drop column if exists handle;
 
+-- Phase-3 reservation, no code: nothing in the backend reads or writes orgs, org_members or
+-- trees.org_id — the tenancy model is still an open question (AUTHZ.md, "Still open"), and
+-- these three shapes are what that decision gets made against. Kept rather than dropped,
+-- because dropping them would strand the question that names them.
 create table if not exists orgs (
   id         uuid primary key,
   name       text not null,
@@ -37,6 +52,12 @@ create table if not exists org_members (
   role    text not null,
   primary key (org_id, user_id)
 );
+
+-- ── Roadmap (products/roadmap) ───────────────────────────────────────────────────────────────
+-- The first room in the superapp: a tree, its CRDT lattice, its append-only op log and the
+-- per-user progress overlay — all read and written by products/roadmap/adapters/postgres.
+-- Tending runs, weekly reminders and the demo seed are roadmap's too and sit further down; the
+-- platform run between them is not a boundary, only the apply order.
 
 -- trees: title, ownership and the snapshot head. The title is an LWW register: `title_hlc`
 -- is its stamp in canonical HLC text ('' = unset, the create-time baseline), and
@@ -64,11 +85,12 @@ create table if not exists trees (
 alter table trees add column if not exists title_hlc text not null default '';
 alter table trees add column if not exists title_ms bigint not null default 0;
 alter table trees add column if not exists title_counter bigint not null default 0;
--- visibility gates every read (domain/Access.h): 'private' is owner-only, 'unlisted'/'public'
--- are readable by anyone holding the id. New trees are PRIVATE, which is what someone writing a
--- plan down expects, and sharing is the deliberate act that opens it. Older databases briefly
--- carried a different default; these two lines normalize new rows to 'private'. An existing
--- table keeps whatever each row already says; only the default for new rows moves.
+-- visibility gates every read (platform/domain/Access.h): 'private' is owner-only,
+-- 'unlisted'/'public' are readable by anyone holding the id. New trees are PRIVATE, which is
+-- what someone writing a plan down expects, and sharing is the deliberate act that opens it.
+-- Older databases briefly carried a different default; these two lines normalize new rows to
+-- 'private'. An existing table keeps whatever each row already says; only the default for new
+-- rows moves.
 alter table trees add column if not exists visibility text not null default 'private';
 alter table trees alter column visibility set default 'private';
 
@@ -199,7 +221,11 @@ create table if not exists node_progress (
 alter table node_progress add column if not exists stamp_ms bigint not null default 0;
 alter table node_progress add column if not exists stamp_counter bigint not null default 0;
 
--- passwordless sign-in (guidelines/auth.md). A magic link is addressed by the digest of
+-- ── Platform (platform/), continued ──────────────────────────────────────────────────────────
+-- Sign-in, sessions, provider doors, MCP keys and OAuth, then telemetry, feedback and billing —
+-- through to the end of the Paddle section below.
+
+-- passwordless sign-in (AUTH.md). A magic link is addressed by the digest of
 -- its secret (the raw token is never at rest); it works once and lasts 15 minutes.
 -- Lifetimes the domain owns are stored as epoch-millisecond bigints so no timezone maths
 -- sits between the code and the row. consumed_ms is null until the link is spent.
@@ -236,7 +262,7 @@ alter table sessions add column if not exists last_seen_ms bigint not null defau
 alter table sessions add column if not exists ip text not null default '';
 create unique index if not exists sessions_id on sessions (id);
 
--- provider sign-in doors (backend/AUTH.md, "Identities — one account, many doors"). The
+-- provider sign-in doors (AUTH.md, "Identities — one account, many doors"). The
 -- provider-issued SUBJECT is the identity; the email is only ever a hint, consulted once, to find
 -- an account that already exists. (provider, subject) is the primary key, so a provider that
 -- changes the address behind an account — an Apple Hide-My-Email relay rotated, a Google primary
@@ -415,14 +441,19 @@ alter table paddle_subscriptions add column if not exists occurred_at timestampt
 alter table paddle_subscriptions add column if not exists user_id uuid;
 create index if not exists paddle_subscriptions_user on paddle_subscriptions (user_id);
 
+-- ── Roadmap (products/roadmap), continued ────────────────────────────────────────────────────
+-- Tending runs, weekly reminders and the seeded demo tree. Roadmap's, exactly like the trees
+-- section above, and read and written by products/roadmap/adapters/postgres.
+
 -- ── Tending runs (server-side agent edits) ──────────────────────────────────────────────────
--- One row per sentence someone told their tree (domain/Tending.h). A tend run is a JOB, not a
--- stream: the browser starts it and is free to leave, so the run's whole state must outlive the
--- socket. This table IS that durable state — the catch-up endpoint reads a row here long after
--- the request that made it has died. status is running/done/failed/refused; refusal is the quiet
--- face a never-started run wears (''=none). started_at/finished_at are epoch ms (TendRun's own
--- clock, the same units the allowance window counts in — not now()). (seq_from, seq_to] is the
--- run's footprint in the tree's op log, recorded faithfully so one sentence can be one undo later.
+-- One row per sentence someone told their tree (products/roadmap/domain/Tending.h). A tend run
+-- is a JOB, not a stream: the browser starts it and is free to leave, so the run's whole state
+-- must outlive the socket. This table IS that durable state — the catch-up endpoint reads a row
+-- here long after the request that made it has died. status is running/done/failed/refused;
+-- refusal is the quiet face a never-started run wears (''=none). started_at/finished_at are
+-- epoch ms (TendRun's own clock, the same units the allowance window counts in — not now()).
+-- (seq_from, seq_to] is the run's footprint in the tree's op log, recorded faithfully so one
+-- sentence can be one undo later.
 create table if not exists tend_runs (
   id           text primary key,
   tree_id      text not null,
@@ -454,7 +485,7 @@ create index if not exists tend_runs_user_started on tend_runs (user_id, started
 -- The per-tree footprint read (undo, activity): every run that touched a given tree.
 create index if not exists tend_runs_tree on tend_runs (tree_id);
 
--- ── Weekly reminders (domain/Reminders.h) ────────────────────────────────────────────────
+-- ── Weekly reminders (products/roadmap/domain/Reminders.h) ───────────────────────────────────
 -- The engine holds NO schedule state in the process: a sweep is a pure function of (now, these
 -- two tables), so a deploy restart loses nothing. All calendar work happens HERE, via AT TIME
 -- ZONE — Postgres ships its own IANA database and therefore behaves identically on a macOS dev
@@ -753,10 +784,10 @@ end $$;
 
 -- Per-page embeddings, replaced by journal_span's per-passage ones. Nothing in the server reads
 -- this table: GET /v1/journal/vectors (the on-device search index seed) is described in
--- ARCHITECTURE.md §8.2 and in ECHOES.md's migration list, but no route, handler or repository
--- method for it has ever been written — the browser embeds its own index locally. So this drop
--- costs nothing today, and whenever that endpoint IS built it seeds from journal_span.vector,
--- which ECHOES.md judges likely better for search anyway.
+-- products/journal/ARCHITECTURE.md §8.2 and in ECHOES.md's migration list, but no route, handler
+-- or repository method for it has ever been written — the browser embeds its own index locally.
+-- So this drop costs nothing today, and whenever that endpoint IS built it seeds from
+-- journal_span.vector, which ECHOES.md judges likely better for search anyway.
 drop table if exists journal_page_vector;
 
 -- Fresh passage identities. A sequence and not max(span_id)+1 per user: the nightly heartbeat and

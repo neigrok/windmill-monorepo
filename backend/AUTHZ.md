@@ -32,9 +32,10 @@ and the middle one is the narrowest:
 
 **Operator action:** set a GitHub **secret** `WINDMILL_MCP_TOKEN` (e.g. `openssl rand -hex 32`) so
 prod enforces MCP auth; agents then send `Authorization: Bearer <token>`. Until it's set, `/mcp` stays
-open (the container logs a warning). Optional follow-ups: orgs/roles tenancy (only per-user ownership
-is wired), and a polished "sign in to edit" prompt in the app (the `wm-edit-forbidden` window event
-is the hook).
+open (the container logs a warning). Of the two follow-ups this listed, the app-side prompt landed:
+`SyncSession` (`web/src/products/roadmap/sync/SyncSession.js:296`) dispatches `wm-edit-forbidden` on
+an ownership or session refusal, and `web/src/products/roadmap/SkillTreeView.jsx:263` re-checks the
+session before the chip speaks. Tenancy is the one that stayed open — see **Still open**.
 
 **Operator action — check for legacy ownerless rows BEFORE this deploy.** Removing first-writer-
 claims removed the last code path that could assign an owner to an existing row: the only two
@@ -52,96 +53,113 @@ An **empty result closes the risk** — the demo is the only ownerless row and i
 that way. A **non-empty result needs a decision before push**: each row named there belongs to
 somebody who can no longer edit it, and the only remedy is an `UPDATE trees SET owner_id = …`
 run by hand against the account that should hold it. (Verified against
-`adapters/postgres/PgTreeRepository.cpp`: `owner_id` appears in exactly two writes, the `INSERT`
-in `create` and the `INSERT` in `fork` — there is no `UPDATE` of that column anywhere.)
+`products/roadmap/adapters/postgres/PgTreeRepository.cpp`: `owner_id` appears in exactly two
+writes, the `INSERT` in `create` and the `INSERT` in `fork` — there is no `UPDATE` of that column
+anywhere.)
 
 ---
 
-The design detail below records the seams and reasoning behind the two findings this closed:
+## How it landed, seam by seam
 
-- **#1 — no authz on the data plane.** `HttpApi` still runs as the fixed `devUser`
-  (`infra/main.cpp:41`), the socket mints an anonymous `u<N>` per connection
-  (`adapters/ws/Collab.cpp:onOpen`), and `windmill_mcp_http` is unauthenticated. Anyone can read/
-  write any tree.
-- **#8 — unauthenticated `PUT /v1/trees/{id}`** overwrites or creates any tree wholesale.
+History, not a plan: this section records what each surface needed and what it now does, so the
+reasoning behind the shape survives. The two findings it closed were:
 
-The seam is already in place: `AuthService::authenticate(secret) -> std::optional<User>`
-(`application/AuthService.cpp`) resolves a cookie/bearer to a user and rolls the session. Reuse it
-everywhere; never trust a client-supplied user/actor id.
+- **#1 — no authz on the data plane.** `HttpApi` ran as a fixed `devUser`, the socket minted an
+  anonymous `u<N>` per connection, and `windmill_mcp_http` was unauthenticated. Anyone could read
+  or write any tree.
+- **#8 — unauthenticated `PUT /v1/trees/{id}`** overwrote or created any tree wholesale.
 
-## 1. REST (`windmill_server`)
+One seam closed both: `AuthService::authenticate(secret) -> std::optional<User>`
+(`platform/application/AuthService.cpp`) resolves a cookie/bearer to a user and rolls the session.
+Every surface reuses it, and none trusts a client-supplied user/actor id.
 
-**Resolve the caller per request, not at construction.** Today `HttpApi` holds one `caller_`
-(`adapters/http/HttpApi.h:39`). Replace that with a principal resolved on each call.
+### REST (`windmill_server`)
 
-- Add a small pre-routing step (a Drogon `HttpFilter`, or a shared helper each handler calls) that
-  reads `wm_session` cookie → else `Authorization: Bearer` → `AuthService::authenticate`. Mirror the
-  exact cookie/bearer extraction already in `AuthApi::me` (`adapters/http/AuthApi.cpp`).
-- **Reads** (`getTree`, `getProgress`, `getDiagnostics`, `getActivity`): allow if the tree is
-  `visibility='public'`, else require the caller to be `owner_id` (or an org member). Anonymous is
-  fine for public trees only.
-- **Writes** (`putTree`, `forkTree`): require an authenticated caller. `putTree` must additionally
-  check the caller owns the target tree (or it doesn't exist yet → they become the owner). This is
-  the direct fix for #8.
-- **Progress** is already keyed by `user_id` in `node_progress` — once the real user flows in, the
-  per-user overlay becomes genuine (today every write is `dev`).
+The caller is resolved **per request, not at construction**. The fixed `caller_` is gone;
+`HttpApi::callerOf` (`products/roadmap/adapters/http/HttpApi.cpp:24`) delegates to the one shared
+`wm::callerOf(req, auth)` (`platform/adapters/http/Caller.h`), which reads the `wm_session` cookie,
+falls back to `Authorization: Bearer`, and hands the secret to `AuthService::authenticate` — one
+extraction every API on the process calls, rather than a copy per handler.
 
-## 2. Ownership columns (already in the schema, currently unwritten)
+Reads (`getTree`, `getProgress`, `getDiagnostics`, `getActivity`) gate on `canRead` and answer a
+denial as a `404` byte-identical to absence. Writes (`putTree`, `forkTree`) require an
+authenticated caller — `401` for anonymous — and then gate on `canWrite`, which is the direct fix
+for #8. Progress writes carry the resolved caller into `node_progress`, so the per-user overlay is
+genuine; the fixed `dev` actor is gone from the server path, surviving only as the default
+`WINDMILL_MCP_USER` of the two standalone MCP binaries (`platform/infra/mcp_main.cpp:67`,
+`platform/infra/mcp_http_main.cpp:62`) and as `platform/infra/main.cpp:283`'s MCP fallback.
 
-`trees.owner_id`, `trees.org_id`, `trees.visibility` exist (`db/schema.sql`) but nothing sets or
-reads them.
+### Ownership columns
 
-- `PgTreeRepository::save`/`fork` (`adapters/postgres/PgTreeRepository.cpp`) must persist `owner_id`
-  (= the creating caller) and a default `visibility` (suggest `'private'`).
-- Extend `StoredTree` (`ports/TreeRepository.h`) + `PgTreeRepository::load` to surface `owner_id`
-  and `visibility`, so `HttpApi` (and the room) can make the authz decision above.
-- Decide the tenancy model first (**open question**): per-user only, or orgs + roles via the
-  existing `orgs`/`org_members` tables? That choice shapes whether the check is
-  `caller == owner_id` or an org-membership lookup — build it once.
+`trees.owner_id` and `trees.visibility` are written, read, filtered and updated.
+`PgTreeRepository` (`products/roadmap/adapters/postgres/PgTreeRepository.cpp`) stamps the owner on
+the `INSERT` in `create` (`:259`) and in `fork` (`:401`), reads both columns back in `loadAccess`
+(`:163`) and `load` (`:202`), filters on them in `listOwnedBy` (`:274`) and `listPublic` (`:334`),
+and `setVisibility` (`:391`) is the one `UPDATE` — there is still no `UPDATE` of
+`owner_id` anywhere, which is what makes the operator check above conclusive. `StoredTree`
+(`products/roadmap/ports/TreeRepository.h:36`) carries `owner` and `visibility` up to the room, so
+the authz decision reads loaded facts instead of issuing a second query.
 
-## 3. WebSocket (`/v1/socket`)
+`trees.org_id` was never wired — see **Still open**.
 
-Authenticate the **upgrade**, not each frame.
+### WebSocket (`/v1/socket`)
 
-- In `TreeSocket::handleNewConnection` (`adapters/ws/TreeSocket.cpp`) the `HttpRequestPtr` is
-  available — read the `wm_session` cookie / bearer, `authenticate`, and on failure close the
-  connection (reject the upgrade). On success, store the real `UserId` in the connection context
-  instead of the anonymous `"u"+N` in `Collab::onOpen`.
-- Then `Collab` uses that real user for the op `actor`, the `undoKey`, and `progressUser_` — so undo
-  and progress become correctly per-user, and presence shows real identity (the `PresenceHub` seat/
-  name derivation can key off it).
-- Keep the app-origin allowlist in mind: once the socket is credentialed, only allow upgrades whose
-  `Origin` is in the same allowlist `main.cpp` uses for CORS (prevents cross-site socket hijack).
+The **upgrade** is authenticated, not each frame. `Collab::onOpen`
+(`products/roadmap/adapters/ws/Collab.cpp:53`) reads the `wm_session` cookie, falls back to a
+bearer, and stores a `Principal` (`products/roadmap/adapters/ws/PresenceHub.h:23`) in the
+connection context. Two departures from the original plan, both deliberate:
 
-## 4. MCP-HTTP (`windmill_mcp_http`, public)
+- A failed authentication does **not** reject the upgrade. The connection joins as a **read-only
+  guest** (`u<N>`, `authenticated = false`). The anonymous id survived — but as an identity rather
+  than as the hole it was, because a public tree has to be watchable by a stranger.
+- The `Principal` keeps the session's **digest**, never the secret, plus `checkedAtMs`. A socket
+  outlives the request that opened it, so a writer re-proves its session (throttled to one lookup
+  a minute) and a revocation reaches a connection opened before it.
 
-This is the most exposed write surface and has no cookie to lean on.
+The real `UserId` is then the op `actor`, the `undoKey` and `progressUser_`, so undo and progress
+are per-user, and `PresenceHub` shows real identity.
 
-- Gate `/mcp` behind a **per-user API token** (a `Bearer` on the MCP request): either a new
-  `api_tokens` table (digest-at-rest, same pattern as sessions) or reuse the session token. Check it
-  in `McpHttpEndpoint::handlePost` before dispatch; map it to a `UserId` and pass that as the
-  `RoadmapTools` caller instead of the env `WINDMILL_MCP_USER`.
-- Gate **mutating** tools (`create_node`, `connect`, `delete_node`, …) behind a write scope and the
-  same owner/visibility check as REST; read tools (`get_tree`, `get_diagnostics`) can follow the
-  visibility rule.
-- I'm hardening the transport in parallel (CSPRNG session id, TTL/expiry, Host/Origin checks) — that
-  composes with, but does not replace, this token check.
+### MCP-HTTP (`/mcp`)
 
-## 5. Footguns to avoid
+`McpHttpEndpoint::resolveCaller` (`platform/adapters/mcp/McpHttpEndpoint.cpp:103`) takes the
+`Bearer` and tries, in order: an OAuth 2.1 access token bound to this resource, then a personal MCP
+API key (`mcp_keys` — digest-at-rest, the `api_tokens` table this plan asked for, shipped under its
+own name), then the shared `WINDMILL_MCP_TOKEN`. No match is a `401` carrying the
+`WWW-Authenticate: Bearer resource_metadata=…` challenge the MCP Authorization spec requires.
+`handlePost` refuses a request whose `Origin` is not allow-listed before any of that runs.
+
+Tool gating is the same predicate as REST rather than a parallel one: `RoadmapTools`
+(`products/roadmap/adapters/mcp/RoadmapTools.cpp`) runs `canRead` on every read tool and `canRead`
+then `canWrite` on every mutating one, both from `platform/domain/Access.h` — the same two
+functions the HTTP and socket paths call.
+
+The rate limiter sits in front of all of it. It is not a Drogon filter but a `registerSyncAdvice`
+(`platform/infra/main.cpp:458`), because a pre-routing advice that returns a response binds to the
+observer overload and is silently dropped; the sync join point runs ahead of routing, so the order
+really is rate-limit → authenticate → authorize → handler.
+
+## Still open
+
+- **Rolling-session write amplification.** `AuthService::revalidate`
+  (`platform/application/AuthService.cpp:193`) calls `refreshSession` — a DB write — on *every*
+  authenticated call, with no TTL throttle. Now that auth gates every request, that is a write per
+  read. Roll only when, say, <80 days remain. Pairs with the connection-pooling work.
+- **No CI guard against a published port.** Nothing in `.github/workflows/` fails if `db`, `server`
+  or `embedder` gains a `ports:` mapping or `network_mode: host` — the one change that would expose
+  these processes directly instead of only via Caddy. Today `caddy` is the only service that
+  publishes ports (`deploy/docker-compose.yml:174`), and only convention keeps it that way.
+- **The WebSocket upgrade does not check `Origin`.** `Collab::onOpen` reads the cookie and nothing
+  else. The allowlist built in `platform/infra/main.cpp:350` shapes CORS response headers, and
+  `McpHttpEndpoint::handlePost` enforces its own — but no equivalent gate sits on the socket
+  handshake.
+- **The tenancy model.** Per-user only, or orgs + roles? `orgs`, `org_members` and `trees.org_id`
+  exist in `db/schema.sql` as a Phase-3 reservation and no code reads or writes any of them. The
+  answer decides whether the check stays `caller == owner_id` or becomes a membership lookup —
+  build it once. Until then the reservation stays in the schema so the question keeps its shapes.
+
+## Rules that do not expire
 
 - **Never** read the acting user/actor from the request body or a client field — always from the
-  server-resolved session. (The WS `cmd` frame carries no actor today; keep it that way.)
+  server-resolved session. (The WS `cmd` frame carries no actor; keep it that way.)
 - The `wm_session` cookie is `SameSite=Lax`, which blocks cross-site POST — keep it; don't loosen to
   `None` without CSRF tokens.
-- **Rolling-session write amplification:** `AuthService::authenticate` does a `refreshSession`
-  (DB write) on *every* call. Once auth gates every request, throttle it (only roll when, say,
-  <80 days remain) so reads don't each incur a write. Pairs with the connection-pooling work.
-- Add a CI guard that fails if `server`/`mcp`/`db` ever get a `ports:` mapping or `network_mode:
-  host` — the one change that would expose these processes directly instead of only via Caddy.
-
-## Where my hardening meets your authz
-
-My rate-limiter is a Drogon filter keyed on `X-Forwarded-For`; it's written to sit *in front of* an
-auth filter, so ordering is: rate-limit → authenticate → authorize → handler. When you add the auth
-filter, register it after the limiter. I'll flag the exact registration point in `main.cpp` once both
-are in.
