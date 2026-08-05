@@ -10,7 +10,7 @@ backend/     one C++ modular-monolith binary
                users · telemetry · access · generic id/crdt primitives · http host
   products/    one module per product, each plugging routes + mcp tools into the host
     roadmap/     the RPG skill-tree app (the original Windmill)
-    journal/     the night-canvas daily journal (shipped; products/notes is its empty pre-rename scaffold)
+    journal/     the night-canvas daily journal (shipped)
     gym/         training log (phase 0 built — see its ARCHITECTURE.md)
   db/          schema.sql (platform tables + per-product tables)
   test/        mirrors src: test/platform, test/products/<p>
@@ -24,7 +24,7 @@ web/         one Vite/React superapp; product modules lazy-loaded behind a switc
     shell/          app frame: App.jsx (router + product switcher) · auth · billing · account ·
                     settings-shell · connect · feedback · marketing · apiBase · products.js
     products/       one front-end per product
-      roadmap/  journal/  gym/  (notes/ is journal's empty pre-rename scaffold)
+      roadmap/  journal/  gym/
 
 apps/        native superapps (one per OS; journal/roadmap/gym are mountable module libraries)
   ios/         Swift — a real SwiftUI app. project.yml (XcodeGen) declares the app target;

@@ -1,15 +1,15 @@
 # Windmill Android
 
 One Kotlin superapp for the whole brand — the mirror of `apps/ios` and `web/`. `roadmap`,
-`notes`, and `gym` are Gradle module libraries mounted by a single `:app` over a shared
+`journal`, and `gym` are Gradle module libraries mounted by a single `:app` over a shared
 `:platform`, behind one sign-in and one subscription. Modules stay independently mountable.
 
 ## Intended layout (mirrors iOS)
 
 ```
-settings.gradle.kts        includes :app :platform :roadmap :notes :gym
+settings.gradle.kts        includes :app :platform :roadmap :journal :gym
 platform/                  shared core: Account + the ProductModule seam + Superapp composition
-roadmap/  notes/  gym/     one product module each (depends on :platform, never on a sibling)
+roadmap/ journal/ gym/     one product module each (depends on :platform, never on a sibling)
 app/                       the app — the only module that knows all three products exist
 ```
 

@@ -17,8 +17,8 @@ endif()
 # Windmill is one modular-monolith backend behind a brand of products. `windmill_platform` is
 # the product-neutral core (auth, oauth, billing, the MCP transport engine, the vendor edges);
 # `windmill_roadmap` is the skill-tree product (trees, the sync/room cluster, the roadmap tools)
-# and depends on the platform, never the other way round. A future product (notes, gym) adds its
-# own products/<name> library beside roadmap and mirrors the same seam.
+# and depends on the platform, never the other way round. `windmill_journal` and `windmill_gym`
+# mirror that seam — one products/<name> library each, beside roadmap and linked into the server.
 
 # --- platform + roadmap CORE (domain + application) — always built, even without Drogon/libpqxx,
 # so the pure logic and its tests stand up on Trantor + jsoncpp alone. The adapters (the messy

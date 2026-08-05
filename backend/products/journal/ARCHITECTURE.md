@@ -86,14 +86,10 @@ backend/products/journal/
 ```
 
 **Naming: the module is `journal`, not `notes`.** The scaffold reserved `products/notes/`, but the
-designed product is *Journal* in every artifact — routes are `/journal`, tables are `journal_*`,
+designed product was *Journal* in every artifact — routes are `/journal`, tables are `journal_*`,
 and the vocabulary section of the canon explicitly bans the words *note/notes/log*. "A newcomer
-should infer where things live from folder names" (CLAUDE.md) argues for the product's real name.
-
-> **Recommendation:** rename `backend/products/notes/` → `backend/products/journal/` and
-> `web/src/products/notes/` → `web/src/products/journal/` (both are one-file scaffolds today —
-> a README and a `ComingSoon`-style stub). Update `STRUCTURE.md` and the root `CLAUDE.md` product
-> list. This design assumes the `journal` name throughout.
+should infer where things live from folder names" (CLAUDE.md) argued for the product's real name,
+so the module took it: `products/journal/` on both surfaces, and the `notes` scaffold is gone.
 
 ---
 
@@ -878,18 +874,16 @@ The canon's four "Still open", plus the backend's own, with recommendations:
    subscription), the same one roadmap reads. The canon's old "Pro = a bigger tending allowance" framing is superseded by
    the brand's one-account-one-subscription model. Usage tuning / cost control is explicitly
    **out of scope now** — mission first, money mechanics later, behind the same gate.
-7. **Module rename `notes → journal`** (§1). Recommended; a one-file scaffold move across two
-   surfaces plus the two structure docs.
-8. **Voice — DECIDED: bought from a zero-retention ASR vendor, a Windmill One feature** (§8.1). No
+7. **Voice — DECIDED: bought from a zero-retention ASR vendor, a Windmill One feature** (§8.1). No
    self-hosting, no metering designed now. Confirm `subscribed` *before* audio reaches the vendor;
    prefer client-direct via an ephemeral vendor token (server proxy only if the vendor can't mint
    one); faithful transcription only (no rewrite); `POST` first, streaming `WS` next. One consequence
    to own: audio leaves to a third party, so the vendor **must** be zero-retention/no-training and
    the voice copy names the processor rather than implying "only you".
-8a. **Voice copy — voice moves from "Free" to Windmill One.** The canon lists voice → transcript
+7a. **Voice copy — voice moves from "Free" to Windmill One.** The canon lists voice → transcript
    under *"Free, forever"* (§05); it's now a subscriber feature. A small copy/`pricing.md` update so
    the surface stays truthful before the voice wave ships. Not a money mechanic — an honesty fix.
-9. **Search — DECIDED on-device** (§8.2). An elite in-browser semantic engine (WebGPU embeddings,
+8. **Search — DECIDED on-device** (§8.2). An elite in-browser semantic engine (WebGPU embeddings,
    passage-level, bi-encoder + cross-encoder rerank, HyDE, live threads). The backend stays
    routeless for queries and owes three things: the `?since=` delta feed (one feed for sync,
    offline cache, and the search index), first-party embedding-model weights, and — the

@@ -15,13 +15,14 @@ import { roadmapRoutes } from '../products/roadmap/routes.js';
 import { journalRoutes } from '../products/journal/routes.js';
 import { gymRoutes } from '../products/gym/routes.js';
 
-// Journal is the daily-notes product, designed and built out — it takes the second slot the `notes`
-// scaffold reserved. gym stays a scaffold until it grows code.
+// Three products, in rail order. Roadmap and journal are open; gym is built and holds itself shut
+// through `shell.status: 'pre-open'` in its own route table — readiness is a flag a product sets,
+// never something the shell infers from whether the product has code.
 export const PRODUCTS = [roadmapRoutes, journalRoutes, gymRoutes];
 
 // The active product is whichever one owns the current hash; on a product-neutral surface
-// (sign-in, settings, connect, the landing) it falls back to the first product. This is the
-// seam notes/gym slot into — nothing about "home" is roadmap-specific in the shell itself.
+// (sign-in, settings, connect, the landing) it falls back to the first product — nothing about
+// "home" is roadmap-specific in the shell itself.
 export function activeProduct(hash = typeof window === 'undefined' ? '' : window.location.hash) {
   return PRODUCTS.find((p) => hash.startsWith(p.switchHash)) ?? PRODUCTS[0];
 }
