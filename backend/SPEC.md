@@ -69,9 +69,12 @@ for a human to fix, rather than reject edits to keep the graph pristine.
 
 ### Non-goals
 
-- **The server never computes layout.** Node positions are derived client-side by the
-  worker layout engine; only explicit user *nudges* (`RepositionNode`) are authored
-  data the server stores. This preserves the frontend's `applyNudges` model exactly.
+- **The server never computes layout.** Node positions are derived client-side; only
+  explicit user *nudges* (`RepositionNode`) are authored data the server stores. (The
+  non-goal held. Two details around it did not: the layout engine is synchronous and
+  inline, never a worker, and the `applyNudges` model this cites was replaced by
+  `sync/materialize.js`. `RepositionNode` and `position` do still exist as CRDT
+  registers on both sides — carried on the wire, read by nothing on the render path.)
 - **The server never renders.** No WebGL, no geometry, no icon atlas. It ships
   `TreeData` + `Progress` and relays commands; the scene is 100% client concern.
 - **Not an offline-first CRDT database.** All traffic flows through a central server
@@ -85,12 +88,14 @@ for a human to fix, rather than reject edits to keep the graph pristine.
 ## 2. The contract the frontend already defines
 
 The backend does not get to invent its data shapes — the frontend already published
-them in `src/skilltree/model/ports.js`. The server must satisfy these ports.
+them in `web/src/products/roadmap/model/ports.js`. The server must satisfy these ports —
+read that file, not this table, which is a snapshot and has drifted before. The port also
+declares `loadServerProgress` and `loadActivity`, which are not listed below.
 
 | Frontend port | Method | Backend responsibility |
 | --- | --- | --- |
 | `TreeRepository` | `loadTree() → TreeData` | Serve authored tree: `{ id, title, nodes[] }` |
-| `TreeRepository` | `loadProgress(treeId) → Progress` | Serve **this user's** `{ completed, inProgress }` |
+| `TreeRepository` | `loadProgress(treeData) → Progress` | Serve **this user's** `{ completed, inProgress, cleared, server }` |
 | `LayoutEngine` | `layout(tree) → Map<id,Vec2>` | **Stays client-side.** Not a backend concern |
 
 `TreeData` / `NodeSpec` (the wire shape the server persists and emits):

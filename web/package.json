@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Windmill — roadmap tracker that renders any roadmap as an RPG skill tree. Design-system component library.",
+  "description": "Windmill \u2014 roadmap tracker that renders any roadmap as an RPG skill tree. Design-system component library.",
   "scripts": {
     "dev": "vite",
     "test": "node --test --test-timeout=30000 test/",
@@ -19,7 +19,6 @@
     "@huggingface/transformers": "3.8.1",
     "lucide-react": "^0.400.0",
     "mediabunny": "^1.51.0",
-    "mp4-muxer": "^5.2.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
