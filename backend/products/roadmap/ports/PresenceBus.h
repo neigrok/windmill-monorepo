@@ -6,8 +6,10 @@
 
 namespace wm {
 
-// Fans an accepted op out to every subscriber of a tree (across instances, in the real
-// adapter). Presence frames ride the same bus and are added with their own methods.
+// Fans an accepted op out to every subscriber of a tree (across instances, in the real adapter),
+// plus a caller's own progress. Presence is NOT on this bus — PresenceHub owns that roster and
+// coalesces it at 20 Hz. The sentence that used to say otherwise was half-true while a raw relay
+// still hung off the adapter; that relay had no callers and is gone.
 struct PresenceBus {
   virtual ~PresenceBus() = default;
 

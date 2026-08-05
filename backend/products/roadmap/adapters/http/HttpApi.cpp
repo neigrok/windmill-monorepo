@@ -25,62 +25,61 @@ std::optional<UserId> HttpApi::callerOf(const drogon::HttpRequestPtr& req) const
   return wm::callerOf(req, *auth_);
 }
 
+// Every room-backed read opens its tree the same way, and refuses in the same breath: an absent
+// tree (a null open), a private one this caller may not read, and an infrastructure failure all
+// answer false, so all three become the one 404 the callers give. That is what the arms are for —
+// a body byte-identical to absent means an id cannot be probed for existence, and a thrown pqxx
+// message (a host, a role, a connection string) never rides out to the client. `read` runs under
+// the strand, so a caller's own work is bracketed by the same lock the open needed.
+bool HttpApi::readRoom(const std::string& treeId, const std::optional<UserId>& caller,
+                       const std::function<void(TreeRoom&)>& read) {
+  std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
+  try {
+    TreeRoom* room = registry_->open(TreeId{treeId});
+    if (!room || !canRead(caller, room->owner(), room->visibility())) return false;
+    read(*room);
+    return true;
+  } catch (const std::exception&) {
+    return false;
+  }
+}
+
 void HttpApi::getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
   std::optional<UserId> caller = callerOf(req);
   Json::Value body(Json::objectValue);
-  bool found = true;
-  {
-    std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
-    try {
-      TreeRoom* room = registry_->open(TreeId{treeId});
-      // Absent (null) or a private tree the caller can't read is 404 — body byte-identical, so an
-      // id can't be probed for existence. An infrastructure failure still throws to the catch,
-      // which also answers 404: masked, not leaked (a message with a host never reaches the client).
-      if (!room || !canRead(caller, room->owner(), room->visibility())) {
-        found = false;
-      } else {
-        const std::optional<UserId>& owner = room->owner();
-        body["seq"] = static_cast<Json::Int64>(room->head());
-        body["data"] = toJson(room->snapshot());  // projected TreeData for the first paint
-        Subgraph state;                            // the stamped lattice the client builds its TreeLattice from
+  if (!readRoom(treeId, caller, [&](TreeRoom& room) {
+        body["seq"] = static_cast<Json::Int64>(room.head());
+        body["data"] = toJson(room.snapshot());  // projected TreeData for the first paint
+        Subgraph state;  // the stamped lattice the client builds its TreeLattice from
         state.treeId = TreeId{treeId};
-        state.frameId = "snapshot-" + std::to_string(room->head());
+        state.frameId = "snapshot-" + std::to_string(room.head());
         state.actor = "srv";
         state.intent = SubgraphIntent::graft;
-        state.graph = room->exportState();
-        state.legend = room->exportLegend();
+        state.graph = room.exportState();
+        state.legend = room.exportLegend();
         body["state"] = toJson(state);
         // When the tree was planted (epoch ms) — the week-N progress card counts from here,
         // never the calendar week, so the client can't derive it from the document alone.
-        body["createdAt"] = static_cast<Json::Int64>(room->createdAt());
+        body["createdAt"] = static_cast<Json::Int64>(room.createdAt());
         // The share flip reads these: the current visibility, and whether this tree is the
         // caller's to change — which is canWrite exactly, so the client's "mine" and the
         // server's write gate can never drift apart into a button that refuses itself.
-        body["visibility"] = toString(room->visibility());
-        body["mine"] = canWrite(caller, owner);
-      }
-    } catch (const std::exception&) {
-      found = false;
-    }
+        body["visibility"] = toString(room.visibility());
+        body["mine"] = canWrite(caller, room.owner());
+      })) {
+    callback(error(drogon::k404NotFound, "no such tree"));
+    return;
   }
-  callback(found ? jsonResponse(body) : error(drogon::k404NotFound, "no such tree"));
+  callback(jsonResponse(body));
 }
 
 void HttpApi::getDiagnostics(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
-  std::optional<UserId> caller = callerOf(req);
   Json::Value body;
-  bool found = true;
-  {
-    std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
-    try {
-      TreeRoom* room = registry_->open(TreeId{treeId});
-      if (!room || !canRead(caller, room->owner(), room->visibility())) found = false;  // absent or gated
-      else body = toJson(room->diagnose());
-    } catch (const std::exception&) {
-      found = false;
-    }
+  if (!readRoom(treeId, callerOf(req), [&](TreeRoom& room) { body = toJson(room.diagnose()); })) {
+    callback(error(drogon::k404NotFound, "no such tree"));
+    return;
   }
-  callback(found ? jsonResponse(body) : error(drogon::k404NotFound, "no such tree"));
+  callback(jsonResponse(body));
 }
 
 void HttpApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
@@ -207,18 +206,7 @@ void HttpApi::getProgress(const drogon::HttpRequestPtr& req, HttpCallback&& call
   // tree sees their own progress (they are the owner). Gated by canRead exactly like the structure
   // read, so a private tree's progress is 404 — byte-identical to absent, never leaked.
   std::optional<UserId> owner;
-  bool found = true;
-  {
-    std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
-    try {
-      TreeRoom* room = registry_->open(TreeId{treeId});
-      if (!room || !canRead(caller, room->owner(), room->visibility())) found = false;
-      else owner = room->owner();
-    } catch (const std::exception&) {
-      found = false;
-    }
-  }
-  if (!found) {
+  if (!readRoom(treeId, caller, [&](TreeRoom& room) { owner = room.owner(); })) {
     callback(error(drogon::k404NotFound, "no such tree"));
     return;
   }
@@ -239,20 +227,8 @@ void HttpApi::getActivity(const drogon::HttpRequestPtr& req, HttpCallback&& call
     return;
   }
 
-  std::optional<UserId> caller = callerOf(req);
   TreeData current;
-  bool found = true;
-  {
-    std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
-    try {
-      TreeRoom* room = registry_->open(TreeId{treeId});
-      if (!room || !canRead(caller, room->owner(), room->visibility())) found = false;  // absent or gated
-      else current = room->snapshot();
-    } catch (const std::exception&) {
-      found = false;
-    }
-  }
-  if (!found) {
+  if (!readRoom(treeId, callerOf(req), [&](TreeRoom& room) { current = room.snapshot(); })) {
     callback(error(drogon::k404NotFound, "no such tree"));
     return;
   }

@@ -39,6 +39,11 @@ private:
   // for an anonymous request (which may read public trees but never write).
   std::optional<UserId> callerOf(const drogon::HttpRequestPtr& req) const;
 
+  // The read gate every room-backed read shares: hold the tree's strand, open the room, and run
+  // `read` against it — answering false, and never a reason, when the caller may not have it.
+  bool readRoom(const std::string& treeId, const std::optional<UserId>& caller,
+                const std::function<void(TreeRoom&)>& read);
+
   std::shared_ptr<RoomRegistry> registry_;
   std::shared_ptr<TreeRepository> trees_;
   std::shared_ptr<ProgressRepository> progress_;

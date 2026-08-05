@@ -64,11 +64,4 @@ void WsPresenceBus::broadcastProgress(const TreeId& tree, const UserId& user, co
     if (conn->connected()) conn->send(text);
 }
 
-void WsPresenceBus::broadcastRaw(const TreeId& tree, const std::string& text,
-                                 const drogon::WebSocketConnectionPtr& except) {
-  for (const auto& conn : subscribersOf(tree)) {
-    if (conn != except && conn->connected()) conn->send(text);
-  }
-}
-
 }

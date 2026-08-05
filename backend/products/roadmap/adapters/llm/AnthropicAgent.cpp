@@ -1,6 +1,7 @@
 #include "products/roadmap/adapters/llm/AnthropicAgent.h"
 
 #include "platform/adapters/http/VendorCall.h"
+#include "platform/adapters/llm/AnthropicClient.h"
 
 #include <drogon/HttpClient.h>
 #include <drogon/HttpRequest.h>
@@ -389,12 +390,11 @@ AgentOutcome AnthropicAgent::run(const std::string& prompt, const TreeId& tree, 
     // process. So marshal EVERY client + loop touch onto the loop thread; the worker only queues
     // the work and blocks on the future, which the timeout-guaranteed callback always fulfils.
     loop->queueInLoop([apiKey, loop, request, promise]() {
-      auto client = drogon::HttpClient::newHttpClient("https://api.anthropic.com", loop);
+      auto client = drogon::HttpClient::newHttpClient(kAnthropicBaseUrl, loop);
       auto req = drogon::HttpRequest::newHttpRequest();
       req->setMethod(drogon::Post);
       req->setPath("/v1/messages");
-      req->addHeader("x-api-key", apiKey);
-      req->addHeader("anthropic-version", "2023-06-01");
+      applyAnthropicHeaders(req, apiKey);
       req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
       Json::StreamWriterBuilder builder;
       builder["indentation"] = "";

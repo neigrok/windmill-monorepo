@@ -13,14 +13,16 @@ namespace wm {
 
 namespace {
 
-constexpr const char* kBaseUrl = "https://api.anthropic.com";
-constexpr const char* kApiVersion = "2023-06-01";
-
 // Nobody is waiting on this call. It runs in a nightly batch, on a model that thinks before it
 // writes, at an effort level the caller picks — so the deadline is sized for the slowest honest
 // answer rather than for a person watching a spinner. A timeout here costs one page one night.
 constexpr double kDeadlineSeconds = 300.0;
 
+}
+
+void applyAnthropicHeaders(const drogon::HttpRequestPtr& request, const std::string& apiKey) {
+  request->addHeader("x-api-key", apiKey);
+  request->addHeader("anthropic-version", kAnthropicApiVersion);
 }
 
 std::string messagesPayload(const MessagesRequest& request) {
@@ -113,12 +115,11 @@ AnthropicClient::AnthropicClient(std::string apiKey) : apiKey_(std::move(apiKey)
 MessagesReply AnthropicClient::send(const MessagesRequest& request) {
   if (apiKey_.empty()) return {false, MessagesFailure::transport, {}};
 
-  auto client = drogon::HttpClient::newHttpClient(kBaseUrl, loop_.getLoop());
+  auto client = drogon::HttpClient::newHttpClient(kAnthropicBaseUrl, loop_.getLoop());
   auto req = drogon::HttpRequest::newHttpRequest();
   req->setMethod(drogon::Post);
   req->setPath("/v1/messages");
-  req->addHeader("x-api-key", apiKey_);
-  req->addHeader("anthropic-version", kApiVersion);
+  applyAnthropicHeaders(req, apiKey_);
   req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
   req->setBody(messagesPayload(request));
 

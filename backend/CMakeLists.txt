@@ -233,6 +233,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     products/roadmap/adapters/ws/Collab.cpp
     products/roadmap/adapters/ws/TreeSocket.cpp
     products/roadmap/adapters/mcp/RoadmapTools.cpp
+    products/roadmap/adapters/mcp/RoadmapToolCatalog.cpp
     products/roadmap/adapters/mcp/RoadmapResources.cpp
     products/roadmap/adapters/mcp/ReadShape.cpp
     products/roadmap/adapters/mcp/EditReceipt.cpp

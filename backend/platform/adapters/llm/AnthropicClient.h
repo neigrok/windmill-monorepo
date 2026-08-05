@@ -1,5 +1,7 @@
 #pragma once
 
+#include <drogon/HttpRequest.h>
+
 #include <json/json.h>
 
 #include <trantor/net/EventLoopThread.h>
@@ -7,6 +9,18 @@
 #include <string>
 
 namespace wm {
+
+// Where the vendor lives and which dialect of its wire we speak. Three spellings because three
+// callers need three: a drogon client takes the base URL, a TLS policy and a raw `Host:` line take
+// the bare host, and every request carries the version. One product retyping any of them is one
+// product that keeps calling last year's API after this line moves.
+constexpr const char* kAnthropicBaseUrl = "https://api.anthropic.com";
+constexpr const char* kAnthropicHost = "api.anthropic.com";
+constexpr const char* kAnthropicApiVersion = "2023-06-01";
+
+// The credential and the version, on any request built for that host. A call missing either is
+// answered 401 or 400 by the vendor, so the pair travels together or not at all.
+void applyAnthropicHeaders(const drogon::HttpRequestPtr& request, const std::string& apiKey);
 
 // Why a call produced no usable answer. A closed set of words, because the caller has exactly one
 // decision to make from it — is this work still owed, or is it done — and an open-ended vendor

@@ -11,8 +11,9 @@
 
 namespace wm {
 
-// Tracks which sockets subscribe to which tree and fans ops/presence out to them.
-// In-process for now; a Redis/NATS bus makes this cross-instance later (§4).
+// Tracks which sockets subscribe to which tree and fans a room's ops — and a caller's own progress
+// — out to them. Class C presence is not on this bus: PresenceHub keeps its own roster and
+// coalesces cursors at 20 Hz. In-process for now; a Redis/NATS bus makes this cross-instance (§4).
 class WsPresenceBus : public PresenceBus {
 public:
   // `user` is the connection's authenticated account (empty for anonymous viewers), remembered
@@ -23,7 +24,6 @@ public:
   void broadcastSubgraph(const TreeId& tree, Seq seq, const Subgraph& subgraph) override;
   void broadcastProgress(const TreeId& tree, const UserId& user, const NodeId& node,
                          ProgressStatus status) override;
-  void broadcastRaw(const TreeId& tree, const std::string& text, const drogon::WebSocketConnectionPtr& except);
 
 private:
   std::set<drogon::WebSocketConnectionPtr> subscribersOf(const TreeId& tree) const;

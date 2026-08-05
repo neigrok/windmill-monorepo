@@ -1,6 +1,7 @@
 #include "products/roadmap/adapters/llm/AnthropicComposer.h"
 
 #include "platform/adapters/http/VendorCall.h"
+#include "platform/adapters/llm/AnthropicClient.h"
 
 #include <drogon/HttpClient.h>
 #include <drogon/HttpRequest.h>
@@ -55,7 +56,6 @@ constexpr const char* kSystemPrompt =
     "- Never add commentary, preamble, explanations, or code fences.\n"
     "- Output the plan text and nothing else.";
 
-constexpr const char* kAnthropicHost = "api.anthropic.com";
 constexpr double kStreamDeadlineSeconds = 90.0;
 
 std::string messagesPayload(const std::string& text, bool stream) {
@@ -331,13 +331,12 @@ void AnthropicComposer::compose(const std::string& text,
     return;
   }
 
-  auto client = drogon::HttpClient::newHttpClient("https://api.anthropic.com", loop_.getLoop());
+  auto client = drogon::HttpClient::newHttpClient(kAnthropicBaseUrl, loop_.getLoop());
 
   auto req = drogon::HttpRequest::newHttpRequest();
   req->setMethod(drogon::Post);
   req->setPath("/v1/messages");
-  req->addHeader("x-api-key", apiKey_);
-  req->addHeader("anthropic-version", "2023-06-01");
+  applyAnthropicHeaders(req, apiKey_);
   req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
   req->setBody(messagesPayload(text, false));
 
@@ -408,7 +407,7 @@ std::function<void()> AnthropicComposer::composeStream(
   request += "POST /v1/messages HTTP/1.1\r\n";
   request += std::string("Host: ") + kAnthropicHost + "\r\n";
   request += "x-api-key: " + apiKey_ + "\r\n";
-  request += "anthropic-version: 2023-06-01\r\n";
+  request += std::string("anthropic-version: ") + kAnthropicApiVersion + "\r\n";
   request += "content-type: application/json\r\n";
   request += "accept: text/event-stream\r\n";
   request += "connection: close\r\n";
