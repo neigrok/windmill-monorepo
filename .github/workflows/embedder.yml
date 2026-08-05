@@ -1,0 +1,83 @@
+name: Embedder CI
+
+# Monorepo: the journal echo sidecar lives under services/embedder. It exists for exactly one
+# reason — the vectors it writes must land in the same space the browser's do — and a divergence
+# there raises no error anywhere, fails no test and just makes retrieval quietly worse forever.
+# So both halves of that pair arm this workflow: the sidecar, and the on-device worker it must
+# agree with (web/src/products/journal/search/neural). Ships nothing; this is a gate, not a deploy.
+#
+# `web/scripts/fetch-model.mjs` is in the filter because it decides which weights land. Change the
+# files and the pinned vectors stop reproducing — which is the whole point of the fixture.
+#
+# check/browser.mjs is deliberately NOT run here. It is the check that measures browser-vs-sidecar
+# parity directly, but it needs real headless Chrome driving the shipped worker, and that is a
+# manual check by choice — recorded as such in services/embedder/README.md rather than left silent.
+# What runs is the pair that needs no browser: the fixture and the server.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/embedder/**'
+      - 'web/src/products/journal/search/neural/**'
+      - 'web/scripts/fetch-model.mjs'
+      - '.github/workflows/embedder.yml'
+  pull_request:
+    paths:
+      - 'services/embedder/**'
+      - 'web/src/products/journal/search/neural/**'
+      - 'web/scripts/fetch-model.mjs'
+      - '.github/workflows/embedder.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: embedder-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: services/embedder
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: services/embedder/package-lock.json
+
+      # npm ci, never npm install: the lockfile pins onnxruntime-node 1.21.0, and that pin is what
+      # makes the fixture below reproducible at all.
+      - run: npm ci
+
+      # The weights are not in the repo (web/.gitignore ignores public/models/) — web's own prebuild
+      # fetches them from HuggingFace. Same cache key as web.yml: it is the same 34MB named by what
+      # it is, so whichever workflow runs first pays for the download.
+      - name: Cache self-hosted embedding model
+        uses: actions/cache@v4
+        with:
+          path: web/public/models
+          key: bge-small-en-v1.5-q8
+
+      # Node builtins only, and a no-op once every file is present, so a cache hit costs nothing.
+      # MODEL_DIR is unset on purpose: the sidecar's default is this exact directory, which is also
+      # what the deployed bind mount reproduces.
+      - name: Fetch the model files
+        working-directory: web
+        run: node scripts/fetch-model.mjs
+
+      # Five pinned sentences against the vectors committed in check/fixture.json. The fixture is
+      # bound to the platform that generated it (darwin/arm64), so the bar on this runner is the
+      # 0.995 cosine floor rather than bit equality — onnxruntime-node's macOS and Linux builds do
+      # not agree to the bit. Measured on linux/x64: 0.9974.
+      - name: Fixture — the five pinned sentences
+        run: node check/fixture.mjs
+
+      # The sidecar as the C++ backend sees it: a process, a port, warmup, determinism, batch
+      # independence, and every way a caller can hand it something absurd.
+      - name: Server — the process the backend talks to
+        run: node check/server.mjs

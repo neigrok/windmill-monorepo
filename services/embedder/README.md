@@ -19,11 +19,15 @@ makes that identity structural — and `check/browser.mjs` measures it rather th
 ```sh
 cd services/embedder
 npm ci
-npm start                       # :8081, model from ../../web/public/models
+node ../../web/scripts/fetch-model.mjs   # once — 34MB of weights, a no-op once they are there
+npm start                                # :8081, model from ../../web/public/models
 ```
 
-The default `MODEL_DIR` is the web app's own `public/models`, so a fresh clone needs no setup — the
-files are committed. Point it elsewhere with `MODEL_DIR`, and change the port with `PORT`.
+The default `MODEL_DIR` is the web app's own `public/models`. The weights are **not** in the repo:
+`web/.gitignore` ignores `public/models/`, and `web/scripts/fetch-model.mjs` pulls them from
+HuggingFace. It is wired as web's `prebuild`, so an `npm run build` over there fills the same
+directory and this service needs nothing further. Point it elsewhere with `MODEL_DIR`, and change
+the port with `PORT`.
 
 Wire the backend to it:
 
@@ -63,7 +67,18 @@ node check/browser.mjs       # the shipped web worker in real headless Chrome, v
 
 `check/fixture.json` is the artifact: five sentences, their vectors, the sha256 of the weights that
 produced them, and the platform they were produced on. `node check/fixture.mjs --write` regenerates
-it — only ever deliberately, alongside a new `VERSION`.
+it — only ever deliberately, alongside a new `VERSION`. (The sha256 is provenance, written on
+`--write` and read by a human; what a check run compares is the vectors, which is the stronger
+statement anyway — the same weights through a different library still produce different numbers.)
+
+`.github/workflows/embedder.yml` runs the first two on every push and PR that touches this directory,
+`web/src/products/journal/search/neural/`, or the script that fetches the weights.
+
+**`check/browser.mjs` is deliberately not in CI.** It needs a real browser, and installing Chrome on
+every push to re-measure a number that only three things can move — the transformers version, the
+model files, the worker — is not worth the minutes. It is also the check that measures the claim this
+whole service exists to make, so run it by hand when any of those three change, and update the table
+below with what it says. The omission is a choice, written down here rather than left to be found.
 
 ### What is measured, and what is true
 
@@ -72,6 +87,7 @@ it — only ever deliberately, alongside a new `VERSION`.
 | **browser (onnxruntime-web, wasm) vs sidecar (onnxruntime-node)** — the claim this service exists to make | **0.999978** | 1.0e-3 |
 | same passage batched with four others vs embedded alone | 0.9956 | 1.5e-2 |
 | sidecar on linux/arm64 vs sidecar on darwin/arm64, same batch | 0.9972 | 1.4e-2 |
+| sidecar on linux/x64 vs the committed fixture — **the bar CI holds**, floor 0.995 | 0.9974 | 1.2e-2 |
 | a float32 unit vector against itself (the ceiling all of these are read against) | 0.9999995 | — |
 | node → JSON → C++ `std::vector<float>` | exact | 0 |
 
@@ -107,18 +123,27 @@ binaries are glibc. The build prunes `onnxruntime-web` (the node entry point nev
 every ORT binary for a platform that isn't the target — **in the same layer as `npm ci`**, because a
 `rm` in a later layer only writes a whiteout and ships the bytes anyway. It was 1.12GB before that.
 
+This image is not what production runs today: `backend/deploy/docker-compose.yml` takes a stock
+`node:22-slim` and bind-mounts this directory into it, so the container's `node_modules` is the
+host's. Which of the two shapes wins is a deploy decision, not this file's — what matters here is
+that the snippet below is the deployed one, quoted rather than imagined.
+
 ### The model files are mounted, not copied
 
-**Decision: bind mount.** The image carries no weights.
+**Decision: bind mount.** No weights travel in an image.
 
 ```yaml
   embedder:
-    build: ./services/embedder          # or the published image
+    image: node:22-slim
     restart: unless-stopped
+    working_dir: /app
     environment:
+      PORT: "8081"
       MODEL_DIR: /models
     volumes:
+      - ../../services/embedder:/app:ro
       - ./web/models:/models:ro         # the deployed site's own models/ directory
+    command: ["node", "server.js"]
 ```
 
 and on the `server` service:
@@ -140,6 +165,12 @@ The price, which an operator must know:
   directory. `docker compose config` will not catch this.
 - A missing or wrong mount surfaces as `/health` reporting `{"status":"failed"}` with the path it
   looked in, and the container stays up saying so. It does not crash-loop, and it does not lie.
+- **The `/app` mount has its own precondition, and nothing enforces it.** `.github/workflows/deploy.yml`
+  copies the compose file, the Caddyfile and the rendered `.env` to the VPS and nothing else, while
+  `node_modules/` is gitignored — so the host path this service is mounted from has to be put there,
+  with its dependencies installed, by some means outside the deploy workflow. Verified 2026-08-05 by
+  reading both files; whether the fix is shipping the directory or going back to the built image is
+  the deploy owner's call.
 - Prove a deployment rather than trusting it: `docker compose exec embedder node check/fixture.mjs`
   re-embeds the five pinned sentences against the mounted weights and compares them to the vectors
   committed in this repo.
@@ -148,7 +179,7 @@ The price, which an operator must know:
 
 | Pin | Why |
 |---|---|
-| `@huggingface/transformers` **3.8.1**, exact | The web app resolves the same 3.8.1. The two must move together or the server and the browser stop sharing a space. |
+| `@huggingface/transformers` **3.8.1**, exact | The two must move together or the server and the browser stop sharing a space. `web/package.json` pins the same exact version — it declared `^3` until 2026-08-05 and agreed only because the lockfile happened to; the rule now lives where npm enforces it rather than in this sentence. |
 | `package-lock.json` committed | It pins `onnxruntime-node`/`onnxruntime-common` **1.21.0**, which is what makes the fixture reproducible. `npm ci`, never `npm install`, in the image. |
 | `Xenova/bge-small-en-v1.5`, dtype `q8` | Matches `web/src/products/journal/search/neural/embedder.worker.js` exactly. |
 | `pooling: 'mean'`, `normalize: true` | Same. Both are named in `VERSION`. |

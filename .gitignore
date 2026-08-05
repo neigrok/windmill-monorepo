@@ -27,6 +27,11 @@ cmake-build-*/
 .gradle/
 apps/android/local.properties
 
+# Drogon's upload scratch tree. It is created eagerly at startup — 256 empty hex-named directories
+# under uploads/tmp/ — whether or not the server ever accepts a file, and it lands wherever the
+# binary was run from, which is usually the checkout.
+uploads/
+
 # Secrets — never commit
 .env
 *.local

@@ -16,7 +16,7 @@
     "@fontsource/baloo-2": "^5.2.7",
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@fontsource/nunito": "^5.2.7",
-    "@huggingface/transformers": "^3",
+    "@huggingface/transformers": "3.8.1",
     "lucide-react": "^0.400.0",
     "mediabunny": "^1.51.0",
     "mp4-muxer": "^5.2.2",
