@@ -49,34 +49,18 @@ struct SweepLock {
 NudgeSweep::NudgeSweep(NudgeRepository& nudges, NudgeMailSender& mail, TokenGenerator& tokens,
                        Clock& clock, NudgeArming arming, std::string appBaseUrl)
     : nudges_(nudges), mail_(mail), tokens_(tokens), clock_(clock), arming_(std::move(arming)),
-      appBaseUrl_(std::move(appBaseUrl)), ticker_("journal-nudge-ticker") {
-  // The loop runs from construction, not from start(): the same idiom as the reminder ticker, so a
-  // loop nobody armed still exists to be queued onto.
-  ticker_.run();
-}
+      appBaseUrl_(std::move(appBaseUrl)), heartbeat_("journal-nudge") {}
 
 void NudgeSweep::start() {
-  ticker_.getLoop()->runAfter(kFirstTickSeconds, [this] {
-    tick();
-    ticker_.getLoop()->runEvery(kTickSeconds, [this] { tick(); });
-  });
-  LOG_INFO << "journal nudge: heartbeat armed, first sweep in " << kFirstTickSeconds << "s ("
-           << (arming_.enabled ? "enabled" : "dark") << ", " << arming_.allowlist.size()
-           << " on the allowlist)";
-}
-
-// The crash guard: whatever one sweep runs into, the heartbeat must survive to sweep again.
-void NudgeSweep::tick() {
-  try {
+  heartbeat_.start(kFirstTickSeconds, kTickSeconds, [this] {
     const NudgeSweepReport report = run(clock_.nowMs(), false);
     if (report.sent > 0 || report.held > 0 || report.failed > 0)
       LOG_INFO << "journal nudge: swept " << report.sent << " sent, " << report.held << " held, "
                << report.skipped << " skipped, " << report.failed << " failed";
-  } catch (const std::exception& error) {
-    LOG_ERROR << "journal nudge sweep failed: " << error.what();
-  } catch (...) {
-    LOG_ERROR << "journal nudge sweep failed";
-  }
+  });
+  LOG_INFO << "journal nudge: heartbeat armed, first sweep in " << kFirstTickSeconds << "s ("
+           << (arming_.enabled ? "enabled" : "dark") << ", " << arming_.allowlist.size()
+           << " on the allowlist)";
 }
 
 NudgeSweepReport NudgeSweep::run(std::uint64_t nowMs, bool dryRun) {

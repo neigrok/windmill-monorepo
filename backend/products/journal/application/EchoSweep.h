@@ -6,7 +6,7 @@
 #include "products/journal/ports/EchoRepository.h"
 #include "products/journal/ports/Embedder.h"
 
-#include <trantor/net/EventLoopThread.h>
+#include "platform/application/Heartbeat.h"
 
 #include <cstdint>
 
@@ -61,7 +61,6 @@ public:
   EchoSweepReport run(std::uint64_t nowMs, std::uint64_t sinceMs);
 
 private:
-  void tick();
   // One page, end to end. Returns the outcome to record; the caller owns the report counters so
   // this stays a pipeline that reads top to bottom rather than a method that also does bookkeeping.
   CurationOutcome derive(const UserId& user, const DuePage& page, std::uint64_t corpusStamp,
@@ -73,7 +72,7 @@ private:
   Clock& clock_;
   SelectionRules rules_;
   SweepBudget budget_;
-  trantor::EventLoopThread ticker_;   // declared last: destructs first, before the deps it uses
+  Heartbeat heartbeat_;   // declared last: destructs first, before the deps a running pass holds
 };
 
 }

@@ -49,39 +49,21 @@ ReminderSweep::ReminderSweep(ReminderRepository& reminders, ReminderMailSender& 
                              TokenGenerator& tokens, Clock& clock, ReminderArming arming,
                              std::string appBaseUrl)
     : reminders_(reminders), mail_(mail), tokens_(tokens), clock_(clock),
-      arming_(std::move(arming)), appBaseUrl_(std::move(appBaseUrl)), ticker_("reminder-ticker") {
-  // The loop runs from construction, not from start(): an admin sweep is queued onto it whether
-  // or not the heartbeat was ever armed, and a loop nobody spun would swallow that work in
-  // silence. Same idiom as the Resend sender's private loop.
-  ticker_.run();
-}
+      arming_(std::move(arming)), appBaseUrl_(std::move(appBaseUrl)), heartbeat_("reminder") {}
 
 void ReminderSweep::start() {
   std::random_device entropy;
   const double firstTick = kFirstTickFloorSeconds + entropy() % kFirstTickJitterSeconds;
-  ticker_.getLoop()->runAfter(firstTick, [this] {
-    tick();
-    ticker_.getLoop()->runEvery(kTickSeconds, [this] { tick(); });
-  });
-  LOG_INFO << "reminders: heartbeat armed, first sweep in " << firstTick << "s ("
-           << (arming_.enabled ? "enabled" : "dark") << ", " << arming_.allowlist.size()
-           << " on the allowlist)";
-}
-
-// The crash guard. Whatever a sweep runs into — a dropped connection, a tree nobody can parse —
-// the heartbeat must survive to sweep again in fifteen minutes.
-void ReminderSweep::tick() {
-  try {
+  heartbeat_.start(firstTick, kTickSeconds, [this] {
     const SweepReport report = run(clock_.nowMs(), false);
     if (report.due > 0)
       LOG_INFO << "reminders: swept " << report.due << " due, " << report.sent << " sent, "
                << report.held << " held, " << report.skipped << " skipped, " << report.failed
                << " failed, " << report.errors << " errored";
-  } catch (const std::exception& error) {
-    LOG_ERROR << "reminder sweep failed: " << error.what();
-  } catch (...) {
-    LOG_ERROR << "reminder sweep failed";
-  }
+  });
+  LOG_INFO << "reminders: heartbeat armed, first sweep in " << firstTick << "s ("
+           << (arming_.enabled ? "enabled" : "dark") << ", " << arming_.allowlist.size()
+           << " on the allowlist)";
 }
 
 SweepReport ReminderSweep::run(std::uint64_t nowMs, bool dryRun) {
@@ -151,7 +133,7 @@ SweepReport ReminderSweep::run(std::uint64_t nowMs, bool dryRun) {
 
 void ReminderSweep::runAsync(std::uint64_t nowMs, bool dryRun,
                              std::function<void(SweepReport)> done) {
-  ticker_.getLoop()->queueInLoop([this, nowMs, dryRun, done = std::move(done)] {
+  heartbeat_.queue([this, nowMs, dryRun, done = std::move(done)] {
     // The caller is waiting on a promise it cannot fulfil itself, so `done` fires on every path —
     // an empty report reads as "nothing ran", which is exactly what happened.
     try {

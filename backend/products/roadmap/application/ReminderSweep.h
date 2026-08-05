@@ -6,7 +6,7 @@
 #include "platform/ports/TokenGenerator.h"
 #include "products/roadmap/domain/Reminders.h"
 
-#include <trantor/net/EventLoopThread.h>
+#include "platform/application/Heartbeat.h"
 
 #include <cstdint>
 #include <functional>
@@ -74,7 +74,6 @@ public:
   const ReminderArming& arming() const { return arming_; }
 
 private:
-  void tick();
   // The load, guarded. It is the only part of a turn that can throw and still leave something
   // worth recording: a week nobody can read must be claimed anyway, or its owner keeps the oldest
   // pointer in the fleet, sorts first in every batch, and eventually crowds everyone else out.
@@ -89,9 +88,9 @@ private:
   ReminderArming arming_;
   std::string appBaseUrl_;
   // Declared LAST so it is destroyed FIRST: its destructor quits the loop and joins the thread,
-  // which must happen while the collaborators above are still alive — a tick in flight is holding
+  // which must happen while the collaborators above are still alive — a pass in flight is holding
   // references to every one of them.
-  trantor::EventLoopThread ticker_;
+  Heartbeat heartbeat_;
 };
 
 }

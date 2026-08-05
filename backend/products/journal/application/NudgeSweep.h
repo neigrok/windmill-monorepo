@@ -6,7 +6,7 @@
 #include "products/journal/ports/NudgeMailSender.h"
 #include "products/journal/ports/NudgeRepository.h"
 
-#include <trantor/net/EventLoopThread.h>
+#include "platform/application/Heartbeat.h"
 
 #include <cstdint>
 #include <string>
@@ -36,7 +36,6 @@ public:
   const NudgeArming& arming() const { return arming_; }
 
 private:
-  void tick();
   NudgeCandidate candidateFor(const NudgeDueUser& due, std::uint64_t nowMs) const;
   bool deliver(const NudgeDueUser& due, const std::string& pauseSecret);
 
@@ -46,7 +45,7 @@ private:
   Clock& clock_;
   NudgeArming arming_;
   std::string appBaseUrl_;
-  trantor::EventLoopThread ticker_;                      // declared last: destructs first, before deps
+  Heartbeat heartbeat_;                                  // declared last: destructs first, before deps
 };
 
 }

@@ -36,25 +36,10 @@ CurationStatus statusFor(const std::string& failure) {
 EchoSweep::EchoSweep(EchoRepository& echoes, Embedder& embedder, Curator& curator, Clock& clock,
                      SelectionRules rules, SweepBudget budget)
     : echoes_(echoes), embedder_(embedder), curator_(curator), clock_(clock),
-      rules_(std::move(rules)), budget_(budget), ticker_("journal-echo-ticker") {
-  // The loop runs from construction, same idiom as the reminder and nudge tickers: an operator pass
-  // may be driven onto it before the heartbeat is ever armed, and a loop nobody spun would swallow it.
-  ticker_.run();
-}
+      rules_(std::move(rules)), budget_(budget), heartbeat_("journal-echo") {}
 
 void EchoSweep::start() {
-  ticker_.getLoop()->runAfter(kEchoFirstTickSeconds, [this] {
-    tick();
-    ticker_.getLoop()->runEvery(kEchoTickSeconds, [this] { tick(); });
-  });
-  const bool armed = embedder_.configured() && curator_.configured();
-  LOG_INFO << "journal echo: heartbeat armed, first sweep in " << kEchoFirstTickSeconds << "s ("
-           << (armed ? "embedder + curator configured" : "unwired — dark") << ")";
-}
-
-// The crash guard: whatever one sweep runs into, the heartbeat must survive to sweep again.
-void EchoSweep::tick() {
-  try {
+  heartbeat_.start(kEchoFirstTickSeconds, kEchoTickSeconds, [this] {
     const std::uint64_t now = clock_.nowMs();
     const EchoSweepReport report = run(now, now - kEchoLookbackMs);
     if (report.pagesDerived > 0 || report.pagesFailed > 0)
@@ -62,11 +47,10 @@ void EchoSweep::tick() {
                << " pages, " << report.passagesEmbedded << " passages, " << report.echoesWritten
                << " echoes, " << report.pagesFailed << " failed, " << report.pagesOverBudget
                << " over budget";
-  } catch (const std::exception& error) {
-    LOG_ERROR << "journal echo sweep failed: " << error.what();
-  } catch (...) {
-    LOG_ERROR << "journal echo sweep failed";
-  }
+  });
+  const bool armed = embedder_.configured() && curator_.configured();
+  LOG_INFO << "journal echo: heartbeat armed, first sweep in " << kEchoFirstTickSeconds << "s ("
+           << (armed ? "embedder + curator configured" : "unwired — dark") << ")";
 }
 
 EchoSweepReport EchoSweep::run(std::uint64_t nowMs, std::uint64_t sinceMs) {
