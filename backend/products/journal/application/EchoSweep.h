@@ -58,7 +58,11 @@ public:
             SelectionRules rules, SweepBudget budget);
 
   void start();
-  EchoSweepReport run(std::uint64_t nowMs, std::uint64_t sinceMs);
+
+  // `sinceMs` is the only instant a pass has an opinion about: which users have touched a page
+  // recently enough to be worth scanning. Everything after that is decided by stamps the corpus
+  // carries, never by the wall — which is why the sweep takes no "now" and cannot drift against one.
+  EchoSweepReport run(std::uint64_t sinceMs);
 
 private:
   // One page, end to end. Returns the outcome to record; the caller owns the report counters so

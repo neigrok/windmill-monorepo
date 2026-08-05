@@ -162,7 +162,7 @@ std::vector<DuePage> PgEchoRepository::duePages(const UserId& user, std::uint64_
   // body never changed.
   pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result rows = txn.exec_params(
-      "SELECT p.day::text AS day, p.body, p.source, p.stamp_ms, coalesce(c.attempts, 0) AS attempts "
+      "SELECT p.day::text AS day, p.body, p.stamp_ms, coalesce(c.attempts, 0) AS attempts "
       "FROM journal_page p "
       "LEFT JOIN journal_page_curation c ON c.user_id = p.user_id AND c.day = p.day "
       "WHERE p.user_id = $1::uuid "
@@ -175,7 +175,6 @@ std::vector<DuePage> PgEchoRepository::duePages(const UserId& user, std::uint64_
   for (const auto& row : rows)
     pages.push_back(DuePage{LocalDate{row["day"].as<std::string>()},
                             row["body"].as<std::string>(),
-                            parseSource(row["source"].as<std::string>()),
                             row["stamp_ms"].as<std::uint64_t>(),
                             row["attempts"].as<int>()});
   return pages;
@@ -342,16 +341,15 @@ void PgEchoRepository::replaceEchoes(const UserId& user, const LocalDate& trigge
   for (const EchoRow& echo : curated.rows)
     txn.exec_params(
         "INSERT INTO journal_echo (user_id, trigger_day, trigger_span_id, match_day, match_span_id, "
-        "cosine, relation, match_is_self, curator_version, prompt_hash) "
-        "VALUES ($1::uuid, $2::date, $3, $4::date, $5, $6, $7, $8, $9, $10) "
+        "cosine, relation, match_is_self, curator_version) "
+        "VALUES ($1::uuid, $2::date, $3, $4::date, $5, $6, $7, $8, $9) "
         "ON CONFLICT (user_id, trigger_span_id, match_span_id) DO UPDATE "
         "SET trigger_day = EXCLUDED.trigger_day, match_day = EXCLUDED.match_day, "
         "cosine = EXCLUDED.cosine, relation = EXCLUDED.relation, "
-        "match_is_self = EXCLUDED.match_is_self, curator_version = EXCLUDED.curator_version, "
-        "prompt_hash = EXCLUDED.prompt_hash",
+        "match_is_self = EXCLUDED.match_is_self, curator_version = EXCLUDED.curator_version",
         user.str(), triggerDay.iso(), static_cast<long long>(echo.triggerSpanId),
         echo.matchDay.iso(), static_cast<long long>(echo.matchSpanId), echo.cosine, echo.relation,
-        echo.matchIsSelf, curated.curatorVersion, curated.promptHash);
+        echo.matchIsSelf, curated.curatorVersion);
 
   txn.commit();
 }

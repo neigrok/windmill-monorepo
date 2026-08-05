@@ -67,7 +67,6 @@ target_link_libraries(windmill_roadmap PUBLIC windmill_platform)
 add_library(windmill_journal
   products/journal/domain/Page.cpp
   products/journal/domain/NudgePlan.cpp
-  products/journal/domain/EchoFinder.cpp
   products/journal/domain/Passage.cpp
   products/journal/domain/SpanReconcile.cpp
   products/journal/domain/EchoSelection.cpp
@@ -142,7 +141,6 @@ add_executable(windmill_domain_tests
   test/products/roadmap/application/ReminderSweepTest.cpp
   test/products/journal/domain/PageTest.cpp
   test/products/journal/domain/NudgePlanTest.cpp
-  test/products/journal/domain/EchoFinderTest.cpp
   test/products/journal/domain/PassageTest.cpp
   test/products/journal/domain/SpanReconcileTest.cpp
   test/products/journal/domain/EchoSelectionTest.cpp
@@ -276,7 +274,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
   add_executable(windmill_mcp platform/infra/mcp_main.cpp)            # stdio transport (local hosts)
   target_link_libraries(windmill_mcp PRIVATE windmill_roadmap)
 
-  add_executable(windmill_mcp_http platform/infra/mcp_http_main.cpp)  # standalone HTTP transport (legacy; folded into windmill_server)
+  add_executable(windmill_mcp_http platform/infra/mcp_http_main.cpp)  # standalone HTTP transport: windmill_server serves MCP in prod, and this still ships in the image for local/single-purpose runs (Dockerfile builds, smoke-tests and installs it)
   target_link_libraries(windmill_mcp_http PRIVATE windmill_roadmap)
 
   add_executable(windmill_mcp_tests

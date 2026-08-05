@@ -108,15 +108,28 @@ line breaks), then split within a line to land at roughly one to three sentences
 large fraction of nightly journalers write bare lists with no terminal punctuation, and sentence
 splitting alone turns three unrelated items into one mush passage.
 
-Pages with `source = 'spoken'` have no reliable sentence boundaries — segment those on ASR pause
-boundaries where available, otherwise fixed overlapping windows.
-
 Merge any passage under ~6 words into its neighbour. Measured: passages of ≤5 words have a mean hub
 score of 18.4 versus 7.4 for ≥10 words — fragments are universal attractors.
 
-Embed each passage **with one sentence of surrounding context**, and store the span separately for
-quoting. Measured: bare "tired." matches every other "tired."; with its neighbouring sentence it
-matches the right kind of tired.
+Everything above is built (`domain/Passage.h` — `segment` is one pure function of the body, with
+`SegmentRules{minWords = 6, maxSentences = 3}`). The next two paragraphs are **designed, not
+built**, and are kept because both are still the right answer, not because either is running.
+
+**Designed, not built — a spoken page segments exactly like a typed one.** The intent: pages with
+`source = 'spoken'` have no reliable sentence boundaries, so segment those on ASR pause boundaries
+where available and otherwise on fixed overlapping windows. Neither half can be built as it stands.
+There are no pause boundaries to read — `ports/Transcriber.h` hands back a finished `Transcript`
+and nothing else, so "where available" is never — and overlapping windows change what a *quote* is,
+from a sentence to a slice, which the surface and the dismissal hashes both key on. It needs a
+decision before it needs code. `DuePage` deliberately carries no `source` field: it was plumbed
+from the page row through the port and read by nothing, which is a claim that this rule ships.
+
+**Designed, not built — a passage is embedded as itself.** The intent: embed each passage with one
+sentence of surrounding context and store the span separately for quoting. Measured: bare "tired."
+matches every other "tired."; with its neighbouring sentence it matches the right kind of tired.
+Today `EchoSweep` embeds `passage.text` and stores that same text. Building it is not a small
+change — what is embedded stops being what is quoted, so it is an `embed_version` bump and a
+re-embed of every corpus, and retrieval reads one version only by design.
 
 ### Passage identity
 
@@ -241,8 +254,7 @@ create table journal_echo (
   match_span_id   bigint not null,
   cosine          real not null,        -- the retrieval signal
   relation        real not null,        -- the curator's judgement; never compared across calls
-  curator_version text not null,
-  prompt_hash     text not null,
+  curator_version text not null,        -- model/effort/prompt-digest — the prompt's identity is IN it
   created_at      timestamptz not null default now(),
   primary key (user_id, trigger_span_id, match_span_id),
   check (match_day < trigger_day)
@@ -451,28 +463,41 @@ Present candidates **chronologically, without their cosine scores** — sorted b
 inherits the retriever's prior and ratifies the top of the list, which is frequently the vocabulary
 twin it exists to reject.
 
-## Migration
+## Migration — done, and it took two waves rather than one
 
-Replaces the shipped page-level cosine implementation. Landing it invalidates:
+This replaced the shipped page-level cosine implementation. The list below was written before the
+build as a checklist of every line the wave would make false. **Everything on it is now executed**,
+but not in one wave, and that is worth recording: the build wave (`c5ff152` / `3c9906e`) did the
+code and the schema, and left three items standing for weeks — a dead domain module with passing
+tests around it, an e2e script written against a table that no longer existed, and the doc a reader
+opens *before* touching this product. The repair wave paid them. The house rule is "fix it in the
+same wave that made it false", and this file is the evidence of what it costs when you don't: the
+checklist was correct, complete, and ignored.
 
-- `domain/EchoFinder.{h,cpp}` + `test/products/journal/domain/EchoFinderTest.cpp`
-- `application/EchoSweep.cpp` + `test/products/journal/application/EchoSweepTest.cpp`
-- `adapters/postgres/PgEchoRepository.cpp`, `adapters/http/EchoApi.cpp` + `EchoApiTest.cpp`
-- `ports/EchoRepository.h`; `test/products/journal/Fakes.h` (needs a `Curator` fake)
-- `test/e2e/journal_echo.sh`
-- `db/schema.sql` — `journal_page_vector` → `journal_span`; `journal_echo` re-keyed
-- `web/src/products/journal/echoes/**` — the surface, rebuilt as its own feature package beside
+- ✔ `domain/EchoFinder.{h,cpp}` + `test/products/journal/domain/EchoFinderTest.cpp` — **deleted in
+  the repair wave.** They survived the build wave with green tests around them, which is the worst
+  shape a dead module can be in: a reader greps `EchoFinder`, finds it passing, and believes
+  whole-page cosine is how echoes work
+- ✔ `application/EchoSweep.cpp` + `test/products/journal/application/EchoSweepTest.cpp`
+- ✔ `adapters/postgres/PgEchoRepository.cpp`, `adapters/http/EchoApi.cpp` + `EchoApiTest.cpp`
+- ✔ `ports/EchoRepository.h`; `test/products/journal/Fakes.h` (gained a `Curator` fake)
+- ✔ `test/e2e/journal_echo.sh` — **rewritten in the repair wave.** The build wave left it seeding
+  `journal_echo` with `trigger_lo` / `match_hi` / `score`, columns the same wave dropped, so the
+  script could only ever fail at its first `psql`
+- ✔ `db/schema.sql` — `journal_page_vector` → `journal_span`; `journal_echo` re-keyed
+- ✔ `web/src/products/journal/echoes/**` — the surface, rebuilt as its own feature package beside
   `search/` and `zoom/`. The old root-level `EchoCard.jsx` and `useEchoes.js` are gone; quotes are
   re-located by text against the live body rather than sliced by stored offset
-- `ARCHITECTURE.md` §5.1–5.4, the `journal_echo` row of the entity table at §265, and **§5.2's "rows
-  are never deleted"**, which this design contradicts
+- ✔ `ARCHITECTURE.md` §5.1–5.4, the `journal_echo` row of its entity table, and **§5.2's "rows are
+  never deleted"**, which this design contradicts (`replaceEchoes` deletes and rewrites) —
+  **all three in the repair wave.** §5 now points here rather than describing a system that is gone
 
 **Closed, and it was never open.** An earlier draft of this spec flagged `GET /v1/journal/vectors`
-as a coupling to resolve — the docs describe it as seeding the on-device search index from
+as a coupling to resolve — the docs described it as seeding the on-device search index from
 `journal_page_vector`. It does not exist: no route, no handler, no repository method, and nothing in
-`web/src` calls it. The browser builds its own index. Dropping `journal_page_vector` therefore
-breaks nothing. `ARCHITECTURE.md` §8.2 and its endpoint table still describe the route as real and
-are corrected in the same wave.
+`web/src` calls it. The browser builds its own index. Dropping `journal_page_vector` therefore broke
+nothing. `ARCHITECTURE.md` §8.2 and its endpoint table both carried it as real and now carry it
+struck through, marked never built.
 
 ## Rules that hold
 

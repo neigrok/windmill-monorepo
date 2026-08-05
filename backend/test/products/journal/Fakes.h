@@ -324,7 +324,7 @@ public:
     bodies[pageKey(user, day)] = body;
   }
   void addDuePage(const UserId& user, const LocalDate& day, const std::string& body) {
-    due[user.str()].push_back(DuePage{day, body, Source::typed, stamp, 0});
+    due[user.str()].push_back(DuePage{day, body, stamp, 0});
     plantPage(user, day, body);
   }
   // Plant an already-derived page, the way a night that ran before this one would have left it.

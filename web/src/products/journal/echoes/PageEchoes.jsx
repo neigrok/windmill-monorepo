@@ -36,7 +36,7 @@ export function PageEchoes({ echoes, day, standing = false }) {
         state={open ? 'open' : (standing ? 'current' : 'aged')}
         onClick={() => (open ? echoes.closeInk() : echoes.openInk(day))}
       />
-      {open && <Ink echoes={echoes} page={page} />}
+      {open && <PageInk echoes={echoes} page={page} />}
       {first && <FirstEcho echoes={echoes} page={page} />}
     </>
   );
@@ -69,7 +69,10 @@ function EdgeTab({ count, state, onClick }) {
 // The ink, in place. With One it is every passage found, oldest at the bottom. Without One it is the
 // nearest, cut, then every other date — all of them, because the tab already said how many there are
 // and a count whose members you cannot reach is not a fact.
-function Ink({ echoes, page }) {
+//
+// Named for where it opens, not for what it is made of: `Ink.jsx` is the shared parts every surface
+// draws an echo out of, and a local `Ink` here would read like the one thing that file does not export.
+function PageInk({ echoes, page }) {
   const [nearest, ...rest] = page.matches;
   const ref = useRef(null);
 

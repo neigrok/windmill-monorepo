@@ -23,7 +23,7 @@ const FIRST_ECHO_KEY = 'windmill:journal-first-echo';
 // not a character position. It is a hint and nothing more: the server omits it when the body has
 // moved under the passage, and the text search below is what actually decides whether a quote
 // renders. A hit yields the char range in this body, which is what the canvas lights when you walk.
-function locate(body, text, occurrence) {
+export function locate(body, text, occurrence) {
   if (!body || !text) return null;
   const want = typeof occurrence === 'number' && occurrence >= 0 ? occurrence : 0;
   let from = 0;

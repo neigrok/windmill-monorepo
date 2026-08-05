@@ -41,7 +41,7 @@ EchoSweep::EchoSweep(EchoRepository& echoes, Embedder& embedder, Curator& curato
 void EchoSweep::start() {
   heartbeat_.start(kEchoFirstTickSeconds, kEchoTickSeconds, [this] {
     const std::uint64_t now = clock_.nowMs();
-    const EchoSweepReport report = run(now, now - kEchoLookbackMs);
+    const EchoSweepReport report = run(now - kEchoLookbackMs);
     if (report.pagesDerived > 0 || report.pagesFailed > 0)
       LOG_INFO << "journal echo: " << report.usersScanned << " users, " << report.pagesDerived
                << " pages, " << report.passagesEmbedded << " passages, " << report.echoesWritten
@@ -53,8 +53,7 @@ void EchoSweep::start() {
            << (armed ? "embedder + curator configured" : "unwired — dark") << ")";
 }
 
-EchoSweepReport EchoSweep::run(std::uint64_t nowMs, std::uint64_t sinceMs) {
-  (void)nowMs;
+EchoSweepReport EchoSweep::run(std::uint64_t sinceMs) {
   EchoSweepReport report;
   // Either boundary missing makes the whole pass a quiet no-op rather than an error — the same
   // discipline PlanComposer uses behind paste-import. No user is scanned and no row is written.
@@ -97,7 +96,7 @@ EchoSweepReport EchoSweep::run(std::uint64_t nowMs, std::uint64_t sinceMs) {
         if (!queued.insert(inbound.iso()).second) continue;
         // Re-derive it from the current body; duePages did not name it because its own body never
         // moved, only the page it points at.
-        pages.push_back(DuePage{inbound, {}, Source::typed, 0, 0});
+        pages.push_back(DuePage{inbound, {}, 0, 0});
         ++enqueued;
         ++report.inboundEnqueued;
       }
@@ -116,7 +115,7 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
   const std::vector<Passage> fresh = segment(page.body);
   if (fresh.empty()) {
     echoes_.replaceSpans(user, page.day, {}, embedder_.version(), page.bodyStampMs);
-    echoes_.replaceEchoes(user, page.day, CuratedEchoes{curator_.version(), {}, {}});
+    echoes_.replaceEchoes(user, page.day, CuratedEchoes{curator_.version(), {}});
     outcome.status = CurationStatus::emptyOk;
     return outcome;
   }
@@ -188,7 +187,7 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
       if (pairing.matchSpanId == span.spanId) offered.emplace(span.spanId, span);
 
   if (proposed.empty()) {
-    echoes_.replaceEchoes(user, page.day, CuratedEchoes{curator_.version(), {}, {}});
+    echoes_.replaceEchoes(user, page.day, CuratedEchoes{curator_.version(), {}});
     outcome.status = CurationStatus::emptyOk;
     return outcome;
   }

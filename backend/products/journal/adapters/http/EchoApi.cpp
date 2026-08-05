@@ -84,9 +84,9 @@ Json::Value toJson(const EchoSweepReport& report) {
   return body;
 }
 
-// A millisecond knob of the admin door, read from the body or the query: nullopt is a malformed
-// value the caller answers 400 to, zero is simply absent. Digits-only before stoull so a "-5"
-// cannot wrap and a 20-digit overflow stays a 400 rather than a 500.
+// The one millisecond knob of the admin door, read from the body or the query: nullopt is a
+// malformed value the caller answers 400 to, zero is simply absent. Digits-only before stoull so a
+// "-5" cannot wrap and a 20-digit overflow stays a 400 rather than a 500.
 std::optional<std::uint64_t> msOf(const drogon::HttpRequestPtr& req,
                                   const std::shared_ptr<Json::Value>& json, const char* name) {
   if (json && json->isMember(name)) {
@@ -273,28 +273,26 @@ void EchoApi::adminSweep(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   }
 
   std::shared_ptr<Json::Value> json = req->getJsonObject();
-  std::optional<std::uint64_t> asOf = msOf(req, json, "asOfMs");
-  if (!asOf) {
-    cb(error(drogon::k400BadRequest, "asOfMs must be a millisecond timestamp"));
-    return;
-  }
   std::optional<std::uint64_t> since = msOf(req, json, "sinceMs");
   if (!since) {
     cb(error(drogon::k400BadRequest, "sinceMs must be a millisecond timestamp"));
     return;
   }
 
-  // An unstated instant is the real one — this edge owns no Clock, and the operator door reading
-  // the wall on the way in is exactly the boundary's job.
-  std::uint64_t asOfMs = *asOf;
-  if (asOfMs == 0)
-    asOfMs = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
-                                            std::chrono::system_clock::now().time_since_epoch())
-                                            .count());
+  // `sinceMs` is the whole rehearsal: which users to look at. There is no "as of" instant to state,
+  // because a pass judges every page against stamps the corpus carries rather than against a clock.
+  // An unstated window is the last day, read off the wall here — this edge owns no Clock, and
+  // reading it on the way in is exactly the boundary's job.
   std::uint64_t sinceMs = *since;
-  if (sinceMs == 0) sinceMs = asOfMs > kDayMs ? asOfMs - kDayMs : 0;
+  if (sinceMs == 0) {
+    const std::uint64_t nowMs =
+        static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                       std::chrono::system_clock::now().time_since_epoch())
+                                       .count());
+    sinceMs = nowMs > kDayMs ? nowMs - kDayMs : 0;
+  }
 
-  cb(jsonResponse(toJson(sweep_->run(asOfMs, sinceMs))));
+  cb(jsonResponse(toJson(sweep_->run(sinceMs))));
 }
 
 }

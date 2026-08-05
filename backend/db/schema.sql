@@ -835,8 +835,12 @@ create index if not exists journal_span_hash on journal_span (user_id, text_sha2
 
 -- One kept pair. cosine is what retrieval measured; relation is the curator's judgement and is
 -- comparative WITHIN one call only — each call mints its own private scale, so two rows' relation
--- values are never meaningfully ordered against each other. curator_version and prompt_hash are
--- what make a chain of mixed vintage debuggable and selectively rebuildable years later.
+-- values are never meaningfully ordered against each other. curator_version is what makes a chain
+-- of mixed vintage debuggable and selectively rebuildable years later, and it is one column and not
+-- two: the curator folds the digest of its own system prompt into the version string it stamps
+-- (products/journal/adapters/llm/AnthropicCurator.cpp), so a separate prompt_hash beside it could
+-- only ever restate that or contradict it. It was the latter — never once assigned, so every row
+-- ever written carried '' — and the drop below converges the databases that already have it.
 --
 -- match_is_self carries the curator's speaker verdict: false means the older passage is something
 -- the writer copied down — a pasted message, a lyric, a line said in session. Those are verbatim
@@ -855,11 +859,11 @@ create table if not exists journal_echo (
   relation        real not null default 0,
   match_is_self   boolean not null default true,
   curator_version text not null default '',
-  prompt_hash     text not null default '',
   created_at      timestamptz not null default now(),
   primary key (user_id, trigger_span_id, match_span_id),
   check (match_day < trigger_day)
 );
+alter table journal_echo drop column if exists prompt_hash;
 -- the read endpoint: a range of pages and what each carries
 create index if not exists journal_echo_page on journal_echo (user_id, trigger_day);
 -- the reverse edge. When a page's passages change, every page holding an echo INTO it must be

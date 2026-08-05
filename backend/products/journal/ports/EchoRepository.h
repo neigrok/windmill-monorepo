@@ -19,14 +19,15 @@ struct EchoUser {
 };
 
 // A page owed a derivation — its body moved past what was last derived from it, or the corpus
-// around it did. `source` rides along because spoken pages have no reliable sentence boundaries and
-// have to segment differently. `attempts` is how many passes in a row have failed on this page: it
-// is here so the sweep can back off one the vendor keeps refusing rather than billing for it every
-// night, and nothing backs off on it yet.
+// around it did. It carries no `source`: segmentation is one deterministic function of the body
+// (products/journal/domain/Passage.h), and a spoken page is segmented exactly like a typed one.
+// ECHOES.md designs a separate spoken path and marks it as not built; when it is built, this is
+// where the discriminator comes back. `attempts` is how many passes in a row have failed on this
+// page: it is here so the sweep can back off one the vendor keeps refusing rather than billing for
+// it every night, and nothing backs off on it yet.
 struct DuePage {
   LocalDate day;
   std::string body;
-  Source source = Source::typed;
   std::uint64_t bodyStampMs = 0;
   int attempts = 0;
 };
@@ -59,11 +60,12 @@ struct EchoRow {
   bool matchIsSelf = true;
 };
 
-// One page's curation as it lands. The version and the prompt hash ride the whole call because one
-// curate call produced every row in it.
+// One page's curation as it lands. The version rides the whole call rather than each row because
+// one curate call produced every row in it — and it is one string and not two: `Curator::version`
+// already folds the prompt's own digest into what it returns, so a second prompt-hash field beside
+// it could only ever be the same fact written down twice or a contradiction.
 struct CuratedEchoes {
   std::string curatorVersion;
-  std::string promptHash;
   std::vector<EchoRow> rows;
 };
 

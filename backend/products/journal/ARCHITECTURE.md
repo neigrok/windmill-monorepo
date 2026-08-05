@@ -29,8 +29,9 @@ narrow and load-bearing, and the first architectural act is to draw that line an
    survives a device, restores after eviction, and converges across two devices. (§3)
 2. **Nudges** — a daily, at-most-one delivery, sent at a time the *device* learned. A pure sweep
    over `(now, database)`, cloned almost verbatim from the roadmap reminder engine. (§4)
-3. **Echoes** — the deep reading-across. A nightly pass across a subscriber's whole corpus,
-   computed for them without being asked. The only reason the backend touches an inference model. (§5)
+3. **Echoes** — the deep reading-across. A nightly pass across a whole corpus, computed for the
+   writer without being asked. It runs for *everyone*; the subscription decides how much of a found
+   passage the read hands back, not whether it is found. (§5, and `ECHOES.md`)
 4. **Entitlement** — one question: is this a **Windmill One** subscriber? Two lines, one shared
    platform predicate read by all three products. (§6)
 
@@ -42,8 +43,11 @@ narrow and load-bearing, and the first architectural act is to draw that line an
 - **The rhythm** — the histogram of when you write, the learning, the confidence — never leaves
   the device. The server learns *nothing* about when you write; it is handed only the single next
   knock-instant the device computed. (This is the pivot of the whole nudge design — §4.1.)
-- **Transcription** is on-device (Web Speech); the backend receives finished text with
-  `source = spoken`. Audio never reaches a Windmill server. (§8.4)
+- **Transcription** is the one that moved. It was designed as on-device Web Speech, and §8.1 is the
+  reversal: it is **bought from an ASR vendor**, a Windmill One feature, and `OpenAiTranscriber`
+  proxies the audio through our server to reach them. So audio *does* touch a Windmill server, in an
+  utterance-scoped buffer that is never durable and never logged — which is a promise the code has
+  to keep rather than one the architecture makes for free. (§8.1)
 - **Sharing** does not exist — structurally. There is no visibility column, no share entity, no
   public route. Every read and write is scoped to `WHERE user_id = :caller` and there is no code
   path that takes a non-owner. (§0.1)
@@ -75,15 +79,27 @@ strict conclusion: Journal removes the axis rather than defaulting it closed.
 
 ```
 backend/products/journal/
-  domain/        Page · Mood · Energy · WeekReadout · EchoFinder · NudgePlan   (pure, no I/O)
-  ports/         JournalRepository · EchoRepository · NudgeRepository · Embedder
-  application/   PageService · WeekService · EchoSweep · NudgeSweep
+  domain/        Page (+ Mood · Energy · Source · LocalDate) · NudgePlan
+                 Passage · SpanReconcile · EchoSelection          (pure, no I/O)
+  ports/         JournalRepository · NudgeRepository · NudgeMailSender
+                 EchoRepository · Embedder · Curator · Transcriber
+  application/   PageService · NudgeSweep · EchoSweep
   adapters/
-    http/        JournalApi (pages, week, export) · NudgeApi (settings, pause)
+    http/        JournalApi (page · pages · export) · NudgeApi (settings · pause ·
+                 unsubscribe · admin sweep) · EchoApi (read · three dismissal doors ·
+                 opened · admin sweep) · VoiceApi (transcribe)
+    json/        PageJson — the page wire shape, both directions, spoken by all three surfaces
     postgres/    PgJournalRepository · PgEchoRepository · PgNudgeRepository
-    llm/         (Embedder impl — only if server-side embeddings ship; see §5.4)
+    llm/         HttpEmbedder (the self-hosted sidecar) · AnthropicCurator · OpenAiTranscriber,
+                 each beside a Null… that reports unconfigured so its feature is simply dark
+    email/       ResendNudgeSender
   routes.{h,cpp} journal::registerRoutes(app, JournalDeps&)
+  ARCHITECTURE.md  this file
+  ECHOES.md        the echo pipeline's own spec, and the live one (§5)
 ```
+
+There is no `WeekService` and no `WeekReadout` here: the weekly readout is the client's
+(`web/src/products/journal/zoom/weekReadout.js`), assembled from pages it already holds — §3.4.
 
 **Naming: the module is `journal`, not `notes`.** The scaffold reserved `products/notes/`, but the
 designed product was *Journal* in every artifact — routes are `/journal`, tables are `journal_*`,
@@ -180,35 +196,25 @@ create table if not exists journal_page_revision (
 );
 create index if not exists journal_page_revision_key on journal_page_revision (user_id, day);
 
--- ── Journal echoes (Windmill One, computed server-side, nightly) ─────────────────────────────
--- An echo is Journal noticing that today repeats something written months ago. Produced only by
--- the nightly EchoSweep, only for subscribers. trigger_day is the page that prompted it; match_day
--- is the older page; the char spans locate the resonant passage in each; score is stored but
--- shown only as presence (never a number). "absent, not locked" for non-subscribers falls out of
--- this table simply being empty for them. dismissed retires an offer/echo for that page (client-set).
-create table if not exists journal_echo (
-  user_id      uuid not null references users(id) on delete cascade,
-  trigger_day  date not null,
-  match_day    date not null,
-  trigger_span int4range not null,
-  match_span   int4range not null,
-  score        real not null default 0,
-  created_at   timestamptz not null default now(),
-  primary key (user_id, trigger_day, match_day)
-);
-create index if not exists journal_echo_trigger on journal_echo (user_id, trigger_day);
-
--- Per-page embedding used ONLY by the nightly echo pass (NOT search — search embeds on-device).
--- Stored as float4[] and matched in-memory by the pure EchoFinder; no pgvector dependency. Null
--- vector = not yet embedded. Recomputed when a page's body changes (stamp advances).
-create table if not exists journal_page_vector (
-  user_id       uuid not null references users(id) on delete cascade,
-  day           date not null,
-  vector        real[] not null,
-  body_stamp_ms bigint not null default 0,     -- the page stamp this vector was computed from
-  created_at    timestamptz not null default now(),
-  primary key (user_id, day)
-);
+-- ── Journal echoes: five tables, and they are NOT reproduced here ────────────────────────────
+-- The echo pipeline is passage-level and owns its own spec. Its DDL lives once, in db/schema.sql,
+-- and the reasoning behind every column lives once, in ECHOES.md. Copying either into this file is
+-- what produced the page-level journal_echo and journal_page_vector that stood here for weeks
+-- describing a schema that had been dropped. What belongs here is only the roster:
+--
+--   journal_span                   one segmented passage: text, byte span, float32 vector, and a
+--                                  span_id that is carried forward across re-derivation
+--   journal_echo                   one kept pair, keyed (user, trigger_span_id, match_span_id),
+--                                  with check (match_day < trigger_day) — reaching forward is
+--                                  unrepresentable, not merely unimplemented
+--   journal_echo_dismissal         "not useful", keyed on the CONTENT hash of both passages so it
+--                                  survives an edit, a re-segmentation and a segmenter bump
+--   journal_echo_offer_dismissal   "not now", keyed on the DAY — it retires the asking, not the
+--                                  echoes, and it is server-side so a phone does not ask again
+--   journal_page_curation          what the last pass over a page decided, and against which two
+--                                  stamps; never advanced on a failed curate
+--
+-- journal_page_vector is dropped (schema.sql), and nothing replaced it: vectors are per passage.
 
 -- ── Journal nudges (one a day at most; the time is the DEVICE's, not ours) ───────────────────
 -- Mirrors reminder_subscription/reminder_week exactly, with two differences: the slot is DAILY
@@ -258,7 +264,7 @@ Mapping back to the canon's §06 Data:
 | Canon field | Where it lives |
 |---|---|
 | Page: date / body / mood / energy / source / updatedAt | `journal_page` (date = `day`, the key) |
-| Echo: pageId / matchPageId / span / score | `journal_echo` (trigger_day / match_day / spans / score) |
+| Echo: pageId / matchPageId / span / score | superseded. An echo is a pair of **passages**, not of pages: `journal_echo` keys on two `span_id`s out of `journal_span`, and the canon's single `score` became `cosine` (what retrieval measured) beside `relation` (what the curator judged). ECHOES.md |
 | Rhythm: histogram / window / confidence | **nowhere on the server** — device-local; only `next_due_at` + `slot_day` cross (§4.1) |
 
 ---
@@ -472,100 +478,37 @@ An echo is Journal noticing that today repeats something written months ago, and
 the older line. It is the only feature that puts the backend in front of an inference model, and —
 with voice — one of Journal's two Windmill One features.
 
-> **§5.1–5.4 below describe the implementation that shipped: whole-page cosine over
-> `journal_page_vector`, one match per trigger.** That implementation is currently **dark** — no
-> `Embedder` is wired in `platform/infra/main.cpp`, so `configured()` is false and the sweep never
-> writes a row. Its agreed replacement — passage-level reaching-back, plural, persisted and
-> navigable — is specified in `ECHOES.md` and lands in its own wave. Read `ECHOES.md` for what is
-> being built; read below for what is running.
+Everything about it — the pipeline, the selection rules, the data model, the API, the cost, the
+gates before a paying user sees it — is specified in **`ECHOES.md`, beside this file, and that is
+the live document.** It is not a sketch: it is what runs.
 
-### 5.1 Why nightly, and what that decides
+The four subsections that stood here described the first implementation — whole-page cosine over a
+`journal_page_vector` table, one match per trigger — and every one of them was false by the time
+anyone read them. The table is dropped, the pure module they documented is deleted, the sweep is
+passage-level and plural, and a signpost pointing at a system that no longer exists is worse than
+no signpost. They are gone rather than annotated.
 
-The canon leaves this open (§ "Still open" 3): nightly batch vs on-write. **Recommended: nightly
-batch.** An echo is "a pass across your whole corpus, computed for you without being asked" — it is
-inherently a corpus operation, cost and latency both point to nightly, and the server can't depend
-on a device being online to trigger it. The consequence the canon names is accepted: an echo
-**cannot** appear in the session that wrote the page that triggered it — it surfaces the next time
-you open, which suits a product about looking back rather than reacting.
+Two decisions made here did survive, so they are recorded here rather than only in `ECHOES.md`:
 
-### 5.2 The sweep (`application/EchoSweep.h`)
+- **Nightly, not on-write.** An echo is a pass across a whole corpus; cost and latency both point
+  to a batch, and the server cannot wait for a device to be online to trigger one. The consequence
+  the canon names is accepted: an echo **cannot** appear in the session that wrote the page that
+  triggered it. It is there the next time you open — which suits a product about looking back.
+- **Vendor inference is permitted, quality first (owner).** Page bodies are already on Windmill's
+  server; an embedding or a curation call sends that text to a vendor, and that is allowed under a
+  no-retention, no-training agreement, with the privacy copy saying so plainly before the feature
+  is armed. In the build the embedder went the other way anyway — `HttpEmbedder` talks to the
+  self-hosted sidecar in `services/embedder`, the same weights the browser's search index uses —
+  and the curator is Anthropic's. Both sit behind ports (`Embedder`, `Curator`), so this stays a
+  deployment choice rather than a rewrite, and either being unwired makes the whole pass a quiet
+  no-op rather than an error.
 
-A second self-owned ticker, fired once per night (not every 15 min), pure over `(now, database)`:
-
-```
-for each subscriber with pages changed since their last echo pass:
-  load the user's page vectors (journal_page_vector)                 [repo]
-  for each recently-changed page → EchoFinder.match(page, corpus)    [pure domain]
-  persist the resulting echo rows                                    [repo upsert]
-```
-
-Entitlement is checked at the top of each user's turn (`entitlements.hasWindmillOne(user, email)`),
-so **the gate is "do we compute", not "do we show"**:
-
-- **Not subscribed → no rows.** "Echo marks are absent, not locked" falls out of the table being
-  empty; there is no locked/blurred state to render because there is nothing to hide. The "one offer
-  card per page, dismissible with Not now" is entirely client-side (a local dismissal per page).
-- **Subscription lapses → stop computing, keep what exists.** The sweep skips non-subscribers; existing
-  `journal_echo` rows are never deleted. "Nothing written is ever withdrawn" holds literally.
-
-### 5.3 The match is pure domain (`domain/EchoFinder.h`)
-
-The interesting logic stays in the domain layer, dependency-light, over already-loaded vectors —
-no pgvector, no I/O:
-
-```cpp
-struct EchoCandidate { LocalDate day; std::vector<float> vector; std::string body; };
-
-struct EchoMatch {
-  LocalDate matchDay;
-  std::pair<int,int> triggerSpan;   // char range in the trigger page
-  std::pair<int,int> matchSpan;     // char range in the older page
-  float score;
-};
-
-// Cosine over the corpus, older pages only, best above threshold, min day-gap so yesterday isn't
-// an "echo". Returns at most one match per trigger (the canon shows one "you said it before").
-std::optional<EchoMatch> match(const EchoCandidate& trigger,
-                               const std::vector<EchoCandidate>& corpus, EchoRules rules);
-```
-
-Corpora are small (hundreds of pages per user), so an in-memory cosine pass per night is trivial
-and keeps the DB free of a vector extension. If corpora ever grow past comfort, `journal_page_
-vector.vector` becomes a `pgvector` column and the match moves to an ANN query — a localized swap
-behind the same `EchoRepository`.
-
-### 5.4 Embeddings and the "Only you" line — a real decision
-
-Echoes need a server-side embedding per page (search embeds separately on-device; the two spaces
-are deliberate — different trust boundaries, and the server can't reach the device's IndexedDB).
-The `Embedder` port keeps the domain clean:
-
-```cpp
-struct Embedder {
-  virtual ~Embedder() = default;
-  virtual bool configured() const = 0;                              // false ⇒ echoes simply don't run
-  virtual std::vector<float> embed(const std::string& body) = 0;    // may be async in the impl
-};
-```
-
-**The honesty question the design must answer out loud:** page bodies are *already* stored on the
-Windmill server (they must be — sync, restore, the year-ago resurface all require it), so echoes
-add no new class of stored data. But computing an embedding via a **third-party** API would send
-page text to that vendor — which sits uneasily under "Only you". Two options:
-
-1. **Server-controlled embedding model (recommended).** A small self-hosted embedding model
-   (an adapter over an internal endpoint) so page text never leaves infrastructure Windmill
-   controls. Honors the brand at the cost of running the model.
-2. **Vendor embedding API** under a strict no-training / no-retention data agreement, documented
-   in the privacy copy.
-
-The `Embedder` port makes this swappable and testable (a fake returns fixed vectors); the choice
-is a product/privacy call, not a code constraint.
-
-**Decided (owner):** option 2 — vendor inference is permitted, under a no-retention agreement, and
-quality is the priority over minimising egress. Page text may reach an inference vendor. The
-privacy copy must say so plainly before the feature is armed. This supersedes the "recommended"
-marker on option 1 above; it is recorded here rather than deleted so the reasoning stays legible.
+**The entitlement gate moved, and this is where the old answer lived.** It used to be checked in
+the sweep, so a non-subscriber's table stayed empty and echo marks were *absent, not locked*. The
+design canon's honest-cut state supersedes that: it shows a non-subscriber that echoes exist, how
+many, how far back, and the real opening words of the nearest passage — none of which can be served
+from an empty table. So the sweep derives for **everyone** and `EchoApi` decides how much of a
+passage a reader is handed. Reverting is one branch in the read path, not a rebuild.
 
 ---
 
@@ -583,8 +526,8 @@ question the whole brand asks:
 const bool subscribed = entitlements.hasWindmillOne(caller, email);
 ```
 
-`subscribed` is the whole gate. Journal's premium surfaces — **echoes** (computed only for
-subscribers; §5) and **voice** (checked before calling the ASR vendor; §8.1) — read exactly this
+`subscribed` is the whole gate. Journal's premium surfaces — **echoes** (asked in the read, not in
+the sweep; §5) and **voice** (checked before any audio reaches the vendor; §8.1) — read exactly this
 boolean, the same one roadmap's premium surfaces (tending) read. `Entitlements` wraps the Paddle
 mirror + `grantsAccess` so Talk, echoes, and tending all gate through one place. One subscription,
 one predicate, three products. (The roadmap code's local `enum class Plan { free, pro }` is really a
@@ -615,14 +558,18 @@ genuinely cannot do itself:
 | `GET /v1/journal/pages?since=&limit=` | delta feed: pages changed after an HLC cursor, ascending, paged — the one read that feeds sync, the offline cache, *and* the on-device search index (§8.2) | owner only |
 | `GET /v1/journal/pages?from=&to=` | a date range (a window, the week) | owner only |
 | `PUT /v1/journal/page/:date` | write a page (LWW upsert; carries the HLC stamp) | owner only |
-| `WS /v1/journal/transcribe` | streaming voice → live transcript deltas; audio ephemeral, discarded on success (§8.1) | owner only |
-| `POST /v1/journal/transcribe` | one-shot voice → `{ text }` (the robust v1 before streaming) | owner only |
+| ~~`WS /v1/journal/transcribe`~~ | **NEVER BUILT.** Designed as streaming voice → live transcript deltas; §8.1 keeps the `transcribeStream` port signature it would have needed, marked the same way. `ports/Transcriber.h` declares one method, `transcribe(audio, mimeType)`, and `routes.cpp` registers the POST alone. Struck rather than deleted so the idea is findable, not so it is believed. | — |
+| `POST /v1/journal/transcribe` | one-shot voice → `{ text }` | owner only, Windmill One |
 | ~~`GET /v1/journal/vectors?since=`~~ | **NEVER BUILT.** Designed as a search accelerator seeding the on-device index; no route, handler or caller has ever existed, and the browser embeds its own corpus. Kept here struck through rather than deleted so the idea is findable, not so it is believed. | — |
-| `GET /v1/journal/echoes?from=&to=` | echoes for a range (empty for non-subscribers) | owner only |
-| `POST /v1/journal/echoes/:day/dismiss` | retire an echo/offer for a page (client-set) | owner only |
+| `GET /v1/journal/echoes?from=&to=` | every echo on the pages in a range, grouped by page, plus `pagesWritten`. Entitlement is asked **here**, not in the sweep: a subscriber is served the passage, everyone else its real opening words and the number withheld (§5) | owner only |
+| `POST /v1/journal/echoes/:triggerDay/offer/dismiss` | "Not now" — retire the upgrade offer on this page. It keeps every echo and every honest cut; only the asking stops. **Registered before the two rows below** — drogon matches in registration order and `{matchDay}` binds the literal `offer` quite happily (`routes.cpp`) | owner only |
+| `POST /v1/journal/echoes/:triggerDay/dismiss` | "Not useful" — retire every pairing on this page in one request, because nine matches must not cost nine round trips | owner only |
+| `POST /v1/journal/echoes/:triggerDay/:matchDay/dismiss` | retire one passage pair. Both doors write the same content-hash key, and both answer 204 however many times they are pressed | owner only |
+| `POST /v1/journal/echoes/:triggerDay/:matchDay/opened` | the "Read it" relevance signal — the one positive label this feature has. Logged, not tabled | owner only |
 | `GET /v1/journal/export` | all pages, JSON (client renders markdown) | owner only |
 | `GET/PATCH /v1/journal/nudge` + pause/unsubscribe | nudge settings & pause (§4.5) | owner only / mail-secret |
-| `POST /v1/admin/journal/nudge/sweep` | operator rehearsal | admin token |
+| `POST /v1/admin/journal/nudge/sweep` | operator rehearsal of one nightly nudge pass (`dryRun`/`asOfMs`) | admin token |
+| `POST /v1/admin/journal/echo/sweep` | operator rehearsal of one nightly echo pass. Its one knob is `sinceMs` — which users to look at. There is no "as of" instant, because a pass judges every page against stamps the corpus carries and never against a clock | admin token |
 
 Every non-admin route resolves identity via the shared `callerUserOf`/`callerOf` seam, 401s
 early, and — the structural-privacy point — is scoped to that caller with no visibility parameter.
@@ -666,13 +613,18 @@ product being honest about where your voice goes.
 update so the surface doesn't advertise voice as free while it's a subscriber feature (§10.8a). Not
 a money mechanic — just keeping the product truthful.
 
-The engine itself:
+The engine itself. **The streaming half below was never built** — `ports/Transcriber.h` declares
+`configured()` and one blocking `transcribe(audio, mimeType)`, and `routes.cpp` registers the POST
+alone. It is kept struck rather than deleted so the shape of the streaming version is findable when
+someone builds it:
 
 ```cpp
 // ports/Transcriber.h — a thin seam over whichever vendor we buy from; the adapter holds the key.
 struct Transcriber {
   virtual ~Transcriber() = default;
   virtual bool configured() const = 0;                    // false ⇒ Talk absent (no vendor wired)
+  // NEVER BUILT — the shipped port is `Transcript transcribe(const std::string& audio,
+  //                                                          const std::string& mimeType)`
   virtual std::function<void()> transcribeStream(         // opus frames in → transcript deltas out
       std::function<void(const AudioFrame&)> feed,
       std::function<void(const Transcript&, bool final)> onText) = 0;
@@ -680,7 +632,7 @@ struct Transcriber {
 ```
 
 ```
-WS  /v1/journal/transcribe    (Windmill One; owner-authed) — streaming voice → live transcript deltas
+WS  /v1/journal/transcribe    NEVER BUILT — streaming voice → live transcript deltas
 POST /v1/journal/transcribe   (Windmill One; owner-authed) — one-shot opus/webm → { "text": "…" }
 ```
 
@@ -793,43 +745,24 @@ is the honest supplier that lets it stay one.
 ## 9. Composition & wiring
 
 Journal plugs in exactly like roadmap — its own `Deps` struct, its own `registerRoutes`, its own
-sweep armed in `main.cpp`.
+two sweeps armed in `main.cpp`.
 
-```cpp
-// products/journal/routes.h
-struct JournalDeps {
-  std::shared_ptr<JournalRepository> pages;
-  std::shared_ptr<PageService> pageService;
-  std::shared_ptr<EchoRepository> echoes;
-  std::shared_ptr<NudgeRepository> nudges;
-  std::shared_ptr<NudgeSweep> nudgeSweep;
-  std::shared_ptr<AuthService> authService;
-  std::shared_ptr<Entitlements> entitlements;
-  std::shared_ptr<TokenGenerator> tokens;
-  std::shared_ptr<Clock> clock;
-  std::string nudgeAdminToken;
-};
+**The struct is not reproduced here.** `products/journal/routes.h` declares `JournalDeps` and is
+eleven lines long; a copy of it in this file was wrong within one wave — it named a `pages`
+repository the routes never take, and its own `main.cpp` snippet three lines below then initialised
+a `.subscriptions` field the struct above it did not declare. Read `routes.h` for what the seam
+takes and `platform/infra/main.cpp` for what fills it. What is worth stating here, because neither
+file says it in one place:
 
-void registerRoutes(drogon::HttpAppFramework& app, const JournalDeps& deps);
-```
-
-```cpp
-// platform/infra/main.cpp — beside the roadmap block, mirror shape
-auto journalPages  = std::make_shared<PgJournalRepository>(databaseUrl);
-auto journalEchoes = std::make_shared<PgEchoRepository>(databaseUrl);
-auto journalNudges = std::make_shared<PgNudgeRepository>(databaseUrl);
-auto pageService   = std::make_shared<PageService>(*journalPages);
-auto nudgeSweep    = std::make_shared<NudgeSweep>(*journalNudges, *journalPages, *email, *tokens, nudgeArming);
-auto echoSweep     = std::make_shared<EchoSweep>(*journalEchoes, *journalPages, *embedder, *subscriptions);
-nudgeSweep->start();                              // one line = one new heartbeat thread
-echoSweep->start();
-
-JournalDeps journalDeps{ .pages = journalPages, .pageService = pageService, .echoes = journalEchoes,
-                         .nudges = journalNudges, .nudgeSweep = nudgeSweep, .authService = authService,
-                         .subscriptions = subscriptions, .tokens = tokens, .clock = systemClock,
-                         .nudgeAdminToken = getenv("JOURNAL_NUDGE_ADMIN_TOKEN") ?: "" };
-journal::registerRoutes(app, journalDeps);
-```
+- Journal owns **two heartbeat threads**, `nudgeSweep->start()` and `echoSweep->start()`, each its
+  own trantor loop and never a drogon request loop. One line each in `main.cpp` arms one.
+- Every vendor edge is chosen there and nowhere else: `HttpEmbedder` or `NullEmbedder`,
+  `AnthropicCurator` or `NullCurator`, `OpenAiTranscriber` or `NullTranscriber`, each picked on the
+  presence of an environment variable. An unwired boundary is a **quiet no-op**, never an error —
+  the echo pass writes nothing and `POST /transcribe` answers 503.
+- Two admin tokens, `JOURNAL_NUDGE_ADMIN_TOKEN` and `JOURNAL_ECHO_ADMIN_TOKEN`, each closing its own
+  rehearsal door. Unset means the door answers 403 to everyone, which is the safe default and the
+  reason it is a token rather than a build flag.
 
 - **CMake:** add a `windmill_journal` library (core: `domain/ + application/`), linking
   `windmill_platform`; fold the Pg/http adapters in under the same `Drogon_FOUND AND libpqxx_FOUND`
@@ -837,10 +770,12 @@ journal::registerRoutes(app, journalDeps);
 - **Schema:** one `-- ── Journal ──` section in `db/schema.sql`; idempotent; no separate file (the
   repo keeps one flat schema).
 - **Tests:** `test/products/journal/{domain,application,adapters}` mirroring the tree, full
-  assertions. The high-value pure targets: `EchoFinder` (cosine, day-gap, spans), `decide`
-  (every gate, especially the absent lapse branch), and the LWW guard (stale write ignored,
-  newer wins, superseded body captured). Fakes for `JournalRepository`/`Embedder`/`EmailSender`
-  substitute freely (constructor injection, no patching).
+  assertions. The high-value pure targets: `segment`/`reconcile`/`select` (the echo pipeline's three
+  pure steps), `decide` (every nudge gate, especially the absent lapse branch), and the LWW guard
+  (stale write ignored, newer wins, superseded body captured). Fakes for `JournalRepository` /
+  `EchoRepository` / `Embedder` / `Curator` / `EmailSender` substitute freely (constructor
+  injection, no patching). Every test file must be named by hand in `CMakeLists.txt`: one that is
+  not in a list is a test that never runs.
 - **CI portability (the standing gotcha):** any calendar work belongs in Postgres via
   `AT TIME ZONE`, never C++ calendar functions (mac vs Linux diverge); pqxx row mappers are
   `template <typename Row>` (the `row_ref` vs `row` split); a green local build is not green CI —
@@ -856,18 +791,20 @@ The canon's four "Still open", plus the backend's own, with recommendations:
    stays editable; a new day's page is created lazily on first write after midnight (device local
    day). The server enforces nothing here — the day is whatever local date the client stamps, and
    the (user, day) key does the rest. No cron, no sealing job.
-2. **Echoes — nightly or on-write?** *Nightly* (§5.1). Accept that an echo can't appear in the
+2. **Echoes — nightly or on-write?** *Nightly* (§5). Accept that an echo can't appear in the
    session that triggered it.
 3. **Sync conflict safety.** *LWW per day + an invisible revision trail* (§3.2–3.3). No CRDT text.
    The revision trail is recommended but severable to wave 2.
 4. **Push channel.** *Not v1.* Ship email + in-app; the `channel` column reserves the choice so a
    `WebPush` port + `push_subscription` table drops in without a schema move.
-5. **Embeddings — same buy-not-host posture as voice.** Given the decision not to self-host ASR,
-   the honest default is that echo/search embeddings are also **bought** (a vendor embedding API),
-   not self-hosted. Same requirement as voice then: a **zero-retention / no-training** vendor, since
-   page text leaves to it, and the privacy copy names the processor. The `Embedder` port keeps a
-   self-hosted swap open if the brand ever wants page text to never leave, but that is not the
-   direction chosen. (Supersedes the earlier "server-controlled model" lean in §5.4.)
+5. **Embeddings — buying was permitted, and the build self-hosted anyway.** The owner's ruling was
+   that a vendor embedding API is allowed under a zero-retention / no-training agreement. What
+   shipped is the other option: `HttpEmbedder` talks to the `services/embedder` sidecar, running the
+   same bge-small weights the browser downloads for on-device search — measured at 0.999978 cosine
+   against a float32 ceiling of 0.9999995, so a server vector and a device one are interchangeable.
+   Page text does not leave for an embedding. It **does** leave for the curator, which is Anthropic's
+   (§5), so the zero-retention requirement and the privacy copy still apply — to that call, not to
+   this one. Both sit behind ports, so either can be swapped without touching the pipeline.
 6. **Entitlement is one subscription — Windmill One — read by all three products** (§6). Not a
    per-product plan; not per-feature metering. Echoes and voice are simply subscriber features
    behind one shared seam (`Entitlements::hasWindmillOne`, which wraps `grantsAccess` over the single
@@ -906,11 +843,13 @@ local stack → push), the way the working agreement requires.
   `sendJournalNudge` method + Resend template. The device pushes its learned `nextDueAt`; the
   footer promise ("The house is quiet. Three minutes?") comes true. Ships dark behind an arming
   allowlist, like the roadmap reminder wave.
-- **Wave 3 — Echoes + Voice (Windmill One).** `Embedder` port + vendor adapter, `journal_page_vector`,
-  `domain/EchoFinder`, `EchoRepository` + `PgEchoRepository`, `EchoSweep` (nightly, subscriber-gated),
-  `journal_echo`, echo read/dismiss routes; and the `Transcriber` seam + `POST /transcribe` behind
-  the shared `subscribed` gate. The two subscriber features land together since they share the
-  entitlement check and the zero-retention-vendor requirement.
+- **Wave 3 — Echoes + Voice (Windmill One).** The `Transcriber` seam + `POST /transcribe` behind the
+  shared `subscribed` gate; and a first, page-level echo pass — `journal_page_vector`, a pure
+  whole-page cosine, one match per trigger — which was **replaced before it ever ran a real model**
+  by the passage-level design in `ECHOES.md`. Landing that replacement is what dropped
+  `journal_page_vector`, re-keyed `journal_echo` onto span ids, and moved the entitlement gate from
+  the sweep to the read. `ECHOES.md`'s migration section is the record of both, including which
+  parts of it lagged and why.
 - **Later — streaming voice `WS`** (live captions), **Web push**, and a `journal_page_revision`
   trail if the two-device case proves real.
 

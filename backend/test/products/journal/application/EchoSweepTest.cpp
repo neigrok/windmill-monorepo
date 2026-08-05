@@ -44,7 +44,7 @@ TEST(a_page_that_reaches_back_writes_an_echo_pointing_at_the_older_passage) {
   armReachingBack(echoes, embedder);
 
   EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
-  const EchoSweepReport report = sweep.run(kNow, kNow - kDay);
+  const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.usersScanned, 1);
   CHECK_EQ(report.pagesDerived, 1);
@@ -67,7 +67,7 @@ TEST(an_unwired_embedder_makes_the_whole_pass_a_no_op) {
   embedder.isConfigured = false;
 
   EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
-  const EchoSweepReport report = sweep.run(kNow, kNow - kDay);
+  const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.usersScanned, 0);   // not a single user is scanned
   CHECK_EQ(report.pagesDerived, 0);
@@ -84,7 +84,7 @@ TEST(an_unwired_curator_makes_the_whole_pass_a_no_op) {
   curator.isConfigured = false;
 
   EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
-  const EchoSweepReport report = sweep.run(kNow, kNow - kDay);
+  const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.usersScanned, 0);
   CHECK_EQ(report.pagesDerived, 0);
@@ -104,7 +104,7 @@ TEST(a_failed_curate_is_recorded_as_a_failure_and_never_as_an_empty_page) {
   curator.failure = "rate_limited";
 
   EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
-  const EchoSweepReport report = sweep.run(kNow, kNow - kDay);
+  const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.pagesFailed, 1);
   CHECK_EQ(report.pagesDerived, 0);
@@ -123,7 +123,7 @@ TEST(a_curator_that_finds_nothing_finishes_the_page_rather_than_failing_it) {
   curator.keepEverything = false;   // it answered; it just kept nothing
 
   EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
-  const EchoSweepReport report = sweep.run(kNow, kNow - kDay);
+  const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.pagesFailed, 0);
   CHECK_EQ(report.pagesDerived, 1);
@@ -141,7 +141,7 @@ TEST(a_short_embedder_result_is_a_failed_call_not_a_page_with_fewer_passages) {
   embedder.failNext = true;
 
   EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
-  const EchoSweepReport report = sweep.run(kNow, kNow - kDay);
+  const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.pagesFailed, 1);
   CHECK_EQ(curator.calls, 0);   // nothing is spent downstream of a failed embed
@@ -158,13 +158,13 @@ TEST(re_deriving_the_older_page_keeps_the_identity_the_echo_points_at) {
   armReachingBack(echoes, embedder);
 
   EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
-  sweep.run(kNow, kNow - kDay);
+  sweep.run(kNow - kDay);
   CHECK_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay))[0].matchSpanId, std::int64_t{11});
 
   // Someone opens the January page and adds a line above the one that echoes.
   echoes.due.clear();
   echoes.addDuePage(uid("u1"), ld(kOldDay), "slept badly last night.\n" + kOldLine);
-  sweep.run(kNow, kNow - kDay);
+  sweep.run(kNow - kDay);
 
   const std::vector<KnownSpan> after = echoes.spansOf(uid("u1"), ld(kOldDay));
   CHECK_EQ(after.size(), std::size_t{2});
@@ -180,13 +180,13 @@ TEST(a_pairing_the_reader_waved_away_is_never_proposed_again) {
   armReachingBack(echoes, embedder);
 
   EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
-  sweep.run(kNow, kNow - kDay);
+  sweep.run(kNow - kDay);
   const std::vector<EchoRow> first = echoes.rowsOn(uid("u1"), ld(kNewDay));
   CHECK_EQ(first.size(), std::size_t{1});
 
   echoes.dismiss(uid("u1"), first[0].triggerSpanId, first[0].matchSpanId);
   echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine);   // the page comes round again
-  sweep.run(kNow, kNow - kDay);
+  sweep.run(kNow - kDay);
 
   CHECK_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay)).size(), std::size_t{0});
 }
@@ -201,7 +201,7 @@ TEST(a_page_within_the_gap_is_too_near_to_echo) {
   echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine);   // three days later
 
   EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
-  const EchoSweepReport report = sweep.run(kNow, kNow - kDay);
+  const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.pagesDerived, 1);
   CHECK_EQ(report.echoesWritten, 0);
@@ -217,7 +217,7 @@ TEST(an_empty_page_is_finished_without_spending_anything) {
   echoes.addDuePage(uid("u1"), ld(kNewDay), "   \n  ");
 
   EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
-  const EchoSweepReport report = sweep.run(kNow, kNow - kDay);
+  const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.pagesDerived, 1);
   CHECK_EQ(report.passagesEmbedded, 0);
@@ -238,7 +238,7 @@ TEST(a_night_stops_at_the_page_budget_and_says_how_much_it_left) {
   }
 
   EchoSweep sweep{echoes, embedder, curator, clock, SelectionRules{}, SweepBudget{5, 20}};
-  const EchoSweepReport report = sweep.run(kNow, kNow - kDay);
+  const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.pagesDerived, 5);
   CHECK_EQ(report.pagesOverBudget, 7);
