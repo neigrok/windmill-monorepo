@@ -167,7 +167,10 @@ label following and it stays clickable; pan/select/hover unchanged; no errors.
 ## Editing phase — command layer + undo/redo (first slice)
 
 The substrate every edit will write through, proven end-to-end by making node drags
-undoable. `editing/TreeEditor` holds the present TreeData + undo/redo stacks; edits are pure
+undoable. (Written when it was true; undo moved to `SyncSession`, which banks each gesture's
+inverse, and `editing/TreeEditor` is now a bare holder for the present TreeData. `edits.js`
+is gone — `sync/materialize.js` is its successor. `ARCHITECTURE.md:275` has the live account.)
+`editing/TreeEditor` holds the present TreeData + undo/redo stacks; edits are pure
 `TreeData → TreeData` transforms (`editing/edits.js`) with structural sharing, so a compound
 edit is one history step and snapshots stay cheap. The view builds the editor from the loaded
 data, caches the raw layout, and:

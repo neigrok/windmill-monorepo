@@ -20,7 +20,10 @@ drogon::HttpResponsePtr oauthError(const std::string& error, const std::string& 
   return jsonResponse(body, code);
 }
 
-std::string enc(const std::string& value) { return drogon::utils::urlEncode(value); }
+// urlEncodeCOMPONENT, not urlEncode. drogon's urlEncode is a FORM encoder: it escapes ':' and
+// writes a space as '+', but leaves '&' and '=' alone — and every caller below is building a query
+// string, so an '&' inside state, scope or resource appended a parameter of its own to the URL.
+std::string enc(const std::string& value) { return drogon::utils::urlEncodeComponent(value); }
 
 Json::Value strArray(const std::vector<std::string>& items) {
   Json::Value out(Json::arrayValue);

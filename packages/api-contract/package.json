@@ -1,0 +1,5 @@
+{
+  "name": "@windmill/api-contract",
+  "private": true,
+  "type": "module"
+}

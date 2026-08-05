@@ -294,6 +294,9 @@ if(Drogon_FOUND AND libpqxx_FOUND)
 
   add_executable(windmill_adapters_tests
     test/main.cpp
+    test/platform/adapters/http/AuthApiTest.cpp
+    test/platform/adapters/http/OAuthApiTest.cpp
+    test/platform/adapters/http/McpKeyApiTest.cpp
     test/platform/adapters/http/EventsApiTest.cpp
     test/platform/adapters/http/FeedbackApiTest.cpp
     test/platform/adapters/http/RateLimiterTest.cpp
@@ -302,8 +305,11 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/platform/adapters/email/ResendEmailSenderTest.cpp
     test/platform/adapters/email/ResendSignatureTest.cpp
     test/platform/adapters/email/ResendWebhookApiTest.cpp
+    test/platform/adapters/oidc/IdTokenTest.cpp
     test/platform/adapters/sentry/LogTeeTest.cpp
     test/platform/adapters/paddle/PaddleSignatureTest.cpp
+    test/platform/adapters/paddle/BillingApiTest.cpp
+    test/platform/adapters/postgres/PgSubscriptionRepositoryTest.cpp
     test/products/roadmap/adapters/json/SubgraphJsonTest.cpp
     test/products/roadmap/adapters/json/TreeJsonTest.cpp
     test/products/roadmap/adapters/http/ComposeApiTest.cpp
