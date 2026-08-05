@@ -9,7 +9,7 @@
 namespace wm {
 
 // The platform's sign-in mail over Resend: the 'magic-link' template for a plain sign-in,
-// 'magic-link-fork' when the link also plants a copy of a tree. It owns no transport of its own
+// 'magic-link-fork' when the link also plants a copy of something. It owns no transport of its own
 // — it binds each template's variables and hands the send to the shared ResendClient, which
 // carries the HTTPS call on its private loop and answers there with the outcome.
 class ResendEmailSender : public EmailSender {
@@ -19,7 +19,7 @@ public:
   void sendMagicLink(const Email& to, const std::string& magicLinkUrl,
                      std::function<void(bool)> done) override;
   void sendForkLink(const Email& to, const std::string& magicLinkUrl,
-                    const std::string& treeTitle, const std::string& treeMeta,
+                    const std::string& sourceTitle, const std::string& sourceMeta,
                     std::function<void(bool)> done) override;
 
 private:

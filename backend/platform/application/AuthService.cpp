@@ -10,7 +10,7 @@ AuthService::AuthService(AuthRepository& repo, EmailSender& email, TokenGenerato
       appBaseUrl_(std::move(appBaseUrl)) {}
 
 void AuthService::requestLink(const std::string& rawEmail, const std::string& forkSource,
-                              const std::optional<ForkDescription>& forkedTree,
+                              const std::optional<ForkDescription>& forkDescription,
                               std::function<void(RequestResult)> done) {
   std::optional<Email> email = parseEmail(rawEmail);
   if (!email) {
@@ -34,13 +34,11 @@ void AuthService::requestLink(const std::string& rawEmail, const std::string& fo
   auto resolve = [done = std::move(done)](bool ok) {
     done(ok ? RequestResult::sent : RequestResult::unreachable);
   };
-  if (!forkedTree) {
+  if (!forkDescription) {
     email_.sendMagicLink(*email, url, std::move(resolve));
     return;
   }
-  const std::string meta =
-      forkedTree->steps == 1 ? "1 step" : std::to_string(forkedTree->steps) + " steps";
-  email_.sendForkLink(*email, url, forkedTree->title, meta, std::move(resolve));
+  email_.sendForkLink(*email, url, forkDescription->title, forkDescription->meta, std::move(resolve));
 }
 
 AuthService::Completion AuthService::completeLink(const std::string& linkSecret, const SessionContext& ctx) {

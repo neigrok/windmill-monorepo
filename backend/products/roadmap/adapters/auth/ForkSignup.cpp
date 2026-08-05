@@ -6,12 +6,14 @@ namespace wm {
 
 ForkSignup::ForkSignup(ForkService& fork) : fork_(fork) {}
 
-std::optional<AuthService::ForkDescription> ForkSignup::describe(const std::string& source) {
-  // The source's live face, translated from the roadmap Description into the platform's — an
-  // unreadable source stays undescribed so the mail promises no tree it can't name.
-  if (std::optional<ForkService::Description> d = fork_.describe(TreeId{source}))
-    return AuthService::ForkDescription{d->title, d->steps};
-  return std::nullopt;
+std::optional<ForkDescription> ForkSignup::describe(const std::string& source) {
+  // The source's live face, rendered here into the two strings the mail prints — an unreadable
+  // source stays undescribed so the mail promises no tree it can't name.
+  std::optional<ForkService::Description> described = fork_.describe(TreeId{source});
+  if (!described) return std::nullopt;
+  const std::string meta =
+      described->steps == 1 ? "1 step" : std::to_string(described->steps) + " steps";
+  return ForkDescription{described->title, meta};
 }
 
 std::optional<std::string> ForkSignup::plant(const std::string& source, const UserId& user) {

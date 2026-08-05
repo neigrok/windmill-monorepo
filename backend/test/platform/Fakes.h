@@ -49,8 +49,8 @@ struct FakeEmail : EmailSender {
     Email to;
     std::string url;
     std::string templateId;
-    std::string treeTitle;
-    std::string treeMeta;
+    std::string sourceTitle;
+    std::string sourceMeta;
   };
   std::vector<Sent> sent;
   bool failNext = false;
@@ -59,9 +59,9 @@ struct FakeEmail : EmailSender {
                      std::function<void(bool)> done) override {
     deliver({to, url, "magic-link", "", ""}, std::move(done));
   }
-  void sendForkLink(const Email& to, const std::string& url, const std::string& treeTitle,
-                    const std::string& treeMeta, std::function<void(bool)> done) override {
-    deliver({to, url, "magic-link-fork", treeTitle, treeMeta}, std::move(done));
+  void sendForkLink(const Email& to, const std::string& url, const std::string& sourceTitle,
+                    const std::string& sourceMeta, std::function<void(bool)> done) override {
+    deliver({to, url, "magic-link-fork", sourceTitle, sourceMeta}, std::move(done));
   }
   // Async like the real sender, but resolves inline: a failed send records nothing and
   // reports false (the caller inserted the link row already, so it survives the failure),

@@ -121,19 +121,20 @@ void AuthApi::requestLink(const drogon::HttpRequestPtr& req, HttpCallback&& call
   }
 
   std::string forkOf = json ? json->get("forkOf", "").asString() : "";
-  if (forkOf.size() > 64) forkOf.clear();  // a tree id, not a payload — drop junk quietly
+  if (forkOf.size() > 64) forkOf.clear();  // an id, not a payload — drop junk quietly
 
-  // A fork mail must name the tree it plants, so resolve the source's face here — the auth
-  // pipeline stays product-free, asking the injected port rather than any tree type. A deploy with
-  // no forkable product injects nothing, and a source we can't read stays undescribed: the mail
-  // falls back to the plain template rather than promise a tree it can't name.
-  std::optional<AuthService::ForkDescription> forkedTree;
-  if (!forkOf.empty() && signupFork_) forkedTree = signupFork_->describe(forkOf);
+  // A fork mail must name what it plants, so resolve the source's face here — the auth pipeline
+  // stays product-free, taking two already-rendered strings from the injected port rather than any
+  // product type. A deploy with no forkable product injects nothing, and a source we can't read
+  // stays undescribed: the mail falls back to the plain template rather than promise a name it
+  // can't see.
+  std::optional<ForkDescription> forkDescription;
+  if (!forkOf.empty() && signupFork_) forkDescription = signupFork_->describe(forkOf);
 
   // The send is async, so the verdict rides back through the callback — fired inline for
   // invalid / rate-limited, or off the sender's loop once the Resend call settles. The
   // handler thread is freed the instant this returns; the drogon callback carries the reply.
-  auth_->requestLink(email, forkOf, forkedTree,
+  auth_->requestLink(email, forkOf, forkDescription,
                      [callback = std::move(callback)](AuthService::RequestResult result) {
     if (result == AuthService::RequestResult::sent) {
       Json::Value body(Json::objectValue);
@@ -157,7 +158,7 @@ void AuthApi::requestLink(const drogon::HttpRequestPtr& req, HttpCallback&& call
     }
     Json::Value body(Json::objectValue);
     body["error"] = "Can't reach windmill.works";
-    body["detail"] = "Your trees are safe on this device.";
+    body["detail"] = "Nothing you've written is lost.";
     body["code"] = "unreachable";
     callback(jsonResponse(body, drogon::k502BadGateway));
   });

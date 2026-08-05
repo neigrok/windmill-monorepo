@@ -12,12 +12,14 @@ namespace wm {
 // port's opaque source id into a TreeId, so the auth HTTP surface can name and plant a fork
 // without ever seeing a roadmap type. Only this file — living beside the product it forks — ties
 // the platform sign-in flow to roadmap; a journal/gym-only deploy injects nothing and the flow
-// no-ops. This adapter also owns the plant's warn/error logging, since it owns the fork call.
+// no-ops. It is also where the fork mail's words are written: a tree's step count is roadmap's
+// fact and "12 steps" is roadmap's sentence, so both are rendered here and cross the seam as
+// prose. This adapter also owns the plant's warn/error logging, since it owns the fork call.
 class ForkSignup : public SignupFork {
 public:
   explicit ForkSignup(ForkService& fork);
 
-  std::optional<AuthService::ForkDescription> describe(const std::string& source) override;
+  std::optional<ForkDescription> describe(const std::string& source) override;
   std::optional<std::string> plant(const std::string& source, const UserId& user) override;
 
 private:

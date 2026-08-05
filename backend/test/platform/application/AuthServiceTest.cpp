@@ -21,9 +21,9 @@ struct Harness {
   // firing before requestLink returns is the proof the send never parks the caller.
   AuthService::RequestResult requestLink(
       const std::string& email, const std::string& forkSource = "",
-      const std::optional<AuthService::ForkDescription>& forkedTree = std::nullopt) {
+      const std::optional<ForkDescription>& forkDescription = std::nullopt) {
     std::optional<AuthService::RequestResult> verdict;
-    service.requestLink(email, forkSource, forkedTree,
+    service.requestLink(email, forkSource, forkDescription,
                         [&](AuthService::RequestResult result) { verdict = result; });
     CHECK(verdict.has_value());  // the callback shape is void(RequestResult), fired exactly once
     return *verdict;
@@ -47,8 +47,8 @@ TEST(request_link_sends_a_link_that_carries_the_minted_secret) {
   CHECK_EQ(h.email.sent[0].to.value, std::string("sam@example.com"));
   CHECK_EQ(h.email.sent[0].url, std::string("https://windmill.works/#/auth?token=s1"));
   CHECK_EQ(h.email.sent[0].templateId, std::string("magic-link"));
-  CHECK_EQ(h.email.sent[0].treeTitle, std::string(""));
-  CHECK_EQ(h.email.sent[0].treeMeta, std::string(""));
+  CHECK_EQ(h.email.sent[0].sourceTitle, std::string(""));
+  CHECK_EQ(h.email.sent[0].sourceMeta, std::string(""));
   // The link is stored under its digest, unspent, expiring 15 minutes out.
   std::optional<StoredLink> link = h.repo.findLink("d1");
   CHECK(link.has_value());
@@ -391,27 +391,31 @@ TEST(linking_refuses_a_spent_or_unknown_link) {
   CHECK_EQ(h.repo.findIdentity(Provider::apple, "a-1")->str(), phone.str());
 }
 
-TEST(a_fork_request_sends_the_fork_mail_naming_the_source_tree) {
+TEST(a_fork_request_sends_the_fork_mail_naming_the_source) {
   Harness h;
-  AuthService::ForkDescription tree{"Learn to sail", 12};
-  CHECK(h.requestLink("sam@example.com", "t_source", tree) == AuthService::RequestResult::sent);
+  ForkDescription source{"Learn to sail", "12 steps"};
+  CHECK(h.requestLink("sam@example.com", "t_source", source) == AuthService::RequestResult::sent);
 
   CHECK_EQ(h.email.sent.size(), 1u);
   CHECK_EQ(h.email.sent[0].to.value, std::string("sam@example.com"));
   CHECK_EQ(h.email.sent[0].url, std::string("https://windmill.works/#/auth?token=s1"));
   CHECK_EQ(h.email.sent[0].templateId, std::string("magic-link-fork"));
-  CHECK_EQ(h.email.sent[0].treeTitle, std::string("Learn to sail"));
-  CHECK_EQ(h.email.sent[0].treeMeta, std::string("12 steps"));
+  CHECK_EQ(h.email.sent[0].sourceTitle, std::string("Learn to sail"));
+  CHECK_EQ(h.email.sent[0].sourceMeta, std::string("12 steps"));
   CHECK_EQ(h.repo.findLink("d1")->forkSource, std::string("t_source"));
 }
 
-TEST(a_single_step_tree_reads_1_step_not_1_steps) {
+// The description is prose the product wrote, and this service is not allowed to have an opinion
+// about it: whatever arrives is what the mail prints, verbatim. The counting and the pluralising
+// that used to live here now live in roadmap's ForkSignup (ForkServiceTest covers them).
+TEST(a_fork_description_is_forwarded_word_for_word) {
   Harness h;
-  AuthService::ForkDescription tree{"Plant one seed", 1};
-  CHECK(h.requestLink("sam@example.com", "t_source", tree) == AuthService::RequestResult::sent);
+  ForkDescription source{"Plant one seed", "1 step"};
+  CHECK(h.requestLink("sam@example.com", "t_source", source) == AuthService::RequestResult::sent);
 
   CHECK_EQ(h.email.sent.size(), 1u);
-  CHECK_EQ(h.email.sent[0].treeMeta, std::string("1 step"));
+  CHECK_EQ(h.email.sent[0].sourceTitle, std::string("Plant one seed"));
+  CHECK_EQ(h.email.sent[0].sourceMeta, std::string("1 step"));
 }
 
 TEST(a_fork_request_with_an_unreadable_source_falls_back_to_the_plain_mail) {
@@ -420,8 +424,8 @@ TEST(a_fork_request_with_an_unreadable_source_falls_back_to_the_plain_mail) {
 
   CHECK_EQ(h.email.sent.size(), 1u);
   CHECK_EQ(h.email.sent[0].templateId, std::string("magic-link"));
-  CHECK_EQ(h.email.sent[0].treeTitle, std::string(""));
-  CHECK_EQ(h.email.sent[0].treeMeta, std::string(""));
+  CHECK_EQ(h.email.sent[0].sourceTitle, std::string(""));
+  CHECK_EQ(h.email.sent[0].sourceMeta, std::string(""));
   // The pending fork still rides the link; verify degrades it if the source stays gone.
   CHECK_EQ(h.repo.findLink("d1")->forkSource, std::string("t_ghost"));
 }

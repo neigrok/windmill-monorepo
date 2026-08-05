@@ -6,9 +6,9 @@
 #include "platform/ports/AuthRepository.h"
 #include "platform/ports/Clock.h"
 #include "platform/ports/EmailSender.h"
+#include "platform/ports/SignupFork.h"  // ForkDescription
 #include "platform/ports/TokenGenerator.h"
 
-#include <cstddef>
 #include <functional>
 #include <optional>
 #include <string>
@@ -48,14 +48,12 @@ public:
 
   enum class RequestResult { sent, invalidEmail, rateLimited, unreachable };
 
-  // When the link carries a fork, the caller resolves the source tree's face up front (the
-  // auth pipeline holds no tree dependency) and passes it here; the mail then uses the fork
-  // template that names the tree. A fork whose source couldn't be read arrives undescribed
-  // and falls back to the plain template — the mail never names a tree it can't see.
-  struct ForkDescription {
-    std::string title;
-    std::size_t steps = 0;
-  };
+  // When the link carries a fork, the caller resolves the source's face up front through the
+  // SignupFork port and passes it here already rendered, so this pipeline forwards two opaque
+  // strings and knows nothing about what it is forwarding. A fork whose source couldn't be read
+  // arrives undescribed and falls back to the plain template — the mail never names what it
+  // can't see.
+  //
   // Asynchronous, so the slow Resend send never parks the calling handler thread. The sync
   // work runs first and fast — parse, rate-limit, mint, insert the link row — then only the
   // send is deferred. done fires exactly once with the verdict: invalidEmail / rateLimited
@@ -64,7 +62,7 @@ public:
   // inserted, so a Resend hiccup loses no link — a retry mints a fresh one and the first
   // still opens the door for its 15-minute life.
   void requestLink(const std::string& rawEmail, const std::string& forkSource,
-                   const std::optional<ForkDescription>& forkedTree,
+                   const std::optional<ForkDescription>& forkDescription,
                    std::function<void(RequestResult)> done);
 
   // On a valid link: the account (created here on first sign-in) and a fresh session secret

@@ -1,5 +1,6 @@
 #include "products/roadmap/application/ForkService.h"
 
+#include "products/roadmap/adapters/auth/ForkSignup.h"
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/domain/LooseGraph.h"
 #include "test/platform/Fakes.h"
@@ -191,4 +192,43 @@ TEST(describe_declines_a_private_source_so_it_never_names_a_strangers_tree) {
   // The fork-invite mail is unauthenticated: a private source stays undescribed so its title
   // and step count never ride an email addressed by someone who can't read it.
   CHECK_FALSE(h.service.describe(TreeId{"t_priv"}).has_value());
+}
+
+// ForkSignup is the platform seam's roadmap side, and the words on the fork mail's meta line are
+// written HERE — the platform forwards whatever string it is handed, so if a tree of one step ever
+// reads "1 steps" it is this file's fault and nowhere else's.
+TEST(the_signup_seam_renders_the_step_count_as_the_mail_prints_it) {
+  Harness h;
+  h.seedSource("t_src", "Learn to sail");
+  ForkSignup signup{h.service};
+
+  std::optional<ForkDescription> described = signup.describe("t_src");
+  CHECK(described.has_value());
+  CHECK_EQ(described->title, std::string("Learn to sail"));
+  CHECK_EQ(described->meta, std::string("2 steps"));
+}
+
+TEST(the_signup_seam_writes_1_step_not_1_steps) {
+  Harness h;
+  TreeData data;
+  data.id = TreeId{"t_one"};
+  data.title = "Plant one seed";
+  NodeSpec root;
+  root.id = nid("root");
+  root.label = "Root";
+  data.nodes = {root};
+  GraphState state = LooseGraph(data, Hlc{1, 0, "seed"}).exportState();
+  h.trees.byId["t_one"] = StoredTree{state, LegendState{}, {"Plant one seed", {}}, 0, uid("owner"),
+                                     Visibility::unlisted};
+  ForkSignup signup{h.service};
+
+  std::optional<ForkDescription> described = signup.describe("t_one");
+  CHECK(described.has_value());
+  CHECK_EQ(described->meta, std::string("1 step"));
+}
+
+TEST(the_signup_seam_leaves_an_unreadable_source_undescribed) {
+  Harness h;
+  ForkSignup signup{h.service};
+  CHECK_FALSE(signup.describe("t_ghost").has_value());
 }
