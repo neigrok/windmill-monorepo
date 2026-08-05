@@ -416,10 +416,9 @@ public struct ElsewhereRoom: View {
 
                 Link("Open it on the web", destination: url)
                     .font(WindmillFont.body(15, .semibold))
-                    .foregroundStyle(WindmillColor.neutral900)
                     .padding(.horizontal, WindmillSpace.x5)
                     .padding(.vertical, WindmillSpace.x3)
-                    .background(Capsule().fill(WindmillColor.gold400))
+                    .actionCapsule(.primary)
                     .padding(.top, WindmillSpace.x2)
             }
             .padding(WindmillSpace.x8)

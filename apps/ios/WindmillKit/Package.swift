@@ -6,7 +6,8 @@ import PackageDescription
 // next door in apps/ios/App. It is a package rather than a folder of app sources so the module
 // boundary is enforced by the compiler, not by a convention: WindmillJournal cannot reach into
 // WindmillGym because it does not depend on it, which is STRUCTURE.md's one rule stated as a build
-// graph. `swift build && swift test` runs the whole thing without Xcode, which is what CI does.
+// graph. The suites run on a simulator, never through `swift build` (see the platforms note below);
+// .github/workflows/ios.yml builds the app target and then runs these tests on one.
 let package = Package(
     name: "WindmillKit",
     // iOS only, deliberately. The UI uses modifiers that exist nowhere else (the tab-bar toolbar

@@ -96,26 +96,18 @@ public struct SignInDoor: View {
             } label: {
                 Text(working ? "Sending…" : "Email me a link")
                     .font(WindmillFont.body(16, .semibold))
-                    .foregroundStyle(WindmillColor.neutral900)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, WindmillSpace.x3)
-                    .background(linkDoorBackground)
+                    // Gold when the link is the only way in; a quiet outline once Apple carries the
+                    // primary weight — and the label's ink follows the fill, because they are one
+                    // modifier and cannot be answered differently.
+                    .actionCapsule(Self.appleSignInEnabled ? .quiet : .primary)
             }
             .disabled(working || email.isEmpty)
 
             Text("No password. Signed out, Windmill still works — what you write lives on this device.")
                 .font(WindmillFont.body(13))
                 .foregroundStyle(WindmillColor.textTertiary)
-        }
-    }
-
-    // Gold when the link is the only way in; a quiet outline once Apple carries the primary weight.
-    @ViewBuilder
-    private var linkDoorBackground: some View {
-        if Self.appleSignInEnabled {
-            Capsule().strokeBorder(WindmillColor.borderDefault, lineWidth: 1)
-        } else {
-            Capsule().fill(WindmillColor.gold400)
         }
     }
 
@@ -142,10 +134,9 @@ public struct SignInDoor: View {
             } label: {
                 Text("Sign in")
                     .font(WindmillFont.body(16, .semibold))
-                    .foregroundStyle(WindmillColor.neutral900)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, WindmillSpace.x3)
-                    .background(Capsule().fill(WindmillColor.gold400))
+                    .actionCapsule(.primary)
             }
             .disabled(working || pasted.isEmpty)
 
@@ -185,10 +176,9 @@ public struct SignInDoor: View {
             } label: {
                 Text("Link this account")
                     .font(WindmillFont.body(16, .semibold))
-                    .foregroundStyle(WindmillColor.neutral900)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, WindmillSpace.x3)
-                    .background(Capsule().fill(WindmillColor.gold400))
+                    .actionCapsule(.primary)
             }
             .disabled(working || pasted.isEmpty)
 

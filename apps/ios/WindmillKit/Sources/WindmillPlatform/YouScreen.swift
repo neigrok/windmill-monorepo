@@ -187,10 +187,9 @@ struct ProScreen: View {
                     Link(destination: URL(string: "https://windmill.works/pricing.html")!) {
                         Text("See the plan on the web")
                             .font(WindmillFont.body(16, .semibold))
-                            .foregroundStyle(WindmillColor.neutral900)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, WindmillSpace.x3)
-                            .background(Capsule().fill(WindmillColor.gold400))
+                            .actionCapsule(.primary)
                     }
 
                     Text("USD · before tax · one subscription, three apps")
