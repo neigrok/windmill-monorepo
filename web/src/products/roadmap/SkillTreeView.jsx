@@ -7,14 +7,20 @@
 // One of the three has moved out: advancing progress and choosing which milestone to announce are
 // pure functions in model/progress.js now, with their own tests. Two are still here — the
 // remote-frame idempotency and anti-clobber reconciliation around the progress push, and the
-// startedAt/completedAt stamping that rides with them. They are named rather than denied, and the
-// next extraction takes them.
+// startedAt/completedAt stamping that rides with them. They are named rather than denied. They
+// also stay on purpose: their failure mode is silent data loss (a stale local mark overwriting a
+// server row, a remote frame applied twice), and no seam has yet been found that carries them out
+// without splitting that guarantee in two.
 //
-// Two of the editors this file used to be have moved to their own hooks, each sitting over the
-// pure model it drives: ui/tree/useLegend.js (the colour key's kinds, open flag, spotlight and
-// every kind gesture) and ui/tree/useWorkspace.js (a step's sub-tasks, note and links, the arc
-// feed and the auto-complete breath). What stays here of theirs is only the join with the live
-// tree — the legend's per-kind counts — and the two panels that render them.
+// Four of the editors this file used to be have moved to their own hooks, each sitting over the
+// pure model or feature package it drives: ui/tree/useLegend.js (the colour key's kinds, open
+// flag, spotlight and every kind gesture), ui/tree/useWorkspace.js (a step's sub-tasks, note and
+// links, the arc feed and the auto-complete breath), share/useWeekOffer.js (the unfurl card, the
+// period's progress card, the share ledger and the one ask that offers it) and
+// activity/useActivity.js (the log, `emit`, the unread badge, the arrival flash and the ticker).
+// What stays here of theirs is only what joins them to the live tree: the legend's per-kind
+// counts, the triggers the load and the ceremony pull on the offer, the `emit` call at every edit
+// site, and the panels that render all of it.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './skilltree.css';
@@ -47,16 +53,11 @@ import { AccountSeat } from '../../shell/auth/AccountSeat.jsx';
 import { useSignInDoor } from '../../shell/auth/SignInDoor.jsx';
 import { ShareDialog } from './share/ShareDialog.jsx';
 import { ShareStats } from './share/ShareStats.js';
-import { buildOgCardSvg } from './share/ogCard.js';
-import { buildProgressCardSvg } from './share/progressCard.js';
-import { considerProgressShare } from './share/progressOffer.js';
-import { ProgressPeriod, newThisPeriod, ledgerDeltas, sinceLabel } from './share/progressPeriod.js';
-import { svgToPngBlob } from './share/rasterize.js';
-import { uploadOgImage, uploadOgVideo } from './share/ogUpload.js';
+import { useWeekOffer } from './share/useWeekOffer.js';
 import { ActivityFeed } from './activity/ActivityFeed.jsx';
 import { NextUp, considerAutoOpen } from './ui/NextUp.jsx';
 import { planNextUp } from './ui/nextUpPlan.js';
-import { ActivityLog, ActivityEvent } from './activity/ActivityLog.js';
+import { useActivity } from './activity/useActivity.js';
 import { ActorAvatar, EventSentence } from './activity/grammar.jsx';
 import { SkillTree } from './model/SkillTree.js';
 import { cmpOrder } from './model/TrunkTree.js';
@@ -78,7 +79,6 @@ import { PlaceStore } from './persistence/PlaceStore.js';
 import { ViewPrefs, initialView, peekBorn, clearBorn } from './persistence/ViewPrefs.js';
 import { ReturnLedger } from './persistence/ReturnLedger.js';
 import { MilestoneLedger } from './persistence/MilestoneLedger.js';
-import { ShareLedger } from './persistence/ShareLedger.js';
 import { detectMilestones } from './model/milestones.js';
 import { advanceProgress, milestoneAnnouncement } from './model/progress.js';
 import { emptyWorkspace } from './model/NodeWorkspace.js';
@@ -106,15 +106,12 @@ const placeStore = new PlaceStore();
 const viewPrefs = new ViewPrefs();
 const returnLedger = new ReturnLedger();
 const milestoneLedger = new MilestoneLedger();
-const shareLedger = new ShareLedger();
 const NEXT_UP_SELECT_MS = 540; // ~90% of the camera's default 600ms glide — the dock swaps as the fly settles
 const NEXT_UP_ENTER_MS = 600; // auto-open waits for the fit-to-view camera to still (whats-next-panel §04)
 const EMPTY_BOUNDS = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 const NEW_NODE_ICON = 'sparkles';
 const PLANTED_QUEST_KEY = 'windmill:planted-quest'; // the shelf's one-shot note (F5 §04): this arrival is a quest
 const CTA_ECHO_DELAY = 1500; // §04: ~when the unlock toast has settled + 120ms — the Fork CTA takes the pulse once
-const WEEK_OFFER_GAP_MS = 120;      // the week's offer follows the recap's last beat, never races it (#20 C7)
-const CEREMONY_TAIL_CAP_MS = 2600;  // past the director's 2400ms structural budget: no ceremony spoke, fire anyway
 
 // The one-shot session notes both consume the same way: read, clear, answer.
 function consumeSessionFlag(key) {
@@ -150,10 +147,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   const layoutCacheRef = useRef({ signature: '', raw: new Map() });
   const completedRef = useRef(new Set());
   const inProgressRef = useRef(new Set());
-  const logRef = useRef(new ActivityLog());
-  const feedOpenRef = useRef(false); // mirrors feedOpen for emit's synchronous "is the feed being watched?" check
-  const pinnedRef = useRef(false);
-  const unseenIdsRef = useRef(new Set()); // events that arrived while the feed wasn't visible
   const seedRef = useRef(null); // the authored seed for the current tree (persistence baseline)
   const repoRef = useRef(null); // the TreeRepository for the current tree — the one door to its server reads
   const collabRef = useRef(null); // live socket to windmill-backend (dogfood roadmap only)
@@ -288,11 +281,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   const toastTimersRef = useRef([]); // pending hold→leave→unmount timers for the active toast
   const toastKeyRef = useRef(0); // monotonic key so a replacing toast remounts and re-enters
   const completeStepRef = useRef(null); // always points at the latest completeStep (for the deferred beat)
-  const openWeekSheetRef = useRef(null);     // latest openWeekSheet — the offer's toast outlives its render
-  const publishOgImageRef = useRef(null);    // same hazard on the milestone beat, which predates it
-  const plantedAtRef = useRef(0);            // when this tree was planted (epoch ms, 0 unrecorded) — the period clock
-  const cardCacheRef = useRef({ key: '', png: null }); // the last progress card rasterized, so the sheet opens onto a drawn one
-  const weekOfferRef = useRef(null);         // the armed week offer awaiting the open's last beat: { run, timer } | null
   const composerOpenRef = useRef(false); // mirrors composerOpen for the capture-phase ⌘V guard
 
   // The color key (F6) — its kinds, its open flag, its spotlight and every kind gesture, over
@@ -338,13 +326,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [autoFocusNameId, setAutoFocusNameId] = useState(null); // freshly created bud → StepPanel focuses its name field
   const [toast, setToast] = useState(null); // single status beat: { message, action, detail, key, leaving }
   const [toastWhyOpen, setToastWhyOpen] = useState(false); // a tend receipt's reasoning, revealed on tap
-  const [logVersion, setLogVersion] = useState(0); // bump to re-render off the mutable activity log
-  const [ticker, setTicker] = useState([]); // live arrival toasts (design C), max 3
-  const [newEventIds, setNewEventIds] = useState(() => new Set()); // rows flashing on arrival
-  const [feedOpen, setFeedOpen] = useState(false); // the activity feed is summoned (design A″ — closed by default)
-  const [pinned, setPinned] = useState(false); // …or pinned to stay docked (= option A)
-  const [unreadCount, setUnreadCount] = useState(0); // events since the feed was last opened
-  const [activityPing, setActivityPing] = useState(false); // transient chip pulse on a fresh arrival
 
   // A Next-up tap selects on a delay (the 540ms glide). Anything that changes the
   // picture before it lands — a newer tap, a selection by other means, dismissing the
@@ -440,6 +421,34 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [demoCompletions, setDemoCompletions] = useState(0); // marks made this demo session — any one retires the coach
   const [ctaEcho, setCtaEcho] = useState(false); // the Fork CTA takes the pulse once, after the unlock toast (§04)
 
+  // The three derivations every seam below reads — where the tree sits, what each step's state is,
+  // and the score. They sit beside the state they derive from, and above the first hook that wants
+  // them.
+  //
+  // Position is purely a projection of structure now (angular-reorder retired the free-pixel move,
+  // §07): whenever the node/edge/order signature changes — a create, connect, delete, or reorder,
+  // local or remote alike — the engine lays the whole tree out afresh, exactly as a page load
+  // would. Content-only updates (rename, progress) reuse the cached layout so nothing else moves.
+  const layoutPositions = useCallback((nextTree) => {
+    const signature = nextTree.allNodes
+      .map((node) => `${node.id}<${[...node.prerequisites].sort().join(',')}<${node.order ?? ''}`)
+      .sort()
+      .join('|');
+    if (layoutCacheRef.current.signature !== signature) {
+      layoutCacheRef.current = { signature, raw: layoutEngine.layout(nextTree) };
+    }
+    return new Map(layoutCacheRef.current.raw);
+  }, []);
+
+  // Single source of truth for node state — every completion ripples through here.
+  const states = useMemo(() => {
+    if (!tree) return new Map();
+    return UnlockRules.derive(tree, { completed, inProgress });
+  }, [tree, completed, inProgress]);
+
+  // The share "score" — done/total + the dominant kind that tints the exported frame.
+  const shareStats = useMemo(() => (tree ? ShareStats.from(tree, states) : null), [tree, states]);
+
   // Save the edited tree over its seed. Only the dogfood roadmap persists — the
   // huge perf tree is a throwaway. Every structural edit, undo/redo, and move
   // funnels here, so the browser always reloads the latest edit.
@@ -485,40 +494,25 @@ export function SkillTreeView({ treeId, demo = false }) {
     setToast(null);
   }, []);
 
-  // The open's one pride moment (brief #20 · canon C7). The week's offer is decided during the load
-  // and fired on the tail of whatever ceremony closes this open — the welcome-back recap, or the
-  // arrival that stands in for it when there is no away-work to replay. It FOLLOWS that beat by
-  // 120ms instead of racing it, so the ask lands on a tree that has finished moving.
-  const fireWeekOffer = useCallback((delay) => {
-    const armed = weekOfferRef.current;
-    if (!armed?.run) return;
-    clearTimeout(armed.timer);
-    weekOfferRef.current = { run: null, timer: setTimeout(armed.run, delay) };
-  }, []);
-
-  const armWeekOffer = useCallback((run) => {
-    clearTimeout(weekOfferRef.current?.timer);
-    // The cap is a safety net, not a schedule: under the phone list the scene is paused and no
-    // ceremony ever speaks, and an offer that can never fire is a feature quietly lost.
-    weekOfferRef.current = { run, timer: setTimeout(() => fireWeekOffer(0), CEREMONY_TAIL_CAP_MS) };
-  }, [fireWeekOffer]);
-
-  // A milestone in the same window WINS the lane, and the week's offer is dropped rather than
-  // queued behind it: one pride moment per open. It costs nothing — the ask was never committed,
-  // so it comes back next period.
-  const dropWeekOffer = useCallback(() => {
-    clearTimeout(weekOfferRef.current?.timer);
-    weekOfferRef.current = null;
-  }, []);
-
-  useEffect(() => () => clearTimeout(weekOfferRef.current?.timer), []);
+  // Everything that leaves this app — the unfurl card, the period's progress card, and the one
+  // ask that offers it. The director owns the ledger, the pixels and the offer's timing; the view
+  // owns the triggers, because they are the load's, the ceremony's and the milestone's to pull.
+  const {
+    publishOgImage, publishOgImageRef, weekSegment,
+    forgetPeriod, openPeriod, considerWeekOffer, followCeremony, dropWeekOffer, clearShareLedger,
+  } = useWeekOffer({
+    treeId, tree, states, shareStats, layoutPositions, viewPrefs,
+    completed, completedAt, completedRef,
+    treeMine, shared, demo, demotion, demotedRef,
+    showToast, setShareOpen,
+  });
 
   // The scene's one toast sink — every ceremony's closing beat comes through here, which is what
   // makes it the seam the week's offer waits on.
   const speakCeremony = useCallback((message, options) => {
     showToast(message, options);
-    fireWeekOffer(WEEK_OFFER_GAP_MS);
-  }, [showToast, fireWeekOffer]);
+    followCeremony();
+  }, [showToast, followCeremony]);
 
   // Tending (guidelines/tending.md): the agent lives in the tree. The bar appears only for a
   // signed-in owner of an editable tree on an ARMED server — a dark server never shows an input
@@ -588,71 +582,14 @@ export function SkillTreeView({ treeId, demo = false }) {
     if (isPanning) setRecenterAvailable(true);
   }, []);
 
-  // Record one activity event and play its arrival: the node pulses on the graph
-  // (felt first), a ticker toast announces it, and the fresh row flashes in the
-  // feed. Removed events skip the pulse/toast — the node is gone and the delete's
-  // Undo toast already speaks. Unlocks belong to the tree, so they carry no actor.
-  const emit = useCallback((partial, options = {}) => {
-    const event = new ActivityEvent({
-      id: crypto.randomUUID?.() ?? `ev-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
-      actor: partial.actor ?? (partial.verb === 'unlocked' ? null : 'You'),
-      verb: partial.verb,
-      nodeId: partial.nodeId,
-      label: partial.label,
-      kind: partial.kind,
-      at: Date.now(),
-    });
-    logRef.current.record(event);
-    setLogVersion((version) => version + 1);
-
-    // Closed ≠ deaf (design A″): an arrival that lands while the feed isn't being
-    // watched counts toward the unread badge and pings the chip; it'll flash on open.
-    const watching = (feedOpenRef.current || pinnedRef.current) && !selectedIdRef.current;
-    if (!watching) {
-      unseenIdsRef.current.add(event.id);
-      setUnreadCount(unseenIdsRef.current.size);
-      setActivityPing(true);
-      setTimeout(() => setActivityPing(false), 900);
-    }
-
-    if (event.verb === 'removed') return event;
-
-    setNewEventIds((prev) => new Set(prev).add(event.id));
-    setTimeout(() => setNewEventIds((prev) => { const next = new Set(prev); next.delete(event.id); return next; }), 1400);
-
-    // A ceremony's completed/unlocked beats are the growth ceremony's to animate and
-    // summarize: they don't pulse individually here, nor stack the ticker. Other
-    // verbs (added / renamed / started) still feel their arrival pulse + ticker.
-    if (!options.silent) {
-      sceneRef.current?.pulseNode(event.nodeId);
-      setTicker((prev) => [...prev, event].slice(-3));
-      setTimeout(() => setTicker((prev) => prev.filter((entry) => entry.id !== event.id)), 4500);
-    }
-    return event;
-  }, []);
-
-  // The feed became visible: clear the unread badge and replay the events that
-  // arrived while it was closed with the arrival flash (design A″ — E's catch-up).
-  const markRead = useCallback(() => {
-    const ids = [...unseenIdsRef.current];
-    if (ids.length === 0) return;
-    unseenIdsRef.current = new Set();
-    setUnreadCount(0);
-    setActivityPing(false);
-    setNewEventIds((prev) => new Set([...prev, ...ids]));
-    setTimeout(() => setNewEventIds((prev) => { const next = new Set(prev); ids.forEach((id) => next.delete(id)); return next; }), 1400);
-  }, []);
-
-  // The Activity chip / the `a` key: summon the feed, or dismiss it if it's the
-  // visible tenant. Opening deselects so the feed (not a step's details) shows.
-  const toggleActivity = useCallback(() => {
-    const visibleAsFeed = (feedOpenRef.current || pinnedRef.current) && !selectedIdRef.current;
-    if (visibleAsFeed) { cancelNextUpSelect(); setFeedOpen(false); setPinned(false); }
-    else { setFeedOpen(true); setSelectedId(null); }
-  }, [cancelNextUpSelect, setSelectedId]);
-
-  const closeActivity = useCallback(() => { cancelNextUpSelect(); setFeedOpen(false); setPinned(false); }, [cancelNextUpSelect]);
-  const togglePin = useCallback(() => setPinned((value) => !value), []);
+  // What has happened to this tree, and whether the dock is showing it — the log, `emit`, the
+  // unread badge, the arrival flash and the ticker (activity/useActivity.js). The one seam the
+  // rest of this file touches is `emit`: every edit that is worth remembering calls it.
+  const {
+    emit, seedActivity, ticker, newEventIds, pinned, unreadCount, activityPing,
+    feedVisible, feedSummonedRef, activityGroups, selectedHistory, eventCount,
+    toggleActivity, openActivity, closeActivity, togglePin,
+  } = useActivity({ sceneRef, selectedIdRef, selectedId, cancelNextUpSelect, setSelectedId });
 
   // Discard local edits and reload the authored seed fresh (clears history too),
   // including the user's durable progress and its timestamps for this tree.
@@ -664,30 +601,15 @@ export function SkillTreeView({ treeId, demo = false }) {
       clearLegendStore(seedRef.current.id);
       returnLedger.clear(seedRef.current.id); // the reset reload re-baselines the recap from the cleared progress
       milestoneLedger.clear(seedRef.current.id); // a reset tree can earn its milestones' share offers again
-      shareLedger.clear(seedRef.current.id); // and starts its share series over — no "since" against work that's gone
+      clearShareLedger(seedRef.current.id); // and starts its share series over — no "since" against work that's gone
     }
     cancelAllAutoCompletes();
     setReloadKey((key) => key + 1);
-  }, [clearLegendStore, clearWorkspaceStore, cancelAllAutoCompletes]);
+  }, [clearLegendStore, clearWorkspaceStore, cancelAllAutoCompletes, clearShareLedger]);
 
   // Re-derive the whole render model from the editor's current TreeData and apply
   // it to the scene preserving the view. The seam every structural edit + undo/redo
   // funnels through; constructing a SkillTree here also re-validates the DAG.
-  // Position is purely a projection of structure now (angular-reorder retired the free-pixel move,
-  // §07): whenever the node/edge/order signature changes — a create, connect, delete, or reorder,
-  // local or remote alike — the engine lays the whole tree out afresh, exactly as a page load
-  // would. Content-only updates (rename, progress) reuse the cached layout so nothing else moves.
-  const layoutPositions = useCallback((nextTree) => {
-    const signature = nextTree.allNodes
-      .map((node) => `${node.id}<${[...node.prerequisites].sort().join(',')}<${node.order ?? ''}`)
-      .sort()
-      .join('|');
-    if (layoutCacheRef.current.signature !== signature) {
-      layoutCacheRef.current = { signature, raw: layoutEngine.layout(nextTree) };
-    }
-    return new Map(layoutCacheRef.current.raw);
-  }, []);
-
   const syncStructure = useCallback(() => {
     const editor = editorRef.current;
     const sceneNow = sceneRef.current;
@@ -1088,7 +1010,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         // Empty-canvas click: drop any selection — nodes or edges, single or multi — (the feed
         // returns iff it was open), or dismiss the feed itself when nothing was selected (design A″).
         if (selectedIdsRef.current.size > 0 || selectedEdgesRef.current.size > 0) setSelectedId(null);
-        else { cancelNextUpSelect(); setFeedOpen(false); setPinned(false); }
+        else closeActivity();
       },
       onNodeHover: (id) => setHoveredId(id),
       onCeremonyToast: speakCeremony,
@@ -1146,7 +1068,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         if (selectedIdsRef.current.size > 0 || selectedEdgesRef.current.size > 0) { setSelectedId(null); return; }
         // A plain-clicked single edge lives only in the scene (empty React sets) — clear it here.
         if (sceneRef.current?.selectedEdge) { sceneRef.current.selectEdge(null); return; }
-        if (feedOpenRef.current || pinnedRef.current) closeActivity();
+        if (feedSummonedRef.current) closeActivity();
         return;
       }
       const typing = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA');
@@ -1264,7 +1186,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     setSelectedId(null);
     setTreeVisibility(null); // the stance is unknown until the server answers — never claim a stale one
     setTreeMine(false);
-    plantedAtRef.current = 0; // …and neither is the planting time: never count a new tree's weeks from an old one's
+    forgetPeriod();           // …and neither is the planting time: never count a new tree's weeks from an old one's
     repoRef.current = null;   // the outgoing tree's repository is not this one's; the reconcile waits for the new seed
 
     async function loadTree() {
@@ -1360,16 +1282,11 @@ export function SkillTreeView({ treeId, demo = false }) {
       // Published beside the seed it loaded, so the reconcile can never read one tree's
       // server rows against another tree's local marks.
       repoRef.current = repo;
-      plantedAtRef.current = seed.createdAt ?? 0; // the period clock: week N counts from here, never the calendar
-      cardCacheRef.current = { key: '', png: null }; // another tree, another card
+      openPeriod(seed.createdAt ?? 0); // the period clock: week N counts from here, never the calendar
       progressRef.current = progress;
       completedRef.current = new Set(progress.completed);
       inProgressRef.current = new Set(progress.inProgress);
-      // Seed the resting feed from the roadmap's build history (the completed deeds) and
-      // fold in the server's structural op history, oldest-first.
-      const built = ActivityLog.fromTree(nextTree, states, Date.now()).events;
-      const fromServer = serverActivity.map((event) => new ActivityEvent({ ...event, actor: event.actor || null }));
-      logRef.current = new ActivityLog([...built, ...fromServer].sort((a, b) => a.at - b.at));
+      seedActivity({ tree: nextTree, states, serverActivity }); // this tree's own history, and a feed closed on it
       setTree(nextTree);
       setRenderModel(model);
       setTreeVisibility(seed.visibility ?? null); // the server's stance rides the seed; the blob fallback carries none
@@ -1381,14 +1298,6 @@ export function SkillTreeView({ treeId, demo = false }) {
       hydrateWorkspaces(seed.id); // saved sub-tasks/notes/links for THIS tree; the arc feed reads them below
       hydrateLegend(seed.id, nextTree.nodes, seed.kinds ?? null); // the key for THIS tree, spotlight cleared
       pushArcs(); // seed the gauges from the hydrated workspaces (model is already applied)
-      setLogVersion((version) => version + 1);
-      setTicker([]);
-      setNewEventIds(new Set());
-      setFeedOpen(false);
-      setPinned(false);
-      setUnreadCount(0);
-      setActivityPing(false);
-      unseenIdsRef.current = new Set();
       setBounds(scene.getBounds());
       if (restoredSelection) setSelectedId(restoredSelection);
       if (!viewReadOnly) placeStore.save({ treeId: seed.id, camera: scene.getViewpoint(), selectedId: restoredSelection });
@@ -1411,42 +1320,16 @@ export function SkillTreeView({ treeId, demo = false }) {
         const autoOpen = considerAutoOpen({ treeId: seed.id, readyCount: readyNow, stepCount: nextTree.nodes.length });
         if (autoOpen.open) {
           autoOpenTimer = setTimeout(() => {
-            if (readOnlyRef.current || selectedIdRef.current || feedOpenRef.current || pinnedRef.current) return;
+            if (readOnlyRef.current || selectedIdRef.current || feedSummonedRef.current) return;
             autoOpen.commit();
-            setFeedOpen(true);
+            openActivity();
           }, NEXT_UP_ENTER_MS);
         }
       }
 
-      // The week's offer (brief #20, reconciled to canon): the first open after a period closes,
-      // riding the tail of the welcome-back recap. It is armed here and fired by the ceremony —
-      // never mid-session, never on a timer, never twice in a period, and never for anyone but the
-      // owner of an editable tree (the same gate the milestone beat uses: a phone owner is exactly
-      // who posts). Two declines in a row and considerProgressShare stops answering, for good.
-      if (seed.mine && !shared && !demo && !demotedRef.current) {
-        const weekOffer = considerProgressShare({
-          treeId: seed.id,
-          plantedAt: seed.createdAt ?? 0,
-          completed: progress.completed,
-          states,
-          completedAt: completedAtMap,
-          unit: viewPrefs.cardUnit(seed.id),
-        });
-        if (weekOffer.offer) {
-          armWeekOffer(() => {
-            // The ask is spent the moment it goes out, and counts as declined until taken. Every
-            // surface that can make the offer now carries a standing Share door — the control bar
-            // on desktop, the action lane's right slot below it (X8 §10) — so a toast left to fade
-            // is a refusal everywhere, and retirement can never strand an owner.
-            weekOffer.commit({ countsAsDecline: true });
-            const count = weekOffer.lit.length;
-            showToast(`${weekOffer.period.label} · ${count} step${count === 1 ? '' : 's'} lit`, {
-              duration: 6000,
-              action: { label: 'Share the week', run: () => openWeekSheetRef.current?.(weekOffer) },
-            });
-          });
-        }
-      }
+      // The week's offer rides this open, if the period earned one: armed here, fired by whatever
+      // ceremony closes the open, dropped outright if a milestone takes the lane (share/useWeekOffer.js).
+      considerWeekOffer(seed, { completed: progress.completed, states, completedAt: completedAtMap });
 
       // Every edit runs through a SyncSession: the lattice is truth, TreeData its projection.
       // The roadmap goes live over the socket (a joined frame reaches every peer). Read-only
@@ -1488,12 +1371,6 @@ export function SkillTreeView({ treeId, demo = false }) {
     };
   }, [reloadKey, treeId, demo]);
 
-  // Single source of truth for node state — every completion ripples through here.
-  const states = useMemo(() => {
-    if (!tree) return new Map();
-    return UnlockRules.derive(tree, { completed, inProgress });
-  }, [tree, completed, inProgress]);
-
   // The legend against the live nodes: each kind's count, and how many are worn (the
   // key appears at two). Recomputes as structure changes — a recolor/set-kind lands a
   // new tree, an add/rename a new legend — so counts and the mount gate stay honest.
@@ -1503,131 +1380,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   // raw palette before a legend is derived (same fallback the single-node picker uses).
   const recolorKinds = legend.length > 0 ? legend : NODE_COLOR_NAMES.map((hue) => ({ id: hue, hue }));
 
-  // The share "score" — done/total + the dominant kind that tints the exported frame.
-  const shareStats = useMemo(() => (tree ? ShareStats.from(tree, states) : null), [tree, states]);
-
-  // Every share moves the baseline the NEXT progress card is "since" (brief #20): the completed
-  // set as it stands right now, the moment, and the share's ordinal. Written here and only here —
-  // never on a completion — because a baseline that survives your own work is the only honest way
-  // to say "since you last shared" without per-node timestamps from the server. `delta` is what the
-  // card being posted stamped, so every later card's ledger row agrees with the picture this one
-  // published; a link share carries no such claim and lets the ledger take the set difference.
-  const recordShare = useCallback((delta = null) => {
-    const prior = shareLedger.load(treeId);
-    shareLedger.save(treeId, { completed: completedRef.current, at: Date.now(), count: (prior?.count ?? 0) + 1, delta });
-  }, [treeId]);
-
-  // When the owner shares, publish the tree's unfurl card (brief #12): build the SVG from the
-  // same model + layout the canvas draws, rasterize it, and upload it — all best-effort, off
-  // the copy interaction. Owner-only (treeMine), and every step is guarded so a failed card
-  // (bad raster, offline, no DOM) stays silent and the backend's generic image covers it.
-  const publishOgImage = useCallback(async () => {
-    if (!treeMine || !tree || !shareStats) return;
-    recordShare();
-    try {
-      const model = tree.toRenderModel(layoutPositions(tree), states);
-      const card = {
-        model,
-        title: tree.title,
-        done: shareStats.done,
-        total: shareStats.total,
-        dominantKind: shareStats.dominantKind,
-      };
-      const png = await svgToPngBlob(buildOgCardSvg(card));
-      if (png) await uploadOgImage(treeId, png);
-      // The motion companion (#19): kicked off AFTER the poster is up, un-awaited, so the share
-      // link is ready instantly and the ~3s encode + upload lands a beat later. Best-effort — a
-      // failed or unsupported encode just leaves the poster, never blocks or breaks sharing. The
-      // encoder (and its heavy WebCodecs/mux library) is loaded on demand here so it never weighs
-      // down the initial page — only an owner who actually shares ever pays for it.
-      import('./share/captureShareVideo.js')
-        .then(({ captureShareVideo }) => captureShareVideo(card))
-        .then((mp4) => { if (mp4) uploadOgVideo(treeId, mp4); })
-        .catch(() => {});
-    } catch { /* the unfurl artifacts are best-effort — never break sharing */ }
-  }, [treeMine, tree, states, shareStats, layoutPositions, treeId, recordShare]);
-
-  // The progress card's pixels (brief #20). The share sheet owns the settings; this owns the
-  // drawing — the same model + layout the canvas paints, rasterized by the same rasterizer the
-  // unfurl card uses. The tree's own og:image is deliberately untouched: the unfurl is the tree's
-  // identity, this is a post the user makes.
-  //
-  // One card is cached, keyed by everything that can change it, because canon asks for the card to
-  // be drawn BEFORE the sheet opens: the offer renders it while the toast is still up, and the
-  // sheet's first frame is a cache hit rather than a hole where the post should be.
-  const renderProgressCard = useCallback(async ({ lit, period, since, ledger }) => {
-    if (!tree || !shareStats || !lit?.length) return null;
-    const key = `${[...lit].sort().join(',')}|${period}|${since ?? ''}|${ledger ? ledger.join('·') : 'off'}`
-      + `|${tree.title}|${shareStats.done}/${shareStats.total}`;
-    if (cardCacheRef.current.key === key) return cardCacheRef.current.png;
-    try {
-      const model = tree.toRenderModel(layoutPositions(tree), states);
-      // No dominant kind is passed: the card takes its hue from the steps that lit THIS period,
-      // which is what keeps two consecutive posts from being the same picture.
-      const png = await svgToPngBlob(buildProgressCardSvg({
-        model,
-        title: tree.title,
-        done: shareStats.done,
-        total: shareStats.total,
-        lit: new Set(lit),
-        period,
-        since,
-        ledger,
-      }));
-      cardCacheRef.current = { key, png };
-      return png;
-    } catch {
-      return null; // best-effort like every other share artifact — the sheet shows no preview, nothing breaks
-    }
-  }, [tree, states, shareStats, layoutPositions]);
-
-  // What this period holds, and everything the sheet's second segment needs to post it. It is
-  // derived, not stored: the offer and the share menu are two doors onto the SAME facts, and a
-  // second copy of them behind the offer's door is how the two would eventually disagree.
-  // Owner-and-editable, exactly like the milestone beat — a phone owner is who shares.
-  const weekSegment = useMemo(() => {
-    if (!treeMine || shared || demo || demotion || !tree) return null;
-    const prior = shareLedger.load(treeId);
-    const period = new ProgressPeriod({
-      plantedAt: plantedAtRef.current,
-      now: Date.now(),
-      unit: viewPrefs.cardUnit(treeId),
-      ordinal: (prior?.count ?? 0) + 1,
-    });
-    const { lit, sinceAt } = newThisPeriod({ completed, states, completedAt, prior, period });
-    return {
-      treeId,
-      prefs: viewPrefs,
-      week: { lit, sinceAt, plantedAt: period.plantedAt, ordinal: period.ordinal, ledger: ledgerDeltas({ history: prior?.history ?? [], period }) },
-      renderCard: (options) => renderProgressCard({ lit, ...options }),
-      onShared: () => recordShare(lit.length), // the card states its own stamp, so the ledger can never outrun it
-    };
-  }, [treeMine, shared, demo, demotion, tree, treeId, completed, states, completedAt, renderProgressCard, recordShare]);
-
-  // Taking the offer: draw the card, THEN open the sheet onto it — canon asks for a sheet that
-  // opens onto the post, never onto a hole where the post will be. Accepting also clears the
-  // decline count: someone who posts is not someone the offer should retire.
-  const openWeekSheet = useCallback(async (offer) => {
-    offer.accept();
-    const ledger = ledgerDeltas({ history: shareLedger.load(treeId)?.history ?? [], period: offer.period });
-    await renderProgressCard({
-      lit: offer.lit,
-      period: offer.period.label,
-      since: sinceLabel({ plantedAt: offer.period.plantedAt, at: offer.sinceAt, unit: offer.period.unit }),
-      ledger: viewPrefs.cardLedger(treeId) ? ledger : null,
-    });
-    setShareOpen(true);
-  }, [renderProgressCard, treeId]);
-
-  // The offer's toast is built at the open that earned it and tapped a beat later, after `states`
-  // and the tree have moved on. Going through the ref means the card draws the tree as it actually
-  // stands when the sheet opens.
-  openWeekSheetRef.current = openWeekSheet;
-  // The milestone beat has always had the same stale-closure hazard, and it mattered more: its
-  // toast could say "Tree complete — 22/22" while the card it published drew 21/22, because the
-  // completion that earned the crown had not reached `states` in the render that built the action.
-  publishOgImageRef.current = publishOgImage;
-
   // Push re-derived states to the scene whenever completion changes; the
   // scene owns the growth animation for newly-unlocked branches.
   useEffect(() => {
@@ -1636,8 +1388,6 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   useEffect(() => { completedRef.current = completed; }, [completed]);
   useEffect(() => { inProgressRef.current = inProgress; }, [inProgress]);
-  useEffect(() => { feedOpenRef.current = feedOpen; }, [feedOpen]);
-  useEffect(() => { pinnedRef.current = pinned; }, [pinned]);
   useEffect(() => { readOnlyRef.current = readOnly; }, [readOnly]);
   useEffect(() => { composerOpenRef.current = composerOpen; }, [composerOpen]);
 
@@ -1655,11 +1405,6 @@ export function SkillTreeView({ treeId, demo = false }) {
       .catch(() => { if (!cancelled) setCoachAllowed(false); });
     return () => { cancelled = true; };
   }, [demo, status]);
-
-  // The feed is the visible dock tenant when summoned/pinned and no step is
-  // selected. Whenever it becomes visible, mark everything read (with a catch-up flash).
-  const feedVisible = (feedOpen || pinned) && !selectedId;
-  useEffect(() => { if (feedVisible) markRead(); }, [feedVisible, markRead]);
 
   // NEXT UP is ranked once per open and frozen in the ref — stable in-session,
   // re-ranked on the next summon, never reshuffled underfoot (whats-next-panel §03.2).
@@ -1691,10 +1436,6 @@ export function SkillTreeView({ treeId, demo = false }) {
     () => sharedKind([...selectedIds].map((id) => nodesById.get(id)?.color ?? DEFAULT_NODE_COLOR)),
     [selectedIds, nodesById],
   );
-
-  // The grouped view and per-node history both recompute when the log version bumps.
-  const activityGroups = useMemo(() => logRef.current.groupedByDay(Date.now()), [logVersion]);
-  const selectedHistory = useMemo(() => (selectedId ? logRef.current.forNode(selectedId) : []), [selectedId, logVersion]);
 
   const handleRowHover = useCallback((id) => sceneRef.current?.spotlightNode(id), []);
   const handleRowLeave = useCallback(() => sceneRef.current?.spotlightNode(null), []);
@@ -2541,7 +2282,7 @@ export function SkillTreeView({ treeId, demo = false }) {
             ) : feedVisible ? (
               <ActivityFeed
                 groups={activityGroups}
-                count={logRef.current.size}
+                count={eventCount}
                 nodesById={nodesById}
                 now={Date.now()}
                 hoveredId={hoveredId}

@@ -37,7 +37,8 @@ Repository loads → domain computes → scene renders. **Layout is synchronous*
 promise: `layoutPositions` re-runs `RadialLayoutEngine` inline whenever the node/edge/order
 signature changes and serves a cached copy otherwise, so a live edit re-lays the tree in the
 same tick it was made. No business logic lives in the scene; the React layer wires data
-through, with the honest exceptions `NOTES.md` records and Wave 17 is scheduled to extract.
+through, and the exceptions `NOTES.md` records are now hooks of their own — see the
+`SkillTreeView.jsx` section for the one that stayed, and why.
 
 After the first paint the load pipeline is not the update path. A `SyncSession` owns the tree's
 CRDT lattice; a local gesture and a remote frame both land as a new projection, which re-enters
@@ -60,7 +61,7 @@ Every directory, one line. The six marked **↓** have a section of their own be
 | `ui/tree/` | The step's own components — kind legend, checklist, workspace body — and the two hooks that drive them (`useLegend` · `useWorkspace`, each over its pure model), plus `SkillNode`/`SkillConnector`/`ProgressBar`, the canon's DOM reference implementation of the tree metaphor, whose consumer is the `#/showcase` gallery. |
 | `ui/mobile/` | The phone/tablet surfaces: bottom sheets, the editor sheet, aim + bulk bars, the action lane, the read-only chrome and the fork door. |
 | `list/` | The phone's second view of the same model (X8): the tree as an outline, with its own pure outline/editing/explore rules. |
-| `activity/` | The activity log domain plus the one presentation grammar (verb hues, sentences, rows) every feed surface speaks. |
+| `activity/` | The activity log domain, the one presentation grammar (verb hues, sentences, rows) every feed surface speaks, and `useActivity` — the controller that records an arrival and decides whether the dock is showing it. |
 | `ceremony/` | `CeremonyDirector` — sequences the motion language's camera → travel → bloom → pulse → toast into one ceremony at a time. |
 | `selection/` | The multi-selection predicates (a set of two or more is one thing, not N picks). |
 | `shortcuts/` | The canonical keyboard map and the reference dialog built from it. |
@@ -330,6 +331,12 @@ one feature package rather than split across layers because it is a self-contain
 - `share/GalleryCard.jsx` — the in-product card (#12): drops the mat (it lives inside app chrome)
   but keeps the kind rule and the same title/readout. Presentational, light and dark.
 
+- `share/useWeekOffer.js` — the director over all of the above: the share ledger, the two cards'
+  pixels (one raster cached, so the sheet opens onto a drawn post), the week segment the sheet
+  renders, and the offer's whole conduct. `SkillTreeView` holds only the triggers, because they are
+  not the director's to pull: `considerWeekOffer` at the end of the load, `followCeremony` from the
+  scene's one toast sink, `dropWeekOffer` from the milestone beat and the load's teardown.
+
 The period's offer is armed during the load and fired by the scene's one toast sink, 120ms after
 whatever ceremony closes the open (the welcome-back recap, or the arrival standing in for it), with
 a cap for the paused-scene case. A milestone landing in the same window drops it: one pride moment
@@ -345,15 +352,19 @@ projection comes back through `onTreeChanged` → `syncStructure()` (re-derive, 
 `SyncSession.undo`/`redo`, ⌫/Delete on the selection, Esc deselects; a `selectedId` →
 `scene.setSelection` effect keeps the canvas chrome in step with React.
 
-At 2,865 lines it is still by far the largest file in the package, and its own header's claim that
+At 2,606 lines it is still by far the largest file in the package, and its own header's claim that
 no business logic lives here was not true — which is why the header now names what is left rather
-than denying it. Three of the planned extractions have landed: advancing progress and choosing the
-milestone to announce are pure functions in `model/progress.js`, and the legend and node-workspace
-editors are the hooks `ui/tree/useLegend.js` and `ui/tree/useWorkspace.js`. What is still here is
-the remote-frame idempotency and anti-clobber reconciliation around the progress push (with the
-`startedAt`/`completedAt` stamping that rides with it), plus the share/week-offer and activity-feed
-controllers. See Wave 17 in the audit ledger and `NOTES.md`; read this section as a map of a file
-that is still scheduled to shrink.
+than denying it. Wave 17's extractions have landed: advancing progress and choosing the milestone
+to announce are pure functions in `model/progress.js`, and four controllers are hooks over the
+model or feature package each drives — `ui/tree/useLegend.js`, `ui/tree/useWorkspace.js`,
+`share/useWeekOffer.js` and `activity/useActivity.js`.
+
+What is still here, deliberately, is the remote-frame idempotency and the anti-clobber
+reconciliation around the progress push, with the `startedAt`/`completedAt` stamping that rides
+with them. That pair is the one thing in this file whose failure mode is silent data loss — a
+stale local mark overwriting a server row, or a remote frame applied twice — and every extraction
+so far has left it whole rather than split the guarantee across a seam. See Wave 17 in the audit
+ledger and `NOTES.md`.
 
 Wires:
 
