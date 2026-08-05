@@ -22,6 +22,10 @@ web/         one Vite/React superapp; product modules lazy-loaded behind a switc
     main.jsx        entry
     styles/  telemetry/   app-global, product-neutral (stay at src/ root)
     design-system/  product-neutral component library (core · forms · feedback · navigation)
+    showcase/       the routed #/showcase gallery. Its own surface rather than part of the
+                    design system, because it EXHIBITS products as well as primitives — and it
+                    reaches each one only through `products/<p>/showcase.js`, the module that
+                    product declares for it (test/shell-boundaries enforces exactly that)
     shell/          app frame: App.jsx (router + product switcher) · auth · billing · account ·
                     settings-shell · connect · feedback · marketing · apiBase · products.js
     products/       one front-end per product

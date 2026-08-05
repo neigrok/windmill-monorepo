@@ -16,7 +16,7 @@ export function Dialog({ open, onClose, title, children, footer, width = 420 }) 
 
   // While open: move focus into the dialog (unless a field inside already claimed it,
   // e.g. an autoFocus input), and restore focus to the opener on close. Escape closes,
-  // and we stop the event so SkillTreeView's global Esc handler doesn't also fire.
+  // and we stop the event so a host's own global Esc handler doesn't also fire behind us.
   useEffect(() => {
     if (!open) return undefined;
     const card = cardRef.current;
@@ -27,7 +27,7 @@ export function Dialog({ open, onClose, title, children, footer, width = 420 }) 
       event.stopPropagation();
       onCloseRef.current?.();
     };
-    // Capture phase: SkillTreeView's global Esc handler is a bubble listener on window,
+    // Capture phase: a host's global Esc handler is typically a bubble listener on window,
     // registered first, so only stopping the event before the bubble phase keeps it from
     // also deselecting/closing behind the dialog.
     window.addEventListener('keydown', onKeyDown, true);

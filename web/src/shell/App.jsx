@@ -12,7 +12,7 @@ import { PRODUCTS, activeProduct } from './products.js';
 // each product's routes (the heavy WebGL tree, the public wall), each product's landing, and the
 // signed-in platform surfaces below — none of which a visitor to the root ever renders, so their
 // code stays out of the entry chunk.
-const Showcase = lazy(() => import('../Showcase.jsx'));
+const Showcase = lazy(() => import('../showcase/Showcase.jsx'));
 const AuthLanding = lazy(() => import('./auth/AuthLanding.jsx').then((m) => ({ default: m.AuthLanding })));
 const OAuthConsent = lazy(() => import('./auth/OAuthConsent.jsx').then((m) => ({ default: m.OAuthConsent })));
 const ConnectPage = lazy(() => import('./connect/ConnectPage.jsx').then((m) => ({ default: m.ConnectPage })));

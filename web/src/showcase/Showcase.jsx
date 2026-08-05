@@ -1,5 +1,5 @@
 import React from 'react';
-import './styles/showcase.css';
+import './showcase.css';
 import {
   Icon,
   Button,
@@ -17,12 +17,11 @@ import {
   Dialog,
   Toast,
   Tabs,
-} from './design-system/index.js';
-import { SkillNode } from './products/roadmap/ui/tree/SkillNode.jsx';
-import { SkillConnector } from './products/roadmap/ui/tree/SkillConnector.jsx';
-import { ProgressBar } from './products/roadmap/ui/tree/ProgressBar.jsx';
-import { GalleryCard } from './products/roadmap/share/GalleryCard.jsx';
-import { ShareStats } from './products/roadmap/share/ShareStats.js';
+} from '../design-system/index.js';
+// A product's specimens arrive through the one module it declares them in — never by reaching
+// into its files. The boundary test enforces exactly that shape: this surface may import
+// products/<p>/showcase.js and nothing else out of a product.
+import { SkillNode, SkillConnector, ProgressBar, GalleryCard, ShareStats } from '../products/roadmap/showcase.js';
 
 /* ------------------------------------------------------------------ *
  * Skill-tree demo — the signature Windmill metaphor.

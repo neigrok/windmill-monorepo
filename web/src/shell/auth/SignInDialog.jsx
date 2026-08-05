@@ -132,7 +132,7 @@ export function SignInDialog({ open, onClose, onSend, resume = null }) {
             Continue with Google
           </Button>
 
-          <p style={reassurance}>No password. Signed out, Windmill still works — your trees live on this device.</p>
+          <p style={reassurance}>No password. Signed out, Windmill still works — your work stays on this device.</p>
         </form>
       )}
 
@@ -163,7 +163,7 @@ export function SignInDialog({ open, onClose, onSend, resume = null }) {
             <Icon name="wifi" size={18} color="var(--color-danger)" />
             <h2 style={brickTitle}>Can't reach windmill.works</h2>
           </div>
-          <p style={panelBody}>Your trees are safe on this device.</p>
+          <p style={panelBody}>Nothing you've written is lost — it's on this device.</p>
           <div style={panelActions}>
             <Button variant="secondary" size="sm" onClick={() => send(email.trim())}>Retry</Button>
           </div>

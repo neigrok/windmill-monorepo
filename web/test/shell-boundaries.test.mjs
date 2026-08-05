@@ -23,6 +23,18 @@ const APP_CHROME_DIR = path.join(SRC, 'shell', 'chrome') + path.sep;
 // The one allowlisted file: the registry's job is to name the products, so the seam is where the
 // wall has its door.
 const REGISTRY = path.join(SRC, 'shell', 'products.js');
+// The neutral side is EVERYTHING that is not a product — not merely src/shell/. This walked only
+// shell/ until 2026-08-05, which skipped 24 files including the whole of design-system/, the layer
+// STRUCTURE.md names by name as one that must be provably product-free. Nothing in it was actually
+// dirty; the point is that nothing was watching, and Showcase.jsx sat at the src root reaching into
+// five roadmap files in plain sight.
+//
+// The showcase gets a NARROW exemption rather than a blanket one: a design-system gallery whose
+// subject includes a product's components has to name them, but it may reach a product only through
+// the one module that product declares for it. So `products/<p>/showcase.js` is a door, and every
+// other path into a product is still a wall.
+const SHOWCASE_DIR = path.join(SRC, 'showcase') + path.sep;
+const specimensOf = (product) => path.join(PRODUCTS_DIR, product, 'showcase.js');
 const SOURCE_EXTENSIONS = new Set(['.js', '.jsx', '.mjs']);
 
 function sourceFiles(dir) {
@@ -64,9 +76,9 @@ function productOf(absolutePath) {
 const violations = { shellIntoProducts: [], productIntoProduct: [], productIntoAppChrome: [] };
 
 for (const file of sourceFiles(SRC)) {
-  const fromShell = file.startsWith(SHELL_DIR) && file !== REGISTRY;
   const fromProduct = productOf(file);
-  if (!fromShell && !fromProduct) continue;
+  const fromShell = !fromProduct && file !== REGISTRY;
+  const fromShowcase = file.startsWith(SHOWCASE_DIR);
 
   const relativeFile = path.relative(SRC, file);
   for (const { specifier, line } of importsOf(file)) {
@@ -78,8 +90,11 @@ for (const file of sourceFiles(SRC)) {
       : path.resolve(path.dirname(file), specifier);
     const targetProduct = productOf(target);
 
-    if (fromShell && targetProduct) {
-      violations.shellIntoProducts.push(`src/${relativeFile}:${line} imports ${specifier} — the shell may only reach products through the registry (src/shell/products.js)`);
+    if (fromShell && targetProduct && !(fromShowcase && target === specimensOf(targetProduct))) {
+      const door = fromShowcase
+        ? `the showcase may reach a product only through src/products/${targetProduct}/showcase.js`
+        : 'the shell may only reach products through the registry (src/shell/products.js)';
+      violations.shellIntoProducts.push(`src/${relativeFile}:${line} imports ${specifier} — ${door}`);
     }
     if (fromProduct && targetProduct && targetProduct !== fromProduct) {
       violations.productIntoProduct.push(`src/${relativeFile}:${line} imports ${specifier} — product "${fromProduct}" must not import from product "${targetProduct}"`);
@@ -90,7 +105,7 @@ for (const file of sourceFiles(SRC)) {
   }
 }
 
-test('nothing in src/shell/ imports from src/products/ — the registry is the only seam', () => {
+test('nothing product-neutral imports from src/products/ — the registry is the only seam', () => {
   assert.deepEqual(violations.shellIntoProducts, []);
 });
 

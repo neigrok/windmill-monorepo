@@ -50,7 +50,7 @@ export function SettingsPage({ inShell = false }) {
           </>
         ) : (
           <div style={{ marginTop: 6 }}>
-            <p style={gate}>Sign in to view your settings. Everything's still here — your trees live on this device.</p>
+            <p style={gate}>Sign in to view your settings. Everything's still here — your work stays on this device.</p>
             <Button variant="primary" size="sm" onClick={openSignInDoor}>Sign in</Button>
           </div>
         )}

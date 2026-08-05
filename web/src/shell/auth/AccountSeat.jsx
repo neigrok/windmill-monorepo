@@ -31,7 +31,7 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
   // The claim beat fires only on a live ghost→signed-in flip — never on a page reload
   // that resolves loading→signed-in, so a returning session stays silent. Without a
   // claimBusy prop the chip runs on its own clock (today's timers); with one
-  // (anon-first-tree F5) the gold "Syncing your trees…" holds until the claim run
+  // (anon-first-tree F5) the gold "Syncing…" holds until the claim run
   // reports done — the effect below takes over.
   useEffect(() => {
     const woken = prevStatus.current === 'ghost' && status === 'signed-in';
@@ -139,7 +139,7 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
               animation: !reduced && claim === 'syncing' ? 'wm-seat-breathe 1.6s var(--ease-standard) infinite' : 'none',
             }}
           />
-          {claim === 'syncing' ? 'Syncing your trees…' : 'Synced'}
+          {claim === 'syncing' ? 'Syncing…' : 'Synced'}
         </span>
       )}
 
