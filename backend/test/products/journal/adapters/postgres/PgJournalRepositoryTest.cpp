@@ -11,7 +11,8 @@
 #include <thread>
 
 // Opt-in integration test: it needs a live local Postgres with the schema applied. It runs only
-// when WM_PG_TEST is set (so CI, which has no database, skips it silently) and seeds its own user
+// when WM_PG_TEST is set — otherwise every case here reports `skip`, which the run summary counts
+// as skipped and never as passed (RUNNING.md §7 has the invocation). It seeds its own user
 // row so it is fully self-contained. This is the one test that proves the SQL half — the LWW guard,
 // the revision capture, the round-trip mapping — against a real server rather than a fake.
 using namespace wm;
@@ -21,6 +22,8 @@ std::string connString() {
   const char* url = std::getenv("DATABASE_URL");
   return url ? url : "postgresql://localhost/windmill";
 }
+const char* kNeedsPostgres = "WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7";
+
 const std::string kUser = "11111111-1111-1111-1111-111111111111";
 
 void reset() {
@@ -44,7 +47,7 @@ Page page(const std::string& body, Mood mood, Energy energy, Source source, cons
 }
 
 TEST(pg_journal_save_then_load_roundtrips_every_field) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgJournalRepository repo{connString()};
 
@@ -52,7 +55,7 @@ TEST(pg_journal_save_then_load_roundtrips_every_field) {
            PageWrite::stored);
 
   std::optional<Page> got = repo.load(UserId{kUser}, LocalDate{"2026-07-27"});
-  CHECK(got.has_value());
+  REQUIRE(got.has_value());
   CHECK_EQ(got->day.iso(), std::string("2026-07-27"));
   CHECK_EQ(got->body, std::string("round trip"));
   CHECK(got->mood == Mood::m3);
@@ -63,7 +66,7 @@ TEST(pg_journal_save_then_load_roundtrips_every_field) {
 }
 
 TEST(pg_journal_lww_and_revision_trail) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgJournalRepository repo{connString()};
 
@@ -77,7 +80,7 @@ TEST(pg_journal_lww_and_revision_trail) {
            PageWrite::superseded);
 
   std::optional<Page> got = repo.load(UserId{kUser}, LocalDate{"2026-07-27"});
-  CHECK(got.has_value());
+  REQUIRE(got.has_value());
   CHECK_EQ(got->body, std::string("clearer now"));
 
   pqxx::connection c{connString()};
@@ -93,14 +96,14 @@ TEST(pg_journal_lww_and_revision_trail) {
 // returned page. This is where the live server was losing the body — reproducing it here, with no
 // drogon in the picture, localises whether the fault is the call chain itself or the HTTP runtime.
 TEST(pg_journal_through_pageservice_keeps_the_body) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgJournalRepository repo{connString()};
   PageService service{repo};
 
   service.write(page("via the service", Mood::m3, Energy::e2, Source::typed, Hlc{300, 0, "devQ"}));
   std::optional<Page> got = service.page(UserId{kUser}, LocalDate{"2026-07-27"});
-  CHECK(got.has_value());
+  REQUIRE(got.has_value());
   CHECK_EQ(got->body, std::string("via the service"));
   CHECK_EQ(got->day.iso(), std::string("2026-07-27"));
 }
@@ -109,7 +112,7 @@ TEST(pg_journal_through_pageservice_keeps_the_body) {
 // pgThreadConnection is thread_local. This runs the same read on a fresh worker thread — if the
 // live server loses the body but this keeps it, the fault is the HTTP runtime, not the storage.
 TEST(pg_journal_through_pageservice_on_a_worker_thread) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgJournalRepository repo{connString()};
   PageService service{repo};
@@ -123,7 +126,7 @@ TEST(pg_journal_through_pageservice_on_a_worker_thread) {
   });
   worker.join();
 
-  CHECK(got.has_value());
+  REQUIRE(got.has_value());
   CHECK_EQ(got->body, std::string("off-thread"));
   CHECK_EQ(listed.size(), static_cast<std::size_t>(1));
   CHECK_EQ(listed.front().body, std::string("off-thread"));

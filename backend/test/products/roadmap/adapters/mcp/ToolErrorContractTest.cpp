@@ -97,7 +97,7 @@ TEST(mcp_the_catalog_publishes_nodeId_and_keeps_id_as_a_deprecated_alias) {
 
   for (const char* name : kNodeHandleTools) {
     const Json::Value* tool = toolNamed(catalog, name);
-    CHECK(tool != nullptr);
+    REQUIRE(tool != nullptr);
     const Json::Value& schema = (*tool)["inputSchema"];
     CHECK_EQ(schema["properties"]["nodeId"]["type"].asString(), std::string("string"));
     CHECK_EQ(schema["properties"]["nodeId"]["description"].asString(),
@@ -112,7 +112,7 @@ TEST(mcp_the_catalog_publishes_nodeId_and_keeps_id_as_a_deprecated_alias) {
 
   // set_progress carries the same pair in both of its shapes: the single mark and a batch row.
   const Json::Value* progress = toolNamed(catalog, "set_progress");
-  CHECK(progress != nullptr);
+  REQUIRE(progress != nullptr);
   const Json::Value& marks = (*progress)["inputSchema"]["properties"];
   CHECK_EQ(marks["nodeId"]["type"].asString(), std::string("string"));
   CHECK(marks["id"]["deprecated"].asBool());
@@ -126,7 +126,7 @@ TEST(mcp_the_catalog_publishes_nodeId_and_keeps_id_as_a_deprecated_alias) {
 
   // Every array this wave made strict publishes what it requires, or a client cannot pre-validate.
   const Json::Value* import = toolNamed(catalog, "import_subgraph");
-  CHECK(import != nullptr);
+  REQUIRE(import != nullptr);
   const Json::Value& arrays = (*import)["inputSchema"]["properties"];
   CHECK_EQ(arrays["nodes"]["items"]["required"][0].asString(), std::string("id"));
   CHECK_EQ(arrays["nodes"]["items"]["properties"]["description"]["maxLength"].asUInt64(), 4000u);
@@ -136,26 +136,26 @@ TEST(mcp_the_catalog_publishes_nodeId_and_keeps_id_as_a_deprecated_alias) {
 
   // …and every id-shaped string publishes its cap, including the ones inside arrays.
   const Json::Value* reconnect = toolNamed(catalog, "reconnect");
-  CHECK(reconnect != nullptr);
+  REQUIRE(reconnect != nullptr);
   for (const char* endpoint : {"oldFrom", "oldTo", "newFrom", "newTo"})
     CHECK_EQ((*reconnect)["inputSchema"]["properties"][endpoint]["maxLength"].asUInt64(), 128u);
   const Json::Value* creation = toolNamed(catalog, "create_node");
-  CHECK(creation != nullptr);
+  REQUIRE(creation != nullptr);
   CHECK_EQ((*creation)["inputSchema"]["properties"]["parentId"]["maxLength"].asUInt64(), 128u);
   CHECK_EQ((*creation)["inputSchema"]["properties"]["prerequisites"]["items"]["maxLength"].asUInt64(), 128u);
   const Json::Value* reorder = toolNamed(catalog, "reorder_kinds");
-  CHECK(reorder != nullptr);
+  REQUIRE(reorder != nullptr);
   CHECK_EQ((*reorder)["inputSchema"]["properties"]["order"]["items"]["maxLength"].asUInt64(), 128u);
   const Json::Value* search = toolNamed(catalog, "find_nodes");
-  CHECK(search != nullptr);
+  REQUIRE(search != nullptr);
   CHECK_EQ((*search)["inputSchema"]["properties"]["kind"]["maxLength"].asUInt64(), 128u);
   const Json::Value* planting = toolNamed(catalog, "create_tree");
-  CHECK(planting != nullptr);
+  REQUIRE(planting != nullptr);
   CHECK_EQ((*planting)["inputSchema"]["properties"]["title"]["maxLength"].asUInt64(), 200u);
 
   // create_node's `id` is the OTHER concept — an id being proposed — so it is not the alias.
   const Json::Value* create = toolNamed(catalog, "create_node");
-  CHECK(create != nullptr);
+  REQUIRE(create != nullptr);
   CHECK_FALSE((*create)["inputSchema"]["properties"]["id"].isMember("deprecated"));
   CHECK_FALSE((*create)["inputSchema"]["properties"].isMember("nodeId"));
 }
@@ -197,7 +197,7 @@ TEST(mcp_an_over_long_description_names_the_size_and_the_max) {
   // …and the cap is published, so a client can pre-validate what the server refuses.
   const Json::Value catalog = h.tools.listTools();
   const Json::Value* annotate = toolNamed(catalog, "annotate_node");
-  CHECK(annotate != nullptr);
+  REQUIRE(annotate != nullptr);
   CHECK_EQ((*annotate)["inputSchema"]["properties"]["description"]["maxLength"].asUInt64(), 4000u);
 }
 
@@ -324,7 +324,7 @@ TEST(mcp_an_imported_node_carries_a_seed_status_and_never_the_callers_mark) {
   // other by reading the schema.
   const Json::Value catalog = h.tools.listTools();
   const Json::Value* import = toolNamed(catalog, "import_subgraph");
-  CHECK(import != nullptr);
+  REQUIRE(import != nullptr);
   const Json::Value& carried = (*import)["inputSchema"]["properties"]["nodes"]["items"]["properties"];
   CHECK_EQ(carried["seedStatus"]["enum"].size(), 3u);
   CHECK_EQ(carried["seedStatus"]["enum"][0].asString(), std::string("active"));
@@ -595,7 +595,7 @@ TEST(mcp_an_import_with_no_nodes_names_the_way_through) {
   // `title` is neither read nor published, so it is no longer part of the shape it documents.
   const Json::Value catalog = h.tools.listTools();
   const Json::Value* import = toolNamed(catalog, "import_subgraph");
-  CHECK(import != nullptr);
+  REQUIRE(import != nullptr);
   CHECK_FALSE((*import)["inputSchema"]["properties"].isMember("title"));
   CHECK_EQ((*import)["inputSchema"]["description"].asString().find("title?"), std::string::npos);
 }
@@ -655,7 +655,7 @@ TEST(mcp_a_kind_handle_is_read_under_either_spelling) {
   const Json::Value catalog = h.tools.listTools();
   for (const char* name : {"rename_kind", "describe_kind", "remove_kind", "recolor_kind"}) {
     const Json::Value* tool = toolNamed(catalog, name);
-    CHECK(tool != nullptr);
+    REQUIRE(tool != nullptr);
     CHECK(( *tool)["inputSchema"]["properties"].isMember("kindId"));
     CHECK(( *tool)["inputSchema"]["properties"].isMember("id"));
   }

@@ -21,16 +21,16 @@ TEST(oauth_full_authorization_code_flow_with_pkce) {
   const std::string challenge = tokens.s256Challenge(verifier);
 
   std::optional<OAuthClient> client = svc.registerClient({kRedirect}, "Claude");
-  CHECK(client.has_value());
+  REQUIRE(client.has_value());
   CHECK(svc.checkAuthorize(client->clientId, kRedirect, challenge, "S256").error == OAuthService::AuthorizeError::ok);
 
   std::string code = svc.issueCode(client->clientId, kRedirect, challenge, kResource, "", UserId{"u1"});
   OAuthService::TokenResult granted = svc.exchangeCode(code, client->clientId, kRedirect, verifier, kResource);
   CHECK(granted.error == OAuthService::GrantError::ok);
-  CHECK(granted.tokens.has_value());
+  REQUIRE(granted.tokens.has_value());
 
   std::optional<UserId> user = svc.resolveAccessToken(granted.tokens->accessToken, "https://mcp.example.com");
-  CHECK(user.has_value());
+  REQUIRE(user.has_value());
   CHECK_EQ(*user, UserId{"u1"});
 
   // The code is single-use.
@@ -85,7 +85,7 @@ TEST(oauth_registration_and_authorize_guards) {
   CHECK_FALSE(svc.registerClient({}, "x").has_value());                          // no redirect uris
 
   std::optional<OAuthClient> client = svc.registerClient({kRedirect}, "ok");
-  CHECK(client.has_value());
+  REQUIRE(client.has_value());
   CHECK(svc.checkAuthorize("nope", kRedirect, "c", "S256").error == OAuthService::AuthorizeError::unknownClient);
   CHECK(svc.checkAuthorize(client->clientId, "https://other/cb", "c", "S256").error == OAuthService::AuthorizeError::badRedirect);
   CHECK(svc.checkAuthorize(client->clientId, kRedirect, "c", "plain").error == OAuthService::AuthorizeError::unsupportedChallenge);

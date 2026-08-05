@@ -9,8 +9,9 @@
 #include <vector>
 
 // Opt-in integration test: it needs a live local Postgres with the schema applied. It runs only
-// when WM_PG_TEST is set (so CI, which has no database, skips it silently) and seeds its own rows,
-// so it is fully self-contained. It exists for the three things a fake cannot prove — that the
+// when WM_PG_TEST is set — otherwise every case here reports `skip`, which the run summary counts
+// as skipped and never as passed (RUNNING.md §7 has the invocation). It seeds its own rows, so it
+// is fully self-contained. It exists for the three things a fake cannot prove — that the
 // anchoring hint is counted against the body Postgres actually holds, that the corpus count is the
 // SQL's own idea of a written page, and that one statement retires a whole panel on exactly the
 // content hashes the pair-level door writes.
@@ -24,6 +25,8 @@ std::string connString() {
   const char* url = std::getenv("DATABASE_URL");
   return url ? url : "postgresql://localhost/windmill";
 }
+const char* kNeedsPostgres = "WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7";
+
 const std::string kMine = "22222222-2222-2222-2222-222222222222";
 const std::string kTheirs = "33333333-3333-3333-3333-333333333333";
 
@@ -92,7 +95,7 @@ std::vector<EchoView> echoesOn(PgEchoRepository& repo, const std::string& user,
 // the echo points at the SECOND one; without a hint the client can only search, and it lands on
 // the first.
 TEST(pg_echo_a_repeated_passage_carries_the_occurrence_it_is) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgEchoRepository repo{connString()};
 
@@ -120,7 +123,7 @@ TEST(pg_echo_a_repeated_passage_carries_the_occurrence_it_is) {
 // 27 BYTES into the body and 23 UTF-16 code units into it; either number sent raw puts the
 // browser's slice inside a word. The occurrence index is 1 in every encoding anyone counts in.
 TEST(pg_echo_the_hint_is_the_one_number_both_sides_agree_on) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgEchoRepository repo{connString()};
 
@@ -148,7 +151,7 @@ TEST(pg_echo_the_hint_is_the_one_number_both_sides_agree_on) {
 // A hint the server cannot stand behind is not offered: the body moved under the passage, so there
 // is no occurrence to name and the client goes back to searching by text.
 TEST(pg_echo_a_body_edited_under_a_passage_offers_no_hint) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgEchoRepository repo{connString()};
   plantPanel(repo, kMine, "2026-05-01", 100);
@@ -169,7 +172,7 @@ TEST(pg_echo_a_body_edited_under_a_passage_offers_no_hint) {
 // The ~20-page corpus floor, counted the way SQL counts it: a page holding only whitespace is one
 // the reader opened, not one they wrote.
 TEST(pg_echo_pages_written_counts_pages_with_words_on_them) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   writePage(kMine, "2026-05-01", "wrote a little.");
   writePage(kMine, "2026-05-02", "wrote a little more.");
@@ -184,7 +187,7 @@ TEST(pg_echo_pages_written_counts_pages_with_words_on_them) {
 
 // One statement retires the panel, and pressing "Not useful" twice is the same as pressing it once.
 TEST(pg_echo_dismissing_a_page_retires_every_pairing_and_repeats_harmlessly) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgEchoRepository repo{connString()};
   plantPanel(repo, kMine, "2026-05-01", 100);
@@ -203,7 +206,7 @@ TEST(pg_echo_dismissing_a_page_retires_every_pairing_and_repeats_harmlessly) {
 }
 
 TEST(pg_echo_dismissing_a_page_leaves_another_day_and_another_account_untouched) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgEchoRepository repo{connString()};
   plantPanel(repo, kMine, "2026-05-01", 100);
@@ -221,7 +224,7 @@ TEST(pg_echo_dismissing_a_page_leaves_another_day_and_another_account_untouched)
 // survives a re-derivation, which is the whole reason it keys on the day rather than on a hash of
 // text that is about to move.
 TEST(pg_echo_declining_the_offer_keeps_every_echo_and_outlives_a_re_derivation) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgEchoRepository repo{connString()};
   plantPanel(repo, kMine, "2026-05-01", 100);
@@ -247,7 +250,7 @@ TEST(pg_echo_declining_the_offer_keeps_every_echo_and_outlives_a_re_derivation) 
 }
 
 TEST(pg_echo_declining_one_offer_leaves_another_day_and_another_account_asking) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgEchoRepository repo{connString()};
   plantPanel(repo, kMine, "2026-05-01", 100);
@@ -269,7 +272,7 @@ TEST(pg_echo_declining_one_offer_leaves_another_day_and_another_account_asking) 
 
 // The two answers are independent: retiring a page's echoes is not an answer to the offer.
 TEST(pg_echo_retiring_a_pages_echoes_writes_no_offer_row) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgEchoRepository repo{connString()};
   plantPanel(repo, kMine, "2026-05-01", 100);
@@ -284,7 +287,7 @@ TEST(pg_echo_retiring_a_pages_echoes_writes_no_offer_row) {
 // offset on it shifted; the dismissal has to hold anyway, because an echo the reader retired
 // coming back is the one failure this feature cannot afford.
 TEST(pg_echo_a_dismissed_page_stays_dismissed_when_its_passages_move) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgEchoRepository repo{connString()};
   plantPanel(repo, kMine, "2026-05-01", 100);

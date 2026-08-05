@@ -224,7 +224,7 @@ TEST(a_page_is_the_first_limit_entries_and_the_token_that_resumes_it) {
 
   std::optional<WallPage> first = wallPage(wall, "", 2);
 
-  CHECK(first.has_value());
+  REQUIRE(first.has_value());
   CHECK_EQ(first->entries.size(), std::size_t{2});
   CHECK_EQ(first->entries[0].id, TreeId{"t_a"});
   CHECK_EQ(first->entries[1].id, TreeId{"t_b"});
@@ -232,7 +232,7 @@ TEST(a_page_is_the_first_limit_entries_and_the_token_that_resumes_it) {
 
   std::optional<WallPage> second = wallPage(wall, first->nextCursor, 2);
 
-  CHECK(second.has_value());
+  REQUIRE(second.has_value());
   CHECK_EQ(second->entries.size(), std::size_t{1});
   CHECK_EQ(second->entries[0].id, TreeId{"t_c"});
   CHECK_EQ(second->nextCursor, std::string(""));  // the last page never invites another
@@ -244,7 +244,7 @@ TEST(a_page_that_holds_the_whole_index_carries_no_cursor) {
 
   std::optional<WallPage> page = wallPage(wall, "", 60);
 
-  CHECK(page.has_value());
+  REQUIRE(page.has_value());
   CHECK_EQ(page->entries.size(), std::size_t{2});
   CHECK_EQ(page->nextCursor, std::string(""));
 }
@@ -261,7 +261,7 @@ TEST(a_cursor_on_the_last_entry_walks_off_the_end_cleanly) {
 
   std::optional<WallPage> page = wallPage(wall, "t_b", 10);
 
-  CHECK(page.has_value());
+  REQUIRE(page.has_value());
   CHECK_EQ(page->entries.size(), std::size_t{0});
   CHECK_EQ(page->nextCursor, std::string(""));
 }
@@ -269,7 +269,7 @@ TEST(a_cursor_on_the_last_entry_walks_off_the_end_cleanly) {
 TEST(an_empty_wall_pages_to_nothing) {
   std::optional<WallPage> page = wallPage({}, "", 10);
 
-  CHECK(page.has_value());
+  REQUIRE(page.has_value());
   CHECK_EQ(page->entries.size(), std::size_t{0});
   CHECK_EQ(page->nextCursor, std::string(""));
 }

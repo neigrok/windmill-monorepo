@@ -56,7 +56,7 @@ TEST(resolve_key_returns_the_owner_and_refuses_garbage_and_revoked_keys) {
 
   MintedKey key = svc.mint(UserId{"u1"}, "Laptop");  // token s1 / digest d1
   std::optional<UserId> owner = svc.resolveKey(key.token);
-  CHECK(owner.has_value());
+  REQUIRE(owner.has_value());
   CHECK_EQ(*owner, UserId{"u1"});
 
   // An unknown or empty secret resolves to nobody.
@@ -94,7 +94,7 @@ TEST(list_returns_keys_newest_first_without_the_token_and_reflects_a_touch) {
   std::vector<McpKeyView> after = svc.list(UserId{"u1"});
   CHECK_EQ(after.size(), 2u);
   CHECK_EQ(after[0].id, newer.id);
-  CHECK(after[0].lastUsedMs.has_value());
+  REQUIRE(after[0].lastUsedMs.has_value());
   CHECK_EQ(*after[0].lastUsedMs, usedAt);
   CHECK_FALSE(after[1].lastUsedMs.has_value());  // the untouched key stays null
 }

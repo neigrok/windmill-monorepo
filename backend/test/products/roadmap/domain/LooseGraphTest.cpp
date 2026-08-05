@@ -39,7 +39,7 @@ TEST(project_present_nodes_and_edges) {
   CHECK_EQ(data.nodes.size(), 2u);
 
   auto child = g.nodeView(nid("child"));
-  CHECK(child.has_value());
+  REQUIRE(child.has_value());
   CHECK_EQ(child->prerequisites.size(), 1u);
   CHECK_EQ(child->prerequisites[0], nid("root"));
   CHECK(child->position.has_value());
@@ -106,7 +106,8 @@ TEST(status_seed_round_trips_through_projection) {
   LooseGraph g;
   g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1), std::string("complete"));
   auto view = g.nodeView(nid("a"));
-  CHECK(view->status.has_value());
+  REQUIRE(view.has_value());
+  REQUIRE(view->status.has_value());
   CHECK_EQ(*view->status, std::string("complete"));
 }
 

@@ -423,7 +423,7 @@ TEST(detail_returns_the_session_with_its_sets_in_completion_order) {
 
   std::optional<SessionDetail> detail = h.service.detail(uid(), sid());
 
-  CHECK(detail.has_value());
+  REQUIRE(detail.has_value());
   CHECK_EQ(detail->session.id, sid());
   CHECK_EQ(detail->sets, (std::vector<Set>{*first.set, *second.set}));
   CHECK_EQ(h.service.detail(uid("u2"), sid()), std::optional<SessionDetail>());

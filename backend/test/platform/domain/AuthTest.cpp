@@ -5,7 +5,7 @@ using namespace wm;
 
 TEST(parse_email_normalizes_case_and_surrounding_space) {
   std::optional<Email> email = parseEmail("  Sam.Gold@Example.COM  ");
-  CHECK(email.has_value());
+  REQUIRE(email.has_value());
   CHECK_EQ(email->value, std::string("sam.gold@example.com"));
 }
 

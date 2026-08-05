@@ -13,7 +13,8 @@
 #include <vector>
 
 // Opt-in integration test: it needs a live local Postgres with the schema applied. It runs only
-// when WM_PG_TEST is set (so CI, which has no database, skips it silently) and seeds its own user
+// when WM_PG_TEST is set — otherwise every case here reports `skip`, which the run summary counts
+// as skipped and never as passed (RUNNING.md §7 has the invocation). It seeds its own user
 // row. This is the one test that proves the SQL half — the bare-conflict start idempotency, the
 // one-open partial index, max+1 numbering computed in the INSERT, the read-back replay, and the
 // 64-row seed — against a real server rather than the fake.
@@ -24,6 +25,8 @@ std::string connString() {
   const char* url = std::getenv("DATABASE_URL");
   return url ? url : "postgresql://localhost/windmill";
 }
+const char* kNeedsPostgres = "WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7";
+
 const std::string kUser = "22222222-2222-2222-2222-222222222222";
 const std::string kOther = "22222222-2222-2222-2222-222222222233";
 
@@ -56,7 +59,7 @@ Set benchSet(const std::string& id, double weightKg, std::uint64_t completedAtMs
 }
 
 TEST(pg_gym_catalog_serves_the_seeded_64_in_pattern_then_name_order) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgTrainingRepository repo{connString()};
 
@@ -70,7 +73,7 @@ TEST(pg_gym_catalog_serves_the_seeded_64_in_pattern_then_name_order) {
 }
 
 TEST(pg_gym_session_lifecycle_start_is_idempotent_and_one_open_holds) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgTrainingRepository repo{connString()};
   const std::uint64_t t1 = 1'700'000'000'123;
@@ -97,7 +100,7 @@ TEST(pg_gym_session_lifecycle_start_is_idempotent_and_one_open_holds) {
 }
 
 TEST(pg_gym_set_write_numbers_max_plus_one_and_replay_returns_stored) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgTrainingRepository repo{connString()};
   const std::uint64_t t1 = 1'700'000'000'123;
@@ -139,7 +142,7 @@ TEST(pg_gym_set_write_numbers_max_plus_one_and_replay_returns_stored) {
 // — never to the other row. Whether that row belongs to a stranger or to the caller's own earlier
 // session, the answer is byte-identical: the id is taken.
 TEST(pg_gym_a_set_id_spent_in_another_session_resolves_to_nothing) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgTrainingRepository repo{connString()};
   const std::uint64_t t1 = 1'700'000'000'123;
@@ -178,7 +181,7 @@ TEST(pg_gym_a_set_id_spent_in_another_session_resolves_to_nothing) {
 // exception is translated here, beside every other statement that knows what Postgres is, and the
 // HTTP edge answers "no such exercise" without ever including a database header.
 TEST(pg_gym_a_set_naming_a_movement_no_catalog_holds_is_refused_as_a_value) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgTrainingRepository repo{connString()};
   const std::uint64_t t1 = 1'700'000'000'123;
@@ -204,7 +207,7 @@ TEST(pg_gym_a_set_naming_a_movement_no_catalog_holds_is_refused_as_a_value) {
 // max+1 numbering under parallel appends: every append to one session serializes behind the
 // session row, so six flushed at once mint six distinct numbers rather than four "set 1"s.
 TEST(pg_gym_parallel_appends_to_one_session_mint_distinct_numbers) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgTrainingRepository repo{connString()};
   const std::uint64_t t1 = 1'700'000'000'123;
@@ -226,7 +229,7 @@ TEST(pg_gym_parallel_appends_to_one_session_mint_distinct_numbers) {
 }
 
 TEST(pg_gym_log_pages_newest_first_with_counts_and_names) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgTrainingRepository repo{connString()};
   const std::uint64_t t1 = 1'700'000'000'123;
@@ -258,7 +261,7 @@ TEST(pg_gym_log_pages_newest_first_with_counts_and_names) {
 // Two sessions started in the same millisecond, with the tie straddling a page edge: on a cursor
 // of the instant alone the tie-mate is in no page, ever. The pair cursor walks all four.
 TEST(pg_gym_log_walks_a_tied_start_instant_across_a_page_boundary) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgTrainingRepository repo{connString()};
   const std::uint64_t t1 = 1'700'000'000'123;
@@ -289,7 +292,7 @@ TEST(pg_gym_log_walks_a_tied_start_instant_across_a_page_boundary) {
 // The summary's movements are framed by the rows they come back in, so a display name holding
 // whatever separator a hand-rolled aggregate would have used is still ONE movement.
 TEST(pg_gym_log_names_a_movement_whose_display_name_holds_a_newline_once) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgTrainingRepository repo{connString()};
   const std::uint64_t t1 = 1'700'000'000'123;
@@ -319,7 +322,7 @@ TEST(pg_gym_log_names_a_movement_whose_display_name_holds_a_newline_once) {
 // order, the routine name is the one frozen in the session's own plan snapshot, and another
 // account's identical movement is invisible.
 TEST(pg_gym_last_time_is_the_newest_finished_session_of_that_movement) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgTrainingRepository repo{connString()};
   const std::uint64_t t1 = 1'700'000'000'123;
@@ -369,7 +372,7 @@ TEST(pg_gym_last_time_is_the_newest_finished_session_of_that_movement) {
 
 // A movement that was only ever warmed up has no last time — the same answer as one never touched.
 TEST(pg_gym_last_time_of_a_first_ever_movement_is_empty_and_of_an_unknown_one_is_a_refusal) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgTrainingRepository repo{connString()};
   const std::uint64_t t1 = 1'700'000'000'123;
@@ -408,7 +411,7 @@ TEST(pg_gym_last_time_of_a_first_ever_movement_is_empty_and_of_an_unknown_one_is
 // otherwise pin the prefill to a week-old session while the log listed a fresher one above it —
 // and with no cutoff on how far last time reaches, it would answer for the next thirty days.
 TEST(pg_gym_last_time_walks_sessions_not_set_instants) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgTrainingRepository repo{connString()};
   const std::uint64_t t1 = 1'700'000'000'123;
@@ -436,7 +439,7 @@ TEST(pg_gym_last_time_walks_sessions_not_set_instants) {
 // that insertSet copies its session's owner. One mis-owned set row is all it took to hand back a
 // stranger's session and the whole frozen plan inside it, while every sibling read refused.
 TEST(pg_gym_last_time_never_answers_with_a_session_the_caller_does_not_own) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgTrainingRepository repo{connString()};
   const std::uint64_t t1 = 1'700'000'000'123;
@@ -476,7 +479,7 @@ TEST(pg_gym_last_time_never_answers_with_a_session_the_caller_does_not_own) {
 // object, an array or a number as TEXT, and that text would be printed verbatim as the prefill
 // card's cross-routine suffix. Only a string is a routine name.
 TEST(pg_gym_last_time_names_the_routine_only_when_the_snapshot_holds_a_string) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   const std::vector<std::pair<std::string, std::string>> snapshots{
       {R"({"routine":"Bench day","entries":[]})", "Bench day"},
       {R"({"routine":42})", ""},
@@ -509,7 +512,7 @@ TEST(pg_gym_last_time_names_the_routine_only_when_the_snapshot_holds_a_string) {
 // A row written before the instant band was enforced still reads: it is clamped into the band
 // rather than failing the conversion, so one poisoned row cannot take down the whole log.
 TEST(pg_gym_reads_a_pre_1970_legacy_row_instead_of_failing_the_whole_log) {
-  if (!std::getenv("WM_PG_TEST")) return;
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgTrainingRepository repo{connString()};
   const std::uint64_t t1 = 1'700'000'000'123;

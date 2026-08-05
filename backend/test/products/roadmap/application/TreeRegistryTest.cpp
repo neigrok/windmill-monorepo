@@ -281,7 +281,7 @@ TEST(rename_of_a_live_tree_flows_through_the_room_and_reaches_subscribers) {
   const FakeBus::SubgraphBroadcast& broadcast = s.bus.subgraphBroadcasts[0];
   CHECK_EQ(broadcast.tree, std::string("t"));
   CHECK_EQ(broadcast.seq, room.head());  // a title frame takes a seq like any joined frame
-  CHECK(broadcast.subgraph.title.has_value());
+  REQUIRE(broadcast.subgraph.title.has_value());
   CHECK(*broadcast.subgraph.title == renamed);
   CHECK(broadcast.subgraph.graph.nodes.empty());  // a title-only frame carries no graph
   CHECK(broadcast.subgraph.legend.kinds.empty());

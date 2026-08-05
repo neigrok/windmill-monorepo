@@ -51,7 +51,7 @@ TEST(request_link_sends_a_link_that_carries_the_minted_secret) {
   CHECK_EQ(h.email.sent[0].sourceMeta, std::string(""));
   // The link is stored under its digest, unspent, expiring 15 minutes out.
   std::optional<StoredLink> link = h.repo.findLink("d1");
-  CHECK(link.has_value());
+  REQUIRE(link.has_value());
   CHECK_FALSE(link->consumed);
   CHECK_EQ(link->expiresAt, h.clock.now + AuthPolicy::linkLifetimeMs);
 }
@@ -66,7 +66,7 @@ TEST(request_link_with_a_failing_send_is_unreachable_but_still_leaves_a_usable_l
   // But the link row was inserted before the send, so the failure loses no link: it is
   // stored under its digest, unspent, expiring 15 minutes out — a usable door on a retry.
   std::optional<StoredLink> link = h.repo.findLink("d1");
-  CHECK(link.has_value());
+  REQUIRE(link.has_value());
   CHECK_FALSE(link->consumed);
   CHECK_EQ(link->expiresAt, h.clock.now + AuthPolicy::linkLifetimeMs);
 }
@@ -105,14 +105,14 @@ TEST(complete_link_creates_the_account_and_a_session_on_first_sign_in) {
 
   AuthService::Completion done = h.service.completeLink("s1");
   CHECK(done.verdict == LinkVerdict::valid);
-  CHECK(done.signedIn.has_value());
+  REQUIRE(done.signedIn.has_value());
   CHECK_EQ(done.signedIn->user.email.value, std::string("sam@example.com"));
   CHECK_EQ(done.signedIn->user.name, std::string("sam"));
 
   // Session secret is the next mint (s2); it is stored under its digest (d2), 90 days out.
   CHECK_EQ(done.signedIn->sessionSecret, std::string("s2"));
   std::optional<StoredSession> session = h.repo.findSession("d2");
-  CHECK(session.has_value());
+  REQUIRE(session.has_value());
   CHECK_EQ(session->user.str(), done.signedIn->user.id.str());
   CHECK_EQ(session->expiresAt, h.clock.now + AuthPolicy::sessionLifetimeMs);
 
@@ -127,7 +127,7 @@ TEST(complete_link_reuses_the_existing_account_on_a_later_sign_in) {
 
   h.requestLink("sam@example.com");  // mints s3 / d3
   AuthService::Completion again = h.service.completeLink("s3");
-  CHECK(again.signedIn.has_value());
+  REQUIRE(again.signedIn.has_value());
   CHECK_EQ(again.signedIn->user.id.str(), first.str());  // same account, keyed by email
   CHECK_EQ(h.repo.usersById.size(), 1u);
 }
@@ -180,7 +180,7 @@ constexpr const char* kRelay = "abc123@privaterelay.appleid.com";
 TEST(google_sign_in_creates_the_account_and_a_session_for_a_new_email) {
   Harness h;
   std::optional<AuthService::ProviderSignIn> signIn = h.service.completeProvider(googleId("g-1", "sam@example.com", "Sam Gold"));
-  CHECK(signIn.has_value());
+  REQUIRE(signIn.has_value());
   CHECK_EQ(signIn->signedIn.user.email.value, std::string("sam@example.com"));
   CHECK_EQ(signIn->signedIn.user.name, std::string("Sam Gold"));  // Google's name, not the email-derived one
   CHECK(signIn->created);
@@ -189,7 +189,7 @@ TEST(google_sign_in_creates_the_account_and_a_session_for_a_new_email) {
   // No link to consume, so the session secret is the first mint (s1), stored under its digest 90 days out.
   CHECK_EQ(signIn->signedIn.sessionSecret, std::string("s1"));
   std::optional<StoredSession> session = h.repo.findSession("d1");
-  CHECK(session.has_value());
+  REQUIRE(session.has_value());
   CHECK_EQ(session->user.str(), signIn->signedIn.user.id.str());
   CHECK_EQ(session->expiresAt, h.clock.now + AuthPolicy::sessionLifetimeMs);
   // The door is bound on the way through — which is the only way this table ever fills, since no
@@ -205,7 +205,7 @@ TEST(google_sign_in_links_to_the_same_account_a_magic_link_created) {
   const UserId viaLink = h.service.completeLink("s1").signedIn->user.id;
 
   std::optional<AuthService::ProviderSignIn> viaGoogle = h.service.completeProvider(googleId("g-1", "Sam@Example.com", "Sam"));
-  CHECK(viaGoogle.has_value());
+  REQUIRE(viaGoogle.has_value());
   CHECK_EQ(viaGoogle->signedIn.user.id.str(), viaLink.str());
   CHECK_FALSE(viaGoogle->created);
   CHECK_EQ(h.repo.usersById.size(), 1u);  // one account, two doors — no duplicate
@@ -219,7 +219,7 @@ TEST(google_sign_in_revives_a_within_grace_closed_account) {
   CHECK(h.repo.usersById.at(account.str()).deletedAt.has_value());  // closed, within grace
 
   std::optional<AuthService::ProviderSignIn> revived = h.service.completeProvider(googleId("g-1", "sam@example.com", "Sam"));
-  CHECK(revived.has_value());
+  REQUIRE(revived.has_value());
   CHECK_EQ(revived->signedIn.user.id.str(), account.str());  // same account — signing in is the undo
   CHECK_FALSE(revived->signedIn.user.deletedAt.has_value());
   CHECK_FALSE(h.repo.usersById.at(account.str()).deletedAt.has_value());
@@ -233,7 +233,7 @@ TEST(a_bound_door_resolves_the_same_account_after_the_address_moves) {
   const UserId first = h.service.completeProvider(googleId("g-1", "sam@example.com"))->signedIn.user.id;
 
   std::optional<AuthService::ProviderSignIn> later = h.service.completeProvider(googleId("g-1", "sam@newjob.com"));
-  CHECK(later.has_value());
+  REQUIRE(later.has_value());
   CHECK_EQ(later->signedIn.user.id.str(), first.str());
   CHECK_FALSE(later->created);
   CHECK_EQ(h.repo.usersById.size(), 1u);  // the new address created nothing
@@ -247,7 +247,7 @@ TEST(apple_with_a_real_address_lands_on_the_existing_web_account) {
   const UserId viaLink = h.service.completeLink("s1").signedIn->user.id;
 
   std::optional<AuthService::ProviderSignIn> viaApple = h.service.completeProvider(appleId("a-1", "sam@example.com", "Sam"));
-  CHECK(viaApple.has_value());
+  REQUIRE(viaApple.has_value());
   CHECK_EQ(viaApple->signedIn.user.id.str(), viaLink.str());
   CHECK_FALSE(viaApple->privateEmail);
   CHECK_EQ(h.repo.usersById.size(), 1u);
@@ -262,7 +262,7 @@ TEST(apple_with_hide_my_email_opens_a_new_account_and_flags_the_link_door) {
   const UserId web = h.service.completeLink("s1").signedIn->user.id;
 
   std::optional<AuthService::ProviderSignIn> phone = h.service.completeProvider(appleId("a-1", kRelay, "Sam"));
-  CHECK(phone.has_value());
+  REQUIRE(phone.has_value());
   CHECK(phone->created);
   CHECK(phone->privateEmail);
   CHECK(phone->signedIn.user.id.str() != web.str());
@@ -277,7 +277,7 @@ TEST(a_returning_relay_address_never_opens_a_third_account) {
   h.repo.identities.clear();  // the door revoked; the address is all that is left
 
   std::optional<AuthService::ProviderSignIn> again = h.service.completeProvider(appleId("a-1", kRelay));
-  CHECK(again.has_value());
+  REQUIRE(again.has_value());
   CHECK_EQ(again->signedIn.user.id.str(), phone.str());
   CHECK_EQ(h.repo.usersById.size(), 1u);
 }
@@ -325,7 +325,7 @@ TEST(linking_moves_the_doors_and_deletes_the_empty_account) {
   h.requestLink("sam@example.com");  // the in-app link the human asks for, minting s3/d3
   AuthService::LinkResult result = h.service.linkAccount(phone, h.lastLinkSecret());
   CHECK(result.outcome == AuthService::LinkOutcome::linked);
-  CHECK(result.signedIn.has_value());
+  REQUIRE(result.signedIn.has_value());
   CHECK_EQ(result.signedIn->user.id.str(), web.str());
 
   CHECK_EQ(h.repo.usersById.size(), 1u);                 // the empty row is gone
@@ -505,7 +505,7 @@ TEST(authenticate_resolves_a_session_and_rolls_the_window_forward) {
 
   h.clock.now += 24ull * 60 * 60 * 1000;  // a day passes
   std::optional<User> user = h.service.authenticate(session);
-  CHECK(user.has_value());
+  REQUIRE(user.has_value());
   CHECK_EQ(user->email.value, std::string("sam@example.com"));
   // Rolling: the stored expiry is now measured from the new present.
   CHECK_EQ(h.repo.findSession("d2")->expiresAt, h.clock.now + AuthPolicy::sessionLifetimeMs);
@@ -539,7 +539,7 @@ TEST(update_name_trims_and_persists_and_rejects_blank_or_over_cap) {
   const UserId account = h.service.completeLink("s1").signedIn->user.id;
 
   std::optional<User> renamed = h.service.updateName(account, "  Samwise Gamgee  ");
-  CHECK(renamed.has_value());
+  REQUIRE(renamed.has_value());
   CHECK_EQ(renamed->name, std::string("Samwise Gamgee"));  // trimmed
   CHECK_EQ(h.repo.usersById[account.str()].name, std::string("Samwise Gamgee"));
 
@@ -553,7 +553,7 @@ TEST(update_name_trims_and_persists_and_rejects_blank_or_over_cap) {
   CHECK_EQ(h.repo.usersById[account.str()].name, std::string("Samwise Gamgee"));
   const std::string atCap(AuthPolicy::nameMaxBytes, 'y');
   std::optional<User> capped = h.service.updateName(account, atCap);
-  CHECK(capped.has_value());
+  REQUIRE(capped.has_value());
   CHECK_EQ(capped->name, atCap);
 }
 
@@ -726,7 +726,7 @@ TEST(a_within_grace_magic_link_sign_in_revives_the_account_and_reissues_a_sessio
   h.requestLink("sam@example.com");                                          // s3/d3
   AuthService::Completion revived = h.service.completeLink("s3");                     // s4/d4
   CHECK(revived.verdict == LinkVerdict::valid);
-  CHECK(revived.signedIn.has_value());
+  REQUIRE(revived.signedIn.has_value());
   CHECK_EQ(revived.signedIn->user.id.str(), account.str());   // same account — its trees stay owned by it
   CHECK_EQ(h.repo.usersById.size(), 1u);
   CHECK_FALSE(h.repo.usersById[account.str()].deletedAt.has_value());  // the close is undone
@@ -734,6 +734,6 @@ TEST(a_within_grace_magic_link_sign_in_revives_the_account_and_reissues_a_sessio
 
   // The freshly issued session works: the account is live again.
   std::optional<User> back = h.service.authenticate(revived.signedIn->sessionSecret);
-  CHECK(back.has_value());
+  REQUIRE(back.has_value());
   CHECK_EQ(back->email.value, std::string("sam@example.com"));
 }

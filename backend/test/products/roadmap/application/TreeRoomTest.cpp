@@ -88,7 +88,7 @@ TEST(room_join_subgraph_folds_assigns_seq_and_broadcasts) {
   TreeRoom room = makeRoom(log, bus);
 
   std::optional<Seq> seq = room.joinSubgraph(frameWith("f1", nid("a"), at(7)), uid());
-  CHECK(seq.has_value());
+  REQUIRE(seq.has_value());
   CHECK_EQ(*seq, static_cast<Seq>(1));
   CHECK_EQ(room.head(), static_cast<Seq>(1));
   CHECK_EQ(room.snapshot().nodes.size(), 1u);
@@ -107,7 +107,7 @@ TEST(room_join_subgraph_logs_its_headline_for_the_feed) {
   CHECK_EQ(op.seq, seq);                           // logged at the seq the frame took
   CHECK_EQ(op.opId, std::string("f1"));            // keyed on the frameId, so a re-gossip can't double-count
   const CreateNode* deed = std::get_if<CreateNode>(&op.command);
-  CHECK(deed != nullptr);                          // the headline read off the frame's life-add
+  REQUIRE(deed != nullptr);                        // the headline read off the frame's life-add
   CHECK_EQ(deed->id, nid("a"));
   CHECK_EQ(deed->label, std::string("N"));
 }
@@ -148,7 +148,7 @@ TEST(room_join_subgraph_edge_frame_logs_a_link) {
   room.joinSubgraph(frame, uid());
   CHECK_EQ(log.byTree["t"].size(), 1u);
   const AddEdge* deed = std::get_if<AddEdge>(&log.byTree["t"].front().command);
-  CHECK(deed != nullptr);
+  REQUIRE(deed != nullptr);
   CHECK_EQ(deed->from, nid("a"));
   CHECK_EQ(deed->to, nid("b"));
 }

@@ -1,8 +1,11 @@
 // The client's half of the graph CRDT — the exact mirror of the backend's domain/Crdt.h +
 // domain/LooseGraph.h + domain/Subgraph.h, in JS. A tree's truth is a lattice of stamped
 // registers; TreeData is only its present-time projection. Everything that syncs is a
-// subgraph joined here. The register laws (add-biased life, last-writer-wins fields) match
-// the backend bit-for-bit and are pinned by test/golden.
+// subgraph joined here. The register laws (add-biased life, last-writer-wins fields) are written
+// to match the backend bit-for-bit, and nothing enforces that: this module's own tests
+// (sync/materialize, sync/reorder, paste/graftPlan) never leave JS, and backend/test/golden holds
+// the laws in fixtures that neither lattice reads. Changing a law here means changing it there by
+// hand — backend/test/golden/SCHEMA.md says what a real cross-language pin would take.
 
 const UNSET = { ms: 0, counter: 0, actor: '' };
 

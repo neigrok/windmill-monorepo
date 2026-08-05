@@ -1,7 +1,9 @@
-// Golden-vector runner. Executes the shared corpus against the reference convergence
-// semantics every Windmill replica must reproduce. Today the reference lives here; when
-// sync/lattice.js lands, its test imports these same fixtures and checks the real
-// implementation against them. See SCHEMA.md.
+// Golden-vector runner, and the honest scope of it: the semantics it checks the corpus against are
+// REIMPLEMENTED below, in this file. Nothing that ships reads these fixtures — not the C++ lattice,
+// not web/src/products/roadmap/sync/lattice.js — and no build or workflow runs this runner, so it
+// can only fail if someone edits the runner. What it is: the convergence laws written down in
+// executable form. What it is not: a cross-language pin. SCHEMA.md says what it would take to
+// become one.
 //
 //   node test/golden/run.mjs
 
@@ -13,7 +15,8 @@ import { dirname, join } from 'node:path';
 const here = dirname(fileURLToPath(import.meta.url));
 const load = (name) => JSON.parse(readFileSync(join(here, name), 'utf8'));
 
-// --- the reference semantics (mirror domain/Ids.h + domain/Crdt.h) ---
+// --- the reference semantics, restated here (they mirror backend/platform/domain/Ids.h and
+// backend/platform/domain/Crdt.h; nothing checks that the restatement stayed faithful) ---
 
 function parseHlc(text) {
   const first = text.indexOf(':');
@@ -55,6 +58,7 @@ function vectorCovers(marks, query) {
   const stamp = parseHlc(query);
   if (!isSet(stamp)) return true;
   const frontier = new Map();  // actor -> greatest stamp, as VersionVector::observe folds them
+                               // (products/roadmap/domain/Subgraph.h)
   for (const m of marks.map(parseHlc)) {
     const seen = frontier.get(m.actor);
     if (seen === undefined || compareHlc(m, seen) > 0) frontier.set(m.actor, m);

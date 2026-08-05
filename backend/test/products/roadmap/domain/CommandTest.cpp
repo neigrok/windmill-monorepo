@@ -151,7 +151,7 @@ TEST(headline_create_wins_over_the_parent_edge_it_drags_in) {
 
   std::optional<Command> deed = headline(g, LegendState{});
   const CreateNode* c = deed ? std::get_if<CreateNode>(&*deed) : nullptr;
-  CHECK(c != nullptr);
+  REQUIRE(c != nullptr);
   CHECK_EQ(c->id, nid("a"));
   CHECK_EQ(c->label, std::string("A"));
 }
@@ -168,7 +168,7 @@ TEST(headline_delete_wins_over_the_spliced_edges) {
 
   std::optional<Command> deed = headline(g, LegendState{});
   const DeleteNode* c = deed ? std::get_if<DeleteNode>(&*deed) : nullptr;
-  CHECK(c != nullptr);
+  REQUIRE(c != nullptr);
   CHECK_EQ(c->id, nid("a"));
 }
 
@@ -184,7 +184,7 @@ TEST(headline_recolor_kind_wins_over_the_node_colors_it_fans_out) {
 
   std::optional<Command> deed = headline(g, legend);
   const RecolorKind* c = deed ? std::get_if<RecolorKind>(&*deed) : nullptr;
-  CHECK(c != nullptr);
+  REQUIRE(c != nullptr);
   CHECK_EQ(c->id, kid("learn"));
   CHECK_EQ(c->hue, NodeColor::sky);
 }
@@ -195,7 +195,7 @@ TEST(headline_reads_rename_relabel_and_edges) {
   rename.nodes.push_back(r);
   std::optional<Command> renameDeed = headline(rename, LegendState{});
   const RenameNode* renamed = renameDeed ? std::get_if<RenameNode>(&*renameDeed) : nullptr;
-  CHECK(renamed != nullptr);
+  REQUIRE(renamed != nullptr);
   CHECK_EQ(renamed->label, std::string("New"));
 
   GraphState link;
@@ -203,7 +203,7 @@ TEST(headline_reads_rename_relabel_and_edges) {
   link.edges.push_back(added);
   std::optional<Command> linkDeed = headline(link, LegendState{});
   const AddEdge* linked = linkDeed ? std::get_if<AddEdge>(&*linkDeed) : nullptr;
-  CHECK(linked != nullptr);
+  REQUIRE(linked != nullptr);
   CHECK_EQ(linked->from, nid("a"));
   CHECK_EQ(linked->to, nid("b"));
 
@@ -211,7 +211,7 @@ TEST(headline_reads_rename_relabel_and_edges) {
   EdgeStateEntry removed; removed.edge = Edge{nid("a"), nid("b")}; removed.removedAt = at(4);
   unlink.edges.push_back(removed);
   std::optional<Command> unlinkDeed = headline(unlink, LegendState{});
-  CHECK(unlinkDeed.has_value());
+  REQUIRE(unlinkDeed.has_value());
   CHECK(std::get_if<RemoveEdge>(&*unlinkDeed) != nullptr);
 }
 
@@ -309,8 +309,8 @@ TEST(headline_reads_an_annotation_frame) {
 
   std::optional<Command> deed = headline(g, LegendState{});
   const AnnotateNode* c = deed ? std::get_if<AnnotateNode>(&*deed) : nullptr;
-  CHECK(c != nullptr);
-  CHECK(c->description.has_value());
+  REQUIRE(c != nullptr);
+  REQUIRE(c->description.has_value());
   CHECK_EQ(*c->description, std::string("hello"));
   CHECK_FALSE(c->links.has_value());
 }

@@ -176,7 +176,7 @@ TEST(describe_names_a_live_source_with_its_step_count) {
   h.seedSource("t_src", "Learn to sail");
 
   std::optional<ForkService::Description> described = h.service.describe(TreeId{"t_src"});
-  CHECK(described.has_value());
+  REQUIRE(described.has_value());
   CHECK_EQ(described->title, std::string("Learn to sail"));
   CHECK_EQ(described->steps, 2u);
 }
@@ -203,7 +203,7 @@ TEST(the_signup_seam_renders_the_step_count_as_the_mail_prints_it) {
   ForkSignup signup{h.service};
 
   std::optional<ForkDescription> described = signup.describe("t_src");
-  CHECK(described.has_value());
+  REQUIRE(described.has_value());
   CHECK_EQ(described->title, std::string("Learn to sail"));
   CHECK_EQ(described->meta, std::string("2 steps"));
 }
@@ -223,7 +223,7 @@ TEST(the_signup_seam_writes_1_step_not_1_steps) {
   ForkSignup signup{h.service};
 
   std::optional<ForkDescription> described = signup.describe("t_one");
-  CHECK(described.has_value());
+  REQUIRE(described.has_value());
   CHECK_EQ(described->meta, std::string("1 step"));
 }
 

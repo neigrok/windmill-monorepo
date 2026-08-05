@@ -301,7 +301,7 @@ TEST(mcp_create_node_wires_prerequisites_description_and_links) {
   const Json::Value got = body(h.call("get_tree", args));
   const Json::Value* cNode = nullptr;
   for (const Json::Value& n : got["tree"]["nodes"]) if (n["id"].asString() == "c") cNode = &n;
-  CHECK(cNode != nullptr);
+  REQUIRE(cNode != nullptr);
   CHECK_EQ((*cNode)["prerequisites"].size(), 2u);
   CHECK_EQ((*cNode)["description"].asString(), std::string("the payoff node"));
   CHECK_EQ((*cNode)["links"].size(), 1u);

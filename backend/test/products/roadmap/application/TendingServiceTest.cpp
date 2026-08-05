@@ -160,7 +160,7 @@ TEST(a_refusal_never_starts_work_and_is_persisted) {
   CHECK_EQ(run.refusal, TendRefusal::notEnabled);
   CHECK_EQ(h.agent.calls.load(), 0);  // the worker was never handed the run
   std::optional<TendRun> stored = h.runs.find(run.id);
-  CHECK(stored.has_value());
+  REQUIRE(stored.has_value());
   CHECK_EQ(stored->status, TendStatus::refused);
   CHECK_EQ(stored->refusal, TendRefusal::notEnabled);
   CHECK_EQ(stored->finishedAtMs, stored->startedAtMs);  // a refusal begins and ends at once

@@ -60,7 +60,7 @@ TEST(title_round_trips) {
   subgraph.title = Lww<std::string>{"My Roadmap", at(9)};
 
   Subgraph back = roundTrip(subgraph);
-  CHECK(back.title.has_value());
+  REQUIRE(back.title.has_value());
   CHECK_EQ(back.title->value, std::string("My Roadmap"));
   CHECK(back == subgraph);
 }

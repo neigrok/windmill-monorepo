@@ -61,7 +61,7 @@ TEST(mcp_initialize_reports_capabilities_and_echoes_protocol) {
   params["protocolVersion"] = "2025-06-18";
   std::optional<Json::Value> reply = server.handle(request("initialize", params, 1));
 
-  CHECK(reply.has_value());
+  REQUIRE(reply.has_value());
   CHECK_EQ((*reply)["id"].asInt(), 1);
   CHECK_EQ((*reply)["result"]["protocolVersion"].asString(), std::string("2025-06-18"));
   CHECK_EQ((*reply)["result"]["serverInfo"]["name"].asString(), std::string("windmill"));
@@ -78,7 +78,7 @@ TEST(mcp_resources_list_publishes_the_injected_catalog) {
   McpServer server = make(host);
   std::optional<Json::Value> reply = server.handle(request("resources/list", Json::nullValue, 8));
 
-  CHECK(reply.has_value());
+  REQUIRE(reply.has_value());
   const Json::Value listing = (*reply)["result"]["resources"];
   CHECK_EQ(listing.size(), 1u);
   CHECK_EQ(listing[0]["uri"].asString(), std::string("test://doc"));
@@ -94,7 +94,7 @@ TEST(mcp_resources_list_is_empty_when_no_catalog_is_injected) {
   McpServer server(host, ServerInfo{"windmill", "0.1.0", ""});   // default: a product-neutral empty catalog
   std::optional<Json::Value> reply = server.handle(request("resources/list", Json::nullValue, 8));
 
-  CHECK(reply.has_value());
+  REQUIRE(reply.has_value());
   CHECK_EQ((*reply)["result"]["resources"].size(), 0u);
 }
 
@@ -106,7 +106,7 @@ TEST(mcp_resources_read_answers_the_injected_body) {
   params["uri"] = "test://doc";
   std::optional<Json::Value> reply = server.handle(request("resources/read", params, 9));
 
-  CHECK(reply.has_value());
+  REQUIRE(reply.has_value());
   const Json::Value contents = (*reply)["result"]["contents"];
   CHECK_EQ(contents.size(), 1u);
   CHECK_EQ(contents[0]["uri"].asString(), std::string("test://doc"));
@@ -122,7 +122,7 @@ TEST(mcp_resources_read_of_an_unknown_uri_names_it) {
   params["uri"] = "windmill://nope";
   std::optional<Json::Value> reply = server.handle(request("resources/read", params, 10));
 
-  CHECK(reply.has_value());
+  REQUIRE(reply.has_value());
   CHECK_EQ((*reply)["error"]["code"].asInt(), -32002);
   CHECK_EQ((*reply)["error"]["message"].asString(),
            std::string("no such resource: \"windmill://nope\" — call resources/list"));
@@ -133,7 +133,7 @@ TEST(mcp_resource_templates_list_is_empty_rather_than_unknown) {
   McpServer server = make(host);
   std::optional<Json::Value> reply =
       server.handle(request("resources/templates/list", Json::nullValue, 11));
-  CHECK(reply.has_value());
+  REQUIRE(reply.has_value());
   CHECK(( *reply)["result"]["resourceTemplates"].isArray());
   CHECK_EQ((*reply)["result"]["resourceTemplates"].size(), 0u);
 }
@@ -142,7 +142,7 @@ TEST(mcp_ping_returns_empty_result) {
   FakeHost host;
   McpServer server = make(host);
   std::optional<Json::Value> reply = server.handle(request("ping", Json::nullValue, 2));
-  CHECK(reply.has_value());
+  REQUIRE(reply.has_value());
   CHECK(( *reply).isMember("result"));
   CHECK_EQ((*reply)["result"].size(), 0u);
 }
@@ -151,7 +151,7 @@ TEST(mcp_tools_list_passes_through_the_host_catalog) {
   FakeHost host;
   McpServer server = make(host);
   std::optional<Json::Value> reply = server.handle(request("tools/list", Json::nullValue, 3));
-  CHECK(reply.has_value());
+  REQUIRE(reply.has_value());
   CHECK_EQ((*reply)["result"]["tools"].size(), 1u);
   CHECK_EQ((*reply)["result"]["tools"][0]["name"].asString(), std::string("echo"));
 }
@@ -167,7 +167,7 @@ TEST(mcp_tools_call_answers_through_content_alone) {
   params["arguments"] = args;
   std::optional<Json::Value> reply = server.handle(request("tools/call", params, 4));
 
-  CHECK(reply.has_value());
+  REQUIRE(reply.has_value());
   CHECK_FALSE((*reply)["result"]["isError"].asBool());
   CHECK(( *reply)["result"]["content"].isArray());
   CHECK_EQ((*reply)["result"]["content"][0]["type"].asString(), std::string("text"));
@@ -188,7 +188,7 @@ TEST(mcp_tools_call_passes_structured_content_through_when_a_tool_sets_it) {
   params["name"] = "echo";
   std::optional<Json::Value> reply = server.handle(request("tools/call", params, 4));
 
-  CHECK(reply.has_value());
+  REQUIRE(reply.has_value());
   CHECK(( *reply)["result"].isMember("structuredContent"));
   CHECK(( *reply)["result"]["structuredContent"]["ok"].asBool());
 }
@@ -199,7 +199,7 @@ TEST(mcp_tools_call_failure_is_reported_in_result_not_transport) {
   Json::Value params(Json::objectValue);
   params["name"] = "boom";
   std::optional<Json::Value> reply = server.handle(request("tools/call", params, 5));
-  CHECK(reply.has_value());
+  REQUIRE(reply.has_value());
   CHECK_FALSE((*reply).isMember("error"));  // a tool failure is not a JSON-RPC error
   CHECK(( *reply)["result"]["isError"].asBool());
 }
@@ -208,7 +208,7 @@ TEST(mcp_tools_call_without_name_is_invalid_params) {
   FakeHost host;
   McpServer server = make(host);
   std::optional<Json::Value> reply = server.handle(request("tools/call", Json::Value(Json::objectValue), 6));
-  CHECK(reply.has_value());
+  REQUIRE(reply.has_value());
   CHECK_EQ((*reply)["error"]["code"].asInt(), -32602);
 }
 
@@ -216,7 +216,7 @@ TEST(mcp_unknown_request_method_is_method_not_found) {
   FakeHost host;
   McpServer server = make(host);
   std::optional<Json::Value> reply = server.handle(request("does/notExist", Json::nullValue, 7));
-  CHECK(reply.has_value());
+  REQUIRE(reply.has_value());
   CHECK_EQ((*reply)["error"]["code"].asInt(), -32601);
 }
 
@@ -238,14 +238,14 @@ TEST(mcp_a_container_where_a_string_belongs_is_answered_not_thrown) {
   Json::Value read(Json::objectValue);
   read["uri"] = Json::Value(Json::arrayValue);
   std::optional<Json::Value> uri = server.handle(request("resources/read", read, 20));
-  CHECK(uri.has_value());
+  REQUIRE(uri.has_value());
   CHECK_EQ((*uri)["error"]["code"].asInt(), -32602);
   CHECK_EQ((*uri)["error"]["message"].asString(), std::string("\"uri\" must be a string"));
 
   Json::Value call(Json::objectValue);
   call["name"] = Json::Value(Json::arrayValue);
   std::optional<Json::Value> named = server.handle(request("tools/call", call, 21));
-  CHECK(named.has_value());
+  REQUIRE(named.has_value());
   CHECK_EQ((*named)["error"]["code"].asInt(), -32602);
   CHECK_EQ((*named)["error"]["message"].asString(), std::string("\"name\" must be a string"));
   CHECK(host.lastName.empty());  // nothing was dispatched
@@ -253,7 +253,7 @@ TEST(mcp_a_container_where_a_string_belongs_is_answered_not_thrown) {
   Json::Value handshake(Json::objectValue);
   handshake["protocolVersion"] = Json::Value(Json::objectValue);
   std::optional<Json::Value> version = server.handle(request("initialize", handshake, 22));
-  CHECK(version.has_value());
+  REQUIRE(version.has_value());
   CHECK_EQ((*version)["error"]["code"].asInt(), -32602);
   CHECK_EQ((*version)["error"]["message"].asString(),
            std::string("\"protocolVersion\" must be a string"));
@@ -263,7 +263,7 @@ TEST(mcp_a_container_where_a_string_belongs_is_answered_not_thrown) {
   framed["id"] = 23;
   framed["method"] = Json::Value(Json::objectValue);
   std::optional<Json::Value> method = server.handle(framed);
-  CHECK(method.has_value());
+  REQUIRE(method.has_value());
   CHECK_EQ((*method)["error"]["code"].asInt(), -32600);
   CHECK_EQ((*method)["error"]["message"].asString(), std::string("\"method\" must be a string"));
 }
@@ -272,7 +272,7 @@ TEST(mcp_non_object_params_are_invalid_params_not_a_throw) {
   FakeHost host;
   McpServer server = make(host);
   std::optional<Json::Value> reply = server.handle(request("tools/call", Json::Value("echo"), 12));
-  CHECK(reply.has_value());
+  REQUIRE(reply.has_value());
   CHECK_EQ((*reply)["error"]["code"].asInt(), -32602);
   CHECK_EQ((*reply)["error"]["message"].asString(), std::string("\"params\" must be an object"));
   CHECK(host.lastName.empty());  // nothing was dispatched
@@ -282,6 +282,6 @@ TEST(mcp_non_object_message_is_invalid_request) {
   FakeHost host;
   McpServer server = make(host);
   std::optional<Json::Value> reply = server.handle(Json::Value("not an object"));
-  CHECK(reply.has_value());
+  REQUIRE(reply.has_value());
   CHECK_EQ((*reply)["error"]["code"].asInt(), -32600);
 }

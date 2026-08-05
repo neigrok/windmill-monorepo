@@ -145,7 +145,7 @@ TEST(nudge_patch_turns_on_and_stores_the_device_schedule) {
            std::string(R"({"adaptive":true,"armed":false,"channel":"email",)"
                        R"("enabled":true,"nextDueAt":1700000900000,"suppressed":false})"));
   std::optional<NudgeSettings> stored = h.nudges->settingsFor(me);
-  CHECK(stored.has_value());
+  REQUIRE(stored.has_value());
   CHECK(stored->enabled);
   CHECK_EQ(stored->channel, std::string("email"));
   CHECK(stored->nextDueAtMs == std::optional<std::uint64_t>(1'700'000'900'000ULL));
@@ -179,7 +179,7 @@ TEST(nudge_pause_with_a_matching_secret_pauses_for_a_week) {
 
   CHECK_EQ(response->getStatusCode(), drogon::k204NoContent);
   std::optional<NudgeSettings> stored = h.nudges->settingsFor(me);
-  CHECK(stored.has_value());
+  REQUIRE(stored.has_value());
   CHECK(stored->enabled);
   CHECK(stored->pausedUntilMs == std::optional<std::uint64_t>(h.clock->now + kWeekMs));
 }
@@ -195,7 +195,7 @@ TEST(nudge_pause_with_a_stranger_secret_is_still_204_and_changes_nothing) {
   // The same 204 whether or not the secret matched — this door is no oracle for whose nudges exist.
   CHECK_EQ(response->getStatusCode(), drogon::k204NoContent);
   std::optional<NudgeSettings> stored = h.nudges->settingsFor(me);
-  CHECK(stored.has_value());
+  REQUIRE(stored.has_value());
   CHECK(stored->enabled);
   CHECK(stored->pausedUntilMs == std::optional<std::uint64_t>());
 }
@@ -210,7 +210,7 @@ TEST(nudge_unsubscribe_with_a_matching_secret_disables) {
 
   CHECK_EQ(response->getStatusCode(), drogon::k204NoContent);
   std::optional<NudgeSettings> stored = h.nudges->settingsFor(me);
-  CHECK(stored.has_value());
+  REQUIRE(stored.has_value());
   CHECK_FALSE(stored->enabled);
 }
 

@@ -48,6 +48,31 @@ Take a port nobody else has (agents in a wave should be handed disjoint ranges).
 - `WINDMILL_ALLOWED_ORIGINS` is required — without it the dev page's credentialed fetches fail CORS ("Failed to fetch").
 - `WINDMILL_MCP_USER` must be a real uuid in `users` (the default "dev" 500s on create_tree; owner_id is uuid). The uuid above is the seeded `dev@localhost` user in the local db.
 
+## The backend suites — and the 29 cases that skip unless you ask for them
+
+```sh
+cmake --build backend/build -j8
+ctest --test-dir backend/build -V     # domain · mcp · adapters, with each binary's summary line
+```
+
+Each binary ends with `N/M cases passed, X stopped before the end, Y skipped, Z assertion(s)
+failed`. Read all four numbers: *skipped* is never counted as passed, and a case a `REQUIRE` cut
+short is counted as *stopped before the end*. `--output-on-failure` prints nothing while green, so
+use `-V` when the skip count is what you came for.
+
+The Postgres integration cases (`PgJournalRepositoryTest`, `PgEchoRepositoryTest`,
+`PgTrainingRepositoryTest`) need a live database and skip without `WM_PG_TEST`. They seed and clean
+their own rows, so re-running them is free — and they are the only proof the SQL half works, since
+CI runs ctest in a container with no database:
+
+```sh
+WM_PG_TEST=1 DATABASE_URL="postgresql://localhost/windmill" \
+  ctest --test-dir backend/build -R adapters -V     # 393/393; without it, 364/393 and 29 skipped
+```
+
+Run them before pushing a change to one of those three repositories or to the tables they read.
+They are the only Postgres adapters with an integration test — the rest are proven against fakes.
+
 ## Driving MCP edits
 
 MCP is HTTP JSON-RPC at `localhost:8088/mcp`, bearer `devtoken`. Sessions are required:

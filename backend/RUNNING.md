@@ -93,6 +93,35 @@ web app has, and it takes its base URL from `web/src/shell/apiBase.js` — which
 `cd ../web && npm run dev`, and the app is talking to it. (`VITE_API_BASE_URL` overrides,
 for a preview build pointed somewhere else.)
 
+## 7. Tests
+
+```sh
+cmake --build build -j8
+ctest --test-dir build --output-on-failure       # three binaries: domain · mcp · adapters
+ctest --test-dir build -V                        # …and their summary lines, which the line above prints only on red
+```
+
+Each binary ends with one line — `N/M cases passed, X stopped before the end, Y skipped, Z
+assertion(s) failed`. *Stopped before the end* counts cases a failing `REQUIRE` cut short, so an
+empty optional reports one honest failure instead of dereferencing past it. *Skipped* counts cases
+the environment could not run, and is never folded into the passed count. If a case takes the
+process down anyway, the harness names it — `*** CRASHED mid-case; no later case in this binary
+ran: <case> ***` — and re-raises, so the exit status still tells the truth.
+
+The 29 Postgres integration cases skip by default: they need a live database with `db/schema.sql`
+applied, so they run only under `WM_PG_TEST` (`PgJournalRepositoryTest`, `PgEchoRepositoryTest`,
+`PgTrainingRepositoryTest`; they seed and clean their own rows, so they are safe to re-run).
+
+```sh
+WM_PG_TEST=1 DATABASE_URL="postgresql://localhost/windmill" \
+  ctest --test-dir build -R adapters -V          # 393/393 — without it, 364/393 and 29 skipped
+```
+
+Nothing in `.github/workflows/backend.yml` sets `WM_PG_TEST`: CI runs `ctest` inside the Docker
+builder stage (`Dockerfile:47`) with no database beside it, so those 29 cases are proven on a
+developer's machine and nowhere else. Run them before pushing a change to one of those three
+repositories or to the tables they read — no other Postgres adapter has an integration test at all.
+
 ## Roadmap tree endpoints
 
 The roadmap tree surface only — the server also serves auth, oauth, billing, MCP keys,
