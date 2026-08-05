@@ -43,8 +43,14 @@ struct NudgeDecision {
 NudgeDecision decide(const NudgeCandidate& candidate);
 
 // The dark-launch gate, checked at SEND time (never at decide time, so a held send is still a
-// recorded decision): send only to users on the allowlist while the fleet is dark. Constructed from
-// the same (enabled, comma-separated ids) shape the reminder wave uses.
+// recorded decision): while the fleet is dark, mail leaves only for users named on the allowlist,
+// and an EMPTY allowlist names nobody. The reasoning for that lives on allows() in NudgePlan.cpp;
+// `.env.example` and deploy/docker-compose.yml repeat it to operators in the same words.
+//
+// Roadmap's ReminderArming is a separate type that takes the same (enabled, comma-separated ids)
+// arguments and, as of this wave, answers the same way. Nothing enforces the agreement — they were
+// written twice and had already drifted on both the empty-list meaning and id casing — so treat
+// them as siblings to check against each other, not as one rule with two spellings.
 struct NudgeArming {
   bool enabled = false;
   std::set<std::string> allowlist;

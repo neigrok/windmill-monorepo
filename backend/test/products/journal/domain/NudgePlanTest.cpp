@@ -114,11 +114,23 @@ TEST(arming_off_reaches_nobody_even_the_listed) {
   CHECK_FALSE(arming.allows(UserId{"stranger"}));
 }
 
-TEST(arming_on_with_an_empty_list_reaches_everybody) {
+// THE DECISION, pinned: an empty allowlist reaches NOBODY. The flag alone arms no one, so the two
+// variables are order-independent and forgetting the list cannot launch the feature to the fleet.
+TEST(arming_on_with_an_empty_list_reaches_nobody) {
   const NudgeArming arming(true, "");
 
-  CHECK(arming.allows(UserId{"u1"}));
-  CHECK(arming.allows(UserId{"anyone-at-all"}));
+  CHECK_FALSE(arming.allows(UserId{"u1"}));
+  CHECK_FALSE(arming.allows(UserId{"anyone-at-all"}));
+}
+
+// The same answer for the shape an operator actually mistypes: a list of separators and spacing
+// parses to no ids at all, and no ids means no one. It must not fall through to "everybody".
+TEST(an_allowlist_of_only_separators_and_spacing_reaches_nobody) {
+  const NudgeArming arming(true, " , ,\t\n");
+
+  CHECK_EQ(arming.allowlist.size(), 0u);
+  CHECK_FALSE(arming.allows(UserId{"u1"}));
+  CHECK_FALSE(arming.allows(UserId{"anyone-at-all"}));
 }
 
 TEST(arming_on_with_a_list_reaches_only_the_named) {
@@ -126,5 +138,27 @@ TEST(arming_on_with_a_list_reaches_only_the_named) {
 
   CHECK(arming.allows(UserId{"u1"}));
   CHECK(arming.allows(UserId{"u3"}));
+  CHECK_FALSE(arming.allows(UserId{"u2"}));
+}
+
+// The casing fix. A uuid pasted from a console or a dashboard often arrives upper- or mixed-case;
+// the id it is compared against is always lowercase. Before this wave the parser trimmed but did
+// not lowercase, so an operator could name an account, read it back on the list, and reach nobody.
+TEST(an_uppercase_id_on_the_allowlist_reaches_the_lowercase_account) {
+  const NudgeArming arming(true, "A1B2C3D4-0000-4000-8000-00000000FFFF");
+
+  CHECK_EQ(arming.allowlist.count("a1b2c3d4-0000-4000-8000-00000000ffff"), 1u);
+  CHECK(arming.allows(UserId{"a1b2c3d4-0000-4000-8000-00000000ffff"}));
+  CHECK_FALSE(arming.allows(UserId{"a1b2c3d4-0000-4000-8000-00000000fffe"}));
+}
+
+// And the other direction, so the gate is casing-blind rather than merely lowercase-tolerant on
+// one side: a mixed-case caller id is folded before the lookup too.
+TEST(a_mixed_case_account_is_matched_against_the_lowercased_allowlist) {
+  const NudgeArming arming(true, "u1, MiXeD-Case-Id");
+
+  CHECK(arming.allows(UserId{"MIXED-CASE-ID"}));
+  CHECK(arming.allows(UserId{"mixed-case-id"}));
+  CHECK(arming.allows(UserId{"U1"}));
   CHECK_FALSE(arming.allows(UserId{"u2"}));
 }

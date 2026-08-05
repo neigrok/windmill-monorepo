@@ -2,9 +2,20 @@ name: Deploy to VPS
 
 # Renders the complete ~/windmill/.env on the VPS from GitHub secrets + variables — the full render the
 # deploy README/.env.example describe — then ships the current compose + Caddyfile, pulls the published
-# image, and brings the stack up. Every value the compose reads is written here from exactly one source:
-#   secrets  → POSTGRES_PASSWORD, the service API keys, WINDMILL_MCP_TOKEN
+# image, and brings the stack up. Each value comes from exactly one source:
+#   secrets  → POSTGRES_PASSWORD, the service API keys, the admin bearers, WINDMILL_MCP_TOKEN
 #   variables→ DOMAIN_APP, DOMAIN_API, ACME_EMAIL, CF_IPS, PADDLE_ENV, PADDLE_PRICE_ID, …
+#
+# ADDING A KEY IS TWO EDITS, and skipping either one fails quietly in a different way. The `env:` block
+# below carries the value into the job; the hand-maintained key list in the render loop decides what
+# actually reaches the .env. A key in `env:` but not in the list is NEVER WRITTEN — it is unsettable
+# from GitHub no matter what the operator configures, and the compose default silently stands in for
+# it forever. (A key in the list but not in `env:` is the loud failure: `set -u` aborts the run.) That
+# is not hypothetical: REMINDERS_* shipped unreachable from here until 2026-08-02, and JOURNAL_NUDGE_*
+# and JOURNAL_ECHO_ADMIN_TOKEN until 2026-08-05 — the echo bearer readable in compose the whole time
+# and settable by nobody. JOURNAL_EMBEDDER_URL is deliberately absent from both: compose defaults it
+# to the sidecar's compose-network name, which is the production value.
+#
 # Anything left unset is written empty and the compose `${VAR:-default}` fallbacks take over — safe only
 # where the fallback is genuinely production-worthy, which is the judgement to make per key rather than
 # assume. The handful whose emptiness would break the site, the database, or the front door
@@ -65,6 +76,12 @@ jobs:
           # Bearer for POST /v1/admin/reminders/sweep. Unset ⇒ that route 404s, which is the
           # resting state — the sweep runs on its own heartbeat and this only forces one by hand.
           REMINDERS_ADMIN_TOKEN: ${{ secrets.REMINDERS_ADMIN_TOKEN }}
+          # Journal's two rehearsal bearers, for POST /v1/admin/journal/nudge/sweep and
+          # /v1/admin/journal/echo/sweep. Unset ⇒ each route 403s, which is its resting state; both
+          # heartbeats run without them. Neither name reached this render until 2026-08-05, so
+          # JOURNAL_ECHO_ADMIN_TOKEN was settable in compose and unsettable from here.
+          JOURNAL_NUDGE_ADMIN_TOKEN: ${{ secrets.JOURNAL_NUDGE_ADMIN_TOKEN }}
+          JOURNAL_ECHO_ADMIN_TOKEN: ${{ secrets.JOURNAL_ECHO_ADMIN_TOKEN }}
           # Config (variables; safe compose defaults when unset):
           CF_IPS: ${{ vars.CF_IPS }}
           PADDLE_ENV: ${{ vars.PADDLE_ENV }}
@@ -78,6 +95,12 @@ jobs:
           # allowlist still means NOBODY, which is the designed resting state, not a misconfiguration.
           REMINDERS_ENABLED: ${{ vars.REMINDERS_ENABLED }}
           REMINDERS_ALLOWLIST: ${{ vars.REMINDERS_ALLOWLIST }}
+          # Journal's nudge arming pair, dark by the same rule and unreachable here until
+          # 2026-08-05 for the same reason. EMPTY ALLOWLIST MEANS NOBODY: ENABLED alone arms no
+          # account, so the two are order-independent and neither on its own launches the feature.
+          # Naming an id is also what reveals journal's nudge settings panel to that account.
+          JOURNAL_NUDGE_ENABLED: ${{ vars.JOURNAL_NUDGE_ENABLED }}
+          JOURNAL_NUDGE_ALLOWLIST: ${{ vars.JOURNAL_NUDGE_ALLOWLIST }}
           WINDMILL_MCP_ALLOWED_ORIGINS: ${{ vars.WINDMILL_MCP_ALLOWED_ORIGINS }}
           IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
@@ -116,6 +139,8 @@ jobs:
                        GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
                        PADDLE_WEBHOOK_SECRET PADDLE_API_KEY PADDLE_ENV PADDLE_PRICE_ID \
                        REMINDERS_ENABLED REMINDERS_ALLOWLIST REMINDERS_ADMIN_TOKEN \
+                       JOURNAL_NUDGE_ENABLED JOURNAL_NUDGE_ALLOWLIST JOURNAL_NUDGE_ADMIN_TOKEN \
+                       JOURNAL_ECHO_ADMIN_TOKEN \
                        WINDMILL_MCP_ALLOWED_ORIGINS WINDMILL_MCP_TOKEN; do
               printf '%s=%s\n' "$key" "${!key}"
             done

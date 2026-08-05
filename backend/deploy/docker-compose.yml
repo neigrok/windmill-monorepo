@@ -83,6 +83,17 @@ services:
       REMINDERS_ENABLED: ${REMINDERS_ENABLED:-}
       REMINDERS_ALLOWLIST: ${REMINDERS_ALLOWLIST:-}
       REMINDERS_ADMIN_TOKEN: ${REMINDERS_ADMIN_TOKEN:-}
+      # Journal's nightly nudge — the same arming pair, its own rehearsal bearer, the same dark
+      # defaults, and the same rule: EMPTY ALLOWLIST MEANS NOBODY. ENABLED alone arms no one and a
+      # list alone sends nothing, so the two can be set in either order and neither can launch the
+      # feature by itself. Naming an id here is also what makes journal's nudge settings panel
+      # appear for that account at all — the panel renders on the `armed` flag this gate answers —
+      # so the allowlist is the whole distance between dark and launched, not just a mail filter.
+      # These three reached NO container until 2026-08-05: absent here AND absent from deploy.yml's
+      # render list, which is the same defect the reminder block above records. Both lists.
+      JOURNAL_NUDGE_ENABLED: ${JOURNAL_NUDGE_ENABLED:-}
+      JOURNAL_NUDGE_ALLOWLIST: ${JOURNAL_NUDGE_ALLOWLIST:-}
+      JOURNAL_NUDGE_ADMIN_TOKEN: ${JOURNAL_NUDGE_ADMIN_TOKEN:-}
       # Observability: uncaught server exceptions AND every LOG_* line ship to Sentry (empty DSN →
       # both no-op; stdout is never affected, so `docker logs` stays whole either way). LOG_LEVEL is
       # the volume knob, ENVIRONMENT keeps a non-prod run out of the environment you page on, and
