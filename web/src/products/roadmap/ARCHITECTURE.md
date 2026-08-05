@@ -57,7 +57,7 @@ Every directory, one line. The six marked **↓** have a section of their own be
 | `editing/` | `TreeEditor` — the holder for the current projection. Undo lives in `sync/`. **↓** |
 | `persistence/` | The `TreeRepository` over HTTP, the account tree registry, and the per-tree localStorage ledgers (progress, workspaces, legend, last place, return/milestone/share baselines, view prefs). |
 | `ui/` | The desktop overlay chrome above the canvas: control bar, step panel, minimap, tree switcher, birth canvas, the Next-up ranking and the honesty chrome. |
-| `ui/tree/` | The step's own components — kind legend, checklist, workspace body — plus `SkillNode`/`SkillConnector`/`ProgressBar`, the canon's DOM reference implementation of the tree metaphor, whose consumer is the `#/showcase` gallery. |
+| `ui/tree/` | The step's own components — kind legend, checklist, workspace body — and the two hooks that drive them (`useLegend` · `useWorkspace`, each over its pure model), plus `SkillNode`/`SkillConnector`/`ProgressBar`, the canon's DOM reference implementation of the tree metaphor, whose consumer is the `#/showcase` gallery. |
 | `ui/mobile/` | The phone/tablet surfaces: bottom sheets, the editor sheet, aim + bulk bars, the action lane, the read-only chrome and the fork door. |
 | `list/` | The phone's second view of the same model (X8): the tree as an outline, with its own pure outline/editing/explore rules. |
 | `activity/` | The activity log domain plus the one presentation grammar (verb hues, sentences, rows) every feed surface speaks. |
@@ -345,10 +345,15 @@ projection comes back through `onTreeChanged` → `syncStructure()` (re-derive, 
 `SyncSession.undo`/`redo`, ⌫/Delete on the selection, Esc deselects; a `selectedId` →
 `scene.setSelection` effect keeps the canvas chrome in step with React.
 
-At 3,067 lines it is by far the largest file in the package, and its own header's claim that no
-business logic lives here is not true today — the milestone selection, the progress state machine
-and the remote-frame idempotency policies all live in it. Four extractions are planned; see Wave 17
-in the audit ledger and `NOTES.md`. Read this section as a map of a file that is scheduled to shrink.
+At 2,865 lines it is still by far the largest file in the package, and its own header's claim that
+no business logic lives here was not true — which is why the header now names what is left rather
+than denying it. Three of the planned extractions have landed: advancing progress and choosing the
+milestone to announce are pure functions in `model/progress.js`, and the legend and node-workspace
+editors are the hooks `ui/tree/useLegend.js` and `ui/tree/useWorkspace.js`. What is still here is
+the remote-frame idempotency and anti-clobber reconciliation around the progress push (with the
+`startedAt`/`completedAt` stamping that rides with it), plus the share/week-offer and activity-feed
+controllers. See Wave 17 in the audit ledger and `NOTES.md`; read this section as a map of a file
+that is still scheduled to shrink.
 
 Wires:
 

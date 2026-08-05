@@ -9,6 +9,12 @@
 // remote-frame idempotency and anti-clobber reconciliation around the progress push, and the
 // startedAt/completedAt stamping that rides with them. They are named rather than denied, and the
 // next extraction takes them.
+//
+// Two of the editors this file used to be have moved to their own hooks, each sitting over the
+// pure model it drives: ui/tree/useLegend.js (the colour key's kinds, open flag, spotlight and
+// every kind gesture) and ui/tree/useWorkspace.js (a step's sub-tasks, note and links, the arc
+// feed and the auto-complete breath). What stays here of theirs is only the join with the live
+// tree — the legend's per-kind counts — and the two panels that render them.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './skilltree.css';
@@ -67,8 +73,6 @@ import { claimLocalTrees } from './sync/claimLocalTrees.js';
 import { renameLocalTree, deleteLocalTree } from './sync/localTrees.js';
 import { PresenceLayer } from './presence/PresenceLayer.jsx';
 import { ProgressStore } from './persistence/ProgressStore.js';
-import { WorkspaceStore } from './persistence/WorkspaceStore.js';
-import { LegendStore } from './persistence/LegendStore.js';
 import { LocalTreeRegistry } from './persistence/LocalTreeRegistry.js';
 import { PlaceStore } from './persistence/PlaceStore.js';
 import { ViewPrefs, initialView, peekBorn, clearBorn } from './persistence/ViewPrefs.js';
@@ -77,9 +81,11 @@ import { MilestoneLedger } from './persistence/MilestoneLedger.js';
 import { ShareLedger } from './persistence/ShareLedger.js';
 import { detectMilestones } from './model/milestones.js';
 import { advanceProgress, milestoneAnnouncement } from './model/progress.js';
-import { emptyWorkspace, arcFraction, addSubtask, toggleSubtask, editSubtask, deleteSubtask, setNote, addLink, deleteLink } from './model/NodeWorkspace.js';
-import { deriveLegend, withCounts, inUseCount, freeHue, addKind, recolorKind } from './model/Legend.js';
+import { emptyWorkspace } from './model/NodeWorkspace.js';
+import { withCounts, inUseCount } from './model/Legend.js';
 import { KindLegend } from './ui/tree/KindLegend.jsx';
+import { useLegend } from './ui/tree/useLegend.js';
+import { useWorkspace } from './ui/tree/useWorkspace.js';
 import { Button } from '../../design-system';
 import { PasteComposer } from './paste/PasteComposer.jsx';
 import { parsePlan } from './paste/planGrammar.js';
@@ -94,8 +100,6 @@ import { DEMO_TREE_ID, DEMO_STAGED_COMPLETED, COACHED_NODE_ID, COACH_DONE_KEY, F
 
 const layoutEngine = new RadialLayoutEngine();
 const progressStore = new ProgressStore();
-const workspaceStore = new WorkspaceStore();
-const legendStore = new LegendStore();
 const syncStore = new SyncStore();
 const deviceTrees = new LocalTreeRegistry();
 const placeStore = new PlaceStore();
@@ -103,7 +107,6 @@ const viewPrefs = new ViewPrefs();
 const returnLedger = new ReturnLedger();
 const milestoneLedger = new MilestoneLedger();
 const shareLedger = new ShareLedger();
-const AUTO_COMPLETE_HOLD = 600; // held breath before auto-completing: arc-close 280 + hold 320 (§4)
 const NEXT_UP_SELECT_MS = 540; // ~90% of the camera's default 600ms glide — the dock swaps as the fly settles
 const NEXT_UP_ENTER_MS = 600; // auto-open waits for the fit-to-view camera to still (whats-next-panel §04)
 const EMPTY_BOUNDS = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
@@ -284,19 +287,29 @@ export function SkillTreeView({ treeId, demo = false }) {
   const selectedEdgesRef = useRef(new Set()); // the live edge multi-selection (keys), for the same synchronous checks
   const toastTimersRef = useRef([]); // pending hold→leave→unmount timers for the active toast
   const toastKeyRef = useRef(0); // monotonic key so a replacing toast remounts and re-enters
-  const workspaceByNodeRef = useRef({}); // nodeId → workspace; the fresh read for arc pushes + persistence
-  const pendingCompleteRef = useRef(new Map()); // nodeId → auto-complete timer awaiting its held breath
   const completeStepRef = useRef(null); // always points at the latest completeStep (for the deferred beat)
   const openWeekSheetRef = useRef(null);     // latest openWeekSheet — the offer's toast outlives its render
   const publishOgImageRef = useRef(null);    // same hazard on the milestone beat, which predates it
   const plantedAtRef = useRef(0);            // when this tree was planted (epoch ms, 0 unrecorded) — the period clock
   const cardCacheRef = useRef({ key: '', png: null }); // the last progress card rasterized, so the sheet opens onto a drawn one
   const weekOfferRef = useRef(null);         // the armed week offer awaiting the open's last beat: { run, timer } | null
-  const legendRef = useRef([]); // the current ordered kinds; the fresh read for legend ops + persistence
-  const commitLegendRef = useRef(null); // latest commitLegend, so applyRemoteOp (defined earlier) can reach it
-  const legendOpenRef = useRef(true); // mirrors legendOpen so persistence reads it without a dep churn
-  const highlightedKindIdRef = useRef(null); // mirrors the highlighted kind for the Esc/toggle checks
   const composerOpenRef = useRef(false); // mirrors composerOpen for the capture-phase ⌘V guard
+
+  // The color key (F6) — its kinds, its open flag, its spotlight and every kind gesture, over
+  // the pure model/Legend.js. The counts it renders stay below, where the live tree is.
+  const {
+    legend, legendRef, legendOpen, legendForceOpen, highlightedKindId, highlightedKindIdRef,
+    hydrateLegend, syncLegendFromTree, clearLegendStore, clearHighlightedKind,
+    onRenameKind, onDescribeKind, onAddKind, onRemoveKind, onRecolorKind,
+    onHighlightKind, onLegendOpenChange, openLegendFromPicker,
+  } = useLegend({ seedRef, collabRef, editorRef, sceneRef });
+
+  // Each step's own workspace (F13) — sub-tasks, note, links — over the pure
+  // model/NodeWorkspace.js, plus the arc feed and the auto-complete breath a full checklist earns.
+  const {
+    workspaceByNode, hydrateWorkspaces, clearWorkspaceStore, cancelAllAutoCompletes, pushArcs,
+    onAddSubtask, onToggleSubtask, onEditSubtask, onDeleteSubtask, onSetNote, onAddLink, onDeleteLink,
+  } = useWorkspace({ seedRef, sceneRef, completedRef, completeStepRef });
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false); // the routed tree couldn't load (offline / gone)
@@ -306,11 +319,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [inProgress, setInProgress] = useState(() => new Set());
   const [startedAt, setStartedAt] = useState(() => ({})); // { nodeId: ms } — when work began
   const [completedAt, setCompletedAt] = useState(() => ({})); // { nodeId: ms } — when it finished
-  const [workspaceByNode, setWorkspaceByNode] = useState(() => ({})); // { nodeId: workspace } — sub-tasks, note, links
-  const [legend, setLegend] = useState([]); // the tree's ordered kinds (F6 — color legend)
-  const [legendOpen, setLegendOpen] = useState(true); // whether the key is expanded, remembered per tree
-  const [legendForceOpen, setLegendForceOpen] = useState(false); // the picker's "+" summoned the key on a 1-kind tree
-  const [highlightedKindId, setHighlightedKindId] = useState(null); // a legend row is spotlighting its kind on the graph
   // paste append-mode (F3 §01): ⌘V on the editor opens the same composer to graft a plan
   // under the current selection. The draft text survives Esc; the draft legend seeds from
   // the live legend on open so headings reuse the tree's own kinds.
@@ -450,25 +458,6 @@ export function SkillTreeView({ treeId, demo = false }) {
     // completions, so a same-session reload replays nothing — only steps finished elsewhere while
     // the tab was closed (a collaborator, or this account's MCP agent) are "new" on the next open.
     if (!readOnlyRef.current) returnLedger.save(seedRef.current.id, { completed: [...next.completed], at: Date.now() });
-  }, []);
-
-  // Durable per-node workspaces (F13): callers pass the freshly-computed map, since
-  // the state setter is async.
-  const persistWorkspace = useCallback((byNode) => {
-    if (!seedRef.current) return;
-    workspaceStore.save(seedRef.current.id, byNode);
-  }, []);
-
-  // The arc feed (§3): hand the scene a fraction for every node whose workspace has
-  // sub-tasks (nodes absent = no arc). Reads the fresh ref, so it can fire right after
-  // a commit. The scene caches these and re-applies them across model rebuilds.
-  const pushArcs = useCallback(() => {
-    const arcs = new Map();
-    for (const [nodeId, ws] of Object.entries(workspaceByNodeRef.current)) {
-      const fraction = arcFraction(ws);
-      if (fraction !== null) arcs.set(nodeId, fraction);
-    }
-    sceneRef.current?.setArcs?.(arcs);
   }, []);
 
   // The single status beat (canonical §2): a toast enters fade+rise, holds, then
@@ -671,16 +660,15 @@ export function SkillTreeView({ treeId, demo = false }) {
     if (seedRef.current) {
       collabRef.current?.clearDurable?.();  // drop the durable lattice for this tree
       progressStore.clear(seedRef.current.id);
-      workspaceStore.clear(seedRef.current.id);
-      legendStore.clear(seedRef.current.id);
+      clearWorkspaceStore(seedRef.current.id);
+      clearLegendStore(seedRef.current.id);
       returnLedger.clear(seedRef.current.id); // the reset reload re-baselines the recap from the cleared progress
       milestoneLedger.clear(seedRef.current.id); // a reset tree can earn its milestones' share offers again
       shareLedger.clear(seedRef.current.id); // and starts its share series over — no "since" against work that's gone
     }
-    pendingCompleteRef.current.forEach(clearTimeout);
-    pendingCompleteRef.current.clear();
+    cancelAllAutoCompletes();
     setReloadKey((key) => key + 1);
-  }, []);
+  }, [clearLegendStore, clearWorkspaceStore, cancelAllAutoCompletes]);
 
   // Re-derive the whole render model from the editor's current TreeData and apply
   // it to the scene preserving the view. The seam every structural edit + undo/redo
@@ -746,7 +734,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     if (!editor) return;
     editor.present = treeData;
     syncStructure();
-    commitLegendRef.current?.(deriveLegend(treeData.nodes, treeData.kinds));
+    syncLegendFromTree(treeData);
 
     // "Keep more, lose less": when a concurrent delete raced a build, the work is kept but
     // masked under the tombstoned parent. Surface it once, with one-click resurrection.
@@ -761,7 +749,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     } else if (!masked.length) {
       maskedShownRef.current = '';
     }
-  }, [syncStructure, showToast]);
+  }, [syncStructure, showToast, syncLegendFromTree]);
   onTreeChangedRef.current = onTreeChanged;
 
   // The browser tab follows the tree's name; the switcher previews each keystroke of an
@@ -1033,77 +1021,6 @@ export function SkillTreeView({ treeId, demo = false }) {
     if (!silent) showToast(`${ids.length} step${ids.length === 1 ? '' : 's'} recolored`, { action: { label: 'Undo', run: undo } });
   }, [showToast, undo]);
 
-  // The legend (F6): every kind edit funnels through one seam — update the fresh ref,
-  // set state, and persist — mirroring commitWorkspace; the open flag rides in the payload.
-  const persistLegend = useCallback((kinds, open) => {
-    if (!seedRef.current) return;
-    legendStore.save(seedRef.current.id, { kinds, open });
-  }, []);
-
-  const commitLegend = useCallback((kinds) => {
-    legendRef.current = kinds;
-    setLegend(kinds);
-    persistLegend(kinds, legendOpenRef.current);
-  }, [persistLegend]);
-  commitLegendRef.current = commitLegend; // let applyRemoteOp (defined earlier) reach the latest
-
-  // Each legend edit is dispatched as one gesture; the lattice is the authority for the
-  // legend (F6) as for everything else, and onTreeChanged re-derives the displayed kinds
-  // from it — for our own edit and a collaborator's alike.
-  const onRenameKind = useCallback((id, label) => {
-    collabRef.current?.dispatch({ kind: 'RenameKind', id, label });
-  }, []);
-  const onDescribeKind = useCallback((id, description) => {
-    collabRef.current?.dispatch({ kind: 'DescribeKind', id, description });
-  }, []);
-  const onAddKind = useCallback((hue) => {
-    const next = addKind(legendRef.current, hue ?? freeHue(legendRef.current));
-    if (next === legendRef.current) return; // hue taken or palette full — nothing added
-    const added = next[next.length - 1];
-    collabRef.current?.dispatch({ kind: 'AddKind', id: added.id, hue: added.hue });
-  }, []);
-
-  // Remove is offered only for a kind no node wears; guard here against a stale click,
-  // reading the editor's live nodes (the freshest source of every node's hue).
-  const onRemoveKind = useCallback((id) => {
-    const nodes = editorRef.current?.treeData.nodes ?? [];
-    const target = withCounts(legendRef.current, nodes).find((kind) => kind.id === id);
-    if (!target || target.count > 0) return;
-    collabRef.current?.dispatch({ kind: 'RemoveKind', id });
-  }, []);
-
-  // Recolor a kind = swap its hue AND repaint every node of the old hue to the new — one
-  // atomic RecolorKind gesture (materialize computes the fan-out; every peer repaints the
-  // same set). A no-op swap (hue taken) leaves the nodes alone.
-  const onRecolorKind = useCallback((id, targetHue) => {
-    const { newHue } = recolorKind(legendRef.current, id, targetHue);
-    if (!newHue) return;
-    collabRef.current?.dispatch({ kind: 'RecolorKind', id, hue: newHue });
-  }, []);
-
-  // A legend row spotlights its kind on the graph (WS-C's scene.highlightKind, called
-  // defensively — a sibling adds it). Clicking the lit row again clears it. We track the
-  // kind id in state but hand the scene the *hue* (the shared contract), null to clear.
-  const onHighlightKind = useCallback((id) => {
-    const nextId = id === highlightedKindIdRef.current ? null : id;
-    highlightedKindIdRef.current = nextId;
-    setHighlightedKindId(nextId);
-    const hue = nextId ? legendRef.current.find((kind) => kind.id === nextId)?.hue ?? null : null;
-    sceneRef.current?.highlightKind?.(hue);
-  }, []);
-
-  const onLegendOpenChange = useCallback((open) => {
-    legendOpenRef.current = open;
-    setLegendOpen(open);
-    persistLegend(legendRef.current, open);
-  }, [persistLegend]);
-
-  // The StepPanel picker's ghost "+" forces the key open on a still-keyless 1-kind tree.
-  const openLegendFromPicker = useCallback(() => {
-    setLegendForceOpen(true);
-    onLegendOpenChange(true);
-  }, [onLegendOpenChange]);
-
   // The composer's "Add to tree" (paste append-mode, F3 §01): the raw parse becomes a
   // graft under the current selection — the tree's root when nothing is selected, or when
   // the selection was deleted mid-compose. graftPlan shapes it (id-collision remap,
@@ -1223,12 +1140,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         return;
       }
       if (event.key === 'Escape') {
-        if (highlightedKindIdRef.current) {
-          highlightedKindIdRef.current = null;
-          setHighlightedKindId(null);
-          sceneRef.current?.highlightKind?.(null);
-          return;
-        }
+        if (highlightedKindIdRef.current) { clearHighlightedKind(); return; }
         // Clear any multi-selection — nodes and/or edges — through one branch. setSelectedId(null)
         // empties both sets and reconciles both projections (incl. the scene's selectedEdge).
         if (selectedIdsRef.current.size > 0 || selectedEdgesRef.current.size > 0) { setSelectedId(null); return; }
@@ -1272,7 +1184,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [undo, redo, deleteSelected, bulkDelete, handleDeleteEdge, toggleActivity, closeActivity, cancelNextUpSelect, setSelectedId, reconcileProjections, setShortcutsOpen]);
+  }, [undo, redo, deleteSelected, bulkDelete, handleDeleteEdge, toggleActivity, closeActivity, cancelNextUpSelect, setSelectedId, reconcileProjections, setShortcutsOpen, clearHighlightedKind]);
 
   // paste append-mode (F3 §01): raw ⌘V on the editor opens the composer already filled and
   // parsed, grafting under the current selection. Capture-phase, with three guards so it
@@ -1341,7 +1253,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   }, [selectedId, autoFocusNameId]);
 
   useEffect(() => () => toastTimersRef.current.forEach(clearTimeout), []);
-  useEffect(() => () => pendingCompleteRef.current.forEach(clearTimeout), []);
 
   // The pipeline itself: repository loads → domain computes → scene renders.
   // Re-runs whenever the dataset toggle swaps demo ↔ huge.
@@ -1411,15 +1322,6 @@ export function SkillTreeView({ treeId, demo = false }) {
       }
       const startedAtMap = savedProgress?.startedAt ?? {};
       const completedAtMap = savedProgress?.completedAt ?? {};
-      // Per-node workspaces overlay the same way — saved sub-tasks/notes/links win.
-      // The arc feed reads this hydrated map below.
-      const savedWorkspace = workspaceStore.load(seed.id);
-      const workspaceMap = savedWorkspace ?? {};
-      // The color legend (F6) is served by the backend (its `kinds`, reconciled so every
-      // in-use hue still has an entry). Open/collapsed stays a local UI preference in localStorage.
-      const savedLegend = legendStore.load(seed.id);
-      const backendKinds = seed.kinds ?? null;
-      const legendKinds = deriveLegend(nextTree.nodes, backendKinds);
       const states = UnlockRules.derive(nextTree, progress);
       const positions = layoutPositions(nextTree);
       const model = nextTree.toRenderModel(positions, states);
@@ -1476,15 +1378,8 @@ export function SkillTreeView({ treeId, demo = false }) {
       setInProgress(new Set(progress.inProgress));
       setStartedAt(startedAtMap);
       setCompletedAt(completedAtMap);
-      workspaceByNodeRef.current = workspaceMap;
-      setWorkspaceByNode(workspaceMap);
-      legendRef.current = legendKinds;
-      legendOpenRef.current = savedLegend?.open ?? true;
-      highlightedKindIdRef.current = null;
-      setLegend(legendKinds);
-      setLegendOpen(savedLegend?.open ?? true);
-      setLegendForceOpen(false);
-      setHighlightedKindId(null);
+      hydrateWorkspaces(seed.id); // saved sub-tasks/notes/links for THIS tree; the arc feed reads them below
+      hydrateLegend(seed.id, nextTree.nodes, seed.kinds ?? null); // the key for THIS tree, spotlight cleared
       pushArcs(); // seed the gauges from the hydrated workspaces (model is already applied)
       setLogVersion((version) => version + 1);
       setTicker([]);
@@ -1741,12 +1636,8 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   useEffect(() => { completedRef.current = completed; }, [completed]);
   useEffect(() => { inProgressRef.current = inProgress; }, [inProgress]);
-  useEffect(() => { workspaceByNodeRef.current = workspaceByNode; }, [workspaceByNode]);
   useEffect(() => { feedOpenRef.current = feedOpen; }, [feedOpen]);
   useEffect(() => { pinnedRef.current = pinned; }, [pinned]);
-  useEffect(() => { legendRef.current = legend; }, [legend]);
-  useEffect(() => { legendOpenRef.current = legendOpen; }, [legendOpen]);
-  useEffect(() => { highlightedKindIdRef.current = highlightedKindId; }, [highlightedKindId]);
   useEffect(() => { readOnlyRef.current = readOnly; }, [readOnly]);
   useEffect(() => { composerOpenRef.current = composerOpen; }, [composerOpen]);
 
@@ -2302,81 +2193,6 @@ export function SkillTreeView({ treeId, demo = false }) {
       if (!known.has(id)) collabRef.current?.sendProgress(id, 'active');
     }
   };
-
-  // Any workspace change on a node calls off a pending auto-complete for it (§4) —
-  // an uncheck, a note edit, a link, all count as "the user is still working".
-  const cancelAutoComplete = useCallback((nodeId) => {
-    const timer = pendingCompleteRef.current.get(nodeId);
-    if (!timer) return;
-    clearTimeout(timer);
-    pendingCompleteRef.current.delete(nodeId);
-  }, []);
-
-  // The one seam every workspace edit funnels through: store the node's next
-  // workspace (fresh ref for immediate reads), render it, and persist the map.
-  const commitWorkspace = useCallback((nodeId, nextWs) => {
-    const nextMap = { ...workspaceByNodeRef.current, [nodeId]: nextWs };
-    workspaceByNodeRef.current = nextMap;
-    setWorkspaceByNode(nextMap);
-    persistWorkspace(nextMap);
-  }, [persistWorkspace]);
-
-  const onAddSubtask = useCallback((nodeId, label) => {
-    cancelAutoComplete(nodeId);
-    const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
-    commitWorkspace(nodeId, addSubtask(current, label));
-    pushArcs();
-  }, [cancelAutoComplete, commitWorkspace, pushArcs]);
-
-  // A check can close the gauge: after the fraction is pushed, if every box is now
-  // done and the node isn't already complete, hold a breath then run F1's completion
-  // beat (bloom + unlocks). The timer is cancelable — a later change lands the
-  // cancelAutoComplete above first. Sticky (§4.3): only a check ever schedules this.
-  const onToggleSubtask = useCallback((nodeId, subtaskId) => {
-    cancelAutoComplete(nodeId);
-    const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
-    const next = toggleSubtask(current, subtaskId);
-    commitWorkspace(nodeId, next);
-    pushArcs();
-    const allDone = next.subtasks.length > 0 && next.subtasks.every((subtask) => subtask.done);
-    if (!allDone || completedRef.current.has(nodeId)) return;
-    const timer = setTimeout(() => {
-      pendingCompleteRef.current.delete(nodeId);
-      completeStepRef.current?.(nodeId);
-    }, AUTO_COMPLETE_HOLD);
-    pendingCompleteRef.current.set(nodeId, timer);
-  }, [cancelAutoComplete, commitWorkspace, pushArcs]);
-
-  const onEditSubtask = useCallback((nodeId, subtaskId, label) => {
-    cancelAutoComplete(nodeId);
-    const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
-    commitWorkspace(nodeId, editSubtask(current, subtaskId, label));
-  }, [cancelAutoComplete, commitWorkspace]);
-
-  const onDeleteSubtask = useCallback((nodeId, subtaskId) => {
-    cancelAutoComplete(nodeId);
-    const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
-    commitWorkspace(nodeId, deleteSubtask(current, subtaskId));
-    pushArcs();
-  }, [cancelAutoComplete, commitWorkspace, pushArcs]);
-
-  const onSetNote = useCallback((nodeId, markdown) => {
-    cancelAutoComplete(nodeId);
-    const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
-    commitWorkspace(nodeId, setNote(current, markdown));
-  }, [cancelAutoComplete, commitWorkspace]);
-
-  const onAddLink = useCallback((nodeId, rawUrl) => {
-    cancelAutoComplete(nodeId);
-    const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
-    commitWorkspace(nodeId, addLink(current, rawUrl));
-  }, [cancelAutoComplete, commitWorkspace]);
-
-  const onDeleteLink = useCallback((nodeId, linkId) => {
-    cancelAutoComplete(nodeId);
-    const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
-    commitWorkspace(nodeId, deleteLink(current, linkId));
-  }, [cancelAutoComplete, commitWorkspace]);
 
   function handleZoomIn() {
     sceneRef.current?.zoomBy(1.2);
