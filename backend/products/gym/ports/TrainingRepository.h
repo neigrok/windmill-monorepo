@@ -1,5 +1,7 @@
 #pragma once
 
+#include "products/gym/domain/Review.h"
+#include "products/gym/domain/Routine.h"
 #include "products/gym/domain/Training.h"
 
 #include <cstdint>
@@ -9,12 +11,35 @@
 
 namespace wm::gym {
 
+// The heaviest WORKING set of a whole session, ties broken by more reps — never by volume, the same
+// rule the review's per-movement top set obeys. It is two numbers where TopSet is three: "how many
+// sets at that load" is a question about one movement, and this one spans every movement in the
+// session. Warmups, drops and failures are not what a session was, so none of them can be its top.
+struct TopWorkingSet {
+  double weightKg;
+  int reps;
+
+  bool operator==(const TopWorkingSet&) const = default;
+};
+
 // One row of the training log read: the session plus what the list needs to say about it without
-// loading its sets — how many, and which movements by display name.
+// loading its sets — how many sets, which movements by display name, the heaviest working set in
+// it, and whether the four-hour rule ended it rather than a tap.
+//
+// closedItself is INFERRED and carries no column, because the rule that closes a session already
+// signs its work: autoCloseAt (§3.2) stamps finished_at at the last set's instant exactly, or at
+// started_at for a session holding none, while a lifter's own finish carries the instant their
+// device named. So `finished_at = max(completed_at)`, or `= started_at` with no sets, IS that
+// rule's signature. A manual finish landing on exactly the same millisecond as the last set reads
+// as an auto-close, and the whole cost of that coincidence is one wrong subtitle on one log row —
+// cheaper than a column two writers would have to keep honest forever. Both implementations of this
+// port compute it the same way, and PgTrainingRepository::log is where the SQL says so.
 struct SessionSummary {
   Session session;
   int setCount;
   std::vector<std::string> exerciseNames;
+  std::optional<TopWorkingSet> topSet;
+  bool closedItself = false;
 
   bool operator==(const SessionSummary&) const = default;
 };
@@ -70,11 +95,36 @@ struct SetInsertOutcome {
   SetInsertError error;
 };
 
-// The one door to gym storage — the catalog and the log live or die together, so phase 0–1 keeps a
-// single bounded store (the split into Catalog/Routine repositories waits for a second consumer).
-// Every read and write is owner-scoped by the UserId it carries; absent is byte-identical to
-// forbidden. Writes are idempotent by client-minted id: insertSession and insertSet no-op on
-// conflict, and one open session per user is the partial unique index's rule, never a guard flag.
+// What became of a routine write, under the same rule as insertSet: every refusal the store alone
+// can know crosses as a VALUE, never as a vendor exception the wire layer would have to name. One
+// outcome serves both writes because a routine write has one shape — the whole document — and each
+// of the two producers can raise only what it can see: insertRoutine answers idTaken (the id is
+// spent on a row this account does not own, never whose) and replaceRoutine answers notFound
+// (absent and another account's are the same fact). unknownExercise is either one's, and it is the
+// same fact a set's foreign key states: an entry names a movement no catalog holds.
+enum class RoutineWriteError { none, idTaken, notFound, unknownExercise };
+
+struct RoutineWriteOutcome {
+  std::optional<Routine> routine;
+  RoutineWriteError error;
+};
+
+// The catalog write's one refusal. The read-back is scoped to the caller's own created_by rows, so
+// a seed's slug and another lifter's custom id are both simply taken — the caller mints a new id
+// and sends it again, and learns nothing about who holds the old one.
+enum class ExerciseInsertError { none, idTaken };
+
+struct ExerciseInsertOutcome {
+  std::optional<Exercise> exercise;
+  ExerciseInsertError error;
+};
+
+// The one door to gym storage — the catalog, the plan and the log live or die together, so gym
+// keeps a single bounded store (the split into Catalog/Routine repositories waits for a second
+// consumer). Every read and write is owner-scoped by the UserId it carries; absent is byte-
+// identical to forbidden. Writes are idempotent by client-minted id: insertSession, insertSet,
+// insertRoutine and insertExercise all no-op on conflict and answer with the row that is stored,
+// and one open session per user is the partial unique index's rule, never a guard flag.
 struct TrainingRepository {
   virtual ~TrainingRepository() = default;
 
@@ -93,6 +143,29 @@ struct TrainingRepository {
   // The prefill read: what this account did the last time it trained this movement. Fired on every
   // movement change, and the one read in this port with no write behind it anywhere.
   virtual LastTimeOutcome lastTime(const UserId& user, const ExerciseId& exercise) = 0;
+
+  // The finish read: everything the review rules need that this session does not already hold, in
+  // one pass. It answers in a DOMAIN value (SessionHistory) rather than a shape of its own, because
+  // the rule is what defines the shape and the store's job is to fill it: the marks of the movements
+  // this session works, and the earlier session it stands against with that session's sets.
+  virtual SessionHistory historyFor(const UserId& user, const Session& session) = 0;
+  // The one destructive action in the product. The sets go with the row (`on delete cascade`), so
+  // a discard leaves nothing behind pointing at a session that is gone.
+  virtual bool deleteSession(const UserId& user, const SessionId& id) = 0;  // false = nothing to remove
+
+  // The plan. Both reads carry lastTrainedAtMs, which is an aggregate over the log rather than a
+  // column, so the list can sort by the thing the routines screen sorts by and one routine can say
+  // the same word as its row in that list.
+  virtual std::vector<Routine> routines(const UserId& user) = 0;   // most recently trained first
+  virtual std::optional<Routine> routine(const UserId& user, const RoutineId& id) = 0;
+  // The routine row and its entries land in ONE transaction — the two writes are one document, and
+  // a routine with no entries is a plan the domain refuses to build and the editor cannot draw.
+  virtual RoutineWriteOutcome insertRoutine(const Routine& incoming) = 0;   // conflict = the stored
+  virtual RoutineWriteOutcome replaceRoutine(const Routine& incoming) = 0;  // whole-document replace
+  virtual bool deleteRoutine(const UserId& user, const RoutineId& id) = 0;  // false = nothing to remove
+  // The owner rides beside the row rather than inside it: a catalog entry has no owner when it is a
+  // seed, and `custom` is what the read derives from created_by.
+  virtual ExerciseInsertOutcome insertExercise(const UserId& owner, const Exercise& incoming) = 0;
 };
 
 }

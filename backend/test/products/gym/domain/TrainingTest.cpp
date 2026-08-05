@@ -145,7 +145,7 @@ TEST(session_construction_guards_the_id_shape_and_both_instants) {
   CHECK_EQ(session.id.str(), std::string("ses_00000001"));
   CHECK_EQ(session.startedAtMs, 1'700'000'000'000ull);
   CHECK_EQ(session.finishedAtMs, std::optional<std::uint64_t>());
-  CHECK_EQ(session.planJson, std::string(""));
+  CHECK_EQ(session.plan, std::optional<PlanSnapshot>());   // ad-hoc: no routine, no frozen plan
   CHECK(rejects([] { Session{SessionId{"short"}, wm::UserId{"u1"}, 1}; }));
   CHECK(rejects([] { Session{SessionId{"ses_00000001"}, wm::UserId{""}, 1}; }));
   CHECK(rejects([] { Session{SessionId{"ses_00000001"}, wm::UserId{"u1"}, 0}; }));
@@ -160,6 +160,97 @@ TEST(session_construction_guards_the_id_shape_and_both_instants) {
   }));
   CHECK_EQ(Session(SessionId{"ses_00000001"}, wm::UserId{"u1"}, kMaxInstantMs).startedAtMs,
            kMaxInstantMs);
+}
+
+// ---- the equipment's default step ----------------------------------------------------------
+
+// The numbers the 64 seed rows were written with, in one place a created movement can read them
+// from: a lifter who adds a barbell lift gets the smallest plate pair without being asked, and the
+// client never carries a copy of this table to keep in step.
+TEST(default_step_is_the_equipments_own) {
+  CHECK_EQ(defaultStepKg(Equipment::barbell), 2.5);
+  CHECK_EQ(defaultStepKg(Equipment::dumbbell), 2.0);
+  CHECK_EQ(defaultStepKg(Equipment::machine), 5.0);
+  CHECK_EQ(defaultStepKg(Equipment::cable), 2.5);
+  CHECK_EQ(defaultStepKg(Equipment::bodyweight), 2.5);
+  CHECK_EQ(defaultStepKg(Equipment::kettlebell), 4.0);
+}
+
+// ---- Exercise construction: the catalog row -----------------------------------------------
+
+TEST(exercise_construction_guards_the_name_and_the_step) {
+  Exercise created{ExerciseId{"ex_11111111"}, "Zercher Squat", Pattern::squat, Equipment::barbell,
+                   defaultStepKg(Equipment::barbell), true};
+  CHECK_EQ(created.stepKg, 2.5);
+  CHECK(created.custom);
+  CHECK(rejects([] {
+    Exercise{ExerciseId{""}, "Zercher Squat", Pattern::squat, Equipment::barbell, 2.5, true};
+  }));
+  CHECK(rejects([] {
+    Exercise{ExerciseId{"ex_11111111"}, "", Pattern::squat, Equipment::barbell, 2.5, true};
+  }));
+  CHECK(rejects([] {
+    Exercise{ExerciseId{"ex_11111111"}, "Zercher Squat", Pattern::squat, Equipment::barbell, 0, true};
+  }));
+  // Postgres text stops at a NUL and would keep the head of the name as the whole of it — the rule
+  // the set note has always lived under, reaching the display name now that a lifter can create one.
+  CHECK(rejects([] {
+    Exercise{ExerciseId{"ex_11111111"}, std::string("Zercher\0Squat", 13), Pattern::squat,
+             Equipment::barbell, 2.5, true};
+  }));
+  // The 64 seeded slugs are the schema's own and are shorter than any minted id may be, so the
+  // catalog row does NOT carry the one id-shape rule — the wire applies it to a created movement.
+  CHECK_EQ(Exercise(ExerciseId{"dip"}, "Dip", Pattern::press, Equipment::bodyweight, 2.5, false).id,
+           ExerciseId{"dip"});
+}
+
+// step_kg is numeric(4,2) and both of its ends are the domain's to refuse. Above the ceiling the
+// column raises a numeric overflow that leaves as a 500 — the status the ladder calls retryable, so
+// a flush queue would resend an unstorable body forever — and below 0.01 the value rounds to 0.00,
+// which the next read of that row refuses as a step that is not positive.
+TEST(exercise_step_is_bounded_by_what_its_column_can_hold) {
+  const auto stepOf = [](double stepKg) {
+    return Exercise{ExerciseId{"ex_11111111"}, "Zercher Squat", Pattern::squat, Equipment::barbell,
+                    stepKg, true}
+        .stepKg;
+  };
+  CHECK_EQ(stepOf(kMinStepKg), 0.01);
+  CHECK_EQ(stepOf(2.5), 2.5);
+  CHECK_EQ(stepOf(kMaxStepKg), 99.99);
+  CHECK(rejects([] {
+    Exercise{ExerciseId{"ex_11111111"}, "Zercher Squat", Pattern::squat, Equipment::barbell, 100.0,
+             true};
+  }));
+  CHECK(rejects([] {
+    Exercise{ExerciseId{"ex_11111111"}, "Zercher Squat", Pattern::squat, Equipment::barbell, 1000.0,
+             true};
+  }));
+  CHECK(rejects([] {
+    Exercise{ExerciseId{"ex_11111111"}, "Zercher Squat", Pattern::squat, Equipment::barbell, 0.004,
+             true};
+  }));
+  CHECK(rejects([] {
+    Exercise{ExerciseId{"ex_11111111"}, "Zercher Squat", Pattern::squat, Equipment::barbell, -2.5,
+             true};
+  }));
+}
+
+// The catalog read hands back every movement this account can see on every open of the picker, so
+// an unbounded display name is one that ships on the product's most-fired read forever. Eighty is
+// the ceiling a routine's name already lives under, and they are the same kind of string.
+TEST(exercise_name_is_capped_at_the_same_eighty_a_routine_name_is) {
+  CHECK_EQ(Exercise(ExerciseId{"ex_11111111"}, std::string(kMaxNameLength, 'x'), Pattern::squat,
+                    Equipment::barbell, 2.5, true)
+               .name.size(),
+           kMaxNameLength);
+  CHECK(rejects([] {
+    Exercise{ExerciseId{"ex_11111111"}, std::string(kMaxNameLength + 1, 'x'), Pattern::squat,
+             Equipment::barbell, 2.5, true};
+  }));
+  CHECK(rejects([] {
+    Exercise{ExerciseId{"ex_11111111"}, std::string(2'000'000, 'x'), Pattern::squat,
+             Equipment::barbell, 2.5, true};
+  }));
 }
 
 // ---- autoCloseAt: every branch ------------------------------------------------------------

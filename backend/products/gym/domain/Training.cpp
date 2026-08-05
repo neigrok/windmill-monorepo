@@ -102,20 +102,46 @@ bool wellFormedId(std::string_view id) {
   return true;
 }
 
+double defaultStepKg(Equipment equipment) {
+  switch (equipment) {
+    case Equipment::barbell: return 2.5;      // the smallest plate pair
+    case Equipment::dumbbell: return 2.0;     // the rack gap
+    case Equipment::machine: return 5.0;      // the pin
+    case Equipment::cable: return 2.5;
+    case Equipment::bodyweight: return 2.5;   // a belt plate
+    case Equipment::kettlebell: return 4.0;
+  }
+  return 2.5;
+}
+
 Exercise::Exercise(ExerciseId id, std::string name, Pattern pattern, Equipment equipment,
                    double stepKg, bool custom)
     : id(std::move(id)), name(std::move(name)), pattern(pattern), equipment(equipment),
       stepKg(stepKg), custom(custom) {
   if (this->id.empty()) throw InvalidTraining("an exercise needs an id");
   if (this->name.empty()) throw InvalidTraining("an exercise needs a name");
-  if (stepKg <= 0) throw InvalidTraining("step must be a positive weight");
+  // The same eighty a routine's name lives under, and for a sharper reason: the catalog read hands
+  // back EVERY movement this account can see, on every open of the movement picker, so a name with
+  // no ceiling is a name that ships forever on the product's most-fired read.
+  if (this->name.size() > kMaxNameLength) throw InvalidTraining("exercise name too long");
+  // Postgres text stops at a NUL and would keep the head of the name as if it were the whole of it.
+  // The set note has lived under this rule since day one; a lifter can now create a movement, so
+  // the display name is the second piece of free text that reaches a text column.
+  if (this->name.find('\0') != std::string::npos)
+    throw InvalidTraining("an exercise name cannot hold a NUL byte");
+  // step_kg is numeric(4,2), and both ends of that column are refused here rather than by Postgres
+  // mid-transaction: a step of 100 raises a numeric overflow, which leaves as the house 500 — the
+  // status the ladder documents as retryable, so a queue would resend an unstorable body forever —
+  // and a step under 0.01 rounds to 0.00 in the column, so the row this write stored is the row the
+  // next read refuses.
+  if (stepKg < kMinStepKg || stepKg > kMaxStepKg) throw InvalidTraining("step out of range");
 }
 
 Session::Session(SessionId id, UserId user, std::uint64_t startedAtMs,
                  std::optional<std::uint64_t> finishedAtMs, std::optional<RoutineId> routine,
-                 std::string planJson)
+                 std::optional<PlanSnapshot> plan)
     : id(std::move(id)), user(std::move(user)), startedAtMs(startedAtMs),
-      finishedAtMs(finishedAtMs), routine(std::move(routine)), planJson(std::move(planJson)) {
+      finishedAtMs(finishedAtMs), routine(std::move(routine)), plan(std::move(plan)) {
   if (!wellFormedId(this->id.str())) throw InvalidTraining("bad session id");
   if (this->user.empty()) throw InvalidTraining("a session belongs to an account");
   if (startedAtMs == 0 || startedAtMs > kMaxInstantMs)

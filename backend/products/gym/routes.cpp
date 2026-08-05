@@ -23,6 +23,12 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
       },
       {drogon::Get});
   app.registerHandler(
+      "/v1/gym/exercises",
+      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        api->createExercise(req, std::move(cb));
+      },
+      {drogon::Post});
+  app.registerHandler(
       "/v1/gym/sessions",
       [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
         api->startSession(req, std::move(cb));
@@ -53,11 +59,53 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
       },
       {drogon::Get});
   app.registerHandler(
+      "/v1/gym/sessions/{id}/review",
+      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        api->reviewSession(req, std::move(cb), id);
+      },
+      {drogon::Get});
+  app.registerHandler(
+      "/v1/gym/sessions/{id}",
+      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        api->discardSession(req, std::move(cb), id);
+      },
+      {drogon::Delete});
+  app.registerHandler(
       "/v1/gym/last",
       [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
         api->lastTime(req, std::move(cb));
       },
       {drogon::Get});
+  app.registerHandler(
+      "/v1/gym/routines",
+      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        api->listRoutines(req, std::move(cb));
+      },
+      {drogon::Get});
+  app.registerHandler(
+      "/v1/gym/routines",
+      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        api->createRoutine(req, std::move(cb));
+      },
+      {drogon::Post});
+  app.registerHandler(
+      "/v1/gym/routines/{id}",
+      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        api->getRoutine(req, std::move(cb), id);
+      },
+      {drogon::Get});
+  app.registerHandler(
+      "/v1/gym/routines/{id}",
+      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        api->replaceRoutine(req, std::move(cb), id);
+      },
+      {drogon::Put});
+  app.registerHandler(
+      "/v1/gym/routines/{id}",
+      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        api->deleteRoutine(req, std::move(cb), id);
+      },
+      {drogon::Delete});
 }
 
 }

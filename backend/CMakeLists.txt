@@ -81,6 +81,8 @@ target_link_libraries(windmill_journal PUBLIC windmill_platform)
 # guard below, so gym stays one lib whether or not the vendor edges are present.
 add_library(windmill_gym
   products/gym/domain/Training.cpp
+  products/gym/domain/Routine.cpp
+  products/gym/domain/Review.cpp
   products/gym/application/LogService.cpp)
 target_include_directories(windmill_gym PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(windmill_gym PUBLIC windmill_platform)
@@ -148,6 +150,8 @@ add_executable(windmill_domain_tests
   test/products/journal/application/NudgeSweepTest.cpp
   test/products/journal/application/EchoSweepTest.cpp
   test/products/gym/domain/TrainingTest.cpp
+  test/products/gym/domain/RoutineTest.cpp
+  test/products/gym/domain/ReviewTest.cpp
   test/products/gym/application/LogServiceTest.cpp)
 target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_journal windmill_gym)
 

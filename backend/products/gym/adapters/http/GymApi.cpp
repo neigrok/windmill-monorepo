@@ -35,6 +35,38 @@ void GymApi::listExercises(const drogon::HttpRequestPtr& req, HttpCallback&& cb)
   cb(jsonResponse(body));
 }
 
+// The movement a lifter creates from the picker, off "no movement by that name". It is theirs
+// alone — created_by is the owner, and the catalog read only ever serves the seeds plus the
+// caller's own — so the reply is the row every later set and routine entry points at by id.
+void GymApi::createExercise(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
+    return;
+  }
+  std::shared_ptr<Json::Value> json = req->getJsonObject();
+  if (!json) {
+    cb(error(drogon::k400BadRequest, "expected json"));
+    return;
+  }
+  ExerciseInsertOutcome outcome{std::nullopt, ExerciseInsertError::none};
+  try {
+    outcome = log_->createExercise(*caller, parseExerciseWrite(*json));
+  } catch (const InvalidTraining&) {
+    cb(error(drogon::k400BadRequest, "could not read that movement"));
+    return;
+  }
+  if (outcome.error == ExerciseInsertError::idTaken) {
+    // A seed's slug or another lifter's custom id, told apart by nobody: mint a new id and send it
+    // again. The caller's OWN id is not this refusal — it replays, answering with the movement
+    // already stored under it, because the alternative is what §2.1 exists to prevent: a lost reply
+    // re-minted into a second "Zercher Squat" that every later set then forks history across.
+    cb(error(drogon::k409Conflict, "that movement id is taken", "exercise-id-taken"));
+    return;
+  }
+  cb(jsonResponse(toJson(*outcome.exercise)));
+}
+
 void GymApi::startSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
@@ -62,6 +94,13 @@ void GymApi::startSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
     // The id is spent — by this account or another, the client is never told which. Mint a new one:
     // the old reply was a 200 for a session the store never accepted, and every set into it 404'd.
     cb(error(drogon::k409Conflict, "that session id is taken", "session-id-taken"));
+    return;
+  }
+  if (outcome.error == StartError::unknownRoutine) {
+    // The same one fact every absent thing gets: this account cannot read that routine, and whether
+    // it never existed or belongs to someone else is not said. Starting ad-hoc instead would be the
+    // real failure — a workout with no targets that nothing on screen could tell apart from a plan.
+    cb(error(drogon::k404NotFound, "no such routine"));
     return;
   }
   if (outcome.error == StartError::alreadyOpen) {
@@ -197,14 +236,7 @@ void GymApi::listSessions(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
   }
 
   Json::Value sessions(Json::arrayValue);
-  for (const SessionSummary& summary : log_->log(*caller, cursor)) {
-    Json::Value item = toJson(summary.session);
-    item["setCount"] = summary.setCount;
-    Json::Value names(Json::arrayValue);
-    for (const std::string& name : summary.exerciseNames) names.append(name);
-    item["exercises"] = names;
-    sessions.append(item);
-  }
+  for (const SessionSummary& summary : log_->log(*caller, cursor)) sessions.append(toJson(summary));
   Json::Value body(Json::objectValue);
   body["sessions"] = sessions;
   cb(jsonResponse(body));
@@ -226,6 +258,52 @@ void GymApi::getSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
   body["session"] = toJson(detail->session);
   body["sets"] = toJson(detail->sets);
   cb(jsonResponse(body));
+}
+
+// The finish screen, and the same readout the session detail draws. It is a pure read — computed
+// from the stored rows on every call and kept nowhere — so a set that arrives late from a flush
+// queue is counted the next time it is asked for, and a session absent or another account's is the
+// one fact every read here gives.
+void GymApi::reviewSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                           const std::string& id) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
+    return;
+  }
+  std::optional<Review> review = log_->review(*caller, SessionId{id});
+  if (!review) {
+    cb(error(drogon::k404NotFound, "no such session"));
+    return;
+  }
+  cb(jsonResponse(toJson(*review)));
+}
+
+// The one destructive action in the product. It takes the session and its sets together and answers
+// with nothing, because there is nothing left to describe.
+void GymApi::discardSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                            const std::string& id) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
+    return;
+  }
+  DiscardOutcome outcome = log_->discard(*caller, SessionId{id});
+  if (outcome == DiscardOutcome::notFound) {
+    cb(error(drogon::k404NotFound, "no such session"));
+    return;
+  }
+  if (outcome == DiscardOutcome::open) {
+    // Its own code, because its repair is unlike every other 409's: nothing the client re-mints or
+    // re-sends helps. Only the device holding the offline queue knows every set has landed, so the
+    // workout is finished (or the four-hour auto-close fires) and the discard is sent again. The
+    // product offers it at the finish screen, after the close, where this is unreachable.
+    cb(error(drogon::k409Conflict, "that session is still running", "session-open"));
+    return;
+  }
+  auto response = drogon::HttpResponse::newHttpResponse();
+  response->setStatusCode(drogon::k204NoContent);
+  cb(response);
 }
 
 // The prefill: what this account did the last time it trained this movement, which is the number
@@ -267,6 +345,121 @@ void GymApi::lastTime(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
     body["sets"] = toJson(outcome.lastTime->sets);
   }
   cb(jsonResponse(body));
+}
+
+// The plan, over four handlers that share one shape. A routine is written as its WHOLE document —
+// create and replace send the same body, and the editor's every change is a read-modify-write of it
+// — so nothing here edits a line, reorders one, or reconciles a partial update against a store that
+// moved underneath it.
+void GymApi::listRoutines(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
+    return;
+  }
+  Json::Value body(Json::objectValue);
+  body["routines"] = toJson(log_->routines(*caller));
+  cb(jsonResponse(body));
+}
+
+void GymApi::createRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
+    return;
+  }
+  std::shared_ptr<Json::Value> json = req->getJsonObject();
+  if (!json) {
+    cb(error(drogon::k400BadRequest, "expected json"));
+    return;
+  }
+  RoutineWriteOutcome outcome{std::nullopt, RoutineWriteError::none};
+  try {
+    outcome = log_->createRoutine(*caller, parseRoutineWrite(*json));
+  } catch (const InvalidTraining&) {
+    // One sentence for every way a routine can be unstorable as written: no entries, a name that is
+    // empty or over eighty characters, a position out of range, an entry outside its bounds.
+    cb(error(drogon::k400BadRequest, "could not read that routine"));
+    return;
+  }
+  if (outcome.error == RoutineWriteError::idTaken) {
+    // Spent by an account this caller cannot see, so it is a fact about an id and never about an
+    // owner. Its own replay is not this refusal — it answers with the routine already stored.
+    cb(error(drogon::k409Conflict, "that routine id is taken", "routine-id-taken"));
+    return;
+  }
+  if (outcome.error == RoutineWriteError::unknownExercise) {
+    // The same fact a set naming no known movement gets, under the same machine word: the entry has
+    // to be resolved against GET /v1/gym/exercises before the plan can hold it.
+    cb(error(drogon::k400BadRequest, "no such exercise", "unknown-exercise"));
+    return;
+  }
+  cb(jsonResponse(toJson(*outcome.routine)));
+}
+
+void GymApi::getRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                        const std::string& id) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
+    return;
+  }
+  std::optional<Routine> routine = log_->routine(*caller, RoutineId{id});
+  if (!routine) {
+    cb(error(drogon::k404NotFound, "no such routine"));
+    return;
+  }
+  cb(jsonResponse(toJson(*routine)));
+}
+
+void GymApi::replaceRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                            const std::string& id) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
+    return;
+  }
+  std::shared_ptr<Json::Value> json = req->getJsonObject();
+  if (!json) {
+    cb(error(drogon::k400BadRequest, "expected json"));
+    return;
+  }
+  // The PATH names the routine being replaced — a read-modify-write sends back the id it read, so
+  // the two always agree, and where they could not the URL is what the store was asked for.
+  RoutineWriteOutcome outcome{std::nullopt, RoutineWriteError::none};
+  try {
+    outcome = log_->replaceRoutine(*caller, RoutineId{id}, parseRoutineWrite(*json));
+  } catch (const InvalidTraining&) {
+    cb(error(drogon::k400BadRequest, "could not read that routine"));
+    return;
+  }
+  if (outcome.error == RoutineWriteError::notFound) {
+    cb(error(drogon::k404NotFound, "no such routine"));
+    return;
+  }
+  if (outcome.error == RoutineWriteError::unknownExercise) {
+    cb(error(drogon::k400BadRequest, "no such exercise", "unknown-exercise"));
+    return;
+  }
+  cb(jsonResponse(toJson(*outcome.routine)));
+}
+
+void GymApi::deleteRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                           const std::string& id) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
+    return;
+  }
+  if (!log_->deleteRoutine(*caller, RoutineId{id})) {
+    cb(error(drogon::k404NotFound, "no such routine"));
+    return;
+  }
+  // Nothing to say and no body to say it in. Every session ever trained under this routine keeps its
+  // frozen snapshot, so deleting the plan never edits what the log says about the past.
+  auto response = drogon::HttpResponse::newHttpResponse();
+  response->setStatusCode(drogon::k204NoContent);
+  cb(response);
 }
 
 }

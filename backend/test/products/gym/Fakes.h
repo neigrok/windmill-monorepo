@@ -2,13 +2,13 @@
 
 #include "products/gym/ports/TrainingRepository.h"
 
-#include <json/json.h>
-
 #include <algorithm>
-#include <memory>
+#include <cstdint>
 #include <optional>
 #include <set>
+#include <stdexcept>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -26,22 +26,34 @@ inline Exercise backSquat() {
   return Exercise{ExerciseId{"back-squat"}, "Back Squat", Pattern::squat, Equipment::barbell,
                   2.5, false};
 }
+inline RoutineId rtId(std::string value = "rt_00000001") { return RoutineId{std::move(value)}; }
+inline RoutineEntry benchEntry(int position = 1) {
+  return RoutineEntry{position, ExerciseId{"bench-press"}, 5, 5, 82.5, 180};
+}
+inline Routine pushA(std::vector<RoutineEntry> entries = {benchEntry()},
+                     std::string id = "rt_00000001") {
+  return Routine{rtId(std::move(id)), uid(), "Push A", 0, std::move(entries)};
+}
 
 // An in-memory TrainingRepository that applies the SAME rules as the SQL — the PK no-op on a
 // duplicate id, the one-open-session refusal that makes a second insert a no-op, max+1-per-
 // exercise numbering, the owner scope on every read, the read-back scoped to the session (a set id
-// spent elsewhere resolves to NOTHING, never to that row), the FK that refuses a set naming no
-// known exercise, the routine name derived from the session's own frozen snapshot, and the IS NULL
-// guard that makes close first-writer-wins. Lift's proposal-apply
-// bug survived precisely as long as its mock didn't model the persistence boundary, so this
-// fidelity is an architecture requirement: the service tests can never quietly disagree with the
-// adapter about what a replay returns — and a fake that mirrors a leak hides it behind green.
+// spent elsewhere resolves to NOTHING, never to that row), the FK that refuses a set or a routine
+// entry naming no known exercise, the routine name read off the session's own frozen snapshot, the
+// derived last-trained instant the routines list sorts on, the cascade that nulls a deleted
+// routine's id on every session that ran it, the cascade that takes a discarded session's sets with
+// it, the (startedAt, id) window that keeps a session out of its own history, and the IS NULL guard
+// that makes close first-writer-wins. Lift's proposal-apply bug survived precisely as long as its
+// mock didn't model the persistence boundary, so this fidelity is an architecture requirement: the
+// service tests can never quietly disagree with the adapter about what a replay returns — and a
+// fake that mirrors a leak hides it behind green.
 class FakeTrainingRepository : public TrainingRepository {
 public:
   std::vector<Exercise> seeds;
   std::vector<std::pair<std::string, Exercise>> customs;   // (owner, row)
   std::vector<Session> sessions;
   std::vector<Set> sets;
+  std::vector<Routine> routineRows;   // the stored rows; lastTrainedAtMs is derived on every read
 
   void seed(const Exercise& exercise) { seeds.push_back(exercise); }
   void seedCustom(const UserId& owner, const Exercise& exercise) {
@@ -90,6 +102,13 @@ public:
   }
 
   void insertSession(const Session& incoming) override {
+    // routine_id is a real foreign key, and it is NOT owner-scoped: a session may point only at a
+    // routine that exists, and a broken pointer is a storage failure rather than a refusal — the
+    // service loads the routine, owner-scoped, before it ever builds this row.
+    bool plannedExists = !incoming.routine;
+    for (const Routine& routine : routineRows)
+      if (incoming.routine == routine.id) plannedExists = true;
+    if (!plannedExists) throw std::runtime_error("no such routine");
     for (const Session& session : sessions)
       if (session.id == incoming.id) return;                              // the PK no-op
     for (const Session& session : sessions)
@@ -152,13 +171,27 @@ public:
     for (const Session& session : page) {
       int count = 0;
       std::set<std::string> names;   // iterates sorted, exactly like the SQL's ORDER BY e.name
+      std::optional<TopWorkingSet> top;
+      std::optional<std::uint64_t> lastSetAtMs;
       for (const Set& set : sets) {
         if (!(set.session == session.id)) continue;
         ++count;
         if (std::optional<std::string> name = nameOf(set.exercise)) names.insert(*name);
+        if (!lastSetAtMs || set.completedAtMs > *lastSetAtMs) lastSetAtMs = set.completedAtMs;
+        // The lateral's ORDER BY weight_kg DESC, reps DESC over the WORKING sets, and the same rule
+        // stated once in TopWorkingSet: heaviest, ties to more reps, never volume.
+        if (set.kind != SetKind::working) continue;
+        if (top && std::pair(set.weightKg, set.reps) <= std::pair(top->weightKg, top->reps))
+          continue;
+        top = TopWorkingSet{set.weightKg, set.reps};
       }
+      // The SQL's `finished_at = coalesce(max(completed_at), started_at)`: the four-hour rule's own
+      // signature, inferred rather than stored, for the reason SessionSummary spells out.
+      const bool closedItself = session.finishedAtMs &&
+                                *session.finishedAtMs == lastSetAtMs.value_or(session.startedAtMs);
       out.push_back(SessionSummary{session, count,
-                                   std::vector<std::string>(names.begin(), names.end())});
+                                   std::vector<std::string>(names.begin(), names.end()), top,
+                                   closedItself});
     }
     return out;
   }
@@ -204,26 +237,167 @@ public:
         block.push_back(set);
     std::sort(block.begin(), block.end(),
               [](const Set& a, const Set& b) { return a.setNumber < b.setNumber; });
-    return {LastTime{*newest, routineNameOf(*newest), block}, LastTimeError::none};
+    // The name comes off the session's own frozen snapshot — never off a side map a test author
+    // fills in, which is how a fake comes to agree with an answer the real store cannot produce.
+    // The snapshot is typed now, so "the name is a string or there is no name" is a fact of the
+    // type; what the adapter's `jsonb_typeof(plan->'routine') = 'string'` guard still defends
+    // against is a raw blob no writer of ours can lay down (PgTrainingRepositoryTest pins that).
+    return {LastTime{*newest, newest->plan ? newest->plan->routineName : "", block},
+            LastTimeError::none};
+  }
+
+  // The same three answers the SQL gives, under the same rules. The marks are DISTINCT ON in a
+  // vector: the qualifying prior working sets ordered by (movement, load, most reps, earliest
+  // instant), keeping the first of each pair — so a mark carries the best reps ever done at that
+  // load and is dated the day they were first hit. Both windows compare the PAIR (startedAt, id),
+  // which is what keeps this session out of its own history: without it a review re-read after the
+  // finish would find every set tying itself and would report no record at all.
+  SessionHistory historyFor(const UserId& user, const Session& session) override {
+    SessionHistory history;
+    std::vector<Set> priorWorking;
+    for (const Set& prior : sets) {
+      if (prior.kind != SetKind::working) continue;
+      bool earlierAndFinished = false;
+      for (const Session& ran : sessions) {
+        if (!(ran.id == prior.session) || !(ran.user == user) || !ran.finishedAtMs) continue;
+        earlierAndFinished = std::pair(ran.startedAtMs, ran.id.str()) <
+                             std::pair(session.startedAtMs, session.id.str());
+      }
+      if (!earlierAndFinished) continue;
+      bool workedToday = false;
+      for (const Set& today : sets)
+        if (today.session == session.id && today.exercise == prior.exercise &&
+            today.kind == SetKind::working)
+          workedToday = true;
+      if (workedToday) priorWorking.push_back(prior);
+    }
+    std::sort(priorWorking.begin(), priorWorking.end(), [](const Set& a, const Set& b) {
+      return std::tuple(a.exercise.str(), a.weightKg, -a.reps, a.completedAtMs) <
+             std::tuple(b.exercise.str(), b.weightKg, -b.reps, b.completedAtMs);
+    });
+    for (const Set& prior : priorWorking) {
+      if (!history.marks.empty() && history.marks.back().exercise == prior.exercise &&
+          history.marks.back().weightKg == prior.weightKg)
+        continue;
+      history.marks.push_back(
+          PriorMark{prior.exercise, prior.weightKg, prior.reps, prior.completedAtMs});
+    }
+
+    if (!session.routine) return history;   // no routine, no session to stand against
+    for (const Session& ran : sessions) {
+      if (!(ran.user == user) || !ran.finishedAtMs || ran.routine != session.routine) continue;
+      if (std::pair(ran.startedAtMs, ran.id.str()) >=
+          std::pair(session.startedAtMs, session.id.str()))
+        continue;
+      if (history.previous && std::pair(ran.startedAtMs, ran.id.str()) <
+                                  std::pair(history.previous->startedAtMs,
+                                            history.previous->id.str()))
+        continue;
+      history.previous = ran;
+    }
+    if (history.previous) history.previousSets = setsOf(history.previous->id);
+    return history;
+  }
+
+  bool deleteSession(const UserId& user, const SessionId& id) override {
+    for (auto row = sessions.begin(); row != sessions.end(); ++row) {
+      if (!(row->id == id) || !(row->user == user)) continue;
+      sessions.erase(row);
+      // `on delete cascade`: the sets go with the session, so nothing is left pointing at a row
+      // that is gone — and a fake that kept them would hide exactly that leak behind green.
+      std::erase_if(sets, [&](const Set& set) { return set.session == id; });
+      return true;
+    }
+    return false;   // absent and another account's are the same fact
+  }
+
+  std::vector<Routine> routines(const UserId& user) override {
+    std::vector<Routine> out;
+    for (const Routine& routine : routineRows)
+      if (routine.user == user) out.push_back(read(routine));
+    // The routines screen's order, and the SQL's: most recently trained first, the never-trained
+    // after them rather than above them, ties broken by (position, id) so the walk is deterministic.
+    std::sort(out.begin(), out.end(), [](const Routine& a, const Routine& b) {
+      if (a.lastTrainedAtMs != b.lastTrainedAtMs) {
+        if (!a.lastTrainedAtMs) return false;
+        if (!b.lastTrainedAtMs) return true;
+        return *a.lastTrainedAtMs > *b.lastTrainedAtMs;
+      }
+      return std::pair(a.position, a.id.str()) < std::pair(b.position, b.id.str());
+    });
+    return out;
+  }
+
+  std::optional<Routine> routine(const UserId& user, const RoutineId& id) override {
+    for (const Routine& routine : routineRows)
+      if (routine.user == user && routine.id == id) return read(routine);
+    return std::nullopt;   // another account's routine is the same fact as no routine at all
+  }
+
+  RoutineWriteOutcome insertRoutine(const Routine& incoming) override {
+    for (const Routine& routine : routineRows) {
+      if (!(routine.id == incoming.id)) continue;
+      if (routine.user == incoming.user)
+        return {read(routine), RoutineWriteError::none};   // the PK no-op: a replay reads back stored
+      return {std::nullopt, RoutineWriteError::idTaken};   // the id is spent by an account we can't see
+    }
+    // The exercise FK, stated as the same value the adapter reports its foreign_key_violation as.
+    // The whole document is one transaction there, so a refused line leaves NO row behind.
+    for (const RoutineEntry& entry : incoming.entries)
+      if (!nameOf(entry.exercise)) return {std::nullopt, RoutineWriteError::unknownExercise};
+    routineRows.push_back(incoming);
+    return {read(incoming), RoutineWriteError::none};
+  }
+
+  RoutineWriteOutcome replaceRoutine(const Routine& incoming) override {
+    for (Routine& routine : routineRows) {
+      if (!(routine.id == incoming.id) || !(routine.user == incoming.user)) continue;
+      for (const RoutineEntry& entry : incoming.entries)
+        if (!nameOf(entry.exercise)) return {std::nullopt, RoutineWriteError::unknownExercise};
+      routine = incoming;
+      return {read(routine), RoutineWriteError::none};
+    }
+    return {std::nullopt, RoutineWriteError::notFound};   // absent and another's are one answer
+  }
+
+  bool deleteRoutine(const UserId& user, const RoutineId& id) override {
+    for (auto row = routineRows.begin(); row != routineRows.end(); ++row) {
+      if (!(row->id == id) || !(row->user == user)) continue;
+      routineRows.erase(row);
+      // `on delete set null`: the sessions trained under it keep their frozen snapshots and lose
+      // only the pointer, so the log still says which day of the program each one was.
+      for (Session& session : sessions)
+        if (session.routine == id) session.routine = std::nullopt;
+      return true;
+    }
+    return false;
+  }
+
+  ExerciseInsertOutcome insertExercise(const UserId& owner, const Exercise& incoming) override {
+    for (const Exercise& seed : seeds)
+      if (seed.id == incoming.id) return {std::nullopt, ExerciseInsertError::idTaken};
+    for (const auto& [heldBy, exercise] : customs) {
+      if (!(exercise.id == incoming.id)) continue;
+      if (heldBy == owner.str())
+        return {exercise, ExerciseInsertError::none};      // the caller's own id: a replay
+      return {std::nullopt, ExerciseInsertError::idTaken};
+    }
+    seedCustom(owner, incoming);
+    return {incoming, ExerciseInsertError::none};
   }
 
 private:
-  // Derived from the session's own frozen snapshot, exactly like the adapter's
-  // `CASE WHEN jsonb_typeof(plan->'routine') = 'string' THEN plan->>'routine' ELSE '' END` — never
-  // from a side map a test author fills in, which is how a fake comes to agree with an answer the
-  // real store cannot produce. Anything that is not a string in an object plan is no name at all.
-  std::string routineNameOf(const Session& session) const {
-    if (session.planJson.empty()) return "";
-    Json::Value plan;
-    Json::CharReaderBuilder builder;
-    const std::unique_ptr<Json::CharReader> reader{builder.newCharReader()};
-    const char* begin = session.planJson.data();
-    std::string errors;
-    if (!reader->parse(begin, begin + session.planJson.size(), &plan, &errors)) return "";
-    if (!plan.isObject()) return "";
-    const Json::Value routine = plan.get("routine", Json::Value());
-    if (!routine.isString()) return "";
-    return routine.asString();
+  // Every routine read carries the store's derived answer, never the value a caller happened to
+  // construct with: the newest session this account started under it, which is what the list sorts
+  // on and what the routines screen prints as "trained {when}".
+  Routine read(const Routine& stored) const {
+    std::optional<std::uint64_t> lastTrained;
+    for (const Session& session : sessions) {
+      if (!(session.user == stored.user) || session.routine != stored.id) continue;
+      if (!lastTrained || session.startedAtMs > *lastTrained) lastTrained = session.startedAtMs;
+    }
+    return Routine{stored.id, stored.user, stored.name, stored.position, stored.entries,
+                   lastTrained};
   }
 
   std::optional<std::string> nameOf(const ExerciseId& id) const {

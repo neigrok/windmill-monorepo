@@ -14,28 +14,61 @@ void settleOpen(TrainingRepository& repo, const UserId& user, std::uint64_t nowM
   if (!closeAt) return;
   repo.close(open->id, *closeAt);
 }
+
+// What the store ALREADY holds for this caller, and nothing else: their own row under this id first
+// — so a replay is idempotent whatever else is going on — then the open session, whose fate the
+// caller's stated intent decides. Both answers carry the session's OWN stored snapshot, which is
+// how pressing Start cannot re-plan a workout that is already running. An empty answer means the
+// store holds nothing this caller is entitled to, and only then does a session get created.
+std::optional<StartOutcome> heldFor(TrainingRepository& repo, const UserId& user,
+                                    const SessionStart& incoming) {
+  std::optional<Session> own = repo.session(user, incoming.id);
+  if (own) return StartOutcome{*own, StartError::none};
+  std::optional<Session> open = repo.open(user);
+  if (!open) return std::nullopt;
+  if (incoming.joinOpenSession) return StartOutcome{*open, StartError::none};
+  return StartOutcome{std::nullopt, StartError::alreadyOpen};
+}
 }
 
 LogService::LogService(TrainingRepository& repo, Clock& clock) : repo_(repo), clock_(clock) {}
 
-// Idempotent by construction, no guard flag anywhere, and the caller's OWN id is resolved first: a
+// Idempotent by construction, no guard flag anywhere, and the caller's OWN id is resolved FIRST: a
 // replayed POST reads back the session it minted — open, finished or auto-closed — so a replay
 // never depends on what else happens to be open, and it is idempotent whichever Start it meant.
 // Only when nothing landed under that id does the open session enter the story, and there the
-// caller's intent decides: a double-tap that minted a second id no-ops on the one-open index and
-// joins the first tap's session (so does the borrowed iPad, §11.3), while a caller that said it
-// will not join is refused rather than handed a live workout it would file a past session's sets
-// into. When NOTHING resolves and nothing is open, the insert no-oped on a row owned by someone
-// else — the reply is a refusal, never a session the store never accepted.
+// caller's intent decides: a double-tap that minted a second id joins the first tap's session (so
+// does the borrowed iPad, §11.3), while a caller that said it will not join is refused rather than
+// handed a live workout it would file a past session's sets into.
+//
+// Reading before writing is what makes that order real rather than merely intended. The plan is
+// frozen HERE from the store's own routine (§2.5) — but only on the path that actually CREATES a
+// session, because freezing it earlier made an absent routine refuse a replay and a join too, and
+// neither of those is planning anything: they are being handed a session that already exists. A
+// routine deleted after the workout began must not 404 the phone out of its own live session.
+// So both branches that answer with a session the store already holds answer with ITS stored
+// snapshot, whatever routineId this call carried — a replay keeps the plan it was started under,
+// and pressing Start cannot re-plan a workout that is already running.
+//
+// The write is still resolved by a read: the insert no-ops on the PK (a replay that raced this one)
+// and on the one-open index (a double-tap), so what the store holds AFTERWARDS is the answer. When
+// nothing resolves even then, the insert no-oped on a row owned by someone else — the reply is a
+// refusal, never a session the store never accepted.
 StartOutcome LogService::start(const UserId& user, const SessionStart& incoming) {
   settleOpen(repo_, user, clock_.nowMs());
-  repo_.insertSession(Session{incoming.id, user, incoming.startedAtMs});
-  std::optional<Session> stored = repo_.session(user, incoming.id);
-  if (stored) return {*stored, StartError::none};
-  std::optional<Session> open = repo_.open(user);
-  if (!open) return {std::nullopt, StartError::idTaken};
-  if (incoming.joinOpenSession) return {*open, StartError::none};
-  return {std::nullopt, StartError::alreadyOpen};
+  std::optional<StartOutcome> already = heldFor(repo_, user, incoming);
+  if (already) return *already;
+  std::optional<PlanSnapshot> plan;
+  if (incoming.routine) {
+    std::optional<Routine> planned = repo_.routine(user, *incoming.routine);
+    if (!planned) return {std::nullopt, StartError::unknownRoutine};
+    plan = snapshotOf(*planned);
+  }
+  repo_.insertSession(
+      Session{incoming.id, user, incoming.startedAtMs, std::nullopt, incoming.routine, plan});
+  std::optional<StartOutcome> landed = heldFor(repo_, user, incoming);
+  if (landed) return *landed;
+  return {std::nullopt, StartError::idTaken};
 }
 
 // No auto-close here on purpose: the background flush replays offline sets into whatever session
@@ -102,6 +135,69 @@ std::vector<Exercise> LogService::catalog(const UserId& user) {
 // not the same thing to a client.
 LastTimeOutcome LogService::lastTime(const UserId& user, const ExerciseId& exercise) {
   return repo_.lastTime(user, exercise);
+}
+
+std::vector<Routine> LogService::routines(const UserId& user) {
+  return repo_.routines(user);
+}
+
+std::optional<Routine> LogService::routine(const UserId& user, const RoutineId& id) {
+  return repo_.routine(user, id);
+}
+
+// Both routine writes are one construction and one call, and that is the whole point of the shape:
+// the entity's constructor is the entire validation (it throws InvalidTraining, which the wire
+// turns into a 400), and the store's outcome is the entire refusal set. Neither write reads before
+// it writes — a load-then-decide here would be a race the SQL already settles, and the create's
+// idempotency is the id, not a lookup: a create that lost its reply and was sent again reads back
+// the STORED routine untouched, exactly as a replayed start does.
+RoutineWriteOutcome LogService::createRoutine(const UserId& user, const RoutineWrite& incoming) {
+  return repo_.insertRoutine(
+      Routine{incoming.id, user, incoming.name, incoming.position, incoming.entries});
+}
+
+RoutineWriteOutcome LogService::replaceRoutine(const UserId& user, const RoutineId& id,
+                                               const RoutineWrite& incoming) {
+  return repo_.replaceRoutine(Routine{id, user, incoming.name, incoming.position, incoming.entries});
+}
+
+bool LogService::deleteRoutine(const UserId& user, const RoutineId& id) {
+  return repo_.deleteRoutine(user, id);
+}
+
+// The one site that applies the equipment's default step, so a movement created without one climbs
+// like the seed row it sits beside and no client has to carry the table. Every created movement is
+// custom by construction — the seeds are the schema's, and nothing on the wire can mint one.
+ExerciseInsertOutcome LogService::createExercise(const UserId& user, const ExerciseWrite& incoming) {
+  return repo_.insertExercise(
+      user, Exercise{incoming.id, incoming.name, incoming.pattern, incoming.equipment,
+                     incoming.stepKg.value_or(defaultStepKg(incoming.equipment)), true});
+}
+
+// Two phases and no third: load the session, its sets and the history the rules need, then hand all
+// three to the pure rule and answer with what it computed. Nothing here decides anything — every
+// number on the finish screen is the domain's, so the web and the phone cannot print two different
+// records for one workout. Nothing is stored either: the review is recomputed on every read, which
+// is what keeps it right after a set arrives late from a flush queue.
+std::optional<Review> LogService::review(const UserId& user, const SessionId& session) {
+  std::optional<Session> stored = repo_.session(user, session);
+  if (!stored) return std::nullopt;
+  return wm::gym::review(*stored, repo_.setsOf(session), repo_.historyFor(user, *stored));
+}
+
+// The one destructive action in the product, and its only refusal is the one the store cannot state:
+// a session still running. Only the device holding the offline queue knows every set landed, so
+// deleting a workout somebody is still logging into destroys sets in flight — the door is offered at
+// the finish screen, after the close. Staleness is settled by a start and by a log read (§3.2) and
+// deliberately not here: a write on the way to a delete would be a rule this door invented. The last
+// refusal is the race — the row went between the load and the delete — and it is the same fact as
+// never having been there at all.
+DiscardOutcome LogService::discard(const UserId& user, const SessionId& session) {
+  std::optional<Session> stored = repo_.session(user, session);
+  if (!stored) return DiscardOutcome::notFound;
+  if (!stored->finishedAtMs) return DiscardOutcome::open;
+  if (!repo_.deleteSession(user, session)) return DiscardOutcome::notFound;
+  return DiscardOutcome::done;
 }
 
 }

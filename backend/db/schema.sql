@@ -943,9 +943,9 @@ create table if not exists journal_page_curation (
 -- forever, and the coach could only address exercises by exact string. Here a rename is a
 -- metadata edit on one row and every set keeps pointing at the same id.
 -- Seeded with 64 movements in this migration (ON CONFLICT DO NOTHING — re-runnable, and user
--- edits to name survive redeploys). created_by NULL marks a seed; phase-2 custom exercises
--- land as rows with created_by = the owner, visible only to them — a column now, not a
--- migration later.
+-- edits to name survive redeploys). created_by NULL marks a seed; a movement a lifter creates
+-- (POST /v1/gym/exercises) lands as a row with created_by = the owner and is visible only to
+-- them — every read is `created_by IS NULL OR created_by = :caller`.
 create table if not exists gym_exercises (
   id          text primary key,
   name        text not null,
@@ -959,10 +959,12 @@ create table if not exists gym_exercises (
   created_at  timestamptz not null default now()
 );
 
--- Phase-2 UI, phase-0 schema. Entries are RELATIONAL, not a JSON blob — Lift persisted
--- per-set pyramid targets as an opaque blob ("the database can never query or aggregate it")
--- and decode failures silently returned [], losing the program. The one legitimate blob is
--- the session's frozen snapshot (below), which is a copy by definition.
+-- The plan. Entries are RELATIONAL, not a JSON blob — Lift persisted per-set pyramid targets as
+-- an opaque blob ("the database can never query or aggregate it") and decode failures silently
+-- returned [], losing the program. The one legitimate blob is the session's frozen snapshot
+-- (below), which is a copy by definition. A routine is written as a WHOLE document in one
+-- transaction — the row and its entries together — so a routine holding no entries is not a state
+-- this schema can be left in, and the client-minted id is the idempotency key like every other.
 create table if not exists gym_routines (
   id          text primary key,                     -- client-minted 'rt_<hex>'
   user_id     uuid not null references users(id) on delete cascade,
@@ -973,25 +975,39 @@ create table if not exists gym_routines (
 create index if not exists gym_routines_user on gym_routines (user_id, position);
 
 -- The same movement twice in one routine — bench heavy, then bench back-off — is two rows with
--- two positions (Lift collapsed them into one set counter). rest_seconds is the phase-2
--- rest-timer's reserved column; a null target weight means "last time".
+-- two positions (Lift collapsed them into one set counter). Positions are dense and 1-based, and
+-- a replace lays the whole run down again: entries have no id to churn, their key IS their
+-- position. Three columns mean something by being null: a null target_reps is "as many as you
+-- can" (the canon's `3 × max` — a chin-up names no rep target), a null target weight means
+-- "whatever you did last time", and a null rest_seconds is the client's own default.
 create table if not exists gym_routine_entries (
   routine_id       text not null references gym_routines(id) on delete cascade,
   position         int  not null check (position >= 1),
   exercise_id      text not null references gym_exercises(id),
   target_sets      int  not null default 3 check (target_sets between 1 and 20),
-  target_reps      int  not null default 8 check (target_reps between 1 and 100),
+  target_reps      int  check (target_reps between 1 and 100),                  -- null = max
   target_weight_kg numeric(6,2) check (target_weight_kg between -500 and 500),  -- null = last time
   rest_seconds     int check (rest_seconds between 15 and 900),                 -- null = client default
   primary key (routine_id, position)
 );
+-- target_reps was `not null default 8` until routines met the chin-up. This run is re-applied on
+-- every deploy and carries no ALTER machinery, so the change is its own pair of idempotent
+-- statements beside the table: dropping a constraint or a default that is already gone succeeds, so
+-- a second apply is a no-op, and a database created before this line ends up shaped exactly like
+-- one created after it. The default goes with the NOT NULL because 8 is a rep target nobody asked
+-- for, and this column's absence now MEANS something.
+alter table gym_routine_entries alter column target_reps drop not null;
+alter table gym_routine_entries alter column target_reps drop default;
 
 -- A session is started by the device with a CLIENT-MINTED id ('ses_<hex>'). The id IS the
 -- idempotency key: a double-tapped Start, an offline replay, a retried POST all conflict on
 -- the PK and no-op — Lift minted a phantom session from a double-tap and needed a guard
 -- nobody wrote for a year. One open session per user is enforced by the partial unique index,
--- not by application memory: starting while another is open JOINS the open session.
--- plan is a FROZEN jsonb copy of the routine at start (null = ad-hoc). Lift stored templateId
+-- not by application memory: starting while another is open JOINS the open session, unless the
+-- caller states it will not join (backfill and import mean "create exactly this past session"),
+-- in which case the no-op is reported as a refusal.
+-- plan is a FROZEN jsonb copy of the routine at start, composed by the SERVER from its own
+-- routine row and never by a client (null = ad-hoc). Lift stored templateId
 -- + a copied name, so it could say what you did and never what you were supposed to do, and
 -- editing a template mid-workout rewrote the program's past. A snapshot is what makes
 -- phase-3 plan-vs-actual possible at all. routine_id is informational (set null on delete);
@@ -1016,7 +1032,8 @@ create unique index if not exists gym_sessions_one_open on gym_sessions (user_id
 -- schema decision, not a feature decision: a warmup must not count toward volume, and
 -- band-assisted work logs NEGATIVE kg, which naive volume = weight × reps silently subtracts
 -- from every total (Lift shipped exactly that). The volume contribution of a set kind is a
--- domain decision, deferred to the first aggregating bet; the storage is decided here.
+-- domain decision and the finish surface took it: WORKING sets only, and a warmup, a drop and a
+-- failure count toward nothing (products/gym/domain/Review.h). The storage is decided here.
 -- set_number is server-assigned max+1 per (session, exercise) — not count+1: after a phase-2
 -- delete + renumber, count+1 would mint a duplicate (a bug Lift's own spec had backwards).
 -- Canonical unit is kg, numeric(6,2) so 72.5 is 72.5 forever; there is no lb column.

@@ -12,7 +12,8 @@ namespace wm::gym {
 // the SQL: insertSession no-ops on ANY unique conflict (the PK replay and the one-open partial
 // index both), insertSet locks the session row, computes max+1 numbering in the INSERT and reads
 // the stored row back scoped to that session, so a replay returns the original byte-for-byte and
-// a spent id resolves to nothing rather than to another account's set. Every pqxx error the store
+// a spent id resolves to nothing rather than to another account's set. insertRoutine is the same
+// story over two tables in one transaction, and insertExercise over one. Every pqxx error the store
 // has an answer for is translated here into the port's typed facts; the rest ride to the house 500.
 class PgTrainingRepository : public TrainingRepository {
 public:
@@ -29,6 +30,14 @@ public:
   std::vector<SessionSummary> log(const UserId& user, const LogCursor& cursor) override;
   std::vector<Set> setsOf(const SessionId& id) override;
   LastTimeOutcome lastTime(const UserId& user, const ExerciseId& exercise) override;
+  SessionHistory historyFor(const UserId& user, const Session& session) override;
+  bool deleteSession(const UserId& user, const SessionId& id) override;
+  std::vector<Routine> routines(const UserId& user) override;
+  std::optional<Routine> routine(const UserId& user, const RoutineId& id) override;
+  RoutineWriteOutcome insertRoutine(const Routine& incoming) override;
+  RoutineWriteOutcome replaceRoutine(const Routine& incoming) override;
+  bool deleteRoutine(const UserId& user, const RoutineId& id) override;
+  ExerciseInsertOutcome insertExercise(const UserId& owner, const Exercise& incoming) override;
 
 private:
   std::string connString_;

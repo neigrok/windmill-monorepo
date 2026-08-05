@@ -1,8 +1,8 @@
 #include "products/gym/adapters/json/TrainingJson.h"
 
-#include "platform/adapters/json/JsonText.h"
-
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace wm::gym {
 
@@ -19,6 +19,17 @@ std::uint64_t instantOf(const Json::Value& body, const char* field) {
   if (instant > kMaxInstantMs) throw InvalidTraining(std::string(field) + " is past the end of time");
   return instant;
 }
+
+// The comparison's two sides are the same three numbers, so they are written by one hand — the line
+// a client prints for "before" is the line it prints for "now", and neither can drift into a shape
+// of its own.
+Json::Value topSetJson(const TopSet& top) {
+  Json::Value body(Json::objectValue);
+  body["weightKg"] = top.weightKg;
+  body["reps"] = top.reps;
+  body["sets"] = top.sets;
+  return body;
+}
 }
 
 SessionStart parseSessionStart(const Json::Value& body) {
@@ -32,6 +43,12 @@ SessionStart parseSessionStart(const Json::Value& body) {
     if (!body["joinOpenSession"].isBool())
       throw InvalidTraining("joinOpenSession must be a boolean");
     start.joinOpenSession = body["joinOpenSession"].asBool();
+  }
+  // The day of the program this workout is. Omitted is the ad-hoc session; present, the server
+  // loads that routine and freezes it — the client sends the id and never the plan.
+  if (body.isMember("routineId") && !body["routineId"].isNull()) {
+    if (!body["routineId"].isString()) throw InvalidTraining("routineId must be a string");
+    start.routine = RoutineId{body["routineId"].asString()};
   }
   return start;
 }
@@ -68,18 +85,81 @@ std::uint64_t parseFinish(const Json::Value& body) {
   return instantOf(body, "finishedAt");
 }
 
+RoutineWrite parseRoutineWrite(const Json::Value& body) {
+  if (!body.isObject()) throw InvalidTraining("a routine must be a json object");
+  if (!body["id"].isString()) throw InvalidTraining("id must be a string");
+  if (!body["name"].isString()) throw InvalidTraining("name must be a string");
+  if (!body["position"].isInt()) throw InvalidTraining("position must be a whole number");
+  if (!body["entries"].isArray()) throw InvalidTraining("entries must be an array");
+
+  std::vector<RoutineEntry> entries;
+  for (const Json::Value& entry : body["entries"]) {
+    if (!entry.isObject()) throw InvalidTraining("a routine entry must be a json object");
+    if (!entry["exerciseId"].isString()) throw InvalidTraining("exerciseId must be a string");
+    if (!entry["targetSets"].isInt()) throw InvalidTraining("targetSets must be a whole number");
+    // All three optionals mean something by their absence — "as many as you can", "whatever you did
+    // last time" and "the client's own rest default" — so a present value type-checks strictly and
+    // an absent one is never filled in with a zero that would read as a real target.
+    std::optional<int> targetReps;
+    if (entry.isMember("targetReps") && !entry["targetReps"].isNull()) {
+      if (!entry["targetReps"].isInt()) throw InvalidTraining("targetReps must be a whole number");
+      targetReps = entry["targetReps"].asInt();
+    }
+    std::optional<double> targetWeightKg;
+    if (entry.isMember("targetWeightKg") && !entry["targetWeightKg"].isNull()) {
+      if (!entry["targetWeightKg"].isNumeric())
+        throw InvalidTraining("targetWeightKg must be a number");
+      targetWeightKg = entry["targetWeightKg"].asDouble();
+    }
+    std::optional<int> restSeconds;
+    if (entry.isMember("restSeconds") && !entry["restSeconds"].isNull()) {
+      if (!entry["restSeconds"].isInt()) throw InvalidTraining("restSeconds must be a whole number");
+      restSeconds = entry["restSeconds"].asInt();
+    }
+    // The position is the order the lines arrived in — no client numbers its own, and the entity
+    // refuses anything but 1..n, so the wire order and the store's key cannot drift apart.
+    entries.push_back(RoutineEntry{static_cast<int>(entries.size()) + 1,
+                                   ExerciseId{entry["exerciseId"].asString()},
+                                   entry["targetSets"].asInt(), targetReps, targetWeightKg,
+                                   restSeconds});
+  }
+  return RoutineWrite{RoutineId{body["id"].asString()}, body["name"].asString(),
+                      body["position"].asInt(), std::move(entries)};
+}
+
+ExerciseWrite parseExerciseWrite(const Json::Value& body) {
+  if (!body.isObject()) throw InvalidTraining("a movement must be a json object");
+  if (!body["id"].isString()) throw InvalidTraining("id must be a string");
+  // A created movement's id is client-minted like every other, so it obeys the one id-shape rule —
+  // which the Exercise constructor itself cannot carry, because the 64 seeded slugs ('dip') are the
+  // schema's own and are shorter than any minted id may be.
+  if (!wellFormedId(body["id"].asString())) throw InvalidTraining("bad exercise id");
+  if (!body["name"].isString()) throw InvalidTraining("name must be a string");
+  if (!body["pattern"].isString()) throw InvalidTraining("pattern must be a string");
+  if (!body["equipment"].isString()) throw InvalidTraining("equipment must be a string");
+
+  ExerciseWrite write{ExerciseId{body["id"].asString()}, body["name"].asString(),
+                      parsePattern(body["pattern"].asString()),
+                      parseEquipment(body["equipment"].asString()), std::nullopt};
+  // Omitted takes the equipment's default step, which the domain owns — the client is never made to
+  // carry a table it would then have to keep in step with the seed.
+  if (body.isMember("stepKg") && !body["stepKg"].isNull()) {
+    if (!body["stepKg"].isNumeric()) throw InvalidTraining("stepKg must be a number");
+    write.stepKg = body["stepKg"].asDouble();
+  }
+  return write;
+}
+
 Json::Value toJson(const Session& session) {
   Json::Value body(Json::objectValue);
   body["id"] = session.id.str();
   body["startedAt"] = Json::Value::UInt64(session.startedAtMs);
   if (session.finishedAtMs) body["finishedAt"] = Json::Value::UInt64(*session.finishedAtMs);
   if (session.routine) body["routineId"] = session.routine->str();
-  if (!session.planJson.empty()) {
-    // The frozen snapshot travels as the object it is, not a string of one; an unparseable stored
-    // blob (which nothing can currently write) is omitted rather than corrupting the reply.
-    Json::Value plan = parse(session.planJson);
-    if (!plan.isNull()) body["plan"] = plan;
-  }
+  // The frozen snapshot travels as the object it is, not a string of one, and it is emitted from
+  // the typed value rather than re-parsed out of storage — the shape is the domain's now, so the
+  // wire cannot disagree with what the session actually holds.
+  if (session.plan) body["plan"] = toJson(*session.plan);
   return body;
 }
 
@@ -103,6 +183,28 @@ Json::Value toJson(const std::vector<Set>& sets) {
   return array;
 }
 
+// One row of the log, which is the session plus the four things the list says about it without
+// loading its sets. topSet is omitted for a session holding no working set — a warmup-only session,
+// or one still empty — because "0 kg × 0" is not a lighter workout, it is no workout yet.
+// closedItself is always present: it is a fact about every row rather than an optional the client
+// tests for, and the note it draws ("closed on its own — no set for four hours") is a sentence the
+// row either says or does not.
+Json::Value toJson(const SessionSummary& summary) {
+  Json::Value body = toJson(summary.session);
+  body["setCount"] = summary.setCount;
+  Json::Value names(Json::arrayValue);
+  for (const std::string& name : summary.exerciseNames) names.append(name);
+  body["exercises"] = names;
+  if (summary.topSet) {
+    Json::Value top(Json::objectValue);
+    top["weightKg"] = summary.topSet->weightKg;
+    top["reps"] = summary.topSet->reps;
+    body["topSet"] = top;
+  }
+  body["closedItself"] = summary.closedItself;
+  return body;
+}
+
 Json::Value toJson(const Exercise& exercise) {
   Json::Value body(Json::objectValue);
   body["id"] = exercise.id.str();
@@ -118,6 +220,129 @@ Json::Value toJson(const std::vector<Exercise>& exercises) {
   Json::Value array(Json::arrayValue);
   for (const Exercise& exercise : exercises) array.append(toJson(exercise));
   return array;
+}
+
+Json::Value toJson(const Routine& routine) {
+  Json::Value body(Json::objectValue);
+  body["id"] = routine.id.str();
+  body["name"] = routine.name;
+  body["position"] = routine.position;
+  // Absent until the routine has been trained once — the routines screen reads the absence as
+  // "never", which is a different sentence from any instant it could otherwise be handed.
+  if (routine.lastTrainedAtMs) body["lastTrainedAt"] = Json::Value::UInt64(*routine.lastTrainedAtMs);
+  Json::Value entries(Json::arrayValue);
+  for (const RoutineEntry& entry : routine.entries) {
+    Json::Value line(Json::objectValue);
+    line["position"] = entry.position;
+    line["exerciseId"] = entry.exercise.str();
+    line["targetSets"] = entry.targetSets;
+    if (entry.targetReps) line["targetReps"] = *entry.targetReps;
+    if (entry.targetWeightKg) line["targetWeightKg"] = *entry.targetWeightKg;
+    if (entry.restSeconds) line["restSeconds"] = *entry.restSeconds;
+    entries.append(line);
+  }
+  body["entries"] = entries;
+  return body;
+}
+
+Json::Value toJson(const std::vector<Routine>& routines) {
+  Json::Value array(Json::arrayValue);
+  for (const Routine& routine : routines) array.append(toJson(routine));
+  return array;
+}
+
+Json::Value toJson(const PlanSnapshot& plan) {
+  Json::Value body(Json::objectValue);
+  body["routine"] = plan.routineName;
+  Json::Value entries(Json::arrayValue);
+  for (const PlanEntry& entry : plan.entries) {
+    Json::Value line(Json::objectValue);
+    line["exerciseId"] = entry.exercise.str();
+    line["sets"] = entry.sets;
+    if (entry.reps) line["reps"] = *entry.reps;
+    if (entry.weightKg) line["weightKg"] = *entry.weightKg;
+    if (entry.restSeconds) line["restSeconds"] = *entry.restSeconds;
+    entries.append(line);
+  }
+  body["entries"] = entries;
+  return body;
+}
+
+// The finish screen, one way. Every optional here is OMITTED when absent and never null, and each
+// omission is a sentence the client draws: no top e1RM means nothing in the session was loaded, no
+// record means the session earned none, no comparison means there was nothing honest to compare
+// against. `planned` carries the target only — rest is the device-local timer's business, not the
+// finish screen's — and `routine` is dropped when the session it stands against holds no name,
+// because "Against last " is worse than the band naming no day at all.
+Json::Value toJson(const Review& review) {
+  Json::Value stats(Json::objectValue);
+  stats["durationMs"] = Json::Value::UInt64(review.stats.durationMs);
+  stats["workingSets"] = review.stats.workingSets;
+  if (review.stats.topE1rm) stats["topE1rm"] = *review.stats.topE1rm;
+  Json::Value body(Json::objectValue);
+  body["stats"] = stats;
+  body["slight"] = review.slight;
+  if (review.record) {
+    Json::Value record(Json::objectValue);
+    record["kind"] = toString(review.record->kind);
+    record["exerciseId"] = review.record->exercise.str();
+    record["value"] = review.record->value;
+    record["weightKg"] = review.record->weightKg;
+    record["reps"] = review.record->reps;
+    record["previous"] = review.record->previous;
+    record["previousAt"] = Json::Value::UInt64(review.record->previousAtMs);
+    body["record"] = record;
+  }
+  if (!review.against) return body;
+
+  Json::Value movements(Json::arrayValue);
+  for (const AgainstMovement& movement : review.against->movements) {
+    Json::Value line(Json::objectValue);
+    line["exerciseId"] = movement.exercise.str();
+    line["now"] = topSetJson(movement.now);
+    if (movement.before) line["before"] = topSetJson(*movement.before);
+    if (movement.planned) {
+      Json::Value planned(Json::objectValue);
+      planned["sets"] = movement.planned->sets;
+      if (movement.planned->reps) planned["reps"] = *movement.planned->reps;
+      if (movement.planned->weightKg) planned["weightKg"] = *movement.planned->weightKg;
+      line["planned"] = planned;
+    }
+    movements.append(line);
+  }
+  Json::Value against(Json::objectValue);
+  against["sessionId"] = review.against->session.str();
+  if (!review.against->routineName.empty()) against["routine"] = review.against->routineName;
+  against["startedAt"] = Json::Value::UInt64(review.against->startedAtMs);
+  against["movements"] = movements;
+  body["against"] = against;
+  return body;
+}
+
+// The read half of the pair, and the one function here that clamps instead of throwing: it reads
+// what STORAGE holds, not what a client sent, so a blob written by a deploy that has since been
+// replaced — or by a hand at the console — must leave the session readable. A non-object is no plan
+// at all; a name that is not a string is no name, exactly as the prefill's SQL decides it; an entry
+// missing the three fields it is made of is skipped rather than invented.
+std::optional<PlanSnapshot> planFrom(const Json::Value& stored) {
+  if (!stored.isObject()) return std::nullopt;
+  PlanSnapshot plan;
+  if (stored["routine"].isString()) plan.routineName = stored["routine"].asString();
+  for (const Json::Value& entry : stored["entries"]) {
+    if (!entry.isObject() || !entry["exerciseId"].isString()) continue;
+    if (!entry["sets"].isInt()) continue;
+    // reps is the one number of a line that may legitimately be absent — `3 × max` — so a missing
+    // one is read as that absence and not as a broken entry to skip.
+    std::optional<int> reps;
+    if (entry["reps"].isInt()) reps = entry["reps"].asInt();
+    std::optional<double> weightKg;
+    if (entry["weightKg"].isNumeric()) weightKg = entry["weightKg"].asDouble();
+    std::optional<int> restSeconds;
+    if (entry["restSeconds"].isInt()) restSeconds = entry["restSeconds"].asInt();
+    plan.entries.push_back(PlanEntry{ExerciseId{entry["exerciseId"].asString()},
+                                     entry["sets"].asInt(), reps, weightKg, restSeconds});
+  }
+  return plan;
 }
 
 }

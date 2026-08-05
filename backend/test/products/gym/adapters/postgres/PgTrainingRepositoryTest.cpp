@@ -37,14 +37,34 @@ void reset() {
          "ON CONFLICT (id) DO NOTHING");
   w.exec("INSERT INTO users (id, email) VALUES ('" + kOther + "', 'gym-pgtest-b@example.com') "
          "ON CONFLICT (id) DO NOTHING");
+  // FK order, and the routines before the exercises: an entry references a movement, so a custom
+  // one cannot be removed while a plan still names it.
   w.exec("DELETE FROM gym_sets WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_sessions WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
+  w.exec("DELETE FROM gym_routines WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_exercises WHERE created_by IN ('" + kUser + "', '" + kOther + "')");
   w.commit();
 }
 
 Session sessionAt(const std::string& id, std::uint64_t startedAtMs) {
   return Session{SessionId{id}, wm::UserId{kUser}, startedAtMs};
+}
+
+RoutineEntry entryAt(int position, const std::string& exercise, int targetSets = 5,
+                     std::optional<int> targetReps = 5,
+                     std::optional<double> targetWeightKg = 82.5,
+                     std::optional<int> restSeconds = 180) {
+  return RoutineEntry{position, ExerciseId{exercise}, targetSets, targetReps, targetWeightKg,
+                      restSeconds};
+}
+
+Routine routineAt(const std::string& id, const std::string& name,
+                  std::vector<RoutineEntry> entries) {
+  return Routine{RoutineId{id}, wm::UserId{kUser}, name, 0, std::move(entries)};
+}
+
+PlanSnapshot pushA() {
+  return PlanSnapshot{"Push A", {PlanEntry{ExerciseId{"bench-press"}, 5, 5, 82.5, 180}}};
 }
 
 LogCursor page(std::uint64_t beforeMs, int limit) {
@@ -55,6 +75,13 @@ Set benchSet(const std::string& id, double weightKg, std::uint64_t completedAtMs
              const std::string& session = "ses_pg000001") {
   return Set{SetId{id}, SessionId{session}, ExerciseId{"bench-press"}, 0, weightKg, 8,
              SetKind::working, std::nullopt, "", completedAtMs};
+}
+
+// The reps are what the marks are made of, so the finish read's fixture states them.
+Set squatSet(const std::string& id, const std::string& session, double weightKg, int reps,
+             std::uint64_t completedAtMs, SetKind kind = SetKind::working) {
+  return Set{SetId{id}, SessionId{session}, ExerciseId{"back-squat"}, 0, weightKg, reps, kind,
+             std::nullopt, "", completedAtMs};
 }
 }
 
@@ -289,6 +316,52 @@ TEST(pg_gym_log_walks_a_tied_start_instant_across_a_page_boundary) {
   CHECK(third.empty());
 }
 
+// The log row's two other facts, against the real statement. topSet is a lateral over the WORKING
+// sets — heaviest, ties to more reps — so a heavier warmup is not what the row says the session was,
+// and a session holding no working set has no top set at all. closedItself is the four-hour rule's
+// own signature: finished_at at the last set's instant exactly, or at started_at for a session that
+// holds none. A finish a lifter tapped lands wherever their device said, and reads as false.
+TEST(pg_gym_log_carries_the_top_working_set_and_says_which_row_closed_itself) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{connString()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+
+  // Finished by a tap, an hour after its last set.
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  repo.insertSet(squatSet("set_pg000001", "ses_pg000001", 100, 5, t1 + 60'000));
+  repo.insertSet(squatSet("set_pg000002", "ses_pg000001", 100, 8, t1 + 120'000));
+  repo.insertSet(squatSet("set_pg000003", "ses_pg000001", 140, 1, t1 + 30'000, SetKind::warmup));
+  repo.close(SessionId{"ses_pg000001"}, t1 + 3'600'000);
+  // Left running and never touched again: the auto-close ends it AT its last set.
+  repo.insertSession(sessionAt("ses_pg000002", t1 + 10'000'000));
+  repo.insertSet(squatSet("set_pg000004", "ses_pg000002", 90, 5, t1 + 10'060'000));
+  repo.close(SessionId{"ses_pg000002"}, t1 + 10'060'000);
+  // Abandoned holding no set at all: the same rule ends it at its own start.
+  repo.insertSession(sessionAt("ses_pg000004", t1 + 30'000'000));
+  repo.close(SessionId{"ses_pg000004"}, t1 + 30'000'000);
+  // Warmed up and still running — inserted LAST, because the one-open index allows exactly one.
+  repo.insertSession(sessionAt("ses_pg000003", t1 + 20'000'000));
+  repo.insertSet(squatSet("set_pg000005", "ses_pg000003", 60, 10, t1 + 20'060'000,
+                          SetKind::warmup));
+
+  std::vector<SessionSummary> listed = repo.log(wm::UserId{kUser}, page(t1 + 40'000'000, 50));
+
+  REQUIRE_EQ(listed.size(), static_cast<std::size_t>(4));
+  CHECK_EQ(listed[0].session.id.str(), std::string("ses_pg000004"));
+  CHECK_EQ(listed[0].topSet, std::optional<TopWorkingSet>());   // no sets at all
+  CHECK(listed[0].closedItself);                                // ended when it began
+  CHECK_EQ(listed[1].session.id.str(), std::string("ses_pg000003"));
+  CHECK_EQ(listed[1].topSet, std::optional<TopWorkingSet>());   // a ramp-up is not a top set
+  CHECK_FALSE(listed[1].closedItself);                          // still running
+  CHECK_EQ(listed[2].session.id.str(), std::string("ses_pg000002"));
+  CHECK_EQ(listed[2].topSet, std::optional<TopWorkingSet>(TopWorkingSet{90, 5}));
+  CHECK(listed[2].closedItself);
+  CHECK_EQ(listed[3].session.id.str(), std::string("ses_pg000001"));
+  CHECK_EQ(listed[3].topSet, std::optional<TopWorkingSet>(TopWorkingSet{100, 8}));
+  CHECK_FALSE(listed[3].closedItself);
+}
+
 // The summary's movements are framed by the rows they come back in, so a display name holding
 // whatever separator a hand-rolled aggregate would have used is still ONE movement.
 TEST(pg_gym_log_names_a_movement_whose_display_name_holds_a_newline_once) {
@@ -333,7 +406,7 @@ TEST(pg_gym_last_time_is_the_newest_finished_session_of_that_movement) {
 
   repo.insertSession(Session{SessionId{"ses_pg000002"}, wm::UserId{kUser}, t1 + 10'000,
                              std::nullopt, std::nullopt,
-                             R"({"routine":"Bench day","entries":[]})"});
+                             PlanSnapshot{"Bench day", {}}});
   repo.insertSet(Set{SetId{"set_pg000002"}, SessionId{"ses_pg000002"}, ExerciseId{"bench-press"}, 0,
                      40.0, 10, SetKind::warmup, std::nullopt, "", t1 + 11'000});
   SetInsertOutcome top = repo.insertSet(benchSet("set_pg000003", 82.5, t1 + 12'000, "ses_pg000002"));
@@ -444,7 +517,7 @@ TEST(pg_gym_last_time_never_answers_with_a_session_the_caller_does_not_own) {
   PgTrainingRepository repo{connString()};
   const std::uint64_t t1 = 1'700'000'000'123;
   repo.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, t1, std::nullopt,
-                             std::nullopt, R"({"routine":"A private routine","entries":[]})"});
+                             std::nullopt, PlanSnapshot{"A private routine", {}}});
   repo.insertSet(benchSet("set_pg000001", 142.5, t1 + 1'000));
   repo.close(SessionId{"ses_pg000001"}, t1 + 2'000);
   {
@@ -475,10 +548,12 @@ TEST(pg_gym_last_time_never_answers_with_a_session_the_caller_does_not_own) {
   CHECK_EQ(ours.lastTime->sets[0].id, SetId{"set_pg000001"});
 }
 
-// The same table the fake is pinned to (LogServiceTest), against real jsonb: `->>` renders an
-// object, an array or a number as TEXT, and that text would be printed verbatim as the prefill
-// card's cross-routine suffix. Only a string is a routine name.
-TEST(pg_gym_last_time_names_the_routine_only_when_the_snapshot_holds_a_string) {
+// Against real jsonb, with the blob written STRAIGHT INTO the column: the snapshot is a typed value
+// now, so no writer in this module can produce any of these — which is exactly why the read is
+// still pinned. `->>` renders an object, an array or a number as TEXT, and that text would be
+// printed verbatim as the prefill card's cross-routine suffix. Only a string is a routine name, and
+// a plan that is not an object is no plan at all.
+TEST(pg_gym_last_time_names_the_routine_only_when_the_stored_plan_holds_a_string) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   const std::vector<std::pair<std::string, std::string>> snapshots{
       {R"({"routine":"Bench day","entries":[]})", "Bench day"},
@@ -489,15 +564,21 @@ TEST(pg_gym_last_time_names_the_routine_only_when_the_snapshot_holds_a_string) {
       {R"({"entries":[]})", ""},
       {R"(["a","b"])", ""},
       {R"("just a string")", ""},
-      {"", ""},
+      {"", ""},   // no plan at all: the ad-hoc session
   };
   const std::uint64_t t1 = 1'700'000'000'123;
 
   for (const auto& [snapshot, name] : snapshots) {
     reset();
     PgTrainingRepository repo{connString()};
-    repo.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, t1, std::nullopt,
-                               std::nullopt, snapshot});
+    repo.insertSession(sessionAt("ses_pg000001", t1));
+    {
+      pqxx::connection c{connString()};
+      pqxx::work w{c};
+      w.exec_params("UPDATE gym_sessions SET plan = nullif($2, '')::jsonb WHERE id = $1",
+                    "ses_pg000001", snapshot);
+      w.commit();
+    }
     SetInsertOutcome landed = repo.insertSet(benchSet("set_pg000001", 82.5, t1 + 1'000));
     repo.close(SessionId{"ses_pg000001"}, t1 + 2'000);
 
@@ -506,6 +587,422 @@ TEST(pg_gym_last_time_names_the_routine_only_when_the_snapshot_holds_a_string) {
     CHECK(last.error == LastTimeError::none);
     CHECK_EQ(last.lastTime->routineName, name);
     CHECK_EQ(last.lastTime->sets, std::vector<Set>{*landed.set});
+  }
+}
+
+// The plan is the one shape written at BOTH edges — jsonb here, an object on the wire — and it goes
+// through the same codec, so a session read back holds exactly what was frozen onto it. The name
+// stays a plain string at the top level, which is what the prefill's type check looks for.
+TEST(pg_gym_the_plan_snapshot_round_trips_through_jsonb) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{connString()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+  const PlanSnapshot frozen{
+      "Push A",
+      {PlanEntry{ExerciseId{"bench-press"}, 5, 5, 82.5, 180},
+       PlanEntry{ExerciseId{"back-squat"}, 3, 8, std::nullopt, std::nullopt}}};
+
+  // The routine has to exist for the session to point at it: routine_id is a real foreign key, and
+  // it is the snapshot beside it — not the pointer — that the log reads its plan out of.
+  repo.insertRoutine(routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
+  repo.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, t1, std::nullopt,
+                             RoutineId{"rt_pg000001"}, frozen});
+  repo.insertSet(benchSet("set_pg000001", 82.5, t1 + 1'000));
+  repo.close(SessionId{"ses_pg000001"}, t1 + 2'000);
+
+  std::optional<Session> stored = repo.session(wm::UserId{kUser}, SessionId{"ses_pg000001"});
+  LastTimeOutcome last = repo.lastTime(wm::UserId{kUser}, ExerciseId{"bench-press"});
+
+  REQUIRE(stored.has_value());
+  CHECK_EQ(stored->plan, std::optional<PlanSnapshot>(frozen));
+  CHECK_EQ(stored->routine, std::optional<RoutineId>(RoutineId{"rt_pg000001"}));
+  CHECK_EQ(last.lastTime->routineName, std::string("Push A"));
+  CHECK_EQ(last.lastTime->session.plan, std::optional<PlanSnapshot>(frozen));
+  // An ad-hoc session carries no plan, and no plan is an absence rather than an empty one.
+  repo.insertSession(sessionAt("ses_pg000002", t1 + 10'000));
+  CHECK_EQ(repo.session(wm::UserId{kUser}, SessionId{"ses_pg000002"})->plan,
+           std::optional<PlanSnapshot>());
+}
+
+// ---- routines: two tables, one document, one transaction -----------------------------------
+
+// The row and its lines land together, and the id is the idempotency key: a create replayed after a
+// lost reply reads back what landed instead of appending a second copy of every line.
+TEST(pg_gym_routine_create_is_idempotent_and_the_whole_document_round_trips) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{connString()};
+  // The same movement twice at two positions — bench heavy, then bench back-off — is the case the
+  // (routine_id, position) key exists for, and it must survive a round trip in order.
+  const Routine pushA = routineAt("rt_pg000001", "Push A",
+                                  {entryAt(1, "bench-press", 5, 5, 82.5, 180),
+                                   entryAt(2, "bench-press", 3, 12, 60.0, std::nullopt),
+                                   entryAt(3, "back-squat", 3, 8, std::nullopt, std::nullopt)});
+
+  RoutineWriteOutcome created = repo.insertRoutine(pushA);
+  RoutineWriteOutcome replayed = repo.insertRoutine(
+      routineAt("rt_pg000001", "Renamed mid-flight", {entryAt(1, "back-squat")}));
+
+  CHECK(created.error == RoutineWriteError::none);
+  CHECK_EQ(created.routine, std::optional<Routine>(pushA));
+  CHECK(replayed.error == RoutineWriteError::none);
+  CHECK_EQ(replayed.routine, created.routine);   // the STORED routine, untouched
+  CHECK_EQ(repo.routine(wm::UserId{kUser}, RoutineId{"rt_pg000001"}),
+           std::optional<Routine>(pushA));
+  CHECK_EQ(repo.routine(wm::UserId{kOther}, RoutineId{"rt_pg000001"}), std::optional<Routine>());
+  CHECK_EQ(repo.routines(wm::UserId{kOther}), std::vector<Routine>{});
+}
+
+// `Chin-up 3 × max` against the real column. target_reps dropped its NOT NULL for this line, so the
+// write binds a null and the read hands back an absence — not a zero, and not the 8 the column used
+// to default to. The CHECK still holds for every line that names a target.
+TEST(pg_gym_a_routine_line_with_no_rep_target_round_trips_as_a_null) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{connString()};
+  const Routine pushA =
+      routineAt("rt_pg000001", "Push A",
+                {entryAt(1, "pull-up", 3, std::nullopt, std::nullopt, 180),
+                 entryAt(2, "bench-press", 5, 5, 82.5, 180)});
+
+  RoutineWriteOutcome created = repo.insertRoutine(pushA);
+  std::optional<Routine> read = repo.routine(wm::UserId{kUser}, RoutineId{"rt_pg000001"});
+
+  CHECK(created.error == RoutineWriteError::none);
+  CHECK_EQ(created.routine, std::optional<Routine>(pushA));
+  CHECK_EQ(read, std::optional<Routine>(pushA));
+  CHECK_EQ(read->entries[0].targetReps, std::optional<int>());
+  CHECK_EQ(read->entries[1].targetReps, std::optional<int>(5));
+  CHECK_EQ(repo.routines(wm::UserId{kUser}), std::vector<Routine>{pushA});
+  {
+    pqxx::connection c{connString()};
+    pqxx::work w{c};
+    CHECK_EQ(w.exec_params("SELECT count(*)::int AS n FROM gym_routine_entries "
+                           "WHERE routine_id = $1 AND target_reps IS NULL",
+                           "rt_pg000001")[0]["n"]
+                 .as<int>(),
+             1);
+  }
+  // A replace writes the null too — the whole document is laid down again, absences and all.
+  RoutineWriteOutcome replaced = repo.replaceRoutine(
+      routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press", 5, std::nullopt, 82.5, 180)}));
+  CHECK(replaced.error == RoutineWriteError::none);
+  CHECK_EQ(replaced.routine->entries[0].targetReps, std::optional<int>());
+}
+
+TEST(pg_gym_a_routine_id_another_account_holds_resolves_to_nothing) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{connString()};
+  repo.insertRoutine(Routine{RoutineId{"rt_pg000001"}, wm::UserId{kOther}, "Their plan", 0,
+                             {entryAt(1, "bench-press")}});
+
+  RoutineWriteOutcome taken = repo.insertRoutine(routineAt("rt_pg000001", "Mine", {entryAt(1, "back-squat")}));
+  RoutineWriteOutcome replaced =
+      repo.replaceRoutine(routineAt("rt_pg000001", "Mine now", {entryAt(1, "back-squat")}));
+
+  CHECK(taken.error == RoutineWriteError::idTaken);
+  CHECK_EQ(taken.routine, std::optional<Routine>());   // never the stranger's plan
+  CHECK(replaced.error == RoutineWriteError::notFound);
+  CHECK_FALSE(repo.deleteRoutine(wm::UserId{kUser}, RoutineId{"rt_pg000001"}));
+  CHECK_EQ(repo.routine(wm::UserId{kOther}, RoutineId{"rt_pg000001"})->name,
+           std::string("Their plan"));
+}
+
+// The exercise FK is the store's own refusal and it leaves as a VALUE, exactly as a set's does. The
+// document is one transaction, so a refused line leaves NO routine row behind — not even the header.
+TEST(pg_gym_a_routine_entry_naming_no_movement_is_refused_and_leaves_no_row) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{connString()};
+
+  RoutineWriteOutcome refused = repo.insertRoutine(
+      routineAt("rt_pg000001", "Push A",
+                {entryAt(1, "bench-press"), entryAt(2, "pg-no-such-movement")}));
+
+  CHECK(refused.error == RoutineWriteError::unknownExercise);
+  CHECK_EQ(refused.routine, std::optional<Routine>());
+  CHECK_EQ(repo.routine(wm::UserId{kUser}, RoutineId{"rt_pg000001"}), std::optional<Routine>());
+  CHECK_EQ(repo.routines(wm::UserId{kUser}), std::vector<Routine>{});
+  // The aborted transaction was the refused write's alone: the connection is reusable at once.
+  RoutineWriteOutcome after = repo.insertRoutine(routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
+  CHECK(after.error == RoutineWriteError::none);
+  CHECK_EQ(after.routine->entries.size(), static_cast<std::size_t>(1));
+}
+
+// A whole-document replace: a reorder, an insertion and a deletion are one write, and churning the
+// lines costs no identity because a line has none — its key IS its position.
+TEST(pg_gym_routine_replace_rewrites_every_line_and_a_missing_one_is_not_found) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{connString()};
+  repo.insertRoutine(routineAt("rt_pg000001", "Push A",
+                               {entryAt(1, "bench-press"), entryAt(2, "back-squat")}));
+  const Routine rewritten = routineAt("rt_pg000001", "Push A2",
+                                      {entryAt(1, "back-squat", 4, 6, 100.0, 240)});
+
+  RoutineWriteOutcome replaced = repo.replaceRoutine(rewritten);
+  RoutineWriteOutcome missing =
+      repo.replaceRoutine(routineAt("rt_pg000009", "Nowhere", {entryAt(1, "bench-press")}));
+  RoutineWriteOutcome refused = repo.replaceRoutine(
+      routineAt("rt_pg000001", "Push A3", {entryAt(1, "pg-no-such-movement")}));
+
+  CHECK(replaced.error == RoutineWriteError::none);
+  CHECK_EQ(replaced.routine, std::optional<Routine>(rewritten));
+  CHECK_EQ(repo.routine(wm::UserId{kUser}, RoutineId{"rt_pg000001"}),
+           std::optional<Routine>(rewritten));
+  CHECK(missing.error == RoutineWriteError::notFound);
+  // A refused replace rolls back whole: the lines it deleted are still there, and so is the name.
+  CHECK(refused.error == RoutineWriteError::unknownExercise);
+  CHECK_EQ(repo.routine(wm::UserId{kUser}, RoutineId{"rt_pg000001"}),
+           std::optional<Routine>(rewritten));
+}
+
+TEST(pg_gym_routine_delete_cascades_its_lines_and_leaves_every_session_its_snapshot) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{connString()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+  repo.insertRoutine(routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
+  repo.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, t1, std::nullopt,
+                             RoutineId{"rt_pg000001"}, pushA()});
+  repo.close(SessionId{"ses_pg000001"}, t1 + 1'000);
+
+  CHECK(repo.deleteRoutine(wm::UserId{kUser}, RoutineId{"rt_pg000001"}));
+  CHECK_FALSE(repo.deleteRoutine(wm::UserId{kUser}, RoutineId{"rt_pg000001"}));
+
+  std::optional<Session> ran = repo.session(wm::UserId{kUser}, SessionId{"ses_pg000001"});
+  REQUIRE(ran.has_value());
+  CHECK_EQ(ran->routine, std::optional<RoutineId>());          // on delete set null
+  CHECK_EQ(ran->plan, std::optional<PlanSnapshot>(pushA()));   // the copy is what survives
+  CHECK_EQ(repo.routines(wm::UserId{kUser}), std::vector<Routine>{});
+  {
+    pqxx::connection c{connString()};
+    pqxx::work w{c};
+    CHECK_EQ(w.exec_params("SELECT 1 FROM gym_routine_entries WHERE routine_id = $1",
+                           "rt_pg000001")
+                 .size(),
+             static_cast<std::size_t>(0));
+  }
+}
+
+// The routines screen's order, read off the log rather than a column: most recently trained first,
+// never-trained after them, ties broken by (position, id) so the walk is deterministic.
+TEST(pg_gym_routines_are_listed_most_recently_trained_first) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{connString()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+  repo.insertRoutine(routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
+  repo.insertRoutine(routineAt("rt_pg000002", "Pull A", {entryAt(1, "back-squat")}));
+  repo.insertRoutine(routineAt("rt_pg000003", "Legs", {entryAt(1, "back-squat")}));
+  repo.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, t1, std::nullopt,
+                             RoutineId{"rt_pg000002"}, PlanSnapshot{"Pull A", {}}});
+  repo.close(SessionId{"ses_pg000001"}, t1 + 1'000);
+  repo.insertSession(Session{SessionId{"ses_pg000002"}, wm::UserId{kUser}, t1 + 10'000,
+                             std::nullopt, RoutineId{"rt_pg000001"}, pushA()});
+  repo.close(SessionId{"ses_pg000002"}, t1 + 11'000);
+  // Another account training its own routine cannot move this account's order.
+  repo.insertRoutine(Routine{RoutineId{"rt_pg000004"}, wm::UserId{kOther}, "Theirs", 0,
+                             {entryAt(1, "bench-press")}});
+
+  std::vector<Routine> listed = repo.routines(wm::UserId{kUser});
+
+  REQUIRE_EQ(listed.size(), static_cast<std::size_t>(3));
+  CHECK_EQ(listed[0].name, std::string("Push A"));
+  CHECK_EQ(listed[0].lastTrainedAtMs, std::optional<std::uint64_t>(t1 + 10'000));
+  CHECK_EQ(listed[1].name, std::string("Pull A"));
+  CHECK_EQ(listed[1].lastTrainedAtMs, std::optional<std::uint64_t>(t1));
+  CHECK_EQ(listed[2].name, std::string("Legs"));
+  CHECK_EQ(listed[2].lastTrainedAtMs, std::optional<std::uint64_t>());
+  CHECK_EQ(listed[0].entries, std::vector<RoutineEntry>{entryAt(1, "bench-press")});
+}
+
+// ---- the finish read: the marks, the session it stands against, and the discard ---------------
+
+// One row per (movement, load) carrying the BEST reps ever done at it — the projection all three
+// record rules are answered from, which is what keeps Epley out of SQL. Restricted to the movements
+// this session works, taken only from FINISHED sessions that started earlier, and dated by the
+// EARLIEST instant those reps were hit.
+TEST(pg_gym_history_marks_the_best_reps_at_each_load_this_session_works) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{connString()};
+  const std::uint64_t t1 = 1'700'000'000'000;
+  const std::uint64_t week = 604'800'000;
+
+  repo.insertSession(sessionAt("ses_pg000001", t1 - 2 * week));
+  repo.insertSet(squatSet("set_pg000001", "ses_pg000001", 100, 8, t1 - 2 * week + 60'000));
+  repo.insertSet(squatSet("set_pg000002", "ses_pg000001", 100, 8, t1 - 2 * week + 120'000));
+  repo.insertSet(squatSet("set_pg000003", "ses_pg000001", 100, 5, t1 - 2 * week + 180'000));
+  repo.insertSet(squatSet("set_pg000004", "ses_pg000001", 90, 10, t1 - 2 * week + 240'000));
+  // A warmup is not history, and neither is a movement this session never works.
+  repo.insertSet(squatSet("set_pg000005", "ses_pg000001", 140, 3, t1 - 2 * week + 30'000,
+                          SetKind::warmup));
+  repo.insertSet(benchSet("set_pg000006", 80, t1 - 2 * week + 300'000, "ses_pg000001"));
+  repo.close(SessionId{"ses_pg000001"}, t1 - 2 * week + 3'600'000);
+  repo.insertSession(sessionAt("ses_pg000003", t1));
+  repo.insertSet(squatSet("set_pg000010", "ses_pg000003", 105, 5, t1 + 60'000));
+  repo.close(SessionId{"ses_pg000003"}, t1 + 3'600'000);
+  // Inserted last, because the one-open index allows exactly one of these at a time: a session
+  // nobody ever closed, holding the heaviest squat in the log.
+  repo.insertSession(sessionAt("ses_pg000002", t1 - week));
+  repo.insertSet(squatSet("set_pg000007", "ses_pg000002", 200, 5, t1 - week + 60'000));
+
+  std::optional<Session> reviewed = repo.session(wm::UserId{kUser}, SessionId{"ses_pg000003"});
+  REQUIRE(reviewed.has_value());
+  SessionHistory history = repo.historyFor(wm::UserId{kUser}, *reviewed);
+
+  const std::vector<PriorMark> marks{
+      PriorMark{ExerciseId{"back-squat"}, 90, 10, t1 - 2 * week + 240'000},
+      PriorMark{ExerciseId{"back-squat"}, 100, 8, t1 - 2 * week + 60'000}};
+  CHECK_EQ(history.marks, marks);
+  CHECK_EQ(history.previous, std::optional<Session>());   // no routine, nothing to stand against
+  CHECK_EQ(history.previousSets, std::vector<Set>{});
+  // Another account reads its own log and no part of this one.
+  CHECK_EQ(repo.historyFor(wm::UserId{kOther}, *reviewed).marks, std::vector<PriorMark>{});
+}
+
+TEST(pg_gym_history_stands_against_the_last_finished_session_of_the_same_routine) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{connString()};
+  const std::uint64_t t1 = 1'700'000'000'000;
+  const std::uint64_t week = 604'800'000;
+  repo.insertRoutine(routineAt("rt_pg000001", "Push A", {entryAt(1, "back-squat")}));
+
+  repo.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, t1 - 2 * week,
+                             std::nullopt, RoutineId{"rt_pg000001"}, pushA()});
+  repo.insertSet(squatSet("set_pg000001", "ses_pg000001", 95, 5, t1 - 2 * week + 60'000));
+  repo.close(SessionId{"ses_pg000001"}, t1 - 2 * week + 3'600'000);
+  // The same movement a week later, with no day of the program behind it: not what this stands
+  // against, however recent.
+  repo.insertSession(sessionAt("ses_pg000002", t1 - week));
+  repo.insertSet(squatSet("set_pg000002", "ses_pg000002", 100, 5, t1 - week + 60'000));
+  repo.close(SessionId{"ses_pg000002"}, t1 - week + 3'600'000);
+  repo.insertSession(Session{SessionId{"ses_pg000003"}, wm::UserId{kUser}, t1, std::nullopt,
+                             RoutineId{"rt_pg000001"}, pushA()});
+  repo.insertSet(squatSet("set_pg000003", "ses_pg000003", 105, 5, t1 + 60'000));
+  repo.close(SessionId{"ses_pg000003"}, t1 + 3'600'000);
+
+  std::optional<Session> reviewed = repo.session(wm::UserId{kUser}, SessionId{"ses_pg000003"});
+  REQUIRE(reviewed.has_value());
+  SessionHistory history = repo.historyFor(wm::UserId{kUser}, *reviewed);
+
+  // The window compares the PAIR (started_at, id), so the session under review is never its own
+  // history — and without that a review read after the finish would find every set tying itself.
+  REQUIRE(history.previous.has_value());
+  CHECK_EQ(history.previous->id.str(), std::string("ses_pg000001"));
+  CHECK_EQ(history.previous->plan, std::optional<PlanSnapshot>(pushA()));
+  REQUIRE_EQ(history.previousSets.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(history.previousSets[0].weightKg, 95.0);
+  const std::vector<PriorMark> marks{
+      PriorMark{ExerciseId{"back-squat"}, 95, 5, t1 - 2 * week + 60'000},
+      PriorMark{ExerciseId{"back-squat"}, 100, 5, t1 - week + 60'000}};
+  CHECK_EQ(history.marks, marks);
+}
+
+TEST(pg_gym_discard_takes_the_session_and_every_set_with_it) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{connString()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  repo.insertSet(benchSet("set_pg000001", 82.5, t1 + 1'000));
+  repo.insertSet(benchSet("set_pg000002", 82.5, t1 + 2'000));
+  repo.close(SessionId{"ses_pg000001"}, t1 + 3'000);
+
+  CHECK_FALSE(repo.deleteSession(wm::UserId{kOther}, SessionId{"ses_pg000001"}));
+  CHECK(repo.deleteSession(wm::UserId{kUser}, SessionId{"ses_pg000001"}));
+  CHECK_FALSE(repo.deleteSession(wm::UserId{kUser}, SessionId{"ses_pg000001"}));
+
+  CHECK_EQ(repo.session(wm::UserId{kUser}, SessionId{"ses_pg000001"}), std::optional<Session>());
+  // `on delete cascade`: the sets go with the row rather than outliving it as orphans.
+  CHECK_EQ(repo.setsOf(SessionId{"ses_pg000001"}), std::vector<Set>{});
+  {
+    pqxx::connection c{connString()};
+    pqxx::work w{c};
+    CHECK_EQ(w.exec_params("SELECT 1 FROM gym_sets WHERE session_id = $1", "ses_pg000001").size(),
+             static_cast<std::size_t>(0));
+  }
+}
+
+// ---- the catalog's one write ---------------------------------------------------------------
+
+TEST(pg_gym_create_exercise_is_the_callers_alone_and_a_spent_id_is_refused) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{connString()};
+  const Exercise mine{ExerciseId{"pg-zercher-squat"}, "Zercher Squat", Pattern::squat,
+                      Equipment::machine, 5.0, true};
+
+  ExerciseInsertOutcome created = repo.insertExercise(wm::UserId{kUser}, mine);
+  ExerciseInsertOutcome replayed = repo.insertExercise(
+      wm::UserId{kUser}, Exercise{ExerciseId{"pg-zercher-squat"}, "Renamed mid-flight",
+                                  Pattern::squat, Equipment::machine, 5.0, true});
+  ExerciseInsertOutcome theirs = repo.insertExercise(
+      wm::UserId{kOther}, Exercise{ExerciseId{"pg-zercher-squat"}, "Theirs", Pattern::squat,
+                                   Equipment::machine, 5.0, true});
+  ExerciseInsertOutcome seedSlug = repo.insertExercise(
+      wm::UserId{kUser}, Exercise{ExerciseId{"bench-press"}, "My Bench", Pattern::press,
+                                  Equipment::barbell, 2.5, true});
+
+  CHECK(created.error == ExerciseInsertError::none);
+  CHECK_EQ(created.exercise, std::optional<Exercise>(mine));
+  CHECK(replayed.error == ExerciseInsertError::none);
+  CHECK_EQ(replayed.exercise, std::optional<Exercise>(mine));   // the stored row, name and all
+  CHECK(theirs.error == ExerciseInsertError::idTaken);
+  CHECK_EQ(theirs.exercise, std::optional<Exercise>());
+  CHECK(seedSlug.error == ExerciseInsertError::idTaken);
+  // It is theirs alone: 64 seeds plus this one for the owner, 64 flat for everybody else.
+  CHECK_EQ(repo.catalog(wm::UserId{kUser}).size(), static_cast<std::size_t>(65));
+  CHECK_EQ(repo.catalog(wm::UserId{kOther}).size(), static_cast<std::size_t>(64));
+  // And a created movement is a movement: a set may name it, and a plan may hold it.
+  repo.insertSession(sessionAt("ses_pg000001", 1'700'000'000'123));
+  CHECK(repo.insertSet(Set{SetId{"set_pg000001"}, SessionId{"ses_pg000001"},
+                           ExerciseId{"pg-zercher-squat"}, 0, 60.0, 8, SetKind::working,
+                           std::nullopt, "", 1'700'000'001'123})
+            .error == SetInsertError::none);
+  CHECK(repo.insertRoutine(routineAt("rt_pg000001", "Push A", {entryAt(1, "pg-zercher-squat")}))
+            .error == RoutineWriteError::none);
+}
+
+// The domain's step band is the column's band, and this is where that claim is checked rather than
+// asserted: 99.99 and 0.01 store and read back unchanged, and a step outside them never reaches
+// here because the Exercise constructor refuses it — which is what keeps a numeric overflow from
+// leaving the repository as the house 500 the ladder documents as retryable.
+TEST(pg_gym_the_step_band_the_domain_enforces_is_exactly_what_the_column_holds) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{connString()};
+  const Exercise ceiling{ExerciseId{"pg-heavy-step"}, "Heavy Step", Pattern::squat,
+                         Equipment::machine, kMaxStepKg, true};
+  const Exercise floorStep{ExerciseId{"pg-fine-step"}, "Fine Step", Pattern::isolation,
+                           Equipment::cable, kMinStepKg, true};
+
+  ExerciseInsertOutcome top = repo.insertExercise(wm::UserId{kUser}, ceiling);
+  ExerciseInsertOutcome fine = repo.insertExercise(wm::UserId{kUser}, floorStep);
+
+  CHECK(top.error == ExerciseInsertError::none);
+  CHECK_EQ(top.exercise, std::optional<Exercise>(ceiling));
+  CHECK_EQ(top.exercise->stepKg, 99.99);
+  CHECK(fine.error == ExerciseInsertError::none);
+  CHECK_EQ(fine.exercise->stepKg, 0.01);
+  // And what the domain refuses is what the column would have raised on: proved by the statement
+  // the repository would have run, so the constructor's bound is the column's and not a guess.
+  {
+    pqxx::connection c{connString()};
+    pqxx::work w{c};
+    bool overflowed = false;
+    try {
+      w.exec_params("INSERT INTO gym_exercises (id, name, pattern, equipment, step_kg, created_by) "
+                    "VALUES ($1, $2, 'squat', 'barbell', $3, $4::uuid)",
+                    "pg-overflow-step", "Overflow Step", 100.0, kUser);
+    } catch (const pqxx::data_exception&) {
+      overflowed = true;
+    }
+    CHECK(overflowed);
   }
 }
 

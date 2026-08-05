@@ -2,11 +2,13 @@
 
 #include "platform/domain/Ids.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace wm::gym {
 
@@ -61,8 +63,19 @@ bool wellFormedId(std::string_view id);
 // of that account can survive.
 constexpr std::uint64_t kMaxInstantMs = 253402300799000ull;
 
+// The ceiling on every display name a lifter types — a routine's and a movement's alike, because
+// they are the same kind of string and the editor and the picker draw them side by side. Counted in
+// BYTES, which is the unit the text column and the wire both count in.
+constexpr std::size_t kMaxNameLength = 80;
+
+// What the step_kg column can hold: numeric(4,2), two decimals and a ceiling of 99.99. A value
+// outside this band is not a ladder increment the store can keep, so it is refused at construction
+// like every other value in this module that meets a column's own bounds.
+constexpr double kMinStepKg = 0.01;
+constexpr double kMaxStepKg = 99.99;
+
 // The catalog row: a STABLE slug id that never renders, a mutable display name, and the default
-// ladder increment. custom marks a created_by row (phase 2); seeds are custom = false.
+// ladder increment. custom marks a created_by row; seeds are custom = false.
 struct Exercise {
   ExerciseId id;
   std::string name;
@@ -77,20 +90,51 @@ struct Exercise {
   bool operator==(const Exercise&) const = default;
 };
 
-// One workout. The client-minted id is the idempotency key; planJson is the frozen routine
-// snapshot at start ("" = ad-hoc); instants are the device's wall clock, epoch-ms, because offline
-// logging means the device's clock is the only honest one.
+// The ladder increment a movement takes when nothing names one: the smallest plate pair on a
+// barbell, the rack gap on dumbbells, the pin on a machine. A created movement that sends no stepKg
+// takes this, so a lifter's own barbell lift climbs exactly like a seeded one — the seed rows were
+// written from this same table (schema.sql's Gym seed comment).
+double defaultStepKg(Equipment equipment);
+
+// The routine as it stood the instant the session started — a COPY, taken by the server, that
+// nothing later edits. Lift stored a template id plus a copied name, so it could say what you did
+// and never what you were supposed to do, and editing a template mid-workout rewrote the program's
+// past. The snapshot holds the plan's numbers and not the routine's identity, because a copy has
+// nothing to point back at: routine_id stays on the session row, informational, and nulls on delete.
+// An absent `reps` is the line the canon draws as `3 × max` — a chin-up names no rep target, and a
+// zero would read as a real one — and it copies the routine entry's absence through unchanged.
+struct PlanEntry {
+  ExerciseId exercise;
+  int sets;
+  std::optional<int> reps;
+  std::optional<double> weightKg;
+  std::optional<int> restSeconds;
+
+  bool operator==(const PlanEntry&) const = default;
+};
+
+struct PlanSnapshot {
+  std::string routineName;
+  std::vector<PlanEntry> entries;
+
+  bool operator==(const PlanSnapshot&) const = default;
+};
+
+// One workout. The client-minted id is the idempotency key; plan is the frozen routine snapshot the
+// server takes at start (absent = ad-hoc); instants are the device's wall clock, epoch-ms, because
+// offline logging means the device's clock is the only honest one.
 struct Session {
   SessionId id;
   UserId user;
   std::uint64_t startedAtMs;
   std::optional<std::uint64_t> finishedAtMs;
   std::optional<RoutineId> routine;
-  std::string planJson;
+  std::optional<PlanSnapshot> plan;
 
   Session(SessionId id, UserId user, std::uint64_t startedAtMs,
           std::optional<std::uint64_t> finishedAtMs = std::nullopt,
-          std::optional<RoutineId> routine = std::nullopt, std::string planJson = "");
+          std::optional<RoutineId> routine = std::nullopt,
+          std::optional<PlanSnapshot> plan = std::nullopt);
 
   bool operator==(const Session&) const = default;
 };

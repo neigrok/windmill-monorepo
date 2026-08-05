@@ -1,6 +1,8 @@
 #include "products/gym/adapters/postgres/PgTrainingRepository.h"
 
+#include "platform/adapters/json/JsonText.h"
 #include "platform/adapters/postgres/PgConnection.h"
+#include "products/gym/adapters/json/TrainingJson.h"
 
 #include <pqxx/pqxx>
 
@@ -8,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace wm::gym {
 
@@ -24,6 +27,22 @@ constexpr std::string_view kSessionColumns =
 constexpr std::string_view kSetColumns =
     "id, session_id, exercise_id, set_number, weight_kg::float8 AS weight_kg, reps, kind, "
     "rpe::float8 AS rpe, note, (extract(epoch from completed_at) * 1000)::bigint AS completed_ms";
+
+constexpr std::string_view kExerciseColumns =
+    "id, name, pattern, equipment, step_kg::float8 AS step_kg, created_by";
+
+// lastTrainedAtMs is an aggregate over the log, not a column: the newest session started under this
+// routine, correlated on the routine's OWN owner so the one read and the list read carry the same
+// scope without either passing the caller twice.
+constexpr std::string_view kRoutineColumns =
+    "r.id, r.user_id, r.name, r.position, "
+    "(extract(epoch from (SELECT max(s.started_at) FROM gym_sessions s "
+    "                     WHERE s.routine_id = r.id AND s.user_id = r.user_id)) * 1000)::bigint "
+    "  AS last_trained_ms";
+
+constexpr std::string_view kEntryColumns =
+    "routine_id, position, exercise_id, target_sets, target_reps, "
+    "target_weight_kg::float8 AS target_weight_kg, rest_seconds";
 
 // Read as a signed bigint and clamped into the band the domain accepts. A row written before that
 // band was enforced — a unit-confused client wrapped a huge uint64 into a pre-1970 timestamp — then
@@ -45,10 +64,13 @@ Session sessionFrom(const Row& row) {
   if (!row["finished_ms"].is_null()) finished = instantFrom(row["finished_ms"]);
   std::optional<RoutineId> routine;
   if (!row["routine_id"].is_null()) routine = RoutineId{row["routine_id"].template as<std::string>()};
+  // The snapshot comes back as the typed value it was frozen as, through the codec that wrote it —
+  // one shape for the jsonb column and the wire, so the two edges cannot drift. planFrom clamps, so
+  // a blob this build did not write leaves the session readable.
   return Session{SessionId{row["id"].template as<std::string>()},
                  UserId{row["user_id"].template as<std::string>()},
                  instantFrom(row["started_ms"]), finished, routine,
-                 row["plan"].template as<std::string>()};
+                 planFrom(parse(row["plan"].template as<std::string>()))};
 }
 
 template <typename Row>
@@ -65,6 +87,13 @@ Set setFrom(const Row& row) {
              rpe,
              row["note"].template as<std::string>(),
              instantFrom(row["completed_ms"])};
+}
+
+template <typename Row>
+PriorMark markFrom(const Row& row) {
+  return PriorMark{ExerciseId{row["exercise_id"].template as<std::string>()},
+                   row["weight_kg"].template as<double>(), row["reps"].template as<int>(),
+                   instantFrom(row["at_ms"])};
 }
 
 // One row of the log summary's aggregate: a session, one movement it holds, and how many sets of
@@ -84,6 +113,81 @@ Exercise exerciseFrom(const Row& row) {
                   row["step_kg"].template as<double>(),
                   !row["created_by"].is_null()};
 }
+
+// The position is taken from the ORDER the rows came back in, not from the column: the stored runs
+// are dense by construction (both writes lay a whole document down in one transaction) and the
+// entity refuses anything else, so reading the order keeps a run that was somehow left with a gap
+// legible instead of failing every read of that plan.
+template <typename Row>
+RoutineEntry entryFrom(const Row& row, int position) {
+  // A null target_reps is the line canon draws as `3 × max`, not a zero and not a missing value to
+  // fill in: the column dropped its NOT NULL for exactly this, so the read carries the absence.
+  std::optional<int> targetReps;
+  if (!row["target_reps"].is_null()) targetReps = row["target_reps"].template as<int>();
+  std::optional<double> targetWeightKg;
+  if (!row["target_weight_kg"].is_null())
+    targetWeightKg = row["target_weight_kg"].template as<double>();
+  std::optional<int> restSeconds;
+  if (!row["rest_seconds"].is_null()) restSeconds = row["rest_seconds"].template as<int>();
+  return RoutineEntry{position, ExerciseId{row["exercise_id"].template as<std::string>()},
+                      row["target_sets"].template as<int>(), targetReps, targetWeightKg,
+                      restSeconds};
+}
+
+template <typename Row>
+Routine routineFrom(const Row& row, std::vector<RoutineEntry> entries) {
+  std::optional<std::uint64_t> lastTrained;
+  if (!row["last_trained_ms"].is_null()) lastTrained = instantFrom(row["last_trained_ms"]);
+  return Routine{RoutineId{row["id"].template as<std::string>()},
+                 UserId{row["user_id"].template as<std::string>()},
+                 row["name"].template as<std::string>(),
+                 row["position"].template as<int>(),
+                 std::move(entries),
+                 lastTrained};
+}
+
+// One routine and its lines, read INSIDE a caller's transaction — the read-back both writes finish
+// with, and the single read on its own. A routine holding no lines is a document no write in this
+// module can lay down, and it reads as absent rather than as a plan with nothing in it.
+std::optional<Routine> loadRoutine(pqxx::work& txn, const UserId& user, const RoutineId& id) {
+  pqxx::result rows = txn.exec_params(
+      "SELECT " + std::string(kRoutineColumns) +
+          " FROM gym_routines r WHERE r.user_id = $1::uuid AND r.id = $2",
+      user.str(), id.str());
+  if (rows.empty()) return std::nullopt;
+  pqxx::result lines = txn.exec_params(
+      "SELECT " + std::string(kEntryColumns) +
+          " FROM gym_routine_entries WHERE routine_id = $1 ORDER BY position",
+      id.str());
+  std::vector<RoutineEntry> entries;
+  for (const auto& line : lines)
+    entries.push_back(entryFrom(line, static_cast<int>(entries.size()) + 1));
+  if (entries.empty()) return std::nullopt;
+  return routineFrom(rows[0], std::move(entries));
+}
+
+// The lines of one whole document, laid down in the order the entity holds them. The exercise FK is
+// the one refusal these can raise, and it is the same fact a set's insert names: the throw has
+// ALREADY aborted the transaction, so every caller returns on it at once.
+void insertEntries(pqxx::work& txn, const Routine& incoming) {
+  for (const RoutineEntry& entry : incoming.entries) {
+    pqxx::params params;
+    params.append(incoming.id.str());
+    params.append(entry.position);
+    params.append(entry.exercise.str());
+    params.append(entry.targetSets);
+    if (entry.targetReps) params.append(*entry.targetReps);
+    else params.append();
+    if (entry.targetWeightKg) params.append(*entry.targetWeightKg);
+    else params.append();
+    if (entry.restSeconds) params.append(*entry.restSeconds);
+    else params.append();
+    txn.exec("INSERT INTO gym_routine_entries (routine_id, position, exercise_id, target_sets, "
+             "                                 target_reps, target_weight_kg, rest_seconds) "
+             "VALUES ($1, $2, $3, $4, $5, $6, $7)",
+             params);
+  }
+}
 }
 
 PgTrainingRepository::PgTrainingRepository(std::string connString)
@@ -92,9 +196,9 @@ PgTrainingRepository::PgTrainingRepository(std::string connString)
 std::vector<Exercise> PgTrainingRepository::catalog(const UserId& user) {
   pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result rows = txn.exec_params(
-      "SELECT id, name, pattern, equipment, step_kg::float8 AS step_kg, created_by "
-      "FROM gym_exercises WHERE created_by IS NULL OR created_by = $1::uuid "
-      "ORDER BY pattern, name",
+      "SELECT " + std::string(kExerciseColumns) +
+          " FROM gym_exercises WHERE created_by IS NULL OR created_by = $1::uuid "
+          "ORDER BY pattern, name",
       user.str());
 
   std::vector<Exercise> out;
@@ -168,7 +272,10 @@ void PgTrainingRepository::insertSession(const Session& incoming) {
   params.append(incoming.user.str());
   if (incoming.routine) params.append(incoming.routine->str());
   else params.append();
-  if (!incoming.planJson.empty()) params.append(incoming.planJson);
+  // The snapshot is serialized through the same codec the wire uses, so the stored object and the
+  // one the client reads back are byte-identical — and `routine` stays the plain string the
+  // prefill's jsonb type check looks for.
+  if (incoming.plan) params.append(dump(toJson(*incoming.plan)));
   else params.append();
   params.append(static_cast<long long>(incoming.startedAtMs));
   if (incoming.finishedAtMs) params.append(static_cast<long long>(*incoming.finishedAtMs));
@@ -262,11 +369,27 @@ std::vector<SessionSummary> PgTrainingRepository::log(const UserId& user,
   // cursor: on a plain started_at cursor two sessions sharing a start instant across a page edge
   // hide one of them from every page, forever. An absent tiebreaker passes the empty id — the floor
   // of the text order — so the first page degrades to a plain "strictly before this instant".
+  //
+  // The row's two other facts ride the same statement. The top set is a lateral over this session's
+  // WORKING sets, heaviest first and ties to more reps — the rule TopWorkingSet states, and never
+  // volume. `closed_itself` is the auto-close's own signature rather than a column: autoCloseAt
+  // stamps finished_at at the last set's instant exactly (or at started_at for a session holding
+  // none), so a finish equal to that instant is the four-hour rule's work. A manual finish landing
+  // on precisely the same millisecond reads as an auto-close, and the whole cost of that
+  // coincidence is one wrong subtitle — cheaper than a column two writers would keep honest.
   const std::string beforeId = cursor.beforeId ? cursor.beforeId->str() : "";
   pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result sessions = txn.exec_params(
       "SELECT " + std::string(kSessionColumns) +
-          " FROM gym_sessions WHERE user_id = $1::uuid "
+          ", top.weight_kg::float8 AS top_weight_kg, top.reps AS top_reps, "
+          "(finished_at IS NOT NULL AND finished_at = coalesce("
+          "   (SELECT max(a.completed_at) FROM gym_sets a WHERE a.session_id = gym_sessions.id), "
+          "   started_at)) AS closed_itself "
+          "FROM gym_sessions "
+          "LEFT JOIN LATERAL (SELECT w.weight_kg, w.reps FROM gym_sets w "
+          "                   WHERE w.session_id = gym_sessions.id AND w.kind = 'working' "
+          "                   ORDER BY w.weight_kg DESC, w.reps DESC LIMIT 1) top ON true "
+          "WHERE user_id = $1::uuid "
           "AND (started_at, id) < (to_timestamp($2::bigint / 1000.0), $3) "
           "ORDER BY started_at DESC, id DESC LIMIT $4",
       user.str(), static_cast<long long>(cursor.beforeMs), beforeId, cursor.limit);
@@ -290,12 +413,17 @@ std::vector<SessionSummary> PgTrainingRepository::log(const UserId& user,
   std::vector<SessionSummary> out;
   for (const auto& row : sessions) {
     Session session = sessionFrom(row);
+    std::optional<TopWorkingSet> top;
+    if (!row["top_weight_kg"].is_null())
+      top = TopWorkingSet{row["top_weight_kg"].as<double>(), row["top_reps"].as<int>()};
+    const bool closedItself = row["closed_itself"].as<bool>();
     const auto tally = tallyBySession.find(session.id.str());
     if (tally == tallyBySession.end()) {
-      out.push_back(SessionSummary{session, 0, {}});
+      out.push_back(SessionSummary{session, 0, {}, top, closedItself});
       continue;
     }
-    out.push_back(SessionSummary{session, tally->second.setCount, tally->second.exerciseNames});
+    out.push_back(SessionSummary{session, tally->second.setCount, tally->second.exerciseNames, top,
+                                 closedItself});
   }
   return out;
 }
@@ -359,6 +487,203 @@ LastTimeOutcome PgTrainingRepository::lastTime(const UserId& user, const Exercis
                      std::move(sets)};
   }
   return {found, LastTimeError::none};
+}
+
+SessionHistory PgTrainingRepository::historyFor(const UserId& user, const Session& session) {
+  // The finish read, in one transaction and at most three statements — the two the comparison needs
+  // fire only for a session that named a routine, because without one the domain draws no
+  // comparison and the rows would be loaded to be thrown away.
+  //
+  // The marks are the whole of what the record rules need, and they are a projection rather than a
+  // history: one row per (movement, load) carrying the BEST reps ever done at it. At a fixed weight
+  // e1RM rises with reps, so that row is the best set at that load, and all three rules follow from
+  // it — which is what keeps the Epley formula out of SQL entirely (§11.5's ladder lesson, applied
+  // to the second formula in the product). DISTINCT ON is what a bare max(reps) cannot do: it hands
+  // back the winning ROW, so the mark is dated by the earliest instant those reps were hit, which is
+  // the day the mark was set and the date the record line prints.
+  //
+  // Both windows compare the PAIR (started_at, id) against this session's own, the unique key every
+  // other read here pages and locates on. It is not decoration: it excludes this session from its
+  // own history, and without that a review re-read after the finish would find every set of the
+  // session tying itself and would silently report no record at all.
+  SessionHistory history;
+  {
+    pqxx::work txn{pgThreadConnection(connString_)};
+    pqxx::result marks = txn.exec_params(
+        "SELECT DISTINCT ON (st.exercise_id, st.weight_kg) "
+        "       st.exercise_id, st.weight_kg::float8 AS weight_kg, st.reps, "
+        "       (extract(epoch from st.completed_at) * 1000)::bigint AS at_ms "
+        "FROM gym_sets st JOIN gym_sessions s ON s.id = st.session_id "
+        "WHERE st.user_id = $1::uuid AND st.kind = 'working' AND s.finished_at IS NOT NULL "
+        "  AND (s.started_at, s.id) < (to_timestamp($2::bigint / 1000.0), $3) "
+        "  AND st.exercise_id IN (SELECT exercise_id FROM gym_sets "
+        "                         WHERE session_id = $3 AND kind = 'working') "
+        "ORDER BY st.exercise_id, st.weight_kg, st.reps DESC, st.completed_at ASC",
+        user.str(), static_cast<long long>(session.startedAtMs), session.id.str());
+    for (const auto& row : marks) history.marks.push_back(markFrom(row));
+
+    if (session.routine) {
+      pqxx::result rows = txn.exec_params(
+          "SELECT " + std::string(kSessionColumns) +
+              " FROM gym_sessions WHERE user_id = $1::uuid AND routine_id = $2 "
+              "AND finished_at IS NOT NULL "
+              "AND (started_at, id) < (to_timestamp($3::bigint / 1000.0), $4) "
+              "ORDER BY started_at DESC, id DESC LIMIT 1",
+          user.str(), session.routine->str(), static_cast<long long>(session.startedAtMs),
+          session.id.str());
+      if (!rows.empty()) {
+        history.previous = sessionFrom(rows[0]);
+        pqxx::result block = txn.exec_params(
+            "SELECT " + std::string(kSetColumns) +
+                " FROM gym_sets WHERE session_id = $1 ORDER BY completed_at ASC, set_number ASC",
+            history.previous->id.str());
+        for (const auto& row : block) history.previousSets.push_back(setFrom(row));
+      }
+    }
+  }
+  return history;
+}
+
+bool PgTrainingRepository::deleteSession(const UserId& user, const SessionId& id) {
+  // The sets cascade with the row (`gym_sets.session_id ... on delete cascade`), which is what makes
+  // the discard one statement and leaves nothing orphaned behind it. Owner-scoped like every write:
+  // another account's session is not refused, it is simply not there to remove.
+  pqxx::work txn{pgThreadConnection(connString_)};
+  pqxx::result removed = txn.exec_params(
+      "DELETE FROM gym_sessions WHERE id = $1 AND user_id = $2::uuid", id.str(), user.str());
+  txn.commit();
+  return removed.affected_rows() > 0;
+}
+
+std::vector<Routine> PgTrainingRepository::routines(const UserId& user) {
+  // Two statements over the same owner scope, merged by routine id — the log read's shape applied
+  // to the plan: the routines, then one pass for every line they hold. The order is the routines
+  // screen's own, most recently trained first, with the never-trained after them rather than at the
+  // top: an absent aggregate sorts nowhere on its own, so the tiebreak is stated (position, then id)
+  // instead of left to the planner.
+  pqxx::work txn{pgThreadConnection(connString_)};
+  pqxx::result rows = txn.exec_params(
+      "SELECT " + std::string(kRoutineColumns) +
+          " FROM gym_routines r WHERE r.user_id = $1::uuid "
+          "ORDER BY last_trained_ms DESC NULLS LAST, r.position ASC, r.id ASC",
+      user.str());
+  pqxx::result lines = txn.exec_params(
+      "SELECT " + std::string(kEntryColumns) +
+          " FROM gym_routine_entries WHERE routine_id IN "
+          "  (SELECT id FROM gym_routines WHERE user_id = $1::uuid) "
+          "ORDER BY routine_id, position",
+      user.str());
+
+  std::map<std::string, std::vector<RoutineEntry>> linesByRoutine;
+  for (const auto& line : lines) {
+    std::vector<RoutineEntry>& entries = linesByRoutine[line["routine_id"].as<std::string>()];
+    entries.push_back(entryFrom(line, static_cast<int>(entries.size()) + 1));
+  }
+
+  std::vector<Routine> out;
+  for (const auto& row : rows) {
+    const auto held = linesByRoutine.find(row["id"].as<std::string>());
+    if (held == linesByRoutine.end()) continue;   // no lines: not a plan, and not writable as one
+    out.push_back(routineFrom(row, std::move(held->second)));
+  }
+  return out;
+}
+
+std::optional<Routine> PgTrainingRepository::routine(const UserId& user, const RoutineId& id) {
+  std::optional<Routine> found;
+  {
+    pqxx::work txn{pgThreadConnection(connString_)};
+    found = loadRoutine(txn, user, id);
+  }
+  return found;
+}
+
+RoutineWriteOutcome PgTrainingRepository::insertRoutine(const Routine& incoming) {
+  // The row and its lines are ONE transaction, so a routine with no lines is not a state this store
+  // can be left in. The lines are written only by the caller that WON the row: a create replayed
+  // after a lost reply finds the id already spent by itself, writes nothing, and reads the STORED
+  // routine back untouched — the same rule a replayed start obeys, applied to a document. And the
+  // read-back is owner-scoped, so an id spent by another account resolves to nothing rather than to
+  // their plan: the caller learns the id is taken and never whose it is.
+  std::optional<Routine> stored;
+  {
+    pqxx::work txn{pgThreadConnection(connString_)};
+    pqxx::result inserted = txn.exec_params(
+        "INSERT INTO gym_routines (id, user_id, name, position) "
+        "VALUES ($1, $2::uuid, $3, $4) ON CONFLICT DO NOTHING",
+        incoming.id.str(), incoming.user.str(), incoming.name, incoming.position);
+    if (inserted.affected_rows() == 1) {
+      try {
+        insertEntries(txn, incoming);
+      } catch (const pqxx::foreign_key_violation&) {
+        return {std::nullopt, RoutineWriteError::unknownExercise};
+      }
+    }
+    stored = loadRoutine(txn, incoming.user, incoming.id);
+    txn.commit();
+  }
+  if (!stored) return {std::nullopt, RoutineWriteError::idTaken};
+  return {stored, RoutineWriteError::none};
+}
+
+RoutineWriteOutcome PgTrainingRepository::replaceRoutine(const Routine& incoming) {
+  // A whole-document replace: the row owner-scoped, then the lines deleted and laid down again.
+  // Churning them costs no identity — entries have none, their key IS their position — and it is
+  // what makes a reorder, an insertion and a deletion one write instead of three verbs the editor
+  // would have to sequence. An update that matches no row is the 404 fact: absent and another
+  // account's are the same answer, so nothing here says which.
+  std::optional<Routine> stored;
+  {
+    pqxx::work txn{pgThreadConnection(connString_)};
+    pqxx::result updated = txn.exec_params(
+        "UPDATE gym_routines SET name = $3, position = $4 WHERE id = $1 AND user_id = $2::uuid",
+        incoming.id.str(), incoming.user.str(), incoming.name, incoming.position);
+    if (updated.affected_rows() == 0) return {std::nullopt, RoutineWriteError::notFound};
+    txn.exec_params("DELETE FROM gym_routine_entries WHERE routine_id = $1", incoming.id.str());
+    try {
+      insertEntries(txn, incoming);
+    } catch (const pqxx::foreign_key_violation&) {
+      return {std::nullopt, RoutineWriteError::unknownExercise};
+    }
+    stored = loadRoutine(txn, incoming.user, incoming.id);
+    txn.commit();
+  }
+  if (!stored) return {std::nullopt, RoutineWriteError::notFound};
+  return {stored, RoutineWriteError::none};
+}
+
+bool PgTrainingRepository::deleteRoutine(const UserId& user, const RoutineId& id) {
+  // The lines cascade, and every session ever trained under this routine keeps its frozen snapshot:
+  // routine_id nulls (on delete set null) and the log still says which day of the program it was.
+  pqxx::work txn{pgThreadConnection(connString_)};
+  pqxx::result removed = txn.exec_params(
+      "DELETE FROM gym_routines WHERE id = $1 AND user_id = $2::uuid", id.str(), user.str());
+  txn.commit();
+  return removed.affected_rows() > 0;
+}
+
+ExerciseInsertOutcome PgTrainingRepository::insertExercise(const UserId& owner,
+                                                           const Exercise& incoming) {
+  // The read-back is scoped to the caller's OWN created_by rows, which is what makes the refusal
+  // safe: a seed's slug and another lifter's custom id both resolve to nothing here, so the answer
+  // is "that id is taken" and never a row the caller may not read.
+  std::optional<Exercise> stored;
+  {
+    pqxx::work txn{pgThreadConnection(connString_)};
+    txn.exec_params(
+        "INSERT INTO gym_exercises (id, name, pattern, equipment, step_kg, created_by) "
+        "VALUES ($1, $2, $3, $4, $5, $6::uuid) ON CONFLICT DO NOTHING",
+        incoming.id.str(), incoming.name, toString(incoming.pattern), toString(incoming.equipment),
+        incoming.stepKg, owner.str());
+    pqxx::result rows = txn.exec_params(
+        "SELECT " + std::string(kExerciseColumns) +
+            " FROM gym_exercises WHERE id = $1 AND created_by = $2::uuid",
+        incoming.id.str(), owner.str());
+    if (!rows.empty()) stored = exerciseFrom(rows[0]);
+    txn.commit();
+  }
+  if (!stored) return {std::nullopt, ExerciseInsertError::idTaken};
+  return {stored, ExerciseInsertError::none};
 }
 
 std::vector<Set> PgTrainingRepository::setsOf(const SessionId& id) {
