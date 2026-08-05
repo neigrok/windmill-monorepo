@@ -121,13 +121,20 @@ Still open (**web** + infra):
   stayed.)
 - ~~**`web`: `shell/marketing/Marketing.jsx`** reads roadmap trees and its copy is roadmap-only~~
   **closed** — the file is gone (`934a241`). The brand root is `BrandLanding.jsx`, which builds its
-  three doors by mapping the registry, and each product's landing lives in its own folder. What
-  survives is softer and the import graph cannot see it: `shell/marketing/landingHeads.js` holds
-  hard-coded **paths into product source trees** (`src/products/*/marketing/*.jsx`) and a
-  roadmap-flavoured `/` fallback whose CTA is hard-coded where `BrandLanding` derives it — the same
-  fact stated twice, on both sides of the boundary, free to disagree the day gym opens. Same species:
-  `App.jsx`'s `LEGACY_DOORS` (which already omits `#/gym`), `AccountSeat`'s `treeCount` / "My trees",
-  and `OAuthConsent`'s roadmap-only scope words on a platform surface.
+  three doors by mapping the registry, and each product's landing lives in its own folder.
+  The softer half — the shell-side knowledge the import graph could not see — is **closed too**
+  (2026-08-05): `landingHeads.js` no longer holds paths into product source trees, because each
+  product owns its own landing head beside the landing it describes and names its own module from
+  there; the brand root's hero derives from the registry rather than being hand-copied in three
+  places; and `App.jsx`'s `LEGACY_DOORS` derives its product rows from `switchHash` + `shell.room`,
+  filtered to open products — which turned the conspicuous absence of `#/gym` into a stated rule.
+  The boundary test now walks **everything that is not a product**, stylesheets included, rather
+  than only `src/shell/`.
+
+  Still open, and both are decisions rather than edits: `AccountSeat`'s `treeCount` / "My trees"
+  row needs a noun the active product supplies (a registry field with one contributor today), and
+  `OAuthConsent`'s scope words wait on a second product publishing MCP tools — with exactly one,
+  the words are accurate for every grant that can be issued.
 - **`backend/infra`** (the composition-root executables) sit under `platform/infra`; they depend on
   roadmap by nature (they compose it). Fine today; revisit if a neutral app-assembly layer is wanted.
 
