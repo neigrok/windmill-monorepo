@@ -16,7 +16,7 @@ WindmillKit/         the Swift package: everything that isn't the app bundle
     WindmillPlatform/  account · wire · session · the ProductModule seam · tokens · shell chrome
     WindmillJournal/   the night canvas (the room that is actually built for a phone)
     WindmillRoadmap/   mounted, not built here — says where it does live
-    WindmillGym/       mounted, not built here — carries the weight ladder
+    WindmillGym/       the training log (the room the open session belongs to)
   Tests/               mirrors Sources/
 ```
 
@@ -65,10 +65,18 @@ lands on the device first and is marked owed; the network is what happens next, 
 sign-in. Signing in *claims* what is already there (additive, per page, by HLC stamp). Offline says
 `offline · saved here`; signed out says `saved on this device`.
 
-**All three products are shipping as rooms in this app.** Journal is the one that is built. Roadmap
-and gym are mounted and render one honest line about where they work today plus a door to it — not
-a mock screen, and not a "coming soon" that counts nobody's interest. When their native rooms land
-they replace that line and nothing else in the shell changes.
+**All three products are shipping as rooms in this app.** Journal and gym are built. Roadmap is
+mounted and renders one honest line about where it works today plus a door to it — not a mock
+screen, and not a "coming soon" that counts nobody's interest. When its native room lands it
+replaces that line and nothing else in the shell changes.
+
+**Gym is here because the phone is the only device that can own an open session.** The web mirrors
+and backfills; workout mode, the ladder, the keypad, the rest clock and the offline queue all need a
+device that is with you, awake and able to log in a basement with no signal
+(`backend/products/gym/ARCHITECTURE.md` §11). The queue is the room's load-bearing part: sets are
+kept on the device under their own client-minted ids and replayed until the log takes them, and the
+three refusals are told apart by their machine `code` — two mean re-mint and send again, one means
+that set can never land and the room says so.
 
 **Sign in with Apple is the primary door** (one tap, no address to type), with the emailed link
 beside it rather than behind it: the link is the only way a Hide My Email account can reach the
