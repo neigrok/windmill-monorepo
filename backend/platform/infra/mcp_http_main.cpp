@@ -1,9 +1,11 @@
+#include "platform/adapters/clock/SystemClock.h"
 #include "platform/adapters/crypto/OpenSslTokenGenerator.h"
 #include "platform/adapters/http/RateLimiter.h"
 #include "platform/adapters/mcp/McpHttpEndpoint.h"
 #include "platform/adapters/mcp/McpServer.h"
 #include "products/roadmap/adapters/mcp/RoadmapResources.h"
 #include "products/roadmap/adapters/mcp/RoadmapTools.h"
+#include "platform/adapters/postgres/PgConnection.h"
 #include "platform/adapters/postgres/PgOAuthRepository.h"
 #include "products/roadmap/adapters/postgres/PgOpLog.h"
 #include "products/roadmap/adapters/postgres/PgProgressRepository.h"
@@ -12,12 +14,10 @@
 #include "products/roadmap/application/ProgressService.h"
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/application/TreeRegistry.h"
-#include "platform/ports/Clock.h"
 #include "products/roadmap/ports/PresenceBus.h"
 
 #include <drogon/drogon.h>
 
-#include <chrono>
 #include <cstdlib>
 #include <memory>
 #include <set>
@@ -26,32 +26,9 @@
 namespace {
 using namespace wm;
 
-struct SystemClock : Clock {
-  std::uint64_t nowMs() override {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(
-               std::chrono::system_clock::now().time_since_epoch())
-        .count();
-  }
-};
-
-// One process, its own RoomRegistry against the shared Postgres — no live WS subscribers
-// here, so op fanout is a no-op; durability (and web visibility on reload) is the database.
-struct NullPresenceBus : PresenceBus {
-  void broadcastSubgraph(const TreeId&, Seq, const Subgraph&) override {}
-  void broadcastProgress(const TreeId&, const UserId&, const NodeId&, ProgressStatus) override {}
-};
-
 std::string env(const char* key, const std::string& fallback) {
   const char* value = std::getenv(key);
   return value ? std::string(value) : fallback;
-}
-
-// Strip any `user:password@` credentials before a connection string reaches a log line.
-std::string redactDbUrl(const std::string& url) {
-  const std::size_t scheme = url.find("://");
-  const std::size_t at = url.find('@');
-  if (scheme == std::string::npos || at == std::string::npos || at < scheme) return url;
-  return url.substr(0, scheme + 3) + "***@" + url.substr(at + 1);
 }
 }
 
@@ -93,14 +70,7 @@ int main() {
   auto oauthService = std::make_shared<OAuthService>(*oauthRepo, *oauthTokens, *clock);
   McpAuth mcpAuth{oauthService.get(), resource, resourceMetadataUrl, mcpToken, caller};
 
-  ServerInfo info{
-      "windmill", "0.1.0",
-      "Windmill roadmaps are RPG-style skill trees: nodes are skills/milestones, and a "
-      "prerequisite edge points from a required node to the node it unlocks. Use get_tree and "
-      "get_diagnostics to inspect, the edit tools (create_node, connect, …) to author, and "
-      "set_progress to mark a node active or complete. Edits are never rejected — a cycle or a "
-      "detached node is surfaced by get_diagnostics, not refused."};
-  auto server = std::make_shared<McpServer>(*tools, std::move(info), roadmapResources());
+  auto server = std::make_shared<McpServer>(*tools, roadmapServerInfo(), roadmapResources());
   auto endpoint = std::make_shared<McpHttpEndpoint>(*server, origins, mcpAuth);
 
   auto& app = drogon::app();

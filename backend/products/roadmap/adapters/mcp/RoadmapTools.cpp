@@ -1351,7 +1351,7 @@ ToolResult RoadmapTools::callTool(const std::string& name, const Json::Value& ar
   } catch (const std::exception& error) {
     // The detail goes to the log, never into the model's context: what escapes a repository is a
     // connection string, a host, a role. stderr rather than LOG_ERROR because on the stdio
-    // transport stdout IS the protocol channel (infra/mcp_main.cpp).
+    // transport stdout IS the protocol channel (platform/infra/mcp_main.cpp).
     std::cerr << "mcp tool " << name << " failed: " << error.what() << "\n";
     return ToolResult::failure(name + ": that call failed inside the server. Nothing was changed; "
                                "the detail is in the server log.");

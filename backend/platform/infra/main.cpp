@@ -334,14 +334,7 @@ int main() {
 
   McpAuth mcpAuth{oauthService.get(), mcpResource,     mcpResourceMetadataUrl,
                   mcpToken,           mcpFallbackUser, mcpKeyService.get()};
-  ServerInfo mcpInfo{
-      "windmill", "0.1.0",
-      "Windmill roadmaps are RPG-style skill trees: nodes are skills/milestones, and a "
-      "prerequisite edge points from a required node to the node it unlocks. Use get_tree and "
-      "get_diagnostics to inspect, the edit tools (create_node, connect, …) to author, and "
-      "set_progress to mark a node active or complete. Edits are never rejected — a cycle or a "
-      "detached node is surfaced by get_diagnostics, not refused."};
-  auto mcpServer = std::make_shared<McpServer>(*mcpTools, std::move(mcpInfo), roadmapResources());
+  auto mcpServer = std::make_shared<McpServer>(*mcpTools, roadmapServerInfo(), roadmapResources());
   auto mcpEndpoint = std::make_shared<McpHttpEndpoint>(*mcpServer, mcpOrigins, mcpAuth);
 
   // The origins allowed to send credentialed (cookie-bearing) requests. The app itself is

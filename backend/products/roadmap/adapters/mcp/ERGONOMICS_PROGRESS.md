@@ -1,6 +1,8 @@
 # MCP ergonomics — build log
 
-Executing the friction backlog in `../../mcp-changes.txt`. Each phase builds + tests + stages.
+Executing the friction backlog. The nine items this file opens with came from
+`backend/mcp-changes-graft.txt` (closed, kept as history); every awkward case found since goes
+to the live ledger at the repo root, `mcp-changes.txt`. Each phase builds + tests + stages.
 
 ## Plan → tool surface
 
@@ -118,9 +120,9 @@ MVCC/TOAST/WAL. Fix, in layers:
   mutable `Json::Value&` needs the same discipline.
 - **Validation belongs where the vocabulary is published.** `kHues` / `kStatuses` now feed both
   the schema's `enum` and the check that refuses against it, so a legal set stated in one place
-  cannot drift from the one enforced. The legend's caps (24 / 80) are still mirrored from an
-  anonymous namespace in `domain/Command.cpp` — hoisting them into `domain/Command.h` beside the
-  node caps is the follow-up that removes the copy.
+  cannot drift from the one enforced. The legend's caps went the same way: `kMaxKindLabelLength`
+  (24) and `kMaxKindDescriptionLength` (80) live in `domain/Command.h:29-30` beside the node
+  caps, and `domain/Command.cpp` refuses against those constants rather than a private copy.
 - **`import_subgraph` grafts without the domain's `validate()`**, so it was the one authoring path
   where a 10MB description or an empty node id would have landed. Its item checks are now the only
   thing standing there — worth remembering if a second bulk path ever appears.

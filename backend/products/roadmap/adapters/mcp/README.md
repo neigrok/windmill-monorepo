@@ -4,27 +4,42 @@ The Model Context Protocol edge of the backend: it lets an AI agent read and aut
 Windmill roadmaps through the **same application core** an HTTP or WebSocket client drives.
 It is a first-class adapter alongside `adapters/http/` and `adapters/ws/` — not a proxy.
 Edits route through the tree's `TreeRoom`, so they are merged, sequenced, logged to
-`tree_ops`, and persisted to `trees.document` exactly like any other edit.
+`tree_ops`, and persisted to the per-entry lattice tables (`tree_nodes` / `tree_edges` /
+`tree_kinds`) exactly like any other edit. (`trees.document` is the legacy whole-tree blob —
+`schema.sql:67` says so; a tree's rows are backfilled from it on first load.)
 
 ## Shape
 
+The engine and the HTTP transport are product-neutral and live in platform; the catalog, the
+projections and the documents are roadmap's:
+
 ```
-adapters/mcp/
-  McpServer.{h,cpp}       transport-agnostic JSON-RPC 2.0 engine (initialize, tools/list,
-                          tools/call, resources/list, resources/read, ping). Depends only on
-                          jsoncpp + an injected ToolHost.
-  RoadmapTools.{h,cpp}    the ToolHost: the tool catalog + dispatch into RoomRegistry /
-                          TreeRoom / ProgressService.
-  ToolArgs.{h,cpp}        one home for argument validation and for the sentence a refusal is
-                          written in — every tool routes through it.
-  ReadShape.{h,cpp}       the read projections (`fields`) and paging (`limit`/`cursor`).
-  EditReceipt.{h,cpp}     what an edit answers about diagnostics: the whole-tree flag, and what
-                          THIS edit introduced.
-  Resources.{h,cpp}       the MCP resources served: `windmill://quickstart`.
-  McpHttpEndpoint.{h,cpp} the Streamable-HTTP transport (sessions, Origin checks, verbs).
-infra/mcp_main.cpp        `windmill_mcp`      — stdio transport (local hosts spawn it).
-infra/mcp_http_main.cpp   `windmill_mcp_http` — HTTP transport (the deployable API).
+platform/adapters/mcp/
+  McpServer.{h,cpp}        transport-agnostic JSON-RPC 2.0 engine (initialize, tools/list,
+                           tools/call, resources/list, resources/read, ping). Depends only on
+                           jsoncpp + an injected ToolHost, a ServerInfo and a resource vector.
+  McpHttpEndpoint.{h,cpp}  the Streamable-HTTP transport: sessions, Origin checks, the three
+                           verbs, and `McpAuth` — how a request becomes a caller.
+products/roadmap/adapters/mcp/
+  RoadmapTools.{h,cpp}     the ToolHost: the tool catalog + dispatch into RoomRegistry /
+                           TreeRoom / ProgressService.
+  ToolArgs.{h,cpp}         one home for argument validation and for the sentence a refusal is
+                           written in — every tool routes through it.
+  ReadShape.{h,cpp}        the read projections (`fields`) and paging (`limit`/`cursor`).
+  EditReceipt.{h,cpp}      what an edit answers about diagnostics: the whole-tree flag, and what
+                           THIS edit introduced.
+  RoadmapResources.{h,cpp} what this deployment says it is: `roadmapServerInfo()` (the name,
+                           version and the `instructions` paragraph every client reads on
+                           connect) and `roadmapResources()` (`windmill://quickstart`).
+  golden/wire_corpus.json  a byte-compared transcript of one authoring session (WireCorpusTest).
+platform/infra/
+  main.cpp                 `windmill_server`   — REST + the collab socket + MCP, one process.
+  mcp_main.cpp             `windmill_mcp`      — stdio transport (local hosts spawn it).
+  mcp_http_main.cpp        `windmill_mcp_http` — standalone HTTP transport (local/standalone).
 ```
+
+All three composition roots ask `roadmapServerInfo()` for the handshake, so the paragraph an
+agent connects to cannot differ by transport.
 
 The dependency arrow points inward: `McpServer` knows nothing of rooms, Postgres, or HTTP;
 the transports know nothing of the tools. The edit tools reuse the existing `commandFromJson`
@@ -52,8 +67,8 @@ The checks live in `ToolArgs.{h,cpp}` — one home, every tool — and the tool 
 exactly once, by `RoadmapTools::callTool`, which also catches: a type-confused read throws inside
 jsoncpp, and a malformed argument must fail its own call rather than the whole HTTP request.
 Every cap a tool enforces is also published as `maxLength` / `maxItems` in its `inputSchema`, so a
-client can pre-validate what the server refuses. `test/adapters/mcp/ToolErrorContractTest.cpp`
-pins the messages themselves.
+client can pre-validate what the server refuses.
+`test/products/roadmap/adapters/mcp/ToolErrorContractTest.cpp` pins the messages themselves.
 
 ## Handles
 
@@ -61,9 +76,11 @@ pins the messages themselves.
 - `nodeId` — a node that **exists**, on every tool that edits or marks one. The older `id` spelling
   is still accepted (declared `deprecated` in the schema, since `additionalProperties: false`
   would otherwise have a client's own validator reject it), and never published as canonical.
-- `id` — the id **proposed** for a NEW node: `create_node`, `import_subgraph`'s `nodes[].id`.
-  A different concept, deliberately a different word; `create_node` refuses `nodeId` outright.
-- Legend kinds keep their own `id`: a kind is not a node.
+- `id` — the id **proposed** for a NEW thing: `create_node`, `add_kind`, `import_subgraph`'s
+  `nodes[].id` and `kinds[].id`. A different concept, deliberately a different word;
+  `create_node` refuses `nodeId` outright and `add_kind` refuses `kindId`.
+- Legend kinds publish `id` for the kind that exists too — a kind is not a node, and all six
+  `*_kind` tools spell it alike. `kindId` is read there as the silent alias (`ToolArgs.h:44`).
 
 ## Resources
 
@@ -78,16 +95,60 @@ The engine `McpServer::handle` is pure (`Json request → optional<Json> reply`)
 transports wrap it; both speak JSON-RPC 2.0, protocol version `2025-06-18`:
 
 - **stdio** (`windmill_mcp`) — newline-delimited frames on stdin/stdout, what local hosts
-  (Claude Code/Desktop) launch. stdout is the protocol channel; logs go to stderr.
-- **Streamable HTTP** (`windmill_mcp_http`) — the remote/deployable transport. One endpoint
-  (`/mcp` by default):
+  (Claude Code/Desktop) launch. stdout is the protocol channel; logs go to stderr. There is no
+  session and no bearer: a process you spawned is already the authorization, and it acts as
+  `WINDMILL_MCP_USER`.
+- **Streamable HTTP** (`McpHttpEndpoint`) — the remote transport. One endpoint (`/mcp` by
+  default):
   - `POST` — the body is one JSON-RPC message. A *request* gets its JSON-RPC response as
     `application/json`; a *notification* gets `202 Accepted`. `initialize` mints an
-    `Mcp-Session-Id` (returned as a header) that every later call must present.
+    `Mcp-Session-Id` (returned as a header) that every later call must present. Sessions are
+    idle-expiring (30 minutes, refreshed on use).
   - `GET` — would open a server→client SSE stream; we have none, so `405`.
   - `DELETE` — ends a session.
-  - The `Origin` header is validated (DNS-rebinding protection); `/healthz` is a liveness
-    probe. No server→client streaming is used because every tool is synchronous.
+  - The `Origin` header is validated (DNS-rebinding protection); a client that sends no Origin
+    at all is not a browser and passes. No server→client streaming is used because every tool
+    is synchronous. (`windmill_mcp_http` also serves `/healthz`; in `windmill_server` the
+    liveness probe is the app root, per `deploy/docker-compose.yml`.)
+
+**The HTTP transport is mounted twice, and the deployed one is `windmill_server`.** `main.cpp`
+registers the same `McpHttpEndpoint` on the REST host's `WINDMILL_MCP_PATH`, over the *same*
+`RoomRegistry` that REST and the collab socket use — so a tree has exactly one live room in
+production, and an agent's edit fans out to connected browsers through `WsPresenceBus` as it
+lands. `windmill_mcp_http` is the standalone build of that endpoint: its own process, its own
+`RoomRegistry`, a null presence bus. Keep it for local and single-purpose runs; do not point
+two writers at one database if you can avoid it (see *Operating notes*).
+
+## Auth
+
+`McpAuth` (`platform/adapters/mcp/McpHttpEndpoint.h`) is how a request becomes a caller, and
+`McpHttpEndpoint::resolveCaller` tries three credentials in order against the `Authorization:
+Bearer …` header:
+
+1. **An OAuth access token** — validated by `OAuthService::resolveAccessToken`, which requires
+   it to be unexpired *and* audience-bound to this server's resource URL. This is the real path:
+   a client discovers the authorization server through the RFC 9728 metadata document, runs the
+   authorization-code + PKCE flow against the API host, and acts as the granting account.
+2. **A personal MCP API key** — `McpKeyService::resolveKey`, the static-token fallback for
+   clients that cannot do OAuth. Minted in settings, stored as a digest, resolvable to its owner
+   until revoked or the account closes. Only `windmill_server` wires this one.
+3. **`WINDMILL_MCP_TOKEN`** — one shared secret, compared in constant time, that acts as
+   `WINDMILL_MCP_USER`. It exists for CI and for an agent on the box; it is not per-caller
+   identity and should be left unset in any deployment more than one person can reach.
+
+A request that presents none of them gets `401` with a
+`WWW-Authenticate: Bearer resource_metadata="…"` challenge naming
+`/.well-known/oauth-protected-resource`, which is served unauthenticated by both HTTP roots.
+
+The one case with no authentication at all is **none of the three configured** — no OAuth
+service, no key service, no shared token. Then every request runs as `WINDMILL_MCP_USER`. That
+is the stdio shape and the test shape; a deployment in that state is one you have to keep
+private yourself.
+
+Above the auth check both HTTP roots meter by IP, keyed on the forwarded client address:
+`windmill_server`'s general API ceiling (25 req/s per client, burst 50) covers `/mcp` along with
+everything else; `windmill_mcp_http` runs its own (20 req/s, burst 40). Traffic arriving with no
+proxy header is treated as internal and is not limited.
 
 ## Tools
 
@@ -156,70 +217,77 @@ a shared document.
 
 ## Build
 
-`brew install drogon libpqxx`, then `cmake --build build`. Produces `windmill_mcp` (stdio),
-`windmill_mcp_http` (HTTP), and `windmill_mcp_tests`.
+`brew install drogon libpqxx`, then `cmake --build build`. The MCP-carrying targets are
+`windmill_server` (REST + socket + MCP), `windmill_mcp` (stdio), `windmill_mcp_http`
+(standalone HTTP), and the `windmill_mcp_tests` suite. The Docker image builds, smoke-tests and
+installs `windmill_server` and `windmill_mcp_http`; `windmill_mcp` is a developer-machine target.
 
-## Run & register — stdio (local)
+## Register — the deployed server
+
+MCP is same-origin with the app — `https://windmill.works/mcp`, proxied to `windmill_server`
+(there is no `mcp.` subdomain any more; `deploy/Caddyfile:86` records the retirement).
+
+```bash
+claude mcp add --transport http windmill https://windmill.works/mcp
+```
+
+The client is challenged, discovers the authorization server from
+`/.well-known/oauth-protected-resource`, and runs OAuth against the API host — you approve the
+grant in the browser and it acts as your account. A client that cannot do OAuth uses a personal
+key from settings instead, as `Authorization: Bearer <key>`.
+
+## Run — stdio (local)
 
 ```bash
 claude mcp add windmill --env DATABASE_URL=postgresql://localhost/windmill \
-  -- /ABS/PATH/windmill-backend/build/windmill_mcp
+  --env WINDMILL_MCP_USER=<your account id> \
+  -- /ABS/PATH/windmill/backend/build/windmill_mcp
 ```
 
-## Deploy & register — HTTP (the main API)
+## Run — standalone HTTP (local)
 
 ```bash
 DATABASE_URL=postgresql://…/windmill \
 PORT=8090 \
-WINDMILL_MCP_ALLOWED_ORIGINS="https://app.windmill.dev" \
+WINDMILL_MCP_ALLOWED_ORIGINS="http://localhost:5173" \
+WINDMILL_MCP_PUBLIC_URL="http://localhost:8090" \
+WINDMILL_OAUTH_ISSUER="http://localhost:8088" \
   ./build/windmill_mcp_http
-```
-
-Point a client at the URL:
-
-```bash
-claude mcp add --transport http windmill https://your-host/mcp
 ```
 
 ### Configuration (env)
 
+Read by every root that serves MCP unless a row says otherwise.
+
 | Var | Default | Meaning |
 | --- | --- | --- |
 | `DATABASE_URL` | `postgresql://localhost/windmill` | Postgres connection |
-| `PORT` | `8090` | listen port |
-| `WINDMILL_MCP_HOST` | `0.0.0.0` | bind address |
-| `WINDMILL_MCP_THREADS` | `8` | Drogon worker threads |
-| `WINDMILL_MCP_PATH` | `/mcp` | endpoint path |
+| `PORT` | `8090` (`windmill_mcp_http`) | listen port |
+| `WINDMILL_MCP_HOST` | `0.0.0.0` (`windmill_mcp_http`) | bind address |
+| `WINDMILL_MCP_THREADS` | `8` (`windmill_mcp_http`) | Drogon worker threads |
+| `WINDMILL_MCP_PATH` | `/mcp` | endpoint path (HTTP roots) |
 | `WINDMILL_MCP_ALLOWED_ORIGINS` | *(empty)* | comma-separated browser Origin allow-list; `*` allows all. Non-browser clients send no Origin and are always allowed. |
-| `WINDMILL_MCP_USER` | `dev` | the identity edits/progress are written as |
+| `WINDMILL_MCP_PUBLIC_URL` | `windmill_server`: `WINDMILL_API_URL` · `windmill_mcp_http`: `http://localhost:8090` | the externally reachable origin. `+ WINDMILL_MCP_PATH` is the OAuth **resource** (audience) a token must be bound to, and the base of the metadata URL in the 401 challenge — get it wrong and every valid token is refused. |
+| `WINDMILL_OAUTH_ISSUER` | `http://localhost:8088` (`windmill_mcp_http`) | the authorization server advertised in the protected-resource metadata. `windmill_server` is its own issuer and advertises itself. |
+| `WINDMILL_MCP_TOKEN` | *(empty)* | optional shared bearer that acts as `WINDMILL_MCP_USER`. CI and local agents only — it is a second key to every tree that user owns. |
+| `WINDMILL_MCP_USER` | `dev` | who an unauthenticated request acts as: the stdio caller, and the account `WINDMILL_MCP_TOKEN` maps to |
 
-Identity: the agent writes as `dev` by default (the same fixed user the web dogfood reads).
-When accounts land (Phase 1) this becomes the authenticated caller — see below.
+Identity is per caller: an OAuth token acts as the account that granted it, a personal key as
+its owner. `WINDMILL_MCP_USER` is the fallback identity only — the stdio process, the shared
+token, and a deployment with no auth wired at all.
 
-## Known limitations (tied to SPEC §12 hardening)
+## Operating notes
 
-- **Auth is deferred.** The HTTP transport is complete and safe (sessions, Origin checks),
-  but there is no per-caller authentication yet — every session acts as `WINDMILL_MCP_USER`.
-  Deploy behind your own gateway/network boundary until Phase 1. The auth seam is the
-  session: Phase 1 maps a bearer token → user at `handlePost`, and per-session identity
-  flows into `RoadmapTools`.
-- **One writer per tree, across processes.** `windmill_mcp_http` runs its own `RoomRegistry`
-  against the shared Postgres (the standalone topology). It reloads head from the database on
-  open and is the effective authority for a tree during a session; the database is the bus,
-  so agent edits are durable and visible to the web on reload. Simultaneous web+MCP editing
-  of the *same* tree can still race on `(tree_id, seq)` until §12 sticky routing (a single
-  room owner) — or fold the MCP endpoint into `windmill_server` to share one RoomRegistry.
-- **Blocking DB in the event loop.** Repositories are connection-per-request (synchronous
-  libpqxx), matching the existing HTTP server. Add a pool / async before high load.
-- **Clock.** MCP and the web `Collab` now share one HLC domain: every write is stamped by
-  the tree's room clock (`TreeRoom::nextStamp`, wall time from the Clock port), so an agent's
+- **One live room, and one process that should hold it.** `windmill_server` mounts MCP over the
+  same `RoomRegistry` as REST and the socket, so agent and browser edits share one head, one
+  `seq` and one broadcast. Running `windmill_mcp_http` (or `windmill_mcp`) against the *same*
+  database opens a second registry: each process reloads head on open and is the authority for
+  a tree while it holds it, so two of them writing one tree can still race on `(tree_id, seq)`.
+  That is a local/standalone topology, not a second production writer.
+- **Blocking DB on the event loop.** Repositories are synchronous libpqxx over one connection
+  per thread (`platform/adapters/postgres/PgConnection.h`), opened lazily and given a 5s
+  statement timeout. Fine at current load; a pool or async is the move before high load.
+- **Clock.** MCP and the web `Collab` share one HLC domain: every write is stamped by the
+  tree's room clock (`TreeRoom::nextStamp`, wall time from the `Clock` port), so an agent's
   edit and a socket edit are directly comparable and can never collide on a stamp. Clients
-  will stamp their own writes in a later step (see `GRAPH_SYNC_DESIGN.md`).
-
-## Next
-
-- Per-caller auth (bearer token → user) at the session seam — pairs with Phase 1.
-- `list_trees` / `create_tree` tools once a `TreeRepository::list` port exists (agent
-  discovery; today a tree id must be known).
-- Optionally co-host the endpoint in `windmill_server` to share one RoomRegistry and
-  broadcast agent edits live to connected browsers.
+  will stamp their own writes in a later step (see the repo-root `docs/GRAPH_SYNC_DESIGN.md`).

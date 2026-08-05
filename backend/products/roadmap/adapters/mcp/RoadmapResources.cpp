@@ -82,6 +82,15 @@ the tool, the argument, what you sent and what is legal — read it before retry
 
 }  // namespace
 
+ServerInfo roadmapServerInfo() {
+  return {"windmill", "0.1.0",
+          "Windmill roadmaps are RPG-style skill trees: nodes are skills/milestones, and a "
+          "prerequisite edge points from a required node to the node it unlocks. Use get_tree and "
+          "get_diagnostics to inspect, the edit tools (create_node, connect, …) to author, and "
+          "set_progress to mark a node active or complete. Edits are never rejected — a cycle or a "
+          "detached node is surfaced by get_diagnostics, not refused."};
+}
+
 std::vector<McpResource> roadmapResources() {
   return {{"windmill://quickstart", "quickstart", "Windmill quickstart",
            "Edge direction, handle names, what is never refused, and the read projections — the "

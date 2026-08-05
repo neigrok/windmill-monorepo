@@ -21,4 +21,13 @@ inline pqxx::connection& pgThreadConnection(const std::string& connString) {
   return *conn;
 }
 
+// Strip any `user:password@` credentials before a connection string reaches a log line. Every
+// process that announces which database it opened goes through here.
+inline std::string redactDbUrl(const std::string& connString) {
+  const std::size_t scheme = connString.find("://");
+  const std::size_t at = connString.find('@');
+  if (scheme == std::string::npos || at == std::string::npos || at < scheme) return connString;
+  return connString.substr(0, scheme + 3) + "***@" + connString.substr(at + 1);
+}
+
 }

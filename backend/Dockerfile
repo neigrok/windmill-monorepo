@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:1.7
 #
-# Windmill backend image. One image, two service binaries (windmill_server on :8080,
-# windmill_mcp_http on :8090) — the compose file picks which to run per service.
+# Windmill backend image. One image, two binaries. windmill_server (:8080) is the deployed
+# one and the only service the compose file starts — it serves REST, the collab socket and
+# MCP from one process. windmill_mcp_http (:8090) is the standalone MCP transport, carried
+# here so a local or single-purpose run has it (deploy/docker-compose.yml:139-141).
 #
 # The build boundary lives here: Drogon and libpqxx are the messy vendor deps, so we
 # resolve them once in a fat builder and ship a slim runtime that carries only the two

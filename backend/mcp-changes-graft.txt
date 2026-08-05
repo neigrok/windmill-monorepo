@@ -1,7 +1,11 @@
-Windmill MCP — ergonomics friction log
-Goal: MCP ergonomics for this product should be EXTREME. Every awkward case an
-agent hits while authoring a tree over MCP goes here, so we can address it.
+Windmill MCP — ergonomics friction log, CLOSED. All nine items below shipped (see the
+tally at the end, and products/roadmap/adapters/mcp/ERGONOMICS_PROGRESS.md for how).
+Kept as the record of what the first 106-node tree cost to author over MCP.
 
+New friction does NOT go here — it goes to the live ledger at the repo root,
+mcp-changes.txt.
+
+Goal, then and now: MCP ergonomics for this product should be EXTREME.
 Format: [area] pain — what would fix it.
 
 --- found while dumping windmill-frontend/src/skilltree/mock/roadmapTree.js into

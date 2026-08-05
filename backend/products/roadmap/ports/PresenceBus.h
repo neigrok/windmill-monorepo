@@ -23,4 +23,12 @@ struct PresenceBus {
                                  ProgressStatus status) = 0;
 };
 
+// The bus a socket-less process mounts: the MCP-only roots (windmill_mcp, windmill_mcp_http) run
+// their own rooms against the shared Postgres with nobody subscribed, so fanout has nowhere to go.
+// Durability is the database — the web server picks an agent's edits up on its next room load.
+struct NullPresenceBus : PresenceBus {
+  void broadcastSubgraph(const TreeId&, Seq, const Subgraph&) override {}
+  void broadcastProgress(const TreeId&, const UserId&, const NodeId&, ProgressStatus) override {}
+};
+
 }
