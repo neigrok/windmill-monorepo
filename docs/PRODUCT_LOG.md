@@ -442,8 +442,15 @@ where it matters more, because the thing on the other end is not ours.
    display string. Stable ids are a schema decision taken in the first migration — never a screen.
 3. **One tap is the product.** The ladder, sticky carry-forward, last-time prefill. The craft is the
    number being right before you touch it.
-4. **The model proposes; the human applies.** Nothing an agent suggests reaches a program without a
-   typed diff and a tap — the same contract roadmap's tending and journal's echoes hold.
+4. **The tools are the only way a model touches data, and the grant decides which tools exist.**
+   Corrected 2026-08-07, because the previous wording ("the model proposes; the human applies —
+   the same contract roadmap's tending holds") described a safety property roadmap's tending has
+   never had: `products/roadmap/domain/Tending.h` says an agent's edits "land through the tree's
+   room and into the op log exactly as a person's do". The contract that IS held, in both products,
+   is narrower and more honest — a scoped catalog with the destructive tools removed outright, one
+   sentence to one undo, and an iteration cap that is a failure rather than a success. Gym's grant
+   model makes it explicit: `delete` is never implied by `write`, and a client without it cannot
+   see a destructive tool, let alone call one.
 
 **Gym's version of "the craft is the moat"** is the strength graph. Roadmap is a shipped RPG skill
 tree; strength progression *is* a prerequisite graph — bodyweight dip unlocks weighted dip unlocks
@@ -650,7 +657,7 @@ personal tool. Every phase-3 bet names its own kill rule when it starts.
 ## Risks carried
 
 - ~~**Gym is a README and a placeholder.**~~ **Retired 2026-08-06.** Phase 0 and phase 1 shipped
-  (`windmill_gym`, the five `gym_*` tables, sixteen routes), and the 2026-08-06 wave took the decided
+  (`windmill_gym`, six `gym_*` tables, twenty routes), and the 2026-08-06 wave took the decided
   design across all three surfaces: routines and the server-frozen plan snapshot, start-from-a-routine,
   the mid-session save-to-routine, the finish screen with its record rule and its comparison, discard,
   a warmup that can actually be logged, the web's backfill door — and the **iOS room**, which is the

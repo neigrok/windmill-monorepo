@@ -253,3 +253,48 @@ was noticed, not where it is unique.
 Worth a receipt field either way: import_subgraph reports newNodes and nodeCollisions but
 no edge count. Even without the schema check, an `edges:` number in the receipt would have
 made this visible on the first call.
+
+
+--- 2026-08-07 · CLOSED: unknown arguments are refused, once, for every tool ---
+
+The 2026-08-05 entry above is fixed, and it was fixed where it said it should be: at the
+seam that dispatches, holding every schema. `CompositeToolHost::callTool` compares the
+argument object's member names against the declared `properties` before it routes, and
+refuses naming the key AND listing what the tool does take —
+
+  import_subgraph: unknown argument "edges". This tool takes: dryRun, kinds, nodes, progress,
+  treeId.
+
+So `additionalProperties:false`, published on every tool since the first one, is finally
+enforced rather than merely advertised, and import_subgraph's promise that the batch is
+atomic against malformed input is now true of a bad field BESIDE `nodes` as well as inside
+one. Written once, for all 27 tools and for every tool any product adds later.
+
+One boundary worth stating: the check lives on the MCP wire, not on the tend path. A tend
+runs through ScopedToolHost into RoadmapTools directly (deliberately — see below), so a
+tending agent's misnamed argument is still dropped in silence. Unchanged from before, not
+made worse, and worth doing if the tend loop ever earns a second reader.
+
+Still open from that entry: import_subgraph's receipt reports newNodes and nodeCollisions
+but no edge count. An `edges:` number would have made the original defect visible on the
+first call, and it is still the cheapest independent guard.
+
+--- 2026-08-07 · the permission gate, and what it changes for a client ---
+
+tools/list is now per-request. A connection sees the tools its grant covers and no others:
+scopes are `<product>:<level>` with three levels that never imply one another, so
+`roadmap:read roadmap:write` shows 24 of roadmap's 27 tools and NOT delete_tree,
+delete_node or remove_kind. An empty scope is the legacy account-wide grant — every token
+minted before this existed carries `scope ''` — and that is the one exception to
+fail-closed, written down at the parse site.
+
+Two ergonomic notes for whoever writes the next client:
+
+- The `instructions` paragraph now says, in as many words, that a tool you cannot see is a
+  level you were not granted rather than a tool that is missing. Without that sentence an
+  agent reads a short catalog as a broken server and either retries or invents a
+  workaround; neither ends with the human being told to reconnect.
+- `/.well-known/oauth-authorization-server` publishes `scopes_supported`, derived from the
+  products actually connected, and the token response echoes the granted `scope`. A client
+  that asked for more than it got learns it at issue rather than from a tool that silently
+  never appears.
