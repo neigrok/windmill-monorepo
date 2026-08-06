@@ -266,15 +266,19 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     products/journal/routes.cpp)
 
   # Gym adapters: the Pg storage, the two wire boundaries (JSON for every client, CSV for the one
-  # artifact a lifter walks away with), the REST surface, the tools an agent drives, and the route seam.
+  # artifact a lifter walks away with), the REST surface, the tools an agent drives, the panel that
+  # drives those same tools from inside the app, and the route seam.
   # They reach Drogon + libpqxx through windmill_platform (linked PUBLIC by the core lib above).
   target_sources(windmill_gym PRIVATE
     products/gym/adapters/json/TrainingJson.cpp
     products/gym/adapters/csv/TrainingCsv.cpp
     products/gym/adapters/postgres/PgTrainingRepository.cpp
     products/gym/adapters/http/GymApi.cpp
+    products/gym/adapters/http/CoachApi.cpp
+    products/gym/adapters/llm/AnthropicCoach.cpp
     products/gym/adapters/mcp/GymTools.cpp
     products/gym/adapters/mcp/GymToolCatalog.cpp
+    products/gym/application/CoachService.cpp
     products/gym/routes.cpp)
 
   # One process serves REST, the collab socket, AND MCP over the same rooms. main.cpp is the
@@ -347,6 +351,8 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/products/journal/adapters/postgres/PgJournalRepositoryTest.cpp
     test/products/journal/adapters/postgres/PgEchoRepositoryTest.cpp
     test/products/gym/adapters/http/GymApiTest.cpp
+    test/products/gym/adapters/llm/AnthropicCoachTest.cpp
+    test/products/gym/application/CoachServiceTest.cpp
     test/products/gym/adapters/postgres/PgTrainingRepositoryTest.cpp)
   target_link_libraries(windmill_adapters_tests PRIVATE windmill_roadmap windmill_journal windmill_gym)
   add_test(NAME adapters COMMAND windmill_adapters_tests)

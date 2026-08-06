@@ -21,6 +21,7 @@ import {
 import { mintId } from './logger/flushQueue.js';
 import { comparison, finishHead, RECORD_TITLE, recordSentence, statTiles } from './review.js';
 import { routineFromSession } from './routines.js';
+import { CoachPanel } from './coach/CoachPanel.jsx';
 import { CoachShare } from './share/CoachShare.jsx';
 import { useGymRead } from './useGymRead.js';
 
@@ -113,9 +114,10 @@ export function FinishScreen({ id, live }) {
         <KeepAsRoutine session={session} sets={sets} catalog={catalog} live={live} />
       )}
 
-      {/* Not offered on a short session, and that is a decision rather than an omission: a screen
-          asking "keep it in the log, or drop it?" must not also offer to send it to somebody. The
-          session detail carries the same door, so a session kept is one tap from being shared. */}
+      {/* Neither of these is offered on a short session, for the same reason: a screen asking "keep
+          it in the log, or drop it?" must not also offer to send it to somebody or to talk about it.
+          The session detail carries both doors, so a session kept is one tap from either. */}
+      {!review.slight && <CoachPanel sessionId={id} />}
       {!review.slight && <CoachShare sessionId={id} />}
 
       {!review.slight && (

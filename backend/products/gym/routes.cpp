@@ -1,5 +1,6 @@
 #include "products/gym/routes.h"
 
+#include "products/gym/adapters/http/CoachApi.h"
 #include "products/gym/adapters/http/GymApi.h"
 
 #include <drogon/drogon.h>
@@ -142,6 +143,19 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
         api->sharedSession(req, std::move(cb), token);
       },
       {drogon::Get});
+
+  // The panel, and the only conditional mount in the product. No vendor key means no coach: the path
+  // does not exist, `POST` to it 404s like any other unrouted path, and the web hides the panel on
+  // that answer. A route that existed only to say "not available" would be a promise this deployment
+  // cannot keep, printed under somebody's workout.
+  if (!deps.coachService || !deps.coachService->configured()) return;
+  auto coach = std::make_shared<CoachApi>(deps.coachService, deps.authService);
+  app.registerHandler(
+      "/v1/gym/sessions/{id}/coach",
+      [coach](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        coach->ask(req, std::move(cb), id);
+      },
+      {drogon::Post});
 }
 
 }

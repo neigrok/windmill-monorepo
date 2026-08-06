@@ -49,6 +49,15 @@
 //                                           UNAUTHENTICATED READ, and the token is the whole
 //                                           credential; revoked, expired and never-minted are one
 //                                           byte, so a null here says nothing about which
+//   POST /v1/gym/sessions/:id/coach      -> { turns: [{from: 'lifter'|'coach', text}] } in;
+//                                           { answer, steps: [{tool, failed}] } out. THE ONE ROUTE
+//                                           THAT MAY NOT EXIST: a deployment with no model wired
+//                                           never mounts it, and that absence is a bare 404 while a
+//                                           workout this account cannot read is a 404 carrying
+//                                           `coach-no-session`. Windmill One only (403
+//                                           `coach-not-entitled`), braked per account (429
+//                                           `coach-rate-limited`), and stateless — the client holds
+//                                           the conversation, the server holds none of it
 //   GET  /v1/gym/routines                -> { routines: [Routine…] }, most-recently-trained first
 //   POST /v1/gym/routines                -> the write document in; the stored Routine out —
 //                                           idempotent on the client-minted id, 409 when it is spent
@@ -313,6 +322,20 @@ export const gymApi = {
     const response = await call(`/shared/${encodeURIComponent(token)}`);
     if (response.status === 404) return null;
     return json(response);
+  },
+
+  // The coach panel: the whole thread so far in, one answer and the tools it read out. The server
+  // keeps nothing between asks — it is the client that holds the conversation — so this call carries
+  // every turn every time, and the caps on that (eight turns, a thousand bytes each) are the server's.
+  //
+  // It is the ONE call in this file that may not exist. A deployment with no model wired never mounts
+  // the route, so a 404 with no `code` means "no coach here" while a 404 carrying `coach-no-session`
+  // means "not your workout"; coach.js's askFailure is the one place that difference is read.
+  async askCoach(sessionId, turns) {
+    return json(await call(`/sessions/${sessionId}/coach`, {
+      method: 'POST',
+      body: JSON.stringify({ turns }),
+    }));
   },
 };
 

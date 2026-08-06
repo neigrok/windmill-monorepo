@@ -19,6 +19,7 @@ import {
   BACKFILL_HREF, CLOSED_ITSELF_NOTE, closedOnItsOwn, dayLabel, fmt, groupByExercise, NO_ROUTINE,
   routineNameOf, sessionHref, sessionMetaLabel, timeLabel, topSetLabel, topSetOf,
 } from './log.js';
+import { CoachPanel } from './coach/CoachPanel.jsx';
 import { CoachShare } from './share/CoachShare.jsx';
 import { useGymRead } from './useGymRead.js';
 
@@ -199,8 +200,10 @@ export function SessionDetail({ id }) {
           </ul>
         </section>
       ))}
-      {/* The same door the finish screen carries, at the other end of a session's life: a workout
-          worth sending to a coach is usually one somebody went back and looked at. */}
+      {/* The same two doors the finish screen carries, at the other end of a session's life: a
+          workout worth asking about, or sending to a coach, is usually one somebody went back and
+          looked at. */}
+      <CoachPanel sessionId={id} />
       <CoachShare sessionId={id} />
     </>
   );

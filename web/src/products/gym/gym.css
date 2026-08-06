@@ -2757,6 +2757,146 @@ a.gym-start-adhoc {
   color: var(--gym-ink-dim);
 }
 
+/* ── The coach panel ──────────────────────────────────────────
+   Deliberately the same quiet block as the share above it, and
+   deliberately NOT a chat app: no bubbles, no avatars, no
+   typing dots, no send icon. Two turns on one surface, the
+   lifter's set slightly in from the edge and the answer flush
+   with it, and under every answer one small line saying what it
+   read. It sits at the bottom of a session and never competes
+   with the sets, because the sets are what happened. */
+.gym-coach {
+  margin-top: 22px;
+  padding: 14px;
+  border: 1px solid var(--gym-line);
+  border-radius: 13px;
+  background: var(--gym-surface);
+}
+.gym-coach-title {
+  margin: 0;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--gym-ink-dim);
+}
+/* The terms are on screen before anything is typed — what it
+   may do, and what it may not. Same rule as the share's. */
+.gym-coach-terms {
+  margin: 6px 0 12px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--gym-ink-faint);
+}
+.gym-coach-thread {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.gym-coach-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.gym-coach-turn.is-lifter {
+  padding-left: 11px;
+  border-left: 2px solid var(--gym-line-strong);
+}
+.gym-coach-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  color: var(--gym-ink);
+}
+.gym-coach-turn.is-lifter .gym-coach-text {
+  color: var(--gym-ink-dim);
+}
+/* WHAT IT READ. Small, quiet, and never omitted — this line is
+   the difference between an instrument and a chatbot. */
+.gym-coach-read {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--gym-ink-faint);
+}
+.gym-coach-compose {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+.gym-coach-input {
+  flex: 1;
+  box-sizing: border-box;
+  padding: 10px 11px;
+  border: 1px solid var(--gym-line);
+  border-radius: 10px;
+  background: var(--gym-sunken);
+  color: var(--gym-ink);
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.45;
+  resize: vertical;
+}
+.gym-coach-input::placeholder {
+  color: var(--gym-ink-faint);
+}
+.gym-coach-ask {
+  flex: none;
+  min-height: 40px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 10px;
+  background: var(--color-brand);
+  color: var(--gym-on-accent);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gym-coach-ask:hover {
+  background: var(--color-brand-hover);
+}
+.gym-coach-ask.is-inert {
+  opacity: 0.45;
+  cursor: default;
+}
+/* The paywall, and the absence, share a face: a plain sentence
+   where the composer would have been. Neither is an alarm. */
+.gym-coach-locked {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--gym-ink-dim);
+}
+.gym-coach-upgrade {
+  margin-top: 10px;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--gym-ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gym-coach-upgrade:hover {
+  border-color: var(--color-brand);
+  color: var(--color-brand);
+}
+.gym-coach-note {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--gym-ink-dim);
+}
+
 /* ── The coach's page ─────────────────────────────────────────
    No chrome, no tabs, no seat, no switcher and no sign-in door.
    A coach did not come here to make an account. */

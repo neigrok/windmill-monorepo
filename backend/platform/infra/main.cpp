@@ -66,9 +66,11 @@
 #include "products/journal/adapters/postgres/PgNudgeRepository.h"
 #include "products/journal/application/PageService.h"
 #include "products/journal/routes.h"
+#include "products/gym/adapters/llm/AnthropicCoach.h"
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
 #include "products/gym/adapters/mcp/GymTools.h"
 #include "products/gym/adapters/postgres/PgTrainingRepository.h"
+#include "products/gym/application/CoachService.h"
 #include "products/gym/application/LogService.h"
 #include "products/gym/routes.h"
 
@@ -345,6 +347,19 @@ int main() {
   auto gymRepository = std::make_shared<gym::PgTrainingRepository>(connString);
   auto logService = std::make_shared<gym::LogService>(*gymRepository, *systemClock, *tokens);
   auto gymTools = std::make_shared<gym::GymTools>(*logService, apiBaseUrl);
+
+  // The in-app coach panel — the SECOND door onto the very tools built above, for a lifter who has no
+  // agent of their own. Same key as the roadmap composer and the tend agent: one Anthropic account,
+  // one credential, three products asking it different questions. Dark when unconfigured, and dark
+  // here means ABSENT: with no key there is no CoachService, so gym::registerRoutes never mounts the
+  // path and the panel's client hides itself on the 404. The narrowing that makes this safe is not
+  // here — it is the read-only ToolScope CoachService states at its own call site, plus CoachTools,
+  // which drops every write and delete tool from the catalog the model is handed.
+  auto gymCoachAgent = std::make_shared<gym::AnthropicCoach>(anthropicKey ? anthropicKey : "", sentry);
+  std::shared_ptr<gym::CoachService> gymCoach;
+  if (gymCoachAgent->configured())
+    gymCoach = std::make_shared<gym::CoachService>(*logService, *gymCoachAgent, *gymTools,
+                                                   *entitlements);
 
   // The tool surface a connected client sees: every product's module behind one host, filtered by
   // the grant its credential carries. Roadmap and gym are wired today; adding one is a line here,
@@ -848,10 +863,12 @@ int main() {
 
   // The gym product — the third room — mounted behind its own seam (products/gym/routes.h). The
   // durable set write is still the heart of it: owner-scoped, idempotent by client-minted id,
-  // auto-close applied lazily by the service. No env vars, no arming flags, no sweeps, no vendor
-  // keys. Its collaborators were built up with the MCP surface, because gym's tools ride the same
-  // service these routes do — one core, two doors, and no second copy of a rule.
-  gym::GymDeps gymDeps{.logService = logService, .authService = authService};
+  // auto-close applied lazily by the service. No arming flags and no sweeps; the one vendor key it
+  // reads is ANTHROPIC_API_KEY, and only the coach panel reads it — every route below exists whether
+  // or not it is set. Its collaborators were built up with the MCP surface, because gym's tools ride
+  // the same service these routes do — one core, two doors, and no second copy of a rule.
+  gym::GymDeps gymDeps{
+      .logService = logService, .authService = authService, .coachService = gymCoach};
   gym::registerRoutes(app, gymDeps);
 
   // Resend's delivery webhook, mounted LAST because it is the one door that speaks for all of them.

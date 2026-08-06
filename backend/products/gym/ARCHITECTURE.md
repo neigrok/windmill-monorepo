@@ -72,18 +72,21 @@ happens on the device. The backend's job is narrow and load-bearing:
   **gym publishes, gym never imports**: it will emit an achievement or a paste-grammar tree the
   user hands to roadmap — coupling by the account and the user's own hand, never a cross-product
   read.
-- **No chat of gym's own — the tools are the agent path.** Roadmap's `llm-generator` ruling applied
-  to gym: gym ships no SSE parser, no prompt, no tool loop and no token bill. It ships a **catalog**,
-  and whatever talks to it — the lifter's own Claude over MCP, or a panel the shell puts in front of
-  someone who has no agent — reaches this log only through those tools, under a grant. **Lift's
-  propose-apply contract did not survive, and this line used to say it had:** a granted write lands
-  directly, exactly as roadmap's tending writes (`domain/Tending.h`). What stands where the human's
-  Apply stood is the grant — a level nobody approved is a tool the connection cannot even see — and
-  the fact that each of the three destructive tools sits behind `gym:delete` alone.
+- **One agent path with two doors.** Gym ships a **catalog**, and whatever talks to it reaches this
+  log only through those tools, under a grant: the lifter's own Claude over MCP, or the coach panel
+  (§12) for someone who has no agent. **Two refusals this section used to make did not survive.**
+  *Lift's propose-apply contract:* a granted write lands directly, exactly as roadmap's tending writes
+  (`domain/Tending.h`); what stands where the human's Apply stood is the grant — a level nobody
+  approved is a tool the connection cannot even see — and the fact that each of the three destructive
+  tools sits behind `gym:delete` alone. *"No prompt, no tool loop, no token bill":* the panel is all
+  three. What is still true and is the point of the design is that it is not a SECOND system — same
+  tools, same service, same ownership rules, and a scope narrower than any MCP connection's. Still
+  cut: streaming (no SSE parser), proposal chrome, and any chat not attached to one finished workout.
 
-**No billing code in gym, phases 0–2.** The log is free; the *connected* log is Windmill One.
-Until `gym-mcp`, gym asks nothing of `Entitlements`, holds no plan enum, and gates nothing.
-The one predicate it will eventually read is the same `hasWindmillOne` journal's Talk reads.
+**Billing in gym is one predicate, read in one place.** The log is free — every route in §6 answers a
+signed-in lifter whether or not they pay. The *connected* log is Windmill One, and the only code in
+this product that knows that is `CoachService`, which reads the same `hasWindmillOne` journal's Talk
+reads before the question travels anywhere. No plan enum, no tier arithmetic, no second gate.
 
 ---
 
@@ -99,12 +102,18 @@ backend/products/gym/
   domain/Review.h/.cpp       e1RM · the three record rules · the comparison   (pure, no I/O)
   domain/Statistics.h/.cpp   the per-movement line · the standing bests       (pure, no I/O)
   ports/TrainingRepository.h the one store port + its DTOs
+  ports/CoachAgent.h         the panel's port: CoachTurn · CoachStep · CoachAnswer
   application/LogService.h/.cpp   start/finish/append/log/routines/stats/export/share
+  application/CoachService.h/.cpp CoachTools (read-only, one workout) + the panel's refusal ladder
   adapters/
     json/TrainingJson.h/.cpp      the cross-surface wire codec
     csv/TrainingCsv.h/.cpp        the export's framing, and nothing else
     postgres/PgTrainingRepository.h/.cpp
-    http/GymApi.h/.cpp
+    http/GymApi.h/.cpp            every /v1/gym/* route but one
+    http/CoachApi.h/.cpp          POST /v1/gym/sessions/{id}/coach — the one conditional route
+    mcp/GymToolCatalog.h/.cpp     the fifteen declarations + the handshake paragraph
+    mcp/GymTools.h/.cpp           the dispatch behind them, over LogService alone
+    llm/AnthropicCoach.h/.cpp     the panel's tool loop and its one vendor call
   routes.h/.cpp              gym::GymDeps + gym::registerRoutes(app, deps)
 ```
 
@@ -986,6 +995,7 @@ query, ordered by pattern then name. Identity rules, stated once:
 | `POST /v1/gym/sessions/{id}/share` | mint a coach share — `{token, expiresAt}`, idempotent on the session | 2 |
 | `DELETE /v1/gym/sessions/{id}/share` | revoke it — `204`; nothing to revoke is `404 no such session` | 2 |
 | `GET  /v1/gym/shared/{token}` | **the one unauthenticated route.** One session and its sets; revoked, expired and unknown are one `404` | 2 |
+| `POST /v1/gym/sessions/{id}/coach` | **the one conditional route.** The panel (§12) — `{turns:[{from,text}]}` in, `{answer, steps}` out. Absent entirely on a deployment with no `ANTHROPIC_API_KEY`, which is why its own `404` carries `coach-no-session` and the framework's does not | 3 |
 
 ### The MCP tool catalog (`adapters/mcp/GymToolCatalog`, dispatched by `adapters/mcp/GymTools`)
 
@@ -1577,3 +1587,71 @@ surface at all**, so the phase-1 dogfood gate (8 consecutive real sessions) cann
 `gym-landing` stays down that much longer. `apple-identity` (`backend/AUTH.md`) is a hard
 prerequisite — shipping Sign in with Apple without `user_identities` forks accounts on the first
 lifter who taps *Hide My Email*, and the fork is unrecoverable once both halves hold sets.
+
+---
+
+## 12. The coach panel — the second door, not the second system
+
+`ports/CoachAgent.h` · `application/CoachService.{h,cpp}` · `adapters/llm/AnthropicCoach.{h,cpp}` ·
+`adapters/http/CoachApi.{h,cpp}`
+
+A lifter with Claude connects it and asks. A lifter without one gets a panel under any finished
+workout that asks the same questions of the same tools. **That is one system with two doors**, and
+everything below exists to keep it that way rather than letting a second, looser path grow beside the
+first. §0's refusal of an in-app chat is reversed here, in writing, with the bounds it is reversed
+under.
+
+### 12.1 The narrowing, in two independent layers
+
+`GymTools` does not gate — deliberately, because over MCP the grant was settled above it by
+`CompositeToolHost` — so a panel wired straight to it would be a door with no lock, and a
+hallucinated `discard_session` would execute. Two things stand in the way, and they stack rather than
+merge, exactly as `ScopedToolHost` and the composite do for a tend:
+
+- **The scope, stated at the call site.** `CoachService::ask` constructs
+  `ToolCaller{caller, ToolScope({{"gym", Access::read}})}` on the line that dispatches the run. Not a
+  default, not inherited, not `everything()` — the widest thing a panel could inherit is everything
+  the *account* may do, which for a question about a workout that already happened is nine tools too
+  many.
+- **`CoachTools`, which is gym's `ScopedToolHost`.** It drops every declaration whose access is not
+  `read` (so the model is handed six tools, not fifteen), refuses a non-read name if one is called
+  anyway, and **forces `sessionId`** on every tool that takes one — so a set note somebody typed at
+  the rack cannot steer the panel onto another workout. It decides all of this by reading the
+  declarations, never a list of names, so it cannot drift from the catalog.
+
+Either layer alone would hold today. Both is what survives someone widening the other by accident.
+
+### 12.2 Every bound, and why each one is there
+
+| Bound | Value | Why |
+|---|---|---|
+| Grant | `gym:read` | a question about a finished workout needs no write, ever |
+| Reach | one session | the panel is about the workout it was opened on; `CoachTools` pins it |
+| Iterations | 6, and hitting it is a **failure** | an unfinished answer printed under somebody's log is worse than "the coach didn't answer" |
+| Turns | 8, 1000 bytes each | the server is stateless, so the request body *is* the prompt somebody pays for |
+| Entitlement | `hasWindmillOne`, read before the question travels | the same predicate journal's Talk reads; a non-subscriber's words never reach the vendor |
+| Rate | ~6 asks / 10 min / **account** | the spend is the account's; a household behind one address should not share a budget |
+| Ownership | `LogService::detail` before dispatch | absent and another account's are one fact here as everywhere |
+| Vendor | absent when unkeyed | no `ANTHROPIC_API_KEY` ⇒ no `CoachService` ⇒ `registerRoutes` never mounts the path |
+
+### 12.3 The shapes it refused
+
+- **No streaming.** The only SSE machinery in the repo is roadmap's hand-rolled HTTP/1.1 + chunked
+  decoder, and one reply per ask does not earn a second consumer of two hundred lines of parser.
+- **No conversation table.** The client sends the turns so far. There is no thread id to leak, no row
+  to garbage-collect, and nothing extra to name on the account-close screen.
+- **No blocking the request loop.** `CoachAgent::answer` blocks for as long as the vendor takes;
+  `CoachService` owns a two-thread pool and the handler hands its callback over. Four handler threads
+  parked on a model is a training log that stops answering everybody.
+- **Not a shared loop with roadmap's.** `AnthropicCoach` is a sibling of `AnthropicAgent`, not a lift
+  of it: same shape, different port, different bootstrap, and a conversation instead of one sentence.
+  A **third** consumer is what earns promoting `agentTools`/`toolResultBlock`/`markCachePoint` into
+  `platform/adapters/llm/`; two is not enough evidence about what the shared shape actually is.
+
+### 12.4 What the lifter is told
+
+The panel draws its terms before anything is typed — what it reaches and, in the same breath, that it
+only reads — and it prints **which tools each answer came from**, in call order
+(`web/src/products/gym/coach/coach.js`). That line is the product's whole stance made visible: a model
+reads your log through the same doors you do. Without it this would be a chatbot claiming to know
+things.

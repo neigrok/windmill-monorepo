@@ -45,7 +45,18 @@ const MCP_CLIENTS = ['Claude Desktop', 'Claude Code', 'Cursor', 'Codex', 'any MC
 const AGENT_CAN = [
   'Read your last twelve weeks of squats.',
   'Draft next block’s progression.',
-  'Propose a routine change.',
+  'Write next week’s routine — if you granted it.',
+];
+
+// THE GRANT, WHICH IS THE REAL SAFETY MODEL AND NOT A SCREENSHOT OF ONE. This card used to draw a
+// propose-apply flow with an Apply button, and the product does not work that way: a connection you
+// granted `write` writes directly, exactly as it would if you had typed it yourself. What stands
+// where that Apply stood is this — three separate levels, approved one at a time, and a level you
+// did not approve is a tool the connection cannot even see in its own tool list.
+const GRANT_LEVELS = [
+  { scope: 'gym:read', line: 'Read your log', granted: true },
+  { scope: 'gym:write', line: 'Add sets, movements and routines', granted: true },
+  { scope: 'gym:delete', line: 'Delete workouts and routines', granted: false },
 ];
 
 const BRAND_DUO = [
@@ -313,7 +324,7 @@ function ConnectedLog() {
   return (
     <section className="wrap" style={{ paddingTop: 96 }}>
       <div className="eyebrow">The connected log</div>
-      <h2 className="sectionTitle">Your log is an endpoint your own AI tools can read.</h2>
+      <h2 className="sectionTitle">Your log is an endpoint your own AI tools can use.</h2>
       <p className="sectionSub">The log is free — all of it. The connected log comes with the paid layer.</p>
       <div style={{ background: 'var(--surface-card)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-2xl)', boxShadow: 'var(--shadow-sm)', padding: 'clamp(24px,3vw,36px)', marginTop: 40, display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))', gap: 'clamp(24px,3vw,40px)' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, alignItems: 'flex-start' }}>
@@ -333,25 +344,35 @@ function ConnectedLog() {
             ))}
           </div>
           <p style={{ fontSize: 15, lineHeight: 1.55, fontWeight: 700, color: 'var(--text-primary)', margin: '6px 0 0' }}>
-            Nothing an agent suggests touches your program until you tap Apply. And there is no chatbot in here.
+            You decide what a connection may do — read, write, delete — and it can only see the tools for the
+            levels you approved. Delete is never implied by write.
+          </p>
+          <p style={{ fontSize: 14.5, lineHeight: 1.55, color: 'var(--text-secondary)', margin: 0 }}>
+            No agent of your own? A panel under any finished workout asks the same questions through the same
+            read tools, and shows you which ones it read. It only reads — it can’t log a set, change your
+            program or delete anything.
           </p>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={PANEL_LABEL}>Propose → approve → apply</div>
+          <div style={PANEL_LABEL}>You approve each level</div>
           <div className="gyw gycard" data-theme="dark">
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--gym-ink-faint)' }}>proposed · Claude Code</span>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--gym-ink-faint)' }}>week 8</span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--gym-ink-faint)' }}>connect · Claude Code</span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--gym-ink-faint)' }}>gym</span>
             </div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13, lineHeight: 1.9, marginTop: 10 }}>
-              <div style={{ color: 'var(--gym-ink-dim)' }}>~ Tuesday · squat</div>
-              <div style={{ color: 'var(--alarm-ink)' }}>− 5 × 5 @ 100</div>
-              <div style={{ color: 'var(--set-done)' }}>+ 3 × 5 @ 105</div>
-              <div style={{ color: 'var(--gym-ink-dim)' }}>~ note: deload Friday holds</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 12 }}>
+              {GRANT_LEVELS.map((level) => (
+                <div key={level.scope} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 17, height: 17, borderRadius: 5, border: `1px solid ${level.granted ? 'var(--color-brand)' : 'var(--gym-line-strong)'}`, background: level.granted ? 'var(--color-brand)' : 'transparent', color: 'var(--gym-on-accent)' }}>
+                    {level.granted && <Check size={11} strokeWidth={3} />}
+                  </span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: level.granted ? 'var(--gym-ink)' : 'var(--gym-ink-faint)', minWidth: 82 }}>{level.scope}</span>
+                  <span style={{ fontFamily: 'var(--font-body)', fontSize: 13, color: level.granted ? 'var(--gym-ink-dim)' : 'var(--gym-ink-faint)' }}>{level.line}</span>
+                </div>
+              ))}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 14 }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', height: 38, padding: '0 20px', borderRadius: 'var(--radius-lg)', background: 'var(--color-brand)', color: 'var(--gym-on-accent)', fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 13.5 }}>Apply</span>
-              <span style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--gym-ink-faint)' }}>Nothing changes until you tap it.</span>
+            <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, lineHeight: 1.5, color: 'var(--gym-ink-faint)', marginTop: 14 }}>
+              This connection was never granted delete, so it cannot see the three tools that take something away.
             </div>
           </div>
         </div>
