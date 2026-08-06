@@ -16,7 +16,7 @@ import { Avatar, Icon } from '../../design-system';
 import { useAuth } from './AuthProvider.jsx';
 import { useSignInDoor } from './SignInDoor.jsx';
 import { fetchConsentClient, postDecision } from './OAuthClient.js';
-import { capabilityGroups } from './scopes.js';
+import { consentSummary } from './scopes.js';
 
 // Read the OAuth params out of the hash's query (…#/oauth/authorize?client_id=…).
 // Three of these (code_challenge, resource, state) are opaque and echoed back untouched; `scope` is
@@ -142,8 +142,9 @@ export default OAuthConsent;
 // a different grant from the one the button hands over.
 function ConsentCard({ user, client, scope, redirectHost, onAllow, onCancel, onNotYou }) {
   const name = user.name?.trim() || user.email;
-  const groups = capabilityGroups(scope);
-  const canDelete = groups.some((group) => group.lines.some((line) => line.level === 'delete'));
+  // Three faces, not two — see consentSummary. "No capability lines" is what an account-wide grant
+  // and an unreadable one have in common, and it is not what tells them apart.
+  const { reach, groups, canDelete } = consentSummary(scope);
   return (
     <Card>
       <div style={mark}>Windmill</div>
@@ -157,13 +158,23 @@ function ConsentCard({ user, client, scope, redirectHost, onAllow, onCancel, onN
         <button type="button" onClick={onNotYou} style={notYou}>Not you?</button>
       </div>
 
-      {groups.length === 0 ? (
+      {reach === 'everything' ? (
         // The legacy grant: a client that asked for nothing in particular gets the account-wide one
         // this server issued before it had a vocabulary, and it is named rather than dressed up.
         <div style={{ marginTop: 6 }}>
-          <div style={grow}>
-            <span className="wm-oc-nd wm-oc-bud" />
+          <div style={{ ...grow, ...growGone }}>
+            <span className="wm-oc-nd wm-oc-gone" />
             Everything in your account — every product, including deleting
+          </div>
+        </div>
+      ) : reach === 'nothing' ? (
+        // Asked for, and got, nothing this server can read. The backend answers such a token with an
+        // empty grant, so the card says the same — and Allow still works, because a scope nobody can
+        // parse is a tool that will find no tools rather than a screen that should refuse to draw.
+        <div style={{ marginTop: 6 }}>
+          <div style={grow}>
+            <span className="wm-oc-nd wm-oc-dim" />
+            Nothing — this request names no part of your account
           </div>
         </div>
       ) : (

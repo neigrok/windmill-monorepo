@@ -46,9 +46,11 @@ export async function signOutEverywhere() {
   throw await errorFrom(response);
 }
 
-// DELETE /v1/me → { closingOn: <iso>, closesMs: <ms> }. Opens the 30-day grace: synced copies
-// and share links go, device trees stay, the undo is signing back in before closingOn. The
-// caller signs out locally and shows the closing chip.
+// DELETE /v1/me → { closingOn: <iso>, closesMs: <ms> }. What the server actually does on this call
+// is revoke every session, disconnect every connected tool, and stamp the account closed
+// (AuthService::closeAccount) — nothing is erased, and `closingOn` is a date no code enforces:
+// signing in revives a closed account whenever it happens. The caller signs out locally and says
+// only those three things; see shell/settings/accountClosure.js for the whole reasoning.
 export async function closeAccount() {
   const response = await send('/v1/me', 'DELETE');
   if (response.ok) return response.json();

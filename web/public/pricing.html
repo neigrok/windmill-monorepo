@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pricing — Windmill</title>
-<meta name="description" content="Windmill is free — all three rooms. The one thing that ever costs money is tending, the AI that plants and reshapes your tree; 30 a month are free, then one flat plan. Cancel any time." />
+<meta name="description" content="Windmill is free — all three rooms. The one thing that will ever cost money is tending, the AI that plants and reshapes your tree; it is not open yet. When it is: 30 a month free, then one flat plan at $12. Cancel any time." />
 <link rel="canonical" href="https://windmill.works/pricing.html" />
 <meta name="robots" content="index, follow, max-image-preview:large" />
 <meta name="theme-color" content="#F9F5EB" />
@@ -105,6 +105,11 @@
   .beat2 .bt2{font-size:14px;line-height:1.5;color:var(--text-secondary)}
   .beat2 .bt2 b{color:var(--text-primary);font-weight:700;display:block;font-size:14.5px}
   .pro .cta2{width:100%;margin:24px 0 0}
+  /* The stand-in for the buy button while there is nothing to buy. It is deliberately NOT a button
+     and NOT a link: a primary CTA that leads to a page with no checkout on it is a door onto
+     nothing, which is the one thing the /app home already refuses to draw for a pre-open product. */
+  .pro .notopen{width:100%;margin:24px 0 0;box-sizing:border-box;padding:14px 16px;border-radius:14px;border:1.5px dashed var(--border-strong);background:var(--surface-card);text-align:center;font-size:14px;line-height:1.55;color:var(--text-secondary)}
+  .pro .notopen b{display:block;font-family:var(--font-display);font-size:15.5px;color:var(--text-primary)}
   .pro .guar{display:flex;align-items:center;justify-content:center;gap:8px;margin:14px 0 0;font-size:12.5px;color:var(--text-tertiary);text-align:center}
   .pro .guar b{color:var(--text-secondary);font-weight:700}
   .pro-aside{position:sticky;top:24px}
@@ -151,7 +156,21 @@
 
 <section class="hero">
   <h1>Windmill is free.</h1>
-  <p>All three rooms — the roadmap, the journal, the gym log when it opens. The one thing that ever costs money is <b>tending</b>: the AI that plants and reshapes your tree for you. Your first 30 tendings each month are free; past that, one flat plan — cancel any time.</p>
+  <p>All three rooms — the roadmap, the journal, the gym log when it opens. The one thing that will ever cost money is <b>tending</b>: the AI that plants and reshapes your tree for you. Your first 30 tendings each month will be free; past that, one flat plan — cancel any time.</p>
+  <!-- THE DECISION, 2026-08-07. This page carried a primary CTA — "Get Windmill One — $12/month" —
+       pointing at /#/settings, where paidPlansOpen() is false, so there was nothing to buy there and
+       no word about why. A price with a door that opens onto nothing is exactly the manufactured
+       urgency the mission section forbids, and the audit ranked it a dead end.
+       Two options: pull the price, or say the state plainly. The price STAYS and the CTA goes,
+       because the page's actual job is honesty about what will ever cost money — a person deciding
+       whether to build years of notes on Windmill deserves to know the number up front, and deleting
+       it would hide the very thing this page exists to disclose. What could not stay is a button.
+       So: the plan is described in the future tense it actually lives in, the price wears a "not
+       open yet" chip, and where the button was there is a statement instead of a door.
+       When tending arms (TENDING_ENABLED) and billing/checkout.js paidPlansOpen() flips true, the
+       CTA comes back and this notice goes — test/shell/pricing.test.mjs fails if only one of the
+       two ever moves. -->
+  <p style="font-size:15.5px;color:var(--text-tertiary);margin-top:14px">Tending is not switched on yet, so <b style="color:var(--text-secondary)">nothing on this page can be bought today</b>. This is what it will cost when it opens.</p>
 </section>
 
 <section class="sec sec--free">
@@ -166,7 +185,7 @@
     <div class="fi"><span class="chk"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span class="ft"><b>Search by meaning</b>On your device; your pages never leave it.</span></div>
     <div class="fi"><span class="chk"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span class="ft"><b>The gym log — all of it<span class="tag">in design</span></b>Sets, sessions, e1RM — free when Gym opens.</span></div>
     <div class="fi"><span class="chk"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span class="ft"><b>Every device</b>Phone at the rack, desk between blocks.</span></div>
-    <div class="fi hl"><span class="chk"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"></path><path d="M2 21c0-3 1.85-5.36 5.08-6"></path></svg></span><span class="ft"><b>30 tendings a month, free</b>The AI, on the house, every month.</span></div>
+    <div class="fi hl"><span class="chk"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"></path><path d="M2 21c0-3 1.85-5.36 5.08-6"></path></svg></span><span class="ft"><b>30 tendings a month, free<span class="tag">not open yet</span></b>The AI, on the house, every month.</span></div>
   </div>
   <p class="free-note">There's no usage meter on the product itself — only tending is counted, in any room, and <b>every tending is a receipt you can see.</b> Hand editing never costs a thing.</p>
 </section>
@@ -188,7 +207,7 @@
     <div class="meter-aside">
       <div class="ttl">You always see what you spent.</div>
       <p>Every tending shows up as a receipt in your ledger — no mystery counter ticking in the background. <b>Hand editing is unlimited and never counted.</b></p>
-      <p style="font-size:13px;color:var(--text-tertiary);margin-top:10px">The meter above is an example; your own appears once you're signed in.</p>
+      <p style="font-size:13px;color:var(--text-tertiary);margin-top:10px">The meter above is an example. There is no real one to show yet — it appears in your settings on the day tending opens, and not before.</p>
     </div>
   </div>
 </section>
@@ -200,15 +219,15 @@
   <div class="pro-wrap">
     <div class="pro">
       <span class="mark"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"></path><path d="M2 21c0-3 1.85-5.36 5.08-6"></path></svg></span>
-      <div class="price"><span class="amt">$12</span><span class="per">/ month</span><span class="tax">USD, before tax</span></div>
+      <div class="price"><span class="amt">$12</span><span class="per">/ month</span><span class="tax">USD, before tax</span><span class="open">not open yet</span></div>
       <h3>Windmill One</h3>
-      <p class="one">300 tendings a month — plant, reshape and review to your heart's content. Everything else was already free.</p>
+      <p class="one">300 tendings a month — plant, reshape and review to your heart's content. Everything else is already free.</p>
       <div class="beats2">
-        <div class="beat2"><span class="bi2"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span class="bt2"><b>Nothing is deleted if you stop.</b>Drop back to Free and your trees stay exactly as they are — hand editing is always free.</span></div>
-        <div class="beat2"><span class="bi2"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span class="bt2"><b>Cancel any time, from Settings.</b>No retention call, no “are you sure” maze.</span></div>
+        <div class="beat2"><span class="bi2"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span class="bt2"><b>Nothing will be deleted if you stop.</b>Drop back to Free and your trees stay exactly as they are — hand editing is always free.</span></div>
+        <div class="beat2"><span class="bi2"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span class="bt2"><b>Cancellable any time, from Settings.</b>No retention call, no “are you sure” maze.</span></div>
       </div>
-      <a class="btn btn--pri btn--lg cta2" href="/#/settings">Get Windmill One — $12/month</a>
-      <div class="guar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg><span><b>30-day money-back guarantee.</b> Billed by Paddle.</span></div>
+      <div class="notopen"><b>There is nothing to buy yet.</b>Tending has not been switched on, so Windmill One is not on sale and no card is asked for anywhere in Windmill. Everything the product does today, it does for free.</div>
+      <div class="guar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg><span><b>A 30-day money-back guarantee, when it opens.</b> Billed by Paddle.</span></div>
     </div>
     <aside class="pro-aside">
       <div class="ttl">That's the whole plan.</div>

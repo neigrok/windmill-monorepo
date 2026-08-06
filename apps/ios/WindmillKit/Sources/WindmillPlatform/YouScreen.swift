@@ -101,7 +101,7 @@ struct YouScreen: View {
                     }
                 } footer: {
                     if auth.status.user == nil {
-                        Text("Signing in claims what you've already written and syncs it to your other devices. Until then it lives on this device, and everything works.")
+                        Text("Signing in claims what you've already written and syncs it to your other devices. Until then it lives on this device — though not every room opens without an account.")
                     } else {
                         Text("Sign out and what you've written stays on this device, editable.")
                     }

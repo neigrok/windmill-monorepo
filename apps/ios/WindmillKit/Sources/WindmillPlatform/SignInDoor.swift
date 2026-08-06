@@ -105,7 +105,12 @@ public struct SignInDoor: View {
             }
             .disabled(working || email.isEmpty)
 
-            Text("No password. Signed out, Windmill still works — what you write lives on this device.")
+            // This read "Signed out, Windmill still works — what you write lives on this device",
+            // the same sentence the web door carried. One door stands in front of every room, and
+            // that claim was only true of the ones that write to disk before they sync: the
+            // training log does not open at all without an account. The shell may not name which
+            // room is which, so the door says the half that holds in all of them.
+            Text("No password. Whatever you have already made on this device is claimed when you sign in — and some rooms only open once you have an account.")
                 .font(WindmillFont.body(13))
                 .foregroundStyle(WindmillColor.textTertiary)
         }

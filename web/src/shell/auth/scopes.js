@@ -76,6 +76,28 @@ export function capabilityGroups(scope) {
   }));
 }
 
+// Everything the consent card draws, in one read, because its three faces are one decision and
+// splitting them is how they went wrong. `reach` is 'everything' for the legacy account-wide grant,
+// 'nothing' for a scope this build cannot read, and 'listed' when there are real lines — and the
+// first two draw the SAME zero capability lines, so a card branching on "are there any lines?"
+// called every unreadable scope "Everything in your account". That is the one direction of this
+// mistake that can hurt somebody: telling a person a token holds nothing when it holds everything
+// is confusing, the other way round is the lie.
+//
+// `canDelete` is answered here for the same reason. The account-wide grant renders no delete LINE
+// and can delete in every product there is, so a card reading the answer off its own rendered list
+// handed the widest grant in the system the sentence written for the narrowest.
+export function consentSummary(scope) {
+  const { accountWide, products } = readScope(scope);
+  if (accountWide) return { reach: 'everything', groups: [], canDelete: true };
+  if (products.length === 0) return { reach: 'nothing', groups: [], canDelete: false };
+  return {
+    reach: 'listed',
+    groups: capabilityGroups(scope),
+    canDelete: products.some((group) => group.levels.includes('delete')),
+  };
+}
+
 // The one line the settings "Connected tools" row shows under a tool's name, so a grant approved
 // months ago is still legible. A grant that can delete says so — the level is never shortened away.
 export function summarizeScope(scope) {

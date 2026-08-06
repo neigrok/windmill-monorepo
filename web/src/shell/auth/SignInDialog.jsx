@@ -132,7 +132,12 @@ export function SignInDialog({ open, onClose, onSend, resume = null }) {
             Continue with Google
           </Button>
 
-          <p style={reassurance}>No password. Signed out, Windmill still works — your work stays on this device.</p>
+          {/* This line used to read "Signed out, Windmill still works — your work stays on this
+              device." It is one door in front of three rooms, and that sentence was only ever true
+              of one of them: the training log will not open at all without an account. A promise
+              two of three rooms do not keep is a promise the shell may not make, and the shell may
+              not name which room is which either — so it says the part that holds everywhere. */}
+          <p style={reassurance}>No password. Whatever you have already made on this device is claimed when you sign in — and some rooms only open once you have an account.</p>
         </form>
       )}
 
@@ -163,7 +168,7 @@ export function SignInDialog({ open, onClose, onSend, resume = null }) {
             <Icon name="wifi" size={18} color="var(--color-danger)" />
             <h2 style={brickTitle}>Can't reach windmill.works</h2>
           </div>
-          <p style={panelBody}>Nothing you've written is lost — it's on this device.</p>
+          <p style={panelBody}>Nothing on this device was touched — try again in a moment.</p>
           <div style={panelActions}>
             <Button variant="secondary" size="sm" onClick={() => send(email.trim())}>Retry</Button>
           </div>

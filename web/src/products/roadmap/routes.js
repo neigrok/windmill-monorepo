@@ -22,7 +22,8 @@ const RoadmapLanding = lazy(importRoadmapLanding);
 // The roadmap's account-settings sections — registered here so the neutral settings page composes
 // them without ever naming the roadmap (shell/settings/SettingsPage.jsx reads settingsSections off
 // the product registry). Lazy, so they keep their own chunks and never weigh on first paint. `main`
-// renders in the product zone right after the account identity; `data` (export + close) renders last.
+// renders in the product zone right after the account identity; `data` — the export, and only the
+// export — renders last, above the account's own close, which the shell owns for the whole brand.
 const ReminderSection = lazy(() => import('./settings/ReminderSection.jsx').then((m) => ({ default: m.ReminderSection })));
 const PlanSection = lazy(() => import('./settings/PlanSection.jsx').then((m) => ({ default: m.PlanSection })));
 const TendingSection = lazy(() => import('./settings/TendingSection.jsx').then((m) => ({ default: m.TendingSection })));

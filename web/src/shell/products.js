@@ -20,6 +20,15 @@ import { gymRoutes } from '../products/gym/routes.js';
 // never something the shell infers from whether the product has code.
 export const PRODUCTS = [roadmapRoutes, journalRoutes, gymRoutes];
 
+// How the shell speaks about a SET of products — "Roadmap, Journal and Gym". It lives beside the
+// registry because that is the only place allowed to know what the set is; every neutral surface
+// that has to name the whole house (the /app home's status line, the account-close consent) reads
+// its words from here rather than writing a list that goes stale the day a fourth product lands.
+export function joinLabels(labels) {
+  if (labels.length <= 1) return labels[0] ?? '';
+  return `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
+}
+
 // The active product is whichever one owns the current hash; on a product-neutral surface
 // (sign-in, settings, connect, the landing) it falls back to the first product — nothing about
 // "home" is roadmap-specific in the shell itself.

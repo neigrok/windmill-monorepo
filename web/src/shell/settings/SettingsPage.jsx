@@ -17,6 +17,7 @@ import { ConnectedToolsSection } from './ConnectedToolsSection.jsx';
 import { ApiKeysSection } from './ApiKeysSection.jsx';
 import { SessionsSection } from './SessionsSection.jsx';
 import { FeedbackSection } from './FeedbackSection.jsx';
+import { CloseAccountSection } from './CloseAccountSection.jsx';
 
 // The product-owned settings sections, gathered from the registry so this neutral page names no
 // product. `main` sections sit in the product zone right after the account identity; `data` sections
@@ -47,10 +48,13 @@ export function SettingsPage({ inShell = false }) {
             <Suspense fallback={null}>
               {PRODUCT_DATA_SECTIONS.map((Section, i) => <Section key={i} />)}
             </Suspense>
+            {/* Dead last, and after every product's export on purpose: its consent list says "export
+                what you want to keep first", and the exports it means are the ones directly above. */}
+            <CloseAccountSection />
           </>
         ) : (
           <div style={{ marginTop: 6 }}>
-            <p style={gate}>Sign in to view your settings. Everything's still here — your work stays on this device.</p>
+            <p style={gate}>Sign in to view your settings — they belong to an account, and there isn't one signed in here yet.</p>
             <Button variant="primary" size="sm" onClick={openSignInDoor}>Sign in</Button>
           </div>
         )}

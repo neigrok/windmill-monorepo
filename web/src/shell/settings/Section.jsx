@@ -1,6 +1,6 @@
 // The settings page's shared visual language: a titled block, and the small set of style
-// tokens the four sections lay their rows out with. One home for the look so Profile,
-// Connected tools, Sessions and Your data read as one page, not four.
+// tokens every section lays its rows out with. One home for the look so the account's own
+// sections and the ones each product registers read as one page rather than as several.
 
 import React from 'react';
 

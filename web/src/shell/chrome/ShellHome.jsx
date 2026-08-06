@@ -4,13 +4,8 @@
 // read off the registry, never hard-coded.
 
 import React, { Suspense } from 'react';
-import { PRODUCTS } from '../products.js';
+import { joinLabels, PRODUCTS } from '../products.js';
 import { InstallChip } from '../pwa/InstallChip.jsx';
-
-function joinLabels(labels) {
-  if (labels.length <= 1) return labels[0] ?? '';
-  return `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
-}
 
 function statusLine(open, preOpen) {
   const openPart = open.length ? `${joinLabels(open.map((p) => p.label))} ${open.length === 1 ? 'is' : 'are'} open today` : '';

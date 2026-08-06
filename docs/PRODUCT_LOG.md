@@ -428,11 +428,22 @@ roadmap: the in-app LLM generator was **retired, not parked**, because "the ship
 agent path." Gym inherits that ruling rather than quietly reversing it.
 
 So gym's coach is not a chat tab. **Your training log is an endpoint your own Claude or ChatGPT can
-read** — it knows your last twelve weeks of squats, it drafts next block's progression, and the
-changes arrive as a typed diff you tap to apply. We build no SSE parser, no tool loop, no streaming,
-no proposal chrome, and we pay for no tokens. The user brings their own agent. Lift's single most
-portable idea — the model proposes, the human applies — moves from an in-app chat to **MCP writes**,
-where it matters more, because the thing on the other end is not ours.
+use** — it knows your last twelve weeks of squats, and it drafts next block's progression. The user
+brings their own agent, and the safety model is the **grant**: three levels per product, approved one
+at a time, and a level nobody approved is a tool the connection cannot even see.
+
+**Amended 2026-08-06 (`gym-coach`).** Two of the refusals above did not survive contact with the
+owner, and both reversals are written down rather than made quietly. First, *Lift's propose-apply
+contract*: a granted MCP write lands directly, exactly as roadmap's tending writes, so the sentence
+that once said changes "arrive as a typed diff you tap to apply" was describing a contract this
+product does not hold — what stands where the human's Apply stood is the grant, and the fact that the
+three destructive tools sit behind `gym:delete` alone. Second, *no in-app chat*: there is now a
+**panel under any finished workout**, and it is the same system with a second door rather than a
+second system — the same fifteen tools, the same LogService, handed a read-only scope. So gym does
+now ship a prompt, a tool loop and a token bill (`adapters/llm/AnthropicCoach`), all three bounded:
+read-only, one workout, six iterations, Windmill One, and dark — no `ANTHROPIC_API_KEY`, no route.
+What is still not built and stays cut: streaming, proposal chrome, and any chat that is not attached
+to one session that already happened.
 
 1. **The log must survive the gym, and the phone.** Lift spent more code protecting data than
    presenting it and still ships a path that deletes a user's history to stay alive. A training log
@@ -621,15 +632,20 @@ personal tool. Every phase-3 bet names its own kill rule when it starts.
 
 ## Cut, retired, parked
 
-- **An in-app coach chat — retired, not parked.** This is roadmap's `llm-generator` ruling applied to
-  gym: the MCP server is the agent path. No SSE parser, no tool loop, no proposal chrome, no token
-  bill, and no third agentic loop in a monorepo that already has two
-  (`roadmap/adapters/llm/AnthropicAgent`, journal's). What survives from Lift is the *contract* —
-  propose, don't mutate — applied to MCP writes.
+- **An in-app coach chat — RETIRED, THEN REVERSED (`gym-coach`, 2026-08-06).** The ruling was
+  roadmap's `llm-generator` ruling applied to gym: the MCP server is the agent path, so no tool loop
+  and no token bill. The owner asked for the panel anyway, and the resolution is that the panel and
+  the MCP server are **one system with two doors** rather than two systems — the same fifteen tools,
+  the same LogService, the same grant model, reachable either from the lifter's own Claude or from a
+  panel for someone who has no agent. So gym does ship a second tool loop
+  (`gym/adapters/llm/AnthropicCoach`, a sibling of roadmap's rather than a lift of it — a *third*
+  consumer is what would earn promoting the shape into platform). What did not come back: streaming,
+  proposal chrome, and any chat not attached to one workout that already happened. The bounds it
+  ships under are read-only scope, one session, six iterations, Windmill One, and absent-when-unkeyed.
 - **BYO API keys, the four-provider picker, on-device inference — cut permanently.** They exist in
   Lift only because the hosted tier didn't. The abstraction spanned a ~4k on-device window and a 200k
-  hosted one; without an in-app coach the reason is gone. (Every model id Lift ships is fabricated
-  and 404s.)
+  hosted one, and the panel that came back is hosted-only on one model we choose, so the reason is
+  still gone. (Every model id Lift ships is fabricated and 404s.)
 - **StoreKit, IAP, trial mechanics — cut.** Paddle is the rail.
 - **Supersets, circuits, EMOM/AMRAP — cut from v1.** Grouping is a modelling decision worth making
   once, on evidence.

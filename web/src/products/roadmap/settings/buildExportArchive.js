@@ -1,4 +1,4 @@
-// The "Your data" export (X6 §5 · settings §04): every roadmap this account can reach,
+// The "Your roadmaps" export (X6 §5 · settings §04): every roadmap this account can reach,
 // each written in F3's plan grammar, zipped, and handed to the browser as a download. The
 // export format IS the paste format — a file dropped back into the composer replants — so
 // this is serializePlan (the inverse of parsePlan) run once per tree, best-effort for the
