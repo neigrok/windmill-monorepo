@@ -73,8 +73,8 @@ struct FakeToolHost : ToolHost {
   std::uint64_t seq = 0;
   bool getTreeErrors = false;
 
-  Json::Value listTools() const override { return Json::Value(Json::arrayValue); }
-  ToolResult callTool(const std::string& name, const Json::Value&, const UserId&) override {
+  std::vector<ToolDeclaration> declareTools() const override { return {}; }
+  ToolResult callTool(const std::string& name, const Json::Value&, const ToolCaller&) override {
     if (name != "get_tree") return ToolResult::failure("unexpected tool: " + name);
     if (getTreeErrors) return ToolResult::failure("no such tree");
     Json::Value out(Json::objectValue);

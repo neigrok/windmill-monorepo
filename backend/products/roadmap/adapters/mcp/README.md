@@ -18,19 +18,25 @@ platform/adapters/mcp/
   McpServer.{h,cpp}        transport-agnostic JSON-RPC 2.0 engine (initialize, tools/list,
                            tools/call, resources/list, resources/read, ping). Depends only on
                            jsoncpp + an injected ToolHost, a ServerInfo and a resource vector.
+  CompositeToolHost.{h,cpp} every connected product's tools behind the one ToolHost McpServer
+                           binds, AND the grant gate: it filters tools/list and refuses an
+                           out-of-scope call, refuses a duplicate tool name at construction, and
+                           refuses an argument no schema declares. `windmillServerInfo()` frames
+                           the handshake from the products it holds.
   McpHttpEndpoint.{h,cpp}  the Streamable-HTTP transport: sessions, Origin checks, the three
-                           verbs, and `McpAuth` — how a request becomes a caller.
+                           verbs, and `McpAuth` — how a request becomes a `ToolCaller`.
 products/roadmap/adapters/mcp/
-  RoadmapTools.{h,cpp}     the ToolHost: the tool catalog + dispatch into RoomRegistry /
-                           TreeRoom / ProgressService.
+  RoadmapTools.{h,cpp}     roadmap's ToolHost: the tool catalog + dispatch into RoomRegistry /
+                           TreeRoom / ProgressService. It declares its tools and never its own
+                           gate — the grant was settled above it.
   ToolArgs.{h,cpp}         one home for argument validation and for the sentence a refusal is
                            written in — every tool routes through it.
   ReadShape.{h,cpp}        the read projections (`fields`) and paging (`limit`/`cursor`).
   EditReceipt.{h,cpp}      what an edit answers about diagnostics: the whole-tree flag, and what
                            THIS edit introduced.
-  RoadmapResources.{h,cpp} what this deployment says it is: `roadmapServerInfo()` (the name,
-                           version and the `instructions` paragraph every client reads on
-                           connect) and `roadmapResources()` (`windmill://quickstart`).
+  RoadmapResources.{h,cpp} what this product says it is: `roadmapInstructions()` (its paragraph
+                           in the `instructions` brief every client reads on connect) and
+                           `roadmapResources()` (`windmill://quickstart`).
   golden/wire_corpus.json  a byte-compared transcript of one authoring session (WireCorpusTest).
 platform/infra/
   main.cpp                 `windmill_server`   — REST + the collab socket + MCP, one process.
@@ -38,8 +44,10 @@ platform/infra/
   mcp_http_main.cpp        `windmill_mcp_http` — standalone HTTP transport (local/standalone).
 ```
 
-All three composition roots ask `roadmapServerInfo()` for the handshake, so the paragraph an
-agent connects to cannot differ by transport.
+All three composition roots build the same one-module composite and ask `windmillServerInfo()`
+for the handshake, so the surface and the paragraph an agent connects to cannot differ by
+transport. The server's name and version belong to the server; each product supplies only its own
+paragraph, which is what lets a second product join without rewriting the first one's brief.
 
 The dependency arrow points inward: `McpServer` knows nothing of rooms, Postgres, or HTTP;
 the transports know nothing of the tools. The edit tools reuse the existing `commandFromJson`
@@ -121,29 +129,51 @@ two writers at one database if you can avoid it (see *Operating notes*).
 
 ## Auth
 
-`McpAuth` (`platform/adapters/mcp/McpHttpEndpoint.h`) is how a request becomes a caller, and
-`McpHttpEndpoint::resolveCaller` tries three credentials in order against the `Authorization:
-Bearer …` header:
+`McpAuth` (`platform/adapters/mcp/McpHttpEndpoint.h`) is how a request becomes a `ToolCaller` —
+the account it acts as AND the grant its credential carries — and `McpHttpEndpoint::resolveCaller`
+tries three credentials in order against the `Authorization: Bearer …` header:
 
 1. **An OAuth access token** — validated by `OAuthService::resolveAccessToken`, which requires
-   it to be unexpired *and* audience-bound to this server's resource URL. This is the real path:
-   a client discovers the authorization server through the RFC 9728 metadata document, runs the
-   authorization-code + PKCE flow against the API host, and acts as the granting account.
+   it to be unexpired *and* audience-bound to this server's resource URL, and which answers with
+   the token's parsed scope. This is the real path: a client discovers the authorization server
+   through the RFC 9728 metadata document, runs the authorization-code + PKCE flow against the
+   API host, and acts as the granting account, within the grant the human approved.
 2. **A personal MCP API key** — `McpKeyService::resolveKey`, the static-token fallback for
    clients that cannot do OAuth. Minted in settings, stored as a digest, resolvable to its owner
-   until revoked or the account closes. Only `windmill_server` wires this one.
+   until revoked or the account closes. Only `windmill_server` wires this one. `mcp_keys.scope`
+   exists and is honoured; the mint endpoint asks for none, so every key today is account-wide.
 3. **`WINDMILL_MCP_TOKEN`** — one shared secret, compared in constant time, that acts as
-   `WINDMILL_MCP_USER`. It exists for CI and for an agent on the box; it is not per-caller
-   identity and should be left unset in any deployment more than one person can reach.
+   `WINDMILL_MCP_USER` with `McpAuth::fallbackScope`. It exists for CI and for an agent on the
+   box; it is not per-caller identity and should be left unset in any deployment more than one
+   person can reach.
 
 A request that presents none of them gets `401` with a
 `WWW-Authenticate: Bearer resource_metadata="…"` challenge naming
 `/.well-known/oauth-protected-resource`, which is served unauthenticated by both HTTP roots.
 
 The one case with no authentication at all is **none of the three configured** — no OAuth
-service, no key service, no shared token. Then every request runs as `WINDMILL_MCP_USER`. That
-is the stdio shape and the test shape; a deployment in that state is one you have to keep
-private yourself.
+service, no key service, no shared token. Then every request runs as `WINDMILL_MCP_USER` with
+`McpAuth::fallbackScope`. That is the stdio shape and the test shape; a deployment in that state
+is one you have to keep private yourself.
+
+## Scopes
+
+A grant is `<product>:<level>`, space-delimited on the wire, with three levels that never imply one
+another — `roadmap:read roadmap:write` does not carry `roadmap:delete`, and a connection holding it
+does not see `delete_tree`, `delete_node` or `remove_kind` in `tools/list` at all. Every tool
+declares its level beside its description (`RoadmapToolCatalog.cpp`), `CompositeToolHost` is the one
+place that enforces it, and `/.well-known/oauth-authorization-server` publishes the whole vocabulary
+in `scopes_supported`, derived from the products actually connected.
+
+**An empty scope is the account-wide grant**, deliberately: every code and token minted before this
+existed carries `scope ''`, so narrowing it would disconnect every connected client on deploy. It is
+the one exception to fail-closed, and it is written down at the parse site
+(`platform/domain/ToolScope.h`).
+
+Tending does NOT go through the composite. `TendingService` holds roadmap's host directly, because a
+tend agent reads node text an attacker may have written (`ScopedToolHost.h`) and has no business
+seeing another product's tools. The two narrowings stack: `ScopedToolHost` pins a run to one tree,
+the composite pins a credential to its grant.
 
 Above the auth check both HTTP roots meter by IP, keyed on the forwarded client address:
 `windmill_server`'s general API ceiling (25 req/s per client, burst 50) covers `/mcp` along with

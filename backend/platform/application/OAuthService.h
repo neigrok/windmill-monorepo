@@ -2,6 +2,7 @@
 
 #include "platform/domain/Ids.h"
 #include "platform/domain/OAuth.h"
+#include "platform/domain/ToolScope.h"
 #include "platform/ports/Clock.h"
 #include "platform/ports/OAuthRepository.h"
 #include "platform/ports/TokenGenerator.h"
@@ -46,6 +47,7 @@ public:
     std::string accessToken;
     std::string refreshToken;
     UnixMs accessLifetimeMs = 0;
+    std::string scope;  // echoed in the token reply: what was actually granted, not what was asked
   };
   enum class GrantError { ok, invalidGrant, invalidClient, badRedirect, pkceMismatch, badResource };
   struct TokenResult {
@@ -57,10 +59,13 @@ public:
                            const std::string& resource);
   TokenResult refresh(const std::string& refreshToken, const std::string& clientId);
 
-  // Resource-server validation: the account a valid, unexpired, audience-matching access
-  // token acts as, or nullopt. A resolved token also advances its grant's last-used stamp
-  // (throttled), so the settings §2 list shows honest recent activity.
-  std::optional<UserId> resolveAccessToken(const std::string& accessToken, const std::string& serverResource);
+  // Resource-server validation: the account a valid, unexpired, audience-matching access token acts
+  // as AND the grant it carries, or nullopt. The scope has been stored end to end since the first
+  // token; this is the line where it stops being an opaque string and starts being enforced. A
+  // resolved token also advances its grant's last-used stamp (throttled), so the settings §2 list
+  // shows honest recent activity.
+  std::optional<ToolCaller> resolveAccessToken(const std::string& accessToken,
+                                               const std::string& serverResource);
 
   // The settings §2 "Connected tools" surface: list a user's grants, disconnect one tool
   // (drops its tokens+codes+grant), and disconnect them all (account close).

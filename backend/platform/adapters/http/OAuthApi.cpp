@@ -37,9 +37,11 @@ drogon::HttpResponsePtr redirect(const std::string& url) {
 }
 
 OAuthApi::OAuthApi(std::shared_ptr<OAuthService> oauth, std::shared_ptr<AuthService> auth,
-                   std::string issuerUrl, std::string appBaseUrl, std::string consentPath)
+                   std::string issuerUrl, std::string appBaseUrl, std::string consentPath,
+                   std::vector<std::string> scopesSupported)
     : oauth_(std::move(oauth)), auth_(std::move(auth)), issuerUrl_(std::move(issuerUrl)),
-      appBaseUrl_(std::move(appBaseUrl)), consentPath_(std::move(consentPath)) {}
+      appBaseUrl_(std::move(appBaseUrl)), consentPath_(std::move(consentPath)),
+      scopesSupported_(std::move(scopesSupported)) {}
 
 std::optional<UserId> OAuthApi::callerOf(const drogon::HttpRequestPtr& req) const {
   std::string secret = req->getCookie("wm_session");
@@ -62,6 +64,10 @@ void OAuthApi::metadata(const drogon::HttpRequestPtr&, HttpCallback&& cb) {
   m["grant_types_supported"] = strArray({"authorization_code", "refresh_token"});
   m["code_challenge_methods_supported"] = strArray({"S256"});
   m["token_endpoint_auth_methods_supported"] = strArray({"none"});
+  // A client cannot ask for a level it was never told about. Omitting a scope it needs is how a
+  // connection ends up with less reach than the person meant to give it, so the whole vocabulary is
+  // published rather than left to be guessed from a tool that is missing.
+  m["scopes_supported"] = strArray(scopesSupported_);
   cb(jsonResponse(m));
 }
 
@@ -208,6 +214,9 @@ void OAuthApi::token(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   out["token_type"] = "Bearer";
   out["expires_in"] = static_cast<Json::Int64>(result.tokens->accessLifetimeMs / 1000);
   out["refresh_token"] = result.tokens->refreshToken;
+  // RFC 6749 §5.1: echo the scope the token actually carries. A client that asked for more than it
+  // got learns it here, at issue, instead of from a tool that silently never appears.
+  out["scope"] = result.tokens->scope;
   auto response = jsonResponse(out);
   response->addHeader("Cache-Control", "no-store");  // token responses are never cached
   cb(response);
@@ -227,6 +236,10 @@ void OAuthApi::listGrants(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
     row["name"] = grant.clientName;
     row["grantedMs"] = static_cast<Json::Int64>(grant.grantedMs);
     row["lastUsedMs"] = static_cast<Json::Int64>(grant.lastUsedMs);
+    // What this tool may do, in the wire spelling — '' is the account-wide grant, and the settings
+    // screen renders it as such. Consent is the only place a person is shown this; without it here,
+    // it is a thing they saw once and can never look up again.
+    row["scope"] = grant.scope;
     list.append(row);
   }
   Json::Value body(Json::objectValue);

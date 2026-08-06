@@ -1,6 +1,7 @@
 #pragma once
 
 #include "platform/ports/Clock.h"
+#include "platform/ports/TokenGenerator.h"
 #include "products/gym/ports/TrainingRepository.h"
 
 #include <cstdint>
@@ -116,10 +117,15 @@ enum class DiscardOutcome { done, notFound, open };
 // repository. It owns the two-phase auto-close (load the open session + its last set instant →
 // the pure rule → persist the close) and the write-then-resolve idempotency story — every write
 // returns the resolved row, so a replayed or double-tapped client sees the winning truth in one
-// round trip. No cron, no sweep: staleness is settled lazily, before a start and before a log read.
+// round trip. No cron, no sweep: staleness is settled lazily, before a start, before a log read and
+// before the statistics read — the three replies a close rewrites.
+//
+// The token generator is here for exactly one thing — minting a coach share's secret — and it is
+// the platform's own, the same mint that makes a session cookie and a magic link, so the one
+// unguessable string gym hands out is not a second-best random of gym's own.
 class LogService {
 public:
-  LogService(TrainingRepository& repo, Clock& clock);
+  LogService(TrainingRepository& repo, Clock& clock, TokenGenerator& tokens);
 
   StartOutcome start(const UserId& user, const SessionStart& incoming);
   AppendOutcome append(const UserId& user, const SessionId& session, const SetWrite& incoming);
@@ -146,9 +152,26 @@ public:
   std::optional<Review> review(const UserId& user, const SessionId& session);
   DiscardOutcome discard(const UserId& user, const SessionId& session);
 
+  // The two long reads. `statistics` is one load and one pure rule, exactly as `review` is — the
+  // shape this service uses wherever a surface is computed rather than stored. `exportedSets` has
+  // no rule at all: it hands back what is stored, which is the point of an export.
+  Statistics statistics(const UserId& user);
+  std::vector<ExportedSet> exportedSets(const UserId& user);
+
+  // The coach share. The mint answers with the live share on a repeat, so nothing here has to ask
+  // first — the store resolves it, the same write-then-resolve every other write in this file uses.
+  // An absent answer is the one fact a session read gives: absent and another account's alike.
+  std::optional<SessionShare> share(const UserId& user, const SessionId& session);
+  bool revokeShare(const UserId& user, const SessionId& session);
+  // The one read here with no caller, and it settles NOTHING: a stranger holding a link must never
+  // be able to write to the owner's log, not even the four-hour close every authenticated read
+  // takes. The token is the whole credential and the clock decides whether it is still one.
+  std::optional<SharedSession> shared(const std::string& token);
+
 private:
   TrainingRepository& repo_;
   Clock& clock_;
+  TokenGenerator& tokens_;
 };
 
 }

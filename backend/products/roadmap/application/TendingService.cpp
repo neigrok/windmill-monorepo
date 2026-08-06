@@ -140,7 +140,8 @@ std::uint64_t TendingService::seqOf(const TreeId& tree, const UserId& caller) {
   // (or any tool error) reads as 0 — the run simply records no footprint rather than leaking one.
   Json::Value args(Json::objectValue);
   args["treeId"] = tree.str();
-  const ToolResult result = tools_.callTool("get_tree", args, caller);
+  const ToolResult result =
+      tools_.callTool("get_tree", args, ToolCaller{caller, ToolScope::everything()});
   if (result.isError || !result.payload.isObject()) return 0;
   return result.payload.get("seq", Json::Value::UInt64(0)).asUInt64();
 }

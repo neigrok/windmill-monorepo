@@ -12,7 +12,7 @@ std::optional<OAuthClient> OAuthService::registerClient(std::vector<std::string>
     if (!redirectSchemeAllowed(uri)) return std::nullopt;
 
   // Registration is open (RFC 7591), and this name becomes the headline on the consent screen —
-  // "<name> wants to tend your roadmaps". Anyone could otherwise register a name that impersonates
+  // "<name> wants access to your Windmill account". Anyone could otherwise register a name that impersonates
   // us or runs long enough to push the honest signal (which host you'd be sent back to) off screen.
   // Clamp the length and drop control characters; the redirect host remains the real trust anchor.
   std::string safeName;
@@ -66,8 +66,10 @@ OAuthService::TokenResult OAuthService::exchangeCode(const std::string& code, co
   // The token stays bound to the resource the code was issued for; a token request that
   // repeats it must match, but an omitted one falls back to that binding.
   if (!resource.empty() && !audienceMatches(resource, stored->resource)) return {GrantError::badResource, std::nullopt};
-  // Consent → token: record the grant (settings §2), keyed apart from the rotating token rows.
-  repo_.recordGrant(stored->user, stored->clientId, now);
+  // Consent → token: record the grant (settings §2), keyed apart from the rotating token rows. The
+  // scope rides along so the settings row can say what a connected tool may do, months later, without
+  // hunting down a token that has rotated a hundred times since.
+  repo_.recordGrant(stored->user, stored->clientId, now, stored->scope);
   return {GrantError::ok, mintPair(stored->clientId, stored->user, stored->resource, stored->scope, now)};
 }
 
@@ -79,15 +81,15 @@ OAuthService::TokenResult OAuthService::refresh(const std::string& refreshToken,
   return {GrantError::ok, mintPair(grant->clientId, grant->user, grant->resource, grant->scope, now)};
 }
 
-std::optional<UserId> OAuthService::resolveAccessToken(const std::string& accessToken,
-                                                       const std::string& serverResource) {
+std::optional<ToolCaller> OAuthService::resolveAccessToken(const std::string& accessToken,
+                                                           const std::string& serverResource) {
   if (accessToken.empty()) return std::nullopt;
   const UnixMs now = clock_.nowMs();
   const std::optional<StoredToken> token = repo_.findAccessToken(tokens_.digestOf(accessToken));
   if (!token || token->expiresAt <= now) return std::nullopt;
   if (!audienceMatches(token->resource, serverResource)) return std::nullopt;
   repo_.touchGrantUsed(token->user, token->clientId, now, OAuthPolicy::grantTouchThrottleMs);
-  return token->user;
+  return ToolCaller{token->user, parseToolScope(token->scope)};
 }
 
 std::vector<GrantView> OAuthService::listGrants(const UserId& user) { return repo_.listGrants(user); }
@@ -104,7 +106,7 @@ OAuthService::Tokens OAuthService::mintPair(const std::string& clientId, const U
   const MintedToken refresh = tokens_.mint();
   repo_.insertToken(access.digest, refresh.digest,
                     StoredToken{clientId, user, resource, scope, accessExpiry(now)}, refreshExpiry(now));
-  return Tokens{access.secret, refresh.secret, OAuthPolicy::accessLifetimeMs};
+  return Tokens{access.secret, refresh.secret, OAuthPolicy::accessLifetimeMs, scope};
 }
 
 }

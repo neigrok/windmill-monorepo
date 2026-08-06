@@ -2,6 +2,7 @@
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
+#include "products/gym/adapters/csv/TrainingCsv.h"
 #include "products/gym/adapters/json/TrainingJson.h"
 
 #include <algorithm>
@@ -460,6 +461,99 @@ void GymApi::deleteRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
   auto response = drogon::HttpResponse::newHttpResponse();
   response->setStatusCode(drogon::k204NoContent);
   cb(response);
+}
+
+// The statistics surface, over values the domain already decides: a per-movement line of top
+// working sets with Epley on top, the two standing bests, when each movement was last trained, and
+// the weekly counts. It takes no parameters at all — no window, no movement filter, no page —
+// because the whole point of it is the long view, and every number in it is a fact with a
+// direction rather than a grade.
+void GymApi::stats(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
+    return;
+  }
+  cb(jsonResponse(toJson(log_->statistics(*caller))));
+}
+
+// Every set this account holds, as the file a lifter walks away with. It is the trust argument for
+// a multi-year artifact and so it is deliberately dull: one shape, no parameters, no pagination,
+// nothing omitted. The filename is fixed rather than stamped with a date — a re-export is the same
+// file with more rows in it, and a browser that numbers the duplicates says something true.
+void GymApi::exportSets(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
+    return;
+  }
+  auto response = drogon::HttpResponse::newHttpResponse();
+  response->setStatusCode(drogon::k200OK);
+  response->setContentTypeCode(drogon::CT_TEXT_CSV);
+  response->addHeader("Content-Disposition", "attachment; filename=\"windmill-gym-sets.csv\"");
+  response->setBody(toCsv(log_->exportedSets(*caller)));
+  cb(response);
+}
+
+// The coach share, minted. Owner-scoped like every other write — an absent session and another
+// account's are the one fact this whole product gives — and idempotent on the SESSION rather than
+// on a client-minted id, because there is no id for a client to mint here: tapping Share twice
+// answers with the link already live, so a lifter never sends two capabilities they would then have
+// to revoke separately. A share that has already expired is replaced instead, which is why the
+// reply always carries the instant the link it just handed over actually ends at.
+void GymApi::shareSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                          const std::string& id) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
+    return;
+  }
+  std::optional<SessionShare> share = log_->share(*caller, SessionId{id});
+  if (!share) {
+    cb(error(drogon::k404NotFound, "no such session"));
+    return;
+  }
+  Json::Value body(Json::objectValue);
+  body["token"] = share->token;
+  body["expiresAt"] = Json::Value::UInt64(share->expiresAtMs);
+  cb(jsonResponse(body));
+}
+
+// Revoked is deleted: the row IS the capability, so there is nothing to mark and nothing left to
+// describe. Nothing to revoke is the same 404 an absent session gets, for the same reason — a
+// caller learns about their own log and never about anyone else's.
+void GymApi::revokeShare(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                         const std::string& id) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
+    return;
+  }
+  if (!log_->revokeShare(*caller, SessionId{id})) {
+    cb(error(drogon::k404NotFound, "no such session"));
+    return;
+  }
+  auto response = drogon::HttpResponse::newHttpResponse();
+  response->setStatusCode(drogon::k204NoContent);
+  cb(response);
+}
+
+// The one route in gym that resolves no caller, and the token in the path is the whole credential.
+// It never touches auth at all — a coach has no account here and must not be told to make one —
+// and it never writes, not even the four-hour close every signed-in read of the log takes: a
+// stranger holding a link cannot be allowed to change the owner's log by reading it.
+//
+// Revoked, expired and never-minted answer this ONE 404, byte for byte, which is what stops a token
+// from being probed for existence. The body it hands back names no account and holds no id at any
+// depth — it is one workout, and nothing that could be walked to a second one.
+void GymApi::sharedSession(const drogon::HttpRequestPtr&, HttpCallback&& cb,
+                           const std::string& token) {
+  std::optional<SharedSession> shared = log_->shared(token);
+  if (!shared) {
+    cb(error(drogon::k404NotFound, "no such session"));
+    return;
+  }
+  cb(jsonResponse(toJson(*shared)));
 }
 
 }

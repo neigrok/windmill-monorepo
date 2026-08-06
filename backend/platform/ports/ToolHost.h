@@ -1,10 +1,11 @@
 #pragma once
 
-#include "platform/domain/Ids.h"
+#include "platform/domain/ToolScope.h"
 
 #include <json/json.h>
 
 #include <string>
+#include <vector>
 
 namespace wm {
 
@@ -48,14 +49,41 @@ struct ToolResult {
   }
 };
 
-// The catalog and executor of the server's tools — the one seam the protocol engine
-// drives. RoadmapTools is the production implementation; tests substitute a fake.
+// One tool as the host serving it declares it: the `tools/list` entry an agent reads, plus the two
+// facts a grant is checked against. The classification rides BESIDE the description rather than in a
+// side table because the two are the same promise told twice — a tool whose sentence says it deletes
+// and whose row says it writes would hand out the reach nobody approved.
+struct ToolDeclaration {
+  Json::Value descriptor;  // {name, description, inputSchema} — the wire shape, verbatim
+  std::string product;     // whose grant reaches it: the `product` half of `gym:delete`
+  Access access;
+
+  std::string name() const { return descriptor.get("name", "").asString(); }
+};
+
+// The catalog and executor of a product's tools — the one seam the protocol engine drives. A module
+// declares its whole surface and never its own gate: the gate is one decision, taken above every
+// module by CompositeToolHost, which is what McpServer binds.
 struct ToolHost {
   virtual ~ToolHost() = default;
-  virtual Json::Value listTools() const = 0;  // the `tools/list` "tools" array
-  // `caller` is the authenticated account the transport resolved for this request (an OAuth
-  // token's user over HTTP, the configured user over stdio) — every edit acts as them.
-  virtual ToolResult callTool(const std::string& name, const Json::Value& arguments, const UserId& caller) = 0;
+
+  virtual std::vector<ToolDeclaration> declareTools() const = 0;
+
+  // `caller` is the account the transport authenticated (an OAuth token's user over HTTP, the
+  // configured user over stdio) together with what that credential was granted — every edit acts as
+  // the account, within the grant.
+  virtual ToolResult callTool(const std::string& name, const Json::Value& arguments,
+                              const ToolCaller& caller) = 0;
+
+  // The `tools/list` array this caller's grant may see. Concrete and shared on purpose: one filter
+  // rule, read from the same declarations the dispatcher gates on, so a catalog can never advertise a
+  // tool the next call would refuse.
+  Json::Value listTools(const ToolCaller& caller) const {
+    Json::Value tools(Json::arrayValue);
+    for (const ToolDeclaration& tool : declareTools())
+      if (caller.scope.allows(tool.product, tool.access)) tools.append(tool.descriptor);
+    return tools;
+  }
 };
 
 }

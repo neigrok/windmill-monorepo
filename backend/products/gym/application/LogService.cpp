@@ -31,7 +31,8 @@ std::optional<StartOutcome> heldFor(TrainingRepository& repo, const UserId& user
 }
 }
 
-LogService::LogService(TrainingRepository& repo, Clock& clock) : repo_(repo), clock_(clock) {}
+LogService::LogService(TrainingRepository& repo, Clock& clock, TokenGenerator& tokens)
+    : repo_(repo), clock_(clock), tokens_(tokens) {}
 
 // Idempotent by construction, no guard flag anywhere, and the caller's OWN id is resolved FIRST: a
 // replayed POST reads back the session it minted — open, finished or auto-closed — so a replay
@@ -198,6 +199,45 @@ DiscardOutcome LogService::discard(const UserId& user, const SessionId& session)
   if (!stored->finishedAtMs) return DiscardOutcome::open;
   if (!repo_.deleteSession(user, session)) return DiscardOutcome::notFound;
   return DiscardOutcome::done;
+}
+
+// Two phases and no third, the review's shape over a longer window: load what the rule needs, hand
+// it to the pure rule, answer with what it computed. Staleness IS settled first, and this is the
+// third door that settles it — the answer counts finished sessions only, so a workout the four-hour
+// rule ended hours ago but nobody has read since would be missing from every chart, and a hole in a
+// chart is read as "I did not train that week".
+Statistics LogService::statistics(const UserId& user) {
+  settleOpen(repo_, user, clock_.nowMs());
+  return wm::gym::statistics(repo_.trainingLog(user));
+}
+
+// The export settles nothing on purpose, and it is the only read of the log that could and does
+// not: it hands back every set unconditionally, so no session can be missing from it whatever
+// finished_at says, and a door whose whole promise is "here is your data, untouched" has no
+// business writing to the log on the way out.
+std::vector<ExportedSet> LogService::exportedSets(const UserId& user) {
+  return repo_.exportedSets(user);
+}
+
+// The token is minted HERE and never parsed from anywhere: the one id in this product the client
+// does not choose, because a client that chose it would choose a guessable one. The store resolves
+// the write like every other — a live share answers with itself, an expired one is replaced, and a
+// session this caller cannot read answers with nothing.
+std::optional<SessionShare> LogService::share(const UserId& user, const SessionId& session) {
+  // One clock reads once and decides both halves — what the new share would end at, and whether the
+  // one already on this session has ended. Asking the clock twice, or letting the database answer
+  // one of them, is how a share that expired between the two questions comes back as live.
+  const std::uint64_t nowMs = clock_.nowMs();
+  return repo_.insertShare(
+      SessionShare{session, user, tokens_.mint().secret, shareExpiryAt(nowMs)}, nowMs);
+}
+
+bool LogService::revokeShare(const UserId& user, const SessionId& session) {
+  return repo_.revokeShare(user, session);
+}
+
+std::optional<SharedSession> LogService::shared(const std::string& token) {
+  return repo_.sharedSession(token, clock_.nowMs());
 }
 
 }

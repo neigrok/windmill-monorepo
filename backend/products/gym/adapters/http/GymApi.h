@@ -14,9 +14,15 @@ namespace wm::gym {
 
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
-// The training log over REST. Every handler resolves the caller first and 401s before touching
-// storage, and every read/write is scoped to that caller — no route is public, absent is
-// byte-identical to forbidden.
+// The training log over REST. Every handler that reads the log resolves the caller first and 401s
+// before touching storage, and every one of those reads and writes is scoped to that caller —
+// absent is byte-identical to forbidden on all of them.
+//
+// `sharedSession` is the ONE exception and the only unauthenticated route in gym: the token in the
+// path is the whole credential. It is not a hole in the rule above — it reaches a row in a separate
+// table that the owner minted on purpose, it carries nothing about the account, and revoked,
+// expired and never-existed answer the same 404 byte for byte so a token cannot be probed for
+// existence. Every other route is exactly as owner-scoped as it was before sharing existed.
 //
 // The status ladder is the whole contract with the client's flush queue, which branches on the
 // status and the machine word beside it (ARCHITECTURE §6): 400 is the client's and terminal — an
@@ -60,6 +66,14 @@ public:
                       const std::string& id);                                 // PUT  /v1/gym/routines/{id}
   void deleteRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                      const std::string& id);                                  // DELETE /v1/gym/routines/{id}
+  void stats(const drogon::HttpRequestPtr& req, HttpCallback&& cb);           // GET  /v1/gym/stats
+  void exportSets(const drogon::HttpRequestPtr& req, HttpCallback&& cb);      // GET  /v1/gym/export
+  void shareSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                    const std::string& id);                                   // POST /v1/gym/sessions/{id}/share
+  void revokeShare(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                   const std::string& id);                                    // DELETE /v1/gym/sessions/{id}/share
+  void sharedSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                     const std::string& token);                               // GET  /v1/gym/shared/{token}
 
 private:
   std::shared_ptr<LogService> log_;

@@ -38,6 +38,13 @@ public:
   RoutineWriteOutcome replaceRoutine(const Routine& incoming) override;
   bool deleteRoutine(const UserId& user, const RoutineId& id) override;
   ExerciseInsertOutcome insertExercise(const UserId& owner, const Exercise& incoming) override;
+  TrainingLog trainingLog(const UserId& user) override;
+  std::vector<ExportedSet> exportedSets(const UserId& user) override;
+  std::optional<SessionShare> insertShare(const SessionShare& incoming,
+                                          std::uint64_t nowMs) override;
+  bool revokeShare(const UserId& user, const SessionId& id) override;
+  std::optional<SharedSession> sharedSession(const std::string& token,
+                                             std::uint64_t nowMs) override;
 
 private:
   std::string connString_;

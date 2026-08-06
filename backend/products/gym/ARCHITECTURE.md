@@ -36,9 +36,12 @@ happens on the device. The backend's job is narrow and load-bearing:
 2. **Exercise identity** — a seeded catalog of stable ids. Every structural bug in Lift traces
    to one line: an exercise is a display string. (§4)
 3. **The reads the device can't fake** — the training log (sessions + sets back), last-time
-   prefill, export. (§5)
-4. **Later, the wedge** — gym's MCP tools on `windmill.works/mcp`, behind a platform scoped-
-   ToolHost bet gym does not own. The coach is the user's own agent; we build no chat. (§8)
+   prefill, the finish, the statistics surface, the export, and the coach share. (§5)
+4. **The wedge — shipped.** Gym's fifteen MCP tools on `windmill.works/mcp`, behind the platform's
+   grant gate: `gym:read` answers questions, `gym:write` logs and plans, `gym:delete` destroys, and
+   **none of the three implies another**. Every tool goes through `LogService` — the same core the
+   REST handlers use, never the repository — and acts **as** the caller, so an agent is one more
+   owner-scoped client and never an admin. The coach is the user's own agent. (§6, §8)
 
 **What the backend deliberately does NOT do — it stays on the device:**
 
@@ -53,15 +56,30 @@ happens on the device. The backend's job is narrow and load-bearing:
   behavior; the server reserves the target column (§2.5) and stores the wall-clock timestamps
   the device already writes.
 - **Workout mode** — Wake Lock, no chrome, the 48-pt number. Client.
-- **Sharing does not exist — structurally.** No visibility column, no share entity, no public
-  route. Every read and write is `WHERE user_id = :caller`; a session is legible to exactly one
-  account, and absent is byte-identical to forbidden. This is journal's stance (§0.1 there),
-  inherited whole. The strength-tree brand bet stays legal because **gym publishes, gym never
-  imports**: it will emit an achievement or a paste-grammar tree the user hands to roadmap —
-  coupling by the account and the user's own hand, never a cross-product read.
-- **In-app coach chat — retired, not parked.** Roadmap's `llm-generator` ruling applied to gym:
-  the shipped MCP server is the agent path. No SSE parser, no tool loop, no token bill. What
-  survives from Lift is the contract — the model proposes a typed diff, the human applies.
+- **Sharing is one door beside the log, never a stance on it.** This bullet used to read
+  "sharing does not exist — structurally", inheriting journal's §0.1 whole, and gym no longer
+  inherits it whole: a lifter can hand one finished workout to a coach. What was load-bearing about
+  that refusal is kept intact and is the reason the share is shaped the way it is:
+  **there is still no visibility column, and not one of the fifteen routes that already existed
+  changed.**
+  Every one of them is still `WHERE user_id = :caller`, and absent is still byte-identical to
+  forbidden on all of them. The one reader who is not the owner comes in through a **separate
+  table** (`gym_session_shares`, §2.6) and one unauthenticated route that reads nothing else — so
+  sharing cannot be reached by accident from any existing query, because no existing query names
+  that table. A share is one session, expiring, revocable, and carries nothing about the account.
+  What stays cut: a visibility column, a public profile, a gallery, a social share sheet, and
+  anything discoverable without the token. The strength-tree brand bet is untouched, because
+  **gym publishes, gym never imports**: it will emit an achievement or a paste-grammar tree the
+  user hands to roadmap — coupling by the account and the user's own hand, never a cross-product
+  read.
+- **No chat of gym's own — the tools are the agent path.** Roadmap's `llm-generator` ruling applied
+  to gym: gym ships no SSE parser, no prompt, no tool loop and no token bill. It ships a **catalog**,
+  and whatever talks to it — the lifter's own Claude over MCP, or a panel the shell puts in front of
+  someone who has no agent — reaches this log only through those tools, under a grant. **Lift's
+  propose-apply contract did not survive, and this line used to say it had:** a granted write lands
+  directly, exactly as roadmap's tending writes (`domain/Tending.h`). What stands where the human's
+  Apply stood is the grant — a level nobody approved is a tool the connection cannot even see — and
+  the fact that each of the three destructive tools sits behind `gym:delete` alone.
 
 **No billing code in gym, phases 0–2.** The log is free; the *connected* log is Windmill One.
 Until `gym-mcp`, gym asks nothing of `Entitlements`, holds no plan enum, and gates nothing.
@@ -76,12 +94,15 @@ backend/products/gym/
   ARCHITECTURE.md            this file
   domain/Training.h/.cpp     ids · enums · Exercise · Session · Set · PlanSnapshot ·
                              InvalidTraining · codecs · defaultStepKg ·
-                             the auto-close rule                              (pure, no I/O)
+                             the auto-close rule · the share's lifetime       (pure, no I/O)
   domain/Routine.h/.cpp      Routine · RoutineEntry · snapshotOf              (pure, no I/O)
+  domain/Review.h/.cpp       e1RM · the three record rules · the comparison   (pure, no I/O)
+  domain/Statistics.h/.cpp   the per-movement line · the standing bests       (pure, no I/O)
   ports/TrainingRepository.h the one store port + its DTOs
-  application/LogService.h/.cpp   start/finish/append/log/routines — load → domain → save
+  application/LogService.h/.cpp   start/finish/append/log/routines/stats/export/share
   adapters/
     json/TrainingJson.h/.cpp      the cross-surface wire codec
+    csv/TrainingCsv.h/.cpp        the export's framing, and nothing else
     postgres/PgTrainingRepository.h/.cpp
     http/GymApi.h/.cpp
   routes.h/.cpp              gym::GymDeps + gym::registerRoutes(app, deps)
@@ -304,6 +325,49 @@ the wire — so the stored object and the one a client reads back are byte-ident
 The read half clamps rather than throws, because it reads what storage holds: `routine` is a name
 only when it is a string (the same rule the prefill's `jsonb_typeof(plan->'routine') = 'string'`
 applies, and the reason it applies it), and a plan that is not an object is no plan at all.
+
+### 2.6 `gym_session_shares` — the coach share, in its own table
+
+```sql
+create table if not exists gym_session_shares (
+  session_id  text primary key references gym_sessions(id) on delete cascade,
+  user_id     uuid not null references users(id) on delete cascade,
+  token       text not null unique,
+  created_at  timestamptz not null default now(),
+  expires_at  timestamptz not null
+);
+```
+
+**Why a table and not a `visibility` column on `gym_sessions`** — this is the decision a future
+reader will otherwise undo, so it is written down here rather than implied. A column puts a stance
+on every session row, and the moment one exists every read in the product has to be re-decided in
+terms of it: fifteen `WHERE user_id = :caller` queries become fifteen places where a gate can be
+forgotten, and the property §0 is built on — *absent is byte-identical to forbidden* — stops being
+structural and becomes something fifteen queries have to keep agreeing about. A separate table
+leaves all fifteen exactly as they were and adds **one** door beside them. Sharing is then
+unreachable by accident, because no existing query names this table; the whole share feature is
+three methods on the port, and deleting the table would delete the feature and nothing else.
+
+**`session_id` is the primary key**, which is what makes the mint idempotent: tapping Share twice
+sends one link rather than two capabilities a lifter would have to revoke separately. A share that
+has already **expired** is replaced rather than returned — re-sharing a workout a month later is a
+new capability, not the resurrection of one that ended — and the guard on that `DO UPDATE` reads
+the instant the caller passed, never the database's own clock, so one clock decides both halves of
+the write.
+
+**The token is minted by the server** (the platform `TokenGenerator`, the same mint behind a
+session cookie) and never accepted from a client, because a client that picks its own share token
+picks a guessable one. Unlike a session or a magic link it is **stored in the clear rather than as
+a digest**, and that is a deliberate trade with a stated cost: the mint must hand back the *same*
+link on a repeat, which a digest cannot do. What a database leak would expose here is a set of live
+links, each to one workout, each expiring and revocable by its owner, none naming the
+account behind it — where the same leak against `wm_session` would expose nothing at all.
+
+**Revocation is deleting the row.** Nothing is marked, nothing is swept, and a revoked token
+resolves to the same nothing an invented one does from the very next request. The row rides the
+session's `on delete cascade`, so a discarded workout leaves no live link pointing at a session
+that is gone, and it is in `PgAccountFootprint`'s owned list in `main.cpp` — a live coach link is
+data, and an account holding one is not empty.
 
 ---
 
@@ -602,6 +666,14 @@ struct TrainingRepository {
   virtual RoutineWriteOutcome replaceRoutine(const Routine&) = 0; // whole-document replace
   virtual bool deleteRoutine(const UserId&, const RoutineId&) = 0;
   virtual ExerciseInsertOutcome insertExercise(const UserId& owner, const Exercise&) = 0;
+  virtual TrainingLog trainingLog(const UserId&) = 0;                     // the statistics read (§5)
+  virtual std::vector<ExportedSet> exportedSets(const UserId&) = 0;       // the export (§5)
+  virtual std::optional<SessionShare> insertShare(const SessionShare&, std::uint64_t nowMs) = 0;
+  virtual bool revokeShare(const UserId&, const SessionId&) = 0;          // false = nothing to revoke
+  // The ONE read here with no UserId, because the token is the credential (§2.6). Revoked, expired
+  // and never-minted are one value, so nothing above can tell them apart and neither can a prober.
+  virtual std::optional<SharedSession> sharedSession(const std::string& token,
+                                                     std::uint64_t nowMs) = 0;
 };
 
 struct TopWorkingSet  { double weightKg; int reps; };   // the session's heaviest, ties to more reps
@@ -621,6 +693,20 @@ enum class RoutineWriteError { none, idTaken, notFound, unknownExercise };
 struct RoutineWriteOutcome { std::optional<Routine> routine; RoutineWriteError error; };
 enum class ExerciseInsertError { none, idTaken };
 struct ExerciseInsertOutcome { std::optional<Exercise> exercise; ExerciseInsertError error; };
+
+// The export's row is text end to end, because a CSV is text and every rendering in one is a
+// decision Postgres already makes better than C++ would (§5).
+struct ExportedSet { std::string sessionId, startedAt, finishedAt, routineName, setId, exerciseId,
+                                 exerciseName, setNumber, weightKg, reps, kind, rpe, note,
+                                 completedAt; };
+
+struct SessionShare { SessionId session; UserId user; std::string token;
+                      std::uint64_t expiresAtMs; };
+// What a coach sees, and the whole of it: no account, and no id at any depth (§2.6).
+struct SharedSet { std::string exercise; int setNumber; double weightKg; int reps; SetKind kind;
+                   std::optional<double> rpe; std::string note; std::uint64_t completedAtMs; };
+struct SharedSession { std::uint64_t startedAtMs; std::optional<std::uint64_t> finishedAtMs;
+                       std::string routineName; std::vector<SharedSet> sets; };
 ```
 
 One outcome serves both routine writes because a routine write has one shape — the whole document —
@@ -630,7 +716,9 @@ second enum that could only say the same words; it hands the port's outcome stra
 pass-through `lastTime` is.
 
 DTOs live with the port (the house convention). **Every method that can resolve a row carries the
-`UserId` that may see it** — including `setOf`, the one lookup keyed by a client-minted set id:
+credential that may see it** — a `UserId` everywhere but one, and on `sharedSession` an unguessable
+token instead, which is the whole of why that one is safe to leave uncredentialed (§2.6). That
+includes `setOf`, the one lookup keyed by a client-minted set id:
 an id is a guess anyone can make, so the scope has to travel with it. `insertSet`'s `idTaken` is
 the same rule applied to the write: its read-back is scoped to `(id, session_id)`, so an id already
 spent outside this session resolves to *nothing* rather than to that row. The unscoped version of
@@ -794,13 +882,87 @@ query, ordered by pattern then name. Identity rules, stated once:
   Nothing is stored. The review is recomputed on every call, which is what keeps it right when a set
   arrives late from a flush queue, and it is why there is no `ReviewService`: one load, one pure
   rule, one answer, on `LogService` beside `detail`.
-- **Export** (phase 2, `gym-export` bet) — CSV of every set, served through the settings
-  `data` section gym registers on its web route table. Zero platform work; the section seam
-  already composes.
+- **The statistics surface** (`trainingLog` + the pure `statistics`) — `GET /v1/gym/stats`, the
+  review's shape over a longer window: one load, one pure rule, one answer, computed on every read
+  and stored nowhere. It takes no parameters at all — no window, no movement filter, no page —
+  because the whole point of it is the long view.
+
+  Three statements in one transaction, and not one of them is a new opinion about training. The
+  **series** is `DISTINCT ON (exercise_id, started_at, id)` over the working sets of finished
+  sessions, keeping the heaviest with the most reps: that is `TopSet`'s rule and the same answer the
+  finish screen already gives to "what was that movement that session", so the chart and the finish
+  can never print two different numbers for one workout. It is made in SQL because it is an
+  **ordering**; the Epley estimate over it is made in the domain because it is a **formula** —
+  §11.5's ladder lesson applied to the second formula in the product, one copy per language and
+  none in the database. Every point is dated by the **session's own start**, never by a set's
+  `completed_at`: that is the device's wall clock and nothing ties it to the session it landed in,
+  so a single future-stamped set would otherwise walk a point across the chart. The **marks** are
+  `historyFor`'s projection with both of its windows removed — every movement instead of one
+  session's, the whole finished log instead of what came before one session — and the two standing
+  bests (highest e1RM, heaviest load) are the *prior* halves of the finish's record rules asked with
+  no session to compare against. The third record rule has no standing form on purpose: "more reps
+  at a load you have used before" is a comparison, and with nothing to compare against every mark
+  already *is* the best reps ever done at its load. The **weeks** are counted in Postgres because
+  they are dates, truncated `AT TIME ZONE 'UTC'` rather than in the server's own zone (`date_trunc`
+  on a `timestamptz` reads the session's TimeZone, so the same log would bucket differently on a
+  laptop and in CI), and `generate_series` fills the run so a week nobody trained is a **zero and
+  not a missing row** — the gap is the fact, and a client filling it in would be doing calendar
+  arithmetic in a second place. Weeks run Monday-to-Monday in UTC because the store holds no
+  timezone for the lifter; the instant crosses as epoch-ms and the client renders it locally.
+
+  **Finished sessions only**, for the reason `lastTime` and `historyFor` exclude them too: today's
+  live workout is today's screen, and a statistics read that moved under a lifter between two sets
+  would be reporting on a session in flight. This is the **third** door that settles staleness
+  (§3.2), and it has to be one — the answer counts finished sessions, so a workout the four-hour
+  rule ended hours ago but nobody has read since would be a hole in the chart, and a hole reads as
+  "I did not train that week".
+
+  **What is not in it, and each was cut for a reason that has not changed:** muscle-group volume
+  and any taxonomy for it, streaks, any cardio or duration axis, volume as a headline number (it
+  goes *negative* on band-assisted work and lies about four light sets against three heavy ones),
+  and any grade, score, percentage or green/red. The finish screen's rule holds over the longer
+  window too — *a fact with a direction, never a grade*.
+- **Export** (`exportedSets` + `toCsv`) — `GET /v1/gym/export`, CSV of every set this account
+  holds, the open session included: an export missing today is the one row a lifter goes looking
+  for. It is the trust argument for a multi-year artifact and so it is deliberately dull — one
+  shape, no parameters, no pagination, nothing omitted, and a fixed filename because a re-export is
+  the same file with more rows in it.
+
+  **Every value crosses the port as text**, because a CSV is text and every rendering decision in
+  one is a decision Postgres already makes better than C++ would: the instants as ISO-8601 UTC (a
+  spreadsheet cannot read an epoch, and the calendar conversion belongs where gym does all of its
+  date work), the numerics at their column's own scale so 72.5 kg is `72.50` forever and an absent
+  rpe is an empty cell rather than a zero a reader would take for a real one. That leaves
+  `adapters/csv/TrainingCsv` with exactly one thing to decide — framing — and it decides it by RFC
+  4180: CRLF between records, a field quoted only where it holds a comma, a quote or a line break,
+  and a quote inside a quoted field doubled. Nothing is edited on the way through; a note is the
+  lifter's own words and travels byte for byte. This read settles **nothing**, alone among the reads
+  of the log: it hands back every set unconditionally, so no session can be missing from it whatever
+  `finished_at` says, and a door whose whole promise is "here is your data, untouched" has no
+  business writing to the log on the way out.
+- **The coach share** (`insertShare` / `revokeShare` / `sharedSession`) — two owner-scoped doors and
+  the one unauthenticated read in the product, over the separate table §2.6 explains.
+  `GET /v1/gym/shared/{token}` resolves the token to one session and its sets; the token is the
+  whole credential, so the handler never resolves a caller and never writes — not even the
+  four-hour close every signed-in read of the log takes, because a stranger holding a link must not
+  be able to end the owner's workout by reading it.
+
+  **Revoked, expired and never-minted answer one 404, byte for byte**, which is what stops a token
+  from being probed for existence, and it is the same body an absent session gives every other read.
+  The second statement fires only when the first found a session — roadmap's share-page rule applied
+  here: a token that resolves to nothing must not spend a query proving it.
+
+  **The body names no account and holds no id at any depth.** Not the session's, not a set's, not
+  the routine's — the only thing an id could do for a reader who is not the owner is be tried
+  somewhere else. Movements travel as their display **name**, because a coach holds no catalog to
+  resolve a slug against, and the routine name comes off the session's own frozen snapshot (type
+  checked exactly as the prefill's is) rather than off a routine as it is called today. The frozen
+  plan itself does not travel: a share is one workout the lifter *did*, and a program is a
+  longer-lived thing than one session's link.
 
 ---
 
-## 6. HTTP surface — small, owner-scoped, boring
+## 6. Wire surfaces — the HTTP routes, and the MCP tools behind the grant
 
 | Method & path | Purpose | Phase |
 |---|---|---|
@@ -819,10 +981,64 @@ query, ordered by pattern then name. Identity rules, stated once:
 | `GET  /v1/gym/routines/{id}` | one routine | 2 |
 | `PUT  /v1/gym/routines/{id}` | replace a routine — the whole document | 2 |
 | `DELETE /v1/gym/routines/{id}` | remove a routine — `204`; entries cascade, sessions keep their snapshots | 2 |
-| `GET  /v1/gym/export` | every set, CSV | 2 |
+| `GET  /v1/gym/stats` | the statistics surface — per-movement line, standing bests, weekly counts (§5) | 2 |
+| `GET  /v1/gym/export` | every set, CSV — `text/csv`, a header row, `Content-Disposition: attachment` | 2 |
+| `POST /v1/gym/sessions/{id}/share` | mint a coach share — `{token, expiresAt}`, idempotent on the session | 2 |
+| `DELETE /v1/gym/sessions/{id}/share` | revoke it — `204`; nothing to revoke is `404 no such session` | 2 |
+| `GET  /v1/gym/shared/{token}` | **the one unauthenticated route.** One session and its sets; revoked, expired and unknown are one `404` | 2 |
 
-Wire shapes live in `adapters/json/TrainingJson` (the one cross-surface codec — web, iOS,
-Android, and later the MCP tools all speak it): instants are epoch-ms numbers, weights are
+### The MCP tool catalog (`adapters/mcp/GymToolCatalog`, dispatched by `adapters/mcp/GymTools`)
+
+Fifteen tools against roadmap's twenty-seven, and the smallness is the design: `tools/list` is the
+biggest fixed cost of a connection, so a tool a parameter on another tool could serve does not get a
+slot. The **level is declared beside the description**, in the same `ToolDeclaration` the gate reads,
+so a tool cannot be described as one thing and gated as another.
+
+| `gym:read` | `gym:write` | `gym:delete` |
+|---|---|---|
+| `list_exercises` — the catalog | `start_session` — open a workout | `discard_session` |
+| `list_sessions` — the log, paged | `log_set` — one set into an open workout | `delete_routine` |
+| `get_session` — one workout + its sets (`review: true` adds the finish readout) | `finish_session` | `revoke_share` |
+| `last_time` — the prefill | `save_routine` — the whole document, replace-or-create | |
+| `list_routines` — all, or one by `routineId` | `create_exercise` | |
+| `get_stats` — all movements, or one by `exerciseId` | `share_session` — `{url, token, expiresAt}` | |
+
+Five rules hold this together, and each is load-bearing:
+
+- **Every tool goes through `LogService`, never the repository.** The service owns the two-phase
+  load → rule → persist shape, the lazy auto-close and the write-then-resolve idempotency; a tool
+  reaching past it would be a second copy of rules that exist once. The tools are therefore a second
+  *door on the same core*, not a second client of the HTTP API.
+- **Every tool acts as the caller.** The `ToolCaller`'s `UserId` is what every read and write is
+  scoped by, exactly as `callerOf(req, auth)` scopes the handlers — absent, another account's and
+  never-existed stay one answer, and an agent is never an admin.
+- **The refusals are the HTTP ones in words a model can act on.** Each names the tool that answers
+  the question it should ask next (`no workout of yours has that id. Call list_sessions…`), because a
+  model cannot read a doc between two calls. The domain's own `InvalidTraining` sentence is forwarded
+  **verbatim** here, where the browser edge flattens every one of them into `could not read that set`.
+- **Client-minted ids, said out loud in the description.** `start_session`, `log_set`,
+  `save_routine` and `create_exercise` all take the id the caller mints, and each description says a
+  replay answers with the stored row — without that sentence a model invents a fresh id per retry and
+  mints duplicates, which is exactly what §2.1 exists to prevent.
+- **`delete` is never merged into `write`.** Two tools may merge where a parameter does the job
+  (`list_routines`, `get_stats`) but never across levels, and no read is reachable through a
+  write-classified name.
+
+**`GET /v1/gym/export` deliberately has no tool.** A CSV is a file for a person to open, and an
+agent holding `list_sessions` + `get_session` + `get_stats` already has every one of those numbers in
+a shape it can read — a sixteenth tool that answered with a wall of comma-separated text would spend
+a `tools/list` slot and a context window to say what three tools already say.
+
+The grant itself is the platform's: `CompositeToolHost` filters `tools/list` by scope, refuses an
+out-of-scope call naming the missing `gym:<level>`, refuses an argument no schema declares, and
+refuses a duplicate tool name **at boot** — so a gym tool colliding with a roadmap one takes the
+server down at start-up rather than answering at random (`GymToolsTest` pins the two catalogs
+against each other).
+
+Wire shapes live in `adapters/json/TrainingJson` (the one cross-surface codec — web, iOS, Android
+and the MCP tools all speak it, which is why a tool's arguments are the REST body's field names) with
+one exception: the export speaks CSV, and its framing is `adapters/csv/TrainingCsv`'s alone (§5).
+Instants are epoch-ms numbers, weights are
 numbers in kg, sets serialize as
 `{id, exerciseId, setNumber, weightKg, reps, kind, rpe?, note, completedAt}`, sessions as
 `{id, startedAt, finishedAt?, routineId?, plan?}`, routines as
@@ -881,6 +1097,30 @@ was ad-hoc, and `session`/`sets` are omitted together for a first-ever movement 
 movement and nothing else**. That absence is a fact, not a fault, and it is what the card draws
 "First time logging this" from; a 404 would say the movement does not exist, which is a different
 and false thing. `sets` is never present and empty: the session is chosen *by* holding one.
+
+The statistics reply travels one way too, and its absences are the shape: no `e1rm` on a point or a
+best means that load has no honest one-rep estimate (a chin-up, a band-assisted pull-up), and an
+absent `bestE1rm` means no set of that movement ever had one. `weeks` is contiguous, so a zero week
+is a zero and never a missing row.
+
+```json
+{ "weeks": [ { "startedAt": 1699833600000, "sessions": 4, "workingSets": 61 } ],
+  "movements": [ { "exerciseId": "back-squat", "lastTrainedAt": 1700000000000,
+                   "points":   [ { "at": 1700000000000, "weightKg": 105, "reps": 5,
+                                   "e1rm": 122.5 } ],
+                   "bestE1rm": { "weightKg": 105, "reps": 5, "at": 1700000000000, "e1rm": 122.5 },
+                   "heaviest": { "weightKg": 110, "reps": 2, "at": 1700000000000,
+                                 "e1rm": 117.3 } } ] }
+```
+
+The share's read is the one shape in the product built to name **less** than the session it is
+about — every id it could have carried is absent by construction, not by omission (§5):
+
+```json
+{ "startedAt": 1700000000000, "finishedAt": 1700003600000, "routine": "Legs",
+  "sets": [ { "exercise": "Back Squat", "setNumber": 1, "weightKg": 105, "reps": 5,
+              "kind": "working", "note": "", "completedAt": 1700000060000 } ] }
+```
 
 **Instants are bounded at the wire, all three the same way.** `startedAt`, `completedAt` and
 `finishedAt` go through one rule in the codec: a UInt64, never `0` (an unset device clock is
@@ -958,8 +1198,11 @@ The 400s are the client's, and terminal: retrying an unreadable body never makes
 The 500 is the server's, and retryable — which is why the write handlers catch **only**
 `InvalidTraining`, one catch, one meaning, and no vendor type among them. A
 `catch (const std::exception&)` around the same call told a queue that a five-second lock wait was
-a malformed set, and the lifter's set would have been dropped forever. There are no admin doors
-and no uncredentialed doors: nothing sweeps, nothing mails.
+a malformed set, and the lifter's set would have been dropped forever. There are no admin doors,
+nothing sweeps and nothing mails. There is exactly **one** uncredentialed door —
+`GET /v1/gym/shared/{token}`, where the token in the path is the whole credential — and it reads
+one row of one table the owner minted on purpose (§2.6), writes nothing, and answers the same 404
+for a token that is revoked, expired or never existed.
 
 **The log cursor carries both halves of the sort key.** The page order is `(startedAt, id)`
 descending, and only the pair is unique, so the cursor is the previous page's last row in full:
@@ -981,25 +1224,42 @@ finish, never retrofitted.
 The full cost of mounting the third product, itemized against the actual seams:
 
 - **CMake:** `add_library(windmill_gym products/gym/domain/Training.cpp
-  products/gym/domain/Routine.cpp products/gym/application/LogService.cpp)` linking
+  products/gym/domain/Routine.cpp products/gym/domain/Review.cpp
+  products/gym/domain/Statistics.cpp products/gym/application/LogService.cpp)` linking
   `windmill_platform PUBLIC`, after the journal block; adapters + `routes.cpp` folded in via `target_sources` under the existing
-  `Drogon_FOUND AND libpqxx_FOUND` guard; `windmill_gym` added to the three
-  `target_link_libraries` lines (domain tests, server, adapters tests). Tests are **appended
-  to the existing executables** — a new test binary means editing the Dockerfile's `--target`
-  list, so there isn't one.
+  `Drogon_FOUND AND libpqxx_FOUND` guard; `windmill_gym` added to the four
+  `target_link_libraries` lines (domain tests, server, adapters tests, and — since the tool
+  catalog — the mcp tests). Tests are **appended to the existing executables** — a new test binary
+  means editing the Dockerfile's `--target` list, so there isn't one.
 - **Dockerfile:** untouched. `windmill_server` statically absorbs the new lib; `schema.sql`
   already rides at `/app/db/schema.sql`.
-- **main.cpp:** four lines after the journal block —
+- **main.cpp:** five lines, plus one entry in the account-footprint list. The core is built **up
+  with the MCP surface** rather than beside the routes, because the composite host is constructed
+  once before the server takes traffic and gym's tools have to be in it; the mount stays down with
+  the other two products' —
 
   ```cpp
   auto gymRepository = std::make_shared<gym::PgTrainingRepository>(connString);
-  auto logService = std::make_shared<gym::LogService>(*gymRepository, *systemClock);
+  auto logService = std::make_shared<gym::LogService>(*gymRepository, *systemClock, *tokens);
+  auto gymTools = std::make_shared<gym::GymTools>(*logService, apiBaseUrl);
+  const std::vector<ToolModule> mcpModules{{*mcpTools, roadmapInstructions()},
+                                           {*gymTools, gym::gymInstructions()}};
+  …
   gym::GymDeps gymDeps{.logService = logService, .authService = authService};
   gym::registerRoutes(app, gymDeps);
   ```
 
-  No env vars, no arming flags, no sweeps, no vendor keys. The seam's whole surface area is
-  the absence in this block.
+  One service, two doors: the tools and the routes hold the *same* `LogService`, so a rule can
+  never be true on one surface and not the other. `apiBaseUrl` is there for one thing — a minted
+  coach share is a token, and only gym knows the route that turns it into a URL. Tending is
+  deliberately NOT given the composite (it keeps roadmap's host directly), so a prompt-injection-
+  exposed agent cannot reach a training log. Still no env vars, no arming flags, no sweeps and no
+  vendor keys, and gym contributes nothing to the mail list. `*tokens` is the one
+  collaborator gym did not have at phase 0 and it is here for exactly one thing — minting a coach
+  share's secret, from the same mint that makes a session cookie, so the one unguessable string gym
+  hands out is the platform's and not gym's own. `{"gym_session_shares", "user_id"}` joins
+  `gym_sessions`/`gym_sets`/`gym_routines` in `PgAccountFootprint`'s owned list: a live coach link
+  is data, and an account holding one is not empty.
 - **Schema:** the `-- ── Gym (products/gym) ──` section + the 64-row seed, appended at EOF,
   idempotent end-to-end (`create … if not exists`, seed `ON CONFLICT (id) DO NOTHING` so a
   redeploy never clobbers a renamed display name). A column that has to *change* gets its own
@@ -1008,8 +1268,15 @@ The full cost of mounting the third product, itemized against the actual seams:
   deploy and there is no migration ledger to carry the change instead. The bar for such a line is
   that a database created before it and one created after it end up identically shaped.
 - **Tests:** `test/products/gym/{Fakes.h, domain/TrainingTest.cpp, domain/RoutineTest.cpp,
-  application/LogServiceTest.cpp, adapters/http/GymApiTest.cpp,
-  adapters/postgres/PgTrainingRepositoryTest.cpp}` mirroring the tree, full assertions. The
+  domain/ReviewTest.cpp, domain/StatisticsTest.cpp, application/LogServiceTest.cpp,
+  adapters/http/GymApiTest.cpp, adapters/mcp/GymToolsTest.cpp,
+  adapters/postgres/PgTrainingRepositoryTest.cpp}` mirroring the tree, full assertions —
+  `GymToolsTest` rides in `windmill_mcp_tests` beside roadmap's, the other three in the domain and
+  adapters binaries. Its high-value targets are the ones only this surface has: the whole
+  (tool → level) table pinned in order, `tools/list` shrinking to exactly what a grant named, a
+  stranger refused by the same one fact an absent row gets, a replayed client-minted id answering
+  with the stored row, and every refusal sentence pinned whole (they are the product here — a
+  reworded one is a model that no longer knows what to do next). The
   high-value pure targets: every `autoCloseAt` branch, `Set` construction bounds (negative
   weight legal, reps 0 illegal, unknown kind thrown), `Exercise` bounds (both ends of the step
   band, the name ceiling), `Routine` construction bounds (positions `1..n`, the same movement
@@ -1037,7 +1304,7 @@ not the seam's.
 | Absent | Why |
 |---|---|
 | Sweeps, heartbeats, mail | Nothing in phase 0–2 fires on a clock. `gym-nudge` (phase 3) must not be a **fourth** copy of the reminder skeleton — it waits for the platform sweep primitive. There are already three: roadmap's `ReminderSweep`, journal's `NudgeSweep` and journal's `EchoSweep` each hold their own trantor `EventLoopThread`, run it from the constructor (so an operator pass can be queued onto a heartbeat nobody armed), arm `runAfter`→`runEvery` in `start()`, and wrap `tick()` in the same two-arm crash guard. So the third consumer arrived and did **not** force the promotion — the trigger is already met and unclaimed, and gym is not what will trip it. Whoever promotes it can refactor any of the three onto the primitive as the proving move. |
-| MCP tools | `McpServer` binds exactly one `ToolHost` and `main.cpp` binds roadmap's. `gym-mcp` needs the platform **scoped-composite** ToolHost (the client's grant selects which products' tools it sees) — not a flat union that regresses roadmap's hard-won `tools/list` size. Until then gym has no MCP surface, and the thesis bet stays honest: it ships when the log is worth connecting. |
+| ~~MCP tools~~ | **Built 2026-08-07 — this row is history, kept because the bet was recorded here.** The platform scoped-composite ToolHost shipped (`McpServer` binds a `CompositeToolHost`, each product registers a `ToolModule`, and a grant of `product:read` / `:write` / `:delete` — none implying another — selects what a connection sees and may call), and gym's own `ToolHost` landed the same day: fifteen tools in `adapters/mcp/`, registered in `main.cpp` beside roadmap's. The surface is §6. |
 | Billing, plans, gates | The log is free — that is a product decision, not a blocked one. The old blocker is gone: the brand-wide gate left roadmap's settings folder in `97e1f1b` and is now `paidPlansOpen()` in `web/src/shell/billing/checkout.js`, which gym may import like any other shell module. What a gym money surface would still have to solve is the tier *copy* (`PLAN_COPY`), which stayed behind in roadmap. |
 | Units preference | Canonical kg is a schema decision already taken; a lb ladder is a second untested surface on the one thing that must be perfect. |
 | Cardio, duration, bodyweight-only, supersets, streaks, plate calculator, muscle-group volume | Cut in the plan, recorded there with reasons; the schema deliberately reserves nothing for them — a duration axis is a different product, and reserving speculative columns is how schemas rot. |
@@ -1061,10 +1328,42 @@ not the seam's.
    created movements); `ON CONFLICT DO NOTHING` + an owner-scoped read-back is the whole retry
    story, so a replay reads back what landed and only another account's id is a conflict; one open
    session per user is a partial unique index, not a guard flag. (§2.2, §3.3, §4)
-6. **Auto-close** — a pure domain rule (4 h, closes at last activity), applied lazily on
-   start and on log read; no cron. (§3.2)
+6. **Auto-close** — a pure domain rule (4 h, closes at last activity), applied lazily on start, on
+   the log read and on the statistics read; no cron. The export settles nothing (it hands back every
+   set whatever `finished_at` says) and neither does the share's unauthenticated read (a stranger
+   holding a link must not write to the owner's log). (§3.2, §5)
 7. **Namespacing** — `wm::gym` for everything; `gym::Set` at call sites, `Set` inside. (§1)
-8. **No billing code until `gym-mcp`**, and no MCP until the scoped ToolHost exists. (§0, §8)
+8. **No billing code in gym, still — and `gym-mcp` is no longer what it waits on.** Both halves of
+   that bet landed 2026-08-07: the platform's scoped ToolHost, then gym's own catalog on top of it.
+   The log is free and the *connected* log is Windmill One, so what is left is a money surface —
+   a plan gate read through `Entitlements` and the tier copy that stayed behind in roadmap — and it
+   is a product decision now, blocked by nothing. Gym still holds no plan enum and gates nothing.
+   (§0, §6, §8)
+9. **The coach share is a table, not a column.** §0's refusal is narrowed rather than dropped: there
+   is still no `visibility` on `gym_sessions` and not one of the fifteen routes that predate it
+   changed, so *absent is byte-identical to forbidden* stays a structural property of every one of
+   them. The second reader arrives through `gym_session_shares` and one unauthenticated route, and
+   sharing is therefore unreachable by accident — no existing query names that table. Per session,
+   never per account; expiring (30 days, `shareExpiryAt`) and revocable by deleting the row;
+   server-minted token, stored in the clear because the mint must be idempotent; the reply names no
+   account and holds no id. Journal's §0.1 is no longer inherited *whole* — journal still has no
+   share entity, gym now has one. (§0, §2.6, §5)
+10. **The statistics surface answers only over values the domain already decides.** The series is
+    `TopSet`'s rule, the estimate is Epley from `domain/Review.h`, the records are the *prior*
+    halves of the finish's own record rules — no new arithmetic and no second ranking vocabulary.
+    All date work stays in Postgres, weeks are Monday-to-Monday in UTC, and finished sessions only.
+    Volume as a headline, muscle-group taxonomy, streaks, a cardio or duration axis, and any grade
+    or percentage stay cut for the reasons they were cut for. (§5, §8)
+11. **The tool catalog is a second door on the same core, and its classification IS the gate.** Every
+    tool goes through `LogService` (never the repository) and acts as the caller, so an agent is an
+    owner-scoped client and the ownership rules are enforced in exactly one place. The level rides on
+    the declaration beside the description, so the two cannot drift. Tools merge where one argument
+    does the job — `list_routines` is the list and the single read, `get_session` carries the finish
+    readout, `get_stats` narrows to one movement, `save_routine` replaces-or-creates — and **never
+    across levels**: no read is reachable through a write-classified name, and `gym:delete` is its
+    own grant. What is deliberately absent: an export tool (three tools already answer it in a shape
+    a model reads), any tool that would touch another account, and any prompt, model or loop of gym's
+    own. (§0, §6, §8)
 
 ---
 
@@ -1087,11 +1386,23 @@ the local stack → push → watch CI → probe prod).
 - **Phase 2.** `routines` — **the backend half is shipped**: the plan's CRUD, the movement a lifter
   creates, and the server-frozen snapshot at start (§2.4, §2.5, §4). `pr-line` — **the backend half
   is shipped too**: the finish read, the three record rules, the comparison and the discard (§3.1,
-  §5, §6), e1RM shown to a human for once. `set-kinds` UI · `log-editing` (drafts, renumber) ·
-  `rest-timer` (the target column routines now write) · `gym-export` · `gym-landing` (the flip,
-  only once the product behind it is true) · `gym-mcp` behind the platform bet.
-- **Phase 3, behind the measured gate** — charts, plan-vs-actual, the strength tree, nudges on
-  the shared sweep primitive, the native shell.
+  §5, §6), e1RM shown to a human for once. `gym-export` — **shipped**, and it is the CSV §5
+  describes rather than the settings-section stub the table used to promise. `gym-share` — **the
+  backend half is shipped**: the separate table, the two owner-scoped doors and the one
+  unauthenticated read (§2.6, §5). `set-kinds` UI · `log-editing` (drafts, renumber) ·
+  `rest-timer` (the target column routines now write) · `gym-landing` (the flip, only once the
+  product behind it is true). `gym-mcp` — **shipped**, both halves: the platform's grant gate, then
+  gym's fifteen tools on it (§6). What is left of that bet is client-side — the connect surface, and
+  whatever the shell puts in front of a lifter who has no agent of their own.
+- **Phase 3.** `progress-charts` — **the backend half is shipped** as `GET /v1/gym/stats` (§5).
+  That is a decision taken **ahead of** the measured gate rather than through it: the gate
+  (8 consecutive real sessions, prefill right on set one in ≥6) has still never been *run*, so
+  "behind a measured gate" meant "behind a measurement nobody took", and the owner chose to build.
+  What the gate protected is preserved a different way — the surface answers only over values the
+  domain already decides, so shipping it early cost no new opinion about training, and the cut list
+  in §8 is unchanged. Still ahead: plan-vs-actual, the strength tree, nudges on the shared sweep
+  primitive, the native shell — and the client half of the charts, which has no design canon yet
+  (there is no chart brief among gym's G1–G7).
 
 The order is deliberate: the durable write is the product; everything else is optional on top
 of that row.
@@ -1109,9 +1420,10 @@ where the product puts a control, not a new rule on the wire.
 
 **The server contract does not change, deliberately.** A surface gate — the backend refusing a set
 that does not carry a device claim — was considered and refused on three counts: `tools/lift-import`
-writes sets over this same public API, `gym-mcp` will write over it too, and making the durable
-write conditional on who is asking inverts §0, where server-as-truth is the reason gym exists here
-at all. The stance lives in the surfaces. Every route stays owner-scoped and surface-blind.
+writes sets over this same public API, gym's **MCP tools write through the same `LogService` behind
+it** (§6) so a rule stated at the HTTP edge would not reach them at all, and making the durable write
+conditional on who is asking inverts §0, where server-as-truth is the reason gym exists here. The
+stance lives in the surfaces. Every route — and every tool — stays owner-scoped and surface-blind.
 
 ### 11.1 Who owns what
 
@@ -1189,9 +1501,11 @@ posts to the same route to create past sessions, so the exposure was real and no
 
 The refusal is the client's *and* the server's, and the division is the interesting part. Web
 refuses before the request, with the reason said plainly — *"your phone is mid-workout"*, not a 409
-the user is left to interpret. But a client-side rule is not a guarantee: `lift-import` and
-`gym-mcp` write over this same public API, and the one durable write gym exists for cannot depend on
-every caller remembering. So the rule is stated on the wire and enforced by the store's own truth:
+the user is left to interpret. But a client-side rule is not a guarantee: `lift-import` writes over
+this same public API and `start_session` (§6) writes through the service behind it — an agent
+composing a backfill is a caller no web screen can warn — and the one durable write gym exists for
+cannot depend on every caller remembering. So the rule is stated on the wire and enforced by the
+store's own truth:
 **`{"joinOpenSession": false}` on the start, and 409 `session-already-open` when another session is
 open.**
 

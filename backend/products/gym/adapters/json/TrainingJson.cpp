@@ -30,6 +30,17 @@ Json::Value topSetJson(const TopSet& top) {
   body["sets"] = top.sets;
   return body;
 }
+
+// The two standing bests are the same four numbers and are written by one hand for the same reason
+// the comparison's two sides are: a client prints "best e1RM" and "heaviest" from one line of code.
+Json::Value bestJson(const Best& best) {
+  Json::Value body(Json::objectValue);
+  body["weightKg"] = best.weightKg;
+  body["reps"] = best.reps;
+  body["at"] = Json::Value::UInt64(best.atMs);
+  if (best.e1rm) body["e1rm"] = *best.e1rm;
+  return body;
+}
 }
 
 SessionStart parseSessionStart(const Json::Value& body) {
@@ -316,6 +327,75 @@ Json::Value toJson(const Review& review) {
   against["startedAt"] = Json::Value::UInt64(review.against->startedAtMs);
   against["movements"] = movements;
   body["against"] = against;
+  return body;
+}
+
+// The statistics surface, one way. Every absence is a sentence: no `e1rm` on a point or a best
+// means that load has no honest one-rep estimate (a chin-up, a band-assisted pull-up), and an
+// absent `bestE1rm` means no set of that movement ever had one. `weeks` is contiguous — a week with
+// no training is present and zero — because the gap is the fact, and a client filling it in would
+// be doing calendar arithmetic in a second place. There is no total, no volume, no score and no
+// percentage anywhere in it: a fact with a direction, never a grade.
+Json::Value toJson(const Statistics& statistics) {
+  Json::Value weeks(Json::arrayValue);
+  for (const TrainingWeek& week : statistics.weeks) {
+    Json::Value line(Json::objectValue);
+    line["startedAt"] = Json::Value::UInt64(week.startedAtMs);
+    line["sessions"] = week.sessions;
+    line["workingSets"] = week.workingSets;
+    weeks.append(line);
+  }
+
+  Json::Value movements(Json::arrayValue);
+  for (const MovementProgress& movement : statistics.movements) {
+    Json::Value points(Json::arrayValue);
+    for (const MovementPoint& point : movement.points) {
+      Json::Value line(Json::objectValue);
+      line["at"] = Json::Value::UInt64(point.atMs);
+      line["weightKg"] = point.weightKg;
+      line["reps"] = point.reps;
+      if (point.e1rm) line["e1rm"] = *point.e1rm;
+      points.append(line);
+    }
+    Json::Value line(Json::objectValue);
+    line["exerciseId"] = movement.exercise.str();
+    line["lastTrainedAt"] = Json::Value::UInt64(movement.lastTrainedAtMs);
+    line["points"] = points;
+    if (movement.bestE1rm) line["bestE1rm"] = bestJson(*movement.bestE1rm);
+    if (movement.heaviest) line["heaviest"] = bestJson(*movement.heaviest);
+    movements.append(line);
+  }
+
+  Json::Value body(Json::objectValue);
+  body["weeks"] = weeks;
+  body["movements"] = movements;
+  return body;
+}
+
+// What a coach reads. The absences here are the ones the session itself has — a workout still
+// running has no finish, an ad-hoc one has no routine name — and everything a session normally
+// carries that names the ACCOUNT rather than the workout is not omitted but never built: there is
+// no id in this object at any depth, and the movement is its display name because the reader holds
+// no catalog to resolve a slug against.
+Json::Value toJson(const SharedSession& shared) {
+  Json::Value sets(Json::arrayValue);
+  for (const SharedSet& set : shared.sets) {
+    Json::Value line(Json::objectValue);
+    line["exercise"] = set.exercise;
+    line["setNumber"] = set.setNumber;
+    line["weightKg"] = set.weightKg;
+    line["reps"] = set.reps;
+    line["kind"] = toString(set.kind);
+    if (set.rpe) line["rpe"] = *set.rpe;
+    line["note"] = set.note;
+    line["completedAt"] = Json::Value::UInt64(set.completedAtMs);
+    sets.append(line);
+  }
+  Json::Value body(Json::objectValue);
+  body["startedAt"] = Json::Value::UInt64(shared.startedAtMs);
+  if (shared.finishedAtMs) body["finishedAt"] = Json::Value::UInt64(*shared.finishedAtMs);
+  if (!shared.routineName.empty()) body["routine"] = shared.routineName;
+  body["sets"] = sets;
   return body;
 }
 

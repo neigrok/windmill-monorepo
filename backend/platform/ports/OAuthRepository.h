@@ -41,13 +41,16 @@ struct StoredToken {
 };
 
 // One row of the settings §2 "Connected tools" list: a client the user has authorized, its
-// display name (from the registered client), when the grant was first made, and when its
-// tokens last acted. granted/last-used live on oauth_grants, stable across token rotation.
+// display name (from the registered client), when the grant was first made, when its
+// tokens last acted, and the scope that was approved. granted/last-used/scope live on
+// oauth_grants, stable across token rotation. The scope is here because a person who approved a
+// grant months ago has no other way to find out what they handed over.
 struct GrantView {
   std::string clientId;
   std::string clientName;
   UnixMs grantedMs = 0;
   UnixMs lastUsedMs = 0;
+  std::string scope;
 };
 
 // Persistence for OAuth clients, authorization codes, and tokens — one connection per call,
@@ -72,9 +75,11 @@ struct OAuthRepository {
 
   // The settings §2 grant record, kept apart from the rotation-prone token rows. recordGrant
   // upserts on first token issue: granted_ms is set once and kept as the earliest, last_used
-  // advances. touchGrantUsed advances last_used on the token's hot path, but only past the
-  // throttle so a busy client does not write on every call.
-  virtual void recordGrant(const UserId& user, const std::string& clientId, UnixMs now) = 0;
+  // and scope advance — a re-consent that narrows the grant must narrow what settings shows.
+  // touchGrantUsed advances last_used on the token's hot path, but only past the throttle so a
+  // busy client does not write on every call.
+  virtual void recordGrant(const UserId& user, const std::string& clientId, UnixMs now,
+                           const std::string& scope) = 0;
   virtual void touchGrantUsed(const UserId& user, const std::string& clientId, UnixMs now,
                               UnixMs minIntervalMs) = 0;
   virtual std::vector<GrantView> listGrants(const UserId& user) = 0;

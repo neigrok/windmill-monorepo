@@ -22,7 +22,8 @@ public:
   std::optional<StoredToken> findAccessToken(const std::string& accessDigest) override;
   std::optional<StoredToken> takeRefreshToken(const std::string& refreshDigest, UnixMs now) override;
 
-  void recordGrant(const UserId& user, const std::string& clientId, UnixMs now) override;
+  void recordGrant(const UserId& user, const std::string& clientId, UnixMs now,
+                   const std::string& scope) override;
   void touchGrantUsed(const UserId& user, const std::string& clientId, UnixMs now,
                       UnixMs minIntervalMs) override;
   std::vector<GrantView> listGrants(const UserId& user) override;

@@ -1,6 +1,7 @@
 #include "platform/adapters/clock/SystemClock.h"
 #include "platform/adapters/crypto/OpenSslTokenGenerator.h"
 #include "platform/adapters/http/RateLimiter.h"
+#include "platform/adapters/mcp/CompositeToolHost.h"
 #include "platform/adapters/mcp/McpHttpEndpoint.h"
 #include "platform/adapters/mcp/McpServer.h"
 #include "products/roadmap/adapters/mcp/RoadmapResources.h"
@@ -68,9 +69,14 @@ int main() {
   auto oauthRepo = std::make_shared<PgOAuthRepository>(connString);
   auto oauthTokens = std::make_shared<OpenSslTokenGenerator>();
   auto oauthService = std::make_shared<OAuthService>(*oauthRepo, *oauthTokens, *clock);
-  McpAuth mcpAuth{oauthService.get(), resource, resourceMetadataUrl, mcpToken, caller};
+  // The shared bearer carries the account-wide grant, written here rather than defaulted: this root
+  // has no McpKeyService, so it is the shared token or an OAuth token and nothing else.
+  McpAuth mcpAuth{oauthService.get(), resource, resourceMetadataUrl, mcpToken,
+                  caller,             nullptr,  ToolScope::everything()};
 
-  auto server = std::make_shared<McpServer>(*tools, roadmapServerInfo(), roadmapResources());
+  const std::vector<ToolModule> modules{{*tools, roadmapInstructions()}};
+  auto surface = std::make_shared<CompositeToolHost>(modules);
+  auto server = std::make_shared<McpServer>(*surface, windmillServerInfo(*surface), roadmapResources());
   auto endpoint = std::make_shared<McpHttpEndpoint>(*server, origins, mcpAuth);
 
   auto& app = drogon::app();

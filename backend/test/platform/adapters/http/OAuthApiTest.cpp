@@ -44,7 +44,7 @@ struct Harness {
   FakeAccountFootprint footprint;
   std::shared_ptr<AuthService> auth = std::make_shared<AuthService>(
       authRepo, email, tokens, *clock, *oauth, footprint, kApp);
-  OAuthApi api{oauth, auth, kIssuer, kApp, kConsent};
+  OAuthApi api{oauth, auth, kIssuer, kApp, kConsent, supportedScopes({"roadmap", "gym"})};
 
   UserId signIn(const std::string& sessionSecret, const std::string& address = "sam@example.com") {
     User user = authRepo.createUser(Email{address}, "sam");
@@ -162,6 +162,24 @@ TEST(oauth_discovery_advertises_s256_only_and_a_client_secret_nobody_holds) {
   CHECK_EQ(body["token_endpoint_auth_methods_supported"][0].asString(), std::string("none"));
   CHECK_EQ(body["response_types_supported"][0].asString(), std::string("code"));
   CHECK_EQ(body["grant_types_supported"].size(), 2u);
+}
+
+// A client can only ask for a level it was told about, so the whole vocabulary is published — and it
+// is the vocabulary of the products actually connected, handed in by the composition root.
+TEST(oauth_discovery_publishes_every_scope_the_tool_surface_honours) {
+  Harness h;
+  drogon::HttpResponsePtr captured;
+  h.api.metadata(get("/.well-known/oauth-authorization-server"),
+                 [&](const drogon::HttpResponsePtr& r) { captured = r; });
+
+  const Json::Value supported = (*captured->getJsonObject())["scopes_supported"];
+  REQUIRE_EQ(supported.size(), 6u);
+  CHECK_EQ(supported[0].asString(), std::string("roadmap:read"));
+  CHECK_EQ(supported[1].asString(), std::string("roadmap:write"));
+  CHECK_EQ(supported[2].asString(), std::string("roadmap:delete"));
+  CHECK_EQ(supported[3].asString(), std::string("gym:read"));
+  CHECK_EQ(supported[4].asString(), std::string("gym:write"));
+  CHECK_EQ(supported[5].asString(), std::string("gym:delete"));
 }
 
 TEST(oauth_registration_refuses_a_redirect_that_is_neither_https_nor_loopback) {
@@ -419,11 +437,18 @@ TEST(oauth_an_approved_consent_yields_a_code_the_client_spends_once_for_that_acc
   CHECK(!body["access_token"].asString().empty());
   CHECK(!body["refresh_token"].asString().empty());
   CHECK_EQ(granted->getHeader("Cache-Control"), std::string("no-store"));
+  // The scope the token actually carries, echoed at issue (RFC 6749 §5.1) — a client that asked for
+  // more than it got learns it here rather than from a tool that silently never appears.
+  CHECK_EQ(body["scope"].asString(), std::string("roadmap:write"));
 
-  const std::optional<UserId> resolved =
+  const std::optional<ToolCaller> resolved =
       h.oauth->resolveAccessToken(body["access_token"].asString(), kResource);
   REQUIRE(resolved.has_value());
-  CHECK_EQ(*resolved, user);
+  CHECK_EQ(resolved->user, user);
+  // And it is enforced from here on: the grant the consent screen showed is the reach the token has.
+  CHECK(resolved->scope.allows("roadmap", Access::write));
+  CHECK_FALSE(resolved->scope.allows("roadmap", Access::read));
+  CHECK_FALSE(resolved->scope.allows("roadmap", Access::del));
 
   // Single-use: the same code again is invalid_grant, and says nothing about why.
   const drogon::HttpResponsePtr replay =
@@ -485,7 +510,7 @@ TEST(oauth_the_connected_tools_list_is_the_caller_s_own_and_disconnecting_is_ide
   const std::string clientId = h.registerClient();
   const UserId mine = h.signIn("s-mine", "sam@example.com");
   h.signIn("s-theirs", "ada@example.com");
-  h.oauthRepo.recordGrant(mine, clientId, h.clock->now);
+  h.oauthRepo.recordGrant(mine, clientId, h.clock->now, "roadmap:read");
 
   drogon::HttpResponsePtr captured;
   auto list = [&](const std::string& session) {
@@ -501,6 +526,9 @@ TEST(oauth_the_connected_tools_list_is_the_caller_s_own_and_disconnecting_is_ide
   CHECK_EQ(body["grants"][0]["name"].asString(), std::string("Claude"));
   CHECK_EQ(body["grants"][0]["grantedMs"].asInt64(), static_cast<Json::Int64>(h.clock->now));
   CHECK_EQ(body["grants"][0]["lastUsedMs"].asInt64(), static_cast<Json::Int64>(h.clock->now));
+  // What the tool may do, months after the one screen that said so. Without this the honest answer
+  // to "what did I give this thing" is unavailable to the person who gave it.
+  CHECK_EQ(body["grants"][0]["scope"].asString(), std::string("roadmap:read"));
 
   CHECK_EQ((*list("s-theirs")->getJsonObject())["grants"].size(), 0u);
   CHECK_EQ(list("")->getStatusCode(), drogon::k401Unauthorized);

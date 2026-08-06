@@ -17,7 +17,7 @@ public:
                      long long createdMs) override;
   std::vector<McpKeyRow> list(const UserId& user) override;
   bool revoke(const UserId& user, const std::string& id) override;
-  std::optional<UserId> findActiveUser(const std::string& tokenDigest, long long nowMs) override;
+  std::optional<ActiveKey> findActiveKey(const std::string& tokenDigest, long long nowMs) override;
   void touchUsed(const std::string& tokenDigest, long long nowMs, long long throttleMs) override;
 
 private:

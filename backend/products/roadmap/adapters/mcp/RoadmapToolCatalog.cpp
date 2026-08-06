@@ -168,8 +168,15 @@ Json::Value linkArray(const char* description) {
   return property;
 }
 
-Json::Value tool(const char* name, const char* description, Json::Value properties,
-                 std::vector<const char*> required) {
+// Each tool names the grant level that reaches it beside the sentence describing what it does, so a
+// client cannot be told one thing and gated on another. The three levels split like this: `read`
+// answers questions, `write` changes the document, and `delete` destroys something a person AUTHORED
+// — a whole roadmap, a step, or a legend kind. Edges are relationships rather than authored things,
+// which is why disconnect/reconnect/tidy/prune stay writes: they rearrange the graph, they never take
+// out of it something someone wrote. And `delete` is never implied by `write` — a connection that was
+// not handed that level does not so much as see these three in tools/list.
+ToolDeclaration tool(const char* name, Access access, const char* description, Json::Value properties,
+                     std::vector<const char*> required) {
   Json::Value schema(Json::objectValue);
   schema["type"] = "object";
   schema["properties"] = std::move(properties);
@@ -182,25 +189,25 @@ Json::Value tool(const char* name, const char* description, Json::Value properti
   descriptor["name"] = name;
   descriptor["description"] = description;
   descriptor["inputSchema"] = schema;
-  return descriptor;
+  return ToolDeclaration{std::move(descriptor), "roadmap", access};
 }
 
 }
 
-Json::Value roadmapToolCatalog() {
-  Json::Value tools(Json::arrayValue);
+std::vector<ToolDeclaration> roadmapToolCatalog() {
+  std::vector<ToolDeclaration> tools;
 
   {
     Json::Value p(Json::objectValue);
     p["title"] = cappedStr("Optional name for the new roadmap.", kMaxTitleChars);
-    tools.append(tool("create_tree",
+    tools.push_back(tool("create_tree", Access::write,
         "Create a new empty roadmap that you own, seeded with the default legend "
         "(Build/Learn/Milestone). Optionally name it with `title`. Returns the new treeId — pass it "
         "to the other tools to start authoring.",
         p, {}));
   }
   {
-    tools.append(tool("list_trees",
+    tools.push_back(tool("list_trees", Access::read,
         "List the roadmaps you own — one row each: id, title, total node count, how many you have "
         "completed, when it was planted (createdAt, epoch ms), when it last moved (updatedAt, epoch "
         "ms), and its dominant hue (dominantKind), newest activity first. Takes no arguments. Use it "
@@ -210,7 +217,7 @@ Json::Value roadmapToolCatalog() {
   {
     Json::Value p(Json::objectValue);
     p["treeId"] = treeHandle();
-    tools.append(tool("delete_tree",
+    tools.push_back(tool("delete_tree", Access::del,
         "Delete a roadmap you own — a soft-delete: it stops appearing in list_trees and can no longer "
         "be read. Only the owner may delete; someone else's tree is refused.",
         p, {"treeId"}));
@@ -228,7 +235,7 @@ Json::Value roadmapToolCatalog() {
         "Which fields each legend kind carries. Default {id, hue, label}.", kindVocabulary().names());
     p["limit"] = boundedInt("Most nodes to return in one page.", 1, kMaxLimit, kDefaultLimit);
     p["cursor"] = str("Resume token from a previous page's `nextCursor`. Omit for the first page.");
-    tools.append(tool("get_tree",
+    tools.push_back(tool("get_tree", Access::read,
         "Read a roadmap's current document — title, its nodes and their prerequisite edges, and the "
         "ordered legend `kinds` — with the tree's op sequence number. Call this before editing to "
         "learn the node ids the other tools take, and the legend a node's color refers to. `count` "
@@ -238,7 +245,7 @@ Json::Value roadmapToolCatalog() {
   {
     Json::Value p(Json::objectValue);
     p["treeId"] = treeHandle();
-    tools.append(tool("get_diagnostics",
+    tools.push_back(tool("get_diagnostics", Access::read,
         "Report how the roadmap departs from a valid skill tree: cycles, dangling edges (an "
         "endpoint is missing), self-edges, and structural smells. Edits are never rejected, so an "
         "edit that forms a cycle still succeeds — this is how you find and fix it.",
@@ -247,7 +254,7 @@ Json::Value roadmapToolCatalog() {
   {
     Json::Value p(Json::objectValue);
     p["treeId"] = treeHandle();
-    tools.append(tool("get_health",
+    tools.push_back(tool("get_health", Access::read,
         "Tidiness metrics for a structurally-valid roadmap: node/edge counts, cross-branch "
         "coupling, redundant (transitively implied) edges, average in-degree, and a 0–100 score. "
         "Fails if the tree currently has cycles/dangling edges — fix those first.",
@@ -260,7 +267,7 @@ Json::Value roadmapToolCatalog() {
         "Which id lists to return. Default {completed, inProgress}; `cleared` (the tombstones a "
         "browser reconciles against) is available but rarely useful.",
         progressVocabulary().names());
-    tools.append(tool("get_progress",
+    tools.push_back(tool("get_progress", Access::read,
         "The caller's private progress overlay for a roadmap: the node ids that are completed and "
         "those in progress. Per-user, separate from the shared structure.",
         p, {"treeId"}));
@@ -281,7 +288,7 @@ Json::Value roadmapToolCatalog() {
         nodeVocabulary().names());
     p["limit"] = boundedInt("Most nodes to return in one page.", 1, kMaxLimit, kDefaultLimit);
     p["cursor"] = str("Resume token from a previous page's `nextCursor`. Omit for the first page.");
-    tools.append(tool("find_nodes",
+    tools.push_back(tool("find_nodes", Access::read,
         "Search a roadmap's nodes. Every filter you set must match (AND): `color` or `kind` pin a hue, "
         "`query` is a case-insensitive substring over id + label + description, best match first — so "
         "pasting an id you already know finds that node, at the top. Omit all filters to list every "
@@ -307,7 +314,7 @@ Json::Value roadmapToolCatalog() {
     p["id"] = cappedStr("Optional id to PROPOSE for the new node; minted from the label if omitted. "
                         "(`nodeId` names a node that already exists and is not accepted here.)",
                         kMaxIdLength);
-    tools.append(tool("create_node",
+    tools.push_back(tool("create_node", Access::write,
         "Add a node to the roadmap. Only `label` is required; icon, color, position (x,y), a set of "
         "`prerequisites` (nodes that unlock this one), a `description`, and `links` are optional. "
         "Returns the node id.",
@@ -321,7 +328,7 @@ Json::Value roadmapToolCatalog() {
     p["description"] = cappedStr("The annotation body (omit to leave it unchanged).",
                                  kMaxNodeDescriptionLength);
     p["links"] = linkArray("The node's external references — replaces the existing set (omit to leave unchanged).");
-    tools.append(tool("annotate_node",
+    tools.push_back(tool("annotate_node", Access::write,
         "Set a node's free annotation: its `description` and/or `links`. Each field is optional — an "
         "omitted field is left untouched; `links` replaces the whole set when given — but at least "
         "one must be given.",
@@ -333,7 +340,7 @@ Json::Value roadmapToolCatalog() {
     p["nodeId"] = nodeHandle();
     p["id"] = legacyNodeHandle();
     p["label"] = cappedStr("The new label.", kMaxNodeLabelLength);
-    tools.append(tool("rename_node", "Change a node's label.", p, {"treeId", "nodeId", "label"}));
+    tools.push_back(tool("rename_node", Access::write, "Change a node's label.", p, {"treeId", "nodeId", "label"}));
   }
   {
     Json::Value p(Json::objectValue);
@@ -341,7 +348,7 @@ Json::Value roadmapToolCatalog() {
     p["nodeId"] = nodeHandle();
     p["id"] = legacyNodeHandle();
     p["color"] = enumStr("The new color.", kHues);
-    tools.append(tool("set_node_color", "Set a node's color (its branch/category tint).", p,
+    tools.push_back(tool("set_node_color", Access::write, "Set a node's color (its branch/category tint).", p,
                       {"treeId", "nodeId", "color"}));
   }
   {
@@ -351,7 +358,7 @@ Json::Value roadmapToolCatalog() {
     p["id"] = legacyNodeHandle();
     p["x"] = num("Canvas x.");
     p["y"] = num("Canvas y.");
-    tools.append(tool("move_node", "Set a node's canvas position (x, y).", p,
+    tools.push_back(tool("move_node", Access::write, "Set a node's canvas position (x, y).", p,
                       {"treeId", "nodeId", "x", "y"}));
   }
   {
@@ -359,7 +366,7 @@ Json::Value roadmapToolCatalog() {
     p["treeId"] = treeHandle();
     p["from"] = cappedStr("The prerequisite node id.", kMaxIdLength);
     p["to"] = cappedStr("The node it unlocks.", kMaxIdLength);
-    tools.append(tool("connect",
+    tools.push_back(tool("connect", Access::write,
         "Add a prerequisite edge from `from` to `to` — `from` must be completed before `to`. "
         "Idempotent; may form a cycle (surfaced by get_diagnostics, never rejected).",
         p, {"treeId", "from", "to"}));
@@ -369,7 +376,7 @@ Json::Value roadmapToolCatalog() {
     p["treeId"] = treeHandle();
     p["from"] = cappedStr("The prerequisite node id.", kMaxIdLength);
     p["to"] = cappedStr("The node it unlocks.", kMaxIdLength);
-    tools.append(tool("disconnect", "Remove the prerequisite edge from `from` to `to`.", p,
+    tools.push_back(tool("disconnect", Access::write, "Remove the prerequisite edge from `from` to `to`.", p,
                       {"treeId", "from", "to"}));
   }
   {
@@ -379,7 +386,7 @@ Json::Value roadmapToolCatalog() {
     p["oldTo"] = cappedStr("Current edge target.", kMaxIdLength);
     p["newFrom"] = cappedStr("New edge source.", kMaxIdLength);
     p["newTo"] = cappedStr("New edge target.", kMaxIdLength);
-    tools.append(tool("reconnect",
+    tools.push_back(tool("reconnect", Access::write,
         "Atomically move an edge: remove (oldFrom→oldTo) and add (newFrom→newTo) as one op / one "
         "undo step.",
         p, {"treeId", "oldFrom", "oldTo", "newFrom", "newTo"}));
@@ -389,7 +396,7 @@ Json::Value roadmapToolCatalog() {
     p["treeId"] = treeHandle();
     p["nodeId"] = nodeHandle();
     p["id"] = legacyNodeHandle();
-    tools.append(tool("delete_node",
+    tools.push_back(tool("delete_node", Access::del,
         "Delete a node (tombstone). Its edges go inert and its children detach into roots; nothing "
         "is re-tethered. Reversible via undo.",
         p, {"treeId", "nodeId"}));
@@ -397,7 +404,7 @@ Json::Value roadmapToolCatalog() {
   {
     Json::Value p(Json::objectValue);
     p["treeId"] = treeHandle();
-    tools.append(tool("tidy",
+    tools.push_back(tool("tidy", Access::write,
         "Transitive reduction: drop edges already implied by a longer path, as one op. A "
         "semantics-preserving cleanup that every collaborator converges on.",
         p, {"treeId"}));
@@ -410,7 +417,7 @@ Json::Value roadmapToolCatalog() {
     p["label"] = cappedStr("Optional label — set inline so the kind lands in one op.", kMaxKindLabelLength);
     p["description"] = cappedStr("Optional description — the generator's sorting brief.",
                                  kMaxKindDescriptionLength);
-    tools.append(tool("add_kind",
+    tools.push_back(tool("add_kind", Access::write,
         "Add a legend kind: a named, described hue. The hue must be free (unique per kind) and the "
         "legend must have fewer than 6 kinds. `label` and `description` may be set inline, or later "
         "with rename_kind / describe_kind.",
@@ -423,7 +430,7 @@ Json::Value roadmapToolCatalog() {
     p["kindId"] = kindHandleAlias();
     p["label"] = cappedStr("The kind's label (sentence-case, one or two words; \"\" = unlabeled).",
                            kMaxKindLabelLength);
-    tools.append(tool("rename_kind", "Set a legend kind's label.", p, {"treeId", "id", "label"}));
+    tools.push_back(tool("rename_kind", Access::write, "Set a legend kind's label.", p, {"treeId", "id", "label"}));
   }
   {
     Json::Value p(Json::objectValue);
@@ -432,14 +439,14 @@ Json::Value roadmapToolCatalog() {
     p["kindId"] = kindHandleAlias();
     p["description"] = cappedStr("The kind's description (plain text; the generator's sorting brief).",
                                  kMaxKindDescriptionLength);
-    tools.append(tool("describe_kind", "Set a legend kind's description.", p, {"treeId", "id", "description"}));
+    tools.push_back(tool("describe_kind", Access::write, "Set a legend kind's description.", p, {"treeId", "id", "description"}));
   }
   {
     Json::Value p(Json::objectValue);
     p["treeId"] = treeHandle();
     p["id"] = kindHandle();
     p["kindId"] = kindHandleAlias();
-    tools.append(tool("remove_kind",
+    tools.push_back(tool("remove_kind", Access::del,
         "Remove a legend kind. Rejected while any node still wears its hue — recolor or repaint those "
         "nodes first.",
         p, {"treeId", "id"}));
@@ -449,7 +456,7 @@ Json::Value roadmapToolCatalog() {
     p["treeId"] = treeHandle();
     p["order"] = strArray("The kind ids in the desired order (legend order = generation priority).",
                           kMaxIdLength);
-    tools.append(tool("reorder_kinds", "Reorder the legend. The first kind is the generation fallback.",
+    tools.push_back(tool("reorder_kinds", Access::write, "Reorder the legend. The first kind is the generation fallback.",
                       p, {"treeId", "order"}));
   }
   {
@@ -458,7 +465,7 @@ Json::Value roadmapToolCatalog() {
     p["id"] = kindHandle();
     p["kindId"] = kindHandleAlias();
     p["hue"] = enumStr("The new hue — must be free (not owned by another kind).", kHues);
-    tools.append(tool("recolor_kind",
+    tools.push_back(tool("recolor_kind", Access::write,
         "Atomically change a kind's hue and repaint every node wearing the old hue to the new one, as "
         "one op / one undo step.",
         p, {"treeId", "id", "hue"}));
@@ -479,7 +486,7 @@ Json::Value roadmapToolCatalog() {
         "out of dependency order no longer misreports prerequisitesMet. Pass this OR a single "
         "nodeId+status, never both.",
         updateFields, {"nodeId", "status"});
-    tools.append(tool("set_progress",
+    tools.push_back(tool("set_progress", Access::write,
         "Set the caller's progress. Pass a single `nodeId`+`status`, or a bulk `updates` list. Unknown "
         "node ids are rejected (no orphan rows). Advisory only — marking complete with unmet "
         "prerequisites still records and reports prerequisitesMet:false, judged against the committed "
@@ -525,7 +532,7 @@ Json::Value roadmapToolCatalog() {
                              "reported back in progressSkipped, not silently dropped.",
                              progressFields, {"nodeId", "status"});
     p["dryRun"] = boolean("If true, report collisions (and any progressSkipped) and change nothing.");
-    tools.append(tool("import_subgraph",
+    tools.push_back(tool("import_subgraph", Access::write,
         "Bulk-apply a whole roadmap slice — the shape get_tree returns ({nodes[], kinds[]}, plus an "
         "optional progress[]); to copy a tree faithfully, read it with every field named in `fields` "
         "first, since get_tree answers with a projection — but a node carries `seedStatus`, never "
@@ -542,7 +549,7 @@ Json::Value roadmapToolCatalog() {
   {
     Json::Value p(Json::objectValue);
     p["treeId"] = treeHandle();
-    tools.append(tool("prune",
+    tools.push_back(tool("prune", Access::write,
         "Garbage-collect the roadmap: drop dangling and self edges (edges no valid DAG keeps) in one "
         "op, and clear the caller's progress rows for nodes no longer in the tree. Returns how many of "
         "each it removed.",

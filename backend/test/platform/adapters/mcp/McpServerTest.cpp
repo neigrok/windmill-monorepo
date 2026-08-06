@@ -11,15 +11,13 @@ struct FakeHost : ToolHost {
   Json::Value lastArgs;
   bool declaresOutputSchema = false;  // the one thing structuredContent exists to accompany
 
-  Json::Value listTools() const override {
-    Json::Value tools(Json::arrayValue);
+  std::vector<ToolDeclaration> declareTools() const override {
     Json::Value one(Json::objectValue);
     one["name"] = "echo";
-    tools.append(one);
-    return tools;
+    return {ToolDeclaration{one, "fixture", Access::read}};
   }
 
-  ToolResult callTool(const std::string& name, const Json::Value& arguments, const UserId&) override {
+  ToolResult callTool(const std::string& name, const Json::Value& arguments, const ToolCaller&) override {
     lastName = name;
     lastArgs = arguments;
     if (name == "boom") return ToolResult::failure("boom failed");
@@ -47,6 +45,10 @@ std::vector<McpResource> fixtureCatalog() {
            "text/markdown", "FIXTURE BODY"}};
 }
 
+// The engine is not the gate — CompositeToolHost is — so these cases hand it a caller holding the
+// account-wide grant and prove protocol behaviour, with one case below for the caller passing through.
+const ToolCaller kAnyone{UserId{"u1"}, ToolScope::everything()};
+
 McpServer make(FakeHost& host) {
   return McpServer(host, ServerInfo{"windmill", "0.1.0", "roadmaps as skill trees"}, fixtureCatalog());
 }
@@ -59,7 +61,7 @@ TEST(mcp_initialize_reports_capabilities_and_echoes_protocol) {
 
   Json::Value params(Json::objectValue);
   params["protocolVersion"] = "2025-06-18";
-  std::optional<Json::Value> reply = server.handle(request("initialize", params, 1));
+  std::optional<Json::Value> reply = server.handle(request("initialize", params, 1), kAnyone);
 
   REQUIRE(reply.has_value());
   CHECK_EQ((*reply)["id"].asInt(), 1);
@@ -76,7 +78,7 @@ TEST(mcp_initialize_reports_capabilities_and_echoes_protocol) {
 TEST(mcp_resources_list_publishes_the_injected_catalog) {
   FakeHost host;
   McpServer server = make(host);
-  std::optional<Json::Value> reply = server.handle(request("resources/list", Json::nullValue, 8));
+  std::optional<Json::Value> reply = server.handle(request("resources/list", Json::nullValue, 8), kAnyone);
 
   REQUIRE(reply.has_value());
   const Json::Value listing = (*reply)["result"]["resources"];
@@ -92,7 +94,7 @@ TEST(mcp_resources_list_publishes_the_injected_catalog) {
 TEST(mcp_resources_list_is_empty_when_no_catalog_is_injected) {
   FakeHost host;
   McpServer server(host, ServerInfo{"windmill", "0.1.0", ""});   // default: a product-neutral empty catalog
-  std::optional<Json::Value> reply = server.handle(request("resources/list", Json::nullValue, 8));
+  std::optional<Json::Value> reply = server.handle(request("resources/list", Json::nullValue, 8), kAnyone);
 
   REQUIRE(reply.has_value());
   CHECK_EQ((*reply)["result"]["resources"].size(), 0u);
@@ -104,7 +106,7 @@ TEST(mcp_resources_read_answers_the_injected_body) {
 
   Json::Value params(Json::objectValue);
   params["uri"] = "test://doc";
-  std::optional<Json::Value> reply = server.handle(request("resources/read", params, 9));
+  std::optional<Json::Value> reply = server.handle(request("resources/read", params, 9), kAnyone);
 
   REQUIRE(reply.has_value());
   const Json::Value contents = (*reply)["result"]["contents"];
@@ -120,7 +122,7 @@ TEST(mcp_resources_read_of_an_unknown_uri_names_it) {
 
   Json::Value params(Json::objectValue);
   params["uri"] = "windmill://nope";
-  std::optional<Json::Value> reply = server.handle(request("resources/read", params, 10));
+  std::optional<Json::Value> reply = server.handle(request("resources/read", params, 10), kAnyone);
 
   REQUIRE(reply.has_value());
   CHECK_EQ((*reply)["error"]["code"].asInt(), -32002);
@@ -132,7 +134,7 @@ TEST(mcp_resource_templates_list_is_empty_rather_than_unknown) {
   FakeHost host;
   McpServer server = make(host);
   std::optional<Json::Value> reply =
-      server.handle(request("resources/templates/list", Json::nullValue, 11));
+      server.handle(request("resources/templates/list", Json::nullValue, 11), kAnyone);
   REQUIRE(reply.has_value());
   CHECK(( *reply)["result"]["resourceTemplates"].isArray());
   CHECK_EQ((*reply)["result"]["resourceTemplates"].size(), 0u);
@@ -141,7 +143,7 @@ TEST(mcp_resource_templates_list_is_empty_rather_than_unknown) {
 TEST(mcp_ping_returns_empty_result) {
   FakeHost host;
   McpServer server = make(host);
-  std::optional<Json::Value> reply = server.handle(request("ping", Json::nullValue, 2));
+  std::optional<Json::Value> reply = server.handle(request("ping", Json::nullValue, 2), kAnyone);
   REQUIRE(reply.has_value());
   CHECK(( *reply).isMember("result"));
   CHECK_EQ((*reply)["result"].size(), 0u);
@@ -150,10 +152,22 @@ TEST(mcp_ping_returns_empty_result) {
 TEST(mcp_tools_list_passes_through_the_host_catalog) {
   FakeHost host;
   McpServer server = make(host);
-  std::optional<Json::Value> reply = server.handle(request("tools/list", Json::nullValue, 3));
+  std::optional<Json::Value> reply = server.handle(request("tools/list", Json::nullValue, 3), kAnyone);
   REQUIRE(reply.has_value());
   REQUIRE_EQ((*reply)["result"]["tools"].size(), 1u);
   CHECK_EQ((*reply)["result"]["tools"][0]["name"].asString(), std::string("echo"));
+}
+
+// The catalog is per-request, not per-process: the engine's whole job here is handing the caller to
+// the host, and without it two clients with different grants would see the same surface.
+TEST(mcp_tools_list_answers_the_caller_s_grant_not_the_whole_catalog) {
+  FakeHost host;
+  McpServer server = make(host);
+  const ToolCaller nothingGranted{UserId{"u2"}, parseToolScope("gym:read")};
+  std::optional<Json::Value> reply =
+      server.handle(request("tools/list", Json::nullValue, 3), nothingGranted);
+  REQUIRE(reply.has_value());
+  CHECK_EQ((*reply)["result"]["tools"].size(), 0u);
 }
 
 TEST(mcp_tools_call_answers_through_content_alone) {
@@ -165,7 +179,7 @@ TEST(mcp_tools_call_answers_through_content_alone) {
   Json::Value args(Json::objectValue);
   args["x"] = 7;
   params["arguments"] = args;
-  std::optional<Json::Value> reply = server.handle(request("tools/call", params, 4));
+  std::optional<Json::Value> reply = server.handle(request("tools/call", params, 4), kAnyone);
 
   REQUIRE(reply.has_value());
   CHECK_FALSE((*reply)["result"]["isError"].asBool());
@@ -186,7 +200,7 @@ TEST(mcp_tools_call_passes_structured_content_through_when_a_tool_sets_it) {
 
   Json::Value params(Json::objectValue);
   params["name"] = "echo";
-  std::optional<Json::Value> reply = server.handle(request("tools/call", params, 4));
+  std::optional<Json::Value> reply = server.handle(request("tools/call", params, 4), kAnyone);
 
   REQUIRE(reply.has_value());
   CHECK(( *reply)["result"].isMember("structuredContent"));
@@ -198,7 +212,7 @@ TEST(mcp_tools_call_failure_is_reported_in_result_not_transport) {
   McpServer server = make(host);
   Json::Value params(Json::objectValue);
   params["name"] = "boom";
-  std::optional<Json::Value> reply = server.handle(request("tools/call", params, 5));
+  std::optional<Json::Value> reply = server.handle(request("tools/call", params, 5), kAnyone);
   REQUIRE(reply.has_value());
   CHECK_FALSE((*reply).isMember("error"));  // a tool failure is not a JSON-RPC error
   CHECK(( *reply)["result"]["isError"].asBool());
@@ -207,7 +221,7 @@ TEST(mcp_tools_call_failure_is_reported_in_result_not_transport) {
 TEST(mcp_tools_call_without_name_is_invalid_params) {
   FakeHost host;
   McpServer server = make(host);
-  std::optional<Json::Value> reply = server.handle(request("tools/call", Json::Value(Json::objectValue), 6));
+  std::optional<Json::Value> reply = server.handle(request("tools/call", Json::Value(Json::objectValue), 6), kAnyone);
   REQUIRE(reply.has_value());
   CHECK_EQ((*reply)["error"]["code"].asInt(), -32602);
 }
@@ -215,7 +229,7 @@ TEST(mcp_tools_call_without_name_is_invalid_params) {
 TEST(mcp_unknown_request_method_is_method_not_found) {
   FakeHost host;
   McpServer server = make(host);
-  std::optional<Json::Value> reply = server.handle(request("does/notExist", Json::nullValue, 7));
+  std::optional<Json::Value> reply = server.handle(request("does/notExist", Json::nullValue, 7), kAnyone);
   REQUIRE(reply.has_value());
   CHECK_EQ((*reply)["error"]["code"].asInt(), -32601);
 }
@@ -224,7 +238,7 @@ TEST(mcp_notification_gets_no_response) {
   FakeHost host;
   McpServer server = make(host);
   std::optional<Json::Value> reply =
-      server.handle(request("notifications/initialized", Json::nullValue, Json::nullValue));
+      server.handle(request("notifications/initialized", Json::nullValue, Json::nullValue), kAnyone);
   CHECK_FALSE(reply.has_value());
 }
 
@@ -237,14 +251,14 @@ TEST(mcp_a_container_where_a_string_belongs_is_answered_not_thrown) {
 
   Json::Value read(Json::objectValue);
   read["uri"] = Json::Value(Json::arrayValue);
-  std::optional<Json::Value> uri = server.handle(request("resources/read", read, 20));
+  std::optional<Json::Value> uri = server.handle(request("resources/read", read, 20), kAnyone);
   REQUIRE(uri.has_value());
   CHECK_EQ((*uri)["error"]["code"].asInt(), -32602);
   CHECK_EQ((*uri)["error"]["message"].asString(), std::string("\"uri\" must be a string"));
 
   Json::Value call(Json::objectValue);
   call["name"] = Json::Value(Json::arrayValue);
-  std::optional<Json::Value> named = server.handle(request("tools/call", call, 21));
+  std::optional<Json::Value> named = server.handle(request("tools/call", call, 21), kAnyone);
   REQUIRE(named.has_value());
   CHECK_EQ((*named)["error"]["code"].asInt(), -32602);
   CHECK_EQ((*named)["error"]["message"].asString(), std::string("\"name\" must be a string"));
@@ -252,7 +266,7 @@ TEST(mcp_a_container_where_a_string_belongs_is_answered_not_thrown) {
 
   Json::Value handshake(Json::objectValue);
   handshake["protocolVersion"] = Json::Value(Json::objectValue);
-  std::optional<Json::Value> version = server.handle(request("initialize", handshake, 22));
+  std::optional<Json::Value> version = server.handle(request("initialize", handshake, 22), kAnyone);
   REQUIRE(version.has_value());
   CHECK_EQ((*version)["error"]["code"].asInt(), -32602);
   CHECK_EQ((*version)["error"]["message"].asString(),
@@ -262,7 +276,7 @@ TEST(mcp_a_container_where_a_string_belongs_is_answered_not_thrown) {
   framed["jsonrpc"] = "2.0";
   framed["id"] = 23;
   framed["method"] = Json::Value(Json::objectValue);
-  std::optional<Json::Value> method = server.handle(framed);
+  std::optional<Json::Value> method = server.handle(framed, kAnyone);
   REQUIRE(method.has_value());
   CHECK_EQ((*method)["error"]["code"].asInt(), -32600);
   CHECK_EQ((*method)["error"]["message"].asString(), std::string("\"method\" must be a string"));
@@ -271,7 +285,7 @@ TEST(mcp_a_container_where_a_string_belongs_is_answered_not_thrown) {
 TEST(mcp_non_object_params_are_invalid_params_not_a_throw) {
   FakeHost host;
   McpServer server = make(host);
-  std::optional<Json::Value> reply = server.handle(request("tools/call", Json::Value("echo"), 12));
+  std::optional<Json::Value> reply = server.handle(request("tools/call", Json::Value("echo"), 12), kAnyone);
   REQUIRE(reply.has_value());
   CHECK_EQ((*reply)["error"]["code"].asInt(), -32602);
   CHECK_EQ((*reply)["error"]["message"].asString(), std::string("\"params\" must be an object"));
@@ -281,7 +295,7 @@ TEST(mcp_non_object_params_are_invalid_params_not_a_throw) {
 TEST(mcp_non_object_message_is_invalid_request) {
   FakeHost host;
   McpServer server = make(host);
-  std::optional<Json::Value> reply = server.handle(Json::Value("not an object"));
+  std::optional<Json::Value> reply = server.handle(Json::Value("not an object"), kAnyone);
   REQUIRE(reply.has_value());
   CHECK_EQ((*reply)["error"]["code"].asInt(), -32600);
 }

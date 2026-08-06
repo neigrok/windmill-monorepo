@@ -161,7 +161,8 @@ struct Set {
 
 // An open session with no activity for four hours is over, and it ended at its last set —
 // not at whenever the server happened to notice. A session with no sets ended when it began.
-// Pure and clock-free; LogService applies it lazily before a start and before a log read.
+// Pure and clock-free; LogService applies it lazily before a start, before a log read and before
+// the statistics read — the three replies whose answer a close rewrites.
 constexpr std::uint64_t kAutoCloseMs = 4ull * 60 * 60 * 1000;
 std::optional<std::uint64_t> autoCloseAt(const Session& session,
                                          std::optional<std::uint64_t> lastSetAtMs,
@@ -172,5 +173,15 @@ std::optional<std::uint64_t> autoCloseAt(const Session& session,
 // zero, or past what the store can hold. LogService::finish refuses exactly what this refuses —
 // the first write to finished_at is permanent, so there is no second chance to get it right.
 bool canFinishAt(const Session& session, std::uint64_t finishedAtMs);
+
+// The third pure session rule, and the only one about a reader who is not the owner. A coach share
+// is a capability with an END — thirty days, which is longer than any conversation about one
+// workout and shorter than a lifter's memory of having sent the link. A share that never expired
+// would be a second, permanent copy of a training record living outside the one account it belongs
+// to, which is the whole thing §0 was written to prevent. The ceiling is the store's own, so a
+// share minted near the end of time names an instant a timestamptz can still hold rather than
+// overflowing to_timestamp() mid-transaction.
+constexpr std::uint64_t kShareLifetimeMs = 30ull * 24 * 60 * 60 * 1000;
+std::uint64_t shareExpiryAt(std::uint64_t nowMs);
 
 }

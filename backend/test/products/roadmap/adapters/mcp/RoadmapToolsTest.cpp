@@ -155,8 +155,8 @@ TEST(mcp_get_health_needs_a_valid_dag) {
 TEST(mcp_unknown_tool_and_missing_tree_id_are_errors) {
   Harness h;
   CHECK(h.call("frobnicate", Json::Value(Json::objectValue)).isError);
-  CHECK(h.tools.callTool("get_tree", Json::Value(Json::objectValue), h.caller).isError);  // no treeId
-  CHECK(h.tools.callTool("get_tree", with("treeId", "nope"), h.caller).isError);          // unknown tree
+  CHECK(h.tools.callTool("get_tree", Json::Value(Json::objectValue), h.actor).isError);  // no treeId
+  CHECK(h.tools.callTool("get_tree", with("treeId", "nope"), h.actor).isError);          // unknown tree
 }
 
 TEST(mcp_add_kind_shows_in_legend_and_rejects_a_taken_hue) {
@@ -218,12 +218,12 @@ TEST(mcp_remove_kind_rejected_while_a_node_wears_its_hue) {
 
 TEST(mcp_create_tree_plants_an_owned_roadmap_and_lists_it) {
   Harness h;
-  ToolResult result = h.tools.callTool("create_tree", with("title", "Sailing"), h.caller);
+  ToolResult result = h.tools.callTool("create_tree", with("title", "Sailing"), h.actor);
   CHECK_FALSE(result.isError);
   std::string newId = body(result)["treeId"].asString();
   CHECK_FALSE(newId.empty());
 
-  const Json::Value listed = body(h.tools.callTool("list_trees", Json::Value(Json::objectValue), h.caller));
+  const Json::Value listed = body(h.tools.callTool("list_trees", Json::Value(Json::objectValue), h.actor));
   bool found = false;
   for (const Json::Value& row : listed["trees"])
     if (row["id"].asString() == newId) { found = true; CHECK_EQ(row["title"].asString(), std::string("Sailing")); }
@@ -237,7 +237,7 @@ TEST(mcp_list_trees_returns_the_callers_owned_rows) {
   h.call("create_node", with("label", "A"));
   h.call("create_node", with("label", "B"));
 
-  ToolResult result = h.tools.callTool("list_trees", Json::Value(Json::objectValue), h.caller);
+  ToolResult result = h.tools.callTool("list_trees", Json::Value(Json::objectValue), h.actor);
   CHECK_FALSE(result.isError);
   const Json::Value trees = body(result)["trees"];
   REQUIRE_EQ(trees.size(), 1u);
@@ -251,7 +251,7 @@ TEST(mcp_list_trees_returns_the_callers_owned_rows) {
 
 TEST(mcp_list_trees_reports_zero_for_a_tree_with_no_recorded_planting) {
   Harness h;  // "t" is seeded without a createdAt
-  const Json::Value trees = body(h.tools.callTool("list_trees", Json::Value(Json::objectValue), h.caller))["trees"];
+  const Json::Value trees = body(h.tools.callTool("list_trees", Json::Value(Json::objectValue), h.actor))["trees"];
   REQUIRE_EQ(trees.size(), 1u);
   CHECK(trees[0].isMember("createdAt"));  // present and 0 — never a missing key, never null
   CHECK_EQ(trees[0]["createdAt"].asInt64(), 0);
@@ -263,7 +263,7 @@ TEST(mcp_delete_tree_soft_deletes_and_drops_it_from_the_list) {
   CHECK_FALSE(deleted.isError);
   CHECK(body(deleted)["deleted"].asBool());
 
-  const Json::Value listed = body(h.tools.callTool("list_trees", Json::Value(Json::objectValue), h.caller));
+  const Json::Value listed = body(h.tools.callTool("list_trees", Json::Value(Json::objectValue), h.actor));
   CHECK_EQ(listed["trees"].size(), 0u);
 }
 
@@ -271,8 +271,8 @@ TEST(mcp_delete_tree_refuses_a_tree_you_dont_own_and_an_unknown_one) {
   Harness h;
   h.trees.byId["other"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Other", {}}, 0, uid("someone")};
 
-  CHECK(h.tools.callTool("delete_tree", with("treeId", "other"), h.caller).isError);  // not the owner
-  CHECK(h.tools.callTool("delete_tree", with("treeId", "ghost"), h.caller).isError);  // no such tree
+  CHECK(h.tools.callTool("delete_tree", with("treeId", "other"), h.actor).isError);  // not the owner
+  CHECK(h.tools.callTool("delete_tree", with("treeId", "ghost"), h.actor).isError);  // no such tree
 }
 
 TEST(mcp_create_node_wires_prerequisites_description_and_links) {
@@ -605,8 +605,8 @@ TEST(mcp_read_tools_deny_a_private_tree_you_dont_own) {
   // absent tree returns — byte-identical, so the id is no existence oracle on this surface.
   const std::vector<const char*> reads = {"get_tree", "get_diagnostics", "get_health", "find_nodes"};
   for (const char* name : reads) {
-    ToolResult denied = h.tools.callTool(name, with("treeId", "priv"), h.caller);
-    ToolResult absent = h.tools.callTool(name, with("treeId", "nope"), h.caller);
+    ToolResult denied = h.tools.callTool(name, with("treeId", "priv"), h.actor);
+    ToolResult absent = h.tools.callTool(name, with("treeId", "nope"), h.actor);
     CHECK(denied.isError);
     CHECK(absent.isError);
     CHECK_EQ(message(denied), std::string(name) + ": no such tree \"priv\"");
@@ -620,8 +620,8 @@ TEST(mcp_read_tools_deny_a_private_tree_you_dont_own) {
     a["treeId"] = tree; a["nodeId"] = "anything"; a["status"] = "complete";
     return a;
   };
-  ToolResult progDenied = h.tools.callTool("set_progress", progArgs("priv"), h.caller);
-  ToolResult progAbsent = h.tools.callTool("set_progress", progArgs("nope"), h.caller);
+  ToolResult progDenied = h.tools.callTool("set_progress", progArgs("priv"), h.actor);
+  ToolResult progAbsent = h.tools.callTool("set_progress", progArgs("nope"), h.actor);
   CHECK(progDenied.isError);
   CHECK_EQ(message(progDenied), std::string("set_progress: no such tree \"priv\""));
   CHECK_EQ(message(progAbsent), std::string("set_progress: no such tree \"nope\""));
@@ -646,7 +646,7 @@ TEST(mcp_an_infrastructure_failure_answers_generically_and_never_leaks_its_detai
 
   Json::Value args(Json::objectValue);
   args["treeId"] = "t";
-  const ToolResult result = tools.callTool("get_tree", args, caller);
+  const ToolResult result = tools.callTool("get_tree", args, ToolCaller{caller, ToolScope::everything()});
   CHECK(result.isError);
   CHECK_EQ(message(result), std::string("get_tree: that call failed inside the server. Nothing was "
                                         "changed; the detail is in the server log."));
@@ -659,9 +659,9 @@ TEST(mcp_read_tools_allow_an_unlisted_tree_by_a_stranger) {
   h.trees.byId["shared"] =
       StoredTree{LooseGraph().exportState(), LegendState{}, {"Shared", {}}, 0, uid("someone"), Visibility::unlisted};
 
-  CHECK_FALSE(h.tools.callTool("get_tree", with("treeId", "shared"), h.caller).isError);
-  CHECK_FALSE(h.tools.callTool("get_diagnostics", with("treeId", "shared"), h.caller).isError);
-  CHECK_FALSE(h.tools.callTool("find_nodes", with("treeId", "shared"), h.caller).isError);
+  CHECK_FALSE(h.tools.callTool("get_tree", with("treeId", "shared"), h.actor).isError);
+  CHECK_FALSE(h.tools.callTool("get_diagnostics", with("treeId", "shared"), h.actor).isError);
+  CHECK_FALSE(h.tools.callTool("find_nodes", with("treeId", "shared"), h.actor).isError);
 }
 
 TEST(mcp_read_tools_allow_your_own_private_tree) {
@@ -698,7 +698,7 @@ TEST(mcp_write_tools_refuse_an_unowned_public_tree_and_never_take_it) {
   const std::vector<std::pair<const char*, Json::Value>> writes = {
       {"create_node", edit}, {"import_subgraph", graft}, {"import_subgraph", preview}, {"prune", sweep}};
   for (const auto& [tool, args] : writes) {
-    ToolResult refused = h.tools.callTool(tool, args, h.caller);
+    ToolResult refused = h.tools.callTool(tool, args, h.actor);
     CHECK(refused.isError);
     CHECK_EQ(message(refused),
              std::string(tool) + ": no account owns this tree, so it cannot be edited. You can "
@@ -712,7 +712,7 @@ TEST(mcp_write_tools_refuse_an_unowned_public_tree_and_never_take_it) {
   CHECK(h.bus.subgraphBroadcasts.empty());
 
   // And it is still the demo: a stranger reads it exactly as before.
-  ToolResult read = h.tools.callTool("get_tree", with("treeId", "demo"), h.caller);
+  ToolResult read = h.tools.callTool("get_tree", with("treeId", "demo"), h.actor);
   CHECK_FALSE(read.isError);
   CHECK_EQ(body(read)["tree"]["nodes"].size(), 0u);
 }
@@ -728,7 +728,7 @@ TEST(mcp_write_tools_refuse_an_unowned_unlisted_tree) {
   Json::Value edit(Json::objectValue);
   edit["treeId"] = "orphan";
   edit["label"] = "Mine now";
-  ToolResult refused = h.tools.callTool("create_node", edit, h.caller);
+  ToolResult refused = h.tools.callTool("create_node", edit, h.actor);
 
   CHECK(refused.isError);
   CHECK_EQ(message(refused),
@@ -748,7 +748,7 @@ TEST(mcp_a_tree_another_account_owns_is_still_refused_by_name) {
   Json::Value edit(Json::objectValue);
   edit["treeId"] = "theirs";
   edit["label"] = "Mine now";
-  ToolResult refused = h.tools.callTool("create_node", edit, h.caller);
+  ToolResult refused = h.tools.callTool("create_node", edit, h.actor);
 
   CHECK(refused.isError);
   CHECK_EQ(message(refused), std::string("create_node: this tree belongs to another account. Call "
@@ -1046,21 +1046,21 @@ TEST(mcp_status_is_the_readers_own_mark_and_never_another_readers) {
                                     h.caller, Visibility::unlisted};
   Json::Value planted = node("step", "Step");
   planted["treeId"] = "open";
-  h.tools.callTool("create_node", planted, h.caller);
+  h.tools.callTool("create_node", planted, h.actor);
   Json::Value marked = mark("step", "complete");
   marked["treeId"] = "open";
-  h.tools.callTool("set_progress", marked, h.caller);
+  h.tools.callTool("set_progress", marked, h.actor);
 
   Json::Value args(Json::objectValue);
   args["treeId"] = "open";
   args["fields"] = list({"id", "status"});
-  const Json::Value mine = body(h.tools.callTool("get_tree", args, h.caller))["tree"]["nodes"][0];
+  const Json::Value mine = body(h.tools.callTool("get_tree", args, h.actor))["tree"]["nodes"][0];
   CHECK_EQ(mine["status"].asString(), std::string("complete"));
 
   // Progress is a private overlay: a stranger reading the same unlisted tree sees the node, and
   // sees that THEY have not marked it.
   const Json::Value theirs =
-      body(h.tools.callTool("get_tree", args, uid("stranger")))["tree"]["nodes"][0];
+      body(h.tools.callTool("get_tree", args, ToolCaller{uid("stranger"), ToolScope::everything()}))["tree"]["nodes"][0];
   CHECK_EQ(keys(theirs), (std::vector<std::string>{"id", "status"}));
   CHECK_EQ(theirs["id"].asString(), std::string("step"));
   CHECK_EQ(theirs["status"].asString(), std::string("none"));

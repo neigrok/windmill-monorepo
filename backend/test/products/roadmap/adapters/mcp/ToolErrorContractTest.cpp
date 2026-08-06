@@ -1,4 +1,5 @@
 #include "products/roadmap/adapters/mcp/ReadShape.h"
+#include "products/roadmap/adapters/mcp/RoadmapToolCatalog.h"
 #include "products/roadmap/adapters/mcp/RoadmapResources.h"
 #include "products/roadmap/adapters/mcp/ToolArgs.h"
 #include "products/roadmap/domain/Command.h"
@@ -44,6 +45,51 @@ Json::Value handleToolArgs(const std::string& tool) {
   return args;
 }
 
+}
+
+// Every tool's grant level, pinned by name. This is the list a reviewer checks a NEW tool against:
+// a tool that destroys something a person authored and is declared `write` hands its reach to every
+// connection that asked to author, which is exactly the thing the three levels exist to prevent.
+TEST(mcp_every_roadmap_tool_declares_the_grant_level_that_reaches_it) {
+  const std::vector<ToolDeclaration> catalog = roadmapToolCatalog();
+  std::vector<std::string> reads;
+  std::vector<std::string> writes;
+  std::vector<std::string> deletes;
+  for (const ToolDeclaration& tool : catalog) {
+    CHECK_EQ(tool.product, std::string("roadmap"));
+    if (tool.access == Access::read) reads.push_back(tool.name());
+    if (tool.access == Access::write) writes.push_back(tool.name());
+    if (tool.access == Access::del) deletes.push_back(tool.name());
+  }
+
+  CHECK_EQ(reads, (std::vector<std::string>{"list_trees", "get_tree", "get_diagnostics", "get_health",
+                                            "get_progress", "find_nodes"}));
+  CHECK_EQ(deletes, (std::vector<std::string>{"delete_tree", "delete_node", "remove_kind"}));
+  CHECK_EQ(writes, (std::vector<std::string>{
+                       "create_tree", "create_node", "annotate_node", "rename_node", "set_node_color",
+                       "move_node", "connect", "disconnect", "reconnect", "tidy", "add_kind",
+                       "rename_kind", "describe_kind", "reorder_kinds", "recolor_kind", "set_progress",
+                       "import_subgraph", "prune"}));
+  CHECK_EQ(catalog.size(), std::size_t{27});
+}
+
+// The gate, over the real catalog rather than a fixture: a connection that may author but was never
+// handed delete does not learn the delete tools exist from tools/list.
+TEST(mcp_a_grant_without_delete_never_sees_the_three_destructive_tools) {
+  Harness h;
+  const ToolCaller author{h.caller, parseToolScope("roadmap:read roadmap:write")};
+  const Json::Value visible = h.tools.listTools(author);
+
+  CHECK_EQ(visible.size(), 24u);
+  for (const char* destructive : {"delete_tree", "delete_node", "remove_kind"})
+    CHECK(toolNamed(visible, destructive) == nullptr);
+  for (const char* ordinary : {"get_tree", "create_node", "disconnect", "prune"})
+    CHECK(toolNamed(visible, ordinary) != nullptr);
+
+  const ToolCaller reader{h.caller, parseToolScope("roadmap:read")};
+  CHECK_EQ(h.tools.listTools(reader).size(), 6u);
+  const ToolCaller elsewhere{h.caller, parseToolScope("gym:read gym:write gym:delete")};
+  CHECK_EQ(h.tools.listTools(elsewhere).size(), 0u);
 }
 
 TEST(mcp_a_missing_node_handle_names_nodeId_and_how_to_find_one) {
@@ -93,7 +139,7 @@ TEST(mcp_nodeId_is_canonical_and_the_legacy_id_is_still_accepted) {
 
 TEST(mcp_the_catalog_publishes_nodeId_and_keeps_id_as_a_deprecated_alias) {
   Harness h;
-  const Json::Value catalog = h.tools.listTools();
+  const Json::Value catalog = h.tools.listTools(h.actor);
 
   for (const char* name : kNodeHandleTools) {
     const Json::Value* tool = toolNamed(catalog, name);
@@ -195,7 +241,7 @@ TEST(mcp_an_over_long_description_names_the_size_and_the_max) {
   CHECK_EQ(message(refused), std::string("annotate_node: description is 4613 characters, max 4000"));
 
   // …and the cap is published, so a client can pre-validate what the server refuses.
-  const Json::Value catalog = h.tools.listTools();
+  const Json::Value catalog = h.tools.listTools(h.actor);
   const Json::Value* annotate = toolNamed(catalog, "annotate_node");
   REQUIRE(annotate != nullptr);
   CHECK_EQ((*annotate)["inputSchema"]["properties"]["description"]["maxLength"].asUInt64(), 4000u);
@@ -322,7 +368,7 @@ TEST(mcp_an_imported_node_carries_a_seed_status_and_never_the_callers_mark) {
 
   // …and the catalog publishes the one spelling it accepts, so a strict client cannot send the
   // other by reading the schema.
-  const Json::Value catalog = h.tools.listTools();
+  const Json::Value catalog = h.tools.listTools(h.actor);
   const Json::Value* import = toolNamed(catalog, "import_subgraph");
   REQUIRE(import != nullptr);
   const Json::Value& carried = (*import)["inputSchema"]["properties"]["nodes"]["items"]["properties"];
@@ -359,7 +405,7 @@ TEST(mcp_a_wrong_type_fails_the_call_and_never_the_request) {
 
   // Arguments that are not an object at all: jsoncpp throws on a keyed read, and that throw must
   // never reach the transport — it is why a malformed import once died as a bare POST error.
-  ToolResult notAnObject = h.tools.callTool("get_tree", Json::Value("t"), h.caller);
+  ToolResult notAnObject = h.tools.callTool("get_tree", Json::Value("t"), h.actor);
   CHECK(notAnObject.isError);
   CHECK_EQ(message(notAnObject),
            std::string("get_tree: arguments must be a JSON object of this tool's named arguments, "
@@ -398,17 +444,17 @@ TEST(mcp_a_number_is_quoted_back_as_the_caller_wrote_it) {
 
 TEST(mcp_a_missing_tree_id_names_it_and_the_way_to_find_one) {
   Harness h;
-  ToolResult refused = h.tools.callTool("get_tree", Json::Value(Json::objectValue), h.caller);
+  ToolResult refused = h.tools.callTool("get_tree", Json::Value(Json::objectValue), h.actor);
   CHECK(refused.isError);
   CHECK_EQ(message(refused),
            std::string("get_tree: missing required argument \"treeId\". Call list_trees to see the "
                        "roadmaps you own and their ids."));
 
-  ToolResult unknown = h.tools.callTool("frobnicate", with("treeId", "t"), h.caller);
+  ToolResult unknown = h.tools.callTool("frobnicate", with("treeId", "t"), h.actor);
   CHECK(unknown.isError);
   CHECK_EQ(message(unknown),
-           std::string("frobnicate: no such tool on this server — call tools/list for the whole "
-                       "surface."));
+           std::string("frobnicate: no such roadmap tool — call tools/list for the surface this "
+                       "connection may use."));
 }
 
 TEST(mcp_a_progress_mark_on_a_missing_node_names_the_id_and_the_next_move) {
@@ -593,7 +639,7 @@ TEST(mcp_an_import_with_no_nodes_names_the_way_through) {
   CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["kinds"].size(), 1u);
 
   // `title` is neither read nor published, so it is no longer part of the shape it documents.
-  const Json::Value catalog = h.tools.listTools();
+  const Json::Value catalog = h.tools.listTools(h.actor);
   const Json::Value* import = toolNamed(catalog, "import_subgraph");
   REQUIRE(import != nullptr);
   CHECK_FALSE((*import)["inputSchema"]["properties"].isMember("title"));
@@ -652,7 +698,7 @@ TEST(mcp_a_kind_handle_is_read_under_either_spelling) {
                        "`kinds` to list this legend's ids."));
 
   // The catalog publishes both spellings, so `additionalProperties: false` admits either.
-  const Json::Value catalog = h.tools.listTools();
+  const Json::Value catalog = h.tools.listTools(h.actor);
   for (const char* name : {"rename_kind", "describe_kind", "remove_kind", "recolor_kind"}) {
     const Json::Value* tool = toolNamed(catalog, name);
     REQUIRE(tool != nullptr);
@@ -751,8 +797,8 @@ TEST(mcp_every_write_tool_denies_a_private_tree_exactly_as_it_denies_an_absent_o
     denied["treeId"] = "priv";
     Json::Value absent = args;
     absent["treeId"] = "nope";
-    ToolResult onPrivate = h.tools.callTool(name, denied, h.caller);
-    ToolResult onAbsent = h.tools.callTool(name, absent, h.caller);
+    ToolResult onPrivate = h.tools.callTool(name, denied, h.actor);
+    ToolResult onAbsent = h.tools.callTool(name, absent, h.actor);
     CHECK(onPrivate.isError);
     CHECK(onAbsent.isError);
     CHECK_EQ(message(onPrivate), std::string(name) + ": no such tree \"priv\"");
@@ -779,7 +825,7 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
   CHECK(text.find("max " + std::to_string(kMaxLimit)) != std::string::npos);
 
   // Every tool the quickstart names has to exist, or the document lies.
-  const Json::Value tools = h.tools.listTools();
+  const Json::Value tools = h.tools.listTools(h.actor);
   for (const char* named : {"list_trees", "get_tree", "find_nodes", "get_progress", "get_diagnostics",
                             "create_node", "connect", "import_subgraph", "set_progress"}) {
     CHECK(text.find(named) != std::string::npos);

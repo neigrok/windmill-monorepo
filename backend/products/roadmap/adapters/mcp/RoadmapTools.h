@@ -21,12 +21,14 @@ public:
   RoadmapTools(RoomRegistry& registry, ProgressService& progress, Clock& clock, TreeRegistry& treeRegistry,
                PresenceBus& bus);
 
-  Json::Value listTools() const override;
-  ToolResult callTool(const std::string& name, const Json::Value& arguments, const UserId& caller) override;
+  std::vector<ToolDeclaration> declareTools() const override;
+  ToolResult callTool(const std::string& name, const Json::Value& arguments, const ToolCaller& caller) override;
 
 private:
-  // The tool itself. callTool wraps it so every failure — refused, thrown, or raised deeper in
-  // the core — reaches the agent naming the tool it came from, exactly once.
+  // The tool itself, over the account alone: the grant was settled above (CompositeToolHost) and
+  // everything below here is an ownership question, which is the only one the core knows how to ask.
+  // callTool wraps it so every failure — refused, thrown, or raised deeper in the core — reaches the
+  // agent naming the tool it came from, exactly once.
   ToolResult dispatch(const std::string& name, const Json::Value& arguments, const UserId& caller);
 
 

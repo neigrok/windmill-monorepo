@@ -4,6 +4,9 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
+#include <ctime>
+#include <map>
 #include <optional>
 #include <set>
 #include <stdexcept>
@@ -27,6 +30,40 @@ inline Exercise backSquat() {
                   2.5, false};
 }
 inline RoutineId rtId(std::string value = "rt_00000001") { return RoutineId{std::move(value)}; }
+
+// The export's three renderings, which the SQL does with `to_char(… AT TIME ZONE 'UTC')` and two
+// `::text` casts off numeric columns of a fixed scale. They are mirrored here rather than
+// approximated, because a fake that framed a cell differently from the live store would let a
+// column drift with every test still green — and PgTrainingRepositoryTest pins the two together by
+// asserting these exact strings against a real Postgres.
+inline std::string isoUtc(std::uint64_t instantMs) {
+  const std::time_t seconds = static_cast<std::time_t>(instantMs / 1000);
+  std::tm parts{};
+  gmtime_r(&seconds, &parts);
+  char text[32] = {0};
+  std::snprintf(text, sizeof(text), "%04d-%02d-%02dT%02d:%02d:%02dZ", parts.tm_year + 1900,
+                parts.tm_mon + 1, parts.tm_mday, parts.tm_hour, parts.tm_min, parts.tm_sec);
+  return text;
+}
+
+inline std::string scaled(double value, int decimals) {
+  char text[32] = {0};
+  std::snprintf(text, sizeof(text), "%.*f", decimals, value);
+  return text;
+}
+
+// Monday 00:00 UTC, which is what `date_trunc('week', ts AT TIME ZONE 'UTC')` answers. The epoch
+// itself was a Thursday, so the walk is shifted three days before it is floored and shifted back —
+// and the result is clamped exactly as the adapter's instantFrom clamps it, so the first week of
+// 1970 cannot come back as a negative instant on either side.
+inline std::uint64_t weekStartMs(std::uint64_t instantMs) {
+  const long long kWeek = 604'800'000;
+  const long long kEpochToMonday = 259'200'000;
+  const long long shifted = static_cast<long long>(instantMs) + kEpochToMonday;
+  const long long start = (shifted / kWeek) * kWeek - kEpochToMonday;
+  if (start < 1) return 1;
+  return static_cast<std::uint64_t>(start);
+}
 inline RoutineEntry benchEntry(int position = 1) {
   return RoutineEntry{position, ExerciseId{"bench-press"}, 5, 5, 82.5, 180};
 }
@@ -54,6 +91,7 @@ public:
   std::vector<Session> sessions;
   std::vector<Set> sets;
   std::vector<Routine> routineRows;   // the stored rows; lastTrainedAtMs is derived on every read
+  std::vector<SessionShare> shares;   // one per session at most, exactly as the primary key says
 
   void seed(const Exercise& exercise) { seeds.push_back(exercise); }
   void seedCustom(const UserId& owner, const Exercise& exercise) {
@@ -386,7 +424,180 @@ public:
     return {incoming, ExerciseInsertError::none};
   }
 
+  // The same three answers the SQL gives. The series is `DISTINCT ON (movement, session)` keeping
+  // the heaviest set with the most reps and then the earliest — TopSet's rule, made by the store
+  // because it is an ordering — and every point carries the SESSION's start, never a set's device
+  // stamp. The marks are historyFor's projection with both of its windows removed. The weeks are
+  // Monday-to-Monday in UTC and CONTIGUOUS: generate_series fills the gaps there, so a week nobody
+  // trained is a zero here rather than a row that is simply missing. No e1RM is computed anywhere
+  // in this method, because none is computed anywhere in the query it mirrors.
+  TrainingLog trainingLog(const UserId& user) override {
+    TrainingLog log;
+    std::vector<std::pair<Session, Set>> lived = workingSetsOfFinished(user);
+
+    std::sort(lived.begin(), lived.end(), [](const auto& a, const auto& b) {
+      return std::tuple(a.second.exercise.str(), a.first.startedAtMs, a.first.id.str(),
+                        -a.second.weightKg, -a.second.reps, a.second.completedAtMs) <
+             std::tuple(b.second.exercise.str(), b.first.startedAtMs, b.first.id.str(),
+                        -b.second.weightKg, -b.second.reps, b.second.completedAtMs);
+    });
+    std::optional<std::pair<std::string, std::string>> lastTop;
+    for (const auto& [ran, set] : lived) {
+      const std::pair<std::string, std::string> key{set.exercise.str(), ran.id.str()};
+      if (lastTop == key) continue;
+      lastTop = key;
+      log.tops.push_back(MovementTop{set.exercise, ran.startedAtMs, set.weightKg, set.reps});
+    }
+
+    std::vector<Set> priors;
+    for (const auto& [ran, set] : lived) priors.push_back(set);
+    std::sort(priors.begin(), priors.end(), [](const Set& a, const Set& b) {
+      return std::tuple(a.exercise.str(), a.weightKg, -a.reps, a.completedAtMs) <
+             std::tuple(b.exercise.str(), b.weightKg, -b.reps, b.completedAtMs);
+    });
+    for (const Set& prior : priors) {
+      if (!log.marks.empty() && log.marks.back().exercise == prior.exercise &&
+          log.marks.back().weightKg == prior.weightKg)
+        continue;
+      log.marks.push_back(
+          PriorMark{prior.exercise, prior.weightKg, prior.reps, prior.completedAtMs});
+    }
+
+    std::map<std::uint64_t, TrainingWeek> byWeek;
+    for (const Session& ran : sessions) {
+      if (!(ran.user == user) || !ran.finishedAtMs) continue;
+      TrainingWeek& counted = byWeek[weekStartMs(ran.startedAtMs)];
+      counted.startedAtMs = weekStartMs(ran.startedAtMs);
+      ++counted.sessions;
+    }
+    for (const auto& [ran, set] : lived) {
+      TrainingWeek& counted = byWeek[weekStartMs(ran.startedAtMs)];
+      counted.startedAtMs = weekStartMs(ran.startedAtMs);
+      ++counted.workingSets;
+    }
+    if (byWeek.empty()) return log;
+    for (std::uint64_t week = byWeek.begin()->first; week <= byWeek.rbegin()->first;
+         week += 604'800'000) {
+      const auto held = byWeek.find(week);
+      if (held == byWeek.end()) {
+        log.weeks.push_back(TrainingWeek{week, 0, 0});
+        continue;
+      }
+      log.weeks.push_back(held->second);
+    }
+    return log;
+  }
+
+  // Every set this account holds, the OPEN session included, in the order the workouts were lived.
+  // The join onto the catalog is an INNER one in the SQL, so a set naming a movement no catalog
+  // holds is not in the file at all — it cannot exist behind the foreign key, and a fake that
+  // emitted it with a blank name would be inventing a row the live store cannot produce.
+  std::vector<ExportedSet> exportedSets(const UserId& user) override {
+    std::vector<std::pair<Session, Set>> lived;
+    for (const Set& set : sets)
+      for (const Session& ran : sessions) {
+        if (!(ran.id == set.session) || !(ran.user == user)) continue;
+        lived.push_back({ran, set});
+      }
+    std::sort(lived.begin(), lived.end(), [](const auto& a, const auto& b) {
+      return std::tuple(a.first.startedAtMs, a.first.id.str(), a.second.completedAtMs,
+                        a.second.setNumber) <
+             std::tuple(b.first.startedAtMs, b.first.id.str(), b.second.completedAtMs,
+                        b.second.setNumber);
+    });
+
+    std::vector<ExportedSet> out;
+    for (const auto& [ran, set] : lived) {
+      std::optional<std::string> movement = nameOf(set.exercise);
+      if (!movement) continue;
+      out.push_back(ExportedSet{ran.id.str(),
+                                isoUtc(ran.startedAtMs),
+                                ran.finishedAtMs ? isoUtc(*ran.finishedAtMs) : "",
+                                ran.plan ? ran.plan->routineName : "",
+                                set.id.str(),
+                                set.exercise.str(),
+                                *movement,
+                                std::to_string(set.setNumber),
+                                scaled(set.weightKg, 2),
+                                std::to_string(set.reps),
+                                toString(set.kind),
+                                set.rpe ? scaled(*set.rpe, 1) : "",
+                                set.note,
+                                isoUtc(set.completedAtMs)});
+    }
+    return out;
+  }
+
+  // The INSERT..SELECT off the caller's own session row: a session that is absent or another
+  // account's selects nothing, so nothing lands, nothing conflicts, and the owner-scoped read-back
+  // finds nothing — one answer for all three, and no branch here that could be got wrong. The
+  // conflict is on the SESSION, so a live share answers with itself (the mint is idempotent) while
+  // one that has already ended is replaced, which is the DO UPDATE's guard exactly.
+  std::optional<SessionShare> insertShare(const SessionShare& incoming,
+                                          std::uint64_t nowMs) override {
+    bool owned = false;
+    for (const Session& ran : sessions)
+      if (ran.id == incoming.session && ran.user == incoming.user) owned = true;
+    if (!owned) return std::nullopt;
+    for (SessionShare& held : shares) {
+      if (!(held.session == incoming.session)) continue;
+      if (held.expiresAtMs > nowMs) return held;
+      held = incoming;
+      return held;
+    }
+    shares.push_back(incoming);
+    return incoming;
+  }
+
+  bool revokeShare(const UserId& user, const SessionId& id) override {
+    for (auto row = shares.begin(); row != shares.end(); ++row) {
+      if (!(row->session == id) || !(row->user == user)) continue;
+      shares.erase(row);
+      return true;
+    }
+    return false;   // absent and another account's are the same fact here too
+  }
+
+  // Revoked (no row), expired (a row the predicate rejects) and never-minted (no row) leave this
+  // with nothing to return — one value, so nothing above can tell them apart. The sets carry their
+  // movement's display name and no id at all, and the routine name comes off the session's own
+  // frozen snapshot rather than off a routine as it is called today.
+  std::optional<SharedSession> sharedSession(const std::string& token,
+                                             std::uint64_t nowMs) override {
+    for (const SessionShare& held : shares) {
+      if (held.token != token || held.expiresAtMs <= nowMs) continue;
+      for (const Session& ran : sessions) {
+        if (!(ran.id == held.session)) continue;
+        std::vector<SharedSet> block;
+        for (const Set& set : setsOf(ran.id)) {
+          std::optional<std::string> movement = nameOf(set.exercise);
+          if (!movement) continue;
+          block.push_back(SharedSet{*movement, set.setNumber, set.weightKg, set.reps, set.kind,
+                                    set.rpe, set.note, set.completedAtMs});
+        }
+        return SharedSession{ran.startedAtMs, ran.finishedAtMs,
+                             ran.plan ? ran.plan->routineName : "", std::move(block)};
+      }
+    }
+    return std::nullopt;
+  }
+
 private:
+  // The join both statistics projections are taken over: this account's working sets, in its
+  // FINISHED sessions only, each carrying the session it was lived in. An open workout is today's
+  // screen and not history — the same reason lastTime and historyFor step over it.
+  std::vector<std::pair<Session, Set>> workingSetsOfFinished(const UserId& user) const {
+    std::vector<std::pair<Session, Set>> lived;
+    for (const Set& set : sets) {
+      if (set.kind != SetKind::working) continue;
+      for (const Session& ran : sessions) {
+        if (!(ran.id == set.session) || !(ran.user == user) || !ran.finishedAtMs) continue;
+        lived.push_back({ran, set});
+      }
+    }
+    return lived;
+  }
+
   // Every routine read carries the store's derived answer, never the value a caller happened to
   // construct with: the newest session this account started under it, which is what the list sorts
   // on and what the routines screen prints as "trained {when}".

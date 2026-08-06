@@ -10,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace wm {
 
@@ -22,7 +23,8 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 class OAuthApi {
 public:
   OAuthApi(std::shared_ptr<OAuthService> oauth, std::shared_ptr<AuthService> auth,
-           std::string issuerUrl, std::string appBaseUrl, std::string consentPath);
+           std::string issuerUrl, std::string appBaseUrl, std::string consentPath,
+           std::vector<std::string> scopesSupported);
 
   void metadata(const drogon::HttpRequestPtr& req, HttpCallback&& cb);        // GET  /.well-known/oauth-authorization-server
   void registerClient(const drogon::HttpRequestPtr& req, HttpCallback&& cb);  // POST /oauth/register
@@ -42,6 +44,10 @@ private:
   std::string issuerUrl_;    // this AS's public base, e.g. https://api.windmill.works
   std::string appBaseUrl_;   // the app's public base, for the consent redirect
   std::string consentPath_;  // e.g. /#/oauth/authorize
+  // Every scope token the tool surface honours, handed in by the composition root that knows which
+  // products are actually connected — a discovery document is a promise, and this is the only place
+  // that can keep it.
+  std::vector<std::string> scopesSupported_;
 };
 
 }

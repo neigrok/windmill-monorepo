@@ -47,15 +47,15 @@ bool PgMcpKeyRepository::revoke(const UserId& user, const std::string& id) {
   return !rows.empty();
 }
 
-std::optional<UserId> PgMcpKeyRepository::findActiveUser(const std::string& tokenDigest, long long nowMs) {
+std::optional<ActiveKey> PgMcpKeyRepository::findActiveKey(const std::string& tokenDigest, long long nowMs) {
   pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result rows = txn.exec_params(
-      "SELECT k.user_id::text FROM mcp_keys k JOIN users u ON u.id = k.user_id "
+      "SELECT k.user_id::text, k.scope FROM mcp_keys k JOIN users u ON u.id = k.user_id "
       "WHERE k.token_hash = $1 AND u.deleted_at IS NULL "
       "AND (k.expires_ms IS NULL OR k.expires_ms > $2)",
       tokenDigest, nowMs);
   if (rows.empty()) return std::nullopt;
-  return UserId{rows[0]["user_id"].as<std::string>()};
+  return ActiveKey{UserId{rows[0]["user_id"].as<std::string>()}, rows[0]["scope"].as<std::string>()};
 }
 
 void PgMcpKeyRepository::touchUsed(const std::string& tokenDigest, long long nowMs, long long throttleMs) {

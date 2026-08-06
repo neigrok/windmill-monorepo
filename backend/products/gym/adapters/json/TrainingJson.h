@@ -40,6 +40,14 @@ namespace wm::gym {
 // `planned` — is the canon's `3 × max`: the chin-up line, which a required targetReps could not
 // express at all. It is an omission that MEANS something, exactly like an absent target weight,
 // and every surface draws it as `max`.
+//   stats out   : { "weeks": [ { "startedAt", "sessions", "workingSets" } ],
+//                   "movements": [ { "exerciseId", "lastTrainedAt",
+//                                    "points":    [ { "at", "weightKg", "reps", "e1rm"? } ],
+//                                    "bestE1rm"?: { "weightKg", "reps", "at", "e1rm"? },
+//                                    "heaviest"?: { "weightKg", "reps", "at", "e1rm"? } } ] }
+//   shared out  : { "startedAt", "finishedAt"?, "routine"?,
+//                   "sets": [ { "exercise", "setNumber", "weightKg", "reps", "kind", "rpe"?,
+//                               "note", "completedAt" } ] }
 //   review out  : { "stats": { "durationMs", "workingSets", "topE1rm"? }, "slight": bool,
 //                   "record"?: { "kind": "e1rm"|"heaviest"|"reps-at-weight", "exerciseId", "value",
 //                                "weightKg", "reps", "previous", "previousAt" },
@@ -96,6 +104,12 @@ Json::Value toJson(const Routine& routine);
 Json::Value toJson(const std::vector<Routine>& routines);
 Json::Value toJson(const PlanSnapshot& plan);
 Json::Value toJson(const Review& review);
+// The other two one-way shapes, for the same reason the review is one: every number in them is
+// computed or read on each call and there is nothing for a client to send back. The share's is
+// deliberately NOT `toJson(const Session&)` — that one carries the ids and the frozen plan, and a
+// reader who is not the owner gets neither (ports/TrainingRepository.h says why).
+Json::Value toJson(const Statistics& statistics);
+Json::Value toJson(const SharedSession& shared);
 std::optional<PlanSnapshot> planFrom(const Json::Value& stored);   // clamps, never throws
 
 }

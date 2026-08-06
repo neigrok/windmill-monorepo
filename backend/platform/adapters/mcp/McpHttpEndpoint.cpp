@@ -100,20 +100,25 @@ std::set<std::string> parseOriginList(const std::string& csv) {
 McpHttpEndpoint::McpHttpEndpoint(McpServer& server, std::set<std::string> allowedOrigins, McpAuth auth)
     : server_(server), allowedOrigins_(std::move(allowedOrigins)), auth_(std::move(auth)) {}
 
-std::optional<UserId> McpHttpEndpoint::resolveCaller(const drogon::HttpRequestPtr& request) const {
+std::optional<ToolCaller> McpHttpEndpoint::resolveCaller(const drogon::HttpRequestPtr& request) const {
   const bool authConfigured = auth_.oauth != nullptr || auth_.mcpKeys != nullptr || !auth_.fallbackToken.empty();
-  if (!authConfigured) return auth_.fallbackUser;  // no auth wired (local/stdio, tests): the default caller
+  if (!authConfigured)  // no auth wired (local/stdio, tests): the default caller, on the root's terms
+    return ToolCaller{auth_.fallbackUser, auth_.fallbackScope};
 
   const std::string authorization = request->getHeader("authorization");
   if (authorization.rfind("Bearer ", 0) != 0) return std::nullopt;
   const std::string bearer = authorization.substr(7);
   if (bearer.empty()) return std::nullopt;
 
+  // Each credential answers with its own grant — this is the point where the two halves of an
+  // authorization stop being one UserId, and where a read-only token stops being indistinguishable
+  // from a full one for the rest of the request.
   if (auth_.oauth)
-    if (std::optional<UserId> user = auth_.oauth->resolveAccessToken(bearer, auth_.resource)) return user;
+    if (std::optional<ToolCaller> caller = auth_.oauth->resolveAccessToken(bearer, auth_.resource)) return caller;
   if (auth_.mcpKeys)
-    if (std::optional<UserId> user = auth_.mcpKeys->resolveKey(bearer)) return user;
-  if (!auth_.fallbackToken.empty() && secretEqual(bearer, auth_.fallbackToken)) return auth_.fallbackUser;
+    if (std::optional<ToolCaller> caller = auth_.mcpKeys->resolveKey(bearer)) return caller;
+  if (!auth_.fallbackToken.empty() && secretEqual(bearer, auth_.fallbackToken))
+    return ToolCaller{auth_.fallbackUser, auth_.fallbackScope};
   return std::nullopt;
 }
 
@@ -134,7 +139,7 @@ void McpHttpEndpoint::handlePost(const drogon::HttpRequestPtr& request, McpHttpC
     return;
   }
 
-  std::optional<UserId> caller = resolveCaller(request);
+  std::optional<ToolCaller> caller = resolveCaller(request);
   if (!caller) {
     // Per the MCP Authorization spec: challenge with the resource-metadata URL so the
     // client can discover the authorization server and obtain a token.

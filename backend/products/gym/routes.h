@@ -11,14 +11,20 @@ namespace wm::gym {
 
 // Everything the gym product's routes need, built once in main.cpp and handed across the seam —
 // the same shape roadmap and journal use, in its own namespace so the three registerRoutes never
-// collide. Phase 0 is the durable log: one service, one auth seam, nothing armed, nothing mailed.
+// collide. One service, one auth seam, nothing armed, nothing mailed.
+//
+// This is the HTTP half of the product and not the whole of it: `adapters/mcp/GymTools` is the
+// second seam, registered as a `ToolModule` on the shared MCP host, and it holds the SAME
+// LogService this struct carries. One core, two doors — so a rule cannot be true on one surface and
+// not the other, and neither door needs to know the other exists.
 struct GymDeps {
   std::shared_ptr<LogService> logService;
   std::shared_ptr<AuthService> authService;
 };
 
-// Mounts the gym product on the shared app: every /v1/gym/* route, owner-scoped, no public
-// surface. main.cpp calls this beside the roadmap and journal mounts.
+// Mounts the gym product on the shared app: every /v1/gym/* route. All of them are owner-scoped
+// except `GET /v1/gym/shared/{token}`, the coach share's read, where the token in the path is the
+// whole credential. main.cpp calls this beside the roadmap and journal mounts.
 void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps);
 
 }

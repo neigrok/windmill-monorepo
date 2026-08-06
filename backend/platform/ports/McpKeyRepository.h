@@ -8,6 +8,14 @@
 
 namespace wm {
 
+// A live key resolved from a presented secret: the account it acts as and the scope it was minted
+// with, in the same wire spelling OAuth uses. v1 mints every key account-wide (scope ''), so the two
+// credentials read alike and neither is the hole the other one closes.
+struct ActiveKey {
+  UserId user;
+  std::string scope;
+};
+
 // One row of the settings MCP-keys list: the public id the revoke endpoint addresses, the
 // display name, when it was minted, and when it last authenticated a call (null until first
 // use). The token digest — the private key of the row — never leaves the persistence layer.
@@ -36,10 +44,10 @@ struct McpKeyRepository {
   // True only when a row was actually deleted (a 404 otherwise).
   virtual bool revoke(const UserId& user, const std::string& id) = 0;
 
-  // The account a live key authenticates as: the owner of an unexpired key whose account is not
-  // soft-closed, or nullopt. This is what makes a key go inert the moment its account closes,
-  // and it honours the (v1-unused) expiry.
-  virtual std::optional<UserId> findActiveUser(const std::string& tokenDigest, long long nowMs) = 0;
+  // The live key a presented digest names: the owner of an unexpired key whose account is not
+  // soft-closed, with its scope, or nullopt. This is what makes a key go inert the moment its
+  // account closes, and it honours the (v1-unused) expiry.
+  virtual std::optional<ActiveKey> findActiveKey(const std::string& tokenDigest, long long nowMs) = 0;
 
   // Advance a key's last-used stamp on its hot path, but only past the throttle so a busy client
   // does not write on every call.

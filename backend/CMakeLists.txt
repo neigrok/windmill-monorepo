@@ -83,6 +83,7 @@ add_library(windmill_gym
   products/gym/domain/Training.cpp
   products/gym/domain/Routine.cpp
   products/gym/domain/Review.cpp
+  products/gym/domain/Statistics.cpp
   products/gym/application/LogService.cpp)
 target_include_directories(windmill_gym PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(windmill_gym PUBLIC windmill_platform)
@@ -110,6 +111,7 @@ target_link_libraries(windmill_platform PUBLIC Trantor::Trantor JsonCpp::JsonCpp
 add_executable(windmill_domain_tests
   test/main.cpp
   test/platform/domain/AccessTest.cpp
+  test/platform/domain/ToolScopeTest.cpp
   test/platform/domain/AuthTest.cpp
   test/platform/domain/MailTest.cpp
   test/platform/domain/OAuthTest.cpp
@@ -152,6 +154,7 @@ add_executable(windmill_domain_tests
   test/products/gym/domain/TrainingTest.cpp
   test/products/gym/domain/RoutineTest.cpp
   test/products/gym/domain/ReviewTest.cpp
+  test/products/gym/domain/StatisticsTest.cpp
   test/products/gym/application/LogServiceTest.cpp)
 target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_journal windmill_gym)
 
@@ -202,7 +205,8 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     platform/adapters/paddle/PaddleApiClient.cpp
     platform/adapters/paddle/BillingApi.cpp
     platform/adapters/mcp/McpServer.cpp
-    platform/adapters/mcp/McpHttpEndpoint.cpp)
+    platform/adapters/mcp/McpHttpEndpoint.cpp
+    platform/adapters/mcp/CompositeToolHost.cpp)
   target_link_libraries(windmill_platform PUBLIC Drogon::Drogon libpqxx::pqxx OpenSSL::Crypto)
 
   # Roadmap adapters: the roadmap tools an AI agent drives (RoadmapTools), the sync/room socket,
@@ -261,12 +265,16 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     products/journal/adapters/llm/HttpEmbedder.cpp
     products/journal/routes.cpp)
 
-  # Gym adapters: the Pg storage, the JSON wire boundary, the REST surface, and the route seam.
+  # Gym adapters: the Pg storage, the two wire boundaries (JSON for every client, CSV for the one
+  # artifact a lifter walks away with), the REST surface, the tools an agent drives, and the route seam.
   # They reach Drogon + libpqxx through windmill_platform (linked PUBLIC by the core lib above).
   target_sources(windmill_gym PRIVATE
     products/gym/adapters/json/TrainingJson.cpp
+    products/gym/adapters/csv/TrainingCsv.cpp
     products/gym/adapters/postgres/PgTrainingRepository.cpp
     products/gym/adapters/http/GymApi.cpp
+    products/gym/adapters/mcp/GymTools.cpp
+    products/gym/adapters/mcp/GymToolCatalog.cpp
     products/gym/routes.cpp)
 
   # One process serves REST, the collab socket, AND MCP over the same rooms. main.cpp is the
@@ -286,10 +294,14 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/main.cpp
     test/platform/adapters/mcp/McpServerTest.cpp
     test/platform/adapters/mcp/McpHttpEndpointTest.cpp
+    test/platform/adapters/mcp/CompositeToolHostTest.cpp
     test/products/roadmap/adapters/mcp/RoadmapToolsTest.cpp
     test/products/roadmap/adapters/mcp/ToolErrorContractTest.cpp
-    test/products/roadmap/adapters/mcp/WireCorpusTest.cpp)
-  target_link_libraries(windmill_mcp_tests PRIVATE windmill_roadmap)
+    test/products/roadmap/adapters/mcp/WireCorpusTest.cpp
+    test/products/gym/adapters/mcp/GymToolsTest.cpp)
+  # Both products' tool surfaces link here: the gym suite pins its own catalog AND that no gym name
+  # collides with a roadmap one, which is the difference between a boot failure and a green suite.
+  target_link_libraries(windmill_mcp_tests PRIVATE windmill_roadmap windmill_gym)
   # The golden MCP wire (WireCorpusTest) lives beside the roadmap tools and is byte-compared against
   # a fresh transcript; the source path is handed in so the check finds it from any build tree.
   target_compile_definitions(windmill_mcp_tests PRIVATE

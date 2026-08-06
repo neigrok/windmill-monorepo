@@ -18,16 +18,15 @@ const std::set<std::string>& crossTreeTools() {
 ScopedToolHost::ScopedToolHost(ToolHost& inner, TreeId scope)
     : inner_(inner), scope_(std::move(scope)) {}
 
-Json::Value ScopedToolHost::listTools() const {
-  Json::Value scoped(Json::arrayValue);
-  for (const Json::Value& tool : inner_.listTools())
-    if (crossTreeTools().find(tool.get("name", "").asString()) == crossTreeTools().end())
-      scoped.append(tool);
+std::vector<ToolDeclaration> ScopedToolHost::declareTools() const {
+  std::vector<ToolDeclaration> scoped;
+  for (ToolDeclaration& tool : inner_.declareTools())
+    if (crossTreeTools().find(tool.name()) == crossTreeTools().end()) scoped.push_back(std::move(tool));
   return scoped;
 }
 
 ToolResult ScopedToolHost::callTool(const std::string& name, const Json::Value& arguments,
-                                    const UserId& caller) {
+                                    const ToolCaller& caller) {
   if (crossTreeTools().find(name) != crossTreeTools().end())
     return ToolResult::failure("tending edits a single tree — " + name + " is out of its reach");
   // Force the target: whatever treeId the agent supplied (or was steered to supply) is overwritten,

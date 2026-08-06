@@ -129,16 +129,19 @@ std::optional<StoredToken> PgOAuthRepository::takeRefreshToken(const std::string
                      static_cast<UnixMs>(row["expires_ms"].as<long long>())};
 }
 
-void PgOAuthRepository::recordGrant(const UserId& user, const std::string& clientId, UnixMs now) {
-  // granted_ms is set once and kept as the earliest; last_used_ms advances to now.
+void PgOAuthRepository::recordGrant(const UserId& user, const std::string& clientId, UnixMs now,
+                                    const std::string& scope) {
+  // granted_ms is set once and kept as the earliest; last_used_ms and scope advance to this consent,
+  // so re-approving a narrower grant is what the settings row then says.
   pqxx::work txn{pgThreadConnection(connString_)};
   txn.exec_params(
-      "INSERT INTO oauth_grants (user_id, client_id, granted_ms, last_used_ms) "
-      "VALUES ($1::uuid, $2, $3, $3) "
+      "INSERT INTO oauth_grants (user_id, client_id, granted_ms, last_used_ms, scope) "
+      "VALUES ($1::uuid, $2, $3, $3, $4) "
       "ON CONFLICT (user_id, client_id) DO UPDATE SET "
       "granted_ms = least(oauth_grants.granted_ms, excluded.granted_ms), "
-      "last_used_ms = excluded.last_used_ms",
-      user.str(), clientId, static_cast<long long>(now));
+      "last_used_ms = excluded.last_used_ms, "
+      "scope = excluded.scope",
+      user.str(), clientId, static_cast<long long>(now), scope);
   txn.commit();
 }
 
@@ -156,8 +159,8 @@ void PgOAuthRepository::touchGrantUsed(const UserId& user, const std::string& cl
 std::vector<GrantView> PgOAuthRepository::listGrants(const UserId& user) {
   pqxx::work txn{pgThreadConnection(connString_)};
   pqxx::result rows = txn.exec_params(
-      "SELECT g.client_id, coalesce(c.client_name, '') AS client_name, g.granted_ms, g.last_used_ms "
-      "FROM oauth_grants g LEFT JOIN oauth_clients c ON c.client_id = g.client_id "
+      "SELECT g.client_id, coalesce(c.client_name, '') AS client_name, g.granted_ms, g.last_used_ms, "
+      "g.scope FROM oauth_grants g LEFT JOIN oauth_clients c ON c.client_id = g.client_id "
       "WHERE g.user_id = $1::uuid ORDER BY g.last_used_ms DESC, g.granted_ms DESC",
       user.str());
 
@@ -166,7 +169,8 @@ std::vector<GrantView> PgOAuthRepository::listGrants(const UserId& user) {
   for (const auto& row : rows)
     grants.push_back(GrantView{row["client_id"].as<std::string>(), row["client_name"].as<std::string>(),
                                static_cast<UnixMs>(row["granted_ms"].as<long long>()),
-                               static_cast<UnixMs>(row["last_used_ms"].as<long long>())});
+                               static_cast<UnixMs>(row["last_used_ms"].as<long long>()),
+                               row["scope"].as<std::string>()});
   return grants;
 }
 

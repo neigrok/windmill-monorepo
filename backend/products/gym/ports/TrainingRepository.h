@@ -2,6 +2,7 @@
 
 #include "products/gym/domain/Review.h"
 #include "products/gym/domain/Routine.h"
+#include "products/gym/domain/Statistics.h"
 #include "products/gym/domain/Training.h"
 
 #include <cstdint>
@@ -119,6 +120,77 @@ struct ExerciseInsertOutcome {
   ExerciseInsertError error;
 };
 
+// One line of the export, and it is TEXT end to end because a CSV is text and every rendering
+// decision in one is a decision Postgres already makes better than C++ would. The instants come
+// back ISO-8601 UTC — a spreadsheet cannot read an epoch, and the calendar conversion belongs where
+// gym does all of its date work rather than in a second place that could disagree with it. The
+// numerics come back at their column's own scale, so 72.5 kg is "72.50" forever, and an absent rpe
+// is an empty cell rather than a zero that would read as a real one. The row is flat because a CSV
+// row is flat: the two facts a set does not carry — which session it belongs to and what its
+// movement is called — ride beside it instead of being joined back by whoever opens the file.
+struct ExportedSet {
+  std::string sessionId;
+  std::string startedAt;
+  std::string finishedAt;    // empty while the workout is still running
+  std::string routineName;   // empty for an ad-hoc session
+  std::string setId;
+  std::string exerciseId;
+  std::string exerciseName;
+  std::string setNumber;
+  std::string weightKg;
+  std::string reps;
+  std::string kind;
+  std::string rpe;           // empty where none was logged
+  std::string note;
+  std::string completedAt;
+
+  bool operator==(const ExportedSet&) const = default;
+};
+
+// The coach share, as a row of its own table. It is NOT a column on the session, and that is the
+// whole design: every one of gym's owner-scoped reads is untouched by it, so absent stays
+// byte-identical to forbidden on all of them and a share can only ever be reached through the one
+// door that was built for it. Both fields the server decides are decided by the server — the token
+// is minted here, never accepted from a client, because a client that picks its own share token
+// picks a guessable one — and the session id has already been resolved against the caller's own log
+// before a share is ever built from it.
+struct SessionShare {
+  SessionId session;
+  UserId user;
+  std::string token;
+  std::uint64_t expiresAtMs;
+
+  bool operator==(const SessionShare&) const = default;
+};
+
+// What the coach sees, and the whole of it. There is no account in this value: no email, no name,
+// no other session, and no id at all — not the session's, not a set's, not the routine's — because
+// the only thing an id could do for a reader who is not the owner is be tried somewhere else. The
+// movement travels as its display NAME for the same reason it has to: a coach holds no catalog to
+// resolve a slug against. The frozen plan does not travel — a share is one workout the lifter DID,
+// and a program is a longer-lived thing than one session's link.
+struct SharedSet {
+  std::string exercise;
+  int setNumber;
+  double weightKg;
+  int reps;
+  SetKind kind;
+  std::optional<double> rpe;
+  std::string note;
+  std::uint64_t completedAtMs;
+
+  bool operator==(const SharedSet&) const = default;
+};
+
+struct SharedSession {
+  std::uint64_t startedAtMs;
+  std::optional<std::uint64_t> finishedAtMs;
+  std::string routineName;   // empty when the session was ad-hoc
+  std::vector<SharedSet> sets;
+
+  bool operator==(const SharedSession&) const = default;
+};
+
 // The one door to gym storage — the catalog, the plan and the log live or die together, so gym
 // keeps a single bounded store (the split into Catalog/Routine repositories waits for a second
 // consumer). Every read and write is owner-scoped by the UserId it carries; absent is byte-
@@ -166,6 +238,32 @@ struct TrainingRepository {
   // The owner rides beside the row rather than inside it: a catalog entry has no owner when it is a
   // seed, and `custom` is what the read derives from created_by.
   virtual ExerciseInsertOutcome insertExercise(const UserId& owner, const Exercise& incoming) = 0;
+
+  // The statistics read: everything the pure rule needs, in one pass, answered in the DOMAIN value
+  // the rule defines — historyFor's contract applied to a longer window. `tops` come back grouped
+  // by movement, oldest first within each group, which is what lets the rule assemble a line by
+  // appending; nothing here computes an e1RM, because that formula has one copy per language and
+  // none in the database.
+  virtual TrainingLog trainingLog(const UserId& user) = 0;
+  // Every set this account holds, oldest first, including the workout it is in the middle of — an
+  // export that quietly omitted today would be the one row a lifter goes looking for.
+  virtual std::vector<ExportedSet> exportedSets(const UserId& user) = 0;
+
+  // The coach share, three doors. The mint is idempotent ON THE SESSION rather than on a
+  // client-minted id, because there is no id for a client to mint here: a second call while a share
+  // is live hands back the SAME token, so a lifter who taps Share twice sends one link and not two
+  // capabilities they would have to revoke separately. An EXPIRED share is replaced rather than
+  // returned — re-sharing a workout a month later is a new capability, not the resurrection of one
+  // that ended. Absent, another account's, and already-shared-by-someone-else are one answer.
+  virtual std::optional<SessionShare> insertShare(const SessionShare& incoming,
+                                                  std::uint64_t nowMs) = 0;
+  virtual bool revokeShare(const UserId& user, const SessionId& id) = 0;   // false = nothing to revoke
+  // The one read in this port that takes no UserId, because the token IS the credential. Expiry is
+  // decided against the instant the caller passes and not against the database's own clock, so one
+  // clock decides and a test can drive it. Revoked, expired and never-existed all answer nothing at
+  // all — the same value, so nothing above this line can tell them apart and neither can a prober.
+  virtual std::optional<SharedSession> sharedSession(const std::string& token,
+                                                     std::uint64_t nowMs) = 0;
 };
 
 }

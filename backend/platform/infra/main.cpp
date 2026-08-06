@@ -20,6 +20,7 @@
 #include "platform/adapters/http/RateLimiter.h"
 #include "products/roadmap/adapters/llm/AnthropicAgent.h"
 #include "products/roadmap/adapters/llm/AnthropicComposer.h"
+#include "platform/adapters/mcp/CompositeToolHost.h"
 #include "platform/adapters/mcp/McpHttpEndpoint.h"
 #include "platform/adapters/mcp/McpServer.h"
 #include "products/roadmap/adapters/mcp/RoadmapResources.h"
@@ -65,6 +66,8 @@
 #include "products/journal/adapters/postgres/PgNudgeRepository.h"
 #include "products/journal/application/PageService.h"
 #include "products/journal/routes.h"
+#include "products/gym/adapters/mcp/GymToolCatalog.h"
+#include "products/gym/adapters/mcp/GymTools.h"
 #include "products/gym/adapters/postgres/PgTrainingRepository.h"
 #include "products/gym/application/LogService.h"
 #include "products/gym/routes.h"
@@ -143,6 +146,7 @@ int main() {
                       {"gym_sessions", "user_id"},          // gym — a workout with no sets is still a workout
                       {"gym_sets", "user_id"},              // gym
                       {"gym_routines", "user_id"},          // gym
+                      {"gym_session_shares", "user_id"},    // gym — a live coach link is data too
                       {"paddle_subscriptions", "user_id"},  // platform — never fold away a payer
                       {"mcp_keys", "user_id"},              // platform
                       {"oauth_grants", "user_id"},          // platform
@@ -174,7 +178,6 @@ int main() {
   auto authApi = std::make_shared<AuthApi>(authService, forkSignup, secureCookies, cookieDomain,
                                            googleClient, appBaseUrl, appleClient);
   auto mcpKeyApi = std::make_shared<McpKeyApi>(authService, mcpKeyService);
-  auto oauthApi = std::make_shared<OAuthApi>(oauthService, authService, apiBaseUrl, appBaseUrl, "/#/oauth/authorize");
 
 
 
@@ -332,10 +335,40 @@ int main() {
                                                        *systemClock, reminderArming, appBaseUrl);
   reminderSweep->start();
 
-  McpAuth mcpAuth{oauthService.get(), mcpResource,     mcpResourceMetadataUrl,
-                  mcpToken,           mcpFallbackUser, mcpKeyService.get()};
-  auto mcpServer = std::make_shared<McpServer>(*mcpTools, roadmapServerInfo(), roadmapResources());
+  // The gym product's core (products/gym/routes.h mounts its HTTP half further down, beside the
+  // other two products'). It is built HERE because its tools are part of the MCP surface below and
+  // the composite is constructed once, before the server takes traffic. `*tokens` is the one
+  // collaborator gym did not have at phase 0 and it is here for exactly one thing — minting a coach
+  // share's secret, from the same mint that makes a session cookie, so the one unguessable string
+  // gym hands out is the platform's and not gym's own. apiBaseUrl is where a minted share becomes a
+  // URL: gym composes that from the route it owns rather than every caller pasting the path.
+  auto gymRepository = std::make_shared<gym::PgTrainingRepository>(connString);
+  auto logService = std::make_shared<gym::LogService>(*gymRepository, *systemClock, *tokens);
+  auto gymTools = std::make_shared<gym::GymTools>(*logService, apiBaseUrl);
+
+  // The tool surface a connected client sees: every product's module behind one host, filtered by
+  // the grant its credential carries. Roadmap and gym are wired today; adding one is a line here,
+  // and a duplicate tool name across two products refuses to boot rather than answering at random.
+  // Tending is deliberately NOT given this host — it keeps *mcpTools directly, so an agent reading
+  // attacker-controlled node text can never reach another product's tools.
+  const std::vector<ToolModule> mcpModules{{*mcpTools, roadmapInstructions()},
+                                           {*gymTools, gym::gymInstructions()}};
+  auto mcpComposite = std::make_shared<CompositeToolHost>(mcpModules);
+
+  // The shared bearer and the no-auth local door carry the account-wide grant, said out loud: the
+  // widest reach in the system is a line someone chose, not a default that reads as an omission.
+  McpAuth mcpAuth{oauthService.get(), mcpResource,     mcpResourceMetadataUrl,   mcpToken,
+                  mcpFallbackUser,    mcpKeyService.get(), ToolScope::everything()};
+  auto mcpServer =
+      std::make_shared<McpServer>(*mcpComposite, windmillServerInfo(*mcpComposite), roadmapResources());
   auto mcpEndpoint = std::make_shared<McpHttpEndpoint>(*mcpServer, mcpOrigins, mcpAuth);
+
+  // The authorization server advertises exactly the scopes the tool surface honours, derived from the
+  // composite rather than written down a second time — which is why it is built here and not up with
+  // the other APIs: a `scopes_supported` naming a product no tool serves is a promise to a client that
+  // nothing keeps.
+  auto oauthApi = std::make_shared<OAuthApi>(oauthService, authService, apiBaseUrl, appBaseUrl,
+                                             "/#/oauth/authorize", supportedScopes(mcpComposite->products()));
 
   // The origins allowed to send credentialed (cookie-bearing) requests. The app itself is
   // always trusted; WINDMILL_ALLOWED_ORIGINS adds more, comma-separated. Anything else gets
@@ -813,12 +846,11 @@ int main() {
                                    .transcriber = journalTranscriber, .entitlements = entitlements};
   journal::registerRoutes(app, journalDeps);
 
-  // The gym product — the third room — mounted behind its own seam (products/gym/routes.h). Phase 0
-  // is the durable set write: owner-scoped, idempotent by client-minted id, auto-close applied
-  // lazily by the service. No env vars, no arming flags, no sweeps, no vendor keys — the seam's
-  // whole surface area is the absence in this block.
-  auto gymRepository = std::make_shared<gym::PgTrainingRepository>(connString);
-  auto logService = std::make_shared<gym::LogService>(*gymRepository, *systemClock);
+  // The gym product — the third room — mounted behind its own seam (products/gym/routes.h). The
+  // durable set write is still the heart of it: owner-scoped, idempotent by client-minted id,
+  // auto-close applied lazily by the service. No env vars, no arming flags, no sweeps, no vendor
+  // keys. Its collaborators were built up with the MCP surface, because gym's tools ride the same
+  // service these routes do — one core, two doors, and no second copy of a rule.
   gym::GymDeps gymDeps{.logService = logService, .authService = authService};
   gym::registerRoutes(app, gymDeps);
 

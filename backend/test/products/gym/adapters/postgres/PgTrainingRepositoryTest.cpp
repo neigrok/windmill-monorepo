@@ -1,5 +1,9 @@
 #include "products/gym/adapters/postgres/PgTrainingRepository.h"
 
+// The in-memory twin is included for its three EXPORT renderings alone: the fake states what
+// `to_char(… AT TIME ZONE 'UTC')` and a `::text` cast off a fixed-scale numeric produce, and the
+// export case below asserts both against each other so neither can drift on its own.
+#include "test/products/gym/Fakes.h"
 #include "test/testing.h"
 
 #include <pqxx/pqxx>
@@ -1031,4 +1035,235 @@ TEST(pg_gym_reads_a_pre_1970_legacy_row_instead_of_failing_the_whole_log) {
   CHECK_EQ(listed[1].session.finishedAtMs, std::optional<std::uint64_t>(1));
   CHECK_EQ(repo.session(wm::UserId{kUser}, SessionId{"ses_pg000002"})->startedAtMs,
            static_cast<std::uint64_t>(1));
+}
+
+// ---- the statistics read -------------------------------------------------------------------
+
+// The three projections, proved against a real planner: one point per (movement, session) under
+// TopSet's rule, one mark per (movement, load) under the review's, and the weekly counts. No Epley
+// is computed anywhere in the SQL — the numbers below are loads and reps, and the estimate over
+// them is the domain's.
+TEST(pg_gym_statistics_is_the_top_set_per_session_the_marks_and_the_weekly_counts) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{connString()};
+  const std::uint64_t t1 = 1'700'000'000'000;
+  const std::uint64_t week = 604'800'000;
+
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  repo.insertSet(squatSet("set_pg000001", "ses_pg000001", 100, 5, t1 + 60'000));
+  repo.insertSet(squatSet("set_pg000002", "ses_pg000001", 110, 2, t1 + 120'000));
+  repo.insertSet(squatSet("set_pg000003", "ses_pg000001", 60, 10, t1 + 180'000, SetKind::warmup));
+  repo.close(SessionId{"ses_pg000001"}, t1 + 3'600'000);
+  repo.insertSession(sessionAt("ses_pg000002", t1 + week));
+  repo.insertSet(squatSet("set_pg000004", "ses_pg000002", 105, 5, t1 + week + 60'000));
+  repo.close(SessionId{"ses_pg000002"}, t1 + week + 3'600'000);
+
+  TrainingLog log = repo.trainingLog(wm::UserId{kUser});
+
+  // The heaviest working set, ties to more reps — and the warmup counts toward nothing, here as
+  // everywhere else the product aggregates.
+  CHECK_EQ(log.tops, (std::vector<MovementTop>{MovementTop{ExerciseId{"back-squat"}, t1, 110, 2},
+                                               MovementTop{ExerciseId{"back-squat"}, t1 + week,
+                                                           105, 5}}));
+  CHECK_EQ(log.marks, (std::vector<PriorMark>{
+                          PriorMark{ExerciseId{"back-squat"}, 100, 5, t1 + 60'000},
+                          PriorMark{ExerciseId{"back-squat"}, 105, 5, t1 + week + 60'000},
+                          PriorMark{ExerciseId{"back-squat"}, 110, 2, t1 + 120'000}}));
+  // Monday 00:00 UTC, truncated `AT TIME ZONE 'UTC'` so the buckets do not move with the server's
+  // own zone — 1699833600000 is 2023-11-13, the Monday of the week t1 falls in.
+  CHECK_EQ(log.weeks, (std::vector<TrainingWeek>{TrainingWeek{1'699'833'600'000, 1, 2},
+                                                 TrainingWeek{1'699'833'600'000 + week, 1, 1}}));
+}
+
+// generate_series fills the run, so a week nobody trained is a zero and not a missing row: the gap
+// is the fact, and a client filling it in would be doing calendar arithmetic in a second place.
+TEST(pg_gym_statistics_weeks_are_contiguous_across_a_week_nobody_trained) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{connString()};
+  const std::uint64_t t1 = 1'700'000'000'000;
+  const std::uint64_t week = 604'800'000;
+
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  repo.insertSet(squatSet("set_pg000001", "ses_pg000001", 100, 5, t1 + 60'000));
+  repo.close(SessionId{"ses_pg000001"}, t1 + 3'600'000);
+  repo.insertSession(sessionAt("ses_pg000002", t1 + 2 * week));
+  repo.insertSet(squatSet("set_pg000002", "ses_pg000002", 105, 5, t1 + 2 * week + 60'000));
+  repo.close(SessionId{"ses_pg000002"}, t1 + 2 * week + 3'600'000);
+
+  TrainingLog log = repo.trainingLog(wm::UserId{kUser});
+
+  CHECK_EQ(log.weeks, (std::vector<TrainingWeek>{
+                          TrainingWeek{1'699'833'600'000, 1, 1},
+                          TrainingWeek{1'699'833'600'000 + week, 0, 0},
+                          TrainingWeek{1'699'833'600'000 + 2 * week, 1, 1}}));
+}
+
+TEST(pg_gym_statistics_leaves_the_open_session_and_another_account_out) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{connString()};
+  const std::uint64_t t1 = 1'700'000'000'000;
+
+  repo.insertSession(sessionAt("ses_pg000001", t1));   // today's workout, never closed
+  repo.insertSet(squatSet("set_pg000001", "ses_pg000001", 100, 5, t1 + 60'000));
+  repo.insertSession(Session{SessionId{"ses_pg000003"}, wm::UserId{kOther}, t1});
+  repo.insertSet(squatSet("set_pg000003", "ses_pg000003", 200, 5, t1 + 60'000));
+  repo.close(SessionId{"ses_pg000003"}, t1 + 3'600'000);
+
+  TrainingLog log = repo.trainingLog(wm::UserId{kUser});
+
+  CHECK(log.tops.empty());
+  CHECK(log.marks.empty());
+  CHECK(log.weeks.empty());
+}
+
+// ---- the export ------------------------------------------------------------------------------
+
+// Every cell is rendered by Postgres and the exact bytes are pinned here, because the in-memory
+// fake states the same three renderings — this case is what keeps the two from drifting apart.
+TEST(pg_gym_export_renders_instants_as_iso_utc_and_numerics_at_their_column_scale) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{connString()};
+  const std::uint64_t t1 = 1'700'000'000'000;
+
+  repo.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, t1, std::nullopt,
+                             std::nullopt, pushA()});
+  repo.insertSet(Set{SetId{"set_pg000001"}, SessionId{"ses_pg000001"}, ExerciseId{"back-squat"}, 0,
+                     82.5, 8, SetKind::working, 8.5, "felt heavy, said \"again\"",
+                     t1 + 60'000});
+
+  std::vector<ExportedSet> rows = repo.exportedSets(wm::UserId{kUser});
+
+  REQUIRE_EQ(rows.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(rows[0],
+           (ExportedSet{"ses_pg000001", "2023-11-14T22:13:20Z", "", "Push A", "set_pg000001",
+                        "back-squat", "Back Squat", "1", "82.50", "8", "working", "8.5",
+                        "felt heavy, said \"again\"", "2023-11-14T22:14:20Z"}));
+  CHECK_EQ(rows[0].startedAt, fake::isoUtc(t1));
+  CHECK_EQ(rows[0].weightKg, fake::scaled(82.5, 2));
+  CHECK_EQ(rows[0].rpe, fake::scaled(8.5, 1));
+}
+
+TEST(pg_gym_export_never_reaches_another_accounts_sets) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{connString()};
+  const std::uint64_t t1 = 1'700'000'000'000;
+  repo.insertSession(Session{SessionId{"ses_pg000003"}, wm::UserId{kOther}, t1});
+  repo.insertSet(squatSet("set_pg000003", "ses_pg000003", 200, 5, t1 + 60'000));
+
+  CHECK(repo.exportedSets(wm::UserId{kUser}).empty());
+  CHECK_EQ(repo.exportedSets(wm::UserId{kOther}).size(), static_cast<std::size_t>(1));
+}
+
+// ---- the coach share ---------------------------------------------------------------------------
+
+TEST(pg_gym_share_is_idempotent_on_the_session_and_replaces_one_that_has_ended) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{connString()};
+  const std::uint64_t now = 1'700'000'000'000;
+  repo.insertSession(sessionAt("ses_pg000001", now));
+  repo.close(SessionId{"ses_pg000001"}, now + 3'600'000);
+
+  std::optional<SessionShare> first =
+      repo.insertShare(SessionShare{SessionId{"ses_pg000001"}, wm::UserId{kUser}, "pg-tok-one",
+                                    now + kShareLifetimeMs},
+                       now);
+  std::optional<SessionShare> again =
+      repo.insertShare(SessionShare{SessionId{"ses_pg000001"}, wm::UserId{kUser}, "pg-tok-two",
+                                    now + kShareLifetimeMs},
+                       now);
+
+  REQUIRE(first);
+  REQUIRE(again);
+  CHECK_EQ(first->token, std::string("pg-tok-one"));
+  CHECK_EQ(again->token, std::string("pg-tok-one"));   // the live link, not a second capability
+  CHECK_EQ(again->expiresAtMs, now + kShareLifetimeMs);
+
+  // A month later the row has ended, and re-sharing mints a NEW capability rather than reviving it.
+  const std::uint64_t later = now + kShareLifetimeMs + 1;
+  std::optional<SessionShare> minted =
+      repo.insertShare(SessionShare{SessionId{"ses_pg000001"}, wm::UserId{kUser}, "pg-tok-three",
+                                    later + kShareLifetimeMs},
+                       later);
+  REQUIRE(minted);
+  CHECK_EQ(minted->token, std::string("pg-tok-three"));
+  CHECK_EQ(minted->expiresAtMs, later + kShareLifetimeMs);
+  CHECK_FALSE(repo.sharedSession("pg-tok-one", later));
+}
+
+TEST(pg_gym_share_never_reaches_an_absent_or_another_accounts_session) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{connString()};
+  const std::uint64_t now = 1'700'000'000'000;
+  repo.insertSession(Session{SessionId{"ses_pg000003"}, wm::UserId{kOther}, now});
+  repo.close(SessionId{"ses_pg000003"}, now + 3'600'000);
+
+  CHECK_FALSE(repo.insertShare(SessionShare{SessionId{"ses_pg000009"}, wm::UserId{kUser}, "pg-a",
+                                            now + kShareLifetimeMs},
+                               now));
+  CHECK_FALSE(repo.insertShare(SessionShare{SessionId{"ses_pg000003"}, wm::UserId{kUser}, "pg-b",
+                                            now + kShareLifetimeMs},
+                               now));
+  CHECK_FALSE(repo.revokeShare(wm::UserId{kUser}, SessionId{"ses_pg000003"}));
+  CHECK_FALSE(repo.sharedSession("pg-a", now));
+  CHECK_FALSE(repo.sharedSession("pg-b", now));
+}
+
+TEST(pg_gym_shared_session_answers_one_workout_and_nothing_about_the_account) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{connString()};
+  const std::uint64_t now = 1'700'000'000'000;
+  repo.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, now, std::nullopt,
+                             std::nullopt, pushA()});
+  repo.insertSet(squatSet("set_pg000001", "ses_pg000001", 100, 5, now + 60'000));
+  repo.insertSet(squatSet("set_pg000002", "ses_pg000001", 110, 2, now + 120'000));
+  repo.close(SessionId{"ses_pg000001"}, now + 3'600'000);
+  repo.insertShare(SessionShare{SessionId{"ses_pg000001"}, wm::UserId{kUser}, "pg-tok-live",
+                                now + kShareLifetimeMs},
+                   now);
+
+  std::optional<SharedSession> read = repo.sharedSession("pg-tok-live", now + 1);
+
+  REQUIRE(read);
+  CHECK_EQ(read->startedAtMs, now);
+  CHECK_EQ(read->finishedAtMs, std::optional<std::uint64_t>(now + 3'600'000));
+  // The name off the session's OWN frozen snapshot, never off a routine as it is called today.
+  CHECK_EQ(read->routineName, std::string("Push A"));
+  CHECK_EQ(read->sets,
+           (std::vector<SharedSet>{
+               SharedSet{"Back Squat", 1, 100, 5, SetKind::working, std::nullopt, "", now + 60'000},
+               SharedSet{"Back Squat", 2, 110, 2, SetKind::working, std::nullopt, "",
+                         now + 120'000}}));
+
+  // Expired, unknown and revoked are one answer, and the end is not inclusive.
+  CHECK_FALSE(repo.sharedSession("pg-tok-live", now + kShareLifetimeMs));
+  CHECK_FALSE(repo.sharedSession("nobody-minted-this", now + 1));
+  CHECK(repo.revokeShare(wm::UserId{kUser}, SessionId{"ses_pg000001"}));
+  CHECK_FALSE(repo.sharedSession("pg-tok-live", now + 1));
+}
+
+// The share goes with the workout: `on delete cascade` means a discard leaves no live link behind
+// pointing at a session that is gone.
+TEST(pg_gym_discarding_a_session_takes_its_share_with_it) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{connString()};
+  const std::uint64_t now = 1'700'000'000'000;
+  repo.insertSession(sessionAt("ses_pg000001", now));
+  repo.close(SessionId{"ses_pg000001"}, now + 3'600'000);
+  repo.insertShare(SessionShare{SessionId{"ses_pg000001"}, wm::UserId{kUser}, "pg-tok-doomed",
+                                now + kShareLifetimeMs},
+                   now);
+  CHECK(repo.sharedSession("pg-tok-doomed", now + 1));
+
+  CHECK(repo.deleteSession(wm::UserId{kUser}, SessionId{"ses_pg000001"}));
+
+  CHECK_FALSE(repo.sharedSession("pg-tok-doomed", now + 1));
 }

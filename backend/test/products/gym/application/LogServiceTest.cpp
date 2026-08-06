@@ -18,7 +18,8 @@ const std::uint64_t kWeek = 604'800'000;
 struct Harness {
   FakeTrainingRepository repo;
   wm::fake::FakeClock clock;
-  LogService service{repo, clock};
+  wm::fake::FakeTokens tokens;
+  LogService service{repo, clock, tokens};
 
   Harness() {
     repo.seed(benchPress());
@@ -1271,4 +1272,218 @@ TEST(discard_never_reaches_another_accounts_session) {
 
   CHECK(theirs == DiscardOutcome::notFound);   // absent and forbidden are one answer
   CHECK_EQ(h.repo.sessions.size(), static_cast<std::size_t>(1));
+}
+
+// ---- statistics: one load, one pure rule, and only finished sessions ------------------------
+
+TEST(statistics_draws_a_point_per_finished_session_and_leaves_the_open_one_out) {
+  Harness h;
+  h.trained("ses_00000001", h.clock.now - 2 * kWeek, 100, 5, 4);
+  h.trained("ses_00000002", h.clock.now - kWeek, 105, 5, 4);
+  h.startAt(h.clock.now, "ses_00000003");   // today's workout, still being logged into
+  h.service.append(uid(), sid("ses_00000003"),
+                   SetWrite{setId("set_99999999"), ExerciseId{"back-squat"}, 110, 5,
+                            SetKind::working, std::nullopt, "", h.clock.now + 60'000});
+
+  Statistics answer = h.service.statistics(uid());
+
+  REQUIRE_EQ(answer.movements.size(), static_cast<std::size_t>(1));
+  REQUIRE_EQ(answer.movements[0].points.size(), static_cast<std::size_t>(2));
+  CHECK_EQ(answer.movements[0].points[0],
+           (MovementPoint{h.clock.now - 2 * kWeek, 100, 5, 116.7}));
+  CHECK_EQ(answer.movements[0].points[1], (MovementPoint{h.clock.now - kWeek, 105, 5, 122.5}));
+  CHECK_EQ(answer.movements[0].lastTrainedAtMs, h.clock.now - kWeek);
+}
+
+// The third door that settles staleness, and it has to be one: the answer counts finished sessions
+// only, so a workout the four-hour rule ended hours ago but nobody has read since would be a hole
+// in the chart — and a hole reads as "I did not train that week".
+TEST(statistics_settles_a_session_the_four_hour_rule_already_ended) {
+  Harness h;
+  const std::uint64_t began = h.clock.now - 6 * 3'600'000;
+  h.startAt(began, "ses_00000001");
+  h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 82.5, began + 60'000));
+
+  Statistics answer = h.service.statistics(uid());
+
+  REQUIRE_EQ(h.repo.sessions.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.sessions[0].finishedAtMs, std::optional<std::uint64_t>(began + 60'000));
+  REQUIRE_EQ(answer.movements.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(answer.movements[0].exercise, ExerciseId{"bench-press"});
+}
+
+TEST(statistics_never_reaches_another_accounts_log) {
+  Harness h;
+  h.repo.sessions.push_back(Session{sid("ses_00000002"), uid("u2"), h.clock.now - kWeek,
+                                    h.clock.now - kWeek + 3'600'000});
+  h.repo.sets.push_back(Set{setId("set_00000002"), sid("ses_00000002"), ExerciseId{"back-squat"}, 1,
+                            200, 5, SetKind::working, std::nullopt, "", h.clock.now - kWeek});
+
+  Statistics answer = h.service.statistics(uid());
+
+  CHECK_EQ(answer.movements.size(), static_cast<std::size_t>(0));
+  CHECK_EQ(answer.weeks.size(), static_cast<std::size_t>(0));
+}
+
+// ---- export: everything, rendered by the store, and nothing written ------------------------
+
+TEST(export_carries_every_set_the_account_holds_including_the_open_session) {
+  Harness h;
+  h.trained("ses_00000001", h.clock.now - kWeek, 100, 5, 2);
+  h.startAt(h.clock.now, "ses_00000002");
+  h.service.append(uid(), sid("ses_00000002"),
+                   SetWrite{setId("set_99999999"), ExerciseId{"bench-press"}, 82.5, 8,
+                            SetKind::warmup, 8.5, "felt light", h.clock.now + 60'000});
+
+  std::vector<ExportedSet> rows = h.service.exportedSets(uid());
+
+  REQUIRE_EQ(rows.size(), static_cast<std::size_t>(3));
+  CHECK_EQ(rows[0].sessionId, "ses_00000001");
+  CHECK_EQ(rows[0].exerciseId, "back-squat");
+  CHECK_EQ(rows[0].exerciseName, "Back Squat");
+  CHECK_EQ(rows[0].setNumber, "1");
+  CHECK_EQ(rows[0].weightKg, "100.00");
+  CHECK_EQ(rows[0].reps, "5");
+  CHECK_EQ(rows[0].kind, "working");
+  CHECK_EQ(rows[0].rpe, "");
+  CHECK_EQ(rows[0].note, "");
+  CHECK_EQ(rows[2].sessionId, "ses_00000002");
+  CHECK_EQ(rows[2].exerciseName, "Bench Press");
+  CHECK_EQ(rows[2].kind, "warmup");
+  CHECK_EQ(rows[2].rpe, "8.5");
+  CHECK_EQ(rows[2].note, "felt light");
+  CHECK_EQ(rows[2].finishedAt, "");   // the workout still running has no end to name yet
+}
+
+TEST(export_settles_nothing_and_leaves_an_abandoned_session_open) {
+  Harness h;
+  const std::uint64_t began = h.clock.now - 6 * 3'600'000;
+  h.startAt(began, "ses_00000001");
+  h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 82.5, began + 60'000));
+
+  CHECK_EQ(h.service.exportedSets(uid()).size(), static_cast<std::size_t>(1));
+
+  CHECK_FALSE(h.repo.sessions[0].finishedAtMs);
+}
+
+TEST(export_never_reaches_another_accounts_sets) {
+  Harness h;
+  h.repo.sessions.push_back(Session{sid("ses_00000002"), uid("u2"), h.clock.now, h.clock.now + 1});
+  h.repo.sets.push_back(Set{setId("set_00000002"), sid("ses_00000002"), ExerciseId{"back-squat"}, 1,
+                            200, 5, SetKind::working, std::nullopt, "", h.clock.now});
+
+  CHECK_EQ(h.service.exportedSets(uid()).size(), static_cast<std::size_t>(0));
+}
+
+// ---- the coach share: one workout, expiring, revocable -------------------------------------
+
+TEST(share_is_idempotent_on_the_session) {
+  Harness h;
+  h.trained("ses_00000001", h.clock.now - kWeek, 100, 5, 4);
+
+  std::optional<SessionShare> first = h.service.share(uid(), sid("ses_00000001"));
+  std::optional<SessionShare> again = h.service.share(uid(), sid("ses_00000001"));
+
+  REQUIRE(first);
+  REQUIRE(again);
+  CHECK_EQ(first->token, again->token);   // one link, not two capabilities to revoke separately
+  CHECK_EQ(first->expiresAtMs, h.clock.now + kShareLifetimeMs);
+  CHECK_EQ(h.repo.shares.size(), static_cast<std::size_t>(1));
+}
+
+TEST(share_of_an_absent_or_another_accounts_session_is_one_answer) {
+  Harness h;
+  h.repo.sessions.push_back(Session{sid("ses_00000002"), uid("u2"), h.clock.now, h.clock.now + 1});
+
+  CHECK_FALSE(h.service.share(uid(), sid("ses_00000009")));
+  CHECK_FALSE(h.service.share(uid(), sid("ses_00000002")));
+  CHECK(h.repo.shares.empty());
+}
+
+// Re-sharing a workout a month later is a NEW capability, not the resurrection of one that ended,
+// so the link that expired stays dead rather than coming back alive under the same token.
+TEST(share_that_has_already_expired_is_replaced_rather_than_returned) {
+  Harness h;
+  h.trained("ses_00000001", h.clock.now - kWeek, 100, 5, 4);
+  std::optional<SessionShare> first = h.service.share(uid(), sid("ses_00000001"));
+  REQUIRE(first);
+  h.clock.now += kShareLifetimeMs + 1;
+
+  std::optional<SessionShare> minted = h.service.share(uid(), sid("ses_00000001"));
+
+  REQUIRE(minted);
+  CHECK(minted->token != first->token);
+  CHECK_EQ(h.repo.shares.size(), static_cast<std::size_t>(1));
+  CHECK_FALSE(h.service.shared(first->token));
+}
+
+TEST(shared_session_resolves_a_live_token_and_names_no_account) {
+  Harness h;
+  h.trained("ses_00000001", h.clock.now - kWeek, 100, 5, 4);
+  std::optional<SessionShare> minted = h.service.share(uid(), sid("ses_00000001"));
+  REQUIRE(minted);
+
+  std::optional<SharedSession> read = h.service.shared(minted->token);
+
+  REQUIRE(read);
+  CHECK_EQ(read->startedAtMs, h.clock.now - kWeek);
+  CHECK_EQ(read->finishedAtMs,
+           std::optional<std::uint64_t>(h.clock.now - kWeek + 3'600'000));
+  CHECK_EQ(read->routineName, "");   // the session was ad-hoc, and an absence is not a blank name
+  REQUIRE_EQ(read->sets.size(), static_cast<std::size_t>(4));
+  CHECK_EQ(read->sets[0], (SharedSet{"Back Squat", 1, 100, 5, SetKind::working, std::nullopt, "",
+                                     h.clock.now - kWeek + 60'000}));
+}
+
+TEST(shared_session_of_a_revoked_or_unknown_token_is_the_same_nothing) {
+  Harness h;
+  h.trained("ses_00000001", h.clock.now - kWeek, 100, 5, 4);
+  std::optional<SessionShare> minted = h.service.share(uid(), sid("ses_00000001"));
+  REQUIRE(minted);
+  CHECK(h.service.shared(minted->token));
+
+  CHECK(h.service.revokeShare(uid(), sid("ses_00000001")));
+
+  CHECK_FALSE(h.service.shared(minted->token));
+  CHECK_FALSE(h.service.shared("a token nobody ever minted"));
+  CHECK_FALSE(h.service.revokeShare(uid(), sid("ses_00000001")));   // nothing left to revoke
+  CHECK(h.repo.shares.empty());
+}
+
+// The end is not inclusive: at the instant it names, the link is already gone.
+TEST(shared_session_stops_answering_the_moment_the_share_expires) {
+  Harness h;
+  h.trained("ses_00000001", h.clock.now - kWeek, 100, 5, 4);
+  std::optional<SessionShare> minted = h.service.share(uid(), sid("ses_00000001"));
+  REQUIRE(minted);
+
+  h.clock.now = minted->expiresAtMs;
+
+  CHECK_FALSE(h.service.shared(minted->token));
+}
+
+// A stranger holding a link must never be able to write to the owner's log — not even the
+// four-hour close every signed-in read of it takes.
+TEST(shared_session_never_settles_the_owners_open_session) {
+  Harness h;
+  const std::uint64_t began = h.clock.now - 6 * 3'600'000;
+  h.stored("ses_00000001", began, std::nullopt, 100, 5, 2);
+  std::optional<SessionShare> minted = h.service.share(uid(), sid("ses_00000001"));
+  REQUIRE(minted);
+
+  CHECK(h.service.shared(minted->token));
+
+  CHECK_FALSE(h.repo.sessions[0].finishedAtMs);
+}
+
+TEST(revoke_never_reaches_another_accounts_share) {
+  Harness h;
+  h.repo.sessions.push_back(Session{sid("ses_00000002"), uid("u2"), h.clock.now, h.clock.now + 1});
+  h.repo.shares.push_back(
+      SessionShare{sid("ses_00000002"), uid("u2"), "theirs", h.clock.now + kShareLifetimeMs});
+
+  CHECK_FALSE(h.service.revokeShare(uid(), sid("ses_00000002")));
+
+  CHECK_EQ(h.repo.shares.size(), static_cast<std::size_t>(1));
+  CHECK(h.service.shared("theirs"));   // and it is still live for the account that minted it
 }

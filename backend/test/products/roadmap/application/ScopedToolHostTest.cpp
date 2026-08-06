@@ -20,18 +20,18 @@ struct RecordingToolHost : ToolHost {
   };
   std::vector<Call> calls;
 
-  Json::Value listTools() const override {
-    Json::Value tools(Json::arrayValue);
+  std::vector<ToolDeclaration> declareTools() const override {
+    std::vector<ToolDeclaration> tools;
     for (const char* name : {"get_tree", "create_node", "delete_tree", "list_trees", "create_tree"}) {
       Json::Value entry(Json::objectValue);
       entry["name"] = name;
-      tools.append(entry);
+      tools.push_back(ToolDeclaration{entry, "roadmap", Access::write});
     }
     return tools;
   }
 
-  ToolResult callTool(const std::string& name, const Json::Value& arguments, const UserId& caller) override {
-    calls.push_back({name, arguments, caller.str()});
+  ToolResult callTool(const std::string& name, const Json::Value& arguments, const ToolCaller& caller) override {
+    calls.push_back({name, arguments, caller.user.str()});
     Json::Value out(Json::objectValue);
     out["ok"] = true;
     // Mirror applyEdit: EVERY single-node edit echoes the id it touched (create, rename, recolor),
@@ -46,18 +46,21 @@ bool has(const std::vector<std::string>& names, const std::string& name) {
   return std::find(names.begin(), names.end(), name) != names.end();
 }
 
-std::vector<std::string> toolNames(const Json::Value& tools) {
+std::vector<std::string> toolNames(const std::vector<ToolDeclaration>& tools) {
   std::vector<std::string> names;
-  for (const Json::Value& tool : tools) names.push_back(tool["name"].asString());
+  for (const ToolDeclaration& tool : tools) names.push_back(tool.name());
   return names;
 }
+
+// A tend runs as the account on itself, so the grant is never what narrows it — one tree is.
+ToolCaller tender(const char* user) { return ToolCaller{UserId{user}, ToolScope::everything()}; }
 
 }
 
 TEST(scoped_tool_host_drops_the_cross_tree_tools_from_the_catalog) {
   RecordingToolHost inner;
   ScopedToolHost scoped(inner, TreeId{"t_target"});
-  const std::vector<std::string> names = toolNames(scoped.listTools());
+  const std::vector<std::string> names = toolNames(scoped.declareTools());
   CHECK(has(names, "get_tree"));       // single-tree tools survive
   CHECK(has(names, "create_node"));
   CHECK_FALSE(has(names, "create_tree"));  // every cross-tree reach is gone
@@ -71,7 +74,7 @@ TEST(scoped_tool_host_forces_the_target_tree_id_over_any_the_agent_supplied) {
   Json::Value args(Json::objectValue);
   args["treeId"] = "t_someone_elses";  // an injected redirect to another tree
   args["label"] = "New step";
-  scoped.callTool("create_node", args, UserId{"u1"});
+  scoped.callTool("create_node", args, tender("u1"));
 
   REQUIRE_EQ(inner.calls.size(), std::size_t{1});
   CHECK_EQ(inner.calls[0].name, std::string("create_node"));
@@ -83,7 +86,7 @@ TEST(scoped_tool_host_forces_the_target_tree_id_over_any_the_agent_supplied) {
 TEST(scoped_tool_host_refuses_a_cross_tree_tool_without_reaching_the_inner_host) {
   RecordingToolHost inner;
   ScopedToolHost scoped(inner, TreeId{"t_target"});
-  const ToolResult deleted = scoped.callTool("delete_tree", Json::Value(Json::objectValue), UserId{"u1"});
+  const ToolResult deleted = scoped.callTool("delete_tree", Json::Value(Json::objectValue), tender("u1"));
   CHECK(deleted.isError);
   CHECK_EQ(inner.calls.size(), std::size_t{0});  // the destructive call never reached the real host
 }
@@ -91,7 +94,7 @@ TEST(scoped_tool_host_refuses_a_cross_tree_tool_without_reaching_the_inner_host)
 TEST(scoped_tool_host_records_exactly_the_nodes_the_tend_planted) {
   RecordingToolHost inner;
   ScopedToolHost scoped(inner, TreeId{"t_target"});
-  const UserId u{"u1"};
+  const ToolCaller u = tender("u1");
 
   Json::Value a(Json::objectValue); a["id"] = "n1"; scoped.callTool("create_node", a, u);
   Json::Value b(Json::objectValue); b["id"] = "n2"; scoped.callTool("create_node", b, u);

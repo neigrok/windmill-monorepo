@@ -29,9 +29,9 @@ TEST(oauth_full_authorization_code_flow_with_pkce) {
   CHECK(granted.error == OAuthService::GrantError::ok);
   REQUIRE(granted.tokens.has_value());
 
-  std::optional<UserId> user = svc.resolveAccessToken(granted.tokens->accessToken, "https://mcp.example.com");
-  REQUIRE(user.has_value());
-  CHECK_EQ(*user, UserId{"u1"});
+  std::optional<ToolCaller> caller = svc.resolveAccessToken(granted.tokens->accessToken, "https://mcp.example.com");
+  REQUIRE(caller.has_value());
+  CHECK_EQ(caller->user, UserId{"u1"});
 
   // The code is single-use.
   CHECK(svc.exchangeCode(code, client->clientId, kRedirect, verifier, kResource).error ==

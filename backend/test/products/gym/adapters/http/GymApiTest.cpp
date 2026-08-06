@@ -42,7 +42,7 @@ struct Harness {
   std::shared_ptr<AuthService> auth =
       std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, footprint, "https://windmill.works");
   FakeTrainingRepository repo;
-  std::shared_ptr<LogService> log = std::make_shared<LogService>(repo, clock);
+  std::shared_ptr<LogService> log = std::make_shared<LogService>(repo, clock, tokens);
   GymApi api{log, auth};
 
   Harness() {
@@ -169,6 +169,25 @@ drogon::HttpResponsePtr send(GymApi& api,
 
 Json::Value bodyOf(const drogon::HttpResponsePtr& response) { return *response->getJsonObject(); }
 
+// A whole finished workout driven through the wire, which is what the three reads added at the
+// bottom of this file are asked about — nothing there reaches past a handler into the store.
+void trainedThrough(Harness& h, const std::string& cookie, const std::string& session,
+                    std::uint64_t startedAt, int sets) {
+  send(h.api, &GymApi::startSession,
+       postRequest("/v1/gym/sessions", startBody(session, startedAt), cookie));
+  for (int number = 1; number <= sets; ++number)
+    send(h.api, &GymApi::appendSet,
+         postRequest("/v1/gym/sessions/" + session + "/sets",
+                     setBody("set_" + session.substr(4) + std::to_string(number), "bench-press",
+                             82.5, startedAt + static_cast<std::uint64_t>(number) * 60'000),
+                     cookie),
+         session);
+  send(h.api, &GymApi::finishSession,
+       postRequest("/v1/gym/sessions/" + session + "/finish", finishBody(startedAt + 3'600'000),
+                   cookie),
+       session);
+}
+
 }
 
 // ---- the owner gate -----------------------------------------------------------------------
@@ -198,6 +217,16 @@ TEST(gym_routes_without_a_session_are_401) {
   drogon::HttpResponsePtr discard =
       send(h.api, &GymApi::discardSession, deleteRequest("/v1/gym/sessions/ses_11111111"),
            "ses_11111111");
+  drogon::HttpResponsePtr stats = send(h.api, &GymApi::stats, getRequest("/v1/gym/stats"));
+  drogon::HttpResponsePtr exported =
+      send(h.api, &GymApi::exportSets, getRequest("/v1/gym/export"));
+  drogon::HttpResponsePtr share =
+      send(h.api, &GymApi::shareSession,
+           postRequest("/v1/gym/sessions/ses_11111111/share", Json::Value(Json::objectValue)),
+           "ses_11111111");
+  drogon::HttpResponsePtr revoke =
+      send(h.api, &GymApi::revokeShare, deleteRequest("/v1/gym/sessions/ses_11111111/share"),
+           "ses_11111111");
 
   CHECK_EQ(exercises->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(dump(bodyOf(exercises)), std::string(R"({"error":"sign in to open your training log"})"));
@@ -209,10 +238,18 @@ TEST(gym_routes_without_a_session_are_401) {
   CHECK_EQ(createExercise->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(review->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(discard->getStatusCode(), drogon::k401Unauthorized);
+  // The share's two owner-scoped doors and the two long reads sit on this side of the gate with
+  // everything else. Only `GET /v1/gym/shared/{token}` is on the other side, and it is the only
+  // handler in this class that never asks who is calling.
+  CHECK_EQ(stats->getStatusCode(), drogon::k401Unauthorized);
+  CHECK_EQ(exported->getStatusCode(), drogon::k401Unauthorized);
+  CHECK_EQ(share->getStatusCode(), drogon::k401Unauthorized);
+  CHECK_EQ(revoke->getStatusCode(), drogon::k401Unauthorized);
   CHECK(h.repo.sessions.empty());
   CHECK(h.repo.sets.empty());
   CHECK(h.repo.routineRows.empty());
   CHECK(h.repo.customs.empty());
+  CHECK(h.repo.shares.empty());
 }
 
 // ---- the catalog --------------------------------------------------------------------------
@@ -607,7 +644,7 @@ TEST(gym_a_storage_failure_on_append_is_never_the_clients_400) {
   DownRepository down;
   down.seed(benchPress());
   down.sessions.push_back(Session{sid("ses_11111111"), user, 1'700'000'000'000});
-  auto log = std::make_shared<LogService>(down, h.clock);
+  auto log = std::make_shared<LogService>(down, h.clock, h.tokens);
   GymApi api{log, h.auth};
 
   // The house exception handler answers 500 "internal error" — a status the flush queue retries,
@@ -631,7 +668,7 @@ TEST(gym_a_storage_failure_on_start_is_never_the_clients_400) {
   Harness h;
   h.signIn("s-live");
   DownRepository down;
-  auto log = std::make_shared<LogService>(down, h.clock);
+  auto log = std::make_shared<LogService>(down, h.clock, h.tokens);
   GymApi api{log, h.auth};
 
   bool escaped = false;
@@ -1406,4 +1443,233 @@ TEST(gym_unknown_session_detail_is_404) {
 
   CHECK_EQ(response->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"no such session"})"));
+}
+
+// ---- the statistics surface ----------------------------------------------------------------
+
+// One point per finished session per movement, Epley over it, the standing bests beside it, and the
+// weekly counts — and nothing else. There is no total, no volume, no streak and no percentage in
+// this body, which is the surface's whole design and not an omission to fill in later.
+TEST(gym_stats_answers_a_line_per_movement_and_the_weeks_around_it) {
+  Harness h;
+  h.signIn("s-live");
+  trainedThrough(h, "s-live", "ses_11111111", 1'700'000'000'000, 4);
+
+  drogon::HttpResponsePtr response = send(h.api, &GymApi::stats, getRequest("/v1/gym/stats", "s-live"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(response)),
+           std::string(R"({"movements":[{"bestE1rm":{"at":1700000060000,"e1rm":104.5,)"
+                       R"("reps":8,"weightKg":82.5},)"
+                       R"("exerciseId":"bench-press",)"
+                       R"("heaviest":{"at":1700000060000,"e1rm":104.5,"reps":8,"weightKg":82.5},)"
+                       R"("lastTrainedAt":1700000000000,)"
+                       R"("points":[{"at":1700000000000,"e1rm":104.5,"reps":8,"weightKg":82.5}]}],)"
+                       R"("weeks":[{"sessions":1,"startedAt":1699833600000,"workingSets":4}]})"));
+}
+
+// An account with nothing finished yet answers with the two empty lists rather than with a 404 or a
+// zeroed-out skeleton: there is no chart to draw, and saying so is not an error.
+TEST(gym_stats_of_an_untrained_account_is_two_empty_lists) {
+  Harness h;
+  h.signIn("s-live");
+
+  drogon::HttpResponsePtr response = send(h.api, &GymApi::stats, getRequest("/v1/gym/stats", "s-live"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"movements":[],"weeks":[]})"));
+}
+
+// ---- the export ------------------------------------------------------------------------------
+
+// The bytes, in full: a header row, CRLF between records, and RFC 4180 quoting where a note holds a
+// comma or a quote of its own. Nothing in a note is edited on the way through — it is the lifter's
+// own words, and an export that rewrote what it exports would not be one.
+TEST(gym_export_is_a_csv_attachment_and_quotes_only_what_needs_it) {
+  Harness h;
+  h.signIn("s-live");
+  send(h.api, &GymApi::startSession,
+       postRequest("/v1/gym/sessions", startBody("ses_11111111", 1'700'000'000'000), "s-live"));
+  Json::Value set = setBody("set_11111111", "bench-press", 82.5, 1'700'000'060'000);
+  set["note"] = R"(felt heavy, said "again")";
+  set["rpe"] = 8.5;
+  send(h.api, &GymApi::appendSet,
+       postRequest("/v1/gym/sessions/ses_11111111/sets", set, "s-live"), "ses_11111111");
+
+  drogon::HttpResponsePtr response =
+      send(h.api, &GymApi::exportSets, getRequest("/v1/gym/export", "s-live"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(response->getHeader("Content-Disposition"),
+           std::string(R"(attachment; filename="windmill-gym-sets.csv")"));
+  CHECK_EQ(std::string(response->getBody()),
+           std::string("session_id,started_at,finished_at,routine,set_id,exercise_id,exercise,"
+                       "set_number,weight_kg,reps,kind,rpe,note,completed_at\r\n"
+                       "ses_11111111,2023-11-14T22:13:20Z,,,set_11111111,bench-press,Bench Press,"
+                       R"(1,82.50,8,working,8.5,"felt heavy, said ""again""",)"
+                       "2023-11-14T22:14:20Z\r\n"));
+}
+
+// An account with nothing logged still gets a file, and the file still names its columns: an empty
+// export is an answer, and a client that downloaded zero bytes could not tell it from a failure.
+TEST(gym_export_of_an_empty_log_is_still_a_header_row) {
+  Harness h;
+  h.signIn("s-live");
+
+  drogon::HttpResponsePtr response =
+      send(h.api, &GymApi::exportSets, getRequest("/v1/gym/export", "s-live"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(std::string(response->getBody()),
+           std::string("session_id,started_at,finished_at,routine,set_id,exercise_id,exercise,"
+                       "set_number,weight_kg,reps,kind,rpe,note,completed_at\r\n"));
+}
+
+// ---- the coach share ---------------------------------------------------------------------------
+
+TEST(gym_share_answers_a_token_and_an_end_and_a_second_tap_answers_the_same_one) {
+  Harness h;
+  h.signIn("s-live");
+  trainedThrough(h, "s-live", "ses_11111111", 1'700'000'000'000, 4);
+
+  drogon::HttpResponsePtr first =
+      send(h.api, &GymApi::shareSession,
+           postRequest("/v1/gym/sessions/ses_11111111/share", Json::Value(Json::objectValue),
+                       "s-live"),
+           "ses_11111111");
+  drogon::HttpResponsePtr again =
+      send(h.api, &GymApi::shareSession,
+           postRequest("/v1/gym/sessions/ses_11111111/share", Json::Value(Json::objectValue),
+                       "s-live"),
+           "ses_11111111");
+
+  CHECK_EQ(first->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(again->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(first)), dump(bodyOf(again)));
+  CHECK(!bodyOf(first)["token"].asString().empty());
+  CHECK_EQ(bodyOf(first)["expiresAt"].asUInt64(), h.clock.now + kShareLifetimeMs);
+  CHECK_EQ(h.repo.shares.size(), static_cast<std::size_t>(1));
+}
+
+// Sharing is a write to the share table and nowhere else: not one of the sixteen owner-scoped
+// routes changed, and the session row a share points at is byte-identical to what it was before.
+TEST(gym_share_adds_a_row_beside_the_session_and_never_touches_it) {
+  Harness h;
+  h.signIn("s-live");
+  trainedThrough(h, "s-live", "ses_11111111", 1'700'000'000'000, 4);
+  const Session before = h.repo.sessions[0];
+
+  send(h.api, &GymApi::shareSession,
+       postRequest("/v1/gym/sessions/ses_11111111/share", Json::Value(Json::objectValue), "s-live"),
+       "ses_11111111");
+
+  CHECK_EQ(h.repo.sessions[0], before);
+  CHECK_EQ(h.repo.shares.size(), static_cast<std::size_t>(1));
+}
+
+TEST(gym_share_of_a_missing_or_anothers_session_is_404) {
+  Harness h;
+  const UserId other = h.signIn("s-other");
+  h.repo.sessions.push_back(Session{SessionId{"ses_22222222"}, other, 1'700'000'000'000,
+                                    1'700'003'600'000});
+  h.authRepo.insertSession(h.tokens.digestOf("s-live"),
+                           h.authRepo.createUser(Email{"lifter@example.com"}, "lifter").id,
+                           h.clock.now + 1'000'000, "", "", h.clock.now);
+
+  drogon::HttpResponsePtr absent =
+      send(h.api, &GymApi::shareSession,
+           postRequest("/v1/gym/sessions/ses_99999999/share", Json::Value(Json::objectValue),
+                       "s-live"),
+           "ses_99999999");
+  drogon::HttpResponsePtr theirs =
+      send(h.api, &GymApi::shareSession,
+           postRequest("/v1/gym/sessions/ses_22222222/share", Json::Value(Json::objectValue),
+                       "s-live"),
+           "ses_22222222");
+
+  CHECK_EQ(absent->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(theirs->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(dump(bodyOf(absent)), dump(bodyOf(theirs)));   // absent and forbidden are one fact
+  CHECK(h.repo.shares.empty());
+}
+
+// The one route in gym that resolves no caller: no cookie, no bearer, no account — the token in the
+// path is the whole credential. The body names no account and holds no id at any depth, so nothing
+// in it can be walked to a second session.
+TEST(gym_shared_session_needs_no_caller_and_carries_no_id) {
+  Harness h;
+  h.signIn("s-live");
+  trainedThrough(h, "s-live", "ses_11111111", 1'700'000'000'000, 2);
+  drogon::HttpResponsePtr minted =
+      send(h.api, &GymApi::shareSession,
+           postRequest("/v1/gym/sessions/ses_11111111/share", Json::Value(Json::objectValue),
+                       "s-live"),
+           "ses_11111111");
+  const std::string token = bodyOf(minted)["token"].asString();
+
+  drogon::HttpResponsePtr read =
+      send(h.api, &GymApi::sharedSession, getRequest("/v1/gym/shared/" + token), token);
+
+  CHECK_EQ(read->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(read)),
+           std::string(R"({"finishedAt":1700003600000,"sets":[)"
+                       R"({"completedAt":1700000060000,"exercise":"Bench Press","kind":"working",)"
+                       R"("note":"","reps":8,"setNumber":1,"weightKg":82.5},)"
+                       R"({"completedAt":1700000120000,"exercise":"Bench Press","kind":"working",)"
+                       R"("note":"","reps":8,"setNumber":2,"weightKg":82.5}],)"
+                       R"("startedAt":1700000000000})"));
+}
+
+// Revoked, expired and never-minted answer ONE 404, byte for byte, which is what stops a token from
+// being probed for existence — and it is the same body an absent session gives every other read.
+TEST(gym_shared_token_that_is_revoked_expired_or_unknown_is_one_404) {
+  Harness h;
+  h.signIn("s-live");
+  trainedThrough(h, "s-live", "ses_11111111", 1'700'000'000'000, 2);
+  drogon::HttpResponsePtr minted =
+      send(h.api, &GymApi::shareSession,
+           postRequest("/v1/gym/sessions/ses_11111111/share", Json::Value(Json::objectValue),
+                       "s-live"),
+           "ses_11111111");
+  const std::string token = bodyOf(minted)["token"].asString();
+
+  drogon::HttpResponsePtr unknown = send(h.api, &GymApi::sharedSession,
+                                         getRequest("/v1/gym/shared/nobody-minted-this"),
+                                         "nobody-minted-this");
+  h.clock.now += kShareLifetimeMs + 1;
+  drogon::HttpResponsePtr expired =
+      send(h.api, &GymApi::sharedSession, getRequest("/v1/gym/shared/" + token), token);
+  send(h.api, &GymApi::revokeShare, deleteRequest("/v1/gym/sessions/ses_11111111/share", "s-live"),
+       "ses_11111111");
+  drogon::HttpResponsePtr revoked =
+      send(h.api, &GymApi::sharedSession, getRequest("/v1/gym/shared/" + token), token);
+
+  CHECK_EQ(unknown->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(expired->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(revoked->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(dump(bodyOf(unknown)), std::string(R"({"error":"no such session"})"));
+  CHECK_EQ(dump(bodyOf(expired)), dump(bodyOf(unknown)));
+  CHECK_EQ(dump(bodyOf(revoked)), dump(bodyOf(unknown)));
+}
+
+TEST(gym_revoke_answers_204_and_a_second_revoke_is_the_same_fact_as_never_having_shared) {
+  Harness h;
+  h.signIn("s-live");
+  trainedThrough(h, "s-live", "ses_11111111", 1'700'000'000'000, 2);
+  send(h.api, &GymApi::shareSession,
+       postRequest("/v1/gym/sessions/ses_11111111/share", Json::Value(Json::objectValue), "s-live"),
+       "ses_11111111");
+
+  drogon::HttpResponsePtr first =
+      send(h.api, &GymApi::revokeShare,
+           deleteRequest("/v1/gym/sessions/ses_11111111/share", "s-live"), "ses_11111111");
+  drogon::HttpResponsePtr again =
+      send(h.api, &GymApi::revokeShare,
+           deleteRequest("/v1/gym/sessions/ses_11111111/share", "s-live"), "ses_11111111");
+
+  CHECK_EQ(first->getStatusCode(), drogon::k204NoContent);
+  CHECK_EQ(again->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(dump(bodyOf(again)), std::string(R"({"error":"no such session"})"));
+  CHECK(h.repo.shares.empty());
+  CHECK_EQ(h.repo.sessions.size(), static_cast<std::size_t>(1));   // the workout itself is untouched
 }

@@ -794,16 +794,17 @@ RoadmapTools::RoadmapTools(RoomRegistry& registry, ProgressService& progress, Cl
                            TreeRegistry& treeRegistry, PresenceBus& bus)
     : registry_(registry), progress_(progress), clock_(clock), treeRegistry_(treeRegistry), bus_(bus) {}
 
-Json::Value RoadmapTools::listTools() const { return roadmapToolCatalog(); }
+std::vector<ToolDeclaration> RoadmapTools::declareTools() const { return roadmapToolCatalog(); }
 
 // Every failure an agent reads names the tool it came from, and it is named exactly once: here,
 // on whatever `dispatch` refused with. A message that arrives in a transcript without its tool is
 // a message the agent has to guess the origin of. The catch is the same promise for a throw:
 // jsoncpp raises on a type-confused read, and a malformed argument must fail its own call rather
 // than the whole request — which is how a bad import item once died as a bare transport error.
-ToolResult RoadmapTools::callTool(const std::string& name, const Json::Value& arguments, const UserId& caller) {
+ToolResult RoadmapTools::callTool(const std::string& name, const Json::Value& arguments,
+                                  const ToolCaller& caller) {
   try {
-    ToolResult outcome = dispatch(name, arguments, caller);
+    ToolResult outcome = dispatch(name, arguments, caller.user);
     if (!outcome.isError) return outcome;
     return ToolResult::failure(name + ": " + outcome.content[0]["text"].asString());
   } catch (const std::bad_alloc&) {
@@ -860,7 +861,10 @@ ToolResult RoadmapTools::dispatch(const std::string& name, const Json::Value& ar
 
   if (commandKindFor(name)) return applyEdit(registry_, tree, name, arguments, clock_, caller);
 
-  return ToolResult::failure("no such tool on this server — call tools/list for the whole surface.");
+  // The whole-server answer belongs to CompositeToolHost, which is the only thing that knows what
+  // else is connected; a name that reaches this far named nothing in the roadmap surface.
+  return ToolResult::failure("no such roadmap tool — call tools/list for the surface this connection "
+                             "may use.");
 }
 
 }

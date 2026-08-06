@@ -702,7 +702,7 @@ TEST(close_account_drops_every_session_disconnects_tools_and_returns_the_grace_e
   const std::string otherSession = h.service.completeLink("s3").signedIn->sessionSecret;  // s4/d4
 
   // The account has a connected tool.
-  h.oauthRepo.recordGrant(account, "client-abc", h.clock.now);
+  h.oauthRepo.recordGrant(account, "client-abc", h.clock.now, "");
   CHECK_EQ(h.oauth.listGrants(account).size(), 1u);
 
   const UnixMs closesMs = h.service.closeAccount(account);

@@ -30,6 +30,11 @@ std::set<std::string> parseOriginList(const std::string& csv);
 // bearer that acts as `fallbackUser` (CI/agents). With none configured, requests run
 // unauthenticated as `fallbackUser` (local/stdio-style, and the tests). `resourceMetadataUrl`
 // is advertised in the 401 WWW-Authenticate challenge.
+//
+// `fallbackScope` is what the two credential-less doors carry — the shared bearer and the no-auth
+// local topology. It has no default: the widest reach in the system is a line a composition root
+// writes on purpose, and a root that omits it gets a caller who can do nothing rather than a caller
+// who can do everything.
 struct McpAuth {
   OAuthService* oauth = nullptr;
   std::string resource;
@@ -37,6 +42,7 @@ struct McpAuth {
   std::string fallbackToken;
   UserId fallbackUser;
   McpKeyService* mcpKeys = nullptr;
+  ToolScope fallbackScope;
 };
 
 // The MCP Streamable-HTTP transport (spec 2025-06-18): one endpoint, three verbs.
@@ -57,9 +63,10 @@ public:
 
 private:
   std::string openSession();
-  // The caller a request authenticates as, or nullopt when auth is configured but no valid
-  // token is presented (→ a 401 challenge). When no auth is configured, always the fallback.
-  std::optional<UserId> resolveCaller(const drogon::HttpRequestPtr& request) const;
+  // The caller a request authenticates as — the account and the grant its credential carries — or
+  // nullopt when auth is configured but no valid token is presented (→ a 401 challenge). When no auth
+  // is configured, always the fallback.
+  std::optional<ToolCaller> resolveCaller(const drogon::HttpRequestPtr& request) const;
 
   McpServer& server_;
   std::set<std::string> allowedOrigins_;

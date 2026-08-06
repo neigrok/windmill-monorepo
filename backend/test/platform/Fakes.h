@@ -251,7 +251,7 @@ struct FakeAccountFootprint : AccountFootprint {
 };
 
 // Personal MCP API keys as a fake: the digest→row map the real table keys on, plus the public
-// id. findActiveUser models just the digest→user + expiry gate (the real deleted_at JOIN is
+// id. findActiveKey models just the digest→(user, scope) + expiry gate (the real deleted_at JOIN is
 // SQL-only); touchUsed and revoke mirror the throttled last-used write and the owner-scoped delete.
 struct FakeMcpKeyRepository : McpKeyRepository {
   struct KeyRow {
@@ -261,6 +261,7 @@ struct FakeMcpKeyRepository : McpKeyRepository {
     long long createdMs = 0;
     std::optional<long long> lastUsedMs;
     std::optional<long long> expiresMs;
+    std::string scope;  // '' — the mint endpoint asks for none, so every key is account-wide
   };
   std::map<std::string, KeyRow> keys;  // digest -> row
   int nextKeyId = 0;
@@ -268,7 +269,7 @@ struct FakeMcpKeyRepository : McpKeyRepository {
   std::string insert(const std::string& tokenDigest, const UserId& user, const std::string& name,
                      long long createdMs) override {
     std::string id = "key" + std::to_string(++nextKeyId);
-    keys[tokenDigest] = KeyRow{id, user, name, createdMs, std::nullopt, std::nullopt};
+    keys[tokenDigest] = KeyRow{id, user, name, createdMs, std::nullopt, std::nullopt, ""};
     return id;
   }
   std::vector<McpKeyRow> list(const UserId& user) override {
@@ -288,11 +289,11 @@ struct FakeMcpKeyRepository : McpKeyRepository {
     }
     return false;
   }
-  std::optional<UserId> findActiveUser(const std::string& tokenDigest, long long nowMs) override {
+  std::optional<ActiveKey> findActiveKey(const std::string& tokenDigest, long long nowMs) override {
     auto it = keys.find(tokenDigest);
     if (it == keys.end()) return std::nullopt;
     if (it->second.expiresMs && *it->second.expiresMs <= nowMs) return std::nullopt;
-    return it->second.user;
+    return ActiveKey{it->second.user, it->second.scope};
   }
   void touchUsed(const std::string& tokenDigest, long long nowMs, long long throttleMs) override {
     auto it = keys.find(tokenDigest);
@@ -310,7 +311,7 @@ struct FakeOAuthRepository : OAuthRepository {
   std::map<std::string, StoredToken> access;
   struct Refresh { StoredToken grant; UnixMs expiresAt; };
   std::map<std::string, Refresh> refresh;
-  struct GrantRow { UnixMs grantedMs = 0; UnixMs lastUsedMs = 0; };
+  struct GrantRow { UnixMs grantedMs = 0; UnixMs lastUsedMs = 0; std::string scope; };
   std::map<std::pair<std::string, std::string>, GrantRow> grants;  // (userId, clientId) -> row
 
   void registerClient(const OAuthClient& client) override { clients[client.clientId] = client; }
@@ -345,15 +346,17 @@ struct FakeOAuthRepository : OAuthRepository {
     return grant;
   }
 
-  void recordGrant(const UserId& user, const std::string& clientId, UnixMs now) override {
+  void recordGrant(const UserId& user, const std::string& clientId, UnixMs now,
+                   const std::string& scope) override {
     auto key = std::make_pair(user.str(), clientId);
     auto it = grants.find(key);
     if (it == grants.end()) {
-      grants[key] = GrantRow{now, now};
+      grants[key] = GrantRow{now, now, scope};
       return;
     }
     it->second.grantedMs = std::min(it->second.grantedMs, now);  // set once, kept as the earliest
     it->second.lastUsedMs = now;
+    it->second.scope = scope;  // a re-consent that narrows the grant narrows what settings shows
   }
   void touchGrantUsed(const UserId& user, const std::string& clientId, UnixMs now,
                       UnixMs minIntervalMs) override {
@@ -367,7 +370,7 @@ struct FakeOAuthRepository : OAuthRepository {
       std::string name;
       auto c = clients.find(key.second);
       if (c != clients.end()) name = c->second.name;
-      out.push_back(GrantView{key.second, name, row.grantedMs, row.lastUsedMs});
+      out.push_back(GrantView{key.second, name, row.grantedMs, row.lastUsedMs, row.scope});
     }
     return out;
   }

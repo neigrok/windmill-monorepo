@@ -301,6 +301,12 @@ create table if not exists mcp_keys (
 create index if not exists mcp_keys_user on mcp_keys (user_id);
 create unique index if not exists mcp_keys_id on mcp_keys (id);
 
+-- What the key's bearer may reach, in the same space-delimited `<product>:<level>` spelling the
+-- OAuth grants use. '' is the account-wide grant — every key at rest was minted before scopes
+-- existed, and the mint endpoint asks for none, so a scoped key is a UI change and not a migration.
+-- A scope model that covered only OAuth would leave this door wide open beside it.
+alter table mcp_keys add column if not exists scope text not null default '';
+
 -- settings §4 delete: a soft close with a 30-day grace. `deleted_at` stamps the request;
 -- the account fully closes 30 days later. A within-grace magic-link sign-in clears it (the
 -- undo), and authenticate refuses any session whose user carries it.
@@ -316,6 +322,12 @@ create table if not exists oauth_grants (
   last_used_ms bigint not null default 0,
   primary key (user_id, client_id)
 );
+
+-- The scope the human approved, carried here from the code so the settings list can say what each
+-- connected tool may do. It lives on the grant rather than on oauth_tokens because tokens rotate
+-- every hour and the answer to "what did I agree to" must not rotate with them. '' is the
+-- account-wide grant every existing row carries.
+alter table oauth_grants add column if not exists scope text not null default '';
 
 -- OAuth 2.1 authorization for the MCP resource server (MCP Authorization spec, 2025-06-18).
 -- Dynamically-registered public clients, single-use PKCE-bound authorization codes, and
@@ -930,12 +942,16 @@ create table if not exists journal_page_curation (
 
 -- ── Gym (products/gym) ───────────────────────────────────────────────────────────────────────
 -- The third room in the superapp: a training log whose one load-bearing feature is the durable
--- set write. Tables are gym_*, every row owner-scoped, and account deletion is the cascade — as
--- in journal, there is deliberately NO visibility column and no share entity, so a session is
--- legible to exactly one account by construction. All date/time work stays in SQL (to_timestamp,
--- extract(epoch …)); instants cross the wire and the domain as epoch-ms. Create order is FK
--- order: exercises → routines → routine_entries → sessions → sets (the architecture doc reads
--- sessions first; the DDL cannot, because gym_sessions.routine_id references gym_routines).
+-- set write. Tables are gym_*, every row owner-scoped, and account deletion is the cascade.
+-- There is still deliberately NO visibility column: a session row is legible to exactly one
+-- account by construction, and every one of the fifteen owner-scoped routes stays
+-- `WHERE user_id = :caller`. The one reader who is not the owner comes in through a SEPARATE
+-- table, gym_session_shares (below) — a capability that expires and is revoked by deleting one
+-- row, never a stance on the session itself. All date/time work stays in SQL (to_timestamp,
+-- extract(epoch …), date_trunc); instants cross the wire and the domain as epoch-ms. Create order
+-- is FK order: exercises → routines → routine_entries → sessions → sets → session_shares (the
+-- architecture doc reads sessions first; the DDL cannot, because gym_sessions.routine_id
+-- references gym_routines).
 
 -- The identity table. id is a STABLE slug ('back-squat'), never renamed, never displayed;
 -- name is the mutable display string. That separation IS the fix for Lift's worst bug family:
@@ -1054,6 +1070,30 @@ create table if not exists gym_sets (
 create index if not exists gym_sets_session  on gym_sets (session_id, set_number);
 -- the prefill read and every per-exercise history: newest sets of one movement, one index
 create index if not exists gym_sets_history  on gym_sets (user_id, exercise_id, completed_at desc);
+
+-- The coach share, and it is a TABLE rather than a column on gym_sessions for one reason that
+-- decides everything else: a column would put a stance on every session row, and every one of
+-- gym's owner-scoped reads would then have to be re-decided in terms of it. A separate table
+-- leaves all fifteen of them exactly as they were — still `WHERE user_id = :caller`, still absent
+-- byte-identical to forbidden — and adds one door beside them. Sharing cannot be reached by
+-- accident from any existing query, because no existing query names this table.
+-- session_id is the primary key, which is what makes the mint idempotent: tapping Share twice
+-- sends one link and not two capabilities to revoke separately. The token is MINTED BY THE SERVER
+-- (platform TokenGenerator, the same mint behind a session cookie) and never accepted from a
+-- client, because a client that picks its own share token picks a guessable one. Unlike a session
+-- or a magic link it is stored in the clear rather than as a digest — the mint must hand back the
+-- SAME link on a repeat, which a digest cannot do — so what a database leak would expose here is a
+-- set of live links, each to one workout, each expiring and revocable by its owner, and
+-- none of them naming the account behind it. expires_at is the end of the capability (30 days,
+-- domain/Training.h) and revocation is deleting the row: nothing is marked and nothing is swept.
+create table if not exists gym_session_shares (
+  session_id  text primary key references gym_sessions(id) on delete cascade,
+  user_id     uuid not null references users(id) on delete cascade,
+  token       text not null unique,
+  created_at  timestamptz not null default now(),
+  expires_at  timestamptz not null
+);
+create index if not exists gym_session_shares_user on gym_session_shares (user_id);
 
 -- The catalog seed: 64 movements across the seven patterns (the flat legs-vs-three-arm-buckets
 -- lopsidedness of Lift's taxonomy is refused; pattern is the only classification). Steps by

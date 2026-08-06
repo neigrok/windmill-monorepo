@@ -44,7 +44,7 @@ Json::Value failure(const Json::Value& id, int code, const std::string& message)
 McpServer::McpServer(ToolHost& tools, ServerInfo info, std::vector<McpResource> resources)
     : tools_(tools), info_(std::move(info)), resources_(std::move(resources)) {}
 
-std::optional<Json::Value> McpServer::handle(const Json::Value& message, const UserId& caller) {
+std::optional<Json::Value> McpServer::handle(const Json::Value& message, const ToolCaller& caller) {
   if (!message.isObject()) return wm::failure(Json::nullValue, -32600, "invalid request");
 
   const bool isNotification = !message.isMember("id");
@@ -86,9 +86,11 @@ std::optional<Json::Value> McpServer::handle(const Json::Value& message, const U
 
   if (method == "ping") return result(id, Json::Value(Json::objectValue));
 
+  // The catalog is per-request, not per-process: two clients on the same server see different
+  // surfaces because they hold different grants, which is why the caller reaches this branch at all.
   if (method == "tools/list") {
     Json::Value payload(Json::objectValue);
-    payload["tools"] = tools_.listTools();
+    payload["tools"] = tools_.listTools(caller);
     return result(id, payload);
   }
 

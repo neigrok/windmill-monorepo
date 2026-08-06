@@ -38,12 +38,13 @@ std::vector<McpKeyView> McpKeyService::list(const UserId& user) {
 
 bool McpKeyService::revoke(const UserId& user, const std::string& id) { return repo_.revoke(user, id); }
 
-std::optional<UserId> McpKeyService::resolveKey(const std::string& secret) {
+std::optional<ToolCaller> McpKeyService::resolveKey(const std::string& secret) {
   const std::string digest = tokens_.digestOf(secret);
   const long long now = static_cast<long long>(clock_.nowMs());
-  const std::optional<UserId> user = repo_.findActiveUser(digest, now);
-  if (user) repo_.touchUsed(digest, now, kTouchThrottleMs);
-  return user;
+  const std::optional<ActiveKey> key = repo_.findActiveKey(digest, now);
+  if (!key) return std::nullopt;
+  repo_.touchUsed(digest, now, kTouchThrottleMs);
+  return ToolCaller{key->user, parseToolScope(key->scope)};
 }
 
 }

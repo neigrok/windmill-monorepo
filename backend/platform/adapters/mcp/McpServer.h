@@ -38,7 +38,9 @@ class McpServer {
 public:
   McpServer(ToolHost& tools, ServerInfo info, std::vector<McpResource> resources = {});
 
-  std::optional<Json::Value> handle(const Json::Value& message, const UserId& caller = UserId{});
+  // `caller` is the transport's resolved credential — the account AND its grant. It has no default:
+  // a request whose caller was never resolved would list the whole surface to nobody in particular.
+  std::optional<Json::Value> handle(const Json::Value& message, const ToolCaller& caller);
 
 private:
   ToolHost& tools_;

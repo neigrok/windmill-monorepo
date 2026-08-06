@@ -1,6 +1,7 @@
 #include "platform/adapters/clock/SystemClock.h"
 #include "platform/adapters/crypto/OpenSslTokenGenerator.h"
 #include "products/roadmap/adapters/json/TreeJson.h"
+#include "platform/adapters/mcp/CompositeToolHost.h"
 #include "platform/adapters/mcp/McpServer.h"
 #include "products/roadmap/adapters/mcp/RoadmapResources.h"
 #include "products/roadmap/adapters/mcp/RoadmapTools.h"
@@ -54,7 +55,12 @@ int main() {
   TreeRegistry treeRegistry(trees, progressRepo, registryTokens, genesis, registry, clock);
 
   RoadmapTools tools(registry, progress, clock, treeRegistry, bus);
-  McpServer server(tools, roadmapServerInfo(), roadmapResources());
+  const std::vector<ToolModule> modules{{tools, roadmapInstructions()}};
+  CompositeToolHost surface(modules);
+  McpServer server(surface, windmillServerInfo(surface), roadmapResources());
+  // stdio has no credential to narrow: the process IS the account, configured by env. Said out loud
+  // here for the same reason it is said in main.cpp — the widest reach is never a default.
+  const ToolCaller actor{caller, ToolScope::everything()};
 
   // stdout is the protocol channel — everything else goes to stderr.
   std::cerr << "windmill-mcp ready (stdio; db=" << redactDbUrl(connString) << ", user=" << caller.str() << ")\n";
@@ -67,7 +73,7 @@ int main() {
       reply(parseError());
       continue;
     }
-    if (std::optional<Json::Value> response = server.handle(message, caller)) reply(*response);
+    if (std::optional<Json::Value> response = server.handle(message, actor)) reply(*response);
   }
   return 0;
 }

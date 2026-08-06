@@ -125,7 +125,7 @@ Json::Value ephemeral() {
 }
 
 // A tend loop re-sends its whole context on every one of up to 12 iterations, and that context is
-// dominated by three static things: the 29-tool catalog, the system prompt, and the tree the
+// dominated by three static things: the 24-tool catalog a tend sees, the system prompt, and the tree the
 // sentence is about. Left uncached this is ~90% of the input bill — the same ~9k tokens paid full
 // price a dozen times. Caching writes them once and reads them at a tenth the price thereafter.
 // The system breakpoint caches tools+system (they render before it); the per-turn message
@@ -247,6 +247,10 @@ AgentOutcome driveAgent(const std::string& prompt, const TreeId& tree, const Use
                         const std::function<void(const AgentStep&)>& onStep,
                         const AgentReporter& report) {
   AgentOutcome outcome;
+  // A tend is the account acting on itself from its own session — there is no third-party credential
+  // to narrow, so the run carries the full grant and the narrowing that matters is the one tree
+  // ScopedToolHost pins it to.
+  const ToolCaller actor{caller, ToolScope::everything()};
 
   // Read the tree the sentence is about, so the model plans against real ids and the person's
   // actual structure rather than a guess. Unreadable tree, no run.
@@ -265,14 +269,14 @@ AgentOutcome driveAgent(const std::string& prompt, const TreeId& tree, const Use
   treeArgs["fields"] = everyNodeField;
   treeArgs["kindFields"] = everyKindField;
   treeArgs["limit"] = 1000;
-  const ToolResult treeResult = tools.callTool("get_tree", treeArgs, caller);
+  const ToolResult treeResult = tools.callTool("get_tree", treeArgs, actor);
   if (treeResult.isError) {
     outcome.error = "could not read the tree before tending";
     report("agent.setup", outcome.error);
     return outcome;
   }
 
-  const Json::Value catalog = agentTools(tools.listTools());
+  const Json::Value catalog = agentTools(tools.listTools(actor));
 
   Json::Value messages(Json::arrayValue);
   messages.append(userMessage(
@@ -324,7 +328,7 @@ AgentOutcome driveAgent(const std::string& prompt, const TreeId& tree, const Use
       const std::string name = block["name"].asString();
       const std::string id = block["id"].asString();
 
-      const ToolResult result = tools.callTool(name, block["input"], caller);
+      const ToolResult result = tools.callTool(name, block["input"], actor);
       results.append(toolResultBlock(id, result));
 
       AgentStep step;

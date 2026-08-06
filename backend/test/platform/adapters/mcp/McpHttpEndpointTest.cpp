@@ -7,8 +7,11 @@ using namespace wm;
 namespace {
 
 struct FakeHost : ToolHost {
-  Json::Value listTools() const override { return Json::Value(Json::arrayValue); }
-  ToolResult callTool(const std::string&, const Json::Value&, const UserId&) override {
+  std::vector<ToolCaller> callers;  // what the transport resolved, so a grant can be proved to arrive
+
+  std::vector<ToolDeclaration> declareTools() const override { return {}; }
+  ToolResult callTool(const std::string&, const Json::Value&, const ToolCaller& caller) override {
+    callers.push_back(caller);
     Json::Value ok(Json::objectValue);
     ok["ok"] = true;
     return ToolResult::json(ok);
@@ -16,7 +19,7 @@ struct FakeHost : ToolHost {
 };
 
 drogon::HttpRequestPtr post(const std::string& body, const std::string& session = "",
-                            const std::string& origin = "") {
+                            const std::string& origin = "", const std::string& bearer = "") {
   auto request = drogon::HttpRequest::newHttpRequest();
   request->setMethod(drogon::Post);
   request->setPath("/mcp");
@@ -24,6 +27,7 @@ drogon::HttpRequestPtr post(const std::string& body, const std::string& session 
   request->setBody(body);
   if (!session.empty()) request->addHeader("Mcp-Session-Id", session);
   if (!origin.empty()) request->addHeader("Origin", origin);
+  if (!bearer.empty()) request->addHeader("Authorization", "Bearer " + bearer);
   return request;
 }
 
@@ -36,6 +40,7 @@ drogon::HttpResponsePtr sendPost(McpHttpEndpoint& endpoint, const drogon::HttpRe
 const char* kInit =
     R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}})";
 const char* kList = R"({"jsonrpc":"2.0","id":2,"method":"tools/list"})";
+const char* kCall = R"({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"echo"}})";
 
 }
 
@@ -119,6 +124,43 @@ TEST(mcp_http_deeply_nested_body_is_a_clean_parse_error_not_a_crash) {
   drogon::HttpResponsePtr response = sendPost(endpoint, post(bomb));
   CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
   CHECK(response->getBody().find("parse error") != std::string::npos);
+}
+
+// The credential is where a grant enters the request, so the transport must carry the scope its
+// composition root wrote and not merely the account — a token that reached the tool as a bare UserId
+// is a token nothing downstream can tell apart from a full one.
+TEST(mcp_http_a_credential_carries_its_grant_to_the_tool_not_just_its_account) {
+  FakeHost host;
+  McpServer server(host, ServerInfo{"windmill", "0.1.0", ""});
+  McpAuth auth;
+  auth.fallbackToken = "shared-secret";
+  auth.fallbackUser = UserId{"ci"};
+  auth.fallbackScope = parseToolScope("roadmap:read");
+  McpHttpEndpoint endpoint(server, {}, auth);
+
+  const std::string session =
+      sendPost(endpoint, post(kInit, "", "", "shared-secret"))->getHeader("Mcp-Session-Id");
+  CHECK_EQ(sendPost(endpoint, post(kCall, session, "", "shared-secret"))->getStatusCode(), drogon::k200OK);
+
+  REQUIRE_EQ(host.callers.size(), std::size_t{1});
+  CHECK_EQ(host.callers[0].user.str(), std::string("ci"));
+  CHECK(host.callers[0].scope.allows("roadmap", Access::read));
+  CHECK_FALSE(host.callers[0].scope.allows("roadmap", Access::write));
+  CHECK_FALSE(host.callers[0].scope.allows("roadmap", Access::del));
+}
+
+TEST(mcp_http_a_wrong_bearer_is_challenged_and_never_reaches_a_tool) {
+  FakeHost host;
+  McpServer server(host, ServerInfo{"windmill", "0.1.0", ""});
+  McpAuth auth;
+  auth.fallbackToken = "shared-secret";
+  auth.fallbackUser = UserId{"ci"};
+  auth.fallbackScope = ToolScope::everything();
+  McpHttpEndpoint endpoint(server, {}, auth);
+
+  drogon::HttpResponsePtr challenged = sendPost(endpoint, post(kInit, "", "", "not-the-secret"));
+  CHECK_EQ(challenged->getStatusCode(), drogon::k401Unauthorized);
+  CHECK_EQ(host.callers.size(), std::size_t{0});
 }
 
 TEST(mcp_http_get_is_method_not_allowed) {

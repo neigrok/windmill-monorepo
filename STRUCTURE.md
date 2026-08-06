@@ -8,8 +8,8 @@ surface. The directory tree is meant to read like a description of the system: g
 backend/     one C++ modular-monolith binary
   platform/    shared, product-neutral: auth · oauth · billing · mcp engine · email ·
                users · telemetry · access · generic id/crdt primitives · http host
-  products/    one module per product, each plugging its routes into the host (mcp tools
-               are roadmap's alone so far)
+  products/    one module per product, each plugging its routes AND (optionally) its MCP
+               tools into the host — roadmap and gym publish tools today
     roadmap/     the RPG skill-tree app (the original Windmill)
     journal/     the night-canvas daily journal (shipped)
     gym/         training log (phase 0 built — see its ARCHITECTURE.md)
@@ -86,8 +86,11 @@ prematurely abstracted — the second consumer earns the abstraction.
 
 - **Backend:** each product exposes `<product>::registerRoutes(app, deps)` over a `…Deps`
   struct it declares in its own `routes.h`. `backend/platform/infra` composes the shared host
-  and calls each. MCP tools are not part of that seam yet — roadmap's `RoadmapTools`
-  implements `platform/ports/ToolHost.h` and `main.cpp` hands it to `McpServer` directly.
+  and calls each. MCP tools are the second seam: a product implements
+  `platform/ports/ToolHost.h`, classifying each tool by product and access level, and
+  `main.cpp` registers it as a `ToolModule` on the `CompositeToolHost` that `McpServer` binds.
+  That composite is the permission gate — a client's grant selects which products' tools it can
+  see and call. Roadmap is the only module registered today.
 - **Web:** each product exports a route table; `web/shell` composes them and renders the
   product switcher. The shell knows an "active product home" — it hard-codes no product.
 
@@ -133,10 +136,10 @@ Still open (**web** + infra):
   The boundary test now walks **everything that is not a product**, stylesheets included, rather
   than only `src/shell/`.
 
-  Still open, and both are decisions rather than edits: `AccountSeat`'s `treeCount` / "My trees"
-  row needs a noun the active product supplies (a registry field with one contributor today), and
-  `OAuthConsent`'s scope words wait on a second product publishing MCP tools — with exactly one,
-  the words are accurate for every grant that can be issued.
+  Still open, and a decision rather than an edit: `AccountSeat`'s `treeCount` / "My trees" row
+  needs a noun the active product supplies (a registry field with one contributor today).
+  `OAuthConsent` no longer hardcodes its scope words — it renders the requested grant, grouped by
+  product, from `web/src/shell/auth/scopes.js`.
 - **`backend/infra`** (the composition-root executables) sit under `platform/infra`; they depend on
   roadmap by nature (they compose it). Fine today; revisit if a neutral app-assembly layer is wanted.
 

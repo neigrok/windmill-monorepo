@@ -33,6 +33,7 @@ struct Harness {
   ProgressService progress{progressRepo};
   TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
   UserId caller = fake::uid("agent");
+  ToolCaller actor{caller, ToolScope::everything()};
   RoadmapTools tools{registry, progress, clock, treeRegistry, bus};
 
   Harness() {
@@ -40,9 +41,12 @@ struct Harness {
         StoredTree{LooseGraph().exportState(), LegendState{}, {"Test Roadmap", {}}, 0, caller};
   }
 
+  // These cases drive RoadmapTools directly, below the grant gate — CompositeToolHost is what
+  // enforces a scope, and it has its own suite. Here the caller holds everything, so what is under
+  // test is the tool's own ownership and argument behaviour and nothing else.
   ToolResult call(const char* name, Json::Value args) {
     args["treeId"] = "t";
-    return tools.callTool(name, args, caller);
+    return tools.callTool(name, args, ToolCaller{caller, ToolScope::everything()});
   }
 };
 

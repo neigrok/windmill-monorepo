@@ -55,9 +55,12 @@ TEST(resolve_key_returns_the_owner_and_refuses_garbage_and_revoked_keys) {
   McpKeyService svc(repo, tokens, clock);
 
   MintedKey key = svc.mint(UserId{"u1"}, "Laptop");  // token s1 / digest d1
-  std::optional<UserId> owner = svc.resolveKey(key.token);
+  std::optional<ToolCaller> owner = svc.resolveKey(key.token);
   REQUIRE(owner.has_value());
-  CHECK_EQ(*owner, UserId{"u1"});
+  CHECK_EQ(owner->user, UserId{"u1"});
+  // The mint endpoint asks for no scope, so a key resolves as the legacy account-wide grant. That is
+  // the door a scope model covering only OAuth would leave standing open.
+  CHECK(owner->scope == ToolScope::everything());
 
   // An unknown or empty secret resolves to nobody.
   CHECK_FALSE(svc.resolveKey("garbage").has_value());

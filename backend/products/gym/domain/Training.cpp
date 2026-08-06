@@ -186,4 +186,9 @@ bool canFinishAt(const Session& session, std::uint64_t finishedAtMs) {
   return finishedAtMs >= session.startedAtMs;
 }
 
+std::uint64_t shareExpiryAt(std::uint64_t nowMs) {
+  if (nowMs > kMaxInstantMs - kShareLifetimeMs) return kMaxInstantMs;
+  return nowMs + kShareLifetimeMs;
+}
+
 }

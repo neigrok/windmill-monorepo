@@ -686,6 +686,237 @@ ExerciseInsertOutcome PgTrainingRepository::insertExercise(const UserId& owner,
   return {stored, ExerciseInsertError::none};
 }
 
+TrainingLog PgTrainingRepository::trainingLog(const UserId& user) {
+  // The statistics read, three statements in one transaction, and every one of them is a query the
+  // store already knows how to make — nothing here is a new opinion about training.
+  //
+  // The series is `DISTINCT ON (movement, session)` keeping the heaviest set with the most reps:
+  // TopSet's rule, made in SQL because it is an ORDERING and not a calculation. The Epley estimate
+  // over it is the domain's and is absent here on purpose — §11.5's ladder lesson applied to the
+  // second formula in the product, one copy per language and none in the database. The rows come
+  // back grouped by movement and oldest first inside each group, which is the port's contract and
+  // what lets the pure rule assemble a line by appending.
+  //
+  // The marks are historyFor's projection with both of its windows removed: every movement instead
+  // of one session's, and the whole finished log instead of what came before one session. Small by
+  // construction — one row per (movement, load) a lifter has ever used.
+  //
+  // The weeks are counted here rather than in C++ because they are dates, and truncated `AT TIME
+  // ZONE 'UTC'` rather than in the server's own zone: date_trunc on a timestamptz reads the
+  // session's TimeZone setting, so the same log would bucket differently on a developer's laptop
+  // and in CI. generate_series fills the gaps, so a week nobody trained is a zero rather than a
+  // missing bar the client would have to invent a calendar to notice.
+  TrainingLog log;
+  {
+    pqxx::work txn{pgThreadConnection(connString_)};
+    pqxx::result tops = txn.exec_params(
+        "SELECT DISTINCT ON (st.exercise_id, s.started_at, s.id) st.exercise_id, "
+        "       (extract(epoch from s.started_at) * 1000)::bigint AS started_ms, "
+        "       st.weight_kg::float8 AS weight_kg, st.reps "
+        "FROM gym_sets st JOIN gym_sessions s ON s.id = st.session_id "
+        "WHERE st.user_id = $1::uuid AND st.kind = 'working' AND s.finished_at IS NOT NULL "
+        "ORDER BY st.exercise_id, s.started_at, s.id, st.weight_kg DESC, st.reps DESC, "
+        "         st.completed_at ASC",
+        user.str());
+    for (const auto& row : tops)
+      log.tops.push_back(MovementTop{ExerciseId{row["exercise_id"].as<std::string>()},
+                                     instantFrom(row["started_ms"]),
+                                     row["weight_kg"].as<double>(), row["reps"].as<int>()});
+
+    pqxx::result marks = txn.exec_params(
+        "SELECT DISTINCT ON (st.exercise_id, st.weight_kg) "
+        "       st.exercise_id, st.weight_kg::float8 AS weight_kg, st.reps, "
+        "       (extract(epoch from st.completed_at) * 1000)::bigint AS at_ms "
+        "FROM gym_sets st JOIN gym_sessions s ON s.id = st.session_id "
+        "WHERE st.user_id = $1::uuid AND st.kind = 'working' AND s.finished_at IS NOT NULL "
+        "ORDER BY st.exercise_id, st.weight_kg, st.reps DESC, st.completed_at ASC",
+        user.str());
+    for (const auto& row : marks) log.marks.push_back(markFrom(row));
+
+    pqxx::result weeks = txn.exec_params(
+        "WITH trained AS ("
+        "  SELECT id, date_trunc('week', started_at AT TIME ZONE 'UTC') AS week "
+        "  FROM gym_sessions WHERE user_id = $1::uuid AND finished_at IS NOT NULL), "
+        "counted AS (SELECT week, count(*)::int AS n FROM trained GROUP BY week), "
+        "worked AS (SELECT t.week, count(*)::int AS n FROM gym_sets st "
+        "           JOIN trained t ON t.id = st.session_id "
+        "           WHERE st.kind = 'working' GROUP BY t.week), "
+        "span AS (SELECT min(week) AS first_week, max(week) AS last_week FROM trained) "
+        "SELECT (extract(epoch from w) * 1000)::bigint AS week_ms, "
+        "       coalesce(c.n, 0) AS sessions, coalesce(k.n, 0) AS working_sets "
+        "FROM span, generate_series(span.first_week, span.last_week, interval '1 week') AS w "
+        "LEFT JOIN counted c ON c.week = w "
+        "LEFT JOIN worked k ON k.week = w "
+        "ORDER BY w",
+        user.str());
+    for (const auto& row : weeks)
+      log.weeks.push_back(TrainingWeek{instantFrom(row["week_ms"]), row["sessions"].as<int>(),
+                                       row["working_sets"].as<int>()});
+  }
+  return log;
+}
+
+std::vector<ExportedSet> PgTrainingRepository::exportedSets(const UserId& user) {
+  // Every value comes back as TEXT and Postgres does every rendering: the instants as ISO-8601 UTC
+  // (a spreadsheet cannot read an epoch, and the calendar conversion belongs in the one place gym
+  // does calendar work), the numerics at their column's own scale, so 72.5 kg is "72.50" and an
+  // absent rpe is an empty cell rather than a zero a reader would take for a real one.
+  //
+  // Ordered by the session's own (started_at, id) pair and then by the sets inside it, which is the
+  // order the workouts were lived and the same unique key every other read here pages on. Nothing
+  // is excluded: the open session is in the file too, because an export missing today is the one
+  // row a lifter goes looking for. The routine name is the session's own frozen snapshot, so a
+  // routine renamed or deleted since cannot rewrite what the file says about the past.
+  pqxx::work txn{pgThreadConnection(connString_)};
+  pqxx::result rows = txn.exec_params(
+      "SELECT st.session_id, "
+      "       to_char(s.started_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') "
+      "         AS started_at, "
+      "       coalesce(to_char(s.finished_at AT TIME ZONE 'UTC', "
+      "                        'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'), '') AS finished_at, "
+      "       CASE WHEN jsonb_typeof(s.plan->'routine') = 'string' THEN s.plan->>'routine' "
+      "            ELSE '' END AS routine, "
+      "       st.id AS set_id, st.exercise_id, e.name AS exercise, "
+      "       st.set_number::text AS set_number, st.weight_kg::text AS weight_kg, "
+      "       st.reps::text AS reps, st.kind, coalesce(st.rpe::text, '') AS rpe, st.note, "
+      "       to_char(st.completed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') "
+      "         AS completed_at "
+      "FROM gym_sets st JOIN gym_sessions s ON s.id = st.session_id "
+      "                 JOIN gym_exercises e ON e.id = st.exercise_id "
+      // Scoped on BOTH halves rather than through the invariant that a set row inherits its
+      // session's owner — the same guard lastTime carries, for the same reason: this row prints a
+      // session's instants and the day of the program it was, so a single mis-owned set is the one
+      // way a stranger's workout could reach a file with the caller's name on it.
+      "WHERE st.user_id = $1::uuid AND s.user_id = $1::uuid "
+      "ORDER BY s.started_at ASC, s.id ASC, st.completed_at ASC, st.set_number ASC",
+      user.str());
+
+  std::vector<ExportedSet> out;
+  for (const auto& row : rows)
+    out.push_back(ExportedSet{row["session_id"].as<std::string>(),
+                              row["started_at"].as<std::string>(),
+                              row["finished_at"].as<std::string>(),
+                              row["routine"].as<std::string>(),
+                              row["set_id"].as<std::string>(),
+                              row["exercise_id"].as<std::string>(),
+                              row["exercise"].as<std::string>(),
+                              row["set_number"].as<std::string>(),
+                              row["weight_kg"].as<std::string>(),
+                              row["reps"].as<std::string>(),
+                              row["kind"].as<std::string>(),
+                              row["rpe"].as<std::string>(),
+                              row["note"].as<std::string>(),
+                              row["completed_at"].as<std::string>()});
+  return out;
+}
+
+std::optional<SessionShare> PgTrainingRepository::insertShare(const SessionShare& incoming,
+                                                              std::uint64_t nowMs) {
+  // Write then resolve, the same story every other write in this module tells — and the INSERT is a
+  // SELECT from the caller's OWN session row, so a session that is absent or another account's
+  // inserts nothing, conflicts with nothing, and is answered by the read-back with nothing. That is
+  // the whole owner check: there is no branch here that could be got wrong, because a row that is
+  // not the caller's never reaches the statement.
+  //
+  // The conflict is on the session, which is what makes the mint idempotent: tapping Share twice
+  // sends one link and not two capabilities to revoke separately. DO UPDATE fires only for a share
+  // that has ALREADY ENDED — re-sharing a workout a month later is a new capability, not the
+  // resurrection of one that expired — and its guard reads the instant the caller passed rather
+  // than the database's own clock, so one clock decides both halves of this write.
+  std::optional<SessionShare> stored;
+  {
+    pqxx::work txn{pgThreadConnection(connString_)};
+    txn.exec_params(
+        "INSERT INTO gym_session_shares (session_id, user_id, token, expires_at) "
+        "SELECT s.id, s.user_id, $3, to_timestamp($4::bigint / 1000.0) "
+        "FROM gym_sessions s WHERE s.id = $1 AND s.user_id = $2::uuid "
+        "ON CONFLICT (session_id) DO UPDATE "
+        "  SET token = excluded.token, expires_at = excluded.expires_at, created_at = now() "
+        "  WHERE gym_session_shares.expires_at <= to_timestamp($5::bigint / 1000.0)",
+        incoming.session.str(), incoming.user.str(), incoming.token,
+        static_cast<long long>(incoming.expiresAtMs), static_cast<long long>(nowMs));
+    pqxx::result rows = txn.exec_params(
+        "SELECT session_id, user_id, token, "
+        "       (extract(epoch from expires_at) * 1000)::bigint AS expires_ms "
+        "FROM gym_session_shares "
+        "WHERE session_id = $1 AND user_id = $2::uuid "
+        "AND expires_at > to_timestamp($3::bigint / 1000.0)",
+        incoming.session.str(), incoming.user.str(), static_cast<long long>(nowMs));
+    if (!rows.empty())
+      stored = SessionShare{SessionId{rows[0]["session_id"].as<std::string>()},
+                            UserId{rows[0]["user_id"].as<std::string>()},
+                            rows[0]["token"].as<std::string>(),
+                            instantFrom(rows[0]["expires_ms"])};
+    txn.commit();
+  }
+  return stored;
+}
+
+bool PgTrainingRepository::revokeShare(const UserId& user, const SessionId& id) {
+  // Owner-scoped like every write here: another account's share is not refused, it is simply not
+  // there to remove. The row IS the capability, so deleting it is the whole revocation — nothing is
+  // marked, nothing is swept, and the token it carried resolves to the same nothing an invented one
+  // does from the very next request.
+  pqxx::work txn{pgThreadConnection(connString_)};
+  pqxx::result removed = txn.exec_params(
+      "DELETE FROM gym_session_shares WHERE session_id = $1 AND user_id = $2::uuid", id.str(),
+      user.str());
+  txn.commit();
+  return removed.affected_rows() > 0;
+}
+
+std::optional<SharedSession> PgTrainingRepository::sharedSession(const std::string& token,
+                                                                 std::uint64_t nowMs) {
+  // The one read in this module with no owner, and the token is the whole credential. Revoked
+  // (no row), expired (a row the predicate rejects) and never-minted (no row) all leave this with
+  // nothing to return — one value, so nothing above can tell them apart and neither can a prober.
+  //
+  // The second statement fires only when the first found a session, which is roadmap's share-page
+  // rule applied here: a token that resolves to nothing must not spend a query proving it.
+  //
+  // The sets carry their movement's display NAME and no id at all: a coach holds no catalog to
+  // resolve a slug against, and an id is the one thing a reader who is not the owner could try
+  // somewhere else. The routine name is type-checked out of the session's own frozen snapshot, the
+  // same guard the prefill read applies — `->>` would render an object or a number as text and
+  // print it verbatim as the day of the program.
+  std::optional<SharedSession> found;
+  {
+    pqxx::work txn{pgThreadConnection(connString_)};
+    pqxx::result sessions = txn.exec_params(
+        "SELECT s.id AS session_id, "
+        "       (extract(epoch from s.started_at) * 1000)::bigint AS started_ms, "
+        "       (extract(epoch from s.finished_at) * 1000)::bigint AS finished_ms, "
+        "       CASE WHEN jsonb_typeof(s.plan->'routine') = 'string' THEN s.plan->>'routine' "
+        "            ELSE '' END AS routine "
+        "FROM gym_session_shares sh JOIN gym_sessions s ON s.id = sh.session_id "
+        "WHERE sh.token = $1 AND sh.expires_at > to_timestamp($2::bigint / 1000.0)",
+        token, static_cast<long long>(nowMs));
+    if (sessions.empty()) return std::nullopt;
+
+    pqxx::result block = txn.exec_params(
+        "SELECT e.name AS exercise, st.set_number, st.weight_kg::float8 AS weight_kg, st.reps, "
+        "       st.kind, st.rpe::float8 AS rpe, st.note, "
+        "       (extract(epoch from st.completed_at) * 1000)::bigint AS completed_ms "
+        "FROM gym_sets st JOIN gym_exercises e ON e.id = st.exercise_id "
+        "WHERE st.session_id = $1 ORDER BY st.completed_at ASC, st.set_number ASC",
+        sessions[0]["session_id"].as<std::string>());
+    std::vector<SharedSet> sets;
+    for (const auto& row : block) {
+      std::optional<double> rpe;
+      if (!row["rpe"].is_null()) rpe = row["rpe"].as<double>();
+      sets.push_back(SharedSet{row["exercise"].as<std::string>(), row["set_number"].as<int>(),
+                               row["weight_kg"].as<double>(), row["reps"].as<int>(),
+                               setKindFromStored(row["kind"].as<std::string>()), rpe,
+                               row["note"].as<std::string>(), instantFrom(row["completed_ms"])});
+    }
+    std::optional<std::uint64_t> finished;
+    if (!sessions[0]["finished_ms"].is_null()) finished = instantFrom(sessions[0]["finished_ms"]);
+    found = SharedSession{instantFrom(sessions[0]["started_ms"]), finished,
+                          sessions[0]["routine"].as<std::string>(), std::move(sets)};
+  }
+  return found;
+}
+
 std::vector<Set> PgTrainingRepository::setsOf(const SessionId& id) {
   // Chronological — the client assembles per-exercise groups in first-performed order from the
   // numbered sets; the server just hands the stream back in the order it was lived.

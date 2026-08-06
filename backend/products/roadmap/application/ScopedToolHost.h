@@ -15,12 +15,17 @@ namespace wm {
 // is real: a public tree the caller tends carries node labels the agent reads as context, and
 // without this a hijacked run could act on every tree the caller owns. With it, even a hijacked
 // run can only touch the tree it was asked to tend, and can neither mint nor destroy trees.
+//
+// This is NOT the grant gate, and the two are stacked rather than merged: CompositeToolHost narrows
+// by what a CREDENTIAL was granted, this narrows by what a RUN was asked to do. Which is also why a
+// tend is wired to roadmap's host directly and never to the composite — an agent that reads
+// attacker-controlled text has no business seeing another product's tools.
 class ScopedToolHost : public ToolHost {
 public:
   ScopedToolHost(ToolHost& inner, TreeId scope);
 
-  Json::Value listTools() const override;
-  ToolResult callTool(const std::string& name, const Json::Value& arguments, const UserId& caller) override;
+  std::vector<ToolDeclaration> declareTools() const override;
+  ToolResult callTool(const std::string& name, const Json::Value& arguments, const ToolCaller& caller) override;
 
   // The nodes THIS tend planted, in call order — captured at the tool boundary as each create lands,
   // so it is exactly what the agent made and never a step the user (or a peer) added meanwhile. This

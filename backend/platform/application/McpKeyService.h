@@ -1,6 +1,7 @@
 #pragma once
 
 #include "platform/domain/Ids.h"
+#include "platform/domain/ToolScope.h"
 #include "platform/ports/Clock.h"
 #include "platform/ports/McpKeyRepository.h"
 #include "platform/ports/TokenGenerator.h"
@@ -48,10 +49,11 @@ public:
   // Revoke one of the user's keys by its public id; false when no such key is owned by the user.
   bool revoke(const UserId& user, const std::string& id);
 
-  // Resource-server validation: the account a presented key secret authenticates as, or nullopt.
-  // A resolved key advances its last-used stamp (throttled), so the list shows honest activity;
-  // a key whose account has soft-closed resolves to nullopt (the repository's deleted_at guard).
-  std::optional<UserId> resolveKey(const std::string& secret);
+  // Resource-server validation: the account a presented key secret authenticates as and the grant
+  // that key carries, or nullopt. A resolved key advances its last-used stamp (throttled), so the
+  // list shows honest activity; a key whose account has soft-closed resolves to nullopt (the
+  // repository's deleted_at guard).
+  std::optional<ToolCaller> resolveKey(const std::string& secret);
 
 private:
   static constexpr long long kTouchThrottleMs = 60'000;  // last-used writes at most once a minute

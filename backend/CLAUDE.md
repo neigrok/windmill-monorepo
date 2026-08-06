@@ -22,9 +22,15 @@ HTTP transport, kept for local/standalone runs).
 Each product owns a `routes.h` that declares one `…Deps` struct and
 `registerRoutes(drogon::HttpAppFramework&, const Deps&)`. `main.cpp` builds the
 collaborators and calls each in its own namespace — `registerRoutes` (roadmap),
-`journal::registerRoutes`, `gym::registerRoutes`. MCP tools are roadmap's alone today:
-`RoadmapTools` implements `platform/ports/ToolHost.h` and is handed to `McpServer`
-together with `roadmapResources()`. There is no per-product tool factory.
+`journal::registerRoutes`, `gym::registerRoutes`.
+
+MCP tools are the second seam: a product implements `platform/ports/ToolHost.h` (declaring
+each tool's product and access level beside its description) and `main.cpp` registers it as
+a `ToolModule` on the `CompositeToolHost` that `McpServer` binds. The composite is the grant
+gate — it filters `tools/list` by the caller's scope, refuses an out-of-scope call, and
+refuses a duplicate tool name at boot. Roadmap and gym are registered today. Tending is wired to
+roadmap's host **directly**, never the composite, so a prompt-injection-exposed agent cannot
+reach another product's tools.
 
 `db/schema.sql` is one file for every product, applied in order and idempotent
 (`create … if not exists`), so the deploy re-applies it every time.

@@ -10,16 +10,16 @@ using namespace wm;
 
 namespace {
 
-// A ToolHost the test scripts: it answers listTools() from a fixed catalog and every callTool
+// A ToolHost the test scripts: it declares a fixed catalog and answers every callTool
 // through a supplied responder, recording each call so the loop's tool traffic is observable.
 struct FakeToolHost : ToolHost {
-  Json::Value catalog{Json::arrayValue};
+  std::vector<ToolDeclaration> catalog;
   std::vector<std::pair<std::string, Json::Value>> calls;
   std::function<ToolResult(const std::string&, const Json::Value&)> responder;
 
-  Json::Value listTools() const override { return catalog; }
+  std::vector<ToolDeclaration> declareTools() const override { return catalog; }
 
-  ToolResult callTool(const std::string& name, const Json::Value& arguments, const UserId&) override {
+  ToolResult callTool(const std::string& name, const Json::Value& arguments, const ToolCaller&) override {
     calls.push_back({name, arguments});
     if (responder) return responder(name, arguments);
     return ToolResult::text("ok");
@@ -104,6 +104,17 @@ struct Recorder {
 const TreeId kTree{"t_0123456789abcdef"};
 const UserId kCaller{"agent"};
 
+// One declaration for the fake catalog. A tend acts as the account on itself, so the level here is
+// beside the point — ScopedToolHost is what narrows a run, not the grant.
+ToolDeclaration declared(const char* name, const char* description) {
+  return ToolDeclaration{mcpTool(name, description), "roadmap", Access::write};
+}
+
+// What the loop itself hands to agentTools: the catalog as the run's caller sees it.
+Json::Value catalogSeenBy(const FakeToolHost& host) {
+  return host.listTools(ToolCaller{kCaller, ToolScope::everything()});
+}
+
 }
 
 // --- Tool-schema translation ---------------------------------------------------------------
@@ -172,8 +183,8 @@ TEST(mutates_tree_treats_everything_else_including_the_unknown_as_a_change) {
 
 TEST(drive_agent_runs_the_tools_and_returns_the_receipt_on_end_turn) {
   FakeToolHost host;
-  host.catalog.append(mcpTool("get_tree", "Read a roadmap."));
-  host.catalog.append(mcpTool("create_node", "Add a step."));
+  host.catalog.push_back(declared("get_tree", "Read a roadmap."));
+  host.catalog.push_back(declared("create_node", "Add a step."));
 
   FakeModel model;
   model.replies.push_back(toolUseReply("create_node", "toolu_1"));
@@ -206,7 +217,7 @@ TEST(drive_agent_runs_the_tools_and_returns_the_receipt_on_end_turn) {
   REQUIRE_EQ(model.requests.size(), 2u);
   CHECK_EQ(model.requests[0]["model"].asString(), std::string("claude-sonnet-5"));
   CHECK_EQ(model.requests[0]["max_tokens"].asInt(), 8000);
-  CHECK_EQ(model.requests[0]["tools"], agentTools(host.catalog));
+  CHECK_EQ(model.requests[0]["tools"], agentTools(catalogSeenBy(host)));
   // System is a cached text block (caches the tool catalog with it), not a bare string.
   CHECK(model.requests[0]["system"][0]["text"].asString().size() > 0);
   CHECK_EQ(model.requests[0]["system"][0]["cache_control"]["type"].asString(), std::string("ephemeral"));
