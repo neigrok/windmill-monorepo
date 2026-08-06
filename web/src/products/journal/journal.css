@@ -258,6 +258,18 @@
   margin-top: 6px;
 }
 
+/* The account could not be read. Said in the canvas's own quiet voice — never red, never a banner,
+   never a retry button — because a read that failed is a fact about the network, not a fault. What
+   it must never let the canvas do is imply the account is empty. */
+.journal-unread {
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--journal-ink);
+  opacity: 0.55;
+  margin: 18px 0 6px;
+}
+
 /* ---- Today — the last block; writing happens inline in a growing textarea. ---- */
 .journal-input {
   display: block;

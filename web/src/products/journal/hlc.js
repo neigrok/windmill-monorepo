@@ -28,6 +28,31 @@ export function mintStamp() {
   return `${ms}:${counter}:${actor()}`;
 }
 
+// The zero stamp — what an unparseable one reads as, and what an unstamped page carries. A page
+// holding it loses every race, which is the safe direction to fail in.
+export const ZERO_STAMP = '';
+
+function parseStamp(text) {
+  const parts = String(text ?? '').split(':');
+  if (parts.length < 3) return { ms: 0, counter: 0, actor: '' };
+  const ms = Number(parts[0]);
+  const counter = Number(parts[1]);
+  if (!Number.isFinite(ms) || !Number.isFinite(counter)) return { ms: 0, counter: 0, actor: '' };
+  return { ms, counter, actor: parts.slice(2).join(':') };
+}
+
+// Exactly the order the server resolves a page by (backend platform/domain/Ids.h: Hlc's default
+// spaceship over physicalMs, counter, actor) and exactly iOS's Hlc.<. The winner of a two-device
+// race is therefore a fact all three sides compute identically, never a negotiation.
+export function compareStamps(left, right) {
+  const a = parseStamp(left);
+  const b = parseStamp(right);
+  if (a.ms !== b.ms) return a.ms < b.ms ? -1 : 1;
+  if (a.counter !== b.counter) return a.counter < b.counter ? -1 : 1;
+  if (a.actor !== b.actor) return a.actor < b.actor ? -1 : 1;
+  return 0;
+}
+
 // The writer's local day, "YYYY-MM-DD" — the page key. The device owns the calendar, never UTC.
 export function localDay(date = new Date()) {
   const pad = (n) => String(n).padStart(2, '0');

@@ -16,6 +16,11 @@ const HomeCard = lazy(() => import('./HomeCard.jsx').then((m) => ({ default: m.H
 const importJournalLanding = () => import('./marketing/JournalLanding.jsx').then((m) => ({ default: m.JournalLanding }));
 const JournalLanding = lazy(importJournalLanding);
 
+// The journal's account-settings section — registered here so the neutral settings page composes it
+// without ever naming the journal (shell/settings/SettingsPage.jsx reads settingsSections off the
+// product registry). Lazy, so it keeps its own chunk and never weighs on a first paint of the canvas.
+const YourJournalSection = lazy(() => import('./settings/YourJournalSection.jsx').then((m) => ({ default: m.YourJournalSection })));
+
 function home() {
   return '#/journal';
 }
@@ -47,6 +52,9 @@ export const journalRoutes = {
   landingAfterSignIn,
   render,
   preloadApp: importJournalApp,
+  settingsSections: {
+    data: [YourJournalSection],
+  },
   // The words the brand root's door for the journal is made of — the product's own, not the shell's.
   landing: {
     head: journalLandingHead,

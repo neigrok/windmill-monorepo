@@ -4,7 +4,9 @@
 // search result flies to the exact passage and lights it for a beat. Days present
 // at first paint never animate — only ones that arrive later fade in from below.
 // Today is the last block: writing happens inline in a growing textarea, mood and
-// energy sit in thumb reach, and a mono "saved" fades in after typing stops.
+// energy sit in thumb reach, and a mono note fades in after each write naming where
+// the words actually are. When the account could not be read the canvas says so and
+// draws nothing implying it is empty — a read that failed is not a first run.
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { usePages } from './usePages.js';
@@ -26,7 +28,7 @@ function wordCount(body) {
 
 export function Canvas({ focusDate = null, flyTo = null, echoes = null, onNeedSignIn = () => {} }) {
   const {
-    today, history, loading, firstRun,
+    today, history, loading, firstRun, readState,
     body, mood, energy, saveState, saveTick,
     setBody, toggleMood, toggleEnergy, extendTo,
   } = usePages();
@@ -155,6 +157,13 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, onNeedSi
       <div className="journal-column">
         {rendered}
 
+        {readState === 'failed' && (
+          <p className="journal-unread">
+            Couldn’t reach your journal just now — this is only what’s on this device.
+            Anything you write is kept here until the rest can be read.
+          </p>
+        )}
+
         <article className="journal-day journal-today" data-date={today}>
           <DayMarker
             date={today}
@@ -226,8 +235,16 @@ function markSpan(body, { lo, hi }) {
   );
 }
 
-// Mono "saved" (or "offline · saved here") that fades in on each write and eases
-// back out — never a button, never a spinner, never a toast.
+// Mono, one line per write, fading in and easing back out — never a button, never a spinner, never
+// a toast. Each state names where the words actually are, and none of them may flatter: a browser
+// that refused the bytes while the network was down is holding nothing, and says so.
+const SAVE_NOTES = {
+  saved: 'saved',
+  device: 'saved on this device',
+  offline: 'offline · saved here',
+  unsaved: 'not saved — no room on this device',
+};
+
 function SavedNote({ state, tick }) {
   const [visible, setVisible] = useState(false);
   useEffect(() => {
@@ -236,6 +253,5 @@ function SavedNote({ state, tick }) {
     const timer = setTimeout(() => setVisible(false), 2200);
     return () => clearTimeout(timer);
   }, [tick]);
-  const text = state === 'offline' ? 'offline · saved here' : 'saved';
-  return <span className={'journal-saved' + (visible ? ' is-on' : '')}> · {text}</span>;
+  return <span className={'journal-saved' + (visible ? ' is-on' : '')}> · {SAVE_NOTES[state] ?? 'saved'}</span>;
 }
