@@ -1,11 +1,11 @@
 // Gym — the training log's web surface, in the instrument skin. This file is the frame and none of
 // the rooms: it resolves the account, holds the ONE live session, and hands each hash to the screen
-// that answers it (Today · The log · Routines, plus one session, one routine, one finish and the
-// past-workout door).
+// that answers it (Today · The log · Routines · Statistics, plus one session, one routine, one
+// finish and the past-workout door).
 //
 // The live session IS workout mode — while it runs on Today, the tabs and the shell's own chrome are
 // not drawn, and the screen is held awake. Nothing here decides anything: the rules live in log.js,
-// routines.js, review.js, backfill.js and logger/.
+// routines.js, review.js, stats.js, backfill.js, share/ and logger/.
 
 import React from 'react';
 import { ProductSwitcher } from '../../shell/ProductSwitcher.jsx';
@@ -16,28 +16,44 @@ import { Backfill } from './Backfill.jsx';
 import { FinishScreen } from './Finish.jsx';
 import { LogList, SessionDetail } from './Log.jsx';
 import { RoutineEditor, RoutinesList } from './Routines.jsx';
+import { Stats } from './Stats.jsx';
 import { Today } from './Today.jsx';
 import {
   clockOf, finishIdOf, fmt, nameOfMovement, ROUTINES_HREF, routineIdOf, routineNameOf, screenOf,
-  sessionIdOf, setCountLabel,
+  sessionIdOf, setCountLabel, sharedTokenOf, STATS_HREF,
 } from './log.js';
 import { Logger } from './logger/Logger.jsx';
+import { SharedSession } from './share/SharedSession.jsx';
 import { useLiveSession } from './logger/useLiveSession.js';
 import './gym.css';
 
-// The three rooms a lifter navigates between. Everything else — a session, a routine, the finish,
+// The four rooms a lifter navigates between. Everything else — a session, a routine, the finish,
 // the backfill form — is somewhere they went from one of them, and each carries its own way back.
-const TAB_SCREENS = ['today', 'log', 'routines'];
+const TAB_SCREENS = ['today', 'log', 'routines', 'stats'];
 
 export function GymApp({ hash }) {
   const { user, status, signOut } = useAuth();
   const openSignInDoor = useSignInDoor();
   const lendDoorSkin = useSignInDoorHost();
+  const sharedToken = sharedTokenOf(hash);
+
+  // THE COACH'S PAGE, ANSWERED BEFORE THE ACCOUNT IS. The token in the URL is the whole credential,
+  // so this branch reads no auth state, waits for none, and offers no door back into the app: a
+  // person opening a link somebody sent them is a reader of one workout and not a lapsed lifter to
+  // be recovered. Every hook above runs first, unconditionally — the early return is under them,
+  // never between them.
+  if (sharedToken) {
+    return (
+      <div className="gym-root" data-theme="dark">
+        <SharedSession token={sharedToken} />
+      </div>
+    );
+  }
 
   return (
     <div className="gym-root" ref={lendDoorSkin} data-theme="dark">
-      {/* Three auth states, three rooms — a first visit resolves through 'loading' with no stored
-          hint, and an empty room would read as a broken app. */}
+      {/* Three auth states, three answers — a first visit resolves through 'loading' with no stored
+          hint, and an empty screen would read as a broken app. */}
       {status === 'loading' && <main className="gym-column"><p className="gym-quiet">Opening the log…</p></main>}
       {status === 'ghost' && (
         <>
@@ -99,6 +115,7 @@ function TrainingRoom({ hash, user, status, onSignIn, onSignOut }) {
           {screen === 'today' && <Today live={live} />}
           {screen === 'log' && <LogList live={live} />}
           {screen === 'routines' && <RoutinesList live={live} />}
+          {screen === 'stats' && <Stats />}
           {/* KEYED BY THE DOCUMENT IT EDITS. The editor holds a DRAFT of one routine, and a draft
               may not outlive the routine it is of: the key is what makes React drop the instance
               when the hash moves to another one. The editor's own Duplicate button moves it — and
@@ -151,12 +168,15 @@ function LiveBand({ live }) {
   );
 }
 
+// Four columns here and four in the grid that lays them out (gym.css) — the count lives in two
+// places and both have to move together, which is what this note is for.
 function TabBar({ screen }) {
   return (
     <nav className="gym-tabs">
       <a className={screen === 'today' ? 'gym-tab is-on' : 'gym-tab'} href="#/gym">Today</a>
       <a className={screen === 'log' ? 'gym-tab is-on' : 'gym-tab'} href="#/gym/log">The log</a>
       <a className={screen === 'routines' ? 'gym-tab is-on' : 'gym-tab'} href={ROUTINES_HREF}>Routines</a>
+      <a className={screen === 'stats' ? 'gym-tab is-on' : 'gym-tab'} href={STATS_HREF}>Stats</a>
     </nav>
   );
 }

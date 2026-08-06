@@ -16,21 +16,11 @@ import { Avatar, Icon } from '../../design-system';
 import { useAuth } from './AuthProvider.jsx';
 import { useSignInDoor } from './SignInDoor.jsx';
 import { fetchConsentClient, postDecision } from './OAuthClient.js';
-
-const reduced = () =>
-  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-// The three verbs the grant covers, each wearing the node glyph it acts on (F17 §3):
-// dim = read, bud = plant, done = mark progress. v1 is one account-wide grant, so these
-// are the truth of the scope, not toggles.
-const SCOPES = [
-  { glyph: 'dim', label: 'See your roadmaps' },
-  { glyph: 'bud', label: 'Plant roadmaps & edit steps' },
-  { glyph: 'done', label: 'Mark progress' },
-];
+import { capabilityGroups } from './scopes.js';
 
 // Read the OAuth params out of the hash's query (…#/oauth/authorize?client_id=…).
-// The opaque four (code_challenge, resource, scope, state) are echoed back untouched.
+// Three of these (code_challenge, resource, state) are opaque and echoed back untouched; `scope` is
+// echoed untouched too, but it is no longer opaque to US — it is the thing this screen is for.
 function readParams() {
   const hash = window.location.hash;
   const q = hash.indexOf('?');
@@ -132,6 +122,7 @@ export function OAuthConsent() {
       <ConsentCard
         user={user}
         client={client}
+        scope={params.scope}
         redirectHost={hostOf(params.redirectUri)}
         onAllow={() => decide(true)}
         onCancel={() => decide(false)}
@@ -145,13 +136,19 @@ export default OAuthConsent;
 
 // ---- the pieces ---------------------------------------------------------
 
-function ConsentCard({ user, client, redirectHost, onAllow, onCancel, onNotYou }) {
+// The card renders THE REQUEST — the scopes this client actually asked for, grouped by product — and
+// never a fixed list. Windmill is several products behind one account, so the tool asking may be
+// reaching for a training log; three hardcoded roadmap lines would have been a screen that describes
+// a different grant from the one the button hands over.
+function ConsentCard({ user, client, scope, redirectHost, onAllow, onCancel, onNotYou }) {
   const name = user.name?.trim() || user.email;
+  const groups = capabilityGroups(scope);
+  const canDelete = groups.some((group) => group.lines.some((line) => line.level === 'delete'));
   return (
     <Card>
       <div style={mark}>Windmill</div>
       <h1 style={title}>
-        <b>{client.client_name}</b> wants to tend your roadmaps
+        <b>{client.client_name}</b> wants access to your Windmill account
       </h1>
 
       <div style={acct}>
@@ -160,16 +157,34 @@ function ConsentCard({ user, client, redirectHost, onAllow, onCancel, onNotYou }
         <button type="button" onClick={onNotYou} style={notYou}>Not you?</button>
       </div>
 
-      <div style={{ marginTop: 6 }}>
-        {SCOPES.map((s) => (
-          <div key={s.glyph} style={grow}>
-            <span className={`wm-oc-nd wm-oc-${s.glyph}`} />
-            {s.label}
+      {groups.length === 0 ? (
+        // The legacy grant: a client that asked for nothing in particular gets the account-wide one
+        // this server issued before it had a vocabulary, and it is named rather than dressed up.
+        <div style={{ marginTop: 6 }}>
+          <div style={grow}>
+            <span className="wm-oc-nd wm-oc-bud" />
+            Everything in your account — every product, including deleting
           </div>
-        ))}
-      </div>
+        </div>
+      ) : (
+        groups.map((group) => (
+          <div key={group.product} style={{ marginTop: 8 }}>
+            <div style={groupHead}>Your {group.label}</div>
+            {group.lines.map((line) => (
+              <div key={line.level} style={line.level === 'delete' ? { ...grow, ...growGone } : grow}>
+                <span className={`wm-oc-nd wm-oc-${line.glyph}`} />
+                {line.label}
+              </div>
+            ))}
+          </div>
+        ))
+      )}
 
-      <p style={cant}>It can’t share roadmaps, delete them, or see your chats.</p>
+      <p style={cant}>
+        {canDelete
+          ? 'Deleting is permanent — this tool can remove things you made. It can’t see your chats or read anything you didn’t grant above.'
+          : 'It can only do what’s listed above. It can’t see your chats, and nothing else in your account is reachable.'}
+      </p>
 
       <div style={btnRow}>
         <button type="button" className="wm-oc-btn" onClick={onCancel}>Cancel</button>
@@ -332,6 +347,15 @@ const notYou = {
   color: 'var(--text-link)',
 };
 
+const groupHead = {
+  fontSize: '10px',
+  fontWeight: 800,
+  letterSpacing: 'var(--tracking-wide)',
+  textTransform: 'uppercase',
+  color: 'var(--text-tertiary)',
+  margin: '0 2px 2px',
+};
+
 const grow = {
   display: 'flex',
   alignItems: 'center',
@@ -344,6 +368,10 @@ const grow = {
   marginTop: 5,
 };
 
+// Delete does not wear the same face as the rest. The line a person skims past is the one that
+// takes something away, so it is the one line on the card that is allowed to look different.
+const growGone = { color: 'var(--color-danger)' };
+
 const cant = { fontSize: 'var(--text-xs)', lineHeight: 1.5, color: 'var(--text-tertiary)', margin: '10px 2px 0' };
 
 const btnRow = { display: 'flex', gap: 8, marginTop: 14 };
@@ -351,11 +379,13 @@ const btnRow = { display: 'flex', gap: 8, marginTop: 14 };
 const foot = { fontSize: '10px', color: 'var(--text-tertiary)', lineHeight: 1.5, textAlign: 'center', marginTop: 10 };
 
 // The node glyphs (F17 §3, inline hues — there are no --kind-* tokens on the DOM side),
-// the button pseudo-states, and the one wake keyframe Allow blooms with.
+// the button pseudo-states, and the one wake keyframe Allow blooms with. `gone` is the delete level:
+// a hollow brick ring rather than a filled node, because the level it marks is the one that empties.
 const GLYPH_CSS = `
   .wm-oc-nd { width:14px; height:14px; border-radius:50%; box-sizing:border-box; flex:none; }
   .wm-oc-dim  { border:2px solid rgba(95,132,148,.32); background:rgba(95,132,148,.22); }
   .wm-oc-bud  { border:2px dashed #BC6C42; background:rgba(188,108,66,.16); }
+  .wm-oc-gone { border:2.5px solid #9E3B32; background:transparent; }
   .wm-oc-done { border:2.5px solid #6F3B67; background:#8D4F83;
                 box-shadow:0 0 0 3px rgba(141,79,131,.4), 0 0 16px rgba(141,79,131,.4); }
   .wm-oc-check { display:inline-flex; align-items:center; justify-content:center; width:38px; height:38px;

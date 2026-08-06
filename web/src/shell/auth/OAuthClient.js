@@ -29,7 +29,7 @@ export async function postDecision(decision) {
 }
 
 // The LLM grants this account has handed out (X6 §5 · settings §02). GET /v1/oauth/grants →
-// one row per client: { clientId, name, grantedMs, lastUsedMs }. Separate from browser
+// one row per client: { clientId, name, grantedMs, lastUsedMs, scope }. Separate from browser
 // sessions on purpose — pulling a tool's key never signs a device out. A 401 is a lapsed
 // session mid-visit.
 export async function listGrants() {

@@ -11,7 +11,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { API_BASE } from '../../../src/shell/apiBase.js';
-import { failureReason, gymApi, GymError } from '../../../src/products/gym/gymApi.js';
+import { EXPORT_HREF, failureReason, gymApi, GymError } from '../../../src/products/gym/gymApi.js';
 
 const realFetch = global.fetch;
 let calls = [];
@@ -586,6 +586,108 @@ test('discardSession — the one destructive call, and 204 is read as a status a
     contentType: 'application/json',
     body: undefined,
   });
+});
+
+// THE STATISTICS SURFACE IS ONE READ. No window parameter and no per-movement route: every number
+// in it is the domain's, and a client that could ask for a different window would be a client that
+// could ask for a different answer.
+test('stats — the whole surface in one read, with the wire’s omissions kept as omissions', async () => {
+  const reply = {
+    weeks: [
+      { startedAt: 1_909_000_000_000, sessions: 3, workingSets: 18 },
+      { startedAt: 1_909_604_800_000, sessions: 0, workingSets: 0 },
+    ],
+    movements: [
+      {
+        exerciseId: 'bench-press',
+        lastTrainedAt: 1_909_200_000_000,
+        points: [{ at: 1_909_000_000_000, weightKg: 100, reps: 5, e1rm: 116.7 }],
+        bestE1rm: { weightKg: 100, reps: 5, at: 1_909_000_000_000, e1rm: 116.7 },
+        heaviest: { weightKg: 110, reps: 1, at: 1_908_000_000_000 },
+      },
+      // A chin-up: no estimate on the point, and no e1RM best at all. Both absences are the wire's
+      // shape and neither arrives as a null to be mistaken for a zero.
+      { exerciseId: 'chin-up', lastTrainedAt: 1_909_100_000_000, points: [{ at: 1_909_100_000_000, weightKg: 0, reps: 9 }] },
+    ],
+  };
+  serve(ok(reply));
+  assert.deepEqual(await gymApi.stats(), reply);
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/gym/stats',
+    method: 'GET',
+    credentials: 'include',
+    contentType: 'application/json',
+    body: undefined,
+  });
+});
+
+// The mint is idempotent ON THE SESSION — there is no id for a client to send, so tapping Share
+// twice is one capability and not two links to revoke separately. Which is why this is a POST with
+// no body at all, and why nothing calls it on a render.
+test('shareSession — the coach link, minted on a tap, with no document to send', async () => {
+  serve(ok({ token: 'JcQ8w-3n1SxT_0aZbYq5rPm7LkHfDgVeU2iOtN4sRw0', expiresAt: 1_911_600_000_000 }));
+  assert.deepEqual(await gymApi.shareSession('ses_1'), {
+    token: 'JcQ8w-3n1SxT_0aZbYq5rPm7LkHfDgVeU2iOtN4sRw0',
+    expiresAt: 1_911_600_000_000,
+  });
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/gym/sessions/ses_1/share',
+    method: 'POST',
+    credentials: 'include',
+    contentType: 'application/json',
+    body: undefined,
+  });
+});
+
+test('revokeShare — revoked is deleted, and 204 is read as a status and never as bytes', async () => {
+  serve(nothing());
+  assert.equal(await gymApi.revokeShare('ses_1'), null);
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/gym/sessions/ses_1/share',
+    method: 'DELETE',
+    credentials: 'include',
+    contentType: 'application/json',
+    body: undefined,
+  });
+});
+
+// THE ONE UNAUTHENTICATED READ. The token is the whole credential, the reply names no account and
+// holds no id at any depth, and the movement travels as its display NAME because a reader with no
+// account holds no catalog to resolve a slug against.
+test('sharedSession — one workout, no ids in it, and one null for all three ways a token can fail', async () => {
+  const reply = {
+    startedAt: 1_909_000_000_000,
+    finishedAt: 1_909_003_600_000,
+    routine: 'Push A',
+    sets: [{
+      exercise: 'Bench Press',
+      setNumber: 1,
+      weightKg: 80,
+      reps: 8,
+      kind: 'working',
+      note: '',
+      completedAt: 1_909_001_000_000,
+    }],
+  };
+  serve(ok(reply));
+  assert.deepEqual(await gymApi.sharedSession('JcQ8w-3n1SxT_0aZbYq5rPm7LkHfDgVeU2iOtN4sRw0'), reply);
+  assert.equal(wireOf(calls[0]).path, '/v1/gym/shared/JcQ8w-3n1SxT_0aZbYq5rPm7LkHfDgVeU2iOtN4sRw0');
+  assert.equal(JSON.stringify(reply).includes('"id"'), false);
+
+  // Revoked, expired and never-minted are one byte on this wire, so they are one value here: the
+  // client may not invent the difference back.
+  serve(refusal(404, 'no such session'));
+  assert.equal(await gymApi.sharedSession('revoked'), null);
+  serve(refusal(404, 'no such session'));
+  assert.equal(await gymApi.sharedSession('expired'), null);
+  serve(refusal(404, 'no such session'));
+  assert.equal(await gymApi.sharedSession('never-existed'), null);
+});
+
+// The export is not a call at all. Nothing is fetched, parsed or held: the browser follows the link
+// and the server's Content-Disposition saves the file, so a log too big for a tab's heap lands.
+test('EXPORT_HREF — a link the browser follows, on the same origin as every other gym call', () => {
+  assert.equal(EXPORT_HREF, `${API_BASE}/v1/gym/export`);
 });
 
 // Only the device holding the offline queue knows every set landed, so a workout somebody is still

@@ -42,3 +42,39 @@ test('every list of a routine’s entries is keyed on the position as well as th
     assert.equal(source.includes('key={entry.exerciseId}'), false, file);
   }
 });
+
+// THE TAB COUNT LIVES IN TWO PLACES and neither of them can see the other: the anchors are JSX and
+// the columns are a CSS grid. A fifth anchor over a four-column grid wraps the tab bar onto two
+// rows over the content it is fixed above — which no test that mounts a component would catch,
+// because it is a layout fact and not a render one.
+test('the tab bar draws the same number of tabs the grid has columns for', () => {
+  const tabs = read('GymApp.jsx').match(/className=\{screen === '[a-z]+' \? 'gym-tab is-on' : 'gym-tab'\}/g) ?? [];
+  const grid = /\.gym-tabs \{[^}]*grid-template-columns: repeat\((\d+), 1fr\)/.exec(read('gym.css'));
+  assert.equal(tabs.length, 4);
+  assert.equal(grid?.[1], String(tabs.length));
+  // And every one of them is a screen the frame will actually draw a tab bar over.
+  assert.equal(read('GymApp.jsx').includes("const TAB_SCREENS = ['today', 'log', 'routines', 'stats'];"), true);
+});
+
+// THE COACH'S PAGE IS ANSWERED BEFORE THE ACCOUNT IS. The token in the URL is the whole credential,
+// so a visitor with no account must not resolve through 'loading' into the sign-in pitch — and the
+// branch must sit ABOVE the auth switch rather than inside it, which is a fact about where one line
+// is in a file. Every hook still runs first: the early return is under them, never between them.
+test('the shared workout is answered above the auth switch, and wears none of the app’s chrome', () => {
+  const app = read('GymApp.jsx');
+  const shared = app.indexOf('if (sharedToken) {');
+  const authSwitch = app.indexOf("status === 'loading'");
+  assert.ok(shared > 0, 'GymApp has no shared branch');
+  assert.ok(shared < authSwitch, 'the shared branch resolves after the auth switch');
+  // The hooks are above the return, so the branch cannot change how many run.
+  assert.ok(app.indexOf('const sharedToken = sharedTokenOf(hash);') < shared);
+  assert.ok(app.indexOf('useSignInDoorHost()') < shared);
+
+  // No chrome, no tabs, no door: the branch renders one component inside the bare root. It ends
+  // where the auth switch begins, which is the first line that is not this branch's.
+  const branch = app.slice(shared, authSwitch);
+  for (const chrome of ['<Chrome', '<TabBar', 'SignInPitch', 'AccountSeat', 'ProductSwitcher']) {
+    assert.equal(branch.includes(chrome), false, chrome);
+  }
+  assert.equal(branch.includes('<SharedSession token={sharedToken} />'), true);
+});

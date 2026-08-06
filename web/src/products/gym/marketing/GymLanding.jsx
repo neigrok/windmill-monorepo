@@ -25,13 +25,19 @@ const PANEL_LABEL = {
   textTransform: 'uppercase', color: 'var(--text-tertiary)',
 };
 
+// The five lifts that have an honest one-rep estimate, and the one that does not. A chin-up at
+// bodyweight logs a load of zero, and Epley has no answer at or below zero — so the statistics tab
+// draws that movement on the reps of its top set and prints no estimate at all (products/gym/
+// stats.js). This card says the same thing, because a landing that promised "chins · BW+20 e1RM"
+// was promising a number the product had already decided it would not invent: bodyweight is stored
+// nowhere in gym, so nothing here can be computed over it.
 const LIFTS = [
-  { name: 'Squat', e1rm: '140', d: 'M4,38 L20,36 L36,32 L52,33 L68,28 L84,25 L100,26 L116,21 L132,18 L148,19 L164,13 L176,10', cy: 10 },
-  { name: 'Bench', e1rm: '100', d: 'M4,37 L20,35 L36,34 L52,30 L68,29 L84,25 L100,26 L116,22 L132,20 L148,17 L164,15 L176,12', cy: 12 },
-  { name: 'Deadlift', e1rm: '170', d: 'M4,39 L20,35 L36,34 L52,29 L68,27 L84,27 L100,22 L116,20 L132,16 L148,15 L164,11 L176,8', cy: 8 },
-  { name: 'Press', e1rm: '62.5', d: 'M4,36 L20,35 L36,35 L52,31 L68,31 L84,28 L100,28 L116,24 L132,24 L148,21 L164,20 L176,17', cy: 17 },
-  { name: 'Rows', e1rm: '90', d: 'M4,37 L20,34 L36,33 L52,30 L68,29 L84,26 L100,25 L116,22 L132,21 L148,18 L164,16 L176,14', cy: 14 },
-  { name: 'Chins', e1rm: 'BW+20', d: 'M4,38 L20,37 L36,33 L52,32 L68,30 L84,26 L100,27 L116,23 L132,22 L148,19 L164,17 L176,15', cy: 15 },
+  { name: 'Squat', value: '140', unit: 'e1RM', d: 'M4,38 L20,36 L36,32 L52,33 L68,28 L84,25 L100,26 L116,21 L132,18 L148,19 L164,13 L176,10', cy: 10 },
+  { name: 'Bench', value: '100', unit: 'e1RM', d: 'M4,37 L20,35 L36,34 L52,30 L68,29 L84,25 L100,26 L116,22 L132,20 L148,17 L164,15 L176,12', cy: 12 },
+  { name: 'Deadlift', value: '170', unit: 'e1RM', d: 'M4,39 L20,35 L36,34 L52,29 L68,27 L84,27 L100,22 L116,20 L132,16 L148,15 L164,11 L176,8', cy: 8 },
+  { name: 'Press', value: '62.5', unit: 'e1RM', d: 'M4,36 L20,35 L36,35 L52,31 L68,31 L84,28 L100,28 L116,24 L132,24 L148,21 L164,20 L176,17', cy: 17 },
+  { name: 'Rows', value: '90', unit: 'e1RM', d: 'M4,37 L20,34 L36,33 L52,30 L68,29 L84,26 L100,25 L116,22 L132,21 L148,18 L164,16 L176,14', cy: 14 },
+  { name: 'Chins', value: '11', unit: 'top set', d: 'M4,38 L20,37 L36,33 L52,32 L68,30 L84,26 L100,27 L116,23 L132,22 L148,19 L164,17 L176,15', cy: 15 },
 ];
 
 const MCP_CLIENTS = ['Claude Desktop', 'Claude Code', 'Cursor', 'Codex', 'any MCP client'];
@@ -278,7 +284,7 @@ function ForTheBarbell() {
       <div className="eyebrow">For lifters</div>
       <h2 className="sectionTitle">Built for the barbell</h2>
       <p className="sectionSub" style={{ maxWidth: 600 }}>
-        Squat, bench, deadlift, press, rows, chins — e1RM per lift, week over week. e1RM is estimated one-rep max (Epley: weight × (1 + reps/30)).
+        Squat, bench, deadlift, press, rows — e1RM per lift, week over week. e1RM is estimated one-rep max (Epley: weight × (1 + reps/30)).
       </p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 20, marginTop: 40 }}>
         {LIFTS.map((lift) => (
@@ -286,7 +292,7 @@ function ForTheBarbell() {
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
               <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15.5, color: 'var(--gym-ink)' }}>{lift.name}</span>
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 17, color: 'var(--weight-ink)' }}>
-                {lift.e1rm}<span style={{ fontSize: 10, color: 'var(--gym-ink-faint)', marginLeft: 3 }}>e1RM</span>
+                {lift.value}<span style={{ fontSize: 10, color: 'var(--gym-ink-faint)', marginLeft: 3 }}>{lift.unit}</span>
               </span>
             </div>
             <svg aria-hidden="true" viewBox="0 0 180 44" width="100%" height="44" style={{ display: 'block', marginTop: 10 }}>
@@ -297,7 +303,7 @@ function ForTheBarbell() {
         ))}
       </div>
       <div style={{ fontFamily: 'var(--font-body)', fontSize: 12.5, color: 'var(--text-tertiary)', marginTop: 16 }}>
-        Example: twelve weeks of a linear cycle. Chins are added load over bodyweight; their e1RM is computed over bodyweight plus the load.
+        Example: twelve weeks of a linear cycle. Chins here carry no added load, so Epley has no answer for them — they are drawn on the reps of the top set instead, and no estimate is invented over a bodyweight the log does not hold.
       </div>
     </section>
   );

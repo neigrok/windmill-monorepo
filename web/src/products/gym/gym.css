@@ -1267,7 +1267,9 @@
   width: min(402px, 100vw);
   box-sizing: border-box;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* Four rooms, and the count is stated here and in the JSX that fills it (GymApp.jsx). Both have
+     to move together — a fifth anchor over a four-column grid wraps the tab bar onto two rows. */
+  grid-template-columns: repeat(4, 1fr);
   padding: 0 14px 22px;
   background: linear-gradient(to bottom, transparent, var(--gym-canvas) 40%);
 }
@@ -2428,4 +2430,362 @@ a.gym-start-adhoc {
 .gym-picker-create:hover {
   border-color: var(--color-brand);
   color: var(--color-brand);
+}
+
+/* ── Statistics (the fourth room) ─────────────────────────────
+   Matter-of-fact by construction. No animation on the way in,
+   no hover state that reveals a number, and nothing coloured
+   for whether it went up: the finish screen's rule over a
+   longer window — a fact with a direction, never a grade.
+
+   The one accent in here is the mark colour, which is gym's own
+   brand step (--color-brand, sky-400 in the instrument skin).
+   It is a single-series palette — one line per movement, one
+   fill per bar row, never two series sharing a plot — so there
+   is no categorical separation at stake; what matters is that
+   the mark reads against the night canvas, and sky-400 on
+   #0D0B07 clears the 3:1 mark-contrast floor.               */
+.gym-stats-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gym-weeks {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 20px;
+}
+.gym-chart {
+  margin: 0;
+}
+.gym-chart-title {
+  margin: 0 0 8px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--gym-ink-dim);
+}
+.gym-chart-plot {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 8px;
+  height: 78px;
+}
+/* Both ends of the scale, said out loud. A reader who cannot see
+   where a scale starts has to trust it — and the whole reason
+   these are bars is that nobody should have to. */
+.gym-chart-scale {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--gym-ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.gym-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  border-bottom: 1px solid var(--gym-line);
+}
+.gym-bar-col {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+/* A week nobody trained draws NOTHING — no nub, no track, no
+   ghost. Zero has a length and its length is zero. */
+.gym-bar-fill {
+  width: 100%;
+  border-radius: 3px 3px 0 0;
+  background: var(--color-brand);
+}
+.gym-weeks-span {
+  margin: 2px 0 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--gym-ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.gym-weeks-older {
+  color: var(--gym-ink-faint);
+}
+
+.gym-moves {
+  margin-top: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.gym-moves-title {
+  margin: 0;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--gym-ink-dim);
+}
+/* One movement, one card, ONE SCALE OF ITS OWN. A bench and a
+   squat never share a Y axis here — that is the first bug in
+   Lift's Progress tab and it is a drawing decision, so the
+   card is the boundary that makes it unrepresentable. */
+.gym-move {
+  padding: 14px;
+  border: 1px solid var(--gym-line);
+  border-radius: 13px;
+  background: var(--gym-surface);
+}
+.gym-move-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.gym-move-name {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gym-move-when {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--gym-ink-faint);
+}
+.gym-move-caption {
+  margin: 3px 0 8px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--gym-ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.gym-move-plot {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.gym-plot-zero {
+  stroke: var(--gym-line);
+  stroke-width: 1;
+}
+.gym-plot-line {
+  stroke: var(--color-brand);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.gym-plot-dot {
+  fill: var(--color-brand);
+}
+.gym-move-flat {
+  margin: 10px 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--gym-ink-faint);
+}
+/* The chart says its own ends, because there is no hover here to
+   reveal them and this is read on a phone at a rack. */
+.gym-move-ends {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 8px 0 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--gym-ink-dim);
+  font-variant-numeric: tabular-nums;
+}
+.gym-move-arrow {
+  color: var(--gym-ink-faint);
+}
+.gym-move-bests {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--gym-line);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.gym-move-best {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.gym-move-best-label {
+  flex: none;
+  color: var(--gym-ink-faint);
+}
+.gym-move-best-value {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--gym-ink);
+  font-variant-numeric: tabular-nums;
+}
+.gym-move-best-when {
+  flex: none;
+  color: var(--gym-ink-faint);
+}
+
+/* ── The coach share ──────────────────────────────────────────
+   A quiet block on a neutral surface, never a call to action and
+   never the loudest thing on the screen it sits at the bottom
+   of. There is no icon row, no card, no image and no share
+   sheet: this is a link to one person, and it looks like one. */
+.gym-share {
+  margin-top: 22px;
+  padding: 14px;
+  border: 1px solid var(--gym-line);
+  border-radius: 13px;
+  background: var(--gym-surface);
+}
+.gym-share-title {
+  margin: 0;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--gym-ink-dim);
+}
+.gym-share-line {
+  margin: 6px 0 12px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--gym-ink-dim);
+}
+.gym-share-make {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--gym-ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gym-share-make:hover {
+  border-color: var(--color-brand);
+  color: var(--color-brand);
+}
+/* A real field, selectable, because a clipboard the browser
+   refuses is a normal outcome and the way through has to be
+   there already rather than arrive as an apology. */
+.gym-share-link {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 10px;
+  padding: 10px 11px;
+  border: 1px solid var(--gym-line);
+  border-radius: 10px;
+  background: var(--gym-sunken);
+  color: var(--gym-ink-dim);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.gym-share-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.gym-share-copy {
+  flex: 1;
+  min-height: 40px;
+  border: none;
+  border-radius: 10px;
+  background: var(--color-brand);
+  color: var(--gym-on-accent);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gym-share-copy:hover {
+  background: var(--color-brand-hover);
+}
+.gym-share-revoke {
+  flex: none;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--gym-ink-dim);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gym-share-revoke:hover {
+  color: var(--alarm-ink);
+  border-color: var(--alarm-ink);
+}
+/* The terms are ON the screen before the link can be copied.
+   They are the honest description of the thing the tap made,
+   which is exactly the sentence a lifter needs before they
+   send it to somebody. */
+.gym-share-terms {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--gym-ink-faint);
+}
+.gym-share-note {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--gym-ink-dim);
+}
+
+/* ── The coach's page ─────────────────────────────────────────
+   No chrome, no tabs, no seat, no switcher and no sign-in door.
+   A coach did not come here to make an account. */
+.gym-shared {
+  padding-bottom: 40px;
+}
+.gym-shared-kicker {
+  margin: 0 0 10px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--gym-ink-faint);
+}
+.gym-shared-absent {
+  margin-top: 10px;
+  line-height: 1.5;
+}
+.gym-shared-foot {
+  margin-top: 30px;
+  padding-top: 14px;
+  border-top: 1px solid var(--gym-line);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.gym-shared-foot p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--gym-ink-faint);
 }

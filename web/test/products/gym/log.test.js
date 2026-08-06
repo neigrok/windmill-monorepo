@@ -12,7 +12,8 @@ import {
   entryLabel, finishHref, finishIdOf, fmt, groupByExercise, isFinished, isFirstSession,
   nameOfMovement, NEW_ROUTINE_ID, NO_ROUTINE, planOf, routineHref, routineIdOf, routineMetaLabel,
   routineNameOf, ROUTINES_HREF, screenOf, sessionHref, sessionIdOf, sessionMetaLabel,
-  sessionMovementMeta, setCountLabel, timeLabel, topSetLabel, topSetOf, weekdayName, workingSetsOf,
+  sessionMovementMeta, setCountLabel, sharedHref, sharedTokenOf, STATS_HREF, timeLabel, topSetLabel,
+  topSetOf, weekdayName, workingSetsOf,
 } from '../../../src/products/gym/log.js';
 
 test('sessionIdOf — a session hash yields its id, everything else yields nothing', () => {
@@ -137,7 +138,7 @@ test('sessionMetaLabel — a session read whole, without printing its day twice'
   );
 });
 
-test('screenOf — one grammar decides which of the seven rooms a hash names', () => {
+test('screenOf — one grammar decides which of the nine rooms a hash names', () => {
   assert.equal(screenOf('#/gym'), 'today');
   assert.equal(screenOf('#/gym/'), 'today');
   assert.equal(screenOf('#/gym/log'), 'log');
@@ -150,10 +151,31 @@ test('screenOf — one grammar decides which of the seven rooms a hash names', (
   assert.equal(screenOf('#/gym/routines?new=1'), 'routines');
   assert.equal(screenOf('#/gym/routines/rt_9f2c'), 'routine');
   assert.equal(screenOf(routineHref(NEW_ROUTINE_ID)), 'routine');
+  assert.equal(screenOf(STATS_HREF), 'stats');
+  assert.equal(screenOf('#/gym/stats'), 'stats');
+  assert.equal(screenOf('#/gym/stats?movement=bench-press'), 'stats');
   assert.equal(screenOf(''), 'today');
   // A hash this build does not know is a link from a build that did, and Today is where a lifter
   // can get anywhere from — never a blank screen with a working URL in the bar.
   assert.equal(screenOf('#/gym/strength-tree'), 'today');
+});
+
+// THE ONE ROOM THAT IS NOT THE LIFTER'S. It has to be recognised before anything that could send a
+// visitor at the sign-in door, because the token IS the credential and a coach has no account —
+// GymApp answers this branch above the auth switch entirely, and this is the parse under it.
+test('sharedTokenOf — the coach’s link carries a whole base64url token, and only that shape', () => {
+  const token = 'JcQ8w-3n1SxT_0aZbYq5rPm7LkHfDgVeU2iOtN4sRw0';
+  assert.equal(screenOf(sharedHref(token)), 'shared');
+  assert.equal(sharedTokenOf(sharedHref(token)), token);
+  assert.equal(sharedHref(token), `#/gym/shared/${token}`);
+  // The mint's alphabet, whole: 32 bytes of entropy, base64url, unpadded — so '-' and '_' are
+  // ordinary characters in it and a parse that stopped at either would truncate the credential.
+  assert.equal(sharedTokenOf('#/gym/shared/a-b_c'), 'a-b_c');
+  assert.equal(sharedTokenOf('#/gym/shared/'), null);
+  assert.equal(sharedTokenOf('#/gym/session/ses_9f3a1c22'), null);
+  assert.equal(sharedTokenOf('#/gym'), null);
+  assert.equal(sharedTokenOf(''), null);
+  assert.equal(sharedTokenOf(undefined), null);
 });
 
 test('routineIdOf — the editor link the routines list writes is the link it reads back', () => {

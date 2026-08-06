@@ -30,6 +30,25 @@
 //   GET  /v1/gym/last?exercise=          -> { exerciseId, session?, routine?, sets? } — the prefill:
 //                                           the newest FINISHED session holding that movement and
 //                                           its working sets in order, warmups excluded
+//   GET  /v1/gym/stats                   -> { weeks: [{startedAt, sessions, workingSets}],
+//                                           movements: [{exerciseId, lastTrainedAt,
+//                                             points: [{at, weightKg, reps, e1rm?}],
+//                                             bestE1rm?, heaviest?}] } — every number the domain
+//                                           already decides, over FINISHED sessions only. Weeks run
+//                                           Monday to Monday in UTC and a week nobody trained is
+//                                           present and zero; movements come back most recently
+//                                           trained first and their points oldest first
+//   POST /v1/gym/sessions/:id/share      -> {token, expiresAt} — the coach link, minted or the live
+//                                           one handed back. Idempotent on the SESSION: there is no
+//                                           id for a client to mint here, so tapping Share twice is
+//                                           one capability and not two
+//   DELETE /v1/gym/sessions/:id/share    -> 204, nothing back. Revoked is deleted
+//   GET  /v1/gym/shared/:token           -> { startedAt, finishedAt?, routine?, sets: [{exercise,
+//                                           setNumber, weightKg, reps, kind, rpe?, note,
+//                                           completedAt}] } — or null on 404. THE ONE
+//                                           UNAUTHENTICATED READ, and the token is the whole
+//                                           credential; revoked, expired and never-minted are one
+//                                           byte, so a null here says nothing about which
 //   GET  /v1/gym/routines                -> { routines: [Routine…] }, most-recently-trained first
 //   POST /v1/gym/routines                -> the write document in; the stored Routine out —
 //                                           idempotent on the client-minted id, 409 when it is spent
@@ -262,4 +281,43 @@ export const gymApi = {
   async lastTime(exerciseId) {
     return json(await call(`/last?exercise=${encodeURIComponent(exerciseId)}`));
   },
+
+  // The statistics surface, whole and in one read: there is no window parameter and no per-movement
+  // route, because every number in it is the domain's and none of them is a client's to ask for
+  // differently. What the screen shows LESS of it than this carries is the screen's business
+  // (stats.js) — a second read per movement would be a chart that loads while it is looked at.
+  async stats() {
+    return json(await call('/stats'));
+  },
+
+  // The coach link, minted. There is no GET beside this: the POST is idempotent on the session and
+  // answers with the live link when there is one, so "show me the link" and "make me a link" are
+  // one round trip. That also means it is never called on a render — a read that writes is not a
+  // read, and this one is on the lifter's own tap (share/CoachShare.jsx).
+  async shareSession(id) {
+    return json(await call(`/sessions/${id}/share`, { method: 'POST' }));
+  },
+
+  async revokeShare(id) {
+    return json(await call(`/sessions/${id}/share`, { method: 'DELETE' }));
+  },
+
+  // The coach's read, and the only one in this file that means anything without an account. The
+  // cookie still rides along because every call here carries it — the handler resolves no caller at
+  // all, so it changes nothing, and a lifter opening their own link sees exactly what they sent.
+  //
+  // Null is the one answer for revoked, expired and never-minted alike. Nothing above may spell it
+  // three ways: the server deliberately answers one byte so a token cannot be probed for existence,
+  // and a client that guessed which would be inventing the difference back.
+  async sharedSession(token) {
+    const response = await call(`/shared/${encodeURIComponent(token)}`);
+    if (response.status === 404) return null;
+    return json(response);
+  },
 };
+
+// Every set this account holds, as a file. Not a method: nothing is fetched, parsed or held in
+// memory — the browser follows the link, the server answers with a Content-Disposition, and a log
+// too big to sit in a tab's heap still lands. Same-origin in production, so the session cookie
+// rides the navigation the way it rides every other request here.
+export const EXPORT_HREF = `${base}/export`;

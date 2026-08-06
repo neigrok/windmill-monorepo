@@ -5,7 +5,9 @@
 //
 // THE EMPTY SLOT IS THE DESIGN. On the ~190 sessions in 200 that earn nothing, the space a record
 // would occupy is simply empty — nothing says well done, nothing implies the session was wasted, and
-// there is no streak, no score and no share sheet to fill it with.
+// there is no streak and no score to fill it with. The coach share below it is not that slot's
+// filler: it is offered on every session alike, it says nothing about how the session went, and it
+// is a link to one person and never a share sheet.
 //
 // It reads the session back rather than being handed it: the hook clears the live session the moment
 // it closes, and a screen assembled from what was in memory a second ago would be a screen that
@@ -19,6 +21,7 @@ import {
 import { mintId } from './logger/flushQueue.js';
 import { comparison, finishHead, RECORD_TITLE, recordSentence, statTiles } from './review.js';
 import { routineFromSession } from './routines.js';
+import { CoachShare } from './share/CoachShare.jsx';
 import { useGymRead } from './useGymRead.js';
 
 export function FinishScreen({ id, live }) {
@@ -109,6 +112,11 @@ export function FinishScreen({ id, live }) {
       {!review.slight && !session.routineId && (
         <KeepAsRoutine session={session} sets={sets} catalog={catalog} live={live} />
       )}
+
+      {/* Not offered on a short session, and that is a decision rather than an omission: a screen
+          asking "keep it in the log, or drop it?" must not also offer to send it to somebody. The
+          session detail carries the same door, so a session kept is one tap from being shared. */}
+      {!review.slight && <CoachShare sessionId={id} />}
 
       {!review.slight && (
         <div className="gym-finish-foot">

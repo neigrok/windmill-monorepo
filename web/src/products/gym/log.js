@@ -12,8 +12,9 @@ const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', '
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // A position is a URL: #/gym is today, #/gym/log the log, #/gym/routines the routines,
-// #/gym/routines/rt_… one routine's editor, #/gym/session/ses_… one session,
-// #/gym/finish/ses_… the end of the one just closed, #/gym/backfill the past-workout form.
+// #/gym/stats the statistics, #/gym/routines/rt_… one routine's editor, #/gym/session/ses_… one
+// session, #/gym/finish/ses_… the end of the one just closed, #/gym/backfill the past-workout form,
+// #/gym/shared/… one workout as a coach reads it.
 // Reading and writing that one grammar live together, so a link and the parse that answers it can
 // never drift — the logger writes it to walk into the session it just started.
 export function sessionIdOf(hash) {
@@ -55,16 +56,36 @@ export function finishHref(id) {
 
 export const BACKFILL_HREF = '#/gym/backfill';
 
+export const STATS_HREF = '#/gym/stats';
+
+// THE ONE URL IN GYM THAT IS NOT THE LIFTER'S. The token is the whole credential — the server
+// resolves it with no caller at all — so it is the only position here that means something to
+// somebody with no account. The charset is the mint's: 32 bytes, base64url, unpadded (43 chars).
+export function sharedTokenOf(hash) {
+  const match = /^#\/gym\/shared\/([A-Za-z0-9_-]+)/.exec(hash || '');
+  return match ? match[1] : null;
+}
+
+export function sharedHref(token) {
+  return `#/gym/shared/${token}`;
+}
+
 // The editor is read before the list it sits under, because a routine id is also a routines URL and
 // only the longer of the two is that one routine. Anything else under #/gym is Today: a hash this
 // build does not know is a link from a build that did, and the home screen is where a lifter can
 // get anywhere from.
+//
+// The coach's page is read FIRST, and not because of any ambiguity: it is the one position that
+// must resolve without an account, and reading it before anything else is what keeps that fact
+// visible here rather than buried in the frame.
 export function screenOf(hash) {
+  if (sharedTokenOf(hash)) return 'shared';
   if (sessionIdOf(hash)) return 'session';
   if (finishIdOf(hash)) return 'finish';
   if (routineIdOf(hash)) return 'routine';
   if (/^#\/gym\/routines(\/|$|\?)/.test(hash || '')) return 'routines';
   if (/^#\/gym\/backfill(\/|$|\?)/.test(hash || '')) return 'backfill';
+  if (/^#\/gym\/stats(\/|$|\?)/.test(hash || '')) return 'stats';
   if (/^#\/gym\/log(\/|$|\?)/.test(hash || '')) return 'log';
   return 'today';
 }
