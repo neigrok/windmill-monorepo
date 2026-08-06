@@ -626,9 +626,14 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
     var written: [String: Routine] = [:]
     var lastTimes: [String: LastTime] = [:]
     var reviews: [String: Review] = [:]
+    var shares: [String: SessionShare] = [:]
+    var stats = TrainingStatistics()
     var refuse: (SetWrite) -> WindmillApiError? = { _ in nil }
     var refuseStart: WindmillApiError?
     var refuseCreate: WindmillApiError?
+    var refuseShare: WindmillApiError?
+    var refuseRevoke: WindmillApiError?
+    var refuseStats: WindmillApiError?
     var swallowReplies = 0
     // The close is a round trip, and this is the only way a test can stand inside it.
     var onFinish: () async -> Void = {}
@@ -774,5 +779,34 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         calls.append("deleteRoutine")
         guard online else { throw WindmillApiError.offline }
         written[id] = nil
+    }
+
+    func statistics() async throws -> TrainingStatistics {
+        calls.append("statistics")
+        guard online else { throw WindmillApiError.offline }
+        if let refuseStats { throw refuseStats }
+        return stats
+    }
+
+    // Idempotent on the session, exactly as the log is: a second mint for a session that already has
+    // a live share hands back the same token rather than a second capability.
+    func share(_ sessionId: String) async throws -> SessionShare {
+        calls.append("share")
+        guard online else { throw WindmillApiError.offline }
+        if let refuseShare { throw refuseShare }
+        guard stored[sessionId] != nil else { throw WindmillApiError.refused(404, Refusal(Data())) }
+        if let live = shares[sessionId] { return live }
+        let minted = SessionShare(token: "tok_\(sessionId)", expiresAtMs: 2_592_000_000)
+        shares[sessionId] = minted
+        return minted
+    }
+
+    func revokeShare(_ sessionId: String) async throws {
+        calls.append("revokeShare")
+        guard online else { throw WindmillApiError.offline }
+        if let refuseRevoke { throw refuseRevoke }
+        guard shares.removeValue(forKey: sessionId) != nil else {
+            throw WindmillApiError.refused(404, Refusal(Data()))
+        }
     }
 }

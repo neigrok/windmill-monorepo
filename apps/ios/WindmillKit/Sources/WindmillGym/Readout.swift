@@ -40,8 +40,13 @@ public enum Readout {
         return pad(parts.hour ?? 0) + ":" + pad(parts.minute ?? 0)
     }
 
-    public static func day(_ ms: Int64) -> String {
-        let parts = components(ms)
+    // `utc` is for one caller and one reason: the statistics weeks are bucketed by
+    // `date_trunc('week', … AT TIME ZONE 'UTC')`, so a bucket's start instant is a UTC Monday
+    // midnight. Rendered in the reader's own zone it comes out as Sunday for half the planet, and a
+    // week label that names the wrong day is worse than none. Everything else in gym is an instant a
+    // person lived through and reads in the zone they are standing in, which is the default.
+    public static func day(_ ms: Int64, utc: Bool = false) -> String {
+        let parts = components(ms, utc: utc)
         let weekday = weekdays[max(0, min(6, (parts.weekday ?? 1) - 1))]
         let month = months[max(0, min(11, (parts.month ?? 1) - 1))]
         return "\(weekday) \(parts.day ?? 1) \(month)"
@@ -85,6 +90,13 @@ public enum Readout {
         count == 1 ? "1 set" : "\(count) sets"
     }
 
+    // The product counts SESSIONS — never workouts and never entries — so the word is spelled here
+    // beside the set's, and the movement lines on the statistics screen borrow it rather than
+    // inventing a second noun for the same thing.
+    public static func sessionCount(_ count: Int) -> String {
+        count == 1 ? "1 session" : "\(count) sessions"
+    }
+
     // A movement is a stable id everywhere except on screen. Falling back to the id keeps a sentence
     // readable while the catalog has not answered — a slug a lifter can still recognise beats a
     // blank where the movement should be.
@@ -92,9 +104,11 @@ public enum Readout {
         catalog.first { $0.id == exerciseId }?.name ?? exerciseId
     }
 
-    private static func components(_ ms: Int64) -> DateComponents {
-        Calendar.current.dateComponents([.hour, .minute, .weekday, .day, .month],
-                                        from: Date(timeIntervalSince1970: Double(ms) / 1000))
+    private static func components(_ ms: Int64, utc: Bool = false) -> DateComponents {
+        var calendar = Calendar.current
+        if utc, let zone = TimeZone(identifier: "UTC") { calendar.timeZone = zone }
+        return calendar.dateComponents([.hour, .minute, .weekday, .day, .month],
+                                       from: Date(timeIntervalSince1970: Double(ms) / 1000))
     }
 
     private static func pad(_ value: Int) -> String {

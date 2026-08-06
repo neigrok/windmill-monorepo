@@ -7,9 +7,14 @@ import WindmillPlatform
 // opinion drawn on the phone would be the product arguing with itself in its own loudest pixel.
 //
 // THE EMPTY SLOT IS A DECISION. On the ~190 sessions in 200 that earn nothing the record line is
-// simply absent and nothing takes its place: no encouragement, no streak, no score, no share sheet.
-// The comparison is a fact with a DIRECTION and never a grade, which is why nothing in it is a
-// percentage and nothing in it is coloured.
+// simply absent and nothing takes its place: no encouragement, no streak, no score. The comparison
+// is a fact with a DIRECTION and never a grade, which is why nothing in it is a percentage and
+// nothing in it is coloured.
+//
+// The one thing under the review is the coach share, and it is not a share SHEET: no social targets,
+// no image, nothing discoverable. It mints one revocable, expiring link to this one workout, and
+// CoachShare.swift is the whole of it. It is not drawn over a session that ended early — screen 11's
+// question there is keep-or-discard, and a second offer beside a delete button competes with it.
 //
 // The native twin of web/src/products/gym/review.js.
 
@@ -151,66 +156,35 @@ struct FinishedSession: Equatable {
     }
 }
 
-struct FinishScreen: View {
-    let finished: FinishedSession
+// ONE DRAWING OF A REVIEW, used by the screen a session ends on and by the screen it is revisited
+// from. The three facts, the rare record line and the comparison are one readout, and two copies of
+// it would be two chances for the product to say the same session two ways.
+struct ReviewReadout: View {
+    let review: Review?
     let catalog: [Exercise]
-    // Whether the routine WAS kept, answered by the room after the log said so. Held outside this
-    // view on purpose: a screen that hid the offer on the tap would be telling the lifter their
-    // program had changed on the strength of a request that may not have landed.
-    let kept: Bool
-    let onKeepRoutine: (String) -> Void
-    let onDiscard: () -> Void
-    let onDone: () -> Void
 
     @Environment(\.gymSkin) private var skin
-    @State private var routineName = ""
 
     var body: some View {
-        let head = Finish.head(startedAtMs: finished.session.startedAtMs,
-                               finishedAtMs: finished.session.finishedAtMs ?? finished.session.startedAtMs,
-                               routine: finished.routine,
-                               slight: finished.slight,
-                               first: finished.isFirst)
-        return ScrollView {
-            VStack(alignment: .leading, spacing: WindmillSpace.x5) {
-                VStack(alignment: .leading, spacing: WindmillSpace.x1) {
-                    Text(head.title)
-                        .font(WindmillFont.display(30))
-                        .foregroundStyle(skin.ink)
-                    Text(head.subtitle)
-                        .font(WindmillFont.body(17))
-                        .foregroundStyle(skin.inkDim)
-                    Text(head.when)
-                        .font(GymType.numeral(12))
-                        .foregroundStyle(skin.inkFaint)
+        VStack(alignment: .leading, spacing: WindmillSpace.x5) {
+            if let review {
+                tiles(review.stats)
+                if let sentence = Finish.recordSentence(review.record, catalog: catalog) {
+                    record(sentence)
                 }
-
-                if let review = finished.review {
-                    tiles(review.stats)
-                    if let sentence = Finish.recordSentence(review.record, catalog: catalog) {
-                        record(sentence)
-                    }
-                    if let comparison = Finish.comparison(review.against, catalog: catalog) {
-                        against(comparison)
-                    }
-                } else {
-                    // The three facts are the domain's and this read did not come back. Nothing
-                    // takes their place: a duration counted on the phone would be a second opinion
-                    // in the one screen that exists to state the first.
-                    Text("the log didn’t answer — the session is saved")
-                        .font(GymType.numeral(13))
-                        .foregroundStyle(skin.inkFaint)
+                if let comparison = Finish.comparison(review.against, catalog: catalog) {
+                    against(comparison)
                 }
-
-                if finished.offersRoutine && !kept { keepAsRoutine }
-
-                actions
+            } else {
+                // The three facts are the domain's and this read did not come back. Nothing takes
+                // their place: a duration counted on the phone would be a second opinion in the one
+                // screen that exists to state the first.
+                Text("the log didn’t answer — the session is saved")
+                    .font(GymType.numeral(13))
+                    .foregroundStyle(skin.inkFaint)
             }
-            .padding(.horizontal, WindmillSpace.x5)
-            .padding(.top, WindmillSpace.x10)
-            .padding(.bottom, WindmillSpace.x12)
         }
-        .task { routineName = Readout.weekday(finished.session.startedAtMs) }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func tiles(_ stats: Review.Stats) -> some View {
@@ -270,6 +244,60 @@ struct FinishScreen: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct FinishScreen: View {
+    let finished: FinishedSession
+    let catalog: [Exercise]
+    // Whether the routine WAS kept, answered by the room after the log said so. Held outside this
+    // view on purpose: a screen that hid the offer on the tap would be telling the lifter their
+    // program had changed on the strength of a request that may not have landed.
+    let kept: Bool
+    let coach: CoachDoors
+    let onKeepRoutine: (String) -> Void
+    let onDiscard: () -> Void
+    let onDone: () -> Void
+
+    @Environment(\.gymSkin) private var skin
+    @State private var routineName = ""
+
+    var body: some View {
+        let head = Finish.head(startedAtMs: finished.session.startedAtMs,
+                               finishedAtMs: finished.session.finishedAtMs ?? finished.session.startedAtMs,
+                               routine: finished.routine,
+                               slight: finished.slight,
+                               first: finished.isFirst)
+        return ScrollView {
+            VStack(alignment: .leading, spacing: WindmillSpace.x5) {
+                VStack(alignment: .leading, spacing: WindmillSpace.x1) {
+                    Text(head.title)
+                        .font(WindmillFont.display(30))
+                        .foregroundStyle(skin.ink)
+                    Text(head.subtitle)
+                        .font(WindmillFont.body(17))
+                        .foregroundStyle(skin.inkDim)
+                    Text(head.when)
+                        .font(GymType.numeral(12))
+                        .foregroundStyle(skin.inkFaint)
+                }
+
+                ReviewReadout(review: finished.review, catalog: catalog)
+
+                if finished.offersRoutine && !kept { keepAsRoutine }
+
+                // Not over a session that ended early: that screen is asking whether to keep the
+                // workout at all, and offering to send it to somebody in the same breath is two
+                // questions where the design allows one.
+                if !finished.slight { CoachShareCard(doors: coach) }
+
+                actions
+            }
+            .padding(.horizontal, WindmillSpace.x5)
+            .padding(.top, WindmillSpace.x10)
+            .padding(.bottom, WindmillSpace.x12)
+        }
+        .task { routineName = Readout.weekday(finished.session.startedAtMs) }
     }
 
     private var keepAsRoutine: some View {

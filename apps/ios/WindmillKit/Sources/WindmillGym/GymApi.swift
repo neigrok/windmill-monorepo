@@ -10,7 +10,14 @@ import WindmillPlatform
 //   GET  /v1/gym/sessions/:id/review  ·  GET /v1/gym/last?exercise=
 //   GET  /v1/gym/routines             ·  POST /v1/gym/routines
 //   PUT  /v1/gym/routines/:id         ·  DELETE /v1/gym/routines/:id
+//   GET  /v1/gym/stats
+//   POST /v1/gym/sessions/:id/share   ·  DELETE /v1/gym/sessions/:id/share
 // The session rides as a Bearer header rather than a cookie (WindmillApi); nothing else differs.
+//
+// `GET /v1/gym/shared/:token` — the coach's own read, and the one unauthenticated route in the
+// product — is deliberately NOT here. Nothing on this phone reads a shared session: the lifter is
+// the owner and reads their own log through the sixteen owner-scoped doors above. The token this
+// client mints is spelled as an address for somebody else to open (CoachShare.swift).
 //
 // EVERY PATH IS PASSED WHOLE, query included. `appendingPathComponent` treats the whole string as one
 // segment and percent-encodes `?` and `&` into it, which silently 404'd the journal's window read and
@@ -38,6 +45,10 @@ public protocol TrainingSyncing {
     func createRoutine(_ write: RoutineWrite) async throws -> Routine
     func replaceRoutine(_ id: String, with write: RoutineWrite) async throws -> Routine
     func deleteRoutine(_ id: String) async throws
+
+    func statistics() async throws -> TrainingStatistics
+    func share(_ sessionId: String) async throws -> SessionShare
+    func revokeShare(_ sessionId: String) async throws
 }
 
 public struct GymApi: TrainingSyncing {
@@ -137,6 +148,26 @@ public struct GymApi: TrainingSyncing {
 
     public func deleteRoutine(_ id: String) async throws {
         try await api.send("DELETE", "/v1/gym/routines/\(id)")
+    }
+
+    // The long window, computed on every read and cached nowhere — server-side or here. There is no
+    // parameter: the window is the whole finished log, and a client that asked for a slice of it
+    // would be the second place in the product deciding what a week is.
+    public func statistics() async throws -> TrainingStatistics {
+        try await api.get("/v1/gym/stats", as: TrainingStatistics.self)
+    }
+
+    // Idempotent on the SESSION and not on a client-minted id — there is no id for a client to mint
+    // here, because the token is unguessable and therefore the server's to make. Tapping Share twice
+    // answers with the link already live, so a lifter never sends two capabilities to revoke apart.
+    public func share(_ sessionId: String) async throws -> SessionShare {
+        try await api.send("POST", "/v1/gym/sessions/\(sessionId)/share", as: SessionShare.self)
+    }
+
+    // Revoked is deleted: the row IS the capability, so there is nothing to mark and nothing left to
+    // describe. Nothing to revoke answers the same 404 an absent session gives.
+    public func revokeShare(_ sessionId: String) async throws {
+        try await api.send("DELETE", "/v1/gym/sessions/\(sessionId)/share")
     }
 
     // Ids are [A-Za-z0-9_-] by the server's own rule, so this only ever has work to do on the two

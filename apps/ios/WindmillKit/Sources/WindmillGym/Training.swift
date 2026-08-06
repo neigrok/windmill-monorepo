@@ -255,10 +255,12 @@ public struct TopSet: Equatable, Codable, Sendable {
 // them — so this decodes the session off the same container rather than from a nested key that is
 // not there.
 //
-// `topSet` and `closedItself` are DECODED AND NOT DRAWN on this phone: the only session row iOS has
-// in this wave is Today's "Last session", whose copy is fixed by the contract (screen 4) and names
-// neither. They are here so the model matches the wire — the web's log row draws both — and so the
-// screen that eventually wants them is not blocked on a decoder change.
+// `closedItself` is drawn where it is a fact worth having — the session detail says so under the
+// clock, because a four-hour span that ended in a rule rather than in a tap is a phone left running
+// and not a workout that lasted that long. `topSet` is decoded and NOT drawn: Today's "Last session"
+// row has fixed copy (contract screen 4) that does not name it, and the detail lists every set
+// anyway, so printing the heaviest one over that list would be the same fact twice. It stays on the
+// model because the web's log row draws it and one wire shape is one wire shape.
 public struct SessionSummary: Equatable, Codable, Sendable, Identifiable {
     public let session: Session
     public let setCount: Int

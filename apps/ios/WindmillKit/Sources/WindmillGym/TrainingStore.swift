@@ -415,6 +415,59 @@ public final class TrainingStore: ObservableObject {
         return try? await gym.review(of: sessionId)
     }
 
+    // One finished session and its sets, read back. Absent and another account's are the same 404,
+    // folded into the type by GymApi — so there is no sentence from the log to repeat, and this is
+    // the plain fact instead, exactly as the routine read one screen down says it.
+    public func sessionDetail(_ sessionId: String) async -> Result<SessionDetail, WriteFailure> {
+        guard let gym else { return .failure(.noAnswer) }
+        do {
+            guard let detail = try await gym.session(sessionId) else {
+                return .failure(.refused("that session is no longer on the log"))
+            }
+            return .success(detail)
+        } catch {
+            return .failure(WriteFailure(error))
+        }
+    }
+
+    // The statistics read. Nothing is held: the store keeps no copy to invalidate, so there is no
+    // cache key here to get wrong — the banked lesson from Lift's progress tab, whose cache was
+    // keyed on the number of sessions and went stale the day one was edited rather than added.
+    //
+    // It answers with a REASON and not with nil, for the reason every write in this store does: a
+    // log that refused with a sentence is not a log that went quiet, and a screen collapsing the two
+    // points the lifter at their signal when the answer was on the server.
+    public func statistics() async -> Result<TrainingStatistics, WriteFailure> {
+        guard let gym else { return .failure(.noAnswer) }
+        do {
+            return .success(try await gym.statistics())
+        } catch {
+            return .failure(WriteFailure(error))
+        }
+    }
+
+    // The coach share, minted and revoked. Both answer with WHAT WENT WRONG rather than with a bool
+    // nobody can act on: a link that was not made and a link that is still live after a failed
+    // revoke are the two facts a lifter has to be told, in the log's own words where it sent any.
+    public func share(_ sessionId: String) async -> Result<SessionShare, WriteFailure> {
+        guard let gym else { return .failure(.noAnswer) }
+        do {
+            return .success(try await gym.share(sessionId))
+        } catch {
+            return .failure(WriteFailure(error))
+        }
+    }
+
+    public func revokeShare(_ sessionId: String) async -> WriteFailure? {
+        guard let gym else { return .noAnswer }
+        do {
+            try await gym.revokeShare(sessionId)
+            return nil
+        } catch {
+            return WriteFailure(error)
+        }
+    }
+
     // THE WALK. One pass over what is owed, per (session, movement) lane, so a set that cannot land
     // holds up its own lane and nothing else — a jam that stopped the whole queue would stop a whole
     // workout, silently.

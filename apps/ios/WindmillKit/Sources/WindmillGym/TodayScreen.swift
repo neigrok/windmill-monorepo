@@ -7,11 +7,17 @@ import WindmillPlatform
 // No tour, no sample program, no questions about goals or experience. This lifter already has a
 // program; the app's job is to CATCH it, not to write it — which is why the empty state's one door
 // is an empty session, and the routine is the thing you name on the way out.
+//
+// Looking BACK lives at the foot of this screen and nowhere else in the room: two doors, under
+// everything that starts a workout, and only once the log holds a session that has finished. That
+// is the whole of gym's navigation and it is deliberately not a tab bar — see GymRoom for why.
 
 struct TodayScreen: View {
     @ObservedObject var store: TrainingStore
     let isSignedIn: Bool
     let onStart: (String?) -> Void
+    let onStatistics: () -> Void
+    let onOpenSession: (SessionSummary) -> Void
     let onSignIn: () -> Void
 
     @Environment(\.gymSkin) private var skin
@@ -34,7 +40,7 @@ struct TodayScreen: View {
                     }
                     logWithoutARoutine
                 }
-                lastSession
+                lookingBack
             }
             .padding(.horizontal, WindmillSpace.x5)
             .padding(.top, WindmillSpace.x10)
@@ -165,21 +171,51 @@ struct TodayScreen: View {
         }
     }
 
+    // THE TWO RETROSPECTIVE DOORS, and they exist exactly when there is something behind them: a log
+    // with no finished session has no statistics to draw and no last session to open, and a door
+    // onto an empty screen is the same defect as a chevron that goes nowhere. Both are read-only —
+    // nothing on either side of them can change the log.
     @ViewBuilder
-    private var lastSession: some View {
+    private var lookingBack: some View {
         if let last = store.recent.first(where: { !$0.session.isOpen }) {
-            VStack(alignment: .leading, spacing: WindmillSpace.x2) {
-                Text("Last session")
-                    .font(GymType.numeral(11))
-                    .foregroundStyle(skin.inkFaint)
-                HStack {
-                    Text(last.session.plan?.routine ?? "Ad-hoc")
-                        .font(WindmillFont.body(16))
-                        .foregroundStyle(skin.ink)
-                    Spacer(minLength: WindmillSpace.x3)
-                    Text(lastMeta(last))
-                        .font(GymType.numeral(12))
-                        .foregroundStyle(skin.inkFaint)
+            VStack(alignment: .leading, spacing: WindmillSpace.x5) {
+                Button(action: onStatistics) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Statistics")
+                                .font(WindmillFont.body(17))
+                                .foregroundStyle(skin.ink)
+                            Text("movement lines, standing bests, weeks")
+                                .font(GymType.numeral(12))
+                                .foregroundStyle(skin.inkFaint)
+                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(skin.inkFaint)
+                    }
+                    .frame(minHeight: GymTap.minimum + 8)
+                }
+
+                Button { onOpenSession(last) } label: {
+                    VStack(alignment: .leading, spacing: WindmillSpace.x2) {
+                        Text("Last session")
+                            .font(GymType.numeral(11))
+                            .foregroundStyle(skin.inkFaint)
+                        HStack {
+                            Text(last.session.plan?.routine ?? "Ad-hoc")
+                                .font(WindmillFont.body(16))
+                                .foregroundStyle(skin.ink)
+                            Spacer(minLength: WindmillSpace.x3)
+                            Text(lastMeta(last))
+                                .font(GymType.numeral(12))
+                                .foregroundStyle(skin.inkFaint)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(skin.inkFaint)
+                        }
+                    }
+                    .frame(minHeight: GymTap.minimum)
                 }
             }
             .padding(.top, WindmillSpace.x2)
