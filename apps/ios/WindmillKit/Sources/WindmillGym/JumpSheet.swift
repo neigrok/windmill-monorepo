@@ -37,7 +37,7 @@ struct JumpSheet: View {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(row.name)
                                     .font(WindmillFont.body(17, row.isCurrent ? .semibold : .regular))
-                                    .foregroundStyle(row.isCurrent ? skin.steel : skin.ink)
+                                    .foregroundStyle(row.isCurrent ? skin.accent : skin.ink)
                                 Text(row.meta)
                                     .font(GymType.numeral(12))
                                     .foregroundStyle(skin.inkFaint)
@@ -52,7 +52,7 @@ struct JumpSheet: View {
             Button(action: onAdd) {
                 Text("+ Add next movement")
                     .font(WindmillFont.body(16, .semibold))
-                    .foregroundStyle(skin.steel)
+                    .foregroundStyle(skin.accent)
                     .frame(maxWidth: .infinity, minHeight: GymTap.primary - 8)
                     .background(RoundedRectangle(cornerRadius: WindmillRadius.md)
                         .strokeBorder(skin.lineStrong, lineWidth: 1))

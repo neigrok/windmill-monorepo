@@ -63,7 +63,7 @@ public struct GymRoom: View {
         // is dressed in the same night.
         .environment(\.colorScheme, .dark)
         .roomChrome(.dark)
-        .tint(skin.steel)
+        .tint(skin.accent)
         // Re-runs whenever who is signed in changes. `connect` drains what the device is still
         // holding BEFORE it reads the log, because reading the log settles a stale open session and
         // a set that arrives after that close is refused forever; and landing back inside a workout

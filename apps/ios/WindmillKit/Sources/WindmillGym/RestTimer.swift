@@ -6,7 +6,7 @@ import Foundation
 // The Swift statement of web/src/products/gym/logger/rest.js.
 //
 // Being over the target is not an error and must never look like one: the overrun counts UP, in
-// steel, calm and quietly present. Nothing in this file may reach for alarm ink, and nothing here
+// the accent, calm and quietly present. Nothing in this file may reach for alarm ink, and nothing here
 // moves the lifter on — the rest landing is a fact, not an instruction.
 
 public enum Rest {

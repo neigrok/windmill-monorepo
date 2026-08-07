@@ -338,9 +338,9 @@ struct FinishScreen: View {
             Button { onKeepRoutine(routineName) } label: {
                 Text("Save routine")
                     .font(WindmillFont.body(17, .bold))
-                    .foregroundStyle(skin.onSteel)
+                    .foregroundStyle(skin.onAccent)
                     .frame(maxWidth: .infinity, minHeight: GymTap.primary)
-                    .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.steel))
+                    .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
             }
             .disabled(routineName.trimmingCharacters(in: .whitespaces).isEmpty)
 
@@ -363,9 +363,9 @@ struct FinishScreen: View {
             VStack(spacing: WindmillSpace.x3) {
                 Button("Keep it", action: onDone)
                     .font(WindmillFont.body(17, .bold))
-                    .foregroundStyle(skin.onSteel)
+                    .foregroundStyle(skin.onAccent)
                     .frame(maxWidth: .infinity, minHeight: GymTap.primary)
-                    .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.steel))
+                    .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
 
                 Button("Discard session", action: onDiscard)
                     .font(WindmillFont.body(16, .semibold))
@@ -380,9 +380,9 @@ struct FinishScreen: View {
         } else if !finished.offersRoutine || kept {
             Button("Done", action: onDone)
                 .font(WindmillFont.body(17, .bold))
-                .foregroundStyle(skin.onSteel)
+                .foregroundStyle(skin.onAccent)
                 .frame(maxWidth: .infinity, minHeight: GymTap.primary)
-                .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.steel))
+                .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
         }
     }
 

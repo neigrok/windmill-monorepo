@@ -117,9 +117,9 @@ struct MovementPicker: View {
                 Button { onCreate(query.trimmingCharacters(in: .whitespaces)) } label: {
                     Text(create)
                         .font(WindmillFont.body(16, .semibold))
-                        .foregroundStyle(skin.onSteel)
+                        .foregroundStyle(skin.onAccent)
                         .frame(maxWidth: .infinity, minHeight: GymTap.minimum + 6)
-                        .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.steel))
+                        .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.accent))
                 }
             }
         }

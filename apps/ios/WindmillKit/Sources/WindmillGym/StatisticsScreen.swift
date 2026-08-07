@@ -10,7 +10,7 @@ import WindmillPlatform
 // endpoints. A chart whose values can only be reached by a gesture the surface does not have is a
 // decoration, and this product does not draw those.
 //
-// Nothing here is a grade. No score, no percentage, no green and no red: the steel is the one accent
+// Nothing here is a grade. No score, no percentage, no green and no red: iris is the one accent
 // and it reads as iron, exactly as it does on the weight the lifter is under.
 
 struct StatisticsScreen: View {
@@ -89,7 +89,7 @@ struct StatisticsScreen: View {
                 HStack(alignment: .bottom, spacing: 3) {
                     ForEach(Array(series.heights.enumerated()), id: \.offset) { _, height in
                         RoundedRectangle(cornerRadius: 1.5)
-                            .fill(skin.steel)
+                            .fill(skin.accent)
                             .frame(height: max(0, height) * 44)
                             .frame(maxWidth: .infinity)
                     }
@@ -124,7 +124,7 @@ struct StatisticsScreen: View {
                 .font(GymType.numeral(11))
                 .foregroundStyle(skin.inkFaint)
 
-            Sparkline(heights: line.heights, ink: skin.steel)
+            Sparkline(heights: line.heights, ink: skin.accent)
                 .frame(height: 36)
                 .padding(.vertical, WindmillSpace.x1)
 
@@ -174,7 +174,7 @@ struct StatisticsScreen: View {
                 Button { Task { await read() } } label: {
                     Text("Try again")
                         .font(WindmillFont.body(16, .semibold))
-                        .foregroundStyle(skin.steel)
+                        .foregroundStyle(skin.accent)
                         .frame(maxWidth: .infinity, minHeight: GymTap.minimum)
                         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg)
                             .strokeBorder(skin.lineStrong, lineWidth: 1))

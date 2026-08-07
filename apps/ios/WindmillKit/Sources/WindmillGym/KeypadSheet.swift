@@ -180,10 +180,10 @@ struct KeypadSheet: View {
                 Button { if let value = reading.value { onCommit(value) } } label: {
                     Text("Set")
                         .font(WindmillFont.body(17, .bold))
-                        .foregroundStyle(reading.isValid ? skin.onSteel : skin.inkFaint)
+                        .foregroundStyle(reading.isValid ? skin.onAccent : skin.inkFaint)
                         .frame(maxWidth: .infinity, minHeight: GymTap.minimum + 6)
                         .background(RoundedRectangle(cornerRadius: WindmillRadius.md)
-                            .fill(reading.isValid ? skin.steel : skin.raised))
+                            .fill(reading.isValid ? skin.accent : skin.raised))
                 }
             }
         }

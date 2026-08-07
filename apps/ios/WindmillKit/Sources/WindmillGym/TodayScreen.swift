@@ -141,7 +141,7 @@ struct TodayScreen: View {
         Button { onStart(nil) } label: {
             Text("Log without a routine")
                 .font(WindmillFont.body(16, .semibold))
-                .foregroundStyle(skin.steel)
+                .foregroundStyle(skin.accent)
                 .frame(maxWidth: .infinity, minHeight: GymTap.primary - 8)
                 .background(RoundedRectangle(cornerRadius: WindmillRadius.lg)
                     .strokeBorder(skin.lineStrong, lineWidth: 1))
@@ -226,9 +226,9 @@ struct TodayScreen: View {
         Button { onStart(routineId) } label: {
             Text(label)
                 .font(WindmillFont.body(17, .bold))
-                .foregroundStyle(skin.onSteel)
+                .foregroundStyle(skin.onAccent)
                 .frame(maxWidth: .infinity, minHeight: GymTap.primary)
-                .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.steel))
+                .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
         }
     }
 

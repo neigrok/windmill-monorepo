@@ -10,7 +10,7 @@ import WindmillPlatform
 // anywhere else — one module per language, both answering packages/api-contract/gym-ladder.json, and
 // the labels re-render as the load climbs because the band under it changed.
 //
-// The screen never congratulates and never warns. An overrun rest counts up in steel, "set 4 of 3"
+// The screen never congratulates and never warns. An overrun rest counts up in the accent, "set 4 of 3"
 // is drawn in the same ink as "set 3 of 5", and the only alarm ink in the product belongs to a write
 // that actually failed.
 
@@ -123,7 +123,7 @@ struct LoggerScreen: View {
     private var header: some View {
         TimelineView(.periodic(from: .now, by: 1)) { beat in
             HStack(spacing: WindmillSpace.x3) {
-                Circle().fill(skin.steel).frame(width: 8, height: 8)
+                Circle().fill(skin.accent).frame(width: 8, height: 8)
                 Text(store.session?.plan?.routine ?? "Ad-hoc session")
                     .font(WindmillFont.body(15, .semibold))
                     .foregroundStyle(skin.ink)
@@ -133,7 +133,7 @@ struct LoggerScreen: View {
                 Spacer(minLength: 0)
                 Button("Finish", action: onFinish)
                     .font(WindmillFont.body(15, .semibold))
-                    .foregroundStyle(skin.steel)
+                    .foregroundStyle(skin.accent)
                     .frame(minWidth: 70, minHeight: GymTap.minimum)
             }
         }
@@ -186,9 +186,9 @@ struct LoggerScreen: View {
             Button { sheet = .picker } label: {
                 Text("Choose a movement")
                     .font(WindmillFont.body(17, .bold))
-                    .foregroundStyle(skin.onSteel)
+                    .foregroundStyle(skin.onAccent)
                     .frame(maxWidth: .infinity, minHeight: GymTap.primary)
-                    .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.steel))
+                    .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
             }
             Spacer(minLength: 0)
         }
@@ -407,7 +407,7 @@ struct LoggerScreen: View {
                     .foregroundStyle(skin.inkFaint)
                 Text(line.time)
                     .font(GymType.numeral(15))
-                    .foregroundStyle(line.overrun ? skin.steel : skin.ink)
+                    .foregroundStyle(line.overrun ? skin.accent : skin.ink)
                 Spacer(minLength: 0)
                 Button("reset") { restStartedAtMs = nil }
                     .font(GymType.numeral(12))
@@ -430,7 +430,7 @@ struct LoggerScreen: View {
                     Spacer(minLength: 0)
                     Button("Undo") { store.undoLast() }
                         .font(WindmillFont.body(14, .semibold))
-                        .foregroundStyle(skin.steel)
+                        .foregroundStyle(skin.accent)
                         .frame(minWidth: 60, minHeight: GymTap.minimum - 8)
                 }
             }
@@ -451,10 +451,10 @@ struct LoggerScreen: View {
         } label: {
             Text("Log set  ·  \(Readout.effort(weightKg: weightKg, reps: reps))")
                 .font(WindmillFont.body(19, .bold))
-                .foregroundStyle(store.isFinishing ? skin.inkFaint : skin.onSteel)
+                .foregroundStyle(store.isFinishing ? skin.inkFaint : skin.onAccent)
                 .frame(maxWidth: .infinity, minHeight: GymTap.primary)
                 .background(RoundedRectangle(cornerRadius: WindmillRadius.lg)
-                    .fill(store.isFinishing ? skin.raised : skin.steel))
+                    .fill(store.isFinishing ? skin.raised : skin.accent))
         }
         // Finish is a round trip and the store refuses a set once it is in flight. The button has to
         // say so BEFORE the tap, or the surface looks live and answers with a refusal nobody earned.

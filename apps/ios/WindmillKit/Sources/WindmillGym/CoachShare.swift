@@ -176,7 +176,7 @@ struct CoachShareCard: View {
                 // is what a coach can open, and a lifter is owed the sight of it before they send it.
                 Text(link)
                     .font(GymType.numeral(11))
-                    .foregroundStyle(skin.steel)
+                    .foregroundStyle(skin.accent)
                     .lineLimit(2)
                     .truncationMode(.middle)
                     .textSelection(.enabled)
@@ -196,7 +196,7 @@ struct CoachShareCard: View {
             Button { Task { await act() } } label: {
                 Text(card.action)
                     .font(WindmillFont.body(16, .semibold))
-                    .foregroundStyle(skin.steel)
+                    .foregroundStyle(skin.accent)
                     .frame(maxWidth: .infinity, minHeight: GymTap.minimum)
                     .background(RoundedRectangle(cornerRadius: WindmillRadius.lg)
                         .strokeBorder(skin.lineStrong, lineWidth: 1))

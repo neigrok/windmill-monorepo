@@ -69,9 +69,9 @@ struct DeviationSheet: View {
             Button(action: onSave) {
                 Text(deviation.saveLabel)
                     .font(WindmillFont.body(17, .bold))
-                    .foregroundStyle(skin.onSteel)
+                    .foregroundStyle(skin.onAccent)
                     .frame(maxWidth: .infinity, minHeight: GymTap.primary)
-                    .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.steel))
+                    .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
             }
 
             Button(action: onToday) {
