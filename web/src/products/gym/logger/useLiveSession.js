@@ -494,7 +494,7 @@ export function useLiveSession({ api = gymApi } = {}) {
 
   const rest = restStartedAt == null
     ? null
-    : restReadout({ targetSeconds: restTargetFor(exercise), startedAt: restStartedAt, now: Date.now() });
+    : restReadout({ targetSeconds: restTargetFor({ planEntry, exercise }), startedAt: restStartedAt, now: Date.now() });
 
   // The alert fires on the beat the target is first reached — and never on a reload that lands
   // long after it, which would be a phone shouting about a rest the lifter already took.

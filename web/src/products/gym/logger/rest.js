@@ -24,8 +24,15 @@ const REST_SECONDS = new Map([
   ['face-pull', 60],
 ]);
 
-export function restTargetFor(exercise, preferenceSeconds = NEUTRAL_PREFERENCE_SECONDS) {
-  const base = exercise?.restSeconds ?? REST_SECONDS.get(exercise?.id) ?? DEFAULT_REST_SECONDS;
+// Three sources, in the order the phone reads them (apps/ios/…/WindmillGym/RestTimer.swift): what
+// THIS session's frozen plan says for this movement, then the movement's own target, then the table.
+// Taking the plan entry as an argument rather than reading it off the exercise is the whole fix for
+// a bug that shipped: the web asked the CATALOG exercise for a `restSeconds` the wire never puts on
+// one, so a routine saved with 180 rested three minutes on the phone and two at the desk. The
+// movement-level target below is kept because it is the designed rule, but note it has no producer
+// yet — nothing writes restSeconds onto an exercise, only onto a routine entry (routines.js).
+export function restTargetFor({ planEntry = null, exercise = null } = {}, preferenceSeconds = NEUTRAL_PREFERENCE_SECONDS) {
+  const base = planEntry?.restSeconds ?? exercise?.restSeconds ?? REST_SECONDS.get(exercise?.id) ?? DEFAULT_REST_SECONDS;
   return Math.round(base * (preferenceSeconds / NEUTRAL_PREFERENCE_SECONDS));
 }
 
