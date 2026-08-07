@@ -41,7 +41,20 @@ const LEGACY_DOORS = [
   ['#/connect', '/app/connect'],
 ];
 
+// A door matches on a PREFIX, and some of a product's own hashes sit under that prefix while being
+// nothing to do with the account looking at them — gym's coach link is `#/gym/shared/<token>`, a
+// page for somebody who is not signed in and may not have an account at all. Upgraded into the room
+// it would draw a rail, a Sign in seat and a product switcher around one stranger's workout.
+//
+// The shell cannot know that; it may not name a product. So a product declares it, on the same
+// registry the shell already composes, and the answer stays beside the route grammar that produced
+// the hash in the first place.
+function staysOutsideTheShell(hash) {
+  return PRODUCTS.some((product) => product.shell.bare?.(hash));
+}
+
 function legacyDoorTarget(pathname, hash) {
+  if (staysOutsideTheShell(hash)) return null;
   const door = LEGACY_DOORS.find(([prefix]) => hash.startsWith(prefix));
   const target = door ? door[1] : (hash === '#/' || hash === '#' ? '/' : null);
   if (!target) return null;

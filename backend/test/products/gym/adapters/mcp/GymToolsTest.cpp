@@ -17,7 +17,9 @@ using namespace wm::gym::fake;
 
 namespace {
 
-const char* kApiBase = "https://api.windmill.works";
+// Deliberately NOT the api origin: a share becomes a page in the browser app, and the two are one
+// host in production, which is what hid the bug where the tool handed out the JSON route.
+const char* kAppBase = "https://windmill.works";
 
 // One in-memory store, one hand-driven clock, the real service, the real tools. Nothing here is a
 // fake of gym's own logic: the tools go through LogService exactly as the HTTP handlers do, so a
@@ -27,7 +29,7 @@ struct Harness {
   wm::fake::FakeClock clock;
   wm::fake::FakeTokens tokens;
   LogService service{repo, clock, tokens};
-  GymTools tools{service, kApiBase};
+  GymTools tools{service, kAppBase};
 
   Harness() {
     repo.seed(benchPress());
@@ -613,7 +615,7 @@ TEST(gym_the_share_tool_answers_with_a_url_a_coach_can_open) {
   CHECK_FALSE(minted.isError);
   const std::string token = body(minted)["token"].asString();
   CHECK_EQ(body(minted)["url"].asString(),
-           std::string(kApiBase) + "/v1/gym/shared/" + token);
+           std::string(kAppBase) + "/#/gym/shared/" + token);
   CHECK_EQ(body(minted)["expiresAt"].asUInt64(), shareExpiryAt(h.clock.now));
   // The link resolves, without a caller, to that one workout — which is what "anyone holding it" means.
   REQUIRE(h.service.shared(token).has_value());

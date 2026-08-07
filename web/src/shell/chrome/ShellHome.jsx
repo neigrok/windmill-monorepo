@@ -33,15 +33,18 @@ export function ShellHome() {
             </Suspense>
           )
           : null))}
+        {/* A product without a room here is not necessarily a product without a product: gym is built
+            and reachable at its own landing while `status` stays 'pre-open', so this cell says the room
+            is missing rather than that the thing is unbuilt or undesigned. */}
         {preOpen.map((p) => (
           <div key={p.id} className="wm-home-cell wm-home-cell--preopen">
             <div className="wm-home-cell-head">
               <span className="wm-home-dot" aria-hidden="true" />
               <span className="wm-home-cell-name">{p.label}</span>
-              <span className="wm-home-cell-tag">in design</span>
+              <span className="wm-home-cell-tag">not open yet</span>
             </div>
-            <p className="wm-home-cell-body">No door yet — a landing must never offer a door that opens onto nothing.</p>
-            <a className="wm-home-cell-link" href={p.shell.landingHref}>See what’s coming →</a>
+            <p className="wm-home-cell-body">{p.landing.tagline} — no room in here yet, and its landing says where it stands.</p>
+            <a className="wm-home-cell-link" href={p.shell.landingHref}>Read about it →</a>
           </div>
         ))}
       </div>

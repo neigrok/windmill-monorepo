@@ -129,3 +129,19 @@ test('the /gym shell carries a complete no-JS body and asserts the application i
   assert.equal(gymLandingHead.path, '/gym');
   assert.equal(gymLandingHead.module, 'src/products/gym/marketing/GymLanding.jsx');
 });
+
+// THE COACH'S PAGE IS NOT A ROOM, WHATEVER `status` SAYS. The shell's legacy door matches on a
+// PREFIX, so '#/gym/shared/<token>' sits under '#/gym' and would be upgraded into /app/gym the day
+// gym opens — drawing a rail, a product switcher and a Sign in seat around one workout, for somebody
+// who is not signed in and may not have an account at all. The route table declares the exception
+// because the shell may not name a product.
+test('the coach link is declared bare, so opening gym never drags it into the room', () => {
+  assert.equal(typeof gymRoutes.shell.bare, 'function');
+  assert.equal(gymRoutes.shell.bare('#/gym/shared/tok_abc123'), true);
+
+  // Everything that IS a room stays one.
+  for (const hash of ['#/gym', '#/gym/log', '#/gym/routines', '#/gym/stats', '#/gym/backfill',
+                      '#/gym/session/ses_1', '#/gym/finish/ses_1']) {
+    assert.equal(gymRoutes.shell.bare(hash), false, hash);
+  }
+});

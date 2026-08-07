@@ -268,7 +268,7 @@ ToolResult createExercise(LogService& log, const UserId& caller, const Json::Val
 }
 
 ToolResult shareSession(LogService& log, const UserId& caller, const Json::Value& args,
-                        const std::string& apiBaseUrl) {
+                        const std::string& appBaseUrl) {
   std::string session;
   if (std::optional<std::string> bad =
           idArgument(args, "sessionId", "Call list_sessions for the ids you own.", session))
@@ -276,10 +276,11 @@ ToolResult shareSession(LogService& log, const UserId& caller, const Json::Value
 
   std::optional<SessionShare> share = log.share(caller, SessionId{session});
   if (!share) return ToolResult::failure(kNoSession);
-  // The token alone is not a thing a lifter can hand anybody, so the reply leads with the URL it
-  // becomes. The path is gym's own (routes.cpp) and is composed here rather than by every caller.
+  // The token alone is not a thing a lifter can hand anybody, so the reply leads with the link it
+  // becomes — composed once in the codec, because three surfaces composing it is how two of them
+  // ended up handing a coach a page of JSON.
   Json::Value out(Json::objectValue);
-  out["url"] = apiBaseUrl + "/v1/gym/shared/" + share->token;
+  out["url"] = shareUrl(appBaseUrl, share->token);
   out["token"] = share->token;
   out["expiresAt"] = Json::Value::UInt64(share->expiresAtMs);
   return ToolResult::json(out);
@@ -333,8 +334,8 @@ ToolResult revokeShare(LogService& log, const UserId& caller, const Json::Value&
 
 }  // namespace
 
-GymTools::GymTools(LogService& log, std::string apiBaseUrl)
-    : log_(log), apiBaseUrl_(std::move(apiBaseUrl)) {}
+GymTools::GymTools(LogService& log, std::string appBaseUrl)
+    : log_(log), appBaseUrl_(std::move(appBaseUrl)) {}
 
 std::vector<ToolDeclaration> GymTools::declareTools() const { return gymToolCatalog(); }
 
@@ -388,7 +389,7 @@ ToolResult GymTools::dispatch(const std::string& name, const Json::Value& argume
   if (name == "finish_session")  return finishSession(log_, caller, arguments);
   if (name == "save_routine")    return saveRoutine(log_, caller, arguments);
   if (name == "create_exercise") return createExercise(log_, caller, arguments);
-  if (name == "share_session")   return shareSession(log_, caller, arguments, apiBaseUrl_);
+  if (name == "share_session")   return shareSession(log_, caller, arguments, appBaseUrl_);
 
   if (name == "discard_session") return discardSession(log_, caller, arguments);
   if (name == "delete_routine")  return deleteRoutine(log_, caller, arguments);

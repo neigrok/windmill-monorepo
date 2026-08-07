@@ -147,8 +147,10 @@ function NavCluster({ cta, resume, resolving, seat }) {
   }
 
   // Role 9 — a signed-in visitor is met by the verb that returns them to their own work, and
-  // the seat that proves the page knows them. The product decides what resuming means; a
-  // pre-open product has no resume and falls back to its CTA, or to nothing at all.
+  // the seat that proves the page knows them. The product decides what resuming means, and
+  // `status` decides nothing about it: gym is pre-open and still passes a resume, because the log a
+  // signed-in lifter would return to is real and reachable. A landing with nothing true to offer
+  // passes none and falls back to its CTA, or to nothing at all.
   // The seat's count and its parting line are the product's to say — the shell owns no sentence
   // about somebody's data — so a landing with nothing true to report passes no `seat` and gets
   // a seat that stays quiet rather than one that guesses.

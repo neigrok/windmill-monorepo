@@ -41,7 +41,8 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // exactly one cause and the sentence is the whole of it.
 class GymApi {
 public:
-  GymApi(std::shared_ptr<LogService> log, std::shared_ptr<AuthService> auth);
+  GymApi(std::shared_ptr<LogService> log, std::shared_ptr<AuthService> auth,
+         std::string appBaseUrl);
 
   void listExercises(const drogon::HttpRequestPtr& req, HttpCallback&& cb);   // GET  /v1/gym/exercises
   void createExercise(const drogon::HttpRequestPtr& req, HttpCallback&& cb);  // POST /v1/gym/exercises
@@ -77,6 +78,7 @@ public:
 
 private:
   std::shared_ptr<LogService> log_;
+  std::string appBaseUrl_;   // where the browser app is served — a share's link, and nothing else
   std::shared_ptr<AuthService> auth_;
 };
 

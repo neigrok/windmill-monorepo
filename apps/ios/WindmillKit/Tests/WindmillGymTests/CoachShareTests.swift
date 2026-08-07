@@ -11,13 +11,14 @@ final class CoachShareTests: XCTestCase {
     private let base = URL(string: "https://windmill.works")!
     private let share = SessionShare(token: "abc123", expiresAtMs: 1_756_992_000_000)
 
-    // The token is the whole credential and the path is gym's one unauthenticated route. A base URL
-    // with a trailing slash is the same address — a debug build reading `WMApiBaseURL` can carry one.
-    func testTheLinkIsTheTokenOnTheOneUnauthenticatedRoute() {
-        XCTAssertEqual(Coach.link("abc123", base: base),
-                       "https://windmill.works/v1/gym/shared/abc123")
-        XCTAssertEqual(Coach.link("abc123", base: URL(string: "http://127.0.0.1:8080/")!),
-                       "http://127.0.0.1:8080/v1/gym/shared/abc123")
+    // A share becomes a PAGE a coach opens, not a call into the JSON API — and those are two routes
+    // on one host, which is how the wrong one shipped. A base URL with a trailing slash is the same
+    // address; a debug build reading `WMApiBaseURL` can carry one.
+    func testTheLinkIsTheReaderPageAndNotTheApiRoute() {
+        XCTAssertEqual(Coach.link(SessionShare(token: "abc123", expiresAtMs: 0), base: base),
+                       "https://windmill.works/#/gym/shared/abc123")
+        XCTAssertEqual(Coach.link(SessionShare(token: "abc123", expiresAtMs: 0), base: URL(string: "http://127.0.0.1:8080/")!),
+                       "http://127.0.0.1:8080/#/gym/shared/abc123")
     }
 
     // Before anything is minted the offer names no expiry DATE, because there is no share yet and
@@ -49,27 +50,43 @@ final class CoachShareTests: XCTestCase {
         XCTAssertNil(card.link)
     }
 
+    // The link is the SERVER's. This shipped composing `/#/gym/shared/…` from the API base, so a
+    // coach tapping a share sent from a phone was handed a page of JSON — the one thing a share is
+    // for, broken. The fallback exists for a backend older than the field and is the READER's route,
+    // never the API's, so the worst case is a wrong host rather than the wrong kind of page.
+    func testTheLinkIsTheOneTheServerSentAndTheFallbackIsNeverTheJsonRoute() {
+        let sent = SessionShare(token: "abc123", expiresAtMs: 0,
+                                url: "https://windmill.works/#/gym/shared/abc123")
+        XCTAssertEqual(Coach.link(sent, base: URL(string: "https://api.example.com")!),
+                       "https://windmill.works/#/gym/shared/abc123")
+
+        let old = SessionShare(token: "abc123", expiresAtMs: 0)
+        let fallback = Coach.link(old, base: base)
+        XCTAssertFalse(fallback.contains("/v1/"))
+        XCTAssertTrue(fallback.hasSuffix("/#/gym/shared/abc123"))
+    }
+
     // The live card prints the ADDRESS in full and the expiry the server decided — never a day
     // counted off this device's clock, which can support an omission but never an assertion.
     func testTheLiveCardShowsTheAddressAndTheServersOwnExpiry() {
-        let card = Coach.card(.live(token: "abc123", expiresAtMs: share.expiresAtMs), base: base)
+        let card = Coach.card(.live(share: share), base: base)
 
         XCTAssertEqual(card.title, "The link is live")
         XCTAssertEqual(card.body, "Anyone who has this link can read this one workout. It stops "
                        + "working on \(Readout.day(share.expiresAtMs)), and revoking it kills it immediately.")
-        XCTAssertEqual(card.link, "https://windmill.works/v1/gym/shared/abc123")
+        XCTAssertEqual(card.link, "https://windmill.works/#/gym/shared/abc123")
         XCTAssertEqual(card.action, "Copy link")
         XCTAssertEqual(card.revoke, "Revoke the link")
         XCTAssertNil(card.note)
     }
 
     func testCopyingSaysSoAndChangesNothingElseAboutTheCard() {
-        let copied = Coach.State.live(token: "abc123", expiresAtMs: share.expiresAtMs).after(.copied)
+        let copied = Coach.State.live(share: share).after(.copied)
         let card = Coach.card(copied, base: base)
 
-        XCTAssertEqual(copied, .live(token: "abc123", expiresAtMs: share.expiresAtMs, copied: true))
+        XCTAssertEqual(copied, .live(share: share, copied: true))
         XCTAssertEqual(card.action, "Copied")
-        XCTAssertEqual(card.link, "https://windmill.works/v1/gym/shared/abc123")
+        XCTAssertEqual(card.link, "https://windmill.works/#/gym/shared/abc123")
         XCTAssertEqual(card.revoke, "Revoke the link")
     }
 
@@ -96,14 +113,14 @@ final class CoachShareTests: XCTestCase {
     // to keep saying so: drawing it as dead would tell a lifter their coach can no longer read the
     // session on the strength of a request that failed.
     func testARevokeThatFailedLeavesTheLinkLiveAndSaysWhy() {
-        let live = Coach.State.live(token: "abc123", expiresAtMs: share.expiresAtMs, copied: true)
+        let live = Coach.State.live(share: share, copied: true)
         let after = live.after(.revokeFailed("the log didn’t answer — the link is still live"))
         let card = Coach.card(after, base: base)
 
-        XCTAssertEqual(after, .live(token: "abc123", expiresAtMs: share.expiresAtMs, copied: false,
+        XCTAssertEqual(after, .live(share: share, copied: false,
                                     note: "the log didn’t answer — the link is still live"))
         XCTAssertEqual(card.title, "The link is live")
-        XCTAssertEqual(card.link, "https://windmill.works/v1/gym/shared/abc123")
+        XCTAssertEqual(card.link, "https://windmill.works/#/gym/shared/abc123")
         XCTAssertEqual(card.note, "the log didn’t answer — the link is still live")
         XCTAssertEqual(card.revoke, "Revoke the link", "the door stays open — it is still revocable")
         XCTAssertEqual(card.action, "Copy link", "the note is the news, so the clipboard claim goes")
@@ -113,7 +130,7 @@ final class CoachShareTests: XCTestCase {
     func testTheStateMachineOnlyGoesLiveOnTheLogsOwnAnswer() {
         XCTAssertEqual(Coach.State.closed().after(.asked), .working)
         XCTAssertEqual(Coach.State.working.after(.minted(share)),
-                       .live(token: "abc123", expiresAtMs: share.expiresAtMs))
+                       .live(share: share))
         XCTAssertEqual(Coach.State.working.after(.mintFailed("no such session")),
                        .closed(note: "no such session"))
         XCTAssertEqual(Coach.State.working.after(.revoked), .revoked)

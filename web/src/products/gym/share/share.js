@@ -20,9 +20,13 @@
 
 import { dayLabel, groupByExercise, sharedHref } from '../log.js';
 
-// The link, whole, for a lifter to paste into a message. Built from the page's own origin rather
-// than from a configured host: this app is served from one origin in production and from a dev
-// server otherwise, and a hard-coded domain would hand a lifter testing locally a link to prod.
+// The link, whole, for a lifter to paste into a message. The server now sends a `url` too — it has
+// to, because the phone and an MCP client have no page origin to read and both once composed the
+// JSON route from the API's base, handing a coach a page of JSON. THIS surface keeps composing from
+// the page's own origin anyway, and that is not drift: a browser knows exactly where it is being
+// served from, while the server's WINDMILL_APP_URL is a deployment's guess that is a different port
+// in development. The route itself is one function (`sharedHref`), which is the part that must not
+// be written twice.
 export function shareLink(token, origin = '') {
   return `${origin}/${sharedHref(token)}`;
 }

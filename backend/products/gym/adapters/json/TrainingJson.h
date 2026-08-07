@@ -112,4 +112,12 @@ Json::Value toJson(const Statistics& statistics);
 Json::Value toJson(const SharedSession& shared);
 std::optional<PlanSnapshot> planFrom(const Json::Value& stored);   // clamps, never throws
 
+// The one place a share token becomes a link, because it has been three places and they disagreed:
+// the web composed the page's own hash route while the phone and the MCP tool each pasted the JSON
+// route onto a base url, so a lifter who shared from either handed their coach a page of JSON. It
+// takes the APP's base url — where the browser app is served — not the API's. In production one
+// origin answers both, which is exactly why the wrong one went unnoticed. The server composes it
+// once and every surface renders what it is given.
+std::string shareUrl(const std::string& appBaseUrl, const std::string& token);
+
 }

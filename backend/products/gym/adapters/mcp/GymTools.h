@@ -21,11 +21,11 @@ namespace wm::gym {
 // knows how to ask.
 class GymTools : public ToolHost {
 public:
-  // `apiBaseUrl` is where this deployment answers HTTP, and it is here for one thing: a minted
+  // `appBaseUrl` is where this deployment answers HTTP, and it is here for one thing: a minted
   // share is a token, and a token is only useful to a coach as a URL. Gym composes that URL because
   // gym owns the route it points at (routes.cpp) — a caller that pasted the path together would be
   // the second place that had to know it.
-  GymTools(LogService& log, std::string apiBaseUrl);
+  GymTools(LogService& log, std::string appBaseUrl);
 
   std::vector<ToolDeclaration> declareTools() const override;
   ToolResult callTool(const std::string& name, const Json::Value& arguments,
@@ -37,7 +37,7 @@ private:
   ToolResult dispatch(const std::string& name, const Json::Value& arguments, const UserId& caller);
 
   LogService& log_;
-  std::string apiBaseUrl_;
+  std::string appBaseUrl_;
 };
 
 }

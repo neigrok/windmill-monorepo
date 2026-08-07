@@ -16,7 +16,7 @@ namespace wm::gym {
 // and calls this beside the other two mounts. Every path below is owner-scoped but the last one,
 // which is the coach share's read and is the only unauthenticated route in the product.
 void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
-  auto api = std::make_shared<GymApi>(deps.logService, deps.authService);
+  auto api = std::make_shared<GymApi>(deps.logService, deps.authService, deps.appBaseUrl);
 
   app.registerHandler(
       "/v1/gym/exercises",

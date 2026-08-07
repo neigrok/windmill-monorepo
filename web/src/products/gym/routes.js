@@ -7,6 +7,7 @@
 
 import { lazy } from 'react';
 import { gymLandingHead } from './marketing/landingHead.js';
+import { sharedTokenOf } from './log.js';
 
 const importGymApp = () => import('./GymApp.jsx').then((m) => ({ default: m.GymApp }));
 const GymApp = lazy(importGymApp);
@@ -99,24 +100,23 @@ export const gymRoutes = {
     //     seat and switcher only outside the shell.
     //
     // What the flip still implies, and what nobody should discover afterwards:
-    //   · ONE TEST FAILS ON THE FLIP, and it is the shell's: test/shell/settings/accountClosure.test.js
-    //     asserts at least one registered product is pre-open, so that the account-close deal is
-    //     proved to name a product with no door. With gym open there is none, and `npm run build`
-    //     stops. Nothing in gym's own suite pins the word — this comment is deliberately the only
-    //     place it is discussed.
-    //   · #/gym/shared/<token> upgrades too, because the legacy door matches on the '#/gym' prefix
-    //     (shell/App.jsx). A coach opening a link they were sent would then read that one workout
-    //     inside the app's chrome — a rail, a Sign in seat — rather than on the bare page this
-    //     product deliberately hands them. Either the door has to learn about that one sub-path or
-    //     the coach's page needs a hash outside the '#/gym' prefix.
-    //   · the shell's pre-open cell and the brand root's door both stop drawing "In design", which
-    //     is correct — and both of those words are the shell's, derived, so neither needs an edit.
-    //     Until then they are the one place left that still calls a finished product a design: the
-    //     /app grid's cell reads "in design · No door yet" beside a landing that now opens the log.
-    //     That copy is the shell's (chrome/ShellHome.jsx) and is filed for whoever owns it.
-    //   · gym still requires an account. #/gym answers a ghost with a sign-in pitch, and the rail
-    //     will offer the room to one. That is stated at every door that leads there (the HomeCard,
-    //     the landing's trust line) and it is a precondition, not a bug.
+    //   · the coach's link is safe: `bare` above keeps #/gym/shared/<token> out of the room, and
+    //     web/test/products/gym/routes.test.js pins it, so a stranger opening a shared workout never
+    //     gets a rail and a Sign in seat around it.
+    //   · the shell's own pre-open cell and the accountClosure test were the two things that would
+    //     have broken or lied on the flip. Both are fixed: no test asserts that a pre-open product
+    //     exists, and the /app grid no longer calls a finished product a design.
+    //   · what the flip DOES still change, and is simply true: #/gym starts upgrading into /app/gym,
+    //     so gym renders inside the shell's chrome (handled — `render` passes `inShell`), gym joins
+    //     the rail, the mobile tabs and the /app home grid (its HomeCard is ready), and the brand
+    //     root's hero CTA can pick gym as the first open product.
+    //   · what it does NOT change: the dogfood gate has still never run. Opening the door is a
+    //     statement that the product is good, and only eight real sessions can make it.
+    // The one hash under '#/gym' that must NEVER be upgraded into the room, whatever `status` says:
+    // the coach's link. Whoever opens it is not signed in and may not have an account, so drawing the
+    // app's rail and a Sign in seat around their lifter's workout would be the shell answering a
+    // question nobody asked. The shell reads this off the registry — it may not name a product.
+    bare: (hash) => sharedTokenOf(hash) != null,
     status: 'pre-open',
     landingHref: '/gym',
     HomeCard,

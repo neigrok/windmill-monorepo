@@ -277,9 +277,10 @@ std::vector<ToolDeclaration> gymToolCatalog() {
     Json::Value p(Json::objectValue);
     p["sessionId"] = sessionHandle();
     tools.push_back(tool("share_session", Access::write,
-        "Mint a link to ONE workout for a coach. Answers {url, token, expiresAt}: anyone holding "
-        "that url can read that workout and its sets without signing in, so hand it to a person and "
-        "not to a page. It reaches no other workout and names no account, it expires (30 days), and "
+        "Mint a link to ONE workout for a coach. Answers {url, token, expiresAt}: hand over the "
+        "URL EXACTLY as given — it opens the workout as a readable page in a browser, and anyone "
+        "holding it can read that workout and its sets without signing in. Do not build a link from "
+        "the token yourself. It reaches no other workout and names no account, it expires (30 days), and "
         "revoke_share ends it early. Called again while a link is live it answers with that same "
         "link rather than a second one.",
         p, {"sessionId"}));

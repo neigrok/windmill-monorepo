@@ -425,4 +425,9 @@ std::optional<PlanSnapshot> planFrom(const Json::Value& stored) {
   return plan;
 }
 
+
+std::string shareUrl(const std::string& appBaseUrl, const std::string& token) {
+  return appBaseUrl + "/#/gym/shared/" + token;
+}
+
 }

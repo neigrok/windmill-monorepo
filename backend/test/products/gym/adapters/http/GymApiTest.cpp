@@ -43,7 +43,7 @@ struct Harness {
       std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, footprint, "https://windmill.works");
   FakeTrainingRepository repo;
   std::shared_ptr<LogService> log = std::make_shared<LogService>(repo, clock, tokens);
-  GymApi api{log, auth};
+  GymApi api{log, auth, "https://windmill.works"};
 
   Harness() {
     repo.seed(benchPress());
@@ -645,7 +645,7 @@ TEST(gym_a_storage_failure_on_append_is_never_the_clients_400) {
   down.seed(benchPress());
   down.sessions.push_back(Session{sid("ses_11111111"), user, 1'700'000'000'000});
   auto log = std::make_shared<LogService>(down, h.clock, h.tokens);
-  GymApi api{log, h.auth};
+  GymApi api{log, h.auth, "https://windmill.works"};
 
   // The house exception handler answers 500 "internal error" — a status the flush queue retries,
   // where the old 400 told it to drop the lifter's set forever.
@@ -669,7 +669,7 @@ TEST(gym_a_storage_failure_on_start_is_never_the_clients_400) {
   h.signIn("s-live");
   DownRepository down;
   auto log = std::make_shared<LogService>(down, h.clock, h.tokens);
-  GymApi api{log, h.auth};
+  GymApi api{log, h.auth, "https://windmill.works"};
 
   bool escaped = false;
   drogon::HttpResponsePtr response;
@@ -1549,6 +1549,26 @@ TEST(gym_share_answers_a_token_and_an_end_and_a_second_tap_answers_the_same_one)
   CHECK(!bodyOf(first)["token"].asString().empty());
   CHECK_EQ(bodyOf(first)["expiresAt"].asUInt64(), h.clock.now + kShareLifetimeMs);
   CHECK_EQ(h.repo.shares.size(), static_cast<std::size_t>(1));
+}
+
+// The reply carries the LINK, not just the secret, and the link is the browser app's route. It shipped
+// as three strings composed by three surfaces and two of them pasted the JSON route onto a base url,
+// so a lifter sharing from the phone or through an agent handed their coach a page of JSON. The
+// server composes it once now and every surface renders what it was given.
+TEST(gym_share_answers_the_page_a_coach_opens_and_never_the_json_route) {
+  Harness h;
+  h.signIn("s-live");
+  trainedThrough(h, "s-live", "ses_11111111", 1'700'000'000'000, 4);
+
+  drogon::HttpResponsePtr minted =
+      send(h.api, &GymApi::shareSession,
+           postRequest("/v1/gym/sessions/ses_11111111/share", Json::Value(Json::objectValue),
+                       "s-live"),
+           "ses_11111111");
+
+  const std::string url = bodyOf(minted)["url"].asString();
+  CHECK_EQ(url, "https://windmill.works/#/gym/shared/" + bodyOf(minted)["token"].asString());
+  CHECK(url.find("/v1/") == std::string::npos);
 }
 
 // Sharing is a write to the share table and nowhere else: not one of the sixteen owner-scoped

@@ -18,15 +18,21 @@ import WindmillPlatform
 public struct SessionShare: Equatable, Codable, Sendable {
     public let token: String
     public let expiresAtMs: Int64
+    // The link, composed by the SERVER, because it is the only participant that knows where the
+    // browser app is served. Optional so a phone talking to a backend older than this field still
+    // decodes; `Coach.link` says what happens then.
+    public let url: String?
 
-    public init(token: String, expiresAtMs: Int64) {
+    public init(token: String, expiresAtMs: Int64, url: String? = nil) {
         self.token = token
         self.expiresAtMs = expiresAtMs
+        self.url = url
     }
 
     enum CodingKeys: String, CodingKey {
         case token
         case expiresAtMs = "expiresAt"
+        case url
     }
 }
 
@@ -55,7 +61,7 @@ public enum Coach {
     public enum State: Equatable {
         case closed(note: String? = nil)
         case working
-        case live(token: String, expiresAtMs: Int64, copied: Bool = false, note: String? = nil)
+        case live(share: SessionShare, copied: Bool = false, note: String? = nil)
         case revoked
 
         // The whole state machine, as one pure step. It is here rather than inside the view because
@@ -67,19 +73,19 @@ public enum Coach {
             case .asked:
                 return .working
             case .minted(let share):
-                return .live(token: share.token, expiresAtMs: share.expiresAtMs)
+                return .live(share: share)
             case .mintFailed(let why):
                 return .closed(note: why)
             case .copied:
-                guard case .live(let token, let expiresAtMs, _, let note) = self else { return self }
-                return .live(token: token, expiresAtMs: expiresAtMs, copied: true, note: note)
+                guard case .live(let share, _, let note) = self else { return self }
+                return .live(share: share, copied: true, note: note)
             case .revoked:
                 return .revoked
             // The note is the news, so the copied flag goes back down with it: the button under a
             // failure reads "Copy link" again rather than claiming a clipboard state from before it.
             case .revokeFailed(let why):
-                guard case .live(let token, let expiresAtMs, _, _) = self else { return self }
-                return .live(token: token, expiresAtMs: expiresAtMs, note: why)
+                guard case .live(let share, _, _) = self else { return self }
+                return .live(share: share, note: why)
             }
         }
     }
@@ -93,15 +99,19 @@ public enum Coach {
         case revokeFailed(String)
     }
 
-    // The address the coach opens. The token is the whole credential and the path is the product's
-    // one unauthenticated route, so this is the only address that exists for a shared session today
-    // — the web has no reader page for one yet. A reader page, when it ships, resolves this same
-    // token, so a link already sent keeps naming the same workout.
-    public static func link(_ token: String, base: URL) -> String {
+    // The address the coach opens, and it is the server's to compose rather than ours. This phone
+    // knows where the API answers; it does not know where the browser app is served, and the two are
+    // one host in production — which is exactly how this shipped pointing at `/v1/gym/shared/…`, the
+    // JSON route, so a coach tapping a link from a phone was handed a page of JSON.
+    //
+    // The fallback is the reader page's own route and never the API's, so the worst case against an
+    // older backend is a link built from the wrong host rather than one that opens the wrong thing.
+    public static func link(_ share: SessionShare, base: URL) -> String {
+        if let sent = share.url, !sent.isEmpty { return sent }
         let origin = base.absoluteString.hasSuffix("/")
             ? String(base.absoluteString.dropLast())
             : base.absoluteString
-        return "\(origin)/v1/gym/shared/\(token)"
+        return "\(origin)/#/gym/shared/\(share.token)"
     }
 
     public static func card(_ state: State, base: URL) -> Card {
@@ -112,12 +122,12 @@ public enum Coach {
         case .working:
             return Card(title: "Share with a coach", body: offer, link: nil,
                         action: "…", revoke: nil, note: nil)
-        case .live(let token, let expiresAtMs, let copied, let note):
+        case .live(let share, let copied, let note):
             return Card(
                 title: "The link is live",
                 body: "Anyone who has this link can read this one workout. It stops working on "
-                    + "\(Readout.day(expiresAtMs)), and revoking it kills it immediately.",
-                link: link(token, base: base),
+                    + "\(Readout.day(share.expiresAtMs)), and revoking it kills it immediately.",
+                link: link(share, base: base),
                 action: copied ? "Copied" : "Copy link",
                 revoke: "Revoke the link",
                 note: note)
@@ -211,8 +221,8 @@ struct CoachShareCard: View {
     // The one action, whatever the card currently offers: mint, or copy the link that is already
     // live. Copying is the only thing here that never touches the log.
     private func act() async {
-        if case .live(let token, _, _, _) = state {
-            UIPasteboard.general.string = Coach.link(token, base: doors.base)
+        if case .live(let share, _, _) = state {
+            UIPasteboard.general.string = Coach.link(share, base: doors.base)
             state = state.after(.copied)
             return
         }

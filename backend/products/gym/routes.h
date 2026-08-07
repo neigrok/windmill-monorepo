@@ -27,6 +27,7 @@ struct GymDeps {
   std::shared_ptr<LogService> logService;
   std::shared_ptr<AuthService> authService;
   std::shared_ptr<CoachService> coachService;  // null (or unconfigured) ⇒ no coach route exists
+  std::string appBaseUrl;                     // the browser app's origin — a coach share's link
 };
 
 // Mounts the gym product on the shared app: every /v1/gym/* route. All of them are owner-scoped

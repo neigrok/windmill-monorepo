@@ -31,14 +31,17 @@ test('the list is built from whatever the registry holds, in its order', () => {
                    'It closes the whole account, not one room — Only alike.');
 });
 
-// A PRE-OPEN PRODUCT IS STILL THE ACCOUNT'S. Gym holds `shell.status: 'pre-open'`, which removes it
-// from the rail, the tabs and the home grid — and must NOT remove it from here, because the account
-// holds a lifter's sessions whether or not the web has grown a door onto them.
-test('a pre-open product is named in the deal all the same', () => {
-  const preOpen = PRODUCTS.filter((product) => product.shell?.status !== 'open');
-  assert.equal(preOpen.length > 0, true, 'this test is vacuous with no pre-open product — check the registry');
+// EVERY PRODUCT IS NAMED, WHATEVER ITS STATUS. `shell.status` decides whether a product has a door
+// in the rail, the tabs and the home grid; it decides nothing about whose data it is. The account
+// holds a lifter's sessions whether or not the web has grown a door onto them, so closing it takes
+// them either way and the deal has to say so.
+//
+// This deliberately does NOT require a pre-open product to exist. It used to, and that assertion was
+// a tripwire under a one-line launch: the day gym's status flips, a test about consent copy would
+// have failed and stopped `npm run build`, which reads as "opening gym broke the app".
+test('every registered product is named in the deal, open or not', () => {
   const deal = closingDeal(PRODUCTS.map((product) => product.label)).join(' ');
-  for (const product of preOpen) assert.equal(deal.includes(product.label), true);
+  for (const product of PRODUCTS) assert.equal(deal.includes(product.label), true);
 });
 
 // THE CLAIM THAT MAY NOT BE MADE BACK WITHOUT THE SERVER MAKING IT TRUE.

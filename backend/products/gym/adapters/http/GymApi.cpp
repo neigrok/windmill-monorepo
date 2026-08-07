@@ -22,8 +22,9 @@ std::optional<std::uint64_t> digitsOnlyMs(const std::string& text) {
 }
 }
 
-GymApi::GymApi(std::shared_ptr<LogService> log, std::shared_ptr<AuthService> auth)
-    : log_(std::move(log)), auth_(std::move(auth)) {}
+GymApi::GymApi(std::shared_ptr<LogService> log, std::shared_ptr<AuthService> auth,
+               std::string appBaseUrl)
+    : log_(std::move(log)), auth_(std::move(auth)), appBaseUrl_(std::move(appBaseUrl)) {}
 
 void GymApi::listExercises(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   std::optional<UserId> caller = callerOf(req, *auth_);
@@ -513,8 +514,12 @@ void GymApi::shareSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     cb(error(drogon::k404NotFound, "no such session"));
     return;
   }
+  // The link is the server's to compose, not each client's: the token alone is not something a
+  // lifter can hand anybody, and when three surfaces built it themselves two of them built the JSON
+  // route and showed a coach a page of JSON.
   Json::Value body(Json::objectValue);
   body["token"] = share->token;
+  body["url"] = shareUrl(appBaseUrl_, share->token);
   body["expiresAt"] = Json::Value::UInt64(share->expiresAtMs);
   cb(jsonResponse(body));
 }

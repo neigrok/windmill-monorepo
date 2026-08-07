@@ -342,11 +342,13 @@ int main() {
   // the composite is constructed once, before the server takes traffic. `*tokens` is the one
   // collaborator gym did not have at phase 0 and it is here for exactly one thing — minting a coach
   // share's secret, from the same mint that makes a session cookie, so the one unguessable string
-  // gym hands out is the platform's and not gym's own. apiBaseUrl is where a minted share becomes a
-  // URL: gym composes that from the route it owns rather than every caller pasting the path.
+  // gym hands out is the platform's and not gym's own. It is handed appBaseUrl and NOT apiBaseUrl,
+  // and the difference is the whole point: a share becomes a link a human opens in the browser app,
+  // not a call into the JSON API. One origin answers both in production, which is exactly why
+  // passing the wrong one went unnoticed until a coach was handed a page of JSON.
   auto gymRepository = std::make_shared<gym::PgTrainingRepository>(connString);
   auto logService = std::make_shared<gym::LogService>(*gymRepository, *systemClock, *tokens);
-  auto gymTools = std::make_shared<gym::GymTools>(*logService, apiBaseUrl);
+  auto gymTools = std::make_shared<gym::GymTools>(*logService, appBaseUrl);
 
   // The in-app coach panel — the SECOND door onto the very tools built above, for a lifter who has no
   // agent of their own. Same key as the roadmap composer and the tend agent: one Anthropic account,
@@ -868,7 +870,8 @@ int main() {
   // or not it is set. Its collaborators were built up with the MCP surface, because gym's tools ride
   // the same service these routes do — one core, two doors, and no second copy of a rule.
   gym::GymDeps gymDeps{
-      .logService = logService, .authService = authService, .coachService = gymCoach};
+      .logService = logService, .authService = authService, .coachService = gymCoach,
+      .appBaseUrl = appBaseUrl};
   gym::registerRoutes(app, gymDeps);
 
   // Resend's delivery webhook, mounted LAST because it is the one door that speaks for all of them.

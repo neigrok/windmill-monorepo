@@ -58,8 +58,8 @@ function swapInTag(html, marker, from, to) {
 }
 
 // Shared site and publisher, this page as a page of it, then whatever this page's own content
-// backs — a roadmap app, a journal app, the brand root's FAQ. Gym asserts nothing extra: there is
-// nothing to log yet.
+// backs — a roadmap app, a journal app, a gym app, the brand root's FAQ. Every landing asserts the
+// thing its own page is for; none of them asserts anything the product does not yet do.
 function renderSchema(head) {
   if (!head.schema) throw new Error(`build-landing-shells: the ${head.path} row declares no schema — a shell that reuses the brand root's would assert the wrong url from this one`);
   const url = `${SITE_ORIGIN}${head.path}`;
