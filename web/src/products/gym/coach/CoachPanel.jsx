@@ -18,9 +18,10 @@
 import React, { useState } from 'react';
 import { gymApi } from '../gymApi.js';
 import { useEntitlements } from '../../../shell/billing/EntitlementsProvider.jsx';
-import { beginUpgrade } from '../../../shell/billing/checkout.js';
+import { beginUpgrade, paidPlansOpen } from '../../../shell/billing/checkout.js';
 import {
-  askFailure, COACH_LOCKED_NOTE, COACH_PLACEHOLDER, COACH_TERMS, COACH_TITLE, stepsLine, threadFor,
+  askFailure, COACH_LOCKED_NOTE, COACH_NOT_FOR_SALE, COACH_PLACEHOLDER, COACH_TERMS, COACH_TITLE,
+  stepsLine, threadFor,
 } from './coach.js';
 
 // Drawn only inside the training room, which is signed-in by construction (GymApp), so there is no
@@ -73,18 +74,27 @@ export function CoachPanel({ sessionId }) {
         ) : (
           <>
             <p className="gym-coach-locked">{COACH_LOCKED_NOTE}</p>
-            <button
-              type="button"
-              className="gym-coach-upgrade"
-              onClick={async () => {
-                const opened = await beginUpgrade({
-                  onCompleted: () => { refresh(); setTimeout(refresh, 2500); },
-                });
-                if (!opened) setNote('Couldn’t open checkout.');
-              }}
-            >
-              See Windmill One
-            </button>
+            {/* The button appears only when there is something to buy. Windmill One is not on sale
+                yet (shell/billing/checkout.js — paidPlansOpen), and an Upgrade that opens a checkout
+                nobody can complete is the same manufactured urgency the pricing page took its own
+                CTA down over. So the locked face says the plan is not open instead of pretending a
+                door. The moment plans arm, the button is back with them. */}
+            {paidPlansOpen() ? (
+              <button
+                type="button"
+                className="gym-coach-upgrade"
+                onClick={async () => {
+                  const opened = await beginUpgrade({
+                    onCompleted: () => { refresh(); setTimeout(refresh, 2500); },
+                  });
+                  if (!opened) setNote('Couldn’t open checkout.');
+                }}
+              >
+                See Windmill One
+              </button>
+            ) : (
+              <p className="gym-coach-note">{COACH_NOT_FOR_SALE}</p>
+            )}
             {note && <p className="gym-coach-note">{note}</p>}
           </>
         )}

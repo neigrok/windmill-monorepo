@@ -19,7 +19,7 @@ export const SITE_SCHEMA = [
     '@id': `${SITE_ORIGIN}/#website`,
     'url': `${SITE_ORIGIN}/`,
     'name': 'Windmill',
-    'description': 'Three self-growth tools on one account — Roadmap turns any goal into a living RPG skill tree, Journal is free-form daily writing that finds the feeling rather than the word, and Gym is a quiet training log, when it opens.',
+    'description': 'Three self-growth tools on one account — Roadmap turns any goal into a living RPG skill tree, Journal is free-form daily writing that finds the feeling rather than the word, and Gym is a quiet training log.',
     'inLanguage': 'en',
     'publisher': { '@id': `${SITE_ORIGIN}/#organization` },
   },

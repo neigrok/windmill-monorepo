@@ -64,8 +64,16 @@ jobs:
           VITE_RELEASE: ${{ github.sha }}
           # Paddle's client-side token is public by design (it ships in the bundle and only opens
           # checkouts). The secret-bearing API key lives on the server, never here.
-          VITE_PADDLE_TOKEN: test_d4d8d13ce4ce20c7b43867bf800
-          VITE_PADDLE_ENV: sandbox
+          #
+          # It is a REPO VARIABLE and not a literal, because this one job both builds pull requests
+          # and ships main. A sandbox token written here is correct for a PR and a lie in
+          # production: it puts a test checkout in front of a real customer. Set the live pair once
+          # with `gh variable set PADDLE_TOKEN` / `gh variable set PADDLE_ENV`, and until then the
+          # build ships an EMPTY token — which is the honest state, because paidPlansOpen() is false
+          # and nothing is for sale. An empty token makes paddleReady() false, so no surface offers a
+          # checkout it cannot honour (shell/billing/checkout.js).
+          VITE_PADDLE_TOKEN: ${{ vars.PADDLE_TOKEN }}
+          VITE_PADDLE_ENV: ${{ vars.PADDLE_ENV }}
         run: npm run build
 
       - name: Rsync dist to the VPS

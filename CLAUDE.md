@@ -4,8 +4,10 @@ Windmill is a brand of three self-growth products — **roadmap** (a highly anim
 tree, rendered with a hand-rolled WebGL2 renderer, no three.js), **journal** (a night-canvas
 daily journal), and **gym** (training log) — served by one shared backend and presented as one
 superapp per surface (web · iOS · Android), behind one account and one subscription. Roadmap is
-the original product and journal shipped second; gym is in build (the phase-0 seam is real —
-see `backend/products/gym/ARCHITECTURE.md`).
+the original product and journal shipped second; gym is BUILT on all three surfaces through
+phase 2 — the log, the logger, routines, statistics, the coach share, CSV out and fifteen MCP
+tools — and holds itself shut behind one word in `web/src/products/gym/routes.js`, because the
+phase-1 dogfood gate has never run (`docs/PRODUCT_LOG.md`, `backend/products/gym/ARCHITECTURE.md`).
 
 This is a monorepo grouped by surface, then product. **Read `STRUCTURE.md` for the layout and
 the one dependency rule** (platform is product-neutral; products depend on platform, never the

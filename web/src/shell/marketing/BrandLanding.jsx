@@ -39,7 +39,11 @@ function ProductDoor({ product }) {
       <div className="eyebrow">{landing.tagline}</div>
       <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
         <h3 className="trioTitle">{label}</h3>
-        {shell.status === 'pre-open' && <Badge tone="neutral">In design</Badge>}
+        {/* "Not open yet", never "In design" — the same words the /app home cell uses. A pre-open
+            product here is one whose ROOM has not opened; it is not a product nobody has built.
+            Gym is finished and reachable at its own landing, and a badge calling it a design was
+            the brand root telling a visitor something the next click contradicts. */}
+        {shell.status === 'pre-open' && <Badge tone="neutral">Not open yet</Badge>}
       </div>
       <p className="trioCopy" style={{ flex: 1 }}>{landing.summary}</p>
       <span style={{ fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 15 }}>{verb} →</span>
@@ -68,7 +72,7 @@ export function BrandLanding() {
         </h1>
         <p style={{ fontFamily: 'var(--font-body)', fontSize: 'clamp(16px, 2vw, 20px)', lineHeight: 1.5, color: 'var(--text-secondary)', maxWidth: 620, margin: 0, textWrap: 'pretty' }}>
           Three quiet tools for looking after yourself — a roadmap for what you’re learning, a journal
-          for what you’re noticing, and a log for how you’re training, when it opens. One account. One
+          for what you’re noticing, and a log for how you’re training. One account. One
           subscription.
         </p>
         {start && (

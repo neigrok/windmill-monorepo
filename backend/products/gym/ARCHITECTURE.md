@@ -1541,12 +1541,26 @@ Three things this rule is deliberately **not**:
 
 ### 11.5 Two rules that fall out sharp
 
-**Web never Finishes a live session.** §3.3's finish boundary is that a set which never landed may
-not land after the close, and only the device holding the queue knows everything landed — that is
-the whole content of *flush before you finish*. A Finish pressed on a laptop over a phone holding
-three unflushed sets refuses those sets forever. The fallback is better than the feature anyway:
-auto-close fires at four hours and stamps the end at the **last set** (§3.2), which is truer than a
-manual finish three hours late. Web offers no button and says the session closes itself.
+**Web DOES Finish a live session — and the rule this paragraph used to state was never built.**
+Written as "web offers no button and says the session closes itself"; corrected 2026-08-07 after
+the code said otherwise. `web/src/products/gym/logger/Logger.jsx` renders a Finish and
+`useLiveSession.js` POSTs it. Half the original reasoning held and is why the web button is safe
+for the device pressing it: finishing **waits for this session's sets to land**, so the tab's own
+queue can never be closed out from under itself.
+
+What did NOT get built is the cross-device half, and it is still a live hazard: §3.3's finish
+boundary is that a set which never landed may not land after the close, and only the device holding
+the queue knows everything landed. **A Finish pressed on a laptop over a phone holding three
+unflushed sets refuses those sets forever**, and no amount of flushing on the laptop can see them.
+The fallback the original rule preferred is still there and still better in that case: auto-close
+fires at four hours and stamps the end at the **last set** (§3.2), which is truer than a manual
+finish three hours late.
+
+So this is an open decision, not a settled design: either the web Finish learns to refuse while
+another device holds an unflushed queue (the server would have to say so), or it goes and web keeps
+only the retrospective half G8 assigns it. It cannot simply stay unstated — it is the one place
+"we have the features" can lose a lifter's sets. Until it is settled, the web logger stays, because
+it is the only capture surface that can be installed on a phone today (§11.6).
 
 **The ladder must not become copy #2.** §0 cut the ladder to exactly one module because Lift pasted
 it into three targets and let them drift — and a native Swift logger writes copy #2 on its first
@@ -1582,11 +1596,21 @@ year of use would never have found them. A second implementation is a second opi
 ### 11.6 What this costs, honestly
 
 The web logger is written and shipped; §11 demotes it to the mirror plus backfill, which is a
-subtraction. The cost is on the other side: until `gym-ios-logger` exists there is **no capture
-surface at all**, so the phase-1 dogfood gate (8 consecutive real sessions) cannot run, and
-`gym-landing` stays down that much longer. `apple-identity` (`backend/AUTH.md`) is a hard
-prerequisite — shipping Sign in with Apple without `user_identities` forks accounts on the first
-lifter who taps *Hide My Email*, and the fork is unrecoverable once both halves hold sets.
+subtraction. `apple-identity` (`backend/AUTH.md`) is a hard prerequisite for the phone —
+shipping Sign in with Apple without `user_identities` forks accounts on the first lifter who taps
+*Hide My Email*, and the fork is unrecoverable once both halves hold sets.
+
+**The cost this paragraph feared did not arrive** (corrected 2026-08-07). It read: "until
+`gym-ios-logger` exists there is **no capture surface at all**, so the phase-1 dogfood gate (8
+consecutive real sessions) cannot run." Both clauses are now false, in opposite directions.
+`gym-ios-logger` exists — `apps/ios/WindmillKit/Sources/WindmillGym` is a full room that builds and
+tests green — and the gate never depended on it: the gate names 8 sessions and no device, and the
+web logger is a complete capture surface that installs to a phone's home screen through the PWA.
+That is where the gate should run, which is what §11 originally assumed.
+
+What *does* still block the phone specifically is signing, not code: `apps/ios/project.yml` sets
+`CODE_SIGNING_REQUIRED: NO` with no `DEVELOPMENT_TEAM`, and the declared Associated Domains
+entitlement needs a paid Apple team. That is a purchase, and it is not on the gate's path.
 
 ---
 

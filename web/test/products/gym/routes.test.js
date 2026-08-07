@@ -73,8 +73,9 @@ test('gym brings the cell the /app home grid draws once it is open', () => {
 // and the phase-1 dogfood gate has never run — so a test asserting 'pre-open' would be one more edit
 // standing in the way of a one-line change. What is pinned is that the registry answers for both: the
 // word is one of the two the shell knows, and the room, the door and the home it names are the same
-// either way. (One test elsewhere DOES fail on the flip and is a real blocker: test/shell/settings/
-// accountClosure.test.js asserts at least one product is pre-open. It is the shell's to fix.)
+// either way. (This used to name accountClosure.test.js as a real blocker on the flip, because it
+// asserted at least one product was pre-open. It was fixed on the shell's side and says so in words
+// — no test in the suite fails when the word changes. Checked 2026-08-07.)
 test('the registry answers for either state of the flag', () => {
   assert.equal(['open', 'pre-open'].includes(gymRoutes.shell.status), true, gymRoutes.shell.status);
   assert.equal(gymRoutes.shell.room, '/app/gym');

@@ -37,6 +37,9 @@ export const COACH_TERMS =
   + 'It only reads: it cannot log a set, change your program, delete a workout, or make a coach link.';
 export const COACH_PLACEHOLDER = 'How did the squats go?';
 export const COACH_LOCKED_NOTE = 'The coach panel is part of Windmill One.';
+// Said when the plan itself is not on sale yet. It replaces the Upgrade button rather than sitting
+// beside it: a price is only honest when there is a door behind it, and there isn't one today.
+export const COACH_NOT_FOR_SALE = 'Windmill One isn’t on sale yet — nothing here is billable, and this panel opens when it is.';
 export const COACH_ABSENT_NOTE = 'The coach isn’t switched on here.';
 
 // Why an ask did not come back, in the half-sentence the panel finishes. Every branch reads the

@@ -12,7 +12,7 @@ backend/     one C++ modular-monolith binary
                tools into the host — roadmap and gym publish tools today
     roadmap/     the RPG skill-tree app (the original Windmill)
     journal/     the night-canvas daily journal (shipped)
-    gym/         training log (phase 0 built — see its ARCHITECTURE.md)
+    gym/         training log (built through phase 2, pre-open — see its ARCHITECTURE.md)
   db/          schema.sql (platform tables + per-product tables)
   test/        mirrors src: test/platform, test/products/<p>
 
@@ -90,7 +90,7 @@ prematurely abstracted — the second consumer earns the abstraction.
   `platform/ports/ToolHost.h`, classifying each tool by product and access level, and
   `main.cpp` registers it as a `ToolModule` on the `CompositeToolHost` that `McpServer` binds.
   That composite is the permission gate — a client's grant selects which products' tools it can
-  see and call. Roadmap is the only module registered today.
+  see and call. Roadmap and gym are both registered today (`main.cpp`).
 - **Web:** each product exports a route table; `web/shell` composes them and renders the
   product switcher. The shell knows an "active product home" — it hard-codes no product.
 

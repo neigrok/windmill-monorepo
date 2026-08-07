@@ -44,7 +44,7 @@ const BRAND_ROOT = {
     accent: '#BC6C42',
     badge: 'Now in public beta',
     h1: 'Grow, gently.',
-    sub: 'Three quiet tools for looking after yourself — a roadmap for what you’re learning, a journal for what you’re noticing, and a log for how you’re training, when it opens. One account. One subscription.',
+    sub: 'Three quiet tools for looking after yourself — a roadmap for what you’re learning, a journal for what you’re noticing, and a log for how you’re training. One account. One subscription.',
     actions: start ? [{ href: start.landing.href, label: `Start with ${start.label}` }] : [],
     trust: 'Free to use by hand, all of it. The paid layer is only ever the AI doing the work for you.',
     notes: [
