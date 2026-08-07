@@ -5,10 +5,14 @@ import SwiftUI
 // the account is created the first time. Every string below is the canon's, verbatim, because the
 // same sentence is already on the web and one sentence lives in one place.
 //
-// What is native rather than canon is the last step. The emailed link opens the WEB app, so until
-// this app has an associated domain to claim `windmill.works` links with, the honest way to finish
-// on a phone is to let someone paste the link they are looking at. That is stated plainly rather
-// than dressed up, and the same field will keep working once universal links land.
+// What is native rather than canon is the last step, and it has two shapes. Once the app claims
+// `windmill.works` links with an associated domain, tapping the emailed link on this phone opens
+// THIS app and the shell finishes the sign-in (`AuthStore.arrived(from:)`). Until the domain serves
+// an `apple-app-site-association` naming this app, the link opens the WEB app instead — and because
+// a link works exactly once, tapping it there BURNS it and a paste afterwards can only fail. So the
+// waiting screen says which of the two is true, and `WMUniversalLinksEnabled` is the one place that
+// answers. Same rule as `WMAppleSignInEnabled`: an instruction that cannot work is absent rather
+// than present and wrong.
 
 public struct SignInDoor: View {
     @ObservedObject var auth: AuthStore
@@ -22,8 +26,12 @@ public struct SignInDoor: View {
     @State private var canResend = false
     @State private var refusal: String?
 
-    public init(auth: AuthStore) {
+    // A door the SHELL opened because a link arrived and failed already carries its own refusal:
+    // seeding it is what lets the sentence be on screen the moment the door is, rather than one
+    // change notification after the sheet that would have observed it was built.
+    public init(auth: AuthStore, refusal: String? = nil) {
         self.auth = auth
+        _refusal = State(initialValue: refusal)
     }
 
     public var body: some View {
@@ -58,6 +66,16 @@ public struct SignInDoor: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }
+                }
+            }
+            // A link that arrived while this door was open finishes HERE, where the person is
+            // standing — a sheet still asking them to check their email over an app that has already
+            // signed them in is a door that outlived its own question.
+            .onChange(of: auth.arrival) { _, arrival in
+                switch arrival {
+                case .signedIn: dismiss()
+                case .refused(let line): refusal = line
+                case nil: break
                 }
             }
         }
@@ -128,9 +146,10 @@ public struct SignInDoor: View {
 
             Divider()
 
-            Text("Open the link on this phone, or paste it here.")
+            Text(Self.finishing)
                 .font(WindmillFont.body(15))
                 .foregroundStyle(WindmillColor.textSecondary)
+                .lineSpacing(3)
 
             DoorField(placeholder: "Paste the link", text: $pasted)
 
@@ -218,7 +237,7 @@ public struct SignInDoor: View {
             try await auth.completeLink(pasted)
             dismiss()
         } catch {
-            refusal = "That link has expired. Links work once and last 15 minutes — send a fresh one."
+            refusal = MagicLink.refusal(for: error)
         }
     }
 
@@ -259,6 +278,25 @@ public struct SignInDoor: View {
     // not locked" rule the product uses everywhere else.
     static var appleSignInEnabled: Bool {
         Bundle.main.object(forInfoDictionaryKey: "WMAppleSignInEnabled") as? Bool ?? false
+    }
+
+    // Whether the emailed link opens THIS app. It needs a paid team, the associated-domains
+    // entitlement this app already declares, and — the half no build can produce — an
+    // `apple-app-site-association` served from windmill.works naming this bundle. Until all three
+    // hold, iOS hands the link to Safari, so the instruction that would send someone to tap it is
+    // absent rather than present and wrong. See apps/ios/README.md.
+    static var universalLinksEnabled: Bool {
+        Bundle.main.object(forInfoDictionaryKey: "WMUniversalLinksEnabled") as? Bool ?? false
+    }
+
+    // THE ONE SENTENCE THAT CHANGES WITH THAT FLAG, and it changes because the right ADVICE changes.
+    // A link works once: while it opens Safari, tapping it signs you in over there and leaves this
+    // phone with a spent link — so the honest instruction is to copy rather than tap.
+    static var finishing: String {
+        guard universalLinksEnabled else {
+            return "Copy the link rather than tapping it — a link works once, and tapping it opens the web app instead of this one. Paste it here to finish on this phone."
+        }
+        return "Open the link on this phone and it comes back here. Or paste it."
     }
 }
 

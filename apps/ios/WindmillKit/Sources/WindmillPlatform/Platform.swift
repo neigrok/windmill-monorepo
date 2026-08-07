@@ -39,11 +39,17 @@ public struct EntryDoor {
     public let made: String     // "Your first page is written." — the house sheet opens with this
     public let back: String     // "Back to writing" — dismissing the house returns you to work
 
-    public init(verb: String, line: String, made: String, back: String) {
+    // What this room needs before it can be worked in — an account, most often. Nil is the good
+    // case and means the door opens straight onto work. A product whose room is on ANOTHER SURFACE
+    // does not fill this in: `presence` already carries that sentence, and one fact is written once.
+    public let caveat: String?
+
+    public init(verb: String, line: String, made: String, back: String, caveat: String? = nil) {
         self.verb = verb
         self.line = line
         self.made = made
         self.back = back
+        self.caveat = caveat
     }
 }
 
@@ -143,6 +149,19 @@ public extension ProductModule {
     // A product with no native room holds nothing on this device, and that is the truth rather than
     // a stub — there is no surface here through which anything could have been made.
     func holdings(_ account: Account) -> Holdings { .none }
+
+    // THE ONE THING A DOOR SAYS BEFORE IT IS CHOSEN. The first screen a phone ever shows offers one
+    // card per product, and the rule that screen lives by is that it must not offer a door it cannot
+    // open: either the card says what the room needs, or the room is not offered. Nil means the door
+    // opens straight onto work and there is nothing to warn about.
+    //
+    // Two sources because they are two different facts, and neither is written twice: a room that is
+    // really on another surface already says so in `presence`, and a room that is here but has a wall
+    // in it says so in its own `entry`.
+    var caveat: String? {
+        if case .elsewhere(_, let line) = presence { return line }
+        return entry.caveat
+    }
 }
 
 // One sign-in, one subscription, one API host — handed to every product so no module invents its

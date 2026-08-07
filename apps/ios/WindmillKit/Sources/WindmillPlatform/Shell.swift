@@ -25,6 +25,8 @@ public struct SuperappView: View {
     @State private var switcherUp = false
     @State private var youUp = false
     @State private var houseUp = false
+    @State private var doorUp = false
+    @State private var doorRefusal: String?
     @AppStorage(Appearance.storageKey) private var appearance = Appearance.system.rawValue
 
     public init(products: [any ProductModule], auth: AuthStore = AuthStore(),
@@ -80,6 +82,11 @@ public struct SuperappView: View {
         }
         .sheet(isPresented: $youUp) { YouScreen(auth: auth, products: products) }
         .sheet(isPresented: $houseUp) { house }
+        .sheet(isPresented: $doorUp) { SignInDoor(auth: auth, refusal: doorRefusal) }
+        // A magic link that opens the app rather than the browser. The shell takes it because a
+        // universal link can land on any screen, including a cold launch with no door open at all —
+        // and a link that arrives is a sign-in, which is the shell's business and no product's.
+        .onOpenURL { url in Task { await arrived(from: url) } }
         // The seat resolves once on launch. Until it answers, products run signed out — a real
         // state, not a loading state, so nothing is blocked while it happens.
         .task { await auth.restore() }
@@ -109,6 +116,21 @@ public struct SuperappView: View {
         houseUp = false
         openRoom = id
         journey.stood(in: id)
+    }
+
+    // A URL the app was opened with. Anything that is not a magic link answers nil and is ignored
+    // rather than guessed at — the app claims one shape of link and has nothing to say about the rest.
+    //
+    // A success needs no screen: the seat, the hub and every room already read `auth.status`, and a
+    // door that happened to be open watches `auth.arrival` and closes itself. A REFUSAL does need
+    // one — an expired link that woke a closed app would otherwise be a launch that silently did
+    // nothing — so the shell opens the door with the sentence already in it, unless another sheet is
+    // up, in which case the door inside it is the one holding the person's attention.
+    private func arrived(from url: URL) async {
+        guard let arrival = await auth.arrived(from: url) else { return }
+        guard case .refused(let line) = arrival, !switcherUp, !youUp, !houseUp else { return }
+        doorRefusal = line
+        doorUp = true
     }
 
     private func leave() {

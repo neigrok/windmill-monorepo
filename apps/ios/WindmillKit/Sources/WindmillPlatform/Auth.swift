@@ -17,10 +17,20 @@ public enum AuthStatus: Equatable {
     }
 }
 
+// What happened to a link that arrived from OUTSIDE the app — a universal-link tap rather than a
+// paste. It is published because nobody is standing at the paste field when one lands: a door that
+// happens to be open reads it and closes itself, and a link that woke a closed app hands its refusal
+// back to the caller so the shell can open a door for it.
+public enum LinkArrival: Equatable {
+    case signedIn
+    case refused(String)
+}
+
 @MainActor
 public final class AuthStore: ObservableObject {
     @Published public private(set) var status: AuthStatus = .unknown
     @Published public private(set) var linkSentTo: String?
+    @Published public private(set) var arrival: LinkArrival?
 
     public let api: WindmillApi
     private let sessions: any SessionStore
@@ -62,6 +72,29 @@ public final class AuthStore: ObservableObject {
         let answer = try await api.sendCapturingSession("POST", "/v1/auth/verify",
                                                        body: ["token": token], as: UserReply.self)
         try adopt(session: answer.session, user: answer.reply.user)
+    }
+
+    // The same completion, reached from the other side: the app was opened BY the link. It cannot
+    // throw, because no call site is holding a `catch` — the outcome is the return value and the
+    // published `arrival` at once, and clearing to nil first is what makes a second identical
+    // refusal still register as a change for anything watching.
+    //
+    // A URL carrying nothing this app can read answers nil and touches nothing. That guard lives
+    // here rather than at the call site because what a magic link looks like is auth's knowledge,
+    // and a shell that had to know it would be a second copy of the same rule.
+    @discardableResult
+    public func arrived(from url: URL) async -> LinkArrival? {
+        guard MagicLink.token(in: url.absoluteString) != nil else { return nil }
+        arrival = nil
+        let outcome: LinkArrival
+        do {
+            try await completeLink(url.absoluteString)
+            outcome = .signedIn
+        } catch {
+            outcome = .refused(MagicLink.refusal(for: error))
+        }
+        arrival = outcome
+        return outcome
     }
 
     // The native door. Apple hands the app a one-time authorization code; the backend does the rest
@@ -123,6 +156,17 @@ public struct AppleOutcome: Equatable {
 // tested function and not two lines at a call site.
 public enum MagicLink {
     public static let unreadable = WindmillApiError.refused(400, Refusal(Data()))
+
+    // One fact, one sentence, wherever a link fails — pasted into the door or tapped in the mail.
+    public static let expired = "That link has expired. Links work once and last 15 minutes — send a fresh one."
+
+    // And it is not always that fact. A request that never reached the server has not expired
+    // anything, and "send a fresh one" is advice nobody offline can follow — so the only failure
+    // that is really about the link gets the sentence about the link.
+    public static func refusal(for error: Error) -> String {
+        guard let api = error as? WindmillApiError, api == .offline else { return expired }
+        return api.line
+    }
 
     public static func token(in text: String) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -83,6 +83,58 @@ beside it rather than behind it: the link is the only way a Hide My Email accoun
 account that person already has on the web, and the only door that keeps one account across phone
 and browser. Apple is gated off until it is configured — see `docs/IOS_APPLE_SIGNIN.md`.
 
+## Universal links — the repo half is done, the domain half is yours
+
+The emailed magic link is `https://windmill.works/#/auth?token=<secret>`
+(`backend/platform/application/AuthService.cpp`). We want a tap on that link to open **this app**.
+Everything a build can contribute is written:
+
+- `project.yml` declares `com.apple.developer.associated-domains` = `applinks:windmill.works`.
+- `Shell.swift`'s `onOpenURL` hands the URL to `AuthStore.arrived(from:)`, which verifies the token
+  and adopts the session. A URL with no token is ignored; a refusal opens the door with the sentence
+  already in it, so a link that wakes a closed app and fails is never a launch that did nothing.
+- `MagicLink.token(in:)` already reads the token out of the **fragment**, which is where it lives —
+  the same function the paste field uses, so both doors end in one parser.
+
+**It does nothing until the domain says so, and that part is not in this repo.** iOS only routes a
+link to an app when the site serves an association file naming that app, signed by a real team:
+
+1. **A paid Apple Developer team** (`docs/IOS_APPLE_SIGNIN.md` step 1) with **Associated Domains**
+   ticked on the `works.windmill.app` App ID. A free personal team cannot use this capability — which
+   also means that from now on, signing for a real device needs the paid team. Simulator and CI
+   builds are unaffected: signing is off there, so the entitlement is never applied.
+2. **`https://windmill.works/.well-known/apple-app-site-association`**, served as
+   `Content-Type: application/json`, over HTTPS, with **no redirect** and no auth. Not committed here
+   because `apps/ios` does not own the web origin; it belongs beside the site's other static files.
+
+   ```json
+   {
+     "applinks": {
+       "details": [
+         {
+           "appIDs": ["TEAMID.works.windmill.app"],
+           "components": [
+             { "/": "/", "#": "/auth?token=*",
+               "comment": "the magic link and nothing else — every other URL on this domain has no matching component, so it stays in the browser. Note Apple's globs treat ? as a single-character wildcard, so this also matches /authXtoken=…, which is not a route." }
+           ]
+         }
+       ]
+     }
+   }
+   ```
+
+   The token is in the fragment, so the claim has to be a `#` component. A path claim would have to be
+   `"/": "/"` — the whole site — and the app would start swallowing the gallery, shared trees and the
+   pricing page.
+3. **Then flip `WMUniversalLinksEnabled` to true in `project.yml`.** It gates one sentence and it is
+   the reason the flag exists: a link works exactly once, so while a tap still lands in Safari the
+   door must tell someone to **copy** the link rather than tap it — tapping signs them in over there
+   and leaves this phone holding a spent link. With the flag on it says the tap comes home.
+
+Unverified until all three hold: the routing itself. The token parser, the arrival handling and the
+copy are covered by `WindmillPlatformTests`; whether iOS hands us the URL cannot be tested without
+the file on the domain and a signed build.
+
 ## The shell — hub + capsule
 
 Built to the resolved design in the Design project (`templates/superapp-shell/SuperappShell.dc.html`,
@@ -124,6 +176,12 @@ the first real thing → the house, once.**
 
 - **The one question** is the first screen, once ever — not the hub, because a hub of three empty
   rooms is a chore list. Three doors in plain verbs, each in its product's skin, one skip.
+- **A door says what it needs before it is chosen.** Two of the three rooms do not open straight onto
+  work — roadmap's canvas is on the web, and a training log is kept on an account — so their cards
+  carry that fact under the product's own sentence (`ProductModule.caveat`). It reads off `presence`
+  for a room that is really elsewhere and off `EntryDoor.caveat` for a room that is here with a wall
+  in it, which means neither sentence is written twice. Nil is the good case and journal has none.
+  The same account line is on gym's hub card while signed out.
 - **Launch reopens the last room you stood in.** Going home clears it: the hub is where you chose to
   be, so the next launch honours that rather than dragging you back in.
 - **The house fires on the first capsule tap after something real exists**, and never again. The
@@ -151,9 +209,8 @@ open the door at that tap and resume after, exactly as `auth.md` §2 defines for
 - **Sign in with Apple is off.** `WMAppleSignInEnabled` in `project.yml` gates it, and it stays false
   until there is a paid team, the capability, and the four server env vars — absent, never
   present-and-broken. The code path and the relay-address link door are written and waiting.
-- **The magic link is completed by pasting it.** The emailed link opens the *web* app; until the app
-  claims `windmill.works` links with an associated domain, pasting is the honest finish. The same
-  field keeps working once universal links land.
+- **Universal links are wired but not live.** See the section below: everything in the repo is done
+  and `WMUniversalLinksEnabled` is false until the domain half exists.
 - **No app icon or launch asset yet.**
 - **The plan meter in You is still not drawn.** The board shows one; this client has no entitlements
   call, and a meter that invented a number is worse than the gap. It arrives when the data does.

@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import WindmillPlatform
 
@@ -70,6 +71,60 @@ final class JourneyTests: XCTestCase {
     func testThereIsNoHouseWhenThereIsOnlyOneRoom() {
         let journey = Journey(defaults: defaults)
         XCTAssertFalse(journey.shouldIntroduceHouse(madeSomething: true, otherRooms: 0))
+    }
+}
+
+// THE FIRST SCREEN MUST NOT OFFER A DOOR IT CANNOT OPEN. It draws one card per mounted product,
+// before anything about the app has been seen, and two of the three rooms do not open straight onto
+// work — so what the card says about that is the whole of whether that screen is honest.
+
+@MainActor
+final class EntryCaveatTests: XCTestCase {
+    private struct Fake: ProductModule {
+        let id: String
+        let label = "Fake"
+        let symbol = "circle"
+        var presence: Presence = .here
+        var entry = EntryDoor(verb: "Do it", line: "a thing", made: "Made.", back: "Back")
+
+        func room(_ account: Account) -> AnyView { AnyView(EmptyView()) }
+        func hubLine(_ account: Account) -> HubLine { HubLine(eyebrow: "Now", headline: "Nothing.") }
+    }
+
+    // The good case, and the reason nil is the default: a room that opens onto work has nothing to
+    // warn about, and a card that manufactured a caveat would be noise on the one screen that can't
+    // afford any.
+    func testARoomThatOpensOntoWorkSaysNothingExtra() {
+        XCTAssertNil(Fake(id: "journal").caveat)
+    }
+
+    // A room that is really on another surface says WHERE, and says it with the words it already
+    // uses inside — the sentence is not written twice, so the card and the room cannot drift.
+    func testARoomOnAnotherSurfaceCarriesItsOwnElsewhereLine() {
+        let elsewhere = Fake(id: "roadmap",
+                             presence: .elsewhere(url: URL(string: "https://windmill.works/")!,
+                                                  line: "Your trees are on the web."))
+        XCTAssertEqual(elsewhere.caveat, "Your trees are on the web.")
+    }
+
+    // A room that is here but has a wall in it says what the wall is, in its own entry.
+    func testARoomThatNeedsAnAccountSaysSoOnTheDoor() {
+        let gated = Fake(id: "gym",
+                         entry: EntryDoor(verb: "Log a workout", line: "sets and weights",
+                                          made: "Logged.", back: "Back",
+                                          caveat: "Sessions are kept on your account."))
+        XCTAssertEqual(gated.caveat, "Sessions are kept on your account.")
+    }
+
+    // Presence outranks the entry's own words. A module that filled in both would be two sentences
+    // about one room, and the structural fact is the one the shell can verify.
+    func testWhereTheRoomIsOutranksWhatItAsksFor() {
+        let both = Fake(id: "roadmap",
+                        presence: .elsewhere(url: URL(string: "https://windmill.works/")!,
+                                             line: "On the web."),
+                        entry: EntryDoor(verb: "Plan", line: "steps", made: "Planted.",
+                                         back: "Back", caveat: "Needs an account."))
+        XCTAssertEqual(both.caveat, "On the web.")
     }
 }
 

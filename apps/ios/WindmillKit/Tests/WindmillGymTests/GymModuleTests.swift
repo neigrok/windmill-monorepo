@@ -79,6 +79,11 @@ final class GymModuleTests: XCTestCase {
                 user: nil)
     }
 
+    private var signedIn: Account {
+        Account(api: WindmillApi(baseURL: URL(string: "https://windmill.works")!, credential: { nil }),
+                user: User(id: "u1", email: "lifter@windmill.works", name: "Lifter"))
+    }
+
     // The room is HERE now. `presence` is the platform's default, and a module that still overrode it
     // would be telling the switcher the log lives somewhere else.
     func testGymIsPresentOnThisPhone() {
@@ -98,10 +103,29 @@ final class GymModuleTests: XCTestCase {
     // Nothing running is the resting state, and it is said without a claim about a log this frame has
     // not read — the device knows whether a session is open and nothing else.
     func testTheHubLineRestsOnWhatTheDeviceKnows() {
-        let line = module.hubLine(account)
+        let line = module.hubLine(signedIn)
         XCTAssertEqual(line.eyebrow, "Today")
         XCTAssertEqual(line.headline, "Nothing running.")
         XCTAssertNil(line.meta)
         XCTAssertFalse(line.running)
+    }
+
+    // A DOOR SAYS WHAT IT NEEDS BEFORE IT IS CHOSEN. Signed out, every Start behind this card answers
+    // with a refusal — the plan snapshot is frozen server-side — so the hub card carries the same
+    // account sentence the first-run card does instead of reading like an empty gym.
+    func testSignedOutTheHubCardNamesTheAccountItNeeds() {
+        let line = module.hubLine(account)
+        XCTAssertEqual(line.eyebrow, "Today")
+        XCTAssertEqual(line.headline, "Nothing running.")
+        XCTAssertEqual(line.meta, "sessions are kept on your account")
+        XCTAssertFalse(line.running)
+    }
+
+    // The same fact on the very first screen a phone ever draws, where it matters most: picking this
+    // card as the first act on a fresh device used to land on a sign-in wall nothing had mentioned.
+    func testTheFirstRunCardNamesTheAccountItNeeds() {
+        XCTAssertEqual(module.entry.caveat, "Sessions are kept on your account — you sign in first.")
+        XCTAssertEqual(module.caveat, module.entry.caveat,
+                       "gym's room is HERE, so its caveat is its own entry line and not a presence")
     }
 }

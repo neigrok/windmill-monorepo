@@ -44,6 +44,22 @@ targets:
         ENABLE_USER_SCRIPT_SANDBOXING: "YES"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1"
+    # The app's claim on windmill.works links, so the emailed magic link opens THIS app instead of
+    # Safari (Shell.swift's onOpenURL → AuthStore.arrived). The entitlement is the half that lives in
+    # the repo; it does nothing on its own. iOS only honours it when the DOMAIN serves
+    # /.well-known/apple-app-site-association naming this bundle under a real team id — see the
+    # "Universal links" section of README.md for exactly what that file is and who can put it there.
+    #
+    # An entitlement is not a button, so declaring it early breaks nothing: with no association file
+    # the system simply never routes a link here, which is what happens today. Two consequences worth
+    # knowing: a simulator/CI build is unaffected (signing is off, entitlements are not applied), and
+    # signing for a real DEVICE now needs a paid team with Associated Domains enabled on the App ID —
+    # a free personal team cannot use this capability.
+    entitlements:
+      path: App/Windmill.generated.entitlements
+      properties:
+        com.apple.developer.associated-domains:
+          - applinks:windmill.works
     info:
       path: App/Info.generated.plist
       properties:
@@ -60,5 +76,9 @@ targets:
         # Sign in with Apple stays OFF until there is a paid team, the capability, and the four
         # server env vars. Off means the button is absent, never present-and-broken.
         WMAppleSignInEnabled: false
+        # Whether a tapped link actually reaches this app — true only once the association file above
+        # is live on windmill.works. It gates one sentence: the sign-in door tells someone to COPY
+        # the link while a tap would open Safari and burn it, and to tap it once a tap comes home.
+        WMUniversalLinksEnabled: false
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true

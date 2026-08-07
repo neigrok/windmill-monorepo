@@ -16,6 +16,9 @@ public struct RoadmapModule: ProductModule {
 
     public init() {}
 
+    // This line is the module's one honest sentence and it is written once. `ElsewhereRoom` draws it
+    // as the room's body, and `ProductModule.caveat` lifts the same words onto the first-run card —
+    // so the fact that roadmap is on the web is known BEFORE the door is chosen, not after.
     public var presence: Presence {
         .elsewhere(
             url: URL(string: "https://windmill.works/#/")!,

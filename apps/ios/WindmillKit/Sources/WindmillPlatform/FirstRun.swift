@@ -111,11 +111,17 @@ struct EntryQuestionView: View {
 
 // A door, in plain verbs and in its product's own skin — so the card already tells you which room
 // it opens onto, before you have ever seen one.
+//
+// AND WHAT IT NEEDS, IF IT NEEDS ANYTHING. Two of the three rooms this app mounts do not open
+// straight onto work — roadmap's canvas is on the web, and gym's log is kept on an account — and a
+// first screen that offered all three as equals gave a fresh phone a two-in-three chance of walking
+// into a wall. The caveat is drawn in mono, under the product's own sentence, so it reads as a fact
+// about the room rather than as more of its pitch.
 private struct EntryCard: View {
     let product: any ProductModule
 
     var body: some View {
-        HStack(spacing: WindmillSpace.x3) {
+        HStack(alignment: .top, spacing: WindmillSpace.x3) {
             Text(String(product.label.prefix(1)))
                 .font(WindmillFont.display(17, .heavy))
                 .foregroundStyle(skin.label)
@@ -131,6 +137,15 @@ private struct EntryCard: View {
                     .foregroundStyle(skin.dim)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
+                if let caveat = product.caveat {
+                    Text(caveat)
+                        .font(WindmillFont.mono(10.5))
+                        .kerning(0.4)
+                        .foregroundStyle(skin.dim)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, WindmillSpace.x2)
+                }
             }
             Spacer(minLength: 0)
         }

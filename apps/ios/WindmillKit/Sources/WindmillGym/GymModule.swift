@@ -11,11 +11,16 @@ public struct GymModule: ProductModule {
 
     public init() {}
 
+    // The caveat is the whole reason this door is honest on a fresh phone. A session cannot be opened
+    // without the log — the plan snapshot is frozen server-side — so Today draws a sign-in card and
+    // nothing else until there is an account. Saying that only INSIDE the room turns a first tap into
+    // an ambush; saying it on the card turns it into a precondition somebody agreed to.
     public let entry = EntryDoor(
         verb: "Log a workout",
         line: "sets and weights, two taps each",
         made: "Your first session is logged.",
-        back: "Back to the log"
+        back: "Back to the log",
+        caveat: "Sessions are kept on your account — you sign in first."
     )
 
     public func room(_ account: Account) -> AnyView {
@@ -27,15 +32,24 @@ public struct GymModule: ProductModule {
     //
     // `running` is the one thing that reorders the hub — a workout in progress sinks gym to the
     // bottom of the stack, under the thumb, and puts the dot on the capsule from every other room.
+    //
+    // A live session is on the device whether or not anybody is signed in, so it outranks the
+    // account note: a lifter mid-workout is told about the workout. At rest and signed out the hub
+    // card is a door onto the same wall Today draws, and it carries the same sentence the entry card
+    // does — the hub's half of the rule that a door says what it needs before it is chosen.
     public func hubLine(_ account: Account) -> HubLine {
         let device = GymDevice.summary()
-        guard let running = device.routine else {
-            return HubLine(eyebrow: "Today", headline: "Nothing running.")
+        if let running = device.routine {
+            return HubLine(eyebrow: "Session running",
+                           headline: running,
+                           meta: Readout.setCount(device.sets) + " so far",
+                           running: true)
         }
-        return HubLine(eyebrow: "Session running",
-                       headline: running,
-                       meta: Readout.setCount(device.sets) + " so far",
-                       running: true)
+        if !account.isSignedIn {
+            return HubLine(eyebrow: "Today", headline: "Nothing running.",
+                           meta: "sessions are kept on your account")
+        }
+        return HubLine(eyebrow: "Today", headline: "Nothing running.")
     }
 
     // What gym is holding HERE, which is the live session and no more: a finished session lives on

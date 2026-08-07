@@ -27,6 +27,7 @@ let package = Package(
         .target(name: "WindmillJournal", dependencies: ["WindmillPlatform"]),
         .target(name: "WindmillGym", dependencies: ["WindmillPlatform"]),
         .testTarget(name: "WindmillPlatformTests", dependencies: ["WindmillPlatform"]),
+        .testTarget(name: "WindmillRoadmapTests", dependencies: ["WindmillRoadmap"]),
         .testTarget(name: "WindmillJournalTests", dependencies: ["WindmillJournal"]),
         .testTarget(name: "WindmillGymTests", dependencies: ["WindmillGym"]),
     ]
