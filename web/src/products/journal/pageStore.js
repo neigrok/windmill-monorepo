@@ -12,6 +12,12 @@
 // apart, and `firstRun` is computed only from a read that landed — a writer with two years of pages
 // opening the journal on a plane must never be shown a virgin canvas.
 //
+// AND AN EMPTY SIXTY-DAY WINDOW IS NOT AN EMPTY JOURNAL — the same rule one step further out.
+// `reach` is the walk back past the window: one window deeper per press, and the beginning of the
+// journal said out loud once a read has actually reached it. A read that FAILED while reaching back
+// is 'failed' and never 'end', because telling a writer with two years of pages that their journal
+// starts in June is the same lie, told about the other edge.
+//
 // A STAMP IS ONLY EVER MINTED AGAINST A PAGE THIS DEVICE HAS READ. See persist() and
 // joinOntoAccount() below; that rule is what makes the two above matter.
 //
@@ -19,12 +25,17 @@
 // unsent draft owed, so a slow reply cannot swallow the last thing someone typed.
 
 import { journalApi } from './journalApi.js';
-import { PageCache, isWritten, normalizePage } from './pageCache.js';
+import { PageCache, isWritten, normalizePage, winnerOf } from './pageCache.js';
 import { localDay, daysBefore, mintStamp } from './hlc.js';
 
 export const WINDOW_DAYS = 60;
 export const SAVE_DEBOUNCE = 800;
 export const RETRY_DELAY = 4000;
+
+// A day before any journal. The window read walks back a window at a time, but "is there anything
+// older at all" has to be asked with no floor under it, and the wire only takes a date — so this
+// is the floor, and it is the earliest one the server's date column will parse.
+export const BEGINNING = '0001-01-01';
 
 function daysBetween(from, to) {
   const [ay, am, ad] = from.split('-').map(Number);
@@ -62,8 +73,13 @@ export class PageStore {
     api = journalApi,
     mint = mintStamp,
     today = localDay(),
-    setTimer = setTimeout,
-    clearTimer = clearTimeout,
+    // WRAPPED, NEVER HANDED OVER BARE. `this.setTimer(…)` calls whatever is here as a method of the
+    // store, and a browser's timer functions check their receiver: `window.setTimeout` invoked on
+    // anything but `window` throws "Illegal invocation", which took the canvas down at mount — the
+    // dispose() in React's StrictMode double-invoke was the first call to reach one. Node's timers
+    // do not check, so the whole suite passed over a room nobody could open.
+    setTimer = (run, delay) => setTimeout(run, delay),
+    clearTimer = (timer) => clearTimeout(timer),
   } = {}) {
     this.cache = cache;
     this.api = api;
@@ -75,6 +91,7 @@ export class PageStore {
     this.history = [];                                    // [{date, body, mood, energy, written}], oldest→newest
     this.draft = { body: '', mood: null, energy: null };   // today, the live draft
     this.readState = 'loading';                            // 'loading' | 'ready' | 'device' | 'failed'
+    this.reach = 'more';                                   // 'more' | 'loading' | 'end' | 'failed'
     this.saveState = 'idle';                               // 'idle' | 'saved' | 'device' | 'offline' | 'unsaved'
     this.saveTick = 0;                                     // bumps once per write, so the note re-fades
     this.signedIn = false;
@@ -91,13 +108,23 @@ export class PageStore {
     this.getSnapshot = () => this.snapshot;
   }
 
-  // Nothing written, ever — the first-run surface. Computed rather than stored so no code path can
-  // leave it true, and computed only from a read that LANDED: a failed read knows nothing about
-  // whether this account is new, and must never be allowed to say that it is.
+  // Nothing written, EVER — the first-run surface, and the strongest claim this store makes about
+  // an account. Computed rather than stored so no code path can leave it true, and only ever from a
+  // read that both landed and reached the beginning:
+  //
+  //   · a failed read knows nothing about whether this account is new;
+  //   · a window read that came back empty proves sixty quiet days and nothing more — a writer who
+  //     has been away longer than that would otherwise be handed a virgin canvas and told to start
+  //     anywhere, with two years of their own pages one read away.
+  //
+  // Signed out is the one case that needs no read at all: nobody is signed in, so this device IS
+  // the whole record, and an empty device is genuinely a first run.
   isFirstRun() {
-    if (this.readState !== 'ready' && this.readState !== 'device') return false;
-    return this.history.length === 0
+    const empty = this.history.length === 0
       && this.draft.body.trim() === '' && this.draft.mood == null && this.draft.energy == null;
+    if (!empty) return false;
+    if (this.readState === 'device') return true;
+    return this.readState === 'ready' && this.reach === 'end';
   }
 
   buildSnapshot() {
@@ -106,6 +133,7 @@ export class PageStore {
       history: this.history,
       loading: this.readState === 'loading',
       readState: this.readState,
+      reach: this.reach,
       firstRun: this.isFirstRun(),
       body: this.draft.body,
       mood: this.draft.mood,
@@ -246,6 +274,70 @@ export class PageStore {
     }
     this.absorb(from, this.today, pages);
     this.readState = 'ready';
+    this.drawFromCache();
+    // Sixty quiet days is not an empty journal, and this is the one place that difference is
+    // invisible: with nothing in the window there is no canvas to press "read further back" from,
+    // so the walk would have no foot to stand on and `firstRun` would be claimed on the window's
+    // word alone. Settle it here instead — for a genuinely new account the answer costs one empty
+    // read, and for a writer who has been away three months it is their journal.
+    if (pages.length === 0) await this.reachToBeginning(daysBefore(from, 1));
+  }
+
+  // ONE WINDOW DEEPER PER PRESS — the foot of gym's log, stood on its head, because the top of a
+  // canvas asks the same question the bottom of a list does: is this everything? A window that
+  // comes back with pages leaves the walk open; there may always be more.
+  //
+  // A window that comes back EMPTY is settled in the same press rather than left for the writer to
+  // press through years of silence: nothing here says "start of your journal" until a read has
+  // actually reached one.
+  async reachBack() {
+    if (this.readState !== 'ready' || this.reach === 'loading' || this.reach === 'end') return;
+    this.reach = 'loading';
+    this.emit();
+
+    const to = this.history.length
+      ? daysBefore(this.history[0].date, 1)
+      : daysBefore(this.today, WINDOW_DAYS + 1);
+    const from = daysBefore(to, WINDOW_DAYS);
+    let pages;
+    try {
+      pages = await this.api.range(from, to);
+    } catch {
+      this.reach = 'failed';
+      this.emit();
+      return;
+    }
+    this.absorb(from, to, pages);
+    if (pages.length === 0) {
+      await this.reachToBeginning(daysBefore(from, 1));
+      return;
+    }
+    this.reach = 'more';
+    this.drawFromCache();
+  }
+
+  // The one read that can settle where a journal starts: everything older than a day, with no floor
+  // under it. Asked only after a window has already come back empty, so for most writers it answers
+  // nothing at all — and when it does answer, what comes back IS the rest of the journal, which
+  // leaves the canvas standing at its true beginning either way.
+  async reachToBeginning(to) {
+    let pages;
+    try {
+      pages = await this.api.range(BEGINNING, to);
+    } catch {
+      // A READ THAT FAILED IS NOT THE BEGINNING OF A JOURNAL. Nothing absorbed, nothing settled,
+      // and the walk stays open so the same step can be offered again.
+      this.reach = 'failed';
+      this.emit();
+      return;
+    }
+    // Absorbed from the oldest page BACK, never from the floor: marking every day since year one as
+    // read would be seven hundred thousand entries, and the days below the first page are days
+    // nobody wrote rather than days the canvas draws.
+    if (pages.length > 0) {
+      this.absorb(pages.reduce((oldest, page) => (page.day < oldest ? page.day : oldest), to), to, pages);
+    }
+    this.reach = 'end';
     this.drawFromCache();
   }
 
@@ -396,4 +488,37 @@ export class PageStore {
     this.retryTimer = null;
     if (this.savePending) this.persist();
   }
+}
+
+// THE WHOLE JOURNAL, for the two readers that want all of it rather than a window: search's index
+// and the year zoom. Both read the account and only the account, which was the whole truth until
+// the device tier landed — a signed-out writer's pages are now real pages that live here, and their
+// own search must not be blind to them.
+//
+// `source` is the other half, and it is the canvas's rule said again: a corpus that could not be
+// read is not an empty journal, so a caller can say which of these three it is looking at instead
+// of drawing a blank year over a failed read.
+export async function corpus({ api = journalApi, cache = new PageCache(), signedIn = true } = {}) {
+  // Nobody is signed in, so there is no account to read and nothing to be offline from: this device
+  // IS the record, exactly as the canvas reads it.
+  if (!signedIn) return { pages: joinCorpus([], cache), source: 'device' };
+  try {
+    return { pages: joinCorpus(await api.allPages(), cache), source: 'account' };
+  } catch {
+    return { pages: joinCorpus([], cache), source: 'failed' };
+  }
+}
+
+// The account's pages and this device's, as one list ordered by day. Last-writer-wins by stamp,
+// exactly as the cache converges — except for an OWED page, which wins outright: it is words the
+// account has not accepted yet, and a HELD one carries no stamp at all by design, so on stamps
+// alone it would lose every race it entered and the writer's newest page would be unsearchable.
+//
+// Blank days are dropped by the canvas's own definition of a written day, so the zoom's grid and
+// the canvas agree about which squares are warm.
+export function joinCorpus(account, cache) {
+  const byDay = new Map(account.map((page) => [page.day, normalizePage(page)]));
+  for (const page of cache.pages()) byDay.set(page.day, winnerOf(page, byDay.get(page.day) ?? null));
+  for (const entry of cache.owed()) byDay.set(entry.page.day, entry.page);
+  return [...byDay.values()].filter(isWritten).sort((a, b) => (a.day < b.day ? -1 : 1));
 }

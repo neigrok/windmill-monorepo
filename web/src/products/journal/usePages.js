@@ -33,5 +33,6 @@ export function usePages() {
     toggleMood: useCallback((step) => store.tap('mood', step), [store]),
     toggleEnergy: useCallback((step) => store.tap('energy', step), [store]),
     extendTo: useCallback((date) => store.extendTo(date), [store]),
+    reachBack: useCallback(() => store.reachBack(), [store]),
   };
 }

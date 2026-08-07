@@ -3,9 +3,14 @@
 // of day cells, warm where you wrote and faint where you didn't — a year you can take in at a glance.
 // Tap any day to fall back into it (the canvas flies there). Read-only, assembled from pages the view
 // loads once; it invents nothing the page doesn't already hold.
+//
+// It draws the account's pages AND this device's (pageStore.js `corpus`) — a signed-out writer's
+// days are on this device and belong in their own year. And a year it could not READ is drawn with
+// that fact printed on it: a grid of empty squares over a failed read would say "you wrote nothing"
+// to someone with two years of pages, which is the exact lie the canvas refuses to tell.
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { journalApi } from '../journalApi.js';
+import { corpus } from '../pageStore.js';
 import { localDay } from '../hlc.js';
 import { buildYear } from './yearGrid.js';
 import { weekReadout } from './weekReadout.js';
@@ -23,17 +28,16 @@ function dow(iso) {
   return WEEKDAYS[new Date(y, m - 1, d).getDay()];
 }
 
-export function ZoomView({ onClose, onPick }) {
-  const [pages, setPages] = useState(null);
+export function ZoomView({ onClose, onPick, signedIn = true }) {
+  const [read, setRead] = useState(null);
+  const pages = read?.pages ?? null;
   const today = localDay();
 
   useEffect(() => {
     let cancelled = false;
-    journalApi.allPages()
-      .then((loaded) => { if (!cancelled) setPages(loaded); })
-      .catch(() => { if (!cancelled) setPages([]); });
+    corpus({ signedIn }).then((loaded) => { if (!cancelled) setRead(loaded); });
     return () => { cancelled = true; };
-  }, []);
+  }, [signedIn]);
 
   useEffect(() => {
     const onKey = (event) => { if (event.key === 'Escape') onClose(); };
@@ -70,6 +74,12 @@ export function ZoomView({ onClose, onPick }) {
             ))}
           </div>
         </section>
+      )}
+
+      {read?.source === 'failed' && (
+        <p className="journal-zoom-unread">
+          Couldn’t reach your journal — these are only the days on this device.
+        </p>
       )}
 
       <div className="journal-zoom-grid">

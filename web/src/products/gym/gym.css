@@ -161,14 +161,21 @@
 
 /* The switcher and the seat ride the shared posts (.wm-post, styles/global.css) — the same two
    coordinates journal floats them on, now said once instead of twice, so "one building" is a rule
-   the markup obeys rather than a claim a comment made. */
+   the markup obeys rather than a claim a comment made. Both are drawn only when this surface is
+   the whole page: inside the /app shell the chrome above the room already carries them, and the
+   room says which frame it is in on its root (GymApp.jsx). */
 
 /* One centred column on every device — arm's-length legible on a phone,
-   never a sprawl on a desk. */
+   never a sprawl on a desk. The 76px above the column is this surface clearing its own floating
+   furniture; a room inside the shell has none to clear, so it starts where the room starts. */
 .gym-column {
   max-width: 560px;
   margin: 0 auto;
   padding: 76px 16px 96px;
+}
+
+.gym-root[data-chrome='shell'] .gym-column {
+  padding-top: 28px;
 }
 
 .gym-title {

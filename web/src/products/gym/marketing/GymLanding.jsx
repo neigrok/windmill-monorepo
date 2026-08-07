@@ -5,8 +5,18 @@
 // recognised on the first frame and Sign in opens the door in place instead of navigating to
 // /?signin#/gym — the URL that rendered the dark GymApp under a black-on-black modal.
 //
-// Gym is pre-open, so canon's carve-out applies: no primary CTA verb, no resume verb. The
-// hero points at what is already open rather than promising a log nobody can start.
+// The page describes the product and never dates itself against `shell.status` (products/gym/
+// routes.js). It carried the pre-open carve-out until 2026-08-07 — an "In design" badge, a hero
+// that pointed at what was already open, and a promise that gym "joins the same account when it
+// opens" — and every one of those had stopped being true: the log, the logger, routines, the
+// finish, statistics, the coach share, the CSV and the MCP tools are all built and reachable at
+// #/gym, on the account this page names. The one verb is that same door, and it is the same door
+// after the flip: #/gym renders the log now and upgrades in place to /app/gym once gym is open.
+//
+// The nav's verb is a RESUME and not a CTA, which is the one place the account shows through the
+// copy: gym answers a visitor with no account with a sign-in pitch, so the nav offers the log to
+// somebody it will open for and offers everyone else Sign in. The hero keeps its door for both and
+// says the precondition in the line directly under it.
 
 import React from 'react';
 import { Badge, Button } from '../../../design-system';
@@ -19,6 +29,13 @@ const SECTION_LINKS = [
   { href: '#proof', label: 'For the barbell' },
   { href: '/changelog.html', label: 'Changelog' },
 ];
+
+// The hero's verb, and the nav's for a lifter the door already opens for. One href in three places
+// on this page, because it is one door.
+const LOG_HREF = '#/gym';
+const OPEN_LOG = 'Open your training log →';
+const RESUME = { href: LOG_HREF, label: 'Open your log' };
+const ACCOUNT_LINE = 'Your log lives on your Windmill account — one account and one subscription across Roadmap, Journal and Gym.';
 
 const PANEL_LABEL = {
   fontSize: 11, fontWeight: 800, letterSpacing: '.09em',
@@ -62,7 +79,7 @@ const GRANT_LEVELS = [
 const BRAND_DUO = [
   {
     title: 'One account, three rooms',
-    copy: 'Roadmap and Journal are open today; Gym joins the same account and subscription when it opens.',
+    copy: 'Roadmap, Journal and Gym — one account, one subscription, one history.',
     glyph: <><circle cx="12" cy="8" r="5" /><path d="M20 21a8 8 0 0 0-16 0" /></>,
   },
   {
@@ -171,19 +188,19 @@ function Hero() {
   return (
     <section>
       <div className="wrap" style={{ paddingTop: 40, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-        <Badge tone="neutral" dot>In design</Badge>
+        <Badge tone="neutral">Barbell training log</Badge>
         <h1 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 'clamp(36px, 5.2vw, 60px)', lineHeight: 1.07, color: 'var(--text-primary)', margin: '20px 0 16px', maxWidth: 820, textWrap: 'pretty' }}>
           It remembers what you lifted.
         </h1>
         <p style={{ fontFamily: 'var(--font-body)', fontSize: 'clamp(16px, 2vw, 20px)', lineHeight: 1.5, color: 'var(--text-secondary)', maxWidth: 640, margin: 0, textWrap: 'pretty' }}>
-          A training log for barbell programs — squat, bench, deadlift, press, rows, chins. Two taps between sets, a small jump when it’s time, and next session opens with last week’s numbers already in the field.
+          A training log for barbell programs — squat, bench, deadlift, press, rows, chins. Two taps between sets, a small jump when it’s time, and the next session opens with last time’s numbers already in the field.
         </p>
         <div style={{ display: 'flex', gap: 12, marginTop: 32, flexWrap: 'wrap', justifyContent: 'center' }}>
-          <a href="/"><Button variant="primary" size="lg">See what’s already open →</Button></a>
+          <a href={LOG_HREF}><Button variant="primary" size="lg">{OPEN_LOG}</Button></a>
           <a href="#how"><Button variant="secondary" size="lg">See how it works</Button></a>
         </div>
         <div style={{ fontFamily: 'var(--font-body)', fontSize: 13.5, color: 'var(--text-tertiary)', marginTop: 14 }}>
-          Gym joins the same account and subscription when it opens.
+          {ACCOUNT_LINE}
         </div>
       </div>
       <Moat />
@@ -407,10 +424,10 @@ function CtaBand() {
   return (
     <section className="wrap" style={{ paddingTop: 96 }}>
       <div className="ctaBand">
-        <h2 className="sectionTitle" style={{ margin: 0 }}>See what’s already open</h2>
-        <p className="sectionSub" style={{ maxWidth: 480 }}>Gym joins the same account and subscription when it opens.</p>
+        <h2 className="sectionTitle" style={{ margin: 0 }}>Log the next one</h2>
+        <p className="sectionSub" style={{ maxWidth: 480 }}>{ACCOUNT_LINE}</p>
         <div style={{ display: 'flex', gap: 12, marginTop: 20, flexWrap: 'wrap', justifyContent: 'center' }}>
-          <a href="/"><Button variant="primary" size="lg">See what’s already open →</Button></a>
+          <a href={LOG_HREF}><Button variant="primary" size="lg">{OPEN_LOG}</Button></a>
         </div>
       </div>
     </section>
@@ -419,7 +436,7 @@ function CtaBand() {
 
 export function GymLanding() {
   return (
-    <LandingPage brand="gym" product="gym" links={SECTION_LINKS} cta={null} resume={null}>
+    <LandingPage brand="gym" product="gym" links={SECTION_LINKS} cta={null} resume={RESUME}>
       <Hero />
       <HowItWorks />
       <ForTheBarbell />

@@ -20,7 +20,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { PageCache } from '../../../src/products/journal/pageCache.js';
-import { PageStore, joinBodies, span } from '../../../src/products/journal/pageStore.js';
+import { BEGINNING, PageStore, corpus, joinBodies, joinCorpus, span } from '../../../src/products/journal/pageStore.js';
 
 const TODAY = '2026-08-07';
 const KEY = 'wm.journal.pages';
@@ -38,14 +38,16 @@ function memoryStorage() {
 // Answers are functions so a test can flip one mid-run — which is exactly what "the signal came
 // back" is.
 function fakeApi() {
-  const calls = { range: [], page: [], put: [] };
+  const calls = { range: [], page: [], put: [], all: 0 };
   const api = {
     calls,
     onRange: () => [],
     onPage: () => null,
+    onAll: () => [],
     onPut: (day, body) => ({ day, ...body, updatedAt: 1 }),
     async range(from, to) { calls.range.push({ from, to }); return api.onRange(from, to); },
     async page(day) { calls.page.push(day); return api.onPage(day); },
+    async allPages() { calls.all += 1; return api.onAll(); },
     async putPage(day, body) { calls.put.push({ day, body }); return api.onPut(day, body); },
   };
   return api;
@@ -216,6 +218,7 @@ test('a read day is written normally: a stamp is minted and the page goes up', a
 
   await store.connect(true);
   assert.equal(store.snapshot.readState, 'ready');
+  assert.equal(store.snapshot.reach, 'end', 'an empty window is settled all the way back before anything is claimed');
   assert.equal(store.snapshot.firstRun, true, 'an account that read fine and holds nothing IS a first run');
 
   store.type('the first thing I ever wrote');
@@ -409,6 +412,260 @@ test('a write that the account refused is still on the device, and owed', async 
   assert.equal(store.snapshot.saveState, 'offline');
   assert.deepEqual(store.cache.owed().map((entry) => entry.page.body), ['typed while the wire was down']);
   assert.equal(new PageCache(storage, KEY).page(TODAY).body, 'typed while the wire was down');
+});
+
+// ── The timers this store schedules with ─────────────────────────────────────────────────────
+//
+// Every case above injects its own timers, which is what made this store drivable — and it is also
+// how a canvas that could not open in a browser shipped past a green suite. `this.setTimer(…)`
+// calls whatever it holds as a METHOD of the store, and a browser's timer functions check their
+// receiver: `window.setTimeout` invoked on anything else throws "Illegal invocation". Node's do
+// not. The first call to reach one was dispose()'s clear, on React's StrictMode double-invoke, so
+// the canvas died at mount into the error boundary — "Something went wrong on this screen."
+test('the default timers survive being called as methods, the way a browser demands', async (t) => {
+  const realSet = globalThis.setTimeout;
+  const realClear = globalThis.clearTimeout;
+  const asBrowser = (real) => function receiverChecked(...args) {
+    if (this !== undefined && this !== globalThis) throw new TypeError('Illegal invocation');
+    return real(...args);
+  };
+  globalThis.setTimeout = asBrowser(realSet);
+  globalThis.clearTimeout = asBrowser(realClear);
+  t.after(() => { globalThis.setTimeout = realSet; globalThis.clearTimeout = realClear; });
+
+  const api = fakeApi();
+  api.onRange = () => { throw new Error('offline'); };   // a failed read schedules a retry
+  const store = new PageStore({ cache: new PageCache(memoryStorage(), KEY), api, today: TODAY });
+
+  await store.connect(true);
+  store.type('and typing schedules a save');
+  store.dispose();                                        // …and leaving clears both
+
+  assert.equal(store.snapshot.readState, 'failed');
+  assert.equal(store.snapshot.saveState, 'device');
+});
+
+// ── The floor ────────────────────────────────────────────────────────────────────────────────
+//
+// The top of the canvas is the bottom of the journal, and until 2026-08-07 there was no way down
+// it: WINDOW_DAYS is sixty, and the sixty-first day back was reachable only by knowing what to
+// search for. The walk has three answers and the difference between two of them is the whole point
+// — a read that FAILED must never read as the beginning of somebody's journal.
+
+test('the floor reaches one window deeper per press, and the walk stays open', async (t) => {
+  const api = fakeApi();
+  api.onRange = (from) => {
+    if (from === '2026-06-08') return [wirePage('2026-06-10', 'inside the window', '1:0:a')];
+    if (from === '2026-04-10') return [wirePage('2026-05-02', 'a window deeper', '2:0:a')];
+    return [];
+  };
+  const { store } = storeOn(memoryStorage(), api);
+  t.after(() => store.dispose());
+
+  await store.connect(true);
+  assert.equal(store.snapshot.reach, 'more');
+  assert.equal(store.snapshot.history[0].date, '2026-06-10');
+
+  await store.reachBack();
+
+  assert.deepEqual(api.calls.range, [
+    { from: '2026-06-08', to: TODAY },
+    { from: '2026-04-10', to: '2026-06-09' },
+  ]);
+  assert.equal(store.snapshot.reach, 'more', 'a window with pages in it settles nothing');
+  assert.equal(store.snapshot.history[0].date, '2026-05-02');
+  // Reaching back EXTENDS what the device holds, so the canvas is still theirs on the next open.
+  assert.equal(store.cache.page('2026-05-02').body, 'a window deeper');
+  assert.equal(store.cache.hasRead('2026-05-02'), true);
+});
+
+// THE ONE THAT MATTERS. Telling a writer with two years of pages that their journal starts in June
+// is the same lie the canvas already refuses to tell about an empty account, told at the other edge.
+test('a reach back that FAILED is never the start of the journal', async (t) => {
+  const api = fakeApi();
+  api.onRange = (from) => {
+    if (from === '2026-06-08') return [wirePage('2026-06-10', 'inside the window', '1:0:a')];
+    throw new Error('offline');
+  };
+  const { store } = storeOn(memoryStorage(), api);
+  t.after(() => store.dispose());
+
+  await store.connect(true);
+  await store.reachBack();
+
+  assert.equal(store.snapshot.reach, 'failed');
+  assert.equal(store.snapshot.firstRun, false);
+  assert.equal(store.snapshot.history[0].date, '2026-06-10', 'what was already read stays on screen');
+
+  // …and the step is still offered, because the walk was never settled.
+  api.onRange = (from) => (from === '2026-04-10' ? [wirePage('2026-05-02', 'still there', '2:0:a')] : []);
+  await store.reachBack();
+
+  assert.equal(store.snapshot.reach, 'more');
+  assert.equal(store.snapshot.history[0].date, '2026-05-02');
+});
+
+// The other half of the same rule: it is the SETTLING read that earns the word "start", so that
+// read failing must not settle anything either.
+test('a settling read that failed is not the beginning either', async (t) => {
+  const api = fakeApi();
+  api.onRange = (from) => {
+    if (from === '2026-06-08') return [wirePage('2026-06-10', 'inside the window', '1:0:a')];
+    if (from === '2026-04-10') return [];              // sixty quiet days
+    throw new Error('offline');                        // …and the read that would settle them
+  };
+  const { store } = storeOn(memoryStorage(), api);
+  t.after(() => store.dispose());
+
+  await store.connect(true);
+  await store.reachBack();
+
+  assert.deepEqual(api.calls.range, [
+    { from: '2026-06-08', to: TODAY },
+    { from: '2026-04-10', to: '2026-06-09' },
+    { from: BEGINNING, to: '2026-04-09' },
+  ]);
+  assert.equal(store.snapshot.reach, 'failed');
+  assert.equal(store.snapshot.history[0].date, '2026-06-10');
+});
+
+test('an empty stretch is settled in the same press, and the start is then said out loud', async (t) => {
+  const api = fakeApi();
+  api.onRange = (from) => {
+    if (from === '2026-06-08') return [wirePage('2026-06-10', 'inside the window', '1:0:a')];
+    if (from === '2026-04-10') return [];
+    if (from === BEGINNING) return [wirePage('2024-03-12', 'the first page I ever wrote', '0:0:a')];
+    return [];
+  };
+  const { store } = storeOn(memoryStorage(), api);
+  t.after(() => store.dispose());
+
+  await store.connect(true);
+  await store.reachBack();
+
+  assert.deepEqual(api.calls.range, [
+    { from: '2026-06-08', to: TODAY },
+    { from: '2026-04-10', to: '2026-06-09' },
+    { from: BEGINNING, to: '2026-04-09' },
+  ]);
+  assert.equal(store.snapshot.reach, 'end');
+  assert.equal(store.snapshot.history[0].date, '2024-03-12', 'a quiet stretch was hiding the rest of the journal');
+  assert.equal(store.snapshot.history[0].body, 'the first page I ever wrote');
+
+  await store.reachBack();
+  assert.equal(api.calls.range.length, 3, 'there is nothing older to ask for twice');
+});
+
+// A writer who has been away longer than the window used to be handed a virgin canvas and told to
+// start anywhere, with years of their own pages one read away.
+test('a writer away longer than the window is not a first run', async (t) => {
+  const api = fakeApi();
+  api.onRange = (from) => (from === BEGINNING ? [wirePage('2026-01-04', 'before I stopped', '1:0:a')] : []);
+  const { store } = storeOn(memoryStorage(), api);
+  t.after(() => store.dispose());
+
+  await store.connect(true);
+
+  assert.deepEqual(api.calls.range, [
+    { from: '2026-06-08', to: TODAY },
+    { from: BEGINNING, to: '2026-06-07' },
+  ]);
+  assert.equal(store.snapshot.firstRun, false);
+  assert.equal(store.snapshot.reach, 'end');
+  assert.equal(store.snapshot.history[0].date, '2026-01-04');
+});
+
+test('an empty window whose settling read failed says nothing about whether the account is new', async (t) => {
+  const api = fakeApi();
+  api.onRange = (from) => { if (from === BEGINNING) throw new Error('offline'); return []; };
+  const { store } = storeOn(memoryStorage(), api);
+  t.after(() => store.dispose());
+
+  await store.connect(true);
+
+  assert.equal(store.snapshot.readState, 'ready', 'the window itself read fine');
+  assert.equal(store.snapshot.reach, 'failed');
+  assert.equal(store.snapshot.firstRun, false, 'nothing may call this account new');
+});
+
+test('signed out there is no account to reach into, and nothing is read', async (t) => {
+  const api = fakeApi();
+  const { store } = storeOn(memoryStorage(), api);
+  t.after(() => store.dispose());
+
+  await store.connect(false);
+  await store.reachBack();
+
+  assert.deepEqual(api.calls.range, []);
+  assert.equal(store.snapshot.reach, 'more');
+  assert.equal(store.snapshot.readState, 'device');
+  assert.equal(store.snapshot.firstRun, true, 'signed out, an empty device IS a first run — no read needed');
+});
+
+// ── The whole journal ────────────────────────────────────────────────────────────────────────
+//
+// Search, the year zoom and the nudge read the corpus rather than a window, and all three read the
+// ACCOUNT — which was the whole truth until pages began living on this device. A signed-out
+// writer's own pages were invisible to their own ⌘K.
+
+test('joinCorpus — the device’s pages are part of the journal, and an owed one wins outright', () => {
+  const cache = new PageCache(memoryStorage(), KEY);
+  cache.markRead('2026-08-01', { day: '2026-08-01', body: 'read from the account', mood: null, energy: null, source: 'typed', stamp: '5:0:a' });
+  cache.markRead('2026-08-02', null);                       // a day nobody wrote
+  cache.store({ day: '2026-08-03', body: 'written offline', mood: null, energy: null, source: 'typed', stamp: '9:0:web' }, { needsPush: true, read: true });
+  cache.hold({ day: '2026-08-04', body: 'held, and carrying no stamp at all', mood: null, energy: null, source: 'typed' });
+
+  const account = [
+    wirePage('2026-08-01', 'read from the account', '5:0:a'),
+    wirePage('2026-08-03', 'the account’s older copy', '1:0:a'),
+    wirePage('2026-08-04', 'the account’s copy of a day held here', '99:0:a'),
+  ];
+
+  assert.deepEqual(joinCorpus(account, cache).map((page) => [page.day, page.body]), [
+    ['2026-08-01', 'read from the account'],
+    ['2026-08-03', 'written offline'],
+    ['2026-08-04', 'held, and carrying no stamp at all'],
+  ]);
+});
+
+test('corpus — signed out, this device IS the journal, and nothing is asked of the account', async () => {
+  const cache = new PageCache(memoryStorage(), KEY);
+  cache.hold({ day: '2026-08-06', body: 'nobody is signed in and this is still mine', mood: null, energy: null, source: 'typed' });
+  const api = fakeApi();
+  api.onAll = () => { throw new Error('401'); };
+
+  assert.deepEqual(await corpus({ api, cache, signedIn: false }), {
+    source: 'device',
+    pages: [{ day: '2026-08-06', body: 'nobody is signed in and this is still mine', mood: null, energy: null, source: 'typed', stamp: '' }],
+  });
+  assert.equal(api.calls.all, 0);
+});
+
+test('corpus — a corpus that could not be read is not an empty journal', async () => {
+  const cache = new PageCache(memoryStorage(), KEY);
+  cache.markRead('2026-08-06', { day: '2026-08-06', body: 'on this device', mood: null, energy: null, source: 'typed', stamp: '2:0:a' });
+  const api = fakeApi();
+  api.onAll = () => { throw new Error('offline'); };
+
+  const read = await corpus({ api, cache, signedIn: true });
+
+  assert.equal(read.source, 'failed');
+  assert.deepEqual(read.pages.map((page) => page.day), ['2026-08-06']);
+});
+
+test('corpus — the account answered, and this device’s unsent page is in it too', async () => {
+  const cache = new PageCache(memoryStorage(), KEY);
+  cache.hold({ day: '2026-08-06', body: 'typed on a plane, still owed', mood: null, energy: null, source: 'typed' });
+  const api = fakeApi();
+  api.onAll = () => [wirePage('2026-07-01', 'an old page', '1:0:a')];
+
+  const read = await corpus({ api, cache, signedIn: true });
+
+  assert.equal(read.source, 'account');
+  assert.deepEqual(read.pages.map((page) => [page.day, page.body]), [
+    ['2026-07-01', 'an old page'],
+    ['2026-08-06', 'typed on a plane, still owed'],
+  ]);
 });
 
 // ── The pure rules underneath ────────────────────────────────────────────────────────────────

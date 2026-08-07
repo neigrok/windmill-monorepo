@@ -3,10 +3,10 @@
 // closes it.
 //
 // IT DRAWS NOTHING WHEN THERE IS NOTHING TO EXPORT. The settings page composes every product's
-// sections for every signed-in visitor, and gym is not open yet — so a roadmap-only account would
-// otherwise be offered a file of a training log they have never had. One cheap read settles it, and
-// a read that does not come back draws nothing either: a section that appears only when it is real
-// may not appear on a maybe.
+// sections for every signed-in visitor, and one account may use one product — so an account that
+// has only ever grown skill trees would otherwise be offered a file of a training log it has never
+// had. One cheap read settles it, and a read that does not come back draws nothing either: a
+// section that appears only when it is real may not appear on a maybe.
 //
 // The link is an anchor and not a fetch. The server answers with a Content-Disposition and the
 // browser saves the file — so a log too large to sit in a tab's memory still lands, and nothing is

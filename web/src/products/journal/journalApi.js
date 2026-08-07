@@ -3,7 +3,7 @@
 // it points at the local windmill_server. The wire shapes match the backend exactly:
 //   GET  /v1/journal/page/:date        -> the page, or null on 404 (a day never written)
 //   PUT  /v1/journal/page/:date        -> the WINNING page after a last-writer-wins upsert
-//   GET  /v1/journal/pages?since=|from=&to=  -> { pages: [...] } (the delta feed / a window)
+//   GET  /v1/journal/pages?since=|from=&to=  -> { pages: [...] } (the delta feed / a window / all)
 //   GET  /v1/journal/export            -> { pages: [...] }
 //   GET  /v1/journal/echoes?from=&to=  -> { pages: [...], pagesWritten, firstEchoEver }
 //   POST /v1/journal/echoes/:trigger/:match/dismiss     ("Not useful" — retire that pairing)
@@ -15,11 +15,6 @@
 import { API_BASE } from '../../shell/apiBase.js';
 
 const base = `${API_BASE}/v1/journal`;
-
-// The HLC that precedes every write, so the delta feed hands back the whole history; and the most
-// days one read will carry — about fourteen years of daily pages.
-const ZERO_CURSOR = '0:0:';
-const CORPUS_CEILING = 5000;
 
 async function call(path, options = {}) {
   const response = await fetch(`${base}${path}`, {
@@ -64,12 +59,17 @@ export const journalApi = {
     return (await json(await call(`/pages?from=${from}&to=${to}`))).pages;
   },
 
-  // The whole corpus, ascending — what search indexes, what the zoom draws a year out of, and what
-  // the nudge reads a rhythm from. It rides the delta feed from the zero HLC cursor, which is the
-  // only cursor any caller has ever passed; the ceiling is one decision made here rather than three
-  // chances to disagree about how much history the journal has.
+  // The whole corpus, ascending by day — what search indexes, what the zoom draws a year out of,
+  // and what the nudge reads a rhythm from. `/pages` with no parameters at all is the backend's own
+  // whole-shelf read (products/journal/adapters/http/JournalApi.cpp), and it is uncapped.
+  //
+  // This rode the delta feed from the zero cursor with `limit=5000` until 2026-08-07. That was two
+  // untrue things at once: the server clamps any `since` limit to 1000, so a writer past ~2.7 years
+  // of daily pages was silently searching and zooming an incomplete journal — and the feed is
+  // ordered by STAMP, so the pages it dropped were an arbitrary scatter of days rather than the
+  // oldest ones. There is no ceiling here now because there is none to state.
   async allPages() {
-    return (await json(await call(`/pages?since=${encodeURIComponent(ZERO_CURSOR)}&limit=${CORPUS_CEILING}`))).pages;
+    return (await json(await call('/pages'))).pages;
   },
 
   async exportAll() {

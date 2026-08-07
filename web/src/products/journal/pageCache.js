@@ -7,12 +7,12 @@
 // MECHANISM. One localStorage key holding every entry as JSON, read once at construction into
 // memory and written whole on flush. Roadmap keeps its tree lattice in IndexedDB because a lattice
 // is large and two tabs JOIN into one document concurrently; a journal page is prose keyed by day,
-// convergence is last-writer-wins on one stamp rather than a merge, and this tier only holds a
-// sixty-day window plus whatever is owed — kilobytes. What localStorage buys for that shape is the
-// thing IndexedDB cannot: the store opens SYNCHRONOUSLY, so the canvas draws this device's pages on
-// the first frame with no await between mount and paint. iOS gets the same property by reading one
-// file in init. An unreadable or absent store opens EMPTY rather than throwing — a corrupted blob
-// costs the window, never the room.
+// convergence is last-writer-wins on one stamp rather than a merge, and what this tier keeps on
+// disk is a few months plus whatever is owed — kilobytes (see RETAIN_DAYS). What localStorage buys
+// for that shape is the thing IndexedDB cannot: the store opens SYNCHRONOUSLY, so the canvas draws
+// this device's pages on the first frame with no await between mount and paint. iOS gets the same
+// property by reading one file in init. An unreadable or absent store opens EMPTY rather than
+// throwing — a corrupted blob costs the window, never the room.
 //
 // TWO MARKS PER ENTRY, and they answer different questions:
 //   needsPush — this device owes the account this page.
@@ -31,6 +31,15 @@
 import { compareStamps, ZERO_STAMP } from './hlc.js';
 
 const CACHE_KEY = 'wm.journal.pages';
+
+// How many days of read pages survive a reload. Reaching further back than the canvas's window
+// (pageStore.js) pulls months — sometimes years — into memory, and every one of them belongs on
+// screen. None of them belongs in the durable store: localStorage is the WRITING tier here, the
+// place a page lives when there is no network and no account, and history crowding it out would
+// eventually cost a write. So a flush keeps everything OWED, whatever its age, plus the newest
+// RETAIN_DAYS entries; anything older is read from the account again on the next open, which is
+// where it came from. Two windows of calendar, blank days included.
+const RETAIN_DAYS = 120;
 
 // Private-mode browsers throw on first use rather than on the property, and a Node test run has no
 // localStorage at all — both read as "no device tier", never as an exception out of a constructor.
@@ -193,7 +202,13 @@ export class PageCache {
       const merged = {};
       for (const [day, entry] of readEntries(this.storage, this.key)) merged[day] = entry;
       for (const [day, entry] of this.entries) merged[day] = entry;
-      this.storage.setItem(this.key, JSON.stringify(merged));
+      // The retention line, applied to the union rather than to this tab's half, so two tabs that
+      // have reached back to different depths still agree on what the disk holds.
+      const days = Object.keys(merged).sort();
+      const oldestKept = days[Math.max(0, days.length - RETAIN_DAYS)] ?? '';
+      const kept = {};
+      for (const day of days) if (day >= oldestKept || merged[day].needsPush) kept[day] = merged[day];
+      this.storage.setItem(this.key, JSON.stringify(kept));
       return true;
     } catch {
       return false;

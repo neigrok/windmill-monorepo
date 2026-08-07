@@ -17,6 +17,7 @@
 //     it refuses that set forever, so Finish only completes when there is nothing left to lose.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { LIVE_KEY, QUEUE_KEY } from '../device.js';
 import { gymApi } from '../gymApi.js';
 import { finishHref, nameOfMovement, planOf, workingSetsOf } from '../log.js';
 import { deviationAsk, withEntryWeight } from '../routines.js';
@@ -27,8 +28,8 @@ import { EMPTY_BAR_KG, EMPTY_BAR_REPS, planEntryFor, prefillFor } from './prefil
 import { restReadout, restTargetFor } from './rest.js';
 import { playRestLanded, playSetLogged } from './sound.js';
 
-const LIVE_KEY = 'windmill.gym.live';
-const QUEUE_KEY = 'windmill.gym.queue';
+// Both keys live in device.js — the /app home cell reads the live one to ask whether a workout was
+// left open here, and it may not import this file to do it.
 const BEAT_MS = 500;
 const FLUSH_MS = 4000;
 const TOAST_MS = 5000;

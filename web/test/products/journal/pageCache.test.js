@@ -186,6 +186,30 @@ test('flush — union by day with what is already on disk, so a second tab’s d
   assert.equal(written['2026-08-02'].page.body, 'this tab');
 });
 
+// Reaching back past the canvas's window (pageStore.js) pulls months, sometimes years, into memory,
+// and every one of those days belongs on screen. None of them belongs in the durable store:
+// localStorage is the WRITING tier here — the place a page lives when there is no network and no
+// account — and letting history crowd it out would eventually cost somebody a write.
+test('flush — the disk keeps the newest days plus everything owed, and history never crowds it', () => {
+  const dayAt = (index) => new Date(Date.UTC(2025, 0, 1 + index)).toISOString().slice(0, 10);
+  const storage = memoryStorage();
+  const cache = new PageCache(storage, KEY);
+  for (let k = 0; k < 200; k += 1) {
+    cache.store(pageOn(dayAt(k), `day ${k}`, `${k + 1}:0:a`), { needsPush: k === 3, read: true });
+  }
+
+  assert.equal(cache.flush(), true);
+  assert.equal(cache.pages().length, 200, 'the session it was read in still holds all of it');
+
+  const reopened = new PageCache(storage, KEY);
+  const days = reopened.pages().map((page) => page.day);
+  assert.equal(days.length, 121);                  // the newest 120, plus the one page still owed
+  assert.equal(days[0], dayAt(3), 'an owed page survives whatever its age — it is somebody’s prose');
+  assert.equal(days[1], dayAt(80));                // 200 read days, 120 kept
+  assert.equal(days[120], dayAt(199));
+  assert.deepEqual(reopened.owed().map((entry) => entry.page.day), [dayAt(3)]);
+});
+
 test('flush — a browser that refuses the bytes answers false, and never pretends', () => {
   const cache = new PageCache(refusingStorage(), KEY);
   cache.hold({ day: '2026-08-07', body: 'nowhere to put this', mood: null, energy: null, source: 'typed' });

@@ -270,6 +270,61 @@
   margin: 18px 0 6px;
 }
 
+/* ---- The floor — the top of the canvas, which is the bottom of the journal. ----
+   A way further down rather than something that happened, so it is quieter than any day: no
+   surface, no border, no spinner. The start of the journal is a statement and reads as one; a
+   failed reach reads in the same ink as .journal-unread, because both are facts about the network
+   and neither is a fault. */
+.journal-floor-more {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin: 0 0 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--journal-ink);
+  opacity: 0.55;
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: opacity 140ms var(--ease-standard);
+}
+.journal-floor-more:hover { opacity: 0.9; }
+/* Busy overrides hover and repeats every property hover sets — a phone leaves :hover stuck after
+   the tap, so without these the control stays lit as pressable for the whole read. */
+.journal-floor-more[aria-disabled='true'],
+.journal-floor-more[aria-disabled='true']:hover {
+  cursor: default;
+  opacity: 0.4;
+  font-style: italic;
+}
+
+.journal-floor-end,
+.journal-floor-failed {
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--journal-ink);
+  opacity: 0.5;
+  margin: 0 0 10px;
+  text-align: center;
+}
+
+.journal-floor-retry {
+  margin-left: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--lamp-400);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 /* ---- Today — the last block; writing happens inline in a growing textarea. ---- */
 .journal-input {
   display: block;
@@ -511,6 +566,15 @@
   color: var(--journal-ink-dim);
   font: 400 15px/1.4 var(--font-body), 'Nunito', system-ui, sans-serif;
 }
+/* The account could not be read, said above the foot rather than in place of it — the privacy line
+   is true whether or not the network is. Same quiet ink as .journal-unread on the canvas. */
+.journal-search-unread {
+  margin: 0;
+  padding: 0 20px 10px;
+  color: var(--journal-ink-dim);
+  font: 400 12px/1.5 var(--font-body), 'Nunito', system-ui, sans-serif;
+}
+
 .journal-search-foot {
   margin: 0;
   padding: 12px 20px;
@@ -1157,6 +1221,14 @@
 
 .journal-zoom-grid { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
 .journal-zoom-loading { color: var(--journal-ink-dim, #8A98AC); font-style: italic; }
+/* A grid of empty squares over a failed read would say "you wrote nothing this year". It says what
+   actually happened instead, in the same quiet ink the canvas uses for the same fact. */
+.journal-zoom-unread {
+  max-width: 760px;
+  margin: 0 auto 14px;
+  color: var(--journal-ink-dim, #8A98AC);
+  font: 400 13px/1.5 var(--font-body), 'Nunito', system-ui, sans-serif;
+}
 .journal-zoom-month { display: flex; align-items: center; gap: 14px; }
 .journal-zoom-mlabel {
   flex: none;

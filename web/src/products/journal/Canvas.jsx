@@ -7,6 +7,8 @@
 // energy sit in thumb reach, and a mono note fades in after each write naming where
 // the words actually are. When the account could not be read the canvas says so and
 // draws nothing implying it is empty — a read that failed is not a first run.
+// At the other edge sits the floor: one window deeper per press, and the start of the
+// journal said out loud once a read has reached it.
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { usePages } from './usePages.js';
@@ -28,15 +30,16 @@ function wordCount(body) {
 
 export function Canvas({ focusDate = null, flyTo = null, echoes = null, onNeedSignIn = () => {} }) {
   const {
-    today, history, loading, firstRun, readState,
+    today, history, loading, firstRun, readState, reach,
     body, mood, energy, saveState, saveTick,
-    setBody, toggleMood, toggleEnergy, extendTo,
+    setBody, toggleMood, toggleEnergy, extendTo, reachBack,
   } = usePages();
 
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
   const restoredRef = useRef(false);
   const bornSet = useRef(null); // the dates present at first paint — these never animate
+  const anchorRef = useRef(null); // distance from the scroll bottom, held across a reach back
   const [highlight, setHighlight] = useState(null); // { day, lo, hi } — a search hit, lit for a beat
 
   if (!loading && !bornSet.current) {
@@ -88,6 +91,24 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, onNeedSi
     if (loading || !restoredRef.current || !focusDate) return;
     scrollToDay(focusDate);
   }, [focusDate, loading]);
+
+  // Reaching back PREPENDS months above the viewport, which would otherwise shove the page the
+  // writer is reading down the screen by however much history arrived. So the press records how far
+  // the scroller is from its own bottom — the one distance a prepend cannot change — and the layout
+  // pass that follows the read puts it back. Measured before the read and restored after it
+  // SETTLES, so a reach that failed or found nothing simply restores the same position it took.
+  const startReachBack = () => {
+    const scroller = scrollRef.current;
+    anchorRef.current = scroller ? scroller.scrollHeight - scroller.scrollTop : null;
+    reachBack();
+  };
+
+  useLayoutEffect(() => {
+    if (anchorRef.current == null || reach === 'loading') return;
+    const scroller = scrollRef.current;
+    if (scroller) scroller.scrollTop = scroller.scrollHeight - anchorRef.current;
+    anchorRef.current = null;
+  }, [reach, history.length]);
 
   // Fly to a search hit: bring its day to centre, neighbours intact, and light the
   // matched passage for a beat — a position, never a detail view. A hit older than the
@@ -152,9 +173,18 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, onNeedSi
   const todayMonth = today.slice(0, 7);
   if (todayMonth !== lastMonth) rendered.push(<MonthDivider key={`m-${todayMonth}`} iso={today} />);
 
+  // The floor belongs to an account that answered, and to nothing else. A canvas still loading has
+  // no edge yet; a read that FAILED has not earned the right to say anything about where the
+  // journal starts (gym's log foot draws the same line); and signed out there is no account to
+  // reach into at all — the device is the whole record and the save note already says so. The one
+  // ready state it stays out of is an account with no pages: "that's the start of your journal"
+  // over an empty canvas is noise, and the first-run placeholder is what belongs there.
+  const showFloor = readState === 'ready' && !(history.length === 0 && reach === 'end');
+
   return (
     <div className="journal-scroll" ref={scrollRef}>
       <div className="journal-column">
+        {showFloor && <CanvasFloor reach={reach} onReach={startReachBack} />}
         {rendered}
 
         {readState === 'failed' && (
@@ -199,6 +229,39 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, onNeedSi
         </article>
       </div>
     </div>
+  );
+}
+
+// THE FLOOR OF THE JOURNAL. Gym's log foot answers "is this everything?" at the bottom of a list;
+// the top of a canvas is the same question upside down, and it gets the same three answers: one
+// window deeper per press, said in words rather than a spinner — and the beginning stated OUT LOUD,
+// because "that's where your journal starts" is what someone checking whether their history came
+// across is actually looking for.
+//
+// A read that FAILED is never that answer. It says what happened and offers the step again: a
+// writer with two years of pages must never be told their journal starts in June.
+function CanvasFloor({ reach, onReach }) {
+  if (reach === 'end') return <p className="journal-floor-end">That’s the start of your journal.</p>;
+  if (reach === 'failed') {
+    return (
+      <p className="journal-floor-failed">
+        Couldn’t read further back — this is what’s loaded so far, not where you started.
+        <button type="button" className="journal-floor-retry" onClick={onReach}>Try again</button>
+      </p>
+    );
+  }
+  // aria-disabled rather than disabled: a real `disabled` drops focus to the body mid-press, and
+  // what actually makes a second press safe is the store's own guard, never the attribute.
+  return (
+    <button
+      type="button"
+      className="journal-floor-more"
+      onClick={onReach}
+      aria-disabled={reach === 'loading'}
+      aria-busy={reach === 'loading'}
+    >
+      {reach === 'loading' ? 'Reading further back…' : 'Read further back'}
+    </button>
   );
 }
 

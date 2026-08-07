@@ -78,3 +78,33 @@ test('the shared workout is answered above the auth switch, and wears none of th
   }
   assert.equal(branch.includes('<SharedSession token={sharedToken} />'), true);
 });
+
+// ONE ACCOUNT SEAT ON A SCREEN, EVER — and which one it is depends on the frame, which is a fact
+// about where a component is mounted and therefore invisible to a module test. Outside the shell,
+// #/gym is the whole page: nothing above GymApp paints anything, so the room floats its own seat and
+// switcher. Inside /app the shell has already drawn a seat (the rail's foot on a desk, the top bar's
+// on a phone) and a rail that IS the switcher, so a room drawing its own would put a second seat on
+// the screen beside the first.
+//
+// The rule is ONE guard at the top of ONE component rather than a condition at each of its call
+// sites: a third caller of Chrome cannot forget it, and a second <AccountSeat> in this file would
+// be a seat outside the guard. Both halves are pinned, because either one alone lets the bug back.
+test('the account seat and the switcher are drawn in one place, and only outside the shell', () => {
+  const app = read('GymApp.jsx');
+
+  assert.equal(app.includes('function Chrome({ inShell, user, status, onSignIn, onSignOut }) {\n  if (inShell) return null;'), true);
+  assert.equal((app.match(/<AccountSeat/g) ?? []).length, 1);
+  assert.equal((app.match(/<ProductSwitcher/g) ?? []).length, 1);
+  assert.ok(app.indexOf('if (inShell) return null;') < app.indexOf('<AccountSeat'));
+
+  // Every mount of Chrome is handed the answer. A mount that forgot the prop would default to the
+  // bare surface and draw the second seat — the exact failure the guard exists to stop.
+  const mounts = app.split('<Chrome').slice(1);
+  assert.equal(mounts.length, 2);
+  for (const mount of mounts) assert.equal(mount.slice(0, 40).includes('inShell={inShell}'), true, mount.slice(0, 40));
+
+  // The root says which frame it is in, so the stylesheet can drop the space the floating furniture
+  // was being cleared from (gym.css) without naming the /app chrome, which products may not touch.
+  assert.equal((app.match(/data-chrome=\{inShell \? 'shell' : 'own'\}/g) ?? []).length, 2);
+  assert.equal(read('gym.css').includes(".gym-root[data-chrome='shell'] .gym-column {"), true);
+});

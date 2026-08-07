@@ -28,6 +28,11 @@ export function useNudge() {
     setSettings(next);
   }, []);
 
+  // The account's pages and nothing else, deliberately — this is the one corpus reader that does
+  // NOT join the device's (pageStore.js `corpus`). The rhythm is read from each page's last-write
+  // INSTANT, and a page held on the device carries a day and a stamp but no `updatedAt`, so it
+  // could contribute a page to the histogram and never an hour. Nor is there a signed-out case to
+  // serve: the whole panel only exists when the server says the engine is armed for this writer.
   const enable = useCallback(async () => {
     const pages = await journalApi.allPages().catch(() => []);
     const { nextDueAt, slotDay } = nextNudge(pages, Date.now());

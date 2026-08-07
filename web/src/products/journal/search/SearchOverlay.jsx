@@ -16,8 +16,8 @@ function dateLabel(iso) {
   return `${weekday} ${String(d).padStart(2, '0')} ${MONTHS[m - 1]}`;
 }
 
-export function SearchOverlay({ open, onClose, onSelect }) {
-  const { ready, indexing, sharpening, mode, version, search } = useSearch(open);
+export function SearchOverlay({ open, onClose, onSelect, signedIn = true }) {
+  const { ready, indexing, sharpening, mode, version, source, search } = useSearch(open, signedIn);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const inputRef = useRef(null);
@@ -67,6 +67,14 @@ export function SearchOverlay({ open, onClose, onSelect }) {
             </button>
           ))}
         </div>
+        {/* A journal that could not be read is not a journal with nothing in it — said above the
+            foot rather than instead of it, because "nothing leaves the device" is true either way
+            and is not the line to drop when the network is down. */}
+        {source === 'failed' && (
+          <p className="journal-search-unread">
+            Couldn’t reach your journal — this searches only what’s on this device.
+          </p>
+        )}
         <p className={'journal-search-foot' + (sharpening ? ' is-sharpening' : '')}>
           {footNote(indexing, sharpening, mode)}
         </p>

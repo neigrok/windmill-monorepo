@@ -1,0 +1,131 @@
+// The route table is the whole seam between gym and the shell, and this wave gave it two jobs it
+// did not have: telling the frame which chrome it is standing in, and bringing the cell the /app
+// home grid draws. Both exist so that opening gym — one word on `shell.status` — is a change of
+// state and not a change of code.
+//
+// The third thing pinned here is the landing's words, because they are the part of a product that
+// goes stale silently. Every line on /gym used to be dated against `pre-open` ("In design", "when
+// it opens", a hero pointing at what was already open), which made them false the moment the flag
+// moved — and several of them were already false before it.
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { gymRoutes } from '../../../src/products/gym/routes.js';
+import { gymLandingHead } from '../../../src/products/gym/marketing/landingHead.js';
+import { SITE_ORIGIN } from '../../../src/shell/marketing/siteIdentity.js';
+
+const GYM = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../src/products/gym');
+
+// ONE ACCOUNT SEAT ON A SCREEN. Outside the shell nothing above GymApp paints anything, so the room
+// floats its own seat and switcher; inside /app the shell already draws a seat — the rail's foot on
+// a desk, the top bar's on a phone — and a rail that IS the switcher. The frame is TOLD which of
+// the two it is in, because the shell resolves the room and the legacy-door upgrade in the same
+// render that mounts the component, and a pathname read from inside can still be the pre-upgrade
+// one. What arrives here is the pathname the frame actually resolved.
+test('the frame is handed the chrome it is standing in, off the pathname the caller resolved', () => {
+  const bare = [
+    ['#/gym', '/'],
+    ['#/gym/log', '/gym'],
+    ['#/gym/stats', '/t/t_abc'],
+    // A pathname that merely starts with the same letters is not the shell.
+    ['#/gym', '/apples'],
+  ];
+  for (const [hash, pathname] of bare) {
+    assert.deepEqual(gymRoutes.render({ hash, pathname }).props, { hash, inShell: false }, pathname);
+  }
+
+  const inShell = [
+    ['#/gym', '/app'],
+    ['#/gym', '/app/gym'],
+    ['#/gym/stats', '/app/gym'],
+    ['#/gym/log', '/app/gym/'],
+  ];
+  for (const [hash, pathname] of inShell) {
+    assert.deepEqual(gymRoutes.render({ hash, pathname }).props, { hash, inShell: true }, pathname);
+  }
+
+  // A caller with no pathname to give resolves to the bare surface rather than throwing through a
+  // render — the shell and the router both pass one today, and neither is this file's to trust.
+  assert.deepEqual(gymRoutes.render({ hash: '#/gym' }).props, { hash: '#/gym', inShell: false });
+
+  // Somebody else's URL is still somebody else's.
+  assert.equal(gymRoutes.render({ hash: '#/journal/2026-08-01', pathname: '/app/journal' }), null);
+  assert.equal(gymRoutes.render({ hash: '#/app/start', pathname: '/app/roadmap' }), null);
+});
+
+// AN OPEN PRODUCT WITHOUT A HomeCard IS ABSENT FROM THE GRID, not present in it: chrome/ShellHome
+// renders `p.shell.HomeCard` for open products and renders nothing at all when there is none. So a
+// gym that opened without this line would disappear from the /app home rather than appear on it —
+// the exact opposite of what flipping the flag is for.
+test('gym brings the cell the /app home grid draws once it is open', () => {
+  assert.notEqual(gymRoutes.shell.HomeCard, undefined);
+  assert.notEqual(gymRoutes.shell.HomeCard, null);
+  assert.equal(fs.existsSync(path.join(GYM, 'HomeCard.jsx')), true);
+  // Lazy, like every other product's: the grid is the first frame after sign-in.
+  assert.equal(fs.readFileSync(path.join(GYM, 'routes.js'), 'utf8').includes("const HomeCard = lazy(() => import('./HomeCard.jsx')"), true);
+});
+
+// NOTHING HERE PINS WHICH WAY THE FLAG POINTS. Opening a product is a launch decision — the owner's,
+// and the phase-1 dogfood gate has never run — so a test asserting 'pre-open' would be one more edit
+// standing in the way of a one-line change. What is pinned is that the registry answers for both: the
+// word is one of the two the shell knows, and the room, the door and the home it names are the same
+// either way. (One test elsewhere DOES fail on the flip and is a real blocker: test/shell/settings/
+// accountClosure.test.js asserts at least one product is pre-open. It is the shell's to fix.)
+test('the registry answers for either state of the flag', () => {
+  assert.equal(['open', 'pre-open'].includes(gymRoutes.shell.status), true, gymRoutes.shell.status);
+  assert.equal(gymRoutes.shell.room, '/app/gym');
+  assert.equal(gymRoutes.switchHash, '#/gym');
+  assert.equal(gymRoutes.home(), '#/gym');
+  assert.equal(gymRoutes.landingAfterSignIn(), '#/gym');
+  assert.equal(gymRoutes.shell.landingHref, gymRoutes.landing.href);
+});
+
+// ONE DOOR, TRUE IN BOTH STATES. #/gym renders the log today and upgrades in place to /app/gym the
+// moment gym opens, so the landing's one verb needs no edit on either side of the flip. The words
+// beside it describe what the product does; none of them names a date, a state or an arrival.
+test('the landing offers the log itself, and no line on it is dated against the flag', () => {
+  assert.deepEqual(gymLandingHead.fallback.actions, [
+    { href: '#/gym', label: 'Open your training log →' },
+    { href: '#how', label: 'See how it works' },
+  ]);
+
+  const words = [
+    gymLandingHead.title,
+    gymLandingHead.description,
+    gymLandingHead.ogDescription,
+    gymLandingHead.fallback.badge,
+    gymLandingHead.fallback.h1,
+    gymLandingHead.fallback.sub,
+    gymLandingHead.fallback.trust,
+    ...gymLandingHead.fallback.notes,
+    gymRoutes.label,
+    gymRoutes.landing.tagline,
+    gymRoutes.landing.summary,
+  ].join('  ');
+  for (const dated of ['when it opens', 'In design', 'in design', 'already open', 'coming soon', 'Coming soon']) {
+    assert.equal(words.includes(dated), false, dated);
+  }
+
+  // The account is the honest precondition, and it is stated at the door rather than behind it:
+  // #/gym answers a visitor with no account with a sign-in pitch and nothing else.
+  assert.equal(gymLandingHead.fallback.trust.includes('account'), true);
+});
+
+// The build script throws on a missing fallback field or a missing schema key, so the /gym shell is
+// only ever as crawlable as this object is complete. An empty `schema` was the pre-open stance —
+// "there is nothing to log yet" — and the product it described has been loggable for weeks.
+test('the /gym shell carries a complete no-JS body and asserts the application it is a page for', () => {
+  for (const field of ['accent', 'badge', 'h1', 'sub', 'actions', 'trust', 'notes']) {
+    assert.equal(Boolean(gymLandingHead.fallback[field]), true, field);
+  }
+  assert.equal(gymLandingHead.schema.length, 1);
+  assert.equal(gymLandingHead.schema[0]['@type'], 'SoftwareApplication');
+  assert.equal(gymLandingHead.schema[0].url, `${SITE_ORIGIN}/gym`);
+  assert.equal(gymLandingHead.schema[0].isAccessibleForFree, true);
+  assert.equal(gymLandingHead.path, '/gym');
+  assert.equal(gymLandingHead.module, 'src/products/gym/marketing/GymLanding.jsx');
+});

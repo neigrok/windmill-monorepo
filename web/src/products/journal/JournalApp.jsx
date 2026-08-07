@@ -128,10 +128,14 @@ export function JournalApp({ hash }) {
           <Search size={18} strokeWidth={1.9} aria-hidden="true" />
         </button>
       </div>
+      {/* Search and the zoom read the whole journal rather than a window, and the whole journal is
+          the account's pages plus this device's — so both need to know whether there is an account
+          to read at all. It is asked once, here, where the auth status already is. */}
       <SearchOverlay
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
         onSelect={(hit) => { setFlyTo({ ...hit, at: Date.now() }); setSearchOpen(false); }}
+        signedIn={status === 'signed-in'}
       />
       {sheetPage && (
         <OneSheet
@@ -146,6 +150,7 @@ export function JournalApp({ hash }) {
         <ZoomView
           onClose={() => setZoomOpen(false)}
           onPick={(date) => { setFlyTo({ day: date, at: Date.now() }); setZoomOpen(false); }}
+          signedIn={status === 'signed-in'}
         />
       )}
       <div className="wm-post wm-post-switch">

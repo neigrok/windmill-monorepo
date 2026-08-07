@@ -4,6 +4,10 @@
 // year out of it, the nudge reads a rhythm from it. Until this file, each of those three wrote the
 // zero cursor and the ceiling out by hand, so "how much history does the journal have" had three
 // answers that only happened to agree. It is one answer now, and this is what pins it.
+//
+// `range` carries the canvas's floor too: the walk back past the sixty-day window ends on a read
+// with no floor under it, and that read is this same window read from the first day a date column
+// will parse (pageStore.js BEGINNING).
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -39,17 +43,20 @@ function wireOf({ url, options }) {
 
 test.afterEach(() => { global.fetch = realFetch; calls = []; });
 
-// The cursor precedes every write a device can mint, so the delta feed hands back everything. It
-// is URL-encoded because the colons in an HLC are not path-safe by luck.
-test('allPages — the zero cursor and the ceiling, encoded, said in exactly one place', async () => {
+// NO CURSOR AND NO CEILING, and that is the point. This rode the delta feed from the zero HLC with
+// `limit=5000` until 2026-08-07, and the server clamps any `since` limit to 1000 — so past ~2.7
+// years of daily pages a writer was searching and zooming an incomplete journal, missing an
+// arbitrary scatter of days rather than the oldest ones, because that feed is ordered by stamp.
+// `/pages` with no parameters is the backend's own whole-shelf read: every page, ascending by day.
+test('allPages — the whole shelf, with no ceiling to be wrong about', async () => {
   const pages = [{ day: '2026-08-03', body: 'slept badly' }, { day: '2026-08-04', body: 'better' }];
   serve(ok({ pages }));
 
   assert.deepEqual(await journalApi.allPages(), pages);
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].url, `${API_BASE}/v1/journal/pages?since=0%3A0%3A&limit=5000`);
+  assert.equal(calls[0].url, `${API_BASE}/v1/journal/pages`);
   assert.deepEqual(wireOf(calls[0]), {
-    path: '/v1/journal/pages?since=0%3A0%3A&limit=5000',
+    path: '/v1/journal/pages',
     method: 'GET',
     credentials: 'include',
     contentType: 'application/json',
