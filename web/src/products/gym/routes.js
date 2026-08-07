@@ -42,9 +42,9 @@ function landingAfterSignIn() {
 
 // ONE PRODUCT, TWO FRAMES. Gym is drawn either as the bare surface at #/gym — where nothing but
 // GymApp paints anything, so it floats its own account seat and product switcher — or as a room
-// inside the /app shell, which already draws a seat (the rail's foot on a desk, the top bar's on a
-// phone) and whose rail IS the switcher. A room that drew its own inside the shell would paint a
-// second account seat next to the first.
+// inside the /app shell, whose head already carries both — the switcher centred and the seat
+// opposite it, at every width. A room that drew its own inside the shell would paint a second
+// account seat next to the first.
 //
 // Decided here rather than inside the app, off the pathname the caller hands the route table —
 // exactly as roadmap's own render reads `pathname` to tell a /t/:id share page from an editor.
@@ -83,16 +83,15 @@ export const gymRoutes = {
     summary: 'A quiet record of how you’re moving — sets, sessions, the long line of showing up. Two taps between sets, and the next session opens with last time’s numbers already in the field.',
   },
   shell: {
-    icon: 'dumbbell',
     room: '/app/gym',
     scope: { theme: 'dark', brand: 'gym' },
     // THE ONE LINE THAT OPENS THE GYM, and it is a launch decision rather than a build one — the
     // phase-1 dogfood gate has never run, and that gate is what says whether this product is good.
     // Everything the flip needs is built, so moving 'pre-open' to 'open' is the whole edit:
     //
-    //   · the rail button, the mobile tab, the /app home cell, the legacy door (#/gym upgrading in
-    //     place to /app/gym), the room itself and the brand root's badge are all DERIVED from this
-    //     word. Nothing outside this line spells gym's state out by hand.
+    //   · the room's name in the shell's head, the /app home cell, the legacy door (#/gym upgrading
+    //     in place to /app/gym), the room itself and the brand root's badge are all DERIVED from
+    //     this word. Nothing outside this line spells gym's state out by hand.
     //   · the HomeCard above is what the grid draws once it is open. Without one, an open product
     //     is absent from the grid rather than present in it (chrome/ShellHome.jsx), which is the
     //     failure this comment exists to make impossible.
@@ -102,14 +101,14 @@ export const gymRoutes = {
     // What the flip still implies, and what nobody should discover afterwards:
     //   · the coach's link is safe: `bare` above keeps #/gym/shared/<token> out of the room, and
     //     web/test/products/gym/routes.test.js pins it, so a stranger opening a shared workout never
-    //     gets a rail and a Sign in seat around it.
+    //     gets a room switcher and a Sign in seat around it.
     //   · the shell's own pre-open cell and the accountClosure test were the two things that would
     //     have broken or lied on the flip. Both are fixed: no test asserts that a pre-open product
     //     exists, and the /app grid no longer calls a finished product a design.
     //   · what the flip DOES still change, and is simply true: #/gym starts upgrading into /app/gym,
     //     so gym renders inside the shell's chrome (handled — `render` passes `inShell`), gym joins
-    //     the rail, the mobile tabs and the /app home grid (its HomeCard is ready), and the brand
-    //     root's hero CTA can pick gym as the first open product.
+    //     the shell's head and the /app home grid (its HomeCard is ready), and the brand root's
+    //     hero CTA can pick gym as the first open product.
     //   · what it does NOT change: the dogfood gate has still never run. Opening the door is a
     //     statement that the product is good, and only eight real sessions can make it.
     // The one hash under '#/gym' that must NEVER be upgraded into the room, whatever `status` says:

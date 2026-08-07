@@ -65,10 +65,10 @@ export const journalRoutes = {
     summary: 'Free-form daily writing for people who want to understand themselves, not score themselves. One page a day, yesterday above it — and search that finds the feeling, not the word.',
   },
   shell: {
-    icon: 'notebook-pen',
     room: '/app/journal',
-    // No pinned theme: journal follows the app's appearance and maps it onto its own two
-    // skins (night, warm parchment). Gym pins steel; journal does not pin.
+    // No pinned theme: journal follows the app's appearance and maps it onto its own two skins —
+    // paper in north light, or dusk with one candle (styles/tokens/palettes.css). Gym still pins
+    // its skin; journal does not pin.
     scope: { brand: 'journal' },
     status: 'open',
     landingHref: '/journal',

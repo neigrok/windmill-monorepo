@@ -7,9 +7,10 @@ import { useAppearance } from '../useAppearance.js';
 // a preference of the DEVICE, not of an account, so gating it behind sign-in would be asking for a
 // password to turn on a lamp.
 //
-// What it sets: the shell and every room that does not pin its own skin. Journal maps it onto night
-// or parchment; gym's instrument skin stays steel either way. The marketing pages are outside the
-// app surface and stay warm cream, which is canon rather than an oversight.
+// What it sets: the shell and every room that does not pin its own skin. A room owns its PALETTE
+// and not the choice (styles/tokens/palettes.css) — journal answers with dusk or paper, roadmap with
+// embers or Tuscan midday, and gym pins basalt either way until it opens. The marketing pages are
+// outside the app surface and stay warm cream, which is canon rather than an oversight.
 
 const LABELS = { light: 'Light', dark: 'Dark', system: 'System' };
 
@@ -35,8 +36,9 @@ export function AppearanceSection() {
         })}
       </div>
       <p style={note}>
-        Sets Windmill — the rail, this page and every room. Journal wears its night canvas in dark and
-        warm parchment in light; gym stays steel. “System” follows your device.
+        Sets Windmill — this page and every room. Each room answers it in its own colours: roadmap is
+        Tuscany at midday or the embers after it, journal is paper in north light or dusk with one
+        candle. Gym keeps its basalt whichever you pick. “System” follows your device.
       </p>
     </Section>
   );

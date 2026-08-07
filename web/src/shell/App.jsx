@@ -235,9 +235,9 @@ function AppRoutes() {
   // pages, the demo, and the legacy hash doors on non-root paths.
   if (pathname === '/app' || pathname.startsWith('/app/')) {
     const neutral = pathname.startsWith('/app/settings')
-      ? { title: 'Settings', Component: SettingsPage, props: { inShell: true } }
+      ? { Component: SettingsPage, props: { inShell: true } }
       : pathname.startsWith('/app/connect')
-        ? { title: 'Connect', Component: ConnectPage, props: { inShell: true } }
+        ? { Component: ConnectPage, props: { inShell: true } }
         : null;
     return (
       <Suspense fallback={<RouteFallback />}>

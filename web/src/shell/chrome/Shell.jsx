@@ -1,9 +1,19 @@
-// The /app shell — the common ground behind the landings. One chrome (rail · top bar · room)
-// hosts every product as a room; the registry (../products.js) is the only window into them.
+// The /app shell — the common ground behind the landings. One minimal chrome hosts every product
+// as a room: the room switcher centred at the head, the account seat opposite it, and the room
+// under both. No rail, no top bar, no chrome lines — the shell draws two pieces of furniture and
+// then gets out of the way, because the room is the thing worth looking at (design canon,
+// templates/app-shell). The registry (../products.js) is the only window into the products.
+//
 // The shell owns theme scope: data-brand comes from the active room's registry scope, and
-// data-theme is the app's one appearance choice (shell/appearance.js) unless the room PINS its own
-// — both stamped on the shell root, so the rail tints with the room. The shell itself runs
-// zero infinite animations — the calm ceiling is the room's budget.
+// data-theme is the app's one appearance choice (shell/appearance.js) unless the room PINS its own.
+// Both are stamped on the shell root together, which is exactly what lets styles/tokens/palettes.css
+// hand the room its ground — the ground blocks are keyed on the PAIR, so a landing (brand alone)
+// keeps the family cream while a room gets its place. The shell itself runs zero infinite
+// animations — the calm ceiling is the room's budget.
+//
+// The room's own tabs would ride at the foot, one per canon; no product asks the shell for tabs
+// today (each draws its own navigation inside its room), and the shell never paints a tab a room
+// did not ask for — so there is no footer here rather than an empty one.
 
 import React, { Suspense, useEffect } from 'react';
 import { PRODUCTS } from '../products.js';
@@ -14,24 +24,6 @@ import { useAppearance } from '../useAppearance.js';
 import { ShellHome } from './ShellHome.jsx';
 import './chrome.css';
 
-// The chrome's glyphs ride inline (lucide-style, 2px stroke, currentColor) — never a CDN.
-// Registry entries name these by their `shell.icon` field.
-const ICONS = {
-  'layout-grid': <><rect width="7" height="7" x="3" y="3" rx="1" /><rect width="7" height="7" x="14" y="3" rx="1" /><rect width="7" height="7" x="14" y="14" rx="1" /><rect width="7" height="7" x="3" y="14" rx="1" /></>,
-  route: <><circle cx="6" cy="19" r="3" /><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15" /><circle cx="18" cy="5" r="3" /></>,
-  'notebook-pen': <><path d="M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4" /><path d="M2 6h4" /><path d="M2 10h4" /><path d="M2 14h4" /><path d="M2 18h4" /><path d="M21.378 5.626a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z" /></>,
-  dumbbell: <><path d="M14.4 14.4 9.6 9.6" /><path d="M18.657 21.485a2 2 0 1 1-2.829-2.828l-1.767 1.768a2 2 0 1 1-2.829-2.829l6.364-6.364a2 2 0 1 1 2.829 2.829l-1.768 1.767a2 2 0 1 1 2.828 2.829z" /><path d="m21.5 21.5-1.4-1.4" /><path d="M3.9 3.9 2.5 2.5" /><path d="M6.404 12.768a2 2 0 1 1-2.829-2.829l1.768-1.767a2 2 0 1 1-2.828-2.829l2.828-2.828a2 2 0 1 1 2.829 2.828l1.767-1.768a2 2 0 1 1 2.829 2.829z" /></>,
-  settings: <><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></>,
-};
-
-function Icon({ name, size = 19 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-      {ICONS[name]}
-    </svg>
-  );
-}
-
 // In-shell navigation: swap the pathname without a reload and wake the router. App.jsx's /app
 // router listens to popstate; a modified click (new-tab intent) falls through to the real href.
 function navigate(href, { replace = false } = {}) {
@@ -40,39 +32,18 @@ function navigate(href, { replace = false } = {}) {
   window.dispatchEvent(new PopStateEvent('popstate'));
 }
 
-function RoomLink({ href, label, icon, active, quiet = false }) {
+// One door in the switcher. A room is named in words rather than drawn as a glyph: three or four
+// short labels read faster than three or four icons anyone has to learn, and the same row is the
+// whole chrome at every width.
+function RoomLink({ href, label, active }) {
   const onClick = (e) => {
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
     navigate(href);
   };
   return (
-    <a
-      className={quiet ? 'wm-rail-btn wm-rail-btn--quiet' : 'wm-rail-btn'}
-      href={href}
-      title={href}
-      aria-label={label}
-      aria-current={active ? 'page' : undefined}
-      onClick={onClick}
-    >
-      <Icon name={icon} size={quiet ? 18 : 19} />
-    </a>
-  );
-}
-
-// The mobile tab — same door as a rail button, but the label rides under the icon (the
-// board's 20px glyph / 11px label column). Room tabs only: settings and the seat live in
-// the top bar's mobile cluster, and pre-open products get no tab, same as no rail button.
-function TabLink({ href, label, icon, active }) {
-  const onClick = (e) => {
-    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-    e.preventDefault();
-    navigate(href);
-  };
-  return (
-    <a className="wm-tab" href={href} aria-current={active ? 'page' : undefined} onClick={onClick}>
-      <Icon name={icon} size={20} />
-      <span>{label}</span>
+    <a className="wm-switch-btn" href={href} title={href} aria-current={active ? 'page' : undefined} onClick={onClick}>
+      {label}
     </a>
   );
 }
@@ -82,17 +53,19 @@ const HOME_SCOPE = { theme: null, brand: 'clay' };
 // The decision table: neutral prop → that room verbatim; /app → home; an open product's
 // shell.room prefix → its room; a pre-open room → replace-redirect to the landing (no door
 // onto nothing); anything else under /app → replace-redirect home. Products without a `shell`
-// registry entry don't exist to the chrome.
+// registry entry don't exist to the chrome. No room carries a title: the chrome names the
+// ROOMS in its switcher and the room writes its own heading, so a title here would be a second
+// place for the same word to be right or wrong.
 function resolveRoom(pathname, neutral) {
-  if (neutral) return { kind: 'neutral', title: neutral.title, scope: HOME_SCOPE, neutral };
+  if (neutral) return { kind: 'neutral', scope: HOME_SCOPE, neutral };
   const path = pathname.replace(/\/+$/, '') || '/';
-  if (path === '/app') return { kind: 'home', title: 'Windmill', scope: HOME_SCOPE };
+  if (path === '/app') return { kind: 'home', scope: HOME_SCOPE };
   const product = PRODUCTS.find((p) => p.shell && (path === p.shell.room || path.startsWith(`${p.shell.room}/`)));
   if (product && product.shell.status === 'open') {
-    return { kind: 'product', title: product.label, scope: product.shell.scope, product };
+    return { kind: 'product', scope: product.shell.scope, product };
   }
-  if (product) return { kind: 'redirect', title: product.label, scope: HOME_SCOPE, redirect: { href: product.shell.landingHref, external: true } };
-  return { kind: 'home', title: 'Windmill', scope: HOME_SCOPE, redirect: { href: '/app', external: false } };
+  if (product) return { kind: 'redirect', scope: HOME_SCOPE, redirect: { href: product.shell.landingHref, external: true } };
+  return { kind: 'home', scope: HOME_SCOPE, redirect: { href: '/app', external: false } };
 }
 
 function RoomFallback() {
@@ -119,11 +92,12 @@ export function Shell({ location, neutral = null }) {
   const { user, status, signOut } = useAuth();
   const openSignInDoor = useSignInDoor();
   const lendDoorSkin = useSignInDoorHost();
-  // A room may PIN its theme (gym's instrument skin is steel whatever this says); a room that pins
+  // A room may PIN its theme (gym's instrument skin is basalt whatever this says); a room that pins
   // nothing follows the app's one appearance choice.
   const { resolved: appearance } = useAppearance();
   const room = resolveRoom(location.pathname, neutral);
   const redirect = room.redirect ?? null;
+  const theme = room.scope.theme ?? appearance;
 
   useEffect(() => {
     if (!redirect) return;
@@ -132,25 +106,24 @@ export function Shell({ location, neutral = null }) {
   }, [redirect?.href, redirect?.external]);
 
   return (
-    <div className="wm-shell" ref={lendDoorSkin} data-brand={room.scope.brand} data-theme={room.scope.theme ?? appearance}>
-      <aside className="wm-rail">
-        <a className="wm-rail-wordmark" href="/" title="Windmill">W</a>
-        <RoomLink href="/app" label="Home" icon="layout-grid" active={room.kind === 'home' && !redirect} />
-        {PRODUCTS.filter((p) => p.shell?.status === 'open').map((p) => (
-          <RoomLink key={p.id} href={p.shell.room} label={p.label} icon={p.shell.icon} active={room.product?.id === p.id} />
-        ))}
-        <div className="wm-rail-foot">
-          <RoomLink
-            href="/app/settings"
-            label="Settings"
-            icon="settings"
-            active={room.kind === 'neutral' && location.pathname.startsWith('/app/settings')}
-            quiet
-          />
+    <div className="wm-shell" ref={lendDoorSkin} data-brand={room.scope.brand} data-theme={theme}>
+      <header className="wm-head">
+        <a className="wm-head-mark" href="/" title="Windmill" aria-label="Windmill — home">W</a>
+        <nav className="wm-switch" aria-label="Rooms">
+          <RoomLink href="/app" label="Home" active={room.kind === 'home' && !redirect} />
+          {PRODUCTS.filter((p) => p.shell?.status === 'open').map((p) => (
+            <RoomLink key={p.id} href={p.shell.room} label={p.label} active={room.product?.id === p.id} />
+          ))}
+        </nav>
+        {/* The seat is the one thing off-centre, and the one thing that is always clay: it belongs
+            to the shell rather than to the room it happens to be standing in (canon superapp-shell
+            §6). Both scope attributes ride together — clay's dark hue is keyed on the pair, so a
+            lone data-brand would hand a dark room the light terracotta. */}
+        <div className="wm-head-seat" data-brand="clay" data-theme={theme}>
           <AccountSeat
             user={user}
             status={status}
-            size={36}
+            size={30}
             treeCount={null}
             onSignIn={openSignInDoor}
             onSettings={() => navigate('/app/settings')}
@@ -158,37 +131,10 @@ export function Shell({ location, neutral = null }) {
             onSignOut={signOut}
           />
         </div>
-      </aside>
-      <div className="wm-body">
-        <div className="wm-topbar">
-          <div className="wm-topbar-title">{room.title}</div>
-          <span className="wm-topbar-url">{location.pathname}</span>
-          <div className="wm-topbar-side">
-            <div className="wm-topbar-note">One account · one history</div>
-            <div className="wm-topbar-seat">
-              <AccountSeat
-                user={user}
-                status={status}
-                size={34}
-                treeCount={null}
-                onSignIn={openSignInDoor}
-                onSettings={() => navigate('/app/settings')}
-                onConnect={() => navigate('/app/connect')}
-                onSignOut={signOut}
-              />
-            </div>
-          </div>
-        </div>
-        <main className="wm-room">
-          <RoomContent room={room} location={location} />
-        </main>
-      </div>
-      <nav className="wm-tabs" aria-label="Rooms">
-        <TabLink href="/app" label="Home" icon="layout-grid" active={room.kind === 'home' && !redirect} />
-        {PRODUCTS.filter((p) => p.shell?.status === 'open').map((p) => (
-          <TabLink key={p.id} href={p.shell.room} label={p.label} icon={p.shell.icon} active={room.product?.id === p.id} />
-        ))}
-      </nav>
+      </header>
+      <main className="wm-room">
+        <RoomContent room={room} location={location} />
+      </main>
     </div>
   );
 }

@@ -260,6 +260,11 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
                 </div>
               )}
               <MenuRow label="Sign in" onSelect={() => choose(onSignIn)} />
+              {/* Settings is offered to BOTH faces, because one thing on that page belongs to the
+                  device and not to an account: light or dark. Gating it would be asking for a
+                  password to turn on a lamp — and since the /app head stopped carrying a settings
+                  door of its own, this row is the only one there is. */}
+              {onSettings && <MenuRow label="Settings" onSelect={() => choose(onSettings)} />}
             </>
           )}
         </div>

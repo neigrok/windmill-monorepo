@@ -1,12 +1,12 @@
 /* The journal palette — every token and every pixel of the canvas lives here.
-   The surface is night by default and warm parchment by choice, and since 2026-08-05 that
+   The surface is dusk by default and paper in north light by choice, and since 2026-08-05 that
    choice is the app's one Appearance setting (shell/appearance.js) rather than a toggle of
-   journal's own. The root carries data-theme (dark|light) so the design-system's
-   matching ramp resolves inside it, and the two blocks below re-pin the surfaces to
-   the journal's own night / parchment plus the lamp hue and the five-step mood scale.
-   The one warm-gold accent, the scrims, and the panel elevation are tokens too, so a
-   theme is one block to author, not a hunt through the rules. Nothing here uses
-   brick/red — a day is never an error. */
+   journal's own. The GROUND is not here: both skins come from the room palette
+   (styles/tokens/palettes.css), which the shell hands down. What the two blocks below
+   own is what stands ON it — the lamp hue, the prose ink, the five-step mood scale,
+   the scrims and the panel elevation, all tokens, so a skin is one block to author
+   rather than a hunt through the rules. Nothing here uses brick/red — a day is never
+   an error. */
 
 .journal-root[data-theme='dark'] {
   color-scheme: dark;
@@ -46,17 +46,19 @@
   --je-sheet-lift: 0 -18px 50px rgba(0, 0, 0, 0.45);
 }
 
-/* Day — warm parchment, the same lamp warmed a shade deeper so the gold still reads on light. The
-   design-system light ramp resolves for free here (no data-theme="dark" to override :root), so the
-   neutrals, borders and shadows the account seat and search chrome borrow are already daylight. */
+/* Day — paper in north light, with the same lamp warmed a shade deeper so the gold still reads on
+   it. The SHEET is not this file's to choose: journal's day ground is the room palette
+   (styles/tokens/palettes.css), which the shell hands down through data-brand — a cool sheet whose
+   cool lives in the shadows, so the one warm thing in the room is the candle. This block used to
+   pin a warm parchment of its own, from before the room had a palette; the head above the room went
+   on reading the palette, and the seam between them was the whole tell. What stays here is the
+   candle, the ink, the mood scale and the echo weights — journal's own light, at day strength. */
 .journal-root[data-theme='light'] {
   color-scheme: light;
-  --surface-canvas: #FBF6EA;         /* warm paper the page rests on */
-  --surface-card: #FFFFFF;
   --lamp-400: #986B1E;               /* the candle, deepened to an ochre that carries at label size on paper */
 
-  --journal-ink: #2A2118;            /* warm near-black prose — ~13:1 on the paper */
-  --journal-ink-dim: #74654F;        /* the mono strip, the margin — ~4.6:1, readable small */
+  --journal-ink: #2A2118;            /* warm near-black prose — 14.7:1 on the paper */
+  --journal-ink-dim: #74654F;        /* the mono strip, the margin — 5.3:1, readable small */
   --journal-gap: var(--neutral-300, #D3C2A0);        /* a day not written — faint, never counted */
   --journal-energy: var(--accent-olive-500, #7D8C43);
 
@@ -70,10 +72,10 @@
   --journal-scrim: color-mix(in srgb, #2A2118 26%, transparent);  /* a warm, lighter wash by day */
   --journal-panel-shadow: 0 20px 50px rgba(74, 58, 36, 0.18);     /* soft warm elevation on paper */
 
-  /* The shell scopes the journal room as dark (products.js), and the design system's light ramp lives
-     on :root — so a writer who chooses the day face inherits DARK text roles from the shell and reads
-     cream ink on parchment. Re-point the roles to the journal's own day ink, and the borders and the
-     one elevation with them. Nothing here fires in night, where the dark scope is the right one. */
+  /* The palette's day ink is a cool near-black, read off the sheet. Prose is the one place journal
+     disagrees: what a person writes is warm, on a cool page, the same way the candle is — so the
+     text roles, the borders and the one elevation are re-pointed to journal's own ink here.
+     Nothing here fires in night, where the dusk ramp's own ink is the right one. */
   --text-primary: var(--journal-ink);
   --text-secondary: color-mix(in srgb, var(--journal-ink) 76%, transparent);
   --text-tertiary: var(--journal-ink-dim);
@@ -129,12 +131,11 @@
   filter: blur(2px);
 }
 
-/* The switcher and the account seat — the one piece of chrome and the one unprompted mention of
-   sign-in — ride the shared posts (.wm-post, styles/global.css), so they stand where they stand in
-   gym too. Their pills are canvas-coloured, so they blend into the night; the seat's menu borrows
-   the design-system chrome, which resolves to the journal's own night or day because the seat lives
-   inside the themed root. `.journal-seat` survives for the one thing only this room does: the
-   desktop margin slides it left (below, at 1240px). */
+/* The switcher rides the shared post (.wm-post, styles/global.css), so it stands where it stands in
+   gym too, and it draws nothing at all inside the /app shell — where the shell's own head is the
+   switcher. The account seat used to ride the opposite post; since 2026-08-07 the shell's head
+   carries it above every room, so this one is gone rather than doubled. Nothing here slides for the
+   echo margin any more either: furniture in the head cannot be covered by a panel in the room. */
 
 .journal-scroll {
   position: relative;
@@ -864,7 +865,6 @@
   .je-ink-foot { display: none; }
   .journal-root.has-margin .journal-scroll { padding-right: 300px; }
   .journal-root.has-margin .journal-tools { right: 320px; }
-  .journal-root.has-margin .journal-seat { right: 316px; }
   .journal-root.has-margin .je-trail { right: 300px; }
 }
 

@@ -1,0 +1,378 @@
+/* ============================================================
+   ROOM PALETTES — one block per product, per skin
+   ------------------------------------------------------------
+   Mirrors the design canon's `themes/brands.css` (Design project
+   a8e8995c, decided 2026-08-07); the reasoning behind each value
+   is on the `Room Palettes` card there. This file is the whole
+   colour API for a product: to restyle a room, edit ITS block and
+   nothing else — the blocks are literal hex, not derivations of
+   each other, so no room can drift when a sibling changes.
+
+   ── The two scopes, and why ──────────────────────────────────
+   `[data-brand="x"]`                    the room's HUE only
+   `[data-theme="l|d"][data-brand="x"]`  the room's GROUND as well
+
+   The /app shell stamps BOTH attributes (shell/chrome/Shell.jsx),
+   so a room gets its ground. The marketing landings stamp brand
+   ALONE (shell/marketing/LandingChrome.jsx) and so take the hue
+   onto the family cream — which is the canon: the marketing family
+   is warm cream at every door, whichever product it is selling.
+   That is the entire reason the ground blocks are theme-gated.
+
+   ── What a room may re-point, and what it may not ────────────
+   A room re-points its brand hue, and — because a room is told
+   apart by its GROUND (system-architecture §4a) — the neutral ramp
+   and the surfaces that read through it, as a whole, so every
+   border and text role stays consistent. It re-points nothing
+   else. The semantic hues never move: olive = success, gold =
+   warning, brick = danger, sky = info, in every room. A brand hue
+   must therefore come from a NON-semantic hue, or from a new one
+   authored to the recipe in the canon's system-architecture §4.
+
+   ── The one rule that made all six ───────────────────────────
+   A COOL GROUND CARRIES A WARM LIGHT, OR A WARM GROUND CARRIES A
+   COOL ONE — never two temperatures agreeing. Each room names a
+   place and reads its ground off it, at both hours:
+
+     roadmap   Tuscany at midday    -> embers after sunset
+     journal   paper in north light -> dusk and one candle
+     gym       pietra in the sun    -> basalt at night
+
+   ── Who reads this, and what a room still keeps ──────────────
+   All three rooms take their ground from here. What a room keeps
+   for itself is the vocabulary ON that ground, never the ground:
+   journal re-points the text roles inside its canvas to a WARM
+   ink, because prose on a cool sheet is the same idea as the
+   candle; gym renames every role it paints with (--gym-canvas,
+   --set-done) so no surface reads a raw one. Neither invents a
+   surface. Journal's night is also stated a second time inside
+   its own root — byte-identical to the dusk below, because that
+   canvas is where the values were tuned.
+   ============================================================ */
+
+/* ---- Ramp extensions the rooms are lit with. iris is a hue authored
+        to the recipe (~265°, clear of sky at 200° and plum at 315°, so it
+        can never be read as "info"); the 300 steps are the lightest that
+        clear 4.5:1 against --text-on-accent (#1B1408) at label size. ---- */
+:root {
+  --accent-plum-300: #C08FB8;   /* on #1B1408 = 6.84:1 */
+  --accent-iris-300: #9A90BE;   /* on #1B1408 = 6.18:1 */
+  /* brick's lit step, for a night that is lifted off black. The family's night is #0D0B07 and
+     brick-400 carries on it at 5.05:1; basalt is three stops lighter and the same ink falls to
+     4.44 / 3.98 / 3.58 on gym's canvas, card and raised. This step measures 5.82 / 5.22 / 4.69
+     there — a danger that stays a danger on a ground the family did not have when brick was cut. */
+  --accent-brick-300: #D08268;
+
+  --accent-iris-50:  #EDEBF3;
+  --accent-iris-100: #DBD7E7;
+  --accent-iris-200: #BFB8D2;
+  --accent-iris-400: #7E74A4;
+  --accent-iris-500: #635892;
+  --accent-iris-600: #4C4374;
+  --accent-iris-700: #3A3358;
+}
+
+/* ============================================================
+   clay · the family default — the brand root, marketing, and every
+   neutral surface belonging to no product. Ground: none. The family
+   cream IS clay's paper and the family night IS its sky; the default
+   product is the one that needs no tint.
+   ============================================================ */
+[data-brand="clay"] {
+  --color-brand: var(--accent-terracotta-500);
+  --color-brand-hover: var(--accent-terracotta-600);
+  --color-brand-active: var(--accent-terracotta-700);
+  --color-brand-soft: var(--accent-terracotta-50);
+  --text-link: var(--accent-terracotta-600);
+  --text-link-hover: var(--accent-terracotta-700);
+}
+[data-theme="dark"][data-brand="clay"] {
+  --color-brand: var(--accent-terracotta-500);
+  --color-brand-hover: var(--accent-terracotta-400);
+  --color-brand-active: var(--accent-terracotta-600);
+  --color-brand-soft: rgba(188, 108, 66, 0.18);
+  --text-link: var(--accent-terracotta-400);
+  --text-link-hover: #E7A87B;
+}
+
+/* ============================================================
+   roadmap · Tuscany at midday, and the embers after it
+   ------------------------------------------------------------
+   Its day is the palette the whole system was built from and does
+   not move. Its night is the same place after the sun goes — warm
+   all the way through, lifted well off black, with terracotta at
+   its 400 step as the lit thing rather than the 500 buried in it.
+   A named room rather than the bare default, because clay is the
+   FAMILY default and must not move when a product's room does.
+   ============================================================ */
+[data-brand="roadmap"] {
+  --color-brand: var(--accent-terracotta-500);
+  --color-brand-hover: var(--accent-terracotta-600);
+  --color-brand-active: var(--accent-terracotta-700);
+  --color-brand-soft: var(--accent-terracotta-50);
+  --text-link: var(--accent-terracotta-600);   /* the 600 — brand as TEXT */
+  --text-link-hover: var(--accent-terracotta-700);
+}
+
+/* Day: the family cream, unchanged — so there is no light ground block. */
+
+[data-theme="dark"][data-brand="roadmap"] {
+  /* Embers — a hearth, not a hole. */
+  --neutral-0: #272019;
+  --neutral-25: #211A15;
+  --neutral-50: #1C1712;
+  --neutral-100: #322A21;
+  --neutral-200: #3E352A;
+  --neutral-300: #4E4335;
+  --neutral-400: #6A5C48;
+  --neutral-500: #9A8A6E;
+  --neutral-600: #BCAA8A;
+  --neutral-700: #D3C4A6;
+  --neutral-800: #E6DBC4;
+  --neutral-900: #F1E9D8;
+  --surface-canvas: var(--neutral-50);
+  --surface-card: var(--neutral-0);
+  --surface-hover: var(--neutral-100);
+  --surface-sunken: #141009;
+  --surface-overlay: rgba(8, 6, 3, 0.68);
+
+  --color-brand: var(--accent-terracotta-400); /* the lit step — 6.5:1 on the ground */
+  --color-brand-hover: var(--accent-terracotta-200);
+  --color-brand-active: var(--accent-terracotta-500);
+  --color-brand-soft: rgba(208, 138, 94, 0.20);
+  --text-link: var(--accent-terracotta-400);
+  --text-link-hover: var(--accent-terracotta-200);
+}
+
+/* ============================================================
+   journal · cool ground, warm light, at any hour
+   ------------------------------------------------------------
+   The candle is the light in both skins. The fill is lamp-600 and
+   not lamp-500: white on lamp-500 measures 2.62:1, under the 4.5
+   gate for a bold CTA label.
+   ============================================================ */
+[data-brand="journal"] {
+  --color-brand: var(--lamp-600);                                        /* white on it = 4.63:1 */
+  --color-brand-hover: color-mix(in oklab, var(--lamp-600) 88%, #17232B);
+  --color-brand-active: color-mix(in oklab, var(--lamp-600) 74%, #17232B);
+  --color-brand-soft: var(--lamp-100);
+  /* Ink is a step darker than the fill: lamp-600 carries white as a FILL but as
+     TEXT on the morning paper it measures 4.30. There is no lamp-700, so the ink
+     mixes toward the paper's own darkest step. */
+  --text-link: color-mix(in oklab, var(--lamp-600) 78%, #161E28);
+  --text-link-hover: color-mix(in oklab, var(--lamp-600) 62%, #161E28);
+}
+
+[data-theme="light"][data-brand="journal"] {
+  /* Paper in north light. The sheet is paper-white and THE COOL LIVES IN THE
+     SHADOWS — every border, mid and ink step is blue-grey, the canvas barely at
+     all. Two earlier tries missed it in opposite directions: the family cream
+     (warm sheet, warm candle — two temperatures agreeing) and a fully blue sheet,
+     which read as a web form rather than a page. What carries journal across its
+     two skins is not the canvas tint, it is the cool shading and the one warm
+     light on it. */
+  --neutral-0: #FFFFFF;
+  --neutral-25: #FBFBFA;
+  --neutral-50: #F7F7F5;
+  --neutral-100: #E9EAEC;
+  --neutral-200: #D8DBE0;
+  --neutral-300: #BCC2CB;
+  --neutral-400: #98A1AE;
+  --neutral-500: #5E6979;
+  --neutral-600: #4E5968;
+  --neutral-700: #3A4553;
+  --neutral-800: #27313D;
+  --neutral-900: #161E28;
+  --surface-canvas: var(--neutral-50);
+  --surface-card: var(--neutral-0);
+  --surface-sunken: var(--neutral-100);
+  --surface-hover: var(--neutral-100);
+  --surface-overlay: rgba(22, 30, 40, 0.45);
+}
+
+[data-theme="dark"][data-brand="journal"] {
+  /* Dusk and one candle — 12 of the 14 cool values tuned in the journal canvas,
+     mapped onto the family's steps in luminance order. The night everybody likes,
+     and the one palette the 2026-08-07 round did not touch. */
+  --neutral-50: #040D19;                       /* canvas — the darkest step */
+  --neutral-25: #0B1218;
+  --neutral-0: #0D1824;                        /* card, elevated over canvas */
+  --neutral-100: #152029;
+  --neutral-200: #1C2932;
+  --neutral-300: #26343E;
+  --neutral-400: #32444F;
+  --neutral-500: #4D6472;
+  --neutral-600: #7E94A1;
+  --neutral-700: #A7B9C2;
+  --neutral-800: #C9D7DD;
+  --neutral-900: #E3ECEF;
+
+  --surface-canvas: var(--neutral-50);
+  --surface-card: var(--neutral-0);
+  --surface-hover: var(--neutral-100);
+  --surface-sunken: #020810;
+  --surface-overlay: rgba(2, 6, 12, 0.68);
+
+  --color-brand: var(--lamp-400);
+  --color-brand-hover: var(--lamp-200);
+  --color-brand-active: var(--lamp-500);
+  --color-brand-soft: rgba(227, 179, 65, 0.18);
+  --text-link: var(--lamp-400);
+  --text-link-hover: var(--lamp-200);
+
+  --focus-ring: 0 0 0 4px rgba(227, 179, 65, 0.4);
+}
+
+/* ============================================================
+   gym · pietra and basalt — Tuscan stone, and the giglio on it
+   ------------------------------------------------------------
+   The quarry is the place: pale stone in the sun, blue-grey stone
+   at night. Lit by IRIS — the giaggiolo, Florence's own flower.
+   Steel was retired as gym's brand on 2026-08-07 and two costs
+   were paid off at once: sky was the INFO semantic doing double
+   duty as a brand, and steel on stone is cool-on-cool, which is
+   what made the graphite and cement grounds fail. Iris sits 65°
+   from sky, so it can never be read as info, and it is the only
+   vibrant hue in the room.
+   ============================================================ */
+[data-brand="gym"] {
+  --color-brand: var(--accent-iris-600);       /* white on it = 8.9:1 */
+  --color-brand-hover: var(--accent-iris-700);
+  --color-brand-active: #2F2A46;
+  --color-brand-soft: var(--accent-iris-50);
+  --text-link: var(--accent-iris-600);
+  --text-link-hover: var(--accent-iris-700);
+}
+
+[data-theme="light"][data-brand="gym"] {
+  /* Pietra — Tuscan stone, warm taupe with the faintest violet in it. What
+     separates stone from paper is the value and the warmth: a full step deeper
+     than the family cream, because stone is heavier. Warm ground, cool light —
+     iris is the only cool thing in the room. */
+  --neutral-0: #F8F6F4;
+  --neutral-25: #F2EFEC;
+  --neutral-50: #EBE7E3;
+  --neutral-100: #DFDAD5;
+  --neutral-200: #D0CAC5;
+  --neutral-300: #B6AFA9;
+  --neutral-400: #8E8781;
+  --neutral-500: #625C58;
+  --neutral-600: #4C4744;
+  --neutral-700: #3B3735;
+  --neutral-800: #2A2726;
+  --neutral-900: #1A1918;
+  --surface-canvas: var(--neutral-50);
+  --surface-card: var(--neutral-0);
+  --surface-sunken: var(--neutral-100);
+  --surface-hover: var(--neutral-100);
+  --surface-overlay: rgba(26, 25, 24, 0.45);
+}
+
+[data-theme="dark"][data-brand="gym"] {
+  /* Basalt — volcanic stone, the same warmth as the day with a violet cast
+     instead of a green one. It sits in iris's own hue neighbourhood at a tenth
+     of its chroma, so the room reads as one material with one lit thing in it. */
+  --neutral-0: #262329;
+  --neutral-25: #201E23;
+  --neutral-50: #1C1A1E;
+  --neutral-100: #2E2B32;
+  --neutral-200: #39363E;
+  --neutral-300: #48444D;
+  --neutral-400: #605B67;
+  --neutral-500: #8D8896;
+  --neutral-600: #B0ABB8;
+  --neutral-700: #CBC7D2;
+  --neutral-800: #E0DDE5;
+  --neutral-900: #EDEBF0;
+  --surface-canvas: var(--neutral-50);
+  --surface-card: var(--neutral-0);
+  --surface-hover: var(--neutral-100);
+  --surface-sunken: #141216;
+  --surface-overlay: rgba(10, 8, 12, 0.68);
+
+  --color-brand: var(--accent-iris-300);       /* 6.18:1 on --text-on-accent */
+  --color-brand-hover: var(--accent-iris-200);
+  --color-brand-active: var(--accent-iris-400);
+  /* The soft fill is iris at its 700, not its 300. A wash of the LIT step lightens whatever it
+     lands on, and gym pairs this fill with --color-brand as the ink on it (the overrun rest chip,
+     the overlap button): iris-300 on an iris-300 wash measures 3.66:1 over the card. Washing with
+     the darkest step instead keeps the chip a shade of the room and the ink legible on it —
+     5.41 / 4.95 / 4.54 on canvas, card and raised. */
+  --color-brand-soft: rgba(58, 51, 88, 0.22);
+  --text-link: var(--accent-iris-300);
+  --text-link-hover: var(--accent-iris-200);
+}
+
+/* ============================================================
+   THE ROLES THAT READ THROUGH A RE-POINTED RAMP
+   ------------------------------------------------------------
+   A custom property is substituted where it is DECLARED, and the
+   answer is what inherits — not the question. tokens/colors.css
+   declares `--text-primary: var(--neutral-900)` and its eight
+   siblings at `:root`, so on <html> they resolve against the
+   FAMILY ramp and every descendant inherits that answer. A room
+   re-pointing `--neutral-900` further down moves the ramp and
+   nothing else: its ground goes cool and its ink stays warm.
+
+   Dark rooms never showed it, because colors.css's
+   `[data-theme="dark"]` block re-declares all nine on the very
+   element that carries the theme — the shell root — where they
+   resolve against the room's own ramp. Light had no such block.
+   So the light grounds say it here, in one list rather than
+   twice, and a fourth room joins it by adding one selector.
+
+   `--surface-canvas/card/sunken/hover` are already restated in
+   each ground block (a room may want its own), and
+   `--surface-overlay` is per-room ink, so both stay above.
+   ============================================================ */
+[data-theme="light"][data-brand="journal"],
+[data-theme="light"][data-brand="gym"] {
+  --surface-inverse: var(--neutral-900);
+  --border-subtle: var(--neutral-200);
+  --border-default: var(--neutral-300);
+  --border-strong: var(--neutral-400);
+  --text-primary: var(--neutral-900);
+  --text-secondary: var(--neutral-600);
+  --text-tertiary: var(--neutral-500);
+}
+
+/* ============================================================
+   SIBLING EXEMPLARS — no room stands on these. They are the proof
+   the family absorbs a fourth product without inventing colour
+   (plum, a hue the palette already holds) or with exactly one new
+   hue authored to the recipe (iris, which gym now uses). Kept so
+   the recipe has a worked example the showcase can point at.
+   ============================================================ */
+[data-brand="plum"] {
+  --color-brand: var(--accent-plum-500);
+  --color-brand-hover: var(--accent-plum-600);
+  --color-brand-active: #5A3054;
+  --color-brand-soft: var(--accent-plum-50);
+  --text-link: var(--accent-plum-600);
+  --text-link-hover: #5A3054;
+}
+[data-theme="dark"][data-brand="plum"] {
+  --color-brand: var(--accent-plum-300);       /* 6.84:1 on dark ink */
+  --color-brand-hover: var(--accent-plum-200);
+  --color-brand-active: var(--accent-plum-400);
+  --color-brand-soft: rgba(141, 79, 131, 0.20);
+  --text-link: var(--accent-plum-300);
+  --text-link-hover: var(--accent-plum-200);
+}
+
+[data-brand="iris"] {
+  --color-brand: var(--accent-iris-500);
+  --color-brand-hover: var(--accent-iris-600);
+  --color-brand-active: var(--accent-iris-700);
+  --color-brand-soft: var(--accent-iris-50);
+  --text-link: var(--accent-iris-600);
+  --text-link-hover: var(--accent-iris-700);
+}
+[data-theme="dark"][data-brand="iris"] {
+  --color-brand: var(--accent-iris-300);       /* 6.18:1 on dark ink */
+  --color-brand-hover: var(--accent-iris-200);
+  --color-brand-active: var(--accent-iris-400);
+  --color-brand-soft: rgba(126, 116, 164, 0.22);
+  --text-link: var(--accent-iris-300);
+  --text-link-hover: var(--accent-iris-200);
+}

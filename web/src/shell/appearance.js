@@ -4,7 +4,7 @@
 //
 // Scope is the app surface (`/app` and its rooms), never the landings: the marketing family is
 // warm cream by canon and a dark landing would be a different promise. A room may still PIN its own
-// theme — gym's instrument skin is steel whatever this says — and a room that pins nothing follows.
+// theme — gym's instrument skin is basalt whatever this says — and a room that pins nothing follows.
 
 const KEY = 'windmill:appearance';
 const CHOICES = ['light', 'dark', 'system'];

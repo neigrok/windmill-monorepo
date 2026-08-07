@@ -1,14 +1,12 @@
-// The journal surface — night by default (a warm day is a keystroke away in the tool rail), a single
-// continuous canvas, on-device search a keystroke away, and the superapp's switcher to step between
-// rooms. A quiet account seat sits opposite the switcher — the one unprompted mention of sign-in —
-// so a writer can claim their days across devices without ever leaving the page. Everything above the
-// chrome is the canvas; nothing stands between the writer and the cursor.
+// The journal surface — a single continuous canvas with on-device search a keystroke away.
+// Everything here is the canvas; nothing stands between the writer and the cursor. The account seat
+// is not this room's to draw: the /app shell carries one seat above every room (shell/chrome/
+// Shell.jsx), and journal drew a second one at the same coordinates until 2026-08-07.
 
 import React, { useEffect, useState } from 'react';
 import { Search, Bell, CalendarRange } from 'lucide-react';
 import { ProductSwitcher } from '../../shell/ProductSwitcher.jsx';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
-import { AccountSeat } from '../../shell/auth/AccountSeat.jsx';
 import { useSignInDoor, useSignInDoorHost } from '../../shell/auth/SignInDoor.jsx';
 import { useAppearance } from '../../shell/useAppearance.js';
 import { Canvas } from './Canvas.jsx';
@@ -31,8 +29,8 @@ function focusDateOf(hash) {
 }
 
 // Light or dark is NOT journal's choice: the superapp's one Appearance setting decides for the
-// whole app (shell/appearance.js), and journal maps it onto its own two skins — dark is the night
-// canvas, light is the warm parchment. Journal carried its own toggle in the tool rail until
+// whole app (shell/appearance.js), and journal maps it onto its own two skins — dark is dusk with
+// one candle, light is paper in north light. Journal carried its own toggle in the tool rail until
 // 2026-08-05; it meant the setting in Account settings could not reach this room, and the app had
 // two controls for one thing. Night is still what this surface was designed as — the app's dark is
 // simply what selects it now.
@@ -45,7 +43,7 @@ export function JournalApp({ hash }) {
   const { resolved: theme } = useAppearance();
   const openSignInDoor = useSignInDoor();
   const lendDoorSkin = useSignInDoorHost();
-  const { user, status, signOut } = useAuth();
+  const { status } = useAuth();
   // Walking an echo is a position change, so the hook hands the canvas the same flight a search hit
   // gets: load the day if it is older than the window, centre it, and light the passage for a beat.
   const echoes = useEchoes({ onFly: (target) => setFlyTo({ ...target, at: Date.now() }) });
@@ -87,16 +85,6 @@ export function JournalApp({ hash }) {
       <EchoTrail echoes={echoes} current={focusDate || echoes.today} />
       <BackToTonight echoes={echoes} />
       <div className="journal-lamp" aria-hidden="true" />
-      <div className="wm-post wm-post-seat journal-seat">
-        <AccountSeat
-          user={user}
-          status={status}
-          onSignIn={openSignInDoor}
-          onSignOut={signOut}
-          onSettings={() => { window.location.hash = '#/settings'; }}
-          onConnect={() => { window.location.hash = '#/connect'; }}
-        />
-      </div>
       <div className="journal-tools">
         <button
           type="button"

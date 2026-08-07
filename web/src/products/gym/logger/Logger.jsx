@@ -4,7 +4,7 @@
 // keeps it for the whole session.
 //
 // The screen never congratulates and never warns: "set 4 of 3" is drawn in exactly the same ink as
-// "set 3 of 5", an overrun rest counts up in steel, and the only alarm ink in the product belongs
+// "set 3 of 5", an overrun rest counts up in the room's own hue, and the only alarm ink belongs
 // to a write that actually failed.
 
 import React, { useState } from 'react';

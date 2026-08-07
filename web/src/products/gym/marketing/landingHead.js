@@ -21,7 +21,10 @@ export const gymLandingHead = {
   twitterDescription: 'A training log for barbell programs — squat, bench, deadlift, press, rows, chins. Two taps between sets, and the next session opens with last time’s numbers already in the field.',
   imageAlt: SHARE_CARD_ALT,
   fallback: {
-    accent: '#4A6875',
+    // --accent-iris-600, gym's brand since 2026-08-07 (styles/tokens/palettes.css). This is the
+    // only fallback field with a live counterpart on the page, so it is the only one that can
+    // drift: the crawlable shell painted its CTA steel for a room that had stopped being steel.
+    accent: '#4C4374',
     badge: 'Barbell training log',
     h1: 'It remembers what you lifted.',
     sub: 'A training log for barbell programs — squat, bench, deadlift, press, rows, chins. Two taps between sets, a small jump when it’s time, and the next session opens with last time’s numbers already in the field.',

@@ -10,33 +10,31 @@
    step off the ramp, and a pure-white numeral. The system's
    dark theme is a re-authored ramp, not an inversion, and it
    already ships every surface, border and text step gym needs.
-   So this file now DERIVES from the dark theme's semantic
-   tokens and re-points exactly one hue. Two consequences:
-     · gym inherits any future correction to the night sky
+   So this file DERIVES from the theme's semantic tokens and
+   re-points no hue of its own. Two consequences:
+     · gym inherits any future correction to its ground
      · gym cannot drift warmer or colder than its siblings
    Product meanings still get product names (--set-done,
    --target-ink) so no surface reads a raw ramp index.
+
+   WHERE THE COLOURS COME FROM (2026-08-07)
+   Gym's ground and hue are the room palette — basalt at night,
+   pietra by day, lit by iris — declared once in
+   styles/tokens/palettes.css and stamped on the shell root as
+   data-theme + data-brand. This file used to re-point the brand
+   to steel in both skins; steel was the INFO semantic doing
+   double duty as a brand, and it is retired. Nothing here names
+   a brand hue any more: --target-ink reads --color-brand and
+   the palette decides what that is.
    ============================================================ */
 
-/* ── Instrument — the system's night sky, one hue re-pointed ── */
+/* ── Instrument — the room's night, in gym's own vocabulary ── */
 .gym-root[data-theme="dark"] {
-  /* The one re-pointed hue. Six declarations, per the sibling
-     contract in guidelines/system-architecture.md. Steel is the
-     palette's Tuscan-sky, promoted from info to brand: roadmap
-     keeps terracotta, journal keeps candle gold. */
-  --color-brand: var(--accent-sky-400);
-  --color-brand-hover: var(--accent-sky-200);
-  --color-brand-active: var(--accent-sky-500);
-  --color-brand-soft: rgba(127, 160, 174, 0.18);
-  --text-link: var(--color-brand);
-  --text-link-hover: var(--color-brand-hover);
-
   /* Every DS semantic the template paints with gets a gym name,
-     restated in BOTH skins. Reading --text-on-accent or
-     --surface-overlay directly is what let the light skin
-     inherit dark values for the primary CTA and the scrim. */
-  --gym-on-accent: #1B1408;                      /* dark ink on the bright accent — 6.6:1 */
-  --gym-scrim: rgba(4, 3, 1, 0.68);
+     restated in BOTH skins, so a surface never reads a raw role
+     and product meaning always has a product word. */
+  --gym-on-accent: #1B1408;                      /* dark ink on iris-300 — 6.18:1 */
+  --gym-scrim: var(--surface-overlay);
   --alarm-fill: var(--accent-brick-500);         /* destructive FILL — brick-400 is too light
                                                     to carry white at 5.5:1, so the fill uses
                                                     500 in both skins while --alarm-ink keeps
@@ -71,7 +69,12 @@
   --pr-ink: var(--color-warning);                /* gold as a KIND of moment, not a state */
   --pr-soft: var(--color-warning-bg);
   --unsynced-ink: var(--neutral-500);            /* saved on this device only */
-  --alarm-ink: var(--color-danger);              /* a write that failed. nothing else */
+  /* The lit brick step, not --color-danger. The semantic does not move between rooms — this is
+     gym's own ink for it, exactly as --alarm-fill already carries its own step for the same
+     reason in the other direction. brick-400 was cut for the family's near-black night and
+     measures 3.98:1 on gym's card; the room is basalt now, and a refused write is the one thing
+     in this product that must never be the hardest line to read. */
+  --alarm-ink: var(--accent-brick-300);          /* a write that failed. nothing else */
   --alarm-soft: var(--color-danger-bg);
 
   /* Numeral treatment — the one place gym extends rather than
@@ -83,58 +86,53 @@
 }
 
 /* ── Daylight — the same product on an outdoor rack ───────────
-   Not the shipping skin, and NOT self-sufficient the way the
-   instrument skin is. The instrument derives from semantic
-   tokens because it agrees with the scope it sits in; a light
-   subtree inside a dark ancestor cannot, since --surface-canvas
-   and friends still hold their dark values there. So this block
-   restates the light ramp values it needs.
+   This block used to restate the family's light ramp as twelve
+   literals, because a light subtree inside a DARK ancestor reads
+   dark surfaces through --surface-canvas and friends. Its own
+   comment said the honest fix was for the SHELL to own theme
+   scope rather than for gym to fight its ancestor. The shell now
+   does (chrome/Shell.jsx stamps one data-theme + data-brand on
+   the room), so the literals are gone and this skin derives from
+   the same roles the instrument does — pietra instead of the
+   family cream, because gym's day is a quarry.
 
-   That restatement is a real cost: these literals are the only
-   place in gym that can silently fall out of step with the
-   brand. They are duplicated deliberately, and the honest fix
-   is for the SHELL to own theme scope (one data-theme high in
-   the tree) rather than for gym to fight its ancestor. Until
-   that exists, treat this block as demonstrated-under-a-light-
-   ancestor, not proven anywhere.                             */
+   Two values still differ by skin rather than following a role,
+   and both are contrast, not taste: the ink that rides ON the
+   accent, and the PR gold (--color-warning is the 500 step,
+   which will not carry as text on pale stone).               */
 .gym-root[data-theme="light"] {
-  /* sky stops at 600 — there is no 700 step, so the pressed
-     state is a mix rather than an invented ramp index */
-  --color-brand: var(--accent-sky-600);
-  --color-brand-hover: color-mix(in oklab, var(--accent-sky-600) 88%, #211B13);
-  --color-brand-active: color-mix(in oklab, var(--accent-sky-600) 74%, #211B13);
-  --color-brand-soft: rgba(74, 104, 117, 0.12);
-  --text-link: var(--color-brand);
-  --text-link-hover: var(--color-brand-hover);
-
-  --gym-on-accent: #FFFFFF;                      /* white on sky-600 — 5.8:1 */
-  --gym-scrim: rgba(33, 27, 19, 0.45);
+  --gym-on-accent: #FFFFFF;                      /* white on iris-600 — 8.9:1 */
+  --gym-scrim: var(--surface-overlay);
   --alarm-fill: var(--accent-brick-500);
   --gym-on-alarm: #FFFFFF;
 
-  /* light ramp, restated — mirrors :root in tokens/colors.css */
-  --gym-canvas: #F9F5EB;
-  --gym-surface: #FFFFFF;
-  --gym-raised: #F1EADA;
-  --gym-sunken: #F1EADA;
-  --gym-line: #E5D9C0;
-  --gym-line-strong: #D3C2A0;
+  --gym-canvas: var(--surface-canvas);
+  --gym-surface: var(--surface-card);
+  --gym-raised: var(--surface-hover);
+  --gym-sunken: var(--surface-sunken);
+  --gym-line: var(--border-subtle);
+  --gym-line-strong: var(--border-default);
 
-  --weight-ink: #211B13;
-  --gym-ink: #211B13;
-  --gym-ink-dim: #6F5F45;
-  --gym-ink-faint: #92805F;
+  --weight-ink: var(--neutral-900);
+  --gym-ink: var(--text-primary);
+  --gym-ink-dim: var(--text-secondary);
+  --gym-ink-faint: var(--text-tertiary);
 
-  --set-done: var(--accent-olive-500);
-  --set-done-soft: rgba(125, 140, 67, 0.12);
+  --set-done: var(--color-success);
+  --set-done-soft: var(--color-success-bg);
   --set-done-glow: rgba(125, 140, 67, 0.4);
-  --warmup-ink: #92805F;
+  --warmup-ink: var(--neutral-500);
   --target-ink: var(--color-brand);
+  /* The 600, because --color-warning is the 500 and gold gets lighter, not darker, from here.
+     MEASURED, not assumed: on the tinted record card it is 3.4:1 at 10.5px — a real miss of the
+     4.5 gate, inherited from before this palette (it was 3.6 on the family cream) and made a
+     shade worse by stone. Left standing because this skin has no producer: gym's room pins dark
+     (routes.js), so nothing in the app renders it. Fix it when the room can be seen in daylight. */
   --pr-ink: var(--accent-gold-600);
   --pr-soft: rgba(161, 120, 34, 0.14);
-  --unsynced-ink: #92805F;
-  --alarm-ink: var(--accent-brick-500);
-  --alarm-soft: rgba(168, 78, 53, 0.12);
+  --unsynced-ink: var(--neutral-500);
+  --alarm-ink: var(--color-danger);
+  --alarm-soft: var(--color-danger-bg);
 
   --weight-size: 104px;
   --weight-leading: 92px;

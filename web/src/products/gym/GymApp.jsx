@@ -41,6 +41,10 @@ export function GymApp({ hash, inShell = false }) {
   const openSignInDoor = useSignInDoor();
   const lendDoorSkin = useSignInDoorHost();
   const sharedToken = sharedTokenOf(hash);
+  // The root names its own scope so gym is basalt-and-iris wherever it mounts (styles/tokens/
+  // palettes.css). Inside the /app shell that repeats what the shell already stamped; at #/gym and
+  // on the coach's shared page nothing above this element paints anything, and without it the room
+  // would read the family's night and the family's terracotta instead of its own.
 
   // THE COACH'S PAGE, ANSWERED BEFORE THE ACCOUNT IS. The token in the URL is the whole credential,
   // so this branch reads no auth state, waits for none, and offers no door back into the app: a
@@ -49,14 +53,14 @@ export function GymApp({ hash, inShell = false }) {
   // never between them.
   if (sharedToken) {
     return (
-      <div className="gym-root" data-chrome={inShell ? 'shell' : 'own'} data-theme="dark">
+      <div className="gym-root" data-chrome={inShell ? 'shell' : 'own'} data-theme="dark" data-brand="gym">
         <SharedSession token={sharedToken} />
       </div>
     );
   }
 
   return (
-    <div className="gym-root" ref={lendDoorSkin} data-chrome={inShell ? 'shell' : 'own'} data-theme="dark">
+    <div className="gym-root" ref={lendDoorSkin} data-chrome={inShell ? 'shell' : 'own'} data-theme="dark" data-brand="gym">
       {/* Three auth states, three answers — a first visit resolves through 'loading' with no stored
           hint, and an empty screen would read as a broken app. */}
       {status === 'loading' && <main className="gym-column"><p className="gym-quiet">Opening the log…</p></main>}
@@ -76,8 +80,8 @@ export function GymApp({ hash, inShell = false }) {
 // THE FURNITURE A BARE SURFACE HAS TO BRING, and only a bare surface. At #/gym nothing above this
 // component paints anything at all, so the room floats the two pieces every Windmill room needs: the
 // account seat, and the switcher between products. Inside the /app shell both of those already
-// exist — a seat in the rail's foot on a desk and in the top bar on a phone, and a rail that IS the
-// switcher — so drawing them here would put a second account seat on the screen beside the first.
+// exist in its head — the switcher centred, the seat opposite it — so drawing them here would put a
+// second account seat on the screen beside the first.
 //
 // The switcher answers this for itself off the pathname and would render null under /app regardless;
 // the seat cannot, because it is the very component the shell's own chrome is made of. So the room

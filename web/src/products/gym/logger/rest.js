@@ -3,7 +3,7 @@
 // and a reloaded tab both come back to the truth.
 //
 // Being over the target is not an error and must never look like one: the overrun counts UP in
-// steel, calm and quietly present. Nothing in this file ever reaches for --alarm-ink.
+// the room's own hue, calm and quietly present. Nothing in this file ever reaches for --alarm-ink.
 
 import { clockOf } from '../log.js';
 

@@ -49,7 +49,6 @@ import { sharedKind } from './ui/mobile/bulk.js';
 import { markDoneTargets } from './selection/bulkSelection.js';
 import { ForkDoor } from './ui/mobile/ForkDoor.jsx';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
-import { AccountSeat } from '../../shell/auth/AccountSeat.jsx';
 import { useSignInDoor } from '../../shell/auth/SignInDoor.jsx';
 import { ShareDialog } from './share/ShareDialog.jsx';
 import { ShareStats } from './share/ShareStats.js';
@@ -127,14 +126,13 @@ function consumeSessionFlag(key) {
 export function SkillTreeView({ treeId, demo = false }) {
   const openSignInDoor = useSignInDoor(); // the one door (shell/auth/SignInDoor.jsx) — the seat, the list notice and an expired landing all ask it
   const { breakpoint, readOnly: viewReadOnly, shared } = useViewMode();
-  const { user, status, signOut, refresh } = useAuth(); // the account seat's source of truth (X6)
+  const { status, refresh } = useAuth(); // this canvas reads the session; the seat that shows it lives in the shell's head
 
   // The honesty split (share-hardening): an owner's lapsed sign-in never downgrades —
   // saves stay on this device and only the chrome tells the truth (lapsed). A visitor
   // on a tree that isn't theirs gets the true downgrade (demotion) into read-only.
   const [lapsed, setLapsed] = useState(false); // owner lapse: chip persists until re-auth
   const [demotion, setDemotion] = useState(null); // visitor downgrade: { edits, cardOpen } | null
-  const [claimBusy, setClaimBusy] = useState(false); // a narrated claim run is in flight (the seat chip holds gold)
   const readOnly = viewReadOnly || !!demotion;
 
   const canvasRef = useRef(null);
@@ -162,22 +160,24 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   // The claim (anon-first-tree F4): adopt this device's unclaimed local trees. All the
   // durable state lives in the LocalTreeRegistry, so a run is fire-and-forget — a reload
-  // mid-claim loses nothing, the next trigger re-runs the sequence. Only a live
-  // ghost→signed-in flip narrates (the seat chip, F5); boot resumes stay silent.
-  const kickClaim = useCallback((narrated) => {
+  // mid-claim loses nothing, the next trigger re-runs the sequence.
+  //
+  // `narrated` used to hold the seat's gold "Syncing…" chip open until this run reported back
+  // (F5). The seat this canvas drew is gone — the shell's head carries the only one — and the
+  // shell's seat still plays the claim beat on a live ghost→signed-in flip, on its own clock
+  // rather than on the run's. Nothing here has anything left to tell, so the flag is only the
+  // silence rule now: a boot resume narrates nothing, which is what it always meant.
+  const kickClaim = useCallback(() => {
     if (claimRunRef.current) return;
     claimRunRef.current = true;
-    if (narrated) setClaimBusy(true);
     claimLocalTrees({ openTreeId: treeId, openSession: () => collabRef.current })
-      .then((result) => { if (narrated) setClaimBusy(result.claimed < result.pending ? 'incomplete' : false); })
-      .catch(() => { if (narrated) setClaimBusy('incomplete'); })
       .finally(() => { claimRunRef.current = false; });
   }, [treeId]);
 
   // A tab born signed-in — the magic-link landing's fresh tab, or a reload that lost a
   // mid-flight claim — still resumes whatever the device index holds unclaimed.
   useEffect(() => {
-    if (prevAuthRef.current === 'signed-in') kickClaim(false);
+    if (prevAuthRef.current === 'signed-in') kickClaim();
   }, [kickClaim]);
 
   // Auth transitions re-anchor the wire. The socket's principal is fixed at the upgrade,
@@ -196,12 +196,12 @@ export function SkillTreeView({ treeId, demo = false }) {
     }
     if (prev === 'loading' && status === 'signed-in') {
       reconcileProgressRef.current?.();
-      kickClaim(false); // silent resume of unfinished claims (anon-first-tree F4 boot trigger)
+      kickClaim(); // silent resume of unfinished claims (anon-first-tree F4 boot trigger)
       return;
     }
     if (prev === 'ghost' && status === 'signed-in') {
       collabRef.current?.forceReconnect();
-      kickClaim(true); // the live claim — the seat chip narrates while it runs
+      kickClaim(); // the live claim; the shell seat's own beat narrates the flip
       return;
     }
     if (prev === 'signed-in') {
@@ -2184,28 +2184,16 @@ export function SkillTreeView({ treeId, demo = false }) {
         />
       )}
 
-      {/* The account seat (X6) — a desktop/editor concern this pass. It sits a row
-          below the control cluster in the top-right so it never collides with it, and
-          below the detail panel's z so an open panel covers it just like it covers the
-          control bar (z 20 < seat 24 < panel 25). */}
-      {!readOnly && (
+      {/* The device line (X6). Honest, not nagging: an owned tree with no account lives only on
+          this device. A lapsed session says so with "signed out"; a never-signed-in anon just
+          needs the fact. The DOOR is the account seat in the shell's head above this room — this
+          canvas drew a second seat of its own here until 2026-08-07, from before /app existed,
+          and two seats on one screen is not an offer, it is a bug. It sits a row below the control
+          cluster so it never collides with it, and below the detail panel's z so an open panel
+          covers it just like it covers the control bar (z 20 < chip 24 < panel 25). */}
+      {!readOnly && status !== 'signed-in' && treeMine && !demo && (
         <div style={{ position: 'absolute', top: 'calc(var(--space-6) + 52px)', right: 'var(--space-6)', zIndex: 24, display: 'flex', alignItems: 'center', gap: 8 }}>
-          {status !== 'signed-in' && treeMine && !demo && (
-            // Honest, not nagging: an owned tree with no account lives only on this device. A lapsed
-            // session says so with "signed out"; a never-signed-in anon just needs the fact. Either
-            // way the AccountSeat beside it is the door — sign in and claimLocalTrees keeps it.
-            <StatusChip>{lapsed ? 'Signed out — saved on this device' : 'Saved on this device — sign in to keep it'}</StatusChip>
-          )}
-          <AccountSeat
-            user={user}
-            status={status}
-            expired={lapsed}
-            claimBusy={claimBusy}
-            onSignIn={openSignInDoor}
-            onSignOut={signOut}
-            onConnect={() => { window.location.hash = '#/connect'; }}
-            onSettings={() => { window.location.hash = '#/settings'; }}
-          />
+          <StatusChip>{lapsed ? 'Signed out — saved on this device' : 'Saved on this device — sign in to keep it'}</StatusChip>
         </div>
       )}
 

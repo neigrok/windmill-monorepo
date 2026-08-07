@@ -119,9 +119,12 @@ export const roadmapRoutes = {
     summary: 'Author a learning path as an RPG skill tree — real prerequisites, ownership gates lifetimes, fundamentals gate frameworks. Grow it one checked-off node at a time.',
   },
   shell: {
-    icon: 'route',
     room: '/app/roadmap',
-    scope: { theme: null, brand: 'clay' },
+    // Its own brand rather than the bare family default: clay is what every surface belonging to
+    // no product stands on (the brand root, marketing, the /app home), and it must not move when
+    // this room does. Roadmap's day IS the family cream; its night is the embers after it
+    // (styles/tokens/palettes.css).
+    scope: { theme: null, brand: 'roadmap' },
     status: 'open',
     landingHref: '/roadmap',
     HomeCard,

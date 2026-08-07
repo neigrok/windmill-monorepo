@@ -119,7 +119,7 @@ function Moat() {
   const ref = useScene(mountMoat);
   return (
     <div className="wrap" style={{ marginTop: 44, display: 'flex', justifyContent: 'center' }}>
-      <div ref={ref} className="gyw gyMoat" data-theme="dark" aria-hidden="true">
+      <div ref={ref} className="gyw gyMoat" data-theme="dark" data-brand="gym" aria-hidden="true">
 
         <div data-gy="still" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 20 }}>
           <div>
@@ -211,7 +211,7 @@ function Hero() {
 function LadderStage() {
   const ref = useScene(mountSetLogger);
   return (
-    <div ref={ref} className="gyw gyStage" data-theme="dark" title="Click to replay" aria-hidden="true"
+    <div ref={ref} className="gyw gyStage" data-theme="dark" data-brand="gym" title="Click to replay" aria-hidden="true"
       style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 14 }}>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
         <span className="gychip gychip--sm">−10</span>
@@ -235,7 +235,7 @@ function LadderStage() {
 function RememberedStage() {
   const ref = useScene(mountRemembered);
   return (
-    <div ref={ref} className="gyw gyStage" data-theme="dark" title="Click to replay" aria-hidden="true"
+    <div ref={ref} className="gyw gyStage" data-theme="dark" data-brand="gym" title="Click to replay" aria-hidden="true"
       style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div data-gy="s2card" className="gyRise" style={{ width: '100%', maxWidth: 240, background: 'var(--gym-surface)', border: '1px solid var(--gym-line)', borderRadius: 'var(--radius-lg)', padding: '14px 16px' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
@@ -254,7 +254,7 @@ function RememberedStage() {
 function LineStage() {
   const ref = useScene(mountE1rmLine);
   return (
-    <div ref={ref} className="gyw gyStage" data-theme="dark" title="Click to replay" aria-hidden="true"
+    <div ref={ref} className="gyw gyStage" data-theme="dark" data-brand="gym" title="Click to replay" aria-hidden="true"
       style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--gym-ink-faint)' }}>Squat · e1RM</span>
@@ -316,7 +316,7 @@ function ForTheBarbell() {
       </p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 20, marginTop: 40 }}>
         {LIFTS.map((lift) => (
-          <div key={lift.name} className="gyw gycard" data-theme="dark">
+          <div key={lift.name} className="gyw gycard" data-theme="dark" data-brand="gym">
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
               <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15.5, color: 'var(--gym-ink)' }}>{lift.name}</span>
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 17, color: 'var(--weight-ink)' }}>
@@ -372,7 +372,7 @@ function ConnectedLog() {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={PANEL_LABEL}>You approve each level</div>
-          <div className="gyw gycard" data-theme="dark">
+          <div className="gyw gycard" data-theme="dark" data-brand="gym">
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--gym-ink-faint)' }}>connect · Claude Code</span>
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--gym-ink-faint)' }}>gym</span>

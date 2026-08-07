@@ -1,5 +1,10 @@
 /* The /app shell chrome. Tokens only — the scope swap (data-brand/data-theme on .wm-shell)
-   re-points every colour, so a literal here would refuse to tint with the room. */
+   re-points every colour, so a literal here would refuse to tint with the room.
+
+   Two pieces of furniture, both quiet: the room switcher centred at the head and the account
+   seat opposite it. Nothing is bordered and nothing is filled — a divider or a tinted bar would
+   put a line between the shell and the room, and there isn't one. The same chrome serves every
+   width, so there is no second mobile shell to keep in step with this one. */
 
 .wm-shell {
   font-family: var(--font-body);
@@ -7,164 +12,92 @@
   color: var(--text-primary);
   min-height: 100vh;
   display: flex;
+  flex-direction: column;
   transition: background var(--duration-base) var(--ease-standard);
 }
 
-/* ---- Rail ---- */
+/* ---- The head ---- */
 
-.wm-rail {
-  width: 68px;
+.wm-head {
   flex: none;
-  background: var(--surface-card);
-  border-right: 1px solid var(--border-subtle);
+  position: relative;
+  height: 52px;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  padding: 16px 0;
-  gap: 6px;
-  position: sticky;
-  top: 0;
-  height: 100vh;
-  transition: background var(--duration-base) var(--ease-standard), border-color var(--duration-base) var(--ease-standard);
+  justify-content: center;
+  padding: 0 16px;
 }
 
-.wm-rail-wordmark {
+/* The way back out of the app, and the only mark the shell wears. */
+.wm-head-mark {
+  position: absolute;
+  left: 16px;
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 21px;
+  font-size: 19px;
+  line-height: 1;
   color: var(--color-brand);
-  margin-bottom: 12px;
+  opacity: 0.66;
+  transition: opacity var(--duration-fast) var(--ease-standard);
 }
-
-.wm-rail-btn {
-  width: 42px;
-  height: 42px;
-  border-radius: var(--radius-lg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-tertiary);
-  transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+a.wm-head-mark:hover {
+  color: var(--color-brand);
+  opacity: 1;
 }
-
-.wm-rail-btn:hover {
-  background: var(--surface-hover);
-  color: var(--text-secondary);
-}
-
-.wm-rail-btn[aria-current='page'] {
-  background: var(--color-brand-soft);
-  color: var(--color-brand-hover);
-}
-
-.wm-rail-btn:focus-visible {
+.wm-head-mark:focus-visible {
   outline: none;
+  border-radius: var(--radius-sm);
   box-shadow: var(--focus-ring);
 }
 
-.wm-rail-btn--quiet {
-  width: 38px;
-  height: 38px;
-}
+/* ---- The room switcher ---- */
 
-.wm-rail-foot {
-  margin-top: auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-}
-
-/* ---- Top bar ---- */
-
-.wm-body {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.wm-topbar {
-  height: 56px;
-  flex: none;
+.wm-switch {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 0 24px;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--surface-card);
-  transition: background var(--duration-base) var(--ease-standard), border-color var(--duration-base) var(--ease-standard);
+  gap: 2px;
 }
 
-.wm-topbar-title {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 16.5px;
-  color: var(--text-primary);
-  white-space: nowrap;
-}
-
-.wm-topbar-url {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--text-tertiary);
-  border: 1px solid var(--border-subtle);
+.wm-switch-btn {
+  height: 30px;
+  padding: 0 13px;
+  display: inline-flex;
+  align-items: center;
   border-radius: var(--radius-full);
-  padding: 4px 11px;
-  background: var(--surface-canvas);
-  max-width: 40vw;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
   white-space: nowrap;
+  transition: color var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard);
 }
 
-.wm-topbar-side {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.wm-topbar-note {
-  font-size: 12.5px;
-  color: var(--text-tertiary);
-  white-space: nowrap;
-}
-/* The mobile account seat rides in the top bar (the board's `monly`); desktop keeps the seat
-   in the rail foot, so this wrapper only exists under 744px. */
-.wm-topbar-seat {
-  display: none;
-}
-
-/* ---- Tab bar — the mobile room switcher (board: "one shell, two chromes") ---- */
-.wm-tabs {
-  display: none;
-}
-.wm-tab {
-  min-width: 64px;
-  height: 50px;
-  border: none;
-  background: none;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  color: var(--text-tertiary);
-  font-family: var(--font-body);
-  font-size: 11px;
+/* The room you are in wears the pill; the pill is the card surface, so it reads as a raised
+   seat on the room's own ground rather than as a colour the shell chose. */
+.wm-switch-btn[aria-current='page'] {
+  background: var(--surface-card);
+  color: var(--text-primary);
   font-weight: 700;
-  border-radius: var(--radius-lg);
 }
-.wm-tab[aria-current='page'] {
-  color: var(--color-brand-hover);
+
+a.wm-switch-btn:hover {
+  color: var(--text-primary);
 }
-.wm-tab:focus-visible {
+
+.wm-switch-btn:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
 }
 
-/* ---- Room ---- */
+/* ---- The account seat ---- */
+
+.wm-head-seat {
+  position: absolute;
+  right: 16px;
+  display: flex;
+  align-items: center;
+}
+
+/* ---- The room ---- */
 
 .wm-room {
   flex: 1;
@@ -175,8 +108,8 @@
   flex-direction: column;
   /* The room IS the viewport for whatever mounts inside: containment makes this element the
      containing block for position:fixed product roots (.st-root, .journal-root, their sheets)
-     and a stacking boundary, so a full-bleed product fills the room — never the rail or the
-     top bar — without the shell ever naming a product class. */
+     and a stacking boundary, so a full-bleed product fills the room — never the head — without
+     the shell ever naming a product class. */
   contain: layout paint;
 }
 
@@ -197,10 +130,15 @@
   letter-spacing: var(--tracking-wide);
 }
 
-/* ---- Home room ---- */
+/* ---- Home room — one centred column. The room owns its width, the shell owns the centring;
+        860px is the wider of the canon's two column widths, and the one that still holds three
+        product doors side by side. ---- */
 
 .wm-home {
-  padding: clamp(20px, 3vw, 36px);
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 22px 24px 40px;
 }
 
 .wm-home-status {
@@ -209,11 +147,12 @@
   margin: 0 0 18px;
 }
 
+/* 240px, not 260: three doors across the 812px the column leaves is 756 — at 260 the third wraps
+   and the row stands with a hole in it, which reads as a missing product rather than a layout. */
 .wm-home-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 18px;
-  max-width: 1020px;
 }
 
 .wm-home-cell {
@@ -275,47 +214,29 @@
   color: var(--text-link);
 }
 
-/* ---- Mobile: the rail becomes a bottom bar; the top bar stays ---- */
+/* ---- Narrow: the same chrome, tightened. The switcher was already centred and the head was
+        already the whole frame, so a phone gets no second shell — only smaller gaps, so four
+        room names still fit across a 360px screen without a scroller. ---- */
 
-/* Under 744px the rail yields to the bottom tab bar — the mobile-native room switcher
-   (board: targets 48px+, safe-area padded); the top bar keeps room title and account seat
-   and drops the URL chip and the account line. One shell, two chromes — never a forked
-   mobile app. */
-@media (max-width: 743px) {
-  .wm-rail {
-    display: none;
+@media (max-width: 480px) {
+  .wm-head {
+    padding: 0 12px;
   }
 
-  .wm-tabs {
-    display: flex;
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 50;
-    background: var(--surface-card);
-    border-top: 1px solid var(--border-subtle);
-    padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
-    justify-content: space-around;
-    transition: background var(--duration-base) var(--ease-standard), border-color var(--duration-base) var(--ease-standard);
+  .wm-head-mark {
+    left: 12px;
   }
 
-  /* Rooms end above the bar: the bar is 62px tall (6 + 50 + 6) plus the safe area, and
-     .wm-room's containing box must stop there so full-bleed product roots stay reachable. */
-  .wm-body {
-    padding-bottom: calc(62px + env(safe-area-inset-bottom, 0px));
+  .wm-head-seat {
+    right: 12px;
   }
 
-  .wm-topbar {
-    padding: 0 16px;
+  .wm-switch-btn {
+    padding: 0 9px;
+    font-size: 12.5px;
   }
 
-  .wm-topbar-url,
-  .wm-topbar-note {
-    display: none;
-  }
-
-  .wm-topbar-seat {
-    display: flex;
+  .wm-home {
+    padding: 18px 16px 32px;
   }
 }

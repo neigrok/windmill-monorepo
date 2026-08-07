@@ -4,12 +4,14 @@
    moat wears: the chips, the set rows, the weight readout, the e1RM cards.
 
    The token block mirrors src/products/gym/gym.css's .gym-root[data-theme="dark"] — the same
-   derivation from the dark ramp, cut down to what the landing actually paints with. The old
-   static page hardcoded these as hex, which is how a landing drifts away from the product it
-   is advertising; derived, the moat inherits any future correction to the night sky. */
+   derivation from the room's own roles, cut down to what the landing actually paints with. The
+   old static page hardcoded these as hex, which is how a landing drifts away from the product it
+   is advertising; derived, the moat inherits any future correction to gym's night. That is why
+   each window carries data-brand="gym" beside its data-theme (GymLanding.jsx): the room's ground
+   and hue are keyed on the PAIR (styles/tokens/palettes.css), so a window naming only the theme
+   would advertise the family's night rather than gym's basalt. */
 
 .gyw[data-theme="dark"] {
-  --color-brand: var(--accent-sky-400);
   --gym-on-accent: #1B1408;
 
   --gym-canvas: var(--surface-canvas);
