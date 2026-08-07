@@ -37,8 +37,8 @@ public struct TrainingWeek: Equatable, Codable, Sendable, Identifiable {
 
 // One session's top working set of one movement. `e1rm` is absent exactly where Epley is undefined —
 // a chin-up at 0 kg and a band-assisted pull-up at −20 have no honest one-rep estimate — so a
-// movement that has never been loaded draws a line of the loads themselves instead of a line of
-// invented numbers.
+// movement Epley cannot speak for is drawn on its loads, or on its reps when the load never moves
+// either (`Stats.Axis`), rather than on a line of invented numbers.
 public struct MovementPoint: Equatable, Codable, Sendable {
     public let atMs: Int64
     public let weightKg: Double
@@ -162,10 +162,52 @@ public enum Stats {
         public let span: String
     }
 
-    // One movement's line. `unit` says which number is drawn, because the two are not the same fact:
-    // a movement every one of whose sets carries an estimate draws the estimate, and a movement any
-    // of whose sets does not — a chin-up, a band-assisted pull-up, the lifter who went from assisted
-    // to weighted — draws the LOAD, which for that lifter is the true story anyway.
+    // WHICH AXIS A MOVEMENT'S LINE IS DRAWN ON, decided by the data and never by a setting — the
+    // native statement of stats.js `axisOf`/`valueOf`, tested in the order the web tests it. Three
+    // cases, and the third is the one a chin-up needs:
+    //   · every point carries an estimate — the line is e1RM, the movement's own strength curve
+    //   · an estimate is missing somewhere but the load MOVES — the line is the top set's load, the
+    //     honest axis across the assisted → bodyweight → weighted crossing that left Epley undefined
+    //   · the load never moves — then the load is not the story and the reps are. A point is already
+    //     the heaviest set of its session, ties going to more reps, so at one fixed load the top set
+    //     IS the best set of reps at it, and drawing the load would be drawing a constant.
+    enum Axis: Equatable {
+        case e1rm, load, reps
+
+        init(of points: [MovementPoint]) {
+            if !points.isEmpty, points.allSatisfy({ $0.e1rm != nil }) {
+                self = .e1rm
+                return
+            }
+            if Set(points.map(\.weightKg)).count > 1 {
+                self = .load
+                return
+            }
+            self = .reps
+        }
+
+        var unit: String {
+            switch self {
+            case .e1rm: return "e1RM"
+            case .load: return "load"
+            case .reps: return "reps"
+            }
+        }
+
+        // The estimate cannot be missing on the axis that was chosen BY every point having one, so
+        // the fallback is unreachable — and a zero there would be a number nobody lifted rather than
+        // a crash on the statistics screen.
+        func value(of point: MovementPoint) -> Double {
+            switch self {
+            case .e1rm: return point.e1rm ?? 0
+            case .load: return point.weightKg
+            case .reps: return Double(point.reps)
+            }
+        }
+    }
+
+    // One movement's line. `unit` names which of the three the axis picked, because they are not the
+    // same fact and a reader who is not told reads a chin-up's 8 → 12 as kilograms.
     public struct Line: Equatable, Identifiable {
         public let id: String
         public let movement: String
@@ -221,15 +263,14 @@ public enum Stats {
         // The server builds a movement out of its points, so one with none cannot arrive. A line with
         // nothing to draw is left out rather than drawn as an empty frame with a name over it.
         guard !movement.points.isEmpty else { return nil }
-        let estimates = movement.points.compactMap(\.e1rm)
-        let loaded = estimates.count == movement.points.count
-        let values = loaded ? estimates : movement.points.map(\.weightKg)
+        let axis = Axis(of: movement.points)
+        let values = movement.points.map(axis.value(of:))
 
         return Line(
             id: movement.exerciseId,
             movement: Readout.movement(movement.exerciseId, in: catalog),
             value: Readout.weight(values[values.count - 1]),
-            unit: loaded ? "e1RM" : "load",
+            unit: axis.unit,
             lastTrained: "trained \(Readout.ago(movement.lastTrainedAtMs, now: now))",
             heights: normalised(values),
             span: span(values),

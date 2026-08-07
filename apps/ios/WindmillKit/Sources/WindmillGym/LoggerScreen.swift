@@ -541,7 +541,7 @@ struct LoggerScreen: View {
     }
 
     private var workingToday: Int {
-        store.todaySets.filter { $0.kind != .warmup }.count
+        LiveLines.workingCount(store.todaySets)
     }
 
     private func stamp(_ date: Date) -> Int64 {

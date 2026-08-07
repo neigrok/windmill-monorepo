@@ -627,11 +627,21 @@ flow control never travels as a throw, and `InvalidTraining` stays reserved for 
   queue in any order, any number of times; the log converges on exactly one row per minted id.
   A concurrent same-exercise append no longer races the numbering (§2.3): appends to one session
   serialize behind its row, which costs one lock on a write that is already one round trip.
-  The insert's own two refusals come back beside the row as `SetInsertError` (§3.4) and the service
-  passes them through untouched: `unknownExercise` when the set names a movement no catalog holds
-  → `AppendError::unknownExercise` → 400, and `idTaken` when the scoped read-back finds nothing.
-  Neither is ever an exception in flight — the catalog is storage's to know, and storage says so in
-  a value.
+  The insert's own three refusals come back beside the row as `SetInsertError` (§3.4) and the
+  service passes them through untouched: `unknownExercise` when the set names a movement no catalog
+  **this account can see** holds → `AppendError::unknownExercise` → 400; `idTaken` when the scoped
+  read-back finds nothing; and `finished` when the locked row is already closed →
+  `AppendError::finished` → 409. None is ever an exception in flight — the catalog and the close are
+  storage's to know, and storage says so in a value.
+
+  **Visibility is checked on the WRITE, not inferred from the FK.** The foreign key only asks
+  whether the row exists, so a set could name another account's private custom movement — and the
+  log, the CSV export and the coach share would then print that account's private name, and its
+  owner could never fully delete their account. Every write that names an exercise id now carries
+  the catalog read's own predicate — `id = $1 AND (created_by IS NULL OR created_by = $2)` — inside
+  the transaction that is already open, resolved against the owner read off the locked session row
+  (or off the routine, for a plan entry). The refusal is `unknownExercise`, which is the honest word:
+  a movement you cannot see is a movement that is not in your catalog.
 
   **The finish boundary, decided.** A set that already landed lands again — idempotency outlives
   the session's close, so a queue that treats 409 as terminal can never drop a row it in fact
@@ -644,7 +654,11 @@ flow control never travels as a throw, and `InvalidTraining` stays reserved for 
   else, and surface the refusal rather than swallowing it.
 - **`finish(user, session, finishedAtMs)`** — load the session → `canFinishAt` (§3.2) or
   `FinishError::badInstant` → 400 → set `finished_at` if null; replay returns the stored session
-  unchanged. Finishing an already-auto-closed session is the same no-op.
+  unchanged. Finishing an already-auto-closed session is the same no-op. The read-back after the
+  close is checked like the load before it: an empty one is `FinishError::notFound`, the same fact
+  an already-absent session gets, because that is what actually happened — a discard from another
+  device won the race. This was the only write in the service that could answer `error == none` with
+  no session, and both wire edges dereference that optional.
 
 Every write returns the resolved row (journal's `PageService::write` lesson): a client that
 lost a race or replayed sees the winning truth in one round trip — and when there is no row it
@@ -662,8 +676,9 @@ struct TrainingRepository {
   virtual std::optional<std::uint64_t> lastActivity(const SessionId&) = 0;
   virtual void insertSession(const Session&) = 0;                    // conflict = no-op
   virtual void close(const SessionId&, std::uint64_t finishedAtMs) = 0;
-  virtual SetInsertOutcome insertSet(const Set& incoming) = 0;       // assigns number; replay returns
-                                                                     // stored; refusals as values
+  virtual SetInsertOutcome insertSet(const Set& incoming) = 0;       // assigns number; refusals as
+                                                                     // values. The REPLAY is the
+                                                                     // service's, through setOf
   virtual std::vector<SessionSummary> log(const UserId&, const LogCursor&) = 0;
   virtual std::vector<Set> setsOf(const SessionId&) = 0;
   virtual LastTimeOutcome lastTime(const UserId&, const ExerciseId&) = 0;  // the prefill read (§5)
@@ -691,7 +706,7 @@ struct SessionSummary { Session session; int setCount; std::vector<std::string> 
                         bool closedItself; };                  // the four-hour rule ended it
 struct LogCursor { std::uint64_t beforeMs; std::optional<SessionId> beforeId; int limit; };
 
-enum class SetInsertError { none, idTaken, unknownExercise };
+enum class SetInsertError { none, idTaken, unknownExercise, finished };
 struct SetInsertOutcome { std::optional<Set> set; SetInsertError error; };
 
 struct LastTime { Session session; std::string routineName; std::vector<Set> sets; };
@@ -734,15 +749,23 @@ spent outside this session resolves to *nothing* rather than to that row. The un
 that one read handed a stranger's weight, rpe and free-text note to whoever guessed the id, and
 reported a 200 for a set it had silently dropped.
 
-**Both refusals cross the port as values, and that is a structural rule, not a preference.** The
-exercise FK is a fact only storage can know, and it arrived as a `pqxx::foreign_key_violation`
-caught at the *HTTP edge* — which made the wire layer include a database header and know which
-store gym is kept in, and cost a divergence immediately: the fake could only imitate the throw with
-`InvalidTraining`, so under test that path said "could not read that set" while the live server
-said "no such exercise", and no test pinned either sentence. The translation belongs where every
-other adapter puts it — inside the Pg adapter, beside the statements that already know what
-Postgres is (`PgTreeRepository` catching `unique_violation`, `PgReminderRepository` catching
-`sql_error`). Everything the store has no answer for rides past untranslated to the house 500.
+**Every refusal crosses the port as a value, and that is a structural rule, not a preference.** The
+catalog and the session's close are facts only storage can know. The exercise refusal used to arrive
+as a `pqxx::foreign_key_violation` caught at the *HTTP edge* — which made the wire layer include a
+database header and know which store gym is kept in, and cost a divergence immediately: the fake
+could only imitate the throw with `InvalidTraining`, so under test that path said "could not read
+that set" while the live server said "no such exercise", and no test pinned either sentence. The
+translation belongs where every other adapter puts it — inside the Pg adapter, beside the statements
+that already know what Postgres is (`PgTreeRepository` catching `unique_violation`,
+`PgReminderRepository` catching `sql_error`). Everything the store has no answer for rides past
+untranslated to the house 500.
+
+It is no longer a catch at all: since the visibility check above, the Pg adapter asks the question
+outright in the same transaction and answers it, so the FK is a backstop rather than the mechanism
+and the three `catch (pqxx::foreign_key_violation)` blocks are gone. An explicit refusal is also the
+only shape that can carry "you may not see it" — an FK cannot tell an id that does not exist from an
+id that belongs to somebody else, and those are the same answer to the caller and different answers
+to the store.
 
 `historyFor` returns a **domain** value rather than a port-owned one, which is the exception that
 proves the DTO rule: `SessionSummary` and `LastTime` are shapes the *store* composes for a caller,
@@ -763,7 +786,7 @@ never take down every read of that account's log.
 
 The `Fakes.h` twin applies the **same rules as the SQL** — the PK no-op, the partial-unique
 open-session refusal, max+1 numbering, the owner scope on every read, the session-scoped read-back,
-and the exercise FK reported as the same typed fact — because Lift's proposal-apply bug survived
+and the owner-scoped catalog check reported as the same typed fact — because Lift's proposal-apply bug survived
 precisely as long as its mock didn't model the persistence boundary. A fake that mirrors a leak is
 worse than no fake: it makes the suite green *because* the bug is faithfully reproduced. Typing the
 fact is what keeps the two honest **by construction** — they now return one enum, so they cannot
@@ -1152,7 +1175,7 @@ on carries a machine word under `code` beside the human sentence:
 | 404 | — | the session is absent **or** another account's — one fact, not two | `no such session` | terminal — drop it |
 | 404 | — | the routine is absent **or** another account's — read, replace, delete, or a start that is *creating* a session under it (§3.3: never a replay, never a join) | `no such routine` | terminal — re-read `GET /v1/gym/routines` |
 | 400 | — | the request is unreadable or unstorable *as written*: bad json, bad field type, a malformed id, an instant outside the bounds above | `could not read that session` / `… that set` / `… that finish` / `… that routine` / `… that movement` | terminal — retrying never makes a body readable |
-| 400 | `unknown-exercise` | a set, a routine entry, or the prefill read names a movement no catalog holds (the exercise FK, §3.4) | `no such exercise` | terminal — the movement has to be resolved against `GET /v1/gym/exercises` first |
+| 400 | `unknown-exercise` | a set, a routine entry, or the prefill read names a movement **this account's** catalog does not hold — a slug nobody has, and another lifter's private movement alike (§3.3's visibility predicate; the FK is only a backstop) | `no such exercise` | terminal — the movement has to be resolved against `GET /v1/gym/exercises` first |
 | 400 | — | the prefill read names no movement at all | `bad exercise` | terminal, and a read-path fault — never the queue's |
 | 400 | — | the close instant runs backwards against the stored start | `a session cannot finish before it began` | terminal — send an instant the session could have ended at |
 | 400 | — | the log cursor is not a digits-only instant plus, optionally, a well-formed id beside it | `bad cursor` | terminal, and a read-path fault — never the queue's |

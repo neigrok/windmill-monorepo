@@ -1111,6 +1111,26 @@ TEST(gym_a_routine_that_could_not_be_stored_as_written_is_400) {
   CHECK(h.repo.routineRows.empty());
 }
 
+// A key the entry schema never declared is REFUSED, never dropped — the rule the tool surface
+// publishes as `additionalProperties: false` and the composite tool host enforces on a call's
+// arguments, reaching one level down into the line. `targetRepsl: 5` used to read clean: the entry
+// stored no rep target at all, the reply said the routine had saved, and the target the lifter
+// typed was gone from a plan they will train off for months.
+TEST(gym_a_routine_entry_key_the_schema_never_declared_is_400_and_nothing_lands) {
+  Harness h;
+  h.signIn("s-live");
+  Json::Value misspelled = routineBody();
+  misspelled["entries"][0].removeMember("targetReps");
+  misspelled["entries"][0]["targetRepsl"] = 5;
+
+  drogon::HttpResponsePtr response =
+      send(h.api, &GymApi::createRoutine, postRequest("/v1/gym/routines", misspelled, "s-live"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"could not read that routine"})"));
+  CHECK(h.repo.routineRows.empty());
+}
+
 TEST(gym_replace_routine_rewrites_it_and_a_missing_one_is_404) {
   Harness h;
   h.signIn("s-live");

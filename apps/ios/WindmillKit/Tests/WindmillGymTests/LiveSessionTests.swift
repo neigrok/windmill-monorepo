@@ -168,6 +168,38 @@ final class LiveLinesTests: XCTestCase {
         XCTAssertEqual(rows.map(\.isWarmup), [true, false, false])
     }
 
+    // ONE WORD FOR WHAT COUNTS. A drop and a failure are things that happened to a set the plan never
+    // asked for, so neither advances "set 3 of 5" and neither counts toward a movement's tally — the
+    // same word log.js `workingSetsOf` counts on, over the same stored session. The phone counted
+    // everything that was not a warmup and said "set 5 of 5" where the desk said "set 4 of 5".
+    //
+    // THE TODAY LIST IS DELIBERATELY NOT THIS RULE: its ordinal numbers every set that is not a
+    // warmup, drops included, because that column is the record of what was performed and not a
+    // count toward the plan — Logger.jsx's TodayList numbers them the same way.
+    func testOnlyWorkingSetsCountTowardThePlanCounterAndTheJumpSheet() {
+        let sets = [
+            aSet("bench-press", 40, 8, at: 900, kind: .warmup, id: "w1"),
+            aSet("bench-press", 82.5, 5, at: 1_000, id: "s1"),
+            aSet("bench-press", 82.5, 5, at: 2_000, id: "s2"),
+            aSet("bench-press", 60, 8, at: 2_500, kind: .drop, id: "d1"),
+            aSet("bench-press", 82.5, 3, at: 3_000, kind: .failure, id: "f1"),
+        ]
+
+        XCTAssertEqual(LiveLines.workingCount(sets), 2)
+        XCTAssertEqual(LiveLines.workingCount(sets, of: "cable-fly"), 0)
+        XCTAssertEqual(LiveLines.counter(workingSetsToday: LiveLines.workingCount(sets),
+                                         planEntry: pushA.entry(for: "bench-press")).count,
+                       "set 3 of 5")
+
+        let rows = LiveLines.jumpRows(order: ["bench-press"], sets: sets, plan: pushA,
+                                      catalog: [Exercise(id: "bench-press", name: "Bench Press")],
+                                      current: "bench-press")
+        XCTAssertEqual(rows.map(\.meta), ["2 of 5 sets"])
+
+        XCTAssertEqual(LiveLines.rows(sets, stalled: []).map(\.index), ["w", "1", "2", "3", "4"],
+                       "the today list numbers what was performed, which is not what counts")
+    }
+
     // A movement with nothing in it says what would start it, rather than reading as a mistake.
     func testTheJumpSheetSaysWhereEachMovementStands() {
         let rows = LiveLines.jumpRows(

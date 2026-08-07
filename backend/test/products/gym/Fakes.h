@@ -75,8 +75,9 @@ inline Routine pushA(std::vector<RoutineEntry> entries = {benchEntry()},
 // An in-memory TrainingRepository that applies the SAME rules as the SQL — the PK no-op on a
 // duplicate id, the one-open-session refusal that makes a second insert a no-op, max+1-per-
 // exercise numbering, the owner scope on every read, the read-back scoped to the session (a set id
-// spent elsewhere resolves to NOTHING, never to that row), the FK that refuses a set or a routine
-// entry naming no known exercise, the routine name read off the session's own frozen snapshot, the
+// spent elsewhere resolves to NOTHING, never to that row), the owner-scoped predicate that refuses a
+// set or a routine entry naming a movement this account cannot see, the closed session that refuses
+// a set which never landed, the routine name read off the session's own frozen snapshot, the
 // derived last-trained instant the routines list sorts on, the cascade that nulls a deleted
 // routine's id on every session that ran it, the cascade that takes a discarded session's sets with
 // it, the (startedAt, id) window that keeps a session out of its own history, and the IS NULL guard
@@ -160,24 +161,29 @@ public:
   }
 
   SetInsertOutcome insertSet(const Set& incoming) override {
+    // The lock statement, which READS the state it locks: whose session this is and whether it has
+    // already been closed. Both refusals come off it before anything is written, exactly as they do
+    // in the SQL. Without a session row the real INSERT..SELECT selects nothing, so nothing lands
+    // and the read-back finds nothing — the same answer as a spent id, and LogService loads the
+    // session before it ever gets here. A CLOSED one refuses outright: a set that never landed may
+    // not land after the finish, and only the locked row can say so without a race.
+    std::optional<Session> ran;
+    for (const Session& session : sessions)
+      if (session.id == incoming.session) ran = session;
+    if (!ran) return {std::nullopt, SetInsertError::idTaken};
+    if (ran->finishedAtMs) return {std::nullopt, SetInsertError::finished};
+    // Scoped on the SESSION's owner, the way the write is scoped in SQL. A foreign key alone would
+    // admit another lifter's private movement, and their movement name would then be printed by
+    // this account's log, its export and its coach share.
+    if (!visibleTo(ran->user, incoming.exercise))
+      return {std::nullopt, SetInsertError::unknownExercise};
+    // The read-back, scoped to (id, session_id) and taken last, as the statement order has it.
     for (const Set& set : sets) {
       if (!(set.id == incoming.id)) continue;
       if (set.session == incoming.session)
         return {set, SetInsertError::none};                // the PK no-op: replay returns stored
       return {std::nullopt, SetInsertError::idTaken};      // the id is spent outside this session
     }
-    bool sessionExists = false;
-    for (const Session& session : sessions)
-      if (session.id == incoming.session) sessionExists = true;
-    // Without a session row the real INSERT..SELECT selects nothing, so nothing lands, no foreign
-    // key is ever consulted, and the read-back finds nothing — the same answer as a spent id.
-    // LogService loads the session before it ever gets here.
-    if (!sessionExists) return {std::nullopt, SetInsertError::idTaken};
-    // The exercise FK, stated as the same value the adapter reports its foreign_key_violation as.
-    // It used to throw InvalidTraining here, so the fake said "could not read that set" where the
-    // live server says "no such exercise" and no test could pin either — exactly the divergence
-    // this file exists to make impossible.
-    if (!nameOf(incoming.exercise)) return {std::nullopt, SetInsertError::unknownExercise};
     int number = 1;
     for (const Set& set : sets)
       if (set.session == incoming.session && set.exercise == incoming.exercise)
@@ -379,10 +385,12 @@ public:
         return {read(routine), RoutineWriteError::none};   // the PK no-op: a replay reads back stored
       return {std::nullopt, RoutineWriteError::idTaken};   // the id is spent by an account we can't see
     }
-    // The exercise FK, stated as the same value the adapter reports its foreign_key_violation as.
+    // Every line names a movement this account may see, under the write's own scope rather than the
+    // foreign key's — another lifter's private movement is unknown here, not merely someone else's.
     // The whole document is one transaction there, so a refused line leaves NO row behind.
     for (const RoutineEntry& entry : incoming.entries)
-      if (!nameOf(entry.exercise)) return {std::nullopt, RoutineWriteError::unknownExercise};
+      if (!visibleTo(incoming.user, entry.exercise))
+        return {std::nullopt, RoutineWriteError::unknownExercise};
     routineRows.push_back(incoming);
     return {read(incoming), RoutineWriteError::none};
   }
@@ -391,7 +399,8 @@ public:
     for (Routine& routine : routineRows) {
       if (!(routine.id == incoming.id) || !(routine.user == incoming.user)) continue;
       for (const RoutineEntry& entry : incoming.entries)
-        if (!nameOf(entry.exercise)) return {std::nullopt, RoutineWriteError::unknownExercise};
+        if (!visibleTo(incoming.user, entry.exercise))
+          return {std::nullopt, RoutineWriteError::unknownExercise};
       routine = incoming;
       return {read(routine), RoutineWriteError::none};
     }
@@ -609,6 +618,15 @@ private:
     }
     return Routine{stored.id, stored.user, stored.name, stored.position, stored.entries,
                    lastTrained};
+  }
+
+  // The catalog read's predicate, applied where a WRITE names a movement: a seed, or one this
+  // account created. It is the twin of nameOf, which stays unscoped on purpose — that one renders a
+  // row the store already holds, this one decides whether an account may point at it at all.
+  bool visibleTo(const UserId& owner, const ExerciseId& exercise) {
+    for (const Exercise& known : catalog(owner))
+      if (known.id == exercise) return true;
+    return false;
   }
 
   std::optional<std::string> nameOf(const ExerciseId& id) const {

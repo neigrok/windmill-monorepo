@@ -208,9 +208,11 @@ TEST(pg_gym_a_set_id_spent_in_another_session_resolves_to_nothing) {
   CHECK_EQ(repo.setOf(wm::UserId{kUser}, SetId{"set_pg000001"}), mine.set);
 }
 
-// The exercise FK is the store's own refusal, and it leaves the store as a VALUE — the pqxx
-// exception is translated here, beside every other statement that knows what Postgres is, and the
-// HTTP edge answers "no such exercise" without ever including a database header.
+// The catalog is the store's own fact, and it leaves the store as a VALUE. It is not a caught
+// exception any more: the statement asks the question outright, inside the transaction that already
+// holds the session's lock, because an FK cannot tell an id nobody has from an id that belongs to
+// somebody else — and those are one answer to the caller and two to the store. The HTTP edge says
+// "no such exercise" either way, without ever including a database header.
 TEST(pg_gym_a_set_naming_a_movement_no_catalog_holds_is_refused_as_a_value) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -227,12 +229,63 @@ TEST(pg_gym_a_set_naming_a_movement_no_catalog_holds_is_refused_as_a_value) {
   CHECK_EQ(unknown.set, std::optional<Set>());
   CHECK_EQ(repo.setsOf(SessionId{"ses_pg000001"}), std::vector<Set>{*landed.set});
 
-  // The aborted transaction is the refused write's alone: the connection is reusable and the next
-  // append lands normally, numbered as if the refusal had never happened.
+  // The rolled-back transaction is the refused write's alone: the connection is reusable and the
+  // next append lands normally, numbered as if the refusal had never happened.
   SetInsertOutcome after = repo.insertSet(benchSet("set_pg000003", 85.0, t1 + 3'000));
   CHECK(after.error == SetInsertError::none);
   CHECK_EQ(after.set->setNumber, 2);
   CHECK_EQ(repo.setsOf(SessionId{"ses_pg000001"}), (std::vector<Set>{*landed.set, *after.set}));
+}
+
+// A set may not NAME a movement this account cannot see. The foreign key alone is happy with
+// another lifter's custom row — it exists — and a set pointing at it would print their movement
+// name in this account's log, its CSV export and any workout it hands a coach, with no way for the
+// owner to take it back. The write carries the catalog read's own predicate, resolved in the owner
+// the locked session row names.
+TEST(pg_gym_a_set_may_not_name_another_accounts_private_movement) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{connString()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+  repo.insertExercise(wm::UserId{kOther},
+                      Exercise{ExerciseId{"pg-their-zercher"}, "Their Zercher Squat",
+                               Pattern::squat, Equipment::barbell, 2.5, true});
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+
+  SetInsertOutcome refused =
+      repo.insertSet(Set{SetId{"set_pg000001"}, SessionId{"ses_pg000001"},
+                         ExerciseId{"pg-their-zercher"}, 0, 60.0, 5, SetKind::working,
+                         std::nullopt, "", t1 + 1'000});
+
+  CHECK(refused.error == SetInsertError::unknownExercise);
+  CHECK_EQ(refused.set, std::optional<Set>());
+  CHECK_EQ(repo.setsOf(SessionId{"ses_pg000001"}), std::vector<Set>{});
+  // It is a scope and never a claim the movement does not exist: its owner logs it as normal.
+  repo.insertSession(Session{SessionId{"ses_pg000002"}, wm::UserId{kOther}, t1});
+  CHECK(repo.insertSet(Set{SetId{"set_pg000002"}, SessionId{"ses_pg000002"},
+                           ExerciseId{"pg-their-zercher"}, 0, 60.0, 5, SetKind::working,
+                           std::nullopt, "", t1 + 1'000})
+            .error == SetInsertError::none);
+}
+
+// The finish boundary is held HERE, by the lock, because the lock is the only reader that cannot be
+// raced: the service checks the session it loaded, and a close landing between that read and this
+// insert would otherwise let a set that never landed land after the workout ended — the one loss
+// §3.3 says is impossible. A set that DID land still replays; this is the one that never did.
+TEST(pg_gym_a_set_that_never_landed_cannot_land_after_the_session_closed) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{connString()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  SetInsertOutcome landed = repo.insertSet(benchSet("set_pg000001", 82.5, t1 + 1'000));
+  repo.close(SessionId{"ses_pg000001"}, t1 + 2'000);
+
+  SetInsertOutcome refused = repo.insertSet(benchSet("set_pg000002", 85.0, t1 + 3'000));
+
+  CHECK(refused.error == SetInsertError::finished);
+  CHECK_EQ(refused.set, std::optional<Set>());
+  CHECK_EQ(repo.setsOf(SessionId{"ses_pg000001"}), std::vector<Set>{*landed.set});
 }
 
 // max+1 numbering under parallel appends: every append to one session serializes behind the
@@ -714,8 +767,10 @@ TEST(pg_gym_a_routine_id_another_account_holds_resolves_to_nothing) {
            std::string("Their plan"));
 }
 
-// The exercise FK is the store's own refusal and it leaves as a VALUE, exactly as a set's does. The
-// document is one transaction, so a refused line leaves NO routine row behind — not even the header.
+// The catalog is the store's own fact and it leaves as a VALUE, exactly as a set's does — asked
+// outright by the statement rather than caught off the foreign key, so "you may not see it" is
+// sayable at all. The document is one transaction, so a refused line rolls back and leaves NO
+// routine row behind — not even the header.
 TEST(pg_gym_a_routine_entry_naming_no_movement_is_refused_and_leaves_no_row) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -729,10 +784,37 @@ TEST(pg_gym_a_routine_entry_naming_no_movement_is_refused_and_leaves_no_row) {
   CHECK_EQ(refused.routine, std::optional<Routine>());
   CHECK_EQ(repo.routine(wm::UserId{kUser}, RoutineId{"rt_pg000001"}), std::optional<Routine>());
   CHECK_EQ(repo.routines(wm::UserId{kUser}), std::vector<Routine>{});
-  // The aborted transaction was the refused write's alone: the connection is reusable at once.
+  // The rolled-back transaction was the refused write's alone: the connection is reusable at once.
   RoutineWriteOutcome after = repo.insertRoutine(routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
   CHECK(after.error == RoutineWriteError::none);
   CHECK_EQ(after.routine->entries.size(), static_cast<std::size_t>(1));
+}
+
+// The same scope the set write is held to, on the other door a movement id travels through — and
+// the replace half is checked beside the create, because both write the same whole document and a
+// gate on only one of them is no gate at all.
+TEST(pg_gym_a_routine_entry_may_not_name_another_accounts_private_movement) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{connString()};
+  repo.insertExercise(wm::UserId{kOther},
+                      Exercise{ExerciseId{"pg-their-zercher"}, "Their Zercher Squat",
+                               Pattern::squat, Equipment::barbell, 2.5, true});
+  const Routine stored = routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")});
+  repo.insertRoutine(stored);
+
+  RoutineWriteOutcome created =
+      repo.insertRoutine(routineAt("rt_pg000002", "Push B", {entryAt(1, "pg-their-zercher")}));
+  RoutineWriteOutcome replaced =
+      repo.replaceRoutine(routineAt("rt_pg000001", "Push A2", {entryAt(1, "pg-their-zercher")}));
+
+  CHECK(created.error == RoutineWriteError::unknownExercise);
+  CHECK_EQ(created.routine, std::optional<Routine>());
+  CHECK_EQ(repo.routine(wm::UserId{kUser}, RoutineId{"rt_pg000002"}), std::optional<Routine>());
+  // A refused replace rolls back whole: the line it deleted is still there, and so is the name.
+  CHECK(replaced.error == RoutineWriteError::unknownExercise);
+  CHECK_EQ(replaced.routine, std::optional<Routine>());
+  CHECK_EQ(repo.routine(wm::UserId{kUser}, RoutineId{"rt_pg000001"}), std::optional<Routine>(stored));
 }
 
 // A whole-document replace: a reorder, an insertion and a deletion are one write, and churning the

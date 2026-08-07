@@ -24,7 +24,7 @@
 // unnormalised shared Y axis is the first bug in Lift's Progress tab and it is a drawing decision,
 // not a data one, so it is designed out here rather than watched for later.
 
-import { agoLabel, dayLabel, fmt, nameOfMovement } from './log.js';
+import { agoLabel, dayLabel, fmt, nameOfMovement, utcDayLabel } from './log.js';
 
 // Twelve weeks is a quarter, which is the window a program is actually judged over, and twelve
 // points is a phone's width divided by a marker you can see. Both are the SCREEN's business — the
@@ -52,6 +52,13 @@ const countLabel = (count, one, many) => `${count} ${count === 1 ? one : many}`;
 // A week nobody trained arrives from the store as a present zero rather than as a gap (the read
 // fills the span with generate_series), so nothing here synthesizes a calendar — the bar is simply
 // absent at zero height, which is what zero looks like.
+//
+// AND A WEEK START IS THE ONE INSTANT ON THIS SURFACE NOBODY LIVED THROUGH. The store buckets
+// weeks with `date_trunc('week', started_at AT TIME ZONE 'UTC')`, so every `startedAt` below is a
+// UTC Monday midnight — read in the reader's own zone that is a Sunday evening for everybody west
+// of Greenwich, and a bar labelled a day early is this screen getting a fact wrong. So the four
+// week days here are the only dates gym spells in UTC (utcDayLabel); the bests and the ends of a
+// movement's line are sessions a lifter trained in and stay local, exactly as iOS has them.
 export function weekBars(weeks, window = WEEK_WINDOW) {
   const shown = weeks.slice(Math.max(0, weeks.length - window));
   // Never zero: a divisor of zero would be a NaN in a style attribute, and the series ends at the
@@ -68,16 +75,16 @@ export function weekBars(weeks, window = WEEK_WINDOW) {
       // A BAR HAS NO TEXT ON IT, so this is the whole of what a reader who is listening to this
       // screen gets — and it is written here, with the rest of the copy, rather than assembled in
       // a view where "1 sessions" is one interpolation away.
-      sessionsLabel: `week of ${dayLabel(week.startedAt)}: ${countLabel(week.sessions, 'session', 'sessions')}`,
-      setsLabel: `week of ${dayLabel(week.startedAt)}: ${countLabel(week.workingSets, 'working set', 'working sets')}`,
+      sessionsLabel: `week of ${utcDayLabel(week.startedAt)}: ${countLabel(week.sessions, 'session', 'sessions')}`,
+      setsLabel: `week of ${utcDayLabel(week.startedAt)}: ${countLabel(week.workingSets, 'working set', 'working sets')}`,
     })),
     sessionsMax,
     setsMax,
     // The ends of the window, spelled as days rather than as "the last 12 weeks" — the series ends
     // at the last week TRAINED and not at this week, so a relative phrase would quietly claim
     // somebody trained recently. The dates say what is actually on screen.
-    from: shown.length > 0 ? dayLabel(shown[0].startedAt) : null,
-    to: shown.length > 0 ? dayLabel(shown[shown.length - 1].startedAt) : null,
+    from: shown.length > 0 ? utcDayLabel(shown[0].startedAt) : null,
+    to: shown.length > 0 ? utcDayLabel(shown[shown.length - 1].startedAt) : null,
     older: weeks.length - shown.length,
     // What the window left out, said out loud — a lifter who has just imported years of training
     // is entitled to know the chart is a quarter of it and not the whole thing.
@@ -169,10 +176,15 @@ function bestLines(movement) {
       when: dayLabel(movement.bestE1rm.at),
     });
   }
+  // ZERO IS NOT A LOAD, it is the absence of one — the rule the finish comparison, the routine
+  // target and the e1RM tile all already read — so the heaviest a dip, a push-up or a chin-up has
+  // ever been is a number of REPS, and "0 kg × 12" was this screen printing a weight nobody lifted.
+  // A band-assisted −20 still prints its load, being a real point on this number line.
   if (movement.heaviest) {
+    const { weightKg, reps } = movement.heaviest;
     lines.push({
       label: 'Heaviest',
-      value: `${fmt(movement.heaviest.weightKg)} kg × ${movement.heaviest.reps}`,
+      value: weightKg === 0 ? countLabel(reps, 'rep', 'reps') : `${fmt(weightKg)} kg × ${reps}`,
       when: dayLabel(movement.heaviest.at),
     });
   }

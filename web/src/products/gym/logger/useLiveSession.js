@@ -53,10 +53,10 @@ const LOG_PAGE = 50;
 //   · THE DIAL is one gesture. Half restored and half prefilled is a number nobody chose, which is
 //     the one thing this screen may never draw — so both come back, or neither does and the prefill
 //     takes over, exactly as it does on a movement just walked into.
-//   · THE PLACE rebuilds itself from the sets that were actually performed, so losing it costs at
-//     most a movement chosen and not yet lifted. The index is a pointer INTO that list and cannot
-//     outlive it; the list is perfectly meaningful without the index, and defaults to the movement
-//     last performed just as a first read of the session does.
+//   · THE PLACE rebuilds itself from the plan and the sets that were actually performed, so losing
+//     it costs at most a movement chosen and not yet lifted. The index is a pointer INTO that list
+//     and cannot outlive it; the list is perfectly meaningful without the index, and defaults to the
+//     movement last performed just as a first read of the session does.
 function readLive() {
   let stored = null;
   try {
@@ -140,6 +140,9 @@ export function useLiveSession({ api = gymApi } = {}) {
   const [deviation, setDeviation] = useState(null);
   const [finishing, setFinishing] = useState(false);
   const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine));
+  // The boot read is the only way into a live session, so it is the one read that may not be allowed
+  // to fail once and stay failed. This counter is how the signal returning asks it again.
+  const [bootAttempt, setBootAttempt] = useState(0);
   const [, setBeat] = useState(0);
 
   const lastTimes = useRef(new Map());
@@ -250,8 +253,21 @@ export function useLiveSession({ api = gymApi } = {}) {
     ];
     const performed = merged.slice().sort((left, right) => left.completedAt - right.completedAt)
       .map((set) => set.exerciseId);
-    const nextOrder = [...new Set([...(mine?.order ?? []), ...performed])];
-    const landing = Math.max(0, Math.min(mine?.exIdx ?? nextOrder.length - 1, nextOrder.length - 1));
+    // Three lists laid end to end, and the seam between them is a decision the phone already made
+    // (LiveOrder.merged, apps/ios): what this device wrote down keeps the head — a movement appended
+    // on the bench mid-rest belongs where the lifter put it — then the plan's own lines in the plan's
+    // order, then everything performed that neither of them named. Without the plan in the middle a
+    // session just started from a routine has nothing performed and no note, so it opens on an empty
+    // list, and the logger draws "No routine, no plan snapshot." over a session that has both.
+    const planned = (planOf(row)?.entries ?? []).map((entry) => entry.exerciseId);
+    const nextOrder = [...new Set([...(mine?.order ?? []), ...planned, ...performed])];
+    // Where to stand when this device left no note: on the movement the last set went into, because
+    // that is where the lifter is (LiveOrder.resume). The last movement in the LIST is a different
+    // question and usually a different answer — a lifter who came back to the bench after the
+    // chin-ups would resume on the chin-ups. Nothing performed leaves no such movement, and the
+    // clamp lands that on the head of the list, which is the head of the plan.
+    const resumed = mine?.exIdx ?? nextOrder.indexOf(performed[performed.length - 1]);
+    const landing = Math.max(0, Math.min(resumed, nextOrder.length - 1));
     setSession(row);
     setSets(merged);
     setOrder(nextOrder);
@@ -284,6 +300,12 @@ export function useLiveSession({ api = gymApi } = {}) {
   // basement last night, opened in the morning — the app's own boot read is what destroys them.
   // Forced, because nothing survives a reload to undo: the strip is gone and the hold protects a
   // gesture that no longer exists.
+  //
+  // And it is asked AGAIN when `bootAttempt` moves, because a read that did not come back used to be
+  // the end of the app: 'failed' is the one phase nothing else leaves, and a lifter who opened the
+  // logger in a basement stayed on the failure screen for the whole workout while the signal came
+  // back around them. The sweep below is what bumps the counter, and only out of 'failed' — asking
+  // again mid-workout would re-adopt the session under a lifter standing in it.
   useEffect(() => {
     let live = true;
     (async () => {
@@ -294,9 +316,10 @@ export function useLiveSession({ api = gymApi } = {}) {
         if (!live) return;
         setCatalog(exercises);
         // Every wholesale replacement of the list bumps the walk, without exception — an older page
-        // in flight continues a tail that this read has just thrown away. Today the deps are stable
-        // enough that this effect runs once, which makes the bump free; the rule is total so that it
-        // stays correct if they ever stop being.
+        // in flight continues a tail that this read has just thrown away. This effect no longer runs
+        // once: the signal returning out of 'failed' asks it again, so the bump is the thing keeping
+        // a page fetched against the first read's tail from being appended onto the second's. The
+        // rule was written total before it had to be, which is the only reason it was already right.
         walk.current += 1;
         setSummaries(log);
         // The first page settles this too: a log of three sessions must not offer to load older ones.
@@ -311,7 +334,7 @@ export function useLiveSession({ api = gymApi } = {}) {
       }
     })();
     return () => { live = false; };
-  }, [api, adopt]);
+  }, [api, adopt, bootAttempt]);
 
   // Deeper into the log, one page at a time. The cursor is the last row IN HAND and it is BOTH
   // halves of it, always: `startedAt` alone is not unique, so two sessions that share an instant
@@ -442,11 +465,22 @@ export function useLiveSession({ api = gymApi } = {}) {
   }, [phase, exerciseId]);
 
   // The queue outlives the session: a set stranded by a four-hour auto-close has to flush (or be
-  // refused out loud) the next time the app opens, whether or not anything is running now.
+  // refused out loud) the next time the app opens, whether or not anything is running now. Which is
+  // exactly why a FAILED boot is swept too, and armed too. A read that did not come back is the
+  // shape of a device with no signal, so it is the state most likely to be holding sets — and it
+  // used to be the one state where nothing swept them and nothing was listening for the signal that
+  // would have sent them. Only 'loading' stands down, and only because the boot's own forced flush
+  // is already in the air ahead of it.
   useEffect(() => {
-    if (phase === 'loading' || phase === 'failed') return undefined;
+    if (phase === 'loading') return undefined;
     queue.current.flush();
-    const back = () => { setOnline(true); queue.current.flush(); };
+    // The signal returning is two things at once: the queue can go out, and the read that never came
+    // back can be asked again.
+    const back = () => {
+      setOnline(true);
+      queue.current.flush();
+      if (phase === 'failed') setBootAttempt((count) => count + 1);
+    };
     const gone = () => setOnline(false);
     // Pocketing the phone is not a reason to break the undo window: the device is already holding
     // the held sets, and a tab discarded mid-workout picks them back up off the store. What the
@@ -563,7 +597,14 @@ export function useLiveSession({ api = gymApi } = {}) {
   // and never taken from the session's plan: the snapshot was frozen at the start and the program
   // has kept moving since.
   //
-  // Both failures say what is still true rather than what went wrong, because what went wrong
+  // Which is the same reason the line can go missing under the question: `position` was minted
+  // against the frozen snapshot, and a routine dragged or trimmed since names something else there
+  // now. The rule refuses to guess and hands back nothing (routines.js), and nothing is what gets
+  // sent — a PUT of the routine exactly as it was found changes no program, and the sheet closing
+  // over it in silence is exactly what a save looks like from where the lifter is standing. So this
+  // is the one path here that has to speak.
+  //
+  // All three failures say what is still true rather than what went wrong, because what went wrong
   // changes nothing about today: the session already has the weight, whatever the routine does.
   const saveDeviation = useCallback(async () => {
     const ask = deviation;
@@ -575,7 +616,12 @@ export function useLiveSession({ api = gymApi } = {}) {
         say(`${routine} isn’t in your routines any more. Today’s session keeps the weight.`);
         return;
       }
-      await api.replaceRoutine(stored.id, withEntryWeight(stored, ask, ask.weightKg));
+      const rewritten = withEntryWeight(stored, ask, ask.weightKg);
+      if (!rewritten) {
+        say(`${routine} didn’t change. Today’s session keeps the weight either way.`);
+        return;
+      }
+      await api.replaceRoutine(stored.id, rewritten);
     } catch {
       say(`${routine} didn’t change. Today’s session keeps the weight either way.`);
     }

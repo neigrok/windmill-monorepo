@@ -84,6 +84,22 @@ struct Harness {
     return service.log(uid(), LogCursor{beforeMs, std::nullopt, limit});
   }
 };
+
+// The two stores that lose a race the service cannot lose on its own — each one narrows the window
+// between two of its statements to zero, which is the only way to drive from a test what a second
+// device does between them.
+struct ClosedUnderTheLock : FakeTrainingRepository {
+  SetInsertOutcome insertSet(const Set&) override {
+    return {std::nullopt, SetInsertError::finished};
+  }
+};
+
+struct DiscardedUnderTheFinish : FakeTrainingRepository {
+  void close(const SessionId& id, std::uint64_t finishedAtMs) override {
+    FakeTrainingRepository::close(id, finishedAtMs);
+    std::erase_if(sessions, [&](const Session& session) { return session.id == id; });
+  }
+};
 }
 
 // ---- start: idempotent by construction ----------------------------------------------------
@@ -327,6 +343,74 @@ TEST(append_of_a_movement_no_catalog_holds_is_unknown_exercise) {
   CHECK_EQ(h.service.detail(uid(), sid())->sets, std::vector<Set>{});
 }
 
+// A set may not NAME a movement this account cannot see. A foreign key only asks whether the row
+// exists, and another lifter's custom movement exists: named, its display name would print in this
+// log, in this account's CSV export and in any workout it hands a coach — and the lifter who
+// created it could never take it back, not even by deleting their account.
+TEST(append_naming_another_accounts_private_movement_is_unknown_exercise) {
+  Harness h;
+  const Exercise theirs{ExerciseId{"ex_22222222"}, "Their Zercher Squat", Pattern::squat,
+                        Equipment::barbell, 2.5, true};
+  h.repo.seedCustom(uid("u2"), theirs);
+  h.startAt(h.clock.now);
+
+  AppendOutcome refused = h.service.append(
+      uid(), sid(),
+      SetWrite{setId("set_00000001"), ExerciseId{"ex_22222222"}, 100.0, 5, SetKind::working,
+               std::nullopt, "", h.clock.now + 1});
+
+  CHECK(refused.error == AppendError::unknownExercise);
+  CHECK_FALSE(refused.set.has_value());
+  CHECK(h.repo.sets.empty());
+
+  // And it is a SCOPE, not a claim that the movement does not exist: its owner logs it as normal,
+  // which is what makes the two accounts' answers differ without either learning about the other.
+  h.service.start(uid("u2"), SessionStart{sid("ses_00000002"), h.clock.now});
+  AppendOutcome mine = h.service.append(
+      uid("u2"), sid("ses_00000002"),
+      SetWrite{setId("set_00000002"), ExerciseId{"ex_22222222"}, 100.0, 5, SetKind::working,
+               std::nullopt, "", h.clock.now + 2});
+  CHECK(mine.error == AppendError::none);
+  CHECK_EQ(mine.set->exercise, ExerciseId{"ex_22222222"});
+}
+
+// The finish boundary is the STORE's to hold, not only the read above it: the service checks the
+// session it loaded, and a close landing between that read and the insert would otherwise let a set
+// that never landed land after the workout ended — the one loss §3.3 says is impossible. The lock
+// reads the state it locks, so the refusal is taken where the row is held.
+TEST(append_that_reaches_a_session_closed_under_the_lock_is_refused_by_the_store) {
+  Harness h;
+  h.startAt(h.clock.now);
+  h.service.finish(uid(), sid(), h.clock.now + 1'000);
+
+  SetInsertOutcome landed =
+      h.repo.insertSet(Set{setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 0, 80.0, 8,
+                           SetKind::working, std::nullopt, "", h.clock.now + 1});
+
+  CHECK(landed.error == SetInsertError::finished);
+  CHECK_FALSE(landed.set.has_value());
+  CHECK(h.repo.sets.empty());
+}
+
+// And the service spells the store's refusal with the one it already had, so the wire learns
+// nothing new: a client reads the same `finished` whichever of the two reads caught the close.
+TEST(append_reports_the_stores_finish_refusal_as_the_finished_the_wire_already_knows) {
+  ClosedUnderTheLock repo;
+  wm::fake::FakeClock clock;
+  wm::fake::FakeTokens tokens;
+  LogService service{repo, clock, tokens};
+  repo.seed(benchPress());
+  service.start(uid(), SessionStart{sid(), clock.now});
+
+  AppendOutcome refused =
+      service.append(uid(), sid(),
+                     SetWrite{setId("set_00000001"), ExerciseId{"bench-press"}, 80.0, 8,
+                              SetKind::working, std::nullopt, "", clock.now + 1});
+
+  CHECK(refused.error == AppendError::finished);
+  CHECK_FALSE(refused.set.has_value());
+}
+
 TEST(append_numbers_max_plus_one_per_exercise_across_interleaving) {
   Harness h;
   h.startAt(h.clock.now);
@@ -374,6 +458,23 @@ TEST(finish_is_idempotent_and_keeps_the_first_instant) {
   FinishOutcome unknown = h.service.finish(uid(), SessionId{"ses_unknown1"}, h.clock.now + 1);
   CHECK(unknown.error == FinishError::notFound);
   CHECK_FALSE(unknown.session.has_value());
+}
+
+// Every other write in this service answers `none` with the row it resolved beside it; finish was
+// the one that could answer `none` with nothing at all, when a discard from another device took the
+// session in the window between the close and the read-back. Both wire edges dereference that
+// optional, so the empty read-back is the fact the session was already gone.
+TEST(finish_that_finds_the_session_gone_under_it_is_not_found_and_never_an_empty_none) {
+  DiscardedUnderTheFinish repo;
+  wm::fake::FakeClock clock;
+  wm::fake::FakeTokens tokens;
+  LogService service{repo, clock, tokens};
+  service.start(uid(), SessionStart{sid(), clock.now});
+
+  FinishOutcome outcome = service.finish(uid(), sid(), clock.now + 1'000);
+
+  CHECK(outcome.error == FinishError::notFound);
+  CHECK_FALSE(outcome.session.has_value());
 }
 
 // close is first-writer-wins, so a nonsense instant would be the session's end FOREVER: refuse it
@@ -845,6 +946,28 @@ TEST(create_routine_naming_a_movement_no_catalog_holds_is_unknown_exercise) {
   CHECK_FALSE(created.routine.has_value());
   CHECK(h.repo.routineRows.empty());
   CHECK_EQ(h.service.routines(uid()), std::vector<Routine>{});
+}
+
+// The same scope the set write is held to, on the other door a movement id can travel through: a
+// plan may not name another lifter's private movement either, or the routines screen would print
+// their movement name every time it drew this day of the program — and the replace must not be the
+// way around the create's refusal, since both halves write the same whole document.
+TEST(a_routine_entry_naming_another_accounts_private_movement_is_unknown_exercise) {
+  Harness h;
+  h.repo.seedCustom(uid("u2"), Exercise{ExerciseId{"ex_22222222"}, "Their Zercher Squat",
+                                        Pattern::squat, Equipment::barbell, 2.5, true});
+  const RoutineEntry theirs{1, ExerciseId{"ex_22222222"}, 3, 8, 60.0, 120};
+
+  RoutineWriteOutcome created = h.service.createRoutine(uid(), h.pushAWrite({theirs}));
+  h.service.createRoutine(uid(), h.pushAWrite());
+  RoutineWriteOutcome replaced = h.service.replaceRoutine(uid(), rtId(), h.pushAWrite({theirs}));
+
+  CHECK(created.error == RoutineWriteError::unknownExercise);
+  CHECK_FALSE(created.routine.has_value());
+  CHECK(replaced.error == RoutineWriteError::unknownExercise);
+  CHECK_FALSE(replaced.routine.has_value());
+  REQUIRE_EQ(h.repo.routineRows.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.routineRows[0].entries, std::vector<RoutineEntry>{benchEntry()});
 }
 
 TEST(replace_routine_rewrites_the_whole_document) {

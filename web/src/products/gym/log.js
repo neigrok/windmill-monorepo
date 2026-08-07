@@ -97,6 +97,18 @@ export function dayLabel(ms) {
   return `${WEEKDAYS[day.getDay()]} ${day.getDate()} ${MONTHS[day.getMonth()]}`;
 }
 
+// The same spelling, read in UTC, and it has one caller for one reason: a statistics week is
+// bucketed by `date_trunc('week', started_at AT TIME ZONE 'UTC')`, so the instant that names it is
+// a UTC Monday midnight rather than a moment anybody lived through. Read in the reader's own zone
+// it comes out as Sunday for half the planet, and a week label naming the wrong day is worse than
+// none. Everything else in gym is an instant a lifter stood in and reads in the zone they were
+// standing in, which is `dayLabel` above. iOS spells this the same way and says so in the same
+// place (Readout.day(_:utc:)).
+export function utcDayLabel(ms) {
+  const day = new Date(ms);
+  return `${WEEKDAYS[day.getUTCDay()]} ${day.getUTCDate()} ${MONTHS[day.getUTCMonth()]}`;
+}
+
 // The day a session happened, spelled the way a lifter names the day they train on. It is the
 // opening value in the name field at the finish, never a name anything writes on its own: the field
 // is on screen, it is typed over, and no routine exists until Save is tapped.

@@ -56,6 +56,27 @@ final class ReadoutTests: XCTestCase {
         XCTAssertEqual(Readout.ago(now - 5 * day, now: now), "5 days ago")
     }
 
+    // "YESTERDAY" IS A CLAIM ABOUT THE CALENDAR AND NOT ABOUT ELAPSED HOURS, which is the whole of
+    // log.js `agoLabel`: a session finished at 07:00 is still today at 21:00, and one finished at
+    // 23:00 is already yesterday by 01:00. Dividing the gap by 86_400_000 got both of those backwards
+    // — the morning's workout read "yesterday" on the phone before lunch — and it also miscounts
+    // across the 23- and 25-hour days. The instants are built in the reader's own zone, because that
+    // is the only zone this sentence is ever read in.
+    func testHowLongAgoCountsCalendarDaysAndNotElapsedHours() {
+        let calendar = Calendar.current
+        let midnight = calendar.startOfDay(for: Date(timeIntervalSince1970: 1_754_308_320))
+        let at = { (days: Int, hour: Int) -> Int64 in
+            let day = calendar.date(byAdding: .day, value: days, to: midnight)!
+            return Int64(calendar.date(byAdding: .hour, value: hour, to: day)!.timeIntervalSince1970 * 1000)
+        }
+
+        XCTAssertEqual(Readout.ago(at(0, 7), now: at(0, 21)), "today",
+                       "fourteen hours is not yesterday when it never crossed a midnight")
+        XCTAssertEqual(Readout.ago(at(0, 23), now: at(1, 1)), "yesterday",
+                       "two hours is yesterday once it has")
+        XCTAssertEqual(Readout.ago(at(0, 23), now: at(5, 1)), "5 days ago")
+    }
+
     func testACountOfSetsIsSingularAtOne() {
         XCTAssertEqual(Readout.setCount(1), "1 set")
         XCTAssertEqual(Readout.setCount(16), "16 sets")

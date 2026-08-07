@@ -7,6 +7,7 @@
 #include "test/products/gym/Fakes.h"
 #include "test/testing.h"
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -85,6 +86,16 @@ std::vector<std::string> classified(const std::vector<ToolDeclaration>& catalog)
   for (const ToolDeclaration& tool : catalog)
     rows.push_back(tool.name() + " " + tool.product + ":" + wm::toString(tool.access));
   return rows;
+}
+
+// The domain's refusal as a fact a case can assert on: an entity is built, or it is not.
+bool refuses(const std::function<void()>& build) {
+  try {
+    build();
+    return false;
+  } catch (const InvalidTraining&) {
+    return true;
+  }
 }
 
 std::vector<std::string> namesIn(const Json::Value& tools) {
@@ -531,6 +542,106 @@ TEST(gym_stats_narrow_to_one_movement_and_keep_the_weeks) {
 }
 
 // ---- the plan ---------------------------------------------------------------------------------
+
+// A schema is a promise about what the write will accept, so every bound in it has to be the
+// DOMAIN's. This one advertised targetReps up to 500 and restSeconds from 0 to 3600 while Routine
+// refuses outside 1–100 and 15–900: an agent that filled a line to the letter of the published
+// schema had the WHOLE document refused over a value the surface itself invited.
+TEST(gym_the_routine_entry_schema_publishes_the_bounds_the_domain_actually_keeps) {
+  Json::Value entries(Json::nullValue);
+  for (const ToolDeclaration& tool : gymToolCatalog())
+    if (tool.name() == "save_routine")
+      entries = tool.descriptor["inputSchema"]["properties"]["entries"];
+  REQUIRE(entries.isObject());
+  const Json::Value& fields = entries["items"]["properties"];
+
+  CHECK_EQ(fields["targetSets"]["minimum"].asInt(), 1);
+  CHECK_EQ(fields["targetSets"]["maximum"].asInt(), 20);
+  CHECK_EQ(fields["targetReps"]["minimum"].asInt(), 1);
+  CHECK_EQ(fields["targetReps"]["maximum"].asInt(), 100);
+  CHECK_EQ(fields["restSeconds"]["minimum"].asInt(), 15);
+  CHECK_EQ(fields["restSeconds"]["maximum"].asInt(), 900);
+  // The document's own size is published beside its fields' values, because the constructor has
+  // always refused both ends of it and the description already said so in prose.
+  CHECK_EQ(entries["minItems"].asInt(), 1);
+  CHECK_EQ(entries["maxItems"].asInt(), kMaxRoutineEntries);
+  // And the line says what every tool around it says about its own arguments.
+  CHECK_EQ(entries["items"]["additionalProperties"].asBool(), false);
+
+  // The promise, kept at both ends: each published extreme builds, and the two values the old
+  // schema invited are refusals it now warns about first.
+  CHECK_EQ(RoutineEntry(1, ExerciseId{"bench-press"}, 20, 100, 500.0, 900).targetReps,
+           std::optional<int>(100));
+  CHECK_EQ(RoutineEntry(1, ExerciseId{"bench-press"}, 1, 1, -500.0, 15).restSeconds,
+           std::optional<int>(15));
+  CHECK(refuses([] { RoutineEntry(1, ExerciseId{"bench-press"}, 5, 101, 82.5, 180); }));
+  CHECK(refuses([] { RoutineEntry(1, ExerciseId{"bench-press"}, 5, 5, 82.5, 3600); }));
+}
+
+// The rule every tool publishes on its own arguments and CompositeToolHost enforces on every call,
+// reaching one level down into the line: a key an entry never declared is REFUSED, never dropped.
+// `targetRepsl: 5` used to read clean — the line stored no rep target at all, and the agent was
+// told the routine had saved while the target it meant to set was gone.
+TEST(gym_save_routine_names_a_misspelled_entry_key_rather_than_dropping_it) {
+  Harness h;
+  Json::Value entry(Json::objectValue);
+  entry["exerciseId"] = "bench-press";
+  entry["targetSets"] = 5;
+  entry["targetRepsl"] = 5;
+  Json::Value args(Json::objectValue);
+  args["id"] = "rt_00000001";
+  args["name"] = "Push A";
+  args["position"] = 0;
+  args["entries"] = Json::Value(Json::arrayValue);
+  args["entries"].append(entry);
+
+  const ToolResult refused = h.call("save_routine", args);
+
+  CHECK(refused.isError);
+  CHECK_EQ(message(refused),
+           std::string("save_routine: unknown routine entry field \"targetRepsl\". An entry takes: "
+                       "exerciseId, targetSets, targetReps, targetWeightKg, restSeconds."));
+  CHECK(h.repo.routineRows.empty());
+}
+
+// THE LOOP THIS TOOL PRINTS HAS TO WORK. save_routine's own description tells the caller to read the
+// routine with list_routines, change what they mean, and send all of it back — and what
+// list_routines hands over carries `position` on every line, plus `lastTrainedAt` on any routine
+// trained under once. Both are the store's answers rather than anybody's input, and refusing them
+// would make our own instruction a hard refusal on the surface gym is sold on. So they are declared,
+// accepted and ignored; the run is renumbered from the order the entries arrive in either way.
+//
+// The misspelling above still has to die, which is the whole point: strictness that refuses a
+// typo AND the document we ourselves emitted is not strictness, it is an outage.
+TEST(gym_a_routine_read_with_list_routines_goes_straight_back_through_save_routine) {
+  Harness h;
+  Json::Value entry(Json::objectValue);
+  entry["exerciseId"] = "bench-press";
+  entry["targetSets"] = 5;
+  entry["targetReps"] = 5;
+  entry["targetWeightKg"] = 82.5;
+  Json::Value args(Json::objectValue);
+  args["id"] = "rt_00000001";
+  args["name"] = "Push A";
+  args["position"] = 0;
+  args["entries"] = Json::Value(Json::arrayValue);
+  args["entries"].append(entry);
+  CHECK(!h.call("save_routine", args).isError);
+
+  // Read it back exactly as an agent would, and change the one thing it came for.
+  const ToolResult listed = h.call("list_routines", Json::Value(Json::objectValue));
+  CHECK(!listed.isError);
+  Json::Value document = body(listed)["routines"][0];
+  CHECK_EQ(document["entries"][0]["position"].asInt(), 1);   // the key that used to be fatal
+  document["entries"][0]["targetWeightKg"] = 85.0;
+
+  const ToolResult saved = h.call("save_routine", document);
+
+  CHECK(!saved.isError);
+  CHECK_EQ(body(saved)["entries"][0]["targetWeightKg"].asDouble(), 85.0);
+  CHECK_EQ(body(saved)["entries"][0]["position"].asInt(), 1);
+  CHECK_EQ(h.repo.routineRows.size(), std::size_t{1});
+}
 
 TEST(gym_save_routine_creates_a_fresh_id_and_replaces_one_that_exists) {
   Harness h;

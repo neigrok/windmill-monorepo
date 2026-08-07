@@ -201,13 +201,16 @@ export function reorderEntries(entries, from, to) {
 // lifter never touched.
 //
 // The position is the one the plan snapshot froze, so a routine that has since moved that line
-// somewhere else comes back untouched rather than half-right: the entry has to still name the same
-// movement. Untouched is also the answer when the movement is gone — the lifter deleted it on
-// purpose and re-adding it here would resurrect it.
+// somewhere else — or dropped it — cannot be addressed at all, and null is how that is said. It has
+// to be a different answer from the routine itself, because "here it is, unchanged" is a document
+// the caller will happily PUT: the write lands, the sheet closes with nothing said, and that silence
+// is precisely what a save looks like to the lifter who pressed for one. Null is also the answer
+// when the movement is gone, and for the same reason it is never re-added — it was deleted on
+// purpose.
 export function withEntryWeight(routine, { position, exerciseId }, weightKg) {
   const write = routineWrite(routine);
   const at = position - 1;
-  if (write.entries[at]?.exerciseId !== exerciseId) return write;
+  if (write.entries[at]?.exerciseId !== exerciseId) return null;
   return {
     ...write,
     entries: write.entries.map((entry, index) => (

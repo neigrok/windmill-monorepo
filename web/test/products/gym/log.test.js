@@ -13,7 +13,7 @@ import {
   nameOfMovement, NEW_ROUTINE_ID, NO_ROUTINE, planOf, routineHref, routineIdOf, routineMetaLabel,
   routineNameOf, ROUTINES_HREF, screenOf, sessionHref, sessionIdOf, sessionMetaLabel,
   sessionMovementMeta, setCountLabel, sharedHref, sharedTokenOf, STATS_HREF, timeLabel, topSetLabel,
-  topSetOf, weekdayName, workingSetsOf,
+  topSetOf, utcDayLabel, weekdayName, workingSetsOf,
 } from '../../../src/products/gym/log.js';
 
 test('sessionIdOf — a session hash yields its id, everything else yields nothing', () => {
@@ -375,6 +375,31 @@ test('dayLabel, timeLabel and agoLabel — the labels a lifter judges relevance 
   assert.equal(agoLabel(wednesday, wednesday + 86_400_000), 'yesterday');
   assert.equal(agoLabel(wednesday, wednesday + 4 * 86_400_000), '4 days ago');
   assert.equal(agoLabel(wednesday, wednesday - 86_400_000), 'today');
+});
+
+// TWO SPELLINGS, ONE VOCABULARY. Every date in gym but one is an instant a lifter stood in and is
+// read in the zone they were standing in. The one exception is a statistics week: it arrives as the
+// start of a `date_trunc('week', … AT TIME ZONE 'UTC')` bucket, which is a UTC Monday midnight and
+// no moment anybody trained in — read locally it is the Sunday evening before, for everybody west
+// of Greenwich. Both spellings come off the same tables, which is why they live side by side.
+test('utcDayLabel — a week bucket is named by its UTC day, wherever it is read from', () => {
+  const bucket = Date.UTC(2026, 6, 6);
+  const zone = process.env.TZ;
+  try {
+    for (const where of ['America/Los_Angeles', 'UTC', 'Pacific/Auckland']) {
+      process.env.TZ = where;
+      assert.equal(utcDayLabel(bucket), 'Mon 6 Jul');
+      assert.equal(utcDayLabel(Date.UTC(2026, 0, 4, 23, 59)), 'Sun 4 Jan');
+    }
+    // And the local spelling stays genuinely local — this is the disagreement, and it is the reason
+    // the statistics weeks may not read it.
+    process.env.TZ = 'America/Los_Angeles';
+    assert.equal(dayLabel(bucket), 'Sun 5 Jul');
+    process.env.TZ = 'Pacific/Auckland';
+    assert.equal(dayLabel(bucket), 'Mon 6 Jul');
+  } finally {
+    if (zone == null) delete process.env.TZ; else process.env.TZ = zone;
+  }
 });
 
 // "Yesterday" is a claim about the CALENDAR. Rounding elapsed hours told a lifter who trained at

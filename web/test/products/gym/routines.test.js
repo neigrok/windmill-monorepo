@@ -256,15 +256,27 @@ test('withEntryWeight — a routine naming one lift twice changes only the line 
 // lifter has since deleted must not come back because a session from before still remembers it —
 // and neither may a line that moved: position 1 naming something else is a program that changed
 // under the question, and half-right is worse than untouched.
-test('withEntryWeight — a line the routine no longer holds where it was is handed back untouched', () => {
+//
+// So the answer is NOTHING, and not the routine as it was found. Handing the caller back a document
+// it can PUT is handing it a write that changes no program: the request succeeds, the sheet closes
+// with nothing said, and the lifter who pressed `Save 92.5 to Push A` has seen exactly what a save
+// looks like over a Push A that is byte-identical to the one they had.
+test('withEntryWeight — a line the routine no longer holds where it was cannot be addressed at all', () => {
   const stored = {
     id: 'rt_push_a',
     name: 'Push A',
     position: 0,
     entries: [{ position: 1, exerciseId: 'overhead-press', targetSets: 3, targetReps: 8, targetWeightKg: 45 }],
   };
-  assert.deepEqual(withEntryWeight(stored, { position: 1, exerciseId: 'cable-fly' }, 25), routineWrite(stored));
-  assert.deepEqual(withEntryWeight(stored, { position: 4, exerciseId: 'overhead-press' }, 25), routineWrite(stored));
+  assert.equal(withEntryWeight(stored, { position: 1, exerciseId: 'cable-fly' }, 25), null);
+  assert.equal(withEntryWeight(stored, { position: 4, exerciseId: 'overhead-press' }, 25), null);
+  // And the line that IS still there is addressable exactly as it was — the refusal is narrow.
+  assert.deepEqual(withEntryWeight(stored, { position: 1, exerciseId: 'overhead-press' }, 50), {
+    id: 'rt_push_a',
+    name: 'Push A',
+    position: 0,
+    entries: [{ exerciseId: 'overhead-press', targetSets: 3, targetReps: 8, targetWeightKg: 50 }],
+  });
 });
 
 // Screen 8, word for word. The plan snapshot keeps last Tuesday reading correctly either way, so

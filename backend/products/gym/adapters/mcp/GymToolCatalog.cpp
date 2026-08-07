@@ -87,14 +87,24 @@ Json::Value routineHandle() {
 
 // One line of a routine, as save_routine takes it. It is an array of objects and the schema says so
 // down to each field: an agent cannot look at an example and recover the way a person reading docs
-// can, so what one entry requires is published rather than discovered by a refusal.
+// can, so what one entry requires is published rather than discovered by a refusal. Every bound here
+// is the DOMAIN's own (products/gym/domain/Routine.cpp) — a schema advertising a wider band than the
+// entity accepts refuses the whole document over a value it invited, which is the most expensive
+// refusal this surface can make.
 Json::Value entryArray() {
   Json::Value fields(Json::objectValue);
   fields["exerciseId"] = exerciseHandle();
   fields["targetSets"] = boundedInt("How many sets this line calls for (1–20).", 1, 20);
-  fields["targetReps"] = boundedInt("Reps per set. OMIT to mean `max` — as many as you can.", 1, 500);
+  fields["targetReps"] =
+      boundedInt("Reps per set (1–100). OMIT to mean `max` — as many as you can.", 1, 100);
   fields["targetWeightKg"] = num("Target load in kg. Omit to mean whatever you did last time.");
-  fields["restSeconds"] = boundedInt("Rest between sets. Omit to take the client's default.", 0, 3600);
+  fields["restSeconds"] =
+      boundedInt("Rest between sets, 15–900. Omit to take the client's default.", 15, 900);
+  // Declared so the round trip this tool PRESCRIBES survives its own schema: list_routines writes a
+  // position on every line, and an agent doing exactly what save_routine's description says — read
+  // it, change what you mean, send all of it back — would otherwise be refused for handing back a
+  // field we gave it. It is ignored on the way in; the run is renumbered from the order.
+  fields["position"] = boundedInt("Ignored — the order these arrive in IS the order.", 1, 10000);
 
   Json::Value entry(Json::objectValue);
   entry["type"] = "object";
@@ -103,10 +113,15 @@ Json::Value entryArray() {
   required.append("exerciseId");
   required.append("targetSets");
   entry["required"] = required;
+  // The refusal every tool publishes on its own arguments, said again for the line — because the
+  // parser refuses a misspelled field inside an entry now, and a schema that stayed silent about it
+  // would let an agent spend a whole write discovering the rule.
+  entry["additionalProperties"] = false;
 
   Json::Value property(Json::objectValue);
   property["type"] = "array";
   property["items"] = entry;
+  property["minItems"] = 1;
   property["maxItems"] = static_cast<Json::UInt64>(kMaxRoutineEntries);
   property["description"] =
       "The lines of the day, in order — their order IS the routine's order and positions are "
@@ -253,6 +268,12 @@ std::vector<ToolDeclaration> gymToolCatalog() {
     p["id"] = str("The routine's id — an existing one is replaced, a new one YOU mint is created.");
     p["name"] = cappedStr("What this day of the program is called.", kMaxNameLength);
     p["position"] = boundedInt("Where it sits in the program, from 0.", 0, 10000);
+    // Declared for the same reason the entry's `position` is: list_routines puts it on any routine
+    // that has been trained, and this tool tells the caller to send the whole document back. It is
+    // the STORE's answer to "when was this last used" and never an input — ignored on the way in,
+    // recomputed on the way out. Undeclared, the argument gate refused the exact document we handed
+    // over, so a routine became unsavable the moment it was trained under once.
+    p["lastTrainedAt"] = num("Ignored — the log decides when a routine was last trained.");
     p["entries"] = entryArray();
     tools.push_back(tool("save_routine", Access::write,
         "Create or replace one day of your program. A routine travels as its WHOLE document, every "

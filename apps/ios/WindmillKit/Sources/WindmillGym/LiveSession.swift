@@ -52,7 +52,7 @@ public enum LiveLines {
 
     public struct Row: Equatable, Identifiable {
         public let id: String
-        public let index: String        // the working-set ordinal, or "w" — warmups never advance it
+        public let index: String        // the performed ordinal, or "w" — only a warmup skips a number
         public let value: String
         public let note: String
         public let time: String
@@ -67,9 +67,10 @@ public enum LiveLines {
         public let isCurrent: Bool
     }
 
-    // Warmups never advance the counter, and a movement with no target says so rather than
-    // borrowing a number from somewhere else. A plan line that names sets but no rep target reads
-    // `plan 3 × max` — the routine asked for whatever the movement gives that day.
+    // Only WORKING sets advance the counter — `workingCount` above is the whole of that rule — and a
+    // movement with no target says so rather than borrowing a number from somewhere else. A plan line
+    // that names sets but no rep target reads `plan 3 × max`: the routine asked for whatever the
+    // movement gives that day.
     public static func counter(workingSetsToday: Int, planEntry: PlanEntry?) -> Counter {
         guard let planEntry else {
             return Counter(count: "set \(workingSetsToday + 1)", tail: "  ·  no target")
@@ -128,13 +129,23 @@ public enum LiveLines {
         }
     }
 
+    // ONE WORD FOR WHAT COUNTS. A set counts toward a target, toward a plan counter and toward the
+    // number under the thumb only when its kind is `working` — the kinds are warmup · working · drop
+    // · failure, and the last three are all things that happened to a set the plan never asked for.
+    // The domain's record rules read the same word and so does log.js `workingSetsOf`, so a drop must
+    // not advance "set 4 of 5" here while counting toward nothing there. The movement is optional
+    // because a session's sets are sometimes already one movement's.
+    public static func workingCount(_ sets: [TrainingSet], of exerciseId: String? = nil) -> Int {
+        sets.filter { $0.kind == .working && (exerciseId == nil || $0.exerciseId == exerciseId) }.count
+    }
+
     // Moving on is the lifter's decision and never the app's: nothing advances when a plan's set
     // count is reached, and nothing advances when a rest lands. This sheet is the only thing that
     // moves them, and it says where everything stands so the choice is theirs to make.
     public static func jumpRows(order: [String], sets: [TrainingSet], plan: PlanSnapshot?,
                                 catalog: [Exercise], current: String?) -> [JumpRow] {
         order.map { exerciseId in
-            let done = sets.filter { $0.exerciseId == exerciseId && $0.kind != .warmup }.count
+            let done = workingCount(sets, of: exerciseId)
             let planned = plan?.entry(for: exerciseId)?.sets
             return JumpRow(id: exerciseId,
                            name: Readout.movement(exerciseId, in: catalog),

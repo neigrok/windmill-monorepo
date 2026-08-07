@@ -132,6 +132,12 @@ function browserWith({ queue = [], live = null } = {}) {
       globalThis.document.visibilityState = 'hidden';
       (listeners.get('visibilitychange') ?? []).forEach((fn) => fn());
     },
+    // The signal coming back, exactly as the browser announces it. A listener that was never bound
+    // hears nothing, which is the whole of what the failed-boot tests below are asking about.
+    reconnect: () => {
+      globalThis.navigator.onLine = true;
+      (listeners.get('online') ?? []).forEach((fn) => fn());
+    },
   };
 }
 
@@ -261,10 +267,10 @@ function liveBlob(fields) {
 }
 
 // A set the log already holds, exactly as `GET /sessions/:id` hands it back.
-function loggedSet(index, at, weightKg) {
+function loggedSet(index, at, weightKg, exerciseId = 'back-squat') {
   return {
     id: `set_stored${index}`,
-    exerciseId: 'back-squat',
+    exerciseId,
     weightKg,
     reps: 5,
     kind: 'working',
@@ -313,6 +319,63 @@ test('the queue goes out before the boot read, so an auto-close cannot eat the n
   ]);
   assert.deepEqual(view.live.refusals, []);
   assert.deepEqual(browser.held(), []);
+});
+
+// A BOOT THAT FAILED IS THE STATE MOST LIKELY TO BE HOLDING SETS — a read that did not come back is
+// the shape of a phone with no signal — and it was the one state that swept nothing: the sweep and
+// the online listener both stood down on 'failed', so the night's sets sat on the device with the
+// app open in front of the lifter, and went out only if the tab was reloaded.
+test('a boot read that failed keeps sweeping the queue, so the device’s sets still go out', async (t) => {
+  const now = Date.now();
+  const held = [0, 1, 2].map((index) => heldSet(index, now - 5 * HOUR + index * 60_000));
+  const browser = browserWith({ queue: held });
+  const backend = logThatSettles({ startedAt: now - 5 * HOUR, lastActivityAt: now - 5 * HOUR + 120_000 });
+  backend.api.sessions = async () => { throw new GymError(503, 'the log didn’t answer'); };
+  // The first send rides out with the boot's own forced flush and does not get through. All three
+  // sets are one lane, so that single 503 holds the whole night back — and the boot read fails right
+  // behind it, which is precisely the moment nothing was left to ask again.
+  const appendSet = backend.api.appendSet;
+  let refused = false;
+  backend.api.appendSet = async (sessionId, body) => {
+    if (refused) return appendSet(sessionId, body);
+    refused = true;
+    throw new GymError(503, 'the log didn’t answer');
+  };
+
+  const view = await open(t, backend.api);
+  await settle();
+
+  assert.equal(view.live.phase, 'failed');
+  assert.deepEqual(backend.stored.map((set) => set.id), ['set_offline0', 'set_offline1', 'set_offline2']);
+  assert.deepEqual(browser.held(), []);
+  assert.deepEqual(view.live.refusals, []);
+});
+
+// And the read itself is asked again when the signal returns. 'failed' is the one phase nothing else
+// leaves — this read is the only door into a live session — so a lifter who opened the logger
+// underground was held out of their own workout for the rest of it, watching the signal come back.
+test('the signal returning asks a failed boot read again, and the session opens', async (t) => {
+  const now = Date.now();
+  const browser = browserWith();
+  const backend = logThatSettles({ startedAt: now - HOUR, lastActivityAt: now - 120_000 });
+  const sessions = backend.api.sessions;
+  let underground = true;
+  backend.api.sessions = async (query) => {
+    if (underground) throw new GymError(503, 'the log didn’t answer');
+    return sessions(query);
+  };
+
+  const view = await open(t, backend.api);
+  assert.equal(view.live.phase, 'failed');
+  assert.equal(view.live.session, null);
+
+  underground = false;
+  browser.reconnect();
+  await settle();
+
+  assert.equal(view.live.phase, 'live');
+  assert.equal(view.live.session.id, 'ses_probe');
+  assert.equal(view.live.session.finishedAt, null);
 });
 
 // THE NUMBER UNDER THE THUMB. The 64px button reads the weight back because a gym is loud and
@@ -996,7 +1059,11 @@ test('a movement list that is not a list is rebuilt from the sets that were perf
 test('an index that is not an index costs the index and not the list', async (t) => {
   const now = Date.now();
   browserWith({ live: liveBlob({ order: ['bench-press', 'back-squat'], exIdx: 'back-squat' }) });
-  const backend = logThatSettles({ startedAt: now - HOUR, lastActivityAt: now - 120_000 });
+  const backend = logThatSettles({
+    startedAt: now - HOUR,
+    lastActivityAt: now - 120_000,
+    sets: [loggedSet(0, now - 120_000, 100)],
+  });
 
   const view = await open(t, backend.api);
 
@@ -1005,6 +1072,32 @@ test('an index that is not an index costs the index and not the list', async (t)
   assert.equal(view.live.exercise.id, 'back-squat');
   assert.deepEqual([view.live.weight, view.live.reps], [82.5, 8]);
   assert.equal(view.live.toast.text, RESUME_LOST);
+});
+
+// WHERE THE LIFTER IS STANDING, with nothing written down: on the movement the last set went into,
+// which is a different question from the last movement in the LIST and a different answer the moment
+// a workout comes back to something. Squats, chin-ups, squats again is a list of two with the lifter
+// on the first of them — and they used to be handed the second, mid-workout, on every reload.
+test('a resume with no note from this device lands on the movement the last set went into', async (t) => {
+  const now = Date.now();
+  browserWith();
+  const backend = logThatSettles({
+    startedAt: now - HOUR,
+    lastActivityAt: now - 300_000,
+    sets: [
+      loggedSet(0, now - 900_000, 100),
+      loggedSet(1, now - 600_000, 60, 'bench-press'),
+      loggedSet(2, now - 300_000, 102.5),
+    ],
+  });
+
+  const view = await open(t, backend.api);
+
+  assert.deepEqual(view.live.order, ['back-squat', 'bench-press']);
+  assert.equal(view.live.exIdx, 0);
+  assert.equal(view.live.exercise.id, 'back-squat');
+  // Nothing is said, because nothing was lost: there was no note on this device to fail to read.
+  assert.equal(view.live.toast, null);
 });
 
 // THE ONE THAT MATTERS. The resume blob and the flush queue are DIFFERENT KEYS, and only the queue
@@ -1182,6 +1275,42 @@ function planned({ startedAt }) {
   };
 }
 
+// A SESSION JUST STARTED FROM A ROUTINE has a frozen plan and nothing performed yet, so a movement
+// list built from the sets alone is EMPTY — and the logger draws "No routine, no plan snapshot."
+// over a session that has both, with the day's first lift one picker away. The plan is the list
+// until the lifter says otherwise (LiveOrder.merged, apps/ios).
+test('a session started from a routine opens on the plan, not on an empty movement list', async (t) => {
+  const now = Date.now();
+  browserWith();
+  const store = planned({ startedAt: now });
+
+  const view = await open(t, store.api);
+
+  assert.equal(view.live.phase, 'live');
+  assert.equal(view.live.routine, 'Push A');
+  assert.deepEqual(view.live.order, ['bench-press', 'chin-up']);
+  assert.equal(view.live.exIdx, 0);
+  assert.equal(view.live.exercise.id, 'bench-press');
+  // And the plan's opening number is under the thumb, which is what freezing it was for.
+  assert.deepEqual([view.live.weight, view.live.reps], [82.5, 5]);
+});
+
+// The seam between the lists is a decision, not an accident: a movement this device wrote down keeps
+// the head even when the plan never named it. The lifter added that movement on the bench mid-rest,
+// and re-sorting it behind the plan would move the list under a thumb already reaching for it.
+test('a movement this device wrote down keeps its place ahead of the plan', async (t) => {
+  const now = Date.now();
+  browserWith({ live: liveBlob({ sessionId: 'ses_plan', order: ['chin-up', 'cable-fly'], exIdx: 1 }) });
+  const store = planned({ startedAt: now - HOUR });
+
+  const view = await open(t, store.api);
+
+  assert.deepEqual(view.live.order, ['chin-up', 'cable-fly', 'bench-press']);
+  assert.equal(view.live.exIdx, 1);
+  assert.equal(view.live.exercise.id, 'cable-fly');
+  assert.equal(view.live.toast, null);
+});
+
 // THE ONE QUESTION THE LOGGER ASKS, at the boundary it is asked at. The answer is a read-modify-write
 // of the WHOLE routine: a PUT carrying only the changed entry would delete the rest of the program.
 test('a heavier day is asked about when the movement changes, and answering rewrites the whole routine', async (t) => {
@@ -1237,6 +1366,44 @@ test('a heavier day is asked about when the movement changes, and answering rewr
   await settle();
   assert.equal(view.live.deviation, null);
   assert.equal(store.wire.length, 3);
+});
+
+// THE POSITION WAS MINTED AGAINST THE FROZEN SNAPSHOT, and the routine has kept moving since — a
+// line dragged on the phone this morning, a movement dropped. Addressed by a position that now names
+// something else, the read-modify-write hands back the routine exactly as it found it, the PUT
+// succeeds, and the sheet closes with nothing said — which is what a save looks like from where the
+// lifter is standing. The write is skipped instead, and the silence is replaced by the truth.
+test('a routine that moved under the question is not written back, and the lifter is told', async (t) => {
+  const now = Date.now();
+  browserWith();
+  const store = planned({ startedAt: now - HOUR });
+  // Between the session's start and this answer, the lifter deleted the bench-press line: position 1
+  // is the chin-ups now, and the line the question was about is nowhere in the routine.
+  store.api.routine = async (id) => {
+    store.wire.push(`GET routine ${id}`);
+    return {
+      id: 'rt_push_a',
+      name: 'Push A',
+      position: 0,
+      entries: [{ position: 1, exerciseId: 'chin-up', targetSets: 3, targetReps: 8 }],
+    };
+  };
+
+  const view = await open(t, store.api);
+  view.live.setWeight(92.5);
+  view.live.logSet();
+  await settle();
+  view.live.chooseMovement('chin-up');
+  await settle();
+  assert.equal(view.live.deviation.save, 'Save 92.5 to Push A');
+  assert.equal(view.live.deviation.position, 1);
+
+  await view.live.saveDeviation();
+  await settle();
+
+  assert.equal(view.live.deviation, null);
+  assert.deepEqual(store.wire, ['GET routine rt_push_a']);
+  assert.equal(view.live.toast.text, 'Push A didn’t change. Today’s session keeps the weight either way.');
 });
 
 // The finish screen replaces the redirect-and-a-toast: what happened is a whole surface now, and

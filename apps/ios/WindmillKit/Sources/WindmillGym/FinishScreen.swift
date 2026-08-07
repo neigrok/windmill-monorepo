@@ -98,10 +98,19 @@ public enum Finish {
     // and last time when it did not — the plan is what the lifter agreed to and the log is what
     // happened. The one row that is not an arrow is the one that fell short: "planned 3×12 · did
     // 3×10" says the thing an arrow cannot.
+    //
+    // WHAT MAY BE CALLED SHORT is narrow, and it is review.js `detailOf`'s predicate exactly. `now
+    // .sets` is not what a reader assumes: it counts only the sets at the TOP LOAD, so a session that
+    // ramped 100·105·110·110·110 through every one of five planned sets arrives as `sets: 3`, and a
+    // set-count term told a lifter who finished the workout that they did not. Reps are the only axis
+    // this wire can be read short on — and only when the bar did not go up, because heavier for fewer
+    // is a different session rather than a smaller one, and this row is a fact with a direction and
+    // never a grade.
     private static func detail(_ movement: Against.Movement) -> String {
-        if let planned = movement.planned,
-           movement.now.sets < planned.sets || planned.reps.map({ movement.now.reps < $0 }) == true {
-            return "planned \(count(planned.sets, planned.reps)) · did \(count(movement.now.sets, movement.now.reps))"
+        if let planned = movement.planned, let target = planned.reps,
+           movement.now.reps < target,
+           planned.weightKg.map({ movement.now.weightKg <= $0 }) ?? true {
+            return "planned \(count(planned.sets, target)) · did \(count(movement.now.sets, movement.now.reps))"
         }
         if let planned = movement.planned {
             return "\(top(planned.sets, planned.reps, planned.weightKg)) → \(top(movement.now))"

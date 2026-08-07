@@ -131,15 +131,65 @@ final class FinishTests: XCTestCase {
                        ["3 × max → 3×6"])
     }
 
-    // Fewer sets than the plan is still a shortfall, whether or not the reps were named.
-    func testFewerSetsThanThePlanIsSaidPlainlyEvenWithNoRepTarget() {
+    // A `3 × max` plan cannot be fallen short of AT ALL: there is no rep target to miss, and a count
+    // of sets is not something this wire can be read short on either (see the ramp below). So the row
+    // is an arrow, exactly as review.js draws it.
+    func testAPlanThatNamesNoRepTargetCannotBeFallenShortOf() {
         let against = Against(sessionId: "ses_0", routine: "Pull A", startedAtMs: 1, movements: [
             Against.Movement(exerciseId: "chin-up",
-                             now: Against.Effort(weightKg: 0, reps: 6, sets: 2),
+                             now: Against.Effort(weightKg: 0, reps: 4, sets: 2),
                              planned: Against.Target(sets: 3)),
         ])
         XCTAssertEqual(Finish.comparison(against, catalog: catalog)?.rows.map(\.detail),
-                       ["planned 3 × max · did 2×6"])
+                       ["3 × max → 2×4"])
+    }
+
+    // THE ROW THAT TOLD A FINISHED SESSION IT FELL SHORT. `now.sets` counts only the sets at the TOP
+    // LOAD, so a lifter who ramped 100·105·110·110·110 through every one of five planned sets arrives
+    // here as `sets: 3` — and the phone's own set-count term printed "planned 5×5 · did 3×5" in the
+    // loudest row on the screen, over bytes the desk read as an arrow. Set counts are not comparable
+    // on this wire and review.js has never compared them.
+    func testASessionThatRampedThroughItsWholePlanIsNeverToldItFellShort() {
+        let ramped = Against(sessionId: "ses_0", routine: "Legs", startedAtMs: 1, movements: [
+            Against.Movement(exerciseId: "back-squat",
+                             now: Against.Effort(weightKg: 110, reps: 5, sets: 3),
+                             before: Against.Effort(weightKg: 105, reps: 5, sets: 3),
+                             planned: Against.Target(sets: 5, reps: 5, weightKg: 100)),
+        ])
+        XCTAssertEqual(Finish.comparison(ramped, catalog: catalog)?.rows.map(\.detail),
+                       ["5×5 @ 100 → 3×5 @ 110"])
+    }
+
+    // Nor is going heavier for fewer reps a smaller session: it is a different one, and the arrow
+    // carries both facts without grading either.
+    func testGoingHeavierForFewerRepsIsADifferentSessionAndNotASmallerOne() {
+        let heavier = Against(sessionId: "ses_0", routine: "Legs", startedAtMs: 1, movements: [
+            Against.Movement(exerciseId: "leg-press",
+                             now: Against.Effort(weightKg: 160, reps: 8, sets: 5),
+                             planned: Against.Target(sets: 3, reps: 12, weightKg: 140)),
+        ])
+        XCTAssertEqual(Finish.comparison(heavier, catalog: catalog)?.rows.map(\.detail),
+                       ["3×12 @ 140 → 5×8 @ 160"])
+    }
+
+    // What IS short: the reps at a load that did not go up — and a plan that names no load at all is
+    // read on the reps alone, because there is no bar to have gone up.
+    func testWhatIsCalledShortIsTheRepsAtALoadThatDidNotGoUp() {
+        let heldLoad = Against(sessionId: "ses_0", routine: "Legs", startedAtMs: 1, movements: [
+            Against.Movement(exerciseId: "leg-press",
+                             now: Against.Effort(weightKg: 140, reps: 10, sets: 3),
+                             planned: Against.Target(sets: 3, reps: 12, weightKg: 140)),
+        ])
+        XCTAssertEqual(Finish.comparison(heldLoad, catalog: catalog)?.rows.map(\.detail),
+                       ["planned 3×12 · did 3×10"])
+
+        let noLoadNamed = Against(sessionId: "ses_0", routine: "Legs", startedAtMs: 1, movements: [
+            Against.Movement(exerciseId: "chin-up",
+                             now: Against.Effort(weightKg: 0, reps: 6, sets: 3),
+                             planned: Against.Target(sets: 3, reps: 8)),
+        ])
+        XCTAssertEqual(Finish.comparison(noLoadNamed, catalog: catalog)?.rows.map(\.detail),
+                       ["planned 3×8 · did 3×6"])
     }
 
     func testAnAdHocSessionHasNothingToCompareAgainst() {

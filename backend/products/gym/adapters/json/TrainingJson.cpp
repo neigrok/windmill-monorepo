@@ -106,6 +106,27 @@ RoutineWrite parseRoutineWrite(const Json::Value& body) {
   std::vector<RoutineEntry> entries;
   for (const Json::Value& entry : body["entries"]) {
     if (!entry.isObject()) throw InvalidTraining("a routine entry must be a json object");
+    // The same rule the tool surface publishes as `additionalProperties: false` and the composite
+    // tool host enforces on a call's arguments, reaching one level down into the line. Asking only
+    // for the names it knows is not the same as refusing the rest: `targetRepsl: 5` read clean, the
+    // entry stored no rep target at all, and the write answered that the routine had saved — a
+    // misspelling that silently wiped the target it was aiming at.
+    //
+    // `position` is ACCEPTED AND IGNORED, and that is not a softening — it is the difference between
+    // strictness and an outage. A routine travels as its whole document: save_routine's own
+    // description tells the caller to read it with list_routines, change what they mean and send all
+    // of it back, and what list_routines hands them carries `position` on every line (toJson below).
+    // Refusing it would make our own printed instruction a hard refusal. It is redundant rather than
+    // wrong — the run is renumbered 1..n from the order these arrive in, and the entity refuses any
+    // other run — so the honest answer is to take it and pay it no attention.
+    for (const std::string& field : entry.getMemberNames()) {
+      if (field == "exerciseId" || field == "targetSets" || field == "targetReps" ||
+          field == "targetWeightKg" || field == "restSeconds" || field == "position")
+        continue;
+      throw InvalidTraining("unknown routine entry field \"" + field +
+                            "\". An entry takes: exerciseId, targetSets, targetReps, "
+                            "targetWeightKg, restSeconds.");
+    }
     if (!entry["exerciseId"].isString()) throw InvalidTraining("exerciseId must be a string");
     if (!entry["targetSets"].isInt()) throw InvalidTraining("targetSets must be a whole number");
     // All three optionals mean something by their absence — "as many as you can", "whatever you did

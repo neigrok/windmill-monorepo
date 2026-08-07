@@ -59,10 +59,16 @@ public enum Readout {
         return names[max(0, min(6, (components(ms).weekday ?? 1) - 1))]
     }
 
-    // Whole days apart, rounded — the same arithmetic the routine list sorts on, so a card and the
-    // row above it never disagree about when a routine was last trained.
+    // "Yesterday" is a claim about the CALENDAR and not about elapsed hours: a session finished at
+    // 07:00 is still today at 21:00, and one finished at 23:00 is already yesterday by 01:00. So both
+    // instants fall to their own local midnight before the difference is taken — which also makes the
+    // count right across the 23- and the 25-hour day, where dividing by 86_400_000 is not. The web
+    // says it the same way (log.js `agoLabel`), over the same stored instant.
     public static func ago(_ ms: Int64, now: Int64) -> String {
-        let days = Int((Double(now - ms) / 86_400_000).rounded())
+        let calendar = Calendar.current
+        let then = calendar.startOfDay(for: Date(timeIntervalSince1970: Double(ms) / 1000))
+        let today = calendar.startOfDay(for: Date(timeIntervalSince1970: Double(now) / 1000))
+        let days = calendar.dateComponents([.day], from: then, to: today).day ?? 0
         if days <= 0 { return "today" }
         if days == 1 { return "yesterday" }
         return "\(days) days ago"

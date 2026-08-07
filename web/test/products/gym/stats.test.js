@@ -21,12 +21,17 @@ const CATALOG = [
   { id: 'chin-up', name: 'Chin-up' },
 ];
 
-const MONDAY = new Date(2026, 6, 6, 0, 0).getTime();      // Mon 6 Jul 2026
+// Two Mondays, because two kinds of instant land on this surface and only one of them happened to
+// anybody. A SESSION ran at a moment a lifter stood in, so its date is read in the lifter's zone; a
+// WEEK is a bucket the store made with `date_trunc('week', started_at AT TIME ZONE 'UTC')`, so it
+// arrives as a UTC Monday midnight and is read in UTC or it is read a day early.
+const MONDAY = new Date(2026, 6, 6, 0, 0).getTime();      // Mon 6 Jul 2026, where the reader stands
+const UTC_MONDAY = Date.UTC(2026, 6, 6);                  // Mon 6 Jul 2026, as a week bucket arrives
 const WEEK = 7 * 86400000;
 
 function weeks(...counts) {
   return counts.map(([sessions, workingSets], index) => ({
-    startedAt: MONDAY + index * WEEK,
+    startedAt: UTC_MONDAY + index * WEEK,
     sessions,
     workingSets,
   }));
@@ -76,6 +81,28 @@ test('weekBars — the window is the last twelve, and the ends are named by thei
   assert.deepEqual(long.bars.map((bar) => bar.workingSets), [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
   assert.equal(long.from, 'Mon 31 Aug');
   assert.equal(long.to, 'Mon 16 Nov');
+});
+
+// A WEEK IS NAMED BY THE BUCKET IT IS, NOT BY WHERE IT IS READ. The start instant is a UTC Monday
+// midnight, so a reader west of Greenwich was standing in the Sunday evening before it: every bar
+// and both ends of the span read one day early in Los Angeles while the phone, which spells the
+// same instant in UTC (Readout.day(_:utc:)), read Monday. One product may not name the same week
+// two days.
+test('weekBars — the week is named by its UTC Monday, in whatever zone the log is read', () => {
+  const zone = process.env.TZ;
+  try {
+    for (const where of ['America/Los_Angeles', 'UTC', 'Pacific/Auckland']) {
+      process.env.TZ = where;
+      const bars = weekBars(weeks([3, 18], [4, 26]));
+      assert.equal(bars.bars[0].sessionsLabel, 'week of Mon 6 Jul: 3 sessions');
+      assert.equal(bars.bars[0].setsLabel, 'week of Mon 6 Jul: 18 working sets');
+      assert.equal(bars.bars[1].sessionsLabel, 'week of Mon 13 Jul: 4 sessions');
+      assert.equal(bars.from, 'Mon 6 Jul');
+      assert.equal(bars.to, 'Mon 13 Jul');
+    }
+  } finally {
+    if (zone == null) delete process.env.TZ; else process.env.TZ = zone;
+  }
 });
 
 // The series ENDS at the last week trained rather than at this week, so the label is a pair of
@@ -190,7 +217,29 @@ test('movementCard — a chin-up plots its reps, and its bests are facts and not
   assert.equal(card.axis, 'reps');
   assert.equal(card.caption, 'top set · reps · 0 – 9');
   assert.equal(card.lastTrained, 'today');
-  assert.deepEqual(card.bests, [{ label: 'Heaviest', value: '0 kg × 9', when: 'Mon 6 Jul' }]);
+  assert.deepEqual(card.bests, [{ label: 'Heaviest', value: '9 reps', when: 'Mon 6 Jul' }]);
+});
+
+// ZERO IS NOT A LOAD BUT THE ABSENCE OF ONE — the rule the finish comparison, a routine's target
+// and the e1RM tile all already read. So the heaviest a dip or a push-up has ever been is a number
+// of REPS, and "0 kg × 12" was this card printing a weight nobody lifted under the five movements
+// the schema seeds as bodyweight. A band-assisted load is a real point on this number line and
+// still prints as one.
+test('movementCard — a bodyweight best is spelled in reps, and an assisted one still in kilos', () => {
+  const heaviest = (weightKg, reps) => movementCard(
+    {
+      exerciseId: 'dip',
+      lastTrainedAt: MONDAY,
+      points: [{ at: MONDAY, weightKg, reps }],
+      heaviest: { weightKg, reps, at: MONDAY },
+    },
+    CATALOG,
+    { now: MONDAY },
+  ).bests[0];
+  assert.deepEqual(heaviest(0, 12), { label: 'Heaviest', value: '12 reps', when: 'Mon 6 Jul' });
+  assert.equal(heaviest(0, 1).value, '1 rep');
+  assert.equal(heaviest(-20, 8).value, '−20 kg × 8');
+  assert.equal(heaviest(20, 6).value, '20 kg × 6');
 });
 
 // The standing bests are the finish screen's record rules asked with no session to compare against.

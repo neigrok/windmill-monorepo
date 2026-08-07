@@ -77,9 +77,11 @@ StartOutcome LogService::start(const UserId& user, const SessionStart& incoming)
 // another's session is the same fact (not found). The replay is resolved BEFORE the finished
 // refusal: a set that is already durable answers with itself however the session ended, so a
 // flush queue that treats 409 as terminal can never drop a row it in fact landed. A set that never
-// landed is another matter — the session is closed and this one is refused (§3.3). The last two
-// refusals are the store's own facts, passed through as they arrive: only it knows the catalog, and
-// only its read-back knows whether a fresh id was already spent somewhere this session cannot see.
+// landed is another matter — the session is closed and this one is refused (§3.3). The last three
+// refusals are the store's own facts, passed through as they arrive: only it knows the catalog, only
+// its read-back knows whether a fresh id was already spent somewhere this session cannot see, and
+// only its lock knows whether the close landed between the read above and the insert below — which
+// is why `finished` is answered twice, once off the loaded row and once off the locked one.
 AppendOutcome LogService::append(const UserId& user, const SessionId& session,
                                  const SetWrite& incoming) {
   std::optional<Session> stored = repo_.session(user, session);
@@ -94,12 +96,18 @@ AppendOutcome LogService::append(const UserId& user, const SessionId& session,
   if (written.error == SetInsertError::idTaken) return {std::nullopt, AppendError::idTaken};
   if (written.error == SetInsertError::unknownExercise)
     return {std::nullopt, AppendError::unknownExercise};
+  if (written.error == SetInsertError::finished) return {std::nullopt, AppendError::finished};
   return {*written.set, AppendError::none};
 }
 
 // The first write to finished_at is permanent (close is first-writer-wins), so the instant is
 // checked against the stored session before it can land — a workout that ends before it began, or
 // at an instant the store cannot hold, is refused rather than frozen into the log forever.
+//
+// The read-back is answered like the load above it, and for the same reason every write in this file
+// does: a session discarded between the load and the close leaves nothing to hand back, and `none`
+// beside no session is a reply both wire edges dereference. It is the fact the session was already
+// absent — the discard won the race, and the caller learns exactly what a second finish would tell it.
 FinishOutcome LogService::finish(const UserId& user, const SessionId& session,
                                  std::uint64_t finishedAtMs) {
   std::optional<Session> stored = repo_.session(user, session);
@@ -107,7 +115,9 @@ FinishOutcome LogService::finish(const UserId& user, const SessionId& session,
   if (!canFinishAt(*stored, finishedAtMs)) return {std::nullopt, FinishError::badInstant};
   if (stored->finishedAtMs) return {*stored, FinishError::none};   // replay, or already auto-closed
   repo_.close(session, finishedAtMs);
-  return {repo_.session(user, session), FinishError::none};
+  std::optional<Session> closed = repo_.session(user, session);
+  if (!closed) return {std::nullopt, FinishError::notFound};
+  return {*closed, FinishError::none};
 }
 
 std::vector<SessionSummary> LogService::log(const UserId& user, const LogCursor& cursor) {

@@ -84,12 +84,15 @@ struct LogCursor {
   int limit;
 };
 
-// What became of an insertSet: the stored row, or the one fact that stopped it. Both refusals are
-// the store's to state and both cross the port as VALUES — a vendor exception escaping to the HTTP
-// edge would make the wire layer know which database gym is kept in. idTaken says the id is spent
-// on a row this session does not hold, never whose, so absent stays byte-identical to forbidden;
-// unknownExercise says the set names a movement no catalog holds.
-enum class SetInsertError { none, idTaken, unknownExercise };
+// What became of an insertSet: the stored row, or the one fact that stopped it. Every refusal here
+// is the store's to state and each crosses the port as a VALUE — a vendor exception escaping to the
+// HTTP edge would make the wire layer know which database gym is kept in. idTaken says the id is
+// spent on a row this session does not hold, never whose, so absent stays byte-identical to
+// forbidden; unknownExercise says the set names a movement this account's catalog does not hold —
+// a slug nobody has, and another lifter's private movement alike; finished says the session was
+// already closed when the write took its lock, which is the boundary §3.3 makes the STORE hold,
+// because it is the only layer that reads that column under the lock that decides it.
+enum class SetInsertError { none, idTaken, unknownExercise, finished };
 
 struct SetInsertOutcome {
   std::optional<Set> set;
@@ -102,7 +105,8 @@ struct SetInsertOutcome {
 // of the two producers can raise only what it can see: insertRoutine answers idTaken (the id is
 // spent on a row this account does not own, never whose) and replaceRoutine answers notFound
 // (absent and another account's are the same fact). unknownExercise is either one's, and it is the
-// same fact a set's foreign key states: an entry names a movement no catalog holds.
+// same fact a set's write states under the same predicate: an entry names a movement this account's
+// catalog does not hold.
 enum class RoutineWriteError { none, idTaken, notFound, unknownExercise };
 
 struct RoutineWriteOutcome {
@@ -207,8 +211,11 @@ struct TrainingRepository {
   virtual std::optional<std::uint64_t> lastActivity(const SessionId& id) = 0;
   virtual void insertSession(const Session& incoming) = 0;                // conflict = no-op
   virtual void close(const SessionId& id, std::uint64_t finishedAtMs) = 0;
-  // Assigns the number and returns the stored row — a replay into the same session is handed the
-  // original; anything that stops the write comes back as a typed fact beside it.
+  // Assigns the number and returns the stored row; anything that stops the write comes back as a
+  // typed fact beside it. A REPLAY IS NOT RESOLVED HERE — `LogService::append` answers it through
+  // `setOf` before this is ever reached, which is what lets this method answer `finished` for every
+  // write that arrives after the locked row closed, replay or not. Stating it the other way round
+  // would be a contract a second implementation could keep and still lose a set.
   virtual SetInsertOutcome insertSet(const Set& incoming) = 0;
   virtual std::vector<SessionSummary> log(const UserId& user, const LogCursor& cursor) = 0;
   virtual std::vector<Set> setsOf(const SessionId& id) = 0;

@@ -166,11 +166,27 @@ std::optional<Routine> loadRoutine(pqxx::work& txn, const UserId& user, const Ro
   return routineFrom(rows[0], std::move(entries));
 }
 
-// The lines of one whole document, laid down in the order the entity holds them. The exercise FK is
-// the one refusal these can raise, and it is the same fact a set's insert names: the throw has
-// ALREADY aborted the transaction, so every caller returns on it at once.
-void insertEntries(pqxx::work& txn, const Routine& incoming) {
+// A movement this account may NAME on a write: the catalog read's own predicate — a seed, or one
+// this account created — applied where a set or a routine entry points at one. The foreign key only
+// asks whether the row EXISTS, and another lifter's private movement exists: named, it would print
+// that account's movement name in this log, this export and this coach share, and its owner could
+// never delete it away. Read inside the caller's own transaction, against the owner of the row being
+// written.
+bool namesVisibleMovement(pqxx::work& txn, const std::string& owner, const ExerciseId& exercise) {
+  return !txn
+              .exec_params("SELECT 1 FROM gym_exercises "
+                           "WHERE id = $1 AND (created_by IS NULL OR created_by = $2::uuid)",
+                           exercise.str(), owner)
+              .empty();
+}
+
+// The lines of one whole document, laid down in the order the entity holds them, each naming a
+// movement this account may see. `false` says one did not: the caller answers unknownExercise and
+// returns at once, and because a routine write is ONE transaction the rollback takes every line
+// already laid down with it.
+bool insertEntries(pqxx::work& txn, const Routine& incoming) {
   for (const RoutineEntry& entry : incoming.entries) {
+    if (!namesVisibleMovement(txn, incoming.user.str(), entry.exercise)) return false;
     pqxx::params params;
     params.append(incoming.id.str());
     params.append(entry.position);
@@ -187,6 +203,7 @@ void insertEntries(pqxx::work& txn, const Routine& incoming) {
              "VALUES ($1, $2, $3, $4, $5, $6, $7)",
              params);
   }
+  return true;
 }
 }
 
@@ -312,6 +329,13 @@ SetInsertOutcome PgTrainingRepository::insertSet(const Set& incoming) {
   // duplicate after a phase-2 delete + renumber — and a replayed id no-ops on the PK. Then the
   // read-back, scoped to (id, session_id): a replay is handed the original, and an id spent on a
   // row this session does not hold resolves to nothing, never to a stranger's set.
+  //
+  // The lock READS THE STATE IT LOCKS, and both of the facts it brings back are refusals only this
+  // statement can make. `finished_at` is the boundary of §3.3: the service checks it too, but on a
+  // row it loaded before the lock existed, so a set that never landed could still land after the
+  // close raced past it — the one loss the finish is supposed to make impossible. And `user_id` is
+  // the scope the movement is resolved in: the foreign key alone would let this set name another
+  // lifter's private movement.
   std::optional<Set> stored;
   {
     pqxx::params params;
@@ -327,28 +351,32 @@ SetInsertOutcome PgTrainingRepository::insertSet(const Set& incoming) {
     params.append(static_cast<long long>(incoming.completedAtMs));
 
     pqxx::work txn{pgThreadConnection(connString_)};
-    txn.exec_params("SELECT 1 FROM gym_sessions WHERE id = $1 FOR UPDATE", incoming.session.str());
-    try {
-      txn.exec(
-          "INSERT INTO gym_sets "
-          "(id, session_id, user_id, exercise_id, set_number, weight_kg, reps, kind, rpe, note, "
-          " completed_at) "
-          "SELECT $1, $2, s.user_id, $3, "
-          "       coalesce((SELECT max(set_number) + 1 FROM gym_sets "
-          "                 WHERE session_id = $2 AND exercise_id = $3), 1), "
-          "       $4, $5, $6, $7, $8, to_timestamp($9::bigint / 1000.0) "
-          "FROM gym_sessions s WHERE s.id = $2 "
-          "ON CONFLICT (id) DO NOTHING",
-          params);
-    } catch (const pqxx::foreign_key_violation&) {
-      // The exercise FK, and only it: the session and owner ids are read out of the session row
-      // this INSERT..SELECT selects from, so they exist or nothing is inserted at all. The fact is
-      // translated HERE, the way every other adapter translates its vendor errors — it leaves the
-      // port as a value, and the wire layer answers it without knowing gym is kept in Postgres.
-      // The throw has already aborted the transaction; the work is rolled back as it goes out of
-      // scope, and the read-back below would only fail on top of it.
+    pqxx::result locked = txn.exec_params(
+        "SELECT user_id, finished_at IS NOT NULL AS finished FROM gym_sessions WHERE id = $1 "
+        "FOR UPDATE",
+        incoming.session.str());
+    // No session row at all is the answer a spent id gets, and it is the same answer the shape
+    // below would reach anyway: the INSERT..SELECT would select nothing, so nothing lands and the
+    // read-back finds nothing. The service loads the session before it ever gets here.
+    if (locked.empty()) return {std::nullopt, SetInsertError::idTaken};
+    if (locked[0]["finished"].as<bool>()) return {std::nullopt, SetInsertError::finished};
+    // The catalog's own predicate, in the owner the locked row names — the fact the foreign key
+    // cannot state, and it is translated HERE the way every other adapter translates its vendor
+    // errors: it leaves the port as a value, and the wire layer answers it without knowing gym is
+    // kept in Postgres.
+    if (!namesVisibleMovement(txn, locked[0]["user_id"].as<std::string>(), incoming.exercise))
       return {std::nullopt, SetInsertError::unknownExercise};
-    }
+    txn.exec(
+        "INSERT INTO gym_sets "
+        "(id, session_id, user_id, exercise_id, set_number, weight_kg, reps, kind, rpe, note, "
+        " completed_at) "
+        "SELECT $1, $2, s.user_id, $3, "
+        "       coalesce((SELECT max(set_number) + 1 FROM gym_sets "
+        "                 WHERE session_id = $2 AND exercise_id = $3), 1), "
+        "       $4, $5, $6, $7, $8, to_timestamp($9::bigint / 1000.0) "
+        "FROM gym_sessions s WHERE s.id = $2 "
+        "ON CONFLICT (id) DO NOTHING",
+        params);
     pqxx::result rows = txn.exec_params(
         "SELECT " + std::string(kSetColumns) + " FROM gym_sets WHERE id = $1 AND session_id = $2",
         incoming.id.str(), incoming.session.str());
@@ -612,13 +640,8 @@ RoutineWriteOutcome PgTrainingRepository::insertRoutine(const Routine& incoming)
         "INSERT INTO gym_routines (id, user_id, name, position) "
         "VALUES ($1, $2::uuid, $3, $4) ON CONFLICT DO NOTHING",
         incoming.id.str(), incoming.user.str(), incoming.name, incoming.position);
-    if (inserted.affected_rows() == 1) {
-      try {
-        insertEntries(txn, incoming);
-      } catch (const pqxx::foreign_key_violation&) {
-        return {std::nullopt, RoutineWriteError::unknownExercise};
-      }
-    }
+    if (inserted.affected_rows() == 1 && !insertEntries(txn, incoming))
+      return {std::nullopt, RoutineWriteError::unknownExercise};
     stored = loadRoutine(txn, incoming.user, incoming.id);
     txn.commit();
   }
@@ -640,11 +663,7 @@ RoutineWriteOutcome PgTrainingRepository::replaceRoutine(const Routine& incoming
         incoming.id.str(), incoming.user.str(), incoming.name, incoming.position);
     if (updated.affected_rows() == 0) return {std::nullopt, RoutineWriteError::notFound};
     txn.exec_params("DELETE FROM gym_routine_entries WHERE routine_id = $1", incoming.id.str());
-    try {
-      insertEntries(txn, incoming);
-    } catch (const pqxx::foreign_key_violation&) {
-      return {std::nullopt, RoutineWriteError::unknownExercise};
-    }
+    if (!insertEntries(txn, incoming)) return {std::nullopt, RoutineWriteError::unknownExercise};
     stored = loadRoutine(txn, incoming.user, incoming.id);
     txn.commit();
   }

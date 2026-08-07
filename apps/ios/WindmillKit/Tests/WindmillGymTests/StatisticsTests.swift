@@ -143,6 +143,39 @@ final class StatisticsTests: XCTestCase {
                        "a negative load is a point on the number line and prints as one")
     }
 
+    // THE THIRD AXIS, and it is the one a chin-up needs. Epley has no answer at zero so the estimate
+    // is gone, and the load never moves so the load is not the story either — the reps are. The phone
+    // had two branches where stats.js `axisOf` has three, so a lifter who went 8 → 12 read "0 → 0"
+    // here off the same stored bytes the desk read 8 → 12 off.
+    func testABodyweightMovementDrawsItsRepsWhenTheLoadNeverMoves() {
+        let line = Stats.line(
+            MovementProgress(exerciseId: "chin-up", lastTrainedAtMs: 1_754_400_000_000,
+                             points: [MovementPoint(atMs: 1, weightKg: 0, reps: 8),
+                                      MovementPoint(atMs: 2, weightKg: 0, reps: 10),
+                                      MovementPoint(atMs: 3, weightKg: 0, reps: 12)]),
+            catalog: catalog, now: 1_754_400_000_000)
+
+        XCTAssertEqual(line?.unit, "reps")
+        XCTAssertEqual(line?.value, "12")
+        XCTAssertEqual(line?.heights, [0, 0.5, 1])
+        XCTAssertEqual(line?.span, "3 sessions · 8 → 12")
+    }
+
+    // The ORDER of the three tests is the rule: an estimate on every point wins over a load that
+    // moves, and a load that moves wins over the reps. A lifter coming off the band is drawn on the
+    // LOAD even though the reps moved too, because that crossing is the story.
+    func testTheAxisIsChosenInTheOrderTheWebChoosesIt() {
+        XCTAssertEqual(Stats.Axis(of: [MovementPoint(atMs: 1, weightKg: 100, reps: 5, e1rm: 116.7),
+                                       MovementPoint(atMs: 2, weightKg: 105, reps: 5, e1rm: 122.5)]),
+                       .e1rm)
+        XCTAssertEqual(Stats.Axis(of: [MovementPoint(atMs: 1, weightKg: -20, reps: 8),
+                                       MovementPoint(atMs: 2, weightKg: 0, reps: 6)]),
+                       .load)
+        XCTAssertEqual(Stats.Axis(of: [MovementPoint(atMs: 1, weightKg: 0, reps: 8),
+                                       MovementPoint(atMs: 2, weightKg: 0, reps: 11)]),
+                       .reps)
+    }
+
     // A movement that has never moved is honestly flat, drawn down the middle — pinning it to an
     // edge would be a divide by nothing dressed up as a trend.
     func testAMovementThatNeverMovedIsFlatDownTheMiddle() {
@@ -225,7 +258,8 @@ final class StatisticsTests: XCTestCase {
         XCTAssertFalse(board.isEmpty)
         XCTAssertEqual(board.weeks?.sets.heights, [1])
         XCTAssertEqual(board.lines.map(\.movement), ["Chin-up", "Bench press"])
-        XCTAssertEqual(board.lines.map(\.unit), ["load", "e1RM"])
+        XCTAssertEqual(board.lines.map(\.unit), ["reps", "e1RM"],
+                       "a chin-up at one fixed load is drawn on its reps, never on a constant zero")
     }
 }
 
