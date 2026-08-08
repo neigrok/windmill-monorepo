@@ -116,7 +116,15 @@ export const gymRoutes = {
     // app's rail and a Sign in seat around their lifter's workout would be the shell answering a
     // question nobody asked. The shell reads this off the registry — it may not name a product.
     bare: (hash) => sharedTokenOf(hash) != null,
-    status: 'pre-open',
+    // OPEN, 2026-08-08, by the owner. Everything above describes the flip and it held: the room, the
+    // door, the home card and the badge all moved off this one word and nothing else was edited.
+    //
+    // What is NOT claimed by it, said here so nobody reads the word as more than it is: the phase-1
+    // dogfood gate has still never run. Opening the room makes gym reachable where it is used; it
+    // does not make the eight sessions true. The gate is where "is this good" gets answered, and it
+    // is now easier to run rather than answered — which was the deadlock: the criterion needs a
+    // ladder ruling that needs dogfood evidence that needed a room somebody could find.
+    status: 'open',
     landingHref: '/gym',
     HomeCard,
   },
