@@ -30,8 +30,12 @@ public:
 
   // The claim seam: plant under a client-minted id, create-if-absent under the tree's strand.
   // `existedYours` is the idempotent resume — the caller already owns the id, the row is left
-  // untouched. `taken` covers another account's tree, an unclaimed one, and a soft-deleted id.
-  enum class Creation { created, existedYours, taken };
+  // untouched. `retired` is the caller's OWN soft-deleted id: the row outlives the delete and
+  // still spoke for the id, so the create cannot land — but answering `taken` here would tell
+  // the claim path a stranger holds it, and the claim answers a stranger by re-planting under a
+  // fresh id, resurrecting the tree its owner deliberately deleted. `taken` is now only ever
+  // somebody else's: another account's tree, live or retired, and an unowned one.
+  enum class Creation { created, existedYours, retired, taken };
   Creation create(const UserId& owner, const TreeId& id, const TreeData& initial);
 
   std::vector<TreeSummary> list(const UserId& owner);

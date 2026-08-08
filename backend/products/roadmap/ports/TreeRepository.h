@@ -88,6 +88,12 @@ struct TreeRepository {
   virtual ~TreeRepository() = default;
   virtual std::optional<StoredTree> load(const TreeId& tree) = 0;
   virtual std::optional<TreeAccess> loadAccess(const TreeId& tree) = 0;
+  // Who owned a row that outlived its delete. A soft delete hides the tree from `load` but
+  // keeps the id spoken for, so a create under that id hits the unique index looking exactly
+  // like a stranger's tree — and the claim path answers a stranger by re-planting under a
+  // fresh id, which resurrects the very tree its owner just retired. This is the one fact
+  // that separates the two. A live row (or none at all) answers nullopt; `load` speaks for those.
+  virtual std::optional<UserId> retiredOwner(const TreeId& tree) = 0;
   // Fork provenance for the unfurl — two small counts/lookups, never the whole lattice.
   virtual ForkLineage loadForkLineage(const TreeId& tree) = 0;
   // Upsert a slice of the tree's lattice: every entry given replaces its stored row (the

@@ -130,7 +130,7 @@ each product's `routes.cpp`.
 
 | Method | Path | Body / result |
 | --- | --- | --- |
-| POST | `/v1/trees` | `{ title?, nodes?, kinds?, id? }` → `200 { treeId, existed }` (plant a new owned roadmap; body is the starting `TreeData` — send `nodes`/`kinds` to seed an initial tree, or none for a blank tree with the default legend; a supplied `id` must be `t_` + 16 lowercase hex; 401 signed out; quest plants are ordinary full-body creates — the F5 catalog ships with the client) |
+| POST | `/v1/trees` | `{ title?, nodes?, kinds?, id? }` → `200 { treeId, existed }` (plant a new owned roadmap; body is the starting `TreeData` — send `nodes`/`kinds` to seed an initial tree, or none for a blank tree with the default legend; a supplied `id` must be `t_` + 16 lowercase hex; 401 signed out; `409 id-taken` the id names somebody else's tree, `409 id-retired` it names one you deleted — the caller must let that one go, never re-plant it under a fresh id; quest plants are ordinary full-body creates — the F5 catalog ships with the client) |
 | GET | `/v1/trees` | → `{ trees[] }` (the caller's owned roadmaps, newest-first: `{ id, title, total, done, createdAt, updatedAt, dominantKind? }` — `createdAt` is when the tree was planted, `updatedAt` when it last moved, both epoch ms; 401 if signed out) |
 | DELETE | `/v1/trees/:id` | → `204` (owner-only soft-delete; 403 someone else's, 404 unknown, 401 signed out) |
 | GET | `/v1/trees/:id` | → `{ seq, data, state, createdAt, visibility, mine }` (`data.kinds` = the legend, F6; `state` is the full CRDT state; `createdAt` is the planting time in epoch ms — the week-N card counts from it, never the calendar week) |

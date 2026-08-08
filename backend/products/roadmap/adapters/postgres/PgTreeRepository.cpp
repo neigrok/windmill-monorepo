@@ -171,6 +171,19 @@ std::optional<TreeAccess> PgTreeRepository::loadAccess(const TreeId& tree) {
   return access;
 }
 
+std::optional<UserId> PgTreeRepository::retiredOwner(const TreeId& tree) {
+  // The mirror of loadAccess: one column off the rows load() refuses to see. Only a deleted row
+  // answers — a live one is load()'s to classify, and an unowned one names nobody.
+  pqxx::work txn{pgThreadConnection(connString_)};
+  pqxx::result rows = txn.exec_params(
+      "SELECT owner_id::text FROM trees WHERE id = $1 AND deleted_at IS NOT NULL", tree.str());
+  if (rows.empty()) return std::nullopt;
+
+  const auto& row = rows[0];
+  if (row["owner_id"].is_null()) return std::nullopt;
+  return UserId{row["owner_id"].as<std::string>()};
+}
+
 ForkLineage PgTreeRepository::loadForkLineage(const TreeId& tree) {
   pqxx::work txn{pgThreadConnection(connString_)};
   ForkLineage lineage;

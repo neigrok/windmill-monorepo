@@ -56,6 +56,17 @@ drogon::HttpResponsePtr create(TreeRegistryApi& api, const drogon::HttpRequestPt
   return captured;
 }
 
+// Delete a tree the way a switcher does, asserting the 204 — the setup step for every case
+// about what an id means AFTER its tree is gone.
+void retire(TreeRegistryApi& api, const std::string& id, const std::string& session) {
+  auto request = drogon::HttpRequest::newHttpRequest();
+  request->setMethod(drogon::Delete);
+  request->addCookie("wm_session", session);
+  drogon::HttpResponsePtr captured;
+  api.deleteTree(request, [&](const drogon::HttpResponsePtr& response) { captured = response; }, id);
+  CHECK_EQ(captured->getStatusCode(), drogon::k204NoContent);
+}
+
 Json::Value titled(const std::string& title) {
   Json::Value body(Json::objectValue);
   body["title"] = title;
@@ -153,19 +164,34 @@ TEST(create_with_an_id_owned_by_another_account_is_refused_as_taken) {
   CHECK_EQ(h.trees.byId["t_0123456789abcdef"].title.value, std::string("Theirs"));
 }
 
-TEST(create_with_a_soft_deleted_id_is_refused_as_taken) {
+// The claim path answers `id-taken` by re-planting under a fresh id — right for a stranger's id,
+// catastrophic for your own retired one: it resurrects the tree you just deleted, once per boot,
+// forever. So your own retired id gets its own code, and only you are ever told.
+TEST(create_with_your_own_soft_deleted_id_is_refused_as_retired) {
   Harness h;
   h.signIn("s-live", "sam@example.com");
   create(h.api, post(claim("t_0123456789abcdef", "Gone soon"), "s-live"));
-  drogon::HttpResponsePtr deleted;
-  auto request = drogon::HttpRequest::newHttpRequest();
-  request->setMethod(drogon::Delete);
-  request->addCookie("wm_session", "s-live");
-  h.api.deleteTree(request, [&](const drogon::HttpResponsePtr& r) { deleted = r; }, "t_0123456789abcdef");
-  CHECK_EQ(deleted->getStatusCode(), drogon::k204NoContent);
+  retire(h.api, "t_0123456789abcdef", "s-live");
 
   drogon::HttpResponsePtr response =
       create(h.api, post(claim("t_0123456789abcdef", "Again"), "s-live"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k409Conflict);
+  CHECK_EQ(dump(bodyOf(response)),
+           std::string(R"({"code":"id-retired","error":"that id names a roadmap you deleted"})"));
+}
+
+// The other half of the same rule: a retired id still reads as a plain `id-taken` to everybody
+// else, byte-identical to a live stranger's tree. Whether an id is dead is the owner's business.
+TEST(create_with_another_accounts_soft_deleted_id_is_still_refused_as_taken) {
+  Harness h;
+  h.signIn("s-owner", "owner@example.com");
+  h.signIn("s-intruder", "intruder@example.com");
+  create(h.api, post(claim("t_0123456789abcdef", "Theirs"), "s-owner"));
+  retire(h.api, "t_0123456789abcdef", "s-owner");
+
+  drogon::HttpResponsePtr response =
+      create(h.api, post(claim("t_0123456789abcdef", "Mine now"), "s-intruder"));
 
   CHECK_EQ(response->getStatusCode(), drogon::k409Conflict);
   CHECK_EQ(dump(bodyOf(response)),

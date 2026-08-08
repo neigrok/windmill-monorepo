@@ -151,18 +151,36 @@ TEST(create_with_an_id_that_is_not_yours_is_taken_and_leaves_the_row_alone) {
   CHECK(s.trees.byId["t_deadbeefdeadbeef"].owner == std::nullopt);
 }
 
-TEST(create_with_a_soft_deleted_id_is_taken_even_for_its_old_owner) {
+TEST(create_with_your_own_soft_deleted_id_is_retired_not_taken) {
   Setup s;
   UserId me = uid("me");
   CHECK(s.registry.create(me, TreeId{"t_00c0ffee00c0ffee"}, treeData("Gone soon", {})) ==
         TreeRegistry::Creation::created);
   CHECK(s.registry.remove(TreeId{"t_00c0ffee00c0ffee"}, me) == TreeRegistry::Removal::deleted);
 
-  // load can't see the deleted row, so the insert runs — the unique index refuses it, the
-  // reload still sees nothing, and the claim reads taken (the client remaps its local id).
+  // load can't see the deleted row, so the insert runs and the unique index refuses it, and the
+  // reload still sees nothing — the retired row's owner is the only fact left that tells the
+  // caller's own delete apart from a stranger's id. Reading `taken` here is what had the claim
+  // re-plant the tree under a fresh id, resurrecting it once per boot.
   CHECK(s.registry.create(me, TreeId{"t_00c0ffee00c0ffee"}, treeData("Again", {})) ==
-        TreeRegistry::Creation::taken);
+        TreeRegistry::Creation::retired);
   CHECK_EQ(s.registry.list(me).size(), 0u);
+}
+
+TEST(create_with_another_accounts_soft_deleted_id_is_still_taken) {
+  Setup s;
+  UserId owner = uid("owner");
+  UserId intruder = uid("intruder");
+  CHECK(s.registry.create(owner, TreeId{"t_00c0ffee00c0ffee"}, treeData("Theirs", {})) ==
+        TreeRegistry::Creation::created);
+  CHECK(s.registry.remove(TreeId{"t_00c0ffee00c0ffee"}, owner) == TreeRegistry::Removal::deleted);
+
+  // Whose delete it was is the owner's business: to everybody else a retired id reads exactly
+  // like a live stranger's tree, and nobody inherits an id by outliving its owner's delete.
+  CHECK(s.registry.create(intruder, TreeId{"t_00c0ffee00c0ffee"}, treeData("Mine now", {})) ==
+        TreeRegistry::Creation::taken);
+  CHECK_EQ(s.registry.list(intruder).size(), 0u);
+  CHECK_EQ(s.registry.list(owner).size(), 0u);
 }
 
 TEST(list_orders_owned_trees_newest_first_and_excludes_other_owners) {

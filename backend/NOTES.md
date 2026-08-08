@@ -310,7 +310,15 @@ pass; the full project (server + mcp) builds green.
   defined off the persisted stamp, so an unsaved in-flight edit legitimately shouldn't move a row.
 - **Delete is a soft-delete with no room eviction (v1 limit).** `deleted_at` + the
   `deleted_at IS NULL` filter on every read is the authority; `save`'s upsert never clears it, so
-  no resurrection. But a room already resident in memory (any process) stays editable until it
+  the ROW never comes back. "So no resurrection" is what this line used to say, and it was wrong —
+  the row not coming back is not the tree not coming back. Because the id stays spoken for by the
+  primary key while `load` is blind to it, a create under a retired id used to answer the same
+  `409 id-taken` as a stranger's — and the web claim answers a stranger by re-planting the local
+  tree under a FRESH id. A deleted roadmap therefore returned on every claim pass, wearing a new id
+  each time, so deleting it again never helped. `Creation::retired` / `409 id-retired` now names the
+  owner's own retired id (`TreeRegistry::create`, `retiredOwner`), and the claim lets that tree go.
+  The lesson worth keeping: a delete is only as durable as the WEAKEST reader of it, and the client
+  that re-creates on conflict is a reader. But a room already resident in memory (any process) stays editable until it
   idle-evicts, persisting to an invisible row. Acceptable for now; a later refinement can evict the
   local room on delete. Also added `DELETE` to the CORS preflight `Allow-Methods` — the shared
   choke point advertises the whole verb set, so a missing verb silently fails the browser's

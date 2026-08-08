@@ -83,6 +83,14 @@ struct FakeTreeRepository : TreeRepository {
     if (!stored) return std::nullopt;
     return TreeAccess{stored->owner, stored->visibility};
   }
+  // Projected off the row the delete left behind, exactly as the real repository reads the
+  // column load() filters away: only a deleted id answers, and only when it had an owner.
+  std::optional<UserId> retiredOwner(const TreeId& tree) override {
+    if (!deletedIds.count(tree.str())) return std::nullopt;
+    auto it = byId.find(tree.str());
+    if (it == byId.end()) return std::nullopt;
+    return it->second.owner;
+  }
 
   ForkLineage loadForkLineage(const TreeId& tree) override {
     ForkLineage lineage;

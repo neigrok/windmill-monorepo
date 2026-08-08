@@ -11,10 +11,19 @@ import { createTree } from '../persistence/TreeRegistry.js';
 import { LocalTreeRegistry } from '../persistence/LocalTreeRegistry.js';
 import { ProgressStore } from '../persistence/ProgressStore.js';
 import { SyncSession } from './SyncSession.js';
-import { mintTreeId, moveLocalTree } from './localTrees.js';
+import { mintTreeId, moveLocalTree, deleteLocalTree } from './localTrees.js';
 import { track } from '../../../telemetry/beacon.js';
 
 const DRAIN_TIMEOUT_MS = 30_000;
+
+// The id names a roadmap this account deleted. Not an error to retry — an answer: this device
+// is holding the leftovers of a tree its owner retired, and the claim's job is to let it go.
+class RetiredTree extends Error {
+  constructor(treeId) {
+    super(`tree ${treeId} was deleted by its owner`);
+    this.treeId = treeId;
+  }
+}
 
 // One pass over the device index. `openSession` is an accessor for the live session of
 // the currently-open tree (its socket already carries the fresh principal); every other
@@ -35,8 +44,15 @@ export async function claimLocalTrees({ openTreeId = null, openSession = null } 
       window.dispatchEvent(new CustomEvent('wm-tree-claimed', { detail: { treeId } }));
       claimed += 1;
     } catch (err) {
-      // This tree stays unclaimed and the next boot retries it; an unreachable or
-      // signed-out server dooms the rest of the run too, so stop asking.
+      // A tree the account has deleted is done, not pending: clear this device's copy so the
+      // next boot has nothing left to claim. Every other failure leaves the tree unclaimed and
+      // the next boot retries it; an unreachable or signed-out server dooms the rest of the run
+      // too, so stop asking.
+      if (err instanceof RetiredTree) {
+        await deleteLocalTree(err.treeId).catch(() => {});
+        window.dispatchEvent(new CustomEvent('wm-claim-retired', { detail: { treeId: err.treeId } }));
+        continue;
+      }
       if (err?.code === 'unreachable' || err?.code === 'unauthenticated') break;
     }
   }
@@ -47,14 +63,19 @@ export async function claimLocalTrees({ openTreeId = null, openSession = null } 
 
 // Step 1 — the server tree exists under our id: created empty (default legend at
 // genesis, so the local seed converges with it), or `existed` (owner == caller, a
-// plain resume). 409 id-taken means another account owns the id or it died a soft
-// delete — cryptographically unreachable for an honestly-minted one. The local tree
-// survives by moving under a fresh id; the server's version stands untouched.
+// plain resume). 409 id-taken means another account owns the id — cryptographically
+// unreachable for an honestly-minted one. The local tree survives by moving under a
+// fresh id; the server's version stands untouched.
 async function ensureServerTree(entry) {
   try {
     const { treeId } = await createTree(claimBody(entry.id, entry.title));
     return treeId;
   } catch (err) {
+    // 409 id-retired is this account's own deleted roadmap. Re-planting it under a fresh id —
+    // what the id-taken path below does — is how a deleted tree came back every boot, forever,
+    // wearing a new id each time so deleting it again never helped. A delete is an instruction:
+    // honour it by clearing what this device still holds, and claim nothing.
+    if (err?.code === 'id-retired') throw new RetiredTree(entry.id);
     if (err?.code !== 'id-taken') throw err;
   }
   const freshId = mintTreeId();

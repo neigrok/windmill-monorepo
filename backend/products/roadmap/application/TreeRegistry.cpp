@@ -40,9 +40,11 @@ TreeRegistry::Creation TreeRegistry::create(const UserId& owner, const TreeId& i
   } catch (const DuplicateTree&) {
     // Lost a cross-process insert race (the standalone MCP binary shares this DB), or the id
     // names a soft-deleted tree — its row outlives the delete, invisible to load. Reload to
-    // classify: only a live row the caller owns reads as a resume.
+    // classify: only a live row the caller owns reads as a resume, and a retired row of the
+    // caller's own reads as `retired` rather than as a stranger's id (see the enum).
     std::optional<StoredTree> raced = trees_.load(id);
     if (raced && raced->owner && *raced->owner == owner) return Creation::existedYours;
+    if (trees_.retiredOwner(id) == std::optional<UserId>(owner)) return Creation::retired;
     return Creation::taken;
   }
   return Creation::created;

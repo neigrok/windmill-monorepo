@@ -46,6 +46,13 @@ void TreeRegistryApi::createTree(const drogon::HttpRequestPtr& req, HttpCallback
     callback(error(drogon::k409Conflict, "that id already names another tree", "id-taken"));
     return;
   }
+  // The caller's own retired id. Told apart from `id-taken` so the claim path can honour the
+  // delete (drop the device's leftovers) instead of re-planting the tree under a fresh id. Only
+  // ever sent to the account that owned it, so it reveals nothing about anyone else's ids.
+  if (outcome == TreeRegistry::Creation::retired) {
+    callback(error(drogon::k409Conflict, "that id names a roadmap you deleted", "id-retired"));
+    return;
+  }
   Json::Value body(Json::objectValue);
   body["treeId"] = requestedId;
   body["existed"] = outcome == TreeRegistry::Creation::existedYours;

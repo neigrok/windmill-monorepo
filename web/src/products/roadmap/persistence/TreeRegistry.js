@@ -72,7 +72,8 @@ function timestampOf(updatedAt) {
 // TreeData: `title` names it, and `nodes`/`kinds` seed its structure + legend (the birth sends
 // one root node); omit them for an empty tree with the default legend. The claim path passes a
 // client-minted `id` (t_ + 16 hex) the server keeps — `existed: true` is its idempotent resume,
-// 409 { code: 'id-taken' } its remap signal.
+// 409 { code: 'id-taken' } its remap signal, and 409 { code: 'id-retired' } an id this account itself deleted —
+// which the claim must let go of rather than remap, since a remap re-plants the deleted tree under a fresh id.
 export async function createTree(request) {
   let response;
   try {

@@ -18,6 +18,7 @@ public:
 
   std::optional<StoredTree> load(const TreeId& tree) override;
   std::optional<TreeAccess> loadAccess(const TreeId& tree) override;
+  std::optional<UserId> retiredOwner(const TreeId& tree) override;
   ForkLineage loadForkLineage(const TreeId& tree) override;
   void save(const TreeId& tree, const GraphState& state, const LegendState& legend,
             const Lww<std::string>& title, Seq head) override;
