@@ -536,10 +536,14 @@ one predicate, three products. (The roadmap code's local `enum class Plan { free
 Everything else — pages, mood/energy, the canvas and zoom, **search**, threads, trends, the week,
 nudges, and export — asks nothing of billing at all.
 
-**Usage tuning is deliberately out of scope here.** How much each feature costs us, per-user
-allowances, minutes caps, cost control — none of that is designed now. The mission is cool,
-effortless products; a subscriber simply *has* the premium features. Metering is a later ops
-concern that bolts on behind this same `subscribed` gate without changing the product (§10). The
+**Usage tuning was deliberately out of scope here, and stopped being so on 2026-08-09.** The
+mission is still cool, effortless products and a subscriber still simply *has* the premium
+features — no minutes cap and no per-feature allowance was ever added. What did land is the
+platform AI meter: the curator records every call it makes to `ai_usage`, and `EchoSweep` asks a
+per-user COST ceiling before curating, skipping an over-budget user for that pass rather than
+failing them. It bolted on behind the same gate without changing the product, which is what this
+paragraph predicted; the prediction is kept here because it came true, not because it is pending.
+The
 one honest note that remains: the canon lists voice under "Free, forever", and it is now a
 Windmill One feature — a small copy/`pricing.md` update, not a silent gate (§10.8a).
 

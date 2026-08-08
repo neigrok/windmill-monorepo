@@ -35,9 +35,14 @@ public:
   // ceiling its plan grants.
   AiAllowance aiAllowanceFor(const UserId& user, const std::string& email) const;
 
-  // Background work's OWN bucket, product-keyed and far smaller. A six-hourly journal sweep nobody
-  // asked for must not be able to eat the allowance the question they DID ask is then refused for,
-  // and one shared per-user budget made exactly that possible.
+  // Background work's OWN bucket, and far smaller. A six-hourly journal sweep nobody asked for must
+  // not be able to eat the allowance the question they DID ask is then refused for, and one shared
+  // per-user budget made exactly that possible.
+  //
+  // It is keyed on the PRODUCT, so what it actually meters is all of journal's model spend, not the
+  // sweep alone — true today because the curator is journal's only vendor call, and a line that will
+  // stop being true the moment journal buys a second one. Say it that way rather than promising a
+  // precision the key cannot deliver.
   AiAllowance sweepAllowanceFor(const UserId& user) const;
 
 private:

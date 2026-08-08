@@ -56,7 +56,7 @@ test('usageView — a clean window, whole', () => {
     header: {
       title: 'AI usage',
       window: 'Trailing 30 days',
-      note: 'All figures USD, as billed by Anthropic.',
+      note: 'USD, estimated from token counts and our own rate table — not an invoice.',
     },
     runRate: {
       headline: '$12.40',
@@ -129,7 +129,7 @@ test('usageView — an unpriced, partly unattributed window, whole', () => {
     projection: null,
     // No prior window was read, so there is no comparison — and none is invented.
     delta: null,
-    subline: '10 calls · $0.1000 per call',
+    subline: '10 calls · ≥$0.1000 per call',
   });
 
   assert.deepEqual(view.honesty, {
@@ -152,7 +152,7 @@ test('usageView — an unpriced, partly unattributed window, whole', () => {
         key: 'roadmap',
         label: 'Roadmap',
         value: 800000000,
-        display: '$0.80',
+        display: '≥$0.80',
         tone: 'var(--wm-usage-a)',
         badge: { text: '≥', title: '3 calls of 7 carry no price — this figure is a floor' },
       },
@@ -166,7 +166,7 @@ test('usageView — an unpriced, partly unattributed window, whole', () => {
       },
     ],
     total: 1000000000,
-    summary: 'Spend by product over the last 30 days: Roadmap $0.80, Compose (no account) $0.20.',
+    summary: 'Spend by product over the last 30 days: Roadmap ≥$0.80, Compose (no account) $0.20.',
   });
 
   // Anonymous spend is never a row in a list of people. It is a caption under it.
@@ -326,4 +326,26 @@ test('the projection divides by elapsed days, so a quiet month does not read as 
 
   // $6 spent over 29 complete days, projected across 30 — not $6 over 2 days projected to $90.
   assert.equal(view.runRate.projection.value, '$6.21');
+});
+
+// A difference between two floors has no knowable sign. With unpriced calls in either window the
+// arithmetic can say "down $39" while real spend went up — a sentence that would sit beside a
+// headline wearing a "≥" and flatly contradict it. Unknown is not small; the line goes away.
+test('the delta is withheld when either window contains a call we could not price', () => {
+  const base = {
+    inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0,
+    anonymousCostNanos: 0, unpricedModels: [], byProduct: [], daily: [],
+  };
+  const withUnpriced = { ...base, costNanos: 1000000000, calls: 501, unpricedCalls: 500 };
+  const cleanPrior = { ...base, costNanos: 40000000000, calls: 10, unpricedCalls: 0 };
+
+  assert.equal(usageView({ summary: withUnpriced, prior: cleanPrior }).runRate.delta, null);
+  // The reverse too: a clean window compared against a floor is the same unknown.
+  assert.equal(usageView({ summary: cleanPrior, prior: withUnpriced }).runRate.delta, null);
+  // Two clean windows still compare, or the panel would never say anything.
+  assert.equal(
+    usageView({ summary: cleanPrior, prior: { ...base, costNanos: 30000000000, calls: 8, unpricedCalls: 0 } })
+      .runRate.delta.direction,
+    'up',
+  );
 });

@@ -6,8 +6,11 @@
 // THE ROOM HAS EXACTLY ONE GATE, AND IT IS THE SERVER'S. The endpoints answer 404 byte-identically
 // for signed-out, signed-in-non-owner and unknown, so this page fetches, and on `not_found` does
 // precisely what any other unrecognised /app path does — replaces into /app. No owner flag is read
-// (there is none, deliberately), no chrome is drawn conditionally, and nothing on the way in tells a
-// visitor who should not be here that there is anything here to be told about.
+// (there is none, deliberately), and no chrome is drawn conditionally. What this does NOT buy is
+// secrecy: the route string and this chunk's filename ship in the built bundle to everyone, so a
+// visitor who reads it learns the room exists. That is fine, and it is the reason the gate is the
+// server's — but writing "nothing tells a visitor there is anything here" would have been this file
+// describing obscurity as though it were the defence, which is the way a real one gets skipped.
 //
 // THE PANELS ARE LOCAL COMPONENTS. Each has one caller — this file — and a separate file per panel
 // would be exactly the single-call-site indirection the house rules say to inline. What is NOT local

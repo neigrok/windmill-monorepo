@@ -40,7 +40,7 @@ inline const char* tendStatusName(TendStatus status) {
   return "failed";
 }
 
-// Why a run never started. The client turns these into the spec's four quiet faces; `none` is
+// Why a run never started. The client turns these into the spec's five quiet faces; `none` is
 // the ordinary case where the run did start.
 // `outOfAllowance` is the RUNS promise (30 a month, statable on a pricing page); `outOfBudget` is
 // our own dollar fuse behind it. Two ceilings measuring two different things, and both are kept —

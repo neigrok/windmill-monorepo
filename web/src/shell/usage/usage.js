@@ -154,7 +154,10 @@ function runRate(summary, prior, filledDaily) {
   const cacheShare = cacheReadPercent(summary);
 
   const parts = [countLabel(summary.calls, 'call', 'calls')];
-  if (perCall) parts.push(`${perCall} per call`);
+  // The floor mark rides on every derived figure, not just the headline. A per-call average computed
+  // from a total that is a floor is itself a floor, and printing it bare invites the one arithmetic
+  // this page exists to prevent — reading a number as if we stood behind it.
+  if (perCall) parts.push(`${partial ? '≥' : ''}${perCall} per call`);
   if (cacheShare != null) parts.push(`cache reads ${cacheShare}% of input tokens`);
 
   return {
@@ -170,8 +173,15 @@ function runRate(summary, prior, filledDaily) {
 
 // The prior equal window, when we have one. A failed second read is not a reason to invent a
 // comparison, so the whole line is simply absent rather than shown as zero change.
+//
+// And a comparison between two FLOORS is not a comparison. When either window contains a call we
+// could not price, the difference of the two known totals has no knowable sign: spend can be up
+// while the arithmetic says down by forty dollars, and that sentence would sit directly beside a
+// headline wearing a "≥" and contradict it. An unknown direction is not a small direction, so the
+// line goes away entirely — the honesty strip already says why.
 function deltaAgainst(summary, prior) {
   if (!prior) return null;
+  if (summary.unpricedCalls > 0 || prior.unpricedCalls > 0) return null;
   const change = summary.costNanos - prior.costNanos;
   if (change === 0) return { direction: 'flat', text: 'level with the prior 30 days' };
   const sign = change > 0 ? '+' : '−';
@@ -277,7 +287,7 @@ function byProduct(summary) {
       key: row.product,
       label: product.label,
       value: row.costNanos,
-      display: formatMoney(row.costNanos),
+      display: `${row.unpricedCalls > 0 ? '≥' : ''}${formatMoney(row.costNanos)}`,
       tone: product.tone,
       badge: floorBadge(row.unpricedCalls, row.calls),
     };
@@ -299,6 +309,9 @@ function byProduct(summary) {
     total,
     summary: segments.length === 0
       ? 'Spend by product: nothing spent in this window.'
+      // The badge is a visual mark and a sentence read aloud carries none of it, so the floor rides
+      // in `display` itself — otherwise the only reader who cannot see the badge is the only reader
+      // told a floor is a total.
       : `Spend by product over the last ${WINDOW_DAYS} days: ${segments.map((segment) => `${segment.label} ${segment.display}`).join(', ')}.`,
   };
 }
@@ -336,7 +349,11 @@ export function usageView({ summary, prior = null, spenders = [], window = null 
     header: {
       title: 'AI usage',
       window: `Trailing ${WINDOW_DAYS} days`,
-      note: 'All figures USD, as billed by Anthropic.',
+      // NOT "as billed by Anthropic": nothing here has seen an invoice. These are our own rate table
+      // applied to the token counts the API reported, which is a good estimate and not a bill — the
+      // two will drift on retries, aborted streams and any rate we are slow to update. Saying
+      // "billed" would be the page telling its two readers something it cannot know.
+      note: 'USD, estimated from token counts and our own rate table — not an invoice.',
     },
     runRate: runRate(summary, prior, filled),
     honesty: honesty(summary),

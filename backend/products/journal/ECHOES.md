@@ -387,7 +387,9 @@ Two consequences the owner should weigh rather than inherit:
   tells the truth about what exists rather than concealing it — but it is a different promise, and
   the mission rule ("no dark patterns") deserves a deliberate answer rather than a default.
 
-**Built so the answer is a policy flip, not a rebuild:** the sweep is entitlement-blind and the
+**Built so the answer is a policy flip, not a rebuild:** the sweep is entitlement-blind (it does
+ask a per-user AI COST ceiling since 2026-08-09 — a spend brake is not an entitlement, and an
+over-budget user is SKIPPED for that pass rather than failed, so their pages stay due) and the
 serialiser owns the cut. Reverting to absent-not-locked is one branch in the read path.
 
 ## The surface

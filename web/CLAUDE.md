@@ -6,8 +6,9 @@ in `STRUCTURE.md`; this file is only what is true inside this tree.
 ## Three zones under `src/`
 
 - **`shell/`** — the app frame: `App.jsx` (hash router + product switcher), auth, billing,
-  account, settings, connect, feedback, the marketing/landing chrome, PWA, and
-  `apiBase.js`. The shell hard-codes no product.
+  account, settings, connect, feedback, the marketing/landing chrome, PWA, the owner-only
+  AI spend room at `/app/usage` (server-gated, and it 404s byte-identically to everyone
+  else), and `apiBase.js`. The shell hard-codes no product.
 - **`products/<p>/`** — one front-end per product (roadmap, journal, gym). Each exports a
   route table; `shell/products.js` is the registry that composes them, and it is the *only*
   place the shell learns a product exists.

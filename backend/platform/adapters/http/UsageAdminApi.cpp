@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cerrno>
 #include <cstdlib>
 #include <optional>
 #include <string>
@@ -60,9 +61,17 @@ struct Window {
 long long msParam(const drogon::HttpRequestPtr& req, const std::string& name, long long fallback) {
   const std::string raw = req->getParameter(name);
   if (raw.empty()) return fallback;
+  errno = 0;
   char* end = nullptr;
   const long long value = std::strtoll(raw.c_str(), &end, 10);
-  if (end == raw.c_str() || *end != '\0' || value < 0) return fallback;
+  // Three ways a number can be nonsense, and only the first is a parse failure. errno catches the
+  // digits that overflow; the RANGE check catches the ones that do not — LLONG_MAX parses perfectly
+  // and then throws inside to_timestamp() on the way into Postgres, which turned a typo in a URL
+  // into a 500. The stated contract here is that nonsense falls back to the default window, so it
+  // has to, whichever kind of nonsense it was.
+  constexpr long long kMaxMs = 253'402'300'799'000;  // 9999-12-31, past any window worth asking for
+  if (errno == ERANGE || end == raw.c_str() || *end != '\0' || value < 0 || value > kMaxMs)
+    return fallback;
   return value;
 }
 

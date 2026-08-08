@@ -7,6 +7,8 @@ this tree.
 ## Layering
 
 `platform/` is the product-neutral half — auth, oauth, billing, the MCP engine, email,
+the AI spend meter (`domain/AiUsage`, `domain/AiFuse`, `ports/AiUsageRepository` — every
+vendor call is priced and recorded, and the ceilings read the same rows the owner page does),
 telemetry, access, the HTTP host. `products/<p>/` is one product each (roadmap, journal,
 gym), and every product repeats the same four layers: `domain/` (pure), `application/`
 (services over ports), `ports/` (the abstractions), `adapters/` (one subfolder per messy
