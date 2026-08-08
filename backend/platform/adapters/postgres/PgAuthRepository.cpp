@@ -1,12 +1,12 @@
 #include "platform/adapters/postgres/PgAuthRepository.h"
 
-#include "platform/adapters/postgres/PgConnection.h"
+#include "platform/adapters/postgres/PgPool.h"
 
 #include <pqxx/pqxx>
 
 namespace wm {
 
-PgAuthRepository::PgAuthRepository(std::string connString) : connString_(std::move(connString)) {}
+PgAuthRepository::PgAuthRepository(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
 
 namespace {
 // A users row → User, carrying the soft-close stamp (null deleted_at → a live account).
@@ -23,7 +23,8 @@ const char* kUserColumns =
 }
 
 std::optional<User> PgAuthRepository::findUserByEmail(const Email& email) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT " + std::string(kUserColumns) + " FROM users WHERE email = $1", email.value);
   if (rows.empty()) return std::nullopt;
@@ -31,7 +32,8 @@ std::optional<User> PgAuthRepository::findUserByEmail(const Email& email) {
 }
 
 std::optional<User> PgAuthRepository::findUserById(const UserId& id) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT " + std::string(kUserColumns) + " FROM users WHERE id = $1::uuid", id.str());
   if (rows.empty()) return std::nullopt;
@@ -39,7 +41,8 @@ std::optional<User> PgAuthRepository::findUserById(const UserId& id) {
 }
 
 User PgAuthRepository::createUser(const Email& email, const std::string& name) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "INSERT INTO users (id, email, name) VALUES (gen_random_uuid(), $1, $2) "
       "RETURNING " + std::string(kUserColumns),
@@ -49,13 +52,15 @@ User PgAuthRepository::createUser(const Email& email, const std::string& name) {
 }
 
 void PgAuthRepository::updateName(const UserId& userId, const std::string& name) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params("UPDATE users SET name = $2 WHERE id = $1::uuid", userId.str(), name);
   txn.commit();
 }
 
 void PgAuthRepository::markUserDeleted(const UserId& userId, UnixMs now) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params("UPDATE users SET deleted_at = to_timestamp($2::double precision / 1000.0) "
                   "WHERE id = $1::uuid",
                   userId.str(), static_cast<long long>(now));
@@ -63,19 +68,22 @@ void PgAuthRepository::markUserDeleted(const UserId& userId, UnixMs now) {
 }
 
 void PgAuthRepository::reviveUser(const UserId& userId) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params("UPDATE users SET deleted_at = NULL WHERE id = $1::uuid", userId.str());
   txn.commit();
 }
 
 void PgAuthRepository::deleteUser(const UserId& userId) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params("DELETE FROM users WHERE id = $1::uuid", userId.str());
   txn.commit();
 }
 
 std::optional<UserId> PgAuthRepository::findIdentity(Provider provider, const std::string& subject) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT user_id::text FROM user_identities WHERE provider = $1 AND subject = $2",
       toString(provider), subject);
@@ -87,7 +95,8 @@ void PgAuthRepository::bindIdentity(Provider provider, const std::string& subjec
                                     const std::string& emailAtLink) {
   // DO UPDATE, not DO NOTHING: the service only reaches this after resolving whatever the door was
   // already bound to, so re-binding is the door following its account rather than overwriting one.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params(
       "INSERT INTO user_identities (provider, subject, user_id, email_at_link) "
       "VALUES ($1, $2, $3::uuid, $4) "
@@ -101,7 +110,8 @@ void PgAuthRepository::moveIdentities(const UserId& from, const UserId& to) {
   // The destination may already hold a door for the same provider (they signed in with Google on
   // the web and Apple on the phone); the pair is the key, and only the loser's own doors move, so
   // a collision is impossible — two rows for one provider differ by subject.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params("UPDATE user_identities SET user_id = $2::uuid WHERE user_id = $1::uuid",
                   from.str(), to.str());
   txn.commit();
@@ -109,7 +119,8 @@ void PgAuthRepository::moveIdentities(const UserId& from, const UserId& to) {
 
 void PgAuthRepository::insertLink(const std::string& digest, const Email& email, UnixMs createdAt,
                                   UnixMs expiresAt, const std::string& forkSource) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params(
       "INSERT INTO magic_links (token_hash, email, created_ms, expires_ms, fork_source) "
       "VALUES ($1, $2, $3, $4, nullif($5, ''))",
@@ -119,7 +130,8 @@ void PgAuthRepository::insertLink(const std::string& digest, const Email& email,
 }
 
 int PgAuthRepository::countRecentLinks(const Email& email, UnixMs since) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT count(*) FROM magic_links "
       "WHERE email = $1 AND consumed_ms IS NULL AND created_ms >= $2",
@@ -128,7 +140,8 @@ int PgAuthRepository::countRecentLinks(const Email& email, UnixMs since) {
 }
 
 std::optional<StoredLink> PgAuthRepository::findLink(const std::string& digest) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT email::text, consumed_ms, expires_ms, coalesce(fork_source, '') AS fork_source "
       "FROM magic_links WHERE token_hash = $1", digest);
@@ -141,7 +154,8 @@ std::optional<StoredLink> PgAuthRepository::findLink(const std::string& digest) 
 }
 
 bool PgAuthRepository::consumeLink(const std::string& digest, UnixMs at) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result result = txn.exec_params(
       "UPDATE magic_links SET consumed_ms = $2 WHERE token_hash = $1 AND consumed_ms IS NULL",
       digest, static_cast<long long>(at));
@@ -151,7 +165,8 @@ bool PgAuthRepository::consumeLink(const std::string& digest, UnixMs at) {
 
 void PgAuthRepository::insertSession(const std::string& digest, const UserId& user, UnixMs expiresAt,
                                     const std::string& userAgent, const std::string& ip, UnixMs seenAt) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params(
       "INSERT INTO sessions (token_hash, user_id, expires_ms, user_agent, ip, last_seen_ms) "
       "VALUES ($1, $2::uuid, $3, $4, $5, $6)",
@@ -161,7 +176,8 @@ void PgAuthRepository::insertSession(const std::string& digest, const UserId& us
 }
 
 std::optional<StoredSession> PgAuthRepository::findSession(const std::string& digest) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT user_id::text, expires_ms FROM sessions WHERE token_hash = $1", digest);
   if (rows.empty()) return std::nullopt;
@@ -173,7 +189,8 @@ std::optional<StoredSession> PgAuthRepository::findSession(const std::string& di
 
 void PgAuthRepository::refreshSession(const std::string& digest, UnixMs expiresAt, UnixMs seenAt,
                                      const std::string& userAgent, const std::string& ip) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params(
       "UPDATE sessions SET expires_ms = $2, last_seen_ms = $3, "
       "user_agent = coalesce(nullif($4, ''), user_agent), ip = coalesce(nullif($5, ''), ip) "
@@ -183,13 +200,15 @@ void PgAuthRepository::refreshSession(const std::string& digest, UnixMs expiresA
 }
 
 void PgAuthRepository::deleteSession(const std::string& digest) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params("DELETE FROM sessions WHERE token_hash = $1", digest);
   txn.commit();
 }
 
 std::vector<SessionRow> PgAuthRepository::listSessions(const UserId& userId) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT id::text, token_hash, user_agent, last_seen_ms, "
       "(extract(epoch from created_at) * 1000)::bigint AS created_ms, ip "
@@ -211,7 +230,8 @@ std::vector<SessionRow> PgAuthRepository::listSessions(const UserId& userId) {
 std::optional<std::string> PgAuthRepository::revokeSession(const UserId& userId,
                                                            const std::string& sessionId) {
   // Compare id::text (not $1::uuid) so a malformed path id matches nothing instead of raising.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "DELETE FROM sessions WHERE id::text = $1 AND user_id = $2::uuid RETURNING token_hash",
       sessionId, userId.str());
@@ -221,14 +241,16 @@ std::optional<std::string> PgAuthRepository::revokeSession(const UserId& userId,
 }
 
 void PgAuthRepository::revokeSessionsExcept(const UserId& userId, const std::string& keepDigest) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params("DELETE FROM sessions WHERE user_id = $1::uuid AND token_hash <> $2",
                   userId.str(), keepDigest);
   txn.commit();
 }
 
 void PgAuthRepository::revokeAllSessions(const UserId& userId) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params("DELETE FROM sessions WHERE user_id = $1::uuid", userId.str());
   txn.commit();
 }

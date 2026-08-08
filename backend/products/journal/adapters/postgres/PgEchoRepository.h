@@ -1,7 +1,9 @@
 #pragma once
 
+#include "platform/adapters/postgres/PgPool.h"
 #include "products/journal/ports/EchoRepository.h"
 
+#include <memory>
 #include <string>
 
 namespace wm {
@@ -18,7 +20,7 @@ namespace wm {
 // the same reasoning that already keeps every date off pqxx's date parsers.
 class PgEchoRepository : public EchoRepository {
 public:
-  explicit PgEchoRepository(std::string connString);
+  explicit PgEchoRepository(std::shared_ptr<PgPool> pool);
 
   std::vector<EchoUser> activeSince(std::uint64_t sinceMs) override;
 
@@ -50,7 +52,7 @@ public:
   int pagesWritten(const UserId& user) override;
 
 private:
-  std::string connString_;
+  std::shared_ptr<PgPool> pool_;
 };
 
 }

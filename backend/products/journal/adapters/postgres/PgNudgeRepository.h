@@ -1,7 +1,9 @@
 #pragma once
 
+#include "platform/adapters/postgres/PgPool.h"
 #include "products/journal/ports/NudgeRepository.h"
 
+#include <memory>
 #include <string>
 
 namespace wm {
@@ -14,7 +16,7 @@ namespace wm {
 // epoch), so no C++ calendar maths ever runs — the mac-vs-CI trap the reminder engine documents.
 class PgNudgeRepository : public NudgeRepository {
 public:
-  explicit PgNudgeRepository(std::string connString);
+  explicit PgNudgeRepository(std::shared_ptr<PgPool> pool);
 
   bool tryLockSweep() override;
   void unlockSweep() override;
@@ -31,7 +33,7 @@ public:
   void disable(const UserId& user) override;
 
 private:
-  std::string connString_;
+  std::shared_ptr<PgPool> pool_;
 };
 
 }

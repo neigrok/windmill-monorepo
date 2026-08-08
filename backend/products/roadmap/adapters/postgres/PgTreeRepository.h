@@ -1,7 +1,9 @@
 #pragma once
 
+#include "platform/adapters/postgres/PgPool.h"
 #include "products/roadmap/ports/TreeRepository.h"
 
+#include <memory>
 #include <pqxx/pqxx>
 
 #include <string>
@@ -10,11 +12,11 @@ namespace wm {
 
 // Stores a tree's lattice as per-entry rows (tree_nodes / tree_edges / tree_kinds), so a
 // save upserts only the slice it is given — never the whole tree through MVCC. Legacy
-// document-blob trees are backfilled into rows on first load. A connection is opened per
-// call — simple and correct for Phase 0; a pool is the obvious later optimization.
+// document-blob trees are backfilled into rows on first load. Each call borrows a connection
+// from the shared pool for the length of its transaction (PgPool.h).
 class PgTreeRepository : public TreeRepository {
 public:
-  explicit PgTreeRepository(std::string connString);
+  explicit PgTreeRepository(std::shared_ptr<PgPool> pool);
 
   std::optional<StoredTree> load(const TreeId& tree) override;
   std::optional<TreeAccess> loadAccess(const TreeId& tree) override;
@@ -42,7 +44,7 @@ private:
   TreeData projectDocument(pqxx::work& txn, const TreeId& tree, const std::string& title,
                            const std::string& documentBlob);
 
-  std::string connString_;
+  std::shared_ptr<PgPool> pool_;
 };
 
 }

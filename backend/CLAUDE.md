@@ -56,6 +56,33 @@ Every test file is named by hand in one of three `add_executable` lists in
 is the production runbook. `SPEC.md` is the founding design document, superseded in
 places — check its banner before building from it.
 
+## Every Postgres connection comes from the pool
+
+`platform/adapters/postgres/PgPool.h` is the only place this process opens a connection, and
+it never holds more than 20. A repository stores a `std::shared_ptr<PgPool>`, never a
+connection string, and borrows for exactly one transaction:
+
+```cpp
+PgLease conn{*pool_};      // the borrow, returned when it goes out of scope
+pqxx::work txn{*conn};     // declared second so it destructs FIRST and can still roll back
+```
+
+That order is load-bearing, and so is the ceiling. The reason is a machine-level failure, not
+tidiness: a closed loopback connection holds one of macOS's 16,384 TCP ephemeral ports for 30
+seconds, and the whole box — Chrome, DNS-over-TCP, everything — shares that pool. The four Pg
+test files used to open a connection per case and per fixture reset, which made one `ctest`
+run cost **157 connections in 1.1 seconds**; a few agents looping the suite took the developer's
+machine off the network on 2026-08-08. Tests borrow from `test/PgTestPool.h`, one pool per
+binary, and the same run now costs five.
+
+Two habits follow, and both are cheap:
+
+- Local `DATABASE_URL` is the **unix socket** (`postgresql:///windmill?host=/tmp`), which costs
+  no ephemeral port at all. Production keeps TCP; the compose network gives it no choice.
+- **Never load-test with one `curl` per request.** `seq 1 3000 | xargs -P 40 curl` burns 3,000
+  ports as surely as the old pool did. Pass every URL to one `curl` so it reuses the connection —
+  500 requests then cost one port instead of 500.
+
 ## A green local build is not a green CI
 
 macOS/Homebrew and the CI's Linux image disagree on two things that each compile green on
@@ -63,7 +90,7 @@ one side and fail on the other:
 
 - **libpqxx** names a result row `pqxx::row_ref` on macOS and `pqxx::row` on Linux. Read
   rows through `pqxx::result`, or take the row as a template parameter — never bind a
-  `pqxx::row` (`PgTreeRepository.cpp:179`, `PgTendRunRepository.cpp:129`).
+  `pqxx::row` (`PgTreeRepository.cpp:195`, `PgTendRunRepository.cpp:132`).
 - **jsoncpp** writes a non-finite double as a token no parser reads back, and older builds
   throw on it instead, so the two toolchains can disagree on the same value
   (`ToolArgs.cpp:69` names such a value rather than rendering it).

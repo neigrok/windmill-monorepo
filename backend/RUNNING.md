@@ -36,7 +36,7 @@ builds only the core libraries + tests and skips the server (see the status line
 ## 4. Run
 
 ```sh
-DATABASE_URL="postgresql://localhost/windmill" PORT=8088 ./build/windmill_server
+DATABASE_URL="postgresql:///windmill?host=/tmp" PORT=8088 ./build/windmill_server
 ```
 
 `:8088` because that is what `web/src/shell/apiBase.js` falls back to outside a production
@@ -113,7 +113,7 @@ applied, so they run only under `WM_PG_TEST` (`PgJournalRepositoryTest`, `PgEcho
 `PgTrainingRepositoryTest`; they seed and clean their own rows, so they are safe to re-run).
 
 ```sh
-WM_PG_TEST=1 DATABASE_URL="postgresql://localhost/windmill" \
+WM_PG_TEST=1 DATABASE_URL="postgresql:///windmill?host=/tmp" \
   ctest --test-dir build -R adapters -V          # 393/393 — without it, 364/393 and 29 skipped
 ```
 

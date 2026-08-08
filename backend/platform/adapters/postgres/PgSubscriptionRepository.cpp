@@ -1,6 +1,6 @@
 #include "platform/adapters/postgres/PgSubscriptionRepository.h"
 
-#include "platform/adapters/postgres/PgConnection.h"
+#include "platform/adapters/postgres/PgPool.h"
 
 #include <pqxx/pqxx>
 
@@ -30,13 +30,14 @@ PaddleSubscription subscriptionFrom(const Row& row) {
 }
 }
 
-PgSubscriptionRepository::PgSubscriptionRepository(std::string connString)
-    : connString_(std::move(connString)) {}
+PgSubscriptionRepository::PgSubscriptionRepository(std::shared_ptr<PgPool> pool)
+    : pool_(std::move(pool)) {}
 
 void PgSubscriptionRepository::upsertCustomer(const PaddleCustomer& customer) {
   // Keyed on the Paddle id, so a redelivered customer.created and a later customer.updated both
   // land on one row — the email is simply refreshed to whatever Paddle last said.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params(
       "INSERT INTO paddle_customers (customer_id, email) VALUES ($1, $2) "
       "ON CONFLICT (customer_id) DO UPDATE SET email = excluded.email, updated_at = now()",
@@ -62,7 +63,8 @@ void PgSubscriptionRepository::upsertSubscription(const PaddleSubscription& subs
 
   // coalesce on user_id: only the checkout stamps it, so a later subscription.updated (which
   // carries no custom_data) must never erase the binding we already know.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   // The trailing WHERE is the staleness guard: a retry of an OLDER event (Paddle retries for days)
   // must not overwrite state a NEWER one already wrote — that is how a canceled subscription would
   // spring back to active. A row with no recorded time, or an event carrying none, still applies.
@@ -88,7 +90,8 @@ std::optional<PaddleSubscription> PgSubscriptionRepository::findFor(const UserId
                                                                     const std::string& email) {
   // Either binding may match, and an access-granting row wins over a merely newer one — see the
   // port for why (a planted row must not shadow a real subscription).
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT " + std::string(kSubscriptionColumns) +
           " FROM paddle_subscriptions s "

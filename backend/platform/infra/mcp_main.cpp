@@ -5,7 +5,7 @@
 #include "platform/adapters/mcp/McpServer.h"
 #include "products/roadmap/adapters/mcp/RoadmapResources.h"
 #include "products/roadmap/adapters/mcp/RoadmapTools.h"
-#include "platform/adapters/postgres/PgConnection.h"
+#include "platform/adapters/postgres/PgPool.h"
 #include "products/roadmap/adapters/postgres/PgOpLog.h"
 #include "products/roadmap/adapters/postgres/PgProgressRepository.h"
 #include "products/roadmap/adapters/postgres/PgTreeRepository.h"
@@ -40,12 +40,13 @@ int main() {
 
   const char* url = std::getenv("DATABASE_URL");
   std::string connString = url ? url : "postgresql://localhost/windmill";
+  auto pool = std::make_shared<PgPool>(connString);
   const char* userEnv = std::getenv("WINDMILL_MCP_USER");
   UserId caller{userEnv ? std::string(userEnv) : std::string("dev")};
 
-  PgTreeRepository trees(connString);
-  PgProgressRepository progressRepo(connString);
-  PgOpLog oplog(connString);
+  PgTreeRepository trees(pool);
+  PgProgressRepository progressRepo(pool);
+  PgOpLog oplog(pool);
   NullPresenceBus bus;
   RoomRegistry registry(trees, oplog, bus);
   ProgressService progress(progressRepo);

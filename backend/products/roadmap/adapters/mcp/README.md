@@ -314,9 +314,11 @@ token, and a deployment with no auth wired at all.
   database opens a second registry: each process reloads head on open and is the authority for
   a tree while it holds it, so two of them writing one tree can still race on `(tree_id, seq)`.
   That is a local/standalone topology, not a second production writer.
-- **Blocking DB on the event loop.** Repositories are synchronous libpqxx over one connection
-  per thread (`platform/adapters/postgres/PgConnection.h`), opened lazily and given a 5s
-  statement timeout. Fine at current load; a pool or async is the move before high load.
+- **Blocking DB on the event loop.** Repositories are synchronous libpqxx. Each borrows a
+  connection for one transaction from a bounded pool of at most 20
+  (`platform/adapters/postgres/PgPool.h`), opened lazily and given a 5s statement timeout.
+  The call still blocks its event-loop thread for the length of the query; async is the
+  remaining move before high load.
 - **Clock.** MCP and the web `Collab` share one HLC domain: every write is stamped by the
   tree's room clock (`TreeRoom::nextStamp`, wall time from the `Clock` port), so an agent's
   edit and a socket edit are directly comparable and can never collide on a stamp. Clients

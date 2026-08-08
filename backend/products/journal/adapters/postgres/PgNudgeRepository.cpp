@@ -1,6 +1,6 @@
 #include "products/journal/adapters/postgres/PgNudgeRepository.h"
 
-#include "platform/adapters/postgres/PgConnection.h"
+#include "platform/adapters/postgres/PgPool.h"
 
 #include <pqxx/pqxx>
 
@@ -51,17 +51,19 @@ NudgeDueUser dueUserFrom(const Row& row) {
 
 }
 
-PgNudgeRepository::PgNudgeRepository(std::string connString) : connString_(std::move(connString)) {}
+PgNudgeRepository::PgNudgeRepository(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
 
 bool PgNudgeRepository::tryLockSweep() {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec("SELECT pg_try_advisory_lock(" + std::string(kSweepLock) + ") AS taken");
   txn.commit();  // the lock is session-scoped, so it outlives this transaction by design
   return rows[0]["taken"].as<bool>();
 }
 
 void PgNudgeRepository::unlockSweep() {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec("SELECT pg_advisory_unlock(" + std::string(kSweepLock) + ")");
   txn.commit();
 }
@@ -69,7 +71,8 @@ void PgNudgeRepository::unlockSweep() {
 std::vector<NudgeDueUser> PgNudgeRepository::dueNow(std::uint64_t nowMs, int limit) {
   // The sweep's whole question, and the only one it is allowed to ask about time: whose slot has
   // arrived. next_due_at is the DEVICE's materialised instant — we never derive it, only fire it.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT n.user_id, u.email, n.slot_day::text AS slot_day, "
       "(extract(epoch from n.next_due_at) * 1000)::bigint AS instant_ms, "
@@ -91,7 +94,8 @@ std::vector<NudgeDueUser> PgNudgeRepository::dueNow(std::uint64_t nowMs, int lim
 bool PgNudgeRepository::wroteToday(const UserId& user, const LocalDate& day) {
   // The "did they already write today?" fact the pure decide gates on. slot_day IS the local day, so
   // this is a single point lookup on the journal_page primary key.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT EXISTS(SELECT 1 FROM journal_page WHERE user_id = $1::uuid AND day = $2::date) AS wrote",
       user.str(), day.iso());
@@ -105,7 +109,8 @@ bool PgNudgeRepository::claimDay(const UserId& user, const LocalDate& slotDay,
   // silent. The EXISTS re-asks, inside the transaction, the question dueNow asked minutes ago —
   // someone who paused, bounced, or closed their account while this batch ran must not be mailed,
   // and rows read up front cannot know that on their own.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result claimed = txn.exec_params(
       "INSERT INTO journal_nudge_day (user_id, slot_day, decision, reason) "
       "SELECT $1::uuid, $2::date, $3, $4 "
@@ -131,7 +136,8 @@ bool PgNudgeRepository::claimDay(const UserId& user, const LocalDate& slotDay,
 }
 
 void PgNudgeRepository::closeDay(const UserId& user, const LocalDate& slotDay, DayOutcome outcome) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   if (outcome == DayOutcome::delivered) {
     // The one stamp that means a person actually received something. Its absence on a claimed row is
     // ambiguous by construction — the mail may well have landed — which is exactly why such a row is
@@ -155,7 +161,8 @@ void PgNudgeRepository::closeDay(const UserId& user, const LocalDate& slotDay, D
 }
 
 std::optional<NudgeSettings> PgNudgeRepository::settingsFor(const UserId& user) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT enabled, channel, "
       "(extract(epoch from next_due_at) * 1000)::bigint AS due_ms, "
@@ -194,7 +201,8 @@ void PgNudgeRepository::upsertSettings(const UserId& user, const NudgeSettings& 
   if (settings.pausedUntilMs) params.append(static_cast<long long>(*settings.pausedUntilMs));
   else params.append();
 
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec(
       "INSERT INTO journal_nudge "
       "(user_id, enabled, channel, next_due_at, slot_day, paused_until, updated_at) "
@@ -220,7 +228,8 @@ bool PgNudgeRepository::stopMailing(const Email& address) {
   // would knock at a dead address for a night before learning it again. `enabled` is left exactly
   // as its owner set it. users.email is citext, so the address matches however the provider cased
   // it back to us.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result changed = txn.exec_params(
       "INSERT INTO journal_nudge (user_id, suppressed) "
       "SELECT id, true FROM users WHERE email = $1::citext AND deleted_at IS NULL "
@@ -231,7 +240,8 @@ bool PgNudgeRepository::stopMailing(const Email& address) {
 }
 
 void PgNudgeRepository::setPauseDigest(const UserId& user, const std::string& digest) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params("UPDATE journal_nudge SET pause_digest = $2 WHERE user_id = $1::uuid",
                   user.str(), digest);
   txn.commit();
@@ -239,7 +249,8 @@ void PgNudgeRepository::setPauseDigest(const UserId& user, const std::string& di
 
 std::optional<UserId> PgNudgeRepository::userByPauseDigest(const std::string& digest) {
   if (digest.empty()) return std::nullopt;  // the never-set sentinel must never resolve to anyone
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT user_id::text AS user_id FROM journal_nudge "
       "WHERE pause_digest = $1 AND pause_digest <> ''",
@@ -249,7 +260,8 @@ std::optional<UserId> PgNudgeRepository::userByPauseDigest(const std::string& di
 }
 
 void PgNudgeRepository::pause(const UserId& user, std::uint64_t untilMs) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params(
       "UPDATE journal_nudge SET paused_until = to_timestamp($2::bigint / 1000.0), updated_at = now() "
       "WHERE user_id = $1::uuid",
@@ -258,7 +270,8 @@ void PgNudgeRepository::pause(const UserId& user, std::uint64_t untilMs) {
 }
 
 void PgNudgeRepository::disable(const UserId& user) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params("UPDATE journal_nudge SET enabled = false, updated_at = now() WHERE user_id = $1::uuid",
                   user.str());
   txn.commit();

@@ -1,7 +1,9 @@
 #pragma once
 
+#include "platform/adapters/postgres/PgPool.h"
 #include "platform/ports/AuthRepository.h"
 
+#include <memory>
 #include <string>
 
 namespace wm {
@@ -11,7 +13,7 @@ namespace wm {
 // through untouched; created_at timestamptz columns stay only for human inspection.
 class PgAuthRepository : public AuthRepository {
 public:
-  explicit PgAuthRepository(std::string connString);
+  explicit PgAuthRepository(std::shared_ptr<PgPool> pool);
 
   std::optional<User> findUserByEmail(const Email& email) override;
   std::optional<User> findUserById(const UserId& id) override;
@@ -45,7 +47,7 @@ public:
   void revokeAllSessions(const UserId& userId) override;
 
 private:
-  std::string connString_;
+  std::shared_ptr<PgPool> pool_;
 };
 
 }

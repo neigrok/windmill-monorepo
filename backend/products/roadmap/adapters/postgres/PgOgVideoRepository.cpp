@@ -1,15 +1,16 @@
 #include "products/roadmap/adapters/postgres/PgOgVideoRepository.h"
 
-#include "platform/adapters/postgres/PgConnection.h"
+#include "platform/adapters/postgres/PgPool.h"
 
 #include <pqxx/pqxx>
 
 namespace wm {
 
-PgOgVideoRepository::PgOgVideoRepository(std::string connString) : connString_(std::move(connString)) {}
+PgOgVideoRepository::PgOgVideoRepository(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
 
 void PgOgVideoRepository::put(const std::string& treeId, const std::string& bytes, const std::string& mime) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   // The bytes ride as a bound bytea parameter (binary_cast → a byte view over the string) —
   // never interpolated into SQL, so an mp4 that happens to contain a quote can't break the query.
   txn.exec_params(
@@ -20,7 +21,8 @@ void PgOgVideoRepository::put(const std::string& treeId, const std::string& byte
 }
 
 std::optional<StoredVideo> PgOgVideoRepository::get(const std::string& treeId) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params("SELECT video, mime FROM tree_og_videos WHERE tree_id = $1", treeId);
   txn.commit();
   if (rows.empty()) return std::nullopt;
@@ -31,7 +33,8 @@ std::optional<StoredVideo> PgOgVideoRepository::get(const std::string& treeId) {
 }
 
 bool PgOgVideoRepository::has(const std::string& treeId) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params("SELECT 1 FROM tree_og_videos WHERE tree_id = $1", treeId);
   txn.commit();
   return !rows.empty();

@@ -6,7 +6,7 @@
 #include "platform/adapters/mcp/McpServer.h"
 #include "products/roadmap/adapters/mcp/RoadmapResources.h"
 #include "products/roadmap/adapters/mcp/RoadmapTools.h"
-#include "platform/adapters/postgres/PgConnection.h"
+#include "platform/adapters/postgres/PgPool.h"
 #include "platform/adapters/postgres/PgOAuthRepository.h"
 #include "products/roadmap/adapters/postgres/PgOpLog.h"
 #include "products/roadmap/adapters/postgres/PgProgressRepository.h"
@@ -37,6 +37,7 @@ int main() {
   using namespace wm;
 
   const std::string connString = env("DATABASE_URL", "postgresql://localhost/windmill");
+  auto pool = std::make_shared<PgPool>(connString);
   const UserId caller{env("WINDMILL_MCP_USER", "dev")};
   const std::string host = env("WINDMILL_MCP_HOST", "0.0.0.0");
   const int port = std::atoi(env("PORT", "8090").c_str());
@@ -52,9 +53,9 @@ int main() {
   const std::string resourceMetadataUrl = publicUrl + "/.well-known/oauth-protected-resource";
   const std::string authServer = env("WINDMILL_OAUTH_ISSUER", "http://localhost:8088");
 
-  auto trees = std::make_shared<PgTreeRepository>(connString);
-  auto progressRepo = std::make_shared<PgProgressRepository>(connString);
-  auto oplog = std::make_shared<PgOpLog>(connString);
+  auto trees = std::make_shared<PgTreeRepository>(pool);
+  auto progressRepo = std::make_shared<PgProgressRepository>(pool);
+  auto oplog = std::make_shared<PgOpLog>(pool);
   auto bus = std::make_shared<NullPresenceBus>();
   auto registry = std::make_shared<RoomRegistry>(*trees, *oplog, *bus);
   auto progress = std::make_shared<ProgressService>(*progressRepo);
@@ -66,7 +67,7 @@ int main() {
 
   // The resource server validates per-user OAuth access tokens (issued by the API host); the
   // shared token, if set, stays a fallback that acts as the configured user.
-  auto oauthRepo = std::make_shared<PgOAuthRepository>(connString);
+  auto oauthRepo = std::make_shared<PgOAuthRepository>(pool);
   auto oauthTokens = std::make_shared<OpenSslTokenGenerator>();
   auto oauthService = std::make_shared<OAuthService>(*oauthRepo, *oauthTokens, *clock);
   // The shared bearer carries the account-wide grant, written here rather than defaulted: this root

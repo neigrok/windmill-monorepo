@@ -1,6 +1,7 @@
 #include "platform/adapters/postgres/PgSubscriptionRepository.h"
 
 #include "platform/domain/Billing.h"
+#include "test/PgTestPool.h"
 #include "test/testing.h"
 
 #include <pqxx/pqxx>
@@ -24,10 +25,6 @@
 using namespace wm;
 
 namespace {
-std::string connString() {
-  const char* url = std::getenv("DATABASE_URL");
-  return url ? url : "postgresql://localhost/windmill";
-}
 const char* kNeedsPostgres = "WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7";
 
 const std::string kMine = "44444444-4444-4444-4444-444444444444";
@@ -42,8 +39,8 @@ const std::string kEarly = "2026-05-01T10:00:00Z";
 const std::string kLate = "2026-05-08T10:00:00Z";
 
 void reset() {
-  pqxx::connection c{connString()};
-  pqxx::work w{c};
+  PgLease c{*pgTestPool()};
+  pqxx::work w{*c};
   w.exec("INSERT INTO users (id, email) VALUES ('" + kMine + "', '" + kMyEmail + "') "
          "ON CONFLICT (id) DO NOTHING");
   w.exec("DELETE FROM paddle_subscriptions WHERE subscription_id LIKE 'sub_pgtest%'");
@@ -63,8 +60,8 @@ PaddleSubscription event(const std::string& status, const std::string& occurredA
 bool storedOccurredAtIs(const std::string& iso) {
   std::optional<std::string> value;
   if (!iso.empty()) value = iso;
-  pqxx::connection c{connString()};
-  pqxx::work w{c};
+  PgLease c{*pgTestPool()};
+  pqxx::work w{*c};
   const pqxx::result rows = w.exec_params(
       "SELECT occurred_at IS NOT DISTINCT FROM $1::timestamptz FROM paddle_subscriptions "
       "WHERE subscription_id = $2",
@@ -79,7 +76,7 @@ bool storedOccurredAtIs(const std::string& iso) {
 TEST(pg_subscription_a_retried_older_event_never_hands_back_the_access_a_cancel_took_away) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgSubscriptionRepository repo{connString()};
+  PgSubscriptionRepository repo{pgTestPool()};
 
   repo.upsertSubscription(event("active", kEarly));
   repo.upsertSubscription(event("canceled", kLate));
@@ -113,7 +110,7 @@ TEST(pg_subscription_a_retried_older_event_never_hands_back_the_access_a_cancel_
 TEST(pg_subscription_a_second_event_stamped_at_the_same_instant_still_applies) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgSubscriptionRepository repo{connString()};
+  PgSubscriptionRepository repo{pgTestPool()};
 
   repo.upsertSubscription(event("trialing", kLate));
   repo.upsertSubscription(event("active", kLate));
@@ -130,7 +127,7 @@ TEST(pg_subscription_a_second_event_stamped_at_the_same_instant_still_applies) {
 TEST(pg_subscription_an_event_or_a_row_with_no_recorded_time_still_applies) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgSubscriptionRepository repo{connString()};
+  PgSubscriptionRepository repo{pgTestPool()};
 
   // A row with no time of its own — the pre-column shape — is not frozen by a timed event.
   repo.upsertSubscription(event("active", ""));
@@ -155,7 +152,7 @@ TEST(pg_subscription_an_event_or_a_row_with_no_recorded_time_still_applies) {
 TEST(pg_subscription_a_later_event_carrying_no_account_never_erases_the_one_already_bound) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgSubscriptionRepository repo{connString()};
+  PgSubscriptionRepository repo{pgTestPool()};
 
   repo.upsertSubscription(event("active", kEarly, kMine));
   repo.upsertSubscription(event("past_due", kLate, ""));  // subscription.updated: no custom_data
@@ -174,7 +171,7 @@ TEST(pg_subscription_a_later_event_carrying_no_account_never_erases_the_one_alre
 TEST(pg_subscription_a_planted_dead_row_never_shadows_the_subscription_that_pays) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgSubscriptionRepository repo{connString()};
+  PgSubscriptionRepository repo{pgTestPool()};
 
   repo.upsertSubscription(event("active", kEarly, kMine, "sub_pgtest01"));
   repo.upsertSubscription(event("canceled", kLate, kMine, "sub_pgtest02"));  // planted, and newer
@@ -191,7 +188,7 @@ TEST(pg_subscription_a_planted_dead_row_never_shadows_the_subscription_that_pays
 TEST(pg_subscription_the_read_finds_a_subscription_bound_only_by_its_customer_s_email) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgSubscriptionRepository repo{connString()};
+  PgSubscriptionRepository repo{pgTestPool()};
 
   repo.upsertCustomer(PaddleCustomer{kCustomer, kMyEmail});
   repo.upsertSubscription(event("active", kEarly, ""));

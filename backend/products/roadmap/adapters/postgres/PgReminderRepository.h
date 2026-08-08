@@ -1,7 +1,9 @@
 #pragma once
 
+#include "platform/adapters/postgres/PgPool.h"
 #include "products/roadmap/ports/ReminderRepository.h"
 
+#include <memory>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -23,7 +25,7 @@ namespace wm {
 // show breaks the footer's promise far harder than any timing bug ever could.
 class PgReminderRepository : public ReminderRepository {
 public:
-  explicit PgReminderRepository(std::string connString);
+  explicit PgReminderRepository(std::shared_ptr<PgPool> pool);
 
   bool tryLockSweep() override;
   void unlockSweep() override;
@@ -46,7 +48,7 @@ public:
   void pause(const UserId& user) override;
 
 private:
-  std::string connString_;
+  std::shared_ptr<PgPool> pool_;
 };
 
 }

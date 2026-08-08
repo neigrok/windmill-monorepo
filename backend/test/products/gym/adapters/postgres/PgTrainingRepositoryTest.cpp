@@ -4,6 +4,7 @@
 // `to_char(… AT TIME ZONE 'UTC')` and a `::text` cast off a fixed-scale numeric produce, and the
 // export case below asserts both against each other so neither can drift on its own.
 #include "test/products/gym/Fakes.h"
+#include "test/PgTestPool.h"
 #include "test/testing.h"
 
 #include <pqxx/pqxx>
@@ -25,18 +26,14 @@
 using namespace wm::gym;
 
 namespace {
-std::string connString() {
-  const char* url = std::getenv("DATABASE_URL");
-  return url ? url : "postgresql://localhost/windmill";
-}
 const char* kNeedsPostgres = "WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7";
 
 const std::string kUser = "22222222-2222-2222-2222-222222222222";
 const std::string kOther = "22222222-2222-2222-2222-222222222233";
 
 void reset() {
-  pqxx::connection c{connString()};
-  pqxx::work w{c};
+  wm::PgLease c{*wm::pgTestPool()};
+  pqxx::work w{*c};
   w.exec("INSERT INTO users (id, email) VALUES ('" + kUser + "', 'gym-pgtest@example.com') "
          "ON CONFLICT (id) DO NOTHING");
   w.exec("INSERT INTO users (id, email) VALUES ('" + kOther + "', 'gym-pgtest-b@example.com') "
@@ -92,7 +89,7 @@ Set squatSet(const std::string& id, const std::string& session, double weightKg,
 TEST(pg_gym_catalog_serves_the_seeded_64_in_pattern_then_name_order) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
 
   std::vector<Exercise> catalog = repo.catalog(wm::UserId{kUser});
 
@@ -106,7 +103,7 @@ TEST(pg_gym_catalog_serves_the_seeded_64_in_pattern_then_name_order) {
 TEST(pg_gym_session_lifecycle_start_is_idempotent_and_one_open_holds) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'123;
 
   repo.insertSession(sessionAt("ses_pg000001", t1));
@@ -133,7 +130,7 @@ TEST(pg_gym_session_lifecycle_start_is_idempotent_and_one_open_holds) {
 TEST(pg_gym_set_write_numbers_max_plus_one_and_replay_returns_stored) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'123;
   repo.insertSession(sessionAt("ses_pg000001", t1));
 
@@ -175,7 +172,7 @@ TEST(pg_gym_set_write_numbers_max_plus_one_and_replay_returns_stored) {
 TEST(pg_gym_a_set_id_spent_in_another_session_resolves_to_nothing) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'123;
   repo.insertSession(sessionAt("ses_pg000001", t1));
   repo.insertSession(Session{SessionId{"ses_pg000002"}, wm::UserId{kOther}, t1});
@@ -216,7 +213,7 @@ TEST(pg_gym_a_set_id_spent_in_another_session_resolves_to_nothing) {
 TEST(pg_gym_a_set_naming_a_movement_no_catalog_holds_is_refused_as_a_value) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'123;
   repo.insertSession(sessionAt("ses_pg000001", t1));
   SetInsertOutcome landed = repo.insertSet(benchSet("set_pg000001", 82.5, t1 + 1'000));
@@ -245,7 +242,7 @@ TEST(pg_gym_a_set_naming_a_movement_no_catalog_holds_is_refused_as_a_value) {
 TEST(pg_gym_a_set_may_not_name_another_accounts_private_movement) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'123;
   repo.insertExercise(wm::UserId{kOther},
                       Exercise{ExerciseId{"pg-their-zercher"}, "Their Zercher Squat",
@@ -275,7 +272,7 @@ TEST(pg_gym_a_set_may_not_name_another_accounts_private_movement) {
 TEST(pg_gym_a_set_that_never_landed_cannot_land_after_the_session_closed) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'123;
   repo.insertSession(sessionAt("ses_pg000001", t1));
   SetInsertOutcome landed = repo.insertSet(benchSet("set_pg000001", 82.5, t1 + 1'000));
@@ -293,7 +290,7 @@ TEST(pg_gym_a_set_that_never_landed_cannot_land_after_the_session_closed) {
 TEST(pg_gym_parallel_appends_to_one_session_mint_distinct_numbers) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'123;
   repo.insertSession(sessionAt("ses_pg000001", t1));
 
@@ -315,7 +312,7 @@ TEST(pg_gym_parallel_appends_to_one_session_mint_distinct_numbers) {
 TEST(pg_gym_log_pages_newest_first_with_counts_and_names) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'123;
   const std::uint64_t t2 = t1 + 100'000;
 
@@ -347,7 +344,7 @@ TEST(pg_gym_log_pages_newest_first_with_counts_and_names) {
 TEST(pg_gym_log_walks_a_tied_start_instant_across_a_page_boundary) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'123;
   repo.insertSession(sessionAt("ses_pg000001", t1 + 3'000));
   repo.close(SessionId{"ses_pg000001"}, t1 + 9'000);
@@ -381,7 +378,7 @@ TEST(pg_gym_log_walks_a_tied_start_instant_across_a_page_boundary) {
 TEST(pg_gym_log_carries_the_top_working_set_and_says_which_row_closed_itself) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'123;
 
   // Finished by a tap, an hour after its last set.
@@ -424,11 +421,11 @@ TEST(pg_gym_log_carries_the_top_working_set_and_says_which_row_closed_itself) {
 TEST(pg_gym_log_names_a_movement_whose_display_name_holds_a_newline_once) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'123;
   {
-    pqxx::connection c{connString()};
-    pqxx::work w{c};
+    wm::PgLease c{*wm::pgTestPool()};
+    pqxx::work w{*c};
     w.exec_params("INSERT INTO gym_exercises (id, name, pattern, equipment, created_by) "
                   "VALUES ($1, $2, 'squat', 'barbell', $3::uuid)",
                   "pg-zercher-squat", "Zercher\nSquat", kUser);
@@ -454,7 +451,7 @@ TEST(pg_gym_log_names_a_movement_whose_display_name_holds_a_newline_once) {
 TEST(pg_gym_last_time_is_the_newest_finished_session_of_that_movement) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'123;
 
   repo.insertSession(sessionAt("ses_pg000001", t1));
@@ -504,15 +501,15 @@ TEST(pg_gym_last_time_is_the_newest_finished_session_of_that_movement) {
 TEST(pg_gym_last_time_of_a_first_ever_movement_is_empty_and_of_an_unknown_one_is_a_refusal) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'123;
   repo.insertSession(sessionAt("ses_pg000001", t1));
   repo.insertSet(Set{SetId{"set_pg000001"}, SessionId{"ses_pg000001"}, ExerciseId{"back-squat"}, 0,
                      60.0, 10, SetKind::warmup, std::nullopt, "", t1 + 1'000});
   repo.close(SessionId{"ses_pg000001"}, t1 + 2'000);
   {
-    pqxx::connection c{connString()};
-    pqxx::work w{c};
+    wm::PgLease c{*wm::pgTestPool()};
+    pqxx::work w{*c};
     w.exec_params("INSERT INTO gym_exercises (id, name, pattern, equipment, created_by) "
                   "VALUES ($1, $2, 'squat', 'barbell', $3::uuid)",
                   "pg-zercher-squat", "Zercher Squat", kOther);
@@ -543,7 +540,7 @@ TEST(pg_gym_last_time_of_a_first_ever_movement_is_empty_and_of_an_unknown_one_is
 TEST(pg_gym_last_time_walks_sessions_not_set_instants) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'123;
   const std::uint64_t day = 86'400'000;
 
@@ -571,7 +568,7 @@ TEST(pg_gym_last_time_walks_sessions_not_set_instants) {
 TEST(pg_gym_last_time_never_answers_with_a_session_the_caller_does_not_own) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'123;
   repo.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, t1, std::nullopt,
                              std::nullopt, PlanSnapshot{"A private routine", {}}});
@@ -580,8 +577,8 @@ TEST(pg_gym_last_time_never_answers_with_a_session_the_caller_does_not_own) {
   {
     // A set row inside the owner's session carrying ANOTHER account's user_id. No API path mints
     // one today; the read must not depend on that staying true.
-    pqxx::connection c{connString()};
-    pqxx::work w{c};
+    wm::PgLease c{*wm::pgTestPool()};
+    pqxx::work w{*c};
     w.exec_params("INSERT INTO gym_sets (id, session_id, user_id, exercise_id, set_number, "
                   "weight_kg, reps, kind, completed_at) "
                   "VALUES ($1, 'ses_pg000001', $2::uuid, 'bench-press', 9, 60, 5, 'working', "
@@ -627,11 +624,11 @@ TEST(pg_gym_last_time_names_the_routine_only_when_the_stored_plan_holds_a_string
 
   for (const auto& [snapshot, name] : snapshots) {
     reset();
-    PgTrainingRepository repo{connString()};
+    PgTrainingRepository repo{wm::pgTestPool()};
     repo.insertSession(sessionAt("ses_pg000001", t1));
     {
-      pqxx::connection c{connString()};
-      pqxx::work w{c};
+      wm::PgLease c{*wm::pgTestPool()};
+      pqxx::work w{*c};
       w.exec_params("UPDATE gym_sessions SET plan = nullif($2, '')::jsonb WHERE id = $1",
                     "ses_pg000001", snapshot);
       w.commit();
@@ -653,7 +650,7 @@ TEST(pg_gym_last_time_names_the_routine_only_when_the_stored_plan_holds_a_string
 TEST(pg_gym_the_plan_snapshot_round_trips_through_jsonb) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'123;
   const PlanSnapshot frozen{
       "Push A",
@@ -689,7 +686,7 @@ TEST(pg_gym_the_plan_snapshot_round_trips_through_jsonb) {
 TEST(pg_gym_routine_create_is_idempotent_and_the_whole_document_round_trips) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   // The same movement twice at two positions — bench heavy, then bench back-off — is the case the
   // (routine_id, position) key exists for, and it must survive a round trip in order.
   const Routine pushA = routineAt("rt_pg000001", "Push A",
@@ -717,7 +714,7 @@ TEST(pg_gym_routine_create_is_idempotent_and_the_whole_document_round_trips) {
 TEST(pg_gym_a_routine_line_with_no_rep_target_round_trips_as_a_null) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const Routine pushA =
       routineAt("rt_pg000001", "Push A",
                 {entryAt(1, "pull-up", 3, std::nullopt, std::nullopt, 180),
@@ -733,8 +730,8 @@ TEST(pg_gym_a_routine_line_with_no_rep_target_round_trips_as_a_null) {
   CHECK_EQ(read->entries[1].targetReps, std::optional<int>(5));
   CHECK_EQ(repo.routines(wm::UserId{kUser}), std::vector<Routine>{pushA});
   {
-    pqxx::connection c{connString()};
-    pqxx::work w{c};
+    wm::PgLease c{*wm::pgTestPool()};
+    pqxx::work w{*c};
     CHECK_EQ(w.exec_params("SELECT count(*)::int AS n FROM gym_routine_entries "
                            "WHERE routine_id = $1 AND target_reps IS NULL",
                            "rt_pg000001")[0]["n"]
@@ -751,7 +748,7 @@ TEST(pg_gym_a_routine_line_with_no_rep_target_round_trips_as_a_null) {
 TEST(pg_gym_a_routine_id_another_account_holds_resolves_to_nothing) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   repo.insertRoutine(Routine{RoutineId{"rt_pg000001"}, wm::UserId{kOther}, "Their plan", 0,
                              {entryAt(1, "bench-press")}});
 
@@ -774,7 +771,7 @@ TEST(pg_gym_a_routine_id_another_account_holds_resolves_to_nothing) {
 TEST(pg_gym_a_routine_entry_naming_no_movement_is_refused_and_leaves_no_row) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
 
   RoutineWriteOutcome refused = repo.insertRoutine(
       routineAt("rt_pg000001", "Push A",
@@ -796,7 +793,7 @@ TEST(pg_gym_a_routine_entry_naming_no_movement_is_refused_and_leaves_no_row) {
 TEST(pg_gym_a_routine_entry_may_not_name_another_accounts_private_movement) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   repo.insertExercise(wm::UserId{kOther},
                       Exercise{ExerciseId{"pg-their-zercher"}, "Their Zercher Squat",
                                Pattern::squat, Equipment::barbell, 2.5, true});
@@ -822,7 +819,7 @@ TEST(pg_gym_a_routine_entry_may_not_name_another_accounts_private_movement) {
 TEST(pg_gym_routine_replace_rewrites_every_line_and_a_missing_one_is_not_found) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   repo.insertRoutine(routineAt("rt_pg000001", "Push A",
                                {entryAt(1, "bench-press"), entryAt(2, "back-squat")}));
   const Routine rewritten = routineAt("rt_pg000001", "Push A2",
@@ -848,7 +845,7 @@ TEST(pg_gym_routine_replace_rewrites_every_line_and_a_missing_one_is_not_found) 
 TEST(pg_gym_routine_delete_cascades_its_lines_and_leaves_every_session_its_snapshot) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'123;
   repo.insertRoutine(routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
   repo.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, t1, std::nullopt,
@@ -864,8 +861,8 @@ TEST(pg_gym_routine_delete_cascades_its_lines_and_leaves_every_session_its_snaps
   CHECK_EQ(ran->plan, std::optional<PlanSnapshot>(pushA()));   // the copy is what survives
   CHECK_EQ(repo.routines(wm::UserId{kUser}), std::vector<Routine>{});
   {
-    pqxx::connection c{connString()};
-    pqxx::work w{c};
+    wm::PgLease c{*wm::pgTestPool()};
+    pqxx::work w{*c};
     CHECK_EQ(w.exec_params("SELECT 1 FROM gym_routine_entries WHERE routine_id = $1",
                            "rt_pg000001")
                  .size(),
@@ -878,7 +875,7 @@ TEST(pg_gym_routine_delete_cascades_its_lines_and_leaves_every_session_its_snaps
 TEST(pg_gym_routines_are_listed_most_recently_trained_first) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'123;
   repo.insertRoutine(routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
   repo.insertRoutine(routineAt("rt_pg000002", "Pull A", {entryAt(1, "back-squat")}));
@@ -914,7 +911,7 @@ TEST(pg_gym_routines_are_listed_most_recently_trained_first) {
 TEST(pg_gym_history_marks_the_best_reps_at_each_load_this_session_works) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'000;
   const std::uint64_t week = 604'800'000;
 
@@ -953,7 +950,7 @@ TEST(pg_gym_history_marks_the_best_reps_at_each_load_this_session_works) {
 TEST(pg_gym_history_stands_against_the_last_finished_session_of_the_same_routine) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'000;
   const std::uint64_t week = 604'800'000;
   repo.insertRoutine(routineAt("rt_pg000001", "Push A", {entryAt(1, "back-squat")}));
@@ -992,7 +989,7 @@ TEST(pg_gym_history_stands_against_the_last_finished_session_of_the_same_routine
 TEST(pg_gym_discard_takes_the_session_and_every_set_with_it) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'123;
   repo.insertSession(sessionAt("ses_pg000001", t1));
   repo.insertSet(benchSet("set_pg000001", 82.5, t1 + 1'000));
@@ -1007,8 +1004,8 @@ TEST(pg_gym_discard_takes_the_session_and_every_set_with_it) {
   // `on delete cascade`: the sets go with the row rather than outliving it as orphans.
   CHECK_EQ(repo.setsOf(SessionId{"ses_pg000001"}), std::vector<Set>{});
   {
-    pqxx::connection c{connString()};
-    pqxx::work w{c};
+    wm::PgLease c{*wm::pgTestPool()};
+    pqxx::work w{*c};
     CHECK_EQ(w.exec_params("SELECT 1 FROM gym_sets WHERE session_id = $1", "ses_pg000001").size(),
              static_cast<std::size_t>(0));
   }
@@ -1019,7 +1016,7 @@ TEST(pg_gym_discard_takes_the_session_and_every_set_with_it) {
 TEST(pg_gym_create_exercise_is_the_callers_alone_and_a_spent_id_is_refused) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const Exercise mine{ExerciseId{"pg-zercher-squat"}, "Zercher Squat", Pattern::squat,
                       Equipment::machine, 5.0, true};
 
@@ -1061,7 +1058,7 @@ TEST(pg_gym_create_exercise_is_the_callers_alone_and_a_spent_id_is_refused) {
 TEST(pg_gym_the_step_band_the_domain_enforces_is_exactly_what_the_column_holds) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const Exercise ceiling{ExerciseId{"pg-heavy-step"}, "Heavy Step", Pattern::squat,
                          Equipment::machine, kMaxStepKg, true};
   const Exercise floorStep{ExerciseId{"pg-fine-step"}, "Fine Step", Pattern::isolation,
@@ -1078,8 +1075,8 @@ TEST(pg_gym_the_step_band_the_domain_enforces_is_exactly_what_the_column_holds) 
   // And what the domain refuses is what the column would have raised on: proved by the statement
   // the repository would have run, so the constructor's bound is the column's and not a guess.
   {
-    pqxx::connection c{connString()};
-    pqxx::work w{c};
+    wm::PgLease c{*wm::pgTestPool()};
+    pqxx::work w{*c};
     bool overflowed = false;
     try {
       w.exec_params("INSERT INTO gym_exercises (id, name, pattern, equipment, step_kg, created_by) "
@@ -1097,12 +1094,12 @@ TEST(pg_gym_the_step_band_the_domain_enforces_is_exactly_what_the_column_holds) 
 TEST(pg_gym_reads_a_pre_1970_legacy_row_instead_of_failing_the_whole_log) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'123;
   repo.insertSession(sessionAt("ses_pg000001", t1));
   {
-    pqxx::connection c{connString()};
-    pqxx::work w{c};
+    wm::PgLease c{*wm::pgTestPool()};
+    pqxx::work w{*c};
     w.exec_params("INSERT INTO gym_sessions (id, user_id, started_at, finished_at) "
                   "VALUES ('ses_pg000002', $1::uuid, to_timestamp(-1), to_timestamp(-1))", kUser);
     w.commit();
@@ -1128,7 +1125,7 @@ TEST(pg_gym_reads_a_pre_1970_legacy_row_instead_of_failing_the_whole_log) {
 TEST(pg_gym_statistics_is_the_top_set_per_session_the_marks_and_the_weekly_counts) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'000;
   const std::uint64_t week = 604'800'000;
 
@@ -1163,7 +1160,7 @@ TEST(pg_gym_statistics_is_the_top_set_per_session_the_marks_and_the_weekly_count
 TEST(pg_gym_statistics_weeks_are_contiguous_across_a_week_nobody_trained) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'000;
   const std::uint64_t week = 604'800'000;
 
@@ -1185,7 +1182,7 @@ TEST(pg_gym_statistics_weeks_are_contiguous_across_a_week_nobody_trained) {
 TEST(pg_gym_statistics_leaves_the_open_session_and_another_account_out) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'000;
 
   repo.insertSession(sessionAt("ses_pg000001", t1));   // today's workout, never closed
@@ -1208,7 +1205,7 @@ TEST(pg_gym_statistics_leaves_the_open_session_and_another_account_out) {
 TEST(pg_gym_export_renders_instants_as_iso_utc_and_numerics_at_their_column_scale) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'000;
 
   repo.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, t1, std::nullopt,
@@ -1232,7 +1229,7 @@ TEST(pg_gym_export_renders_instants_as_iso_utc_and_numerics_at_their_column_scal
 TEST(pg_gym_export_never_reaches_another_accounts_sets) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'000;
   repo.insertSession(Session{SessionId{"ses_pg000003"}, wm::UserId{kOther}, t1});
   repo.insertSet(squatSet("set_pg000003", "ses_pg000003", 200, 5, t1 + 60'000));
@@ -1246,7 +1243,7 @@ TEST(pg_gym_export_never_reaches_another_accounts_sets) {
 TEST(pg_gym_share_is_idempotent_on_the_session_and_replaces_one_that_has_ended) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t now = 1'700'000'000'000;
   repo.insertSession(sessionAt("ses_pg000001", now));
   repo.close(SessionId{"ses_pg000001"}, now + 3'600'000);
@@ -1281,7 +1278,7 @@ TEST(pg_gym_share_is_idempotent_on_the_session_and_replaces_one_that_has_ended) 
 TEST(pg_gym_share_never_reaches_an_absent_or_another_accounts_session) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t now = 1'700'000'000'000;
   repo.insertSession(Session{SessionId{"ses_pg000003"}, wm::UserId{kOther}, now});
   repo.close(SessionId{"ses_pg000003"}, now + 3'600'000);
@@ -1300,7 +1297,7 @@ TEST(pg_gym_share_never_reaches_an_absent_or_another_accounts_session) {
 TEST(pg_gym_shared_session_answers_one_workout_and_nothing_about_the_account) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t now = 1'700'000'000'000;
   repo.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, now, std::nullopt,
                              std::nullopt, pushA()});
@@ -1336,7 +1333,7 @@ TEST(pg_gym_shared_session_answers_one_workout_and_nothing_about_the_account) {
 TEST(pg_gym_discarding_a_session_takes_its_share_with_it) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{connString()};
+  PgTrainingRepository repo{wm::pgTestPool()};
   const std::uint64_t now = 1'700'000'000'000;
   repo.insertSession(sessionAt("ses_pg000001", now));
   repo.close(SessionId{"ses_pg000001"}, now + 3'600'000);

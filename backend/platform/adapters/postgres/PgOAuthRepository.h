@@ -1,7 +1,9 @@
 #pragma once
 
+#include "platform/adapters/postgres/PgPool.h"
 #include "platform/ports/OAuthRepository.h"
 
+#include <memory>
 #include <string>
 
 namespace wm {
@@ -11,7 +13,7 @@ namespace wm {
 // (PgConnection) backs every call, like the other repositories.
 class PgOAuthRepository : public OAuthRepository {
 public:
-  explicit PgOAuthRepository(std::string connString);
+  explicit PgOAuthRepository(std::shared_ptr<PgPool> pool);
 
   void registerClient(const OAuthClient& client) override;
   std::optional<OAuthClient> findClient(const std::string& clientId) override;
@@ -31,7 +33,7 @@ public:
   void revokeAllGrants(const UserId& user) override;
 
 private:
-  std::string connString_;
+  std::shared_ptr<PgPool> pool_;
 };
 
 }

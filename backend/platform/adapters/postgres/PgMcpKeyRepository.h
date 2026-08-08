@@ -1,7 +1,9 @@
 #pragma once
 
+#include "platform/adapters/postgres/PgPool.h"
 #include "platform/ports/McpKeyRepository.h"
 
+#include <memory>
 #include <string>
 
 namespace wm {
@@ -11,7 +13,7 @@ namespace wm {
 // connection (PgConnection) backs every call, like the other repositories.
 class PgMcpKeyRepository : public McpKeyRepository {
 public:
-  explicit PgMcpKeyRepository(std::string connString);
+  explicit PgMcpKeyRepository(std::shared_ptr<PgPool> pool);
 
   std::string insert(const std::string& tokenDigest, const UserId& user, const std::string& name,
                      long long createdMs) override;
@@ -21,7 +23,7 @@ public:
   void touchUsed(const std::string& tokenDigest, long long nowMs, long long throttleMs) override;
 
 private:
-  std::string connString_;
+  std::shared_ptr<PgPool> pool_;
 };
 
 }

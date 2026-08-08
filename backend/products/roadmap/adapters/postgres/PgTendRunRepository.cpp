@@ -1,6 +1,6 @@
 #include "products/roadmap/adapters/postgres/PgTendRunRepository.h"
 
-#include "platform/adapters/postgres/PgConnection.h"
+#include "platform/adapters/postgres/PgPool.h"
 
 #include <json/json.h>
 #include <pqxx/pqxx>
@@ -79,12 +79,13 @@ TendRun tendRunFrom(const Row& row) {
 }
 }
 
-PgTendRunRepository::PgTendRunRepository(std::string connString) : connString_(std::move(connString)) {}
+PgTendRunRepository::PgTendRunRepository(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
 
 void PgTendRunRepository::save(const TendRun& run) {
   // Upsert keyed on the run id: start() writes the `running` row, the worker overwrites it with
   // the terminal one. The id never changes, so every field but it is refreshed to the latest.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec("INSERT INTO tend_runs "
            "(id, tree_id, user_id, prompt, status, refusal, summary, detail, edits, "
            "seq_from, seq_to, started_at, finished_at, created_node_ids) "
@@ -102,7 +103,8 @@ void PgTendRunRepository::save(const TendRun& run) {
 }
 
 std::optional<TendRun> PgTendRunRepository::find(const std::string& id) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows =
       txn.exec_params("SELECT " + std::string(kTendRunColumns) + " FROM tend_runs WHERE id = $1", id);
   if (rows.empty()) return std::nullopt;
@@ -113,7 +115,8 @@ int PgTendRunRepository::failOrphanedRuns() {
   // Every `running` row at startup was orphaned by the restart (a run lives on this process's
   // worker thread), so settle them all to `failed` with a plain diagnostic. finished_at is stamped
   // from the DB clock — no Clock dependency for a one-shot boot sweep.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result result = txn.exec(
       "UPDATE tend_runs SET status = 'failed', "
       "detail = CASE WHEN detail = '' THEN 'interrupted — the run did not survive a restart' ELSE detail END, "
@@ -127,7 +130,8 @@ int PgTendRunRepository::countForUser(const UserId& user, std::uint64_t sinceMs)
   // The allowance read: runs this user started within the window. An agent loop is expensive, so
   // this is the real brake on a single account — counted over started_at, the indexed column.
   // Read through pqxx::result (never a bare row: pqxx names it row_ref on macOS, row on CI Linux).
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       // Only runs that actually started work count against the day's allowance — a refusal (blank
       // prompt, the dark-launch "not turned on" tap, an over-length paste) costs nothing, so
@@ -143,7 +147,8 @@ std::vector<TendRun> PgTendRunRepository::recentForUser(const UserId& user, std:
                                                         int limit) {
   // The ledger read, newest first: the same window and refusal exclusion as the count, so the
   // receipts the user reads are exactly the runs the meter counted spent.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT " + std::string(kTendRunColumns) + " FROM tend_runs "
       "WHERE user_id = $1::uuid AND started_at >= $2 AND status <> 'refused' "

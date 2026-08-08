@@ -1,6 +1,6 @@
 #include "products/journal/adapters/postgres/PgJournalRepository.h"
 
-#include "platform/adapters/postgres/PgConnection.h"
+#include "platform/adapters/postgres/PgPool.h"
 
 #include <pqxx/pqxx>
 
@@ -36,7 +36,7 @@ Page pageFrom(const Row& row) {
 }
 }
 
-PgJournalRepository::PgJournalRepository(std::string connString) : connString_(std::move(connString)) {}
+PgJournalRepository::PgJournalRepository(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
 
 std::optional<Page> PgJournalRepository::load(const UserId& user, const LocalDate& day) {
   // The page is mapped into a named result and the pqxx handles are released in their own scope
@@ -44,7 +44,8 @@ std::optional<Page> PgJournalRepository::load(const UserId& user, const LocalDat
   // an optional materialised in the same expression a transaction is being torn down in.
   std::optional<Page> found;
   {
-    pqxx::work txn{pgThreadConnection(connString_)};
+    PgLease conn{*pool_};
+    pqxx::work txn{*conn};
     pqxx::result rows = txn.exec_params(
         "SELECT " + std::string(kPageColumns) +
             " FROM journal_page WHERE user_id = $1::uuid AND day = $2::date",
@@ -55,7 +56,8 @@ std::optional<Page> PgJournalRepository::load(const UserId& user, const LocalDat
 }
 
 std::vector<Page> PgJournalRepository::range(const UserId& user, const LocalDate& from, const LocalDate& to) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT " + std::string(kPageColumns) +
           " FROM journal_page WHERE user_id = $1::uuid AND day BETWEEN $2::date AND $3::date "
@@ -73,7 +75,8 @@ std::vector<Page> PgJournalRepository::since(const UserId& user, const Hlc& curs
   // (ms, counter) collision as equal and drop whichever page fell past a page boundary from the feed
   // forever (it feeds sync AND the on-device search index). The actor tiebreak makes the order total
   // and deterministic across pages.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT " + std::string(kPageColumns) +
           " FROM journal_page WHERE user_id = $1::uuid "
@@ -88,7 +91,8 @@ std::vector<Page> PgJournalRepository::since(const UserId& user, const Hlc& curs
 }
 
 std::vector<Page> PgJournalRepository::all(const UserId& user) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT " + std::string(kPageColumns) +
           " FROM journal_page WHERE user_id = $1::uuid ORDER BY day ASC",
@@ -103,7 +107,8 @@ PageWrite PgJournalRepository::save(const Page& incoming) {
   // Read-modify-write in one transaction: the row is locked FOR UPDATE so the revision capture sees
   // exactly the body this write is about to supersede — a bare ON CONFLICT could not carry the loser
   // into the revision trail.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result existing = txn.exec_params(
       "SELECT body, stamp_ms, stamp_counter, stamp_actor FROM journal_page "
       "WHERE user_id = $1::uuid AND day = $2::date FOR UPDATE",

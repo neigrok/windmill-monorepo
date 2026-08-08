@@ -1,12 +1,12 @@
 #include "platform/adapters/postgres/PgFeedbackRepository.h"
 
-#include "platform/adapters/postgres/PgConnection.h"
+#include "platform/adapters/postgres/PgPool.h"
 
 #include <pqxx/pqxx>
 
 namespace wm {
 
-PgFeedbackRepository::PgFeedbackRepository(std::string connString) : connString_(std::move(connString)) {}
+PgFeedbackRepository::PgFeedbackRepository(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
 
 void PgFeedbackRepository::insert(const std::string& sessionKey, const std::optional<UserId>& user,
                                   const std::string& message, const std::string& email,
@@ -24,7 +24,8 @@ void PgFeedbackRepository::insert(const std::string& sessionKey, const std::opti
   if (context.empty()) params.append();
   else params.append(context);
 
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec("INSERT INTO feedback (session_key, user_id, message, email, context) "
            "VALUES ($1, $2::uuid, $3, $4, $5)",
            params);

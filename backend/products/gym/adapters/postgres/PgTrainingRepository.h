@@ -1,7 +1,9 @@
 #pragma once
 
+#include "platform/adapters/postgres/PgPool.h"
 #include "products/gym/ports/TrainingRepository.h"
 
+#include <memory>
 #include <string>
 
 namespace wm::gym {
@@ -17,7 +19,7 @@ namespace wm::gym {
 // has an answer for is translated here into the port's typed facts; the rest ride to the house 500.
 class PgTrainingRepository : public TrainingRepository {
 public:
-  explicit PgTrainingRepository(std::string connString);
+  explicit PgTrainingRepository(std::shared_ptr<PgPool> pool);
 
   std::vector<Exercise> catalog(const UserId& user) override;
   std::optional<Session> open(const UserId& user) override;
@@ -47,7 +49,7 @@ public:
                                              std::uint64_t nowMs) override;
 
 private:
-  std::string connString_;
+  std::shared_ptr<PgPool> pool_;
 };
 
 }

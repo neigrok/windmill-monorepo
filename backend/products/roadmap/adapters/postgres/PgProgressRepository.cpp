@@ -1,6 +1,6 @@
 #include "products/roadmap/adapters/postgres/PgProgressRepository.h"
 
-#include "platform/adapters/postgres/PgConnection.h"
+#include "platform/adapters/postgres/PgPool.h"
 
 #include <pqxx/pqxx>
 
@@ -12,10 +12,11 @@ std::string hlcText(const Hlc& at) {
 }
 }
 
-PgProgressRepository::PgProgressRepository(std::string connString) : connString_(std::move(connString)) {}
+PgProgressRepository::PgProgressRepository(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
 
 Progress PgProgressRepository::load(const TreeId& tree, const UserId& user) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT node_id, status FROM node_progress WHERE tree_id = $1 AND user_id = $2",
       tree.str(), user.str());
@@ -32,7 +33,8 @@ Progress PgProgressRepository::load(const TreeId& tree, const UserId& user) {
 }
 
 std::map<TreeId, ProgressDigest> PgProgressRepository::overlaysFor(const UserId& user) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT tree_id, node_id, status, (extract(epoch from updated_at) * 1000)::bigint AS updated_ms "
       "FROM node_progress WHERE user_id = $1",
@@ -53,7 +55,8 @@ std::map<TreeId, ProgressDigest> PgProgressRepository::overlaysFor(const UserId&
 
 void PgProgressRepository::setStatus(const TreeId& tree, const UserId& user, const NodeId& node,
                                      ProgressStatus status, const Hlc& at) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
 
   // A clear ('none') is a stamped value, not a row delete — so it converges like any status and
   // a stale mark can never resurrect the node. The upsert is true last-writer-wins: it only

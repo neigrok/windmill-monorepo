@@ -1,12 +1,12 @@
 #include "platform/adapters/postgres/PgEventRepository.h"
 
-#include "platform/adapters/postgres/PgConnection.h"
+#include "platform/adapters/postgres/PgPool.h"
 
 #include <pqxx/pqxx>
 
 namespace wm {
 
-PgEventRepository::PgEventRepository(std::string connString) : connString_(std::move(connString)) {}
+PgEventRepository::PgEventRepository(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
 
 void PgEventRepository::append(const std::string& sessionKey, const std::optional<UserId>& user,
                                const std::vector<FunnelEvent>& events) {
@@ -30,7 +30,8 @@ void PgEventRepository::append(const std::string& sessionKey, const std::optiona
     params.append(event.props);
   }
 
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec(sql, params);
   txn.commit();
 }

@@ -1,14 +1,16 @@
 #pragma once
 
+#include "platform/adapters/postgres/PgPool.h"
 #include "products/roadmap/ports/TendRunRepository.h"
 
+#include <memory>
 #include <string>
 
 namespace wm {
 
 class PgTendRunRepository : public TendRunRepository {
 public:
-  explicit PgTendRunRepository(std::string connString);
+  explicit PgTendRunRepository(std::shared_ptr<PgPool> pool);
 
   void save(const TendRun& run) override;
   std::optional<TendRun> find(const std::string& id) override;
@@ -17,7 +19,7 @@ public:
   int failOrphanedRuns() override;
 
 private:
-  std::string connString_;
+  std::shared_ptr<PgPool> pool_;
 };
 
 }

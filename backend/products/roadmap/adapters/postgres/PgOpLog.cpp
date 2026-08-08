@@ -2,7 +2,7 @@
 
 #include "products/roadmap/adapters/json/CommandJson.h"
 #include "products/roadmap/adapters/json/TreeJson.h"
-#include "platform/adapters/postgres/PgConnection.h"
+#include "platform/adapters/postgres/PgPool.h"
 
 #include <pqxx/pqxx>
 
@@ -12,11 +12,12 @@ namespace {
 constexpr int kOpReadLimit = 10000;  // cap one replay read so a giant op log can't be slurped whole
 }
 
-PgOpLog::PgOpLog(std::string connString) : connString_(std::move(connString)) {}
+PgOpLog::PgOpLog(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
 
 void PgOpLog::append(const TreeId& tree, const AppliedOp& op) {
   std::string payload = dump(commandPayload(op.command));
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params(
       "INSERT INTO tree_ops (tree_id, seq, actor_id, op_id, kind, payload, hlc) "
       "VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7) ON CONFLICT (tree_id, op_id) DO NOTHING",
@@ -26,7 +27,8 @@ void PgOpLog::append(const TreeId& tree, const AppliedOp& op) {
 }
 
 std::vector<AppliedOp> PgOpLog::since(const TreeId& tree, Seq afterSeq) const {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT seq, actor_id, op_id, kind, payload::text, hlc, "
       "(extract(epoch from created_at) * 1000)::bigint AS created_ms FROM tree_ops "

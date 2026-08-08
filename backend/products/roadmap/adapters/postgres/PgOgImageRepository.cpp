@@ -1,15 +1,16 @@
 #include "products/roadmap/adapters/postgres/PgOgImageRepository.h"
 
-#include "platform/adapters/postgres/PgConnection.h"
+#include "platform/adapters/postgres/PgPool.h"
 
 #include <pqxx/pqxx>
 
 namespace wm {
 
-PgOgImageRepository::PgOgImageRepository(std::string connString) : connString_(std::move(connString)) {}
+PgOgImageRepository::PgOgImageRepository(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
 
 void PgOgImageRepository::put(const std::string& treeId, const std::string& pngBytes) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   // The bytes ride as a bound bytea parameter (binary_cast → a byte view over the string) —
   // never interpolated into SQL, so a PNG that happens to contain a quote can't break the query.
   txn.exec_params(
@@ -20,7 +21,8 @@ void PgOgImageRepository::put(const std::string& treeId, const std::string& pngB
 }
 
 std::optional<std::string> PgOgImageRepository::get(const std::string& treeId) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params("SELECT png FROM tree_og_images WHERE tree_id = $1", treeId);
   txn.commit();
   if (rows.empty()) return std::nullopt;

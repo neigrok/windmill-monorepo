@@ -413,7 +413,7 @@ already tested.** The settings surface composes each product's registered sectio
 (`web/src/shell/settings/SettingsPage.jsx` flatMaps `settingsSections.main` and `.data`), so gym
 contributes a section and rebuilds nothing. Email is one `ResendClient` under a product-owned port
 (journal's `NudgeMailSender` + `ResendNudgeSender` is the two-file template). Plus telemetry, the
-error ledger, CORS, the rate limiter, `pgThreadConnection`, the 18-component design system, and a
+error ledger, CORS, the rate limiter, the Postgres pool, the 18-component design system, and a
 plug-in seam that is one `gym::registerRoutes(app, GymDeps&)` call.
 
 ## Thesis

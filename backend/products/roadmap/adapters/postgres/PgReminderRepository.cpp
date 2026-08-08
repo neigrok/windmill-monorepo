@@ -1,6 +1,6 @@
 #include "products/roadmap/adapters/postgres/PgReminderRepository.h"
 
-#include "platform/adapters/postgres/PgConnection.h"
+#include "platform/adapters/postgres/PgPool.h"
 #include "products/roadmap/domain/GraphState.h"
 #include "products/roadmap/domain/LooseGraph.h"
 #include "products/roadmap/domain/SkillTree.h"
@@ -90,18 +90,20 @@ NodeStateEntry nodeFromRow(const Row& row) {
 
 }
 
-PgReminderRepository::PgReminderRepository(std::string connString)
-    : connString_(std::move(connString)) {}
+PgReminderRepository::PgReminderRepository(std::shared_ptr<PgPool> pool)
+    : pool_(std::move(pool)) {}
 
 bool PgReminderRepository::tryLockSweep() {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec("SELECT pg_try_advisory_lock(" + std::string(kSweepLock) + ") AS taken");
   txn.commit();  // the lock is session-scoped, so it outlives this transaction by design
   return rows[0]["taken"].as<bool>();
 }
 
 void PgReminderRepository::unlockSweep() {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec("SELECT pg_advisory_unlock(" + std::string(kSweepLock) + ")");
   txn.commit();
 }
@@ -110,7 +112,8 @@ std::vector<DueUser> PgReminderRepository::dueNow(std::uint64_t nowMs, int limit
   // The sweep's whole question, and the only one it is allowed to ask about time: whose slot has
   // arrived. The row carries its slot back in both currencies — the LOCAL date, which is the
   // ledger's week key, and the UTC instant the lateness gate measures against.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT s.user_id::text AS user_id, u.email::text AS email, "
       "to_char((s.next_due_at AT TIME ZONE s.iana_tz)::date, 'YYYY-MM-DD') AS slot_date, "
@@ -137,7 +140,8 @@ std::vector<DueUser> PgReminderRepository::dueNow(std::uint64_t nowMs, int limit
 }
 
 std::vector<TreeReadiness> PgReminderRepository::readinessFor(const UserId& user) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result trees = txn.exec_params(
       "SELECT id, title, (extract(epoch from updated_at) * 1000)::bigint AS updated_ms "
       "FROM trees WHERE owner_id = $1::uuid AND deleted_at IS NULL ORDER BY id",
@@ -221,7 +225,8 @@ std::uint64_t PgReminderRepository::lastActiveAtMs(const UserId& user) {
   // "Was this person just here?" — their freshest session use, or their freshest tree edit. Every
   // authenticated request rolls last_seen_ms forward, so a signed-in visit of any kind lands
   // here; both reads ride an existing index (sessions_user, trees_owner).
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT greatest("
       "  coalesce((SELECT max(last_seen_ms) FROM sessions WHERE user_id = $1::uuid), 0), "
@@ -235,7 +240,8 @@ std::uint64_t PgReminderRepository::accountCreatedAtMs(const UserId& user) {
   // The new-account grace measures the ACCOUNT's age, plainly. The earlier reading — the birth of
   // this person's first tree — denied a long-time user their grace-free status the moment they
   // started a fresh plan, and handed anyone who deleted an old tree a brand new first week.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT coalesce((extract(epoch from created_at) * 1000)::bigint, 0) AS born_ms "
       "FROM users WHERE id = $1::uuid",
@@ -255,7 +261,8 @@ bool PgReminderRepository::claimWeek(const UserId& user, const std::string& slot
   // The EXISTS re-asks, inside the transaction, the question dueNow asked minutes ago. Someone
   // who paused, bounced, or closed their account while this batch was running is a person who
   // must not be mailed, and rows read up front cannot know that on their own.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   std::optional<std::string> treeId;
   if (decision.outcome == ReminderOutcome::send) treeId = decision.content.treeId.str();
   pqxx::result claimed = txn.exec_params(
@@ -275,7 +282,8 @@ bool PgReminderRepository::claimWeek(const UserId& user, const std::string& slot
 
 void PgReminderRepository::closeWeek(const UserId& user, const std::string& slotDate,
                                      WeekOutcome outcome) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   if (outcome == WeekOutcome::delivered) {
     // The one stamp that means a person actually received something. Its absence on a claimed row
     // is ambiguous by construction — the mail may well have landed — which is exactly why such a
@@ -297,7 +305,8 @@ void PgReminderRepository::closeWeek(const UserId& user, const std::string& slot
 }
 
 std::optional<ReminderSettings> PgReminderRepository::settingsFor(const UserId& user) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT enabled, iana_tz, slot_dow, slot_minute, suppressed "
       "FROM reminder_subscription WHERE user_id = $1::uuid",
@@ -320,7 +329,8 @@ bool PgReminderRepository::upsertSettings(const UserId& user, bool enabled,
   // name inside the write below would poison the whole transaction.
   if (!ianaTz.empty()) {
     try {
-      pqxx::work probe{pgThreadConnection(connString_)};
+      PgLease probeConn{*pool_};
+      pqxx::work probe{*probeConn};
       probe.exec_params("SELECT now() AT TIME ZONE $1", ianaTz);
       probe.commit();
     } catch (const pqxx::sql_error&) {
@@ -328,7 +338,8 @@ bool PgReminderRepository::upsertSettings(const UserId& user, bool enabled,
     }
   }
 
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params(
       "INSERT INTO reminder_subscription (user_id, enabled, iana_tz) VALUES ($1::uuid, $2, $3) "
       "ON CONFLICT (user_id) DO UPDATE SET enabled = EXCLUDED.enabled, iana_tz = EXCLUDED.iana_tz",
@@ -354,7 +365,8 @@ bool PgReminderRepository::stopMailing(const Email& address) {
   // learning it again. `enabled` is left exactly as its owner set it — suppression is our fact
   // about the mailbox, never an edit to their choice, so lifting it restores what they asked for.
   // users.email is citext, so the address matches however the provider cased it back to us.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result changed = txn.exec_params(
       "INSERT INTO reminder_subscription (user_id, suppressed) "
       "SELECT id, true FROM users WHERE email = $1::citext AND deleted_at IS NULL "
@@ -365,7 +377,8 @@ bool PgReminderRepository::stopMailing(const Email& address) {
 }
 
 void PgReminderRepository::setPauseDigest(const UserId& user, const std::string& digest) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params("UPDATE reminder_subscription SET pause_digest = $2 WHERE user_id = $1::uuid",
                   user.str(), digest);
   txn.commit();
@@ -373,7 +386,8 @@ void PgReminderRepository::setPauseDigest(const UserId& user, const std::string&
 
 std::optional<UserId> PgReminderRepository::userByPauseDigest(const std::string& digest) {
   if (digest.empty()) return std::nullopt;  // the never-set sentinel must never resolve to anyone
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT user_id::text AS user_id FROM reminder_subscription WHERE pause_digest = $1", digest);
   if (rows.empty()) return std::nullopt;
@@ -384,7 +398,8 @@ void PgReminderRepository::pause(const UserId& user) {
   // The digest goes with it. A pause link is a bearer credential with no expiry of its own, so
   // leaving it live would keep a forwarded reminder able to pause this account forever — including
   // after they deliberately turn reminders back on. Spending it here is what ends it.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params(
       "UPDATE reminder_subscription SET enabled = false, next_due_at = NULL, pause_digest = '' "
       "WHERE user_id = $1::uuid",

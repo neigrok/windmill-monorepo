@@ -179,6 +179,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     platform/adapters/http/EventsApi.cpp
     platform/adapters/http/FeedbackApi.cpp
     platform/adapters/http/VendorCall.cpp
+    platform/adapters/postgres/PgPool.cpp
     platform/adapters/postgres/PgAuthRepository.cpp
     platform/adapters/postgres/PgAccountFootprint.cpp
     platform/adapters/postgres/PgOAuthRepository.cpp
@@ -329,6 +330,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/platform/adapters/sentry/LogTeeTest.cpp
     test/platform/adapters/paddle/PaddleSignatureTest.cpp
     test/platform/adapters/paddle/BillingApiTest.cpp
+    test/platform/adapters/postgres/PgPoolTest.cpp
     test/platform/adapters/postgres/PgSubscriptionRepositoryTest.cpp
     test/products/roadmap/adapters/json/SubgraphJsonTest.cpp
     test/products/roadmap/adapters/json/TreeJsonTest.cpp

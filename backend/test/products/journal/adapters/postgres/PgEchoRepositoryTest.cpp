@@ -1,5 +1,6 @@
 #include "products/journal/adapters/postgres/PgEchoRepository.h"
 
+#include "test/PgTestPool.h"
 #include "test/testing.h"
 
 #include <pqxx/pqxx>
@@ -21,10 +22,6 @@
 using namespace wm;
 
 namespace {
-std::string connString() {
-  const char* url = std::getenv("DATABASE_URL");
-  return url ? url : "postgresql://localhost/windmill";
-}
 const char* kNeedsPostgres = "WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7";
 
 const std::string kMine = "22222222-2222-2222-2222-222222222222";
@@ -34,8 +31,8 @@ const std::string kLine = "i don't know what to do about any of it.";
 const std::string kTrigger = "i still don't know what to do about it.";
 
 void reset() {
-  pqxx::connection c{connString()};
-  pqxx::work w{c};
+  PgLease c{*pgTestPool()};
+  pqxx::work w{*c};
   for (const std::string& user : {kMine, kTheirs}) {
     w.exec("INSERT INTO users (id, email) VALUES ('" + user + "', 'echo-" + user.substr(0, 4) +
            "@example.com') ON CONFLICT (id) DO NOTHING");
@@ -47,8 +44,8 @@ void reset() {
 }
 
 void writePage(const std::string& user, const std::string& day, const std::string& body) {
-  pqxx::connection c{connString()};
-  pqxx::work w{c};
+  PgLease c{*pgTestPool()};
+  pqxx::work w{*c};
   w.exec_params("INSERT INTO journal_page (user_id, day, body) VALUES ($1::uuid, $2::date, $3) "
                 "ON CONFLICT (user_id, day) DO UPDATE SET body = EXCLUDED.body",
                 user, day, body);
@@ -97,7 +94,7 @@ std::vector<EchoView> echoesOn(PgEchoRepository& repo, const std::string& user,
 TEST(pg_echo_a_repeated_passage_carries_the_occurrence_it_is) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgEchoRepository repo{connString()};
+  PgEchoRepository repo{pgTestPool()};
 
   const std::string body = kLine + "\nthe day was long and grey and then it was over.\n" + kLine;
   const int second = static_cast<int>(body.rfind(kLine));
@@ -125,7 +122,7 @@ TEST(pg_echo_a_repeated_passage_carries_the_occurrence_it_is) {
 TEST(pg_echo_the_hint_is_the_one_number_both_sides_agree_on) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgEchoRepository repo{connString()};
+  PgEchoRepository repo{pgTestPool()};
 
   const std::string accented = "café. déjà vu. touché.";
   const std::string body = accented + "\n" + accented;
@@ -153,7 +150,7 @@ TEST(pg_echo_the_hint_is_the_one_number_both_sides_agree_on) {
 TEST(pg_echo_a_body_edited_under_a_passage_offers_no_hint) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgEchoRepository repo{connString()};
+  PgEchoRepository repo{pgTestPool()};
   plantPanel(repo, kMine, "2026-05-01", 100);
 
   const std::string moved = kLine + " (2222 2026-05-01) 1";
@@ -180,7 +177,7 @@ TEST(pg_echo_pages_written_counts_pages_with_words_on_them) {
   writePage(kMine, "2026-05-04", "");
   writePage(kTheirs, "2026-05-01", "not mine.");
 
-  PgEchoRepository repo{connString()};
+  PgEchoRepository repo{pgTestPool()};
   CHECK_EQ(repo.pagesWritten(UserId{kMine}), 2);
   CHECK_EQ(repo.pagesWritten(UserId{kTheirs}), 1);
 }
@@ -189,7 +186,7 @@ TEST(pg_echo_pages_written_counts_pages_with_words_on_them) {
 TEST(pg_echo_dismissing_a_page_retires_every_pairing_and_repeats_harmlessly) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgEchoRepository repo{connString()};
+  PgEchoRepository repo{pgTestPool()};
   plantPanel(repo, kMine, "2026-05-01", 100);
   CHECK_EQ(echoesOn(repo, kMine, "2026-05-01").size(), std::size_t{3});
 
@@ -197,8 +194,8 @@ TEST(pg_echo_dismissing_a_page_retires_every_pairing_and_repeats_harmlessly) {
   repo.dismissPage(UserId{kMine}, LocalDate{"2026-05-01"});
 
   CHECK_EQ(echoesOn(repo, kMine, "2026-05-01").size(), std::size_t{0});
-  pqxx::connection c{connString()};
-  pqxx::work w{c};
+  PgLease c{*pgTestPool()};
+  pqxx::work w{*c};
   // exec1 (not query_value) so this compiles on the CI's pinned libpqxx 7.x as well as mac's 8.x.
   CHECK_EQ(w.exec1("SELECT count(*)::int FROM journal_echo_dismissal WHERE user_id = '" + kMine +
                    "'")[0].as<int>(),
@@ -208,7 +205,7 @@ TEST(pg_echo_dismissing_a_page_retires_every_pairing_and_repeats_harmlessly) {
 TEST(pg_echo_dismissing_a_page_leaves_another_day_and_another_account_untouched) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgEchoRepository repo{connString()};
+  PgEchoRepository repo{pgTestPool()};
   plantPanel(repo, kMine, "2026-05-01", 100);
   plantPanel(repo, kMine, "2026-06-01", 200);
   plantPanel(repo, kTheirs, "2026-05-01", 300);
@@ -226,7 +223,7 @@ TEST(pg_echo_dismissing_a_page_leaves_another_day_and_another_account_untouched)
 TEST(pg_echo_declining_the_offer_keeps_every_echo_and_outlives_a_re_derivation) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgEchoRepository repo{connString()};
+  PgEchoRepository repo{pgTestPool()};
   plantPanel(repo, kMine, "2026-05-01", 100);
   CHECK_EQ(repo.retiredOffers(UserId{kMine}, LocalDate{"0001-01-01"}, LocalDate{"9999-12-31"}).size(),
            std::size_t{0});
@@ -252,7 +249,7 @@ TEST(pg_echo_declining_the_offer_keeps_every_echo_and_outlives_a_re_derivation) 
 TEST(pg_echo_declining_one_offer_leaves_another_day_and_another_account_asking) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgEchoRepository repo{connString()};
+  PgEchoRepository repo{pgTestPool()};
   plantPanel(repo, kMine, "2026-05-01", 100);
   plantPanel(repo, kMine, "2026-06-01", 200);
   plantPanel(repo, kTheirs, "2026-05-01", 300);
@@ -274,7 +271,7 @@ TEST(pg_echo_declining_one_offer_leaves_another_day_and_another_account_asking) 
 TEST(pg_echo_retiring_a_pages_echoes_writes_no_offer_row) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgEchoRepository repo{connString()};
+  PgEchoRepository repo{pgTestPool()};
   plantPanel(repo, kMine, "2026-05-01", 100);
 
   repo.dismissPage(UserId{kMine}, LocalDate{"2026-05-01"});
@@ -289,7 +286,7 @@ TEST(pg_echo_retiring_a_pages_echoes_writes_no_offer_row) {
 TEST(pg_echo_a_dismissed_page_stays_dismissed_when_its_passages_move) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgEchoRepository repo{connString()};
+  PgEchoRepository repo{pgTestPool()};
   plantPanel(repo, kMine, "2026-05-01", 100);
   repo.dismissPage(UserId{kMine}, LocalDate{"2026-05-01"});
 

@@ -1,12 +1,12 @@
 #include "platform/adapters/postgres/PgServerErrorRepository.h"
 
-#include "platform/adapters/postgres/PgConnection.h"
+#include "platform/adapters/postgres/PgPool.h"
 
 #include <pqxx/pqxx>
 
 namespace wm {
 
-PgServerErrorRepository::PgServerErrorRepository(std::string connString) : connString_(std::move(connString)) {}
+PgServerErrorRepository::PgServerErrorRepository(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
 
 void PgServerErrorRepository::insert(const std::string& method, const std::string& path, int status,
                                      const std::string& message) {
@@ -17,7 +17,8 @@ void PgServerErrorRepository::insert(const std::string& method, const std::strin
   params.append(status);
   params.append(message);
 
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec("INSERT INTO server_errors (method, path, status, message) VALUES ($1, $2, $3, $4)", params);
   txn.commit();
 }

@@ -1,7 +1,7 @@
 #include "products/gym/adapters/postgres/PgTrainingRepository.h"
 
 #include "platform/adapters/json/JsonText.h"
-#include "platform/adapters/postgres/PgConnection.h"
+#include "platform/adapters/postgres/PgPool.h"
 #include "products/gym/adapters/json/TrainingJson.h"
 
 #include <pqxx/pqxx>
@@ -207,11 +207,12 @@ bool insertEntries(pqxx::work& txn, const Routine& incoming) {
 }
 }
 
-PgTrainingRepository::PgTrainingRepository(std::string connString)
-    : connString_(std::move(connString)) {}
+PgTrainingRepository::PgTrainingRepository(std::shared_ptr<PgPool> pool)
+    : pool_(std::move(pool)) {}
 
 std::vector<Exercise> PgTrainingRepository::catalog(const UserId& user) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT " + std::string(kExerciseColumns) +
           " FROM gym_exercises WHERE created_by IS NULL OR created_by = $1::uuid "
@@ -229,7 +230,8 @@ std::optional<Session> PgTrainingRepository::open(const UserId& user) {
   // a transaction is being torn down in. At most one row exists: the partial unique index says so.
   std::optional<Session> found;
   {
-    pqxx::work txn{pgThreadConnection(connString_)};
+    PgLease conn{*pool_};
+    pqxx::work txn{*conn};
     pqxx::result rows = txn.exec_params(
         "SELECT " + std::string(kSessionColumns) +
             " FROM gym_sessions WHERE user_id = $1::uuid AND finished_at IS NULL",
@@ -242,7 +244,8 @@ std::optional<Session> PgTrainingRepository::open(const UserId& user) {
 std::optional<Session> PgTrainingRepository::session(const UserId& user, const SessionId& id) {
   std::optional<Session> found;
   {
-    pqxx::work txn{pgThreadConnection(connString_)};
+    PgLease conn{*pool_};
+    pqxx::work txn{*conn};
     pqxx::result rows = txn.exec_params(
         "SELECT " + std::string(kSessionColumns) +
             " FROM gym_sessions WHERE user_id = $1::uuid AND id = $2",
@@ -257,7 +260,8 @@ std::optional<Set> PgTrainingRepository::setOf(const UserId& user, const SetId& 
   // the service can tell a replay of the caller's own row from an id it may not look at.
   std::optional<Set> found;
   {
-    pqxx::work txn{pgThreadConnection(connString_)};
+    PgLease conn{*pool_};
+    pqxx::work txn{*conn};
     pqxx::result rows = txn.exec_params(
         "SELECT " + std::string(kSetColumns) +
             " FROM gym_sets WHERE user_id = $1::uuid AND id = $2",
@@ -270,7 +274,8 @@ std::optional<Set> PgTrainingRepository::setOf(const UserId& user, const SetId& 
 std::optional<std::uint64_t> PgTrainingRepository::lastActivity(const SessionId& id) {
   std::optional<std::uint64_t> last;
   {
-    pqxx::work txn{pgThreadConnection(connString_)};
+    PgLease conn{*pool_};
+    pqxx::work txn{*conn};
     pqxx::result rows = txn.exec_params(
         "SELECT (extract(epoch from max(completed_at)) * 1000)::bigint AS last_ms "
         "FROM gym_sets WHERE session_id = $1",
@@ -298,7 +303,8 @@ void PgTrainingRepository::insertSession(const Session& incoming) {
   if (incoming.finishedAtMs) params.append(static_cast<long long>(*incoming.finishedAtMs));
   else params.append();
 
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec(
       "INSERT INTO gym_sessions (id, user_id, routine_id, plan, started_at, finished_at) "
       "VALUES ($1, $2::uuid, $3, $4::jsonb, to_timestamp($5::bigint / 1000.0), "
@@ -311,7 +317,8 @@ void PgTrainingRepository::insertSession(const Session& incoming) {
 void PgTrainingRepository::close(const SessionId& id, std::uint64_t finishedAtMs) {
   // The trailing IS NULL makes the close idempotent AND first-writer-wins: a finish replay, or a
   // finish racing the lazy auto-close, keeps whichever instant landed first.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params(
       "UPDATE gym_sessions SET finished_at = to_timestamp($2::bigint / 1000.0) "
       "WHERE id = $1 AND finished_at IS NULL",
@@ -350,7 +357,8 @@ SetInsertOutcome PgTrainingRepository::insertSet(const Set& incoming) {
     params.append(incoming.note);
     params.append(static_cast<long long>(incoming.completedAtMs));
 
-    pqxx::work txn{pgThreadConnection(connString_)};
+    PgLease conn{*pool_};
+    pqxx::work txn{*conn};
     pqxx::result locked = txn.exec_params(
         "SELECT user_id, finished_at IS NOT NULL AS finished FROM gym_sessions WHERE id = $1 "
         "FOR UPDATE",
@@ -406,7 +414,8 @@ std::vector<SessionSummary> PgTrainingRepository::log(const UserId& user,
   // on precisely the same millisecond reads as an auto-close, and the whole cost of that
   // coincidence is one wrong subtitle — cheaper than a column two writers would keep honest.
   const std::string beforeId = cursor.beforeId ? cursor.beforeId->str() : "";
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result sessions = txn.exec_params(
       "SELECT " + std::string(kSessionColumns) +
           ", top.weight_kg::float8 AS top_weight_kg, top.reps AS top_reps, "
@@ -477,7 +486,8 @@ LastTimeOutcome PgTrainingRepository::lastTime(const UserId& user, const Exercis
   // card's cross-routine suffix.
   std::optional<LastTime> found;
   {
-    pqxx::work txn{pgThreadConnection(connString_)};
+    PgLease conn{*pool_};
+    pqxx::work txn{*conn};
     pqxx::result sessions = txn.exec_params(
         "SELECT " + std::string(kSessionColumns) +
             ", CASE WHEN jsonb_typeof(plan->'routine') = 'string' THEN plan->>'routine' "
@@ -536,7 +546,8 @@ SessionHistory PgTrainingRepository::historyFor(const UserId& user, const Sessio
   // session tying itself and would silently report no record at all.
   SessionHistory history;
   {
-    pqxx::work txn{pgThreadConnection(connString_)};
+    PgLease conn{*pool_};
+    pqxx::work txn{*conn};
     pqxx::result marks = txn.exec_params(
         "SELECT DISTINCT ON (st.exercise_id, st.weight_kg) "
         "       st.exercise_id, st.weight_kg::float8 AS weight_kg, st.reps, "
@@ -576,7 +587,8 @@ bool PgTrainingRepository::deleteSession(const UserId& user, const SessionId& id
   // The sets cascade with the row (`gym_sets.session_id ... on delete cascade`), which is what makes
   // the discard one statement and leaves nothing orphaned behind it. Owner-scoped like every write:
   // another account's session is not refused, it is simply not there to remove.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result removed = txn.exec_params(
       "DELETE FROM gym_sessions WHERE id = $1 AND user_id = $2::uuid", id.str(), user.str());
   txn.commit();
@@ -589,7 +601,8 @@ std::vector<Routine> PgTrainingRepository::routines(const UserId& user) {
   // screen's own, most recently trained first, with the never-trained after them rather than at the
   // top: an absent aggregate sorts nowhere on its own, so the tiebreak is stated (position, then id)
   // instead of left to the planner.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT " + std::string(kRoutineColumns) +
           " FROM gym_routines r WHERE r.user_id = $1::uuid "
@@ -620,7 +633,8 @@ std::vector<Routine> PgTrainingRepository::routines(const UserId& user) {
 std::optional<Routine> PgTrainingRepository::routine(const UserId& user, const RoutineId& id) {
   std::optional<Routine> found;
   {
-    pqxx::work txn{pgThreadConnection(connString_)};
+    PgLease conn{*pool_};
+    pqxx::work txn{*conn};
     found = loadRoutine(txn, user, id);
   }
   return found;
@@ -635,7 +649,8 @@ RoutineWriteOutcome PgTrainingRepository::insertRoutine(const Routine& incoming)
   // their plan: the caller learns the id is taken and never whose it is.
   std::optional<Routine> stored;
   {
-    pqxx::work txn{pgThreadConnection(connString_)};
+    PgLease conn{*pool_};
+    pqxx::work txn{*conn};
     pqxx::result inserted = txn.exec_params(
         "INSERT INTO gym_routines (id, user_id, name, position) "
         "VALUES ($1, $2::uuid, $3, $4) ON CONFLICT DO NOTHING",
@@ -657,7 +672,8 @@ RoutineWriteOutcome PgTrainingRepository::replaceRoutine(const Routine& incoming
   // account's are the same answer, so nothing here says which.
   std::optional<Routine> stored;
   {
-    pqxx::work txn{pgThreadConnection(connString_)};
+    PgLease conn{*pool_};
+    pqxx::work txn{*conn};
     pqxx::result updated = txn.exec_params(
         "UPDATE gym_routines SET name = $3, position = $4 WHERE id = $1 AND user_id = $2::uuid",
         incoming.id.str(), incoming.user.str(), incoming.name, incoming.position);
@@ -674,7 +690,8 @@ RoutineWriteOutcome PgTrainingRepository::replaceRoutine(const Routine& incoming
 bool PgTrainingRepository::deleteRoutine(const UserId& user, const RoutineId& id) {
   // The lines cascade, and every session ever trained under this routine keeps its frozen snapshot:
   // routine_id nulls (on delete set null) and the log still says which day of the program it was.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result removed = txn.exec_params(
       "DELETE FROM gym_routines WHERE id = $1 AND user_id = $2::uuid", id.str(), user.str());
   txn.commit();
@@ -688,7 +705,8 @@ ExerciseInsertOutcome PgTrainingRepository::insertExercise(const UserId& owner,
   // is "that id is taken" and never a row the caller may not read.
   std::optional<Exercise> stored;
   {
-    pqxx::work txn{pgThreadConnection(connString_)};
+    PgLease conn{*pool_};
+    pqxx::work txn{*conn};
     txn.exec_params(
         "INSERT INTO gym_exercises (id, name, pattern, equipment, step_kg, created_by) "
         "VALUES ($1, $2, $3, $4, $5, $6::uuid) ON CONFLICT DO NOTHING",
@@ -727,7 +745,8 @@ TrainingLog PgTrainingRepository::trainingLog(const UserId& user) {
   // missing bar the client would have to invent a calendar to notice.
   TrainingLog log;
   {
-    pqxx::work txn{pgThreadConnection(connString_)};
+    PgLease conn{*pool_};
+    pqxx::work txn{*conn};
     pqxx::result tops = txn.exec_params(
         "SELECT DISTINCT ON (st.exercise_id, s.started_at, s.id) st.exercise_id, "
         "       (extract(epoch from s.started_at) * 1000)::bigint AS started_ms, "
@@ -786,7 +805,8 @@ std::vector<ExportedSet> PgTrainingRepository::exportedSets(const UserId& user) 
   // is excluded: the open session is in the file too, because an export missing today is the one
   // row a lifter goes looking for. The routine name is the session's own frozen snapshot, so a
   // routine renamed or deleted since cannot rewrite what the file says about the past.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT st.session_id, "
       "       to_char(s.started_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') "
@@ -844,7 +864,8 @@ std::optional<SessionShare> PgTrainingRepository::insertShare(const SessionShare
   // than the database's own clock, so one clock decides both halves of this write.
   std::optional<SessionShare> stored;
   {
-    pqxx::work txn{pgThreadConnection(connString_)};
+    PgLease conn{*pool_};
+    pqxx::work txn{*conn};
     txn.exec_params(
         "INSERT INTO gym_session_shares (session_id, user_id, token, expires_at) "
         "SELECT s.id, s.user_id, $3, to_timestamp($4::bigint / 1000.0) "
@@ -876,7 +897,8 @@ bool PgTrainingRepository::revokeShare(const UserId& user, const SessionId& id) 
   // there to remove. The row IS the capability, so deleting it is the whole revocation — nothing is
   // marked, nothing is swept, and the token it carried resolves to the same nothing an invented one
   // does from the very next request.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result removed = txn.exec_params(
       "DELETE FROM gym_session_shares WHERE session_id = $1 AND user_id = $2::uuid", id.str(),
       user.str());
@@ -900,7 +922,8 @@ std::optional<SharedSession> PgTrainingRepository::sharedSession(const std::stri
   // print it verbatim as the day of the program.
   std::optional<SharedSession> found;
   {
-    pqxx::work txn{pgThreadConnection(connString_)};
+    PgLease conn{*pool_};
+    pqxx::work txn{*conn};
     pqxx::result sessions = txn.exec_params(
         "SELECT s.id AS session_id, "
         "       (extract(epoch from s.started_at) * 1000)::bigint AS started_ms, "
@@ -939,7 +962,8 @@ std::optional<SharedSession> PgTrainingRepository::sharedSession(const std::stri
 std::vector<Set> PgTrainingRepository::setsOf(const SessionId& id) {
   // Chronological — the client assembles per-exercise groups in first-performed order from the
   // numbered sets; the server just hands the stream back in the order it was lived.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT " + std::string(kSetColumns) +
           " FROM gym_sets WHERE session_id = $1 ORDER BY completed_at ASC, set_number ASC",

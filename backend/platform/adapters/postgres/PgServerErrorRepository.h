@@ -1,5 +1,8 @@
 #pragma once
 
+#include "platform/adapters/postgres/PgPool.h"
+
+#include <memory>
 #include <string>
 
 namespace wm {
@@ -14,13 +17,13 @@ namespace wm {
 // enter through, so a port over it would be a vtable and a file that nothing chooses between.
 class PgServerErrorRepository {
 public:
-  explicit PgServerErrorRepository(std::string connString);
+  explicit PgServerErrorRepository(std::shared_ptr<PgPool> pool);
 
   void insert(const std::string& method, const std::string& path, int status,
               const std::string& message);
 
 private:
-  std::string connString_;
+  std::shared_ptr<PgPool> pool_;
 };
 
 }

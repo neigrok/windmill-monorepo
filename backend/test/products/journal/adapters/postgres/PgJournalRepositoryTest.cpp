@@ -1,6 +1,7 @@
 #include "products/journal/adapters/postgres/PgJournalRepository.h"
 
 #include "products/journal/application/PageService.h"
+#include "test/PgTestPool.h"
 #include "test/testing.h"
 
 #include <pqxx/pqxx>
@@ -18,17 +19,13 @@
 using namespace wm;
 
 namespace {
-std::string connString() {
-  const char* url = std::getenv("DATABASE_URL");
-  return url ? url : "postgresql://localhost/windmill";
-}
 const char* kNeedsPostgres = "WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7";
 
 const std::string kUser = "11111111-1111-1111-1111-111111111111";
 
 void reset() {
-  pqxx::connection c{connString()};
-  pqxx::work w{c};
+  PgLease c{*pgTestPool()};
+  pqxx::work w{*c};
   w.exec("INSERT INTO users (id, email) VALUES ('" + kUser + "', 'journal-pgtest@example.com') "
          "ON CONFLICT (id) DO NOTHING");
   w.exec("DELETE FROM journal_page WHERE user_id = '" + kUser + "'");
@@ -49,7 +46,7 @@ Page page(const std::string& body, Mood mood, Energy energy, Source source, cons
 TEST(pg_journal_save_then_load_roundtrips_every_field) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgJournalRepository repo{connString()};
+  PgJournalRepository repo{pgTestPool()};
 
   CHECK_EQ(repo.save(page("round trip", Mood::m3, Energy::e2, Source::spoken, Hlc{500, 0, "devZ"})),
            PageWrite::stored);
@@ -68,7 +65,7 @@ TEST(pg_journal_save_then_load_roundtrips_every_field) {
 TEST(pg_journal_lww_and_revision_trail) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgJournalRepository repo{connString()};
+  PgJournalRepository repo{pgTestPool()};
 
   CHECK_EQ(repo.save(page("first light", Mood::m4, Energy::e2, Source::typed, Hlc{100, 0, "devA"})),
            PageWrite::stored);
@@ -83,8 +80,8 @@ TEST(pg_journal_lww_and_revision_trail) {
   REQUIRE(got.has_value());
   CHECK_EQ(got->body, std::string("clearer now"));
 
-  pqxx::connection c{connString()};
-  pqxx::work w{c};
+  PgLease c{*pgTestPool()};
+  pqxx::work w{*c};
   // exec1 (not query_value) so this compiles on the CI's pinned libpqxx 7.x as well as mac's 8.x.
   int revisions = w.exec1(
       "SELECT count(*)::int FROM journal_page_revision WHERE user_id = '" + kUser + "'")[0].as<int>();
@@ -98,7 +95,7 @@ TEST(pg_journal_lww_and_revision_trail) {
 TEST(pg_journal_through_pageservice_keeps_the_body) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgJournalRepository repo{connString()};
+  PgJournalRepository repo{pgTestPool()};
   PageService service{repo};
 
   service.write(page("via the service", Mood::m3, Energy::e2, Source::typed, Hlc{300, 0, "devQ"}));
@@ -108,13 +105,14 @@ TEST(pg_journal_through_pageservice_keeps_the_body) {
   CHECK_EQ(got->day.iso(), std::string("2026-07-27"));
 }
 
-// The server serves every request on a drogon WORKER THREAD, never the main thread, and
-// pgThreadConnection is thread_local. This runs the same read on a fresh worker thread — if the
-// live server loses the body but this keeps it, the fault is the HTTP runtime, not the storage.
+// The server serves every request on a drogon WORKER THREAD, never the main thread, and a
+// repository borrows its connection from a pool shared across all of them. This runs the same read
+// on a fresh worker thread — if the live server loses the body but this keeps it, the fault is the
+// HTTP runtime, not the storage.
 TEST(pg_journal_through_pageservice_on_a_worker_thread) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgJournalRepository repo{connString()};
+  PgJournalRepository repo{pgTestPool()};
   PageService service{repo};
   service.write(page("off-thread", Mood::m2, Energy::e1, Source::spoken, Hlc{400, 0, "devW"}));
 

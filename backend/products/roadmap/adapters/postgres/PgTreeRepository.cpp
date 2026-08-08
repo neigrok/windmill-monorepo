@@ -1,7 +1,7 @@
 #include "products/roadmap/adapters/postgres/PgTreeRepository.h"
 
 #include "products/roadmap/adapters/json/TreeJson.h"
-#include "platform/adapters/postgres/PgConnection.h"
+#include "platform/adapters/postgres/PgPool.h"
 #include "platform/domain/Crdt.h"
 #include "products/roadmap/domain/LooseGraph.h"
 
@@ -153,12 +153,13 @@ LegendState legendRows(pqxx::work& txn, const TreeId& tree) {
 
 }
 
-PgTreeRepository::PgTreeRepository(std::string connString) : connString_(std::move(connString)) {}
+PgTreeRepository::PgTreeRepository(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
 
 std::optional<TreeAccess> PgTreeRepository::loadAccess(const TreeId& tree) {
   // Two columns, one row, no lattice — the whole point is that deciding "may this caller read it?"
   // costs a primary-key lookup rather than every node, edge and kind the tree owns.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT owner_id::text, visibility FROM trees WHERE id = $1 AND deleted_at IS NULL",
       tree.str());
@@ -174,7 +175,8 @@ std::optional<TreeAccess> PgTreeRepository::loadAccess(const TreeId& tree) {
 std::optional<UserId> PgTreeRepository::retiredOwner(const TreeId& tree) {
   // The mirror of loadAccess: one column off the rows load() refuses to see. Only a deleted row
   // answers — a live one is load()'s to classify, and an unowned one names nobody.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT owner_id::text FROM trees WHERE id = $1 AND deleted_at IS NOT NULL", tree.str());
   if (rows.empty()) return std::nullopt;
@@ -185,7 +187,8 @@ std::optional<UserId> PgTreeRepository::retiredOwner(const TreeId& tree) {
 }
 
 ForkLineage PgTreeRepository::loadForkLineage(const TreeId& tree) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   ForkLineage lineage;
   // Is this a fork, and may its source be named? The source is named only while it still exists
   // and is PUBLIC — an unlisted, private or deleted source stays anonymous in the unfurl. (auto
@@ -210,7 +213,8 @@ ForkLineage PgTreeRepository::loadForkLineage(const TreeId& tree) {
 }
 
 std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT title, title_hlc, head_seq, document::text, owner_id::text, visibility, "
       "(extract(epoch from created_at) * 1000)::bigint AS created_ms "
@@ -243,7 +247,8 @@ std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
 
 void PgTreeRepository::save(const TreeId& tree, const GraphState& state, const LegendState& legend,
                             const Lww<std::string>& title, Seq head) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params(
       "INSERT INTO trees (id, title, title_hlc, title_ms, title_counter, head_seq) "
       "VALUES ($1, $2, $3, $4, $5, $6) "
@@ -267,7 +272,8 @@ void PgTreeRepository::save(const TreeId& tree, const GraphState& state, const L
 
 void PgTreeRepository::create(const TreeId& tree, const GraphState& state, const LegendState& legend,
                               const std::string& title, const UserId& owner) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   try {
     txn.exec_params("INSERT INTO trees (id, title, head_seq, owner_id) VALUES ($1, $2, 0, $3::uuid)",
                     tree.str(), title, owner.str());
@@ -279,7 +285,8 @@ void PgTreeRepository::create(const TreeId& tree, const GraphState& state, const
 }
 
 std::vector<OwnedTree> PgTreeRepository::listOwnedBy(const UserId& owner) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT id, title, document::text, "
       "(extract(epoch from created_at) * 1000)::bigint AS created_ms, "
@@ -319,7 +326,8 @@ TreeData PgTreeRepository::projectDocument(pqxx::work& txn, const TreeId& tree, 
 }
 
 std::vector<ListedTree> PgTreeRepository::listPublic() {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   // Every listed tree, unbounded: listing is a deliberate, rare owner act, so the candidate set
   // is small by construction. Ordering and the wall's cap belong to the domain (domain/Gallery.h)
   // and are deliberately NOT duplicated here — if this set ever grows past one query's worth,
@@ -363,7 +371,8 @@ std::vector<ListedTree> PgTreeRepository::listPublic() {
 }
 
 std::set<TreeId> PgTreeRepository::listForkedSources(const UserId& owner) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   // One row per source this user still holds a fork of. A deleted fork drops out: the reader let
   // that copy go, so the plan is theirs to take again.
   pqxx::result rows = txn.exec_params(
@@ -377,13 +386,15 @@ std::set<TreeId> PgTreeRepository::listForkedSources(const UserId& owner) {
 }
 
 void PgTreeRepository::softDelete(const TreeId& tree) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params("UPDATE trees SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL", tree.str());
   txn.commit();
 }
 
 void PgTreeRepository::rename(const TreeId& tree, const Lww<std::string>& title) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params(  // the same LWW guard as save(): only a dominating stamp lands
       "UPDATE trees SET title = $2, title_hlc = $3, title_ms = $4, title_counter = $5, "
       "updated_at = now() WHERE id = $1 AND deleted_at IS NULL "
@@ -395,7 +406,8 @@ void PgTreeRepository::rename(const TreeId& tree, const Lww<std::string>& title)
 }
 
 void PgTreeRepository::setVisibility(const TreeId& tree, Visibility visibility) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   // Deliberately does NOT touch updated_at. The gallery folds that column into last-active, so a
   // bump here would let anyone flip unlisted->public to vault a long-dead tree up the wall — the
   // one thing ranking by activity exists to prevent. Nothing is lost by leaving it: the funnel's
@@ -408,7 +420,8 @@ void PgTreeRepository::setVisibility(const TreeId& tree, Visibility visibility) 
 
 void PgTreeRepository::fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
                            const LegendState& legend, const std::string& title, const UserId& owner) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   try {
     txn.exec_params(
         "INSERT INTO trees (id, title, head_seq, forked_from, owner_id) VALUES ($1, $2, 0, $3, $4::uuid)",

@@ -1,6 +1,6 @@
 #include "platform/adapters/postgres/PgOAuthRepository.h"
 
-#include "platform/adapters/postgres/PgConnection.h"
+#include "platform/adapters/postgres/PgPool.h"
 
 #include <pqxx/pqxx>
 
@@ -48,10 +48,11 @@ std::vector<std::string> parseArrayLiteral(const std::string& literal) {
 }
 }
 
-PgOAuthRepository::PgOAuthRepository(std::string connString) : connString_(std::move(connString)) {}
+PgOAuthRepository::PgOAuthRepository(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
 
 void PgOAuthRepository::registerClient(const OAuthClient& client) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params(
       "INSERT INTO oauth_clients (client_id, redirect_uris, client_name) VALUES ($1, $2::text[], $3)",
       client.clientId, arrayLiteral(client.redirectUris), client.name);
@@ -59,7 +60,8 @@ void PgOAuthRepository::registerClient(const OAuthClient& client) {
 }
 
 std::optional<OAuthClient> PgOAuthRepository::findClient(const std::string& clientId) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT redirect_uris::text, client_name FROM oauth_clients WHERE client_id = $1", clientId);
   if (rows.empty()) return std::nullopt;
@@ -68,7 +70,8 @@ std::optional<OAuthClient> PgOAuthRepository::findClient(const std::string& clie
 }
 
 void PgOAuthRepository::insertCode(const std::string& codeDigest, const StoredCode& code) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params(
       "INSERT INTO oauth_codes (code_hash, client_id, user_id, redirect_uri, code_challenge, "
       "resource, scope, expires_ms) VALUES ($1, $2, $3::uuid, $4, $5, $6, $7, $8)",
@@ -78,7 +81,8 @@ void PgOAuthRepository::insertCode(const std::string& codeDigest, const StoredCo
 }
 
 std::optional<StoredCode> PgOAuthRepository::takeCode(const std::string& codeDigest) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "DELETE FROM oauth_codes WHERE code_hash = $1 "
       "RETURNING client_id, user_id::text, redirect_uri, code_challenge, resource, scope, expires_ms",
@@ -94,7 +98,8 @@ std::optional<StoredCode> PgOAuthRepository::takeCode(const std::string& codeDig
 
 void PgOAuthRepository::insertToken(const std::string& accessDigest, const std::string& refreshDigest,
                                     const StoredToken& token, UnixMs refreshExpiresAt) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params(
       "INSERT INTO oauth_tokens (token_hash, refresh_hash, client_id, user_id, resource, scope, "
       "expires_ms, refresh_expires_ms) VALUES ($1, $2, $3, $4::uuid, $5, $6, $7, $8)",
@@ -104,7 +109,8 @@ void PgOAuthRepository::insertToken(const std::string& accessDigest, const std::
 }
 
 std::optional<StoredToken> PgOAuthRepository::findAccessToken(const std::string& accessDigest) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT client_id, user_id::text, resource, scope, expires_ms FROM oauth_tokens WHERE token_hash = $1",
       accessDigest);
@@ -116,7 +122,8 @@ std::optional<StoredToken> PgOAuthRepository::findAccessToken(const std::string&
 }
 
 std::optional<StoredToken> PgOAuthRepository::takeRefreshToken(const std::string& refreshDigest, UnixMs now) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "DELETE FROM oauth_tokens WHERE refresh_hash = $1 AND refresh_expires_ms > $2 "
       "RETURNING client_id, user_id::text, resource, scope, expires_ms",
@@ -133,7 +140,8 @@ void PgOAuthRepository::recordGrant(const UserId& user, const std::string& clien
                                     const std::string& scope) {
   // granted_ms is set once and kept as the earliest; last_used_ms and scope advance to this consent,
   // so re-approving a narrower grant is what the settings row then says.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params(
       "INSERT INTO oauth_grants (user_id, client_id, granted_ms, last_used_ms, scope) "
       "VALUES ($1::uuid, $2, $3, $3, $4) "
@@ -148,7 +156,8 @@ void PgOAuthRepository::recordGrant(const UserId& user, const std::string& clien
 void PgOAuthRepository::touchGrantUsed(const UserId& user, const std::string& clientId, UnixMs now,
                                        UnixMs minIntervalMs) {
   // A no-op inside the throttle window, so a busy client does not write on every token check.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params(
       "UPDATE oauth_grants SET last_used_ms = $3 "
       "WHERE user_id = $1::uuid AND client_id = $2 AND $3 - last_used_ms > $4",
@@ -157,7 +166,8 @@ void PgOAuthRepository::touchGrantUsed(const UserId& user, const std::string& cl
 }
 
 std::vector<GrantView> PgOAuthRepository::listGrants(const UserId& user) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT g.client_id, coalesce(c.client_name, '') AS client_name, g.granted_ms, g.last_used_ms, "
       "g.scope FROM oauth_grants g LEFT JOIN oauth_clients c ON c.client_id = g.client_id "
@@ -175,7 +185,8 @@ std::vector<GrantView> PgOAuthRepository::listGrants(const UserId& user) {
 }
 
 void PgOAuthRepository::revokeGrant(const UserId& user, const std::string& clientId) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params("DELETE FROM oauth_tokens WHERE user_id = $1::uuid AND client_id = $2",
                   user.str(), clientId);
   txn.exec_params("DELETE FROM oauth_codes WHERE user_id = $1::uuid AND client_id = $2",
@@ -186,7 +197,8 @@ void PgOAuthRepository::revokeGrant(const UserId& user, const std::string& clien
 }
 
 void PgOAuthRepository::revokeAllGrants(const UserId& user) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params("DELETE FROM oauth_tokens WHERE user_id = $1::uuid", user.str());
   txn.exec_params("DELETE FROM oauth_codes WHERE user_id = $1::uuid", user.str());
   txn.exec_params("DELETE FROM oauth_grants WHERE user_id = $1::uuid", user.str());

@@ -66,7 +66,7 @@ their own rows, so re-running them is free — and they are the only proof the S
 CI runs ctest in a container with no database:
 
 ```sh
-WM_PG_TEST=1 DATABASE_URL="postgresql://localhost/windmill" \
+WM_PG_TEST=1 DATABASE_URL="postgresql:///windmill?host=/tmp" \
   ctest --test-dir backend/build -R adapters -V     # 393/393; without it, 364/393 and 29 skipped
 ```
 

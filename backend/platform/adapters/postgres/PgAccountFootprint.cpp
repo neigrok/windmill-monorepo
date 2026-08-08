@@ -1,6 +1,6 @@
 #include "platform/adapters/postgres/PgAccountFootprint.h"
 
-#include "platform/adapters/postgres/PgConnection.h"
+#include "platform/adapters/postgres/PgPool.h"
 
 #include <pqxx/pqxx>
 #include <stdexcept>
@@ -16,8 +16,8 @@ bool isIdentifier(const std::string& name) {
 }
 }
 
-PgAccountFootprint::PgAccountFootprint(std::string connString, std::vector<OwnedTable> probes)
-    : connString_(std::move(connString)) {
+PgAccountFootprint::PgAccountFootprint(std::shared_ptr<PgPool> pool, std::vector<OwnedTable> probes)
+    : pool_(std::move(pool)) {
   if (probes.empty())
     throw std::invalid_argument("account footprint needs at least one probe — an unprobed deploy "
                                 "would report every account empty");
@@ -34,7 +34,8 @@ PgAccountFootprint::PgAccountFootprint(std::string connString, std::vector<Owned
 }
 
 bool PgAccountFootprint::anyData(const UserId& userId) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   return !txn.exec_params(query_, userId.str()).empty();
 }
 

@@ -39,6 +39,7 @@
 #include "platform/adapters/postgres/PgServerErrorRepository.h"
 #include "platform/adapters/postgres/PgSubscriptionRepository.h"
 #include "products/roadmap/adapters/postgres/PgTendRunRepository.h"
+#include "platform/adapters/postgres/PgPool.h"
 #include "products/roadmap/adapters/postgres/PgTreeRepository.h"
 #include "products/roadmap/adapters/ws/PresenceHub.h"
 #include "products/roadmap/adapters/ws/WsPresenceBus.h"
@@ -88,14 +89,15 @@ int main() {
 
   const char* url = std::getenv("DATABASE_URL");
   std::string connString = url ? url : "postgresql://localhost/windmill";
+  auto pool = std::make_shared<PgPool>(connString);
   const Hlc genesis{1, 0, "genesis"};
 
-  auto trees = std::make_shared<PgTreeRepository>(connString);
-  auto progress = std::make_shared<PgProgressRepository>(connString);
+  auto trees = std::make_shared<PgTreeRepository>(pool);
+  auto progress = std::make_shared<PgProgressRepository>(pool);
   auto progressService = std::make_shared<ProgressService>(*progress);
 
   // Rooms are the authority; HTTP reads and socket edits both go through them (Phase 2).
-  auto oplog = std::make_shared<PgOpLog>(connString);
+  auto oplog = std::make_shared<PgOpLog>(pool);
   auto bus = std::make_shared<WsPresenceBus>();
   auto registry = std::make_shared<RoomRegistry>(*trees, *oplog, *bus);
   auto presence = std::make_shared<PresenceHub>();
@@ -111,7 +113,7 @@ int main() {
   std::string cookieDomain = cookieDomainEnv ? cookieDomainEnv : "";
   bool secureCookies = appBaseUrl.rfind("https://", 0) == 0;
 
-  auto authRepo = std::make_shared<PgAuthRepository>(connString);
+  auto authRepo = std::make_shared<PgAuthRepository>(pool);
   // One Resend transport, shared by every mail: the neutral client owns the single outbound loop
   // and the api key, and each mail sender (platform sign-in, roadmap reminder, journal nudge) is
   // just a thin variable-binding over it. Kept alive here for the whole process, so every sender
@@ -127,13 +129,13 @@ int main() {
   // is a frontend route the /authorize redirect hands off to.
   const char* apiUrlEnv = std::getenv("WINDMILL_API_URL");
   std::string apiBaseUrl = apiUrlEnv ? apiUrlEnv : "http://localhost:8088";
-  auto oauthRepo = std::make_shared<PgOAuthRepository>(connString);
+  auto oauthRepo = std::make_shared<PgOAuthRepository>(pool);
   auto oauthService = std::make_shared<OAuthService>(*oauthRepo, *tokens, *systemClock);
 
   // Personal MCP API keys: the OAuth-less static-token fallback. The same token generator mints
   // and digests them (no prefix — consistent with sessions/oauth), so a leaked digest can neither
   // resurrect a key nor act as one.
-  auto mcpKeyRepo = std::make_shared<PgMcpKeyRepository>(connString);
+  auto mcpKeyRepo = std::make_shared<PgMcpKeyRepository>(pool);
   auto mcpKeyService = std::make_shared<McpKeyService>(*mcpKeyRepo, *tokens, *systemClock);
 
   // "Does this account hold anything?" — the one precondition on the link door (backend/AUTH.md).
@@ -142,17 +144,17 @@ int main() {
   // EVERY product must appear: one missing from this list reports an account empty that is not,
   // and the link door would then delete real data.
   auto accountFootprint = std::make_shared<PgAccountFootprint>(
-      connString, std::vector<OwnedTable>{
-                      {"trees", "owner_id"},                // roadmap
-                      {"journal_page", "user_id"},          // journal
-                      {"gym_sessions", "user_id"},          // gym — a workout with no sets is still a workout
-                      {"gym_sets", "user_id"},              // gym
-                      {"gym_routines", "user_id"},          // gym
-                      {"gym_session_shares", "user_id"},    // gym — a live coach link is data too
-                      {"paddle_subscriptions", "user_id"},  // platform — never fold away a payer
-                      {"mcp_keys", "user_id"},              // platform
-                      {"oauth_grants", "user_id"},          // platform
-                  });
+      pool, std::vector<OwnedTable>{
+                {"trees", "owner_id"},                // roadmap
+                {"journal_page", "user_id"},          // journal
+                {"gym_sessions", "user_id"},          // gym — a workout with no sets is still a workout
+                {"gym_sets", "user_id"},              // gym
+                {"gym_routines", "user_id"},          // gym
+                {"gym_session_shares", "user_id"},    // gym — a live coach link is data too
+                {"paddle_subscriptions", "user_id"},  // platform — never fold away a payer
+                {"mcp_keys", "user_id"},              // platform
+                {"oauth_grants", "user_id"},          // platform
+            });
   auto authService = std::make_shared<AuthService>(*authRepo, *emailSender, *tokens, *systemClock,
                                                    *oauthService, *accountFootprint, appBaseUrl);
   auto forkService = std::make_shared<ForkService>(*registry, *trees, *tokens);
@@ -186,14 +188,14 @@ int main() {
   // Per-tree unfurl cards (og-tree-cards): the owner PUTs their tree's rendered 1200×630 PNG,
   // and GET /og/:id.png serves it (canRead-gated) as the share link's og:image — with the
   // generic card as the fallback whenever a tree has no image or can't be read.
-  auto ogImages = std::make_shared<PgOgImageRepository>(connString);
+  auto ogImages = std::make_shared<PgOgImageRepository>(pool);
 
   // Per-tree share videos (og-share-video): the owner PUTs their tree's rendered mp4/webm loop,
   // and GET /v1/trees/:id/og-video serves it (canRead-gated) as the share link's og:video — the
   // og:image card above stays the poster fallback, so a tree with no video is a plain 404 there,
   // never a broken tag. Built before the share page so it can advertise og:video only for a tree
   // that actually carries one (a cheap `has` on render).
-  auto ogVideos = std::make_shared<PgOgVideoRepository>(connString);
+  auto ogVideos = std::make_shared<PgOgVideoRepository>(pool);
 
   // The real share path (path-share-pages): GET /t/:id serves the SPA shell with a shared
   // tree's own unfurl meta spliced in, so the link unfurls as itself for social scrapers. It
@@ -213,7 +215,7 @@ int main() {
   // The local mirror of Paddle billing state. Private trees are free (the paid line is tending, not
   // privacy), so nothing gates visibility on it — it feeds the /v1/subscription read and the
   // tending allowance's free-vs-Pro plan lookup.
-  auto subscriptionRepo = std::make_shared<PgSubscriptionRepository>(connString);
+  auto subscriptionRepo = std::make_shared<PgSubscriptionRepository>(pool);
   // Windmill One, asked as a domain question. Every paid feature — Talk, echoes, the tending Pro
   // plan — gates through this one seam instead of re-deriving the rule over the Paddle mirror, so
   // "what grants access" lives in exactly one place (platform/application/Entitlements).
@@ -228,12 +230,12 @@ int main() {
   auto amplitude = std::make_shared<AmplitudeClient>(
       amplitudeKey ? amplitudeKey : "",
       (amplitudeHost && *amplitudeHost) ? amplitudeHost : "api2.amplitude.com");  // set-but-empty → default
-  auto eventRepo = std::make_shared<PgEventRepository>(connString);
+  auto eventRepo = std::make_shared<PgEventRepository>(pool);
   auto eventsApi = std::make_shared<EventsApi>(eventRepo, authService, amplitude);
 
   // The feedback door: one-click notes from anyone, signed-in or ghost. Same shape as the
   // event-spine — anon-allowed, caller resolved server-side, one row per note.
-  auto feedbackRepo = std::make_shared<PgFeedbackRepository>(connString);
+  auto feedbackRepo = std::make_shared<PgFeedbackRepository>(pool);
   auto feedbackApi = std::make_shared<FeedbackApi>(feedbackRepo, authService);
 
   // Paddle billing: verified webhooks upsert the local mirror of customers + subscriptions, and the
@@ -253,7 +255,7 @@ int main() {
   // whatever escaped a request handler, so a broken endpoint surfaces in server_errors instead of
   // only in a stdout LOG_ERROR no one can see. It also ships the same exception to Sentry when
   // SENTRY_DSN is set (empty → a no-op client, mirroring the Resend/Anthropic key guards).
-  auto serverErrors = std::make_shared<PgServerErrorRepository>(connString);
+  auto serverErrors = std::make_shared<PgServerErrorRepository>(pool);
   const char* sentryDsn = std::getenv("SENTRY_DSN");
   // The environment is a variable, not a constant, and logs are why it had to become one: exceptions
   // were rare enough that a laptop run with the DSN set was a curiosity, whereas a laptop teeing
@@ -305,7 +307,7 @@ int main() {
   // flag with no key keeps the quiet "not-enabled" face rather than emitting a stream of failed runs.
   const char* tendingEnabledEnv = std::getenv("TENDING_ENABLED");
   const std::string tendingEnabledFlag = tendingEnabledEnv ? tendingEnabledEnv : "";
-  auto tendRuns = std::make_shared<PgTendRunRepository>(connString);
+  auto tendRuns = std::make_shared<PgTendRunRepository>(pool);
   // Reap runs a previous process left mid-flight: this boots before the server accepts traffic, so
   // every `running` row is orphaned and safe to settle to `failed` — a returning phone then reads a
   // finished run rather than polling a `running` row that will never move.
@@ -329,7 +331,7 @@ int main() {
   const std::string remindersEnabledFlag = remindersEnabledEnv ? remindersEnabledEnv : "";
   const char* remindersAllowlistEnv = std::getenv("REMINDERS_ALLOWLIST");
   const char* remindersAdminEnv = std::getenv("REMINDERS_ADMIN_TOKEN");
-  auto reminderRepo = std::make_shared<PgReminderRepository>(connString);
+  auto reminderRepo = std::make_shared<PgReminderRepository>(pool);
   ReminderArming reminderArming(remindersEnabledFlag == "true" || remindersEnabledFlag == "1",
                                 remindersAllowlistEnv ? remindersAllowlistEnv : "");
   auto reminderMail = std::make_shared<ResendReminderSender>(*resendClient);
@@ -346,7 +348,7 @@ int main() {
   // and the difference is the whole point: a share becomes a link a human opens in the browser app,
   // not a call into the JSON API. One origin answers both in production, which is exactly why
   // passing the wrong one went unnoticed until a coach was handed a page of JSON.
-  auto gymRepository = std::make_shared<gym::PgTrainingRepository>(connString);
+  auto gymRepository = std::make_shared<gym::PgTrainingRepository>(pool);
   auto logService = std::make_shared<gym::LogService>(*gymRepository, *systemClock, *tokens);
   auto gymTools = std::make_shared<gym::GymTools>(*logService, appBaseUrl);
 
@@ -799,7 +801,7 @@ int main() {
   // in namespace wm::journal so its registerRoutes never collides with roadmap's. Wave 1 is the
   // pages canvas: durable, owner-scoped, offline-convergent. It reads platform auth like roadmap and
   // owns no public surface.
-  auto journalPages = std::make_shared<PgJournalRepository>(connString);
+  auto journalPages = std::make_shared<PgJournalRepository>(pool);
   auto pageService = std::make_shared<PageService>(*journalPages);
   // Wave 2 nudges: a daily heartbeat on its own thread, shipped DARK behind an arming allowlist
   // exactly like the reminder engine — JOURNAL_NUDGE_ENABLED must say so AND the user be named in
@@ -810,7 +812,7 @@ int main() {
   const std::string journalNudgeEnabledFlag = journalNudgeEnabledEnv ? journalNudgeEnabledEnv : "";
   const char* journalNudgeAllowlistEnv = std::getenv("JOURNAL_NUDGE_ALLOWLIST");
   const char* journalNudgeAdminEnv = std::getenv("JOURNAL_NUDGE_ADMIN_TOKEN");
-  auto journalNudges = std::make_shared<PgNudgeRepository>(connString);
+  auto journalNudges = std::make_shared<PgNudgeRepository>(pool);
   NudgeArming journalNudgeArming(journalNudgeEnabledFlag == "true" || journalNudgeEnabledFlag == "1",
                                  journalNudgeAllowlistEnv ? journalNudgeAllowlistEnv : "");
   auto journalNudgeMail = std::make_shared<ResendNudgeSender>(*resendClient);
@@ -841,7 +843,7 @@ int main() {
         std::make_shared<AnthropicClient>(anthropicKeyEnv));
   else
     journalCurator = std::make_shared<NullCurator>();
-  auto journalEchoes = std::make_shared<PgEchoRepository>(connString);
+  auto journalEchoes = std::make_shared<PgEchoRepository>(pool);
   const char* journalEchoAdminEnv = std::getenv("JOURNAL_ECHO_ADMIN_TOKEN");
   auto journalEchoSweep = std::make_shared<EchoSweep>(*journalEchoes, *journalEmbedder,
                                                       *journalCurator, *systemClock,

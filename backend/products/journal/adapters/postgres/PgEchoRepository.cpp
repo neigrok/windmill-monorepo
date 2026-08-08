@@ -1,6 +1,6 @@
 #include "products/journal/adapters/postgres/PgEchoRepository.h"
 
-#include "platform/adapters/postgres/PgConnection.h"
+#include "platform/adapters/postgres/PgPool.h"
 #include "products/journal/domain/Passage.h"
 
 #include <pqxx/pqxx>
@@ -123,13 +123,14 @@ EchoView viewFrom(const Row& row, const std::string& matchBody) {
 }
 }
 
-PgEchoRepository::PgEchoRepository(std::string connString) : connString_(std::move(connString)) {}
+PgEchoRepository::PgEchoRepository(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
 
 std::vector<EchoUser> PgEchoRepository::activeSince(std::uint64_t sinceMs) {
   // The nightly candidate list: distinct owners of a recently-touched page. The join to users earns
   // its place on `deleted_at` alone — a soft-closed account never comes up, so its echoes stop being
   // computed the moment the grace period starts.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT DISTINCT p.user_id::text AS user_id "
       "FROM journal_page p JOIN users u ON u.id = p.user_id "
@@ -147,7 +148,8 @@ std::uint64_t PgEchoRepository::corpusStamp(const UserId& user) {
   // The corpus stamp IS the newest passage stamp the user has — no separate counter to bump and so
   // no way for one to drift out of step with the spans it claims to describe. A user with no spans
   // yet reads 0, which makes every page of theirs stale and is exactly right.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT coalesce(max(body_stamp_ms), 0)::bigint AS stamp FROM journal_span "
       "WHERE user_id = $1::uuid",
@@ -160,7 +162,8 @@ std::vector<DuePage> PgEchoRepository::duePages(const UserId& user, std::uint64_
   // corpus that moved past it. The third is what makes a backfill work — write "i like c++" in May,
   // add the January page in July, and the May page has to learn January exists even though its own
   // body never changed.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT p.day::text AS day, p.body, p.stamp_ms, coalesce(c.attempts, 0) AS attempts "
       "FROM journal_page p "
@@ -183,7 +186,8 @@ std::vector<DuePage> PgEchoRepository::duePages(const UserId& user, std::uint64_
 std::vector<KnownSpan> PgEchoRepository::spansOf(const UserId& user, const LocalDate& day) {
   // Ordered by ord because reconciliation matches duplicated text within a page in document order —
   // two identical lines have to keep two stable, distinct identities rather than collapse into one.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT span_id, text FROM journal_span "
       "WHERE user_id = $1::uuid AND day = $2::date ORDER BY ord",
@@ -206,7 +210,8 @@ void PgEchoRepository::replaceSpans(const UserId& user, const LocalDate& day,
   // No foreign key ties journal_echo to these rows, so an echo aimed at a passage that just died is
   // orphaned rather than deleted. It is invisible immediately (echoesFor inner-joins both spans) and
   // is swept when its own page is next derived, which the reverse edge is what schedules.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params("DELETE FROM journal_span WHERE user_id = $1::uuid AND day = $2::date",
                   user.str(), day.iso());
 
@@ -229,7 +234,8 @@ std::vector<Vectored> PgEchoRepository::corpusOf(const UserId& user,
   // The whole comparison set, and not one page body with it: the corpus load is the entire cost of
   // a night and a body is dead weight in it — the passage text is already here, and it is the only
   // text an echo may ever quote.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT span_id, day::text AS day, text, encode(vector, 'hex') AS vector "
       "FROM journal_span WHERE user_id = $1::uuid AND embed_version = $2 ORDER BY day, ord",
@@ -250,7 +256,8 @@ std::vector<SpanPair> PgEchoRepository::dismissalsOn(const UserId& user,
   // Dismissals are keyed on content, so this resolves them back into the span ids the pipeline is
   // holding. Text repeats: every span carrying dismissed text is dismissed, which is the whole
   // point of hashing rather than pinning to an id.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT st.span_id AS trigger_span_id, sm.span_id AS match_span_id "
       "FROM journal_span st "
@@ -272,7 +279,8 @@ void PgEchoRepository::dismiss(const UserId& user, std::int64_t triggerSpanId,
   // Stored as the two passages' content, never as their ids, so the pair stays faded across an
   // edit, a re-segmentation and a segmenter version bump. If either span has already gone, nothing
   // is written and nothing needs to be: an echo whose passage no longer exists is already unshown.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params(
       "INSERT INTO journal_echo_dismissal (user_id, trigger_hash, match_hash) "
       "SELECT $1::uuid, st.text_sha256, sm.text_sha256 "
@@ -292,7 +300,8 @@ void PgEchoRepository::dismissPage(const UserId& user, const LocalDate& triggerD
   // twice has to be the same as pressing it once.
   //
   // Scoped by e.user_id and nothing else: a forged day reaches this caller's rows or no rows.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params(
       "INSERT INTO journal_echo_dismissal (user_id, trigger_hash, match_hash) "
       "SELECT DISTINCT e.user_id, st.text_sha256, sm.text_sha256 "
@@ -314,7 +323,8 @@ void PgEchoRepository::dismissOffer(const UserId& user, const LocalDate& day) {
   // offer belongs to the page and not to any pairing on it: re-derive the page and the answer still
   // stands. Aligning this with the other two would put the question back the moment a sentence
   // moved, which is the nagging the mission rule forbids.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params(
       "INSERT INTO journal_echo_offer_dismissal (user_id, day) VALUES ($1::uuid, $2::date) "
       "ON CONFLICT DO NOTHING",
@@ -329,7 +339,8 @@ void PgEchoRepository::replaceEchoes(const UserId& user, const LocalDate& trigge
   // time is KEPT: the curator is not deterministic, and a typo fix must not silently destroy a
   // chain the reader has already walked. created_at survives an update for the same reason; an
   // echo re-affirmed tonight has been on the page since the night it was first found.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   txn.exec_params(
       "DELETE FROM journal_echo e WHERE e.user_id = $1::uuid AND e.trigger_day = $2::date AND ("
       "NOT EXISTS (SELECT 1 FROM journal_span s "
@@ -356,7 +367,8 @@ void PgEchoRepository::replaceEchoes(const UserId& user, const LocalDate& trigge
 
 void PgEchoRepository::recordCuration(const UserId& user, const LocalDate& day,
                                       const CurationOutcome& outcome) {
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
 
   // A failed pass records WHAT failed and leaves both stamps exactly where they were, so the page
   // comes back as due on the next sweep. Advancing them here — the idiom the shipped vector path
@@ -390,7 +402,8 @@ std::vector<LocalDate> PgEchoRepository::inboundPages(const UserId& user,
                                                       const LocalDate& matchDay) {
   // The reverse edge, served by journal_echo_inbound: which pages are reaching into this one, and
   // therefore have to be derived again now that its passages have moved.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT DISTINCT trigger_day::text AS day FROM journal_echo "
       "WHERE user_id = $1::uuid AND match_day = $2::date ORDER BY day",
@@ -411,7 +424,8 @@ std::vector<EchoView> PgEchoRepository::echoesFor(const UserId& user, const Loca
   // Ordered trigger day, then position on the page, then match day — oldest match first. Read
   // top-down that list is reach ("this goes back to 2024"); newest-first the same rows read as
   // accumulation ("and again, and again"). Same data, opposite rhetoric.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
 
   // The match pages' bodies, once each, so the anchoring hint can be counted against the page the
   // reader will actually walk back to. Its own query rather than a column on the one below: ten
@@ -456,7 +470,8 @@ std::vector<LocalDate> PgEchoRepository::retiredOffers(const UserId& user, const
                                                        const LocalDate& to) {
   // Which pages in view have already been answered with "not now", so the surface can decline to
   // ask again. A reader who never declined anything reads zero rows here, which is the whole cost.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT day::text AS day FROM journal_echo_offer_dismissal "
       "WHERE user_id = $1::uuid AND day BETWEEN $2::date AND $3::date ORDER BY day",
@@ -472,7 +487,8 @@ int PgEchoRepository::pagesWritten(const UserId& user) {
   // Pages the user has actually written on — a row holding only whitespace is a page they opened,
   // not one they wrote. This is the number the ~20-page corpus floor is judged against, and the
   // reason it is served at all is that the browser cannot count what it has not synced.
-  pqxx::work txn{pgThreadConnection(connString_)};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT count(*)::int AS pages FROM journal_page "
       "WHERE user_id = $1::uuid AND btrim(body, E' \\t\\r\\n') <> ''",

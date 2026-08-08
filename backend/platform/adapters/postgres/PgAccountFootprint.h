@@ -1,7 +1,9 @@
 #pragma once
 
+#include "platform/adapters/postgres/PgPool.h"
 #include "platform/ports/AccountFootprint.h"
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -22,12 +24,12 @@ public:
   // Identifiers cannot be bound as parameters, so they are spliced — and therefore validated here,
   // at construction, against a plain [a-z_][a-z0-9_]* shape. A malformed probe is a wiring error
   // and takes the server down at boot rather than reaching a query.
-  PgAccountFootprint(std::string connString, std::vector<OwnedTable> probes);
+  PgAccountFootprint(std::shared_ptr<PgPool> pool, std::vector<OwnedTable> probes);
 
   bool anyData(const UserId& userId) override;
 
 private:
-  std::string connString_;
+  std::shared_ptr<PgPool> pool_;
   std::string query_;
 };
 
