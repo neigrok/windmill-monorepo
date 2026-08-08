@@ -304,3 +304,26 @@ test('daily bars span the whole window, so a quiet day is drawn as a quiet day a
   assert.equal(quiet.partial, false);
   assert.equal(quiet.label, 'Aug 9 — $0.00, 0 calls');
 });
+
+// The projection's denominator is days that PASSED, not days that spent. Dividing by the days the
+// server happened to return turns sparse traffic into a panic: two spending days in thirty
+// multiplies the true rate by fifteen, and the panel this page is read for is the one that lies.
+test('the projection divides by elapsed days, so a quiet month does not read as a busy one', () => {
+  const toMs = Date.UTC(2026, 7, 9, 12, 0, 0);
+  const fromMs = toMs - 29 * 24 * 60 * 60 * 1000;
+  const view = usageView({
+    summary: {
+      costNanos: 6000000000, calls: 2, unpricedCalls: 0,
+      inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0,
+      anonymousCostNanos: 0, unpricedModels: [], byProduct: [],
+      daily: [
+        { day: '2026-07-11', costNanos: 3000000000, calls: 1, unpricedCalls: 0 },
+        { day: '2026-08-08', costNanos: 3000000000, calls: 1, unpricedCalls: 0 },
+      ],
+    },
+    window: { fromMs, toMs },
+  });
+
+  // $6 spent over 29 complete days, projected across 30 — not $6 over 2 days projected to $90.
+  assert.equal(view.runRate.projection.value, '$6.21');
+});

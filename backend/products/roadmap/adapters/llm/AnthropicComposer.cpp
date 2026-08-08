@@ -388,7 +388,7 @@ void AnthropicComposer::compose(const std::string& text,
   // Three ways to answer without calling anybody, and all three are the same answer the caller
   // already handles: no plan, fall back to the parser we own. An oversized paste and a blown fuse
   // are refused HERE, before a socket is opened, because a cap enforced after the call is not a cap.
-  if (apiKey_.empty() || text.size() > kMaxPasteBytes || (fuse_ && !fuse_->allows())) {
+  if (apiKey_.empty() || text.size() > kMaxPasteBytes || (fuse_ && !fuse_->allows(nowMs()))) {
     done(std::nullopt);
     return;
   }
@@ -488,7 +488,7 @@ std::function<void()> AnthropicComposer::composeStream(
     std::function<void(bool)> onDone) {
   // The same three refusals as the buffered path, and the same answer: fail cleanly and let the
   // caller fall back to the parser. Nothing is spent, so nothing is recorded.
-  if (apiKey_.empty() || text.size() > kMaxPasteBytes || (fuse_ && !fuse_->allows())) {
+  if (apiKey_.empty() || text.size() > kMaxPasteBytes || (fuse_ && !fuse_->allows(nowMs()))) {
     onDone(false);
     return []() {};
   }

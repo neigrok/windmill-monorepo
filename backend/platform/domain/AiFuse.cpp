@@ -5,11 +5,12 @@ namespace wm {
 AiFuse::AiFuse(long long ceilingNanos, long long windowMs)
     : ceilingNanos_(ceilingNanos), windowMs_(windowMs) {}
 
-bool AiFuse::allows() const {
+bool AiFuse::allows(long long atMs) const {
   std::lock_guard<std::mutex> guard{mutex_};
-  // No clock argument, so this reads the window as the last spend left it — pruning only ever
-  // lowers the total, so the worst this can be is briefly conservative, and a fuse that errs toward
-  // refusing is the right way for a fuse to be wrong.
+  // Prune FIRST. Reading the running total without dropping what has aged out made this a latch:
+  // nothing but spent() pruned, and spent() only runs on a call this gate let through, so one bad
+  // hour disabled every seam permanently.
+  dropOlderThan(atMs - windowMs_);
   if (trailingNanos_ < ceilingNanos_) return true;
   tripped_ = true;
   return false;

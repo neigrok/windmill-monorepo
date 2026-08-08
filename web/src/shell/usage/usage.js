@@ -105,10 +105,14 @@ export function dayLabel(day) {
   return `${MONTHS[Number(month) - 1] ?? '?'} ${Number(date)}`;
 }
 
-// The 30-day projection, taken from the COMPLETE days only. The last bucket in the series is today,
-// which is still being spent into, so a rate that included it always reads low — and a "projection"
-// computed over the whole trailing window would be the window total restated, which is not a
-// projection at all. One day of data projects nothing, and says so with a dash.
+// The 30-day projection, taken from the COMPLETE days only. The last bucket is today, still being
+// spent into, so a rate that included it always reads low — and a "projection" over the whole
+// trailing window would be the window total restated, which is not a projection at all.
+//
+// It MUST be handed the calendar-filled series, not the server's array. The server returns only days
+// that HAVE rows, and dividing by those made the denominator "days we spent" instead of "days that
+// passed" — which on sparse traffic is the difference between $28 and a projected $154. A silent day
+// is a real day at a rate of zero, and leaving it out is how a spend chart talks itself into a panic.
 export function projectionNanos(daily) {
   const complete = (daily ?? []).slice(0, -1);
   if (complete.length === 0) return null;
@@ -143,9 +147,9 @@ function floorBadge(unpricedCalls, calls) {
 }
 
 // PANEL 1 — the number the week's decision is made on, and the two figures that give it a direction.
-function runRate(summary, prior) {
+function runRate(summary, prior, filledDaily) {
   const partial = summary.unpricedCalls > 0;
-  const projected = projectionNanos(summary.daily);
+  const projected = projectionNanos(filledDaily);
   const perCall = formatPerCall(summary.costNanos, summary.calls);
   const cacheShare = cacheReadPercent(summary);
 
@@ -324,15 +328,19 @@ function topSpenders(rows, summary) {
 // optional on purpose: the comparison is the only thing that needs it, and one failed read should
 // cost the reader that line and nothing else.
 export function usageView({ summary, prior = null, spenders = [], window = null }) {
+  // One filled series, built once and read twice, so the chart and the projection can never be
+  // computed over different days — which is exactly how they came to disagree.
+  const series = daily(summary, window);
+  const filled = series.bars.map((bar) => ({ day: bar.key, costNanos: bar.value }));
   return {
     header: {
       title: 'AI usage',
       window: `Trailing ${WINDOW_DAYS} days`,
       note: 'All figures USD, as billed by Anthropic.',
     },
-    runRate: runRate(summary, prior),
+    runRate: runRate(summary, prior, filled),
     honesty: honesty(summary),
-    daily: daily(summary, window),
+    daily: series,
     products: byProduct(summary),
     spenders: topSpenders(spenders, summary),
   };

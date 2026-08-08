@@ -238,7 +238,7 @@ Curation AnthropicCurator::curate(const UserId& user, const std::vector<Vectored
 
   // Over the process fuse, the page is not judged and not lost either: this is the same failed-call
   // shape as an unreachable vendor, so tomorrow's pass picks the page up exactly as it would have.
-  if (fuse_ && !fuse_->allows()) {
+  if (fuse_ && !fuse_->allows(nowMs())) {
     curation.failure = MessagesFailure::transport;
     return curation;
   }

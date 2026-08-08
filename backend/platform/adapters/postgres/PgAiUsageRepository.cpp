@@ -28,6 +28,11 @@ void PgAiUsageRepository::record(const AiSpend& spend) noexcept {
   // reply. The port's `noexcept` is only honest because of this catch.
   try {
     const std::optional<long long> cost = costNanos(spend.model, spend.tokens);
+    // Two costs, deliberately. `cost_nanos` is what we KNOW and is null when we do not — that null
+    // is what lights the unpriced badge and keeps the dashboard honest. `cost_floor_nanos` is what
+    // the CEILINGS read, and is never null: an unknown model is charged the dearest rate we know,
+    // because a model we forgot to price must not be a model that spends for free.
+    const long long floorCost = floorCostNanos(spend.model, spend.tokens);
 
     pqxx::params params;
     if (spend.user) params.append(spend.user->str());
@@ -44,13 +49,15 @@ void PgAiUsageRepository::record(const AiSpend& spend) noexcept {
     params.append(spend.tokens.cacheWrite);
     if (cost) params.append(*cost);
     else params.append();
+    params.append(floorCost);
 
     PgLease conn{*pool_};
     pqxx::work txn{*conn};
     txn.exec("INSERT INTO ai_usage "
              "(user_id, product, operation, run_id, iteration, model, outcome, "
-             "input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_nanos) "
-             "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+             "input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_nanos, "
+             "cost_floor_nanos) "
+             "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
              params);
     txn.commit();
   } catch (const std::exception& e) {
@@ -67,7 +74,9 @@ long long PgAiUsageRepository::spentSinceNanos(const UserId& user, const std::st
   // An empty product means every product — one query rather than two, because the caller's question
   // is the same question either way.
   const pqxx::result rows = txn.exec_params(
-      "SELECT coalesce(sum(cost_nanos), 0) FROM ai_usage "
+      // cost_floor_nanos, not cost_nanos: summing the nullable column let an unpriced model spend
+      // against no ceiling at all — fifty such calls moved a $25 budget by nothing.
+      "SELECT coalesce(sum(cost_floor_nanos), 0) FROM ai_usage "
       "WHERE user_id = $1::uuid AND ts >= to_timestamp($2::bigint / 1000.0) "
       "AND ($3 = '' OR product = $3)",
       user.str(), sinceMs, product);
@@ -113,7 +122,7 @@ UsageSummary PgAiUsageRepository::summary(long long fromMs, long long toMs) {
   }
 
   const pqxx::result days = txn.exec_params(
-      "SELECT to_char(ts, 'YYYY-MM-DD') AS day, coalesce(sum(cost_nanos), 0), count(*), " +
+      "SELECT to_char(ts AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day, coalesce(sum(cost_nanos), 0), count(*), " +
           std::string(kUnpriced) + window + " GROUP BY day ORDER BY day",
       fromMs, toMs);
   for (int i = 0; i < static_cast<int>(days.size()); ++i) {

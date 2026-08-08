@@ -179,10 +179,15 @@ TEST(pg_ai_usage_the_budget_read_sums_one_account_s_window_and_one_product_of_it
   repo.record(spend("pgtest-roadmap", "claude-sonnet-5", kOther, TokenUse{1000, 1000, 0, 0}));
   stampLatest(kDayOneMs);  // someone else's spend: never counted
   repo.record(spend("pgtest-roadmap", "unpriced-model", kMine, TokenUse{9999, 9999, 0, 0}));
-  stampLatest(kDayOneMs);  // unpriced: adds nothing to a sum, and is not an error either
+  stampLatest(kDayOneMs);  // unpriced: charged the DEAREST rate we know, never nothing
 
-  CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "", kFromMs), 21'000'000);
-  CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "pgtest-roadmap", kFromMs), 18'000'000);
+  // 9999 in + 9999 out at the fable rate ($10/$50 per MTok), because a model we forgot to price must
+  // not be a model that spends against no ceiling. This read is the ceiling's read, so it takes the
+  // floor column; the dashboard's read still shows the nullable truth and marks it with a "≥".
+  const long long floor = 9999LL * 10'000 + 9999LL * 50'000;
+
+  CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "", kFromMs), 21'000'000 + floor);
+  CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "pgtest-roadmap", kFromMs), 18'000'000 + floor);
   CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "pgtest-journal", kFromMs), 3'000'000);
   CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "pgtest-nothing", kFromMs), 0);
   CHECK_EQ(repo.spentSinceNanos(UserId{kOther}, "", kFromMs), 18'000'000);

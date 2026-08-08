@@ -22,7 +22,12 @@ class AiFuse {
 public:
   explicit AiFuse(long long ceilingNanos, long long windowMs = 3'600'000);
 
-  bool allows() const;
+  // Takes the clock, like spent() and trailingNanos() do, because it MUST prune before it answers.
+  // An allows() that only read the running total was a latch, not a window: spend() is reached only
+  // after allows() passes, so the moment the fuse tripped nothing called spend(), nothing pruned,
+  // and every seam stayed refused until the process restarted — with the alert fired once, hours
+  // before anyone noticed the product was dark.
+  bool allows(long long atMs) const;
   void spent(long long nanos, long long atMs);
   long long trailingNanos(long long atMs) const;
 

@@ -32,6 +32,13 @@ TokenUse tokensFrom(const Json::Value& usage);
 // silently free.
 std::optional<long long> costNanos(const std::string& model, const TokenUse& tokens);
 
+// The same cost, but never absent — an unpriced model is charged the dearest rate we know rather
+// than nothing. Every spend CONTROL reads this; only the display reads the optional above. Charging
+// an unknown model zero is the arithmetic that makes a runaway invisible: it moves no ceiling and
+// trips no fuse, so the failure the dashboard shouts about is the one the ceilings would wave
+// through. A guess that errs toward refusing is the right way for a fuse to be wrong.
+long long floorCostNanos(const std::string& model, const TokenUse& tokens);
+
 // One row of the ledger. `user` is nullopt for the anonymous birth canvas — never invented, because
 // an invented owner is worse than an honest gap. `runId` groups one tool loop's iterations into one
 // logical operation, which is the only way a twelve-iteration agent reads as one act.

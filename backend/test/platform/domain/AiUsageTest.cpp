@@ -184,38 +184,38 @@ TEST(ai_fuse_spend_older_than_the_window_stops_counting) {
 
   fuse.spent(400, 1'000);
   CHECK_EQ(fuse.trailingNanos(1'000), 400);
-  CHECK(fuse.allows());
+  CHECK(fuse.allows(1'000));
 
   fuse.spent(400, 1'050);
   CHECK_EQ(fuse.trailingNanos(1'050), 800);
-  CHECK(fuse.allows());
+  CHECK(fuse.allows(1'050));
 
   // At exactly one window past the first sample, that sample is gone and the second is not.
   CHECK_EQ(fuse.trailingNanos(1'100), 400);
   // ...and one window past the second, nothing is left.
   CHECK_EQ(fuse.trailingNanos(1'150), 0);
-  CHECK(fuse.allows());
+  CHECK(fuse.allows(1'150));
 }
 
 // Over the ceiling it refuses, and it remembers that it refused — so the alert is sent once instead
 // of on every blocked call in the storm that tripped it.
 TEST(ai_fuse_refuses_over_the_ceiling_and_recovers_when_the_window_passes) {
   AiFuse fuse{1000, 100};
-  CHECK(fuse.allows());
+  CHECK(fuse.allows(1'000));
   CHECK_FALSE(fuse.tripped());
 
   fuse.spent(600, 1'000);
-  CHECK(fuse.allows());
+  CHECK(fuse.allows(1'000));
   CHECK_FALSE(fuse.tripped());
 
   fuse.spent(400, 1'010);  // exactly at the ceiling: the budget is spent, so the door is shut
   CHECK_EQ(fuse.trailingNanos(1'010), 1000);
-  CHECK_FALSE(fuse.allows());
+  CHECK_FALSE(fuse.allows(1'010));
   CHECK(fuse.tripped());
 
   fuse.spent(5, 1'200);  // the two old samples age out as this one lands
   CHECK_EQ(fuse.trailingNanos(1'200), 5);
-  CHECK(fuse.allows());
+  CHECK(fuse.allows(1'200));
   CHECK(fuse.tripped());  // still true: it HAS refused, and that is what the flag says
 }
 
@@ -229,7 +229,7 @@ TEST(ai_fuse_counts_every_concurrent_add_exactly) {
     threads.emplace_back([&fuse] {
       for (int i = 0; i < 2000; ++i) {
         fuse.spent(7, 500'000);
-        fuse.allows();
+        fuse.allows(500'000);
         fuse.trailingNanos(500'000);
       }
     });
@@ -237,6 +237,46 @@ TEST(ai_fuse_counts_every_concurrent_add_exactly) {
   for (std::thread& thread : threads) thread.join();
 
   CHECK_EQ(fuse.trailingNanos(500'000), 5 * 2000 * 7);
-  CHECK(fuse.allows());
+  CHECK(fuse.allows(500'000));
   CHECK_FALSE(fuse.tripped());
+}
+
+// THE LATCH. allows() used to read the running total without pruning, and spent() — the only other
+// pruner — is reached only on a call this gate lets through. So one bad hour refused every seam for
+// the life of the process: no call, no spend, no prune, no recovery, and the alert already sent. The
+// old tests missed it because every one of them spent before it asked, which pruned for free.
+TEST(ai_fuse_recovers_on_its_own_when_nothing_spends_again) {
+  AiFuse fuse{1000, 100};
+
+  fuse.spent(1000, 1'000);
+  CHECK_FALSE(fuse.allows(1'000));
+
+  // Nothing spends after this point, because nothing CAN — every seam is refusing. The window must
+  // still clear on the strength of the clock alone.
+  CHECK_FALSE(fuse.allows(1'050));
+  CHECK(fuse.allows(1'101));
+  CHECK_EQ(fuse.trailingNanos(1'101), 0);
+}
+
+// An unpriced model is charged the dearest rate we know, not nothing. Charging it zero is what let
+// fifty calls of a model we forgot to price move a $25 ceiling by $0.00 while spending real money.
+TEST(ai_usage_a_model_we_cannot_price_is_charged_the_dearest_rate_rather_than_nothing) {
+  const TokenUse tokens{1'000'000, 0, 0, 0};
+
+  CHECK_FALSE(costNanos("claude-unknown-9", tokens).has_value());
+  // fable/mythos input is the dearest at $10/MTok, so a million input tokens floors at $10.
+  CHECK_EQ(floorCostNanos("claude-unknown-9", tokens), 10'000'000'000LL);
+  // A model we CAN price is charged exactly what it costs, never the floor.
+  CHECK_EQ(floorCostNanos("claude-haiku-4-5", tokens), 1'000'000'000LL);
+}
+
+// Longest-prefix matching exists for dated snapshots and must not adopt a differently-priced sibling:
+// a rule that cannot tell "-20260114" from "-mini" silently bills a new model at a neighbour's rate
+// and never lights the unpriced badge, which is the one signal that says look at this.
+TEST(ai_usage_a_prefix_match_takes_a_dated_snapshot_and_refuses_anything_else) {
+  const TokenUse tokens{1'000'000, 0, 0, 0};
+
+  CHECK_EQ(costNanos("claude-sonnet-5-20260114", tokens).value_or(-1), 3'000'000'000LL);
+  CHECK_FALSE(costNanos("claude-opus-5-mini", tokens).has_value());
+  CHECK_FALSE(costNanos("claude-opus-5-nano-20260601", tokens).has_value());
 }

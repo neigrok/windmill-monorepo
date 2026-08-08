@@ -187,7 +187,8 @@ void meterSpend(AiSpend spend, const std::shared_ptr<AiFuse>& fuse,
                 const std::shared_ptr<UsageSink>& usage) {
   // The fuse first, and unconditionally: an unpriced model still burned an hour of somebody's
   // capacity, and charging it zero is the one arithmetic that lets a runaway model be invisible.
-  if (fuse) fuse->spent(costNanos(spend.model, spend.tokens).value_or(0), nowMs());
+  // floorCostNanos is what makes that sentence true — value_or(0) said it and then did the opposite.
+  if (fuse) fuse->spent(floorCostNanos(spend.model, spend.tokens), nowMs());
   if (usage) usage->record(spend);
 }
 
@@ -199,20 +200,22 @@ ModelCall metered(ModelCall inner, AiSpend frame, std::shared_ptr<AiFuse> fuse,
           usage = std::move(usage), report = std::move(report),
           turn](const Json::Value& request) -> std::optional<Json::Value> {
     AiSpend spend = frame;
-    spend.iteration = (*turn)++;
 
     // Asked before the call, never after: the whole value of a fuse is the money it does not spend.
     // allows() raises tripped() itself, so the flag is read first — whoever finds it still down is
     // the one call that reports, and a runaway loop does not become a runaway alert.
     if (fuse) {
       const bool alreadyReported = fuse->tripped();
-      if (!fuse->allows()) {
+      if (!fuse->allows(nowMs())) {
         if (report && !alreadyReported)
           report("ai.fuse", "over the hourly spend ceiling — refusing " + spend.product + " " +
                                 spend.operation + " calls until the window clears");
         return std::nullopt;
       }
     }
+    // Numbered only now: a turn the fuse refused made no call and must not consume an ordinal, or a
+    // run's iterations come back with holes in them and max(iteration)+1 stops counting anything.
+    spend.iteration = (*turn)++;
 
     const std::optional<Json::Value> reply = inner(request);
     if (!reply) {

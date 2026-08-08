@@ -418,7 +418,9 @@ create index if not exists server_errors_ts on server_errors (ts);
 -- one account's window, and a second write would only double the failure surface of the thing that
 -- must never break the product it is watching.
 -- user_id null = the anonymous birth canvas, by design and never invented. cost_nanos null = the
--- model was absent from the price table: unpriced is LOUD, never silently free. run_id groups one
+-- model was absent from the price table: unpriced is LOUD, never silently free — and cost_floor_nanos
+-- carries what the CEILINGS read instead, priced at the dearest rate we know, because a model we
+-- forgot to price must not be a model that spends for free. run_id groups one
 -- tool loop's iterations into one logical operation. Failures record too, and disproportionately
 -- matter — a max_tokens truncation burned the entire budget and produced nothing.
 create table if not exists ai_usage (
@@ -435,8 +437,13 @@ create table if not exists ai_usage (
   output_tokens      bigint not null default 0,
   cache_read_tokens  bigint not null default 0,
   cache_write_tokens bigint not null default 0,
-  cost_nanos         bigint
+  cost_nanos         bigint,
+  cost_floor_nanos   bigint not null default 0
 );
+-- Added after the ledger shipped: the budget summed the nullable column, so an unpriced model spent
+-- against no ceiling at all. Backfilled to cost_nanos so existing rows keep counting.
+alter table ai_usage add column if not exists cost_floor_nanos bigint not null default 0;
+update ai_usage set cost_floor_nanos = cost_nanos where cost_floor_nanos = 0 and cost_nanos is not null;
 -- the budget check: one account's rolling window
 create index if not exists ai_usage_user_ts on ai_usage (user_id, ts);
 -- the owner page: every account's window at once
