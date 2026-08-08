@@ -65,6 +65,17 @@ std::string answerJson(const std::vector<Answer>& answers) {
   return write(root);
 }
 
+// What the vendor bills, on every reply it sends — the successful ones and the truncated ones
+// alike. These four numbers are what the meter is for, so every fixture below carries them.
+Json::Value usageBlock() {
+  Json::Value usage(Json::objectValue);
+  usage["input_tokens"] = 400;
+  usage["output_tokens"] = 60;
+  usage["cache_read_input_tokens"] = 9000;
+  usage["cache_creation_input_tokens"] = 200;
+  return usage;
+}
+
 // One reply as the wire delivers it: the thinking block the reader has to step over, then the
 // constrained answer as the first text block.
 std::string replyBody(const std::string& stopReason, const std::string& answer) {
@@ -79,6 +90,7 @@ std::string replyBody(const std::string& stopReason, const std::string& answer) 
   Json::Value body(Json::objectValue);
   body["type"] = "message";
   body["model"] = "claude-opus-5";
+  body["usage"] = usageBlock();
   body["stop_reason"] = stopReason;
   body["content"] = Json::Value(Json::arrayValue);
   body["content"].append(thinking);
@@ -97,10 +109,20 @@ std::string refusalBody() {
   body["type"] = "message";
   body["model"] = "claude-opus-5";
   body["stop_reason"] = "refusal";
+  body["usage"] = usageBlock();
   body["stop_details"] = details;
   body["content"] = Json::Value(Json::arrayValue);
   return write(body);
 }
+
+// Whose night it is. It changes no verdict; it is what every ledger row below is attributed to.
+const UserId kWriter{"u_night"};
+
+// A sink that keeps every row, so a test can assert the whole spend and not just that one happened.
+struct RecordedSpend : UsageSink {
+  std::vector<AiSpend> rows;
+  void record(const AiSpend& spend) noexcept override { rows.push_back(spend); }
+};
 
 Vectored passage(std::int64_t spanId, const char* day, std::string text) {
   return Vectored{spanId, LocalDate(day), std::move(text), {}};
@@ -179,7 +201,7 @@ TEST(curator_reads_a_clean_multi_verdict_reply) {
                                              {3, true, 0.4, false}})));
 
   AnthropicCurator curator(transport);
-  const Curation curation = curator.curate(tonight(), candidates(), proposed());
+  const Curation curation = curator.curate(kWriter, tonight(), candidates(), proposed());
 
   CHECK(curation.ok);
   CHECK_EQ(curation.failure, std::string(""));
@@ -209,7 +231,7 @@ TEST(curator_reports_a_refusal_as_a_failed_call) {
   transport->reply = readMessagesReply(200, refusalBody());
 
   AnthropicCurator curator(transport);
-  const Curation curation = curator.curate(tonight(), candidates(), proposed());
+  const Curation curation = curator.curate(kWriter, tonight(), candidates(), proposed());
 
   CHECK_FALSE(curation.ok);
   CHECK_EQ(curation.failure, std::string("refused"));
@@ -224,7 +246,7 @@ TEST(curator_refuses_a_half_written_answer_rather_than_parsing_it) {
       readMessagesReply(200, replyBody("max_tokens", "{\"verdicts\":[{\"pairing\":1,\"related\":tr"));
 
   AnthropicCurator curator(transport);
-  const Curation curation = curator.curate(tonight(), candidates(), proposed());
+  const Curation curation = curator.curate(kWriter, tonight(), candidates(), proposed());
 
   CHECK_FALSE(curation.ok);
   CHECK_EQ(curation.failure, std::string("truncated"));
@@ -236,7 +258,7 @@ TEST(curator_reports_an_unreadable_answer_as_schema_invalid) {
   transport->reply = readMessagesReply(200, replyBody("end_turn", "I looked at these and none held."));
 
   AnthropicCurator curator(transport);
-  const Curation curation = curator.curate(tonight(), candidates(), proposed());
+  const Curation curation = curator.curate(kWriter, tonight(), candidates(), proposed());
 
   CHECK_FALSE(curation.ok);
   CHECK_EQ(curation.failure, std::string("schema_invalid"));
@@ -248,7 +270,7 @@ TEST(curator_reports_finding_nothing_as_a_finished_page) {
   transport->reply = readMessagesReply(200, replyBody("end_turn", answerJson({})));
 
   AnthropicCurator curator(transport);
-  const Curation curation = curator.curate(tonight(), candidates(), proposed());
+  const Curation curation = curator.curate(kWriter, tonight(), candidates(), proposed());
 
   // The distinction the whole port is built around: nothing found is a page that is done, and it
   // must never look like a page whose call fell over at 02:14.
@@ -266,7 +288,7 @@ TEST(curator_drops_a_verdict_naming_a_pairing_nobody_proposed) {
                                              {2, true, 0.1, false}})));  // a second go at it
 
   AnthropicCurator curator(transport);
-  const Curation curation = curator.curate(tonight(), candidates(), proposed());
+  const Curation curation = curator.curate(kWriter, tonight(), candidates(), proposed());
 
   CHECK(curation.ok);
   REQUIRE_EQ(curation.verdicts.size(), std::size_t{1});
@@ -282,7 +304,7 @@ TEST(curator_fails_rather_than_reporting_an_empty_night_when_unconfigured) {
   transport->ready = false;
 
   AnthropicCurator curator(transport);
-  const Curation curation = curator.curate(tonight(), candidates(), proposed());
+  const Curation curation = curator.curate(kWriter, tonight(), candidates(), proposed());
 
   CHECK_FALSE(curator.configured());
   CHECK_FALSE(curation.ok);
@@ -294,7 +316,7 @@ TEST(curator_does_not_call_when_retrieval_proposed_nothing) {
   auto transport = std::make_shared<FakeMessages>();
 
   AnthropicCurator curator(transport);
-  const Curation curation = curator.curate(tonight(), candidates(), {});
+  const Curation curation = curator.curate(kWriter, tonight(), candidates(), {});
 
   CHECK(curation.ok);
   CHECK_EQ(curation.verdicts.size(), std::size_t{0});
@@ -306,7 +328,7 @@ TEST(curator_request_honours_the_reasoning_model_traps) {
   transport->reply = readMessagesReply(200, replyBody("end_turn", answerJson({})));
 
   AnthropicCurator curator(transport);
-  curator.curate(tonight(), candidates(), proposed());
+  curator.curate(kWriter, tonight(), candidates(), proposed());
 
   REQUIRE_EQ(transport->sent.size(), std::size_t{1});
   const MessagesRequest& request = transport->sent.front();
@@ -351,8 +373,8 @@ TEST(curator_sends_a_byte_stable_system_block_across_pages) {
   transport->reply = readMessagesReply(200, replyBody("end_turn", answerJson({})));
 
   AnthropicCurator curator(transport);
-  curator.curate(tonight(), candidates(), proposed());
-  curator.curate({passage(31, "2026-08-05", "different night, different words.")},
+  curator.curate(kWriter, tonight(), candidates(), proposed());
+  curator.curate(kWriter, {passage(31, "2026-08-05", "different night, different words.")},
                  {passage(41, "2024-02-02", "and a different memory.")}, {pairing(31, 41)});
 
   REQUIRE_EQ(transport->sent.size(), std::size_t{2});
@@ -374,4 +396,93 @@ TEST(curator_version_names_the_model_the_effort_and_the_prompt) {
   // Same wording, different spend: a stored row has to say which one judged it.
   CHECK(cheaper.version() != version);
   CHECK_EQ(cheaper.version().rfind("claude-opus-5/low/", 0), std::size_t{0});
+}
+
+// --- The meter ------------------------------------------------------------------------------
+
+TEST(curator_records_the_whole_bill_against_the_writer_it_judged_for) {
+  auto transport = std::make_shared<FakeMessages>();
+  transport->reply = readMessagesReply(200, replyBody("end_turn", answerJson({{1, true, 0.9, true}})));
+  auto ledger = std::make_shared<RecordedSpend>();
+
+  AnthropicCurator curator(transport, "claude-opus-5", "high", nullptr, ledger);
+  const Curation curation = curator.curate(kWriter, tonight(), candidates(), proposed());
+
+  CHECK(curation.ok);
+  REQUIRE_EQ(ledger->rows.size(), std::size_t{1});
+  const AiSpend& row = ledger->rows[0];
+  CHECK(row.user == kWriter);
+  CHECK_EQ(row.product, std::string("journal"));
+  CHECK_EQ(row.operation, std::string("echo.curate"));
+  CHECK_EQ(row.model, std::string("claude-opus-5"));
+  CHECK_EQ(row.outcome, std::string("ok"));
+  CHECK_EQ(row.iteration, 0);
+  // All four buckets, cache included. Folding the 9000 cache reads into `input` would price this
+  // call at ten times what it cost, which is the error the four-bucket split exists to prevent.
+  CHECK_EQ(row.tokens.input, 400LL);
+  CHECK_EQ(row.tokens.output, 60LL);
+  CHECK_EQ(row.tokens.cacheRead, 9000LL);
+  CHECK_EQ(row.tokens.cacheWrite, 200LL);
+}
+
+// The whole reason wave 1 was rewritten: a reply that was thrown away was still paid for in full,
+// and a meter that only counted the usable ones would miss the most expensive calls we make.
+TEST(curator_records_a_truncated_reply_that_bought_nothing) {
+  auto transport = std::make_shared<FakeMessages>();
+  transport->reply =
+      readMessagesReply(200, replyBody("max_tokens", "{\"verdicts\":[{\"pairing\":1,\"related\":tr"));
+  auto ledger = std::make_shared<RecordedSpend>();
+
+  AnthropicCurator curator(transport, "claude-opus-5", "high", nullptr, ledger);
+  const Curation curation = curator.curate(kWriter, tonight(), candidates(), proposed());
+
+  CHECK_FALSE(curation.ok);
+  CHECK_EQ(curation.failure, std::string("truncated"));
+  REQUIRE_EQ(ledger->rows.size(), std::size_t{1});
+  CHECK_EQ(ledger->rows[0].outcome, std::string("truncated"));
+  CHECK_EQ(ledger->rows[0].tokens.input, 400LL);
+  CHECK_EQ(ledger->rows[0].tokens.output, 60LL);
+}
+
+TEST(curator_records_a_refusal_which_the_vendor_still_charged_for) {
+  auto transport = std::make_shared<FakeMessages>();
+  transport->reply = readMessagesReply(200, refusalBody());
+  auto ledger = std::make_shared<RecordedSpend>();
+
+  AnthropicCurator curator(transport, "claude-opus-5", "high", nullptr, ledger);
+  curator.curate(kWriter, tonight(), candidates(), proposed());
+
+  REQUIRE_EQ(ledger->rows.size(), std::size_t{1});
+  CHECK_EQ(ledger->rows[0].outcome, std::string("refused"));
+  CHECK_EQ(ledger->rows[0].tokens.cacheRead, 9000LL);
+}
+
+TEST(curator_over_the_fuse_never_calls_and_leaves_the_page_owed) {
+  auto transport = std::make_shared<FakeMessages>();
+  transport->reply = readMessagesReply(200, replyBody("end_turn", answerJson({})));
+  auto ledger = std::make_shared<RecordedSpend>();
+  auto fuse = std::make_shared<AiFuse>(1'000);
+  fuse->spent(2'000, nowMs());   // already over the ceiling before the sweep gets there
+
+  AnthropicCurator curator(transport, "claude-opus-5", "high", fuse, ledger);
+  const Curation curation = curator.curate(kWriter, tonight(), candidates(), proposed());
+
+  CHECK_EQ(transport->sent.size(), std::size_t{0});   // refused BEFORE the call, or it is not a fuse
+  CHECK_EQ(ledger->rows.size(), std::size_t{0});      // nothing spent, so nothing to record
+  // A failed call, not an empty night: the page comes back tomorrow rather than being marked done.
+  CHECK_FALSE(curation.ok);
+  CHECK_EQ(curation.failure, std::string("transport"));
+}
+
+TEST(curator_charges_the_fuse_what_the_call_cost) {
+  auto transport = std::make_shared<FakeMessages>();
+  transport->reply = readMessagesReply(200, replyBody("end_turn", answerJson({})));
+  auto fuse = std::make_shared<AiFuse>(kHourlyFuseNanos);
+
+  AnthropicCurator curator(transport, "claude-opus-5", "high", fuse, nullptr);
+  curator.curate(kWriter, tonight(), candidates(), proposed());
+
+  // 400 in + 60 out + 9000 cache reads + 200 cache writes, at opus's 5000/25000 nanos per token.
+  const long long expected = 400 * 5'000 + 60 * 25'000 + 9'000 * 500 + 200 * 6'250;
+  CHECK_EQ(fuse->trailingNanos(nowMs()), expected);
 }

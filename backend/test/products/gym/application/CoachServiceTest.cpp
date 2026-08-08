@@ -48,7 +48,8 @@ struct Harness {
   FakeClock clock;
   FakeTokens tokens;
   FakeSubscriptionRepository subs;
-  Entitlements entitlements{subs};
+  FakeAiUsageRepository usage;
+  Entitlements entitlements{subs, usage};
   LogService log{repo, clock, tokens};
   GymTools gymTools{log, "https://windmill.works"};
   FakeCoach agent;
@@ -281,4 +282,49 @@ TEST(the_per_account_brake_refuses_the_fourth_question_in_a_burst) {
   CHECK(h.ask(question("three")).refusal == CoachRefusal::none);
   CHECK(h.ask(question("four")).refusal == CoachRefusal::rateLimited);
   CHECK_EQ(h.agent.runs, 3);
+}
+
+TEST(an_account_over_its_ai_ceiling_is_refused_before_the_question_travels) {
+  Harness h;
+  h.subscribe();
+  h.usage.spentByProduct[""] = kProMonthlyAiNanos;  // this account's own window is spent
+
+  const CoachReply reply = h.ask(question("how did the squats go?"));
+
+  CHECK(reply.refusal == CoachRefusal::outOfBudget);
+  CHECK_EQ(h.agent.runs, 0);  // nothing is spent proving we are out of budget
+}
+
+TEST(a_subscriber_over_the_free_ceiling_but_under_their_own_still_gets_an_answer) {
+  Harness h;
+  h.subscribe();
+  h.usage.spentByProduct[""] = kFreeMonthlyAiNanos;  // spent for a free account, not for this one
+
+  const CoachReply reply = h.ask(question("how did the squats go?"));
+
+  CHECK(reply.refusal == CoachRefusal::none);
+  CHECK_EQ(h.agent.runs, 1);
+}
+
+TEST(a_maxed_journal_sweep_never_stops_the_coach_answering) {
+  Harness h;
+  h.subscribe();
+  // The background bucket is gone; the account's own total is barely touched. The panel is the
+  // thing the lifter ASKED for, and a sweep they did not ask for cannot take it from them.
+  h.usage.spentByProduct["journal"] = kSweepMonthlyAiNanos;
+  h.usage.spentByProduct[""] = kSweepMonthlyAiNanos;
+
+  const CoachReply reply = h.ask(question("how did the squats go?"));
+
+  CHECK(reply.refusal == CoachRefusal::none);
+  CHECK_EQ(h.agent.runs, 1);
+}
+
+TEST(an_unentitled_account_over_the_ceiling_hears_the_reason_that_is_actually_theirs) {
+  Harness h;  // no subscription
+  h.usage.spentByProduct[""] = kProMonthlyAiNanos;
+
+  // Both rungs would refuse. The entitlement is the true one and comes first — telling somebody
+  // they are over a ceiling they never had access to would be a refusal that explains nothing.
+  CHECK(h.ask(question("how did the squats go?")).refusal == CoachRefusal::notEntitled);
 }

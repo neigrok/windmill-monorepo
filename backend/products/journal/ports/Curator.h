@@ -1,5 +1,6 @@
 #pragma once
 
+#include "platform/domain/Ids.h"
 #include "products/journal/domain/EchoSelection.h"
 
 #include <cstdint>
@@ -48,7 +49,11 @@ struct Curator {
   // and cannot be selectively rebuilt.
   virtual std::string version() const = 0;
 
-  virtual Curation curate(const std::vector<Vectored>& tonight,
+  // `user` is whose night this is. It changes no judgement — the passages are the whole question —
+  // and it is here for one reason: the call costs money, and a cost with nobody attached to it is a
+  // number the sweep can never be held to. A background pass spending against an account is exactly
+  // the spend that has to be visible per account.
+  virtual Curation curate(const UserId& user, const std::vector<Vectored>& tonight,
                           const std::vector<Vectored>& candidates,
                           const std::vector<Pairing>& proposed) = 0;
 };

@@ -50,6 +50,7 @@ TendRefusal tendRefusalFrom(const std::string& name) {
   if (name == "not-enabled")      return TendRefusal::notEnabled;
   if (name == "rate-limited")     return TendRefusal::rateLimited;
   if (name == "out-of-allowance") return TendRefusal::outOfAllowance;
+  if (name == "out-of-budget")    return TendRefusal::outOfBudget;
   if (name == "tree-too-large")   return TendRefusal::treeTooLarge;
   if (name == "prompt-empty")     return TendRefusal::promptEmpty;
   if (name == "prompt-too-long")  return TendRefusal::promptTooLong;

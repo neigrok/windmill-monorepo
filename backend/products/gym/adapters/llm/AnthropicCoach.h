@@ -1,5 +1,6 @@
 #pragma once
 
+#include "platform/adapters/llm/AnthropicClient.h"
 #include "platform/ports/FailureReporter.h"
 #include "products/gym/ports/CoachAgent.h"
 
@@ -42,8 +43,10 @@ using CoachReporter = std::function<void(const std::string& where, const std::st
 
 // One blocking Messages API round-trip: the request body in, the parsed reply out, or nullopt on any
 // transport or parse failure. The seam that keeps the loop testable with no network — production
-// sends it over HTTPS, a test answers it from a script.
-using CoachCall = std::function<std::optional<Json::Value>(const Json::Value& request)>;
+// sends it over HTTPS, a test answers it from a script, and `metered` wraps whichever one it is.
+// This is `ModelCall` under gym's name: the loop above is roadmap's sibling, and metering is the one
+// concern the two genuinely share, so it is the one thing lifted to the platform edge.
+using CoachCall = ModelCall;
 
 // The loop, pure but for the two seams it is handed. Reads the one workout under discussion, then
 // drives Anthropic's standard tool loop until the model stops asking for tools or the iteration cap
@@ -60,8 +63,12 @@ CoachAnswer driveCoach(const SessionId& session, const std::vector<CoachTurn>& t
 class AnthropicCoach : public CoachAgent {
 public:
   // The reporter is optional (null = report nowhere), so tests and local runs stay silent while
-  // production sees every upstream failure the panel only ever says "didn't answer" about.
-  explicit AnthropicCoach(std::string apiKey, std::shared_ptr<FailureReporter> failures = nullptr);
+  // production sees every upstream failure the panel only ever says "didn't answer" about. The fuse
+  // and the sink are optional the same way. Opus at six turns is the priciest call per question in
+  // the brand, and the question is one tap on a phone.
+  explicit AnthropicCoach(std::string apiKey, std::shared_ptr<FailureReporter> failures = nullptr,
+                          std::shared_ptr<AiFuse> fuse = nullptr,
+                          std::shared_ptr<UsageSink> usage = nullptr);
 
   bool configured() const override;
   CoachAnswer answer(const SessionId& session, const std::vector<CoachTurn>& turns,
@@ -70,6 +77,8 @@ public:
 private:
   std::string apiKey_;
   std::shared_ptr<FailureReporter> failures_;
+  std::shared_ptr<AiFuse> fuse_;
+  std::shared_ptr<UsageSink> usage_;
   trantor::EventLoopThread loop_;
 };
 

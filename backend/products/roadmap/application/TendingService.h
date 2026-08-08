@@ -34,8 +34,9 @@ public:
   TendingService(TendRunRepository& runs, PlanAgent& agent, ToolHost& tools, Clock& clock,
                  TokenGenerator& tokens, Entitlements& entitlements, bool enabled);
 
-  // Validate → persist → hand off → return. A refusal (not enabled, over the monthly allowance, or
-  // an unusable prompt) is persisted as a `refused` run and returned without ever starting work —
+  // Validate → persist → hand off → return. A refusal (not enabled, over the monthly run allowance,
+  // over the account's AI budget, or an unusable prompt) is persisted as a `refused` run and
+  // returned without ever starting work —
   // the client renders it as a quiet face, not an error. Otherwise a `running` run is persisted and
   // its id returned immediately, with the loop already queued on the worker thread. `email` is the
   // second binding the plan lookup reads (a subscription bound by email, not just the checkout id).

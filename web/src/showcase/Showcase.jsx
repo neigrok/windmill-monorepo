@@ -17,6 +17,8 @@ import {
   Dialog,
   Toast,
   Tabs,
+  BarSeries,
+  ShareBar,
 } from '../design-system/index.js';
 // A product's specimens arrive through the one module it declares them in — never by reaching
 // into its files. The boundary test enforces exactly that shape: this surface may import
@@ -145,6 +147,22 @@ const SHARE_CARDS = [
   { title: 'Ship the redesign', theme: 'dark', dominantKind: 'plum', stats: new ShareStats({ done: 12, total: 20, dominantKind: 'plum' }), author: 'Sam Gold', updatedAgo: '5h ago' },
   { title: 'Marathon base', theme: 'light', dominantKind: 'olive', stats: new ShareStats({ done: 4, total: 24, dominantKind: 'olive' }), author: 'Ada Vale', updatedAgo: '1w ago' },
   { title: 'Home studio', theme: 'dark', dominantKind: 'gold', stats: new ShareStats({ done: 19, total: 19, dominantKind: 'gold' }), author: 'Ravi Okon', updatedAgo: 'just now' },
+];
+
+// Specimen data for the chart primitives, in the shape their one real caller (shell/usage) hands
+// them: integer nano-dollars, finished label sentences, and tones that are variable names.
+const CHART_BARS = [
+  { key: 'a', value: 4000000000, label: 'Jul 11 — $4.00, 400 calls', partial: false },
+  { key: 'b', value: 6000000000, label: 'Jul 12 — $6.00, 600 calls', partial: false },
+  { key: 'c', value: 0, label: 'Jul 13 — $0.00, 0 calls', partial: false },
+  { key: 'd', value: 2400000000, label: 'Jul 14 — at least $2.40, 204 calls', partial: true },
+  { key: 'e', value: 900000000, label: 'Jul 15 — $0.90, 60 calls', partial: false },
+];
+
+const CHART_SEGMENTS = [
+  { key: 'roadmap', label: 'Roadmap', value: 7000000000, display: '$7.00', tone: 'var(--accent-terracotta-500)', badge: null },
+  { key: 'journal', label: 'Journal', value: 3000000000, display: '$3.00', tone: 'var(--accent-plum-600)', badge: null },
+  { key: 'gym', label: 'Gym', value: 2400000000, display: '$2.40', tone: 'var(--accent-sky-400)', badge: null },
 ];
 
 function Section({ title, meta, children }) {
@@ -311,6 +329,29 @@ export default function Showcase() {
           </div>
         </Section>
 
+        {/* ---- Charts ---- */}
+        <Section title="Charts" meta="BarSeries · ShareBar — hand-rolled, no charting dependency">
+          <div className="wm-grid">
+            <Card>
+              <div className="wm-label">Bar series</div>
+              {/* A zero draws nothing and a partial bar is hatched: absence is what zero looks like,
+                  and a figure that is really a floor must not be drawn as a total. */}
+              <BarSeries
+                title="Spend per day"
+                bars={CHART_BARS}
+                max={6000000000}
+                floorLabel="$0"
+                ceilingLabel="$6.00"
+                tone="var(--color-brand)"
+              />
+            </Card>
+            <Card>
+              <div className="wm-label">Share bar</div>
+              <ShareBar segments={CHART_SEGMENTS} total={12400000000} summary="Roadmap $7.00, Journal $3.00, Gym $2.40." />
+            </Card>
+          </div>
+        </Section>
+
         {/* ---- Cards ---- */}
         <Section title="Cards" meta="24px radius · lift on hover">
           <div className="wm-grid">
@@ -471,10 +512,9 @@ export default function Showcase() {
         </Section>
 
         <p className="wm-footnote">
-          Built with the <strong>Windmill Design System</strong> — tokens in{' '}
-          <code>src/styles/tokens/</code>, components in <code>src/design-system/</code>.
-          Colors, type, and voice are a proposed <strong>v1</strong> direction (the system was
-          authored without the real Windmill repo or brand assets) — swap in real tokens when available.
+          Built with the <strong>Windmill Design System</strong> — the same tokens the product ships{' '}
+          (<code>src/styles/tokens/</code>) and the same components (<code>src/design-system/</code>).
+          This page is the specimen sheet: what you see here is what every room renders with.
         </p>
       </main>
 

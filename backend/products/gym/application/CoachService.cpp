@@ -83,6 +83,13 @@ void CoachService::ask(const UserId& caller, const std::string& email, const Ses
     done(CoachReply{CoachRefusal::notEntitled, {}});
     return;
   }
+  // The dollar fuse, read while everything is still refusable and before a token is spent. It sits
+  // after the entitlement because a lifter without Windmill One should hear the one true reason
+  // rather than a ceiling that was never theirs to meet.
+  if (!entitlements_.aiAllowanceFor(caller, email).allows()) {
+    done(CoachReply{CoachRefusal::outOfBudget, {}});
+    return;
+  }
   if (!perAccount_.allow(caller.str())) {
     done(CoachReply{CoachRefusal::rateLimited, {}});
     return;

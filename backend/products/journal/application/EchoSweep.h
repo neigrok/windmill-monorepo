@@ -1,5 +1,6 @@
 #pragma once
 
+#include "platform/application/Entitlements.h"
 #include "platform/ports/Clock.h"
 #include "products/journal/domain/EchoSelection.h"
 #include "products/journal/ports/Curator.h"
@@ -21,6 +22,7 @@ struct EchoSweepReport {
   int pagesFailed = 0;
   int inboundEnqueued = 0;
   int pagesOverBudget = 0;
+  int usersOverAiBudget = 0;
 };
 
 // What one night is allowed to cost a single user. A three-hundred-page cleanup pass — someone
@@ -49,13 +51,20 @@ struct SweepBudget {
 // outcome from "the curator call failed" — conflating them stores a silence the user can never
 // recover from.
 //
-// The sweep is deliberately entitlement-blind: it derives for everyone, and the read layer decides
-// how much of a passage a given reader is served. The gate moved there when the design canon's
-// honest-cut state required a non-subscriber to see that echoes exist at all.
+// The sweep is deliberately entitlement-blind about WHAT it derives: it derives for everyone, and
+// the read layer decides how much of a passage a given reader is served. The gate moved there when
+// the design canon's honest-cut state required a non-subscriber to see that echoes exist at all.
+//
+// It is not blind about what it SPENDS. Entitlements is here for one question — has this account's
+// background bucket run dry — asked once per user and answered from that bucket alone, never the
+// account's own. A six-hourly pass nobody asked for eating the allowance their next question is then
+// refused for is indefensible, and it is the reason the two buckets are separate at all. Over it the
+// user is SKIPPED, not failed: their pages' stamps never advance, so the work is deferred to a later
+// pass rather than lost, which is the same promise a vendor blip at 02:14 already gets.
 class EchoSweep {
 public:
   EchoSweep(EchoRepository& echoes, Embedder& embedder, Curator& curator, Clock& clock,
-            SelectionRules rules, SweepBudget budget);
+            Entitlements& entitlements, SelectionRules rules, SweepBudget budget);
 
   void start();
 
@@ -74,6 +83,7 @@ private:
   Embedder& embedder_;
   Curator& curator_;
   Clock& clock_;
+  Entitlements& entitlements_;
   SelectionRules rules_;
   SweepBudget budget_;
   Heartbeat heartbeat_;   // declared last: destructs first, before the deps a running pass holds

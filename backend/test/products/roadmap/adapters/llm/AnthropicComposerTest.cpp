@@ -235,3 +235,114 @@ TEST(stream_parser_stays_quiet_when_the_plan_finishes_cleanly) {
   CHECK(observed.ok);
   CHECK_EQ(observed.failures.size(), 0u);
 }
+
+// --- The meter ------------------------------------------------------------------------------
+
+// The two frames the decoder never used to read, and between them they are the entire bill for a
+// streamed compose. message_start is the only frame carrying the input count and both cache
+// counters; message_delta carries the output count, as a SIBLING of `delta` and as a RUNNING TOTAL.
+TEST(stream_parser_counts_the_input_from_message_start_and_the_output_from_message_delta) {
+  ParsedStream observed;
+  observed.feedBytewise(
+      std::string(kStreamHeaders) +
+      chunk(sse("message_start",
+                R"({"type":"message_start","message":{"id":"msg_1","usage":{"input_tokens":812,"output_tokens":1,"cache_read_input_tokens":9100,"cache_creation_input_tokens":240}}})")) +
+      chunk(sse("content_block_delta",
+                R"({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"# Plan"}})")) +
+      chunk(sse("message_delta",
+                R"({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":964}})")) +
+      chunk(sse("message_stop", "{}")));
+
+  CHECK(observed.ok);
+  const TokenUse tokens = observed.parser.tokens();
+  CHECK_EQ(tokens.input, 812LL);
+  CHECK_EQ(tokens.cacheRead, 9100LL);
+  CHECK_EQ(tokens.cacheWrite, 240LL);
+  // The running total, ASSIGNED. The 1 that message_start declared is replaced, not added to — a
+  // += here would have billed 965 for a 964-token plan, and worse on every extra frame.
+  CHECK_EQ(tokens.output, 964LL);
+}
+
+TEST(stream_parser_takes_the_last_running_output_total_rather_than_summing_them) {
+  ParsedStream observed;
+  observed.feedBytewise(
+      std::string(kStreamHeaders) +
+      chunk(sse("message_start",
+                R"({"type":"message_start","message":{"usage":{"input_tokens":100,"output_tokens":1}}})")) +
+      chunk(sse("message_delta", R"({"type":"message_delta","delta":{},"usage":{"output_tokens":40}})")) +
+      chunk(sse("message_delta",
+                R"({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":90}})")) +
+      chunk(sse("message_stop", "{}")));
+
+  CHECK_EQ(observed.parser.tokens().output, 90LL);   // not 1 + 40 + 90
+  CHECK_EQ(observed.parser.tokens().input, 100LL);
+}
+
+// A plan the budget cut off still cost every token it spent getting there, and it is the reply the
+// product throws away — exactly the shape a success-only meter would price at nothing.
+TEST(stream_parser_counts_a_truncated_stream_too) {
+  ParsedStream observed;
+  observed.feedBytewise(
+      std::string(kStreamHeaders) +
+      chunk(sse("message_start",
+                R"({"type":"message_start","message":{"usage":{"input_tokens":24000,"output_tokens":1}}})")) +
+      chunk(sse("message_delta",
+                R"({"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":8000}})")) +
+      chunk(sse("message_stop", "{}")));
+
+  CHECK_FALSE(observed.ok);
+  CHECK_EQ(observed.parser.tokens().input, 24000LL);
+  CHECK_EQ(observed.parser.tokens().output, 8000LL);
+}
+
+TEST(stream_parser_survives_a_message_start_it_cannot_read) {
+  ParsedStream observed;
+  observed.feedBytewise(
+      std::string(kStreamHeaders) + chunk(sse("message_start", "{not json")) +
+      chunk(sse("content_block_delta", R"({"delta":{"type":"text_delta","text":"# Plan"}})")) +
+      chunk(sse("message_delta", R"({"delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":12}})")) +
+      chunk(sse("message_stop", "{}")));
+
+  // A frame we cannot read costs a token count, never the plan: the reader still got their tree.
+  CHECK(observed.ok);
+  REQUIRE_EQ(observed.deltas.size(), 1u);
+  CHECK_EQ(observed.parser.tokens().input, 0LL);
+  CHECK_EQ(observed.parser.tokens().output, 12LL);
+}
+
+// --- The gates in front of the vendor --------------------------------------------------------
+
+TEST(composer_refuses_an_oversized_paste_without_calling_upstream) {
+  AnthropicComposer composer{"sk-ant-test"};
+  const std::string book(30000, 'x');   // well past the ~24k cap a birth canvas ever needs
+
+  std::optional<std::string> result = std::string("untouched");
+  composer.compose(book, [&](std::optional<std::string> plan) { result = std::move(plan); });
+  // Answered synchronously, which is only possible if no socket was opened. The caller's fallback
+  // is the deterministic parser, so the door still works — it is merely less clever.
+  CHECK(result == std::nullopt);
+
+  ParsedStream observed;
+  composer.composeStream(book, [&](const std::string& delta) { observed.deltas.push_back(delta); },
+                         [&](bool clean) { ++observed.doneCalls; observed.ok = clean; });
+  CHECK_EQ(observed.doneCalls, 1);
+  CHECK_FALSE(observed.ok);
+}
+
+TEST(composer_over_the_fuse_refuses_without_calling_upstream) {
+  auto fuse = std::make_shared<AiFuse>(1'000);
+  fuse->spent(2'000, nowMs());
+  AnthropicComposer composer{"sk-ant-test", nullptr, fuse};
+
+  std::optional<std::string> result = std::string("untouched");
+  composer.compose("a paragraph of notes", [&](std::optional<std::string> plan) { result = std::move(plan); });
+  CHECK(result == std::nullopt);
+
+  ParsedStream observed;
+  composer.composeStream("a paragraph of notes",
+                         [&](const std::string& delta) { observed.deltas.push_back(delta); },
+                         [&](bool clean) { ++observed.doneCalls; observed.ok = clean; });
+  CHECK_EQ(observed.doneCalls, 1);
+  CHECK_FALSE(observed.ok);
+  CHECK_EQ(observed.deltas.size(), 0u);
+}

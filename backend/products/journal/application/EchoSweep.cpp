@@ -34,9 +34,10 @@ CurationStatus statusFor(const std::string& failure) {
 }
 
 EchoSweep::EchoSweep(EchoRepository& echoes, Embedder& embedder, Curator& curator, Clock& clock,
-                     SelectionRules rules, SweepBudget budget)
+                     Entitlements& entitlements, SelectionRules rules, SweepBudget budget)
     : echoes_(echoes), embedder_(embedder), curator_(curator), clock_(clock),
-      rules_(std::move(rules)), budget_(budget), heartbeat_("journal-echo") {}
+      entitlements_(entitlements), rules_(std::move(rules)), budget_(budget),
+      heartbeat_("journal-echo") {}
 
 void EchoSweep::start() {
   heartbeat_.start(kEchoFirstTickSeconds, kEchoTickSeconds, [this] {
@@ -46,7 +47,7 @@ void EchoSweep::start() {
       LOG_INFO << "journal echo: " << report.usersScanned << " users, " << report.pagesDerived
                << " pages, " << report.passagesEmbedded << " passages, " << report.echoesWritten
                << " echoes, " << report.pagesFailed << " failed, " << report.pagesOverBudget
-               << " over budget";
+               << " over budget, " << report.usersOverAiBudget << " users out of AI budget";
   });
   const bool armed = embedder_.configured() && curator_.configured();
   LOG_INFO << "journal echo: heartbeat armed, first sweep in " << kEchoFirstTickSeconds << "s ("
@@ -62,6 +63,14 @@ EchoSweepReport EchoSweep::run(std::uint64_t sinceMs) {
   for (const EchoUser& due : echoes_.activeSince(sinceMs)) {
     ++report.usersScanned;
     const UserId& user = due.user;
+
+    // The background bucket, asked once for the whole user rather than per page. Dry means SKIPPED,
+    // not failed: nothing is written, so no stamp advances, so every page this user is owed is still
+    // owed on the next pass. A refusal recorded here would mark the night done and lose it.
+    if (!entitlements_.sweepAllowanceFor(user).allows()) {
+      ++report.usersOverAiBudget;
+      continue;
+    }
 
     // Read once and carry it through the user's whole pass. A page derived halfway through would
     // otherwise record a stamp covering spans it never saw, and would never re-run against them.
@@ -197,7 +206,7 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
   std::vector<Vectored> candidates;
   candidates.reserve(offered.size());
   for (const auto& [spanId, span] : offered) candidates.push_back(span);
-  const Curation curation = curator_.curate(tonight, candidates, proposed);
+  const Curation curation = curator_.curate(user, tonight, candidates, proposed);
   if (!curation.ok) {
     outcome.status = statusFor(curation.failure);
     outcome.error = curation.failure;

@@ -201,8 +201,13 @@ CurationPrompt curationPrompt(const std::vector<Vectored>& tonight,
 }
 
 AnthropicCurator::AnthropicCurator(std::shared_ptr<MessagesApi> transport, std::string model,
-                                   std::string effort)
-    : transport_(std::move(transport)), model_(std::move(model)), effort_(std::move(effort)) {}
+                                   std::string effort, std::shared_ptr<AiFuse> fuse,
+                                   std::shared_ptr<UsageSink> usage)
+    : transport_(std::move(transport)),
+      model_(std::move(model)),
+      effort_(std::move(effort)),
+      fuse_(std::move(fuse)),
+      usage_(std::move(usage)) {}
 
 bool AnthropicCurator::configured() const { return transport_ && transport_->configured(); }
 
@@ -211,7 +216,7 @@ std::string AnthropicCurator::version() const {
   return model_ + "/" + effort_ + "/" + tag;
 }
 
-Curation AnthropicCurator::curate(const std::vector<Vectored>& tonight,
+Curation AnthropicCurator::curate(const UserId& user, const std::vector<Vectored>& tonight,
                                   const std::vector<Vectored>& candidates,
                                   const std::vector<Pairing>& proposed) {
   Curation curation;
@@ -231,6 +236,13 @@ Curation AnthropicCurator::curate(const std::vector<Vectored>& tonight,
     return curation;
   }
 
+  // Over the process fuse, the page is not judged and not lost either: this is the same failed-call
+  // shape as an unreachable vendor, so tomorrow's pass picks the page up exactly as it would have.
+  if (fuse_ && !fuse_->allows()) {
+    curation.failure = MessagesFailure::transport;
+    return curation;
+  }
+
   MessagesRequest request;
   request.model = model_;
   request.system = kSystemPrompt;
@@ -239,6 +251,18 @@ Curation AnthropicCurator::curate(const std::vector<Vectored>& tonight,
   request.effort = effort_;
 
   const MessagesReply reply = transport_->send(request);
+  // Recorded from HERE, not from the transport, because this is the frame that knows the model, the
+  // operation and whose night it was — the transport knows only the wire. Every outcome lands,
+  // including the refusals and truncations, which are the calls that thought the longest.
+  AiSpend spend;
+  spend.user = user;
+  spend.product = "journal";
+  spend.operation = "echo.curate";
+  spend.model = model_;
+  spend.outcome = reply.outcome;
+  spend.tokens = reply.tokens;
+  meterSpend(spend, fuse_, usage_);
+
   if (!reply.ok) {
     curation.failure = reply.failure;
     return curation;

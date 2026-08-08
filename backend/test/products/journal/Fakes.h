@@ -271,13 +271,15 @@ struct FakeCurator : Curator {
   bool keepEverything = true;
   bool speakerIsSelf = true;
   int calls = 0;
+  std::vector<UserId> billed;   // whose night each call was charged to, in order
 
   bool configured() const override { return isConfigured; }
   std::string version() const override { return "fake-curator-v1"; }
 
-  Curation curate(const std::vector<Vectored>&, const std::vector<Vectored>&,
+  Curation curate(const UserId& user, const std::vector<Vectored>&, const std::vector<Vectored>&,
                   const std::vector<Pairing>& proposed) override {
     ++calls;
+    billed.push_back(user);
     Curation curation;
     curation.ok = callSucceeds;
     curation.failure = failure;

@@ -92,6 +92,19 @@ test('askFailure — the brake and a dead model each say what they are, and neit
   });
 });
 
+// The two 429s are different facts and must not share a sentence: the brake is about how fast the
+// questions came, the ceiling is about money and clears as a 30-day window rolls. Neither blames the
+// lifter, and neither offers a purchase — there is no checkout behind this panel to offer.
+test('askFailure — the AI ceiling is its own 429, and it is not the pace brake', () => {
+  const failure = askFailure({ status: 429, code: 'coach-out-of-budget' });
+  assert.match(failure.note, /rolling 30 days/);
+  assert.match(failure.note, /rolls on/);
+  assert.doesNotMatch(failure.note, /lot of questions/);
+  assert.doesNotMatch(failure.note, /[Uu]pgrade|[Bb]uy|[Pp]lan|[Ss]ubscri/);
+  assert.equal(failure.locked, undefined);
+  assert.equal(failure.gone, undefined);
+});
+
 test('askFailure — a deployment with no vendor answers 503, and that retires too', () => {
   assert.equal(askFailure({ status: 503 }).gone, true);
 });

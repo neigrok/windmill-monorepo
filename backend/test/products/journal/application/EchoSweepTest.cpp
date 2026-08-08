@@ -29,9 +29,21 @@ void armReachingBack(FakeEchoRepository& echoes, FakeEmbedder& embedder) {
   echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine);
 }
 
+// The background AI bucket the sweep asks about, as a test holds it. Empty means every account is
+// under its ceiling, which is the ordinary night every test but one below wants; `spend` plants a
+// journal bill big enough to close the bucket.
+struct SweepLedger {
+  FakeSubscriptionRepository subscriptions;
+  FakeAiUsageRepository usage;
+  Entitlements entitlements{subscriptions, usage};
+
+  void spend(long long nanos) { usage.spentByProduct["journal"] = nanos; }
+};
+
 EchoSweep sweepOver(FakeEchoRepository& echoes, FakeEmbedder& embedder, FakeCurator& curator,
-                    FakeClock& clock) {
-  return EchoSweep{echoes, embedder, curator, clock, SelectionRules{}, SweepBudget{}};
+                    FakeClock& clock, SweepLedger& ledger) {
+  return EchoSweep{echoes,             embedder,          curator, clock,
+                   ledger.entitlements, SelectionRules{}, SweepBudget{}};
 }
 
 }
@@ -43,7 +55,8 @@ TEST(a_page_that_reaches_back_writes_an_echo_pointing_at_the_older_passage) {
   FakeClock clock;
   armReachingBack(echoes, embedder);
 
-  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
+  SweepLedger ledger;
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.usersScanned, 1);
@@ -66,7 +79,8 @@ TEST(an_unwired_embedder_makes_the_whole_pass_a_no_op) {
   armReachingBack(echoes, embedder);
   embedder.isConfigured = false;
 
-  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
+  SweepLedger ledger;
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.usersScanned, 0);   // not a single user is scanned
@@ -83,7 +97,8 @@ TEST(an_unwired_curator_makes_the_whole_pass_a_no_op) {
   armReachingBack(echoes, embedder);
   curator.isConfigured = false;
 
-  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
+  SweepLedger ledger;
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.usersScanned, 0);
@@ -103,7 +118,8 @@ TEST(a_failed_curate_is_recorded_as_a_failure_and_never_as_an_empty_page) {
   curator.callSucceeds = false;
   curator.failure = "rate_limited";
 
-  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
+  SweepLedger ledger;
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.pagesFailed, 1);
@@ -122,7 +138,8 @@ TEST(a_curator_that_finds_nothing_finishes_the_page_rather_than_failing_it) {
   armReachingBack(echoes, embedder);
   curator.keepEverything = false;   // it answered; it just kept nothing
 
-  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
+  SweepLedger ledger;
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.pagesFailed, 0);
@@ -140,7 +157,8 @@ TEST(a_short_embedder_result_is_a_failed_call_not_a_page_with_fewer_passages) {
   armReachingBack(echoes, embedder);
   embedder.failNext = true;
 
-  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
+  SweepLedger ledger;
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.pagesFailed, 1);
@@ -157,7 +175,8 @@ TEST(re_deriving_the_older_page_keeps_the_identity_the_echo_points_at) {
   FakeClock clock;
   armReachingBack(echoes, embedder);
 
-  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
+  SweepLedger ledger;
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
   sweep.run(kNow - kDay);
   CHECK_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay))[0].matchSpanId, std::int64_t{11});
 
@@ -179,7 +198,8 @@ TEST(a_pairing_the_reader_waved_away_is_never_proposed_again) {
   FakeClock clock;
   armReachingBack(echoes, embedder);
 
-  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
+  SweepLedger ledger;
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
   sweep.run(kNow - kDay);
   const std::vector<EchoRow> first = echoes.rowsOn(uid("u1"), ld(kNewDay));
   REQUIRE_EQ(first.size(), std::size_t{1});
@@ -200,7 +220,8 @@ TEST(a_page_within_the_gap_is_too_near_to_echo) {
   echoes.plantSpan(uid("u1"), ld("2026-04-28"), 11, kOldLine, embedder.embed({kOldLine})[0]);
   echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine);   // three days later
 
-  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
+  SweepLedger ledger;
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.pagesDerived, 1);
@@ -216,7 +237,8 @@ TEST(an_empty_page_is_finished_without_spending_anything) {
   echoes.addUser(uid("u1"));
   echoes.addDuePage(uid("u1"), ld(kNewDay), "   \n  ");
 
-  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
+  SweepLedger ledger;
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.pagesDerived, 1);
@@ -237,9 +259,64 @@ TEST(a_night_stops_at_the_page_budget_and_says_how_much_it_left) {
     echoes.addDuePage(uid("u1"), ld(day), kNewLine);
   }
 
-  EchoSweep sweep{echoes, embedder, curator, clock, SelectionRules{}, SweepBudget{5, 20}};
+  SweepLedger ledger;
+  EchoSweep sweep{echoes,              embedder,         curator, clock,
+                  ledger.entitlements, SelectionRules{}, SweepBudget{5, 20}};
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.pagesDerived, 5);
   CHECK_EQ(report.pagesOverBudget, 7);
+}
+
+// --- The background AI bucket -----------------------------------------------------------------
+
+// The bug this bucket exists to make impossible: a six-hourly pass nobody asked for spending the
+// allowance the question they DID ask is then refused for. It is asked once per user, and it is the
+// journal bucket, never the account's own.
+TEST(a_user_whose_background_bucket_is_dry_is_skipped_not_failed) {
+  FakeEchoRepository echoes;
+  FakeEmbedder embedder;
+  FakeCurator curator;
+  FakeClock clock;
+  armReachingBack(echoes, embedder);
+
+  SweepLedger ledger;
+  ledger.spend(kSweepMonthlyAiNanos);   // the $2 bucket, exactly spent
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
+  const EchoSweepReport report = sweep.run(kNow - kDay);
+
+  CHECK_EQ(report.usersScanned, 1);
+  CHECK_EQ(report.usersOverAiBudget, 1);
+  CHECK_EQ(curator.calls, 0);        // refused before anything was bought
+  CHECK_EQ(report.pagesDerived, 0);
+  // SKIPPED, not failed. Nothing was written, so no stamp advanced and no outcome was recorded —
+  // the page is still owed, and the next pass with room in the bucket picks it up untouched.
+  CHECK_EQ(report.pagesFailed, 0);
+  CHECK_EQ(echoes.outcomes.size(), std::size_t{0});
+  CHECK_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay)).size(), std::size_t{0});
+}
+
+TEST(a_user_with_room_in_the_background_bucket_sweeps_and_is_billed_by_name) {
+  FakeEchoRepository echoes;
+  FakeEmbedder embedder;
+  FakeCurator curator;
+  FakeClock clock;
+  armReachingBack(echoes, embedder);
+
+  SweepLedger ledger;
+  ledger.spend(kSweepMonthlyAiNanos - 1);   // a nano left is still a nano
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
+  const EchoSweepReport report = sweep.run(kNow - kDay);
+
+  CHECK_EQ(report.usersOverAiBudget, 0);
+  CHECK_EQ(report.pagesDerived, 1);
+  CHECK_EQ(curator.calls, 1);
+  // The call was attributed to the account whose night it was, which is the whole reason the port
+  // widened — a background spend with nobody attached to it can never be held to an account.
+  REQUIRE_EQ(curator.billed.size(), std::size_t{1});
+  CHECK(curator.billed[0] == uid("u1"));
+  // And it asked the JOURNAL bucket, not the account's every-product total.
+  REQUIRE_EQ(ledger.usage.asked.size(), std::size_t{1});
+  CHECK_EQ(ledger.usage.asked[0].product, std::string("journal"));
+  CHECK(ledger.usage.asked[0].user == uid("u1"));
 }

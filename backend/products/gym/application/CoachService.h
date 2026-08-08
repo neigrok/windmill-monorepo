@@ -54,6 +54,7 @@ enum class CoachRefusal {
   tooManyTurns,
   notConfigured,    // no vendor key — in production the route is absent, so this is the fail-closed floor
   notEntitled,      // the connected log is Windmill One
+  outOfBudget,      // this account is over OUR AI ceiling for the window — a fuse, not a sales door
   rateLimited,
   unknownSession,   // absent, or another account's — one fact, as everywhere else in gym
 };

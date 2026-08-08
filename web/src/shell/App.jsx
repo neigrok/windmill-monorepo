@@ -17,6 +17,9 @@ const AuthLanding = lazy(() => import('./auth/AuthLanding.jsx').then((m) => ({ d
 const OAuthConsent = lazy(() => import('./auth/OAuthConsent.jsx').then((m) => ({ default: m.OAuthConsent })));
 const ConnectPage = lazy(() => import('./connect/ConnectPage.jsx').then((m) => ({ default: m.ConnectPage })));
 const SettingsPage = lazy(() => import('./settings/SettingsPage.jsx').then((m) => ({ default: m.SettingsPage })));
+// The owner's spend meter. Deliberately absent from LEGACY_DOORS: nothing anywhere emits a #/usage
+// hash, and the room is reached by two people typing one bookmarked URL.
+const UsagePage = lazy(() => import('./usage/UsagePage.jsx').then((m) => ({ default: m.UsagePage })));
 // Named rather than inlined, because warming a link to the app calls the same thunk early.
 const importShell = () => import('./chrome/Shell.jsx').then((m) => ({ default: m.Shell }));
 const Shell = lazy(importShell);
@@ -32,9 +35,10 @@ const Shell = lazy(importShell);
 //
 // The product rows are DERIVED — switchHash and shell.room are already on the registry, and writing
 // them out here made the shell restate a product fact it does not own. Only OPEN products get a
-// door, which is the rule that used to be an omission: #/gym renders its app but does not upgrade
-// into /app/gym, so gym stays outside the room chrome until its status flips. That is now something
-// the code says rather than something a reader has to notice is missing.
+// door, which is the rule that used to be an omission: a product whose `shell.status` is still
+// 'pre-open' renders at its own hash but never upgrades into /app/<room>, so it stays outside the
+// room chrome until its own route table flips. That is now something the code says rather than
+// something a reader has to notice is missing.
 const LEGACY_DOORS = [
   ...PRODUCTS.filter((product) => product.shell.status === 'open').map((product) => [product.switchHash, product.shell.room]),
   ['#/settings', '/app/settings'],
@@ -238,7 +242,9 @@ function AppRoutes() {
       ? { Component: SettingsPage, props: { inShell: true } }
       : pathname.startsWith('/app/connect')
         ? { Component: ConnectPage, props: { inShell: true } }
-        : null;
+        : pathname.startsWith('/app/usage')
+          ? { Component: UsagePage, props: {} }
+          : null;
     return (
       <Suspense fallback={<RouteFallback />}>
         <Shell

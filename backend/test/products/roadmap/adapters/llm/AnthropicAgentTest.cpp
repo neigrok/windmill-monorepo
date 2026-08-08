@@ -363,3 +363,158 @@ TEST(anthropic_agent_with_a_key_reports_configured) {
   AnthropicAgent agent{"sk-ant-test"};
   CHECK(agent.configured());
 }
+
+// --- The meter around the loop ---------------------------------------------------------------
+
+namespace {
+
+struct RecordedSpend : UsageSink {
+  std::vector<AiSpend> rows;
+  void record(const AiSpend& spend) noexcept override { rows.push_back(spend); }
+};
+
+// A reply carrying what the vendor billed for it. The loop itself discards `usage`, which is
+// precisely why the metering wraps the call instead of living inside driveAgent.
+Json::Value billed(Json::Value reply, long long input, long long output, long long cacheRead) {
+  Json::Value usage(Json::objectValue);
+  usage["input_tokens"] = static_cast<Json::Int64>(input);
+  usage["output_tokens"] = static_cast<Json::Int64>(output);
+  usage["cache_read_input_tokens"] = static_cast<Json::Int64>(cacheRead);
+  reply["usage"] = usage;
+  return reply;
+}
+
+AiSpend tendFrame() {
+  AiSpend frame;
+  frame.user = kCaller;
+  frame.product = "roadmap";
+  frame.operation = "tend";
+  frame.model = "claude-sonnet-5";
+  frame.runId = "tend-abc";
+  return frame;
+}
+
+}
+
+TEST(metered_writes_one_row_per_turn_with_a_stable_run_id_and_a_climbing_iteration) {
+  FakeToolHost host;
+  FakeModel model;
+  model.replies.push_back(billed(toolUseReply("create_node", "toolu_1"), 9000, 120, 0));
+  model.replies.push_back(billed(toolUseReply("connect", "toolu_2"), 400, 90, 9000));
+  model.replies.push_back(billed(textReply("end_turn", "Added 2 steps"), 500, 60, 9400));
+
+  auto ledger = std::make_shared<RecordedSpend>();
+  Recorder rec;
+  const AgentOutcome outcome =
+      driveAgent("build it", kTree, kCaller, host,
+                 metered(model.asCall(), tendFrame(), nullptr, ledger, rec.report()),
+                 rec.onStep(), rec.report());
+
+  CHECK(outcome.ok);
+  REQUIRE_EQ(ledger->rows.size(), std::size_t{3});
+  for (std::size_t turn = 0; turn < 3; ++turn) {
+    // One run id across all three, which is the only thing that lets a conversation be summed as
+    // the single act it was rather than read as three unrelated calls.
+    CHECK_EQ(ledger->rows[turn].runId, std::string("tend-abc"));
+    CHECK_EQ(ledger->rows[turn].iteration, static_cast<int>(turn));
+    CHECK_EQ(ledger->rows[turn].product, std::string("roadmap"));
+    CHECK_EQ(ledger->rows[turn].operation, std::string("tend"));
+    CHECK_EQ(ledger->rows[turn].model, std::string("claude-sonnet-5"));
+    CHECK(ledger->rows[turn].user == std::optional<UserId>{kCaller});
+    CHECK_EQ(ledger->rows[turn].outcome, std::string("ok"));   // tool_use is a finished turn too
+  }
+  CHECK_EQ(ledger->rows[0].tokens.input, 9000LL);
+  CHECK_EQ(ledger->rows[0].tokens.cacheRead, 0LL);
+  CHECK_EQ(ledger->rows[1].tokens.cacheRead, 9000LL);   // the prefix cached by the first turn
+  CHECK_EQ(ledger->rows[2].tokens.output, 60LL);
+}
+
+// The failure that costs the most money in this product: twelve full Sonnet turns, a tree half
+// built, and nothing to show for it. It is the single most important row in the ledger.
+TEST(metered_records_all_twelve_turns_of_a_run_that_hit_the_cap) {
+  FakeToolHost host;
+  FakeModel model;
+  model.whenExhausted = billed(toolUseReply("create_node", "toolu_x"), 9000, 200, 0);
+
+  auto ledger = std::make_shared<RecordedSpend>();
+  Recorder rec;
+  const AgentOutcome outcome =
+      driveAgent("build forever", kTree, kCaller, host,
+                 metered(model.asCall(), tendFrame(), nullptr, ledger, rec.report()),
+                 rec.onStep(), rec.report());
+
+  CHECK_FALSE(outcome.ok);
+  CHECK_EQ(ledger->rows.size(), std::size_t{12});
+  CHECK_EQ(ledger->rows[11].iteration, 11);
+  CHECK_EQ(ledger->rows[11].runId, std::string("tend-abc"));
+}
+
+TEST(metered_records_a_turn_the_model_stopped_early_as_truncated) {
+  FakeToolHost host;
+  FakeModel model;
+  model.replies.push_back(billed(textReply("max_tokens", "# Half a"), 9000, 8000, 0));
+
+  auto ledger = std::make_shared<RecordedSpend>();
+  Recorder rec;
+  driveAgent("plan it", kTree, kCaller, host,
+             metered(model.asCall(), tendFrame(), nullptr, ledger, rec.report()), rec.onStep(),
+             rec.report());
+
+  REQUIRE_EQ(ledger->rows.size(), std::size_t{1});
+  CHECK_EQ(ledger->rows[0].outcome, std::string("truncated"));
+  CHECK_EQ(ledger->rows[0].tokens.output, 8000LL);   // the budget it burned on the way to nothing
+}
+
+TEST(metered_records_a_turn_that_never_landed_as_transport) {
+  FakeToolHost host;
+  FakeModel model;   // no replies, no whenExhausted → nullopt on the first call
+
+  auto ledger = std::make_shared<RecordedSpend>();
+  Recorder rec;
+  driveAgent("do something", kTree, kCaller, host,
+             metered(model.asCall(), tendFrame(), nullptr, ledger, rec.report()), rec.onStep(),
+             rec.report());
+
+  REQUIRE_EQ(ledger->rows.size(), std::size_t{1});
+  CHECK_EQ(ledger->rows[0].outcome, std::string("transport"));
+  CHECK_EQ(ledger->rows[0].tokens.input, 0LL);
+}
+
+TEST(metered_over_the_fuse_refuses_the_turn_before_it_reaches_the_vendor) {
+  FakeToolHost host;
+  FakeModel model;
+  model.whenExhausted = billed(toolUseReply("create_node", "toolu_x"), 9000, 200, 0);
+
+  auto fuse = std::make_shared<AiFuse>(1'000);
+  fuse->spent(2'000, nowMs());
+  auto ledger = std::make_shared<RecordedSpend>();
+  Recorder rec;
+  const AgentOutcome outcome =
+      driveAgent("build it", kTree, kCaller, host,
+                 metered(model.asCall(), tendFrame(), fuse, ledger, rec.report()), rec.onStep(),
+                 rec.report());
+
+  CHECK_FALSE(outcome.ok);
+  CHECK_EQ(model.requests.size(), 0u);   // refused BEFORE the call, or it is not a fuse
+  CHECK_EQ(ledger->rows.size(), 0u);     // nothing spent, so nothing to record
+  // The alert fires ONCE. A report per blocked call is the same runaway pointed at the alerting.
+  REQUIRE_EQ(rec.failures.size(), 2u);
+  CHECK(rec.failures[0].rfind("ai.fuse | over the hourly spend ceiling", 0) == 0);
+  CHECK_EQ(rec.failures[1],
+           std::string("agent.run | the model call failed or returned an unreadable reply"));
+}
+
+TEST(metered_charges_the_fuse_what_each_turn_cost) {
+  FakeToolHost host;
+  FakeModel model;
+  model.replies.push_back(billed(textReply("end_turn", "Added 1 step"), 1000, 100, 2000));
+
+  auto fuse = std::make_shared<AiFuse>(kHourlyFuseNanos);
+  Recorder rec;
+  driveAgent("add one", kTree, kCaller, host,
+             metered(model.asCall(), tendFrame(), fuse, nullptr, rec.report()), rec.onStep(),
+             rec.report());
+
+  // Sonnet: 3000 nanos in, 15000 out, cache reads a tenth of input.
+  CHECK_EQ(fuse->trailingNanos(nowMs()), 1000 * 3'000 + 100 * 15'000 + 2000 * 300);
+}

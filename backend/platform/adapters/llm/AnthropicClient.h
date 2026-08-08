@@ -1,11 +1,18 @@
 #pragma once
 
+#include "platform/domain/AiFuse.h"
+#include "platform/domain/AiUsage.h"
+#include "platform/ports/AiUsageRepository.h"
+
 #include <drogon/HttpRequest.h>
 
 #include <json/json.h>
 
 #include <trantor/net/EventLoopThread.h>
 
+#include <functional>
+#include <memory>
+#include <optional>
 #include <string>
 
 namespace wm {
@@ -56,10 +63,18 @@ struct MessagesRequest {
 
 // The parsed structured output, or the one word that says why there isn't one. `ok` false always
 // carries a failure and never an output; `ok` true always carries an output object.
+//
+// `tokens` and `outcome` ride on EVERY reply, the failures above all. A max_tokens truncation burned
+// the whole budget and returns nothing; a refusal was thought about and paid for. Counting only the
+// replies we could use would under-report exactly where the money went. `outcome` is the ledger's
+// word for the same event `failure` names on the wire — two closed sets, stated apart so an
+// aggregate can branch on one without the other's spelling becoming load-bearing.
 struct MessagesReply {
   bool ok = false;
   std::string failure;
   Json::Value output;
+  TokenUse tokens;
+  std::string outcome;
 };
 
 // The seam a caller depends on and a test substitutes. One method, because one call per unit of
@@ -96,5 +111,45 @@ private:
   std::string apiKey_;
   trantor::EventLoopThread loop_;
 };
+
+// --- Metering ---------------------------------------------------------------------------------
+//
+// The vendor edge knows what a call cost; only the caller knows whose it was. So attribution
+// arrives here as data — an AiSpend the adapter fills in from its own frame — and nothing below
+// reaches back for it. AnthropicClient::send stays exactly as advertised above: it records nothing.
+
+// The wall clock the fuse's trailing hour is measured against. Deliberately not a Clock port: this
+// feature has no clock seam by design, and the fuse only ever compares two of these to each other.
+long long nowMs();
+
+// A fresh id for one logical operation — a tend conversation, a coach exchange — so its dozen turns
+// sum as one act in the ledger instead of reading as a dozen unrelated calls. It names rows and
+// authorises nothing.
+std::string newRunId(const std::string& prefix);
+
+// Charge one reply to the process fuse and post it to the ledger. Every seam does these two things
+// identically, and doing them in one place is what stops an adapter deriving a cost of its own from
+// a token count. A null sink or a null fuse is the no-op, exactly as FailureReporter already is.
+void meterSpend(AiSpend spend, const std::shared_ptr<AiFuse>& fuse,
+                const std::shared_ptr<UsageSink>& usage);
+
+// One tool-loop turn: the request body in, the parsed reply out, nullopt on any transport or parse
+// failure. Roadmap's `MessagesCall` and gym's `CoachCall` are this type under two product names.
+using ModelCall = std::function<std::optional<Json::Value>(const Json::Value& request)>;
+
+// Wrap a tool loop's model call so every turn it takes is metered. `frame` carries what the run
+// knows — who, which product, which operation, which run — and the wrapper adds what only the turn
+// knows: the iteration number (it is invoked exactly once per turn), the outcome, and the `usage`
+// the raw reply carries and the loop itself discards.
+//
+// Wrapping rather than reaching into driveAgent/driveCoach is the point. Those loops are pure: they
+// have never seen a model name, a product, or a clock, and they gain nothing by starting now.
+//
+// Over the fuse it refuses without calling and answers nullopt, which is the failure both loops
+// already handle — and reports the first trip through `report` under "ai.fuse", once, because a
+// report per blocked call in a runaway loop is the same runaway aimed at the alerting instead.
+ModelCall metered(ModelCall inner, AiSpend frame, std::shared_ptr<AiFuse> fuse,
+                  std::shared_ptr<UsageSink> usage,
+                  std::function<void(const std::string& where, const std::string& detail)> report);
 
 }

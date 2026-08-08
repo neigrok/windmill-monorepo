@@ -14,6 +14,7 @@
 #include "platform/adapters/http/AuthApi.h"
 #include "products/roadmap/adapters/auth/ForkSignup.h"
 #include "platform/adapters/http/EventsApi.h"
+#include "platform/adapters/http/UsageAdminApi.h"
 #include "platform/adapters/http/FeedbackApi.h"
 #include "platform/adapters/http/McpKeyApi.h"
 #include "platform/adapters/http/OAuthApi.h"
@@ -26,6 +27,7 @@
 #include "products/roadmap/adapters/mcp/RoadmapResources.h"
 #include "products/roadmap/adapters/mcp/RoadmapTools.h"
 #include "platform/adapters/postgres/PgAuthRepository.h"
+#include "platform/adapters/postgres/PgAiUsageRepository.h"
 #include "platform/adapters/postgres/PgEventRepository.h"
 #include "platform/adapters/postgres/PgFeedbackRepository.h"
 #include "platform/adapters/postgres/PgMcpKeyRepository.h"
@@ -45,6 +47,7 @@
 #include "products/roadmap/adapters/ws/WsPresenceBus.h"
 #include "platform/application/AuthService.h"
 #include "platform/application/Entitlements.h"
+#include "platform/domain/AiFuse.h"
 #include "products/roadmap/application/ForkService.h"
 #include "platform/application/McpKeyService.h"
 #include "platform/application/OAuthService.h"
@@ -216,10 +219,22 @@ int main() {
   // privacy), so nothing gates visibility on it — it feeds the /v1/subscription read and the
   // tending allowance's free-vs-Pro plan lookup.
   auto subscriptionRepo = std::make_shared<PgSubscriptionRepository>(pool);
+  // What the model costs us, counted once and read twice. Every Anthropic seam writes here through
+  // the write-only UsageSink half, and the budget check and the owner's spend room read the same
+  // rows — so the dashboard and the ceiling can never disagree about what an account has spent.
+  auto aiUsageRepo = std::make_shared<PgAiUsageRepository>(pool);
+  // The fuse the ledger cannot be: one in-process trailing-hour ceiling over EVERY vendor call,
+  // holding no database. Per-account budgets bound what a person spends and are structurally blind
+  // to what a machine spends — a retry storm, a loop whose termination breaks, a cron that overlaps
+  // itself. That is the shape that empties an account overnight, and it is also the shape that
+  // arrives exactly when Postgres is down and the ledger has stopped both recording and enforcing.
+  auto aiFuse = std::make_shared<AiFuse>(kHourlyFuseNanos);
+
   // Windmill One, asked as a domain question. Every paid feature — Talk, echoes, the tending Pro
   // plan — gates through this one seam instead of re-deriving the rule over the Paddle mirror, so
-  // "what grants access" lives in exactly one place (platform/application/Entitlements).
-  auto entitlements = std::make_shared<Entitlements>(*subscriptionRepo);
+  // "what grants access" lives in exactly one place (platform/application/Entitlements). It now
+  // also answers the AI ceiling, which its own header promised would land here rather than beside.
+  auto entitlements = std::make_shared<Entitlements>(*subscriptionRepo, *aiUsageRepo);
 
   // Funnel telemetry (event-spine): ghosts and signed-in users alike beacon here; the
   // general per-IP apiLimiter below covers this route like every other. Accepted events also
@@ -232,6 +247,17 @@ int main() {
       (amplitudeHost && *amplitudeHost) ? amplitudeHost : "api2.amplitude.com");  // set-but-empty → default
   auto eventRepo = std::make_shared<PgEventRepository>(pool);
   auto eventsApi = std::make_shared<EventsApi>(eventRepo, authService, amplitude);
+
+  // The owner's spend room, and the only surface that reads the AI ledger. Gated on the SESSION's
+  // account email against WINDMILL_OWNER_EMAILS — a real identity rather than a shared bearer,
+  // because these two responses name individual users' spend. Unset or empty ⇒ CLOSED, the resting
+  // state every admin door here keeps. It answers 404 to a signed-out caller, a signed-in
+  // non-owner and an unknown path alike: a private thing denies byte-identically to an absent one,
+  // which is the rule the tree-visibility wave settled, and a 401 here would pop the sign-in door
+  // on a surface no one but us is meant to know exists.
+  const char* ownerEmailsEnv = std::getenv("WINDMILL_OWNER_EMAILS");
+  auto usageAdminApi = std::make_shared<UsageAdminApi>(aiUsageRepo, authService,
+                                                       ownerEmailsEnv ? ownerEmailsEnv : "");
 
   // The feedback door: one-click notes from anyone, signed-in or ghost. Same shape as the
   // event-spine — anon-allowed, caller resolved server-side, one row per note.
@@ -276,7 +302,7 @@ int main() {
   // and the client re-parses it deterministically — text in, text out, never a door into the
   // tree. No ANTHROPIC_API_KEY → the route answers 503 and the client hides the handle.
   const char* anthropicKey = std::getenv("ANTHROPIC_API_KEY");
-  auto composer = std::make_shared<AnthropicComposer>(anthropicKey ? anthropicKey : "", sentry);
+  auto composer = std::make_shared<AnthropicComposer>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiUsageRepo);
 
   // MCP (Streamable-HTTP) mounted in this same process — the whole point of this change: agent
   // edits run through the very same RoomRegistry as REST and the socket, so a tree has exactly
@@ -313,7 +339,7 @@ int main() {
   // finished run rather than polling a `running` row that will never move.
   if (const int reaped = tendRuns->failOrphanedRuns(); reaped > 0)
     LOG_INFO << "tending: reaped " << reaped << " run(s) stranded by a restart";
-  auto tendingAgent = std::make_shared<AnthropicAgent>(anthropicKey ? anthropicKey : "", sentry);
+  auto tendingAgent = std::make_shared<AnthropicAgent>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiUsageRepo);
   const bool tendingEnabled =
       (tendingEnabledFlag == "true" || tendingEnabledFlag == "1") && tendingAgent->configured();
   auto tendingService = std::make_shared<TendingService>(*tendRuns, *tendingAgent, *mcpTools,
@@ -359,7 +385,7 @@ int main() {
   // path and the panel's client hides itself on the 404. The narrowing that makes this safe is not
   // here — it is the read-only ToolScope CoachService states at its own call site, plus CoachTools,
   // which drops every write and delete tool from the catalog the model is handed.
-  auto gymCoachAgent = std::make_shared<gym::AnthropicCoach>(anthropicKey ? anthropicKey : "", sentry);
+  auto gymCoachAgent = std::make_shared<gym::AnthropicCoach>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiUsageRepo);
   std::shared_ptr<gym::CoachService> gymCoach;
   if (gymCoachAgent->configured())
     gymCoach = std::make_shared<gym::CoachService>(*logService, *gymCoachAgent, *gymTools,
@@ -730,6 +756,15 @@ int main() {
       [eventsApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { eventsApi->ingest(req, std::move(cb)); },
       {drogon::Post});
 
+  app.registerHandler(
+      "/v1/admin/usage/summary",
+      [usageAdminApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { usageAdminApi->summary(req, std::move(cb)); },
+      {drogon::Get});
+  app.registerHandler(
+      "/v1/admin/usage/users",
+      [usageAdminApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { usageAdminApi->users(req, std::move(cb)); },
+      {drogon::Get});
+
   // The feedback door: anonymous allowed (a frustrated logged-out user is the point); the
   // shared per-IP apiLimiter covers this route like every other.
   app.registerHandler(
@@ -840,13 +875,14 @@ int main() {
   std::shared_ptr<Curator> journalCurator;
   if (anthropicKeyEnv && *anthropicKeyEnv)
     journalCurator = std::make_shared<AnthropicCurator>(
-        std::make_shared<AnthropicClient>(anthropicKeyEnv));
+        std::make_shared<AnthropicClient>(anthropicKeyEnv), "claude-opus-5", "high",
+        aiFuse, aiUsageRepo);
   else
     journalCurator = std::make_shared<NullCurator>();
   auto journalEchoes = std::make_shared<PgEchoRepository>(pool);
   const char* journalEchoAdminEnv = std::getenv("JOURNAL_ECHO_ADMIN_TOKEN");
   auto journalEchoSweep = std::make_shared<EchoSweep>(*journalEchoes, *journalEmbedder,
-                                                      *journalCurator, *systemClock,
+                                                      *journalCurator, *systemClock, *entitlements,
                                                       SelectionRules{}, SweepBudget{});
   journalEchoSweep->start();
   // Voice (Windmill One): bought from OpenAI's gpt-4o-transcribe when OPENAI_API_KEY is set, and

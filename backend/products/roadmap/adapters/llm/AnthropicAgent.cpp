@@ -357,8 +357,12 @@ AgentOutcome driveAgent(const std::string& prompt, const TreeId& tree, const Use
   return outcome;
 }
 
-AnthropicAgent::AnthropicAgent(std::string apiKey, std::shared_ptr<FailureReporter> failures)
-    : apiKey_(std::move(apiKey)), failures_(std::move(failures)) {
+AnthropicAgent::AnthropicAgent(std::string apiKey, std::shared_ptr<FailureReporter> failures,
+                               std::shared_ptr<AiFuse> fuse, std::shared_ptr<UsageSink> usage)
+    : apiKey_(std::move(apiKey)),
+      failures_(std::move(failures)),
+      fuse_(std::move(fuse)),
+      usage_(std::move(usage)) {
   loop_.run();
 }
 
@@ -427,7 +431,19 @@ AgentOutcome AnthropicAgent::run(const std::string& prompt, const TreeId& tree, 
     return future.get();
   };
 
-  return driveAgent(prompt, tree, caller, tools, call, onStep, report);
+  // The frame the loop cannot supply. driveAgent has never seen a model name, a product or a clock,
+  // and the raw reply's `usage` — which it discards — only exists inside the call above. So the
+  // metering wraps the call rather than reaching into the loop: one row per turn, one run id across
+  // all twelve of them, so a conversation sums as the single act it was.
+  AiSpend frame;
+  frame.user = caller;
+  frame.product = "roadmap";
+  frame.operation = "tend";
+  frame.model = kModel;
+  frame.runId = newRunId("tend");
+
+  return driveAgent(prompt, tree, caller, tools,
+                    metered(call, frame, fuse_, usage_, report), onStep, report);
 }
 
 }

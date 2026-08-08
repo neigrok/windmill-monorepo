@@ -41,6 +41,12 @@ TendRun TendingService::start(const TreeId& tree, const UserId& caller, const st
   if (!enabled_) return refuse(tree, caller, prompt, TendRefusal::notEnabled);
   if (!allowanceAt(caller, email, clock_.nowMs()).allows())
     return refuse(tree, caller, prompt, TendRefusal::outOfAllowance);
+  // The dollar fuse, last because it is the only rung that reads the ledger. It measures something
+  // the run count cannot: one sentence that sets a twelve-iteration agent loose costs many times
+  // what another does, so thirty cheap runs and thirty expensive ones are the same number and
+  // nowhere near the same money.
+  if (!entitlements_.aiAllowanceFor(caller, email).allows())
+    return refuse(tree, caller, prompt, TendRefusal::outOfBudget);
 
   TendRun run;
   run.id = "tr_" + tokens_.mint().digest.substr(0, 16);  // server-minted, unguessable — the catch-up key

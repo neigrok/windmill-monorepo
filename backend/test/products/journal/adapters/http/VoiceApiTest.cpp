@@ -28,7 +28,8 @@ struct Harness {
       std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, footprint, "https://windmill.works");
   std::shared_ptr<FakeTranscriber> transcriber = std::make_shared<FakeTranscriber>();
   std::shared_ptr<FakeSubscriptionRepository> subs = std::make_shared<FakeSubscriptionRepository>();
-  std::shared_ptr<Entitlements> entitlements = std::make_shared<Entitlements>(*subs);
+  FakeAiUsageRepository usage;
+  std::shared_ptr<Entitlements> entitlements = std::make_shared<Entitlements>(*subs, usage);
   VoiceApi api{transcriber, entitlements, auth};
 
   UserId signIn(const std::string& sessionSecret) {

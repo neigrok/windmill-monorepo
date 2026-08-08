@@ -31,7 +31,8 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // that is not a conversation, a blank question, a turn past the byte cap, more turns than a panel
 // holds; 403 `coach-not-entitled` is the paywall, and the web draws it UP FRONT so nobody types a
 // question they will lose to it; 404 is the fact that this account cannot read that workout, absent
-// and another's alike; 429 `coach-rate-limited` is the per-account brake; 502 is the model not
+// and another's alike; 429 `coach-rate-limited` is the per-account brake and `coach-out-of-budget` the
+// AI ceiling behind it, which no purchase lifts and so the client must not sell against; 502 is the model not
 // answering, which is the one worth offering again; 503 is no vendor wired at all, which the route
 // being registered at boot already makes unreachable in production.
 class CoachApi {

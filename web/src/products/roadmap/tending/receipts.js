@@ -38,11 +38,16 @@ export function runFace(run) {
   return { kind: 'failed', line: 'Nothing changed — the tree is untouched.' };
 }
 
-// The four honest refusal faces (§6): each a fact and a way forward, and out-of-allowance points at
-// hand editing rather than a paywall. `empty` is the no-op of a blank submit — nothing to say.
+// The five honest refusal faces (§6): each a fact and a way forward, and neither ceiling points at a
+// paywall — there is no checkout to point at. `empty` is the no-op of a blank submit — nothing to say.
 function refusalFace(refusal) {
   if (refusal === 'rate-limited') return { kind: 'rate', line: 'That’s a lot of tending quickly. Your tree is exactly as you left it.' };
   if (refusal === 'out-of-allowance') return { kind: 'out', line: 'You’ve used this month’s tending. You can still edit by hand — nothing is gated.' };
+  // OUR ceiling, not a fault of theirs, and a rolling window rather than a door that shut: the
+  // honest shape of a 30-day budget is "it comes back", so the sentence says when. It offers no
+  // upgrade on purpose — there is no checkout to send anyone to, and copy that pointed at one would
+  // be selling a thing this product cannot yet hand over.
+  if (refusal === 'out-of-budget') return { kind: 'out', line: 'This account has reached its AI ceiling for the last 30 days. You can still edit by hand, and tending returns as that window rolls on.' };
   if (refusal === 'prompt-too-long') return { kind: 'long', line: 'That’s a lot at once — paste an outline instead for a whole plan.' };
   if (refusal === 'not-enabled') return { kind: 'off', line: 'Tending is off for this account.' };
   if (refusal === 'prompt-empty') return { kind: 'empty', line: '' };

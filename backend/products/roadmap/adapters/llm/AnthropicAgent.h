@@ -1,5 +1,6 @@
 #pragma once
 
+#include "platform/adapters/llm/AnthropicClient.h"
 #include "platform/ports/FailureReporter.h"
 #include "products/roadmap/ports/PlanAgent.h"
 
@@ -37,8 +38,9 @@ using AgentReporter = std::function<void(const std::string& where, const std::st
 
 // One blocking Messages API round-trip: the request body in, the parsed reply out, or nullopt
 // on any transport or parse failure. This is the seam that keeps the loop testable without a
-// network — production sends it over HTTPS, a test answers it from a script.
-using MessagesCall = std::function<std::optional<Json::Value>(const Json::Value& request)>;
+// network — production sends it over HTTPS, a test answers it from a script, and `metered` wraps
+// whichever one it is so the loop's spend is counted without the loop knowing it happened.
+using MessagesCall = ModelCall;
 
 // The tool-use loop, pure but for the two seams it is handed (the model call and the tools).
 // Reads the tree, then drives Anthropic's standard loop until the model stops asking for tools
@@ -56,8 +58,12 @@ AgentOutcome driveAgent(const std::string& prompt, const TreeId& tree, const Use
 class AnthropicAgent : public PlanAgent {
 public:
   // The reporter is optional (null = report nowhere), so tests and local runs stay silent while
-  // production sees every upstream failure the client only ever hears as a quiet "failed".
-  explicit AnthropicAgent(std::string apiKey, std::shared_ptr<FailureReporter> failures = nullptr);
+  // production sees every upstream failure the client only ever hears as a quiet "failed". The fuse
+  // and the sink are optional the same way. A tend is the costliest thing this product does — up to
+  // twelve Sonnet turns re-sending a whole tree — and hitting the cap is twelve of them for nothing.
+  explicit AnthropicAgent(std::string apiKey, std::shared_ptr<FailureReporter> failures = nullptr,
+                          std::shared_ptr<AiFuse> fuse = nullptr,
+                          std::shared_ptr<UsageSink> usage = nullptr);
 
   bool configured() const override;
   AgentOutcome run(const std::string& prompt, const TreeId& tree, const UserId& caller,
@@ -71,6 +77,8 @@ private:
 
   std::string apiKey_;
   std::shared_ptr<FailureReporter> failures_;
+  std::shared_ptr<AiFuse> fuse_;
+  std::shared_ptr<UsageSink> usage_;
   trantor::EventLoopThread loop_;
 };
 

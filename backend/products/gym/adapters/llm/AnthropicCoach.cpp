@@ -313,8 +313,12 @@ CoachAnswer driveCoach(const SessionId& session, const std::vector<CoachTurn>& t
   return outcome;
 }
 
-AnthropicCoach::AnthropicCoach(std::string apiKey, std::shared_ptr<FailureReporter> failures)
-    : apiKey_(std::move(apiKey)), failures_(std::move(failures)) {
+AnthropicCoach::AnthropicCoach(std::string apiKey, std::shared_ptr<FailureReporter> failures,
+                               std::shared_ptr<AiFuse> fuse, std::shared_ptr<UsageSink> usage)
+    : apiKey_(std::move(apiKey)),
+      failures_(std::move(failures)),
+      fuse_(std::move(fuse)),
+      usage_(std::move(usage)) {
   loop_.run();
 }
 
@@ -378,7 +382,18 @@ CoachAnswer AnthropicCoach::answer(const SessionId& session, const std::vector<C
     return future.get();
   };
 
-  return driveCoach(session, turns, caller, tools, call, report);
+  // The frame driveCoach cannot supply: it has never seen a model name, a product or a clock, and
+  // the reply's `usage` — which it discards — only exists inside the call above. One row per turn,
+  // one run id across the exchange, so a question that took four turns reads as one question.
+  AiSpend frame;
+  frame.user = caller.user;
+  frame.product = "gym";
+  frame.operation = "coach";
+  frame.model = kModel;
+  frame.runId = newRunId("coach");
+
+  return driveCoach(session, turns, caller, tools,
+                    metered(call, frame, fuse_, usage_, report), report);
 }
 
 }

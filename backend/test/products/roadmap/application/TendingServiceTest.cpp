@@ -112,7 +112,8 @@ struct Harness {
   FakeClock clock;
   FakeTokens tokens;
   FakeSubscriptionRepository subs;
-  Entitlements entitlements{subs};
+  FakeAiUsageRepository usage;
+  Entitlements entitlements{subs, usage};
 };
 
 // The worker finishes asynchronously; spin on the durable row until it leaves `running`.
@@ -339,4 +340,43 @@ TEST(the_worker_pool_completes_more_runs_than_it_has_threads) {
   for (const std::string& id : ids)
     CHECK_EQ(awaitTerminal(h.runs, id).status, TendStatus::done);
   CHECK_EQ(h.agent.calls.load(), 8);
+}
+
+TEST(an_account_over_its_ai_budget_refuses_without_work) {
+  Harness h;
+  h.usage.spentByProduct[""] = kFreeMonthlyAiNanos;  // runs to spare, money gone
+  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
+
+  TendRun run = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com", "grow the tree");
+
+  CHECK_EQ(run.status, TendStatus::refused);
+  CHECK_EQ(run.refusal, TendRefusal::outOfBudget);
+  CHECK_EQ(std::string{tendRefusalName(run.refusal)}, std::string{"out-of-budget"});
+  CHECK_EQ(h.agent.calls.load(), 0);
+}
+
+TEST(the_run_allowance_is_still_its_own_ceiling_and_answers_first) {
+  Harness h;
+  // Both ceilings are spent. The one the pricing page promises — 30 runs — is what the person is
+  // told, because it is the only one they were ever given a number for.
+  seedDoneRuns(h.runs, UserId{"u"}, kFreeMonthlyTendings, h.clock.now);
+  h.usage.spentByProduct[""] = kFreeMonthlyAiNanos;
+  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
+
+  TendRun run = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com", "grow the tree");
+
+  CHECK_EQ(run.refusal, TendRefusal::outOfAllowance);
+  CHECK_EQ(h.agent.calls.load(), 0);
+}
+
+TEST(a_budget_under_the_ceiling_lets_the_run_start) {
+  Harness h;
+  h.agent.outcome = ok("grew it", 1);
+  h.usage.spentByProduct[""] = kFreeMonthlyAiNanos - 1;  // one nano left is still room
+  TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
+
+  TendRun run = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com", "grow the tree");
+
+  CHECK_EQ(run.status, TendStatus::running);
+  CHECK_EQ(awaitTerminal(h.runs, run.id).status, TendStatus::done);
 }

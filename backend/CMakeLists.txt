@@ -24,6 +24,8 @@ endif()
 # so the pure logic and its tests stand up on Trantor + jsoncpp alone. The adapters (the messy
 # vendor edges) are folded into these same two libraries below, once Drogon + libpqxx are found.
 add_library(windmill_platform
+  platform/domain/AiFuse.cpp
+  platform/domain/AiUsage.cpp
   platform/domain/Auth.cpp
   platform/domain/Mail.cpp
   platform/domain/OAuth.cpp
@@ -111,6 +113,7 @@ target_link_libraries(windmill_platform PUBLIC Trantor::Trantor JsonCpp::JsonCpp
 add_executable(windmill_domain_tests
   test/main.cpp
   test/platform/domain/AccessTest.cpp
+  test/platform/domain/AiUsageTest.cpp
   test/platform/domain/ToolScopeTest.cpp
   test/platform/domain/AuthTest.cpp
   test/platform/domain/MailTest.cpp
@@ -177,9 +180,11 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     platform/adapters/http/OAuthApi.cpp
     platform/adapters/http/McpKeyApi.cpp
     platform/adapters/http/EventsApi.cpp
+    platform/adapters/http/UsageAdminApi.cpp
     platform/adapters/http/FeedbackApi.cpp
     platform/adapters/http/VendorCall.cpp
     platform/adapters/postgres/PgPool.cpp
+    platform/adapters/postgres/PgAiUsageRepository.cpp
     platform/adapters/postgres/PgAuthRepository.cpp
     platform/adapters/postgres/PgAccountFootprint.cpp
     platform/adapters/postgres/PgOAuthRepository.cpp
@@ -319,6 +324,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/platform/adapters/http/OAuthApiTest.cpp
     test/platform/adapters/http/McpKeyApiTest.cpp
     test/platform/adapters/http/EventsApiTest.cpp
+    test/platform/adapters/http/UsageAdminApiTest.cpp
     test/platform/adapters/http/FeedbackApiTest.cpp
     test/platform/adapters/http/RateLimiterTest.cpp
     test/platform/adapters/http/VendorCallTest.cpp
@@ -330,6 +336,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/platform/adapters/sentry/LogTeeTest.cpp
     test/platform/adapters/paddle/PaddleSignatureTest.cpp
     test/platform/adapters/paddle/BillingApiTest.cpp
+    test/platform/adapters/postgres/PgAiUsageRepositoryTest.cpp
     test/platform/adapters/postgres/PgPoolTest.cpp
     test/platform/adapters/postgres/PgSubscriptionRepositoryTest.cpp
     test/products/roadmap/adapters/json/SubgraphJsonTest.cpp

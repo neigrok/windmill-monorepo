@@ -47,7 +47,8 @@ export const COACH_ABSENT_NOTE = 'The coach isn’t switched on here.';
 //   403 the paywall raced us (bought elsewhere, or lapsed mid-thread)
 //   404 + coach-no-session  this workout is not this account's to read
 //   404 with no code        the route does not exist here — the deployment has no model wired
-//   429 the per-account brake
+//   429 + coach-out-of-budget  our own AI ceiling for this account's rolling 30 days
+//   429 with no code           the per-account brake, which is about pace and not about money
 //   everything else         the model did not answer, and asking again is the whole repair
 export function askFailure(error) {
   if (error?.status === 403) return { note: COACH_LOCKED_NOTE, locked: true };
@@ -55,6 +56,14 @@ export function askFailure(error) {
     return { note: 'That workout isn’t in your log.', gone: true };
   }
   if (error?.status === 404 || error?.status === 503) return { note: COACH_ABSENT_NOTE, gone: true };
+  // TWO DIFFERENT 429s, and reading only the status would have said the wrong one out loud: the
+  // brake is about pace and clears in a minute, the ceiling is about money and clears as a 30-day
+  // window rolls. Neither is the lifter's fault and neither points at a purchase — there is no
+  // checkout behind this panel (paidPlansOpen() is false), and a door that does not exist is not
+  // something to offer somebody standing at it.
+  if (error?.status === 429 && error?.code === 'coach-out-of-budget') {
+    return { note: 'This account has reached the AI ceiling we set for a rolling 30 days. The coach answers again as that window rolls on — the rest of the log is untouched.' };
+  }
   if (error?.status === 429) return { note: 'That’s a lot of questions at once. Try again shortly.' };
   return { note: 'The coach didn’t answer. Ask again in a moment.' };
 }

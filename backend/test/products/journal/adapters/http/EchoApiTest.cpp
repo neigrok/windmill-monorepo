@@ -32,13 +32,14 @@ struct Harness {
   FakeEmbedder embedder;
   FakeCurator curator;
   FakeSubscriptionRepository subscriptions;
-  Entitlements entitlements{subscriptions};
+  FakeAiUsageRepository usage;
+  Entitlements entitlements{subscriptions, usage};
   std::shared_ptr<EchoSweep> sweep;
   std::shared_ptr<EchoApi> api;
 
   explicit Harness(std::string adminToken = "")
-      : sweep(std::make_shared<EchoSweep>(*echoes, embedder, curator, *clock, SelectionRules{},
-                                          SweepBudget{})),
+      : sweep(std::make_shared<EchoSweep>(*echoes, embedder, curator, *clock, entitlements,
+                                          SelectionRules{}, SweepBudget{})),
         api(std::make_shared<EchoApi>(echoes, sweep, auth,
                                       std::shared_ptr<Entitlements>(&entitlements, [](Entitlements*) {}),
                                       std::move(adminToken))) {}

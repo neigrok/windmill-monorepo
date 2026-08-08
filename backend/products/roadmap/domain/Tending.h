@@ -42,7 +42,10 @@ inline const char* tendStatusName(TendStatus status) {
 
 // Why a run never started. The client turns these into the spec's four quiet faces; `none` is
 // the ordinary case where the run did start.
-enum class TendRefusal { none, notEnabled, rateLimited, outOfAllowance, treeTooLarge, promptEmpty, promptTooLong };
+// `outOfAllowance` is the RUNS promise (30 a month, statable on a pricing page); `outOfBudget` is
+// our own dollar fuse behind it. Two ceilings measuring two different things, and both are kept —
+// quietly replacing a published count with a dollar figure nobody was told about would be the lie.
+enum class TendRefusal { none, notEnabled, rateLimited, outOfAllowance, outOfBudget, treeTooLarge, promptEmpty, promptTooLong };
 
 inline const char* tendRefusalName(TendRefusal refusal) {
   switch (refusal) {
@@ -50,6 +53,7 @@ inline const char* tendRefusalName(TendRefusal refusal) {
     case TendRefusal::notEnabled:     return "not-enabled";
     case TendRefusal::rateLimited:    return "rate-limited";
     case TendRefusal::outOfAllowance: return "out-of-allowance";
+    case TendRefusal::outOfBudget:    return "out-of-budget";
     case TendRefusal::treeTooLarge:   return "tree-too-large";
     case TendRefusal::promptEmpty:    return "prompt-empty";
     case TendRefusal::promptTooLong:  return "prompt-too-long";

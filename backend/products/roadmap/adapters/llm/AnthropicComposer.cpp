@@ -58,15 +58,38 @@ constexpr const char* kSystemPrompt =
 
 constexpr double kStreamDeadlineSeconds = 90.0;
 
+// Haiku, because shaping is a latency feature before it is a quality one — the plan lands in the
+// well while you are still looking at it, and it does not lead with a thinking block that spends the
+// token budget before the first word of the plan reaches the client.
+constexpr const char* kModel = "claude-haiku-4-5-20251001";
+
+// The hard input cap, and it lives here beside the model because the two decide the bill together.
+// A birth canvas is a paragraph; this is a generous page of notes. Above it the vendor is not called
+// at all — the door is unauthenticated, and uncapped, fifty pasted books cost real money before
+// anybody has an account to bill. The caller's fallback is the deterministic 8-rule parser, so the
+// product still works and the tree is merely less clever.
+constexpr std::size_t kMaxPasteBytes = 24000;
+
+// One SSE frame's JSON, or nothing. Separate because two callers now want it and they want opposite
+// things from a frame they cannot read: an unreadable delta breaks the plan, an unreadable
+// message_start costs a token count and nothing else.
+std::optional<Json::Value> frameJson(const std::string& data) {
+  Json::CharReaderBuilder builder;
+  const std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
+  Json::Value payload;
+  std::string errors;
+  if (!reader->parse(data.data(), data.data() + data.size(), &payload, &errors) ||
+      !payload.isObject())
+    return std::nullopt;
+  return payload;
+}
+
 std::string messagesPayload(const std::string& text, bool stream) {
   Json::Value message(Json::objectValue);
   message["role"] = "user";
   message["content"] = text;
   Json::Value body(Json::objectValue);
-  // Haiku, because shaping is a latency feature before it is a quality one — the plan lands in
-  // the well while you are still looking at it, and it does not lead with a thinking block that
-  // spends the token budget before the first word of the plan reaches the client.
-  body["model"] = "claude-haiku-4-5-20251001";
+  body["model"] = kModel;
   // Room for a plan drawn from a long document. The old 2000 was under what a real page of notes
   // produces, and a truncated plan is refused outright — so the budget being tight read to the
   // client as an open stream that never said anything.
@@ -96,7 +119,10 @@ struct StreamCall : public std::enable_shared_from_this<StreamCall> {
   // The clock starts when the call object does, ahead of the resolve, so the cost reported is the
   // whole call: dns, handshake, and every second the model spent writing.
   VendorCall vendor{"anthropic", "compose.stream"};
+  std::shared_ptr<AiFuse> fuse;
+  std::shared_ptr<UsageSink> usage;
   bool settled = false;
+  bool finished = false;  // the decoder reached a clean end_turn
 
   void hangUp() {
     if (settled) return;
@@ -104,6 +130,24 @@ struct StreamCall : public std::enable_shared_from_this<StreamCall> {
     // The one place a stream ends is the one place its outcome is reported. A transport failure has
     // already named itself by now and wins; a cancelled stream still cost the time it cost.
     vendor.answered(parser->status());
+
+    // And the one place a stream ends is the one place its spend is recorded, for the same reason. A
+    // stream the reader hung up on, or one the vendor cut off mid-plan, was written and paid for
+    // exactly as far as it got — those are the streams a meter must not quietly lose.
+    const int status = parser->status();
+    AiSpend spend;
+    spend.product = "roadmap";
+    spend.operation = "compose";
+    spend.model = kModel;
+    spend.tokens = parser->tokens();
+    // No user, and never an invented one: the birth canvas is anonymous by design. An unattributed
+    // row is an honest gap; a guessed owner is a lie the ledger then repeats forever.
+    spend.outcome = status == 429 || status == 529 ? AiOutcome::rateLimited
+                    : status != 200               ? AiOutcome::transport
+                    : finished                    ? AiOutcome::ok
+                                                  : AiOutcome::truncated;
+    meterSpend(spend, fuse, usage);
+
     if (client) client->disconnect();
     loop->queueInLoop([anchor = std::move(self), client = std::move(client)]() {});
   }
@@ -287,20 +331,31 @@ void AnthropicStreamParser::dispatch(const std::string& event, const std::string
     settle(false);
     return;
   }
+  // message_start is here for the bill and nothing else: it is the only frame carrying the input
+  // count and both cache counters, and without it a cached 9k-token prefix reads as free. A frame we
+  // cannot parse costs a token count, never the plan, so this one does not settle on a bad read.
+  if (event == "message_start") {
+    if (const std::optional<Json::Value> payload = frameJson(data))
+      tokens_ = tokensFrom((*payload)["message"]["usage"]);
+    return;
+  }
   if (event != "content_block_delta" && event != "message_delta") return;
 
-  Json::CharReaderBuilder builder;
-  const std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
-  Json::Value payload;
-  std::string errors;
-  if (!reader->parse(data.data(), data.data() + data.size(), &payload, &errors) ||
-      !payload.isObject()) {
+  const std::optional<Json::Value> parsed = frameJson(data);
+  if (!parsed) {
     if (onFailure_) onFailure_("compose.stream", "unreadable " + event + " frame");
     settle(false);
     return;
   }
+  const Json::Value& payload = *parsed;
   const Json::Value& delta = payload["delta"];
   if (event == "message_delta") {
+    // The usage on this frame is a SIBLING of `delta`, not a child of it — reaching through `delta`
+    // for it, as everything else here does, finds nothing. And its output count is CUMULATIVE: the
+    // running total for the whole message, not this frame's share. So it is ASSIGNED. Adding would
+    // bill the total again on top of itself every time the vendor sent one.
+    const TokenUse running = tokensFrom(payload["usage"]);
+    if (running.output > 0) tokens_.output = running.output;
     if (delta["stop_reason"].isString()) stopReason_ = delta["stop_reason"].asString();
     return;
   }
@@ -310,8 +365,12 @@ void AnthropicStreamParser::dispatch(const std::string& event, const std::string
   }
 }
 
-AnthropicComposer::AnthropicComposer(std::string apiKey, std::shared_ptr<FailureReporter> failures)
-    : apiKey_(std::move(apiKey)), failures_(std::move(failures)) {
+AnthropicComposer::AnthropicComposer(std::string apiKey, std::shared_ptr<FailureReporter> failures,
+                                     std::shared_ptr<AiFuse> fuse, std::shared_ptr<UsageSink> usage)
+    : apiKey_(std::move(apiKey)),
+      failures_(std::move(failures)),
+      fuse_(std::move(fuse)),
+      usage_(std::move(usage)) {
   loop_.run();
 }
 
@@ -326,7 +385,10 @@ bool AnthropicComposer::configured() const { return !apiKey_.empty(); }
 
 void AnthropicComposer::compose(const std::string& text,
                                 std::function<void(std::optional<std::string>)> done) {
-  if (apiKey_.empty()) {
+  // Three ways to answer without calling anybody, and all three are the same answer the caller
+  // already handles: no plan, fall back to the parser we own. An oversized paste and a blown fuse
+  // are refused HERE, before a socket is opened, because a cap enforced after the call is not a cap.
+  if (apiKey_.empty() || text.size() > kMaxPasteBytes || (fuse_ && !fuse_->allows())) {
     done(std::nullopt);
     return;
   }
@@ -345,15 +407,46 @@ void AnthropicComposer::compose(const std::string& text,
   VendorCall call("anthropic", "compose");
   client->sendRequest(
       req,
-      [client, call, report = reporter(), done = std::move(done)](
+      [client, call, report = reporter(), fuse = fuse_, usage = usage_, done = std::move(done)](
           drogon::ReqResult result, const drogon::HttpResponsePtr& resp) mutable {
+        // One line, filled in from the composer's own frame. `user` stays empty deliberately: the
+        // birth canvas has no account behind it yet, and the ledger carries that gap honestly rather
+        // than attaching the spend to whoever happened to be nearby.
+        const auto record = [&fuse, &usage](const char* outcome, const TokenUse& tokens) {
+          AiSpend spend;
+          spend.product = "roadmap";
+          spend.operation = "compose";
+          spend.model = kModel;
+          spend.outcome = outcome;
+          spend.tokens = tokens;
+          meterSpend(spend, fuse, usage);
+        };
+
         if (!call.succeeded(result, resp)) {
+          record(AiOutcome::transport, TokenUse{});
           done(std::nullopt);
           return;
         }
 
         std::shared_ptr<Json::Value> reply = resp->getJsonObject();
-        if (!reply || !(*reply)["content"].isArray() || (*reply)["content"].empty()) {
+        if (!reply) {
+          report("compose.buffered", "unreadable reply");
+          record(AiOutcome::schemaInvalid, TokenUse{});
+          done(std::nullopt);
+          return;
+        }
+
+        // Counted the moment the reply parses, before a word of it is judged. A plan cut off by the
+        // token budget is thrown away below and cost the whole budget to produce; a reply the meter
+        // only reached on the success path would price that at nothing.
+        const Json::Value& stopReason = (*reply)["stop_reason"];
+        const std::string reason = stopReason.isString() ? stopReason.asString() : std::string();
+        record(reason == "end_turn"  ? AiOutcome::ok
+               : reason == "refusal" ? AiOutcome::refused
+                                     : AiOutcome::truncated,
+               tokensFrom((*reply)["usage"]));
+
+        if (!(*reply)["content"].isArray() || (*reply)["content"].empty()) {
           report("compose.buffered", "unreadable reply");
           done(std::nullopt);
           return;
@@ -370,12 +463,11 @@ void AnthropicComposer::compose(const std::string& text,
           return;
         }
 
-        const Json::Value& stopReason = (*reply)["stop_reason"];
-        if (!stopReason.isString() || stopReason.asString() != "end_turn") {
+        if (reason != "end_turn") {
           // max_tokens or any other early stop means a truncated plan — never hand the
           // client half a plan to replace the user's paste with.
-          report("compose.buffered", "stopped early (stop_reason: " +
-                                                 (stopReason.isString() ? stopReason.asString() : std::string("missing")) + ")");
+          report("compose.buffered",
+                 "stopped early (stop_reason: " + (reason.empty() ? std::string("missing") : reason) + ")");
           done(std::nullopt);
           return;
         }
@@ -394,7 +486,9 @@ std::function<void()> AnthropicComposer::composeStream(
     const std::string& text,
     std::function<void(const std::string&)> onDelta,
     std::function<void(bool)> onDone) {
-  if (apiKey_.empty()) {
+  // The same three refusals as the buffered path, and the same answer: fail cleanly and let the
+  // caller fall back to the parser. Nothing is spent, so nothing is recorded.
+  if (apiKey_.empty() || text.size() > kMaxPasteBytes || (fuse_ && !fuse_->allows())) {
     onDone(false);
     return []() {};
   }
@@ -418,6 +512,8 @@ std::function<void()> AnthropicComposer::composeStream(
   auto call = std::make_shared<StreamCall>();
   call->loop = loop_.getLoop();
   call->request = std::move(request);
+  call->fuse = fuse_;
+  call->usage = usage_;
   call->self = call;
   std::weak_ptr<StreamCall> weak = call;
   // The reporter holds the shared_ptr, not `this`: a stream can settle long after the caller has
@@ -425,7 +521,12 @@ std::function<void()> AnthropicComposer::composeStream(
   call->parser = std::make_unique<AnthropicStreamParser>(
       std::move(onDelta),
       [weak, onDone = std::move(onDone)](bool ok) {
-        if (auto call = weak.lock()) call->hangUp();
+        // The verdict reaches the call before it hangs up, so the row it writes says what the reader
+        // actually got rather than inferring it from a status that was 200 either way.
+        if (auto call = weak.lock()) {
+          call->finished = ok;
+          call->hangUp();
+        }
         onDone(ok);
       },
       reporter());

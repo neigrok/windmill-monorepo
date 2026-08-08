@@ -1,6 +1,7 @@
 #pragma once
 
 #include "platform/ports/AccountFootprint.h"
+#include "platform/ports/AiUsageRepository.h"
 #include "platform/ports/AuthRepository.h"
 #include "platform/ports/Clock.h"
 #include "platform/ports/EmailSender.h"
@@ -428,6 +429,50 @@ struct FakeSubscriptionRepository : SubscriptionRepository {
     subscription.userId = user.str();
     subscription.status = status;
     byUser[user.str()] = subscription;
+  }
+};
+
+// The AI ledger, planted rather than accumulated: a test says what a product has already cost this
+// account and reads what the gate then does about it. `spentByProduct[""]` is the every-product
+// total the user's own ceiling is measured against, and a named key is one product's bucket — the
+// same two questions Entitlements asks. `asked` keeps every window the caller requested, which is
+// how the rolling-30-days floor is checked at all.
+struct FakeAiUsageRepository : AiUsageRepository {
+  struct Query {
+    UserId user;
+    std::string product;
+    long long sinceMs = 0;
+  };
+
+  std::map<std::string, long long> spentByProduct;
+  std::vector<Query> asked;
+  std::vector<AiSpend> recorded;
+  UsageSummary summaryValue;
+  std::vector<UserSpend> spenders;
+  long long fromMs = 0;
+  long long toMs = 0;
+  int limit = 0;
+
+  void record(const AiSpend& spend) noexcept override { recorded.push_back(spend); }
+
+  long long spentSinceNanos(const UserId& user, const std::string& product,
+                            long long sinceMs) override {
+    asked.push_back(Query{user, product, sinceMs});
+    auto it = spentByProduct.find(product);
+    return it == spentByProduct.end() ? 0 : it->second;
+  }
+
+  UsageSummary summary(long long from, long long to) override {
+    fromMs = from;
+    toMs = to;
+    return summaryValue;
+  }
+
+  std::vector<UserSpend> topSpenders(long long from, long long to, int depth) override {
+    fromMs = from;
+    toMs = to;
+    limit = depth;
+    return spenders;
   }
 };
 

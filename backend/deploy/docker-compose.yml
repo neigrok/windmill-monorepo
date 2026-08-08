@@ -68,6 +68,10 @@ services:
       JOURNAL_EMBEDDER_URL: ${JOURNAL_EMBEDDER_URL:-http://embedder:8081}
       # The operator's rehearsal door for one nightly pass. Unset → the route 403s, its resting state.
       JOURNAL_ECHO_ADMIN_TOKEN: ${JOURNAL_ECHO_ADMIN_TOKEN:-}
+      # Who may read the AI spend room: comma-separated account emails, matched against the caller's
+      # SESSION rather than a shared bearer, because these responses name individual users' spend.
+      # Empty → nobody, and the doors answer 404 rather than 403, so the room's existence stays quiet.
+      WINDMILL_OWNER_EMAILS: ${WINDMILL_OWNER_EMAILS:-}
       # Tending (server-side agent edits). Ships DARK: empty/absent → every run refuses with
       # "not turned on", the designed first face. Set to "true" to arm it once the agent loop lands.
       TENDING_ENABLED: ${TENDING_ENABLED:-}

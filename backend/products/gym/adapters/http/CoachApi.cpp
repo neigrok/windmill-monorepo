@@ -25,6 +25,14 @@ drogon::HttpResponsePtr refusalOf(CoachRefusal refusal) {
   if (refusal == CoachRefusal::notEntitled)
     return error(drogon::k403Forbidden, "the coach panel is part of Windmill One",
                  "coach-not-entitled");
+  if (refusal == CoachRefusal::outOfBudget)
+    // OUR ceiling, said as ours, and with no upgrade offered — there is no checkout to take one
+    // through, so a "go paid" line here would be a door painted on a wall. The window is trailing,
+    // so the wait is real and finite rather than a month's silence.
+    return error(drogon::k429TooManyRequests,
+                 "this account has reached its AI ceiling for the last 30 days. The coach will "
+                 "answer again as that window rolls on",
+                 "coach-out-of-budget");
   if (refusal == CoachRefusal::rateLimited)
     return error(drogon::k429TooManyRequests, "that's a lot of questions at once — try again shortly",
                  "coach-rate-limited");

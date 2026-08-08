@@ -1,5 +1,6 @@
 #pragma once
 
+#include "platform/adapters/llm/AnthropicClient.h"
 #include "platform/ports/FailureReporter.h"
 #include "products/roadmap/ports/PlanComposer.h"
 
@@ -39,6 +40,10 @@ public:
   // What the reply's head said, or 0 while none has landed. The transport reports the call's
   // outcome, so the decoder exposes the status rather than growing a log seam of its own.
   int status() const { return status_; }
+  // What the stream has cost so far, read the same way and for the same reason: the decoder is the
+  // only thing that ever sees `message_start` and `message_delta`, and the one place a stream ends
+  // is the transport, not here. State to be read at the end, not a second callback to subscribe to.
+  TokenUse tokens() const { return tokens_; }
 
 private:
   enum class Phase { Headers, ChunkSize, ChunkData, ChunkGap, PlainBody, Done };
@@ -59,6 +64,7 @@ private:
   std::string eventName_;
   std::string eventData_;
   std::string stopReason_;
+  TokenUse tokens_;
 };
 
 // Composes plans through Anthropic's Messages API: the raw paste rides as the user turn
@@ -71,8 +77,17 @@ private:
 class AnthropicComposer : public PlanComposer {
 public:
   // The reporter is optional (null = report nowhere), so tests and local runs stay silent while
-  // production sees every upstream failure that the client only ever hears as a polite "fail".
-  explicit AnthropicComposer(std::string apiKey, std::shared_ptr<FailureReporter> failures = nullptr);
+  // production sees every upstream failure that the client only ever hears as a polite "fail". The
+  // fuse and the sink are optional in the same way and for the same reason.
+  //
+  // This is the one seam on an UNAUTHENTICATED door, so it is the one that gets attacked. The paste
+  // is capped before the call and the fuse is asked before the call, and over either of them the
+  // birth canvas falls back to the deterministic parser it already owns — never a 503, because a
+  // cost attack that becomes an availability attack on our own signup funnel is a worse trade than
+  // the money it saved.
+  explicit AnthropicComposer(std::string apiKey, std::shared_ptr<FailureReporter> failures = nullptr,
+                             std::shared_ptr<AiFuse> fuse = nullptr,
+                             std::shared_ptr<UsageSink> usage = nullptr);
 
   bool configured() const override;
   void compose(const std::string& text,
@@ -88,6 +103,8 @@ private:
 
   std::string apiKey_;
   std::shared_ptr<FailureReporter> failures_;
+  std::shared_ptr<AiFuse> fuse_;
+  std::shared_ptr<UsageSink> usage_;
   trantor::EventLoopThread loop_;
 };
 

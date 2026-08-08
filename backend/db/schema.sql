@@ -412,6 +412,36 @@ create table if not exists server_errors (
 -- the triage read: newest errors first
 create index if not exists server_errors_ts on server_errors (ts);
 
+-- what every LLM call cost us: counts and costs only, never content — the same rule VendorCall
+-- holds, because an accounting table is not a place to keep what someone wrote. One append-only
+-- detail row per vendor call, and no rollup: a btree on (user_id, ts) is an index range scan over
+-- one account's window, and a second write would only double the failure surface of the thing that
+-- must never break the product it is watching.
+-- user_id null = the anonymous birth canvas, by design and never invented. cost_nanos null = the
+-- model was absent from the price table: unpriced is LOUD, never silently free. run_id groups one
+-- tool loop's iterations into one logical operation. Failures record too, and disproportionately
+-- matter — a max_tokens truncation burned the entire budget and produced nothing.
+create table if not exists ai_usage (
+  id                 bigserial primary key,
+  ts                 timestamptz not null default now(),
+  user_id            uuid,
+  product            text not null,
+  operation          text not null,
+  run_id             text not null default '',
+  iteration          int  not null default 0,
+  model              text not null,
+  outcome            text not null default 'ok',  -- ok | truncated | refused | rate_limited | transport | schema_invalid
+  input_tokens       bigint not null default 0,
+  output_tokens      bigint not null default 0,
+  cache_read_tokens  bigint not null default 0,
+  cache_write_tokens bigint not null default 0,
+  cost_nanos         bigint
+);
+-- the budget check: one account's rolling window
+create index if not exists ai_usage_user_ts on ai_usage (user_id, ts);
+-- the owner page: every account's window at once
+create index if not exists ai_usage_ts on ai_usage (ts);
+
 -- ── Paddle billing ──────────────────────────────────────────────────────────────────────────
 -- Webhooks are the source of truth: every notification upserts here, so access gating reads this
 -- database instead of round-tripping the Paddle API. The bridge from a Windmill account to a

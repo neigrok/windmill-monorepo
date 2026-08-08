@@ -45,8 +45,15 @@ public:
   // before one is defaulted, and rejecting vocabulary twins is the kind of task the low end of this
   // model is unusually good at. Until that sweep happens the default is the API's own, so this file
   // asserts nothing nobody measured.
+  //
+  // The fuse and the sink arrive last and default to null, which is the no-op — the same discipline
+  // FailureReporter already keeps everywhere else. This seam is the one that spends money nobody
+  // asked it to: it runs six-hourly against pages the writer never requested a pass over, so it is
+  // the seam a runaway most easily hides in and the one whose spend is least likely to be noticed.
   explicit AnthropicCurator(std::shared_ptr<MessagesApi> transport,
-                            std::string model = "claude-opus-5", std::string effort = "high");
+                            std::string model = "claude-opus-5", std::string effort = "high",
+                            std::shared_ptr<AiFuse> fuse = nullptr,
+                            std::shared_ptr<UsageSink> usage = nullptr);
 
   bool configured() const override;
 
@@ -55,13 +62,16 @@ public:
   // mixed chain cannot be selectively rebuilt.
   std::string version() const override;
 
-  Curation curate(const std::vector<Vectored>& tonight, const std::vector<Vectored>& candidates,
+  Curation curate(const UserId& user, const std::vector<Vectored>& tonight,
+                  const std::vector<Vectored>& candidates,
                   const std::vector<Pairing>& proposed) override;
 
 private:
   std::shared_ptr<MessagesApi> transport_;
   std::string model_;
   std::string effort_;
+  std::shared_ptr<AiFuse> fuse_;
+  std::shared_ptr<UsageSink> usage_;
 };
 
 }

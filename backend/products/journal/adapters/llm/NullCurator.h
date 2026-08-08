@@ -10,7 +10,7 @@ namespace wm {
 struct NullCurator : Curator {
   bool configured() const override { return false; }
   std::string version() const override { return "none"; }
-  Curation curate(const std::vector<Vectored>&, const std::vector<Vectored>&,
+  Curation curate(const UserId&, const std::vector<Vectored>&, const std::vector<Vectored>&,
                   const std::vector<Pairing>&) override {
     return Curation{};   // ok = false: never mistaken for "looked, and found nothing"
   }
