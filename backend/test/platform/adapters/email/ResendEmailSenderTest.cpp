@@ -49,6 +49,22 @@ TEST(resend_email_body_carries_the_template_and_recipient) {
            std::string("https://windmill.works/link"));
 }
 
+TEST(resend_email_body_carries_the_sign_in_code_for_the_magic_code_template) {
+  // The app door's wire bytes: template id 'magic-code', the digits under sign_in_code, no
+  // subject (it lives on the stored template) and no headers (transactional, no unsubscribe).
+  // The stored template is vendor-side — these bytes are the whole local half of that contract.
+  Json::Value vars(Json::objectValue);
+  vars["sign_in_code"] = "483201";
+  const Json::Value body = resendEmailBody("Windmill <hi@windmill.works>", "you@example.com",
+                                           "magic-code", vars, Json::Value(Json::objectValue));
+  CHECK_EQ(body["from"].asString(), std::string("Windmill <hi@windmill.works>"));
+  CHECK_EQ(body["to"].asString(), std::string("you@example.com"));
+  CHECK_EQ(body["template"]["id"].asString(), std::string("magic-code"));
+  CHECK_EQ(body["template"]["variables"]["sign_in_code"].asString(), std::string("483201"));
+  CHECK_FALSE(body.isMember("subject"));
+  CHECK_FALSE(body.isMember("headers"));
+}
+
 TEST(resend_email_body_omits_headers_when_there_are_none) {
   // A sign-in link is transactional and carries no unsubscribe, so the field must be absent rather
   // than an empty object a provider might read as an empty header set.

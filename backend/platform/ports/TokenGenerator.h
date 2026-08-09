@@ -17,6 +17,10 @@ struct MintedToken {
 struct TokenGenerator {
   virtual ~TokenGenerator() = default;
   virtual MintedToken mint() = 0;
+  // The app door's typed credential: six decimal digits from the same entropy as mint(), drawn
+  // with rejection sampling so no digit is favoured. Only its digestOf is ever stored — though for
+  // a million-state secret that is hygiene, not a defense; the attempt bound in domain/Auth is.
+  virtual std::string mintCode() = 0;
   virtual std::string digestOf(const std::string& secret) = 0;
   // The PKCE S256 challenge for a verifier: base64url(sha256(verifier)), unpadded — the
   // value an authorization request carries and the token request is checked against.

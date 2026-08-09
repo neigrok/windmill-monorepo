@@ -26,4 +26,14 @@ void ResendEmailSender::sendForkLink(const Email& to, const std::string& magicLi
   client_.send(to, "magic-link-fork", variables, Json::Value(Json::objectValue), std::move(done));
 }
 
+void ResendEmailSender::sendSignInCode(const Email& to, const std::string& signInCode,
+                                       std::function<void(bool)> done) {
+  // `sign_in_code` is the slot inside Resend's stored 'magic-code' template (paste-source:
+  // web/emails/magic-code.html) — server-minted digits, never user text, so raw substitution
+  // holds. The subject lives on the template, deliberately omitted here like the others.
+  Json::Value variables(Json::objectValue);
+  variables["sign_in_code"] = signInCode;
+  client_.send(to, "magic-code", variables, Json::Value(Json::objectValue), std::move(done));
+}
+
 }

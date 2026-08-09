@@ -82,6 +82,23 @@ TEST(verify_link_distinguishes_every_outcome) {
   CHECK(verifyLink(true, true, now - 1, now) == LinkVerdict::alreadyUsed);  // used beats expired
 }
 
+// The code's whole policy in one place, because the mail copy ("6-digit", "works once and lasts
+// 15 minutes") and the app door's field are built on these numbers being exactly these.
+TEST(the_code_is_six_digits_with_five_attempts_on_the_links_own_clock) {
+  CHECK_EQ(AuthPolicy::codeLength, 6);
+  CHECK_EQ(AuthPolicy::maxCodeAttempts, 5);
+}
+
+// The lookup owns liveness (newest unspent, unexpired, under-cap row), so the verdict decides
+// only what is left: no live row and a wrong guess are different verdicts because only the wrong
+// guess spends an attempt — at the edge both collapse to one identical refusal.
+TEST(verify_code_distinguishes_a_wrong_guess_from_no_live_code) {
+  CHECK(verifyCode(true, true) == CodeVerdict::valid);
+  CHECK(verifyCode(true, false) == CodeVerdict::wrongCode);
+  CHECK(verifyCode(false, false) == CodeVerdict::noLiveCode);
+  CHECK(verifyCode(false, true) == CodeVerdict::noLiveCode);  // a match against no row is no match
+}
+
 TEST(provider_names_round_trip_through_the_stored_spelling) {
   CHECK_EQ(toString(Provider::google), std::string("google"));
   CHECK_EQ(toString(Provider::apple), std::string("apple"));

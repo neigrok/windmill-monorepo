@@ -241,6 +241,11 @@ create table if not exists magic_links (
 create index if not exists magic_links_email_created on magic_links (email, created_ms);
 -- a pending fork may ride the link: the tree to copy into whatever account verify signs in
 alter table magic_links add column if not exists fork_source text;
+-- the app door's second credential: a 6-digit code twin living ON the link's row — one mint, one
+-- row, one rate-budget unit; either credential flips consumed_ms. attempts bounds guessing: a
+-- wrong code is one atomic increment, and at the cap (domain/Auth.h, 5) the row stops resolving.
+alter table magic_links add column if not exists code_hash text;
+alter table magic_links add column if not exists attempts int not null default 0;
 
 -- 90-day rolling sessions, one row per device, keyed by the digest of the cookie secret.
 create table if not exists sessions (

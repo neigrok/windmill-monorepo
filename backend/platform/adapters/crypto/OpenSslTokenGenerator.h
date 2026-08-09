@@ -10,6 +10,7 @@ namespace wm {
 class OpenSslTokenGenerator : public TokenGenerator {
 public:
   MintedToken mint() override;
+  std::string mintCode() override;
   std::string digestOf(const std::string& secret) override;
   std::string s256Challenge(const std::string& verifier) override;
 };

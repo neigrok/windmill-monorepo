@@ -28,10 +28,13 @@ public:
                     const std::string& emailAtLink) override;
   void moveIdentities(const UserId& from, const UserId& to) override;
 
-  void insertLink(const std::string& digest, const Email& email, UnixMs createdAt, UnixMs expiresAt,
-                  const std::string& forkSource) override;
+  void insertLink(const std::string& digest, const std::string& codeDigest, const Email& email,
+                  UnixMs createdAt, UnixMs expiresAt, const std::string& forkSource) override;
   int countRecentLinks(const Email& email, UnixMs since) override;
   std::optional<StoredLink> findLink(const std::string& digest) override;
+  std::optional<StoredSignInCode> findLiveCode(const Email& email, UnixMs now,
+                                               int maxAttempts) override;
+  int spendCodeAttempt(const std::string& digest, int maxAttempts) override;
   bool consumeLink(const std::string& digest, UnixMs at) override;
 
   void insertSession(const std::string& digest, const UserId& user, UnixMs expiresAt,

@@ -56,6 +56,12 @@ struct AuthPolicy {
   // so "try again in 10 minutes" stays true; the per-IP and global ceilings in main.cpp are what
   // actually price a flood, and they are untouched.
   static constexpr int maxLinksPerWindow = 9;
+  // The app door's typed credential: 6 decimal digits living ON the link's row, sharing its
+  // 15-minute life and its single use. A million states is the whole space, so the attempt cap —
+  // not the digest at rest — is the defense: at five wrong guesses the row is dead and a fresh
+  // request is the remedy.
+  static constexpr int codeLength = 6;
+  static constexpr int maxCodeAttempts = 5;
   static constexpr std::size_t nameMaxBytes = 80;                  // settings §5 profile name cap
   static constexpr UnixMs closeGraceMs = 30ull * 24 * 60 * 60 * 1000;  // settings §4 delete grace
 };
@@ -88,6 +94,14 @@ inline UnixMs effectiveLastSeen(UnixMs lastSeenMs, UnixMs createdMs) {
 // folds into the same remedy without leaking whether a digest ever existed.
 enum class LinkVerdict { valid, expired, alreadyUsed, unknown };
 LinkVerdict verifyLink(bool found, bool consumed, UnixMs expiresAt, UnixMs now);
+
+// A typed code resolves against the NEWEST live code row for its address — live meaning unspent,
+// unexpired, and under the attempt cap, a filter the repository lookup owns, so a resend
+// supersedes the code before it and everything dead answers noLiveCode. Only wrongCode spends an
+// attempt. At the edge every non-valid verdict collapses to one identical refusal, so nothing
+// leaks about which addresses hold pending codes.
+enum class CodeVerdict { valid, wrongCode, noLiveCode };
+CodeVerdict verifyCode(bool foundLive, bool matches);
 
 // The doors a sign-in can arrive through besides the magic link. The stored spelling is the
 // `provider` column's check constraint, so parse and toString are the wire and the schema at once.

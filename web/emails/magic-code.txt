@@ -1,0 +1,18 @@
+WINDMILL
+
+Your sign-in code
+-----------------
+
+{{{sign_in_code}}}
+
+Type it in the app to sign in.
+No password — the code is the key.
+
+It works once and lasts 15 minutes.
+
+Didn't ask for this? You can ignore it — nothing changes
+until the code is used.
+
+--
+Sent because this address was entered in the Windmill app.
+Windmill · https://windmill.works

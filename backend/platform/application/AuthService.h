@@ -55,14 +55,15 @@ public:
   // can't see.
   //
   // Asynchronous, so the slow Resend send never parks the calling handler thread. The sync
-  // work runs first and fast — parse, rate-limit, mint, insert the link row — then only the
-  // send is deferred. done fires exactly once with the verdict: invalidEmail / rateLimited
-  // resolve inline before any send; sent or unreachable waits on the send's completion (which
-  // may fire on the sender's loop thread). An unreachable send still leaves the link row
-  // inserted, so a Resend hiccup loses no link — a retry mints a fresh one and the first
-  // still opens the door for its 15-minute life.
+  // work runs first and fast — parse, rate-limit, mint BOTH credentials (the link token and its
+  // 6-digit code twin), insert the one row — then only the send is deferred. done fires exactly
+  // once with the verdict: invalidEmail / rateLimited resolve inline before any send; sent or
+  // unreachable waits on the send's completion (which may fire on the sender's loop thread). An
+  // unreachable send still leaves the row inserted, so a Resend hiccup loses neither credential —
+  // a retry mints a fresh pair and the first still opens the door for its 15-minute life.
+  // `door` picks the mail: "app" carries the code, anything else today's link (or fork) mail.
   void requestLink(const std::string& rawEmail, const std::string& forkSource,
-                   const std::optional<ForkDescription>& forkDescription,
+                   const std::optional<ForkDescription>& forkDescription, const std::string& door,
                    std::function<void(RequestResult)> done);
 
   // On a valid link: the account (created here on first sign-in) and a fresh session secret
@@ -80,6 +81,18 @@ public:
   // session is minted, so signing in is the undo. The new session is born with the device's
   // metadata (ctx).
   Completion completeLink(const std::string& linkSecret, const SessionContext& ctx = {});
+
+  // The typed twin of completeLink: resolves the NEWEST live code row for the address, spends one
+  // attempt on a wrong guess, burns the row through the same atomic consume on a right one, then
+  // funnels into the identical mintSessionFor tail — find-or-create, revival-in-grace, 90-day
+  // session. Every non-valid verdict is refused without a session; the edge collapses them all.
+  struct CodeCompletion {
+    CodeVerdict verdict;
+    std::optional<SignedIn> signedIn;
+    std::string forkSource;  // a pending fork rides the row whichever credential spends it
+  };
+  CodeCompletion completeCode(const std::string& rawEmail, const std::string& code,
+                              const SessionContext& ctx = {});
 
   // A completed provider sign-in. `created` says this call minted the account; `privateEmail` says
   // the address behind it is a relay that can never find the human's other account — together they

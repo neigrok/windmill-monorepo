@@ -79,6 +79,12 @@ LinkVerdict verifyLink(bool found, bool consumed, UnixMs expiresAt, UnixMs now) 
   return LinkVerdict::valid;
 }
 
+CodeVerdict verifyCode(bool foundLive, bool matches) {
+  if (!foundLive) return CodeVerdict::noLiveCode;  // a match against no live row is no match
+  if (!matches) return CodeVerdict::wrongCode;
+  return CodeVerdict::valid;
+}
+
 std::string toString(Provider provider) {
   return provider == Provider::apple ? "apple" : "google";
 }

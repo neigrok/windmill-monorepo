@@ -117,15 +117,16 @@ void PgAuthRepository::moveIdentities(const UserId& from, const UserId& to) {
   txn.commit();
 }
 
-void PgAuthRepository::insertLink(const std::string& digest, const Email& email, UnixMs createdAt,
-                                  UnixMs expiresAt, const std::string& forkSource) {
+void PgAuthRepository::insertLink(const std::string& digest, const std::string& codeDigest,
+                                  const Email& email, UnixMs createdAt, UnixMs expiresAt,
+                                  const std::string& forkSource) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   txn.exec_params(
-      "INSERT INTO magic_links (token_hash, email, created_ms, expires_ms, fork_source) "
-      "VALUES ($1, $2, $3, $4, nullif($5, ''))",
-      digest, email.value, static_cast<long long>(createdAt), static_cast<long long>(expiresAt),
-      forkSource);
+      "INSERT INTO magic_links (token_hash, code_hash, email, created_ms, expires_ms, fork_source) "
+      "VALUES ($1, nullif($2, ''), $3, $4, $5, nullif($6, ''))",
+      digest, codeDigest, email.value, static_cast<long long>(createdAt),
+      static_cast<long long>(expiresAt), forkSource);
   txn.commit();
 }
 
@@ -151,6 +152,40 @@ std::optional<StoredLink> PgAuthRepository::findLink(const std::string& digest) 
   return StoredLink{Email{row["email"].as<std::string>()}, !row["consumed_ms"].is_null(),
                     static_cast<UnixMs>(row["expires_ms"].as<long long>()),
                     row["fork_source"].as<std::string>()};
+}
+
+std::optional<StoredSignInCode> PgAuthRepository::findLiveCode(const Email& email, UnixMs now,
+                                                               int maxAttempts) {
+  // Newest live row wins — a resend supersedes the code before it. The (email, created_ms) index
+  // built for the rate-limit query carries this walk too.
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  pqxx::result rows = txn.exec_params(
+      "SELECT token_hash, code_hash, coalesce(fork_source, '') AS fork_source "
+      "FROM magic_links "
+      "WHERE email = $1 AND code_hash IS NOT NULL AND consumed_ms IS NULL "
+      "AND expires_ms > $2 AND attempts < $3 "
+      "ORDER BY created_ms DESC LIMIT 1",
+      email.value, static_cast<long long>(now), maxAttempts);
+  if (rows.empty()) return std::nullopt;
+
+  const auto& row = rows[0];
+  return StoredSignInCode{row["token_hash"].as<std::string>(), row["code_hash"].as<std::string>(),
+                          row["fork_source"].as<std::string>()};
+}
+
+int PgAuthRepository::spendCodeAttempt(const std::string& digest, int maxAttempts) {
+  // One statement, gated in the WHERE — racing wrong guesses each pay for themselves, and the
+  // count can only climb to the cap, never past it.
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  pqxx::result rows = txn.exec_params(
+      "UPDATE magic_links SET attempts = attempts + 1 "
+      "WHERE token_hash = $1 AND consumed_ms IS NULL AND attempts < $2 RETURNING attempts",
+      digest, maxAttempts);
+  txn.commit();
+  if (rows.empty()) return 0;  // spent or guessed out by a concurrent verify — dead either way
+  return rows[0][0].as<int>();
 }
 
 bool PgAuthRepository::consumeLink(const std::string& digest, UnixMs at) {

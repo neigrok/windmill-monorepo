@@ -123,6 +123,10 @@ void AuthApi::requestLink(const drogon::HttpRequestPtr& req, HttpCallback&& call
   std::string forkOf = json ? json->get("forkOf", "").asString() : "";
   if (forkOf.size() > 64) forkOf.clear();  // an id, not a payload — drop junk quietly
 
+  // The optional door: "app" asks the mail to carry the row's 6-digit code instead of the link;
+  // absent or anything else is today's link mail, byte for byte.
+  const std::string door = json ? json->get("door", "").asString() : "";
+
   // A fork mail must name what it plants, so resolve the source's face here — the auth pipeline
   // stays product-free, taking two already-rendered strings from the injected port rather than any
   // product type. A deploy with no forkable product injects nothing, and a source we can't read
@@ -134,7 +138,7 @@ void AuthApi::requestLink(const drogon::HttpRequestPtr& req, HttpCallback&& call
   // The send is async, so the verdict rides back through the callback — fired inline for
   // invalid / rate-limited, or off the sender's loop once the Resend call settles. The
   // handler thread is freed the instant this returns; the drogon callback carries the reply.
-  auth_->requestLink(email, forkOf, forkDescription,
+  auth_->requestLink(email, forkOf, forkDescription, door,
                      [callback = std::move(callback)](AuthService::RequestResult result) {
     if (result == AuthService::RequestResult::sent) {
       Json::Value body(Json::objectValue);
@@ -185,20 +189,53 @@ void AuthApi::verify(const drogon::HttpRequestPtr& req, HttpCallback&& callback)
     callback(jsonResponse(body, drogon::k410Gone));
     return;
   }
+  respondSignedIn(*completion.signedIn, completion.forkSource, callback);
+}
 
-  const AuthService::SignedIn& signedIn = *completion.signedIn;
+void AuthApi::verifyCode(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
+  // The app door's landing: the typed code comes back once, against the address it was sent to.
+  std::shared_ptr<Json::Value> json = req->getJsonObject();
+  const std::string email = json ? json->get("email", "").asString() : "";
+  const std::string code = json ? json->get("code", "").asString() : "";
+  if (email.empty() || code.empty()) {
+    Json::Value body(Json::objectValue);
+    body["error"] = "Missing code";
+    body["code"] = "bad_request";
+    callback(jsonResponse(body, drogon::k400BadRequest));
+    return;
+  }
+
+  AuthService::CodeCompletion completion = auth_->completeCode(email, code, contextOf(req));
+  if (completion.verdict != CodeVerdict::valid) {
+    // Wrong, expired, spent, exhausted, unknown address — one identical brick, so this endpoint
+    // can never be read as an oracle for which addresses hold pending codes or accounts.
+    Json::Value body(Json::objectValue);
+    body["error"] = "That code has expired";
+    body["detail"] = "Codes work once and last 15 minutes.";
+    body["code"] = "expired";
+    callback(jsonResponse(body, drogon::k410Gone));
+    return;
+  }
+  respondSignedIn(*completion.signedIn, completion.forkSource, callback);
+}
+
+void AuthApi::respondSignedIn(const AuthService::SignedIn& signedIn, const std::string& forkSource,
+                              HttpCallback& callback) {
   Json::Value body(Json::objectValue);
   body["user"] = userJson(signedIn.user);
 
-  // A pending fork rides the link: plant it into the fresh session through the injected port.
-  // Failure degrades to a plain sign-in — the fork never blocks the door — and the port owns the
-  // logging (the link is already spent, so a dropped fork is unrecoverable and must leave a trace).
-  // A deploy with no forkable product injects nothing, so the branch simply falls through.
-  if (!completion.forkSource.empty() && signupFork_) {
-    if (std::optional<std::string> planted = signupFork_->plant(completion.forkSource, signedIn.user.id))
+  // A pending fork rides the credential: plant it into the fresh session through the injected
+  // port. Failure degrades to a plain sign-in — the fork never blocks the door — and the port
+  // owns the logging (the credential is already spent, so a dropped fork is unrecoverable and
+  // must leave a trace). A deploy with no forkable product injects nothing; the branch falls
+  // through.
+  if (!forkSource.empty() && signupFork_) {
+    if (std::optional<std::string> planted = signupFork_->plant(forkSource, signedIn.user.id))
       body["forkedTree"] = *planted;
   }
 
+  // The session secret rides ONLY in the cookie, never the body — both apps lift it from the
+  // Set-Cookie header, and script must never be able to read it.
   auto response = jsonResponse(body);
   setSessionCookie(response, signedIn.sessionSecret, secureCookies_, cookieDomain_);
   callback(response);

@@ -1,0 +1,125 @@
+<!--
+  Windmill transactional email — sign-in CODE (the app door)
+  From:      Windmill <sign-in@windmill.works>
+  Subject:   Your sign-in code
+  Preheader: Works once and lasts 15 minutes — type it and you're in.
+  Plain-text pair: magic-code.txt
+
+  Template variable: {{{sign_in_code}}}  — the 6 decimal digits AuthService mints beside the
+  link token when the request carried door:"app". It appears exactly once below, as the big
+  code line. Server-minted digits, never user text — but it still sits in a text-content
+  position, honouring the raw {{{ }}} substitution contract (emails/README.md).
+
+  Shell rules: guidelines/email.md, structure and voice shared with magic-link.html.
+  Table-based + inline CSS (Gmail/Outlook/Apple Mail); brand fonts never load in email — the
+  stacks below are the fallback contract. No logo file exists (readme policy): the wordmark is
+  real text, which is also the images-off fallback. This mail is light-only: color-scheme is
+  pinned to 'light' so Apple Mail / iOS Mail render the designed palette instead of
+  auto-darkening.
+-->
+<!DOCTYPE html>
+<html lang="en" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+<title>Your sign-in code</title>
+<!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]-->
+<style>
+  /* Light-only: Apple Mail / iOS Mail must not auto-darken this transactional mail. */
+  :root, body { color-scheme: only light; }
+  html, body { margin: 0 !important; padding: 0 !important; }
+  body { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+  table { border-collapse: collapse !important; }
+  img { border: 0; line-height: 100%; }
+  @media (max-width: 560px) {
+    .wm-card-pad { padding: 30px 24px !important; }
+  }
+</style>
+</head>
+<body class="wm-canvas" bgcolor="#F9F5EB" style="margin:0; padding:0; background:#F9F5EB; color-scheme:only light;">
+<!-- preheader (hidden) -->
+<div style="display:none; font-size:1px; line-height:1px; max-height:0; max-width:0; opacity:0; overflow:hidden; mso-hide:all;">
+  Works once and lasts 15 minutes &mdash; type it and you&rsquo;re in.&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;
+</div>
+<center role="article" aria-roledescription="email" lang="en" class="wm-canvas" style="width:100%; background:#F9F5EB;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="wm-canvas" bgcolor="#F9F5EB" style="background:#F9F5EB; width:100%; min-width:100%;">
+  <tr>
+    <td align="center" style="padding:36px 16px 48px;">
+      <!--[if mso]><table role="presentation" align="center" width="520" cellpadding="0" cellspacing="0" border="0"><tr><td width="520"><![endif]-->
+      <table role="presentation" width="520" align="center" cellpadding="0" cellspacing="0" border="0" style="width:520px; max-width:100%; margin:0 auto;">
+
+        <!-- header: the wordmark (text = the alt fallback) -->
+        <tr>
+          <td align="center" class="wm-wordmark" style="padding:6px 0 22px; font-family:'Baloo 2','Trebuchet MS','Segoe UI',sans-serif; font-size:23px; font-weight:700; color:#BC6C42; letter-spacing:-0.2px;">
+            Windmill
+          </td>
+        </tr>
+
+        <!-- the card -->
+        <tr>
+          <td class="wm-card wm-card-pad" bgcolor="#FFFFFF" style="background:#FFFFFF; border:1px solid #E5D9C0; border-radius:24px; padding:38px 44px 34px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td align="center" class="wm-h" style="font-family:'Baloo 2','Trebuchet MS','Segoe UI',sans-serif; font-size:27px; font-weight:700; line-height:1.2; color:#211B13; padding-bottom:12px;">
+                  Your sign-in code
+                </td>
+              </tr>
+              <tr>
+                <td align="center" class="wm-p" style="font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:16px; line-height:1.55; color:#6F5F45;">
+                  Type it in the app to sign in. No password &mdash; the code is the key.
+                </td>
+              </tr>
+
+              <!-- the one code -->
+              <tr>
+                <td align="center" style="padding:28px 0 12px;">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
+                    <tr>
+                      <td align="center" bgcolor="#F9F5EB" style="background:#F9F5EB; border:1px solid #E5D9C0; border-radius:16px; padding:18px 34px;">
+                        <span style="font-family:'JetBrains Mono','SFMono-Regular',Consolas,'Courier New',monospace; font-size:34px; font-weight:700; line-height:1; color:#211B13; letter-spacing:8px;">{{{sign_in_code}}}</span>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+              <tr>
+                <td align="center" class="wm-mut" style="font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:13.5px; line-height:1.5; color:#92805F; padding-bottom:26px;">
+                  It works once and lasts 15 minutes.
+                </td>
+              </tr>
+
+              <!-- no button, no link: the code is the whole credential -->
+              <tr>
+                <td class="wm-div" style="border-top:1px solid #F1EADA; padding-top:22px;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td class="wm-mut" style="font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:13.5px; line-height:1.55; color:#92805F;">
+                        Didn&rsquo;t ask for this? You can ignore it &mdash; nothing changes until the code is used.
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- footer: auth mail never carries unsubscribe -->
+        <tr>
+          <td align="center" class="wm-mut" style="padding:22px 12px 0; font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:12.5px; line-height:1.6; color:#92805F;">
+            Sent because this address was entered in the Windmill app.<br>
+            Windmill &middot; <a href="https://windmill.works" class="wm-link" style="color:#9D5330; text-decoration:none;">windmill.works</a>
+          </td>
+        </tr>
+
+      </table>
+      <!--[if mso]></td></tr></table><![endif]-->
+    </td>
+  </tr>
+</table>
+</center>
+</body>
+</html>

@@ -332,6 +332,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/platform/adapters/http/RateLimiterTest.cpp
     test/platform/adapters/http/VendorCallTest.cpp
     test/platform/adapters/http/AccessLogTest.cpp
+    test/platform/adapters/crypto/OpenSslTokenGeneratorTest.cpp
     test/platform/adapters/email/ResendEmailSenderTest.cpp
     test/platform/adapters/email/ResendSignatureTest.cpp
     test/platform/adapters/email/ResendWebhookApiTest.cpp

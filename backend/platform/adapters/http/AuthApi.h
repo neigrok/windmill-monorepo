@@ -17,7 +17,9 @@ namespace wm {
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
 // The REST surface for auth (guidelines/auth.md §7). One door in, one link out, a session
-// cookie on the way back. The session rides in an HttpOnly `wm_session` cookie; a Bearer
+// cookie on the way back. The app door asks the same mint for a 6-digit code instead
+// (`door: "app"` on /magic-link) and types it back at /verify-code — the same cookie, the same
+// one-brick collapse of refusals. The session rides in an HttpOnly `wm_session` cookie; a Bearer
 // token is also honoured for API and test callers. Every reply uses the doc's exact copy.
 // Google sign-in is a second door onto the same `wm_session`: two top-level redirects that
 // mint the identical cookie, so an account reached via Google or a magic link is one account.
@@ -31,6 +33,7 @@ public:
 
   void requestLink(const drogon::HttpRequestPtr& req, HttpCallback&& callback);  // POST   /v1/auth/magic-link
   void verify(const drogon::HttpRequestPtr& req, HttpCallback&& callback);       // POST   /v1/auth/verify
+  void verifyCode(const drogon::HttpRequestPtr& req, HttpCallback&& callback);   // POST   /v1/auth/verify-code
   void googleStart(const drogon::HttpRequestPtr& req, HttpCallback&& callback);    // GET  /v1/auth/google/start
   void googleCallback(const drogon::HttpRequestPtr& req, HttpCallback&& callback); // GET  /v1/auth/google/callback
   void apple(const drogon::HttpRequestPtr& req, HttpCallback&& callback);        // POST   /v1/auth/apple
@@ -45,6 +48,12 @@ public:
   void signOutEverywhere(const drogon::HttpRequestPtr& req, HttpCallback&& callback);  // DELETE /v1/sessions
 
 private:
+  // The 200 every credential door shares: the user in the body, a pending fork planted through
+  // the port, and the session ONLY as the cookie — both apps lift it from Set-Cookie, so parity
+  // between /verify and /verify-code is a contract, not a coincidence.
+  void respondSignedIn(const AuthService::SignedIn& signedIn, const std::string& forkSource,
+                       HttpCallback& callback);
+
   std::shared_ptr<AuthService> auth_;
   std::shared_ptr<SignupFork> signupFork_;  // null on a deploy with no forkable product — both fork steps no-op
   bool secureCookies_;

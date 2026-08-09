@@ -1,7 +1,8 @@
 # Auth — magic-link backend (X6)
 
 Implements `guidelines/auth.md`: passwordless, one door keyed by email, 15-minute
-single-use links, 90-day rolling sessions. This file is the contract the frontend consumes
+single-use links — every mint also carrying a 6-digit code twin the native apps type instead
+of tapping — and 90-day rolling sessions. This file is the contract the frontend consumes
 and the operator's wiring reference.
 
 > **Supersedes `SPEC.md §10`.** The founding spec sketched email+password with Argon2. The
@@ -15,11 +16,13 @@ and the operator's wiring reference.
 domain/Auth.{h,cpp}                 email parsing, verdicts, lifetimes — pure, no I/O
 application/AuthService.{h,cpp}     the lifecycle pipeline (load → domain → persist → email)
 ports/AuthRepository.h              users + magic_links + sessions persistence
-ports/EmailSender.h                 sendMagicLink(to, url)
-ports/TokenGenerator.h              mint() / digestOf() — secrets vs. stored digests
+ports/EmailSender.h                 sendMagicLink / sendForkLink / sendSignInCode
+ports/TokenGenerator.h              mint() / mintCode() / digestOf() — secrets vs. stored digests
 adapters/postgres/PgAuthRepository  the SQL
-adapters/crypto/OpenSslTokenGenerator  32B RAND_bytes → url-safe base64; SHA-256 hex digest
-adapters/email/ResendEmailSender    Resend HTTP API, 'magic-link' template, magic_link var
+adapters/crypto/OpenSslTokenGenerator  32B RAND_bytes → url-safe base64; SHA-256 hex digest;
+                                       mintCode() → 6 decimal digits, rejection-sampled (no bias)
+adapters/email/ResendEmailSender    Resend HTTP API — 'magic-link' / 'magic-link-fork' /
+                                       'magic-code' stored templates
 adapters/http/AuthApi               the REST surface + session cookie
 adapters/clock/SystemClock          wall clock (tests inject a fake)
 ```
@@ -32,15 +35,21 @@ ever stored, so a database leak resurrects nothing.
 All JSON. The session rides in an `HttpOnly` `wm_session` cookie; a `Authorization: Bearer
 <secret>` header is also accepted (API/tests). Copy is verbatim from `auth.md §7`.
 
-### `POST /v1/auth/magic-link`  — request a link
-Request `{ "email": "sam@example.com" }`
+### `POST /v1/auth/magic-link`  — request a link (or, through the app door, a code)
+Request `{ "email": "sam@example.com", "forkOf": "t_1a2b3c", "door": "app" }` — `email` alone is
+the common case. `forkOf` (optional) is a tree id riding the credential: verify plants a copy of
+that tree into whatever account signs in, and it is dropped silently when longer than 64 chars (an
+id, not a payload). `door` (optional): `"app"` makes the mail carry the row's 6-digit code instead
+of the link; absent or any other value sends today's link mail, byte-identical behavior. Every
+mint stores BOTH credentials on the one `magic_links` row — either spends it, and one mint is one
+unit of the 9-per-window budget whichever mail it sends.
 
 | Result | Status | Body |
 |---|---|---|
-| Link sent | `200` | `{ "status": "sent" }` |
+| Mail sent | `200` | `{ "status": "sent" }` |
 | Address unfinished | `400` | `{ "error": "That address looks unfinished — check the ending.", "code": "invalid_email" }` |
 | Too many in a row | `429` | `{ "error": "That's a few links in a row. Check your spam folder first — or try again in 10 minutes.", "code": "rate_limited" }` |
-| Mail provider down | `502` | `{ "error": "Can't reach windmill.works", "detail": "Your trees are safe on this device.", "code": "unreachable" }` |
+| Mail provider down | `502` | `{ "error": "Can't reach windmill.works", "detail": "Nothing you've written is lost.", "code": "unreachable" }` |
 
 ### `POST /v1/auth/verify`  — complete a link (the landing)
 Request `{ "token": "<the secret from the emailed URL>" }`
@@ -51,7 +60,33 @@ Request `{ "token": "<the secret from the emailed URL>" }`
 | Expired / used / unknown | `410` | `{ "error": "That link has expired", "detail": "Links work once and last 15 minutes.", "code": "expired" }` |
 
 The account is created here on the first sign-in (one door). Expired, already-used, and
-unknown all collapse to one screen — the remedy is identical and nothing leaks.
+unknown all collapse to one screen — the remedy is identical and nothing leaks. A successful
+verify may also carry `"forkedTree": "<tree id>"` when the link rode in with a `forkOf` — the copy
+is planted into the signed-in account, and a fork that cannot be planted degrades to a plain
+sign-in rather than blocking the door.
+
+### `POST /v1/auth/verify-code`  — complete a code (the app door's landing)
+Request `{ "email": "sam@example.com", "code": "483201" }`
+
+| Result | Status | Body / effect |
+|---|---|---|
+| Valid | `200` | `{ "user": { "id", "email", "name" } }` (+ `forkedTree` when one rode the row) + `Set-Cookie: wm_session=…` — byte-for-byte the `/v1/auth/verify` shape; the session secret is never in the body |
+| Wrong / expired / used / exhausted / unknown email | `410` | `{ "error": "That code has expired", "detail": "Codes work once and last 15 minutes.", "code": "expired" }` |
+| Missing email or code | `400` | `{ "error": "Missing code", "code": "bad_request" }` |
+
+The lookup is the NEWEST live row for the address — unspent, unexpired, fewer than 5 attempts — so
+a resend supersedes the code before it. A wrong guess spends one attempt on that newest row (one
+atomic `UPDATE … SET attempts = attempts + 1 RETURNING attempts`); at 5 the row is dead and a
+fresh request is the remedy. A right guess burns the row through the same atomic `consumed_ms`
+flip the link uses — one row, two credentials, one use — then runs the identical `mintSessionFor`
+tail (find-or-create, revival-in-grace, 90-day rolling session). Every failure collapses to the
+one 410 body above, so the endpoint cannot be probed for which addresses hold pending codes or
+accounts.
+
+**Security note:** a 6-digit code has only 10⁶ states, so hashing it at rest is hygiene, not the
+defense. The defense is the bound: 15-minute life, single use, 5 attempts per row, and a dedicated
+per-IP bucket on `/v1/auth/verify-code` (10/min, burst 10, in `main.cpp`'s sync advice) as the
+outer wall.
 
 ### `GET /v1/me`  — the seat
 `200 { "user": {…} }` when the session resolves (window rolls forward on each call), else
@@ -218,9 +253,10 @@ empty one is refused at construction, and a fourth product adds one line to it.
   `Authorization: Bearer <session-secret>` when the `wm_session` cookie is absent, and
   `AuthService::authenticate` is transport-neutral. The iOS app keeps the secret in the Keychain
   and needs **no backend change** — the `SameSite=Lax` cookie stays a browser concern.
-- **The in-app magic link** returns through a Universal Link on `${WINDMILL_APP_URL}/#/auth`, which
-  the app claims; the token stays in the fragment for the same reason it does on the web, and the
-  app posts it to `/v1/auth/verify` (sign-in) or `/v1/auth/link` (the merge above).
+- **The apps sign in by code**: they mint with `door: "app"` and post the typed digits to
+  `/v1/auth/verify-code`, capturing the session from `Set-Cookie` — no universal link required. A
+  pasted magic link / bare token still works through `/v1/auth/verify` (sign-in) or
+  `/v1/auth/link` (the merge above), the token in the fragment for the same reason as the web.
 - **Guideline 4.8 is not triggered by a magic link.** It applies to third-party and social login,
   so an app shipping magic link plus Sign in with Apple, and *not* Google, meets it by having
   nothing to be equivalent to. Confirm against the current guideline text before leaning on it.
@@ -267,7 +303,7 @@ Apple stays dark until all four land: `configured()` is false and `/v1/auth/appl
 rather than half-working. The client secret is minted per exchange (ES256, one-hour life) rather
 than stored, so there is no long-lived secret to rotate.
 
-## The Resend template
+## The Resend templates
 
 `ResendEmailSender` calls `POST https://api.resend.com/emails` with
 `template.id = "magic-link"` (Resend accepts the alias here) and
@@ -279,9 +315,22 @@ precedence over the template's default) and **omits `subject`** so the template 
 > fail — the endpoint then returns `502` with Resend's validation message. Put the subject
 > on the template, not in this adapter.
 
+The app door's mail is the stored `magic-code` template:
+`template.variables.sign_in_code = <the 6 digits>`, subject on the template (`Your sign-in code`),
+same `from` handling, no unsubscribe headers. Paste-source: `web/emails/magic-code.html` / `.txt`.
+
+> **Operator step — cannot be done from this repo: the `magic-code` template must be pasted into
+> the Resend dashboard before any app release ships the code door.** A missing template makes
+> every `door:"app"` send fail into the 502 brick; a template pasted without the
+> `{{{sign_in_code}}}` variable renders a mail with an empty slot and no local test fails.
+
 Any non-2xx response (or a network error) throws, which the endpoint surfaces as the `502`
 "can't reach windmill.works" brick.
 
 ## Lifetimes (`domain/Auth.h`, one source of truth)
 
-Link 15 min · single-use · rate 3 per email per 10 min · session 90 days, rolling.
+Link 15 min · single-use · rate 9 per email per 10 min (raised from 3 — a retry usually means the
+last mail never arrived; the rationale sits on `AuthPolicy::maxLinksPerWindow`) · session 90
+days, rolling. The 6-digit code lives ON its link's row, so it inherits everything — the same 15
+minutes, the same single use, the same 9-per-window budget — and adds its own bound: 5 attempts,
+then the row is dead.

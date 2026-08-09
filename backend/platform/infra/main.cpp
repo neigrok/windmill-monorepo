@@ -515,11 +515,14 @@ int main() {
   // CORS above). The limiter keys on the real visitor IP (CF-Connecting-IP behind Cloudflare, see
   // clientIp); internal traffic (no proxy header) is never limited. The magic-link path adds a
   // per-client bucket loose enough for shared NAT, plus a global send ceiling — the real guard on
-  // the Resend quota — that no single client can lift. Compose gets the same pair of buckets: the
+  // the Resend quota — that no single client can lift. Verify-code gets its own tight per-IP
+  // bucket: a 6-digit code is worth exactly its guessing rate, and the row's 5-attempt bound is
+  // the inner wall this outer one protects. Compose gets the same pair of buckets: the
   // per-IP one keeps a single paster honest, the global one is the real guard on the LLM spend.
   auto apiLimiter = std::make_shared<RateLimiter>(25.0, 50.0);          // ~25 req/s/client, burst 50
   auto magicPerIp = std::make_shared<RateLimiter>(30.0 / 600.0, 30.0);  // ~30 links / 10 min / client
   auto magicGlobal = std::make_shared<RateLimiter>(0.5, 60.0);          // global email send ceiling
+  auto codePerIp = std::make_shared<RateLimiter>(10.0 / 60.0, 10.0);    // ~10 code tries / min / client
   auto composePerIp = std::make_shared<RateLimiter>(10.0 / 600.0, 5.0);  // ~10 plans / 10 min / client
   auto composeGlobal = std::make_shared<RateLimiter>(0.5, 20.0);         // global LLM spend ceiling
   // Tending starts a whole agent loop — many model turns and many tool calls — so it is far more
@@ -528,8 +531,8 @@ int main() {
   auto tendPerIp = std::make_shared<RateLimiter>(5.0 / 600.0, 3.0);   // ~5 runs / 10 min / client
   auto tendGlobal = std::make_shared<RateLimiter>(0.2, 8.0);          // global agent-spend ceiling
   app.registerSyncAdvice(
-      [apiLimiter, magicPerIp, magicGlobal, composePerIp, composeGlobal, tendPerIp, tendGlobal,
-       writeCors](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
+      [apiLimiter, magicPerIp, magicGlobal, codePerIp, composePerIp, composeGlobal, tendPerIp,
+       tendGlobal, writeCors](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
         if (req->method() == drogon::Options) return nullptr;  // preflight already answered above
         const std::string ip = clientIp(req);
         if (ip.empty()) return nullptr;  // internal / health-check traffic
@@ -550,6 +553,7 @@ int main() {
         bool ok = apiLimiter->allow(ip);
         if (ok && path == "/v1/auth/magic-link")
           ok = magicPerIp->allow(ip) && magicGlobal->allow("global");
+        if (ok && path == "/v1/auth/verify-code") ok = codePerIp->allow(ip);
         if (ok && path == "/v1/compose")
           ok = composePerIp->allow(ip) && composeGlobal->allow("global");
         // Only the POST that STARTS a run (/v1/trees/{id}/tend) carries the agent cost; the GET
@@ -600,6 +604,12 @@ int main() {
       "/v1/auth/verify",
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
         authApi->verify(req, std::move(cb));
+      },
+      {drogon::Post});
+  app.registerHandler(
+      "/v1/auth/verify-code",
+      [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        authApi->verifyCode(req, std::move(cb));
       },
       {drogon::Post});
   // Paddle billing: the webhook Paddle delivers to (signature-verified, no session), and the

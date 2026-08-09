@@ -18,6 +18,16 @@ struct StoredLink {
   std::string forkSource;  // tree to fork into the account this link signs in; empty = plain link
 };
 
+// The link row seen through its OTHER credential: the newest live code-bearing row for an
+// address. linkDigest is the row's primary key — what the attempt bump and the consume address —
+// and forkSource rides along so a pending fork lands whichever credential spends the row.
+// (StoredCode is taken: OAuth's authorization code lives under that name next door.)
+struct StoredSignInCode {
+  std::string linkDigest;
+  std::string codeDigest;
+  std::string forkSource;
+};
+
 // A live session as stored: whose it is and when it lapses (rolled forward on each use).
 struct StoredSession {
   UserId user;
@@ -62,10 +72,25 @@ struct AuthRepository {
   // The merge: every door of `from` now opens `to`. Called only once `from` is provably empty.
   virtual void moveIdentities(const UserId& from, const UserId& to) = 0;
 
-  virtual void insertLink(const std::string& digest, const Email& email, UnixMs createdAt,
-                          UnixMs expiresAt, const std::string& forkSource) = 0;
+  // One mint, one row, both credentials: the link token's digest (the key) and its 6-digit code
+  // twin's. Either credential burns the row through the same consumed_ms flip.
+  virtual void insertLink(const std::string& digest, const std::string& codeDigest,
+                          const Email& email, UnixMs createdAt, UnixMs expiresAt,
+                          const std::string& forkSource) = 0;
   virtual int countRecentLinks(const Email& email, UnixMs since) = 0;
   virtual std::optional<StoredLink> findLink(const std::string& digest) = 0;
+  // The code lookup inverts the key: newest row by ADDRESS, and only while live — unspent,
+  // unexpired, under the attempt cap. `now` and `maxAttempts` arrive from the caller (the
+  // service, out of AuthPolicy), so a spent, lapsed, or guessed-out row is invisible here and a
+  // resend supersedes the code before it.
+  virtual std::optional<StoredSignInCode> findLiveCode(const Email& email, UnixMs now,
+                                                       int maxAttempts) = 0;
+  // One wrong guess, one atomic increment, gated at the row — UPDATE … attempts = attempts + 1
+  // WHERE … attempts < maxAttempts RETURNING — so no increment is ever lost and the counter can
+  // never climb past the cap, however many verifies race. Returns the new count, or 0 when the
+  // update matched nothing: the row already spent, or already guessed out (dead either way, a
+  // distinction this refusal doesn't need).
+  virtual int spendCodeAttempt(const std::string& digest, int maxAttempts) = 0;
   // Spend the link atomically. Returns true only for the caller that actually flipped it
   // from unspent to spent — concurrent verifies of the same link get false, so exactly one
   // can mint a session (the "works once" guarantee, enforced at the row, not by the read).

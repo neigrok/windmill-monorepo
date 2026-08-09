@@ -7,43 +7,71 @@ survives Gmail, Outlook and Apple Mail; the brand fonts never load in email, so 
 font *stacks* in each file are the real contract, not a nicety.
 
 Domain is **windmill.works**. The sign-in URL itself is minted by the backend
-(`${WINDMILL_APP_URL}/#/auth?token=<secret>`) and arrives as the `{{magic_link}}`
-variable — the templates never hardcode a link.
+(`${WINDMILL_APP_URL}/#/auth?token=<secret>`) and arrives as the `{{{magic_link}}}`
+variable — the templates never hardcode a link. The app door's 6-digit code is minted the
+same way, server-side, and arrives as `{{{sign_in_code}}}`.
 
 ## The templates
 
-| File | From | Subject | When |
-|------|------|---------|------|
-| `magic-link.html` / `.txt` | `Windmill <sign-in@windmill.works>` | `Your sign-in link` | Returning address requests a link |
-| `magic-link-signup.html` / `.txt` | `Windmill <sign-in@windmill.works>` | `Welcome to Windmill — your sign-in link` | New address requests a link |
-| `reminder.html` / `.txt` | `Windmill <reminders@windmill.works>` | `{{{ready_phrase}}} ready · {{{tree_name}}}` | The weekly slot came round and a tree has steps ready |
+| File | Resend template id | Subject | When |
+|------|--------------------|---------|------|
+| `magic-link.html` / `.txt` | `magic-link` | `Your sign-in link` | Any address asks for a link — new or returning |
+| `magic-code.html` / `.txt` | `magic-code` | `Your sign-in code` | The mint carried `door:"app"`: the native apps ask for a code to type, and the mail carries the 6 digits instead of the link |
+| `magic-link-fork.html` / `.txt` | `magic-link-fork` | `Your sign-in link — and your copy of "{{{tree_title}}}"` | A signed-out visitor forks a shared tree: one link signs them in and plants the copy |
+| `reminder.html` / `.txt` | `reminder` | `{{{ready_phrase}}} ready · {{{tree_name}}}` | The weekly slot came round and a tree has steps ready |
 
-Reply-to for every email is `hello@windmill.works` — never a no-reply address.
-The two magic-link mails are the same shell with different words; the server picks
-sign-in vs sign-up by whether the address already has an account.
+Two more mails exist and are not in that table, in opposite directions:
+
+- `magic-link-signup.html` / `.txt` **is never sent.** `ResendEmailSender` calls exactly three
+  template ids — `magic-link` (line 13), `magic-link-fork` (line 26) and `magic-code` (line 36) —
+  and a first-time address gets the same `magic-link` (or `magic-code`) a returning one does. The
+  signup shell is written and unwired; wire it or delete it, but do not read it as shipping copy.
+- `journal-nudge` **is sent and has no file here.** `ResendNudgeSender.cpp:18` sends it, and the
+  template lives only in Resend, so there is nothing in this repo to paste, diff or review. That
+  is a gap rather than a decision.
+
+One sender, not several. `ResendClient` writes `RESEND_FROM` into the payload's `from` on every
+message (`ResendClient.cpp:31`), so each mail arrives from the one configured address and the
+`From:` lines in the template file headers are intent, not what a recipient sees. Reply-to is set
+provider-side on the stored template — keep it `hello@windmill.works`, never a no-reply address.
 
 ### Preheaders (the grey line after the subject)
 
 - magic-link: `Works once and lasts 15 minutes — tap and you're in.`
-- magic-link-signup: `One tap creates your account. No password — works once, lasts 15 minutes.`
-- reminder: `Your frontier moved — a few steps just came within reach.`
+- magic-code: `Works once and lasts 15 minutes — type it and you're in.`
+- magic-link-fork: `One tap signs you in and plants a copy of {{{tree_title}}} in your trees.`
+- reminder: `Your frontier is waiting — finish one and the next branch unlocks.`
+- magic-link-signup, the unsent shell: `One tap creates your account. No password — works once, lasts 15 minutes.`
 
 Each lives as a hidden `<div>` at the top of the HTML and is padded with
 `&zwnj;&nbsp;` so the client doesn't spill body copy into the preview.
 
 ## Variables
 
-Resend substitutes `{{var}}` in both subject and body. If your engine
-HTML-escapes values, use the triple-brace form for anything containing a URL
-(the magic link, tree/settings links) so `&`, `=` and `?` survive intact.
-The reminder is triple-braced throughout — a test enforces it, along with the rule
+Resend substitutes variables in both subject and body, and every Windmill variable is written
+triple-brace `{{{var}}}`: substitution is raw, there is no escaping tier, and a URL therefore
+keeps its `&`, `=` and `?` intact. A test enforces that on the reminder, along with the rule
 that every variable below appears in a template and every template variable appears below.
 
-**magic-link / magic-link-signup**
+**magic-link**
 
 | Variable | Meaning |
 |----------|---------|
-| `{{magic_link}}` | Full sign-in URL. Appears in the button href and the raw paste-fallback (as href and visible text). |
+| `{{{magic_link}}}` | Full sign-in URL. Appears in the button href and the raw paste-fallback (as href and visible text). |
+
+**magic-code**
+
+| Variable | Meaning |
+|----------|---------|
+| `{{{sign_in_code}}}` | The 6 decimal digits, server-minted (never user text). Appears exactly once, as the big code line — a text-content position, honouring the raw-substitution contract below. There is no link and no button: the code is the whole credential. |
+
+**magic-link-fork** — the same shell, plus the tree the link plants.
+
+| Variable | Meaning |
+|----------|---------|
+| `{{{magic_link}}}` | The same sign-in URL; following it also plants the copy |
+| `{{{tree_title}}}` | The shared tree's name. It is user text and it reaches the Subject line, so the sender strips markup and control bytes first (`emailSafeTitle`, `ResendClient.cpp:13`) |
+| `{{{tree_meta}}}` | The one line printed under the title, already worded by the product that owns the words (`ports/SignupFork.h`) — this template counts and pluralises nothing |
 
 **reminder**
 
@@ -107,9 +135,13 @@ exists to make it literally true, so changing the copy changes a contract. It st
 *necessary* condition, not the whole rule — the recently-active window and the new-account
 grace also have to pass, and settings §Reminders is where those are spelled out.
 
-**Not shipped — wave 2:** RFC 8058 `List-Unsubscribe` / `List-Unsubscribe-Post`. Nothing
-sets those headers today, so Gmail's and Yahoo's native unsubscribe button does not appear
-on a Windmill reminder. It wants a `headers` field on the Resend payload plus a form-encoded
-endpoint; that one IS a one-click POST, which is safe, unlike a bare GET link in the body —
-and it is also the answer to a link scanner that runs JavaScript *and* presses buttons. Until
-it lands, the in-body pause link and the settings link are the whole opt-out story.
+**Shipped:** RFC 8058 one-click unsubscribe, so Gmail's and Yahoo's native unsubscribe button
+does appear. `reminderUnsubscribeHeaders` (`ResendClient.cpp:39`) sets `List-Unsubscribe` — the
+URL in angle brackets — and `List-Unsubscribe-Post: List-Unsubscribe=One-Click`, riding as
+message headers rather than template variables. Both mails with a weekly rhythm carry them: the
+reminder points at `POST /v1/reminders/unsubscribe?t=<secret>` (`ResendReminderSender.cpp:37`,
+route registered POST-only in `products/roadmap/routes.cpp:187`), the journal nudge at
+`POST /v1/journal/nudge/unsubscribe?t=<secret>` (`ResendNudgeSender.cpp:18`). POST-only is the
+point: a bare GET link in the body is unsubscribed by every prefetcher and link scanner that
+walks a mail. The secret is the same one the in-body pause link spends, and the exact header
+bytes are pinned by `ResendEmailSenderTest.cpp:81`.

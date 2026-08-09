@@ -33,10 +33,14 @@ struct FakeClock : Clock {
 // resolve to the same stored digest.
 struct FakeTokens : TokenGenerator {
   int counter = 0;
+  // Codes count from 100001 so they are always six digits and digestOf maps them into their own
+  // namespace ("100001" → "d00001"), never colliding with a token's "d1".
+  int codeCounter = 100000;
   MintedToken mint() override {
     ++counter;
     return {"s" + std::to_string(counter), "d" + std::to_string(counter)};
   }
+  std::string mintCode() override { return std::to_string(++codeCounter); }
   std::string digestOf(const std::string& secret) override {
     return secret.empty() ? "" : "d" + secret.substr(1);
   }
@@ -52,17 +56,22 @@ struct FakeEmail : EmailSender {
     std::string templateId;
     std::string sourceTitle;
     std::string sourceMeta;
+    std::string code;  // the app door's mail carries the code and never a url
   };
   std::vector<Sent> sent;
   bool failNext = false;
 
   void sendMagicLink(const Email& to, const std::string& url,
                      std::function<void(bool)> done) override {
-    deliver({to, url, "magic-link", "", ""}, std::move(done));
+    deliver({to, url, "magic-link", "", "", ""}, std::move(done));
   }
   void sendForkLink(const Email& to, const std::string& url, const std::string& sourceTitle,
                     const std::string& sourceMeta, std::function<void(bool)> done) override {
-    deliver({to, url, "magic-link-fork", sourceTitle, sourceMeta}, std::move(done));
+    deliver({to, url, "magic-link-fork", sourceTitle, sourceMeta, ""}, std::move(done));
+  }
+  void sendSignInCode(const Email& to, const std::string& code,
+                      std::function<void(bool)> done) override {
+    deliver({to, "", "magic-code", "", "", code}, std::move(done));
   }
   // Async like the real sender, but resolves inline: a failed send records nothing and
   // reports false (the caller inserted the link row already, so it survives the failure),
@@ -85,6 +94,8 @@ struct FakeAuthRepository : AuthRepository {
     UnixMs expiresAt;
     std::optional<UnixMs> consumedAt;
     std::string forkSource;
+    std::string codeDigest;  // the 6-digit twin's digest; empty models code_hash NULL
+    int attempts = 0;
   };
   // A session row as the real table carries it: keyed by its digest, with the public id, the
   // device metadata, and the recency stamps the §5 list reads.
@@ -159,9 +170,9 @@ struct FakeAuthRepository : AuthRepository {
       if (owner == from) owner = to;
   }
 
-  void insertLink(const std::string& digest, const Email& email, UnixMs createdAt,
-                  UnixMs expiresAt, const std::string& forkSource) override {
-    links[digest] = LinkRow{email, createdAt, expiresAt, std::nullopt, forkSource};
+  void insertLink(const std::string& digest, const std::string& codeDigest, const Email& email,
+                  UnixMs createdAt, UnixMs expiresAt, const std::string& forkSource) override {
+    links[digest] = LinkRow{email, createdAt, expiresAt, std::nullopt, forkSource, codeDigest, 0};
   }
   int countRecentLinks(const Email& email, UnixMs since) override {
     int count = 0;
@@ -175,6 +186,27 @@ struct FakeAuthRepository : AuthRepository {
     if (it == links.end()) return std::nullopt;
     return StoredLink{it->second.email, it->second.consumedAt.has_value(), it->second.expiresAt,
                       it->second.forkSource};
+  }
+  std::optional<StoredSignInCode> findLiveCode(const Email& email, UnixMs now,
+                                               int maxAttempts) override {
+    // Newest live row wins, exactly as the SQL orders it: unspent, unexpired, under the cap.
+    const std::string* bestDigest = nullptr;
+    const LinkRow* best = nullptr;
+    for (const auto& [digest, row] : links) {
+      if (!(row.email == email) || row.codeDigest.empty() || row.consumedAt) continue;
+      if (now >= row.expiresAt || row.attempts >= maxAttempts) continue;
+      if (best && best->createdAt >= row.createdAt) continue;
+      best = &row;
+      bestDigest = &digest;
+    }
+    if (!best) return std::nullopt;
+    return StoredSignInCode{*bestDigest, best->codeDigest, best->forkSource};
+  }
+  int spendCodeAttempt(const std::string& digest, int maxAttempts) override {
+    auto it = links.find(digest);
+    if (it == links.end() || it->second.consumedAt) return 0;
+    if (it->second.attempts >= maxAttempts) return 0;  // the WHERE gate: the cap is spent
+    return ++it->second.attempts;
   }
   bool consumeLink(const std::string& digest, UnixMs at) override {
     auto it = links.find(digest);

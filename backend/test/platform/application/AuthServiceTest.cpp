@@ -21,12 +21,18 @@ struct Harness {
   // firing before requestLink returns is the proof the send never parks the caller.
   AuthService::RequestResult requestLink(
       const std::string& email, const std::string& forkSource = "",
-      const std::optional<ForkDescription>& forkDescription = std::nullopt) {
+      const std::optional<ForkDescription>& forkDescription = std::nullopt,
+      const std::string& door = "") {
     std::optional<AuthService::RequestResult> verdict;
-    service.requestLink(email, forkSource, forkDescription,
+    service.requestLink(email, forkSource, forkDescription, door,
                         [&](AuthService::RequestResult result) { verdict = result; });
     CHECK(verdict.has_value());  // the callback shape is void(RequestResult), fired exactly once
     return *verdict;
+  }
+
+  // The app door's mint: same pipeline, the mail carries the code instead of the link.
+  AuthService::RequestResult requestCode(const std::string& email) {
+    return requestLink(email, "", std::nullopt, "app");
   }
 
   // The secret out of the last mail, rather than a hand-counted "s4" — every session mint moves the
@@ -36,6 +42,9 @@ struct Harness {
     const std::string& url = email.sent.back().url;
     return url.substr(url.find("token=") + 6);
   }
+
+  // And what the human would have typed: the code out of the last app-door mail.
+  std::string lastCode() const { return email.sent.back().code; }
 };
 }
 
@@ -472,7 +481,7 @@ TEST(complete_link_loses_the_race_when_a_concurrent_verify_already_spent_it) {
   OAuthService oauth{oauthRepo, tokens, clock};
   FakeAccountFootprint footprint;
   AuthService service{repo, email, tokens, clock, oauth, footprint, "https://windmill.works"};
-  repo.insertLink("d1", Email{"sam@example.com"}, clock.now, clock.now + AuthPolicy::linkLifetimeMs, "");
+  repo.insertLink("d1", "", Email{"sam@example.com"}, clock.now, clock.now + AuthPolicy::linkLifetimeMs, "");
 
   AuthService::Completion done = service.completeLink("s1");  // digestOf("s1") == "d1"
   CHECK(done.verdict == LinkVerdict::alreadyUsed);
@@ -736,4 +745,209 @@ TEST(a_within_grace_magic_link_sign_in_revives_the_account_and_reissues_a_sessio
   std::optional<User> back = h.service.authenticate(revived.signedIn->sessionSecret);
   REQUIRE(back.has_value());
   CHECK_EQ(back->email.value, std::string("sam@example.com"));
+}
+
+// ── The code door: the same mint, typed instead of tapped ─────────────────────────────────────
+
+TEST(every_mint_stores_both_credentials_on_one_row) {
+  Harness h;
+  CHECK(h.requestLink("sam@example.com") == AuthService::RequestResult::sent);  // the web door
+
+  // ONE row (d1): the link token's digest is its key, the code's digest sits beside it, unspent.
+  REQUIRE_EQ(h.repo.links.size(), 1u);
+  CHECK_EQ(h.repo.links["d1"].codeDigest, std::string("d00001"));  // digestOf("100001")
+  CHECK_EQ(h.repo.links["d1"].attempts, 0);
+  // The web mail carried the link alone — but the code is real: typing it signs in.
+  CHECK_EQ(h.email.sent.back().templateId, std::string("magic-link"));
+  CHECK_EQ(h.email.sent.back().code, std::string(""));
+  AuthService::CodeCompletion done = h.service.completeCode("sam@example.com", "100001");
+  CHECK(done.verdict == CodeVerdict::valid);
+  REQUIRE(done.signedIn.has_value());
+  CHECK_EQ(done.signedIn->user.email.value, std::string("sam@example.com"));
+}
+
+TEST(the_app_door_mails_the_code_and_any_other_door_mails_the_link) {
+  Harness h;
+  CHECK(h.requestCode("sam@example.com") == AuthService::RequestResult::sent);
+  CHECK_EQ(h.email.sent.back().templateId, std::string("magic-code"));
+  CHECK_EQ(h.email.sent.back().to.value, std::string("sam@example.com"));
+  CHECK_EQ(h.email.sent.back().code, std::string("100001"));
+  CHECK_EQ(h.email.sent.back().url, std::string(""));  // the code mail never carries the link
+
+  CHECK(h.requestLink("sam@example.com") == AuthService::RequestResult::sent);
+  CHECK_EQ(h.email.sent.back().templateId, std::string("magic-link"));
+  // An unknown door is nobody's door: today's link mail, byte-identical behavior.
+  CHECK(h.requestLink("sam@example.com", "", std::nullopt, "toaster") ==
+        AuthService::RequestResult::sent);
+  CHECK_EQ(h.email.sent.back().templateId, std::string("magic-link"));
+}
+
+TEST(complete_code_signs_in_through_the_same_tail_and_burns_the_links_row) {
+  Harness h;
+  h.requestCode("sam@example.com");  // token s1/d1 + code 100001
+
+  AuthService::CodeCompletion done = h.service.completeCode("sam@example.com", h.lastCode());
+  CHECK(done.verdict == CodeVerdict::valid);
+  REQUIRE(done.signedIn.has_value());
+  CHECK_EQ(done.signedIn->user.email.value, std::string("sam@example.com"));
+  CHECK_EQ(done.signedIn->user.name, std::string("sam"));
+  // The same mintSessionFor tail as the link door: session s2 under digest d2, 90 days out.
+  CHECK_EQ(done.signedIn->sessionSecret, std::string("s2"));
+  std::optional<StoredSession> session = h.repo.findSession("d2");
+  REQUIRE(session.has_value());
+  CHECK_EQ(session->user.str(), done.signedIn->user.id.str());
+  CHECK_EQ(session->expiresAt, h.clock.now + AuthPolicy::sessionLifetimeMs);
+
+  // One row, spent once: the code is dead — and so is the link that rode the same mint.
+  CHECK(h.service.completeCode("sam@example.com", h.lastCode()).verdict == CodeVerdict::noLiveCode);
+  CHECK(h.service.completeLink("s1").verdict == LinkVerdict::alreadyUsed);
+}
+
+TEST(spending_the_link_kills_its_code_twin) {
+  Harness h;
+  h.requestCode("sam@example.com");
+  CHECK(h.service.completeLink("s1").verdict == LinkVerdict::valid);
+  CHECK(h.service.completeCode("sam@example.com", "100001").verdict == CodeVerdict::noLiveCode);
+}
+
+TEST(complete_code_spends_an_attempt_only_on_a_wrong_guess_against_a_live_row) {
+  Harness h;
+  h.requestCode("sam@example.com");
+
+  // A wrong guess: refused, and exactly one attempt spent on the row.
+  CHECK(h.service.completeCode("sam@example.com", "999999").verdict == CodeVerdict::wrongCode);
+  CHECK_EQ(h.repo.links["d1"].attempts, 1);
+  // An unknown address holds no live code — nothing to guess against, nothing spent.
+  CHECK(h.service.completeCode("nobody@example.com", "100001").verdict == CodeVerdict::noLiveCode);
+  // An unfinished address is the same refusal, decided before any lookup.
+  CHECK(h.service.completeCode("sam@example", "100001").verdict == CodeVerdict::noLiveCode);
+  CHECK_EQ(h.repo.links["d1"].attempts, 1);
+
+  // Expiry is the link's own 15 minutes, lapsed exactly at the boundary; a dead row spends nothing.
+  h.clock.now += AuthPolicy::linkLifetimeMs;
+  CHECK(h.service.completeCode("sam@example.com", "100001").verdict == CodeVerdict::noLiveCode);
+  CHECK_EQ(h.repo.links["d1"].attempts, 1);
+  CHECK_EQ(h.repo.sessions.size(), 0u);
+}
+
+TEST(the_guess_before_the_cap_can_still_be_the_right_one) {
+  Harness h;
+  h.requestCode("sam@example.com");
+  for (int guess = 0; guess < AuthPolicy::maxCodeAttempts - 1; ++guess)
+    CHECK(h.service.completeCode("sam@example.com", "999999").verdict == CodeVerdict::wrongCode);
+
+  // Four wrong: the row still lives, and the right code on the fifth try signs in.
+  CHECK(h.service.completeCode("sam@example.com", h.lastCode()).verdict == CodeVerdict::valid);
+}
+
+TEST(five_wrong_guesses_kill_the_code_even_for_the_right_one) {
+  Harness h;
+  h.requestCode("sam@example.com");
+  const std::string code = h.lastCode();
+  for (int guess = 0; guess < AuthPolicy::maxCodeAttempts; ++guess)
+    CHECK(h.service.completeCode("sam@example.com", "999999").verdict == CodeVerdict::wrongCode);
+  CHECK_EQ(h.repo.links["d1"].attempts, AuthPolicy::maxCodeAttempts);
+
+  // The right code is now refused — the row is dead, not the address...
+  CHECK(h.service.completeCode("sam@example.com", code).verdict == CodeVerdict::noLiveCode);
+  CHECK_EQ(h.repo.links["d1"].attempts, AuthPolicy::maxCodeAttempts);  // dead rows spend nothing
+  CHECK_EQ(h.repo.sessions.size(), 0u);
+
+  // ...and a resend is the remedy: the fresh code signs in.
+  h.clock.now += 1;
+  h.requestCode("sam@example.com");
+  CHECK(h.service.completeCode("sam@example.com", h.lastCode()).verdict == CodeVerdict::valid);
+}
+
+TEST(racing_wrong_guesses_can_never_push_attempts_past_the_cap) {
+  Harness h;
+  h.requestCode("sam@example.com");
+  for (int guess = 0; guess < AuthPolicy::maxCodeAttempts - 1; ++guess)
+    CHECK(h.service.completeCode("sam@example.com", "999999").verdict == CodeVerdict::wrongCode);
+
+  // Two wrong guesses race: both read the row live at one-under-the-cap, then both spend.
+  // The WHERE gate lets exactly one increment through; the loser's matches nothing.
+  CHECK(h.repo.findLiveCode(Email{"sam@example.com"}, h.clock.now, AuthPolicy::maxCodeAttempts)
+            .has_value());
+  CHECK(h.repo.findLiveCode(Email{"sam@example.com"}, h.clock.now, AuthPolicy::maxCodeAttempts)
+            .has_value());
+  CHECK_EQ(h.repo.spendCodeAttempt("d1", AuthPolicy::maxCodeAttempts), AuthPolicy::maxCodeAttempts);
+  CHECK_EQ(h.repo.spendCodeAttempt("d1", AuthPolicy::maxCodeAttempts), 0);
+  CHECK_EQ(h.repo.links["d1"].attempts, AuthPolicy::maxCodeAttempts);
+}
+
+TEST(a_resend_supersedes_the_code_before_it) {
+  Harness h;
+  h.requestCode("sam@example.com");  // code 100001 on row d1
+  const std::string oldCode = h.lastCode();
+  h.clock.now += 1'000;
+  h.requestCode("sam@example.com");  // code 100002 on row d2 — the newest live row
+
+  // The old code is now just a wrong guess against the newest row, and spends THAT row's attempt.
+  CHECK(h.service.completeCode("sam@example.com", oldCode).verdict == CodeVerdict::wrongCode);
+  CHECK_EQ(h.repo.links["d2"].attempts, 1);
+  CHECK_EQ(h.repo.links["d1"].attempts, 0);
+
+  // The fresh code signs in.
+  CHECK(h.service.completeCode("sam@example.com", h.lastCode()).verdict == CodeVerdict::valid);
+}
+
+TEST(complete_code_loses_the_race_when_a_concurrent_verify_already_spent_the_row) {
+  // The row is still live when findLiveCode reads it, but consume loses the atomic race — exactly
+  // what the second of two concurrent verifies sees, whichever credential the winner presented.
+  struct LostRaceRepo : FakeAuthRepository {
+    bool consumeLink(const std::string&, UnixMs) override { return false; }
+  } repo;
+  FakeOAuthRepository oauthRepo;
+  FakeEmail email;
+  FakeTokens tokens;
+  FakeClock clock;
+  OAuthService oauth{oauthRepo, tokens, clock};
+  FakeAccountFootprint footprint;
+  AuthService service{repo, email, tokens, clock, oauth, footprint, "https://windmill.works"};
+  repo.insertLink("d1", "d83201", Email{"sam@example.com"}, clock.now,
+                  clock.now + AuthPolicy::linkLifetimeMs, "");
+
+  AuthService::CodeCompletion done = service.completeCode("sam@example.com", "483201");
+  CHECK(done.verdict == CodeVerdict::noLiveCode);
+  CHECK_FALSE(done.signedIn.has_value());
+  CHECK_EQ(repo.sessions.size(), 0u);
+  CHECK_EQ(repo.usersById.size(), 0u);
+}
+
+TEST(a_within_grace_code_sign_in_revives_the_account) {
+  Harness h;
+  h.requestLink("sam@example.com");                                        // s1/d1
+  const UserId account = h.service.completeLink("s1").signedIn->user.id;   // s2/d2
+  h.service.closeAccount(account);
+  CHECK(h.repo.usersById[account.str()].deletedAt.has_value());
+
+  h.clock.now += 24ull * 60 * 60 * 1000;  // a day into the 30-day grace
+  h.requestCode("sam@example.com");
+  AuthService::CodeCompletion revived = h.service.completeCode("sam@example.com", h.lastCode());
+  CHECK(revived.verdict == CodeVerdict::valid);
+  REQUIRE(revived.signedIn.has_value());
+  CHECK_EQ(revived.signedIn->user.id.str(), account.str());  // typing is the undo too
+  CHECK_FALSE(revived.signedIn->user.deletedAt.has_value());
+  CHECK_FALSE(h.repo.usersById[account.str()].deletedAt.has_value());
+  CHECK(h.service.authenticate(revived.signedIn->sessionSecret).has_value());
+}
+
+TEST(the_code_door_spends_the_same_per_email_budget_as_the_link_door) {
+  Harness h;
+  for (int i = 0; i < AuthPolicy::maxLinksPerWindow; ++i)
+    CHECK(h.requestCode("sam@example.com") == AuthService::RequestResult::sent);
+  CHECK(h.requestCode("sam@example.com") == AuthService::RequestResult::rateLimited);
+  CHECK(h.requestLink("sam@example.com") == AuthService::RequestResult::rateLimited);  // one budget
+}
+
+TEST(a_pending_fork_rides_the_row_whichever_credential_spends_it) {
+  Harness h;
+  CHECK(h.requestLink("sam@example.com", "t_source", std::nullopt, "app") ==
+        AuthService::RequestResult::sent);
+  CHECK_EQ(h.email.sent.back().templateId, std::string("magic-code"));  // the app door wins the mail
+
+  AuthService::CodeCompletion done = h.service.completeCode("sam@example.com", h.lastCode());
+  CHECK(done.verdict == CodeVerdict::valid);
+  CHECK_EQ(done.forkSource, std::string("t_source"));
 }

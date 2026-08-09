@@ -1,5 +1,7 @@
 #include "platform/adapters/crypto/OpenSslTokenGenerator.h"
 
+#include "platform/domain/Auth.h"  // AuthPolicy::codeLength
+
 #include <array>
 #include <stdexcept>
 
@@ -16,6 +18,26 @@ MintedToken OpenSslTokenGenerator::mint() {
     throw std::runtime_error("token entropy unavailable");
   std::string secret = drogon::utils::base64Encode(bytes.data(), bytes.size(), true, false);
   return MintedToken{secret, digestOf(secret)};
+}
+
+// The 6-digit sign-in code: one uniform decimal digit per accepted byte. A byte is accepted only
+// below 250 — the largest multiple of 10 a byte reaches — so `% 10` is exact; without the
+// rejection, 256 % 10 != 0 would quietly over-produce the digits 0-5.
+std::string OpenSslTokenGenerator::mintCode() {
+  const std::size_t length = static_cast<std::size_t>(AuthPolicy::codeLength);
+  std::string code;
+  code.reserve(length);
+  while (code.size() < length) {
+    std::array<unsigned char, 16> bytes{};
+    if (RAND_bytes(bytes.data(), static_cast<int>(bytes.size())) != 1)
+      throw std::runtime_error("token entropy unavailable");
+    for (unsigned char byte : bytes) {
+      if (byte >= 250) continue;  // resample rather than bias the low digits
+      code.push_back(static_cast<char>('0' + byte % 10));
+      if (code.size() == length) break;
+    }
+  }
+  return code;
 }
 
 // SHA-256 of the secret's bytes, lowercase hex (64 chars).

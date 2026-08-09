@@ -11,7 +11,7 @@ AuthService::AuthService(AuthRepository& repo, EmailSender& email, TokenGenerato
 
 void AuthService::requestLink(const std::string& rawEmail, const std::string& forkSource,
                               const std::optional<ForkDescription>& forkDescription,
-                              std::function<void(RequestResult)> done) {
+                              const std::string& door, std::function<void(RequestResult)> done) {
   std::optional<Email> email = parseEmail(rawEmail);
   if (!email) {
     done(RequestResult::invalidEmail);
@@ -24,16 +24,24 @@ void AuthService::requestLink(const std::string& rawEmail, const std::string& fo
     return;
   }
 
+  // One mint, one row, both credentials: the link token and its 6-digit code twin, minted here in
+  // the synchronous half so both are at rest before any send is deferred.
   const MintedToken link = tokens_.mint();
-  repo_.insertLink(link.digest, *email, now, linkExpiry(now), forkSource);
+  const std::string code = tokens_.mintCode();
+  repo_.insertLink(link.digest, tokens_.digestOf(code), *email, now, linkExpiry(now), forkSource);
 
-  // The link row is already persisted; only the slow send is deferred. Its outcome is the
-  // last verdict — a 2xx is sent, a failure is unreachable — but the link stands either way,
-  // so an unreachable send is still a usable link the user can reach on a retry.
-  const std::string url = appBaseUrl_ + "/#/auth?token=" + link.secret;
+  // The row is already persisted; only the slow send is deferred. Its outcome is the last
+  // verdict — a 2xx is sent, a failure is unreachable — but the row stands either way, so an
+  // unreachable send is still a usable credential the user can reach on a retry.
   auto resolve = [done = std::move(done)](bool ok) {
     done(ok ? RequestResult::sent : RequestResult::unreachable);
   };
+  // The app door asked to type rather than tap: its mail carries the code and never the link.
+  if (door == "app") {
+    email_.sendSignInCode(*email, code, std::move(resolve));
+    return;
+  }
+  const std::string url = appBaseUrl_ + "/#/auth?token=" + link.secret;
   if (!forkDescription) {
     email_.sendMagicLink(*email, url, std::move(resolve));
     return;
@@ -55,6 +63,33 @@ AuthService::Completion AuthService::completeLink(const std::string& linkSecret,
   if (!repo_.consumeLink(digest, now)) return {LinkVerdict::alreadyUsed, std::nullopt, ""};
 
   return {verdict, mintSessionFor(link->email, nameFromEmail(link->email), ctx, now), link->forkSource};
+}
+
+AuthService::CodeCompletion AuthService::completeCode(const std::string& rawEmail,
+                                                      const std::string& code,
+                                                      const SessionContext& ctx) {
+  const std::optional<Email> email = parseEmail(rawEmail);
+  if (!email) return {CodeVerdict::noLiveCode, std::nullopt, ""};
+  const UnixMs now = clock_.nowMs();
+
+  // The newest live row is THE code for this address — a resend supersedes the one before it.
+  const std::optional<StoredSignInCode> stored =
+      repo_.findLiveCode(*email, now, AuthPolicy::maxCodeAttempts);
+  const CodeVerdict verdict =
+      verifyCode(stored.has_value(), stored && tokens_.digestOf(code) == stored->codeDigest);
+  if (verdict == CodeVerdict::wrongCode) {
+    // The attempt bound is the code's real defense (a million states): one gated increment, and
+    // at maxCodeAttempts the lookup above stops finding the row — dead for good, resend to retry.
+    repo_.spendCodeAttempt(stored->linkDigest, AuthPolicy::maxCodeAttempts);
+    return {verdict, std::nullopt, ""};
+  }
+  if (verdict != CodeVerdict::valid) return {verdict, std::nullopt, ""};
+
+  // Either credential burns the one row. A concurrent verify — link or code — that already spent
+  // it won the race: no session for us, and the same opaque refusal at the edge.
+  if (!repo_.consumeLink(stored->linkDigest, now)) return {CodeVerdict::noLiveCode, std::nullopt, ""};
+
+  return {verdict, mintSessionFor(*email, nameFromEmail(*email), ctx, now), stored->forkSource};
 }
 
 std::optional<AuthService::ProviderSignIn> AuthService::completeProvider(const ProviderIdentity& identity,

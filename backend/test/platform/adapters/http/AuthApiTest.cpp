@@ -79,9 +79,15 @@ struct Harness {
   // A live magic link for `address`, as the mail would have carried it.
   std::string linkFor(const std::string& address, const std::string& forkSource = "") {
     std::string secret;
-    auth->requestLink(address, forkSource, fork->description,
+    auth->requestLink(address, forkSource, fork->description, "",
                       [&](AuthService::RequestResult) { secret = email.sent.back().url; });
     return secret.substr(secret.rfind('=') + 1);
+  }
+
+  // A live 6-digit code for `address`, as the app-door mail would have carried it.
+  std::string codeFor(const std::string& address) {
+    auth->requestLink(address, "", std::nullopt, "app", [](AuthService::RequestResult) {});
+    return email.sent.back().code;
   }
 };
 
@@ -553,6 +559,123 @@ TEST(auth_a_fork_link_plants_through_the_port_and_a_deployment_without_one_signs
       bare, &AuthApi::verify, request(drogon::Post, "/v1/auth/verify", kVerified + third + "\"}"));
   CHECK_EQ(noProduct->getStatusCode(), drogon::k200OK);
   CHECK_FALSE((*noProduct->getJsonObject()).isMember("forkedTree"));
+}
+
+// The app door's landing: the typed code mints the SAME session cookie the link door does — every
+// flag, byte for byte — and the secret is never in the body. Both apps lift it from Set-Cookie,
+// so this parity is what lets sendCapturingSession work unchanged on either door.
+TEST(auth_verify_code_signs_in_with_the_same_cookie_the_link_door_mints) {
+  Harness h;
+  const std::string code = h.codeFor("sam@example.com");
+  CHECK_EQ(h.email.sent.back().templateId, std::string("magic-code"));
+
+  const drogon::HttpResponsePtr response =
+      call(h, &AuthApi::verifyCode,
+           request(drogon::Post, "/v1/auth/verify-code",
+                   R"({"email":"sam@example.com","code":")" + code + "\"}"));
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  const Json::Value body = *response->getJsonObject();
+  CHECK_EQ(body["user"]["email"].asString(), std::string("sam@example.com"));
+  CHECK_FALSE(body.isMember("session"));  // the secret rides ONLY in the cookie — deliberate
+
+  REQUIRE(hasCookie(response, "wm_session"));
+  const drogon::Cookie& cookie = response->getCookie("wm_session");
+  CHECK(!cookie.getValue().empty());
+  checkSessionCookie(cookie, true, kDomain, 7776000);  // 90 days, same flags as /verify
+
+  // The cookie's value is the live session: it authenticates on the very next request.
+  const drogon::HttpResponsePtr me =
+      call(h, &AuthApi::me, request(drogon::Get, "/v1/me", "", cookie.getValue()));
+  CHECK_EQ(me->getStatusCode(), drogon::k200OK);
+  CHECK_EQ((*me->getJsonObject())["user"]["email"].asString(), std::string("sam@example.com"));
+}
+
+// The collapse is a security property: wrong code, unknown address, a spent row, an exhausted row
+// — one byte-identical 410, no cookie, so the endpoint can't be probed for which addresses hold
+// pending codes or accounts.
+TEST(auth_every_code_refusal_is_the_same_410_and_mints_nothing) {
+  Harness h;
+  const std::string code = h.codeFor("sam@example.com");
+
+  const drogon::HttpResponsePtr wrong =
+      call(h, &AuthApi::verifyCode,
+           request(drogon::Post, "/v1/auth/verify-code",
+                   R"({"email":"sam@example.com","code":"999999"})"));
+  CHECK_EQ(wrong->getStatusCode(), drogon::k410Gone);
+  const Json::Value gone = *wrong->getJsonObject();
+  CHECK_EQ(gone["error"].asString(), std::string("That code has expired"));
+  CHECK_EQ(gone["detail"].asString(), std::string("Codes work once and last 15 minutes."));
+  CHECK_EQ(gone["code"].asString(), std::string("expired"));
+  CHECK_FALSE(hasCookie(wrong, "wm_session"));  // a refusal mints nothing
+
+  const drogon::HttpResponsePtr unknown =
+      call(h, &AuthApi::verifyCode,
+           request(drogon::Post, "/v1/auth/verify-code",
+                   R"({"email":"nobody@example.com","code":"999999"})"));
+  CHECK_EQ(unknown->getStatusCode(), drogon::k410Gone);
+  CHECK_EQ(std::string(unknown->getBody()), std::string(wrong->getBody()));  // byte-identical
+
+  // Spend the code, then replay it: the burned row answers the very same brick.
+  CHECK_EQ(call(h, &AuthApi::verifyCode,
+                request(drogon::Post, "/v1/auth/verify-code",
+                        R"({"email":"sam@example.com","code":")" + code + "\"}"))
+               ->getStatusCode(),
+           drogon::k200OK);
+  const drogon::HttpResponsePtr replay =
+      call(h, &AuthApi::verifyCode,
+           request(drogon::Post, "/v1/auth/verify-code",
+                   R"({"email":"sam@example.com","code":")" + code + "\"}"));
+  CHECK_EQ(replay->getStatusCode(), drogon::k410Gone);
+  CHECK_EQ(std::string(replay->getBody()), std::string(wrong->getBody()));
+
+  // And exhaustion: five wrong guesses kill a fresh row, the right code included — same brick.
+  const std::string second = h.codeFor("ada@example.com");
+  for (int guess = 0; guess < 5; ++guess)
+    call(h, &AuthApi::verifyCode,
+         request(drogon::Post, "/v1/auth/verify-code",
+                 R"({"email":"ada@example.com","code":"999999"})"));
+  const drogon::HttpResponsePtr exhausted =
+      call(h, &AuthApi::verifyCode,
+           request(drogon::Post, "/v1/auth/verify-code",
+                   R"({"email":"ada@example.com","code":")" + second + "\"}"));
+  CHECK_EQ(exhausted->getStatusCode(), drogon::k410Gone);
+  CHECK_EQ(std::string(exhausted->getBody()), std::string(wrong->getBody()));
+}
+
+// A request missing either half is malformed, not a dead code — a 400 the client fixes, never
+// the 410 it retries with a resend.
+TEST(auth_a_code_request_missing_its_email_or_code_is_a_400) {
+  Harness h;
+  for (const std::string& body :
+       {std::string("{}"), std::string(R"({"email":"sam@example.com"})"),
+        std::string(R"({"code":"123456"})"), std::string(R"({"email":"","code":""})"),
+        std::string("not json")}) {
+    const drogon::HttpResponsePtr refused =
+        call(h, &AuthApi::verifyCode, request(drogon::Post, "/v1/auth/verify-code", body));
+    CHECK_EQ(refused->getStatusCode(), drogon::k400BadRequest);
+    const Json::Value out = *refused->getJsonObject();
+    CHECK_EQ(out["error"].asString(), std::string("Missing code"));
+    CHECK_EQ(out["code"].asString(), std::string("bad_request"));
+  }
+  CHECK(h.authRepo.sessions.empty());  // nothing was minted on the way
+}
+
+// The mint's door field routes the mail: "app" carries the code, absence carries today's link.
+TEST(auth_the_mint_door_picks_the_code_mail_and_absence_keeps_the_link) {
+  Harness h;
+  const drogon::HttpResponsePtr coded = call(
+      h, &AuthApi::requestLink,
+      request(drogon::Post, "/v1/auth/magic-link", R"({"email":"sam@example.com","door":"app"})"));
+  CHECK_EQ(coded->getStatusCode(), drogon::k200OK);
+  CHECK_EQ((*coded->getJsonObject())["status"].asString(), std::string("sent"));
+  CHECK_EQ(h.email.sent.back().templateId, std::string("magic-code"));
+  CHECK_EQ(h.email.sent.back().code.size(), std::size_t{6});
+
+  const drogon::HttpResponsePtr linked = call(
+      h, &AuthApi::requestLink,
+      request(drogon::Post, "/v1/auth/magic-link", R"({"email":"sam@example.com"})"));
+  CHECK_EQ(linked->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(h.email.sent.back().templateId, std::string("magic-link"));
 }
 
 // Apple's native door, at the two points reachable without a live call to Apple: an unconfigured
