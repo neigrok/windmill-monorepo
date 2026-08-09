@@ -41,17 +41,17 @@ CurationPrompt curationPrompt(const std::vector<Vectored>& tonight,
 // canned bytes and nothing here needs a network to be trusted.
 class AnthropicCurator : public Curator {
 public:
-  // `effort` is a knob, not a setting: ECHOES wants the levels swept and the quality delta measured
-  // before one is defaulted, and rejecting vocabulary twins is the kind of task the low end of this
-  // model is unusually good at. Until that sweep happens the default is the API's own, so this file
-  // asserts nothing nobody measured.
+  // Sonnet 5 at `low`, and both halves of that are an owner decision taken for LATENCY, not a
+  // measured one. The sweep ECHOES asks for has still not been run: nobody has compared this pair's
+  // precision against Opus 5 at `high` on a labelled set, and the pre-ship gate (curator precision
+  // ≥0.85) is the thing that would catch it if the trade went badly. Treat the pair as unverified.
   //
   // The fuse and the sink arrive last and default to null, which is the no-op — the same discipline
   // FailureReporter already keeps everywhere else. This seam is the one that spends money nobody
   // asked it to: it runs six-hourly against pages the writer never requested a pass over, so it is
   // the seam a runaway most easily hides in and the one whose spend is least likely to be noticed.
   explicit AnthropicCurator(std::shared_ptr<MessagesApi> transport,
-                            std::string model = "claude-opus-5", std::string effort = "high",
+                            std::string model = "claude-sonnet-5", std::string effort = "low",
                             std::shared_ptr<AiFuse> fuse = nullptr,
                             std::shared_ptr<UsageSink> usage = nullptr);
 

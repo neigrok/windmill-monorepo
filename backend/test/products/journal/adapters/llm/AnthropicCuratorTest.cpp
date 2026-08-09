@@ -332,17 +332,18 @@ TEST(curator_request_honours_the_reasoning_model_traps) {
 
   REQUIRE_EQ(transport->sent.size(), std::size_t{1});
   const MessagesRequest& request = transport->sent.front();
-  CHECK_EQ(request.model, std::string("claude-opus-5"));
-  CHECK_EQ(request.effort, std::string("high"));
+  CHECK_EQ(request.model, std::string("claude-sonnet-5"));
+  CHECK_EQ(request.effort, std::string("low"));
   CHECK_EQ(request.maxTokens, 16000);
 
   const Json::Value body = parse(messagesPayload(request));
-  CHECK_EQ(body["model"].asString(), std::string("claude-opus-5"));
+  CHECK_EQ(body["model"].asString(), std::string("claude-sonnet-5"));
   CHECK_EQ(body["max_tokens"].asInt(), 16000);
-  // Thinking stays on: turning it off to save money is what leaks reasoning into the text block and
-  // breaks the JSON. Depth is bought with effort instead.
+  // Thinking stays on and spend is bought down with `effort` instead. Disabling it is the cheaper-
+  // looking lever and the wrong one: on this family it degrades the judgement without a matching
+  // saving, and `adaptive` is the only on-mode Sonnet 5 accepts.
   CHECK_EQ(body["thinking"]["type"].asString(), std::string("adaptive"));
-  CHECK_EQ(body["output_config"]["effort"].asString(), std::string("high"));
+  CHECK_EQ(body["output_config"]["effort"].asString(), std::string("low"));
   CHECK_EQ(body["output_config"]["format"]["type"].asString(), std::string("json_schema"));
   // Structured outputs, strictly: every field required, nothing else allowed.
   const Json::Value& schema = body["output_config"]["format"]["schema"];
@@ -388,14 +389,15 @@ TEST(curator_version_names_the_model_the_effort_and_the_prompt) {
   auto transport = std::make_shared<FakeMessages>();
 
   const AnthropicCurator standard(transport);
-  const AnthropicCurator cheaper(transport, "claude-opus-5", "low");
+  const AnthropicCurator pricier(transport, "claude-opus-5", "high");
 
   const std::string version = standard.version();
-  CHECK_EQ(version.rfind("claude-opus-5/high/", 0), std::size_t{0});
-  CHECK_EQ(version.size(), std::string("claude-opus-5/high/").size() + 8);
-  // Same wording, different spend: a stored row has to say which one judged it.
-  CHECK(cheaper.version() != version);
-  CHECK_EQ(cheaper.version().rfind("claude-opus-5/low/", 0), std::size_t{0});
+  CHECK_EQ(version.rfind("claude-sonnet-5/low/", 0), std::size_t{0});
+  CHECK_EQ(version.size(), std::string("claude-sonnet-5/low/").size() + 8);
+  // Same wording, different spend: a stored row has to say which one judged it. Rows curated before
+  // the 2026-08-09 swap carry the Opus 5 string, which is exactly what makes them selectable.
+  CHECK(pricier.version() != version);
+  CHECK_EQ(pricier.version().rfind("claude-opus-5/high/", 0), std::size_t{0});
 }
 
 // --- The meter ------------------------------------------------------------------------------

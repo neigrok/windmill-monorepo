@@ -97,7 +97,9 @@ everything looking alike.
 returns, per pair, whether they genuinely relate — plus `speaker: self | other` for each candidate.
 **It writes no copy and asserts nothing.** Its job is to reject candidates that share vocabulary
 without sharing subject, and to reject candidates that are about someone else's life rather than the
-writer's. Model: `claude-opus-5`.
+writer's. Model: `claude-sonnet-5` at effort `low`, **swapped from `claude-opus-5`/`high` on
+2026-08-09 for latency, not because anything was measured.** See *Cost and scale* for what that
+buys and what it costs; the pre-ship precision gate below has still never been run against either.
 
 If either boundary is unconfigured, the pass is a quiet no-op and no echo is written.
 
@@ -443,23 +445,29 @@ quantized (3.1 MB, ~0.5% recall cost — the on-device search path already quant
 exists). Select vectors without page bodies. Brute force is correct at this scale and keeps exact
 recall measurable; `pgvector` is the escape hatch behind the repository if corpora outgrow it.
 
-Curator: ~2,600 input tokens, and **output is the expensive half** — on Opus 5 thinking is on by
-default at effort `high`, and thinking bills as output. Roughly $0.02–0.09 per page depending on
-effort. Sweep the effort levels and measure the quality delta before defaulting; the low end is
-unusually strong on this model and this is fundamentally a "reject the vocabulary twins" task.
+Curator: ~2,600 input tokens, and **output is the expensive half** — thinking is on by default on
+this family and thinking bills as output, so `effort` is the only real cost lever. At
+`claude-sonnet-5`/`low` that is roughly half a cent per page against Opus 5/`high`'s $0.02–0.09 —
+call it a tenth, and note $3/$15 per MTok is itself introductory pricing through 2026-08-31, so the
+figure rises when it lapses. **None of the quality side of that trade is measured.** The effort sweep this
+file has asked for since it was written is still not run: the level was chosen, not found.
 
-Four Opus 5 traps, each of which produces a silent failure:
+Four traps, each of which produces a silent failure:
 
 - **`max_tokens` caps thinking + response together.** A curator sized around its JSON output will
-  truncate mid-JSON now that thinking is on by default.
+  truncate mid-JSON, because thinking is on by default.
 - **Check `stop_reason` before reading `content`** — a refusal is HTTP 200 with empty or partial
-  content. Consider `fallbacks: "default"`.
-- **Do not disable thinking to save money** — lower `effort` instead. Disabled thinking can leak
-  `<thinking>` tags into the response and break JSON parsing.
-- **Use structured outputs** (`output_config.format`) — it eliminates the schema-invalid branch.
+  content, and Sonnet 5 carries the same cyber-capable safeguards Opus 5 does.
+- **Do not disable thinking to save money** — lower `effort` instead. On Sonnet 5 `adaptive` is the
+  only on-mode, and turning it off degrades the judgement without a matching saving.
+- **Use structured outputs** (`output_config.format`) — it eliminates the schema-invalid branch, and
+  Sonnet 5 supports them, so the swap cost the schema path nothing.
 
-Cache the system prompt: Opus 5's minimum cacheable prefix is 512 tokens, so an ~800-token system
-prompt caches at ~0.1× on reads. Keep it byte-stable; never interpolate per-request content into it.
+**The system prompt no longer caches, and that is a regression the swap paid for.** Sonnet 5's
+minimum cacheable prefix is 1024 tokens; ours is ~800, so it falls under the floor and the
+`cache_control` marker is a silent no-op — no error, just `cache_creation_input_tokens: 0`. On Opus
+5 (512-token minimum) the same prompt read at ~0.1×. Keep it byte-stable regardless; either lengthen
+it past 1024 deliberately or accept paying full input price on every call.
 
 Present candidates **chronologically, without their cosine scores** — sorted by score, the curator
 inherits the retriever's prior and ratifies the top of the list, which is frequently the vocabulary

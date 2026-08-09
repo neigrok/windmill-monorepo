@@ -866,7 +866,7 @@ int main() {
   std::shared_ptr<Curator> journalCurator;
   if (anthropicKeyEnv && *anthropicKeyEnv)
     journalCurator = std::make_shared<AnthropicCurator>(
-        std::make_shared<AnthropicClient>(anthropicKeyEnv), "claude-opus-5", "high",
+        std::make_shared<AnthropicClient>(anthropicKeyEnv), "claude-sonnet-5", "low",
         aiFuse, aiSpendSink);
   else
     journalCurator = std::make_shared<NullCurator>();
