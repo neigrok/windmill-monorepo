@@ -23,8 +23,3 @@ export { Toast } from './feedback/Toast.jsx';
 
 // navigation
 export { Tabs } from './navigation/Tabs.jsx';
-
-// charts — hand-rolled, no charting dependency. Geometry only: the caller brings finished numbers,
-// finished words and a tone that is a CSS variable name.
-export { BarSeries } from './charts/BarSeries.jsx';
-export { ShareBar } from './charts/ShareBar.jsx';

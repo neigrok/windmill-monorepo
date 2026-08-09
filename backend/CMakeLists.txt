@@ -180,7 +180,6 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     platform/adapters/http/OAuthApi.cpp
     platform/adapters/http/McpKeyApi.cpp
     platform/adapters/http/EventsApi.cpp
-    platform/adapters/http/UsageAdminApi.cpp
     platform/adapters/http/FeedbackApi.cpp
     platform/adapters/http/VendorCall.cpp
     platform/adapters/postgres/PgPool.cpp
@@ -207,6 +206,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     platform/adapters/http/AccessLog.cpp
     platform/adapters/http/LogFormat.cpp
     platform/adapters/amplitude/AmplitudeClient.cpp
+    platform/adapters/amplitude/AmplitudeUsageSink.cpp
     platform/adapters/paddle/PaddleSignature.cpp
     platform/adapters/paddle/PaddleApiClient.cpp
     platform/adapters/paddle/BillingApi.cpp
@@ -324,7 +324,6 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/platform/adapters/http/OAuthApiTest.cpp
     test/platform/adapters/http/McpKeyApiTest.cpp
     test/platform/adapters/http/EventsApiTest.cpp
-    test/platform/adapters/http/UsageAdminApiTest.cpp
     test/platform/adapters/http/FeedbackApiTest.cpp
     test/platform/adapters/http/RateLimiterTest.cpp
     test/platform/adapters/http/VendorCallTest.cpp
@@ -336,6 +335,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/platform/adapters/sentry/LogTeeTest.cpp
     test/platform/adapters/paddle/PaddleSignatureTest.cpp
     test/platform/adapters/paddle/BillingApiTest.cpp
+    test/platform/adapters/amplitude/AmplitudeUsageSinkTest.cpp
     test/platform/adapters/postgres/PgAiUsageRepositoryTest.cpp
     test/platform/adapters/postgres/PgPoolTest.cpp
     test/platform/adapters/postgres/PgSubscriptionRepositoryTest.cpp

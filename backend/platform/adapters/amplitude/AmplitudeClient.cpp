@@ -33,7 +33,7 @@ AmplitudeClient::AmplitudeClient(std::string apiKey, std::string host)
 }
 
 void AmplitudeClient::forward(const std::string& sessionKey, const std::optional<UserId>& user,
-                              const std::vector<FunnelEvent>& events) {
+                              const std::vector<FunnelEvent>& events, const std::string& idSeed) {
   if (apiKey_.empty() || events.empty()) return;
 
   Json::Value payload(Json::objectValue);
@@ -52,7 +52,8 @@ void AmplitudeClient::forward(const std::string& sessionKey, const std::optional
     item["event_properties"] = propsObject(event.props);
     // A stable insert_id lets Amplitude drop a retried batch as a duplicate rather than double-count.
     // Name + batch index keep two events sharing a session and millisecond from colliding.
-    item["insert_id"] = sessionKey + ":" + std::to_string(event.clientMs) + ":" + event.name + ":" + std::to_string(index++);
+    item["insert_id"] = sessionKey + ":" + idSeed + ":" + std::to_string(event.clientMs) + ":" +
+                        event.name + ":" + std::to_string(index++);
     out.append(std::move(item));
   }
   payload["events"] = std::move(out);

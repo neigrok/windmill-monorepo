@@ -23,8 +23,14 @@ class AmplitudeClient {
 public:
   explicit AmplitudeClient(std::string apiKey, std::string host = "api2.amplitude.com");
 
+  // `idSeed` disambiguates the dedupe key. Amplitude drops two events sharing an insert_id, and the
+  // key is built from device_id + time + name + index — fine for a beacon, where the device_id is a
+  // per-browser key, and NOT fine for server-side events that all share one device_id: two of them
+  // in the same millisecond would collide and one would vanish silently. A caller with its own
+  // identity for the event (a run id, say) passes it here. Empty keeps the original key exactly, so
+  // the funnel path is unchanged.
   void forward(const std::string& sessionKey, const std::optional<UserId>& user,
-               const std::vector<FunnelEvent>& events);
+               const std::vector<FunnelEvent>& events, const std::string& idSeed = "");
 
 private:
   std::string apiKey_;

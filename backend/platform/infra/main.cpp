@@ -14,7 +14,6 @@
 #include "platform/adapters/http/AuthApi.h"
 #include "products/roadmap/adapters/auth/ForkSignup.h"
 #include "platform/adapters/http/EventsApi.h"
-#include "platform/adapters/http/UsageAdminApi.h"
 #include "platform/adapters/http/FeedbackApi.h"
 #include "platform/adapters/http/McpKeyApi.h"
 #include "platform/adapters/http/OAuthApi.h"
@@ -27,6 +26,7 @@
 #include "products/roadmap/adapters/mcp/RoadmapResources.h"
 #include "products/roadmap/adapters/mcp/RoadmapTools.h"
 #include "platform/adapters/postgres/PgAuthRepository.h"
+#include "platform/adapters/amplitude/AmplitudeUsageSink.h"
 #include "platform/adapters/postgres/PgAiUsageRepository.h"
 #include "platform/adapters/postgres/PgEventRepository.h"
 #include "platform/adapters/postgres/PgFeedbackRepository.h"
@@ -220,8 +220,10 @@ int main() {
   // tending allowance's free-vs-Pro plan lookup.
   auto subscriptionRepo = std::make_shared<PgSubscriptionRepository>(pool);
   // What the model costs us, counted once and read twice. Every Anthropic seam writes here through
-  // the write-only UsageSink half, and the budget check and the owner's spend room read the same
-  // rows — so the dashboard and the ceiling can never disagree about what an account has spent.
+  // the write-only UsageSink half; the rate limits read the same rows back. Spend is LOOKED at in
+  // Amplitude (see the sink below) rather than in a dashboard of our own — but the ledger stays the
+  // truth, because a ceiling has to be answerable synchronously before a call, which no analytics
+  // vendor can do, and because money must never be reconciled from a fire-and-forget mirror.
   auto aiUsageRepo = std::make_shared<PgAiUsageRepository>(pool);
   // The fuse the ledger cannot be: one in-process trailing-hour ceiling over EVERY vendor call,
   // holding no database. Per-account budgets bound what a person spends and are structurally blind
@@ -245,19 +247,16 @@ int main() {
   auto amplitude = std::make_shared<AmplitudeClient>(
       amplitudeKey ? amplitudeKey : "",
       (amplitudeHost && *amplitudeHost) ? amplitudeHost : "api2.amplitude.com");  // set-but-empty → default
+  // What every LLM adapter is handed: the ledger, mirrored to Amplitude. The ledger is the truth and
+  // is written first — the rate limits read it, and a chart vendor cannot answer "has this account
+  // spent too much" before a call is made. Amplitude is the eyes, and is where the spend is actually
+  // looked at, so we keep no dashboard of our own to keep true.
+  std::shared_ptr<UsageSink> aiSpendSink =
+      std::make_shared<AmplitudeUsageSink>(aiUsageRepo, amplitude);
+
   auto eventRepo = std::make_shared<PgEventRepository>(pool);
   auto eventsApi = std::make_shared<EventsApi>(eventRepo, authService, amplitude);
 
-  // The owner's spend room, and the only surface that reads the AI ledger. Gated on the SESSION's
-  // account email against WINDMILL_OWNER_EMAILS — a real identity rather than a shared bearer,
-  // because these two responses name individual users' spend. Unset or empty ⇒ CLOSED, the resting
-  // state every admin door here keeps. It answers 404 to a signed-out caller, a signed-in
-  // non-owner and an unknown path alike: a private thing denies byte-identically to an absent one,
-  // which is the rule the tree-visibility wave settled, and a 401 here would pop the sign-in door
-  // on a surface no one but us is meant to know exists.
-  const char* ownerEmailsEnv = std::getenv("WINDMILL_OWNER_EMAILS");
-  auto usageAdminApi = std::make_shared<UsageAdminApi>(aiUsageRepo, authService,
-                                                       ownerEmailsEnv ? ownerEmailsEnv : "");
 
   // The feedback door: one-click notes from anyone, signed-in or ghost. Same shape as the
   // event-spine — anon-allowed, caller resolved server-side, one row per note.
@@ -302,7 +301,7 @@ int main() {
   // and the client re-parses it deterministically — text in, text out, never a door into the
   // tree. No ANTHROPIC_API_KEY → the route answers 503 and the client hides the handle.
   const char* anthropicKey = std::getenv("ANTHROPIC_API_KEY");
-  auto composer = std::make_shared<AnthropicComposer>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiUsageRepo);
+  auto composer = std::make_shared<AnthropicComposer>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiSpendSink);
 
   // MCP (Streamable-HTTP) mounted in this same process — the whole point of this change: agent
   // edits run through the very same RoomRegistry as REST and the socket, so a tree has exactly
@@ -339,7 +338,7 @@ int main() {
   // finished run rather than polling a `running` row that will never move.
   if (const int reaped = tendRuns->failOrphanedRuns(); reaped > 0)
     LOG_INFO << "tending: reaped " << reaped << " run(s) stranded by a restart";
-  auto tendingAgent = std::make_shared<AnthropicAgent>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiUsageRepo);
+  auto tendingAgent = std::make_shared<AnthropicAgent>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiSpendSink);
   const bool tendingEnabled =
       (tendingEnabledFlag == "true" || tendingEnabledFlag == "1") && tendingAgent->configured();
   auto tendingService = std::make_shared<TendingService>(*tendRuns, *tendingAgent, *mcpTools,
@@ -385,7 +384,7 @@ int main() {
   // path and the panel's client hides itself on the 404. The narrowing that makes this safe is not
   // here — it is the read-only ToolScope CoachService states at its own call site, plus CoachTools,
   // which drops every write and delete tool from the catalog the model is handed.
-  auto gymCoachAgent = std::make_shared<gym::AnthropicCoach>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiUsageRepo);
+  auto gymCoachAgent = std::make_shared<gym::AnthropicCoach>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiSpendSink);
   std::shared_ptr<gym::CoachService> gymCoach;
   if (gymCoachAgent->configured())
     gymCoach = std::make_shared<gym::CoachService>(*logService, *gymCoachAgent, *gymTools,
@@ -756,14 +755,6 @@ int main() {
       [eventsApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { eventsApi->ingest(req, std::move(cb)); },
       {drogon::Post});
 
-  app.registerHandler(
-      "/v1/admin/usage/summary",
-      [usageAdminApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { usageAdminApi->summary(req, std::move(cb)); },
-      {drogon::Get});
-  app.registerHandler(
-      "/v1/admin/usage/users",
-      [usageAdminApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { usageAdminApi->users(req, std::move(cb)); },
-      {drogon::Get});
 
   // The feedback door: anonymous allowed (a frustrated logged-out user is the point); the
   // shared per-IP apiLimiter covers this route like every other.
@@ -876,7 +867,7 @@ int main() {
   if (anthropicKeyEnv && *anthropicKeyEnv)
     journalCurator = std::make_shared<AnthropicCurator>(
         std::make_shared<AnthropicClient>(anthropicKeyEnv), "claude-opus-5", "high",
-        aiFuse, aiUsageRepo);
+        aiFuse, aiSpendSink);
   else
     journalCurator = std::make_shared<NullCurator>();
   auto journalEchoes = std::make_shared<PgEchoRepository>(pool);

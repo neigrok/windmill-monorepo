@@ -258,6 +258,7 @@ Curation AnthropicCurator::curate(const UserId& user, const std::vector<Vectored
   spend.user = user;
   spend.product = "journal";
   spend.operation = "echo.curate";
+  spend.runId = newRunId("curate");
   spend.model = model_;
   spend.outcome = reply.outcome;
   spend.tokens = reply.tokens;

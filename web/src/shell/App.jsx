@@ -17,9 +17,6 @@ const AuthLanding = lazy(() => import('./auth/AuthLanding.jsx').then((m) => ({ d
 const OAuthConsent = lazy(() => import('./auth/OAuthConsent.jsx').then((m) => ({ default: m.OAuthConsent })));
 const ConnectPage = lazy(() => import('./connect/ConnectPage.jsx').then((m) => ({ default: m.ConnectPage })));
 const SettingsPage = lazy(() => import('./settings/SettingsPage.jsx').then((m) => ({ default: m.SettingsPage })));
-// The owner's spend meter. Deliberately absent from LEGACY_DOORS: nothing anywhere emits a #/usage
-// hash, and the room is reached by two people typing one bookmarked URL.
-const UsagePage = lazy(() => import('./usage/UsagePage.jsx').then((m) => ({ default: m.UsagePage })));
 // Named rather than inlined, because warming a link to the app calls the same thunk early.
 const importShell = () => import('./chrome/Shell.jsx').then((m) => ({ default: m.Shell }));
 const Shell = lazy(importShell);
@@ -242,9 +239,7 @@ function AppRoutes() {
       ? { Component: SettingsPage, props: { inShell: true } }
       : pathname.startsWith('/app/connect')
         ? { Component: ConnectPage, props: { inShell: true } }
-        : pathname.startsWith('/app/usage')
-          ? { Component: UsagePage, props: {} }
-          : null;
+        : null;
     return (
       <Suspense fallback={<RouteFallback />}>
         <Shell

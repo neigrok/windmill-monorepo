@@ -138,6 +138,7 @@ struct StreamCall : public std::enable_shared_from_this<StreamCall> {
     AiSpend spend;
     spend.product = "roadmap";
     spend.operation = "compose";
+    spend.runId = newRunId("compose");
     spend.model = kModel;
     spend.tokens = parser->tokens();
     // No user, and never an invented one: the birth canvas is anonymous by design. An unattributed
@@ -416,6 +417,7 @@ void AnthropicComposer::compose(const std::string& text,
           AiSpend spend;
           spend.product = "roadmap";
           spend.operation = "compose";
+          spend.runId = newRunId("compose");
           spend.model = kModel;
           spend.outcome = outcome;
           spend.tokens = tokens;

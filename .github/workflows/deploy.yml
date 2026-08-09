@@ -89,11 +89,6 @@ jobs:
           RESEND_FROM: ${{ vars.RESEND_FROM }}
           AMPLITUDE_HOST: ${{ vars.AMPLITUDE_HOST }}
           TENDING_ENABLED: ${{ vars.TENDING_ENABLED }}
-          # Who may read the AI spend room (/app/usage) and its two endpoints. A comma-separated
-          # list of account emails, matched against the SESSION's account — not a shared bearer,
-          # because these responses name individual users' spend. Empty/unset ⇒ CLOSED, and every
-          # door answers 404 rather than 403, so a non-owner cannot tell the room exists.
-          WINDMILL_OWNER_EMAILS: ${{ vars.WINDMILL_OWNER_EMAILS }}
           # The reminder engine's arming pair. It has shipped dark since wave 1 and until now could
           # not be armed AT ALL from here — neither name reached the container, so the allowlist was
           # unreachable rather than merely empty. Both stay unset until the owner arms it; empty
@@ -145,7 +140,7 @@ jobs:
                        PADDLE_WEBHOOK_SECRET PADDLE_API_KEY PADDLE_ENV PADDLE_PRICE_ID \
                        REMINDERS_ENABLED REMINDERS_ALLOWLIST REMINDERS_ADMIN_TOKEN \
                        JOURNAL_NUDGE_ENABLED JOURNAL_NUDGE_ALLOWLIST JOURNAL_NUDGE_ADMIN_TOKEN \
-                       JOURNAL_ECHO_ADMIN_TOKEN WINDMILL_OWNER_EMAILS \
+                       JOURNAL_ECHO_ADMIN_TOKEN \
                        WINDMILL_MCP_ALLOWED_ORIGINS WINDMILL_MCP_TOKEN; do
               printf '%s=%s\n' "$key" "${!key}"
             done
