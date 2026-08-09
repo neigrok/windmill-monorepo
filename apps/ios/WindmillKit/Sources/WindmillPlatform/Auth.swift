@@ -1,10 +1,10 @@
 import Foundation
 
 // Sign-in for the native superapp — the same one door the web has, reached the way a phone can
-// reach it. The account is an email address (backend/AUTH.md): a magic link is the founding door
-// and Sign in with Apple is the native one. Whichever door opens, the session secret it yields is
-// the app's only credential and lives in the Keychain, never in UserDefaults — a session is a
-// 90-day bearer of someone's whole journal.
+// reach it. The account is an email address (backend/AUTH.md): the app asks for an emailed six-digit
+// CODE (`door: "app"`), the web keeps the magic link, and Sign in with Apple is the native extra.
+// Whichever door opens, the session secret it yields is the app's only credential and lives in the
+// Keychain, never in UserDefaults — a session is a 90-day bearer of someone's whole journal.
 
 public enum AuthStatus: Equatable {
     case unknown            // the app has not yet asked /v1/me — the seat is a ghost, not empty
@@ -37,13 +37,20 @@ public final class AuthStore: ObservableObject {
 
     // Nonisolated: building the store touches nothing but its own stored properties, so a caller
     // may create one anywhere (a default argument, a preview) while every mutation stays on main.
-    public nonisolated init(baseURL: URL = WindmillApi.resolvedBaseURL(), sessions: any SessionStore = KeychainSessions()) {
+    public nonisolated init(baseURL: URL = WindmillApi.resolvedBaseURL(),
+                            sessions: any SessionStore = KeychainSessions(),
+                            urlSession: URLSession = .shared) {
         self.sessions = sessions
-        self.api = WindmillApi(baseURL: baseURL, credential: { [sessions] in sessions.read() })
+        self.api = WindmillApi(baseURL: baseURL, credential: { [sessions] in sessions.read() },
+                               session: urlSession)
     }
 
     // The seat on launch. A lapsed session is a non-event (AUTH.md): drop the dead secret and show
     // the door, never an error — nobody needs to be told their 90 days ran out.
+    //
+    // Only a DEFINITIVE 401 may clear the Keychain. A phone with no signal has not been signed out:
+    // clearing on a transport failure was a silent sign-out that deleted a live 90-day secret and
+    // stranded the gym queue's owed sets behind a bearer that no longer existed.
     public func restore() async {
         guard sessions.read() != nil else {
             status = .signedOut
@@ -51,16 +58,30 @@ public final class AuthStore: ObservableObject {
         }
         do {
             status = .signedIn(try await api.get("/v1/me", as: UserReply.self).user)
-        } catch {
+        } catch let refusal as WindmillApiError where refusal.isUnauthorized {
             sessions.clear()
+            status = .signedOut
+        } catch {
             status = .signedOut
         }
     }
 
+    // `door: "app"` asks the mail to carry the six-digit code instead of the link — a code can be
+    // read off one screen and typed into this one, where a tapped link opens the wrong surface.
     public func requestLink(to email: String) async throws {
         let address = email.trimmingCharacters(in: .whitespacesAndNewlines)
-        try await api.send("POST", "/v1/auth/magic-link", body: ["email": address])
+        try await api.send("POST", "/v1/auth/magic-link", body: ["email": address, "door": "app"])
         linkSentTo = address
+    }
+
+    // The app door's own finish: the emailed code, with the address it was sent to. The reply is
+    // shaped exactly like /v1/auth/verify — the user in the body, the session only in Set-Cookie —
+    // so the same capture lifts it.
+    public func completeCode(email: String, code: String) async throws {
+        let answer = try await api.sendCapturingSession("POST", "/v1/auth/verify-code",
+                                                        body: ["email": email, "code": code],
+                                                        as: UserReply.self)
+        try adopt(session: answer.session, user: answer.reply.user)
     }
 
     // The token arrives from the mail. On a phone that means one of two things: the app was opened
@@ -179,6 +200,30 @@ public enum MagicLink {
         let tail = trimmed[start.upperBound...]
         let token = tail.prefix { $0 != "&" && $0 != "#" && !$0.isWhitespace }
         return token.isEmpty ? nil : String(token)
+    }
+}
+
+// The emailed six-digit code — what the app's own door requests (`door: "app"`) and verifies. It
+// shares one field with the pasted link, and the door tells the two credentials apart HERE, before
+// the parser: `MagicLink.token(in:)` accepts ANY bare string as a token, so a code that reached it
+// would go out to /v1/auth/verify as a token and die there. Exactly six ASCII digits is a code;
+// everything else is the parser's.
+public enum SignInCode {
+    // The server collapses wrong, spent, expired and unknown into one refusal so nothing leaks;
+    // this is the door's one sentence for all of them, and the remedy is the Resend button above it.
+    public static let expired = "That code has expired. Codes work once and last 15 minutes — send a fresh one."
+
+    // The same split MagicLink.refusal makes: a request that never reached the server has not
+    // expired anything, so only a failure that is really about the code gets the code's sentence.
+    public static func refusal(for error: Error) -> String {
+        guard let api = error as? WindmillApiError, api == .offline else { return expired }
+        return api.line
+    }
+
+    public static func parse(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count == 6, trimmed.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
+        return trimmed
     }
 }
 

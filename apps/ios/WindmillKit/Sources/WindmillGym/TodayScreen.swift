@@ -22,17 +22,15 @@ struct TodayScreen: View {
 
     @Environment(\.gymSkin) private var skin
 
-    // SIGNED OUT, TODAY OFFERS THE DOOR AND NOTHING ELSE. A session cannot be opened without the log
-    // — the plan snapshot is frozen server-side — so every Start on this screen would answer with a
-    // refusal, and a primary button that fails is worse than one that is not there. The card below
-    // is the whole screen until somebody is signed in, and it is itself the way in.
+    // SIGNED OUT, TODAY IS THE SAME SCREEN. The room is anonymous-first: sessions open against the
+    // device's own log, the plan freezes off the local routine, and every Start below is real before
+    // there is an account. What signing in adds is reach — the account, the web mirror, the coach —
+    // so the door is a quiet claim offer under the work, never a wall in front of it.
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: WindmillSpace.x5) {
                 head
-                if !isSignedIn {
-                    signIn
-                } else if store.routines.isEmpty {
+                if store.routines.isEmpty {
                     empty
                 } else {
                     ForEach(Array(store.routines.enumerated()), id: \.element.id) { index, routine in
@@ -40,6 +38,7 @@ struct TodayScreen: View {
                     }
                     logWithoutARoutine
                 }
+                if !isSignedIn { claimOffer }
                 lookingBack
             }
             .padding(.horizontal, WindmillSpace.x5)
@@ -148,16 +147,16 @@ struct TodayScreen: View {
         }
     }
 
-    // A session cannot be opened without the log: the plan snapshot is frozen server-side, and a
-    // client-composed copy would freeze whatever this phone last read. So the door says so plainly
-    // rather than offering a button that answers with nothing.
-    private var signIn: some View {
+    // The quiet claim offer (wave contract §C) — the one sentence signed-out Today says about the
+    // account, under the doors and never in front of them. Tapping it opens You, where the sign-in
+    // door is; the claim itself runs on connect, the moment there is an account to take it.
+    private var claimOffer: some View {
         Button(action: onSignIn) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Sessions are kept on your account.")
+                Text("Your log is saved on this device.")
                     .font(WindmillFont.body(15, .semibold))
                     .foregroundStyle(skin.ink)
-                Text("Sign in to start one — the plan it runs against is frozen on the log.")
+                Text("Sign in to claim it to your account — and open it on the web.")
                     .font(GymType.numeral(12))
                     .foregroundStyle(skin.inkFaint)
                     .lineSpacing(3)

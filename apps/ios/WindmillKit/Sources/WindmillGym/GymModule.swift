@@ -11,16 +11,14 @@ public struct GymModule: ProductModule {
 
     public init() {}
 
-    // The caveat is the whole reason this door is honest on a fresh phone. A session cannot be opened
-    // without the log — the plan snapshot is frozen server-side — so Today draws a sign-in card and
-    // nothing else until there is an account. Saying that only INSIDE the room turns a first tap into
-    // an ambush; saying it on the card turns it into a precondition somebody agreed to.
+    // No caveat, and that is the point: the room is anonymous-first. A session opens against the
+    // device's own log before there is an account, and signing in CLAIMS what the device holds —
+    // so the door opens straight onto work, which is exactly what a nil caveat promises.
     public let entry = EntryDoor(
         verb: "Log a workout",
         line: "sets and weights, two taps each",
         made: "Your first session is logged.",
-        back: "Back to the log",
-        caveat: "Sessions are kept on your account — you sign in first."
+        back: "Back to the log"
     )
 
     public func room(_ account: Account) -> AnyView {
@@ -34,9 +32,9 @@ public struct GymModule: ProductModule {
     // bottom of the stack, under the thumb, and puts the dot on the capsule from every other room.
     //
     // A live session is on the device whether or not anybody is signed in, so it outranks the
-    // account note: a lifter mid-workout is told about the workout. At rest and signed out the hub
-    // card is a door onto the same wall Today draws, and it carries the same sentence the entry card
-    // does — the hub's half of the rule that a door says what it needs before it is chosen.
+    // account note: a lifter mid-workout is told about the workout. At rest and signed out with a
+    // log on this device, the meta says where that log is — the hub's half of Today's quiet claim
+    // offer, and never a wall.
     public func hubLine(_ account: Account) -> HubLine {
         let device = GymDevice.summary()
         if let running = device.routine {
@@ -45,16 +43,16 @@ public struct GymModule: ProductModule {
                            meta: Readout.setCount(device.sets) + " so far",
                            running: true)
         }
-        if !account.isSignedIn {
+        if !account.isSignedIn && device.sessions > 0 {
             return HubLine(eyebrow: "Today", headline: "Nothing running.",
-                           meta: "sessions are kept on your account")
+                           meta: "your log is saved on this device")
         }
         return HubLine(eyebrow: "Today", headline: "Nothing running.")
     }
 
-    // What gym is holding HERE, which is the live session and no more: a finished session lives on
-    // the account, and this device lets go of its rows the moment it closes. The noun is the
-    // product's own — a gym counts sessions, never workouts and never entries.
+    // What gym is holding HERE: the live session, and every finished one signed-in hands have not
+    // yet claimed — the local shelf is a real home now, and signed-out You counts it. The noun is
+    // the product's own — a gym counts sessions, never workouts and never entries.
     public func holdings(_ account: Account) -> Holdings {
         Holdings(count: GymDevice.summary().sessions, noun: "session")
     }
@@ -63,7 +61,11 @@ public struct GymModule: ProductModule {
 // THE CHEAP READ. `hubLine` and `holdings` are called on every hub render and on every capsule tap —
 // the shell maps hubLine across all products just to decide whether the dot is on — so answering by
 // decoding a training log per frame is not an option. This summarises once and then answers from the
-// file's own modification stamp: unchanged file, unchanged answer, no decode.
+// two files' own modification stamps: unchanged files, unchanged answer, no decode.
+//
+// Two files because the device now holds two shelves: the queue (`windmill-gym-sets.json`, the live
+// session — its name and shape are load-bearing, this read depends on them) and the local log
+// (`windmill-gym-local.json`, finished sessions nobody has claimed yet).
 //
 // Main-actor by construction, because ProductModule is: the cache needs no lock and cannot be raced.
 @MainActor
@@ -76,30 +78,37 @@ enum GymDevice {
         static let none = Summary(sessions: 0, routine: nil, sets: 0)
     }
 
-    private static var stamp: Date?
+    private static var stamps: [Date?] = [nil, nil]
     private static var summarised = Summary.none
 
-    static func summary(url: URL = SetQueue.defaultURL()) -> Summary {
-        let written = (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate]) as? Date
-        // No file is no session, and it is also the state the cache must not answer stale from: a
-        // discarded queue leaves nothing behind, and the hub would otherwise go on naming a workout
-        // that was deleted.
-        guard let written else {
-            stamp = nil
+    static func summary(url: URL = SetQueue.defaultURL(),
+                        localURL: URL = LocalLog.defaultURL()) -> Summary {
+        let written = [stamp(of: url), stamp(of: localURL)]
+        // No files is no gym on this device, and it is also the state the cache must not answer
+        // stale from: a discarded queue leaves nothing behind, and the hub would otherwise go on
+        // naming a workout that was deleted.
+        guard written.contains(where: { $0 != nil }) else {
+            stamps = [nil, nil]
             summarised = .none
             return summarised
         }
-        if written == stamp { return summarised }
+        if written == stamps { return summarised }
 
-        let queue = SetQueue(url: url)
-        stamp = written
-        summarised = read(queue)
+        stamps = written
+        summarised = read(SetQueue(url: url), LocalLog(url: localURL))
         return summarised
     }
 
-    private static func read(_ queue: SetQueue) -> Summary {
-        guard let live = queue.session else { return .none }
-        return Summary(sessions: 1,
+    private static func stamp(of url: URL) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate]) as? Date
+    }
+
+    private static func read(_ queue: SetQueue, _ localLog: LocalLog) -> Summary {
+        let kept = localLog.sessions.count
+        guard let live = queue.session else {
+            return Summary(sessions: kept, routine: nil, sets: 0)
+        }
+        return Summary(sessions: kept + 1,
                        routine: live.plan?.routine ?? "Logging without a routine",
                        sets: queue.sets(in: live.id).count)
     }

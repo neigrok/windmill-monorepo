@@ -2,10 +2,10 @@ import Foundation
 import SwiftUI
 import WindmillPlatform
 
-// The live session, wired — the native twin of web/src/products/gym/logger/useLiveSession.js, and the
-// one place in gym where the pure rules meet the network, the clock and the disk. Everything it
-// decides it decides by asking a module: the ladder moves the weight, Prefill picks the number, the
-// queue owns durability. This file is the plumbing and none of the meaning.
+// The live session, wired — the Swift twin of Android's TrainingStore.kt, and the one place in gym
+// where the pure rules meet the network, the clock and the disk. Everything it decides it decides
+// by asking a module: the ladder moves the weight, Prefill picks the number, the queue owns
+// durability. This file is the plumbing and none of the meaning.
 //
 // The order of every write is the same and never varies: mint an id → store on the device → tell the
 // log, or owe it. Nothing is ever held in memory waiting for a network call to decide whether it
@@ -46,6 +46,7 @@ public final class TrainingStore: ObservableObject {
 
     private let queue: SetQueue
     private let deviceCatalog: DeviceCatalog
+    private let localLog: LocalLog
     private let now: () -> Int64
     private let mintSession: () -> String
     private let mintSet: () -> String
@@ -53,6 +54,9 @@ public final class TrainingStore: ObservableObject {
     private var gym: (any TrainingSyncing)?
     private var lastTimes: [String: LastTime] = [:]
     private var retryTask: Task<Void, Never>?
+    // True while the claim is replaying the shelf — the window in which an ordinary start must
+    // compose on the device instead, because the server would default-JOIN a replayed session.
+    private var claiming = false
 
     // At or under the server's own ceiling: the handler clamps `limit` to 200, and a larger page here
     // would come back short of what was asked for and read as the bottom of the log.
@@ -63,6 +67,7 @@ public final class TrainingStore: ObservableObject {
 
     public init(queue: SetQueue = SetQueue(),
                 deviceCatalog: DeviceCatalog = DeviceCatalog(),
+                localLog: LocalLog = LocalLog(),
                 now: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
                 mintSession: @escaping () -> String = Ids.session,
                 mintSet: @escaping () -> String = Ids.set,
@@ -73,6 +78,7 @@ public final class TrainingStore: ObservableObject {
                 }) {
         self.queue = queue
         self.deviceCatalog = deviceCatalog
+        self.localLog = localLog
         self.now = now
         self.mintSession = mintSession
         self.mintSet = mintSet
@@ -169,14 +175,45 @@ public final class TrainingStore: ObservableObject {
     // always — a room that waited for a round trip would be a workout that waits.
     public func connect(to account: Account) async {
         gym = sync(account)
+        // Whoever is signed in now brings their own history: every cached last time was computed
+        // against the previous log (or none), so the answers go and the movement in hand asks
+        // again once the connect has settled — a shelf-computed "first time" surviving a sign-in
+        // would answer for a movement the account has trained for a year.
+        lastTimes.removeAll()
+        lastTime = nil
+        lastTimeFailed = false
+        // A crash between the local finish's two flushes leaves the workout both live and
+        // finished. The finished shelf already holds it, so the queue's copy is the stale half:
+        // any set only the queue still has folds into the finished session, and the queue lets
+        // go — resuming it would run a workout that ended, and claiming both copies would file
+        // the same session twice.
+        if let live = queue.session, let kept = localLog.session(live.id) {
+            let known = Set(kept.sets.map(\.id))
+            let strays = queue.sets(in: live.id).filter { !known.contains($0.id) }
+            if !strays.isEmpty {
+                localLog.keep(kept.session, sets: kept.sets + strays)
+                localLog.flush()
+            }
+            queue.forget(live.id)
+            queue.flush()
+        }
         drawFromQueue()
+        // The device's shelves are on screen before any wire answers — the room mounts on local
+        // state, and a signed-in read that lands later only ever adds to it.
+        routines = localLog.routines
+        recent = mergedRecent([])
         isLoading = false
 
         guard let gym else {
             saveState = queue.pending.isEmpty ? .idle : .onThisDevice
+            if session != nil, let movement = exerciseId { await choose(movement) }
             return
         }
-        // The queue goes out BEFORE the first read, and it is not an optimisation: reading the log
+        // What this device made before anybody signed in goes out FIRST — movements, routines,
+        // finished sessions, the live session's start — because the queue's own walk can only land
+        // sets in a session the log knows (the journal's claimWhatIsOwed, in gym's grammar).
+        await claimWhatIsOwed()
+        // Then the queue, BEFORE the first read, and it is not an optimisation: reading the log
         // SETTLES a stale open session, and a set that arrives after that close is refused forever.
         // Logged in a basement last night, opened in the morning — the app's own boot read is what
         // would destroy them.
@@ -188,17 +225,27 @@ public final class TrainingStore: ObservableObject {
         // Held on the device as well as in memory: the ids are the truth and the names are display
         // strings, so the next cold launch draws `Bench Press` from here rather than the slug.
         if let exercises = try? await gym.exercises() {
-            catalog = exercises
-            deviceCatalog.hold(exercises)
+            catalog = merged(exercises)
+            deviceCatalog.hold(catalog)
         }
-        if let written = try? await gym.routines() { routines = written }
+        if let written = try? await gym.routines() { routines = written + localLog.routines }
+        if session != nil, let movement = exerciseId { await choose(movement) }
     }
 
-    // Start. A session cannot be opened without the log, because the plan snapshot is FROZEN BY THE
-    // SERVER off the routine's own row — a client-composed copy would freeze whatever that client
-    // last read, which is exactly the staleness the snapshot exists to prevent.
+    // Start. Signed in, the log opens the session and freezes the plan snapshot off the routine's
+    // own row. Signed out this DEVICE is the shelf the routine lives on, so freezing the snapshot
+    // here is the same staleness rule against the only copy that exists — and the claim replays the
+    // session under this same id when an account arrives.
     public func start(routineId: String? = nil) async -> Result<Session, WriteFailure> {
-        guard let gym else { return .failure(.noAnswer) }
+        // Composed on the device whenever the log could not honestly take it: nobody signed in,
+        // a claim still mid-replay (a server start would default-JOIN whatever session the replay
+        // has open — today's sets filed into yesterday's workout), or a routine still on the local
+        // shelf the log has never heard of. The claim picks the session up the moment its road is
+        // open — the in-flight claim's own tail, or the next connect.
+        guard let gym, !claiming else { return startLocally(routineId: routineId) }
+        if let routineId, session == nil, localLog.routine(routineId) != nil {
+            return startLocally(routineId: routineId)
+        }
         // One id collision is a coincidence and a fresh id lands. Two is a device that cannot mint,
         // and looping on it would hammer the log rather than say so.
         var collision = WriteFailure.noAnswer
@@ -228,6 +275,26 @@ public final class TrainingStore: ObservableObject {
         return .failure(collision)
     }
 
+    private func startLocally(routineId: String?) -> Result<Session, WriteFailure> {
+        var plan: PlanSnapshot?
+        if let routineId {
+            guard let routine = localLog.routine(routineId) else {
+                return .failure(.refused("that routine is not on this device"))
+            }
+            plan = PlanSnapshot(routine: routine.name,
+                                entries: routine.entries
+                                    .sorted { $0.position < $1.position }
+                                    .map { PlanEntry(exerciseId: $0.exerciseId, sets: $0.targetSets,
+                                                     reps: $0.targetReps, weightKg: $0.targetWeightKg,
+                                                     restSeconds: $0.restSeconds) })
+        }
+        let opened = Session(id: mintSession(), startedAtMs: now(), routineId: routineId, plan: plan)
+        queue.hold(opened, unclaimed: true)
+        queue.flush()
+        drawFromQueue()
+        return .success(opened)
+    }
+
     // The movement in hand, and the number in front of the lifter before they touch anything. The
     // answer is kept for as long as the session lasts: within one workout the same three or four
     // movements are walked repeatedly and none of their answers can change, because a last time is a
@@ -243,10 +310,16 @@ public final class TrainingStore: ObservableObject {
         lastTimeFailed = false
         redial()
 
-        // Signed out there is no log to answer, so the read is not pending — it is over. A card left
-        // saying "reading your log…" would be waiting on a request nobody made.
+        // Signed out this device's own history is the log, and it answers synchronously: the last
+        // finished LOCAL session holding the movement, or an honest first time. Nothing is pending
+        // and nothing failed — a card left saying "reading your log…" would be waiting on a request
+        // nobody made.
         guard let gym else {
-            lastTimeFailed = lastTime == nil
+            let answer = lastTimes[movement] ?? localLog.lastTime(movement) ?? LastTime(exerciseId: movement)
+            lastTimes[movement] = answer
+            lastTime = answer
+            lastTimeFailed = false
+            redial()
             return
         }
         guard lastTime == nil else { return }
@@ -308,8 +381,17 @@ public final class TrainingStore: ObservableObject {
     // refuses that set forever, so Finish only completes when there is nothing left to lose. A set
     // stranded against some other session — one that closed under it, one from a sign-in that has
     // since ended — is not this session's business and can never stop it closing.
+    //
+    // An UNCLAIMED session closes on the device whoever is signed in: the log has never heard of it,
+    // so there is nothing to drain and nothing that can strand — the whole session, sets and true
+    // finish instant together, moves to the local shelf and the claim replays it start → sets →
+    // finish when the account can take it.
     public func finish() async -> FinishOutcome {
-        guard let gym, let live = session else { return .noAnswer }
+        guard let live = session else { return .noAnswer }
+        if queue.sessionIsUnclaimed || gym == nil {
+            return await finishLocally(live)
+        }
+        guard let gym else { return .noAnswer }
         isFinishing = true
         defer { isFinishing = false }
         // Forced: finishing is this device's statement that everything the session holds is already
@@ -333,10 +415,52 @@ public final class TrainingStore: ObservableObject {
         return .closed(closed)
     }
 
+    private func finishLocally(_ live: Session) async -> FinishOutcome {
+        isFinishing = true
+        defer { isFinishing = false }
+        let performed = queue.sets(in: live.id)
+        let closed = Session(id: live.id, startedAtMs: live.startedAtMs,
+                             finishedAtMs: max(now(), live.startedAtMs),
+                             routineId: live.routineId, plan: live.plan)
+        localLog.keep(closed, sets: performed)
+        localLog.trained(routine: live.routineId, atMs: closed.finishedAtMs ?? live.startedAtMs)
+        localLog.flush()
+        // The entries move shelves rather than being dropped: the local session owns its sets now,
+        // and the claim replays them from there.
+        queue.forget(live.id)
+        queue.flush()
+        lastTimes.removeAll()
+        exerciseId = nil
+        lastTime = nil
+        drawFromQueue()
+        if gym != nil {
+            // Signed in, the close IS the moment the account can take the whole session — claim it
+            // now, so the review and the coach share on the next screen answer from the log. The
+            // session handed on is the one the LOG holds: a claim that reminted the id would leave
+            // the finish screen reviewing — and discarding — an id spent on nothing.
+            let landed = await claimWhatIsOwed()
+            await loadLog()
+            return .closed(landed[closed.id] ?? localLog.session(closed.id)?.session ?? closed)
+        }
+        routines = localLog.routines
+        recent = mergedRecent([])
+        return .closed(localLog.session(closed.id)?.session ?? closed)
+    }
+
     // The one destructive action in the product, and it is offered only at the finish screen: the log
     // refuses to delete a session somebody may still be logging into, because only the device holding
-    // the queue knows every set landed.
+    // the queue knows every set landed. A session the log has never heard of is the device's alone to
+    // delete, and asking the server about it would 404 a delete that must succeed.
     public func discard(_ sessionId: String) async -> Bool {
+        if localLog.holds(session: sessionId) || (queue.sessionIsUnclaimed && queue.session?.id == sessionId) {
+            localLog.claimed(session: sessionId)
+            localLog.flush()
+            queue.forget(sessionId)
+            queue.flush()
+            drawFromQueue()
+            recent = recent.filter { $0.id != sessionId }
+            return true
+        }
         guard let gym else { return false }
         do {
             try await gym.discardSession(sessionId)
@@ -352,10 +476,17 @@ public final class TrainingStore: ObservableObject {
 
     // "Keep this as a routine" (screen 3) — composed from the session's own sets, in the order they
     // were performed, with the weights actually used as next week's targets. Nothing is created until
-    // the tap; declining costs nothing and the offer returns next session.
+    // the tap; declining costs nothing and the offer returns next session. Signed out the routine is
+    // kept on this device — the claim replays it, first, when an account arrives.
     public func keep(_ sets: [TrainingSet], asRoutineNamed name: String) async -> Routine? {
-        guard let gym else { return nil }
         guard let write = RoutineWrite(named: name, from: sets, position: routines.count) else { return nil }
+        guard let gym else {
+            let made = write.made
+            localLog.keep(made)
+            localLog.flush()
+            routines.append(made)
+            return made
+        }
         guard let saved = try? await gym.createRoutine(write) else { return nil }
         routines.append(saved)
         return saved
@@ -370,7 +501,16 @@ public final class TrainingStore: ObservableObject {
     // believing their program had changed.
     public func save(_ weightKg: Double, toRoutine routineId: String,
                      for exerciseId: String) async -> WriteFailure? {
-        guard let gym else { return .noAnswer }
+        // A routine still on the local shelf is retargeted there — same read-modify-write, same
+        // whole-document rule, no wire. The claim carries the changed copy when it replays.
+        if let local = localLog.routine(routineId) {
+            let changed = local.retargeting(exerciseId, toWeightKg: weightKg)
+            localLog.replace(changed)
+            localLog.flush()
+            routines = routines.map { $0.id == changed.id ? changed : $0 }
+            return nil
+        }
+        guard let gym else { return .refused("that routine is not on this device") }
         do {
             // Absent and another account's are the same 404, folded into the type by GymApi — so
             // there is no sentence from the log to repeat, and this is the plain fact instead.
@@ -390,9 +530,21 @@ public final class TrainingStore: ObservableObject {
     // picker asks for a name and nothing else, so the classification is the domain's own value for
     // "unknown" rather than a guess dressed as a fact — and nothing on this surface reads it, because
     // the ladder is taken off the MAGNITUDE of the load and never off the equipment.
+    //
+    // Signed out the movement is minted onto this device — a fresh phone has no catalog at all, so
+    // without this the anonymous room could not log its first set. The claim replays the create
+    // BEFORE any session, because a set naming a movement the log has never heard of is refused.
     public func create(_ name: String) async -> Result<Exercise, WriteFailure> {
-        guard let gym else { return .failure(.noAnswer) }
         let write = ExerciseWrite(name: name, pattern: "isolation", equipment: "barbell")
+        guard let gym else {
+            let made = Exercise(id: write.id, name: write.name, pattern: write.pattern,
+                                equipment: write.equipment, custom: true)
+            localLog.keep(exercise: write)
+            localLog.flush()
+            catalog.append(made)
+            deviceCatalog.hold(catalog)
+            return .success(made)
+        }
         do {
             let made = try await gym.createExercise(write)
             catalog.append(made)
@@ -408,18 +560,22 @@ public final class TrainingStore: ObservableObject {
     }
 
     // The finish screen's three facts, its one record line and its comparison — computed by the
-    // DOMAIN and read here, never re-derived. A second opinion drawn on the phone would be the
-    // product arguing with itself in its own loudest pixel.
+    // DOMAIN and read here, never re-derived. A session still on the local shelf gets the local
+    // review instead: the three facts and the honest word over a short one, with the record line and
+    // the comparison absent because both are claims against a history this device does not hold.
     public func review(of sessionId: String) async -> Review? {
+        if let local = localLog.review(of: sessionId) { return local }
         guard let gym else { return nil }
         return try? await gym.review(of: sessionId)
     }
 
-    // One finished session and its sets, read back. Absent and another account's are the same 404,
-    // folded into the type by GymApi — so there is no sentence from the log to repeat, and this is
-    // the plain fact instead, exactly as the routine read one screen down says it.
+    // One finished session and its sets, read back — from the local shelf while it is still this
+    // device's, from the log once claimed. Absent and another account's are the same 404, folded
+    // into the type by GymApi — so there is no sentence from the log to repeat, and this is the
+    // plain fact instead, exactly as the routine read one screen down says it.
     public func sessionDetail(_ sessionId: String) async -> Result<SessionDetail, WriteFailure> {
-        guard let gym else { return .failure(.noAnswer) }
+        if let local = localLog.detail(of: sessionId) { return .success(local) }
+        guard let gym else { return .failure(.refused("that session is on your account — sign in to read it")) }
         do {
             guard let detail = try await gym.session(sessionId) else {
                 return .failure(.refused("that session is no longer on the log"))
@@ -438,7 +594,7 @@ public final class TrainingStore: ObservableObject {
     // log that refused with a sentence is not a log that went quiet, and a screen collapsing the two
     // points the lifter at their signal when the answer was on the server.
     public func statistics() async -> Result<TrainingStatistics, WriteFailure> {
-        guard let gym else { return .failure(.noAnswer) }
+        guard let gym else { return .success(localLog.statistics()) }
         do {
             return .success(try await gym.statistics())
         } catch {
@@ -449,8 +605,10 @@ public final class TrainingStore: ObservableObject {
     // The coach share, minted and revoked. Both answer with WHAT WENT WRONG rather than with a bool
     // nobody can act on: a link that was not made and a link that is still live after a failed
     // revoke are the two facts a lifter has to be told, in the log's own words where it sent any.
+    // Signed out the answer is the plain precondition — a link is a capability the ACCOUNT mints,
+    // and "the log didn't answer" over a log nobody asked would be the wrong fact.
     public func share(_ sessionId: String) async -> Result<SessionShare, WriteFailure> {
-        guard let gym else { return .failure(.noAnswer) }
+        guard let gym else { return .failure(.refused("sharing needs your account — sign in first")) }
         do {
             return .success(try await gym.share(sessionId))
         } catch {
@@ -459,7 +617,7 @@ public final class TrainingStore: ObservableObject {
     }
 
     public func revokeShare(_ sessionId: String) async -> WriteFailure? {
-        guard let gym else { return .noAnswer }
+        guard let gym else { return .refused("sharing needs your account — sign in first") }
         do {
             try await gym.revokeShare(sessionId)
             return nil
@@ -480,7 +638,11 @@ public final class TrainingStore: ObservableObject {
             return
         }
 
-        var blocked: Set<SetQueue.Lane> = []
+        // Sets of an UNCLAIMED session are parked, not walked: the log has never heard of their
+        // session, so every send would 404 — the claim's start is what opens their road, and until
+        // it lands they are saved on this device on purpose.
+        let parked = queue.sessionIsUnclaimed ? queue.session?.id : nil
+        var blocked: Set<SetQueue.Lane> = Set(parked.map { queue.owed(in: $0).map(\.lane) } ?? [])
         var refusal: String?
         while let owed = queue.nextOwed(skipping: blocked, readyAt: force ? nil : now()) {
             do {
@@ -510,9 +672,16 @@ public final class TrainingStore: ObservableObject {
         // WHAT IS STILL OWED IS OWED WHATEVER ELSE THE WALK MET. The next attempt is scheduled off
         // the queue before anything is said, because a refusal in one lane must not take the retry
         // away from a set merely jammed in another: nothing else carries that one, and returning at
-        // the refusal left it on the device with no task at all until the next tap.
-        guard let earliestReady = queue.pending.map({ $0.heldUntilMs ?? 0 }).min() else {
-            settle(refusal.map(SaveState.refused) ?? .onTheLog)
+        // the refusal left it on the device with no task at all until the next tap. Parked sets are
+        // not carried by THIS task at all — the claim is their road — so they schedule nothing and
+        // read "saved on this device", which is exactly where they are.
+        let carried = queue.pending.filter { $0.sessionId != parked }
+        guard let earliestReady = carried.map({ $0.heldUntilMs ?? 0 }).min() else {
+            if let refusal {
+                settle(.refused(refusal))
+                return
+            }
+            settle(queue.pending.isEmpty ? .onTheLog : .onThisDevice)
             return
         }
         // A set the walk never offered is not a set that failed. Everything owed being inside its own
@@ -548,21 +717,292 @@ public final class TrainingStore: ObservableObject {
         }
     }
 
+    // THE CLAIM (section D of the wave contract; journal's claimWhatIsOwed is the house shape).
+    // Everything this device made before there was an account, replayed in dependency order —
+    // movements, then routines, then finished sessions oldest first, then the live session's start —
+    // and strictly per session: start with the client-minted id, the TRUE startedAt and
+    // `joinOpenSession: false` (the join default once filed a past session's sets into a live
+    // workout), then every set per lane in original order, then finish at the true instant. No log
+    // or stats read interleaves, because settleOpen would auto-close a >4h-old session mid-replay
+    // and refuse every later set forever.
+    //
+    // Verdicts by CODE only, and a failure aborts the walk rather than dropping anything: what is
+    // still owed is owed, and the next connect (or the next local finish) replays from where this
+    // one stopped — idempotent ids make the repetition free.
+    //
+    // What landed comes back keyed by the id each session wore BEFORE the claim: a remint mid-claim
+    // means the log holds the session under a fresh id, and the local finish reads its own session
+    // out of this rather than reviewing an id the log has never heard of.
+    @discardableResult
+    private func claimWhatIsOwed() async -> [String: Session] {
+        var landed: [String: Session] = [:]
+        guard let gym else { return landed }
+        claiming = true
+        defer { claiming = false }
+        for write in localLog.exercises {
+            guard await claim(exercise: write, with: gym) else { return landed }
+        }
+        for routine in localLog.routines {
+            guard await claim(routine: routine, with: gym) else { return landed }
+        }
+        for local in localLog.sessions {
+            guard let claimed = await claim(session: local, with: gym) else { return landed }
+            landed[local.session.id] = claimed
+        }
+        if queue.sessionIsUnclaimed, let live = queue.session {
+            await claimLive(live, with: gym)
+        }
+        return landed
+    }
+
+    private func claim(exercise write: ExerciseWrite, with gym: any TrainingSyncing) async -> Bool {
+        var write = write
+        for _ in 0...SetQueue.maxRemints {
+            do {
+                _ = try await gym.createExercise(write)
+                localLog.claimed(exercise: write.id)
+                localLog.flush()
+                return true
+            } catch {
+                switch claimVerdict(of: error, remintCode: "exercise-id-taken") {
+                case .remint:
+                    let fresh = Ids.exercise()
+                    localLog.remint(exercise: write.id, as: fresh)
+                    localLog.flush()
+                    queue.remapExercise(write.id, to: fresh)
+                    queue.flush()
+                    catalog = catalog.map {
+                        $0.id == write.id
+                            ? Exercise(id: fresh, name: $0.name, pattern: $0.pattern,
+                                       equipment: $0.equipment, stepKg: $0.stepKg, custom: true)
+                            : $0
+                    }
+                    deviceCatalog.hold(catalog)
+                    write = ExerciseWrite(id: fresh, name: write.name, pattern: write.pattern,
+                                          equipment: write.equipment, stepKg: write.stepKg)
+                case .refused:
+                    // Terminal as written and it never will be: let go rather than jam the whole
+                    // claim behind it. Its sets will be refused by name and SAID when they replay.
+                    localLog.claimed(exercise: write.id)
+                    localLog.flush()
+                    return true
+                case .wait, .dropped, .retry:
+                    return false
+                }
+            }
+        }
+        return false
+    }
+
+    private func claim(routine: Routine, with gym: any TrainingSyncing) async -> Bool {
+        var routine = routine
+        for _ in 0...SetQueue.maxRemints {
+            do {
+                _ = try await gym.createRoutine(RoutineWrite(routine))
+                localLog.claimed(routine: routine.id)
+                localLog.flush()
+                return true
+            } catch {
+                switch claimVerdict(of: error, remintCode: "routine-id-taken") {
+                case .remint:
+                    let fresh = Ids.routine()
+                    localLog.remint(routine: routine.id, as: fresh)
+                    localLog.flush()
+                    queue.remapRoutine(routine.id, to: fresh)
+                    queue.flush()
+                    routines = routines.map {
+                        $0.id == routine.id
+                            ? Routine(id: fresh, name: $0.name, position: $0.position,
+                                      lastTrainedAtMs: $0.lastTrainedAtMs, entries: $0.entries)
+                            : $0
+                    }
+                    routine = Routine(id: fresh, name: routine.name, position: routine.position,
+                                      lastTrainedAtMs: routine.lastTrainedAtMs, entries: routine.entries)
+                case .refused:
+                    // The write can never land as written. The sessions keep their frozen plan —
+                    // a snapshot, not a reference — and drop only the id that will never resolve.
+                    localLog.orphan(routine: routine.id)
+                    localLog.flush()
+                    return true
+                case .wait, .dropped, .retry:
+                    return false
+                }
+            }
+        }
+        return false
+    }
+
+    private func claim(session local: LocalLog.LocalSession, with gym: any TrainingSyncing) async -> Session? {
+        var local = local
+        var opened = false
+        var remints = 0
+        while !opened {
+            do {
+                _ = try await gym.startSession(SessionStart(id: local.session.id,
+                                                            startedAtMs: Instants.clamped(local.session.startedAtMs),
+                                                            routineId: local.session.routineId,
+                                                            joinOpenSession: false))
+                opened = true
+            } catch {
+                // The one 404 a claimed start can meet is a routine the account deleted from
+                // another surface since. The plan is frozen on the session already — a snapshot,
+                // not a reference — so the id that will never resolve goes, and the start retries.
+                if let failure = error as? WindmillApiError, case .refused(404, _) = failure,
+                   let gone = local.session.routineId {
+                    localLog.orphan(routine: gone)
+                    localLog.flush()
+                    guard let moved = localLog.session(local.session.id) else { return nil }
+                    local = moved
+                    continue
+                }
+                switch claimVerdict(of: error, remintCode: "session-id-taken") {
+                case .remint:
+                    remints += 1
+                    guard remints <= SetQueue.maxRemints else { return nil }
+                    let fresh = mintSession()
+                    localLog.remint(session: local.session.id, as: fresh)
+                    localLog.flush()
+                    guard let moved = localLog.session(fresh) else { return nil }
+                    local = moved
+                case .wait, .dropped, .refused, .retry:
+                    return nil
+                }
+            }
+        }
+
+        for set in local.sets {
+            var write = set
+            var remints = 0
+            var settled = false
+            while !settled {
+                do {
+                    _ = try await gym.appendSet(to: local.session.id, SetWrite(write.clamped))
+                    settled = true
+                } catch {
+                    let verdict = Verdict(refusing: error)
+                    if case .remint = verdict, remints < SetQueue.maxRemints {
+                        remints += 1
+                        let fresh = mintSet()
+                        localLog.remint(set: write.id, in: local.session.id, as: fresh)
+                        localLog.flush()
+                        write = write.reminted(as: fresh)
+                        continue
+                    }
+                    if let reason = verdict.terminalReason(afterRemints: SetQueue.maxRemints) {
+                        // Removed and SAID, exactly as the queue says it: this is the last copy of
+                        // a set somebody lifted, and a claim that dropped it quietly would count
+                        // the loss as intended.
+                        localLog.drop(set: write.id, in: local.session.id)
+                        localLog.flush()
+                        refusals.append(RefusedSet(write, reason: reason))
+                        settled = true
+                        continue
+                    }
+                    return nil
+                }
+            }
+        }
+
+        let startedAt = Instants.clamped(local.session.startedAtMs)
+        let finishedAt = max(Instants.clamped(local.session.finishedAtMs ?? startedAt), startedAt)
+        guard let settled = try? await gym.finishSession(local.session.id, at: finishedAt) else { return nil }
+        localLog.claimed(session: local.session.id)
+        localLog.flush()
+        return settled
+    }
+
+    // The live session claims the same way minus finish; once the start lands, the ordinary queue
+    // owns its sets exactly as it owns any signed-in session's.
+    private func claimLive(_ live: Session, with gym: any TrainingSyncing) async {
+        var live = live
+        for _ in 0...SetQueue.maxRemints {
+            do {
+                let opened = try await gym.startSession(SessionStart(id: live.id,
+                                                                     startedAtMs: Instants.clamped(live.startedAtMs),
+                                                                     routineId: live.routineId,
+                                                                     joinOpenSession: false))
+                queue.hold(opened, unclaimed: false)
+                queue.flush()
+                drawFromQueue()
+                return
+            } catch {
+                switch claimVerdict(of: error, remintCode: "session-id-taken") {
+                case .remint:
+                    let fresh = mintSession()
+                    queue.remapSession(live.id, to: fresh)
+                    queue.flush()
+                    drawFromQueue()
+                    guard let moved = queue.session else { return }
+                    live = moved
+                case .wait, .dropped, .refused, .retry:
+                    // The session stays this device's — its sets are parked, not stranded — and the
+                    // next connect or finish tries again.
+                    return
+                }
+            }
+        }
+    }
+
+    // The claim's reading of a refusal, by CODE and never by sentence — the same contract the queue's
+    // Verdict states for sets, extended with the two codes only a start can meet.
+    private enum ClaimVerdict {
+        case remint, wait, dropped, refused, retry
+    }
+
+    private func claimVerdict(of error: Error, remintCode: String) -> ClaimVerdict {
+        guard let failure = error as? WindmillApiError,
+              case .refused(let status, let refusal) = failure else { return .retry }
+        if refusal.code == remintCode { return .remint }
+        if refusal.code == "session-already-open" { return .wait }
+        if refusal.code == "session-finished" { return .dropped }
+        if status >= 500 { return .retry }
+        if status == 400 || status == 409 { return .refused }
+        // 401 waits for the Keychain, 404 for the thing to exist — the contract's retry class,
+        // never a drop.
+        return .retry
+    }
+
     private func loadLog() async {
         guard let gym else { return }
         guard let page = try? await gym.sessions(before: nil, beforeId: nil, limit: Self.logPage) else { return }
-        recent = page
+        recent = mergedRecent(page)
 
         guard let open = page.first(where: { $0.session.isOpen }) else {
             // The log holds no open session, so whatever this device was holding is over — a finish
             // from another surface, or the four-hour auto-close. The session row goes; a set that is
-            // still OWED does not, because a set nobody has answered for has not been refused.
-            if let live = queue.session { queue.close(live.id) }
+            // still OWED does not, because a set nobody has answered for has not been refused. An
+            // UNCLAIMED session is the exception both ways: the log has never held it, so the log's
+            // silence about it says nothing, and closing it here would throw away a live workout.
+            if let live = queue.session, !queue.sessionIsUnclaimed { queue.close(live.id) }
             queue.flush()
             drawFromQueue()
             return
         }
+        // A different session open on the ACCOUNT while this device holds an unclaimed one: the
+        // phone keeps its own workout — that is the ownership rule — and the claim waits for the
+        // other session to close rather than letting the adopt overwrite a session the log cannot
+        // give back.
+        if queue.sessionIsUnclaimed, queue.session?.id != open.session.id { return }
         await adopt(open.session, joined: true)
+    }
+
+    // The log's page with this device's unclaimed sessions folded in, newest first — the merge rule
+    // of section D: after a claim confirms, the server row is the truth, so a local copy that shares
+    // an id with a served row stands down.
+    private func mergedRecent(_ server: [SessionSummary]) -> [SessionSummary] {
+        let known = Set(server.map(\.id))
+        let local = localLog.summaries().filter { !known.contains($0.id) }
+        return (server + local).sorted { $0.session.startedAtMs > $1.session.startedAtMs }
+    }
+
+    // The served catalog plus whatever this device minted and has not yet claimed — without the
+    // fold, a catalog read while the claim is still owed would erase the movement mid-session.
+    private func merged(_ server: [Exercise]) -> [Exercise] {
+        let known = Set(server.map(\.id))
+        let unclaimed = localLog.exercises.filter { !known.contains($0.id) }
+            .map { Exercise(id: $0.id, name: $0.name, pattern: $0.pattern,
+                            equipment: $0.equipment, stepKg: $0.stepKg, custom: true) }
+        return server + unclaimed
     }
 
     private func adopt(_ opened: Session, joined: Bool) async {
@@ -593,10 +1033,14 @@ public final class TrainingStore: ObservableObject {
         // Counted off the queue and never off `saveState`, so no single word can silence it. A set
         // still inside its own undo window is not stranded — it is being held on purpose, and the
         // strip would otherwise flash for nine seconds after every set on a healthy connection.
-        // Signed out nothing is stranded either: there is no log to reach, which is a different fact
-        // and has its own word.
+        // Signed out nothing is stranded, and neither is a set parked behind an unclaimed session:
+        // there is no log those sets could have reached yet, which is a different fact with its own
+        // word.
         let instant = now()
-        strandedCount = gym == nil ? 0 : queue.pending.filter { !$0.isHeld(at: instant) }.count
+        let parked = queue.sessionIsUnclaimed ? queue.session?.id : nil
+        strandedCount = gym == nil
+            ? 0
+            : queue.pending.filter { !$0.isHeld(at: instant) && $0.sessionId != parked }.count
         redial()
     }
 

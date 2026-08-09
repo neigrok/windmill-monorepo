@@ -175,10 +175,6 @@ public struct GymRoom: View {
         starting = true
         defer { starting = false }
         note = nil
-        guard account.isSignedIn else {
-            note = "sessions are kept on your account"
-            return
-        }
         if case .failure(let why) = await store.start(routineId: routineId) {
             note = why.line("a session starts there")
             return
@@ -205,9 +201,11 @@ public struct GymRoom: View {
         switch await store.finish() {
         case .closed(let session):
             keptRoutine = false
+            // Reviewed under the id the close CAME BACK with, not the one it went out under — a
+            // local finish whose claim reminted the id holds the review under the fresh one.
             finished = FinishedSession(session: session,
                                        sets: performed,
-                                       review: await store.review(of: live.id),
+                                       review: await store.review(of: session.id),
                                        isFirst: store.recent.count <= 1)
         case .stranded(let count):
             note = "\(Readout.setCount(count)) still on this device — the session stays open until they land"

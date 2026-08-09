@@ -2,8 +2,10 @@ import Foundation
 import WindmillPlatform
 
 // THE LOCAL-FIRST WRITE — a set is the lifter's the instant they tap, and the network's problem
-// afterwards. This is the Swift statement of web/src/products/gym/logger/flushQueue.js, the same
-// contract in another language, and the two must not drift.
+// afterwards. This and Android's SetQueue.kt are the contract's two surviving statements — the
+// same rules in two languages, pinned by gym ARCHITECTURE.md §11's verdict contract — and the two
+// must not drift. (The web's flushQueue.js was the reference implementation until 2026-08-09; it
+// went with the web logger.)
 //
 // Every set carries a CLIENT-MINTED id, which IS the idempotency key: a replay of a set that already
 // landed answers 200 with the stored row, even after the session closed, so this queue can send in
@@ -58,9 +60,9 @@ public final class SetQueue {
     // and re-minting forever would hammer the log instead of telling the lifter.
     public static let maxRemints = 3
 
-    // The web's own window (flushQueue.js), to the millisecond: the two surfaces must agree on how
-    // long a set can be taken back, or the same mistake is undoable on one phone and permanent on
-    // the other.
+    // Android's window (SetQueue.kt), to the millisecond: the two phones must agree on how long a
+    // set can be taken back, or the same mistake is undoable on one phone and permanent on the
+    // other.
     public static let undoWindowMs: Int64 = 9_000
 
     private struct Held: Codable {
@@ -72,6 +74,10 @@ public final class SetQueue {
         // "no sets yet — logging one starts it" is drawing. Optional for the same reason Entry's
         // hold is: an older file must still open.
         var order: [String]?
+        // Whether the live session was composed on this DEVICE with no account asked — the claim
+        // replay is what turns it false. Optional so an older file still opens, and nil honestly
+        // reads as claimed: every session before this flag existed was opened by the server.
+        var unclaimed: Bool?
     }
 
     private let url: URL
@@ -105,12 +111,66 @@ public final class SetQueue {
 
     public var session: Session? { held.session }
 
+    public var sessionIsUnclaimed: Bool { held.session != nil && (held.unclaimed ?? false) }
+
     // A different session is a different workout, so the movement order goes with the old one. It is
     // cleared rather than merged: the two lists share nothing, and carrying yesterday's movements
     // into today would draw a session the lifter never started.
-    public func hold(_ session: Session?) {
+    //
+    // `unclaimed` defaults to false because every caller but one is holding a session the SERVER
+    // answered with; only the anonymous local start passes true, and the claim's success passes
+    // false again for the same id.
+    public func hold(_ session: Session?, unclaimed: Bool = false) {
         if held.session?.id != session?.id { held.order = nil }
         held.session = session
+        held.unclaimed = session == nil ? nil : unclaimed
+    }
+
+    // The claim reminted the live session's id (409 session-id-taken): the session row and every
+    // entry pinned to the old id follow it, or the sets would be owed against an id the log will
+    // never know.
+    public func remapSession(_ old: String, to fresh: String) {
+        held.entries = held.entries.mapValues { entry in
+            guard entry.sessionId == old else { return entry }
+            return Entry(set: entry.set, sessionId: fresh, needsPush: entry.needsPush,
+                         remints: entry.remints, heldUntilMs: entry.heldUntilMs)
+        }
+        guard let live = held.session, live.id == old else { return }
+        held.session = Session(id: fresh, startedAtMs: live.startedAtMs,
+                               finishedAtMs: live.finishedAtMs, routineId: live.routineId,
+                               plan: live.plan)
+    }
+
+    // The claim reminted a LOCAL id the live session still references — a routine, or a movement in
+    // its sets, its walk order and its frozen plan's own lines. Every repair moves the key and
+    // nothing else, exactly as `remint` does for a set's own id.
+    public func remapRoutine(_ old: String, to fresh: String) {
+        guard let live = held.session, live.routineId == old else { return }
+        held.session = Session(id: live.id, startedAtMs: live.startedAtMs,
+                               finishedAtMs: live.finishedAtMs, routineId: fresh, plan: live.plan)
+    }
+
+    public func remapExercise(_ old: String, to fresh: String) {
+        held.entries = held.entries.mapValues { entry in
+            guard entry.set.exerciseId == old else { return entry }
+            let moved = TrainingSet(id: entry.set.id, exerciseId: fresh, setNumber: entry.set.setNumber,
+                                    weightKg: entry.set.weightKg, reps: entry.set.reps,
+                                    kind: entry.set.kind, rpe: entry.set.rpe, note: entry.set.note,
+                                    completedAtMs: entry.set.completedAtMs)
+            return Entry(set: moved, sessionId: entry.sessionId, needsPush: entry.needsPush,
+                         remints: entry.remints, heldUntilMs: entry.heldUntilMs)
+        }
+        held.order = held.order.map { $0.map { $0 == old ? fresh : $0 } }
+        guard let live = held.session, let plan = live.plan,
+              plan.entries.contains(where: { $0.exerciseId == old }) else { return }
+        let entries = plan.entries.map { entry in
+            guard entry.exerciseId == old else { return entry }
+            return PlanEntry(exerciseId: fresh, sets: entry.sets, reps: entry.reps,
+                             weightKg: entry.weightKg, restSeconds: entry.restSeconds)
+        }
+        held.session = Session(id: live.id, startedAtMs: live.startedAtMs,
+                               finishedAtMs: live.finishedAtMs, routineId: live.routineId,
+                               plan: PlanSnapshot(routine: plan.routine, entries: entries))
     }
 
     // The open session's sets in the order they were performed — queued and delivered together,
@@ -213,11 +273,12 @@ public final class SetQueue {
         if held.session?.id == sessionId { letGo() }
     }
 
-    // The session row and its movement order are one fact and end together — an order left standing
-    // over no session is a list of movements belonging to a workout that is over.
+    // The session row, its movement order and its claim state are one fact and end together — an
+    // order left standing over no session is a list of movements belonging to a workout that is over.
     private func letGo() {
         held.session = nil
         held.order = nil
+        held.unclaimed = nil
     }
 
     public func flush() {

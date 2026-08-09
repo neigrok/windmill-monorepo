@@ -172,6 +172,7 @@ final class CoachShareStoreTests: XCTestCase {
         var ms: Int64 = 1_000
         return TrainingStore(queue: SetQueue(url: queueURL),
                              deviceCatalog: DeviceCatalog(url: queueURL.appendingPathExtension("cat")),
+                             localLog: LocalLog(url: queueURL.appendingPathExtension("local")),
                              now: { ms += 1; return ms },
                              undoWindowMs: 0,
                              sync: { _ in server })
@@ -240,23 +241,24 @@ final class CoachShareStoreTests: XCTestCase {
         XCTAssertEqual(quiet, .noAnswer)
     }
 
-    // Signed out there is no log to reach and no session to share, so the doors answer without
-    // inventing a request — the same shape every other write in this store takes.
-    func testSignedOutThereIsNothingToShare() async {
+    // The coach share is a signed-in OFFER: a link is a capability the account mints, so signed out
+    // the doors answer with the plain precondition rather than pretending a log went quiet — and
+    // statistics answer from the device's own log, which with nothing finished is honestly empty.
+    func testSignedOutTheShareNamesItsPreconditionAndStatisticsAnswerLocally() async {
         let store = store(nil)
         await store.connect(to: Account(
             api: WindmillApi(baseURL: URL(string: "https://windmill.works")!, credential: { nil }),
             user: nil))
 
         guard case .failure(let why) = await store.share("ses_1") else {
-            return XCTFail("there is no log to answer")
+            return XCTFail("no account can mint no link")
         }
-        XCTAssertEqual(why, .noAnswer)
+        XCTAssertEqual(why, .refused("sharing needs your account — sign in first"))
         let revoked = await store.revokeShare("ses_1")
-        XCTAssertEqual(revoked, .noAnswer)
-        guard case .failure(let quiet) = await store.statistics() else {
-            return XCTFail("there is no log to answer")
+        XCTAssertEqual(revoked, .refused("sharing needs your account — sign in first"))
+        guard case .success(let local) = await store.statistics() else {
+            return XCTFail("the device's own log always answers")
         }
-        XCTAssertEqual(quiet, .noAnswer)
+        XCTAssertEqual(local, TrainingStatistics())
     }
 }

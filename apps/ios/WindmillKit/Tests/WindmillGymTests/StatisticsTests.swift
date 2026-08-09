@@ -284,6 +284,7 @@ final class RetrospectiveReadTests: XCTestCase {
         var ms: Int64 = 1_000
         let store = TrainingStore(queue: SetQueue(url: queueURL),
                                   deviceCatalog: DeviceCatalog(url: queueURL.appendingPathExtension("cat")),
+                                  localLog: LocalLog(url: queueURL.appendingPathExtension("local")),
                                   now: { ms += 1; return ms },
                                   undoWindowMs: 0,
                                   sync: { _ in server })

@@ -5,14 +5,13 @@ import SwiftUI
 // the account is created the first time. Every string below is the canon's, verbatim, because the
 // same sentence is already on the web and one sentence lives in one place.
 //
-// What is native rather than canon is the last step, and it has two shapes. Once the app claims
-// `windmill.works` links with an associated domain, tapping the emailed link on this phone opens
-// THIS app and the shell finishes the sign-in (`AuthStore.arrived(from:)`). Until the domain serves
-// an `apple-app-site-association` naming this app, the link opens the WEB app instead — and because
-// a link works exactly once, tapping it there BURNS it and a paste afterwards can only fail. So the
-// waiting screen says which of the two is true, and `WMUniversalLinksEnabled` is the one place that
-// answers. Same rule as `WMAppleSignInEnabled`: an instruction that cannot work is absent rather
-// than present and wrong.
+// What is native rather than canon is the finish: the app asks the mail for a six-digit CODE
+// (`door: "app"`), because a code can be read off one screen and typed into this one — nothing to
+// copy, nothing that a tap in the wrong place can burn. The field still takes a whole pasted magic
+// link or bare token (an old email, a link requested from the web), and a tapped link that lands in
+// this app is still finished by the shell (`AuthStore.arrived(from:)`) — routing that stays dark
+// until windmill.works serves an association file (`WMUniversalLinksEnabled` records that state;
+// README.md).
 
 public struct SignInDoor: View {
     @ObservedObject var auth: AuthStore
@@ -82,11 +81,11 @@ public struct SignInDoor: View {
     }
 
     // Apple leads on this surface — one tap, no address to type, no mail to go and find. The
-    // emailed link stays beside it rather than behind it, and not out of politeness: it is the only
-    // way a Hide My Email account can ever reach the account that person already has on the web
-    // (AUTH.md's link door), and the only door that keeps one account across phone and browser.
+    // emailed code stays beside it rather than behind it, and not out of politeness: email is the
+    // only door that keeps one account across phone and browser, and the only road a Hide My Email
+    // account has back to the account that person already has on the web (AUTH.md's link door).
     //
-    // Until Apple is configured the link is the ONLY door, so it takes the primary treatment back.
+    // Until Apple is configured the email is the ONLY door, so it takes the primary treatment back.
     // A door with no primary button is a door nobody knows how to open.
     private var asking: some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x5) {
@@ -112,23 +111,21 @@ public struct SignInDoor: View {
             Button {
                 Task { await requestLink() }
             } label: {
-                Text(working ? "Sending…" : "Email me a link")
+                Text(working ? "Sending…" : "Email me a code")
                     .font(WindmillFont.body(16, .semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, WindmillSpace.x3)
-                    // Gold when the link is the only way in; a quiet outline once Apple carries the
+                    // Gold when the code is the only way in; a quiet outline once Apple carries the
                     // primary weight — and the label's ink follows the fill, because they are one
                     // modifier and cannot be answered differently.
                     .actionCapsule(Self.appleSignInEnabled ? .quiet : .primary)
             }
             .disabled(working || email.isEmpty)
 
-            // This read "Signed out, Windmill still works — what you write lives on this device",
-            // the same sentence the web door carried. One door stands in front of every room, and
-            // that claim was only true of the ones that write to disk before they sync: the
-            // training log does not open at all without an account. The shell may not name which
-            // room is which, so the door says the half that holds in all of them.
-            Text("No password. Whatever you have already made on this device is claimed when you sign in — and some rooms only open once you have an account.")
+            // The door's whole promise, in one footnote. Every room works before there is an
+            // account — the gym's log and the journal's pages live on this device — and signing in
+            // CLAIMS what is already here rather than gating it (auth canon §2).
+            Text("No password. What you make on this device is claimed by your account when you sign in.")
                 .font(WindmillFont.body(13))
                 .foregroundStyle(WindmillColor.textTertiary)
         }
@@ -140,21 +137,18 @@ public struct SignInDoor: View {
                 .font(WindmillFont.display(22))
                 .foregroundStyle(WindmillColor.textPrimary)
 
-            Text("We sent a link to \(address). It works once and lasts 15 minutes.")
+            Text("We sent a code to \(address). It works once and lasts 15 minutes.")
                 .font(WindmillFont.body(15))
                 .foregroundStyle(WindmillColor.textSecondary)
 
-            Divider()
-
-            Text(Self.finishing)
-                .font(WindmillFont.body(15))
-                .foregroundStyle(WindmillColor.textSecondary)
-                .lineSpacing(3)
-
-            DoorField(placeholder: "Paste the link", text: $pasted)
+            // Numeric because the credential is — and the field still takes a whole pasted magic
+            // link or bare token (an old email, a link requested from the web), because someone
+            // holding one has done nothing wrong. Paste works whatever the keyboard shows.
+            DoorField(placeholder: "6-digit code", text: $pasted)
+                .keyboardType(.numberPad)
 
             Button {
-                Task { await completeLink() }
+                Task { await signIn(to: address) }
             } label: {
                 Text("Sign in")
                     .font(WindmillFont.body(16, .semibold))
@@ -218,7 +212,9 @@ public struct SignInDoor: View {
         defer { working = false }
         do {
             try await auth.requestLink(to: email)
-            sentTo = email
+            // The address the mail actually went to — AuthStore trims before it posts, so stage 2
+            // displays and verifies against that exact address rather than the raw field.
+            sentTo = auth.linkSentTo
             canResend = false
             Task {
                 try? await Task.sleep(for: .seconds(30))
@@ -229,15 +225,24 @@ public struct SignInDoor: View {
         }
     }
 
-    private func completeLink() async {
+    // One field, two credentials: exactly six digits is the code we just emailed, and everything
+    // else — a whole link, a bare token — goes to the parser. The order is load-bearing:
+    // MagicLink.token(in:) would accept the code as a token and send it to the wrong endpoint.
+    private func signIn(to address: String) async {
         working = true
         refusal = nil
         defer { working = false }
         do {
-            try await auth.completeLink(pasted)
+            if let code = SignInCode.parse(pasted) {
+                try await auth.completeCode(email: address, code: code)
+            } else {
+                try await auth.completeLink(pasted)
+            }
             dismiss()
         } catch {
-            refusal = MagicLink.refusal(for: error)
+            refusal = SignInCode.parse(pasted) != nil
+                ? SignInCode.refusal(for: error)
+                : MagicLink.refusal(for: error)
         }
     }
 
@@ -279,29 +284,10 @@ public struct SignInDoor: View {
     static var appleSignInEnabled: Bool {
         Bundle.main.object(forInfoDictionaryKey: "WMAppleSignInEnabled") as? Bool ?? false
     }
-
-    // Whether the emailed link opens THIS app. It needs a paid team, the associated-domains
-    // entitlement this app already declares, and — the half no build can produce — an
-    // `apple-app-site-association` served from windmill.works naming this bundle. Until all three
-    // hold, iOS hands the link to Safari, so the instruction that would send someone to tap it is
-    // absent rather than present and wrong. See apps/ios/README.md.
-    static var universalLinksEnabled: Bool {
-        Bundle.main.object(forInfoDictionaryKey: "WMUniversalLinksEnabled") as? Bool ?? false
-    }
-
-    // THE ONE SENTENCE THAT CHANGES WITH THAT FLAG, and it changes because the right ADVICE changes.
-    // A link works once: while it opens Safari, tapping it signs you in over there and leaves this
-    // phone with a spent link — so the honest instruction is to copy rather than tap.
-    static var finishing: String {
-        guard universalLinksEnabled else {
-            return "Copy the link rather than tapping it — a link works once, and tapping it opens the web app instead of this one. Paste it here to finish on this phone."
-        }
-        return "Open the link on this phone and it comes back here. Or paste it."
-    }
 }
 
-// The one field this door uses, in all three places it needs one (the address, and the pasted link
-// on two different screens).
+// The one field this door uses, in all three places it needs one (the address, the code, and the
+// pasted link in the Hide My Email door).
 //
 // The placeholder is DRAWN rather than handed to `prompt:` because SwiftUI colours a prompt with the
 // accent, and a sheet does not reliably inherit its presenter's tint — which is how a door built

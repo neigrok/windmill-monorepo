@@ -94,10 +94,12 @@ public struct PlanEntry: Equatable, Codable, Sendable {
     }
 }
 
-// The routine as it stood the moment Start was pressed, frozen onto the session by the SERVER. The
-// client never composes one: a client-composed copy freezes whatever that client last read, which
-// is exactly the staleness the snapshot exists to prevent. `routine` is the name that day of the
-// program had then, and a rename since must not rewrite what the log says about the past.
+// The routine as it stood the moment Start was pressed. Signed in the SERVER freezes it off the
+// routine's own row — a client-composed copy would freeze whatever that client last read, which is
+// exactly the staleness the snapshot exists to prevent. Signed out this device IS the routine's
+// only shelf, so the local start composes it off that only copy: the same rule, nothing to be
+// stale against. `routine` is the name that day of the program had then, and a rename since must
+// not rewrite what the log says about the past.
 public struct PlanSnapshot: Equatable, Codable, Sendable {
     public let routine: String
     public let entries: [PlanEntry]
@@ -180,6 +182,15 @@ public struct TrainingSet: Equatable, Codable, Sendable, Identifiable {
     public func reminted(as id: String) -> TrainingSet {
         TrainingSet(id: id, exerciseId: exerciseId, setNumber: setNumber, weightKg: weightKg,
                     reps: reps, kind: kind, rpe: rpe, note: note, completedAtMs: completedAtMs)
+    }
+
+    // The same set with its instant repaired into the wire's bound (`Instants`). The claim replays
+    // through this so a broken local clock cannot jam a whole session behind a terminal 400.
+    public var clamped: TrainingSet {
+        let repaired = Instants.clamped(completedAtMs)
+        guard repaired != completedAtMs else { return self }
+        return TrainingSet(id: id, exerciseId: exerciseId, setNumber: setNumber, weightKg: weightKg,
+                           reps: reps, kind: kind, rpe: rpe, note: note, completedAtMs: repaired)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -650,23 +661,26 @@ public struct SetWrite: Equatable, Codable, Sendable {
     }
 }
 
-// Start. `joinOpenSession` is omitted by the phone always: the default JOINS whatever session is
+// Start. `joinOpenSession` is omitted by a LIVE start always: the default JOINS whatever session is
 // already open, so a lost race and a borrowed second device both land in the live workout in one
-// round trip. Only backfill — a web door — ever means "create exactly this session, which is not
-// now", and that surface sends the flag itself.
+// round trip. `false` means "create exactly this session, which is not now" — backfill on the web,
+// and the claim replay here, where the join default once silently filed a past session's sets into
+// a workout that was running (gym ARCHITECTURE.md §11's shipped bug).
 public struct SessionStart: Equatable, Codable, Sendable {
     public let id: String
     public let startedAtMs: Int64
     public let routineId: String?
+    public let joinOpenSession: Bool?
 
-    public init(id: String, startedAtMs: Int64, routineId: String? = nil) {
+    public init(id: String, startedAtMs: Int64, routineId: String? = nil, joinOpenSession: Bool? = nil) {
         self.id = id
         self.startedAtMs = startedAtMs
         self.routineId = routineId
+        self.joinOpenSession = joinOpenSession
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, routineId
+        case id, routineId, joinOpenSession
         case startedAtMs = "startedAt"
     }
 }
@@ -742,6 +756,18 @@ public struct RoutineWrite: Equatable, Codable, Sendable {
         self.entries = entries
     }
 
+    // What a create ANSWERS, composed the way the server composes it — position 1-based and dense,
+    // in entry order. The device's own copy of the rule, for the routine kept while nobody is
+    // signed in to ask.
+    public var made: Routine {
+        Routine(id: id, name: name, position: position,
+                entries: entries.enumerated().map { index, entry in
+                    RoutineEntry(position: index + 1, exerciseId: entry.exerciseId,
+                                 targetSets: entry.targetSets, targetReps: entry.targetReps,
+                                 targetWeightKg: entry.targetWeightKg, restSeconds: entry.restSeconds)
+                })
+    }
+
     // The whole document again, with whatever the caller changed. A routine PUT is a replace, so a
     // read-modify-write that dropped a line would delete it — this is the one conversion, and it
     // keeps the server's own order.
@@ -788,6 +814,18 @@ public struct RoutineWrite: Equatable, Codable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case id, name, position, entries
+    }
+}
+
+// The wire's bound on every instant: (0, 253402300799000] — year 9999 — and finish may never come
+// before start. A local timestamp outside it (a zero clock, a nanosecond slip) is REPAIRED before
+// replay, because the server answers a bad instant with a terminal 400 and the claim would jam on
+// it forever.
+public enum Instants {
+    public static let maxMs: Int64 = 253_402_300_799_000
+
+    public static func clamped(_ ms: Int64) -> Int64 {
+        min(max(ms, 1), maxMs)
     }
 }
 

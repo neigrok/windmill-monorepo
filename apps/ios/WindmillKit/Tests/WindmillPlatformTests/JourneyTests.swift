@@ -107,13 +107,15 @@ final class EntryCaveatTests: XCTestCase {
         XCTAssertEqual(elsewhere.caveat, "Your trees are on the web.")
     }
 
-    // A room that is here but has a wall in it says what the wall is, in its own entry.
+    // A room that is here but has a wall in it says what the wall is, in its own entry. No shipping
+    // product carries one today — journal and gym are anonymous-first — but the seam stays tested,
+    // because the next gated room will lean on it.
     func testARoomThatNeedsAnAccountSaysSoOnTheDoor() {
-        let gated = Fake(id: "gym",
-                         entry: EntryDoor(verb: "Log a workout", line: "sets and weights",
-                                          made: "Logged.", back: "Back",
-                                          caveat: "Sessions are kept on your account."))
-        XCTAssertEqual(gated.caveat, "Sessions are kept on your account.")
+        let gated = Fake(id: "someday",
+                         entry: EntryDoor(verb: "Open the vault", line: "a locked thing",
+                                          made: "Opened.", back: "Back",
+                                          caveat: "The vault needs an account."))
+        XCTAssertEqual(gated.caveat, "The vault needs an account.")
     }
 
     // Presence outranks the entry's own words. A module that filled in both would be two sentences

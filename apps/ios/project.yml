@@ -76,9 +76,11 @@ targets:
         # Sign in with Apple stays OFF until there is a paid team, the capability, and the four
         # server env vars. Off means the button is absent, never present-and-broken.
         WMAppleSignInEnabled: false
-        # Whether a tapped link actually reaches this app — true only once the association file above
-        # is live on windmill.works. It gates one sentence: the sign-in door tells someone to COPY
-        # the link while a tap would open Safari and burn it, and to tap it once a tap comes home.
+        # Whether a tapped windmill.works link actually reaches this app — true only once the
+        # association file above is live. Since the code door shipped, no code reads it: the sign-in
+        # door asks for an emailed six-digit code and gives no instruction about the link. It stays
+        # as the declared truth of the domain half, for the wave that makes a tapped link come home
+        # (README.md, "Universal links").
         WMUniversalLinksEnabled: false
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true

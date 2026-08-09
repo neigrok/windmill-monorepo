@@ -73,28 +73,35 @@ replaces that line and nothing else in the shell changes.
 **Gym is here because the phone is the only device that can own an open session.** The web mirrors
 and backfills; workout mode, the ladder, the keypad, the rest clock and the offline queue all need a
 device that is with you, awake and able to log in a basement with no signal
-(`backend/products/gym/ARCHITECTURE.md` §11). The queue is the room's load-bearing part: sets are
-kept on the device under their own client-minted ids and replayed until the log takes them, and the
-three refusals are told apart by their machine `code` — two mean re-mint and send again, one means
-that set can never land and the room says so.
+(`backend/products/gym/ARCHITECTURE.md` §11). The room is anonymous-first: sessions, routines and
+finished history live on the device before there is an account (`LocalLog`), and signing in claims
+them — movements, then routines, then sessions oldest first, each replayed start → sets → finish
+with `joinOpenSession: false`. The queue is the room's load-bearing part: sets are kept on the
+device under their own client-minted ids and replayed until the log takes them, and the three
+refusals are told apart by their machine `code` — two mean re-mint and send again, one means that
+set can never land and the room says so.
 
-**Sign in with Apple is the primary door** (one tap, no address to type), with the emailed link
-beside it rather than behind it: the link is the only way a Hide My Email account can reach the
-account that person already has on the web, and the only door that keeps one account across phone
-and browser. Apple is gated off until it is configured — see `docs/IOS_APPLE_SIGNIN.md`.
+**Sign in with Apple is the primary door** (one tap, no address to type), with the emailed six-digit
+code beside it rather than behind it: email is the only door that keeps one account across phone and
+browser, and a magic link pasted from the web is still how a Hide My Email account folds into the
+account that person already has (`AUTH.md`'s link door). Apple is gated off until it is configured —
+see `docs/IOS_APPLE_SIGNIN.md`.
 
 ## Universal links — the repo half is done, the domain half is yours
 
-The emailed magic link is `https://windmill.works/#/auth?token=<secret>`
-(`backend/platform/application/AuthService.cpp`). We want a tap on that link to open **this app**.
-Everything a build can contribute is written:
+The app signs in by an emailed six-digit **code** (`door: "app"` on `POST /v1/auth/magic-link`), so
+sign-in no longer depends on the emailed link at all — the old failure where tapping the link opened
+Safari, signed you in over there and burned the paste field's credential is gone with the paste step
+itself. The magic link still exists (the web's door, old emails, a link requested cross-surface), it
+is `https://windmill.works/#/auth?token=<secret>` (`backend/platform/application/AuthService.cpp`),
+and a tap on it should someday open **this app**. Everything a build can contribute is written:
 
 - `project.yml` declares `com.apple.developer.associated-domains` = `applinks:windmill.works`.
 - `Shell.swift`'s `onOpenURL` hands the URL to `AuthStore.arrived(from:)`, which verifies the token
   and adopts the session. A URL with no token is ignored; a refusal opens the door with the sentence
   already in it, so a link that wakes a closed app and fails is never a launch that did nothing.
 - `MagicLink.token(in:)` already reads the token out of the **fragment**, which is where it lives —
-  the same function the paste field uses, so both doors end in one parser.
+  the same function the door's field uses for a pasted link, so both roads end in one parser.
 
 **It does nothing until the domain says so, and that part is not in this repo.** iOS only routes a
 link to an app when the site serves an association file naming that app, signed by a real team:
@@ -126,14 +133,14 @@ link to an app when the site serves an association file naming that app, signed 
    The token is in the fragment, so the claim has to be a `#` component. A path claim would have to be
    `"/": "/"` — the whole site — and the app would start swallowing the gallery, shared trees and the
    pricing page.
-3. **Then flip `WMUniversalLinksEnabled` to true in `project.yml`.** It gates one sentence and it is
-   the reason the flag exists: a link works exactly once, so while a tap still lands in Safari the
-   door must tell someone to **copy** the link rather than tap it — tapping signs them in over there
-   and leaves this phone holding a spent link. With the flag on it says the tap comes home.
+3. **Then flip `WMUniversalLinksEnabled` to true in `project.yml`.** Since the code door shipped,
+   no code reads the flag — the door asks for a code and gives no instruction about the link — so it
+   stands as the declared truth of whether the domain half exists, kept so the wave that makes a
+   tapped link come home has one switch to flip and one place to look.
 
-Unverified until all three hold: the routing itself. The token parser, the arrival handling and the
-copy are covered by `WindmillPlatformTests`; whether iOS hands us the URL cannot be tested without
-the file on the domain and a signed build.
+Unverified until all three hold: the routing itself. The token parser and the arrival handling are
+covered by `WindmillPlatformTests`; whether iOS hands us the URL cannot be tested without the file
+on the domain and a signed build.
 
 ## The shell — hub + capsule
 
@@ -176,12 +183,12 @@ the first real thing → the house, once.**
 
 - **The one question** is the first screen, once ever — not the hub, because a hub of three empty
   rooms is a chore list. Three doors in plain verbs, each in its product's skin, one skip.
-- **A door says what it needs before it is chosen.** Two of the three rooms do not open straight onto
-  work — roadmap's canvas is on the web, and a training log is kept on an account — so their cards
-  carry that fact under the product's own sentence (`ProductModule.caveat`). It reads off `presence`
-  for a room that is really elsewhere and off `EntryDoor.caveat` for a room that is here with a wall
-  in it, which means neither sentence is written twice. Nil is the good case and journal has none.
-  The same account line is on gym's hub card while signed out.
+- **A door says what it needs before it is chosen.** One of the three rooms does not open straight
+  onto work — roadmap's canvas is on the web — so its card carries that fact under the product's own
+  sentence (`ProductModule.caveat`, read off `presence` for a room that is really elsewhere; a room
+  that is here with a wall in it would say so in `EntryDoor.caveat`, so no sentence is written
+  twice). Nil is the good case, and journal and gym both have none: both rooms are anonymous-first,
+  and gym's log lives on the device until signing in claims it.
 - **Launch reopens the last room you stood in.** Going home clears it: the hub is where you chose to
   be, so the next launch honours that rather than dragging you back in.
 - **The house fires on the first capsule tap after something real exists**, and never again. The

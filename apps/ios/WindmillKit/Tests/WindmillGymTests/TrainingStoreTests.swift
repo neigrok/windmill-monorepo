@@ -23,17 +23,21 @@ private let storageFailure = refusal(500, message: "internal error")
 final class TrainingStoreTests: XCTestCase {
     private var queueURL: URL!
     private var catalogURL: URL!
+    private var localURL: URL!
 
     override func setUp() async throws {
         queueURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("gym-\(UUID().uuidString).json")
         catalogURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("gym-catalog-\(UUID().uuidString).json")
+        localURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("gym-local-\(UUID().uuidString).json")
     }
 
     override func tearDown() async throws {
         try? FileManager.default.removeItem(at: queueURL)
         try? FileManager.default.removeItem(at: catalogURL)
+        try? FileManager.default.removeItem(at: localURL)
     }
 
     // The undo window is off here on purpose. What every test below is about is what happens to a
@@ -47,6 +51,7 @@ final class TrainingStoreTests: XCTestCase {
         return TrainingStore(
             queue: SetQueue(url: queueURL),
             deviceCatalog: DeviceCatalog(url: catalogURL),
+            localLog: LocalLog(url: localURL),
             now: { ms += 1; return ms },
             mintSession: { "ses_minted" },
             mintSet: mintSet,
@@ -285,19 +290,9 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(store.prefill, Prefill(weightKg: 85, reps: 4), "the sticky carry-forward follows the thumb")
     }
 
-    // Signed out is a supported state, not a degraded one — but gym cannot open a session without the
-    // log, because the plan snapshot is frozen server-side. Nothing here may claim otherwise.
-    func testSignedOutThereIsNoSessionToOpenAndNothingIsClaimed() async {
-        let store = makeStore(sync: nil)
-        await store.connect(to: account(signedIn: false))
-
-        guard case .failure(.noAnswer) = await store.start() else {
-            return XCTFail("with nobody signed in there is no log to answer")
-        }
-        XCTAssertNil(store.session)
-        XCTAssertEqual(store.saveState, .idle)
-        XCTAssertNil(store.saveState.line)
-    }
+    // Signed out is a supported state, not a degraded one: the room is anonymous-first, and the
+    // whole signed-out life of a session — start, log, finish, claim — has its own suite
+    // (AnonymousGymTests). What this file keeps is the signed-in walk.
 
     // A WARMUP IS A KIND THE LOGGER CAN WRITE, and it counts toward nothing. Before the toggle
     // existed every set this surface could produce was `working`, so a 60 kg ramp-up was fed to the
@@ -601,6 +596,34 @@ final class SetQueueTests: XCTestCase {
         XCTAssertEqual(queue.sets(in: "ses_1").map(\.id), ["set_owed"])
     }
 
+    // The claim reminted a movement the live session's frozen plan names: the repair reaches the
+    // sets, the walk order AND the plan's own lines — a plan row left on the dead id would miss the
+    // planEntry lookup and draw an id the remapped catalog no longer knows.
+    func testRemappingAMovementRewritesTheSetsTheWalkOrderAndTheFrozenPlan() {
+        let (queue, url) = makeQueue()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let plan = PlanSnapshot(routine: "Push A", entries: [
+            PlanEntry(exerciseId: "ex_local", sets: 5, reps: 5, weightKg: 82.5, restSeconds: 120),
+            PlanEntry(exerciseId: "bench-press", sets: 3, reps: 8, weightKg: 60),
+        ])
+        queue.hold(Session(id: "ses_1", startedAtMs: 1_000, routineId: "rt_1", plan: plan),
+                   unclaimed: true)
+        queue.append("ex_local")
+        queue.append("bench-press")
+        queue.store(aSet("set_a", "ex_local", at: 1_100), in: "ses_1", needsPush: true)
+
+        queue.remapExercise("ex_local", to: "ex_fresh")
+
+        XCTAssertEqual(queue.pending.map(\.set.exerciseId), ["ex_fresh"])
+        XCTAssertEqual(queue.order, ["ex_fresh", "bench-press"])
+        XCTAssertEqual(queue.session?.plan, PlanSnapshot(routine: "Push A", entries: [
+            PlanEntry(exerciseId: "ex_fresh", sets: 5, reps: 5, weightKg: 82.5, restSeconds: 120),
+            PlanEntry(exerciseId: "bench-press", sets: 3, reps: 8, weightKg: 60),
+        ]), "the plan lines follow the fresh id and keep everything else")
+        XCTAssertEqual(queue.session?.routineId, "rt_1")
+    }
+
     // Discard is the one case where an owed set has nowhere left to go: the session id no longer
     // names anything, so keeping it would re-send it against nothing, forever.
     func testForgettingADiscardedSessionTakesTheOwedSetsWithIt() {
@@ -617,7 +640,11 @@ final class SetQueueTests: XCTestCase {
 }
 
 // A log entirely under the test's control: it can be unreachable, it can already hold a session and
-// its sets, it can refuse a named movement, and it can store a set and then lose the reply.
+// its sets, it can refuse a named movement, and it can store a set and then lose the reply. Its
+// start walks the server's own resolution order — the caller's OWN row first (a replay answers the
+// stored session), then the open session for a joining start, then a refusal for `false` — because
+// the claim replay's whole safety rests on that order and a fake that joined anyway would prove
+// nothing.
 final class FakeTraining: TrainingSyncing, @unchecked Sendable {
     var online = true
     var catalog: [Exercise] = []
@@ -631,18 +658,31 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
     var refuse: (SetWrite) -> WindmillApiError? = { _ in nil }
     var refuseStart: WindmillApiError?
     var refuseCreate: WindmillApiError?
+    var refuseCreateRoutine: WindmillApiError?
     var refuseShare: WindmillApiError?
     var refuseRevoke: WindmillApiError?
     var refuseStats: WindmillApiError?
+    // Ids some OTHER account already spent — the 409s whose code asks for a remint.
+    var takenSessionIds: Set<String> = []
+    var takenRoutineIds: Set<String> = []
+    var takenExerciseIds: Set<String> = []
     var swallowReplies = 0
     // The close is a round trip, and this is the only way a test can stand inside it.
     var onFinish: () async -> Void = {}
 
     private(set) var appended: [SetWrite] = []
+    private(set) var started: [SessionStart] = []
+    private(set) var finishes: [String: Int64] = [:]
+    private(set) var routineWrites: [RoutineWrite] = []
+    private(set) var exerciseWrites: [ExerciseWrite] = []
     private(set) var calls: [String] = []
 
     func open(_ session: Session) {
         stored[session.id] = session
+    }
+
+    private func refusal(_ status: Int, code: String, _ message: String) -> WindmillApiError {
+        .refused(status, Refusal(Data(#"{"error":"\#(message)","code":"\#(code)"}"#.utf8)))
     }
 
     func exercises() async throws -> [Exercise] {
@@ -653,8 +693,13 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
 
     func createExercise(_ write: ExerciseWrite) async throws -> Exercise {
         calls.append("createExercise")
+        exerciseWrites.append(write)
         guard online else { throw WindmillApiError.offline }
         if let refuseCreate { throw refuseCreate }
+        if let already = catalog.first(where: { $0.id == write.id }) { return already }
+        if takenExerciseIds.contains(write.id) {
+            throw refusal(409, code: "exercise-id-taken", "that movement id is taken")
+        }
         let made = Exercise(id: write.id, name: write.name, pattern: write.pattern,
                             equipment: write.equipment, stepKg: write.stepKg, custom: true)
         catalog.append(made)
@@ -663,10 +708,34 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
 
     func startSession(_ start: SessionStart) async throws -> Session {
         calls.append("start")
+        started.append(start)
         guard online else { throw WindmillApiError.offline }
         if let refuseStart { throw refuseStart }
-        if let live = stored.values.first(where: \.isOpen) { return live }
-        let opened = Session(id: start.id, startedAtMs: start.startedAtMs, routineId: start.routineId)
+        if takenSessionIds.contains(start.id) {
+            throw refusal(409, code: "session-id-taken", "that session id is taken")
+        }
+        // The server's heldFor: a replayed start answers the caller's own stored row, open or
+        // closed, before any join or refusal is considered.
+        if let mine = stored[start.id] { return mine }
+        if let live = stored.values.first(where: \.isOpen) {
+            guard start.joinOpenSession != false else {
+                throw refusal(409, code: "session-already-open", "a session is already open")
+            }
+            return live
+        }
+        let plan = start.routineId.flatMap { written[$0] }.map { routine in
+            PlanSnapshot(routine: routine.name,
+                         entries: routine.entries.sorted { $0.position < $1.position }.map {
+                             PlanEntry(exerciseId: $0.exerciseId, sets: $0.targetSets,
+                                       reps: $0.targetReps, weightKg: $0.targetWeightKg,
+                                       restSeconds: $0.restSeconds)
+                         })
+        }
+        if start.routineId != nil, plan == nil {
+            throw refusal(404, code: "not-found", "no such routine")
+        }
+        let opened = Session(id: start.id, startedAtMs: start.startedAtMs,
+                             routineId: start.routineId, plan: plan)
         stored[opened.id] = opened
         return opened
     }
@@ -697,6 +766,7 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         await onFinish()
         guard online else { throw WindmillApiError.offline }
         guard let live = stored[sessionId] else { throw WindmillApiError.refused(404, Refusal(Data())) }
+        finishes[sessionId] = finishedAtMs
         let closed = Session(id: live.id, startedAtMs: live.startedAtMs, finishedAtMs: finishedAtMs,
                              routineId: live.routineId, plan: live.plan)
         stored[sessionId] = closed
@@ -756,7 +826,13 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
 
     func createRoutine(_ write: RoutineWrite) async throws -> Routine {
         calls.append("createRoutine")
+        routineWrites.append(write)
         guard online else { throw WindmillApiError.offline }
+        if let refuseCreateRoutine { throw refuseCreateRoutine }
+        if let already = written[write.id] { return already }
+        if takenRoutineIds.contains(write.id) {
+            throw refusal(409, code: "routine-id-taken", "that routine id is taken")
+        }
         let made = Routine(id: write.id, name: write.name, position: write.position,
                            entries: write.entries.enumerated().map { index, entry in
                                RoutineEntry(position: index + 1, exerciseId: entry.exerciseId,

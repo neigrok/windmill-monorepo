@@ -71,20 +71,188 @@ final class LinkArrivalTests: XCTestCase {
     }
 }
 
-// The waiting screen's instruction is the one string in this app that a dark universal-link setup
-// makes WRONG rather than merely absent. A link works exactly once: while iOS still hands
-// windmill.works to Safari, "open the link on this phone" signs someone in over there and leaves the
-// phone holding a spent link — so the advice has to be to copy it. It flips only when the domain
-// serves an association file, which no build can produce and no test can fake.
-final class SignInDoorCopyTests: XCTestCase {
-    func testAnUnconfiguredBundleReadsAsNoUniversalLinks() {
-        XCTAssertFalse(SignInDoor.universalLinksEnabled, "absent must read as off, never as on")
+// The door's one field takes two credentials, and this is the rule that tells them apart. The pin
+// that matters most is the LAST test: the link parser accepts ANY bare string as a token, so the
+// door must ask the code question FIRST — a six-digit code that reached MagicLink would be POSTed
+// to /v1/auth/verify as a token and die there.
+final class SignInCodeTests: XCTestCase {
+    func testExactlySixAsciiDigitsIsACodeAndNothingElseIs() {
+        XCTAssertEqual(SignInCode.parse("483201"), "483201")
+        XCTAssertEqual(SignInCode.parse("  483201\n"), "483201")
+        XCTAssertNil(SignInCode.parse("48320"), "five digits is not a code")
+        XCTAssertNil(SignInCode.parse("4832017"), "seven digits is not a code")
+        XCTAssertNil(SignInCode.parse("48a201"), "a letter makes it a token")
+        XCTAssertNil(SignInCode.parse(""))
+        XCTAssertNil(SignInCode.parse("https://windmill.works/#/auth?token=abc123"),
+                     "a pasted link is the parser's, never a code")
     }
 
-    func testWithNoAssociatedDomainTheDoorSaysCopyRatherThanTap() {
-        XCTAssertTrue(SignInDoor.finishing.contains("Copy the link rather than tapping it"))
-        XCTAssertFalse(SignInDoor.finishing.contains("Open the link on this phone"),
-                       "a tap cannot come back here yet, so nothing may tell anyone to tap")
+    func testTheParserStillTreatsABareSixDigitStringAsAToken() {
+        XCTAssertEqual(MagicLink.token(in: "483201"), "483201",
+                       "the parser has not changed — the door disambiguates by asking SignInCode first")
+    }
+
+    // The server collapses wrong/spent/expired/unknown into one refusal; offline is the one failure
+    // that is not about the code, and it keeps its own sentence.
+    func testOnlyACodeFailureIsReportedAsAnExpiredCode() {
+        XCTAssertEqual(SignInCode.refusal(for: WindmillApiError.refused(410, Refusal(Data()))),
+                       SignInCode.expired)
+        XCTAssertEqual(SignInCode.refusal(for: WindmillApiError.malformed), SignInCode.expired)
+        XCTAssertEqual(SignInCode.refusal(for: WindmillApiError.offline), "Can't reach windmill.works")
+    }
+}
+
+// A wire the tests own end to end: every request the store sends is recorded, and the answer is
+// scripted. This is what lets the code door's endpoint, body and cookie capture — and restore's
+// clear-only-on-401 rule — be pinned without a server.
+final class DoorWire: URLProtocol {
+    struct Sent: Equatable {
+        let method: String
+        let path: String
+        let body: [String: String]
+    }
+
+    static var script: [(status: Int, headers: [String: String], body: String)] = []
+    static var failWith: Error?
+    private(set) static var sent: [Sent] = []
+
+    static func reset() {
+        script = []
+        failWith = nil
+        sent = []
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func stopLoading() {}
+
+    override func startLoading() {
+        Self.sent.append(Sent(method: request.httpMethod ?? "",
+                              path: request.url?.path ?? "",
+                              body: Self.bodyOf(request)))
+        if let failure = Self.failWith {
+            client?.urlProtocol(self, didFailWithError: failure)
+            return
+        }
+        let step = Self.script.isEmpty ? (status: 200, headers: [:], body: "{}") : Self.script.removeFirst()
+        let response = HTTPURLResponse(url: request.url!, statusCode: step.status,
+                                       httpVersion: "HTTP/1.1", headerFields: step.headers)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(step.body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    // URLSession hands a POST body to a protocol as a STREAM, not as `httpBody` — reading only the
+    // property would pin every body as empty and prove nothing.
+    private static func bodyOf(_ request: URLRequest) -> [String: String] {
+        var data = request.httpBody
+        if data == nil, let stream = request.httpBodyStream {
+            stream.open()
+            defer { stream.close() }
+            var collected = Data()
+            let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 1024)
+            defer { buffer.deallocate() }
+            while stream.hasBytesAvailable {
+                let read = stream.read(buffer, maxLength: 1024)
+                guard read > 0 else { break }
+                collected.append(buffer, count: read)
+            }
+            data = collected
+        }
+        guard let data else { return [:] }
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: String] ?? [:]
+    }
+}
+
+@MainActor
+final class AuthStoreWireTests: XCTestCase {
+    override func setUp() async throws {
+        DoorWire.reset()
+    }
+
+    private func store(sessions: MemorySessions = MemorySessions()) -> AuthStore {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DoorWire.self]
+        return AuthStore(baseURL: URL(string: "https://windmill.works")!, sessions: sessions,
+                         urlSession: URLSession(configuration: configuration))
+    }
+
+    // The app's mint asks for the CODE email — `door: "app"` is what makes the mail carry a code
+    // instead of a link, and the trimmed address is what verify-code will later be keyed on.
+    func testRequestingACodeNamesTheAppDoor() async throws {
+        let auth = store()
+        DoorWire.script = [(200, [:], #"{"status":"sent"}"#)]
+
+        try await auth.requestLink(to: "  sam@example.com \n")
+
+        XCTAssertEqual(DoorWire.sent, [DoorWire.Sent(method: "POST", path: "/v1/auth/magic-link",
+                                                     body: ["email": "sam@example.com", "door": "app"])])
+        XCTAssertEqual(auth.linkSentTo, "sam@example.com")
+    }
+
+    // The verify-code reply is shaped exactly like verify: user in the body, session ONLY in
+    // Set-Cookie. If the capture stops working, sign-in looks successful with no credential stored.
+    func testCompletingWithACodePostsEmailAndCodeAndLiftsTheSessionCookie() async throws {
+        let sessions = MemorySessions()
+        let auth = store(sessions: sessions)
+        DoorWire.script = [(200, ["Set-Cookie": "wm_session=s3cr3t; Path=/; HttpOnly; Max-Age=7776000"],
+                            #"{"user":{"id":"u1","email":"sam@example.com","name":"Sam"}}"#)]
+
+        try await auth.completeCode(email: "sam@example.com", code: "483201")
+
+        XCTAssertEqual(DoorWire.sent, [DoorWire.Sent(method: "POST", path: "/v1/auth/verify-code",
+                                                     body: ["email": "sam@example.com", "code": "483201"])])
+        XCTAssertEqual(sessions.read(), "s3cr3t")
+        XCTAssertEqual(auth.status, .signedIn(User(id: "u1", email: "sam@example.com", name: "Sam")))
+    }
+
+    func testACodeReplyWithoutACookieRefusesRatherThanPretending() async {
+        let sessions = MemorySessions()
+        let auth = store(sessions: sessions)
+        DoorWire.script = [(200, [:], #"{"user":{"id":"u1","email":"sam@example.com","name":"Sam"}}"#)]
+
+        do {
+            try await auth.completeCode(email: "sam@example.com", code: "483201")
+            XCTFail("no cookie is no session — adopting nothing must throw")
+        } catch {}
+        XCTAssertNil(sessions.read())
+        XCTAssertEqual(auth.status, .unknown, "a failed sign-in touches nothing")
+    }
+
+    // THE RESTORE RULE: only a definitive 401 clears the Keychain. A phone opened in a basement is
+    // not signed out — clearing there deleted a live 90-day secret and stranded the gym queue's
+    // owed sets behind a bearer that no longer existed.
+    func testRestoreKeepsTheSecretWhenTheNetworkFails() async {
+        let sessions = MemorySessions(secret: "held")
+        let auth = store(sessions: sessions)
+        DoorWire.failWith = URLError(.notConnectedToInternet)
+
+        await auth.restore()
+
+        XCTAssertEqual(auth.status, .signedOut, "the seat rests signed out until the log answers")
+        XCTAssertEqual(sessions.read(), "held", "and the secret survives to try again")
+    }
+
+    func testRestoreKeepsTheSecretThroughAServerFailure() async {
+        let sessions = MemorySessions(secret: "held")
+        let auth = store(sessions: sessions)
+        DoorWire.script = [(500, [:], #"{"error":"internal error"}"#)]
+
+        await auth.restore()
+
+        XCTAssertEqual(auth.status, .signedOut)
+        XCTAssertEqual(sessions.read(), "held")
+    }
+
+    func testRestoreClearsTheSecretOnADefinitive401() async {
+        let sessions = MemorySessions(secret: "spent")
+        let auth = store(sessions: sessions)
+        DoorWire.script = [(401, [:], #"{"error":"session expired"}"#)]
+
+        await auth.restore()
+
+        XCTAssertEqual(auth.status, .signedOut)
+        XCTAssertNil(sessions.read(), "a 401 is the one answer that really ends the session")
     }
 }
 
