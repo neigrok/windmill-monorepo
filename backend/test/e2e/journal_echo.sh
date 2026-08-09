@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Journal echoes, end-to-end against the LIVE local stack. Locally there is usually no embedder and
-# no curator wired, so the nightly pass is a quiet no-op; what this drives is everything downstream
+# no curator wired, so every pass — the one a save triggers and the six-hourly repair one — is a
+# quiet no-op; what this drives is everything downstream
 # of it, over real Postgres rows: the owner-scoped READ and its honest cut, the anchoring hint, the
 # three dismissal doors and the route order that makes them reachable, and the admin door's gate and
 # report shape. The embed→select→curate compute path is unit-covered (EchoSweepTest).
@@ -32,7 +33,7 @@ psql "$DB" -q -c "insert into magic_links (token_hash,email,created_ms,expires_m
 curl -s -c "$JAR" -X POST "$BASE/v1/auth/verify" -H 'content-type: application/json' -H "Origin: $ORIGIN" -d "{\"token\":\"$SECRET\"}" >/dev/null
 
 # A clean slate, and then one echo planted whole: two pages, two passages, one kept pair. The
-# vector is a stub — the read path never decodes one; only the nightly pass does.
+# vector is a stub — the read path never decodes one; only a derivation does.
 psql "$DB" -q <<SQL
 delete from journal_echo where user_id='$U';
 delete from journal_echo_dismissal where user_id='$U';

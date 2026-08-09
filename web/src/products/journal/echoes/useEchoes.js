@@ -1,4 +1,7 @@
-// The echoes the nightly sweep left on your pages, and everything the surface does with them.
+// The echoes the server left on your pages, and everything the surface does with them. They are
+// derived from the writer's own save (backend ECHOES.md, "Delivery") rather than by a nightly pass,
+// which is why nothing here polls and nothing here shows a spinner: the page is re-read on the next
+// ordinary read, and the journal never speaks on its own initiative.
 //
 // Three rules shape this file:
 //

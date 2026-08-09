@@ -68,6 +68,7 @@ selection rules below stop the cruel case arriving ten times on the worst night 
 | Decision | Value |
 |---|---|
 | Where it computes | Server-side (the server holds the journal anyway, for sync) |
+| **When** it computes | **On write** — ruled 2026-08-09, replacing a six-hourly pass. See *Delivery* |
 | Minimum age gap | **7 days** — a page younger than a week is not an echo |
 | How many shown | **Up to 10** per page |
 | Persistence | **Persisted and navigable** — echoes are a durable property of a page |
@@ -75,7 +76,7 @@ selection rules below stop the cruel case arriving ten times on the worst night 
 
 ## Pipeline
 
-Nightly, for each page whose body changed since its last derivation:
+For each page whose body changed since its last derivation, or whose corpus moved under it:
 
 ```
 1  segment    page body                    → passages                  [pure]
@@ -102,6 +103,76 @@ writer's. Model: `claude-sonnet-5` at effort `low`, **swapped from `claude-opus-
 buys and what it costs; the pre-ship precision gate below has still never been run against either.
 
 If either boundary is unconfigured, the pass is a quiet no-op and no echo is written.
+
+## Delivery — the pipeline runs on the writer's save
+
+**Ruled 2026-08-09: echoes are computed ON WRITE.** Before that they were delivered by a six-hourly
+ticker, so a page written tonight waited between zero and six hours for the reaching-back that is
+the entire feature. What was shipped as a nightly job was really two jobs wearing one name, and they
+are now two:
+
+- **Live derivation** (`application/EchoDerivations` → `EchoSweep::derivePage`) — one page, the one a
+  writer just saved. **This is the only way anyone receives an echo.**
+- **The repair pass** (`EchoSweep::run`, still every six hours) — inbound reverse edges, corpus-stamp
+  backfill, pages a vendor blip failed, and the derivations the per-page cap deferred. Unchanged in
+  every step; it simply stopped being how an echo arrives. Nobody is waiting on it, which is why six
+  hours is still a generous cadence for it.
+
+**The trigger** is `PageService::write`, the one door every page save goes through, via a
+`PageWatcher`. Two things about that seam are load-bearing. A write that **lost** the last-writer-wins
+guard changed nothing and announces nothing — a phone pushing a stale body must not buy a derivation.
+And the announcement **never derives on the request thread**: drogon has four handler threads and a
+curator call is 1.5–8 seconds, so `pageSaved` does map bookkeeping under a short mutex and returns.
+Derivation happens on `EchoDerivations`' own trantor thread, which is the same precedent the
+magic-link mail send set when it was made async so sign-in could not stall the four handlers.
+
+**The debounce**, because a writer typing for ten minutes must not buy ten derivations:
+
+| Knob | Value | Why |
+|---|---|---|
+| quiet time | **8 s** | past a sentence, and short enough that someone who puts the phone down still sees the mark before they close the app |
+| new material | **400 bytes** | …unless roughly a paragraph has arrived since the pending entry opened. A long evening's writing never goes quiet, and a pure debounce would deliver nothing until the writer stopped for the night |
+| per page, per rolling day | **4** | past it the page is **deferred**, not derived and not failed — nothing is written, no stamp moves, and the repair pass takes it. The rolling window opens at the page's first derivation rather than at midnight, so nobody has to name a timezone |
+
+The per-user AI ceiling (`Entitlements::sweepAllowanceFor`) is asked exactly as before and means
+exactly what it meant: over budget is **SKIPPED**, not failed, so the page's stamps never advance and
+it stays owed. A writer typing all evening is still a background spend and the ceiling does not care
+which trigger reached it.
+
+**No pending state is served, by design.** There is no progress route and no spinner: the journal
+never speaks on its own initiative, and the client re-reads on its own.
+
+**Save-to-echo, reasoned rather than measured** (nothing below has been run against a live vendor):
+8 s quiet + one embed round trip + a 14 ms cosine scan + the curator's 1.5–8 s ≈ **10–17 seconds**,
+against 0–6 hours before. The 8 seconds is the dominant *controllable* term and the curator is the
+dominant term overall.
+
+### The hot corpus cache
+
+`application/WarmEchoRepository` is an `EchoRepository` decorator that holds one thing warm: the
+user's vector corpus. It exists because deriving on write asks for that corpus far more often than a
+six-hourly ticker did — a writer touching four pages in an evening would otherwise pay four
+multi-megabyte loads to do four 14 ms scans.
+
+- **Lifetime:** per (user, embedding version), **15 minutes**.
+- **Update, not invalidate.** Every change to `journal_span` goes through `replaceSpans`, and
+  `replaceSpans` now *returns what it stored* (`RETURNING span_id`), so the warm copy is **spliced** —
+  the day's passages replaced by the day's passages, minted identities and all. This is the whole
+  design: each derivation rewrites its own page, so a cache that could only drop would be cold at
+  every single read and warm for nobody.
+- A write under a **different** embedding version drops the entry outright. Cosine across two spaces
+  is not degraded, it is meaningless.
+- A load that raced a write is **returned to its caller and not kept** — a per-user write counter is
+  compared across the load, so a warm copy can never be born stale.
+- **What it does not guarantee:** it is exact only *within one process*. A span written by a second
+  backend replica is invisible here for at most the TTL. Today's deploy runs one container, so that
+  window is theory; the day it stops being theory the answer is a shorter TTL, not a longer one.
+- **What it costs:** one warm user is their whole corpus in memory — **12.3 MB** at this file's
+  8,000-passage × 384-float32 measurement, ~3 MB for a corpus of a couple of thousand. Entries drop
+  on the first call after they expire, so the ceiling is the number of distinct users deriving inside
+  one 15-minute window, not the number of accounts. Twenty writers at the 8,000-passage extreme is a
+  few hundred megabytes; the lever, if that ever stops being affordable, is the TTL and after that a
+  bound on entries.
 
 ### Segmentation
 
@@ -214,7 +285,10 @@ not silently destroy a chain the user has walked.
 **Inbound.** When page X's passages change, enqueue re-derivation for every page holding an echo
 into X (`WHERE match_day = X`). Without this, fixing one typo in a January page permanently kills
 every echo pointing at it, and the graph decays with the user's own care for their archive. Budget
-the queue — a 300-page cleanup pass must drain over several nights, not bill in one.
+the queue — a 300-page cleanup pass must drain over several passes, not bill in one. **This is the
+repair pass's work and deliberately not the live path's**: the walk is unbounded in the writer's own
+body, and a save that chased it would be a save that takes minutes. A live derivation answers one
+question — what does tonight's page reach back to — and the six-hourly pass does the rest.
 
 **Backfill.** A user-level corpus stamp, bumped whenever any page's passages change. A page's echo
 set is stale when computed against an older stamp; stale pages re-run *retrieval* (free) and only
@@ -328,7 +402,9 @@ domain/       Passage         body → passages                        (pure)
               Stratify        candidates → age-banded selection       (pure)
               Select          dedup, quota, spread, score             (pure)
 ports/        Embedder · Curator · EchoRepository
-application/  EchoSweep       the seven steps, top to bottom
+application/  EchoSweep            the seven steps, top to bottom — derivePage (live) · run (repair)
+              EchoDerivations      saves → derivations: debounce, the daily cap, its own thread
+              WarmEchoRepository   the corpus held warm, per user, behind the port
 adapters/     PgEchoRepository · <Embedder impl> · AnthropicCurator
 ```
 
@@ -492,12 +568,18 @@ Measured, not estimated, at 8,000 passages × 384 dims with the shipped wire for
 | cosine scan, 8 probes | **14 ms** |
 | parse back (`strtof`) | 73 ms |
 | serialize (`snprintf %.9g`) | 419 ms |
-| **wire bytes, Postgres text arrays** | **39.6 MB per user per night** |
+| **wire bytes, Postgres text arrays** | **39.6 MB per user per corpus load** |
 
 The arithmetic is free; the corpus load is not. Store vectors as `bytea` float32 (12.3 MB) or int8-
 quantized (3.1 MB, ~0.5% recall cost — the on-device search path already quantizes, so the precedent
 exists). Select vectors without page bodies. Brute force is correct at this scale and keeps exact
 recall measurable; `pgvector` is the escape hatch behind the repository if corpora outgrow it.
+
+**Since 2026-08-09 the load is also amortised**, which matters more now that a save triggers a
+derivation rather than a ticker: `WarmEchoRepository` holds a user's corpus for fifteen minutes and
+splices each re-derivation into it, so a writer's second, third and fourth derivation of an evening
+pay the 14 ms scan and not the load. See *Delivery* for what that costs in memory and what its
+staleness bound actually is.
 
 Curator: ~2,600 input tokens, and **output is the expensive half** — thinking is on by default on
 this family and thinking bills as output, so `effort` is the only real cost lever. At
@@ -623,7 +705,7 @@ documents. None blocks the build; each needs a designer's decision before ship.
 | curator self-consistency, 5 runs, Jaccard on kept set | ≥0.90 |
 | identity-survival suite (append / insert-top / insert-mid / delete / split / merge / segmenter bump) | **100%** |
 | render-time re-locate failure rate, and 0% mis-anchored | <2% |
-| corpus load per user per night | <5 MB, <1 s |
+| corpus load per user, per cold load | <5 MB, <1 s |
 | median age of shown echoes | ≥90 days — the card sells distance ("five months ago") |
 | hubness: max share of a user's pages any one passage appears on | ≤5% |
 

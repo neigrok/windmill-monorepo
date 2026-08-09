@@ -68,7 +68,9 @@
 #include "products/journal/adapters/postgres/PgEchoRepository.h"
 #include "products/journal/adapters/postgres/PgJournalRepository.h"
 #include "products/journal/adapters/postgres/PgNudgeRepository.h"
+#include "products/journal/application/EchoDerivations.h"
 #include "products/journal/application/PageService.h"
+#include "products/journal/application/WarmEchoRepository.h"
 #include "products/journal/routes.h"
 #include "products/gym/adapters/llm/AnthropicCoach.h"
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
@@ -828,7 +830,9 @@ int main() {
   // pages canvas: durable, owner-scoped, offline-convergent. It reads platform auth like roadmap and
   // owns no public surface.
   auto journalPages = std::make_shared<PgJournalRepository>(pool);
-  auto pageService = std::make_shared<PageService>(*journalPages);
+  // PageService is built further down, after the echo stack: a save is what triggers a derivation,
+  // so the write path needs the thing that receives one, and building it here would mean handing it
+  // a listener later — a two-step construction nobody would find on their way through.
   // Wave 2 nudges: a daily heartbeat on its own thread, shipped DARK behind an arming allowlist
   // exactly like the reminder engine — JOURNAL_NUDGE_ENABLED must say so AND the user be named in
   // JOURNAL_NUDGE_ALLOWLIST before any mail leaves; both gates are read at send time, so the ledger
@@ -845,7 +849,8 @@ int main() {
   auto journalNudgeSweep = std::make_shared<NudgeSweep>(*journalNudges, *journalNudgeMail, *tokens,
                                                         *systemClock, journalNudgeArming, appBaseUrl);
   journalNudgeSweep->start();
-  // Echoes: the nightly reaching-back. Two boundaries, and either one unwired makes the whole pass
+  // Echoes: the reaching-back, derived on the writer's own save (ECHOES.md, "Delivery"). Two
+  // boundaries, and either one unwired makes any pass — live or repair —
   // a quiet no-op — NullEmbedder and NullCurator both answer configured() false. The sweep itself
   // is deliberately ENTITLEMENT-BLIND: it derives for every user, and EchoApi decides how much of
   // a passage a given reader is served, because the honest-cut surface has to show a non-subscriber
@@ -870,12 +875,25 @@ int main() {
         aiFuse, aiSpendSink);
   else
     journalCurator = std::make_shared<NullCurator>();
-  auto journalEchoes = std::make_shared<PgEchoRepository>(pool);
+  auto journalSpans = std::make_shared<PgEchoRepository>(pool);
+  // One warm corpus in front of storage, shared by every door: the live path, the repair pass and
+  // the read layer all hold this one object, so none of them has to know the corpus is cached and
+  // none of them can hold a second, staler copy. Loading a user's whole vector corpus was the
+  // entire cost of a pass, and a save-triggered derivation asks for it far more often than a
+  // six-hourly ticker did.
+  auto journalEchoes = std::make_shared<WarmEchoRepository>(*journalSpans, *systemClock);
   const char* journalEchoAdminEnv = std::getenv("JOURNAL_ECHO_ADMIN_TOKEN");
   auto journalEchoSweep = std::make_shared<EchoSweep>(*journalEchoes, *journalEmbedder,
                                                       *journalCurator, *systemClock, *entitlements,
                                                       SelectionRules{}, SweepBudget{});
   journalEchoSweep->start();
+  // And the delivery path: a page saved is a page derived, seconds later, on this object's own
+  // thread. It is the PageWatcher the write path announces to — never the request thread, which
+  // drogon has four of and a curator call is seconds long.
+  auto journalEchoDerivations =
+      std::make_shared<EchoDerivations>(*journalEchoSweep, *systemClock, LiveDerivationRules{});
+  journalEchoDerivations->start();
+  auto pageService = std::make_shared<PageService>(*journalPages, journalEchoDerivations.get());
   // Voice (Windmill One): bought from OpenAI's gpt-4o-transcribe when OPENAI_API_KEY is set, and
   // unwired otherwise (NullTranscriber ⇒ the endpoint answers 503 and the client hides Talk). Either
   // way it gates through the same Windmill One entitlement seam as echoes and tending.

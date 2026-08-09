@@ -74,7 +74,9 @@ add_library(windmill_journal
   products/journal/domain/EchoSelection.cpp
   products/journal/application/PageService.cpp
   products/journal/application/NudgeSweep.cpp
-  products/journal/application/EchoSweep.cpp)
+  products/journal/application/EchoSweep.cpp
+  products/journal/application/EchoDerivations.cpp
+  products/journal/application/WarmEchoRepository.cpp)
 target_include_directories(windmill_journal PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(windmill_journal PUBLIC windmill_platform)
 
@@ -154,6 +156,8 @@ add_executable(windmill_domain_tests
   test/products/journal/application/PageServiceTest.cpp
   test/products/journal/application/NudgeSweepTest.cpp
   test/products/journal/application/EchoSweepTest.cpp
+  test/products/journal/application/EchoDerivationsTest.cpp
+  test/products/journal/application/WarmEchoRepositoryTest.cpp
   test/products/gym/domain/TrainingTest.cpp
   test/products/gym/domain/RoutineTest.cpp
   test/products/gym/domain/ReviewTest.cpp

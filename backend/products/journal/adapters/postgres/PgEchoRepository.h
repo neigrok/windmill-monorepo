@@ -26,10 +26,14 @@ public:
 
   std::uint64_t corpusStamp(const UserId& user) override;
   std::vector<DuePage> duePages(const UserId& user, std::uint64_t corpusStamp) override;
+  std::optional<DuePage> duePage(const UserId& user, const LocalDate& day,
+                                 std::uint64_t corpusStamp) override;
 
   std::vector<KnownSpan> spansOf(const UserId& user, const LocalDate& day) override;
-  void replaceSpans(const UserId& user, const LocalDate& day, const std::vector<SpanWrite>& spans,
-                    const std::string& embedVersion, std::uint64_t bodyStampMs) override;
+  std::vector<Vectored> replaceSpans(const UserId& user, const LocalDate& day,
+                                     const std::vector<SpanWrite>& spans,
+                                     const std::string& embedVersion,
+                                     std::uint64_t bodyStampMs) override;
 
   std::vector<Vectored> corpusOf(const UserId& user, const std::string& embedVersion) override;
 

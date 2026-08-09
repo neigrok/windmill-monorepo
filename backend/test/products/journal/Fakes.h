@@ -330,6 +330,7 @@ public:
   std::map<std::string, std::vector<LocalDate>> inbound;
   std::uint64_t stamp = 1;
   std::int64_t nextSpanId = 100;
+  int corpusLoads = 0;   // how many times the whole corpus was actually read off storage
 
   static std::string pageKey(const UserId& user, const LocalDate& day) {
     return user.str() + "|" + day.iso();
@@ -365,6 +366,26 @@ public:
     return it->second;
   }
 
+  // The one named row, the way the SQL asks it. A test drives what is owed through `due`, and a
+  // page derived by the live path takes itself off that list — which is what makes "the second of
+  // two debounced saves costs nothing" assertable here rather than only against Postgres.
+  std::optional<DuePage> duePage(const UserId& user, const LocalDate& day, std::uint64_t) override {
+    auto it = due.find(user.str());
+    if (it == due.end()) return std::nullopt;
+    for (const DuePage& page : it->second)
+      if (page.day == day) return page;
+    return std::nullopt;
+  }
+
+  // A page stops being owed once it has been derived, exactly as advancing body_stamp_ms takes it
+  // out of the duePages query. Only a SUCCESS calls this — a failed curate leaves it owed.
+  void settle(const UserId& user, const LocalDate& day) {
+    std::vector<DuePage>& pages = due[user.str()];
+    pages.erase(std::remove_if(pages.begin(), pages.end(),
+                               [&](const DuePage& page) { return page.day == day; }),
+                pages.end());
+  }
+
   std::vector<KnownSpan> spansOf(const UserId& user, const LocalDate& day) override {
     std::vector<KnownSpan> known;
     auto it = spans.find(user.str());
@@ -374,19 +395,27 @@ public:
     return known;
   }
 
-  void replaceSpans(const UserId& user, const LocalDate& day, const std::vector<SpanWrite>& writes,
-                    const std::string& embedVersion, std::uint64_t) override {
+  // Hands back what it stored, minted identities and all — the same contract the SQL keeps with its
+  // RETURNING clause, and the one a warm corpus splices on.
+  std::vector<Vectored> replaceSpans(const UserId& user, const LocalDate& day,
+                                     const std::vector<SpanWrite>& writes,
+                                     const std::string& embedVersion, std::uint64_t) override {
     std::vector<StoredSpan>& all = spans[user.str()];
     all.erase(std::remove_if(all.begin(), all.end(),
                              [&](const StoredSpan& s) { return s.day == day; }),
               all.end());
+    std::vector<Vectored> stored;
+    stored.reserve(writes.size());
     for (SpanWrite write : writes) {
       if (write.spanId == 0) write.spanId = nextSpanId++;
       all.push_back(StoredSpan{day, write, embedVersion});
+      stored.push_back(Vectored{write.spanId, day, write.passage.text, write.vector});
     }
+    return stored;
   }
 
   std::vector<Vectored> corpusOf(const UserId& user, const std::string& embedVersion) override {
+    ++corpusLoads;
     std::vector<Vectored> corpus;
     auto it = spans.find(user.str());
     if (it == spans.end()) return corpus;
@@ -395,6 +424,14 @@ public:
       corpus.push_back(Vectored{stored.write.spanId, stored.day, stored.write.passage.text,
                                 stored.write.vector});
     }
+    // ORDER BY day, ord, like the SQL — the order is part of the port's contract, and a cache that
+    // claims to serve the same bytes has to be asserted against the same order.
+    std::stable_sort(corpus.begin(), corpus.end(), [&](const Vectored& a, const Vectored& b) {
+      if (!(a.day == b.day)) return a.day < b.day;
+      const StoredSpan* left = spanOf(user, a.spanId);
+      const StoredSpan* right = spanOf(user, b.spanId);
+      return left && right && left->write.passage.ord < right->write.passage.ord;
+    });
     return corpus;
   }
 
@@ -499,8 +536,14 @@ public:
                      const CuratedEchoes& curated) override {
     echoesByPage[pageKey(user, day)] = curated;
   }
-  void recordCuration(const UserId&, const LocalDate&, const CurationOutcome& outcome) override {
+  // Success advances the page's stamps, which is what takes it off the owed list; a FAILURE writes
+  // the error and leaves both stamps where they were, so the page is still owed. Mirrored here
+  // exactly, because "a failed curate leaves the page still due" is a claim about this branch and a
+  // fake that settled either way would let it pass while production lost the page.
+  void recordCuration(const UserId& user, const LocalDate& day,
+                      const CurationOutcome& outcome) override {
     outcomes.push_back(outcome);
+    if (isSuccess(outcome.status)) settle(user, day);
   }
 
   std::vector<LocalDate> inboundPages(const UserId& user, const LocalDate& day) override {

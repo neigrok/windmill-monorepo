@@ -6,12 +6,13 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
 namespace wm {
 
-// A candidate user for a nightly pass: someone with recent page activity. Nothing else — the email
+// A candidate user for a repair pass: someone with recent page activity. Nothing else — the email
 // used to ride along so the sweep could ask billing whether to derive at all, and the entitlement
 // gate has since moved to the read layer, so the sweep needs to know who and not one thing more.
 struct EchoUser {
@@ -162,10 +163,11 @@ inline int occurrenceAt(const std::string& body, const std::string& text, int lo
 // echoes exist, how many and how far back, none of which survives an empty table.
 //
 // The seven steps of ECHOES.md read across this port in order: activeSince and duePages open a
-// pass, spansOf and replaceSpans carry passage identity across a re-derivation, corpusOf feeds
-// retrieval, dismissalsOn removes what the reader waved away, replaceEchoes and recordCuration
-// close a page, and inboundPages is the reverse edge that keeps an edited page from silently
-// killing every echo aimed at it. The last three serve the reader rather than the pass.
+// repair pass — duePage opens a live one, for the single page a writer just saved — spansOf and
+// replaceSpans carry passage identity across a re-derivation, corpusOf feeds retrieval,
+// dismissalsOn removes what the reader waved away, replaceEchoes and recordCuration close a page,
+// and inboundPages is the reverse edge that keeps an edited page from silently killing every echo
+// aimed at it. The last three serve the reader rather than the pass.
 struct EchoRepository {
   virtual ~EchoRepository() = default;
 
@@ -177,12 +179,28 @@ struct EchoRepository {
   virtual std::uint64_t corpusStamp(const UserId& user) = 0;
   virtual std::vector<DuePage> duePages(const UserId& user, std::uint64_t corpusStamp) = 0;
 
+  // One named page, if it is owed anything — the live path's whole opening move. It asks the same
+  // three questions duePages asks (never derived · body moved · corpus moved) of one row instead of
+  // the user's shelf, because a writer's save names its own page and scanning the rest of the
+  // journal to find it back would make the cheap trigger the expensive one. Nothing owed reads as
+  // nullopt, which is how a debounced second save costs nothing at all.
+  virtual std::optional<DuePage> duePage(const UserId& user, const LocalDate& day,
+                                         std::uint64_t corpusStamp) = 0;
+
   // Ordered by ord — reconcile matches duplicated text within a page in document order, so the
   // order this returns in is part of the contract, not a convenience.
   virtual std::vector<KnownSpan> spansOf(const UserId& user, const LocalDate& day) = 0;
-  virtual void replaceSpans(const UserId& user, const LocalDate& day,
-                            const std::vector<SpanWrite>& spans, const std::string& embedVersion,
-                            std::uint64_t bodyStampMs) = 0;
+
+  // Records the caller's identity decisions and hands back exactly what it stored, minted ids and
+  // all. The return value is not a convenience: it is what lets a warm corpus be UPDATED rather
+  // than dropped when a page is re-derived. Every derivation writes its own page's spans, so a
+  // cache that could only invalidate would throw the corpus away on every single pass and never be
+  // warm for anyone — the one call that changes the corpus is also the one that can describe the
+  // change exactly.
+  virtual std::vector<Vectored> replaceSpans(const UserId& user, const LocalDate& day,
+                                             const std::vector<SpanWrite>& spans,
+                                             const std::string& embedVersion,
+                                             std::uint64_t bodyStampMs) = 0;
 
   // Every passage the user has, without a single page body attached — the corpus load is the whole
   // cost of a night and a body is dead weight in it. One embedding version only: cosine across two

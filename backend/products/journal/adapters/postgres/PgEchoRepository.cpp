@@ -127,9 +127,9 @@ EchoView viewFrom(const Row& row, const std::string& matchBody) {
 PgEchoRepository::PgEchoRepository(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
 
 std::vector<EchoUser> PgEchoRepository::activeSince(std::uint64_t sinceMs) {
-  // The nightly candidate list: distinct owners of a recently-touched page. The join to users earns
-  // its place on `deleted_at` alone — a soft-closed account never comes up, so its echoes stop being
-  // computed the moment the grace period starts.
+  // The repair pass's candidate list: distinct owners of a recently-touched page. The join to
+  // users earns its place on `deleted_at` alone — a soft-closed account never comes up, so its
+  // echoes stop being computed the moment the grace period starts.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
@@ -184,6 +184,27 @@ std::vector<DuePage> PgEchoRepository::duePages(const UserId& user, std::uint64_
   return pages;
 }
 
+std::optional<DuePage> PgEchoRepository::duePage(const UserId& user, const LocalDate& day,
+                                                 std::uint64_t corpusStamp) {
+  // The same three ways to be owed a pass as duePages, asked of one named row. The live path calls
+  // this the moment a writer stops typing, so it is also the guard that makes a debounced second
+  // save free: a page already derived against this body and this corpus is not due, and nothing
+  // downstream of here is reached.
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  pqxx::result rows = txn.exec_params(
+      "SELECT p.day::text AS day, p.body, p.stamp_ms, coalesce(c.attempts, 0) AS attempts "
+      "FROM journal_page p "
+      "LEFT JOIN journal_page_curation c ON c.user_id = p.user_id AND c.day = p.day "
+      "WHERE p.user_id = $1::uuid AND p.day = $2::date "
+      "AND (c.day IS NULL OR c.body_stamp_ms < p.stamp_ms OR c.corpus_stamp < $3)",
+      user.str(), day.iso(), static_cast<long long>(corpusStamp));
+
+  if (rows.empty()) return std::nullopt;
+  return DuePage{LocalDate{rows[0]["day"].as<std::string>()}, rows[0]["body"].as<std::string>(),
+                 rows[0]["stamp_ms"].as<std::uint64_t>(), rows[0]["attempts"].as<int>()};
+}
+
 std::vector<KnownSpan> PgEchoRepository::spansOf(const UserId& user, const LocalDate& day) {
   // Ordered by ord because reconciliation matches duplicated text within a page in document order —
   // two identical lines have to keep two stable, distinct identities rather than collapse into one.
@@ -201,9 +222,10 @@ std::vector<KnownSpan> PgEchoRepository::spansOf(const UserId& user, const Local
   return spans;
 }
 
-void PgEchoRepository::replaceSpans(const UserId& user, const LocalDate& day,
-                                    const std::vector<SpanWrite>& spans,
-                                    const std::string& embedVersion, std::uint64_t bodyStampMs) {
+std::vector<Vectored> PgEchoRepository::replaceSpans(const UserId& user, const LocalDate& day,
+                                                     const std::vector<SpanWrite>& spans,
+                                                     const std::string& embedVersion,
+                                                     std::uint64_t bodyStampMs) {
   // Delete then insert, in one transaction: a day's passages are always a complete set, and a
   // carried span_id is re-inserted under the identity the caller chose. Nothing here decides which
   // identities survive — that judgement is made in the domain and this only records it.
@@ -216,18 +238,28 @@ void PgEchoRepository::replaceSpans(const UserId& user, const LocalDate& day,
   txn.exec_params("DELETE FROM journal_span WHERE user_id = $1::uuid AND day = $2::date",
                   user.str(), day.iso());
 
-  for (const SpanWrite& span : spans)
-    txn.exec_params(
+  // RETURNING, so the identity storage just minted travels back with the row rather than being
+  // read for a second time. In ord order, which is the order corpusOf serves this page in — a warm
+  // corpus splices this straight in and stays byte-identical to a fresh load.
+  std::vector<Vectored> stored;
+  stored.reserve(spans.size());
+  for (const SpanWrite& span : spans) {
+    pqxx::result rows = txn.exec_params(
         "INSERT INTO journal_span "
         "(user_id, span_id, day, ord, lo, hi, text, text_sha256, vector, embed_version, "
         "body_stamp_ms) "
         "VALUES ($1::uuid, coalesce(nullif($2::bigint, 0), nextval('journal_span_id_seq')), "
-        "$3::date, $4, $5, $6, $7, decode($8, 'hex'), decode($9, 'hex'), $10, $11)",
+        "$3::date, $4, $5, $6, $7, decode($8, 'hex'), decode($9, 'hex'), $10, $11) "
+        "RETURNING span_id",
         user.str(), static_cast<long long>(span.spanId), day.iso(), span.passage.ord,
         span.passage.lo, span.passage.hi, span.passage.text, hashOf(span.passage.text),
         hexOfVector(span.vector), embedVersion, static_cast<long long>(bodyStampMs));
+    stored.push_back(Vectored{rows[0]["span_id"].as<std::int64_t>(), day, span.passage.text,
+                              span.vector});
+  }
 
   txn.commit();
+  return stored;
 }
 
 std::vector<Vectored> PgEchoRepository::corpusOf(const UserId& user,

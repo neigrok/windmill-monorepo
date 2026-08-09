@@ -6,6 +6,7 @@
 #include <pqxx/pqxx>
 
 #include <cstdlib>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -37,9 +38,12 @@ void reset() {
   for (const std::string& user : {kMine, kTheirs}) {
     w.exec("INSERT INTO users (id, email) VALUES ('" + user + "', 'echo-" + user.substr(0, 4) +
            "@example.com') ON CONFLICT (id) DO NOTHING");
+    // journal_page_curation is on this list because a page's derivation stamps outlive the page:
+    // leave one behind and the next case's brand-new page is already "derived", which is exactly
+    // the silent cross-case leak a due-page test cannot survive.
     for (const std::string& table : {"journal_echo_signal", "journal_echo_offer_dismissal",
                                      "journal_echo_dismissal", "journal_echo", "journal_span",
-                                     "journal_page"})
+                                     "journal_page_curation", "journal_page"})
       w.exec("DELETE FROM " + table + " WHERE user_id = '" + user + "'");
   }
   w.commit();
@@ -193,6 +197,85 @@ TEST(pg_echo_pages_written_counts_pages_with_words_on_them) {
   PgEchoRepository repo{pgTestPool()};
   CHECK_EQ(repo.pagesWritten(UserId{kMine}), 2);
   CHECK_EQ(repo.pagesWritten(UserId{kTheirs}), 1);
+}
+
+// The live path's opening move, against the real three-way condition. A page nobody has derived is
+// owed one; the page the writer just saved is owed one; a page already derived against this body
+// and this corpus is owed nothing, and that last answer is what makes a debounced second save free.
+TEST(pg_echo_one_named_page_is_owed_a_derivation_on_the_same_three_conditions_the_shelf_is) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  const std::string day = "2026-05-01";
+  writePage(kMine, day, "wrote a little.");
+  PgEchoRepository repo{pgTestPool()};
+  {
+    PgLease c{*pgTestPool()};
+    pqxx::work w{*c};
+    w.exec_params("UPDATE journal_page SET stamp_ms = 500 WHERE user_id = $1::uuid AND day = $2::date",
+                  kMine, day);
+    w.commit();
+  }
+
+  // Never derived.
+  std::optional<DuePage> owed = repo.duePage(UserId{kMine}, LocalDate{day}, 0);
+  REQUIRE(owed.has_value());
+  CHECK_EQ(owed->body, std::string("wrote a little."));
+  CHECK_EQ(owed->bodyStampMs, std::uint64_t{500});
+  CHECK_EQ(owed->attempts, 0);
+
+  // Derived against this body and this corpus: nothing owed.
+  repo.recordCuration(UserId{kMine}, LocalDate{day}, CurationOutcome{CurationStatus::ok, 500, 9, ""});
+  CHECK(!repo.duePage(UserId{kMine}, LocalDate{day}, 9).has_value());
+
+  // The corpus moved under it — the backfill case, and the reason the repair pass still exists.
+  CHECK(repo.duePage(UserId{kMine}, LocalDate{day}, 10).has_value());
+
+  // A day nobody has written on is not a page, and another account's day is not this one's.
+  CHECK(!repo.duePage(UserId{kMine}, LocalDate{"2026-05-02"}, 0).has_value());
+  CHECK(!repo.duePage(UserId{kTheirs}, LocalDate{day}, 0).has_value());
+}
+
+// A failed curate leaves both stamps where they were, so the page comes back as owed — the one rule
+// that keeps a vendor blip from costing a page its echoes permanently.
+TEST(pg_echo_a_failed_curate_leaves_the_named_page_owed) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  const std::string day = "2026-05-01";
+  writePage(kMine, day, "wrote a little.");
+  PgEchoRepository repo{pgTestPool()};
+
+  repo.recordCuration(UserId{kMine}, LocalDate{day},
+                      CurationOutcome{CurationStatus::rateLimited, 500, 9, "rate_limited"});
+  std::optional<DuePage> owed = repo.duePage(UserId{kMine}, LocalDate{day}, 9);
+  REQUIRE(owed.has_value());
+  CHECK_EQ(owed->attempts, 1);
+}
+
+// Storage hands back what it stored, minted identities and all. This is what a warm corpus splices
+// on, so an id it invented has to travel out of the INSERT rather than be read for a second time.
+TEST(pg_echo_replacing_a_pages_spans_hands_back_the_identities_it_minted) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  const std::string day = "2026-05-01";
+  writePage(kMine, day, kLine + " " + kTrigger);
+  PgEchoRepository repo{pgTestPool()};
+
+  const std::vector<Vectored> stored = repo.replaceSpans(
+      UserId{kMine}, LocalDate{day},
+      {span(0, 0, 0, kLine), span(4242, 1, static_cast<int>(kLine.size()) + 1, kTrigger)}, "v1", 1);
+
+  REQUIRE_EQ(stored.size(), std::size_t{2});
+  CHECK(stored[0].spanId != 0);            // minted by the sequence, and it came back
+  CHECK_EQ(stored[0].text, kLine);
+  CHECK(stored[0].day == LocalDate{day});
+  CHECK_EQ(stored[1].spanId, std::int64_t{4242});   // carried forward, recorded as chosen
+  CHECK_EQ(stored[1].text, kTrigger);
+
+  // And it is the same set, in the same order, that a cold corpus read serves.
+  const std::vector<Vectored> cold = repo.corpusOf(UserId{kMine}, "v1");
+  REQUIRE_EQ(cold.size(), std::size_t{2});
+  CHECK_EQ(cold[0].spanId, stored[0].spanId);
+  CHECK_EQ(cold[1].spanId, stored[1].spanId);
 }
 
 // One statement retires the panel, and pressing "Not useful" twice is the same as pressing it once.

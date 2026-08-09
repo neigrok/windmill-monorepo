@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <exception>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
@@ -16,10 +17,13 @@
 namespace wm {
 
 namespace {
-// A nightly-ish cadence. The reading-across is a slow once-a-day kindness, so the ticker fires
-// every six hours and each pass looks a day back — an overnight gap between passes still catches
-// every page that moved. Re-deriving an unchanged page is prevented by its stamps, not by the
-// cadence: duePages only returns what is genuinely owed.
+// The repair cadence, and it is no longer how anyone receives an echo — a saved page is derived
+// seconds later by EchoDerivations. What is left for this ticker is the work no save triggers:
+// inbound reverse edges a live derivation deliberately does not chase, pages made stale by a
+// corpus that moved under them, pages a vendor blip failed, and the derivations a per-page daily
+// cap deferred. Six hours is generous for all four, because none of them is anybody waiting.
+// Re-deriving an unchanged page is prevented by its stamps, not by the cadence: duePages only
+// returns what is genuinely owed, so a live derivation that already ran costs this pass nothing.
 constexpr double kEchoTickSeconds = 6.0 * 60.0 * 60.0;
 constexpr double kEchoFirstTickSeconds = 60.0;
 constexpr std::uint64_t kEchoLookbackMs = 24ull * 60 * 60 * 1000;
@@ -50,8 +54,33 @@ void EchoSweep::start() {
                << " over budget, " << report.usersOverAiBudget << " users out of AI budget";
   });
   const bool armed = embedder_.configured() && curator_.configured();
-  LOG_INFO << "journal echo: heartbeat armed, first sweep in " << kEchoFirstTickSeconds << "s ("
-           << (armed ? "embedder + curator configured" : "unwired — dark") << ")";
+  LOG_INFO << "journal echo: repair heartbeat armed, first sweep in " << kEchoFirstTickSeconds
+           << "s (" << (armed ? "embedder + curator configured" : "unwired — dark") << ")";
+}
+
+EchoSweepReport EchoSweep::derivePage(const UserId& user, const LocalDate& day) {
+  EchoSweepReport report;
+  // Either boundary missing is the same quiet no-op it is on the repair path: no row is written and
+  // the page stays due, so wiring the vendors later derives it rather than skipping it forever.
+  if (!embedder_.configured() || !curator_.configured()) return report;
+  ++report.usersScanned;
+
+  if (!entitlements_.sweepAllowanceFor(user).allows()) {
+    ++report.usersOverAiBudget;
+    return report;
+  }
+
+  const std::uint64_t corpusStamp = echoes_.corpusStamp(user);
+  const std::optional<DuePage> page = echoes_.duePage(user, day, corpusStamp);
+  // Nothing owed. The ordinary case for the second of two debounced saves that carried no new text,
+  // and the reason a coalesced burst cannot bill twice even when it fires twice.
+  if (!page) return report;
+
+  const CurationOutcome outcome = derive(user, *page, corpusStamp, report);
+  echoes_.recordCuration(user, page->day, outcome);
+  if (!isSuccess(outcome.status)) ++report.pagesFailed;
+  else ++report.pagesDerived;
+  return report;
 }
 
 EchoSweepReport EchoSweep::run(std::uint64_t sinceMs) {

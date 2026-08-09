@@ -29,9 +29,10 @@ narrow and load-bearing, and the first architectural act is to draw that line an
    survives a device, restores after eviction, and converges across two devices. (§3)
 2. **Nudges** — a daily, at-most-one delivery, sent at a time the *device* learned. A pure sweep
    over `(now, database)`, cloned almost verbatim from the roadmap reminder engine. (§4)
-3. **Echoes** — the deep reading-across. A nightly pass across a whole corpus, computed for the
-   writer without being asked. It runs for *everyone*; the subscription decides how much of a found
-   passage the read hands back, not whether it is found. (§5, and `ECHOES.md`)
+3. **Echoes** — the deep reading-across: a pass over a whole corpus, computed for the writer
+   without being asked, and triggered by their own save (ruled 2026-08-09; a six-hourly pass
+   remains as the repair path). It runs for *everyone*; the subscription decides how much of a
+   found passage the read hands back, not whether it is found. (§5, and `ECHOES.md`)
 4. **Entitlement** — one question: is this a **Windmill One** subscriber? Two lines, one shared
    platform predicate read by all three products. (§6)
 
@@ -53,7 +54,7 @@ narrow and load-bearing, and the first architectural act is to draw that line an
   path that takes a non-owner. (§0.1)
 
 Everything below serves that division. When a feature could live on either side, it lives on the
-device unless the backend is the *only* place it can be correct (a nightly corpus pass; a nudge
+device unless the backend is the *only* place it can be correct (a whole-corpus pass; a nudge
 that must fire while the phone is asleep; the page from a year ago the device no longer caches).
 
 ### 0.1 Privacy is structural, not enforced
@@ -83,7 +84,9 @@ backend/products/journal/
                  Passage · SpanReconcile · EchoSelection          (pure, no I/O)
   ports/         JournalRepository · NudgeRepository · NudgeMailSender
                  EchoRepository · Embedder · Curator · Transcriber
-  application/   PageService · NudgeSweep · EchoSweep
+  application/   PageService (+ PageWatcher, the seam a save announces on) · NudgeSweep
+                 EchoSweep (derivePage · run) · EchoDerivations (saves → derivations)
+                 WarmEchoRepository (the corpus held warm, per user, behind the port)
   adapters/
     http/        JournalApi (page · pages · export) · NudgeApi (settings · pause ·
                  unsubscribe · admin sweep) · EchoApi (read · three dismissal doors ·
@@ -476,7 +479,7 @@ credential-in-the-mail pattern (sessions/magic-links/reminder pause).
 
 ---
 
-## 5. Capability 3 — Echoes: the one paid thing, computed nightly
+## 5. Capability 3 — Echoes: the one paid thing, computed on write
 
 An echo is Journal noticing that today repeats something written months ago, and saying so with
 the older line. It is the only feature that puts the backend in front of an inference model, and —
@@ -492,12 +495,20 @@ anyone read them. The table is dropped, the pure module they documented is delet
 passage-level and plural, and a signpost pointing at a system that no longer exists is worse than
 no signpost. They are gone rather than annotated.
 
-Two decisions made here did survive, so they are recorded here rather than only in `ECHOES.md`:
+One decision made here survived, and one was **overturned on 2026-08-09**:
 
-- **Nightly, not on-write.** An echo is a pass across a whole corpus; cost and latency both point
-  to a batch, and the server cannot wait for a device to be online to trigger one. The consequence
-  the canon names is accepted: an echo **cannot** appear in the session that wrote the page that
-  triggered it. It is there the next time you open — which suits a product about looking back.
+- **~~Nightly, not on-write.~~ On write — ruled 2026-08-09.** The old answer stood here: an echo is
+  a pass across a whole corpus, so cost and latency point to a batch, and an echo therefore
+  **cannot** appear in the session that wrote the page. It read as a considered trade and it was
+  really a six-hourly ticker, which meant a page written tonight waited 0–6 hours for the whole
+  point of the feature. The owner ruled that echoes are computed on the writer's save. `PageService`
+  announces a save, `EchoDerivations` debounces it (~8 s quiet, capped at four derivations per page
+  per rolling day) and derives on its own thread, and a warm per-user corpus keeps the second
+  derivation of an evening from re-loading a corpus it already has. The six-hourly pass is still
+  there and still unchanged — it is the REPAIR path now (inbound reverse edges, corpus-stamp
+  backfill, failed pages, deferred derivations) and no longer how anyone receives an echo. The
+  cost, the debounce policy, the cache's lifetime and exactly what its invalidation does and does
+  not guarantee are in `ECHOES.md` under *Delivery*.
 - **Vendor inference is permitted, quality first (owner).** Page bodies are already on Windmill's
   server; an embedding or a curation call sends that text to a vendor, and that is allowed under a
   no-retention, no-training agreement, with the privacy copy saying so plainly before the feature
@@ -578,7 +589,7 @@ genuinely cannot do itself:
 | `GET /v1/journal/export` | all pages, JSON (client renders markdown) | owner only |
 | `GET/PATCH /v1/journal/nudge` + pause/unsubscribe | nudge settings & pause (§4.5) | owner only / mail-secret |
 | `POST /v1/admin/journal/nudge/sweep` | operator rehearsal of one nightly nudge pass (`dryRun`/`asOfMs`) | admin token |
-| `POST /v1/admin/journal/echo/sweep` | operator rehearsal of one nightly echo pass. Its one knob is `sinceMs` — which users to look at. There is no "as of" instant, because a pass judges every page against stamps the corpus carries and never against a clock | admin token |
+| `POST /v1/admin/journal/echo/sweep` | operator rehearsal of one echo REPAIR pass (echoes are derived on write since 2026-08-09; this door drives the six-hourly pass, not the live path). Its one knob is `sinceMs` — which users to look at. There is no "as of" instant, because a pass judges every page against stamps the corpus carries and never against a clock | admin token |
 
 Every non-admin route resolves identity via the shared `callerUserOf`/`callerOf` seam, 401s
 early, and — the structural-privacy point — is scoped to that caller with no visibility parameter.
@@ -800,8 +811,9 @@ The canon's four "Still open", plus the backend's own, with recommendations:
    stays editable; a new day's page is created lazily on first write after midnight (device local
    day). The server enforces nothing here — the day is whatever local date the client stamps, and
    the (user, day) key does the rest. No cron, no sealing job.
-2. **Echoes — nightly or on-write?** *Nightly* (§5). Accept that an echo can't appear in the
-   session that triggered it.
+2. **Echoes — nightly or on-write?** *On write* — **the nightly answer was overturned on
+   2026-08-09** (§5). It stood for months as "accept that an echo can't appear in the session that
+   triggered it", which in practice meant a 0–6 hour wait for the whole point of the feature.
 3. **Sync conflict safety.** *LWW per day + an invisible revision trail* (§3.2–3.3). No CRDT text.
    The revision trail is recommended but severable to wave 2.
 4. **Push channel.** *Not v1.* Ship email + in-app; the `channel` column reserves the choice so a
