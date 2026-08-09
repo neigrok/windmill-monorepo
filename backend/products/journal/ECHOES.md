@@ -410,29 +410,43 @@ reader chose and delivery is not, so a page whose echo was shown and never touch
 so the honest options are a `seen` record the client writes once, or no card. A device-local flag is not one of them: it cannot know an echo
 already arrived on another device.
 
-### Entitlement — moved, and this needs the owner's ruling
+### Entitlement — ruled 2026-08-09: locked, and the lock is the funnel
 
 Previously: checked in the sweep, so a non-subscriber's table stayed empty. *Absent, not locked.*
+**That is no longer the answer, on the owner's ruling.** Echo marks are **locked, not absent**, and a
+locked mark's job is to invite the upgrade — this is a deliberate conversion surface, not a
+side-effect of where the gate happened to sit.
 
-The design canon supersedes this. Its "honest cut" state shows a non-subscriber the mark, the count,
-the **real opening words** of the nearest passage, the withheld word count, and every match's date
-and distance. That cannot be served from an empty table, so **the sweep runs for everyone and the
-gate moves to the read layer** — entitled serves full text, unentitled serves a prefix plus
-`withheldWords`.
+The mechanism is the design canon's **honest cut**: a non-subscriber sees the mark, the count, the
+**real opening words** of the nearest passage, the withheld word count, and every match's date and
+distance. That cannot be served from an empty table, so **the sweep runs for everyone and the gate
+lives in the read layer** — entitled serves full text, unentitled serves a prefix plus
+`withheldWords`. The One sheet carries the ask.
 
-Two consequences the owner should weigh rather than inherit:
+**What the lock may never become.** The mission rule is not suspended by the fact that this converts.
+The cut shows the reader *their own words, truthfully labelled*, and that is the whole reason it is
+allowed to sell. Four things stay out, and they are the same four `journal.md` §6 has always named:
 
-- **Cost.** Computing for every user, not only subscribers, multiplies the nightly embed and curate
-  spend by the free-to-paid ratio.
-- **Feel.** "Absent, not locked" hid the feature entirely; the honest cut instead shows someone
-  their own words and withholds the rest of them. It is arguably the more honest of the two — it
-  tells the truth about what exists rather than concealing it — but it is a different promise, and
-  the mission rule ("no dark patterns") deserves a deliberate answer rather than a default.
+- no blurred or scrambled text standing in for words that exist;
+- no fake preview — every character shown is a character the reader wrote;
+- no manufactured count of what they are missing, and no count of anything they cannot check;
+- no urgency, no expiry, no "3 people upgraded today".
 
-**Built so the answer is a policy flip, not a rebuild:** the sweep is entitlement-blind (it does
-ask a per-user AI COST ceiling since 2026-08-09 — a spend brake is not an entitlement, and an
-over-budget user is SKIPPED for that pass rather than failed, so their pages stay due) and the
-serialiser owns the cut. Reverting to absent-not-locked is one branch in the read path.
+A lock that converts on honest curiosity is the product working. A lock that converts on a trick
+would be worth more this quarter and would be the thing this whole file exists to refuse.
+
+**Cost, accepted with the ruling:** computing for every user rather than only subscribers multiplies
+the embed and curate spend by the free-to-paid ratio. That is what the funnel costs, and the per-user
+AI ceiling is the brake — the sweep asks it since 2026-08-09, an over-budget user is SKIPPED for that
+pass rather than failed, so their pages stay due. A spend brake is not an entitlement.
+
+**Built so the answer stays a policy flip, not a rebuild:** the sweep is entitlement-blind and the
+serialiser owns the cut, so absent-not-locked remains one branch in the read path if the ruling ever
+reverses.
+
+**Canon drift this ruling closes:** `journal.md` §6 still read "Without One, echo marks are *absent,
+not locked* … no blurred text, no fake preview, no count of what you're missing." The first clause is
+now wrong and the rest is still binding. The design project is updated in the same wave.
 
 ## The surface
 
