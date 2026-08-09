@@ -1,0 +1,158 @@
+name: Android CI
+
+# Monorepo: the Android superapp lives under apps/android. Path-filtered to apps/android and
+# packages/api-contract: the weight ladder's truth is packages/api-contract/gym-ladder.json and the
+# Kotlin copy of the rule runs it as a test — the same drift gate as ios.yml and web.yml, so editing
+# the golden now fires all three workflows and a rule changed in one language fails in the others.
+#
+# Two jobs share this file. build-and-test arms on every push and pull_request that touches the
+# app; release arms only on an android-v* tag, because an APK handed to a person is a claim about a
+# version — "this is 0.2.0" — and a branch head makes no such claim. The tag is the claim; the
+# workflow just makes it installable. (GitHub does not evaluate the paths filter for tag pushes, so
+# the paths list below gates branch pushes only — the tags line is not shadowed by it.)
+
+on:
+  push:
+    branches: [main]
+    tags: ['android-v*']
+    paths:
+      - 'apps/android/**'
+      - 'packages/api-contract/**'
+      - '.github/workflows/android.yml'
+  pull_request:
+    paths:
+      - 'apps/android/**'
+      - 'packages/api-contract/**'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version name for a dry-run release build (e.g. 0.2.0); the APK lands as an actions artifact, no release is created'
+        required: true
+        type: string
+
+concurrency:
+  group: android-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: apps/android
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The runner image ships the Android SDK with licenses pre-accepted, so only the JDK needs
+      # picking. cache: gradle keys on the gradle build files, sparing the dependency downloads.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      # `build` assembles every module and runs the whole unit-test suite, including the ladder
+      # against packages/api-contract/gym-ladder.json. That test finds the golden by walking up
+      # from the project directory, so the whole repo must be checked out — never a bundled copy.
+      - run: ./gradlew build
+
+  # needs: the release APK must come from a run whose full suite is green — a tag push re-proves
+  # the commit even when the same sha already passed as a branch push.
+  release:
+    if: startsWith(github.ref, 'refs/tags/android-v') || github.event_name == 'workflow_dispatch'
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Resolve the version
+        id: ver
+        env:
+          DISPATCH_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            version="$DISPATCH_VERSION"
+          else
+            version="${GITHUB_REF#refs/tags/android-v}"
+          fi
+          if [ -z "$version" ]; then
+            echo "a bare android-v tag names no version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Release signing is armed by four repo secrets; when none are set, app/build.gradle.kts
+      # falls back to the DEBUG key on its own and this workflow must not fail for it. A
+      # debug-signed APK is sideload-ready and honest about what it is: not a store identity, and
+      # not updatable in place once the real key exists. Arm the real key once with:
+      #   gh secret set WINDMILL_ANDROID_KEYSTORE_B64 --body "$(base64 -i windmill.keystore)"
+      #   gh secret set WINDMILL_ANDROID_KEYSTORE_PASSWORD
+      #   gh secret set WINDMILL_ANDROID_KEY_ALIAS
+      #   gh secret set WINDMILL_ANDROID_KEY_PASSWORD
+      # Some-but-not-all set is a misconfiguration, not a choice — that fails loudly rather than
+      # quietly shipping a debug-signed build that looks intentional.
+      - name: Arm signing
+        env:
+          KEYSTORE_B64: ${{ secrets.WINDMILL_ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.WINDMILL_ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.WINDMILL_ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.WINDMILL_ANDROID_KEY_PASSWORD }}
+        run: |
+          present=0
+          for v in KEYSTORE_B64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            [ -n "${!v}" ] && present=$((present + 1))
+          done
+          if [ "$present" -eq 0 ]; then
+            echo "Signing: **debug key** (keystore secrets not set — sideload-ready, no store identity)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$present" -ne 4 ]; then
+            echo "signing secrets are partially set ($present of 4) — set all four or none" >&2
+            exit 1
+          fi
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/windmill.keystore"
+          {
+            echo "WINDMILL_ANDROID_KEYSTORE=$RUNNER_TEMP/windmill.keystore"
+            echo "WINDMILL_ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "WINDMILL_ANDROID_KEY_ALIAS=$KEY_ALIAS"
+            echo "WINDMILL_ANDROID_KEY_PASSWORD=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+          echo "Signing: **release keystore**" >> "$GITHUB_STEP_SUMMARY"
+
+      # run_number as versionCode: monotonic across every run of this workflow, so a later tag can
+      # never ship a smaller code than an earlier one.
+      - name: Assemble the release APK
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          ./gradlew :app:assembleRelease \
+            "-Pwindmill.versionName=$VERSION" \
+            "-Pwindmill.versionCode=$GITHUB_RUN_NUMBER"
+          cp app/build/outputs/apk/release/*.apk "windmill-$VERSION.apk"
+
+      - name: Create the GitHub Release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: gh release create "$GITHUB_REF_NAME" "windmill-$VERSION.apk" --verify-tag --generate-notes
+
+      # The dispatch path is a rehearsal: same build, same signing decision, but the APK lands as
+      # an actions artifact — a release without a tag would be a lie.
+      - name: Upload the dry-run APK
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windmill-${{ steps.ver.outputs.version }}
+          path: apps/android/windmill-*.apk
+          if-no-files-found: error

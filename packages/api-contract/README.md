@@ -1,6 +1,6 @@
 # api-contract
 
-The wire shapes shared across surfaces — backend, web, and (later) native. One place so the
+The wire shapes shared across surfaces — backend, web, and native. One place so the
 four surfaces can never drift.
 
 A tenant earns a place here by being **one truth several languages must state separately**. Not
@@ -21,8 +21,8 @@ Read by: `web/vite.config.js` (build fails on drift), pinned backend-side by `Tr
 The ladder is the single highest-value pixel in gym: it is where a lifter's weight moves by a
 tap, and a wrong number there is a wrong number in their training log. Lift — gym's predecessor —
 pasted this rule into three targets and let them drift. Gym's rule was "exactly one module," which
-held only while there was one language; a native Swift logger writes copy #2 on its first day.
-So the rule moves here, and both copies run this file.
+held only while there was one language; a native Swift logger wrote copy #2 on its first day, and
+Android's Kotlin logger wrote #3. So the rule moves here, and all three copies run this file.
 
 **The bands.** The step pair is chosen by the **magnitude** of the weight, never its sign: under
 20 kg it is ±1 / ±5, under 50 kg ±2 / ±5, at or above 50 kg ±5 / ±10. Magnitude and not sign,
@@ -72,15 +72,16 @@ server allows 500, because 99 is a keypad bound — two digits, no third — and
 Read that as **`round(x × 100) ÷ 100` evaluated in IEEE-754 doubles**, not as decimal rounding of
 the typed string — the two are different answers and `roundCases` pins the first. `2.505` is not
 `2.505` as a double, it is `2.50499999…`, so a decimal reading rounds it *down* to `2.50` while
-`2.505 × 100` is exactly `250.5` and rounds *up* to `2.51`. Both shipped copies are doubles and
+`2.505 × 100` is exactly `250.5` and rounds *up* to `2.51`. All three shipped copies are doubles and
 agree bit for bit. A future surface that parses the string into a decimal type — C++, or Postgres
-`numeric` — would disagree with both, which is the one way left for this contract to be read
+`numeric` — would disagree with all three, which is the one way left for this contract to be read
 correctly and implemented wrongly.
 
 Read as a test by:
 
 - `web/test/products/gym/logger/ladder.test.js` → `web/src/products/gym/logger/ladder.js`
 - `apps/ios/WindmillKit/Tests/WindmillGymTests/LadderTests.swift` → `apps/ios/WindmillKit/Sources/WindmillGym/Ladder.swift`
+- `apps/android/gym/src/test/kotlin/works/windmill/gym/domain/LadderTests.kt` → `apps/android/gym/src/main/kotlin/works/windmill/gym/domain/Ladder.kt`
 
-Both read *this* file from the repo rather than a bundled copy — a copied fixture is a copy, and
-copies are the thing this package exists to prevent.
+All three read *this* file from the repo rather than a bundled copy — a copied fixture is a copy,
+and copies are the thing this package exists to prevent.

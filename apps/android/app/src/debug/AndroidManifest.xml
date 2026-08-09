@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds may talk cleartext to the local stack (10.0.2.2 is the emulator's host loopback)
+     — the Android twin of iOS's NSAllowsLocalNetworking. Release builds carry no such exception. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:networkSecurityConfig="@xml/net_security_debug" />
+</manifest>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Gym renders one skin and it is dark; the window ground matches the basalt canvas so the
+         first frame is never a white flash. -->
+    <style name="Theme.Windmill" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#1C1A1E</item>
+        <item name="android:statusBarColor">#1C1A1E</item>
+        <item name="android:navigationBarColor">#1C1A1E</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

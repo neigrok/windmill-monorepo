@@ -49,8 +49,8 @@ happens on the device. The backend's job is narrow and load-bearing:
   **magnitude**, and a step that lightens the load sized by the band just below it) is
   presentation. Lift's best code — and Lift pasted it into three targets and let them drift.
   Gym's rule was "exactly **one** module," which held only while there was one language; it is
-  now one module *per language*, both answering `packages/api-contract/gym-ladder.json` as a
-  test (§11.5). The server only stores what was logged plus each exercise's default step. Same
+  now one module *per language* — JS, Swift, Kotlin — all three answering
+  `packages/api-contract/gym-ladder.json` as a test (§11.5). The server only stores what was logged plus each exercise's default step. Same
   for comma-as-decimal parsing, sticky carry-forward, tap-to-type.
 - **The rest timer** — a countdown against a target with a Notification-API alert is device
   behavior; the server reserves the target column (§2.5) and stores the wall-clock timestamps
@@ -1326,9 +1326,10 @@ The full cost of mounting the third product, itemized against the actual seams:
 whole backend conversation (`credentials: 'include'`, one typed `GymError`, 404→null on
 singular reads), `gym.css` scoped under `.gym-root`, and `landingAfterSignIn` on the route
 table (today a lifter signing in from gym lands on the skill tree — the `PRODUCTS[0]`
-fallback). The shell `status` stays `'pre-open'` until the logger is real: the author dogfoods
-at `#/gym`, `/app/gym` keeps redirecting to the landing, and the flip is `gym-landing`'s move,
-not the seam's.
+fallback). The shell `status` was `'pre-open'` through phases 0–1 and flipped to `'open'` on
+2026-08-08 — `gym-landing`'s move, not the seam's. `#/gym` now upgrades in place into `/app/gym`,
+with the coach's `#/gym/shared/<token>` link held outside the room chrome by the route table's
+`bare` predicate. The phase-1 dogfood gate has still never run.
 
 ---
 
@@ -1422,9 +1423,10 @@ the local stack → push → watch CI → probe prod).
   §5, §6), e1RM shown to a human for once. `gym-export` — **shipped**, and it is the CSV §5
   describes rather than the settings-section stub the table used to promise. `gym-share` — **the
   backend half is shipped**: the separate table, the two owner-scoped doors and the one
-  unauthenticated read (§2.6, §5). `set-kinds` UI · `log-editing` (drafts, renumber) ·
-  `rest-timer` (the target column routines now write) · `gym-landing` (the flip, only once the
-  product behind it is true). `gym-mcp` — **shipped**, both halves: the platform's grant gate, then
+  unauthenticated read (§2.6, §5). `gym-landing` — **shipped, and flipped 2026-08-08**: the landing
+  is live and `shell.status` is `'open'`. Still open: `set-kinds` UI · `log-editing` (drafts,
+  renumber) · `rest-timer` (the target column routines now write).
+  `gym-mcp` — **shipped**, both halves: the platform's grant gate, then
   gym's fifteen tools on it (§6). What is left of that bet is client-side — the connect surface, and
   whatever the shell puts in front of a lifter who has no agent of their own.
 - **Phase 3.** `progress-charts` — **the backend half is shipped** as `GET /v1/gym/stats` (§5).
@@ -1460,7 +1462,7 @@ stance lives in the surfaces. Every route — and every tool — stays owner-sco
 
 ### 11.1 Who owns what
 
-| | Phone (native iOS) | Web |
+| | Phone (native iOS · Android) | Web |
 |---|---|---|
 | owns | the **open** session | everything retrospective and prospective |
 | | workout mode, keypad, ladder, sticky carry-forward, rest timer, wake lock, the flush queue | the log, progression, routines editor, export, MCP connect, settings, the strength-tree publish, backfill |
@@ -1582,15 +1584,17 @@ finish three hours late.
 So this is an open decision, not a settled design: either the web Finish learns to refuse while
 another device holds an unflushed queue (the server would have to say so), or it goes and web keeps
 only the retrospective half G8 assigns it. It cannot simply stay unstated — it is the one place
-"we have the features" can lose a lifter's sets. Until it is settled, the web logger stays, because
-it is the only capture surface that can be installed on a phone today (§11.6).
+"we have the features" can lose a lifter's sets. Until it is settled, the web logger stays. Android
+now exists as an installable capture surface — a sideloaded APK off a GitHub Release, no store —
+but the web logger's reason stands on what remains true: an iPhone is uncovered until the iOS app
+ships to a store, and Android has no store distribution either (§11.6).
 
 **The ladder must not become copy #2.** §0 cut the ladder to exactly one module because Lift pasted
 it into three targets and let them drift — and a native Swift logger writes copy #2 on its first
 day. The fix is not shared code across a language boundary but shared *truth*: the step table and
 the down-step rule became a golden fixture in `packages/api-contract/gym-ladder.json`, which
-already existed to hold exactly this (wire types plus the genesis-legend golden), and both the JS
-module and the Swift one run it as a test. Drift then fails CI instead of shipping a wrong number
+already existed to hold exactly this (wire types plus the genesis-legend golden), and the JS,
+Swift and Kotlin modules each run it as a test. Drift then fails CI instead of shipping a wrong number
 into the product's single highest-value pixel.
 
 **Shipped (`ladder-golden`), and writing the contract down caught two defects the single copy had

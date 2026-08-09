@@ -7,12 +7,14 @@ surface. The directory tree is meant to read like a description of the system: g
 ```
 backend/     one C++ modular-monolith binary
   platform/    shared, product-neutral: auth · oauth · billing · mcp engine · email ·
-               users · telemetry · access · generic id/crdt primitives · http host
+               users · telemetry · ai spend metering · access · generic id/crdt
+               primitives · http host
   products/    one module per product, each plugging its routes AND (optionally) its MCP
                tools into the host — roadmap and gym publish tools today
     roadmap/     the RPG skill-tree app (the original Windmill)
     journal/     the night-canvas daily journal (shipped)
-    gym/         training log (built through phase 2, pre-open — see its ARCHITECTURE.md)
+    gym/         training log (built through phase 2, open since 2026-08-08; its phase-1
+                 dogfood gate has never run — see its ARCHITECTURE.md)
   db/          schema.sql (platform tables + per-product tables)
   test/        mirrors src: test/platform, test/products/<p>
 
@@ -39,19 +41,25 @@ apps/        native superapps (one per OS; journal/roadmap/gym are mountable mod
                phone is the only device that can own an open session. Roadmap mounts and says where
                it does live. iOS-only: builds and tests through xcodebuild against a simulator,
                never `swift build`
-  android/     Kotlin — structured scaffold (Gradle project is a later native wave)
+  android/     Kotlin — a real Compose superapp. Gradle modules :app :platform :gym under the
+               same one-directional rule (products depend on :platform, never each other); gym is
+               the built room — the phone half of "the phone owns the open session". JVM unit
+               tests including the ladder golden; builds via the committed wrapper (./gradlew
+               build, JDK 17+)
 
 packages/    cross-surface shared assets (consumed by more than one surface)
   api-contract/   one truth several languages must state separately — wire types, the
-                  genesis-legend golden, the gym weight-ladder golden (web + iOS each test it)
+                  genesis-legend golden, the gym weight-ladder golden (web + iOS + Android each test it)
   design-tokens/  a README and nothing else — no tokens, no consumers. The intended home for
                   the raw color/space/type scales, which today live in web/src/styles/tokens
-                  and are mirrored by hand in iOS's WindmillPlatform/Tokens.swift
+                  and are mirrored by hand in iOS's WindmillPlatform/Tokens.swift and Android's
+                  platform/…/design/Tokens.kt (the third mirror fired the lift trigger; the
+                  lift itself is deferred — see the README)
 
 services/    sidecars the backend calls out to, deployed beside it in the same compose file
   embedder/       Node + transformers.js, running the same bge-small weights the browser
                   downloads, so a journal echo's vectors share the browser's space. Journal's
-                  nightly echo pass is dark without it (backend/products/journal/ports/Embedder.h)
+                  echo pass is dark without it (backend/products/journal/ports/Embedder.h)
 
 tools/       one-shot scripts kept for the record, never a product surface
   lift-import/          the author's Lift training history into the gym log, over the public API
@@ -63,10 +71,13 @@ docs/        brand-level narrative: PRODUCT_LOG (strategy) · DESIGN_BRIEFS (the
              · per-topic design/exploration notes
 .github/     root workflows: backend.yml (context backend/ — test, build, push the image) ·
              web.yml (workdir web/ — test, build, rsync dist/ to the VPS) · ios.yml (workdir
-             apps/ios — build + test only, ships nothing) · deploy.yml (manual: renders
-             ~/windmill/.env on the VPS from GitHub secrets + variables, then compose up) ·
-             embedder.yml (path-filtered: the sidecar and the on-device worker it must agree
-             with) · tools.yml (path-filtered: tools/). The last two ship nothing either.
+             apps/ios — build + test only, ships nothing) · android.yml (path-filtered:
+             apps/android/** + packages/api-contract/** + itself — build + test on push/PR,
+             and on an android-v* tag it SHIPS a release APK to a GitHub Release) · deploy.yml
+             (manual: renders ~/windmill/.env on the VPS from GitHub secrets + variables, then
+             compose up) · embedder.yml (path-filtered: the sidecar and the on-device worker it
+             must agree with) · tools.yml (path-filtered: tools/). Embedder and tools ship
+             nothing either.
              A backend push publishes an image; it does not deploy. On a fresh host the WEB
              deploy must land before the backend one — the embedder bind-mounts its model
              weights out of the served web directory (services/embedder/README.md).
@@ -132,7 +143,8 @@ Still open (**web** + infra):
   product owns its own landing head beside the landing it describes and names its own module from
   there; the brand root's hero derives from the registry rather than being hand-copied in three
   places; and `App.jsx`'s `LEGACY_DOORS` derives its product rows from `switchHash` + `shell.room`,
-  filtered to open products — which turned the conspicuous absence of `#/gym` into a stated rule.
+  filtered to open products — which is why `#/gym` joined the door table on the day gym flipped to
+  `open`, with no edit to the shell.
   The boundary test now walks **everything that is not a product**, stylesheets included, rather
   than only `src/shell/`.
 

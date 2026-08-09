@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:label="Windmill"
+        android:icon="@mipmap/ic_launcher"
+        android:theme="@style/Theme.Windmill"
+        android:supportsRtl="true">
+
+        <!-- uiMode/locale/fontScale/density ride along deliberately: the gym skin is pinned dark
+             and the room holds a live offline queue — an activity recreation mid-flush would put
+             two queues on one file, and the outgoing one can clobber what the fresh one wrote. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode|locale|layoutDirection|fontScale|density"
+            android:screenOrientation="portrait">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

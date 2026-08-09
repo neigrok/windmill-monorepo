@@ -8,14 +8,29 @@ tree node can't: the thesis, the metric contract, the cuts, and the risks.
 Everything above the "Gym" heading is **roadmap's** narrative. Journal's design lives in
 `backend/products/journal/ARCHITECTURE.md`; gym's plan is the last section of this file.
 
+> **Status (2026-08-09): the Android surface stands.** `apps/android` is a built Kotlin/Compose
+> app — the gym room only, ported from the iOS room, so the two-surface doctrine ("the phone owns
+> the open session", gym `ARCHITECTURE.md` §11) now has two native hands instead of one. Magic-link
+> (paste) sign-in, an offline-first set queue, and the ladder answering
+> `packages/api-contract/gym-ladder.json` as its third language. Releases are `android-v*` tags to
+> GitHub Releases (`.github/workflows/android.yml`); the roadmap and journal rooms, any
+> subscription surface, and any store distribution are deliberately not built.
+
 > **Status (2026-07-29): two corrections, and the third product gets a plan.**
 > **(a) Monetization is no longer parked — it shipped while this doc said otherwise.** The metric
 > contract below ("deliberately unmeasured this cycle") and the Cuts section ("all monetization —
-> parked behind `funnel-baseline` evidence") are **stale as of the Windmill One work**. One paid
+> parked behind `funnel-baseline` evidence") went **stale with the Windmill One work**, and both
+> are now corrected where they stand rather than only flagged here. One paid
 > tier now exists and gates three live surfaces through one predicate,
 > `Entitlements::hasWindmillOne` (`backend/platform/application/Entitlements.h`, committed in
-> `516ef23`): roadmap's tending, journal's echoes (`EchoSweep.cpp:69`), and journal's Talk
-> (`VoiceApi.cpp:26`). What is still true is the *restraint*: no price is open
+> `516ef23`): roadmap's tending (`TendingService.cpp:97`, and shipped dark behind `TENDING_ENABLED`,
+> `main.cpp:317`), journal's echoes (`EchoApi.cpp:132`, where the gate TRUNCATES a passage to eight
+> words rather than refusing the read — `EchoSweep` is deliberately entitlement-blind,
+> and still is: since 2026-08-09 it asks a per-user AI COST ceiling, which is a spend brake and not
+> an entitlement, and skips an over-budget user for that pass rather than failing them),
+> and journal's Talk (`VoiceApi.cpp:26`, the one hard refusal). **Superseded 2026-08-07:** there is
+> a fourth, gym's coach panel (`CoachService.cpp:82`). What is still true is the *restraint*: no
+> price is open
 > (`paidPlansOpen()` in `web/src/shell/billing/checkout.js` still returns `false` — the constant
 > `PAID_PLANS_OPEN` this line used to name is gone, see the shell-inversion note below), and no
 > bet's success is defined by revenue this cycle. Products do
@@ -46,13 +61,22 @@ Everything above the "Gym" heading is **roadmap's** narrative. Journal's design 
 
 ---
 
-## Where Windmill actually is
+## Where Windmill was — the 2026-07-16 snapshot
+
+> Kept as the record of the starting position, not as a status. Everything in this section is as of
+> 2026-07-16, and most of the "broken or missing" half has since been built: the paste parser and
+> its composer, the nine quests and the shelf that plants them, the fork door, a real `og-image.png`
+> and path routes at `/t/:id`, server-known progress, the reminder scheduler, the telemetry beacon,
+> and visibility actually enforced (`canRead` on every read path). For the current state read the
+> phase log below and each product's `ARCHITECTURE.md`.
 
 **Shipped and solid** (per code review, not per docs): magic-link accounts with 90-day
 sessions; OAuth 2.1 authorization server; a 27-tool remote MCP endpoint at
 `windmill.works/mcp` with a completed ergonomics program; full CRDT offline-first cloud
 sync (row-lattice Postgres storage, HLC, O(delta) anti-entropy, per-user LWW progress,
-IndexedDB outbox, d2d `.windmill` files); live WebSocket collaboration with presence;
+IndexedDB outbox, d2d `.windmill` files); live WebSocket sync across one account's own devices with
+a presence cursor layer — writes are owner-only (`canWrite`, `backend/platform/domain/Access.h`), so
+multi-account collaboration was never built here, and LAUNCH.md's Do-not list keeps it that way;
 multi-tree registry + switcher + per-tree routing; the node workspace (checklist, notes,
 links, progress arc); server-authoritative color legend; the whole motion/ceremony system
 with reduced-motion; PNG share export + share dialog + tree portrait; a real marketing
@@ -105,7 +129,9 @@ The new thesis: **make the front door honest, measure it, then amplify.**
   shared artifact. k is not declared real until measured end-to-end.
 - **Retention** — W1 return rate; post-reminder 48h re-activation once the engine ships;
   guardrail: share of qualifying weeks correctly suppressed.
-- **Monetization** — deliberately unmeasured this cycle (see Parked).
+- **Monetization** — still deliberately unmeasured, but no longer because monetization is
+  parked: Windmill One shipped and gates four surfaces, and nothing is on sale, so there is
+  nothing to measure yet. No bet's success is defined by revenue this cycle.
 
 Numeric targets get set one week after `funnel-baseline` lands real data — targets
 invented before a baseline exist to be gamed. Each phase-3 amplification bet must name
@@ -240,16 +266,20 @@ New bets with no old number: `truth-pass`, `event-spine`, `funnel-baseline`,
 
 ## Cut, retired, parked (what this plan refuses)
 
-- **LLM goal-to-quest generator — retired, not parked.** The shipped 27-tool OAuth'd MCP
-  server is the agent path; an in-app generator needs an LLM proxy and re-solves a solved
-  problem. Revisit only if non-agent users demonstrably demand in-app generation.
-- **Public gallery — deferred behind quest-picker + tree-visibility + a moderation
-  story.** Greenfield on both ends; the curated-browse value ships via quests. Re-opens
-  when telemetry shows real fork-per-view on shared pages.
-- **All monetization (license keys, subscriptions, team seats) — parked behind
-  `funnel-baseline` evidence of retention.** Pricing an unmeasured funnel anchors low and
-  contaminates cohorts. Team seats additionally smuggle in a payments backend and a
-  roles/authz surface. The watermark stays the only monetization primitive this cycle.
+- **LLM goal-to-quest generator — retired, not parked.** The shipped OAuth'd MCP server is
+  the agent path; an in-app generator re-solves a solved problem. The "needs an LLM proxy"
+  half of this reason has since expired — `/v1/compose` and tending both call Anthropic
+  server-side — but the ruling stands: the quests are authored, and paste-import escalates
+  to a model only to feed the one deterministic parser.
+- ~~**Public gallery — deferred behind quest-picker + tree-visibility + a moderation
+  story.**~~ **Shipped 2026-07-25** — the `/gallery` wall (`routes.cpp:212`) ranked by forks,
+  its in-product twin `#/browse`, and the listing consent (`public` = "and list me") that
+  fills it.
+- ~~**All monetization (license keys, subscriptions, team seats) — parked behind
+  `funnel-baseline` evidence of retention.**~~ **Superseded** by the Windmill One work — see
+  the 2026-07-29 status note at the top of this file. One paid tier exists and gates four
+  surfaces; no price is open. Team seats stay cut, for the reason this bullet gave: they
+  smuggle in a roles/authz surface.
 - **Streaks** — decoration on a return visit that doesn't exist yet; `progress-timestamps`
   make it cheap later.
 - **Dark app chrome** — full token set exists, wiring it moves no funnel metric; share
@@ -264,12 +294,13 @@ New bets with no old number: `truth-pass`, `event-spine`, `funnel-baseline`,
   is the only sign-in and now carries fork/claim tokens. SPF/DKIM/DMARC + stream
   separation before any recurring send (`email-deliverability`).
 - **Cross-browser claim hazard** — anonymous-tree claim assumes the magic link opens in
-  the browser holding IndexedDB. Fork-claim solves this server-side (pending fork);
-  anon-tree claim needs an explicit same-browser fallback design.
+  the browser holding IndexedDB. Fork-claim solves this server-side and the fork door
+  shipped; anon-tree claim still needs an explicit same-browser fallback design.
 - **Single-instance collab core** — a successful launch cannot be absorbed by adding
   replicas; `sync-scale-out` is a tripwire with a designed fix, pulled forward on load.
-- **Path-routing migration breaks pre-migration hash links** — ship `path-share-pages`
-  before `share-link` proliferates URLs, or carry a permanent hash→path redirect shim.
+- ~~**Path-routing migration breaks pre-migration hash links**~~ — closed: `/t/{id}` is a
+  real path route serving the SPA shell with per-tree OG meta (`routes.cpp:203`), and it
+  landed before `share-link` proliferated URLs.
 - **WebGL2-only rendering sheds unknown visitors** — `event-spine` logs render-init
   failures from day one; a graceful fallback is a later call made on data.
 - **Brand collision** — "Windmill" is an established dev-tools brand (windmill.dev)
@@ -337,8 +368,10 @@ Everything below exists to make that line literally true.
 > (`backend/products/gym/ARCHITECTURE.md`); `gym-schema` (five tables, 64 seeded movements),
 > `gym-backend-seam` (`windmill_gym`, six routes, four lines in `main.cpp`) and `gym-web-seam` (the
 > module shell at `#/gym`, `pwa-shell` beside it) followed in one wave. The seam is real: a set
-> logged by curl survives a server restart. The shell `status` stays `'pre-open'` until the logger
-> exists — `/app/gym` still redirects to the landing, and the author dogfoods at `#/gym`.
+> logged by curl survives a server restart. The shell `status` stayed `'pre-open'` until the logger
+> existed — `/app/gym` redirected to the landing and the author dogfooded at `#/gym`. **Superseded
+> 2026-08-08:** `status` is `'open'` and `#/gym` upgrades in place into `/app/gym`. What the flip
+> does not claim is unchanged — the dogfood gate has still never run.
 >
 > **What the gauntlet cost, and why it was worth it.** Four executing reviewers found 21 defects,
 > every one reproduced independently by a second agent before it was believed. One was a **blocker**:
@@ -420,10 +453,17 @@ plug-in seam that is one `gym::registerRoutes(app, GymDeps&)` call.
 
 **The log is free. The *connected* log is Windmill One.**
 
+**Amended 2026-08-09:** the second sentence is not what shipped. Gym's fifteen MCP tools read no
+entitlement at all — the connected log is free like the log. Gym's only `hasWindmillOne` read is the
+in-app coach panel (`CoachService.cpp:82`), so the paid line in gym is the coach, not the connection.
+Whether to move it is an open product decision; until it is taken, no surface may sell the connected
+log.
+
 Every competitor sells "tracker free, AI coach paid" — Hevy, Strong, Fitbod, and every wrapper
 shipped since 2023. Building a fifth in-app chatbot is not a product bet, it is a subscription to
 someone else's tokens. Windmill has something none of them do and it is already shipped: an OAuth 2.1
-MCP server with a 27-tool endpoint at `windmill.works/mcp`. This doc already ruled on this once, for
+MCP server at `windmill.works/mcp` — today 42 tools across two products (roadmap's 27 and gym's 15),
+filtered per connection by the grant its credential holds. This doc already ruled on this once, for
 roadmap: the in-app LLM generator was **retired, not parked**, because "the shipped MCP server is the
 agent path." Gym inherits that ruling rather than quietly reversing it.
 
@@ -439,7 +479,8 @@ that once said changes "arrive as a typed diff you tap to apply" was describing 
 product does not hold — what stands where the human's Apply stood is the grant, and the fact that the
 three destructive tools sit behind `gym:delete` alone. Second, *no in-app chat*: there is now a
 **panel under any finished workout**, and it is the same system with a second door rather than a
-second system — the same fifteen tools, the same LogService, handed a read-only scope. So gym does
+second system — the read half of the same fifteen tools (six of them: `CoachTools` drops every
+write and delete from the catalog), the same LogService, a read-only scope. So gym does
 now ship a prompt, a tool loop and a token bill (`adapters/llm/AnthropicCoach`), all three bounded:
 read-only, one workout, six iterations, Windmill One, and dark — no `ANTHROPIC_API_KEY`, no route.
 What is still not built and stays cut: streaming, proposal chrome, and any chat that is not attached
@@ -516,8 +557,8 @@ Lift's three-way recovery UX existed to survive a device-local store that server
 | `rest-timer` | A rest target with a countdown and a Notification-API alert, reset on exercise switch. Lift's counts up forever, has no target, no alert, and never resets | S | `set-logger` |
 | `routines` | Named ordered exercise lists to start a session from, duplicate, reorder. The session **snapshots the plan** at start; mid-session changes are session-scoped with an optional "save to routine". For the named user, the prefill that matters is what the program says today, not what last week said | M | `log-editing` |
 | `pr-line` | e1RM (Epley, `weight × (1 + reps/30)` — already in Lift's coach tool output and never once shown to a user) plus PR detection and a "vs last time" line on the finish screen. The words "PR", "streak" and "record" appear nowhere in Lift's codebase | S | `set-kinds` |
-| `gym-mcp` | **The wedge.** Gym's tools on `windmill.works/mcp`: read the log, read progression, propose a routine change as a typed diff the user applies. Needs a platform bet first — `McpServer` binds exactly one `ToolHost` (`McpServer.h:39`) and `main.cpp` binds roadmap's — and the right shape is a **scoped** composite, where the client's grant selects which products' tools it sees, not a flat union that regresses every roadmap user's `tools/list` right after we fought to shrink it | M | platform scoped ToolHost |
-| `gym-landing` | Flip the Gym card in `BrandLanding.jsx` from `live: false` and add the static product page on journal's template. Not before the product behind it is true | S | `pr-line` |
+| `gym-mcp` | **The wedge.** Gym's tools on `windmill.works/mcp`: read the log, read progression, propose a routine change as a typed diff the user applies. **Shipped 2026-08-07** — the platform bet landed as a scoped composite (`CompositeToolHost`, bound at `main.cpp:375`), where the client's grant selects which products' tools it sees rather than a flat union, and gym's fifteen tools ride it. What is left of this bet is client-side: the connect surface for a lifter with no agent of their own | M | platform scoped ToolHost |
+| `gym-landing` | **Shipped, and flipped 2026-08-08.** The gym landing is its own module (`products/gym/marketing/`) and `BrandLanding.jsx` derives every card from the registry rather than a hand-set `live` flag, so the flip was one word: `shell.status: 'open'` in `products/gym/routes.js`. Written down here because the bet's condition — "not before the product behind it is true" — was met by the build, not by the dogfood gate, which has still never run | S | `pr-line` |
 | `gym-export` | A `GymDataSection` registered through `gymRoutes.settingsSections.data` — CSV of every set. `SettingsPage.jsx` already composes product sections, so this needs zero platform work. A multi-year artifact with no way out has no trust argument | S | `training-log` |
 
 **Phase 3 — behind a measured gate.** `progress-charts` (one chart: per-exercise e1RM + volume, no
@@ -682,12 +723,13 @@ personal tool. Every phase-3 bet names its own kill rule when it starts.
 - **The dogfood gate is now runnable and has not been run.** Eight consecutive real sessions on the
   phone without falling back to Lift, prefill right on set one in at least six. Every claim about
   whether gym is good is unearned until that happens; the wave that unblocked it did not run it.
-- **Section D has no surface and the landing already sells it.** `gym-mcp` waits on the platform
-  scoped-composite ToolHost, so the connected log — the product's whole paid thesis — is drawn in the
-  design and absent from the build. `/gym` is pre-open and says so, but `marketing/GymLanding.jsx`
-  states the capability in the present tense ("Works with Claude Desktop…"), which stops being
-  honest on the day gym opens. Either that section moves to the future tense or gym does not open
-  without it.
+- **Section D shipped, and what is left of it is client-side.** The scoped composite landed
+  (`CompositeToolHost`, `main.cpp:375`) and gym's fifteen tools ride it (`GymToolCatalog.cpp`), so
+  `marketing/GymLanding.jsx`'s present-tense "Works with Claude Desktop…" is now backed by shipped
+  tools and gym opened on 2026-08-08 with the claim true. The residue is the connect surface for a
+  lifter with no agent of their own (gym `ARCHITECTURE.md`, phase 2). **One correction the thesis
+  above still needs:** the connected log is FREE. Nothing in gym's MCP stack reads an entitlement;
+  gym's only `hasWindmillOne` read is the in-app coach panel (`CoachService.cpp:82`).
 - **Exercise identity is the bug we must not inherit.** Root of Lift's mid-workout crash, its
   duplicate-name collapse, its rename-forks-history behaviour, and its coach's exact-string failures.
   It costs one column now and a migration across every set ever logged later.

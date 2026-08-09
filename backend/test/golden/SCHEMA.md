@@ -46,8 +46,8 @@ Each lattice is proven separately, natively, and neither run touches this corpus
 
 Recorded so the shape is not re-derived: move the three fixtures to
 `packages/api-contract/crdt-golden/` beside `gym-ladder.json` — cross-surface truth belongs there
-(`STRUCTURE.md`), and `gym-ladder.json` is the working example, read by both a web test and an iOS
-test. Then give them two real consumers: a web test driving the exported `parseHlc`, `compareHlc`
+(`STRUCTURE.md`), and `gym-ladder.json` is the working example, read by a web test, an iOS test and
+an Android test. Then give them two real consumers: a web test driving the exported `parseHlc`, `compareHlc`
 and `VersionVector` out of `sync/lattice.js`, and a JSON-driven C++ case reading the same files (the
 subgraph wire codec, `products/roadmap/adapters/json/SubgraphJson.h`, can already parse them).
 `run.mjs`'s reimplemented semantics are then dead and go with it. State-level join/delta scenarios

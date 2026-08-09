@@ -2,11 +2,11 @@ name: iOS CI
 
 # Monorepo: the native superapp lives under apps/ios. Build and test only — this workflow ships
 # nothing; App Store delivery is a later wave. Path-filtered to apps/ios and packages/api-contract:
-# the weight ladder's truth is packages/api-contract/gym-ladder.json and both copies of the rule
-# (Swift and web) run it as a test, so editing the golden fires this workflow AND web.yml, whose
-# `npm run build` runs the JS suite first. That is the drift gate doing its job — a rule changed in
-# one language fails in the other. Both halves arm on push and on pull_request, so neither language
-# can be the only one watching.
+# the weight ladder's truth is packages/api-contract/gym-ladder.json and all three copies of the
+# rule (Swift, web and Kotlin) run it as a test, so editing the golden fires this workflow AND
+# web.yml AND android.yml — web.yml's `npm run build` runs the JS suite first. That is the drift
+# gate doing its job — a rule changed in one language fails in the others. All three arm on push
+# and on pull_request, so no language can be the only one watching.
 #
 # This runs xcodebuild against a simulator rather than `swift build`: the package is iOS-only (see
 # apps/ios/README.md), and building the app target is a far stronger gate than compiling the
