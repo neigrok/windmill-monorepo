@@ -8,10 +8,24 @@ tree node can't: the thesis, the metric contract, the cuts, and the risks.
 Everything above the "Gym" heading is **roadmap's** narrative. Journal's design lives in
 `backend/products/journal/ARCHITECTURE.md`; gym's plan is the last section of this file.
 
+> **Status (2026-08-09, later the same day): the first-open wave — the door stopped being the
+> product's first screen.** A real Android user's first run surfaced three failures at once: the
+> emailed link died in a browser before the app could spend it, the web could still start a live
+> gym session, and a fresh install demanded an account before showing anything. One wave fixed all
+> three (nodes `app-code-door`, `gym-anonymous-first`, `gym-live-mirror`; follow-ups filed under
+> `first-open-follow-ups`). The phones now sign in by an emailed **6-digit code** (`door:"app"` on
+> the mint, the `magic-code` template — which must be pasted into Resend before an app release
+> ships the door), the gym room is **anonymous-first on both phones** with a claim replay that
+> drains the local shelf into the account in the one safe order, and the web gym is finally what
+> §11 decided: **mirror + backfill, never capture**. Sign-in changed meaning: from a wall in front
+> of the room to the claim that adds the cloud half — the web log, the AI coach, shares, and
+> Windmill One when it opens.
+
 > **Status (2026-08-09): the Android surface stands.** `apps/android` is a built Kotlin/Compose
 > app — the gym room only, ported from the iOS room, so the two-surface doctrine ("the phone owns
 > the open session", gym `ARCHITECTURE.md` §11) now has two native hands instead of one. Magic-link
-> (paste) sign-in, an offline-first set queue, and the ladder answering
+> (paste) sign-in **(superseded later the same day: the code door, above)**, an offline-first set
+> queue, and the ladder answering
 > `packages/api-contract/gym-ladder.json` as its third language. Releases are `android-v*` tags to
 > GitHub Releases (`.github/workflows/android.yml`); the roadmap and journal rooms, any
 > subscription surface, and any store distribution are deliberately not built.
