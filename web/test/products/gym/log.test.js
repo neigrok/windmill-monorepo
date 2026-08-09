@@ -12,7 +12,7 @@ import {
   entryLabel, finishHref, finishIdOf, fmt, groupByExercise, isFinished, isFirstSession,
   nameOfMovement, NEW_ROUTINE_ID, NO_ROUTINE, planOf, routineHref, routineIdOf, routineMetaLabel,
   routineNameOf, ROUTINES_HREF, screenOf, sessionHref, sessionIdOf, sessionMetaLabel,
-  sessionMovementMeta, setCountLabel, sharedHref, sharedTokenOf, STATS_HREF, timeLabel, topSetLabel,
+  setCountLabel, sharedHref, sharedTokenOf, STATS_HREF, timeLabel, topSetLabel,
   topSetOf, utcDayLabel, weekdayName, workingSetsOf,
 } from '../../../src/products/gym/log.js';
 
@@ -222,16 +222,6 @@ test('entryLabel — what a routine asks a movement for, and the two targets it 
   assert.equal(entryLabel({ exerciseId: 'dip', targetSets: 3, targetWeightKg: 20 }), '3 × max · 20');
 });
 
-// A movement just added between sets is the normal state of the list, not an empty slot.
-test('sessionMovementMeta — a movement with no sets says what starts it', () => {
-  assert.equal(sessionMovementMeta({ done: 0 }), 'no sets yet — logging one starts it');
-  assert.equal(sessionMovementMeta({ done: 0, planned: 5 }), 'no sets yet — logging one starts it');
-  assert.equal(sessionMovementMeta({ done: 3, planned: 5 }), '3 of 5 sets');
-  assert.equal(sessionMovementMeta({ done: 6, planned: 5 }), '6 of 5 sets');
-  assert.equal(sessionMovementMeta({ done: 1 }), '1 set');
-  assert.equal(sessionMovementMeta({ done: 4 }), '4 sets');
-});
-
 // "Your first session" is a claim about the LIST, and one other finished session refutes it.
 test('isFirstSession — the session being asked about never counts as its own predecessor', () => {
   const session = (id, finishedAt) => ({ id, startedAt: 1, finishedAt });
@@ -416,8 +406,8 @@ test('agoLabel — the day is counted from midnight, not from a rounded number o
   assert.equal(agoLabel(new Date(2026, 6, 18, 23, 0).getTime(), new Date(2026, 6, 22, 6, 0).getTime()), '4 days ago');
 });
 
-// One word for a session nobody planned, wherever it is named: the row, the detail, the finish
-// subtitle, the overlap panel and the logger's own bar, which called the same session "Ad-hoc".
+// One word for a session nobody planned, wherever it is named: the row, the detail, the review
+// subtitle, the overlap panel and the mirror's head. "Ad-hoc" was retired for the same session.
 test('NO_ROUTINE — the one word for a session with no routine', () => {
   assert.equal(NO_ROUTINE, 'No routine');
 });

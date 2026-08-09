@@ -1415,8 +1415,9 @@ the local stack → push → watch CI → probe prod).
 - **`set-logger` (phase 1).** The product: the ladder module (one copy), sticky carry-forward,
   tap-to-type, the local-first flush queue against §3.3's idempotent writes, workout mode.
   Then `lift-import` (the corpus), `last-time-prefill` (the number being right), `training-log`
-  (the reads). The dogfood gate runs here: 8 consecutive real sessions without falling back to
-  Lift, prefill right on set one in ≥6.
+  (the reads). The dogfood gate was planted here: 8 consecutive real sessions without falling
+  back to Lift, prefill right on set one in ≥6 — its capture surface is the native rooms now,
+  the web logger having been demoted away (§11.6).
 - **Phase 2.** `routines` — **the backend half is shipped**: the plan's CRUD, the movement a lifter
   creates, and the server-frozen snapshot at start (§2.4, §2.5, §4). `pr-line` — **the backend half
   is shipped too**: the finish read, the three record rules, the comparison and the discard (§3.1,
@@ -1487,9 +1488,15 @@ Bench press — set 3 · 82.5 × 8 · last set 1:47 ago
 On a laptop at a desk that is worth having on its own, and it makes the phone's ownership legible
 without a word of copy. With no session open, the slot says so in words rather than in a greyed-out
 control — the one shape that would make this feel like a restriction rather than a division of
-labour. It carries **no install door**: there is no iPhone app anybody can install yet (§8), and a
-door onto nothing is exactly the advertising this product does not do. Until there is one, the web
-keeps its own Start.
+labour. It carries **no install door**: neither phone room has a store listing yet (Android is a
+sideloaded APK off a GitHub Release, iOS is signing-blocked, §8), and a door onto nothing is
+exactly the advertising this product does not do.
+
+**Built, 2026-08-09.** The web's own Start went the same day: Today draws the mirror
+(`web/src/products/gym/Today.jsx`) off the shared read hook's poll
+(`web/src/products/gym/useTrainingLog.js`), the resting slot says *"Not training now."* over
+*"Workouts start on your phone."* — true now, both phone rooms exist — and the web logger, its
+flush queue and its resume note are deleted, not disabled.
 
 **The mirror never says "resting".** The rest target is device-local — one module per language,
 answering `packages/api-contract/gym-ladder.json` — so the server cannot know whether 1:47 is a
@@ -1498,16 +1505,20 @@ stand behind: *last set 1:47 ago*.
 
 ### 11.3 Sync — four flows, and the new one is not a channel
 
-1. **Phone → server (the write).** Unchanged from §3.3 and already correct in
-   `web/src/products/gym/logger/flushQueue.js`: client-minted `set_<hex>`, offline queue, replay in
-   any order any number of times, `ON CONFLICT DO NOTHING`, flush before finish. The Swift queue is
-   a re-implementation of this contract, and it must branch the three 409 codes the same way —
-   `set-id-taken` re-mints, `session-id-taken` re-mints, `session-finished` drops (§6).
-2. **Server → web (freshness). No new endpoint.** Web boots on the log read — which is also what
-   lazily settles a stale open session (§3.2) — finds the open session, then polls
-   `GET /v1/gym/sessions/{id}`, which already answers `{session, sets}` owner-scoped. Five seconds
-   while the tab is visible, stopped when hidden, refetched on `visibilitychange`. The only backend
-   work is an `ETag` over `(setCount, last completedAt, finishedAt)` so the steady state is a 304.
+1. **Phone → server (the write).** Unchanged from §3.3: client-minted `set_<hex>`, offline queue,
+   replay in any order any number of times, `ON CONFLICT DO NOTHING`, flush before finish. The
+   living statements of this contract are the phones' queues — `SetQueue.swift` (apps/ios) and
+   `SetQueue.kt` (apps/android) — which branch the three 409 codes the same way: `set-id-taken`
+   re-mints, `session-id-taken` re-mints, `session-finished` drops (§6). The web's `flushQueue.js`
+   was the reference implementation until 2026-08-09; it went with the web logger, and the web now
+   holds no set queue at all.
+2. **Server → web (freshness). No new endpoint — built 2026-08-09** (`useTrainingLog.js`). Web
+   boots on the log read — which is also what lazily settles a stale open session (§3.2) — finds
+   the open session, then polls `GET /v1/gym/sessions/{id}`, which already answers
+   `{session, sets}` owner-scoped. Five seconds while the tab is visible, stopped when hidden,
+   refetched on `visibilitychange`. The `ETag` over `(setCount, last completedAt, finishedAt)` that
+   would make the steady state a 304 is still unbuilt — the poll ships as full 200s, one small read
+   every five seconds, for one lifter's own open session.
 
    **No socket, and that is a decision.** A set lands once every 60–120 seconds. Roadmap already
    runs a CRDT room cluster for a value that changes per keystroke; a second live transport for one
@@ -1566,28 +1577,22 @@ Three things this rule is deliberately **not**:
 
 ### 11.5 Two rules that fall out sharp
 
-**Web DOES Finish a live session — and the rule this paragraph used to state was never built.**
-Written as "web offers no button and says the session closes itself"; corrected 2026-08-07 after
-the code said otherwise. `web/src/products/gym/logger/Logger.jsx` renders a Finish and
-`useLiveSession.js` POSTs it. Half the original reasoning held and is why the web button is safe
-for the device pressing it: finishing **waits for this session's sets to land**, so the tab's own
-queue can never be closed out from under itself.
+**Web does NOT Finish a live session — settled 2026-08-09, by subtraction.** This paragraph spent
+two corrections getting here: the rule was written as "web offers no button", the 2026-08-07 audit
+found the code shipping a Finish anyway, and the open decision it left — teach the web Finish to
+refuse over another device's unflushed queue, or remove it — is now resolved the second way. The
+web logger went (§11.6), so the laptop half of the hazard went with it: there is no button on a
+desk that can close a session over a phone holding unflushed sets. The web's one destructive door
+is the retrospective discard on the review screen, and the store refuses that while the session is
+open (409 `session-open`), so it cannot strand anything in flight.
 
-What did NOT get built is the cross-device half, and it is still a live hazard: §3.3's finish
-boundary is that a set which never landed may not land after the close, and only the device holding
-the queue knows everything landed. **A Finish pressed on a laptop over a phone holding three
-unflushed sets refuses those sets forever**, and no amount of flushing on the laptop can see them.
-The fallback the original rule preferred is still there and still better in that case: auto-close
-fires at four hours and stamps the end at the **last set** (§3.2), which is truer than a manual
-finish three hours late.
-
-So this is an open decision, not a settled design: either the web Finish learns to refuse while
-another device holds an unflushed queue (the server would have to say so), or it goes and web keeps
-only the retrospective half G8 assigns it. It cannot simply stay unstated — it is the one place
-"we have the features" can lose a lifter's sets. Until it is settled, the web logger stays. Android
-now exists as an installable capture surface — a sideloaded APK off a GitHub Release, no store —
-but the web logger's reason stands on what remains true: an iPhone is uncovered until the iOS app
-ships to a store, and Android has no store distribution either (§11.6).
+What the subtraction does NOT settle is the same hazard **between two phones**: §3.3's finish
+boundary still holds — a set that never landed may not land after the close, and only the device
+holding the queue knows everything landed — so a Finish pressed on the Android room over an iPhone
+holding three unflushed sets refuses those sets forever. The fallback is unchanged and still truer
+in that case: auto-close fires at four hours and stamps the end at the **last set** (§3.2). One
+lifter running two phone rooms at once is a narrow ledge, but the claim replay (§11.7) walks near
+it, which is why its order — sets strictly before finish — is stated as law there.
 
 **The ladder must not become copy #2.** §0 cut the ladder to exactly one module because Lift pasted
 it into three targets and let them drift — and a native Swift logger writes copy #2 on its first
@@ -1622,22 +1627,58 @@ year of use would never have found them. A second implementation is a second opi
 
 ### 11.6 What this costs, honestly
 
-The web logger is written and shipped; §11 demotes it to the mirror plus backfill, which is a
-subtraction. `apple-identity` (`backend/AUTH.md`) is a hard prerequisite for the phone —
-shipping Sign in with Apple without `user_identities` forks accounts on the first lifter who taps
+The demotion §11 called for is **done, 2026-08-09**: the web logger — capture screen, flush queue,
+resume note, rest timer, wake lock, prefill dial — is deleted from `web/src/products/gym`, and the
+web is the mirror (§11.2) plus backfill (§11.4) plus everything retrospective. It was a
+subtraction, performed as one: nothing is disabled, flagged or apologised for. `apple-identity`
+(`backend/AUTH.md`) remains a hard prerequisite for the iOS phone room's store path — shipping
+Sign in with Apple without `user_identities` forks accounts on the first lifter who taps
 *Hide My Email*, and the fork is unrecoverable once both halves hold sets.
 
-**The cost this paragraph feared did not arrive** (corrected 2026-08-07). It read: "until
-`gym-ios-logger` exists there is **no capture surface at all**, so the phase-1 dogfood gate (8
-consecutive real sessions) cannot run." Both clauses are now false, in opposite directions.
-`gym-ios-logger` exists — `apps/ios/WindmillKit/Sources/WindmillGym` is a full room that builds and
-tests green — and the gate never depended on it: the gate names 8 sessions and no device, and the
-web logger is a complete capture surface that installs to a phone's home screen through the PWA.
-That is where the gate should run, which is what §11 originally assumed.
+**The dogfood gate's capture surface is the native rooms now.** An earlier version of this
+paragraph feared there was no capture surface at all; the 2026-08-07 correction answered that the
+PWA web logger was one — true then, and unbuilt now. The gate still names 8 consecutive real
+sessions and no device, and the surfaces that can capture them are `apps/android` (a real room,
+installable today as a sideloaded APK off a GitHub Release) and `apps/ios` (a full room that
+builds and tests green, runnable from Xcode). The gate has still never been run.
 
-What *does* still block the phone specifically is signing, not code: `apps/ios/project.yml` sets
+What *does* still block the iPhone specifically is signing, not code: `apps/ios/project.yml` sets
 `CODE_SIGNING_REQUIRED: NO` with no `DEVELOPMENT_TEAM`, and the declared Associated Domains
-entitlement needs a paid Apple team. That is a purchase, and it is not on the gate's path.
+entitlement needs a paid Apple team. That is a purchase, and it is not on the gate's path — the
+gate can run on Android today.
+
+### 11.7 The claim replay — the client convention for anonymous-first capture
+
+The phone rooms open signed out: a lifter trains against local routines and a local log, and
+sign-in **claims** what the device holds. The claim is pure client-side replay over the ordinary
+routes — the server stays surface-blind (§11), gains no claim endpoint, no anonymous identity and
+**no server-side surface gate anywhere**. Both phones implement the same convention, and it is a
+convention exactly the way the flush queue is one: the codes are the contract, the order is the
+law.
+
+On sign-in, and on every connect while a local backlog exists:
+
+1. **Routines first**, idempotent by their `rt_` ids; 409 `routine-id-taken` re-mints.
+2. **Sessions sequentially, oldest first.** Per session, strictly: `start` with the client-minted
+   id, the true `startedAt`, its `routineId` if that routine landed, and **`joinOpenSession:
+   false` — never the default**. A defaulted join silently files past sets into a live phone
+   workout; that exact bug shipped once (§11.4). Then ALL its sets, per-(session, exercise) lane in
+   original order — `set_number` is server-assigned in arrival order — then `finish` with the true
+   local `finishedAt`. No log or stats reads interleaved mid-session: `settleOpen` auto-closes a
+   session whose last set is over four hours old, and every later NEW set id then gets terminal
+   409 `session-finished` — lost lifts.
+3. **Verdicts by code only.** 409 `session-already-open` → wait until the open session closes;
+   409 `session-id-taken` during claim → re-mint the session id AND remap that session's queued
+   sets onto it; 401 / 404 / 5xx / offline → retry, never drop; 409 `session-finished` → dropped
+   and SAID (a `RefusedSet`, never silence). Every instant must sit in
+   `(0, 253402300799000]` — repair a broken local timestamp before replay, because the 400 it
+   earns is terminal.
+4. The live local session — open at the moment of sign-in — claims the same way minus the finish;
+   the existing queue then owns it as on any signed-in day.
+5. After a session's finish confirms, the local copy is **claimed**: the server log is the truth,
+   and local reads merge server history with unclaimed-local only.
+
+The undo window stays 9000 ms on every surface. Copy may change; the verdict codes may not.
 
 ---
 

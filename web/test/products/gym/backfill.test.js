@@ -149,19 +149,20 @@ test('overlapWith — the edges touch without crossing, and an open session is n
   // A live session's end is not a fact yet. Inventing one would refuse a backfill over hours
   // nothing has happened in — and the mid-workout refusal already owns that case, in its own words.
   assert.equal(overlapWith({ startedAt: day, durationMs: 60 * 60_000 }, [{ id: 'ses_live', startedAt: day, finishedAt: null }]), null);
-  // It names no device and promises nothing about a draft. The web is the only surface that can
-  // start a session on this build, so "your phone is mid-workout" was false about a workout usually
-  // running in the very tab reading it — and at the log's door there is no draft to keep.
+  // It names the phone, because on this build that is where live training happens — the web's own
+  // Start is gone (§11), so the sentence G8 wrote is finally true. It still promises nothing about
+  // a draft: at the log's door there is no draft to keep.
   assert.deepEqual(MID_WORKOUT_REFUSAL, {
     title: 'A session is already running.',
-    body: 'Adding now would file these sets into the live session. The door opens when that session closes.',
+    body: 'Live training happens on your phone — adding now would file these sets into the running session. The door opens when it closes.',
   });
-  assert.equal(/phone|draft/i.test(MID_WORKOUT_REFUSAL.title + MID_WORKOUT_REFUSAL.body), false);
+  assert.equal(/phone/.test(MID_WORKOUT_REFUSAL.body), true);
+  assert.equal(/draft/i.test(MID_WORKOUT_REFUSAL.title + MID_WORKOUT_REFUSAL.body), false);
 });
 
 // Every edit the form makes to its draft is one of these four, so the form holds the draft and the
 // cursor and no rule at all.
-test('withMovementAdded — a movement joins on the empty bar, the same value the logger opens on', () => {
+test('withMovementAdded — a movement joins on the empty bar, the opening value everything dials from', () => {
   assert.deepEqual(withMovementAdded([], 'back-squat'), [
     { exerciseId: 'back-squat', lines: [{ weightKg: 20, reps: 5, sets: 3, kind: 'working' }] },
   ]);

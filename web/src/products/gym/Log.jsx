@@ -16,15 +16,16 @@ import { ArrowLeft } from 'lucide-react';
 import { gymApi } from './gymApi.js';
 import { MID_WORKOUT_REFUSAL } from './backfill.js';
 import {
-  BACKFILL_HREF, CLOSED_ITSELF_NOTE, closedOnItsOwn, dayLabel, fmt, groupByExercise, NO_ROUTINE,
-  routineNameOf, sessionHref, sessionMetaLabel, timeLabel, topSetLabel, topSetOf,
+  BACKFILL_HREF, CLOSED_ITSELF_NOTE, closedOnItsOwn, dayLabel, finishHref, fmt, groupByExercise,
+  isFinished, NO_ROUTINE, routineNameOf, sessionHref, sessionMetaLabel, timeLabel, topSetLabel,
+  topSetOf,
 } from './log.js';
 import { CoachPanel } from './coach/CoachPanel.jsx';
 import { CoachShare } from './share/CoachShare.jsx';
 import { useGymRead } from './useGymRead.js';
 
-export function LogList({ live }) {
-  const { phase, summaries, older, session } = live;
+export function LogList({ log }) {
+  const { phase, summaries, older, session } = log;
   const [refused, setRefused] = useState(false);
 
   return (
@@ -181,6 +182,11 @@ export function SessionDetail({ id }) {
         <p className="gym-detail-when">{sessionMetaLabel(session, sets.length)}</p>
         {top && <p className="gym-detail-top">{`top set  ·  ${topSetLabel(top)}`}</p>}
         {closedOnItsOwn(session, sets) && <p className="gym-detail-closed">{CLOSED_ITSELF_NOTE}</p>}
+        {/* The review — the store's own reading of the session (Finish.jsx) — used to be reachable
+            only from the web finish, and the web no longer finishes anything: this door is what
+            keeps that surface on the map. Only a closed session has one; an open one has no
+            comparison to draw yet. */}
+        {isFinished(session) && <a className="gym-detail-review" href={finishHref(session.id)}>Session review ›</a>}
       </header>
       {sets.length === 0 && <p className="gym-quiet">No sets in this session.</p>}
       {groupByExercise(sets).map(([exerciseId, group]) => (

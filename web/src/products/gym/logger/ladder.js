@@ -1,7 +1,8 @@
-// THE LADDER — the one place in Windmill where a weight moves by a tap. Lift had the same rule
-// pasted into three targets and let them drift; here every button and every label reads these four
-// functions, and the cases they must answer live in packages/api-contract/gym-ladder.json, which
-// the native logger runs as a test too.
+// THE LADDER — the one rule for how a weight moves by a tap. Lift had the same rule pasted into
+// three targets and let them drift; the cases every implementation must answer live in
+// packages/api-contract/gym-ladder.json, and the phone loggers run the same golden in Swift and
+// Kotlin. The web's tap-ladder went with the capture (§11) — this module stays as the golden's JS
+// statement, and `round` is the grid every printed weight is spelled on (log.js fmt).
 //
 // The bands are read off the MAGNITUDE and never the sign — a band-assisted pull-up sits at −20 kg,
 // which is a point on the number line and never a mode. So the ladder is a mirror, exactly:
@@ -22,9 +23,9 @@ const BANDS = [
 // come back. Reversibility at the edge, not everywhere.
 //
 // The find falls back because NaN and Infinity compare false against every band, and a weight is
-// not always a number a lifter typed: it is rehydrated from localStorage, where a blob written by
-// an older build can arrive shaped wrong. Throwing here would white-screen the logger mid-workout
-// on every reload until storage was cleared by hand.
+// not always a number a lifter typed: a caller can hand this a value rehydrated from a store an
+// older build shaped wrong, and a throw here is a white screen where a wrong band is merely a
+// wrong label.
 export function steps(weight, lightening = false) {
   const load = Math.abs(weight);
   const top = BANDS[BANDS.length - 1];

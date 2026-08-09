@@ -1,7 +1,7 @@
 // ADD A PAST WORKOUT — the one place in gym where a set is written from memory instead of from the
 // bar. It is a door on the log and never a Start, and it admits to being a form: the unit of entry
 // is the LINE (weight × reps × how many), because "3 × 8 at 82.5" is one fact a lifter remembers
-// rather than three rows to fill in, and every value is typed on the same keypad the logger uses.
+// rather than three rows to fill in, and every value is typed on the training log's own keypad.
 //
 // The two refusals are not the same shape and must not read as one. Times that CROSS a session
 // already in the log are a fact about the log, so the panel offers to open that session — one visit
@@ -14,9 +14,9 @@
 // set or none, and anything short of all of them keeps the form standing with the workout intact —
 // these sets were typed from memory and there is no second copy of them anywhere (backfill.js).
 //
-// G8's desk copy adds "Live training happens on your phone" under the title. It is not written here,
-// because on this build it is not true: the web keeps its Start button until there is an iPhone app
-// to send anybody to.
+// G8's desk sentence — "Live training happens on your phone" — is true on this build at last: the
+// web's own Start is gone (§11), so it is spoken where it earns its place, in the mid-workout
+// refusal that names where the running session lives.
 
 import React, { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
@@ -27,14 +27,14 @@ import {
 } from './backfill.js';
 import { failureReason, gymApi } from './gymApi.js';
 import { fmt, nameOfMovement, sessionHref } from './log.js';
-import { mintId } from './logger/flushQueue.js';
+import { mintId } from './mint.js';
 import { Keypad } from './logger/Keypad.jsx';
 import { MovementPicker } from './logger/MovementPicker.jsx';
 
 const DEFAULT_DAYS = 1;
 const DEFAULT_MINUTES = 60;
 
-export function Backfill({ live }) {
+export function Backfill({ log }) {
   const [form, setForm] = useState({ days: DEFAULT_DAYS, hour: 17, minute: 30, minutes: DEFAULT_MINUTES, blocks: [] });
   const [overlap, setOverlap] = useState(null);
   const [refused, setRefused] = useState(false);
@@ -57,12 +57,12 @@ export function Backfill({ live }) {
 
   const save = async () => {
     if (saving || form.blocks.length === 0) return;
-    if (live.session) {
+    if (log.session) {
       setOverlap(null);
       setRefused(true);
       return;
     }
-    const crossed = overlapWith({ startedAt, durationMs }, live.summaries);
+    const crossed = overlapWith({ startedAt, durationMs }, log.summaries);
     if (crossed) {
       setOverlap(crossed);
       return;
@@ -77,7 +77,7 @@ export function Backfill({ live }) {
       // The store's own check, reached by a tab that did not know a workout had started. It speaks
       // the door's sentence and never a status, because nothing failed here either.
       if (error.sessionAlreadyOpen) setRefused(true);
-      else live.say(`That workout didn’t reach the log — ${failureReason(error)}.`);
+      else log.say(`That workout didn’t reach the log — ${failureReason(error)}.`);
       return;
     }
     // Every set or none, and the draft stays under the hand until every one of them is in the log:
@@ -86,8 +86,8 @@ export function Backfill({ live }) {
     const filed = await fileBackfill({ api: gymApi, id, sets, finishedAt: startedAt + durationMs });
     const report = saveReport({ ...filed, startedAt });
     setSaving(false);
-    live.reloadLog();
-    live.say(report.text);
+    log.reloadLog();
+    log.say(report.text);
     if (!report.kept) window.location.hash = '#/gym/log';
   };
 
@@ -137,7 +137,7 @@ export function Backfill({ live }) {
 
       {form.blocks.map((block, blockIndex) => (
         <section className="gym-block" key={`${block.exerciseId}-${blockIndex}`}>
-          <h2 className="gym-block-name">{nameOfMovement(live.catalog, block.exerciseId)}</h2>
+          <h2 className="gym-block-name">{nameOfMovement(log.catalog, block.exerciseId)}</h2>
           {block.lines.map((line, lineIndex) => (
             <div className="gym-line" key={`${line.weightKg}-${line.reps}-${lineIndex}`}>
               <button
@@ -238,11 +238,11 @@ export function Backfill({ live }) {
 
       {picking && (
         <MovementPicker
-          catalog={live.catalog}
+          catalog={log.catalog}
           query={query}
           onQuery={setQuery}
           onPick={(exerciseId) => { setPicking(false); blocks((held) => withMovementAdded(held, exerciseId)); }}
-          onCreate={live.createMovement}
+          onCreate={log.createMovement}
           onClose={() => setPicking(false)}
           title="Add a movement"
         />

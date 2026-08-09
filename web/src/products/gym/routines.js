@@ -1,6 +1,7 @@
 // ROUTINES AS RULES, not as screens: what a routine composed from the session you just finished
-// says, what a duplicate of one is, what dragging a row does to the numbering, and the one question
-// the logger is allowed to ask mid-workout when the bar disagrees with the plan.
+// says, what a duplicate of one is, and what dragging a row does to the numbering. The capture-time
+// rules — which routine is due, the mid-workout "heavier than the plan" question — live with the
+// capture, in the phone rooms (§11); this module keeps only what the web's screens still ask.
 //
 // Everything here is pure, and what it hands back is one of two things: a WRITE document — the
 // shape POST and PUT read, carrying its order in the order of its entries and no `position` on an
@@ -14,7 +15,7 @@
 // the session's start and the routine has kept moving, so an edit is always a read of the routine
 // itself, changed and written whole.
 
-import { fmt, groupByExercise, workingSetsOf } from './log.js';
+import { groupByExercise, workingSetsOf } from './log.js';
 
 // The server's own ceiling on a name, so a field can stop at it instead of discovering it in a 400.
 export const NAME_MAX = 80;
@@ -118,19 +119,6 @@ export function duplicateRoutine(routine, {
   return { ...routineWrite(routine), id, name: name.slice(0, NAME_MAX), position };
 }
 
-// Which routine Today opens on. A rotation's next turn is the one that has waited longest, and the
-// wire carries exactly one fact to decide it with: when each was last trained. A routine never
-// trained has waited longer than any routine ever has, so it is the one on the card — it is almost
-// always the one just written down, and the card says `never trained` under it rather than implying
-// a schedule. Nothing here decides a routine is due on a DATE: gym keeps no calendar, and a card
-// that said "due today" would be inventing one.
-export function dueRoutine(routines) {
-  if (routines.length === 0) return null;
-  return routines.reduce((due, routine) => (
-    (routine.lastTrainedAt ?? -Infinity) < (due.lastTrainedAt ?? -Infinity) ? routine : due
-  ));
-}
-
 // THE EDITOR IS A DRAFT (screen 6). Every change lands in this copy and nothing reaches the store
 // until Done, so a routine is never left half-rewritten by a lifter who walked away mid-edit — and
 // half a program is what somebody trains against tomorrow. The draft is a whole routine, so the
@@ -139,8 +127,8 @@ export function dueRoutine(routines) {
 // What the editor changes is what screen 6 draws: the order, the membership, the name and each
 // line's target. A target is never INVENTED here, though — a movement joins with no load at all,
 // because "whatever you did last time" is a better answer than a number nobody has ever lifted, and
-// the two other ways a load gets set are the session that composed the routine and the one question
-// the logger asks mid-workout.
+// the two other ways a load gets set are the session that composed the routine and the mid-workout
+// question the phone's logger asks (§11).
 export function draftFrom(routine) {
   return { ...routine, entries: routine.entries.map((entry) => ({ ...entry })) };
 }
@@ -194,57 +182,3 @@ export function reorderEntries(entries, from, to) {
   return moved.map((each, index) => ({ ...each, position: index + 1 }));
 }
 
-// The modify half of the read-modify-write behind screen 8's "Save 87.5 to Push A", and it addresses
-// ONE LINE by its position. A routine naming a lift twice — the heavy line and the back-off line —
-// is the case `(routine_id, position)` exists to make representable, and a write-back matched on the
-// movement would put the heavy day's load on the back-off line as well and delete a target the
-// lifter never touched.
-//
-// The position is the one the plan snapshot froze, so a routine that has since moved that line
-// somewhere else — or dropped it — cannot be addressed at all, and null is how that is said. It has
-// to be a different answer from the routine itself, because "here it is, unchanged" is a document
-// the caller will happily PUT: the write lands, the sheet closes with nothing said, and that silence
-// is precisely what a save looks like to the lifter who pressed for one. Null is also the answer
-// when the movement is gone, and for the same reason it is never re-added — it was deleted on
-// purpose.
-export function withEntryWeight(routine, { position, exerciseId }, weightKg) {
-  const write = routineWrite(routine);
-  const at = position - 1;
-  if (write.entries[at]?.exerciseId !== exerciseId) return null;
-  return {
-    ...write,
-    entries: write.entries.map((entry, index) => (
-      index === at ? { ...entry, targetWeightKg: weightKg } : entry
-    )),
-  };
-}
-
-// THE ONE QUESTION THE LOGGER ASKS (screen 8). The plan snapshot is frozen — last Tuesday keeps
-// reading correctly whichever way this goes — so a heavier day is a fact about today until the
-// lifter says it is a fact about the program. Only heavier: a lighter day is usually a bad day, and
-// a program that ratcheted down every time somebody was tired is not one anybody wrote.
-//
-// Asked at the exercise BOUNDARY and never again that session, which is why `asked` comes in from
-// outside: the memory belongs to the session, not to this rule. The load compared is the heaviest
-// working set, because that is what "ran at 87.5" means — the top set is what a movement was, here
-// as everywhere else in gym.
-export function deviationAsk({ routine = null, planEntry = null, movement = '', sets = [], asked = [] }) {
-  if (!routine || !planEntry || planEntry.weightKg == null) return null;
-  if (asked.includes(planEntry.exerciseId)) return null;
-  const working = workingSetsOf(sets, planEntry.exerciseId);
-  if (working.length === 0) return null;
-  const heaviest = working.reduce((top, set) => Math.max(top, set.weightKg), working[0].weightKg);
-  if (heaviest <= planEntry.weightKg) return null;
-  return {
-    exerciseId: planEntry.exerciseId,
-    // Which LINE of the routine this is about, carried from the snapshot so the write-back can
-    // address it — a routine that names the movement twice has two of them (withEntryWeight).
-    position: planEntry.position,
-    weightKg: heaviest,
-    title: 'Heavier than the plan',
-    body: `Today’s ${movement} ran at ${fmt(heaviest)} against a planned ${fmt(planEntry.weightKg)}. `
-      + `Today’s session already has it. ${routine} does not.`,
-    save: `Save ${fmt(heaviest)} to ${routine}`,
-    keep: 'Today only',
-  };
-}

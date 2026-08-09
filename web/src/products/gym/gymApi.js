@@ -285,8 +285,8 @@ export const gymApi = {
   // log has not answered. The one refusal is 400 `unknown-exercise`, the same word the write path
   // uses, and a client that read its ids out of the catalog cannot reach it.
   //
-  // The movement is echoed back because the logger re-reads this on every movement change, and a
-  // reply that lands after the lifter has moved on has to be discardable.
+  // The movement is echoed back because a capture surface re-reads this on every movement change,
+  // and a reply that lands after the lifter has moved on has to be discardable.
   async lastTime(exerciseId) {
     return json(await call(`/last?exercise=${encodeURIComponent(exerciseId)}`));
   },

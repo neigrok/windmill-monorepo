@@ -1,16 +1,15 @@
 // The routine rules, pinned. Three of them decide what a lifter's program becomes without them
 // ever opening an editor — the routine composed from the session they just did, the copy of one,
-// the drag that reorders it — and the fourth is the only question gym asks mid-workout, which is
-// the one place a session is allowed to change the program it is running against.
+// the drag that reorders it. The capture-time rules (which routine is due, the mid-workout
+// question) went to the phone rooms with the capture itself (§11) and are pinned there.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  blankRoutine, deviationAsk, draftFrom, dueRoutine, duplicateRoutine, ENTRY_REPS_MAX,
-  ENTRY_REPS_MIN, ENTRY_SETS_MAX, ENTRY_SETS_MIN, NAME_MAX, NEW_ENTRY_REPS, NEW_ENTRY_SETS,
-  reorderEntries, routineFromSession, routineWrite, withEntryAdded, withEntryChanged,
-  withEntryRemoved, withEntryWeight,
+  blankRoutine, draftFrom, duplicateRoutine, ENTRY_REPS_MAX, ENTRY_REPS_MIN, ENTRY_SETS_MAX,
+  ENTRY_SETS_MIN, NAME_MAX, NEW_ENTRY_REPS, NEW_ENTRY_SETS, reorderEntries, routineFromSession,
+  routineWrite, withEntryAdded, withEntryChanged, withEntryRemoved,
 } from '../../../src/products/gym/routines.js';
 
 const AT = 1_900_000_000_000;
@@ -198,148 +197,6 @@ test('reorderEntries — a drag that lands past the end still lands, and an empt
     [2, 'bench-press'],
   ]);
   assert.deepEqual(reorderEntries([], 0, 1), []);
-});
-
-// PUT replaces the whole document, so the modify half has to hand back everything that came back.
-test('withEntryWeight — one target changes and the rest of the program comes with it', () => {
-  const stored = {
-    id: 'rt_push_a',
-    name: 'Push A',
-    position: 0,
-    lastTrainedAt: 1_754_300_000_000,
-    entries: [
-      { position: 1, exerciseId: 'bench-press', targetSets: 5, targetReps: 5, targetWeightKg: 82.5, restSeconds: 180 },
-      { position: 2, exerciseId: 'overhead-press', targetSets: 3, targetReps: 8, targetWeightKg: 45 },
-    ],
-  };
-  assert.deepEqual(withEntryWeight(stored, { position: 1, exerciseId: 'bench-press' }, 87.5), {
-    id: 'rt_push_a',
-    name: 'Push A',
-    position: 0,
-    entries: [
-      { exerciseId: 'bench-press', targetSets: 5, targetReps: 5, targetWeightKg: 87.5, restSeconds: 180 },
-      { exerciseId: 'overhead-press', targetSets: 3, targetReps: 8, targetWeightKg: 45 },
-    ],
-  });
-});
-
-// THE LIFT BUG FAMILY, in the one place on this surface it could still happen. A routine naming one
-// lift twice — the heavy line and the back-off line — is the case `(routine_id, position)` exists to
-// make representable, and a write-back matched on the MOVEMENT rewrote both: the lifter answered one
-// question about their top set and the back-off line's 70 kg was destroyed with no second number
-// ever shown to them, under a PUT that has no undo.
-test('withEntryWeight — a routine naming one lift twice changes only the line that was asked about', () => {
-  const stored = {
-    id: 'rt_push_a',
-    name: 'Push A',
-    position: 0,
-    entries: [
-      { position: 1, exerciseId: 'bench-press', targetSets: 5, targetReps: 5, targetWeightKg: 100 },
-      { position: 2, exerciseId: 'bench-press', targetSets: 3, targetReps: 10, targetWeightKg: 70 },
-      { position: 3, exerciseId: 'back-squat', targetSets: 3, targetReps: 5, targetWeightKg: 120 },
-    ],
-  };
-  assert.deepEqual(withEntryWeight(stored, { position: 1, exerciseId: 'bench-press' }, 105).entries, [
-    { exerciseId: 'bench-press', targetSets: 5, targetReps: 5, targetWeightKg: 105 },
-    { exerciseId: 'bench-press', targetSets: 3, targetReps: 10, targetWeightKg: 70 },
-    { exerciseId: 'back-squat', targetSets: 3, targetReps: 5, targetWeightKg: 120 },
-  ]);
-  // And the back-off line is addressable in its own right, without touching the heavy one.
-  assert.deepEqual(withEntryWeight(stored, { position: 2, exerciseId: 'bench-press' }, 75).entries, [
-    { exerciseId: 'bench-press', targetSets: 5, targetReps: 5, targetWeightKg: 100 },
-    { exerciseId: 'bench-press', targetSets: 3, targetReps: 10, targetWeightKg: 75 },
-    { exerciseId: 'back-squat', targetSets: 3, targetReps: 5, targetWeightKg: 120 },
-  ]);
-});
-
-// The snapshot is frozen at the session's start and the routine has kept moving. A movement the
-// lifter has since deleted must not come back because a session from before still remembers it —
-// and neither may a line that moved: position 1 naming something else is a program that changed
-// under the question, and half-right is worse than untouched.
-//
-// So the answer is NOTHING, and not the routine as it was found. Handing the caller back a document
-// it can PUT is handing it a write that changes no program: the request succeeds, the sheet closes
-// with nothing said, and the lifter who pressed `Save 92.5 to Push A` has seen exactly what a save
-// looks like over a Push A that is byte-identical to the one they had.
-test('withEntryWeight — a line the routine no longer holds where it was cannot be addressed at all', () => {
-  const stored = {
-    id: 'rt_push_a',
-    name: 'Push A',
-    position: 0,
-    entries: [{ position: 1, exerciseId: 'overhead-press', targetSets: 3, targetReps: 8, targetWeightKg: 45 }],
-  };
-  assert.equal(withEntryWeight(stored, { position: 1, exerciseId: 'cable-fly' }, 25), null);
-  assert.equal(withEntryWeight(stored, { position: 4, exerciseId: 'overhead-press' }, 25), null);
-  // And the line that IS still there is addressable exactly as it was — the refusal is narrow.
-  assert.deepEqual(withEntryWeight(stored, { position: 1, exerciseId: 'overhead-press' }, 50), {
-    id: 'rt_push_a',
-    name: 'Push A',
-    position: 0,
-    entries: [{ exerciseId: 'overhead-press', targetSets: 3, targetReps: 8, targetWeightKg: 50 }],
-  });
-});
-
-// Screen 8, word for word. The plan snapshot keeps last Tuesday reading correctly either way, so
-// this is only ever a question about the program, never about the session.
-test('deviationAsk — a heavier day is asked about once, in the words the design decided', () => {
-  const planEntry = { exerciseId: 'bench-press', position: 1, sets: 5, reps: 5, weightKg: 82.5, restSeconds: 180 };
-  const sets = [
-    set('bench-press', 82.5, 5, 4),
-    set('bench-press', 87.5, 5, 9),
-    set('bench-press', 87.5, 4, 14),
-  ];
-  assert.deepEqual(deviationAsk({ routine: 'Push A', planEntry, movement: 'Bench Press', sets }), {
-    exerciseId: 'bench-press',
-    // Which LINE of the routine the answer edits — carried from the snapshot, because a routine may
-    // name one lift twice and only one of them was asked about (withEntryWeight).
-    position: 1,
-    weightKg: 87.5,
-    title: 'Heavier than the plan',
-    body: 'Today’s Bench Press ran at 87.5 against a planned 82.5. Today’s session already has it. Push A does not.',
-    save: 'Save 87.5 to Push A',
-    keep: 'Today only',
-  });
-  // Asked at the exercise boundary, once, and never again that session.
-  assert.equal(deviationAsk({ routine: 'Push A', planEntry, movement: 'Bench Press', sets, asked: ['bench-press'] }), null);
-});
-
-// A lighter day is a bad day, not a decision. A program that ratcheted down every time somebody was
-// tired would be one nobody wrote.
-test('deviationAsk — lighter, equal, warmed-up-only and unplanned all ask nothing', () => {
-  const planEntry = { exerciseId: 'bench-press', sets: 5, reps: 5, weightKg: 82.5 };
-  const ask = (sets, over = {}) => deviationAsk({ routine: 'Push A', planEntry, movement: 'Bench Press', sets, ...over });
-
-  assert.equal(ask([set('bench-press', 75, 5, 4), set('bench-press', 75, 5, 9)]), null);
-  assert.equal(ask([set('bench-press', 82.5, 5, 4)]), null);
-  // A warmup above the plan's working weight is not a heavier day; nor is another movement's set.
-  assert.equal(ask([set('bench-press', 90, 2, 4, 'warmup')]), null);
-  assert.equal(ask([set('overhead-press', 100, 5, 4)]), null);
-  assert.equal(ask([]), null);
-  // Nothing to deviate from: no routine on the session, or a plan entry that set no weight target.
-  assert.equal(ask([set('bench-press', 90, 5, 4)], { routine: null }), null);
-  assert.equal(
-    ask([set('bench-press', 90, 5, 4)], { planEntry: { exerciseId: 'bench-press', sets: 3, reps: 8 } }),
-    null,
-  );
-  assert.equal(ask([set('bench-press', 90, 5, 4)], { planEntry: null }), null);
-});
-
-// A rotation's next turn is the one that has waited longest, and a routine written down and never
-// trained has waited longer than any routine ever has.
-test('dueRoutine — the card on Today is the routine that has waited longest', () => {
-  const routine = (id, days) => ({
-    id, name: id, position: 0, entries: [],
-    ...(days === null ? {} : { lastTrainedAt: AT - days * 86_400_000 }),
-  });
-  const rotation = [routine('pull-a', 2), routine('push-a', 5), routine('legs', 3), routine('push-b', 21)];
-  assert.equal(dueRoutine(rotation).id, 'push-b');
-  assert.equal(dueRoutine([routine('pull-a', 2), routine('new-one', null), routine('push-b', 21)]).id, 'new-one');
-  assert.equal(dueRoutine([routine('only', 1)]).id, 'only');
-  // Nothing here reads a calendar: with no routines there is no card, and a tie keeps the row the
-  // wire already put first.
-  assert.equal(dueRoutine([]), null);
-  assert.equal(dueRoutine([routine('first', 4), routine('second', 4)]).id, 'first');
-  assert.equal(dueRoutine([routine('first', null), routine('second', null)]).id, 'first');
 });
 
 // The editor changes a COPY. Nothing reaches the store until Done, so a lifter who walks away

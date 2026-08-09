@@ -1,7 +1,7 @@
 // How a training log reads — the pure rules behind every gym surface, with no React and no fetch
 // in them: which room a URL names and how each of those URLs is written, every label a number is
-// printed under, and the first-performed order a session's sets are grouped in. The logger, the log
-// list, the routines and the session detail all read from here, so there is exactly one way a
+// printed under, and the first-performed order a session's sets are grouped in. The mirror, the
+// log list, the routines and the session detail all read from here, so there is exactly one way a
 // weight, a day and a duration are spelled in this product; the tests read the same rules without a
 // browser.
 
@@ -16,7 +16,7 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 // session, #/gym/finish/ses_… the end of the one just closed, #/gym/backfill the past-workout form,
 // #/gym/shared/… one workout as a coach reads it.
 // Reading and writing that one grammar live together, so a link and the parse that answers it can
-// never drift — the logger writes it to walk into the session it just started.
+// never drift.
 export function sessionIdOf(hash) {
   const match = /^#\/gym\/session\/([A-Za-z0-9_-]+)/.exec(hash || '');
   return match ? match[1] : null;
@@ -169,6 +169,13 @@ export function durLabel(ms) {
   return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`;
 }
 
+// The empty bar — the value a form opens on when it has nothing better to go on: a backfill line
+// just added, a routine target not yet typed. It is a number on screen to be typed over, never a
+// guess at a weight anybody lifted. (The live prefill — sticky carry-forward, plan, last time —
+// lives on the phones now, beside the capture it serves.)
+export const EMPTY_BAR_KG = 20;
+export const EMPTY_BAR_REPS = 5;
+
 // Weights print with trailing zeros stripped and a real U+2212 minus, because a negative load is
 // a normal point on the number line here — band-assisted work sits below zero.
 // The grid is the ladder's, not a second opinion: this read the magnitude to two decimals itself
@@ -204,15 +211,6 @@ export function entryLabel(entry) {
   const weight = entry.targetWeightKg;
   if (weight == null || weight === 0) return `${entry.targetSets} × ${reps}`;
   return `${entry.targetSets} × ${reps} · ${fmt(weight)}`;
-}
-
-// A movement's line in the session list, which is also where the next one gets appended between
-// sets. A movement with no sets is the normal state of one just added — it is not an empty slot to
-// apologise for, so it says what makes it start rather than counting to zero.
-export function sessionMovementMeta({ done, planned = null }) {
-  if (done === 0) return 'no sets yet — logging one starts it';
-  if (planned) return `${done} of ${planned} sets`;
-  return setCountLabel(done);
 }
 
 // ONE WORD FOR WHAT COUNTS. A set counts toward a target, a plan counter, a record and the number
@@ -302,10 +300,9 @@ export function planOf(session) {
 }
 
 // ONE WORD FOR A SESSION NOBODY PLANNED, everywhere it is named: the log row, the session read
-// whole, the finish subtitle, the overlap panel and the logger's own bar. It reads one step quieter
+// whole, the review subtitle, the overlap panel and the mirror's head. It reads one step quieter
 // than a routine name and never as a fault — most rows in most logs will not have one — and it is
-// the word G8 and canon screen 2 both use, which is why the logger stopped calling the same session
-// "Ad-hoc".
+// the word G8 and canon screen 2 both use, which is why "Ad-hoc" was retired for the same session.
 export const NO_ROUTINE = 'No routine';
 
 export function routineNameOf(session) {
@@ -316,10 +313,10 @@ export function routineNameOf(session) {
 }
 
 // First-performed order falls out of Map insertion order over sets sorted by completion; inside an
-// exercise the server-assigned number is the order. A set the server has not numbered yet is one
-// the logger is still flushing — it is the newest thing in that exercise, so it sorts last, and
-// two of them fall back to when they happened. Without that floor the comparator returns NaN and
-// the order of a session being logged is whatever the sort implementation happens to do.
+// exercise the server-assigned number is the order. A set the server has not numbered yet is one a
+// capture surface is still flushing — it is the newest thing in that exercise, so it sorts last,
+// and two of them fall back to when they happened. Without that floor the comparator returns NaN
+// and the order of a session being logged is whatever the sort implementation happens to do.
 export function groupByExercise(sets) {
   const groups = new Map();
   for (const set of [...sets].sort((a, b) => a.completedAt - b.completedAt)) {

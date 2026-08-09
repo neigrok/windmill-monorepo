@@ -4,10 +4,9 @@
 //
 // ONE DRAFT, ONE COMMIT. Every change lands in a copy and nothing reaches the store until Done, so a
 // routine is never left half-rewritten by a lifter who walked away mid-edit — half a program is what
-// somebody trains against tomorrow. The three ways out say which they are: Done writes, the back
-// arrow leaves the routine as it was, and Start writes first, because the plan snapshot is frozen
-// from the STORE's row and a draft the store has never seen would be a workout run against a plan
-// nobody saved (gymApi.js).
+// somebody trains against tomorrow. The two ways out say which they are: Done writes, and the back
+// arrow leaves the routine as it was. Sessions start on the phone (§11), so nothing here runs one —
+// the routine saved here is the plan the phone's Start freezes onto the session.
 //
 // The order is the store's, not this screen's: `GET /v1/gym/routines` answers most-recently-trained
 // first, which is what canon screen 5 sorts by, so the list draws what it is handed.
@@ -18,17 +17,17 @@ import { failureReason, gymApi } from './gymApi.js';
 import {
   entryLabel, fmt, nameOfMovement, NEW_ROUTINE_ID, routineHref, routineMetaLabel, ROUTINES_HREF,
 } from './log.js';
-import { mintId } from './logger/flushQueue.js';
+import { mintId } from './mint.js';
 import { Keypad } from './logger/Keypad.jsx';
 import { MovementPicker } from './logger/MovementPicker.jsx';
-import { EMPTY_BAR_KG } from './logger/prefill.js';
+import { EMPTY_BAR_KG } from './log.js';
 import {
   blankRoutine, draftFrom, duplicateRoutine, NAME_MAX, NEW_ENTRY_REPS, reorderEntries, routineWrite,
   withEntryAdded, withEntryChanged, withEntryRemoved,
 } from './routines.js';
 import { useGymRead } from './useGymRead.js';
 
-export function RoutinesList({ live }) {
+export function RoutinesList({ log }) {
   const view = useGymRead(() => gymApi.routines(), []);
   const [copying, setCopying] = useState(false);
 
@@ -41,7 +40,7 @@ export function RoutinesList({ live }) {
       await gymApi.createRoutine(duplicateRoutine(routine, { id: mintId('rt_'), position: view.data.length }));
       view.retry();
     } catch (error) {
-      live.say(`That copy wasn’t made — ${failureReason(error)}.`);
+      log.say(`That copy wasn’t made — ${failureReason(error)}.`);
     }
     setCopying(false);
   };
@@ -89,7 +88,7 @@ export function RoutinesList({ live }) {
   );
 }
 
-export function RoutineEditor({ id, live }) {
+export function RoutineEditor({ id, log }) {
   // A routine being written for the first time is minted once, here, and not again on every render:
   // the id is the idempotency key, so a create that times out and is sent again must be the same
   // document arriving twice rather than two routines with one name.
@@ -150,7 +149,7 @@ export function RoutineEditor({ id, live }) {
       return true;
     } catch (error) {
       setSaving(false);
-      live.say(`That routine wasn’t saved — ${failureReason(error)}.`);
+      log.say(`That routine wasn’t saved — ${failureReason(error)}.`);
       return false;
     }
   };
@@ -179,7 +178,7 @@ export function RoutineEditor({ id, live }) {
 
       <EntryList
         entries={draft.entries}
-        catalog={live.catalog}
+        catalog={log.catalog}
         onMove={(from, to) => editEntries((held) => reorderEntries(held, from, to))}
         onTarget={(index) => setTarget(index)}
         onRemove={(index) => editEntries((held) => withEntryRemoved(held, index))}
@@ -204,24 +203,17 @@ export function RoutineEditor({ id, live }) {
               await gymApi.createRoutine(copy);
               window.location.hash = routineHref(copy.id);
             } catch (error) {
-              live.say(`That copy wasn’t made — ${failureReason(error)}.`);
+              log.say(`That copy wasn’t made — ${failureReason(error)}.`);
             }
           }}
         >
           Duplicate
         </button>
-        <button
-          type="button"
-          className="gym-editor-start"
-          onClick={async () => { if (await commit()) live.start({ routineId: draft.id }); }}
-        >
-          Start session
-        </button>
       </div>
 
       {target != null && (
         <TargetSheet
-          movement={nameOfMovement(live.catalog, draft.entries[target].exerciseId)}
+          movement={nameOfMovement(log.catalog, draft.entries[target].exerciseId)}
           entry={draft.entries[target]}
           onChange={(change) => editEntries((held) => withEntryChanged(held, target, change))}
           onClose={() => setTarget(null)}
@@ -230,11 +222,11 @@ export function RoutineEditor({ id, live }) {
 
       {picking && (
         <MovementPicker
-          catalog={live.catalog}
+          catalog={log.catalog}
           query={query}
           onQuery={setQuery}
           onPick={(exerciseId) => { setPicking(false); editEntries((held) => withEntryAdded(held, exerciseId)); }}
-          onCreate={live.createMovement}
+          onCreate={log.createMovement}
           onClose={() => setPicking(false)}
           title="Add exercise"
         />
@@ -243,8 +235,8 @@ export function RoutineEditor({ id, live }) {
   );
 }
 
-// What one line asks for, in the logger's own grammar: two counts under a thumb and the weight on
-// the keypad every other number in this product is typed on. BOTH targets have one value no stepper
+// What one line asks for: two counts under a thumb and the weight on the keypad every other number
+// on this surface is typed on. BOTH targets have one value no stepper
 // and no keypad can reach — none at all — and neither is a zero somebody has to guess at: an absent
 // load is the wire's "whatever you did last time", an absent rep target is canon screen 6's
 // `3 × max`, and each gets the same way back, one word under the row it belongs to.

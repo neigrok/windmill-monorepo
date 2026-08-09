@@ -1,13 +1,13 @@
-// THE MOVEMENT PICKER — the one door a movement ever comes through, on all three surfaces that need
-// one: the live session, the routine editor and the backfill form. It offers ids and never a typed
-// string, because a name typed twice is two movements with no history between them; when the catalog
-// holds nothing by that name it offers to MINT one, which is the same rule reached from the other
-// side — the string becomes an identity before it becomes a set.
+// THE MOVEMENT PICKER — the one door a movement ever comes through on this surface, for both rooms
+// that need one: the routine editor and the backfill form. It offers ids and never a typed string,
+// because a name typed twice is two movements with no history between them; when the catalog holds
+// nothing by that name it offers to MINT one, which is the same rule reached from the other side —
+// the string becomes an identity before it becomes a set.
 //
-// `order` is what this list already holds, and only the logger passes it: a session shows a movement
-// once, while a routine may legitimately name the same lift twice (five heavy, then a backoff set)
-// and a past workout may hold two blocks of it. Which of the three silences a search lands in, and
-// whether it has a door, is movements.js's to decide — never this component's.
+// `order` is what this list already holds. No web caller passes it since capture moved to the
+// phones (§11) — a routine may legitimately name the same lift twice, and a past workout may hold
+// two blocks of it — but which silence a search lands in, and whether it has a door, stays
+// movements.js's to decide, never this component's.
 
 import React, { useState } from 'react';
 import { movementOptions } from './movements.js';

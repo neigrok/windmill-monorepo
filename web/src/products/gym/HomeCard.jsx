@@ -1,35 +1,28 @@
 // The gym's /app home cell (shell contract §HomeCards) — the training log's one line on the home
-// grid. Everything it says it reads off this device: the auth status the shell has already
-// resolved, and one localStorage look at whether a workout was left open here. No fetch at all —
-// this cell is drawn in the first frame after sign-in, and a training log is a read the log itself
-// is a better place to wait for.
+// grid. Everything it says it reads off the auth status the shell has already resolved: no fetch
+// and no storage look at all — this cell is drawn in the first frame after sign-in, and a training
+// log is a read the log itself is a better place to wait for.
 
-import React, { useState } from 'react';
+import React from 'react';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
-import { openSessionOnThisDevice } from './device.js';
 
-// Three answers, one door each. A session left open on this device outranks the other two because
-// it is the only one of them that is about today — and it is said as what this device knows
-// ("still open here"), never as a claim about what the log currently holds, which nothing on this
-// screen has asked.
+// Two answers, one door each. The signed-in line says what web gym IS — the phone captures, this
+// surface holds the log — and claims nothing about a workout this browser cannot know about: live
+// state lives on the phone and on the server, and the log is where both are read.
 //
 // A ghost is told about the account BEFORE the tap rather than after it. #/gym answers a visitor
 // with no account with a sign-in pitch and nothing else, so a cell reading "Open the log →" would
 // be an ambush; the log being kept on an account is the honest first fact about this product.
-function cell({ signedIn, openSession }) {
-  if (signedIn && openSession) return { body: 'A workout is still open on this device.', link: 'Pick it up →' };
-  if (signedIn) return { body: 'Two taps a set, and the next session opens with last time’s numbers already in the field.', link: 'Open the log →' };
+function cell({ signedIn }) {
+  if (signedIn) return { body: 'Workouts start on your phone and land here — the log, the routines, the long line of showing up.', link: 'Open the log →' };
   return { body: 'Sets, weights, and what you lifted last time — kept on your account.', link: 'Sign in to open your log →' };
 }
 
 export function HomeCard() {
   const { status } = useAuth();
-  // Read once, on mount: a workout that starts while somebody is looking at the home grid starts
-  // inside the log, which is a screen away from here.
-  const [openSession] = useState(openSessionOnThisDevice);
   // 'loading' reads as signed out on purpose — the same face a first-ever visitor gets. A returning
   // signed-in tab never sees it: AuthProvider seeds itself from its own hint on the first frame.
-  const { body, link } = cell({ signedIn: status === 'signed-in', openSession });
+  const { body, link } = cell({ signedIn: status === 'signed-in' });
 
   return (
     <>

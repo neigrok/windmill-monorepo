@@ -18,8 +18,10 @@
 // form makes to that draft is one of the four functions below, so the form itself holds no rule —
 // it holds the draft and the cursor, and asks here what a change means.
 
-import { dayLabel, fmt, isFinished, NO_ROUTINE, routineNameOf, setCountLabel, timeLabel } from './log.js';
-import { EMPTY_BAR_KG, EMPTY_BAR_REPS } from './logger/prefill.js';
+import {
+  dayLabel, EMPTY_BAR_KG, EMPTY_BAR_REPS, fmt, isFinished, NO_ROUTINE, routineNameOf,
+  setCountLabel, timeLabel,
+} from './log.js';
 
 const DAY_MS = 86400000;
 
@@ -39,13 +41,12 @@ export const DURATION_CHIPS = [
 // the store's is the rule — a stale tab can reach this door mid-workout — so losing that race has
 // to speak this sentence rather than a 409, because nothing failed: the workout is simply running.
 //
-// It does not say WHERE the session is running. G8 wrote "your phone is mid-workout" for a build
-// with an iPhone app in it; on this one the web is the only surface that can start a session, so
-// the workout is usually running in the very tab reading this. And it promises nothing about a
-// draft: at the log's door there is no draft yet.
+// It names the phone now, because on this build that is where live training happens: the web's own
+// Start is gone (§11), so the session this door defers to was opened somewhere else. It still
+// promises nothing about a draft: at the log's door there is no draft yet.
 export const MID_WORKOUT_REFUSAL = {
   title: 'A session is already running.',
-  body: 'Adding now would file these sets into the live session. The door opens when that session closes.',
+  body: 'Live training happens on your phone — adding now would file these sets into the running session. The door opens when it closes.',
 };
 
 export const OVERLAP_TITLE = 'These times cross a session already in the log.';
@@ -81,9 +82,9 @@ export function lineLabel(line) {
   return `${fmt(line.weightKg)} × ${line.reps}`;
 }
 
-// Three is what a remembered block usually is, and the empty bar is what the logger opens on when it
-// has nothing else to go on — the same opening value, because a line typed from memory is typed over
-// at once and a default that guessed a weight would be the one number in the form nobody chose.
+// Three is what a remembered block usually is, and the empty bar is the opening value every form in
+// this product dials from (log.js) — because a line typed from memory is typed over at once, and a
+// default that guessed a weight would be the one number in the form nobody chose.
 const OPENING_LINE = { weightKg: EMPTY_BAR_KG, reps: EMPTY_BAR_REPS, sets: 3, kind: 'working' };
 
 export function withMovementAdded(blocks, exerciseId) {
@@ -177,8 +178,8 @@ export function overlapWith({ startedAt, durationMs }, sessions) {
 // form keeps the whole workout for one more tap.
 //
 // The close happens on every path, rollback or not: an open session is the one thing this form may
-// never leave behind, because the next boot would adopt it as the live workout and the logger would
-// open on a past evening.
+// never leave behind, because the next boot would mirror it as a workout in progress — and a phone
+// pressing Start would JOIN it, adopting a past evening into today.
 export async function fileBackfill({ api, id, sets, finishedAt }) {
   let landed = 0;
   // EVERY SET IS OFFERED, and one the store refuses does not stop the ones behind it. A set nobody

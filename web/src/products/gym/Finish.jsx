@@ -9,23 +9,24 @@
 // filler: it is offered on every session alike, it says nothing about how the session went, and it
 // is a link to one person and never a share sheet.
 //
-// It reads the session back rather than being handed it: the hook clears the live session the moment
-// it closes, and a screen assembled from what was in memory a second ago would be a screen that
-// cannot survive a reload — which is exactly what the lifter does when the log looks wrong.
+// It reads the session back rather than being handed it: sessions finish on the phone (§11), so
+// everything drawn here is the log's answer and nothing is a memory of a screen that closed one —
+// which is also what lets a reload, a back button and the log's own review door all land on the
+// same three facts.
 
 import React, { useRef, useState } from 'react';
 import { failureReason, gymApi } from './gymApi.js';
 import {
   entryLabel, isFirstSession, nameOfMovement, routineNameOf, sessionHref, weekdayName,
 } from './log.js';
-import { mintId } from './logger/flushQueue.js';
+import { mintId } from './mint.js';
 import { comparison, finishHead, RECORD_TITLE, recordSentence, statTiles } from './review.js';
 import { routineFromSession } from './routines.js';
 import { CoachPanel } from './coach/CoachPanel.jsx';
 import { CoachShare } from './share/CoachShare.jsx';
 import { useGymRead } from './useGymRead.js';
 
-export function FinishScreen({ id, live }) {
+export function FinishScreen({ id, log }) {
   const view = useGymRead(
     () => Promise.all([
       gymApi.session(id),
@@ -38,7 +39,7 @@ export function FinishScreen({ id, live }) {
     [id],
   );
 
-  if (view.phase === 'loading') return <p className="gym-quiet">Closing the session…</p>;
+  if (view.phase === 'loading') return <p className="gym-quiet">Opening the review…</p>;
   if (view.phase === 'absent') {
     return (
       <>
@@ -109,9 +110,9 @@ export function FinishScreen({ id, live }) {
         </section>
       )}
 
-      {review.slight && <ShortSession id={id} live={live} />}
+      {review.slight && <ShortSession id={id} log={log} />}
       {!review.slight && !session.routineId && (
-        <KeepAsRoutine session={session} sets={sets} catalog={catalog} live={live} />
+        <KeepAsRoutine session={session} sets={sets} catalog={catalog} log={log} />
       )}
 
       {/* Neither of these is offered on a short session, for the same reason: a screen asking "keep
@@ -133,7 +134,7 @@ export function FinishScreen({ id, live }) {
 // The one destructive action in the product, and it sits here because a three-set session is usually
 // a phone left running rather than a workout. It is offered only after the close — while a session
 // is open, only the device holding the offline queue knows every set landed (gymApi.js).
-function ShortSession({ id, live }) {
+function ShortSession({ id, log }) {
   const [dropping, setDropping] = useState(false);
   return (
     <section className="gym-short">
@@ -149,12 +150,12 @@ function ShortSession({ id, live }) {
             try {
               await gymApi.discardSession(id);
               // The list on screen still holds it, and the lifter is about to look at that list.
-              live.reloadLog();
-              live.say('That session is out of your log.');
+              log.reloadLog();
+              log.say('That session is out of your log.');
               window.location.hash = '#/gym';
             } catch (error) {
               setDropping(false);
-              live.say(`That session wasn’t discarded — ${failureReason(error)}.`);
+              log.say(`That session wasn’t discarded — ${failureReason(error)}.`);
             }
           }}
         >
@@ -172,7 +173,7 @@ function ShortSession({ id, live }) {
 //
 // The name field opens on the day it happened, which is a value on screen to be typed over and not
 // a name anything wrote on its own — a lifter who saves it unchanged has read it and chosen it.
-function KeepAsRoutine({ session, sets, catalog, live }) {
+function KeepAsRoutine({ session, sets, catalog, log }) {
   const [name, setName] = useState(() => weekdayName(session.startedAt));
   const [offered, setOffered] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -220,10 +221,10 @@ function KeepAsRoutine({ session, sets, catalog, live }) {
             try {
               await gymApi.createRoutine(composed);
               setOffered(false);
-              live.say(`${name.trim()} is in your routines.`);
+              log.say(`${name.trim()} is in your routines.`);
             } catch (error) {
               setSaving(false);
-              live.say(`That routine wasn’t saved — ${failureReason(error)}.`);
+              log.say(`That routine wasn’t saved — ${failureReason(error)}.`);
             }
           }}
         >

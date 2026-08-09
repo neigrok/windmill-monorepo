@@ -14,7 +14,7 @@ const GymApp = lazy(importGymApp);
 
 // The gym's cell on the /app home grid. Lazy, like every other HomeCard, and for the sharpest
 // version of the reason: the grid is the first frame after sign-in, and this cell is three lines
-// of text read off this device.
+// of text with no fetch behind them.
 const HomeCard = lazy(() => import('./HomeCard.jsx').then((m) => ({ default: m.HomeCard })));
 
 // The gym's own landing at /gym. It has to recognise a signed-in visitor on the first frame, which

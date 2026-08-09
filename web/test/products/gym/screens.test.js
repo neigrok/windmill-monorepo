@@ -28,19 +28,17 @@ test('the routine editor is keyed on the routine it edits, so a hash move remoun
   const app = read('GymApp.jsx');
   // The seam, not an effect copying the prop into state: a draft synced out of props still has a
   // frame where the screen holds one routine's edits under another routine's URL.
-  assert.equal(app.includes('<RoutineEditor key={routineIdOf(hash)} id={routineIdOf(hash)} live={live} />'), true);
+  assert.equal(app.includes('<RoutineEditor key={routineIdOf(hash)} id={routineIdOf(hash)} log={log} />'), true);
 });
 
 // A ROUTINE MAY NAME ONE LIFT TWICE — the heavy line and the back-off line — which is the case
 // `(routine_id, position)` exists to make representable. Two rows sharing a React key is a list
-// React reconciles however it likes: the rows can swap or one can be dropped, and Today's card
-// re-renders on its own when the catalog answers.
+// React reconciles however it likes: the rows can swap or one can be dropped. The editor is the
+// one screen left that lists a routine's entries — Today's due card went with the web Start (§11).
 test('every list of a routine’s entries is keyed on the position as well as the movement', () => {
-  for (const file of ['Today.jsx', 'Routines.jsx']) {
-    const source = read(file);
-    assert.equal(source.includes('key={`${entry.exerciseId}-${index}`}'), true, file);
-    assert.equal(source.includes('key={entry.exerciseId}'), false, file);
-  }
+  const source = read('Routines.jsx');
+  assert.equal(source.includes('key={`${entry.exerciseId}-${index}`}'), true);
+  assert.equal(source.includes('key={entry.exerciseId}'), false);
 });
 
 // THE TAB COUNT LIVES IN TWO PLACES and neither of them can see the other: the anchors are JSX and
