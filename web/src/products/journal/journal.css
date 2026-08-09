@@ -212,10 +212,6 @@
   background: color-mix(in srgb, var(--journal-ink) 26%, transparent);
   flex: 0 0 auto;
 }
-.journal-pip-hollow {
-  background: transparent;
-  border: 1.5px solid var(--journal-gap);
-}
 /* Today's pip is the one infinite loop on screen — a breathing ember. */
 .journal-pip-today {
   animation: journal-ember 2000ms var(--ease-standard) infinite;
@@ -249,7 +245,8 @@
   margin-top: 8px;
 }
 
-/* A day not written: "nothing written" at 50% ink. Never red, never apologised for. */
+/* A quiet aside beside prose, at 50% ink — the echo lab's scenario note. Never red, never a warning.
+   The canvas itself no longer draws one: a day nobody wrote is not drawn at all. */
 .journal-gap {
   font-family: var(--font-body);
   font-size: 13px;

@@ -14,7 +14,7 @@ function stamp(iso) {
   return `${weekday} ${String(d).padStart(2, '0')} ${MONTHS[m - 1]}`;
 }
 
-export function DayMarker({ date, mood = null, energy = null, written = false, wordCount = 0, isToday = false, trailing = null }) {
+export function DayMarker({ date, mood = null, energy = null, wordCount = 0, isToday = false, trailing = null }) {
   return (
     <header className="journal-marker">
       <span className="journal-meta">
@@ -23,19 +23,20 @@ export function DayMarker({ date, mood = null, energy = null, written = false, w
         {trailing}
       </span>
       <span className="journal-glyphs" aria-hidden="true">
-        <MoodPip mood={mood} written={written} isToday={isToday} />
+        <MoodPip mood={mood} isToday={isToday} />
         <EnergyTick energy={energy} />
       </span>
     </header>
   );
 }
 
-function MoodPip({ mood, written, isToday }) {
+// Every day the canvas draws was written — an unwritten day is not drawn at all — so there is no
+// hollow pip here. The zoom's year grid is where a day nobody wrote is still a cell.
+function MoodPip({ mood, isToday }) {
   if (isToday) {
     const color = mood ? `var(--mood-${mood})` : 'var(--lamp-400)';
     return <span className="journal-pip journal-pip-today" style={{ '--dot-color': color, background: color }} />;
   }
-  if (!written) return <span className="journal-pip journal-pip-hollow" />;
   if (mood) return <span className="journal-pip" style={{ background: `var(--mood-${mood})` }} />;
   return <span className="journal-pip" />;
 }

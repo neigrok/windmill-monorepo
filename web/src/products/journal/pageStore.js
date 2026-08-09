@@ -88,7 +88,7 @@ export class PageStore {
     this.setTimer = setTimer;
     this.clearTimer = clearTimer;
 
-    this.history = [];                                    // [{date, body, mood, energy, written}], oldest→newest
+    this.history = [];                                    // [{date, body, mood, energy}], written days oldest→newest
     this.draft = { body: '', mood: null, energy: null };   // today, the live draft
     this.readState = 'loading';                            // 'loading' | 'ready' | 'device' | 'failed'
     this.reach = 'more';                                   // 'more' | 'loading' | 'end' | 'failed'
@@ -462,18 +462,15 @@ export class PageStore {
     }, RETRY_DELAY);
   }
 
-  // The days that were written, oldest first, with the unwritten ones between them drawn as gaps —
-  // the canvas is a calendar with holes in it, not a list. Today is never here: it is the draft.
+  // The days that were WRITTEN, oldest first — and only those. A day nobody wrote is not drawn at
+  // all: the canvas is what you wrote, not a calendar with holes in it, and saying nothing about a
+  // missed day is the strongest reading of "no scoring" — an unwritten day cannot be counted,
+  // coloured or apologised for if it was never put on the page. iOS's PageStore draws it the same
+  // way. Today is never here: it is the draft.
   drawFromCache() {
-    const written = this.cache.pages().filter((page) => page.day < this.today && isWritten(page));
-    const earliest = written.length ? written[0].day : null;
-    this.history = earliest
-      ? span(earliest, daysBefore(this.today, 1)).map((date) => {
-        const page = this.cache.page(date);
-        if (!page || !isWritten(page)) return { date, body: '', mood: null, energy: null, written: false };
-        return { date, body: page.body, mood: page.mood, energy: page.energy, written: true };
-      })
-      : [];
+    this.history = this.cache.pages()
+      .filter((page) => page.day < this.today && isWritten(page))
+      .map((page) => ({ date: page.day, body: page.body, mood: page.mood, energy: page.energy }));
     const mine = this.cache.page(this.today);
     if (mine && !this.touched) this.draft = { body: mine.body, mood: mine.mood, energy: mine.energy };
     this.emit();

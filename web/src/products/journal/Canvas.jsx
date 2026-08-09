@@ -276,11 +276,9 @@ function MonthDivider({ iso }) {
 function DayBlock({ day, born, highlight = null, echoes = null, standing = false }) {
   return (
     <article className={'journal-day' + (born ? ' journal-born' : '')} data-date={day.date}>
-      <DayMarker date={day.date} mood={day.mood} energy={day.energy} written={day.written} wordCount={wordCount(day.body)} />
+      <DayMarker date={day.date} mood={day.mood} energy={day.energy} wordCount={wordCount(day.body)} />
       <div className="journal-page">
-        {day.written
-          ? <div className="journal-prose">{highlight ? markSpan(day.body, highlight) : day.body}</div>
-          : <div className="journal-gap">nothing written</div>}
+        <div className="journal-prose">{highlight ? markSpan(day.body, highlight) : day.body}</div>
         {echoes && <PageEchoes echoes={echoes} day={day.date} standing={standing} />}
       </div>
     </article>

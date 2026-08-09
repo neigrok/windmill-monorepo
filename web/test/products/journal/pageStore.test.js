@@ -168,9 +168,27 @@ test('a failed read still draws what the device holds, and says the account coul
   assert.equal(store.snapshot.readState, 'failed');
   assert.equal(store.snapshot.firstRun, false);
   assert.deepEqual(store.snapshot.history, [
-    { date: '2026-08-05', body: 'a real page', mood: 3, energy: null, written: true },
-    { date: '2026-08-06', body: '', mood: null, energy: null, written: false },
+    { date: '2026-08-05', body: 'a real page', mood: 3, energy: null },
   ]);
+});
+
+// The canvas is what you wrote, not a calendar with holes in it. Unwritten days used to be drawn as
+// a marker and the words "nothing written" — a gap the writer never asked to be shown, and the one
+// thing on the canvas that could read as a score. The phone has never drawn them
+// (apps/ios/…/WindmillJournal/PageStore.swift), and now neither does this.
+test('only the days that were written are drawn — the quiet ones between them are not', async (t) => {
+  const api = fakeApi();
+  api.onRange = () => [
+    wirePage('2026-08-01', 'monday', '1:0:web'),
+    wirePage('2026-08-04', 'thursday', '2:0:web'),
+    wirePage('2026-08-05', '', '3:0:web', { mood: 3 }),   // only a mood, but still a day someone showed up for
+  ];
+  const { store } = storeOn(memoryStorage(), api);
+  t.after(() => store.dispose());
+
+  await store.connect(true);
+
+  assert.deepEqual(store.snapshot.history.map((day) => day.date), ['2026-08-01', '2026-08-04', '2026-08-05']);
 });
 
 // The one race left in the join: the writer keeps typing while the reconnect is in the air. Their
