@@ -42,9 +42,10 @@ import works.windmill.platform.design.WindmillSpace
 // everything that starts a workout, and only once the log holds a session that has finished. That
 // is the whole of gym's navigation and it is deliberately not a tab bar — see GymRoom for why.
 //
-// SIGNED OUT, TODAY OFFERS THE DOOR AND NOTHING ELSE. A session cannot be opened without the log —
-// the plan snapshot is frozen server-side — so every Start on this screen would answer with a
-// refusal, and a primary button that fails is worse than one that is not there.
+// SIGNED OUT, TODAY IS THE SAME SCREEN. The room works before there is an account — a session
+// starts from a local routine or empty, and the log it writes is saved on this device — so every
+// Start stands whoever is standing here. The only signed-out difference is one quiet card under
+// the starts: the claim offer, which says what signing in ADDS and gates nothing.
 @Composable
 fun TodayScreen(
     store: TrainingStore,
@@ -65,7 +66,6 @@ fun TodayScreen(
     ) {
         TodayHead(nothingLogged = store.recent.isEmpty(), nowMs = nowMs)
         when {
-            !isSignedIn -> SignInCard(onSignIn)
             store.routines.isEmpty() -> EmptyStart(onStart)
             else -> {
                 store.routines.forEachIndexed { index, routine ->
@@ -78,6 +78,7 @@ fun TodayScreen(
                 LogWithoutARoutine(onStart)
             }
         }
+        if (!isSignedIn) ClaimCard(onSignIn)
         LookingBack(store.recent, onStatistics, onOpenSession)
     }
 }
@@ -116,8 +117,9 @@ private fun EmptyStart(onStart: (String?) -> Unit) {
 }
 
 // The routine trained most recently, opened out: what it holds, and one button that starts it. The
-// plan snapshot is frozen by the SERVER off this routine's own row, so what is drawn here is a
-// preview of the workout and never the thing the session is planned from.
+// plan snapshot is frozen off this routine's own row at start — by the server signed in, off the
+// device's shelf signed out — so what is drawn here is a preview of the workout and never the
+// thing the session is planned from.
 @Composable
 private fun RoutineCard(routine: Routine, store: TrainingStore, nowMs: Long, onStart: (String?) -> Unit) {
     Column(
@@ -199,11 +201,10 @@ private fun LogWithoutARoutine(onStart: (String?) -> Unit) {
     }
 }
 
-// A session cannot be opened without the log: the plan snapshot is frozen server-side, and a
-// client-composed copy would freeze whatever this phone last read. So the door says so plainly
-// rather than offering a button that answers with nothing.
+// The claim offer, and never a wall: the room already works, so this card only names what signing
+// in adds — the account, and the web mirror. It gates nothing and apologises for nothing.
 @Composable
-private fun SignInCard(onSignIn: () -> Unit) {
+private fun ClaimCard(onSignIn: () -> Unit) {
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
         modifier = Modifier
@@ -213,12 +214,12 @@ private fun SignInCard(onSignIn: () -> Unit) {
             .padding(WindmillSpace.x4),
     ) {
         Text(
-            "Sessions are kept on your account.",
+            "Your log is saved on this device.",
             style = WindmillFont.body(15, FontWeight.SemiBold),
             color = GymSkin.ink,
         )
         Text(
-            "Sign in to start one — the plan it runs against is frozen on the log.",
+            "Sign in to claim it to your account — and open it on the web.",
             style = GymType.numeral(12).copy(lineHeight = 17.sp),
             color = GymSkin.inkFaint,
         )

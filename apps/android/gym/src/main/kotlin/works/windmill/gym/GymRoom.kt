@@ -49,6 +49,7 @@ import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.store.DeviceCatalog
 import works.windmill.gym.store.FinishOutcome
 import works.windmill.gym.store.GymResult
+import works.windmill.gym.store.LocalLog
 import works.windmill.gym.store.SetQueue
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.ui.FinishScreen
@@ -111,6 +112,7 @@ fun GymRoom(account: Account) {
         TrainingStore(
             SetQueue(File(context.filesDir, SetQueue.fileName)),
             DeviceCatalog(File(context.filesDir, DeviceCatalog.fileName)),
+            LocalLog(File(context.filesDir, LocalLog.fileName)),
             scope,
         )
     }
@@ -191,10 +193,6 @@ fun GymRoom(account: Account) {
             starting = true
             try {
                 note = null
-                if (!account.isSignedIn) {
-                    note = "sessions are kept on your account"
-                    return@launch
-                }
                 val opened = store.start(routineId)
                 if (opened is GymResult.Failed) {
                     note = opened.why.line("a session starts there")

@@ -4,6 +4,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
+// The parser behind the FALLBACK door: the code field also takes a pasted magic link or bare
+// token, and this is what reads them. Exactly six digits never reaches it — that is the code.
 class MagicLinkTest {
     @Test
     fun theEmailedLinkYieldsItsToken() {
@@ -60,5 +62,20 @@ class MagicLinkTest {
         assertEquals("Can't reach windmill.works", MagicLink.refusal(works.windmill.platform.net.WindmillApiException.Offline))
         assertEquals(MagicLink.expired, MagicLink.refusal(MagicLink.unreadable))
         assertEquals(MagicLink.expired, MagicLink.refusal(IllegalStateException("anything else")))
+    }
+
+    // The code door fails in the code's own words — and offline still outranks both, because a
+    // request that never reached the server has not expired anything.
+    @Test
+    fun aCodeFailureGetsTheCodeSentence() {
+        assertEquals(MagicLink.expiredCode, MagicLink.refusal(MagicLink.unreadable, ofCode = true))
+        assertEquals(
+            "That code has expired. Codes work once and last 15 minutes — send a fresh one.",
+            MagicLink.expiredCode,
+        )
+        assertEquals(
+            "Can't reach windmill.works",
+            MagicLink.refusal(works.windmill.platform.net.WindmillApiException.Offline, ofCode = true),
+        )
     }
 }

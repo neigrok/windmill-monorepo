@@ -65,6 +65,27 @@ class TrainingSyncingTests {
         assertNull("no second session was opened", server.stored["ses_fresh"])
     }
 
+    // The claim's start refuses to join — a replayed past session filed into a live workout is the
+    // bug the flag exists against — and the refusal is the machine word the claim waits on.
+    @Test
+    fun testAStartThatDeclinesToJoinIsRefusedWhileAnotherSessionIsOpen() = runTest {
+        val server = FakeTraining()
+        server.open(Session(id = "ses_live", startedAtMs = 500))
+
+        try {
+            server.startSession(SessionStart(id = "ses_past", startedAt = 1_000, joinOpenSession = false))
+            fail("expected session-already-open")
+        } catch (refused: works.windmill.platform.net.WindmillApiException.Refused) {
+            assertEquals(409, refused.status)
+            assertEquals("session-already-open", refused.refusal.code)
+        }
+        assertNull("nothing was opened and nothing was joined", server.stored["ses_past"])
+
+        // Its own row answers regardless — a replay is not a second session.
+        val replayed = server.startSession(SessionStart(id = "ses_live", startedAt = 500, joinOpenSession = false))
+        assertEquals("ses_live", replayed.id)
+    }
+
     @Test
     fun testAnAbsentSessionAndRoutineReadAsNullRatherThanThrowing() = runTest {
         val server = FakeTraining()
@@ -104,8 +125,9 @@ internal class FakeTraining : TrainingSyncing {
     val shares = mutableMapOf<String, SessionShare>()
     var stats = TrainingStatistics()
     var refuse: (SetWrite) -> Exception? = { null }
-    var refuseStart: Exception? = null
+    var refuseStart: (SessionStart) -> Exception? = { null }
     var refuseCreate: Exception? = null
+    var refuseRoutine: (RoutineWrite) -> Exception? = { null }
     var refuseShare: Exception? = null
     var refuseRevoke: Exception? = null
     var refuseStats: Exception? = null
@@ -114,6 +136,8 @@ internal class FakeTraining : TrainingSyncing {
     var onFinish: suspend () -> Unit = {}
 
     val appended = mutableListOf<SetWrite>()
+    val started = mutableListOf<SessionStart>()
+    val finished = mutableListOf<Pair<String, Long>>()
     val calls = mutableListOf<String>()
 
     fun open(session: Session) {
@@ -134,17 +158,30 @@ internal class FakeTraining : TrainingSyncing {
         calls.add("createExercise")
         reachable()
         refuseCreate?.let { throw it }
+        catalog.firstOrNull { it.id == write.id }?.let { return it }
         val made = Exercise(write.id, write.name, write.pattern, write.equipment, write.stepKg,
             custom = true)
         catalog = catalog + made
         return made
     }
 
+    // The server's own resolution order: the caller's own row under the id first — a replay is
+    // never a second session — then the open session, which a `joinOpenSession: false` start
+    // refuses rather than joins.
     override suspend fun startSession(start: SessionStart): Session {
         calls.add("start")
+        started.add(start)
         reachable()
-        refuseStart?.let { throw it }
-        stored.values.firstOrNull { it.isOpen }?.let { return it }
+        refuseStart(start)?.let { throw it }
+        stored[start.id]?.let { return it }
+        stored.values.firstOrNull { it.isOpen }?.let { open ->
+            if (start.joinOpenSession == false) {
+                throw works.windmill.platform.net.WindmillApiException.Refused(409,
+                    works.windmill.platform.net.Refusal(message = "a session is already open",
+                        code = "session-already-open"))
+            }
+            return open
+        }
         val opened = Session(id = start.id, startedAtMs = start.startedAt, routineId = start.routineId)
         stored[opened.id] = opened
         return opened
@@ -173,9 +210,13 @@ internal class FakeTraining : TrainingSyncing {
 
     override suspend fun finishSession(sessionId: String, finishedAtMs: Long): Session {
         calls.add("finish")
+        finished.add(sessionId to finishedAtMs)
         onFinish()
         reachable()
         val live = stored[sessionId] ?: throw IllegalStateException("404")
+        // First-writer-wins, exactly as the log's close is: a replayed finish answers the stored
+        // row unchanged.
+        if (!live.isOpen) return live
         val closed = live.copy(finishedAtMs = finishedAtMs)
         stored[sessionId] = closed
         return closed
@@ -236,6 +277,8 @@ internal class FakeTraining : TrainingSyncing {
     override suspend fun createRoutine(write: RoutineWrite): Routine {
         calls.add("createRoutine")
         reachable()
+        refuseRoutine(write)?.let { throw it }
+        written[write.id]?.let { return it }
         val made = Routine(id = write.id, name = write.name, position = write.position,
             entries = write.entries.mapIndexed { index, entry ->
                 RoutineEntry(position = index + 1, exerciseId = entry.exerciseId,

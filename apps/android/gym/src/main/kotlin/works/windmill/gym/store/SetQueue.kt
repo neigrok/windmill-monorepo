@@ -9,8 +9,10 @@ import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.TrainingSet
 
 // THE LOCAL-FIRST WRITE — a set is the lifter's the instant they tap, and the network's problem
-// afterwards. This is the Kotlin statement of web/src/products/gym/logger/flushQueue.js and of the
-// iOS SetQueue.swift — the same contract in a third language, and the three must not drift.
+// afterwards. This and the iOS SetQueue.swift are the two living statements of the verdict
+// contract pinned in backend/products/gym/ARCHITECTURE.md §11, and the two must not drift. (The
+// web's flushQueue.js was the reference implementation until 2026-08-09; it went with the web
+// logger, and the web now holds no set queue at all.)
 //
 // Every set carries a CLIENT-MINTED id, which IS the idempotency key: a replay of a set that already
 // landed answers 200 with the stored row, even after the session closed, so this queue can send in
@@ -66,7 +68,7 @@ class SetQueue(
         // coincidence and re-minting forever would hammer the log instead of telling the lifter.
         const val maxRemints = 3
 
-        // The web's own window (flushQueue.js), to the millisecond: the surfaces must agree on how
+        // iOS's own window (SetQueue.swift), to the millisecond: the surfaces must agree on how
         // long a set can be taken back, or the same mistake is undoable on one phone and permanent
         // on the other.
         const val undoWindowMs = 9_000L
@@ -192,6 +194,36 @@ class SetQueue(
         held = held.copy(entries = held.entries - id)
     }
 
+    // The claim's repair for a live session whose id another account already spent: the same
+    // workout under a fresh session id, every owed set re-pointed at it. Set ids do not move —
+    // they are keys of their own and each has its own remint budget.
+    fun remapSession(old: String, fresh: String) {
+        val entries = held.entries.mapValues { (_, entry) ->
+            if (entry.sessionId == old) entry.copy(sessionId = fresh) else entry
+        }
+        val session = held.session?.let { if (it.id == old) it.copy(id = fresh) else it }
+        held = held.copy(session = session, entries = entries)
+    }
+
+    // The claim's repair for a locally minted movement whose id another account already spent:
+    // the id changes everywhere this queue wrote it — the sets, the walk order, and the live
+    // plan's own lines — because a movement is a stable id everywhere except on screen.
+    fun remapExercise(old: String, fresh: String) {
+        val entries = held.entries.mapValues { (_, entry) ->
+            if (entry.set.exerciseId == old) entry.copy(set = entry.set.copy(exerciseId = fresh)) else entry
+        }
+        val order = held.order?.map { if (it == old) fresh else it }
+        val session = held.session?.let { live ->
+            val plan = live.plan?.let { plan ->
+                plan.copy(entries = plan.entries.map {
+                    if (it.exerciseId == old) it.copy(exerciseId = fresh) else it
+                })
+            }
+            live.copy(plan = plan)
+        }
+        held = held.copy(session = session, entries = entries, order = order)
+    }
+
     // A session that is over. Its delivered sets live on the log now, so this device stops holding
     // them — but an owed set is dropped by nobody quietly: it stays queued until the log answers
     // for it, and a `session-finished` refusal is what tells the lifter it never landed.
@@ -280,6 +312,12 @@ sealed class Verdict {
     }
 }
 
+// What is SAID when a write is lost for good — the one surface every loss rides, because a loss
+// dropped quietly would count as intended.
+sealed interface RefusedWrite {
+    val reason: String
+}
+
 // A set that never landed, kept so it can be said out loud. The movement and the numbers travel
 // with the reason because this is the LAST COPY of a set somebody lifted — "82.5 × 8 never reached
 // the log" is unloggable again without knowing of what.
@@ -288,11 +326,16 @@ data class RefusedSet(
     val exerciseId: String,
     val weightKg: Double,
     val reps: Int,
-    val reason: String,
-) {
+    override val reason: String,
+) : RefusedWrite {
     constructor(set: TrainingSet, reason: String) :
         this(set.id, set.exerciseId, set.weightKg, set.reps, reason)
 }
+
+// The claim's own loss: a movement or routine document the server refuses outright, let go from
+// the shelf so the same terminal write is not re-sent on every connect. Said under its name — a
+// document has no numbers to carry.
+data class RefusedClaim(val name: String, override val reason: String) : RefusedWrite
 
 // How a write reports itself: mono, lower-case, never a toast and never an alert (the journal's
 // voice). Silence is a state — a room that has just opened says nothing. A refusal speaks in the
@@ -300,7 +343,7 @@ data class RefusedSet(
 sealed class SaveState {
     data object Idle : SaveState()
     data object OnTheLog : SaveState()          // the account has it
-    data object OnThisDevice : SaveState()      // nobody signed in — there is no log to reach, and that is fine
+    data object OnThisDevice : SaveState()      // held on purpose: nobody signed in, or the log cannot take this session yet
     data object Offline : SaveState()           // signed in, but this set has not landed yet
     data class Refused(val reason: String) : SaveState()
 

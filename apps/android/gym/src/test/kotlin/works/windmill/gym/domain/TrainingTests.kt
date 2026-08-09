@@ -2,6 +2,7 @@ package works.windmill.gym.domain
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -108,7 +109,13 @@ class TrainingWireTests {
 
         val start = fields(SessionStart(id = "ses_1", startedAt = 1))
         assertNull("an ad-hoc session names no routine, and says so by silence", start["routineId"])
-        assertNull("the phone always joins, so it never sends the flag", start["joinOpenSession"])
+        assertNull("an ordinary start omits the flag — the phone joins by default", start["joinOpenSession"])
+
+        // The claim is the one caller that sends it, and it must ride as an explicit false: a
+        // replayed past session that silently joined a live workout would file yesterday's sets
+        // into today's.
+        val claimed = fields(SessionStart(id = "ses_1", startedAt = 1, joinOpenSession = false))
+        assertEquals(false, claimed["joinOpenSession"]?.jsonPrimitive?.boolean)
     }
 
     // The log's rows are FLAT: the session's own fields with its four facts beside them, not a
@@ -303,6 +310,30 @@ class RoutineWriteTests {
         ))
 
         assertEquals(routine, routine.retargeting("back-squat", toWeightKg = 140.0))
+    }
+}
+
+class TrainingStatisticsTests {
+    private fun aSet(exerciseId: String, at: Long): TrainingSet = TrainingSet(
+        id = "set_$at", exerciseId = exerciseId, weightKg = 100.0, reps = 5, completedAtMs = at)
+
+    // Every multi-movement session TIES on lastTrainedAt — both movements stamp the session's own
+    // startedAt — so without the server's id tie-break (Statistics.cpp: most recently trained
+    // first, ties to the id) the signed-out list sits in encounter order and visibly reorders the
+    // moment the claim lands.
+    @Test
+    fun testMovementsOrderMostRecentFirstWithTiesToTheIdAsTheServerDoes() {
+        val statistics = TrainingStatistics.of(listOf(
+            SessionDetail(
+                Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 3_000),
+                listOf(aSet("ex_zeta", at = 1_100), aSet("ex_alpha", at = 1_200))),
+            SessionDetail(
+                Session(id = "ses_2", startedAtMs = 700_000_000, finishedAtMs = 700_060_000),
+                listOf(aSet("ex_omega", at = 700_000_100))),
+        ))
+
+        assertEquals(listOf("ex_omega", "ex_alpha", "ex_zeta"),
+                     statistics.movements.map { it.exerciseId })
     }
 }
 

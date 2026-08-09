@@ -40,17 +40,18 @@ import works.windmill.platform.net.WindmillApiException
 
 // One door (auth canon §1): no sign-in/sign-up fork, no tabs, no passwords — the email decides, and
 // the account is created the first time. Every string below is the canon's, verbatim, because the
-// same sentence is already on the web and one sentence lives in one place.
+// same sentence is already on the app doors of both platforms and one sentence lives in one place.
 //
-// What is native rather than canon is the last step. On iOS a universal link can one day finish
-// the sign-in in-app; this app claims no links yet (android-plan.md: paste flow only), and a link
-// works exactly once — tapping it opens the web app and BURNS it. So the honest instruction is to
-// copy rather than tap, and when app links arrive the sentence changes with them.
+// The mail carries a 6-DIGIT CODE (the mint rides `door: "app"`), because a code finishes the
+// sign-in on the phone that asked for it — a magic link would open the web app and burn itself
+// there, which is why this door used to instruct people to copy-not-tap. The code field still
+// takes a pasted link or bare token as the fallback: older mails, and links minted from another
+// surface, stay usable.
 
 @Composable
 fun SignInDoor(auth: AuthStore, onDone: () -> Unit = {}) {
     var email by remember { mutableStateOf("") }
-    var pasted by remember { mutableStateOf("") }
+    var typed by remember { mutableStateOf("") }
     var sentTo by remember { mutableStateOf<String?>(null) }
     var working by remember { mutableStateOf(false) }
     var canResend by remember { mutableStateOf(false) }
@@ -98,20 +99,17 @@ fun SignInDoor(auth: AuthStore, onDone: () -> Unit = {}) {
             DoorField("you@example.com", email, keyboardType = KeyboardType.Email) { email = it }
 
             ActionCapsule(
-                if (working) "Sending…" else "Email me a link",
+                if (working) "Sending…" else "Email me a code",
                 ActionWeight.Primary,
                 enabled = !working && email.isNotEmpty(),
             ) { requestLink() }
 
             refusal?.let { RefusalLine(it) }
 
-            // This read "Signed out, Windmill still works — what you write lives on this device",
-            // the same sentence the web door carried. One door stands in front of every room, and
-            // that claim was only true of the ones that write to disk before they sync: the
-            // training log does not open at all without an account. The shell may not name which
-            // room is which, so the door says the half that holds in all of them.
+            // Since the gym runs signed out and the claim replay carries what it made onto the
+            // account, the footnote can finally say the simple half that holds everywhere.
             Text(
-                "No password. Whatever you have already made on this device is claimed when you sign in — and some rooms only open once you have an account.",
+                "No password. What you make on this device is claimed by your account when you sign in.",
                 style = WindmillFont.body(13),
                 color = WindmillColor.textTertiary.color,
             )
@@ -119,37 +117,32 @@ fun SignInDoor(auth: AuthStore, onDone: () -> Unit = {}) {
             Text("Check your email", style = WindmillFont.display(22), color = WindmillColor.textPrimary.color)
 
             Text(
-                "We sent a link to $address. It works once and lasts 15 minutes.",
+                "We sent a code to $address. It works once and lasts 15 minutes.",
                 style = WindmillFont.body(15),
                 color = WindmillColor.textSecondary.color,
             )
 
             HorizontalDivider(color = WindmillColor.borderSubtle.color)
 
-            // THE ONE SENTENCE THAT CHANGES when this app claims windmill.works links, and it
-            // changes because the right ADVICE changes: while the link opens the web app, tapping
-            // it signs you in over there and leaves this phone with a spent link.
-            Text(
-                "Copy the link rather than tapping it — a link works once, and tapping it opens the web app instead of this one. Paste it here to finish on this phone.",
-                style = WindmillFont.body(15),
-                color = WindmillColor.textSecondary.color,
-            )
-
-            DoorField("Paste the link", pasted) { pasted = it }
+            // The number pad is for the code the mail just sent; pasting still lands whole links
+            // and bare tokens in the same field, and exactly six digits is what tells them apart.
+            DoorField("6-digit code", typed, keyboardType = KeyboardType.Number) { typed = it }
 
             ActionCapsule(
                 "Sign in",
                 ActionWeight.Primary,
-                enabled = !working && pasted.isNotEmpty(),
+                enabled = !working && typed.isNotEmpty(),
             ) {
                 scope.launch {
                     working = true
                     refusal = null
+                    val entry = typed.trim()
+                    val code = entry.takeIf { it.length == 6 && it.all(Char::isDigit) }
                     try {
-                        auth.completeLink(pasted)
+                        if (code != null) auth.completeCode(address, code) else auth.completeLink(entry)
                         onDone()
                     } catch (refused: WindmillApiException) {
-                        refusal = MagicLink.refusal(refused)
+                        refusal = MagicLink.refusal(refused, ofCode = code != null)
                     } finally {
                         working = false
                     }
@@ -166,7 +159,7 @@ fun SignInDoor(auth: AuthStore, onDone: () -> Unit = {}) {
                     modifier = Modifier.clickable {
                         sentTo = null
                         refusal = null
-                        pasted = ""
+                        typed = ""
                     },
                 )
                 // Absent while it would only invite a double send; it appears at 30 seconds.
@@ -199,7 +192,7 @@ private fun RefusalLine(line: String) {
     )
 }
 
-// The one field this door uses, in both places it needs one (the address, and the pasted link).
+// The one field this door uses, in both places it needs one (the address, and the code).
 // The placeholder is DRAWN in the decoration rather than left to any component default, so what
 // colour it is is never the platform's guess — the iOS door learned that when a sheet built
 // entirely out of brand neutrals came up with a system-blue prompt sitting in the middle of it.

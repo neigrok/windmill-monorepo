@@ -12,8 +12,8 @@ mounted the same way. There is no subscription surface here yet.
 ```
 settings.gradle.kts   includes :app :platform :gym
 platform/             the product-neutral seam: WindmillApi (the Bearer transport) · AuthStore +
-                      the magic-link paste door · SessionStore · Tokens · the ProductModule /
-                      Account seam · SignInDoor · YouSheet
+                      the emailed-code door (magic-link paste as fallback) · SessionStore · Tokens ·
+                      the ProductModule / Account seam · SignInDoor · YouSheet
 gym/                  the room, ported file-for-file from apps/ios's WindmillGym —
                       domain/ (pure) · store/ (SetQueue, the offline-first flush queue) · net/ · ui/
 app/                  the lean composition root — the only module that knows which rooms exist.
@@ -40,10 +40,18 @@ others.
 
 ## Sign-in
 
-The emailed magic link, **pasted**: the door asks for an address, the mail arrives, and the field
-takes the whole link or the bare token (`MagicLink.token`). There are no app links yet, so the door
-says to copy the link rather than tap it — a tap would spend the once-only link in the browser.
-The session secret rides `Authorization: Bearer` and sleeps behind `SessionStore`.
+An emailed **6-digit code**: the door asks for an address, the mint rides `door: "app"` so the
+mail carries a code instead of a link, and typing the code finishes the sign-in on this phone
+(`POST /v1/auth/verify-code`). The same field still takes a pasted magic link or bare token
+(`MagicLink.token`) as the fallback — older mails, and links minted from another surface, stay
+usable; there are still no app links. The session secret rides `Authorization: Bearer` and sleeps
+behind `SessionStore`; a restore that cannot reach the server keeps the secret — only a definitive
+401 spends it.
+
+Nothing needs an account first: the gym room opens and works signed out (sessions, routines and
+movements live on the device in `LocalLog` + `SetQueue`), and signing in claims all of it onto the
+account through `ClaimReplay` — movements first, then routines, then finished sessions
+oldest-first, each replayed start → sets → finish with `joinOpenSession: false`.
 
 ## CI and releases
 

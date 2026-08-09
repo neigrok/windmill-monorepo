@@ -14,7 +14,6 @@ import works.windmill.gym.GymModule
 import works.windmill.platform.Account
 import works.windmill.platform.LocalShellActions
 import works.windmill.platform.ShellActions
-import works.windmill.platform.auth.AuthStatus
 import works.windmill.platform.auth.AuthStore
 import works.windmill.platform.auth.PrefsSessions
 import works.windmill.platform.net.WindmillApi
@@ -41,13 +40,13 @@ private fun Root(auth: AuthStore) {
     // the account below is simply nobody — a supported state, not a degraded one.
     LaunchedEffect(Unit) { auth.restore() }
 
-    // The room waits for that answer. On iOS the hub resolves auth before any room can mount; here
-    // the room IS the app, and mounting it at Unknown would run its connect-on-account lifecycle
-    // once as nobody and once as the restored user — the first pass poisons the second (a resumed
-    // movement reads "the log didn't answer" for a log nobody asked). The wait is one frame of the
-    // basalt ground the theme already painted.
-    if (auth.status is AuthStatus.Unknown) return
-
+    // The room mounts IMMEDIATELY, whatever the seat turns out to be. Signed out is a working
+    // state — the gym runs off the device's own shelf — so the first frame is the room over local
+    // state, never a blank ground while /v1/me resolves. When restore lands a user, the account
+    // below rebuilds and the room's connect-on-account-change lifecycle claims what the device
+    // made in the meantime; every connect clears the per-seat answers (the last-time cache) and
+    // re-asks for the movement in hand, so the second pass inherits nothing from the nobody
+    // pass — not a failed read, and not a shelf answer standing where the log's should be.
     var youUp by remember { mutableStateOf(false) }
     val shell = remember { ShellActions(openYou = { youUp = true }) }
     val gym = remember { GymModule() }

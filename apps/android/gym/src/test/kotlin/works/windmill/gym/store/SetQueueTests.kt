@@ -159,6 +159,40 @@ class SetQueueTests {
             "set_held", queue.nextOwed(skipping = emptySet(), readyAt = null)?.set?.id)
     }
 
+    // The claim's repair for a live session whose id another account spent: the same workout under
+    // a fresh session id, every owed set re-pointed — and the set ids themselves do not move.
+    @Test
+    fun testRemappingTheSessionMovesTheWorkoutWholeToTheFreshId() {
+        val queue = SetQueue(queueFile())
+        queue.hold(Session(id = "ses_spent", startedAtMs = 1_000))
+        queue.store(aSet("set_a", at = 1_100), sessionId = "ses_spent", needsPush = true)
+        queue.store(aSet("set_b", at = 1_200), sessionId = "ses_other", needsPush = true)
+        queue.remapSession("ses_spent", fresh = "ses_fresh")
+
+        assertEquals("ses_fresh", queue.session?.id)
+        assertEquals(listOf("set_a"), queue.owed("ses_fresh").map { it.set.id })
+        assertEquals("another session's sets are not touched",
+            listOf("set_b"), queue.owed("ses_other").map { it.set.id })
+        assertTrue(queue.owed("ses_spent").isEmpty())
+    }
+
+    // ...and for a locally minted movement: the id changes in the sets, the walk order and the
+    // live plan's own lines, because a movement is a stable id everywhere except on screen.
+    @Test
+    fun testRemappingAMovementReachesTheSetsTheOrderAndThePlan() {
+        val queue = SetQueue(queueFile())
+        queue.hold(Session(id = "ses_1", startedAtMs = 1_000,
+            plan = works.windmill.gym.domain.PlanSnapshot(routine = "Push",
+                entries = listOf(works.windmill.gym.domain.PlanEntry(exerciseId = "ex_spent", sets = 3)))))
+        queue.append("ex_spent")
+        queue.store(aSet("set_a", "ex_spent", at = 1_100), sessionId = "ses_1", needsPush = true)
+        queue.remapExercise("ex_spent", fresh = "ex_fresh")
+
+        assertEquals(listOf("ex_fresh"), queue.order)
+        assertEquals(listOf("ex_fresh"), queue.pending.map { it.set.exerciseId })
+        assertEquals(listOf("ex_fresh"), queue.session?.plan?.entries?.map { it.exerciseId })
+    }
+
     @Test
     fun testTheMovementOrderBelongsToItsSessionAndGoesWithIt() {
         val file = queueFile()

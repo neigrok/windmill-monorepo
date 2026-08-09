@@ -55,6 +55,7 @@ import works.windmill.gym.domain.Rest
 import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.store.GymResult
+import works.windmill.gym.store.RefusedClaim
 import works.windmill.gym.store.RefusedSet
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.design.WindmillFont
@@ -192,8 +193,17 @@ fun LoggerScreen(store: TrainingStore, say: (String?) -> Unit, onFinish: () -> U
             )
         }
         store.refusals.forEach { refused ->
-            Refusal(refused, movement = Readout.movement(refused.exerciseId, store.catalog),
+            when (refused) {
+                is RefusedSet -> Refusal(
+                    headline = "${Readout.movement(refused.exerciseId, store.catalog)} " +
+                        "${Readout.effort(refused.weightKg, refused.reps)} never reached the log",
+                    reason = refused.reason,
                     onDismiss = { store.clearRefusals() })
+                is RefusedClaim -> Refusal(
+                    headline = "“${refused.name}” couldn’t be claimed",
+                    reason = refused.reason,
+                    onDismiss = { store.clearRefusals() })
+            }
         }
 
         val movement = store.exerciseId
@@ -347,11 +357,11 @@ private fun Header(routine: String, elapsedMs: Long, onFinish: () -> Unit) {
     }
 }
 
-// The last copy of a set somebody lifted. It is SAID, with the movement and the numbers, because
-// a queue that dropped it quietly would count the loss as intended — and this is the one place
-// in gym allowed to use alarm ink.
+// The last copy of a write that will never land — a set with its movement and numbers, or a
+// claim's refused document under its name. It is SAID because a queue that dropped it quietly
+// would count the loss as intended — and this is the one place in gym allowed to use alarm ink.
 @Composable
-private fun Refusal(refused: RefusedSet, movement: String, onDismiss: () -> Unit) {
+private fun Refusal(headline: String, reason: String, onDismiss: () -> Unit) {
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
@@ -359,11 +369,11 @@ private fun Refusal(refused: RefusedSet, movement: String, onDismiss: () -> Unit
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-                "$movement ${Readout.effort(refused.weightKg, refused.reps)} never reached the log",
+                headline,
                 style = GymType.numeral(12),
                 color = GymSkin.alarmInk,
             )
-            Text(refused.reason, style = GymType.numeral(12), color = GymSkin.inkDim)
+            Text(reason, style = GymType.numeral(12), color = GymSkin.inkDim)
         }
         Box(
             Modifier.heightIn(min = GymTap.minimum).clickable(onClick = onDismiss),
