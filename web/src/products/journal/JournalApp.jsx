@@ -3,13 +3,14 @@
 // is not this room's to draw: the /app shell carries one seat above every room (shell/chrome/
 // Shell.jsx), and journal drew a second one at the same coordinates until 2026-08-07.
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Search, Bell, CalendarRange } from 'lucide-react';
 import { ProductSwitcher } from '../../shell/ProductSwitcher.jsx';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
 import { useSignInDoor, useSignInDoorHost } from '../../shell/auth/SignInDoor.jsx';
 import { useAppearance } from '../../shell/useAppearance.js';
 import { Canvas } from './Canvas.jsx';
+import { TalkButton } from './TalkButton.jsx';
 import { SearchOverlay } from './search/SearchOverlay.jsx';
 import { NudgePanel } from './NudgePanel.jsx';
 import { ZoomView } from './zoom/ZoomView.jsx';
@@ -48,6 +49,10 @@ export function JournalApp({ hash }) {
   // gets: load the day if it is older than the window, centre it, and light the passage for a beat.
   const echoes = useEchoes({ onFly: (target) => setFlyTo({ ...target, at: Date.now() }) });
   const nudge = useNudge();
+  // Talk is a tool and sits in the rail with the others, but what it produces is today's writing —
+  // so the canvas lends the rail the one write into today and keeps the store to itself.
+  const writeRef = useRef(null);
+  const holdWriter = useCallback((write) => { writeRef.current = write; }, []);
 
   const focusDate = focusDateOf(hash);
   const openPage = echoes.openDay ? echoes.pageOf(echoes.openDay) : null;
@@ -78,7 +83,7 @@ export function JournalApp({ hash }) {
         focusDate={focusDate}
         flyTo={flyTo}
         echoes={echoes}
-        onNeedSignIn={openSignInDoor}
+        holdWriter={holdWriter}
       />
       {marginPage && <EchoMargin echoes={echoes} page={marginPage} />}
       {openPage && <InkFooter echoes={echoes} page={openPage} />}
@@ -115,6 +120,10 @@ export function JournalApp({ hash }) {
         >
           <Search size={18} strokeWidth={1.9} aria-hidden="true" />
         </button>
+        <TalkButton
+          onTranscript={(text) => writeRef.current?.(text)}
+          onNeedSignIn={openSignInDoor}
+        />
       </div>
       {/* Search and the zoom read the whole journal rather than a window, and the whole journal is
           the account's pages plus this device's — so both need to know whether there is an account

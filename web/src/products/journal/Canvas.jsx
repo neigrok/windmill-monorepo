@@ -3,19 +3,19 @@
 // cursor waits for nothing); a dated position scrolls that day into view, and a
 // search result flies to the exact passage and lights it for a beat. Days present
 // at first paint never animate — only ones that arrive later fade in from below.
-// Today is the last block: writing happens inline in a growing textarea, mood and
-// energy sit in thumb reach, and a mono note fades in after each write naming where
-// the words actually are. When the account could not be read the canvas says so and
-// draws nothing implying it is empty — a read that failed is not a first run.
+// Today is the last block: writing happens inline in a growing textarea, the two
+// taps sit under it as one labelled strip, and a mono note fades in after each write
+// naming where the words actually are. Today's marker draws no pip and no tick — the
+// strip is the one drawing of those two values, and the same day drawn twice at two
+// sizes read as two different things. When the account could not be read the canvas
+// says so and draws nothing implying it is empty — a read that failed is not a first run.
 // At the other edge sits the floor: one window deeper per press, and the start of the
 // journal said out loud once a read has reached it.
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { usePages } from './usePages.js';
 import { DayMarker } from './DayMarker.jsx';
-import { MoodDots } from './MoodDots.jsx';
-import { EnergyBars } from './EnergyBars.jsx';
-import { TalkButton } from './TalkButton.jsx';
+import { ScaleStrip } from './ScaleStrip.jsx';
 import { PageEchoes } from './echoes/PageEchoes.jsx';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
@@ -28,7 +28,19 @@ function wordCount(body) {
   return trimmed ? trimmed.split(/\s+/).length : 0;
 }
 
-export function Canvas({ focusDate = null, flyTo = null, echoes = null, onNeedSignIn = () => {} }) {
+const WHY_KEY = 'windmill:journal-scales-why';
+const WHY_LINE = 'Mood is what you see when you zoom out to the year.';
+const WHY_READ_MS = 2500;   // on screen this long before the one showing counts as spent
+
+function whySaid() {
+  try {
+    return localStorage.getItem(WHY_KEY) === 'said';
+  } catch {
+    return false;   // no storage — the one line may be said twice rather than never
+  }
+}
+
+export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWriter = null }) {
   const {
     today, history, loading, firstRun, readState, reach,
     body, mood, energy, saveState, saveTick,
@@ -37,6 +49,8 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, onNeedSi
 
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
+  const bodyRef = useRef(body);
+  bodyRef.current = body;
   const restoredRef = useRef(false);
   const bornSet = useRef(null); // the dates present at first paint — these never animate
   const anchorRef = useRef(null); // distance from the scroll bottom, held across a reach back
@@ -65,6 +79,35 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, onNeedSi
     holdCanvas({ scroller: scrollRef.current, dayElement });
     return () => holdCanvas(null);
   }, [holdCanvas]);
+
+  // Talk sits in the tool rail with search and the zoom now, not over the writing — so the canvas
+  // hands the rail the one thing a transcript needs, a write into today, exactly as it hands the
+  // echoes surfaces its scroller above. Nothing out there touches the store or the field directly.
+  useEffect(() => {
+    if (!holdWriter) return undefined;
+    holdWriter((text) => {
+      const written = bodyRef.current;
+      setBody(written ? `${written.replace(/\s+$/, '')} ${text}` : text);
+    });
+    return () => holdWriter(null);
+  }, [holdWriter, setBody]);
+
+  // The one sentence that says what the two taps are FOR, said under them once ever and on the
+  // first save — never before there is a page to have felt something about, and never again once
+  // the question has been answered or skipped.
+  //
+  // It is spent by being READ, not by being rendered. A save that lands a beat before the account's
+  // own mood merges in paints this line for a single frame nobody perceives; burning the one showing
+  // on that frame would retire the sentence without anyone ever having seen it.
+  const [whyDue] = useState(() => !whySaid());
+  const why = whyDue && saveTick > 0 && mood == null ? WHY_LINE : null;
+  useEffect(() => {
+    if (!why) return undefined;
+    const timer = setTimeout(() => {
+      try { localStorage.setItem(WHY_KEY, 'said'); } catch { /* no storage — it may say itself twice */ }
+    }, WHY_READ_MS);
+    return () => clearTimeout(timer);
+  }, [why]);
 
   // Grow the composer to its content. Runs before the restore below, so the
   // bottom is measured at the field's full height.
@@ -197,9 +240,6 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, onNeedSi
         <article className="journal-day journal-today" data-date={today}>
           <DayMarker
             date={today}
-            mood={mood}
-            energy={energy}
-            written
             wordCount={wordCount(body)}
             isToday
             trailing={<SavedNote state={saveState} tick={saveTick} />}
@@ -217,14 +257,7 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, onNeedSi
             />
             {echoes && <PageEchoes echoes={echoes} day={today} standing={today === standingOn} />}
           </div>
-          <div className="journal-controls">
-            <MoodDots value={mood} onChange={toggleMood} />
-            <EnergyBars value={energy} onChange={toggleEnergy} />
-            <TalkButton
-              onTranscript={(text) => setBody(body ? `${body.replace(/\s+$/, '')} ${text}` : text)}
-              onNeedSignIn={onNeedSignIn}
-            />
-          </div>
+          <ScaleStrip mood={mood} energy={energy} onMood={toggleMood} onEnergy={toggleEnergy} why={why} />
           {firstRun && <p className="journal-privacy">Nobody sees this but you.</p>}
         </article>
       </div>

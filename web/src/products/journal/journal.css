@@ -212,10 +212,6 @@
   background: color-mix(in srgb, var(--journal-ink) 26%, transparent);
   flex: 0 0 auto;
 }
-/* Today's pip is the one infinite loop on screen — a breathing ember. */
-.journal-pip-today {
-  animation: journal-ember 2000ms var(--ease-standard) infinite;
-}
 
 .journal-tick {
   display: inline-flex;
@@ -354,11 +350,14 @@
   margin: 14px 0 0;
 }
 
-/* Mood + energy sit in thumb reach; both optional, skipping costs nothing. */
+/* ---- The two taps — one strip: five mood steps, three energy steps, one word. ----
+   Sizes are the canon table (Journal canvas controls, 09 Aug 2026). A POINTER gets the small
+   drawing: 44px targets are a thumb rule, and carried to desktop unchanged they made an optional
+   aside the heaviest object on the page. The phone block below puts the thumb rule back.
+   Both scales are optional, skipping costs nothing, and pressing the lit step clears it. */
 .journal-controls {
   display: flex;
   align-items: center;
-  gap: 18px;
   margin-top: 16px;
 }
 
@@ -368,10 +367,39 @@
   align-items: center;
   gap: 4px;
 }
+.journal-energy { gap: 3px; }
+
+/* The hairline between the two scales — the only thing that says they are two questions. */
+.journal-scale-rule {
+  width: 1px;
+  height: 14px;
+  margin: 0 10px;
+  background: color-mix(in srgb, var(--journal-ink) 16%, transparent);
+  flex: 0 0 auto;
+}
+
+/* The word: mono, right of the strip, naming the value you last touched. Unset it reads `felt` —
+   the one place the canvas says what the dots are at all. */
+.journal-scale-word {
+  margin-left: auto;
+  font: 400 10px/1 var(--font-mono), ui-monospace, monospace;
+  letter-spacing: 0.08em;
+  color: var(--journal-ink-dim, #8A98AC);
+  transition: color 180ms var(--ease-standard);
+}
+.journal-scale-word.is-set { color: var(--lamp-400); }
+
+/* Why the two taps are worth anything. Said under them once ever, on the first save. */
+.journal-scale-why {
+  margin: 8px 0 0;
+  font: 400 12px/19px var(--font-body), sans-serif;
+  color: var(--journal-ink);
+  opacity: 0.55;
+}
 
 .journal-mood-dot {
-  width: 40px;
-  height: 40px;
+  width: 26px;
+  height: 26px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -382,8 +410,8 @@
 }
 .journal-mood-dot::before {
   content: '';
-  width: 16px;
-  height: 16px;
+  width: 13px;
+  height: 13px;
   border-radius: 999px;
   box-sizing: border-box;
   border: 1.5px solid color-mix(in srgb, var(--journal-ink) 34%, transparent);
@@ -400,10 +428,13 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--lamp-400) 40%, transparent);
 }
 
+/* Bottom-aligned so the three make one rising tick, then lifted half the tallest bar so the tick
+   sits on the dots' own centre line rather than hanging below it. */
 .journal-energy-bar {
-  width: 24px;
-  height: 40px;
-  padding: 0;
+  width: 14px;
+  height: 26px;
+  padding: 0 0 6px;
+  box-sizing: border-box;
   border: 0;
   background: transparent;
   cursor: pointer;
@@ -411,22 +442,42 @@
   align-items: flex-end;
   justify-content: center;
 }
+/* The same rising tick the day marker already draws, at the size it already draws it. */
 .journal-energy-bar::before {
   content: '';
-  width: 8px;
-  border-radius: 3px;
+  width: 5px;
+  border-radius: 2px;
   background: color-mix(in srgb, var(--journal-ink) 22%, transparent);
   transition: background 180ms var(--ease-standard), box-shadow 180ms var(--ease-standard);
 }
-.journal-energy-bar.level-1::before { height: 12px; }
-.journal-energy-bar.level-2::before { height: 20px; }
-.journal-energy-bar.level-3::before { height: 28px; }
+.journal-energy-bar.level-1::before { height: 6px; }
+.journal-energy-bar.level-2::before { height: 10px; }
+.journal-energy-bar.level-3::before { height: 14px; }
 .journal-energy-bar.is-on::before {
   background: var(--journal-energy);
   box-shadow: 0 0 10px 0 color-mix(in srgb, var(--journal-energy) 45%, transparent);
 }
 .journal-energy-bar:focus-visible::before {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--lamp-400) 40%, transparent);
+}
+
+/* A thumb needs the thumb rule back: 44px tall targets, drawn a little larger, and still one row —
+   five mood boxes at 31px, three energy boxes at 22px and the word fit the measure at 356px with
+   room over. The row costs no more vertical space than the pointer's, because the hit boxes
+   overlap the space above and below the drawing rather than adding to it. */
+@media (max-width: 684px) {
+  .journal-controls { margin-top: 8px; }
+  .journal-mood { gap: 0; }
+  .journal-energy { gap: 0; }
+  .journal-mood-dot { width: 31px; height: 44px; }
+  .journal-mood-dot::before { width: 16px; height: 16px; }
+  .journal-energy-bar { width: 22px; height: 44px; padding-bottom: 14px; }
+  .journal-energy-bar::before { width: 6px; border-radius: 2px; }
+  .journal-energy-bar.level-1::before { height: 6px; }
+  .journal-energy-bar.level-2::before { height: 10px; }
+  .journal-energy-bar.level-3::before { height: 15px; }
+  .journal-scale-rule { margin: 0 8px; }
+  .journal-scale-word { font-size: 10.5px; }
 }
 
 /* "saved" — mono, cross-fades in after typing stops, then fades. Never a button. */
@@ -443,26 +494,9 @@
   to { opacity: 1; transform: none; }
 }
 
-@keyframes journal-ember {
-  0%, 100% {
-    transform: scale(1);
-    box-shadow: 0 0 6px 1px color-mix(in srgb, var(--dot-color) 42%, transparent),
-      0 0 14px 3px color-mix(in srgb, var(--dot-color) 18%, transparent);
-  }
-  50% {
-    transform: scale(1.12);
-    box-shadow: 0 0 10px 2px color-mix(in srgb, var(--dot-color) 62%, transparent),
-      0 0 22px 5px color-mix(in srgb, var(--dot-color) 30%, transparent);
-  }
-}
-
-/* Reduced motion: the ember holds a static face; entrances don't travel.
+/* Reduced motion: entrances don't travel.
    (The global reset already collapses transitions to instant.) */
 @media (prefers-reduced-motion: reduce) {
-  .journal-pip-today {
-    animation: none;
-    box-shadow: 0 0 8px 1px color-mix(in srgb, var(--dot-color) 45%, transparent);
-  }
   .journal-born {
     animation: none;
   }
@@ -1288,56 +1322,66 @@
 }
 
 /* ── Talk ─────────────────────────────────────────────────────────────────
-   Speak a page. A quiet mic in the composer row; while it listens the dot
-   breathes in the lamp. Absent entirely where voice isn't available. */
-.journal-talk { display: inline-flex; align-items: center; gap: 10px; }
-.journal-talk-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--journal-ink-dim, #8A98AC) 28%, transparent);
-  background: none;
-  color: var(--journal-ink-dim, #8A98AC);
-  font: 500 12px/1 var(--font-body), sans-serif;
-  cursor: pointer;
-  transition: border-color var(--duration-fast, 150ms) var(--ease-standard), color var(--duration-fast, 150ms) var(--ease-standard);
-}
-.journal-talk-btn:hover { border-color: var(--lamp-400); color: var(--lamp-400); }
-.journal-talk-btn.is-recording {
+   Speak a page. Talk is a TOOL and wears the rail's own face — a glyph, no price tag, nothing
+   floating over the writing. While it listens the glyph breathes in the lamp. Absent entirely
+   where voice isn't available. */
+.journal-talk-tool.is-recording {
   border-color: var(--lamp-400);
   color: var(--lamp-400);
 }
-.journal-talk-btn.is-recording svg {
+.journal-talk-tool.is-recording svg {
   border-radius: 50%;
   animation: journal-talk-pulse 1400ms var(--ease-standard) infinite;
 }
-.journal-talk-btn.is-working { color: var(--lamp-400); opacity: 0.7; cursor: default; }
+.journal-talk-tool.is-working { opacity: 0.6; cursor: default; }
+.journal-talk-tool:disabled { opacity: 0.5; cursor: default; }
 
-/* Locked — the paywall shown up front: the mic wears a small "Windmill One" tag and leads to the
-   door or checkout rather than the recorder. Checking holds a dim, disabled face while the
-   entitlement read is in flight, so a subscriber never sees a locked flash. */
-.journal-talk-btn.is-locked { color: var(--lamp-400); border-color: color-mix(in srgb, var(--lamp-400) 40%, transparent); }
-.journal-talk-btn.is-locked:hover { border-color: var(--lamp-400); color: var(--lamp-400); }
-.journal-talk-btn.is-checking { opacity: 0.55; cursor: default; }
-.journal-talk-tag {
-  font: 600 10px/1 var(--font-mono), ui-monospace, monospace;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  padding: 3px 7px;
-  border-radius: 999px;
-  color: var(--lamp-400);
-  background: color-mix(in srgb, var(--lamp-400) 14%, transparent);
+/* The sheet — where the layer and the discard promise are said, together, before a word is spoken.
+   Anchored to the rail rather than the viewport, so it follows the rail when the echo margin
+   opens and never drifts over the measure. */
+.journal-talk-sheet {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  width: 268px;
+  box-sizing: border-box;
+  padding: 16px 18px 14px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--lamp-400) 26%, transparent);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(8px);
 }
+.journal-talk-state {
+  margin: 0;
+  font: 600 13.5px/20px var(--font-body), sans-serif;
+  color: var(--journal-ink);
+}
+.journal-talk-promise {
+  margin: 6px 0 0;
+  font: 400 12px/19px var(--font-body), sans-serif;
+  color: var(--journal-ink);
+  opacity: 0.62;
+}
+.journal-talk-act {
+  margin-top: 12px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--lamp-400);
+  font: 600 12.5px/1 var(--font-body), sans-serif;
+  cursor: pointer;
+}
+.journal-talk-act:hover { text-decoration: underline; }
 .journal-talk-note {
+  margin: 10px 0 0;
   color: var(--journal-ink-dim, #8A98AC);
-  font: 400 11px/1 var(--font-mono), ui-monospace, monospace;
+  font: 400 11px/16px var(--font-mono), ui-monospace, monospace;
 }
 @keyframes journal-talk-pulse {
   0%, 100% { filter: drop-shadow(0 0 0 color-mix(in srgb, var(--lamp-400) 40%, transparent)); }
   50% { filter: drop-shadow(0 0 5px color-mix(in srgb, var(--lamp-400) 70%, transparent)); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .journal-talk-btn.is-recording svg { animation: none; }
+  .journal-talk-tool.is-recording svg { animation: none; }
 }
