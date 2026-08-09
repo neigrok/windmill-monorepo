@@ -933,6 +933,46 @@ create table if not exists journal_echo_dismissal (
   primary key (user_id, trigger_hash, match_hash)
 );
 
+-- What the reader said about ONE pairing: 'opened' (they walked back to the older page), 'useful'
+-- (they said so) or 'not_useful' (they retired it). This is the only place the feature learns
+-- whether its curator is any good — dismissal alone cannot tell "wrong match" from "right match,
+-- bad night", so the positive half has to be recorded too or the dataset is one-sided.
+--
+-- cosine, relation and curator_version ride along and are the whole reason this is a table rather
+-- than a counter. Without them a row says "somebody liked something"; with them it says which
+-- retrieval score and which model's judgement produced a pairing a reader endorsed. curator_version
+-- matters most: rows read claude-sonnet-5/low/<tag> or claude-opus-5/high/<tag> after the
+-- 2026-08-09 swap, so this table can answer whether that swap cost precision — the pre-ship gate in
+-- ECHOES.md that has never been run.
+--
+-- ECHOES.md asks for z and family_size here too, and they are NOT here: neither is persisted
+-- anywhere. Both are computed inside domain/EchoSelection and discarded, and journal_echo is not
+-- being widened to chase them. What is recorded is what exists; the gap is stated rather than
+-- papered over.
+--
+-- Keyed on the span pair like journal_echo itself, not on content hashes like the dismissal above.
+-- The two want different things: a dismissal must survive a rewrite of the passage, whereas a
+-- signal is a judgement ABOUT the pairing that was on screen, and reconciliation already carries a
+-- span_id forward for any passage whose text survived. kind is in the primary key so the three
+-- answers coexist, and every insert is ON CONFLICT DO NOTHING — pressing a button twice is one row.
+create table if not exists journal_echo_signal (
+  user_id         uuid not null references users(id) on delete cascade,
+  trigger_day     date not null,
+  trigger_span_id bigint not null,
+  match_day       date not null,
+  match_span_id   bigint not null,
+  kind            text not null,
+  cosine          real not null default 0,
+  relation        real not null default 0,
+  curator_version text not null default '',
+  created_at      timestamptz not null default now(),
+  primary key (user_id, trigger_span_id, match_span_id, kind)
+);
+-- the read path: which of a range's pairings the reader has marked useful, served back so no device
+-- has to remember an answer it may not have been the one to give
+create index if not exists journal_echo_signal_page
+  on journal_echo_signal (user_id, trigger_day, kind);
+
 -- "Not now." The reader was shown the upgrade offer on this page and declined it. Distinct from the
 -- dismissal above in every way that matters: that one retires ECHOES, this one retires only the
 -- ASKING. Their echoes and their honest cut stay exactly as they were; the page simply stops

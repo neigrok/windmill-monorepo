@@ -6,7 +6,9 @@
 //   GET  /v1/journal/pages?since=|from=&to=  -> { pages: [...] } (the delta feed / a window / all)
 //   GET  /v1/journal/export            -> { pages: [...] }
 //   GET  /v1/journal/echoes?from=&to=  -> { pages: [...], pagesWritten, firstEchoEver }
+//   POST /v1/journal/echoes/:trigger/dismiss            ("Not useful" — retire the whole page, one call)
 //   POST /v1/journal/echoes/:trigger/:match/dismiss     ("Not useful" — retire that pairing)
+//   POST /v1/journal/echoes/:trigger/:match/useful      ("Useful" — the reader's own answer)
 //   POST /v1/journal/echoes/:trigger/offer/dismiss      ("Not now" — retire the offer for that page)
 //   POST /v1/journal/echoes/:trigger/:match/opened      (the relevance signal)
 //   GET/PATCH /v1/journal/nudge
@@ -28,6 +30,14 @@ async function call(path, options = {}) {
 async function json(response) {
   if (!response.ok) throw new JournalError(response.status);
   return response.json();
+}
+
+// The write twin of `json`, for the doors that answer 204 however many times they are pressed. There
+// is nothing to read back, so the one fact worth returning is whether the server took it — and it
+// has to be a rejection, because a bare `await call(...)` resolves just as happily on a 500 and the
+// callers below act on the difference.
+async function sent(response) {
+  if (!response.ok) throw new JournalError(response.status);
 }
 
 export class JournalError extends Error {
@@ -78,26 +88,42 @@ export const journalApi = {
 
   // The whole envelope, not just the pages: `pagesWritten` is what suppresses marks under the ~20-page
   // floor, and `firstEchoEver` is the once-ever card's only honest source (a device flag can withhold
-  // that card, never assert it — the first echo may have arrived on another device).
+  // that card, never assert it — the first echo may have arrived on another device). Each match
+  // carries `useful` for the same reason: the reader's answer is the server's to remember, not a
+  // device's.
   async echoes(from, to) {
     return json(await call(`/echoes?from=${from}&to=${to}`));
   },
 
-  // "Not useful" — retire this pairing. Keyed on both days: a dismissal survives re-derivation.
+  // "Not useful" — retire this pairing. Keyed on both days: a dismissal survives re-derivation. The
+  // server records the negative signal on this same call, so there is no second "bad" door to press.
   async dismissEcho(triggerDay, matchDay) {
-    await call(`/echoes/${triggerDay}/${matchDay}/dismiss`, { method: 'POST' });
+    await sent(await call(`/echoes/${triggerDay}/${matchDay}/dismiss`, { method: 'POST' }));
+  },
+
+  // "Not useful" for the whole page — ONE request for the set. Nine matches must not cost nine round
+  // trips, each able to fail on its own and leave a page half faded.
+  async dismissEchoPage(triggerDay) {
+    await sent(await call(`/echoes/${triggerDay}/dismiss`, { method: 'POST' }));
+  },
+
+  // "Useful" — the only answer the reader gives on purpose, and the one this feature is measured by.
+  // Idempotent, and the read hands it back per match as `useful`: an answer given on a laptop is
+  // still given on the phone, which a device flag could never manage.
+  async echoUseful(triggerDay, matchDay) {
+    await sent(await call(`/echoes/${triggerDay}/${matchDay}/useful`, { method: 'POST' }));
   },
 
   // "Not now" — retire the offer for this page. The echo still opens; nothing re-asks a page that
   // was answered, and nothing counts the decline.
   async dismissEchoOffer(triggerDay) {
-    await call(`/echoes/${triggerDay}/offer/dismiss`, { method: 'POST' });
+    await sent(await call(`/echoes/${triggerDay}/offer/dismiss`, { method: 'POST' }));
   },
 
   // Opening a match's page is the one positive signal this feature has — the design has no "Read it"
   // button, so the row tap is it. Fire-and-forget: a failed beacon must never cost the walk.
   async echoOpened(triggerDay, matchDay) {
-    await call(`/echoes/${triggerDay}/${matchDay}/opened`, { method: 'POST' });
+    await sent(await call(`/echoes/${triggerDay}/${matchDay}/opened`, { method: 'POST' }));
   },
 
   async nudge() {

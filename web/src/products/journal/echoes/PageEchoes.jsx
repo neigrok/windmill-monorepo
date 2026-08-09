@@ -98,14 +98,25 @@ function PageInk({ echoes, page }) {
             triggerDay={page.day}
             dim={LADDER[Math.min(index, LADDER.length - 1)]}
             onOpen={() => echoes.walkTo(page.day, match)}
+            onUseful={() => echoes.markUseful(page.day, match.day)}
+            onNotUseful={() => echoes.retireMatch(page.day, match.day)}
           />
         ))}
       </div>
     );
   }
+  // The cut passage can be answered too. A reader without One still sees the date, the distance and
+  // the opening words, which is enough to know whether the journal reached back at anything real —
+  // and an answer only subscribers may give measures only subscribers.
   return (
     <div className="je-ink" ref={ref}>
-      <InkRow match={nearest} triggerDay={page.day} onOpen={() => echoes.openSheet(page.day)} />
+      <InkRow
+        match={nearest}
+        triggerDay={page.day}
+        onOpen={() => echoes.openSheet(page.day)}
+        onUseful={() => echoes.markUseful(page.day, nearest.day)}
+        onNotUseful={() => echoes.retireMatch(page.day, nearest.day)}
+      />
       <InkDates matches={rest} onOpen={(match) => echoes.walkTo(page.day, match)} />
       <FreePath match={nearest} />
     </div>

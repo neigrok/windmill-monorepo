@@ -5,6 +5,10 @@
 // It follows the scroll until a tab is opened, and then it holds that page. Either way it only ever
 // states facts: with One two passages and the rest as dates, without One one cut passage and the
 // same dates. No head, no count, no buy verb — the ask is the sheet, one tap past the cut.
+//
+// The passages here carry the same two answers the phone's ink does. On a desktop this panel IS the
+// ink — `.je-ink` is display:none above the margin breakpoint — so leaving the answers off it would
+// not be restraint, it would be a whole surface of readers who cannot say what they think.
 
 import React, { useEffect } from 'react';
 import { FreePath, InkDates, InkRow } from './Ink.jsx';
@@ -31,11 +35,13 @@ export function EchoMargin({ echoes, page }) {
           size="desk"
           dim={index === 0 ? 1 : 0.78}
           onOpen={() => (page.entitled ? echoes.walkTo(page.day, match) : echoes.openSheet(page.day))}
+          onUseful={() => echoes.markUseful(page.day, match.day)}
+          onNotUseful={() => echoes.retireMatch(page.day, match.day)}
         />
       ))}
       <InkDates matches={dated} size="desk" onOpen={(match) => echoes.walkTo(page.day, match)} />
       {page.entitled
-        ? <p className="je-margin-foot">This panel follows the scroll. It never asks you to do anything.</p>
+        ? <p className="je-margin-foot">This panel follows the scroll.</p>
         : <FreePath match={nearest} />}
     </aside>
   );

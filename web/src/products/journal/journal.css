@@ -691,9 +691,23 @@
   border: 0;
   background: none;
   text-align: left;
-  cursor: pointer;
 }
 .je-ink .je-ink-row + .je-ink-row { margin-top: 22px; }
+
+/* The passage is the press target, not the whole row — the row carries the reader's answer too, and
+   a button cannot hold a button. Column, because the provenance note and the cut sit under it. */
+.je-ink-open {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
 
 /* The margin does the labelling — date, distance and nothing else — so the passage itself is never
    interrupted by chrome. */
@@ -749,6 +763,23 @@
   letter-spacing: inherit;
   cursor: pointer;
 }
+
+/* The reader's answer about this one passage. Two words, no scale, no icon — the canon forbids
+   grading, so there is nothing here to be a thumb or a star. Quiet enough to sit under prose without
+   competing with it, and 42px of press area on a phone, which is negative space rather than chrome:
+   the canvas stays flat, with no border, fill or glow anywhere in this lane. */
+.je-verdict { display: flex; gap: 22px; margin-top: 2px; }
+.je-verdict-mark {
+  padding: 15px 0;
+  border: 0;
+  background: none;
+  color: var(--text-tertiary);
+  font: 400 12px/1 var(--font-body), sans-serif;
+  cursor: pointer;
+}
+/* Answered, and it stays answered: `useful` comes back on every read, so this is the same mark on
+   the phone as on the laptop it was given on. Lamp, because lamp is memory on this surface. */
+.je-verdict-held { color: var(--lamp-400); font-weight: 700; }
 
 /* The free path: the older page is one scroll away and always has been. Naming it costs a few
    conversions and buys the right to cut at all. */
@@ -843,6 +874,9 @@
 .je-ink-desk .je-ink-passage { font-size: 14.5px; line-height: 26px; }
 .je-ink-desk .je-ink-withheld { margin-top: 9px; font-size: 9.5px; }
 .je-ink-desk .je-ink-run { font-size: 9.5px; line-height: 19px; letter-spacing: 0.06em; }
+/* A pointer needs no thumb-sized target, and this column is 300px wide — the answers tuck in. */
+.je-ink-desk .je-verdict { gap: 16px; margin-top: 6px; }
+.je-ink-desk .je-verdict-mark { padding: 4px 0; font-size: 11.5px; }
 .je-margin .je-free-path { margin-top: 0; padding-top: 14px; font-size: 12px; line-height: 19px; }
 .je-margin-foot {
   margin: auto 0 0;
@@ -984,7 +1018,7 @@
   color: var(--text-primary);
 }
 /* Their cut, opened with — because that is what they are buying the end of. */
-.je-ink-sheet { margin-top: 13px; cursor: default; }
+.je-ink-sheet { margin-top: 13px; }
 .je-ink-sheet .je-ink-margin { padding-top: 3px; }
 .je-ink-sheet .je-ink-passage { font-size: 14.5px; line-height: 26px; }
 .je-ink-sheet .je-ink-withheld { margin-top: 7px; font-size: 9.5px; }

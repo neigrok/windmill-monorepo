@@ -28,6 +28,11 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // travel is `occurrenceHint` — which occurrence of that text the passage is — because a page that
 // says "i don't know." twice gives a text search no way to pick the right one. It is a hint: the
 // client still verifies by text, and re-locating is still what decides whether the quote is shown.
+//
+// Three of these doors also write a quality signal — a walk back to the older page, a "useful", a
+// dismissal — because dismissal alone cannot tell "wrong match" from "right match, bad night", and
+// without the positive half the only thing this feature can ever learn about itself is one-sided.
+// The answer travels back on the read as `useful`, for the same reason `offerRetired` does.
 class EchoApi {
 public:
   EchoApi(std::shared_ptr<EchoRepository> echoes, std::shared_ptr<EchoSweep> sweep,
@@ -41,6 +46,8 @@ public:
                    const std::string& triggerDay);
   void dismissOffer(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                     const std::string& triggerDay);
+  void markUseful(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                  const std::string& triggerDay, const std::string& matchDay);
   void opened(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
               const std::string& triggerDay, const std::string& matchDay);
   void adminSweep(const drogon::HttpRequestPtr& req, HttpCallback&& cb);

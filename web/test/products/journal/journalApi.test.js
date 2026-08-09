@@ -13,7 +13,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { API_BASE } from '../../../src/shell/apiBase.js';
-import { journalApi } from '../../../src/products/journal/journalApi.js';
+import { JournalError, journalApi } from '../../../src/products/journal/journalApi.js';
 
 const realFetch = global.fetch;
 let calls = [];
@@ -28,6 +28,11 @@ function serve(answer) {
 
 function ok(body) {
   return { ok: true, status: 200, json: async () => body };
+}
+
+// A write door's reply: a status and no body at all, which is what a 204 is.
+function no(status) {
+  return { ok: status < 400, status, json: async () => { throw new Error('no body'); } };
 }
 
 function wireOf({ url, options }) {
@@ -95,4 +100,53 @@ test('page — a day never written comes back null, and a written one comes back
   const written = { day: '2026-08-04', body: 'better', mood: 3, energy: 2 };
   serve(ok(written));
   assert.deepEqual(await journalApi.page('2026-08-04'), written);
+});
+
+// THE PAGE DOOR IS ONE REQUEST. It was nine — the surface looped the pair door once per match, so a
+// nine-match page cost nine round trips that could each fail alone and leave the page half faded on
+// the next read. There is a route for the set; this is the test that it is the one being called.
+test('dismissEchoPage — the whole page retires on one call, not one per match', async () => {
+  serve(no(204));
+  await journalApi.dismissEchoPage('2026-08-09');
+
+  assert.equal(calls.length, 1);
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/journal/echoes/2026-08-09/dismiss',
+    method: 'POST',
+    credentials: 'include',
+    contentType: 'application/json',
+    body: undefined,
+  });
+});
+
+test('dismissEcho — one pairing, keyed on both days so it survives re-derivation', async () => {
+  serve(no(204));
+  await journalApi.dismissEcho('2026-08-09', '2024-01-01');
+  assert.equal(wireOf(calls[0]).path, '/v1/journal/echoes/2026-08-09/2024-01-01/dismiss');
+  assert.equal(wireOf(calls[0]).method, 'POST');
+});
+
+test('echoUseful — the positive answer, on the pair the reader gave it about', async () => {
+  serve(no(204));
+  await journalApi.echoUseful('2026-08-09', '2024-01-01');
+  assert.equal(wireOf(calls[0]).path, '/v1/journal/echoes/2026-08-09/2024-01-01/useful');
+  assert.equal(wireOf(calls[0]).method, 'POST');
+});
+
+// These four have nothing to read back, so until 2026-08-09 they awaited the response and returned
+// whatever came — which means a 500 resolved exactly like a 204 and no caller could tell. The
+// surface hides an echo the moment it is dismissed and puts it back if the server refused, and that
+// decision is only implementable if the refusal actually arrives.
+test('the echo write doors reject when the server refused, rather than resolving on a 500', async () => {
+  const doors = [
+    () => journalApi.dismissEcho('2026-08-09', '2024-01-01'),
+    () => journalApi.dismissEchoPage('2026-08-09'),
+    () => journalApi.echoUseful('2026-08-09', '2024-01-01'),
+    () => journalApi.dismissEchoOffer('2026-08-09'),
+    () => journalApi.echoOpened('2026-08-09', '2024-01-01'),
+  ];
+  for (const door of doors) {
+    serve(no(500));
+    await assert.rejects(door, (error) => error instanceof JournalError && error.status === 500);
+  }
 });

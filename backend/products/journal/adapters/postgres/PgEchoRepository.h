@@ -34,9 +34,14 @@ public:
   std::vector<Vectored> corpusOf(const UserId& user, const std::string& embedVersion) override;
 
   std::vector<SpanPair> dismissalsOn(const UserId& user, const LocalDate& triggerDay) override;
-  void dismiss(const UserId& user, std::int64_t triggerSpanId, std::int64_t matchSpanId) override;
+  void dismissPair(const UserId& user, const LocalDate& triggerDay,
+                   const LocalDate& matchDay) override;
   void dismissPage(const UserId& user, const LocalDate& triggerDay) override;
   void dismissOffer(const UserId& user, const LocalDate& day) override;
+
+  void recordSignal(const UserId& user, const LocalDate& triggerDay, const LocalDate& matchDay,
+                    EchoSignal kind) override;
+  void recordPageSignal(const UserId& user, const LocalDate& triggerDay, EchoSignal kind) override;
 
   void replaceEchoes(const UserId& user, const LocalDate& triggerDay,
                      const CuratedEchoes& curated) override;

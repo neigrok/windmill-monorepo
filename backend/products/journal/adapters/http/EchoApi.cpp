@@ -3,8 +3,6 @@
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
 
-#include <trantor/utils/Logger.h>
-
 #include <chrono>
 #include <cstdint>
 #include <optional>
@@ -46,6 +44,11 @@ void appendMatch(Json::Value& into, const EchoView& echo, bool entitled) {
   match["day"] = echo.matchDay.iso();
   match["isSelf"] = echo.matchIsSelf;
   match["source"] = echo.matchSource == Source::spoken ? "spoken" : "typed";
+  // The reader's own answer, on both sides of the cut: whether they are shown the passage or its
+  // opening words, "I already said this one was useful" is a fact about them and not about what
+  // they have paid for. Served rather than left to the device, because a mark made on a laptop
+  // that a phone cannot see is a mark the phone asks for a second time.
+  match["useful"] = echo.markedUseful;
 
   if (entitled) {
     match["text"] = echo.matchText;
@@ -191,14 +194,17 @@ void EchoApi::dismiss(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     return;
   }
 
-  // The reader waves away a pairing between two DAYS; storage keys dismissal on the passage pair,
-  // because an ordinal shifts the moment a sentence is inserted and a position-keyed dismissal
-  // would quietly resurrect the very echo they retired. Resolving here keeps that detail out of
-  // the surface without letting it leak into the URL.
-  for (const EchoView& echo : echoes_->echoesFor(*caller, *trigger, *trigger)) {
-    if (echo.matchDay.iso() != match->iso()) continue;
-    echoes_->dismiss(*caller, echo.triggerSpanId, echo.matchSpanId);
-  }
+  // The reader waves away a pairing between two DAYS, and that gesture says two separate things.
+  // It retires the pair — keyed on the two passages' content down in storage, because an ordinal
+  // shifts the moment a sentence is inserted and a position-keyed dismissal would quietly
+  // resurrect the very echo they retired. And it is a JUDGEMENT, the negative half of the only
+  // dataset this feature has about whether its curator is any good.
+  //
+  // Two calls rather than one hidden side effect, and in this order: the dismissal writes to its
+  // own table and leaves journal_echo standing, so the signal still finds the row it needs to copy
+  // the retrieval score and the curator's version off.
+  echoes_->dismissPair(*caller, *trigger, *match);
+  echoes_->recordSignal(*caller, *trigger, *match, EchoSignal::notUseful);
   cb(noContent());   // idempotent: a pairing that is already gone dismisses nothing, and says 204
 }
 
@@ -219,8 +225,11 @@ void EchoApi::dismissPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
 
   // "Not useful" is one tap on a panel, so it is one request. The pair-level door stays — a reader
   // retiring a single match still has one — but nine matches must not cost nine round trips, each
-  // of which can fail on its own and leave the page half faded.
+  // of which can fail on its own and leave the page half faded. The judgement is recorded for all
+  // of them too: this is the gesture where a reader actually says "not useful", and a dataset that
+  // heard only the pair-level door would be missing most of its negative labels.
   echoes_->dismissPage(*caller, *trigger);
+  echoes_->recordPageSignal(*caller, *trigger, EchoSignal::notUseful);
   cb(noContent());   // idempotent: a page with nothing left to retire dismisses nothing, and says 204
 }
 
@@ -246,6 +255,31 @@ void EchoApi::dismissOffer(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
   cb(noContent());   // idempotent: declining twice is declining once
 }
 
+void EchoApi::markUseful(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                         const std::string& triggerDay, const std::string& matchDay) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to mark an echo useful"));
+    return;
+  }
+  std::optional<LocalDate> trigger;
+  std::optional<LocalDate> match;
+  try {
+    trigger = LocalDate{triggerDay};
+    match = LocalDate{matchDay};
+  } catch (const InvalidPage&) {
+    cb(error(drogon::k400BadRequest, "bad date"));
+    return;
+  }
+
+  // The reader saying outright that a pairing was worth showing them. It changes nothing they can
+  // see beyond the mark itself — no echo is retired, nothing is re-ranked tonight — and it exists
+  // because the alternative is judging a curator on its complaints alone. It answers 204 however
+  // many times it is pressed, the same discipline the dismissal doors keep.
+  echoes_->recordSignal(*caller, *trigger, *match, EchoSignal::useful);
+  cb(noContent());
+}
+
 void EchoApi::opened(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                      const std::string& triggerDay, const std::string& matchDay) {
   std::optional<UserId> caller = callerOf(req, *auth_);
@@ -253,12 +287,21 @@ void EchoApi::opened(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     cb(error(drogon::k401Unauthorized, "sign in"));
     return;
   }
-  // The one positive relevance signal this feature has. Dismissal alone cannot tell "wrong match"
-  // from "right match, bad night", so a tap that opened the older page is the only clean label
-  // available — and it is on screen already. Logged rather than tabled for now; it wants its own
-  // table before anyone tries to learn from it.
-  LOG_INFO << "journal echo opened: user=" << caller->str() << " trigger=" << triggerDay
-           << " match=" << matchDay;
+  std::optional<LocalDate> trigger;
+  std::optional<LocalDate> match;
+  try {
+    trigger = LocalDate{triggerDay};
+    match = LocalDate{matchDay};
+  } catch (const InvalidPage&) {
+    cb(error(drogon::k400BadRequest, "bad date"));
+    return;
+  }
+
+  // The cheapest positive label this feature will ever get: the reader walked back to the older
+  // page, which is a button they were pressing anyway. Weaker than a "useful" — opening something
+  // is not endorsing it — so it is recorded as its own kind rather than folded in with one. It
+  // used to be a LOG_INFO line and nothing else, which is a signal collected and thrown away.
+  echoes_->recordSignal(*caller, *trigger, *match, EchoSignal::opened);
   cb(noContent());
 }
 

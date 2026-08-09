@@ -119,7 +119,8 @@ EchoView viewFrom(const Row& row, const std::string& matchBody) {
       row["match_is_self"].template as<bool>(),
       parseSource(row["match_source"].template as<std::string>()),
       row["days_earlier"].template as<int>(),
-      occurrence};
+      occurrence,
+      row["marked_useful"].template as<bool>()};
 }
 }
 
@@ -274,21 +275,28 @@ std::vector<SpanPair> PgEchoRepository::dismissalsOn(const UserId& user,
   return pairs;
 }
 
-void PgEchoRepository::dismiss(const UserId& user, std::int64_t triggerSpanId,
-                               std::int64_t matchSpanId) {
-  // Stored as the two passages' content, never as their ids, so the pair stays faded across an
-  // edit, a re-segmentation and a segmenter version bump. If either span has already gone, nothing
-  // is written and nothing needs to be: an echo whose passage no longer exists is already unshown.
+void PgEchoRepository::dismissPair(const UserId& user, const LocalDate& triggerDay,
+                                   const LocalDate& matchDay) {
+  // One pairing, in one statement, and the same shape as the panel door below with one more day in
+  // the WHERE. Stored as the two passages' content, never as their ids, so the pair stays faded
+  // across an edit, a re-segmentation and a segmenter version bump.
+  //
+  // Two days can name several pairings — a page with two passages both reaching into the same
+  // January page is two rows — and the reader retiring "that match" means all of them. DISTINCT
+  // because two spans can carry identical text and therefore identical hashes.
+  //
+  // Scoped by e.user_id and nothing else: a forged day reaches this caller's rows or no rows.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   txn.exec_params(
       "INSERT INTO journal_echo_dismissal (user_id, trigger_hash, match_hash) "
-      "SELECT $1::uuid, st.text_sha256, sm.text_sha256 "
-      "FROM journal_span st, journal_span sm "
-      "WHERE st.user_id = $1::uuid AND st.span_id = $2 "
-      "AND sm.user_id = $1::uuid AND sm.span_id = $3 "
+      "SELECT DISTINCT e.user_id, st.text_sha256, sm.text_sha256 "
+      "FROM journal_echo e "
+      "JOIN journal_span st ON st.user_id = e.user_id AND st.span_id = e.trigger_span_id "
+      "JOIN journal_span sm ON sm.user_id = e.user_id AND sm.span_id = e.match_span_id "
+      "WHERE e.user_id = $1::uuid AND e.trigger_day = $2::date AND e.match_day = $3::date "
       "ON CONFLICT DO NOTHING",
-      user.str(), static_cast<long long>(triggerSpanId), static_cast<long long>(matchSpanId));
+      user.str(), triggerDay.iso(), matchDay.iso());
   txn.commit();
 }
 
@@ -329,6 +337,50 @@ void PgEchoRepository::dismissOffer(const UserId& user, const LocalDate& day) {
       "INSERT INTO journal_echo_offer_dismissal (user_id, day) VALUES ($1::uuid, $2::date) "
       "ON CONFLICT DO NOTHING",
       user.str(), day.iso());
+  txn.commit();
+}
+
+void PgEchoRepository::recordSignal(const UserId& user, const LocalDate& triggerDay,
+                                    const LocalDate& matchDay, EchoSignal kind) {
+  // The echo row is the source of every column here, which is what makes this a dataset rather
+  // than a tally: the score that retrieved the pair and the model that judged it are copied in
+  // beside the reader's answer, so a later question — did the 2026-08-09 swap to sonnet cost
+  // precision? — is a GROUP BY rather than an archaeology dig. Copied and not joined at read time
+  // on purpose: journal_echo is rewritten every night and would answer about tonight's curator,
+  // not the one whose pairing the reader actually saw.
+  //
+  // ON CONFLICT DO NOTHING, so the first answer stands. Pressing a button twice is one row, and a
+  // pairing this account never had is no row at all.
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  txn.exec_params(
+      "INSERT INTO journal_echo_signal (user_id, trigger_day, trigger_span_id, match_day, "
+      "match_span_id, kind, cosine, relation, curator_version) "
+      "SELECT e.user_id, e.trigger_day, e.trigger_span_id, e.match_day, e.match_span_id, $4::text, "
+      "e.cosine, e.relation, e.curator_version "
+      "FROM journal_echo e "
+      "WHERE e.user_id = $1::uuid AND e.trigger_day = $2::date AND e.match_day = $3::date "
+      "ON CONFLICT DO NOTHING",
+      user.str(), triggerDay.iso(), matchDay.iso(), signalText(kind));
+  txn.commit();
+}
+
+void PgEchoRepository::recordPageSignal(const UserId& user, const LocalDate& triggerDay,
+                                        EchoSignal kind) {
+  // The same answer about every pairing on a page, because the panel-level "Not useful" is one tap
+  // about all of them. One statement for the same reason the panel dismissal is one: a page whose
+  // signals half-landed is a page whose dataset quietly disagrees with its own dismissals.
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  txn.exec_params(
+      "INSERT INTO journal_echo_signal (user_id, trigger_day, trigger_span_id, match_day, "
+      "match_span_id, kind, cosine, relation, curator_version) "
+      "SELECT e.user_id, e.trigger_day, e.trigger_span_id, e.match_day, e.match_span_id, $3::text, "
+      "e.cosine, e.relation, e.curator_version "
+      "FROM journal_echo e "
+      "WHERE e.user_id = $1::uuid AND e.trigger_day = $2::date "
+      "ON CONFLICT DO NOTHING",
+      user.str(), triggerDay.iso(), signalText(kind));
   txn.commit();
 }
 
@@ -445,7 +497,12 @@ std::vector<EchoView> PgEchoRepository::echoesFor(const UserId& user, const Loca
       "SELECT e.trigger_day::text AS trigger_day, e.trigger_span_id, st.text AS trigger_text, "
       "e.match_day::text AS match_day, e.match_span_id, sm.text AS match_text, sm.lo AS match_lo, "
       "e.match_is_self, mp.source AS match_source, "
-      "(e.trigger_day - e.match_day) AS days_earlier "
+      "(e.trigger_day - e.match_day) AS days_earlier, "
+      // The reader's own answer, coming back to them. Served rather than remembered by the device:
+      // a mark made on a laptop that a phone cannot see is a mark the phone will ask for again.
+      "EXISTS (SELECT 1 FROM journal_echo_signal g WHERE g.user_id = e.user_id "
+      "AND g.trigger_span_id = e.trigger_span_id AND g.match_span_id = e.match_span_id "
+      "AND g.kind = 'useful') AS marked_useful "
       "FROM journal_echo e "
       "JOIN journal_span st ON st.user_id = e.user_id AND st.span_id = e.trigger_span_id "
       "JOIN journal_span sm ON sm.user_id = e.user_id AND sm.span_id = e.match_span_id "

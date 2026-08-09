@@ -138,17 +138,60 @@ export function useEchoes({ today = localDay(), onFly = () => {} } = {}) {
   }, [retiredOffers]);
 
   // "Not useful" — the whole set for that page is retired, never asked about, never counted.
+  //
+  // One request for the set, not one per match. This looped the pair door until 2026-08-09, so a
+  // nine-match page cost nine round trips that could each fail on its own and leave the page half
+  // faded on the next read — the exact shape ECHOES.md rules out.
   const retireEcho = useCallback((day) => {
-    const page = pagesRef.current.get(day);
+    const held = pagesRef.current.get(day);
     setOpenDay((current) => (current === day ? null : current));
     setPages((current) => {
       const next = new Map(current);
       next.delete(day);
       return next;
     });
-    page?.matches.forEach((match) => {
-      journalApi.dismissEcho(day, match.day).catch(() => { /* the tab is already gone here */ });
+    journalApi.dismissEchoPage(day).catch(() => {
+      if (held) setPages((current) => new Map(current).set(day, held));
     });
+  }, []);
+
+  // "Not useful" on one pairing. Only that passage goes — the rest of the page was not what the
+  // reader answered about, and retiring it would be putting words in their mouth.
+  //
+  // THE REFUSAL PUTS IT BACK, here and above, and that is the deliberate half. A dismissal the
+  // server did not take is one the next read hands straight back: leaving it hidden buys a few
+  // minutes of looking obedient and pays for them with an echo that returns days later for no reason
+  // the reader can name — the failure ECHOES.md calls the most trust-destroying this feature has.
+  // Coming back at once is at least legible, and the control is right there to press again. No retry
+  // queue: a queue would be a second, invisible copy of the reader's answer.
+  const retireMatch = useCallback((day, matchDay) => {
+    const held = pagesRef.current.get(day);
+    if (!held) return;
+    const kept = held.matches.filter((match) => match.day !== matchDay);
+    setPages((current) => {
+      const next = new Map(current);
+      if (kept.length) next.set(day, { ...held, matches: kept });
+      else next.delete(day);                           // never an empty "no echoes" state
+      return next;
+    });
+    journalApi.dismissEcho(day, matchDay).catch(() => {
+      setPages((current) => new Map(current).set(day, held));
+    });
+  }, []);
+
+  // "Useful" — the one answer given on purpose, and the whole point of the pair. Marked here first
+  // because the reader must never wait on a round trip to see their own answer land, and unmarked
+  // again if the server refused, for the same reason the dismissal comes back: `useful` is served on
+  // the next read, so a mark the server never took is a mark that quietly disappears later.
+  const markUseful = useCallback((day, matchDay) => {
+    const answer = (useful) => (current) => {
+      const held = current.get(day);
+      if (!held) return current;
+      const matches = held.matches.map((match) => (match.day === matchDay ? { ...match, useful } : match));
+      return new Map(current).set(day, { ...held, matches });
+    };
+    setPages(answer(true));
+    journalApi.echoUseful(day, matchDay).catch(() => setPages(answer(false)));
   }, []);
 
   // Walking back: a position is a URL, so the hop is a hash change; the canvas loads the day and
@@ -240,6 +283,8 @@ export function useEchoes({ today = localDay(), onFly = () => {} } = {}) {
     closeSheet,
     retireOffer,
     retireEcho,
+    retireMatch,
+    markUseful,
     walkTo,
     standOn,
     hops,

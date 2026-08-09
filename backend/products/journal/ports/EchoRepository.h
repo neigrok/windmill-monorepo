@@ -102,6 +102,11 @@ struct CurationOutcome {
 // parts company again at the first emoji. An occurrence index has no encoding in it to disagree
 // about. It stays a HINT and nothing more: -1 says the server has nothing honest to offer, and the
 // text check — not this number — is what decides whether the quote is still there.
+//
+// `markedUseful` is the reader's own answer travelling back to them. It is served rather than
+// remembered by the device for the same reason `offerRetired` is: an answer only one device knows
+// about is an answer the next device ignores, and re-asking someone something they already told
+// you is exactly what this product does not do.
 struct EchoView {
   LocalDate triggerDay;
   std::int64_t triggerSpanId = 0;
@@ -113,7 +118,23 @@ struct EchoView {
   Source matchSource = Source::typed;
   int daysEarlier = 0;
   int matchOccurrenceHint = -1;
+  bool markedUseful = false;
 };
+
+// What a reader said about one pairing. `opened` is the walk back to the older page — the only
+// clean positive label this feature gets for free, because the reader was pressing that button
+// anyway. `useful` is them saying so outright, and `notUseful` is what a dismissal means: the pair
+// is retired AND it was wrong, which are two different facts and are recorded in two places.
+enum class EchoSignal { opened, useful, notUseful };
+
+inline const char* signalText(EchoSignal kind) {
+  switch (kind) {
+    case EchoSignal::opened: return "opened";
+    case EchoSignal::useful: return "useful";
+    case EchoSignal::notUseful: return "not_useful";
+  }
+  return "opened";
+}
 
 // Which occurrence of `text` the passage sitting at byte offset `lo` is, counted the way a browser
 // counts: scan from the start, step past each hit, stop at the one that begins where the passage
@@ -169,8 +190,14 @@ struct EchoRepository {
   virtual std::vector<Vectored> corpusOf(const UserId& user, const std::string& embedVersion) = 0;
 
   virtual std::vector<SpanPair> dismissalsOn(const UserId& user, const LocalDate& triggerDay) = 0;
-  virtual void dismiss(const UserId& user, std::int64_t triggerSpanId,
-                       std::int64_t matchSpanId) = 0;
+
+  // One pairing, named the way the reader named it: two DAYS. Storage resolves them to the span
+  // pair and keys the dismissal on the two passages' content, because an ordinal shifts the moment
+  // a sentence is inserted and a position-keyed dismissal would resurrect the very echo that was
+  // retired. This used to take span ids and the edge resolved them by reading the whole page back
+  // through echoesFor — one call per match, recomputing anchoring hints it then threw away.
+  virtual void dismissPair(const UserId& user, const LocalDate& triggerDay,
+                           const LocalDate& matchDay) = 0;
 
   // "Not useful" is panel-level on the surface — one tap retires the whole page — so it is one
   // call here. Nine calls for nine matches is nine chances to half-succeed, and a page left half
@@ -183,6 +210,18 @@ struct EchoRepository {
   // not to any pairing on it — re-derive the page and the answer still stands, which a content hash
   // would not survive. Nobody should later align this with the other two doors.
   virtual void dismissOffer(const UserId& user, const LocalDate& day) = 0;
+
+  // What the reader thought of a pairing, kept so the feature can eventually be measured rather
+  // than believed. Written beside the retrieval score and the curator's version — the row is a
+  // dataset only because those ride with it, and it is the only way to answer whether the
+  // 2026-08-09 model swap cost precision. Both are idempotent: a button pressed twice is one row.
+  //
+  // A pairing with no echo row behind it records nothing. There is no signal to keep about a
+  // pairing this account never had, and forging days therefore buys a caller an empty insert.
+  virtual void recordSignal(const UserId& user, const LocalDate& triggerDay,
+                            const LocalDate& matchDay, EchoSignal kind) = 0;
+  virtual void recordPageSignal(const UserId& user, const LocalDate& triggerDay,
+                                EchoSignal kind) = 0;
 
   virtual void replaceEchoes(const UserId& user, const LocalDate& triggerDay,
                              const CuratedEchoes& curated) = 0;

@@ -204,7 +204,7 @@ TEST(a_pairing_the_reader_waved_away_is_never_proposed_again) {
   const std::vector<EchoRow> first = echoes.rowsOn(uid("u1"), ld(kNewDay));
   REQUIRE_EQ(first.size(), std::size_t{1});
 
-  echoes.dismiss(uid("u1"), first[0].triggerSpanId, first[0].matchSpanId);
+  echoes.plantDismissal(uid("u1"), first[0].triggerSpanId, first[0].matchSpanId);
   echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine);   // the page comes round again
   sweep.run(kNow - kDay);
 

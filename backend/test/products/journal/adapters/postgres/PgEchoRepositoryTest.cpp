@@ -12,10 +12,11 @@
 // Opt-in integration test: it needs a live local Postgres with the schema applied. It runs only
 // when WM_PG_TEST is set — otherwise every case here reports `skip`, which the run summary counts
 // as skipped and never as passed (RUNNING.md §7 has the invocation). It seeds its own rows, so it
-// is fully self-contained. It exists for the three things a fake cannot prove — that the
-// anchoring hint is counted against the body Postgres actually holds, that the corpus count is the
-// SQL's own idea of a written page, and that one statement retires a whole panel on exactly the
-// content hashes the pair-level door writes.
+// is fully self-contained. It exists for the four things a fake cannot prove — that the anchoring
+// hint is counted against the body Postgres actually holds, that the corpus count is the SQL's own
+// idea of a written page, that one statement retires a whole panel on exactly the content hashes
+// the pair-level door writes, and that a signal's score and curator version are copied off the echo
+// row by the INSERT itself rather than by a second implementation of the same idea.
 //
 // Spans and echoes are planted THROUGH the repository rather than by hand, so the digests under
 // every dismissal are the ones production computes and never a second implementation of them.
@@ -36,8 +37,9 @@ void reset() {
   for (const std::string& user : {kMine, kTheirs}) {
     w.exec("INSERT INTO users (id, email) VALUES ('" + user + "', 'echo-" + user.substr(0, 4) +
            "@example.com') ON CONFLICT (id) DO NOTHING");
-    for (const std::string& table : {"journal_echo_offer_dismissal", "journal_echo_dismissal",
-                                     "journal_echo", "journal_span", "journal_page"})
+    for (const std::string& table : {"journal_echo_signal", "journal_echo_offer_dismissal",
+                                     "journal_echo_dismissal", "journal_echo", "journal_span",
+                                     "journal_page"})
       w.exec("DELETE FROM " + table + " WHERE user_id = '" + user + "'");
   }
   w.commit();
@@ -85,6 +87,17 @@ void plantPanel(PgEchoRepository& repo, const std::string& user, const std::stri
 std::vector<EchoView> echoesOn(PgEchoRepository& repo, const std::string& user,
                                const std::string& day) {
   return repo.echoesFor(UserId{user}, LocalDate{day}, LocalDate{day});
+}
+
+int countOf(const std::string& sql) {
+  PgLease c{*pgTestPool()};
+  pqxx::work w{*c};
+  // exec1 (not query_value) so this compiles on the CI's pinned libpqxx 7.x as well as mac's 8.x.
+  return w.exec1("SELECT count(*)::int FROM " + sql)[0].as<int>();
+}
+
+int signalsFor(const std::string& user) {
+  return countOf("journal_echo_signal WHERE user_id = '" + user + "'");
 }
 }
 
@@ -194,12 +207,7 @@ TEST(pg_echo_dismissing_a_page_retires_every_pairing_and_repeats_harmlessly) {
   repo.dismissPage(UserId{kMine}, LocalDate{"2026-05-01"});
 
   CHECK_EQ(echoesOn(repo, kMine, "2026-05-01").size(), std::size_t{0});
-  PgLease c{*pgTestPool()};
-  pqxx::work w{*c};
-  // exec1 (not query_value) so this compiles on the CI's pinned libpqxx 7.x as well as mac's 8.x.
-  CHECK_EQ(w.exec1("SELECT count(*)::int FROM journal_echo_dismissal WHERE user_id = '" + kMine +
-                   "'")[0].as<int>(),
-           3);   // three rows, not six
+  CHECK_EQ(countOf("journal_echo_dismissal WHERE user_id = '" + kMine + "'"), 3);   // not six
 }
 
 TEST(pg_echo_dismissing_a_page_leaves_another_day_and_another_account_untouched) {
@@ -307,4 +315,180 @@ TEST(pg_echo_a_dismissed_page_stays_dismissed_when_its_passages_move) {
   repo.replaceEchoes(UserId{kMine}, LocalDate{"2026-05-01"}, curated);
 
   CHECK_EQ(echoesOn(repo, kMine, "2026-05-01").size(), std::size_t{0});
+}
+
+// ── The quality signals ─────────────────────────────────────────────────────────────────────────
+// The columns that make journal_echo_signal a dataset rather than a tally are copied off the echo
+// row by the INSERT itself, which is precisely the part a fake cannot prove.
+
+TEST(pg_echo_a_useful_mark_carries_the_score_and_the_curator_that_produced_the_pairing) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgEchoRepository repo{pgTestPool()};
+  plantPanel(repo, kMine, "2026-05-01", 100);
+
+  repo.recordSignal(UserId{kMine}, LocalDate{"2026-05-01"}, LocalDate{"2024-02-01"},
+                    EchoSignal::useful);
+
+  PgLease c{*pgTestPool()};
+  pqxx::work w{*c};
+  pqxx::result rows = w.exec_params(
+      "SELECT trigger_day::text AS trigger_day, trigger_span_id, match_day::text AS match_day, "
+      "match_span_id, kind, cosine, relation, curator_version "
+      "FROM journal_echo_signal WHERE user_id = $1::uuid",
+      kMine);
+  REQUIRE_EQ(rows.size(), std::size_t{1});
+  CHECK_EQ(rows[0]["trigger_day"].as<std::string>(), std::string("2026-05-01"));
+  CHECK_EQ(rows[0]["trigger_span_id"].as<std::int64_t>(), std::int64_t{100});
+  CHECK_EQ(rows[0]["match_day"].as<std::string>(), std::string("2024-02-01"));
+  CHECK_EQ(rows[0]["match_span_id"].as<std::int64_t>(), std::int64_t{102});
+  CHECK_EQ(rows[0]["kind"].as<std::string>(), std::string("useful"));
+  CHECK_EQ(rows[0]["cosine"].as<float>(), 0.8f);
+  CHECK_EQ(rows[0]["relation"].as<float>(), 0.9f);
+  CHECK_EQ(rows[0]["curator_version"].as<std::string>(), std::string("pg-test-v1"));
+}
+
+// The answer comes back on the read, which is the whole reason it is server-side: a mark made on a
+// laptop that a phone cannot see is a mark the phone asks for a second time.
+TEST(pg_echo_the_read_says_which_pairings_the_reader_called_useful) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgEchoRepository repo{pgTestPool()};
+  plantPanel(repo, kMine, "2026-05-01", 100);
+  for (const EchoView& echo : echoesOn(repo, kMine, "2026-05-01")) CHECK(!echo.markedUseful);
+
+  repo.recordSignal(UserId{kMine}, LocalDate{"2026-05-01"}, LocalDate{"2024-02-01"},
+                    EchoSignal::useful);
+
+  int marked = 0;
+  for (const EchoView& echo : echoesOn(repo, kMine, "2026-05-01")) {
+    if (!echo.markedUseful) continue;
+    ++marked;
+    CHECK_EQ(echo.matchDay.iso(), std::string("2024-02-01"));
+  }
+  CHECK_EQ(marked, 1);
+}
+
+// Only 'useful' is an endorsement. Opening the older page is a weaker label and a dismissal is the
+// opposite one, and neither may come back on the read as a mark the reader never made.
+TEST(pg_echo_opening_and_dismissing_are_not_read_back_as_useful) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgEchoRepository repo{pgTestPool()};
+  plantPanel(repo, kMine, "2026-05-01", 100);
+
+  repo.recordSignal(UserId{kMine}, LocalDate{"2026-05-01"}, LocalDate{"2024-01-01"},
+                    EchoSignal::opened);
+  repo.recordSignal(UserId{kMine}, LocalDate{"2026-05-01"}, LocalDate{"2024-02-01"},
+                    EchoSignal::notUseful);
+
+  CHECK_EQ(signalsFor(kMine), 2);
+  for (const EchoView& echo : echoesOn(repo, kMine, "2026-05-01")) CHECK(!echo.markedUseful);
+}
+
+// One pairing can carry all three answers — opened on Monday, useful on Tuesday, retired in March —
+// so kind is in the primary key. Pressing any one of them twice is still one row.
+TEST(pg_echo_the_three_answers_are_three_rows_and_each_repeats_harmlessly) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgEchoRepository repo{pgTestPool()};
+  plantPanel(repo, kMine, "2026-05-01", 100);
+
+  for (int again = 0; again < 2; ++again)
+    for (const EchoSignal kind : {EchoSignal::opened, EchoSignal::useful, EchoSignal::notUseful})
+      repo.recordSignal(UserId{kMine}, LocalDate{"2026-05-01"}, LocalDate{"2024-03-01"}, kind);
+
+  CHECK_EQ(signalsFor(kMine), 3);
+}
+
+// A pairing this account never had is no row at all, so a forged day buys a caller an empty insert
+// rather than a signal about somebody else's page.
+TEST(pg_echo_a_signal_about_a_pairing_that_never_existed_writes_nothing) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgEchoRepository repo{pgTestPool()};
+  plantPanel(repo, kMine, "2026-05-01", 100);
+  plantPanel(repo, kTheirs, "2026-05-01", 300);
+
+  repo.recordSignal(UserId{kMine}, LocalDate{"2026-05-01"}, LocalDate{"2023-09-09"},
+                    EchoSignal::useful);
+  repo.recordSignal(UserId{kMine}, LocalDate{"2026-05-01"}, LocalDate{"2024-01-01"},
+                    EchoSignal::useful);
+
+  CHECK_EQ(signalsFor(kMine), 1);
+  CHECK_EQ(signalsFor(kTheirs), 0);   // the same day in another account is untouched
+  for (const EchoView& echo : echoesOn(repo, kTheirs, "2026-05-01")) CHECK(!echo.markedUseful);
+}
+
+// The panel-level "Not useful" is one tap about every pairing on the page, so it records one
+// judgement about each — and repeating it is still three rows.
+TEST(pg_echo_a_page_signal_records_one_row_per_pairing_and_repeats_harmlessly) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgEchoRepository repo{pgTestPool()};
+  plantPanel(repo, kMine, "2026-05-01", 100);
+  plantPanel(repo, kMine, "2026-06-01", 200);
+
+  repo.recordPageSignal(UserId{kMine}, LocalDate{"2026-05-01"}, EchoSignal::notUseful);
+  repo.recordPageSignal(UserId{kMine}, LocalDate{"2026-05-01"}, EchoSignal::notUseful);
+
+  CHECK_EQ(signalsFor(kMine), 3);
+  CHECK_EQ(countOf("journal_echo_signal WHERE user_id = '" + kMine +
+                   "' AND kind = 'not_useful' AND trigger_day = '2026-05-01'"),
+           3);
+  CHECK_EQ(countOf("journal_echo_signal WHERE user_id = '" + kMine +
+                   "' AND trigger_day = '2026-06-01'"),
+           0);   // the other page was not part of the tap
+}
+
+// The pair-level door, now one statement. It retires exactly the pairing it names, on the same
+// content hashes the panel door writes — the guarantee that must not regress is that what it
+// retires never comes back.
+TEST(pg_echo_dismissing_one_pairing_retires_that_one_and_leaves_the_panel_standing) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgEchoRepository repo{pgTestPool()};
+  plantPanel(repo, kMine, "2026-05-01", 100);
+  plantPanel(repo, kTheirs, "2026-05-01", 300);
+
+  repo.dismissPair(UserId{kMine}, LocalDate{"2026-05-01"}, LocalDate{"2024-02-01"});
+  repo.dismissPair(UserId{kMine}, LocalDate{"2026-05-01"}, LocalDate{"2024-02-01"});
+
+  const std::vector<EchoView> left = echoesOn(repo, kMine, "2026-05-01");
+  REQUIRE_EQ(left.size(), std::size_t{2});
+  CHECK_EQ(left[0].matchDay.iso(), std::string("2024-01-01"));
+  CHECK_EQ(left[1].matchDay.iso(), std::string("2024-03-01"));
+  CHECK_EQ(countOf("journal_echo_dismissal WHERE user_id = '" + kMine + "'"), 1);   // not two
+  CHECK_EQ(echoesOn(repo, kTheirs, "2026-05-01").size(), std::size_t{3});
+}
+
+// Keyed on what the two passages SAY. The night re-derives the page with brand new span ids and
+// every offset shifted, and the pairing the reader retired must stay retired.
+TEST(pg_echo_a_dismissed_pairing_stays_dismissed_when_its_passages_move) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgEchoRepository repo{pgTestPool()};
+  plantPanel(repo, kMine, "2026-05-01", 100);
+  repo.dismissPair(UserId{kMine}, LocalDate{"2026-05-01"}, LocalDate{"2024-02-01"});
+
+  const std::string tag = " (2222 2026-05-01)";
+  const std::string opening = "a new opening line.\n";
+  writePage(kMine, "2026-05-01", opening + kTrigger + tag);
+  repo.replaceSpans(UserId{kMine}, LocalDate{"2026-05-01"},
+                    {span(900, 0, static_cast<int>(opening.size()), kTrigger + tag)}, "v1", 2);
+
+  CuratedEchoes curated;
+  curated.curatorVersion = "pg-test-v2";
+  for (int at = 1; at <= 3; ++at) {
+    const std::string matchDay = "2024-0" + std::to_string(at) + "-01";
+    const std::string text = kLine + tag + " " + std::to_string(at);
+    repo.replaceSpans(UserId{kMine}, LocalDate{matchDay}, {span(900 + at, 0, 0, text)}, "v1", 2);
+    curated.rows.push_back(echoRow(900, matchDay, 900 + at));
+  }
+  repo.replaceEchoes(UserId{kMine}, LocalDate{"2026-05-01"}, curated);
+
+  const std::vector<EchoView> left = echoesOn(repo, kMine, "2026-05-01");
+  REQUIRE_EQ(left.size(), std::size_t{2});
+  CHECK_EQ(left[0].matchDay.iso(), std::string("2024-01-01"));
+  CHECK_EQ(left[1].matchDay.iso(), std::string("2024-03-01"));
 }

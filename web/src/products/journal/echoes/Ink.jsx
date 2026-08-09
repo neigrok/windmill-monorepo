@@ -8,35 +8,68 @@
 // reader's passage stops, nothing is blurred or faded — the sentence ends mid-clause and the words it
 // held back are counted out loud, because a blur pretends the text is there and unreadable while a
 // stated count is simply true.
+//
+// Under each passage the reader may answer it — "Useful" or "Not useful", the same two words the
+// page-level door uses. That answer is the only way this feature can ever learn whether its echoes
+// are any good, and it belongs to the reader, so it is stored on the server and never here.
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { distanceStamp, proseDayMonth, stampCompact, stampStacked } from './echoDates.js';
 
 // One older passage. `dim` is the set's opacity ladder — newest reads first, and nothing is ever
-// dimmed past legibility.
-export function InkRow({ match, triggerDay, onOpen, dim = 1, size = 'page' }) {
+// dimmed past legibility. The ladder is worn by the date and the words and not by the row, because
+// the answer below them has to read the same on the ninth passage as on the first.
+//
+// The row is a div and the passage is the button: the row also carries the reader's answer now, and
+// a button inside a button is not a thing. `data-je-match` stays on the row — it is what the footer
+// counts to say how many are still below the fold.
+export function InkRow({ match, triggerDay, onOpen, onUseful, onNotUseful, dim = 1, size = 'page' }) {
   const { head, year } = stampStacked(match.day);
+  const faded = dim === 1 ? undefined : { opacity: dim };
   return (
-    <button
-      type="button"
-      className={`je-ink-row je-ink-${size}`}
-      data-je-match={match.day}
-      style={dim === 1 ? undefined : { opacity: dim }}
-      onClick={onOpen}
-    >
-      <span className="je-ink-margin">
+    <div className={`je-ink-row je-ink-${size}`} data-je-match={match.day}>
+      <span className="je-ink-margin" style={faded}>
         <span>{head}</span>
         <span>{year}</span>
         <span className="je-ink-distance">{distanceStamp(match.day, triggerDay)}</span>
       </span>
       <span className="je-ink-body">
-        <span className="je-ink-passage">{match.text}</span>
-        <Provenance match={match} />
-        {match.withheldWords > 0 && (
-          <span className="je-ink-withheld">{match.withheldWords} MORE WORDS</span>
-        )}
+        <button type="button" className="je-ink-open" style={faded} onClick={onOpen}>
+          <span className="je-ink-passage">{match.text}</span>
+          <Provenance match={match} />
+          {match.withheldWords > 0 && (
+            <span className="je-ink-withheld">{match.withheldWords} MORE WORDS</span>
+          )}
+        </button>
+        {onUseful && <Verdict match={match} onUseful={onUseful} onNotUseful={onNotUseful} />}
       </span>
-    </button>
+    </div>
+  );
+}
+
+// Whether this passage was worth showing you — asked of the passage, not of the page, so the answer
+// is about the one thing on screen.
+//
+// Two plain words and no scale between them: no thumb, no star, no score. The product may state a
+// pattern and may not grade one, and a five-point anything on a passage someone wrote in the worst
+// month of their life is grading. They are the page-level door's own two words, because there is one
+// vocabulary here and this is it. "Not useful" takes the passage off the page and asks nothing
+// further — no reason picker, no confirm, no undo nagging from the bottom of the screen.
+function Verdict({ match, onUseful, onNotUseful }) {
+  return (
+    <span className="je-verdict">
+      <button
+        type="button"
+        className={'je-verdict-mark' + (match.useful ? ' je-verdict-held' : '')}
+        aria-pressed={Boolean(match.useful)}
+        onClick={onUseful}
+      >
+        Useful
+      </button>
+      <button type="button" className="je-verdict-mark" onClick={onNotUseful}>
+        Not useful
+      </button>
+    </span>
   );
 }
 

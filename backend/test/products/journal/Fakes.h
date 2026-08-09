@@ -302,6 +302,19 @@ public:
     std::string embedVersion;
   };
 
+  // What the reader said about a pairing, with the score and the curator version it was judged
+  // under carried alongside — the two columns that make journal_echo_signal a dataset.
+  struct StoredSignal {
+    LocalDate triggerDay;
+    std::int64_t triggerSpanId = 0;
+    LocalDate matchDay;
+    std::int64_t matchSpanId = 0;
+    EchoSignal kind = EchoSignal::opened;
+    float cosine = 0.0f;
+    float relation = 0.0f;
+    std::string curatorVersion;
+  };
+
   std::vector<EchoUser> users;
   std::map<std::string, std::vector<DuePage>> due;
   std::map<std::string, std::string> bodies;   // "user|day" -> the page as it stands right now
@@ -311,6 +324,7 @@ public:
   // pass while production resurrected a dismissed echo the first time a sentence moved.
   std::map<std::string, std::set<std::pair<std::string, std::string>>> dismissals;
   std::set<std::string> offersRetired;   // "user|day" -> the reader answered "not now" here
+  std::map<std::string, std::vector<StoredSignal>> signals;
   std::map<std::string, CuratedEchoes> echoesByPage;   // "user|day" -> what the pass wrote
   std::vector<CurationOutcome> outcomes;
   std::map<std::string, std::vector<LocalDate>> inbound;
@@ -419,7 +433,9 @@ public:
     return pairs;
   }
 
-  void dismiss(const UserId& user, std::int64_t triggerSpanId, std::int64_t matchSpanId) override {
+  // Content in, and only content: the same key the SQL writes, so a test that dismisses a pair is
+  // dismissing what the two passages SAY and not where they sit.
+  void plantDismissal(const UserId& user, std::int64_t triggerSpanId, std::int64_t matchSpanId) {
     const StoredSpan* trigger = spanOf(user, triggerSpanId);
     const StoredSpan* match = spanOf(user, matchSpanId);
     if (!trigger || !match) return;   // a passage that is already gone is already unshown
@@ -427,16 +443,56 @@ public:
                                    normalizedForIdentity(match->write.passage.text)});
   }
 
+  void dismissPair(const UserId& user, const LocalDate& triggerDay,
+                   const LocalDate& matchDay) override {
+    for (const EchoRow& row : rowsOn(user, triggerDay)) {
+      if (!(row.matchDay == matchDay)) continue;
+      plantDismissal(user, row.triggerSpanId, row.matchSpanId);
+    }
+  }
+
   void dismissPage(const UserId& user, const LocalDate& triggerDay) override {
-    auto it = echoesByPage.find(pageKey(user, triggerDay));
-    if (it == echoesByPage.end()) return;
-    for (const EchoRow& row : it->second.rows) dismiss(user, row.triggerSpanId, row.matchSpanId);
+    for (const EchoRow& row : rowsOn(user, triggerDay))
+      plantDismissal(user, row.triggerSpanId, row.matchSpanId);
   }
 
   // "Not now" lives in its own set and touches nothing else — the same separation the SQL keeps,
   // where declining the offer writes one row in its own table and journal_echo never moves.
   void dismissOffer(const UserId& user, const LocalDate& day) override {
     offersRetired.insert(pageKey(user, day));
+  }
+
+  // Signals are stored with the retrieval score and the curator's version copied off the echo row,
+  // exactly as the INSERT ... SELECT does — a fake that kept only the kind would let a test pass
+  // while production wrote a tally instead of a dataset.
+  bool hasSignal(const UserId& user, std::int64_t triggerSpanId, std::int64_t matchSpanId,
+                 EchoSignal kind) const {
+    auto it = signals.find(user.str());
+    if (it == signals.end()) return false;
+    for (const StoredSignal& signal : it->second)
+      if (signal.triggerSpanId == triggerSpanId && signal.matchSpanId == matchSpanId &&
+          signal.kind == kind)
+        return true;
+    return false;
+  }
+
+  void recordSignal(const UserId& user, const LocalDate& triggerDay, const LocalDate& matchDay,
+                    EchoSignal kind) override {
+    auto it = echoesByPage.find(pageKey(user, triggerDay));
+    if (it == echoesByPage.end()) return;
+    for (const EchoRow& row : it->second.rows) {
+      if (!(row.matchDay == matchDay)) continue;
+      if (hasSignal(user, row.triggerSpanId, row.matchSpanId, kind)) continue;   // pressed twice
+      signals[user.str()].push_back(StoredSignal{triggerDay, row.triggerSpanId, row.matchDay,
+                                                 row.matchSpanId, kind, row.cosine, row.relation,
+                                                 it->second.curatorVersion});
+    }
+  }
+
+  void recordPageSignal(const UserId& user, const LocalDate& triggerDay, EchoSignal kind) override {
+    auto it = echoesByPage.find(pageKey(user, triggerDay));
+    if (it == echoesByPage.end()) return;
+    for (const EchoRow& row : it->second.rows) recordSignal(user, triggerDay, row.matchDay, kind);
   }
 
   void replaceEchoes(const UserId& user, const LocalDate& day,
@@ -474,7 +530,8 @@ public:
             row.matchSpanId, match->write.passage.text, row.matchIsSelf, Source::typed, 0,
             body == bodies.end()
                 ? -1
-                : occurrenceAt(body->second, match->write.passage.text, match->write.passage.lo)});
+                : occurrenceAt(body->second, match->write.passage.text, match->write.passage.lo),
+            hasSignal(user, row.triggerSpanId, row.matchSpanId, EchoSignal::useful)});
       }
     }
     return views;

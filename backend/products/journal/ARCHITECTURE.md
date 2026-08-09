@@ -87,7 +87,7 @@ backend/products/journal/
   adapters/
     http/        JournalApi (page · pages · export) · NudgeApi (settings · pause ·
                  unsubscribe · admin sweep) · EchoApi (read · three dismissal doors ·
-                 opened · admin sweep) · VoiceApi (transcribe)
+                 useful · opened · admin sweep) · VoiceApi (transcribe)
     json/        PageJson — the page wire shape, both directions, spoken by all three surfaces
     postgres/    PgJournalRepository · PgEchoRepository · PgNudgeRepository
     llm/         HttpEmbedder (the self-hosted sidecar) · AnthropicCurator · OpenAiTranscriber,
@@ -211,6 +211,10 @@ create index if not exists journal_page_revision_key on journal_page_revision (u
 --                                  survives an edit, a re-segmentation and a segmenter bump
 --   journal_echo_offer_dismissal   "not now", keyed on the DAY — it retires the asking, not the
 --                                  echoes, and it is server-side so a phone does not ask again
+--   journal_echo_signal            what the reader SAID about a pairing: opened | useful |
+--                                  not_useful, keyed on the span pair (not the content hash — a
+--                                  judgement is about the pairing that was on screen), carrying
+--                                  the cosine, relation and curator_version that produced it
 --   journal_page_curation          what the last pass over a page decided, and against which two
 --                                  stamps; never advanced on a failed curate
 --
@@ -569,7 +573,8 @@ genuinely cannot do itself:
 | `POST /v1/journal/echoes/:triggerDay/offer/dismiss` | "Not now" — retire the upgrade offer on this page. It keeps every echo and every honest cut; only the asking stops. **Registered before the two rows below** — drogon matches in registration order and `{matchDay}` binds the literal `offer` quite happily (`routes.cpp`) | owner only |
 | `POST /v1/journal/echoes/:triggerDay/dismiss` | "Not useful" — retire every pairing on this page in one request, because nine matches must not cost nine round trips | owner only |
 | `POST /v1/journal/echoes/:triggerDay/:matchDay/dismiss` | retire one passage pair. Both doors write the same content-hash key, and both answer 204 however many times they are pressed | owner only |
-| `POST /v1/journal/echoes/:triggerDay/:matchDay/opened` | the "Read it" relevance signal — the one positive label this feature has. Logged, not tabled | owner only |
+| `POST /v1/journal/echoes/:triggerDay/:matchDay/useful` | "Useful" — the reader's explicit positive answer about one pairing. Idempotent | owner only |
+| `POST /v1/journal/echoes/:triggerDay/:matchDay/opened` | the "Read it" relevance signal — the weaker positive label (a walk-back, not an endorsement). Tabled in `journal_echo_signal` since 2026-08-09; it was logged and discarded before that | owner only |
 | `GET /v1/journal/export` | all pages, JSON (client renders markdown) | owner only |
 | `GET/PATCH /v1/journal/nudge` + pause/unsubscribe | nudge settings & pause (§4.5) | owner only / mail-secret |
 | `POST /v1/admin/journal/nudge/sweep` | operator rehearsal of one nightly nudge pass (`dryRun`/`asOfMs`) | admin token |

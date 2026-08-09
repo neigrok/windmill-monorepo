@@ -272,6 +272,26 @@ create table journal_echo_dismissal (
   primary key (user_id, trigger_hash, match_hash)
 );
 
+-- What the reader said about one pairing. Keyed on the SPAN pair, unlike the dismissal above: a
+-- dismissal must outlive a rewrite of the passage, a judgement is about the pairing that was on
+-- screen. cosine/relation/curator_version are copied off journal_echo at write time and are what
+-- make this a dataset rather than a tally. ECHOES.md also asks for z and family_size; neither is
+-- persisted anywhere (both are computed in domain/EchoSelection and discarded), and journal_echo is
+-- deliberately not widened to chase them.
+create table journal_echo_signal (
+  user_id         uuid not null references users(id) on delete cascade,
+  trigger_day     date not null,
+  trigger_span_id bigint not null,
+  match_day       date not null,
+  match_span_id   bigint not null,
+  kind            text not null,          -- opened | useful | not_useful
+  cosine          real not null,
+  relation        real not null,
+  curator_version text not null,
+  created_at      timestamptz not null default now(),
+  primary key (user_id, trigger_span_id, match_span_id, kind)
+);
+
 -- "Not now". Keyed on the DAY, not on content — the offer belongs to the page, not to a pairing.
 create table journal_echo_offer_dismissal (
   user_id    uuid not null references users(id) on delete cascade,
@@ -323,12 +343,31 @@ relation between two passages is recomputed from the passages themselves.
 | `POST /v1/journal/echoes/:triggerDay/dismiss` | "Not useful" — retire every pairing on this page |
 | `POST /v1/journal/echoes/:triggerDay/:matchDay/dismiss` | retire one passage pair |
 | `POST /v1/journal/echoes/:triggerDay/offer/dismiss` | "Not now" — retire the offer for this page |
-| `POST /v1/journal/echoes/:triggerDay/:matchDay/opened` | the relevance signal (see *Measurement*) |
+| `POST /v1/journal/echoes/:triggerDay/:matchDay/useful` | "Useful" — the positive signal, one pairing |
+| `POST /v1/journal/echoes/:triggerDay/:matchDay/opened` | the walk back to the older page, recorded |
 | `POST /v1/admin/journal/echo/sweep` | operator rehearsal of one pass, admin token |
 
-"Not useful" is **panel-level on the surface, so it is one request** — nine matches must not cost
-nine round trips, each able to fail on its own and leave a page half faded. Both dismissal doors
-write the same content-hash key, and both answer 204 however many times they are pressed.
+"Not useful" is on screen twice, and the two are different requests on purpose. **Per match** it is
+the pair door, one request for the one pairing the reader is answering. **Panel-level it is one
+request for the whole page** — nine matches must not cost nine round trips, each able to fail on its
+own and leave a page half faded. The surface looped the pair door for the panel until 2026-08-09,
+which is precisely the half-faded page this paragraph forbids; it now calls the page door. Both
+dismissal doors write the same content-hash key, both record the negative signal, and both answer
+204 however many times they are pressed.
+
+**Three of these doors also write a quality signal**, into `journal_echo_signal`: `useful`, `opened`,
+and `not_useful` from either dismissal door. That is the whole measurement apparatus — see *Before a
+paying user sees this*. Two things about its shape:
+
+- **The dismissal says two separate things.** The pair is retired (a content-hash row, which is what
+  keeps it retired across a rewrite) *and* it was wrong (a span-keyed judgement about the pairing
+  that was actually on screen). They are different facts with different lifetimes, so they are two
+  rows in two tables and not one.
+- **`useful` comes back on the read**, per match, beside `day` / `isSelf` / `source` / `text` /
+  `withheldWords` / `occurrenceHint` — and on both sides of the honest cut, because "I already said
+  this one was useful" is a fact about the reader and not about what they have paid for. It is
+  served for the same reason `offerRetired` is: an answer only one device knows about is an answer
+  the next device ignores.
 
 **"Not now" is a different answer and costs the reader nothing.** It retires the *offer*, never the
 echoes: the page keeps every match and its honest cut, and only stops selling. Two decisions in its
@@ -366,8 +405,9 @@ pages it has not synced, so the floor is unenforceable unless the server states 
 
 **`firstEchoEver` is not derivable and is not served.** `journal_echo.created_at` records when a
 row was *written*, not when anyone *saw* it, and the once-ever card is about the second. Nothing
-here records delivery — `opened` is logged, not tabled — so the honest options are a `seen` record
-the client writes once, or no card. A device-local flag is not one of them: it cannot know an echo
+here records delivery — `journal_echo_signal` now tables `opened`, but opening an echo is an act the
+reader chose and delivery is not, so a page whose echo was shown and never touched leaves no row —
+so the honest options are a `seen` record the client writes once, or no card. A device-local flag is not one of them: it cannot know an echo
 already arrived on another device.
 
 ### Entitlement — moved, and this needs the owner's ruling
@@ -524,20 +564,18 @@ struck through, marked never built.
    the span's text still hashes to what the echo was built from — locating alone is not enough,
    because after an edit the wrong text locates successfully.
 
-## Known follow-ups in the build
+## Known follow-ups in the build — both now paid
 
-Not defects, and neither blocks anything. Recorded so the next reader finds them here rather than
-rediscovering them.
+Neither was a defect and neither blocked anything, and both were executed in the signals wave. The
+entries are kept, marked done, rather than deleted: a reader who remembers either one should find
+the answer here rather than rediscover it.
 
-1. **The pair-level dismiss is shaped unlike its two neighbours.** `dismissPage` and `dismissOffer`
-   are each one statement; the pair door instead reads the page back through `echoesFor` to turn two
-   days into a span pair, then writes one row per match. Bounded (one page's matches) and correct,
-   and it needlessly recomputes the anchoring hints it throws away. The tidy version is a
-   `dismissPair(user, triggerDay, matchDay)` on the repository, replacing today's span-id `dismiss`.
-   Deliberately deferred: the surface is being rebuilt against v2 of the design and the churn buys
-   nothing this week.
-2. **`EchoRepository::dismiss` has exactly one production caller** and exists only to serve the
-   above. It goes away with it.
+1. ✔ **The pair-level dismiss was shaped unlike its two neighbours** — it read the page back through
+   `echoesFor` to turn two days into a span pair, then wrote one row per match, recomputing
+   anchoring hints it threw away. **Done** in the signals wave: `dismissPair(user, triggerDay,
+   matchDay)` is one statement, the same shape as `dismissPage` with one more day in the `WHERE`.
+2. ✔ **`EchoRepository::dismiss` had exactly one production caller** and existed only to serve the
+   above. **Gone**, with it.
 
 ## Filed back to design
 
@@ -575,6 +613,23 @@ documents. None blocks the build; each needs a designer's decision before ship.
 | median age of shown echoes | ≥90 days — the card sells distance ("five months ago") |
 | hubness: max share of a user's pages any one passage appears on | ≤5% |
 
-Persist the **"Read it"** tap alongside dismissals, with cosine, z, family size and age attached.
-It is already on screen and currently thrown away; within a month it is a real relevance dataset,
-collected honestly from a button the user was already pressing.
+**The collection half of this is built.** `journal_echo_signal` records three answers per pairing —
+`opened` (the walk back, a button the reader was pressing anyway), `useful` (them saying so), and
+`not_useful` from either dismissal door — each carrying the `cosine`, the `relation` and the
+`curator_version` of the pairing it judges. Because `curator_version` rides along, the table can
+answer the one question the 2026-08-09 swap left open: whether moving from `claude-opus-5`/`high` to
+`claude-sonnet-5`/`low` cost precision. Rows written before and after the swap are separable by that
+column alone.
+
+**Two honest limits, and neither is a to-do in disguise.** This asked for `z`, family size and age
+to ride along too. Age is `trigger_day - match_day` and is therefore free. `z` and `family_size` are
+**not persisted anywhere** — both are computed inside `domain/EchoSelection` and discarded — so they
+are not in the table, and `journal_echo` is deliberately not widened to chase them; carrying a
+number nobody can reproduce would be worse than not carrying it. And a signal is keyed on the span
+pair, so it survives re-derivation exactly as far as reconciliation carries a `span_id` forward:
+through an edit elsewhere on the page, not through a rewrite of the passage itself. That is the
+right boundary — a rewritten passage is a different pairing — but it means the dataset thins on
+heavily-edited corpora.
+
+**Nothing has been measured yet.** The table is empty, no gate in it has been run, and none of it
+counts until a real corpus has been through it.

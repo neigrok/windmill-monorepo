@@ -126,6 +126,18 @@ void registerRoutes(drogon::HttpAppFramework& app, const JournalDeps& deps) {
         echoApi->dismiss(req, std::move(cb), triggerDay, matchDay);
       },
       {drogon::Post});
+  // The two quality signals, both owner-only and both 204 however many times they are pressed.
+  // Three segments each ending in a distinct literal, so neither can be swallowed by the pair
+  // dismissal above however this block is ordered. "useful" is the reader saying so; "opened" is
+  // the walk back to the older page, a weaker label and its own kind because of it. Between them
+  // and the dismissal doors, this feature can finally be measured rather than believed.
+  app.registerHandler(
+      "/v1/journal/echoes/{triggerDay}/{matchDay}/useful",
+      [echoApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                const std::string& triggerDay, const std::string& matchDay) {
+        echoApi->markUseful(req, std::move(cb), triggerDay, matchDay);
+      },
+      {drogon::Post});
   app.registerHandler(
       "/v1/journal/echoes/{triggerDay}/{matchDay}/opened",
       [echoApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb,

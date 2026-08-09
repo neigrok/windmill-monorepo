@@ -100,6 +100,26 @@ drogon::HttpResponsePtr dismissOffer(Harness& h, const std::string& session,
   return captured;
 }
 
+drogon::HttpResponsePtr markUseful(Harness& h, const std::string& session,
+                                   const std::string& triggerDay, const std::string& matchDay) {
+  drogon::HttpResponsePtr captured;
+  h.api->markUseful(
+      request(drogon::Post, "/v1/journal/echoes/" + triggerDay + "/" + matchDay + "/useful", "",
+              session),
+      [&](const drogon::HttpResponsePtr& r) { captured = r; }, triggerDay, matchDay);
+  return captured;
+}
+
+drogon::HttpResponsePtr opened(Harness& h, const std::string& session,
+                               const std::string& triggerDay, const std::string& matchDay) {
+  drogon::HttpResponsePtr captured;
+  h.api->opened(
+      request(drogon::Post, "/v1/journal/echoes/" + triggerDay + "/" + matchDay + "/opened", "",
+              session),
+      [&](const drogon::HttpResponsePtr& r) { captured = r; }, triggerDay, matchDay);
+  return captured;
+}
+
 drogon::HttpResponsePtr adminSweep(Harness& h, const drogon::HttpRequestPtr& req) {
   drogon::HttpResponsePtr captured;
   h.api->adminSweep(req, [&](const drogon::HttpResponsePtr& r) { captured = r; });
@@ -160,6 +180,16 @@ unsigned matchesOn(const Json::Value& body, const std::string& day) {
   for (const Json::Value& page : body["pages"])
     if (page["day"].asString() == day) return page["matches"].size();
   return 0;
+}
+
+// One match as the reader is handed it, or a null value when the pairing is no longer shown.
+Json::Value matchOn(const Json::Value& body, const std::string& day, const std::string& matchDay) {
+  for (const Json::Value& page : body["pages"]) {
+    if (page["day"].asString() != day) continue;
+    for (const Json::Value& match : page["matches"])
+      if (match["day"].asString() == matchDay) return match;
+  }
+  return Json::Value();
 }
 
 bool offerRetiredOn(const Json::Value& body, const std::string& day) {
@@ -483,6 +513,226 @@ TEST(declining_an_offer_on_something_that_is_not_a_date_is_refused) {
   Harness h;
   h.signIn("s-live");
   CHECK_EQ(static_cast<int>(dismissOffer(h, "s-live", "not-a-day")->statusCode()), 400);
+}
+
+// ── The quality signals ─────────────────────────────────────────────────────────────────────────
+// Dismissal alone cannot tell "wrong match" from "right match, bad night". These are what let the
+// curator be measured rather than believed, and every one of them is written with the retrieval
+// score and the curator's own version beside it.
+
+TEST(marking_a_match_useful_records_it_with_the_score_and_the_curator_that_produced_it) {
+  Harness h;
+  const UserId user = h.signIn("s-live");
+  h.subscriptions.subscribe(user);
+  plantPanel(h, user, "2026-05-01", "2024", 100);
+
+  CHECK_EQ(static_cast<int>(markUseful(h, "s-live", "2026-05-01", "2024-02-01")->statusCode()), 204);
+
+  const std::vector<FakeEchoRepository::StoredSignal>& signals = h.echoes->signals[user.str()];
+  REQUIRE_EQ(signals.size(), std::size_t{1});
+  CHECK_EQ(signals[0].triggerDay.iso(), std::string("2026-05-01"));
+  CHECK_EQ(signals[0].triggerSpanId, std::int64_t{100});
+  CHECK_EQ(signals[0].matchDay.iso(), std::string("2024-02-01"));
+  CHECK_EQ(signals[0].matchSpanId, std::int64_t{102});
+  CHECK(signals[0].kind == EchoSignal::useful);
+  CHECK_EQ(signals[0].cosine, 0.8f);
+  CHECK_EQ(signals[0].relation, 0.9f);
+  CHECK_EQ(signals[0].curatorVersion, std::string("fake-curator-v1"));
+}
+
+// The answer has to survive the trip to another device, which is the whole reason it is server-side
+// rather than a flag in the browser. Marked comes back marked; everything else comes back false.
+TEST(the_read_carries_the_useful_answer_back_and_says_false_for_every_match_that_has_none) {
+  Harness h;
+  const UserId user = h.signIn("s-live");
+  h.subscriptions.subscribe(user);
+  plantPanel(h, user, "2026-05-01", "2024", 100);
+  CHECK(!matchOn(listOf(h, "s-live"), "2026-05-01", "2024-02-01")["useful"].asBool());
+
+  markUseful(h, "s-live", "2026-05-01", "2024-02-01");
+
+  const Json::Value body = listOf(h, "s-live");
+  CHECK(matchOn(body, "2026-05-01", "2024-02-01")["useful"].asBool());
+  CHECK(!matchOn(body, "2026-05-01", "2024-01-01")["useful"].asBool());
+  CHECK(!matchOn(body, "2026-05-01", "2024-03-01")["useful"].asBool());
+}
+
+// An unentitled reader is shown eight words of the passage and no more — but "I already said this
+// one was useful" is a fact about them, not about what they have paid for.
+TEST(the_useful_answer_is_carried_back_across_the_honest_cut_too) {
+  Harness h;
+  const UserId user = h.signIn("s-live");
+  plantPanel(h, user, "2026-05-01", "2024", 100);
+  markUseful(h, "s-live", "2026-05-01", "2024-02-01");
+
+  const Json::Value match = matchOn(listOf(h, "s-live"), "2026-05-01", "2024-02-01");
+  CHECK(match["useful"].asBool());
+  CHECK(match["withheldWords"].asInt() > 0);
+}
+
+TEST(marking_a_match_useful_twice_says_the_same_thing_the_first_time_did) {
+  Harness h;
+  const UserId user = h.signIn("s-live");
+  plantPanel(h, user, "2026-05-01", "2024", 100);
+
+  CHECK_EQ(static_cast<int>(markUseful(h, "s-live", "2026-05-01", "2024-02-01")->statusCode()), 204);
+  CHECK_EQ(static_cast<int>(markUseful(h, "s-live", "2026-05-01", "2024-02-01")->statusCode()), 204);
+  CHECK_EQ(h.echoes->signals[user.str()].size(), std::size_t{1});   // one row, not two
+}
+
+TEST(marking_a_pairing_that_was_never_on_the_page_records_nothing_and_is_still_a_204) {
+  Harness h;
+  const UserId user = h.signIn("s-live");
+  plantPanel(h, user, "2026-05-01", "2024", 100);
+
+  CHECK_EQ(static_cast<int>(markUseful(h, "s-live", "2026-05-01", "2023-09-09")->statusCode()), 204);
+  CHECK_EQ(h.echoes->signals[user.str()].size(), std::size_t{0});
+}
+
+TEST(marking_a_match_useful_needs_a_signed_in_reader) {
+  Harness h;
+  CHECK_EQ(static_cast<int>(markUseful(h, "", "2026-05-01", "2024-02-01")->statusCode()), 401);
+}
+
+TEST(marking_something_that_is_not_a_date_useful_is_refused) {
+  Harness h;
+  h.signIn("s-live");
+  CHECK_EQ(static_cast<int>(markUseful(h, "s-live", "2026-05-01", "not-a-day")->statusCode()), 400);
+}
+
+// Marking one useful is not an answer about the others, and it is not an answer about the page.
+TEST(one_useful_mark_reaches_neither_another_pairing_nor_another_account) {
+  Harness h;
+  const UserId mine = h.signIn("s-mine", "sam@example.com");
+  const UserId theirs = h.signIn("s-theirs", "ada@example.com");
+  plantPanel(h, mine, "2026-05-01", "2024", 100);
+  plantPanel(h, theirs, "2026-05-01", "2024", 200);
+
+  markUseful(h, "s-mine", "2026-05-01", "2024-02-01");
+
+  CHECK_EQ(h.echoes->signals[mine.str()].size(), std::size_t{1});
+  CHECK_EQ(h.echoes->signals[theirs.str()].size(), std::size_t{0});
+  CHECK(!matchOn(listOf(h, "s-theirs"), "2026-05-01", "2024-02-01")["useful"].asBool());
+}
+
+// The dismissal says two separate things and both are now written down: the pair is retired, AND
+// it was wrong. The retirement is the guarantee that must not regress — a dismissed pair never
+// comes back — and the judgement is the negative half of the dataset.
+TEST(dismissing_one_pairing_retires_it_and_records_that_it_was_not_useful) {
+  Harness h;
+  const UserId user = h.signIn("s-live");
+  h.subscriptions.subscribe(user);
+  plantPanel(h, user, "2026-05-01", "2024", 100);
+
+  CHECK_EQ(static_cast<int>(dismissPair(h, "s-live", "2026-05-01", "2024-02-01")->statusCode()), 204);
+
+  CHECK(h.echoes->isDismissed(user, panelTrigger("2026-05-01"), panelMatch("2024", 2)));
+  CHECK(matchOn(listOf(h, "s-live"), "2026-05-01", "2024-02-01").isNull());   // and it stays gone
+
+  const std::vector<FakeEchoRepository::StoredSignal>& signals = h.echoes->signals[user.str()];
+  REQUIRE_EQ(signals.size(), std::size_t{1});
+  CHECK_EQ(signals[0].matchSpanId, std::int64_t{102});
+  CHECK(signals[0].kind == EchoSignal::notUseful);
+  CHECK_EQ(signals[0].curatorVersion, std::string("fake-curator-v1"));
+}
+
+// "Not useful" on the panel is the gesture where a reader actually says it, so the judgement is
+// recorded for every pairing the tap retired — a dataset that heard only the pair-level door would
+// be missing most of its negative labels.
+TEST(dismissing_a_page_records_that_every_pairing_on_it_was_not_useful) {
+  Harness h;
+  const UserId user = h.signIn("s-live");
+  h.subscriptions.subscribe(user);
+  plantPanel(h, user, "2026-05-01", "2024", 100);
+
+  CHECK_EQ(static_cast<int>(dismissPage(h, "s-live", "2026-05-01")->statusCode()), 204);
+
+  CHECK_EQ(h.echoes->signals[user.str()].size(), std::size_t{3});
+  CHECK(h.echoes->hasSignal(user, 100, 101, EchoSignal::notUseful));
+  CHECK(h.echoes->hasSignal(user, 100, 102, EchoSignal::notUseful));
+  CHECK(h.echoes->hasSignal(user, 100, 103, EchoSignal::notUseful));
+  CHECK_EQ(matchesOn(listOf(h, "s-live"), "2026-05-01"), 0u);   // and the page stays retired
+}
+
+TEST(dismissing_a_page_twice_records_three_signals_and_not_six) {
+  Harness h;
+  const UserId user = h.signIn("s-live");
+  plantPanel(h, user, "2026-05-01", "2024", 100);
+
+  dismissPage(h, "s-live", "2026-05-01");
+  dismissPage(h, "s-live", "2026-05-01");
+
+  CHECK_EQ(h.echoes->signals[user.str()].size(), std::size_t{3});
+}
+
+// Declining the OFFER is not a judgement about anything. It retires the asking and nothing else,
+// so it must leave the dataset alone.
+TEST(declining_the_offer_records_no_judgement_at_all) {
+  Harness h;
+  const UserId user = h.signIn("s-live");
+  plantPanel(h, user, "2026-05-01", "2024", 100);
+
+  dismissOffer(h, "s-live", "2026-05-01");
+
+  CHECK_EQ(h.echoes->signals[user.str()].size(), std::size_t{0});
+}
+
+// The walk back to the older page. It used to be a LOG_INFO line and nothing else — a signal
+// collected and thrown away — and it is a weaker label than "useful", so it is its own kind rather
+// than folded in with one.
+TEST(walking_back_to_the_older_page_is_recorded_as_its_own_kind) {
+  Harness h;
+  const UserId user = h.signIn("s-live");
+  plantPanel(h, user, "2026-05-01", "2024", 100);
+
+  CHECK_EQ(static_cast<int>(opened(h, "s-live", "2026-05-01", "2024-03-01")->statusCode()), 204);
+
+  const std::vector<FakeEchoRepository::StoredSignal>& signals = h.echoes->signals[user.str()];
+  REQUIRE_EQ(signals.size(), std::size_t{1});
+  CHECK_EQ(signals[0].matchSpanId, std::int64_t{103});
+  CHECK(signals[0].kind == EchoSignal::opened);
+  CHECK_EQ(signals[0].cosine, 0.8f);
+  // opening is not endorsing: the read still says nobody called this one useful
+  CHECK(!matchOn(listOf(h, "s-live"), "2026-05-01", "2024-03-01")["useful"].asBool());
+}
+
+TEST(opening_the_same_pairing_twice_records_one_row) {
+  Harness h;
+  const UserId user = h.signIn("s-live");
+  plantPanel(h, user, "2026-05-01", "2024", 100);
+
+  CHECK_EQ(static_cast<int>(opened(h, "s-live", "2026-05-01", "2024-03-01")->statusCode()), 204);
+  CHECK_EQ(static_cast<int>(opened(h, "s-live", "2026-05-01", "2024-03-01")->statusCode()), 204);
+  CHECK_EQ(h.echoes->signals[user.str()].size(), std::size_t{1});
+}
+
+// The three answers are three kinds, and one pairing can carry all of them: opened on Monday,
+// useful on Tuesday, retired in March. Collapsing them would lose exactly the distinction the
+// table exists to record.
+TEST(the_three_answers_about_one_pairing_are_three_rows) {
+  Harness h;
+  const UserId user = h.signIn("s-live");
+  plantPanel(h, user, "2026-05-01", "2024", 100);
+
+  opened(h, "s-live", "2026-05-01", "2024-01-01");
+  markUseful(h, "s-live", "2026-05-01", "2024-01-01");
+  dismissPair(h, "s-live", "2026-05-01", "2024-01-01");
+
+  CHECK_EQ(h.echoes->signals[user.str()].size(), std::size_t{3});
+  CHECK(h.echoes->hasSignal(user, 100, 101, EchoSignal::opened));
+  CHECK(h.echoes->hasSignal(user, 100, 101, EchoSignal::useful));
+  CHECK(h.echoes->hasSignal(user, 100, 101, EchoSignal::notUseful));
+}
+
+TEST(walking_back_needs_a_signed_in_reader) {
+  Harness h;
+  CHECK_EQ(static_cast<int>(opened(h, "", "2026-05-01", "2024-01-01")->statusCode()), 401);
+}
+
+TEST(walking_back_from_something_that_is_not_a_date_is_refused) {
+  Harness h;
+  h.signIn("s-live");
+  CHECK_EQ(static_cast<int>(opened(h, "s-live", "not-a-day", "2024-01-01")->statusCode()), 400);
 }
 
 TEST(an_admin_sweep_without_a_token_is_refused) {
