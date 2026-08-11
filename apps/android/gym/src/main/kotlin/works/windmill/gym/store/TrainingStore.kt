@@ -123,8 +123,22 @@ class TrainingStore(
     // The claim is mid-replay. While this is true an ordinary start may not go to the log at all:
     // a start JOINS whatever session is open, and mid-replay the open session is a PAST one the
     // claim just reopened — today's first set filed into yesterday's workout, finished at the
-    // shelf's stale instant. Starts compose on the device instead, and the claim lands them.
-    private var claiming = false
+    // shelf's stale instant. Starts compose on the device instead, and the claim lands them. The
+    // boot read stands down for the same reason: a log read mid-replay would ADOPT that reopened
+    // past session as the phone's live workout (see `loadLog`).
+    private var claimsRunning = 0
+    private val claiming: Boolean get() = claimsRunning > 0
+    // A claim was requested while one was already mid-replay — a local finish shelving a fresh
+    // session, a connect on a seat change. Runners never overlap: the one running goes once more
+    // when its pass ends, over whatever the shelf holds by then, instead of a second replay
+    // walking the same shelf and holding a reopened session open under the first one's reads.
+    private var claimAgain = false
+    // The last claim stopped on a retryable failure and the backlog is still owed. While this is
+    // true the deliver cadence re-runs the claim — the same 4s task that carries the owed sets,
+    // never a second timer. Only the retryable stops arm it: a WAIT (the account's other workout
+    // is open) stays event-driven, because polling a remote human's live session every four
+    // seconds is noise and the parked lanes already say "saved on this device".
+    private var claimOwed = false
 
     private companion object {
         // At or under the server's own ceiling: the handler clamps `limit` to 200, and a larger
@@ -187,6 +201,7 @@ class TrainingStore(
             // Signed out the shelf is the log: routines and history are the device's own, and
             // nothing here is pending against a server nobody named.
             liveUnclaimed = false
+            claimOwed = false
             routines = localLog.routines
             recent = localLog.summaries()
             saveState = if (queue.pending.isEmpty()) SaveState.Idle else SaveState.OnThisDevice
@@ -198,14 +213,7 @@ class TrainingStore(
         // was made signed out becomes the account's, and a loss is SAID through the same banner a
         // refused set uses. Local history is drawn immediately so an offline boot still shows it.
         recent = localLog.summaries()
-        claiming = true
-        val claimed = try {
-            ClaimReplay(log, localLog, queue, mintExercise, mintRoutine, mintSession, mintSet).run()
-        } finally {
-            claiming = false
-        }
-        refusals = refusals + claimed.said
-        liveUnclaimed = queue.session != null && !claimed.liveLanded
+        runClaim()
         // The queue goes out BEFORE the first read, and it is not an optimisation: reading the log
         // SETTLES a stale open session, and a set that arrives after that close is refused forever.
         // Logged in a basement last night, opened in the morning — the app's own boot read is what
@@ -432,20 +440,13 @@ class TrainingStore(
         lastTime = null
         drawFromQueue()
         recent = localLog.summaries()
-        // Signed in, the shelf does not wait for a relaunch: the claim runs now, and if the log is
-        // ready (the other workout closed, the signal is back) the session lands immediately. A
-        // start tapped while it runs composes on the device (see `claiming`), so the unclaimed
-        // flag is recomputed off the outcome exactly as connect's is.
-        val log = gym
-        if (log != null) {
-            claiming = true
-            val outcome = try {
-                ClaimReplay(log, localLog, queue, mintExercise, mintRoutine, mintSession, mintSet).run()
-            } finally {
-                claiming = false
-            }
-            refusals = refusals + outcome.said
-            liveUnclaimed = queue.session != null && !outcome.liveLanded
+        // Signed in, the shelf does not wait for a relaunch: the claim runs now — or, if a replay
+        // is already mid-flight, is marked to run again the moment that pass ends — and once the
+        // log is ready the session lands. A start tapped while it runs composes on the device
+        // (see `claiming`), and the unclaimed flag is recomputed off the outcome exactly as
+        // connect's is.
+        if (gym != null) {
+            runClaim()
             deliver()
             loadLog()
         }
@@ -649,7 +650,13 @@ class TrainingStore(
     private suspend fun deliver(force: Boolean = false) {
         retryTask?.cancel()
         retryTask = null
-        if (queue.pending.isEmpty()) return
+        if (queue.pending.isEmpty()) {
+            // An owed claim keeps the cadence armed even with no set to walk: the shelf's
+            // finished sessions are backlog too, and nothing else would carry them before the
+            // next connect.
+            if (claimOwed) scheduleDeliver(afterMs = retryAfterMs)
+            return
+        }
         val log = gym
         if (log == null) {
             settle(SaveState.OnThisDevice)
@@ -697,11 +704,13 @@ class TrainingStore(
         // the queue before anything is said, because a refusal in one lane must not take the retry
         // away from a set merely jammed in another: nothing else carries that one, and returning at
         // the refusal left it on the device with no task at all until the next tap. Parked sets
-        // are not carried by THIS task at all — the claim is their road — so they schedule
-        // nothing and read "saved on this device", which is exactly where they are.
+        // are not carried by the WALK at all — the claim is their road — so they schedule
+        // nothing and read "saved on this device", which is exactly where they are; while the
+        // claim itself is still owed retryably, the same task stays armed to re-run it.
         val carried = queue.pending.filter { it.sessionId != parked }
         val earliestReady = carried.minOfOrNull { it.heldUntilMs ?: 0 }
         if (earliestReady == null) {
+            if (claimOwed) scheduleDeliver(afterMs = retryAfterMs)
             if (refusal != null) {
                 settle(SaveState.Refused(refusal))
                 return
@@ -723,8 +732,9 @@ class TrainingStore(
     }
 
     // A set that did not land is not a lost set — it is on the device, still owed, and this carries
-    // it: the retry after a failure, and the send after a window closes. The task dies with the
-    // scope, which is why leaving the room flushes rather than trusting it.
+    // it: the retry after a failure, the send after a window closes, and the claim's own re-run
+    // when its last pass stopped retryably. The task dies with the scope, which is why leaving
+    // the room flushes rather than trusting it.
     private fun scheduleDeliver(afterMs: Long) {
         retryTask?.cancel()
         retryTask = scope.launch {
@@ -734,13 +744,60 @@ class TrainingStore(
             // would fail as a cancellation and schedule another walk that did exactly the same
             // thing.
             retryTask = null
+            if (reclaimed()) return@launch
             deliver()
         }
     }
 
+    // THE CLAIM, one door for every runner — sign-in, a local finish, the cadence's retry — and
+    // never two abreast: a request landing while a replay is mid-flight marks the claim owed
+    // again, and the running pass goes once more when it ends. Overlapped runners walked the same
+    // shelf twice, and one's ending fired the boot read while the other still held a reopened
+    // past session open on the log. What a pass said is repeated out loud, and how it ended
+    // decides what carries the rest: a retryable stop leaves the claim owed to the deliver task,
+    // a WAIT and a terminal refusal wait for the next connect. A pass that outlived its seat —
+    // the account changed while it was parked on a slow call — settles nothing: that seat's own
+    // connect owns the state now, and the marked re-run picks up the fresh seat.
+    private suspend fun runClaim() {
+        claimAgain = true
+        if (claiming) return
+        claimsRunning += 1
+        try {
+            while (claimAgain) {
+                claimAgain = false
+                val seat = gym ?: return
+                val outcome = ClaimReplay(seat, localLog, queue, mintExercise, mintRoutine, mintSession, mintSet).run()
+                if (gym !== seat) continue
+                refusals = refusals + outcome.said
+                liveUnclaimed = queue.session != null && !outcome.liveLanded
+                claimOwed = outcome.retryable
+            }
+        } finally {
+            claimsRunning -= 1
+        }
+    }
+
+    // The cadence's half of the claim. `claiming` holds while it runs, so a start tapped during a
+    // scheduled re-claim still composes on the device; the walk follows the claim exactly as
+    // connect's does — the queue goes out before any read — and a claim that stopped being owed
+    // re-reads the log, so what landed reaches Today without a remount.
+    private suspend fun reclaimed(): Boolean {
+        if (!claimOwed || claiming || gym == null) return false
+        runClaim()
+        deliver()
+        if (!claimOwed) loadLog()
+        return true
+    }
+
     private suspend fun loadLog() {
+        // Never mid-claim, and checked again across the await: the open session a mid-replay log
+        // answers with may be a PAST one the claim just reopened, and adopting it would resurrect
+        // a finished workout as the phone's live one. Whoever ends the claim reads again
+        // (`reclaimed`, `finishOnDevice`, connect), so a skipped read still lands.
+        if (claiming) return
         val log = gym ?: return
         val page = tried { log.sessions(limit = logPage, before = null, beforeId = null) } ?: return
+        if (claiming) return
         // The server is the truth and the shelf is what it does not have yet — the reader sees
         // both, merged on the clock, until the claim empties the shelf.
         recent = (page + localLog.summaries()).sortedByDescending { it.startedAtMs }

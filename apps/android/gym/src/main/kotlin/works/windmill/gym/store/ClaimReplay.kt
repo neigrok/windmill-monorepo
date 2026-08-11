@@ -10,8 +10,9 @@ import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.net.RefusalFacts
 import works.windmill.gym.net.TrainingSyncing
 
-// THE CLAIM — how what was made signed out becomes the account's. Runs on sign-in and on every
-// connect while the shelf holds a backlog, and the order is the whole contract (the three-surface
+// THE CLAIM — how what was made signed out becomes the account's. Runs on sign-in, on every
+// connect while the shelf holds a backlog, and again on the deliver loop's own cadence while the
+// last pass stopped on a retryable failure; the order is the whole contract (the three-surface
 // client convention; the server stays surface-blind):
 //
 //   movements → routines → finished sessions SEQUENTIALLY, oldest first → the live session's start.
@@ -27,7 +28,7 @@ import works.windmill.gym.net.TrainingSyncing
 // Verdicts are by machine code only, exactly as the queue's are: an id another account spent is
 // re-minted (and every reference re-pointed); `session-already-open` WAITS — the account's live
 // workout closes first, and a later connect resumes; 401/5xx/offline leave everything on the
-// shelf for the next connect, never dropped. A movement or routine the server refuses outright
+// shelf and the deliver cadence retries, never dropped. A movement or routine the server refuses outright
 // is SAID and let go — the sessions keep their frozen plans and replay ad-hoc — because a
 // terminal write re-sent on every connect jams the claim forever behind an answer that cannot
 // change; `session-finished` is the set-level loss, and it is SAID. The one 404 a claimed start
@@ -49,17 +50,27 @@ class ClaimReplay(
     private val mintSession: () -> String = Ids::session,
     private val mintSet: () -> String = Ids::set,
 ) {
-    // What landed, what is still owed, and what was lost — the store repeats the losses out loud.
-    data class Outcome(val said: List<RefusedWrite>, val liveLanded: Boolean)
+    // What landed, what was lost, and how the run ended — the store repeats the losses out loud,
+    // and `retryable` is true exactly when the stop is one a later pass can change: the store arms
+    // the deliver cadence off it, while a WAIT stays event-driven and a terminal refusal was
+    // already said and let go.
+    data class Outcome(val said: List<RefusedWrite>, val liveLanded: Boolean, val retryable: Boolean)
+
+    // Why a run stopped short of landing everything. WAIT parks the claim until an event frees it
+    // — the account's other workout closing, the next connect; RETRY hands it to the deliver
+    // cadence; REFUSED is the live start's answer that cannot change, left where it always was.
+    private enum class Halt { Wait, Retry, Refused }
 
     suspend fun run(): Outcome {
         val said = mutableListOf<RefusedWrite>()
-        if (!claimExercises(said)) return Outcome(said, liveLanded = false)
-        if (!claimRoutines(said)) return Outcome(said, liveLanded = false)
+        if (!claimExercises(said)) return Outcome(said, liveLanded = false, retryable = true)
+        if (!claimRoutines(said)) return Outcome(said, liveLanded = false, retryable = true)
         for (past in localLog.finished.sortedBy { it.session.startedAtMs }) {
-            if (!claimFinished(past, said)) return Outcome(said, liveLanded = false)
+            val halted = claimFinished(past, said) ?: continue
+            return Outcome(said, liveLanded = false, retryable = halted == Halt.Retry)
         }
-        return Outcome(said, liveLanded = claimLive())
+        val halted = claimLive() ?: return Outcome(said, liveLanded = true, retryable = false)
+        return Outcome(said, liveLanded = false, retryable = halted == Halt.Retry)
     }
 
     private suspend fun claimExercises(said: MutableList<RefusedWrite>): Boolean {
@@ -134,7 +145,7 @@ class ClaimReplay(
         return true
     }
 
-    private suspend fun claimFinished(past: LocalLog.FinishedSession, said: MutableList<RefusedWrite>): Boolean {
+    private suspend fun claimFinished(past: LocalLog.FinishedSession, said: MutableList<RefusedWrite>): Halt? {
         // Off the shelf's CURRENT row rather than the loop's snapshot: an earlier session's 404
         // repair may already have orphaned this one's routine id.
         var session = localLog.detail(past.session.id)?.session ?: past.session
@@ -170,10 +181,11 @@ class ClaimReplay(
                     continue
                 }
                 // `session-already-open` is the WAIT: the account's live workout closes first, and
-                // the next connect resumes exactly here. Every retryable failure ends the same way.
-                if (facts.code == "session-already-open") return false
-                if (Verdict.refusing(facts) is Verdict.Retry) return false
-                return true
+                // the next connect resumes exactly here — event-driven, never polled. Every other
+                // retryable failure goes to the deliver cadence instead.
+                if (facts.code == "session-already-open") return Halt.Wait
+                if (Verdict.refusing(facts) is Verdict.Retry) return Halt.Retry
+                return null
             }
         }
 
@@ -196,7 +208,7 @@ class ClaimReplay(
                         continue
                     }
                     val reason = Verdict.refusing(facts).terminalReason(afterRemints = SetQueue.maxRemints)
-                    if (reason == null) return false
+                    if (reason == null) return Halt.Retry
                     // Removed and SAID, never swallowed — the banner is the last copy of it.
                     localLog.dropSet(session.id, set.id)
                     said += RefusedSet(set, reason)
@@ -215,16 +227,16 @@ class ClaimReplay(
             // Refused outright: the sets are on the log and the session stands open there; the
             // shelf keeps its copy and a later pass closes it (an auto-close on the server ends
             // the same way — finishing a closed session is the server's own no-op).
-            if (Verdict.refusing(RefusalFacts(refusing)) is Verdict.Retry) return false
-            return true
+            if (Verdict.refusing(RefusalFacts(refusing)) is Verdict.Retry) return Halt.Retry
+            return null
         }
         localLog.forget(session.id)
-        return true
+        return null
     }
 
     // The live session claims the same way minus finish; the queue then owns its sets as today.
-    private suspend fun claimLive(): Boolean {
-        var live = queue.session ?: return true
+    private suspend fun claimLive(): Halt? {
+        var live = queue.session ?: return null
         var remints = 0
         while (true) {
             try {
@@ -234,7 +246,7 @@ class ClaimReplay(
                     routineId = landed(live.routineId),
                     joinOpenSession = false,
                 ))
-                return true
+                return null
             } catch (interrupted: CancellationException) {
                 throw interrupted
             } catch (refusing: Exception) {
@@ -256,9 +268,11 @@ class ClaimReplay(
                     live = live.copy(routineId = null)
                     continue
                 }
-                // Wait, retry and refusal all leave the queue holding the workout — its walk and
-                // the next connect carry what is owed.
-                return false
+                // Wait, retry and refusal all leave the queue holding the workout — the cadence
+                // carries the retry, and the wait and the refusal wait for the next connect.
+                if (facts.code == "session-already-open") return Halt.Wait
+                if (Verdict.refusing(facts) is Verdict.Retry) return Halt.Retry
+                return Halt.Refused
             }
         }
     }

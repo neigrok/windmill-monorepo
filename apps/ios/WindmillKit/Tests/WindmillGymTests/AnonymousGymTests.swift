@@ -40,7 +40,8 @@ final class AnonymousGymTests: XCTestCase {
     }
 
     private func makeStore(sync: FakeTraining?,
-                           mintSession: @escaping () -> String = Ids.session) -> TrainingStore {
+                           mintSession: @escaping () -> String = Ids.session,
+                           retryAfter: Duration = .seconds(4)) -> TrainingStore {
         TrainingStore(
             queue: SetQueue(url: queueURL),
             deviceCatalog: DeviceCatalog(url: catalogURL),
@@ -49,6 +50,7 @@ final class AnonymousGymTests: XCTestCase {
             mintSession: mintSession,
             mintSet: Ids.set,
             undoWindowMs: 0,
+            retryAfter: retryAfter,
             sync: { $0.isSignedIn ? sync : nil }
         )
     }
@@ -343,7 +345,8 @@ final class AnonymousGymTests: XCTestCase {
     }
 
     // 409 session-already-open is WAIT, never drop and never join: the claim stands down whole and
-    // the local shelf keeps everything for the next connect.
+    // the local shelf keeps everything for the next connect. And WAIT stays EVENT-DRIVEN (wave 2
+    // §A): the retry cadence carries offline and 5xx, never a poll of a remote human's open workout.
     func testTheClaimWaitsWhileAnotherSessionIsOpen() async {
         let anonymous = makeStore(sync: nil)
         await anonymous.connect(to: account(signedIn: false))
@@ -354,7 +357,7 @@ final class AnonymousGymTests: XCTestCase {
 
         let server = FakeTraining()
         server.open(Session(id: "ses_phone", startedAtMs: 500))
-        let claimed = makeStore(sync: server)
+        let claimed = makeStore(sync: server, retryAfter: .milliseconds(40))
         await claimed.connect(to: account(signedIn: true))
 
         XCTAssertEqual(server.started.map(\.joinOpenSession), [false])
@@ -364,6 +367,10 @@ final class AnonymousGymTests: XCTestCase {
         XCTAssertTrue(claimed.refusals.isEmpty, "waiting is not a refusal")
         XCTAssertTrue(claimed.recent.map(\.id).contains(closed.id),
                       "the unclaimed session still reads in the merged log")
+
+        try? await Task.sleep(for: .milliseconds(250))
+        XCTAssertEqual(server.started.map(\.id), [closed.id],
+                       "one start asked and one answer taken — WAIT armed no cadence")
     }
 
     // 409 session-id-taken remints the session id AND remaps its sets — the one repair a spent id
@@ -404,7 +411,7 @@ final class AnonymousGymTests: XCTestCase {
 
         XCTAssertEqual(claimed.refusals.map(\.reason),
                        ["the session closed before this set reached it"])
-        XCTAssertEqual(claimed.refusals.map(\.weightKg), [82.5])
+        XCTAssertEqual(claimed.refusals.compactMap(\.set).map(\.weightKg), [82.5])
         XCTAssertNotNil(server.finishes[closed.id], "the close still lands — the loss is said, not hidden")
         XCTAssertTrue(shelf().isEmpty)
     }
@@ -428,6 +435,36 @@ final class AnonymousGymTests: XCTestCase {
         XCTAssertTrue(claimed.refusals.isEmpty)
         XCTAssertEqual(claimed.recent.map(\.id), [closed.id],
                        "the room still stands on local state while the wire is down")
+    }
+
+    // Wave 2 §A: a claim that failed RETRYABLY rides the queue's own cadence — the same scheduler
+    // that carries a jammed set — and lands the moment the road heals, with no remount and no tap.
+    func testAClaimThatFailedOfflineRetriesOnTheQueuesCadenceAndLands() async {
+        let anonymous = makeStore(sync: nil)
+        await anonymous.connect(to: account(signedIn: false))
+        _ = await anonymous.start()
+        await anonymous.choose("bench-press")
+        await anonymous.logSet(weightKg: 82.5, reps: 5)
+        guard case .closed(let closed) = await anonymous.finish() else { return XCTFail("no close") }
+
+        let server = FakeTraining()
+        server.online = false
+        let claimed = makeStore(sync: server, retryAfter: .milliseconds(40))
+        await claimed.connect(to: account(signedIn: true))
+        XCTAssertEqual(shelf().sessions.map { $0.session.id }, [closed.id],
+                       "offline, the shelf keeps everything for the retry")
+
+        server.online = true
+        for _ in 0..<200 where server.finishes[closed.id] == nil {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+
+        XCTAssertEqual(server.sets[closed.id]?.map(\.weightKg), [82.5])
+        XCTAssertEqual(server.finishes[closed.id], closed.finishedAtMs,
+                       "the cadence claimed the session on its own once the network returned")
+        XCTAssertEqual(server.started.last?.joinOpenSession, false)
+        XCTAssertTrue(claimed.refusals.isEmpty)
+        XCTAssertTrue(shelf().isEmpty, "everything owed was answered for and let go — no remount, no tap")
     }
 
     // The live session claims minus finish, and the ordinary queue owns it from there — the next
@@ -457,8 +494,9 @@ final class AnonymousGymTests: XCTestCase {
     }
 
     // A movement the log refuses OUTRIGHT is let go of the shelf rather than jamming the claim —
-    // and the loss is SAID: every set that named it replays into a refusal the banner carries.
-    // This let-go-and-say shape is the terminal-refusal contract for both phones.
+    // and the loss is SAID twice over: the claim-level row under the movement's NAME (wave 2 §B,
+    // Android's RefusedClaim to the word), and every set that named it replays into a refusal the
+    // banner carries. This let-go-and-say shape is the terminal-refusal contract for both phones.
     func testAClaimWriteRefusedOutrightIsLetGoAndItsSetsAreSaid() async {
         let anonymous = makeStore(sync: nil)
         await anonymous.connect(to: account(signedIn: false))
@@ -483,14 +521,45 @@ final class AnonymousGymTests: XCTestCase {
         await claimed.connect(to: account(signedIn: true))
 
         XCTAssertTrue(shelf().exercises.isEmpty, "the refused movement is let go, never a jam on the shelf")
-        XCTAssertEqual(claimed.refusals.map(\.exerciseId), [made.id])
-        XCTAssertEqual(claimed.refusals.map(\.weightKg), [60])
-        XCTAssertEqual(claimed.refusals.map(\.reason), ["that movement is not in the catalog"],
+        XCTAssertEqual(claimed.refusals.first,
+                       .claim(RefusedClaim(id: made.id, name: "Zercher Squat",
+                                           reason: "the log wouldn’t take that movement")),
+                       "the claim-level loss is said by NAME, in the log's own words")
+        XCTAssertEqual(claimed.refusals.compactMap(\.set).map(\.exerciseId), [made.id])
+        XCTAssertEqual(claimed.refusals.compactMap(\.set).map(\.weightKg), [60])
+        XCTAssertEqual(claimed.refusals.compactMap(\.set).map(\.reason), ["that movement is not in the catalog"],
                        "the loss is said through the refusals surface, not silently let go")
         XCTAssertEqual(server.sets[closed.id]?.map(\.weightKg), [82.5],
                        "the rest of the session still lands")
         XCTAssertNotNil(server.finishes[closed.id])
         XCTAssertTrue(shelf().sessions.isEmpty, "the session claimed whole once the loss was said")
+    }
+
+    // Wave 2 §B: a loss said during a BOOT claim has no logger to carry it — no session is open, so
+    // Today is the standing screen and it draws the same refusal banner the logger uses. The loss
+    // is said by NAME with the server's own sentence, and dismissing clears it.
+    func testABootClaimLossIsSaidByNameOnTodayAndDismissClears() async {
+        seedRoutine()
+        let server = FakeTraining()
+        server.refuseCreateRoutine = refusal(400, code: "bad-request",
+                                             message: "the log wouldn’t take that routine")
+        let claimed = makeStore(sync: server)
+        await claimed.connect(to: account(signedIn: true))
+
+        XCTAssertNil(claimed.session, "no live session — Today is the screen that carries the banner")
+        XCTAssertEqual(claimed.refusals,
+                       [.claim(RefusedClaim(id: "rt_local", name: "Push A",
+                                            reason: "the log wouldn’t take that routine"))])
+        XCTAssertEqual(claimed.refusals.map(\.id), ["claim-rt_local"],
+                       "the banner keys the row by the document's id, never by the name")
+        XCTAssertEqual(claimed.refusals.map { RefusalRows.headline(of: $0, in: claimed.catalog) },
+                       ["“Push A” couldn’t be claimed"],
+                       "said by NAME — the convergence pin with Android's RefusedClaim row")
+        XCTAssertTrue(shelf().routines.isEmpty,
+                      "said and let go — the terminal write is not re-sent on every connect")
+
+        claimed.clearRefusals()
+        XCTAssertEqual(claimed.refusals, [], "dismissing the banner clears the shown refusals")
     }
 
     // A Start tapped while the claim is mid-replay must NOT reach the server: a server start would
@@ -529,6 +598,106 @@ final class AnonymousGymTests: XCTestCase {
         XCTAssertEqual(server.sets[composed.id]?.map(\.weightKg), [999],
                        "today's set filed into today's session")
         XCTAssertEqual(server.sets[past.id]?.map(\.weightKg), [82.5])
+    }
+
+    // The overlap repro, rebuilt on the gate: a boot claim parked on a slow finish, a local finish
+    // asking to claim behind it, and a Start tapped while the rerun holds the replayed session
+    // OPEN on the log. One runner serializes all of it — the finish parks a rerun instead of
+    // walking beside the runner, `claiming` holds until the rerun has walked too, and the Start
+    // composes on the device instead of JOINing the mid-replay session.
+    func testAFinishMidClaimParksAndAStartDuringTheRerunNeverJoins() async {
+        let anonymous = makeStore(sync: nil)
+        await anonymous.connect(to: account(signedIn: false))
+        guard case .success(let past) = await anonymous.start() else { return XCTFail("no session") }
+        await anonymous.choose("bench-press")
+        await anonymous.logSet(weightKg: 82.5, reps: 5)
+        guard case .closed = await anonymous.finish() else { return XCTFail("no close") }
+
+        let server = FakeTraining()
+        let gate = FinishGate()
+        server.onFinish = { await gate.hold() }
+        let store = makeStore(sync: server)
+        let boot = Task { await store.connect(to: account(signedIn: true)) }
+        for _ in 0..<200 where gate.heldCount == 0 { try? await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(gate.heldCount, 1, "the boot claim is parked on yesterday's slow finish")
+
+        guard case .success(let todays) = await store.start() else { return XCTFail("no mid-claim start") }
+        XCTAssertNotEqual(todays.id, past.id, "the mid-claim start joined nothing")
+        await store.choose("bench-press")
+        await store.logSet(weightKg: 999, reps: 1)
+        XCTAssertNil(server.sets[todays.id], "the set is parked with its unclaimed session, not sent")
+        XCTAssertEqual(store.saveState, .onThisDevice)
+
+        let closing = Task { await store.finish() }
+        for _ in 0..<200 where store.session != nil { try? await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(server.started.map(\.id), [past.id],
+                       "the finish's claim parked a rerun — no second walk started beside the runner")
+        XCTAssertEqual(server.finishes, [:], "nothing has finished on the log yet — the walk is inside it")
+
+        gate.releaseOne()
+        for _ in 0..<200 where gate.heldCount == 0 { try? await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(server.started.map(\.id), [past.id, todays.id],
+                       "the rerun claims today's finished session — and is parked on ITS finish now")
+        XCTAssertEqual(server.sets[todays.id]?.map(\.weightKg), [999])
+
+        guard case .success(let third) = await store.start() else { return XCTFail("no start during the rerun") }
+        XCTAssertNotEqual(third.id, todays.id,
+                          "the replayed session stands open on the log and the start did NOT join it")
+        XCTAssertEqual(store.session?.id, third.id, "it composed on the device")
+        XCTAssertEqual(server.started.map(\.id), [past.id, todays.id],
+                       "no server start went out while the claim held the room")
+
+        gate.releaseOne()
+        guard case .closed(let closedToday) = await closing.value else { return XCTFail("no local close") }
+        XCTAssertEqual(closedToday.id, todays.id)
+        await boot.value
+
+        XCTAssertEqual(server.started.map(\.id), [past.id, todays.id, third.id],
+                       "the runner's own tail claimed the composed session once the rerun settled")
+        XCTAssertEqual(server.started.map(\.joinOpenSession), [false, false, false],
+                       "no start ever rode the join default")
+        XCTAssertEqual(server.sets[past.id]?.map(\.weightKg), [82.5])
+        XCTAssertEqual(server.sets[todays.id]?.map(\.weightKg), [999])
+        XCTAssertEqual(server.finishes[todays.id], closedToday.finishedAtMs)
+        XCTAssertEqual(store.session?.id, third.id, "the lifter's live workout survived the whole claim")
+        XCTAssertTrue(shelf().sessions.isEmpty)
+        XCTAssertEqual(store.refusals, [])
+    }
+
+    // A reconnect arriving while the claim is mid-replay parks ONE rerun on the running walk
+    // rather than replaying the shelf beside it — and the walk that outlived its seat settles the
+    // flags for nobody, because the reconnect's own rerun owns them now.
+    func testAConnectMidClaimParksARerunInsteadOfASecondRunner() async {
+        let anonymous = makeStore(sync: nil)
+        await anonymous.connect(to: account(signedIn: false))
+        _ = await anonymous.start()
+        await anonymous.choose("bench-press")
+        await anonymous.logSet(weightKg: 82.5, reps: 5)
+        guard case .closed(let past) = await anonymous.finish() else { return XCTFail("no close") }
+
+        let server = FakeTraining()
+        let gate = FinishGate()
+        server.onFinish = { await gate.hold() }
+        let store = makeStore(sync: server)
+        let boot = Task { await store.connect(to: account(signedIn: true)) }
+        for _ in 0..<200 where gate.heldCount == 0 { try? await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(gate.heldCount, 1, "the boot claim is parked on the slow finish")
+
+        await store.connect(to: account(signedIn: true))
+        XCTAssertEqual(server.started.map(\.id), [past.id],
+                       "the reconnect parked its claim — no second runner replayed the shelf")
+
+        gate.releaseOne()
+        await boot.value
+
+        XCTAssertEqual(server.started.map(\.id), [past.id],
+                       "one start ever — the rerun found the shelf already claimed")
+        XCTAssertEqual(server.started.map(\.joinOpenSession), [false])
+        XCTAssertEqual(server.sets[past.id]?.map(\.weightKg), [82.5])
+        XCTAssertEqual(server.finishes[past.id], past.finishedAtMs)
+        XCTAssertTrue(shelf().isEmpty)
+        XCTAssertEqual(store.recent.map(\.id), [past.id], "the claimed session still reached Today")
+        XCTAssertEqual(store.refusals, [])
     }
 
     // A signed-in start naming a routine still on the LOCAL shelf composes on the device: the log
@@ -679,5 +848,23 @@ final class AnonymousGymTests: XCTestCase {
         let queue = SetQueue(url: queueURL)
         XCTAssertEqual(queue.session?.id, "ses_old")
         XCTAssertFalse(queue.sessionIsUnclaimed)
+    }
+}
+
+// Parks every finish the fake is asked for until the test releases one — the only way a test can
+// stand INSIDE the claim's replay, with a session started on the log and not yet finished there.
+@MainActor
+private final class FinishGate {
+    private var held: [CheckedContinuation<Void, Never>] = []
+
+    var heldCount: Int { held.count }
+
+    func hold() async {
+        await withCheckedContinuation { held.append($0) }
+    }
+
+    func releaseOne() {
+        guard !held.isEmpty else { return }
+        held.removeFirst().resume()
     }
 }

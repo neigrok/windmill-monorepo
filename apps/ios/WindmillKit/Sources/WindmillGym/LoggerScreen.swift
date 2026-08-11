@@ -64,7 +64,8 @@ struct LoggerScreen: View {
         VStack(alignment: .leading, spacing: WindmillSpace.x4) {
             header
             if let line = LiveLines.onThisDeviceLine(store.strandedCount) { unsynced(line) }
-            ForEach(store.refusals) { refused in refusal(refused) }
+            RefusalRows(refusals: store.refusals, catalog: store.catalog,
+                        onDismiss: { store.clearRefusals() })
 
             if store.exerciseId == nil {
                 assembling
@@ -145,28 +146,6 @@ struct LoggerScreen: View {
             .foregroundStyle(skin.unsyncedInk)
             .lineSpacing(3)
             .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    // The last copy of a set somebody lifted. It is SAID, with the movement and the numbers, because
-    // a queue that dropped it quietly would count the loss as intended — and this is the one place
-    // in gym allowed to use alarm ink.
-    private func refusal(_ refused: RefusedSet) -> some View {
-        HStack(alignment: .top, spacing: WindmillSpace.x3) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("\(Readout.movement(refused.exerciseId, in: store.catalog)) "
-                     + "\(Readout.effort(weightKg: refused.weightKg, reps: refused.reps)) never reached the log")
-                    .font(GymType.numeral(12))
-                    .foregroundStyle(skin.alarmInk)
-                Text(refused.reason)
-                    .font(GymType.numeral(12))
-                    .foregroundStyle(skin.inkDim)
-            }
-            Spacer(minLength: 0)
-            Button("Dismiss") { store.clearRefusals() }
-                .font(GymType.numeral(12))
-                .foregroundStyle(skin.inkFaint)
-                .frame(minHeight: GymTap.minimum)
-        }
     }
 
     // No routine, no plan snapshot, and nothing to log into yet. The one way forward is to name what
@@ -546,5 +525,51 @@ struct LoggerScreen: View {
 
     private func stamp(_ date: Date) -> Int64 {
         Int64(date.timeIntervalSince1970 * 1000)
+    }
+}
+
+// The last copy of a write somebody lost. It is SAID — a set with its movement and its numbers, a
+// claim-level document under its name — because a queue that dropped it quietly would count the
+// loss as intended, and this is the one place in gym allowed to use alarm ink. ONE component
+// because it is one voice: the logger says a loss over the workout it happened in, and Today says
+// the same loss when a boot claim met it with no logger mounted. Dismiss clears the shown refusals
+// on this surface.
+struct RefusalRows: View {
+    let refusals: [RefusedWrite]
+    let catalog: [Exercise]
+    let onDismiss: () -> Void
+
+    @Environment(\.gymSkin) private var skin
+
+    var body: some View {
+        ForEach(refusals) { refused in
+            HStack(alignment: .top, spacing: WindmillSpace.x3) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(Self.headline(of: refused, in: catalog))
+                        .font(GymType.numeral(12))
+                        .foregroundStyle(skin.alarmInk)
+                    Text(refused.reason)
+                        .font(GymType.numeral(12))
+                        .foregroundStyle(skin.inkDim)
+                }
+                Spacer(minLength: 0)
+                Button("Dismiss", action: onDismiss)
+                    .font(GymType.numeral(12))
+                    .foregroundStyle(skin.inkFaint)
+                    .frame(minHeight: GymTap.minimum)
+            }
+        }
+    }
+
+    // The convergence pin, to the word with Android's LoggerScreen.kt: claim-level losses are said
+    // by NAME on both platforms, and the server's sentence rides underneath.
+    static func headline(of refused: RefusedWrite, in catalog: [Exercise]) -> String {
+        switch refused {
+        case .set(let set):
+            return "\(Readout.movement(set.exerciseId, in: catalog)) "
+                + "\(Readout.effort(weightKg: set.weightKg, reps: set.reps)) never reached the log"
+        case .claim(let claim):
+            return "“\(claim.name)” couldn’t be claimed"
+        }
     }
 }

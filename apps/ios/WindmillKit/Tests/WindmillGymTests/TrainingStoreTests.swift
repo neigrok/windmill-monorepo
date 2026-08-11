@@ -138,8 +138,8 @@ final class TrainingStoreTests: XCTestCase {
 
         XCTAssertTrue(store.sets.isEmpty, "a set that never landed is not drawn as though it had")
         XCTAssertEqual(store.refusals.map(\.reason), ["the session closed before this set reached it"])
-        XCTAssertEqual(store.refusals.map(\.exerciseId), ["bench-press"])
-        XCTAssertEqual(store.refusals.map(\.weightKg), [60])
+        XCTAssertEqual(store.refusals.compactMap(\.set).map(\.exerciseId), ["bench-press"])
+        XCTAssertEqual(store.refusals.compactMap(\.set).map(\.weightKg), [60])
         XCTAssertEqual(store.saveState.line, "the session closed before this set reached it")
         XCTAssertTrue(SetQueue(url: queueURL).pending.isEmpty)
     }
@@ -338,7 +338,7 @@ final class TrainingStoreTests: XCTestCase {
         await store.choose("zercher-squat")
         await store.logSet(weightKg: 100, reps: 5)
 
-        XCTAssertEqual(store.refusals.map(\.exerciseId), ["zercher-squat"])
+        XCTAssertEqual(store.refusals.compactMap(\.set).map(\.exerciseId), ["zercher-squat"])
         XCTAssertEqual(store.saveState, .refused("that movement is not in the catalog"))
         XCTAssertEqual(SetQueue(url: queueURL).pending.map(\.set.exerciseId), ["bench-press"])
         XCTAssertEqual(store.strandedCount, 1,
@@ -624,6 +624,18 @@ final class SetQueueTests: XCTestCase {
         XCTAssertEqual(queue.session?.routineId, "rt_1")
     }
 
+    // The banner keys its rows off RefusedWrite.id. A claim row keyed on the NAME folded two
+    // same-named losses into one — ForEach drew one row for both, and one loss went unsaid.
+    func testTwoSameNamedClaimLossesAreTwoRowsNotOne() {
+        let movement = RefusedWrite.claim(RefusedClaim(id: "ex_press", name: "Press", reason: "refused"))
+        let routine = RefusedWrite.claim(RefusedClaim(id: "rt_press", name: "Press", reason: "refused"))
+
+        XCTAssertEqual(movement.id, "claim-ex_press")
+        XCTAssertEqual(routine.id, "claim-rt_press")
+        XCTAssertNotEqual(movement.id, routine.id,
+                          "a name collision must not fold two losses into one banner row")
+    }
+
     // Discard is the one case where an owed set has nowhere left to go: the session id no longer
     // names anything, so keeping it would re-send it against nothing, forever.
     func testForgettingADiscardedSessionTakesTheOwedSetsWithIt() {
@@ -636,6 +648,20 @@ final class SetQueueTests: XCTestCase {
 
         XCTAssertNil(queue.session)
         XCTAssertTrue(queue.pending.isEmpty)
+    }
+}
+
+// The two shapes a said loss takes, unwrapped for assertions — the same cast Android's tests make
+// on RefusedWrite.
+extension RefusedWrite {
+    var set: RefusedSet? {
+        guard case .set(let set) = self else { return nil }
+        return set
+    }
+
+    var claim: RefusedClaim? {
+        guard case .claim(let claim) = self else { return nil }
+        return claim
     }
 }
 

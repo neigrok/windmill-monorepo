@@ -65,6 +65,9 @@ fun TodayScreen(
             .padding(top = WindmillSpace.x10, bottom = WindmillSpace.x8),
     ) {
         TodayHead(nothingLogged = store.recent.isEmpty(), nowMs = nowMs)
+        // A loss said during a boot claim has no logger standing to show it, so the banner stands
+        // here instead — the logger's own component, the logger's own words — until dismissed.
+        Refusals(store.refusals, store.catalog, onDismiss = { store.clearRefusals() })
         when {
             store.routines.isEmpty() -> EmptyStart(onStart)
             else -> {

@@ -30,6 +30,12 @@ struct TodayScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: WindmillSpace.x5) {
                 head
+                // A loss said during a boot claim has no logger to carry it — no session is open,
+                // so Today is the screen the lifter is standing on. Same rows, same voice, same
+                // dismiss as the logger's (wave 2 §B); with a session open the logger is mounted
+                // instead of this screen, so the loss is never said twice.
+                RefusalRows(refusals: store.refusals, catalog: store.catalog,
+                            onDismiss: { store.clearRefusals() })
                 if store.routines.isEmpty {
                     empty
                 } else {

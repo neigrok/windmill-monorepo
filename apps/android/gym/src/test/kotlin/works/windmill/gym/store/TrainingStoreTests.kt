@@ -579,6 +579,204 @@ class TrainingStoreTests {
         assertTrue(LocalLog(localFile).finished.isEmpty())
     }
 
+    // ...and the next connect is no longer the only carrier: a claim that stopped on a retryable
+    // failure re-runs on the deliver loop's own four-second task — no remount, no tap — while a
+    // start during a scheduled re-claim still composes on the device, exactly as connect's does.
+    @Test
+    fun testAnOfflineClaimRetriesOnTheDeliverCadenceAndLandsWithoutARemount() = runTest {
+        val server = FakeTraining()
+        val minted = mutableListOf("ses_a", "ses_b")
+        val store = makeStore(sync = server, mintSession = { minted.removeAt(0) })
+        store.connect(account(signedIn = false))
+        store.start()
+        store.choose("bench-press")
+        store.logSet(weightKg = 82.5, reps = 5)
+        clockMs += 60_000
+        store.finish()
+
+        server.online = false
+        store.connect(account(signedIn = true))
+        assertEquals("the boot claim stopped offline — nothing lost, nothing said",
+            1, LocalLog(localFile).finished.size)
+        assertTrue(store.refusals.isEmpty())
+        val attempted = server.started.size
+
+        advanceTimeBy(4_100)
+        runCurrent()
+        assertTrue("the cadence retried the claim on its own, with nobody tapping anything",
+            server.started.size > attempted)
+        assertEquals("still offline — the shelf keeps everything", 1, LocalLog(localFile).finished.size)
+
+        server.online = true
+        val gate = CompletableDeferred<Unit>()
+        server.onFinish = { gate.await() }
+        advanceTimeBy(4_100)
+        runCurrent()
+        val opened = (store.start() as GymResult.Ok).value
+        assertEquals("a start during the scheduled re-claim composes on the device", "ses_b", opened.id)
+        store.choose("back-squat")
+        store.logSet(weightKg = 999.0, reps = 1)
+        assertTrue("and its sets are parked, never filed into the replay",
+            server.appended.none { it.weightKg == 999.0 })
+
+        server.onFinish = {}
+        gate.complete(Unit)
+        runCurrent()
+
+        assertEquals(listOf(82.5), server.sets.getValue("ses_a").map { it.weightKg })
+        assertFalse(server.stored.getValue("ses_a").isOpen)
+        assertTrue("the shelf let go once the log confirmed", LocalLog(localFile).finished.isEmpty())
+        assertEquals("the re-claim landed the device-composed workout too, without any remount",
+            listOf(999.0), server.sets.getValue("ses_b").map { it.weightKg })
+        assertTrue(server.stored.getValue("ses_b").isOpen)
+        assertEquals("the room stands in its claimed workout", "ses_b", store.session?.id)
+    }
+
+    // TWO CLAIMS MAY NEVER OVERLAP. A local finish while the cadence's re-claim is mid-replay
+    // marks the claim owed again rather than starting a second replay — and the boot read stands
+    // down while any claim runs. The alternative was the cadence's ending firing loadLog while
+    // the deferred replay held a re-opened past session open on the log: the store adopted the
+    // workout the lifter had just finished as the phone's live one, resurrected.
+    @Test
+    fun testAFinishDuringTheCadenceReclaimNeverAdoptsTheMidReplaySession() = runTest {
+        val server = FakeTraining()
+        val minted = mutableListOf("ses_a", "ses_b")
+        val store = makeStore(sync = server, mintSession = { minted.removeAt(0) })
+        store.connect(account(signedIn = false))
+        store.start()
+        store.choose("bench-press")
+        store.logSet(weightKg = 82.5, reps = 5)
+        clockMs += 60_000
+        store.finish()
+        store.start()
+        store.choose("back-squat")
+        store.logSet(weightKg = 999.0, reps = 1)
+
+        server.online = false
+        store.connect(account(signedIn = true))
+
+        server.online = true
+        val gateA = CompletableDeferred<Unit>()
+        val gateB = CompletableDeferred<Unit>()
+        val parked = mutableSetOf<String>()
+        server.onFinish = {
+            val id = server.finished.last().first
+            if (parked.add(id)) when (id) {
+                "ses_a" -> gateA.await()
+                "ses_b" -> gateB.await()
+            }
+        }
+        advanceTimeBy(4_100)
+        runCurrent()
+        assertTrue("the cadence's re-claim stands parked inside the replayed session's finish",
+            server.stored.getValue("ses_a").isOpen)
+
+        var closed: FinishOutcome? = null
+        val finishing = launch { closed = store.finish() }
+        runCurrent()
+        assertTrue("the local finish completed without waiting on the running claim: $closed",
+            closed is FinishOutcome.Closed)
+        assertNull("and it started no second replay while one was mid-flight",
+            server.stored["ses_b"])
+        assertNull(store.session)
+
+        gateA.complete(Unit)
+        runCurrent()
+        assertTrue("the deferred re-run reopened the finished workout on the log to replay it",
+            server.stored.getValue("ses_b").isOpen)
+        assertNull("and the store never adopts the mid-replay session as the phone's live workout",
+            store.session)
+
+        gateB.complete(Unit)
+        runCurrent()
+        finishing.join()
+
+        assertEquals("ses_b", (closed as FinishOutcome.Closed).session.id)
+        assertNull("nothing stands running once the replay is over", store.session)
+        assertFalse(server.stored.getValue("ses_a").isOpen)
+        assertFalse(server.stored.getValue("ses_b").isOpen)
+        assertEquals(listOf(82.5), server.sets.getValue("ses_a").map { it.weightKg })
+        assertEquals(listOf(999.0), server.sets.getValue("ses_b").map { it.weightKg })
+        assertTrue("the shelf let go of both", LocalLog(localFile).finished.isEmpty())
+        assertEquals("and the eventual log read lands clean — both workouts listed, neither open",
+            setOf("ses_a", "ses_b"), store.recent.map { it.id }.toSet())
+        assertTrue(store.recent.none { it.session.isOpen })
+        assertTrue(store.refusals.isEmpty())
+    }
+
+    // The serialization itself, pinned: a claim requested while one runs goes once more when that
+    // pass ends — each shelf session claimed exactly once, never a second runner interleaving
+    // starts with the first.
+    @Test
+    fun testAClaimRequestedMidReplayRunsOnceMoreAfterItRatherThanOverlapping() = runTest {
+        val server = FakeTraining()
+        val minted = mutableListOf("ses_a", "ses_b")
+        val store = makeStore(sync = server, mintSession = { minted.removeAt(0) })
+        store.connect(account(signedIn = false))
+        store.start()
+        store.choose("bench-press")
+        store.logSet(weightKg = 82.5, reps = 5)
+        clockMs += 60_000
+        store.finish()
+        store.start()
+        store.choose("back-squat")
+        store.logSet(weightKg = 999.0, reps = 1)
+
+        val gate = CompletableDeferred<Unit>()
+        server.onFinish = { if (server.finished.last().first == "ses_a") gate.await() }
+        val connecting = launch { store.connect(account(signedIn = true)) }
+        runCurrent()
+        assertEquals("the boot claim stands parked inside the shelved session's finish",
+            listOf("ses_a"), server.started.map { it.id })
+
+        var closed: FinishOutcome? = null
+        val finishing = launch { closed = store.finish() }
+        runCurrent()
+        assertTrue("the local finish completed without waiting on the running claim: $closed",
+            closed is FinishOutcome.Closed)
+        assertEquals("no second replay went to the wire while one was mid-flight",
+            listOf("ses_a"), server.started.map { it.id })
+
+        gate.complete(Unit)
+        connecting.join()
+        finishing.join()
+        runCurrent()
+
+        assertEquals("the claim went once more when its pass ended — each session claimed exactly once",
+            listOf("ses_a", "ses_b"), server.started.map { it.id })
+        assertFalse(server.stored.getValue("ses_a").isOpen)
+        assertFalse(server.stored.getValue("ses_b").isOpen)
+        assertEquals(listOf(999.0), server.sets.getValue("ses_b").map { it.weightKg })
+        assertTrue(LocalLog(localFile).finished.isEmpty())
+        assertNull(store.session)
+        assertTrue(store.refusals.isEmpty())
+    }
+
+    // A loss said during a boot claim has no logger standing to show it: the refusal surfaces on
+    // Today — the same banner, drawn from the same store fact the logger reads — and dismissing
+    // clears what was shown.
+    @Test
+    fun testABootClaimLossWithNoLiveSessionSurfacesOnTodayAndDismissClears() = runTest {
+        val server = FakeTraining()
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = false))
+        store.keep(listOf(TrainingSet(id = "set_seed", exerciseId = "bench-press", weightKg = 100.0,
+            reps = 5, completedAtMs = 900)), asRoutineNamed = "Push Day")
+
+        server.refuseRoutine = { refusal(400, code = "bad-routine", message = "that document is unclaimable") }
+        store.connect(account(signedIn = true))
+
+        assertEquals("the loss is said by name, through the store fact Today draws the banner from",
+            listOf(RefusedClaim(name = "Push Day", reason = "that document is unclaimable")),
+            store.refusals)
+        assertNull("no logger is mounted — Today is the standing screen", store.session)
+        assertTrue("said once and let go, not re-said on the next connect",
+            LocalLog(localFile).routines.isEmpty())
+
+        store.clearRefusals()
+        assertEquals("dismissing clears what was shown", emptyList<RefusedWrite>(), store.refusals)
+    }
+
     // The one loss a claim can meet, said out loud: a set the server refuses forever (the session
     // closed under a previous, partial claim) is dropped from the shelf and reported — and the
     // rest of the session still settles.

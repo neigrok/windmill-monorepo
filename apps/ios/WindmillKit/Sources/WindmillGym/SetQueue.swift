@@ -347,6 +347,31 @@ public enum Verdict: Equatable {
     }
 }
 
+// What is SAID when a write is lost for good — the one surface every loss rides, because a loss
+// dropped quietly would count as intended. Two shapes, one banner: a set carries its numbers, and a
+// claim-level document (a movement, a routine) has none, so it is said under its NAME — Android's
+// RefusedWrite in SetQueue.kt. The Identifiable id is this side's own need — ForEach keys the rows
+// by it, so it is the kind plus the DOCUMENT's id, never the name: two same-named losses are two
+// rows, not one drawn twice.
+public enum RefusedWrite: Equatable, Identifiable, Sendable {
+    case set(RefusedSet)
+    case claim(RefusedClaim)
+
+    public var id: String {
+        switch self {
+        case .set(let set): return set.id
+        case .claim(let claim): return "claim-\(claim.id)"
+        }
+    }
+
+    public var reason: String {
+        switch self {
+        case .set(let set): return set.reason
+        case .claim(let claim): return claim.reason
+        }
+    }
+}
+
 // A set that never landed, kept so it can be said out loud. The movement and the numbers travel with
 // the reason because this is the LAST COPY of a set somebody lifted — "82.5 × 8 never reached the
 // log" is unloggable again without knowing of what.
@@ -362,6 +387,21 @@ public struct RefusedSet: Equatable, Identifiable, Sendable {
         exerciseId = set.exerciseId
         weightKg = set.weightKg
         reps = set.reps
+        self.reason = reason
+    }
+}
+
+// The claim's own loss: a movement or routine document the server refuses outright, let go from the
+// shelf so the same terminal write is not re-sent on every connect. It keeps the document's own id —
+// never shown, but the banner keys its rows by it.
+public struct RefusedClaim: Equatable, Sendable {
+    public let id: String
+    public let name: String
+    public let reason: String
+
+    public init(id: String, name: String, reason: String) {
+        self.id = id
+        self.name = name
         self.reason = reason
     }
 }

@@ -55,8 +55,6 @@ import works.windmill.gym.domain.Rest
 import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.store.GymResult
-import works.windmill.gym.store.RefusedClaim
-import works.windmill.gym.store.RefusedSet
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
@@ -192,19 +190,7 @@ fun LoggerScreen(store: TrainingStore, say: (String?) -> Unit, onFinish: () -> U
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        store.refusals.forEach { refused ->
-            when (refused) {
-                is RefusedSet -> Refusal(
-                    headline = "${Readout.movement(refused.exerciseId, store.catalog)} " +
-                        "${Readout.effort(refused.weightKg, refused.reps)} never reached the log",
-                    reason = refused.reason,
-                    onDismiss = { store.clearRefusals() })
-                is RefusedClaim -> Refusal(
-                    headline = "“${refused.name}” couldn’t be claimed",
-                    reason = refused.reason,
-                    onDismiss = { store.clearRefusals() })
-            }
-        }
+        Refusals(store.refusals, store.catalog, onDismiss = { store.clearRefusals() })
 
         val movement = store.exerciseId
         if (movement == null) {
@@ -353,33 +339,6 @@ private fun Header(routine: String, elapsedMs: Long, onFinish: () -> Unit) {
             contentAlignment = Alignment.Center,
         ) {
             Text("Finish", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.accent)
-        }
-    }
-}
-
-// The last copy of a write that will never land — a set with its movement and numbers, or a
-// claim's refused document under its name. It is SAID because a queue that dropped it quietly
-// would count the loss as intended — and this is the one place in gym allowed to use alarm ink.
-@Composable
-private fun Refusal(headline: String, reason: String, onDismiss: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
-        verticalAlignment = Alignment.Top,
-    ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                headline,
-                style = GymType.numeral(12),
-                color = GymSkin.alarmInk,
-            )
-            Text(reason, style = GymType.numeral(12), color = GymSkin.inkDim)
-        }
-        Box(
-            Modifier.heightIn(min = GymTap.minimum).clickable(onClick = onDismiss),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("Dismiss", style = GymType.numeral(12), color = GymSkin.inkFaint)
         }
     }
 }
