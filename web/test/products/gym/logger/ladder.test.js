@@ -34,9 +34,9 @@ test('the golden still carries its cases — an emptied fixture is not a passing
 // into a throw, which Logger.jsx would take during render and repeat on every reload.
 test('steps is total — a weight that is not a number gets the top band, never an exception', () => {
   for (const value of [Infinity, -Infinity, NaN, undefined]) {
-    assert.deepEqual(steps(value, false), [5, 10], `steps of ${value}`);
-    assert.deepEqual(steps(value, true), [5, 10], `lightening steps of ${value}`);
-    assert.deepEqual(ladderLabels(value), ['−10', '−5', '+5', '+10'], `labels of ${value}`);
+    assert.deepEqual(steps(value, false), [2.5, 10], `steps of ${value}`);
+    assert.deepEqual(steps(value, true), [2.5, 10], `lightening steps of ${value}`);
+    assert.deepEqual(ladderLabels(value), ['−10', '−2.5', '+2.5', '+10'], `labels of ${value}`);
   }
 });
 
@@ -111,7 +111,7 @@ test('mirror symmetry — the assisted side is the loaded side reflected through
 // way to say −0.
 test('round — the float noise a step leaves behind, and the zero that keeps its sign', () => {
   assert.equal(round(18.999000000000002), 19);
-  assert.equal(round(20.01 - 2), 18.01);
+  assert.equal(round(20.01 - 2.5), 17.51);
   assert.equal(round(-0.001), -0);
 });
 

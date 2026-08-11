@@ -152,16 +152,16 @@ function Moat() {
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 18, marginTop: 14, flexWrap: 'wrap' }}>
             <div>
               <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 500, fontSize: 'clamp(48px,8vw,72px)', lineHeight: .92, color: 'var(--weight-ink)' }}>
-                <span data-gy="weight">95</span><span style={{ fontSize: 19, color: 'var(--gym-ink-faint)', marginLeft: 6 }}>kg</span>
+                <span data-gy="weight">97.5</span><span style={{ fontSize: 19, color: 'var(--gym-ink-faint)', marginLeft: 6 }}>kg</span>
               </div>
-              <div data-gy="note" style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--target-ink)', marginTop: 9 }}>last week · 95 × 5</div>
+              <div data-gy="note" style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--target-ink)', marginTop: 9 }}>last week · 97.5 × 5</div>
               <div data-gy="pr" className="gyFade" style={{ display: 'none', fontFamily: 'var(--font-body)', fontSize: 13, color: 'var(--gym-ink-dim)', marginTop: 7 }}>100 × 5 — best yet.</div>
             </div>
             <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-end' }}>
               <div style={{ display: 'flex', gap: 8 }}>
                 <span className="gychip">−10</span>
-                <span className="gychip">−5</span>
-                <span className="gychip" data-gy="plus5">+5</span>
+                <span className="gychip">−2.5</span>
+                <span className="gychip" data-gy="fine">+2.5</span>
                 <span className="gychip">+10</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -216,8 +216,8 @@ function LadderStage() {
       style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 14 }}>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
         <span className="gychip gychip--sm">−10</span>
-        <span className="gychip gychip--sm">−5</span>
-        <span className="gychip gychip--sm" data-gy="s1plus">+5</span>
+        <span className="gychip gychip--sm">−2.5</span>
+        <span className="gychip gychip--sm" data-gy="s1fine">+2.5</span>
         <span className="gychip gychip--sm">+10</span>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
@@ -227,7 +227,7 @@ function LadderStage() {
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 15, color: 'var(--gym-ink-dim)' }}>× <span data-gy="s1r">5</span></span>
       </div>
       <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--gym-ink-faint)', textAlign: 'center' }}>
-        the ladder steps with the load · −10 −5 +5 +10 at this weight
+        the small step is your program step · the big one is a plate change
       </div>
     </div>
   );
@@ -283,7 +283,7 @@ function HowItWorks() {
           <div>
             <div className="beatNum">01</div>
             <h3 className="beatTitle">Log the set</h3>
-            <p className="beatCopy">Two taps between sets. Big targets for one thumb and chalked hands — the ladder steps at the size the load calls for.</p>
+            <p className="beatCopy">Two taps between sets. Big targets for one thumb and chalked hands — the small step is the 2.5 kg your program is written in, the big one is a plate change.</p>
           </div>
         </div>
         <div className="beat">

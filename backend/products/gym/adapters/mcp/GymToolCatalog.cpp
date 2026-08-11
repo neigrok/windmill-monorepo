@@ -286,8 +286,8 @@ std::vector<ToolDeclaration> gymToolCatalog() {
     p["id"] = str("The id YOU mint for this movement (`ex_` + hex is the house shape).");
     p["name"] = cappedStr("What it is called on screen. Renaming it later keeps every set.", kMaxNameLength);
     p["pattern"] = enumStr("The one classification gym keeps.", kPatterns);
-    p["equipment"] = enumStr("What it is loaded with — it decides the default ladder step.", kEquipment);
-    p["stepKg"] = num("The ladder increment. Omit to take the equipment's own default.");
+    p["equipment"] = enumStr("What it is loaded with. The one classification gym keeps beside pattern.", kEquipment);
+    p["stepKg"] = num("This movement's own increment, stored and served back. NOTHING reads it yet — every logger steps the weight off the load band, not off this. Omit to take the equipment's default.");
     tools.push_back(tool("create_exercise", Access::write,
         "Add a movement the catalog does not hold. Read list_exercises FIRST: a second row for a "
         "movement that already exists forks that lift's history across two ids permanently, and "

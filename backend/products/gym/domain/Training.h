@@ -30,7 +30,7 @@ using SetId = Id<SetTag>;
 using RoutineId = Id<RoutineTag>;
 
 // Pattern is the only classification (the flat legs-vs-three-arm-buckets lopsidedness of Lift's
-// taxonomy is refused). Equipment decides the default ladder step. SetKind lands now though its UI
+// taxonomy is refused). Equipment decides the default stepKg. SetKind lands now though its UI
 // is phase 2 — a warmup must not count toward volume, and that is a schema decision, not a feature
 // decision.
 enum class Pattern { squat, hinge, press, pull, carry, core, isolation };
@@ -69,13 +69,13 @@ constexpr std::uint64_t kMaxInstantMs = 253402300799000ull;
 constexpr std::size_t kMaxNameLength = 80;
 
 // What the step_kg column can hold: numeric(4,2), two decimals and a ceiling of 99.99. A value
-// outside this band is not a ladder increment the store can keep, so it is refused at construction
-// like every other value in this module that meets a column's own bounds.
+// outside this band is not an increment the store can keep, so it is refused at construction like
+// every other value in this module that meets a column's own bounds.
 constexpr double kMinStepKg = 0.01;
 constexpr double kMaxStepKg = 99.99;
 
-// The catalog row: a STABLE slug id that never renders, a mutable display name, and the default
-// ladder increment. custom marks a created_by row; seeds are custom = false.
+// The catalog row: a STABLE slug id that never renders, a mutable display name, and a per-movement
+// increment. custom marks a created_by row; seeds are custom = false.
 struct Exercise {
   ExerciseId id;
   std::string name;
@@ -90,10 +90,14 @@ struct Exercise {
   bool operator==(const Exercise&) const = default;
 };
 
-// The ladder increment a movement takes when nothing names one: the smallest plate pair on a
-// barbell, the rack gap on dumbbells, the pin on a machine. A created movement that sends no stepKg
-// takes this, so a lifter's own barbell lift climbs exactly like a seeded one — the seed rows were
+// The increment a movement takes when nothing names one: the smallest plate pair on a barbell, the
+// rack gap on dumbbells, the pin on a machine. A created movement that sends no stepKg takes this,
+// so a lifter's own barbell lift carries the same figure as a seeded one — the seed rows were
 // written from this same table (schema.sql's Gym seed comment).
+//
+// IT IS NOT THE LADDER. The 2026-08-11 retier took the tap step from the load band instead
+// (packages/api-contract/gym-ladder.json), so this figure is stored, served, and read by nothing.
+// It is reserved for the day a movement's own step earns its way onto the buttons.
 double defaultStepKg(Equipment equipment);
 
 // The routine as it stood the instant the session started — a COPY, taken by the server, that

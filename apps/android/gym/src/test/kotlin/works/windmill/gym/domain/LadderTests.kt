@@ -101,7 +101,7 @@ class LadderTests {
         for (value in listOf(Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY)) {
             for (lightening in listOf(false, true)) {
                 val step = Ladder.steps(abs(value), lightening)
-                assertEquals("small step at $value, lightening $lightening", 5.0, step.small, tolerance)
+                assertEquals("small step at $value, lightening $lightening", 2.5, step.small, tolerance)
                 assertEquals("large step at $value, lightening $lightening", 10.0, step.large, tolerance)
             }
         }

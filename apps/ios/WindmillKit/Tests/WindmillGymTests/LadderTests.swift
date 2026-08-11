@@ -90,7 +90,7 @@ final class LadderTests: XCTestCase {
         for value in [Double.nan, .infinity, -.infinity] {
             for lightening in [false, true] {
                 let step = Ladder.steps(magnitude: abs(value), lightening: lightening)
-                XCTAssertEqual(step.small, 5, accuracy: tolerance, "small step at \(value), lightening \(lightening)")
+                XCTAssertEqual(step.small, 2.5, accuracy: tolerance, "small step at \(value), lightening \(lightening)")
                 XCTAssertEqual(step.large, 10, accuracy: tolerance, "large step at \(value), lightening \(lightening)")
             }
         }

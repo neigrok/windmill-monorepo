@@ -9,18 +9,26 @@
 // bump(−w, −direction, big) === −bump(w, direction, big) for every weight, direction and size. The
 // step buttons do not clamp; only typed entry is bounded (see entry.js).
 
+// RETIERED 2026-08-11. The tiers mined from Lift put ±2 and ±5 in the middle band and ±5/±10 above
+// it, so above 50 kg the +2.5 kg step a barbell program is written in was not on the ladder at all:
+// the row was a 5-spaced lattice, and 85 kg was unreachable from 82.5 at any depth without leaving
+// for the keypad. The dogfood gate asks whether the prefill was accepted unchanged or moved by
+// EXACTLY ONE step, so it could not be measured at the loads its author trains at. Now the FINE
+// button is the program step and the COARSE button is a plate change: ±1 survives only under 20 kg,
+// where dumbbells and the small stuff live, and above it the fine step is ±2.5 with the coarse step
+// growing 5 → 10 as the bar fills.
 const BANDS = [
-  { under: 20, small: 1, large: 5 },
-  { under: 50, small: 2, large: 5 },
-  { under: Infinity, small: 5, large: 10 },
+  { under: 20, small: 1, large: 2.5 },
+  { under: 50, small: 2.5, large: 5 },
+  { under: Infinity, small: 2.5, large: 10 },
 ];
 
 // A step that LIGHTENS the load is sized by the band just below the magnitude rather than the one
 // it sits in — one comparison tightening from < to <=, which is the limit of |weight| − ε with no
 // epsilon to pick. What it buys is that a step LANDING on a boundary is undone by its opposite: the
-// +1 that carried you 19 → 20 is answered by a −1 back to 19, never a −2 down to 18. It buys no
-// more than that — 49 +2→ 51 −5→ 46 crosses the boundary rather than landing on it, and does not
-// come back. Reversibility at the edge, not everywhere.
+// +1 that carried you 19 → 20 is answered by a −1 back to 19, never a −2.5 down to 17.5. It buys no
+// more than that — 19.5 +1→ 20.5 −2.5→ 18 crosses the boundary rather than landing on it, and does
+// not come back. Reversibility at the edge, not everywhere.
 //
 // The find falls back because NaN and Infinity compare false against every band, and a weight is
 // not always a number a lifter typed: a caller can hand this a value rehydrated from a store an
@@ -42,8 +50,8 @@ export function round(weight) {
 }
 
 // Lightening is REDUCING THE MAGNITUDE, not going down — which is what carries the rule across zero
-// without a toggle in sight. At +20 kg the row reads −5 · −1 · +2 · +5, so at −20 kg it must read
-// −5 · −2 · +1 · +5; at 0 no direction lightens, and both sides read the smallest band.
+// without a toggle in sight. At +20 kg the row reads −2.5 · −1 · +2.5 · +5, so at −20 kg it must
+// read −5 · −2.5 · +1 · +2.5; at 0 no direction lightens, and both sides read the smallest band.
 export function bump(weight, direction, big) {
   const [small, large] = steps(weight, direction * weight < 0);
   return round(weight + direction * (big ? large : small));

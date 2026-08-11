@@ -32,7 +32,7 @@ export function mountMoat(root) {
   const reps = handle(root, 'reps');
   const pr = handle(root, 'pr');
   const row4 = handle(root, 'row4');
-  const plus5 = handle(root, 'plus5');
+  const fine = handle(root, 'fine');
   const logSet = handle(root, 'log');
 
   // React renders the still panel and keeps the live one folded away; the timeline borrows the
@@ -54,12 +54,12 @@ export function mountMoat(root) {
 
   const reset = () => {
     session.textContent = 'Tuesday · week 6';
-    weight.textContent = '95';
-    note.textContent = 'last week · 95 × 5';
+    weight.textContent = '97.5';
+    note.textContent = 'last week · 97.5 × 5';
     reps.textContent = '—';
     pr.style.display = 'none';
     row4.style.display = 'none';
-    plus5.classList.remove('gym-pressed');
+    fine.classList.remove('gym-pressed');
     logSet.classList.remove('gym-pressed');
     live.style.opacity = '';
   };
@@ -78,7 +78,7 @@ export function mountMoat(root) {
       reps.textContent = String(n);
       if (n < 5) T.at(150, () => tick(n + 1));
     });
-    go(1100, () => press(plus5, 240));
+    go(1100, () => press(fine, 240));
     go(1300, () => { weight.textContent = '100'; });
     go(2100, () => tick(1));
     go(3300, () => press(logSet, 280));
@@ -113,25 +113,25 @@ export function mountMoat(root) {
   };
 }
 
-// Beat 01 — the ladder steps with the load. Finite, and only on a click: nothing below the
-// hero plays by itself.
+// Beat 01 — the fine step IS the program step, so next week is one tap. Finite, and only on a
+// click: nothing below the hero plays by itself.
 export function mountSetLogger(root) {
   if (PRM) return NOOP;
 
   const weight = handle(root, 's1w');
   const reps = handle(root, 's1r');
-  const plus5 = handle(root, 's1plus');
+  const fine = handle(root, 's1fine');
   const T = timers();
   const weightAtRest = weight.textContent;
   const repsAtRest = reps.textContent;
 
   const replay = () => {
     T.clear();
-    weight.textContent = '95';
+    weight.textContent = '97.5';
     reps.textContent = '—';
     T.at(500, () => {
-      plus5.classList.add('gym-pressed');
-      T.at(240, () => plus5.classList.remove('gym-pressed'));
+      fine.classList.add('gym-pressed');
+      T.at(240, () => fine.classList.remove('gym-pressed'));
     });
     T.at(700, () => { weight.textContent = '100'; });
     for (let n = 1; n <= 5; n += 1) T.at(1100 + n * 150, () => { reps.textContent = String(n); });
@@ -141,7 +141,7 @@ export function mountSetLogger(root) {
   return () => {
     root.removeEventListener('click', replay);
     T.clear();
-    plus5.classList.remove('gym-pressed');
+    fine.classList.remove('gym-pressed');
     weight.textContent = weightAtRest;
     reps.textContent = repsAtRest;
   };

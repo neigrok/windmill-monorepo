@@ -22,17 +22,22 @@ object Ladder {
 
     // The golden's `bands` array, same rows in the same order. A band added there and not here is
     // exactly the drift LadderTests exists to catch.
+    //
+    // RETIERED 2026-08-11: the FINE button is the program step and the COARSE button is a plate
+    // change. The mined tiers put ±2 and ±5 in the middle band and ±5/±10 above it, which left the
+    // +2.5 kg step a barbell program is written in off the ladder entirely above 50 kg — 85 was not
+    // reachable from 82.5 at any depth, only through the keypad.
     val bands = listOf(
-        Band(under = 20.0, small = 1.0, large = 5.0),
-        Band(under = 50.0, small = 2.0, large = 5.0),
-        Band(under = null, small = 5.0, large = 10.0),
+        Band(under = 20.0, small = 1.0, large = 2.5),
+        Band(under = 50.0, small = 2.5, large = 5.0),
+        Band(under = null, small = 2.5, large = 10.0),
     )
 
     // A move that lightens the load reads the band JUST BELOW the magnitude, so the +1 that carried
-    // you 19 → 20 is answered by a −1 back to 19 rather than a −2 down to 18. That is the whole
+    // you 19 → 20 is answered by a −1 back to 19 rather than a −2.5 down to 17.5. That is the whole
     // difference, and it is one comparison: `<` tightens to `<=`. It is the limit of `magnitude − ε`
-    // with no epsilon to pick. It buys reversibility at the edge and nowhere else: 49 +2→ 51 −5→ 46
-    // crosses a boundary rather than landing on it, and does not come back.
+    // with no epsilon to pick. It buys reversibility at the edge and nowhere else: 19.5 +1→ 20.5
+    // −2.5→ 18 crosses a boundary rather than landing on it, and does not come back.
     fun steps(magnitude: Double, lightening: Boolean): Steps {
         // The open top band (`under: null`) answers true without comparing, so it catches NaN too and
         // the fallback is unreachable — it is written out because the compiler cannot know that. The

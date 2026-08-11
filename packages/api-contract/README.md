@@ -25,16 +25,27 @@ held only while there was one language; a native Swift logger wrote copy #2 on i
 Android's Kotlin logger wrote #3. So the rule moves here, and all three copies run this file.
 
 **The bands.** The step pair is chosen by the **magnitude** of the weight, never its sign: under
-20 kg it is ±1 / ±5, under 50 kg ±2 / ±5, at or above 50 kg ±5 / ±10. Magnitude and not sign,
+20 kg it is ±1 / ±2.5, under 50 kg ±2.5 / ±5, at or above 50 kg ±2.5 / ±10. Magnitude and not sign,
 because a band-assisted pull-up logs at −20 kg — a point on the number line, never a mode.
+
+**Retiered 2026-08-11, and this is the point of the table.** The tiers mined from Lift put ±2 and
+±5 in the middle band and ±5 / ±10 above it, so **above 50 kg the +2.5 kg step a barbell program is
+written in was not on the ladder at all** — the row was a 5-spaced lattice, and 85 kg was
+unreachable from 82.5 at any depth without leaving for the keypad. The phase-1 dogfood gate, which
+asks whether the prefilled weight was accepted unchanged *or moved by exactly one step*, therefore
+could not be measured at the loads its author trains at. The fine button is now the **program
+step** and the coarse button is a **plate change**: ±1 survives only under 20 kg, where dumbbells
+and the small stuff live. The rule stays a
+pure function of the weight — nothing reads the exercise, the lifter, or their plate inventory —
+which is what keeps it checkable as data in three languages.
 
 **The lightening rule.** A step that *reduces the load* is sized by the band just below the
 current magnitude rather than the one it sits in. What it buys is that a step **landing on** a
 boundary is undone by its opposite: the +1 that carried you 19 → 20 is answered by a −1 back to 19,
-not a −2 down to 18. It buys no more than that, and the narrow claim is the true one — `49 +2→ 51
-−5→ 46` *crosses* the boundary instead of landing on it and does not come back. Reversibility at
-the edge, not everywhere. In code it is one comparison that tightens from `<` to `<=` — the limit
-of `magnitude − ε` with no epsilon to pick.
+not a −2.5 down to 17.5. It buys no more than that, and the narrow claim is the true one — `19.5
++1→ 20.5 −2.5→ 18` *crosses* the boundary instead of landing on it and does not come back.
+Reversibility at the edge, not everywhere. In code it is one comparison that tightens from `<` to
+`<=` — the limit of `magnitude − ε` with no epsilon to pick.
 
 **Mirror symmetry is the law that ties the two together**, and it is exactly checkable:
 
@@ -45,7 +56,8 @@ bump(−w, −direction, big) == −bump(w, direction, big)      for every w, di
 Because "lightening" is defined as *reducing the magnitude* (`direction × weight < 0`) rather than
 *going down*, the ladder walks through zero into assisted territory without a toggle in sight, and
 the assisted side behaves identically. The visible consequence, and the reason this golden exists:
-at +20 kg the row reads `−5 · −1 · +2 · +5`, so at −20 kg it must read `−5 · −2 · +1 · +5`. Any
+at +20 kg the row reads `−2.5 · −1 · +2.5 · +5`, so at −20 kg it must read
+`−5 · −2.5 · +1 · +2.5`. Any
 implementation that reads its down-band as "the band just below the *signed* weight" gets the
 loaded side right and the assisted side wrong, and it will pass its own hand-written tests.
 

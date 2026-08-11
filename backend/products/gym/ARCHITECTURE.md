@@ -45,9 +45,11 @@ happens on the device. The backend's job is narrow and load-bearing:
 
 **What the backend deliberately does NOT do — it stays on the device:**
 
-- **The weight ladder** (±1/±5 under 20 kg, ±2/±5 under 50, ±5/±10 above, bands read off the
+- **The weight ladder** (±1/±2.5 under 20 kg, ±2.5/±5 under 50, ±2.5/±10 above, bands read off the
   **magnitude**, and a step that lightens the load sized by the band just below it) is
-  presentation. Lift's best code — and Lift pasted it into three targets and let them drift.
+  presentation. Retiered 2026-08-11 so the **fine** button is the program step and the **coarse**
+  button is a plate change; the mined tiers put ±2 and ±5 in the middle band, which left the
+  +2.5 kg step a barbell program is written in two taps away at every load its lifter trains at. Lift's best code — and Lift pasted it into three targets and let them drift.
   Gym's rule was "exactly **one** module," which held only while there was one language; it is
   now one module *per language* — JS, Swift, Kotlin — all three answering
   `packages/api-contract/gym-ladder.json` as a test (§11.5). The server only stores what was logged plus each exercise's default step. Same
@@ -162,8 +164,11 @@ create table if not exists gym_exercises (
                 ('squat','hinge','press','pull','carry','core','isolation')),
   equipment   text not null check (equipment in
                 ('barbell','dumbbell','machine','cable','bodyweight','kettlebell')),
-  step_kg     numeric(4,2) not null default 2.5,   -- the default ladder increment; the
-                                                   -- range-adaptive ladder layers on top, client-side
+  step_kg     numeric(4,2) not null default 2.5,   -- per-movement increment, seeded and on the wire.
+                                                   -- READ BY NOTHING as of 2026-08-11: the ladder
+                                                   -- retier took the fine step from the load band
+                                                   -- (±2.5 above 20 kg) rather than from here, so
+                                                   -- this column is reserved and not yet load-bearing
   created_by  uuid references users(id) on delete cascade,   -- null = catalog seed
   created_at  timestamptz not null default now()
 );

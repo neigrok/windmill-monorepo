@@ -1,7 +1,8 @@
-// THE LADDER — the one place in gym where a weight moves by a tap. There are two copies of this
-// rule in Windmill, this one and web/src/products/gym/logger/ladder.js, because there are two
-// languages. What keeps them one rule is packages/api-contract/gym-ladder.json: both copies read
-// that file as a test, so a change here that the web copy does not make fails CI.
+// THE LADDER — the one place in gym where a weight moves by a tap. There are three copies of this
+// rule in Windmill — this one, web/src/products/gym/logger/ladder.js and Android's Ladder.kt —
+// because there are three languages. What keeps them one rule is
+// packages/api-contract/gym-ladder.json: every copy reads that file as a test, so a change here
+// that the others do not make fails CI.
 //
 // The bands are read off the MAGNITUDE, so the ladder behaves the same on the negative side of
 // zero — band-assisted pull-ups sit at −20 kg, a point on the number line and never a mode. The
@@ -16,17 +17,22 @@ public enum Ladder {
 
     // The golden's `bands` array, same rows in the same order. A band added there and not here is
     // exactly the drift LadderTests exists to catch.
+    //
+    // RETIERED 2026-08-11: the FINE button is the program step and the COARSE button is a plate
+    // change. The mined tiers put ±2 and ±5 in the middle band and ±5/±10 above it, which left the
+    // +2.5 kg step a barbell program is written in off the ladder entirely above 50 kg — 85 was not
+    // reachable from 82.5 at any depth, only through the keypad.
     public static let bands = [
-        Band(under: 20, small: 1, large: 5),
-        Band(under: 50, small: 2, large: 5),
-        Band(under: nil, small: 5, large: 10),
+        Band(under: 20, small: 1, large: 2.5),
+        Band(under: 50, small: 2.5, large: 5),
+        Band(under: nil, small: 2.5, large: 10),
     ]
 
     // A move that lightens the load reads the band JUST BELOW the magnitude, so the +1 that carried
-    // you 19 → 20 is answered by a −1 back to 19 rather than a −2 down to 18. That is the whole
+    // you 19 → 20 is answered by a −1 back to 19 rather than a −2.5 down to 17.5. That is the whole
     // difference, and it is one comparison: `<` tightens to `<=`. It is the limit of `magnitude − ε`
-    // with no epsilon to pick. It buys reversibility at the edge and nowhere else: 49 +2→ 51 −5→ 46
-    // crosses a boundary rather than landing on it, and does not come back.
+    // with no epsilon to pick. It buys reversibility at the edge and nowhere else: 19.5 +1→ 20.5
+    // −2.5→ 18 crosses a boundary rather than landing on it, and does not come back.
     public static func steps(magnitude: Double, lightening: Bool) -> (small: Double, large: Double) {
         // The open top band (`under: nil`) answers true without comparing, so it catches NaN too and
         // the fallback is unreachable — it is written out because the compiler cannot know that. The

@@ -1058,8 +1058,11 @@ create table if not exists gym_exercises (
                 ('squat','hinge','press','pull','carry','core','isolation')),
   equipment   text not null check (equipment in
                 ('barbell','dumbbell','machine','cable','bodyweight','kettlebell')),
-  step_kg     numeric(4,2) not null default 2.5,   -- the default ladder increment; the
-                                                   -- range-adaptive ladder layers on top, client-side
+  step_kg     numeric(4,2) not null default 2.5,   -- per-movement increment, seeded and served.
+                                                   -- READ BY NOTHING as of 2026-08-11: the ladder
+                                                   -- retier took the fine step from the load band
+                                                   -- (±2.5 above 20 kg), not from here. Reserved,
+                                                   -- and not yet load-bearing anywhere
   created_by  uuid references users(id) on delete cascade,   -- null = catalog seed
   created_at  timestamptz not null default now()
 );

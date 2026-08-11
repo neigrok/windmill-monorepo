@@ -61,7 +61,7 @@ struct RoutineWrite {
 
 // A movement a lifter created, off the picker's "no movement by that name". stepKg is the one
 // optional: omitted, the equipment decides it (defaultStepKg), which is how the 64 seeds were
-// written and how a custom barbell lift comes to climb like a seeded one.
+// written. It is stored and served and nothing steps a weight by it — see Training.h.
 struct ExerciseWrite {
   ExerciseId id;
   std::string name;
