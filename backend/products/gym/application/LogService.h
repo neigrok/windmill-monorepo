@@ -107,6 +107,29 @@ struct SessionDetail {
   bool operator==(const SessionDetail&) const = default;
 };
 
+// One row of the log as a SURFACE reads it: the store's summary, plus the one number on it that is
+// a formula rather than an aggregation.
+//
+// topE1rm is `domain/Review`'s `topE1rmOf` over the loads the store handed back — the SAME function
+// the finish screen's `ReviewStats::topE1rm` comes through, which is the whole point of routing it
+// here. It is the best estimate over every working set and NOT Epley over `summary.topSet`: those
+// two disagree on an ordinary top-set-and-back-offs session (100 × 5 then 3 × 95 × 10 estimates
+// 126.7 off the back-offs and 116.7 off the top set), and a lifter who finished a workout and then
+// opened The log would have read two numbers under the word `e1RM`, two taps apart.
+//
+// Epley reaches neither the database — picking a set BY e1RM is the formula, not an ordering, so the
+// store hands over its per-load projection instead (`ports/TrainingRepository.h`) — nor a client,
+// because the formula has one copy per language (§11.5) and a log row that computed its own would be
+// the second copy in JavaScript. It is absent exactly where Epley is undefined: a session holding no
+// working set, and one whose working sets were all chin-ups at 0 kg or band-assisted pulls at −20,
+// which have no honest one-rep estimate to print.
+struct LogRow {
+  SessionSummary summary;
+  std::optional<double> topE1rm;
+
+  bool operator==(const LogRow&) const = default;
+};
+
 // A discard answers with a status and nothing else — a deleted session has no row to hand back —
 // so this is the one operation here with no `{value, error}` pair beside it. `open` is the refusal
 // the store cannot state on its own: only the device holding the offline queue knows every set has
@@ -130,7 +153,7 @@ public:
   StartOutcome start(const UserId& user, const SessionStart& incoming);
   AppendOutcome append(const UserId& user, const SessionId& session, const SetWrite& incoming);
   FinishOutcome finish(const UserId& user, const SessionId& session, std::uint64_t finishedAtMs);
-  std::vector<SessionSummary> log(const UserId& user, const LogCursor& cursor);
+  std::vector<LogRow> log(const UserId& user, const LogCursor& cursor);
   std::optional<SessionDetail> detail(const UserId& user, const SessionId& session);
   std::vector<Exercise> catalog(const UserId& user);
   LastTimeOutcome lastTime(const UserId& user, const ExerciseId& exercise);

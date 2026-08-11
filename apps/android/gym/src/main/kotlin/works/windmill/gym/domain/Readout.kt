@@ -21,6 +21,8 @@ object Readout {
     private val weekdays = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
     private val months = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+    private val names = listOf("zero", "one", "two", "three", "four", "five",
+                               "six", "seven", "eight", "nine", "ten")
 
     // Trailing zeros stripped and a REAL U+2212 minus, because a negative load is a normal point on
     // the number line here — band-assisted work sits below zero. The grid is the LADDER's own and
@@ -39,9 +41,109 @@ object Readout {
     // spelled, so the routine card, the logger's plan line and the finish comparison agree.
     fun repTarget(reps: Int?): String = reps?.toString() ?: "max"
 
+    // What a routine asks a movement for, in one line — the routine card on Today, the routines tab
+    // and the finish comparison all print it, so a target reads the same wherever it is read
+    // (log.js `entryLabel`). An absent weight is "whatever you did last time" and prints nothing
+    // rather than a zero; so does an actual zero, because zero is not a load but the absence of one,
+    // while a band-assisted −20 is a real point on this number line and prints.
+    //
+    // The plan and the routine spell their targets with different field names and the same three
+    // numbers, so both hand them over rather than each writing the grammar out again.
+    fun target(sets: Int, reps: Int?, weightKg: Double?): String {
+        val count = "$sets × ${repTarget(reps)}"
+        if (weightKg == null || weightKg == 0.0) return count
+        return "$count · ${weight(weightKg)}"
+    }
+
     fun time(ms: Long): String {
         val at = at(ms)
         return pad(at.hour) + ":" + pad(at.minute)
+    }
+
+    // TONNAGE IS A CAPTION AND NEVER A METRIC. `domain/Statistics.h` refuses volume brand-wide for a
+    // good reason — band-assisted work logs a negative load, so weight × reps FALLS as a lifter gets
+    // stronger — and the refusal stands: e1RM is still the headline, and nothing is ever ranked by
+    // this. What the log's week divider asks for is the scale of a week, sitting beside the four
+    // facts a lifter scans, which is a different claim.
+    //
+    // So it clamps rather than subtracts: an assisted set moved no external load and contributes
+    // zero, and so does a bodyweight one — gym does not know a lifter's bodyweight. And a sum that
+    // comes to zero prints NOTHING rather than `0.0 t`: a chin-up-and-dips week did not move zero
+    // kilograms, we simply have nothing true to say about it. Absence over a false zero, which is
+    // also why anything under fifty kilos — a tonnage that would round to `0.0 t` — says nothing.
+    //
+    // ROUNDED HALF AWAY FROM ZERO BY HAND, and the tenths are an INTEGER so that no formatter and
+    // no locale ever touches this number. That is `Ladder.round`'s law one decimal further up, and
+    // it is a law for the same reason: the three languages' own spellings disagree with each other,
+    // so a surface that reached for the one its platform ships would print a different week to the
+    // phone in the other pocket. Measured, same doubles, three runtimes:
+    //
+    //     kg     this law   C/Swift "%.1f"   JS toFixed(1)
+    //     5350     5.4          5.3              5.3          ← §G17 draws 5.4 t
+    //     1150     1.2          1.1              1.1
+    //     1250     1.3          1.2              1.3
+    //      250     0.3          0.2              0.3
+    //
+    // Each of those rounds the BINARY APPROXIMATION of a decimal sum, which is why none of them is
+    // even self-consistent — toFixed sends 1150 down and 1250 up. A tonnage is a decimal quantity
+    // of kilograms and it rounds like one.
+    //
+    // Java's own `%.1f` happens to agree with the law on every row above, because it rounds the
+    // SHORTEST DECIMAL of the double rather than the double. That is one runtime's implementation
+    // detail and not a rule anybody wrote down, and a rule the other two rooms cannot reproduce is
+    // no use to them — so the arithmetic is here where all three can copy it.
+    fun tonnes(kg: Double): String? {
+        val tenths = floor(kg / 100.0 + 0.5).toLong()
+        if (tenths <= 0) return null
+        return "${tenths / 10}.${tenths % 10} t"
+    }
+
+    // ONE WORD FOR A SESSION NOBODY PLANNED, everywhere this room names one — the log's row, the
+    // session read back, Today's last-session line and the live logger's own head. It is the
+    // design's own (§G16) and it replaced "Ad-hoc", which the web retired for the same reason
+    // (log.js NO_ROUTINE): a session with no routine is the ordinary case in most logs and must not
+    // read as a fault or as jargon. It is spelled here beside the other phrases this product spells
+    // once — a screen that borrowed it from the LOG's file would be the log deciding what the
+    // logger calls a workout, and two words for one thing is how two screens start disagreeing.
+    const val noRoutine = "Session · no routine"
+
+    // ONE WORD FOR WHAT COUNTS. A set counts toward a target, a record and the prefill only when its
+    // kind is working, so the log row and the session head both name the working ones and never the
+    // total — the number beside a session's top set has always been about these.
+    fun workingSets(count: Int): String = "$count working"
+
+    // The estimate arrives from the log or not at all: Epley lives in one place per language and
+    // this phone is not one of them (Review.of and TrainingStatistics.of say the same). This spells
+    // the number the server computed; it never makes one.
+    fun estimate(e1rm: Double): String = "e1RM ${weight(e1rm)}"
+
+    // A count said as a word, for the one column that reads better without a numeral in it: a set
+    // that came up short gets `two short`, because a digit in a miss column reads like a score, and
+    // this product does not score anybody against a plan they were free to change.
+    fun spelled(count: Int): String = names.getOrNull(count) ?: count.toString()
+
+    fun weekOf(ms: Long): String {
+        val at = at(ms)
+        return "week of ${at.dayOfMonth} ${months[at.monthValue - 1]}"
+    }
+
+    // The bottom of the log, and the one place gym prints a YEAR: it is the date a lifter scrolled
+    // all the way down to arrive at, and "6 May" without the year is the fact they came for with the
+    // interesting half missing.
+    fun date(ms: Long): String {
+        val at = at(ms)
+        return "${at.dayOfMonth} ${months[at.monthValue - 1]} ${at.year}"
+    }
+
+    // When a session happened, as a log row says it. Today's still carries its clock — a session
+    // finished an hour ago is placed by the hour — and every older one is a date, because the minute
+    // it started at is no longer something anybody is standing in.
+    fun whenLogged(ms: Long, now: Long): String {
+        val zone = ZoneId.systemDefault()
+        val then = Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
+        val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        if (then == today) return "today · ${time(ms)}"
+        return day(ms)
     }
 
     // `utc` is for one caller and one reason: the statistics weeks are bucketed by
@@ -95,6 +197,17 @@ object Readout {
     }
 
     fun setCount(count: Int): String = if (count == 1) "1 set" else "$count sets"
+
+    // What a routine holds and when it was last used — the line Today's list prints and the line the
+    // Routines tab prints, which is one sentence and therefore lives in one place. It is also the
+    // fact both lists are SORTED by, so a row never has to explain its own order. A routine nobody
+    // has trained says exactly that rather than borrowing today.
+    fun routineLine(routine: Routine, now: Long): String {
+        val count = routine.entries.size
+        val movements = if (count == 1) "1 exercise" else "$count exercises"
+        val trained = routine.lastTrainedAtMs ?: return "$movements · never trained"
+        return "$movements · trained ${ago(trained, now)}"
+    }
 
     // The product counts SESSIONS — never workouts and never entries — so the word is spelled here
     // beside the set's, and the movement lines on the statistics screen borrow it rather than

@@ -1,37 +1,53 @@
-// THE LOG — every session that happened, newest first, and one of them read whole. G8 draws the row
-// as the web's home: the day and the routine on one line, what the session was on the next, the top
-// set in its own column, and one ghost door beside the title for the workout that never made it in.
+// THE LOG — every session that happened, newest first, folded into weeks, and one of them read
+// whole beside what the plan asked for. §G16 gives a row four facts a lifter scans: what it was and
+// when, then the working sets, the tonnage and the top e1RM. §G17 draws the session itself with the
+// plan dim and the actual bright.
 //
-// THE ROW DRAWS THE TOP SET AND THE AUTO-CLOSE NOTE FROM THE STORE'S OWN ANSWER. The session LIST
-// carries no sets, so neither could be read here at all until the summary began carrying `topSet`
-// and `closedItself` beside the set count (gymApi.js); a session read whole still derives both from
-// the sets it has in hand, by the same rules, in the same two functions (log.js). Deriving either
-// from a set COUNT would have been a number nobody lifted.
+// EVERY NUMBER ON A ROW COMES OFF THE WIRE. The session LIST carries no sets, so the working count
+// and the tonnage are the store's own aggregations and the e1RM is the domain's own Epley over the
+// top set it picked (gymApi.js) — nothing here derives one, and a row draws nothing where a
+// deployment sent nothing. A session read WHOLE carries its sets, so the same facts are read off
+// them by the same rules in the same functions (log.js): two sources, one rule, exactly as the top
+// set and the auto-close note already had.
 //
-// The door is refused in place while a session is open, on a neutral surface with the live dot and
-// never in alarm ink, because nothing failed: the workout is simply still running (backfill.js).
+// The web is the mirror and the desk (§11.2). Nothing on this screen starts, resumes or logs
+// anything; the one write door is the backfill, and it is refused in place while a session is open,
+// on a neutral surface with the live dot and never in alarm ink, because nothing failed — the
+// workout is simply still running (backfill.js).
 
 import React, { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { gymApi } from './gymApi.js';
 import { MID_WORKOUT_REFUSAL } from './backfill.js';
 import {
-  BACKFILL_HREF, CLOSED_ITSELF_NOTE, closedOnItsOwn, dayLabel, finishHref, fmt, groupByExercise,
-  isFinished, NO_ROUTINE, routineNameOf, sessionHref, sessionMetaLabel, timeLabel, topSetLabel,
-  topSetOf,
+  BACKFILL_HREF, CLOSED_ITSELF_NOTE, closedOnItsOwn, e1rmLabel, finishHref, firstSessionLabel,
+  groupByExercise, isFinished, loadedLine, logWhenLabel, NO_ROUTINE, onThisDevice, planFrozenLabel,
+  planReadingOf, routineNameOf, sessionDetailMeta, sessionHref, setLoadLabel, setNoteOf,
+  tonnageLabel, weeksOf, workingLabel,
 } from './log.js';
 import { CoachPanel } from './coach/CoachPanel.jsx';
 import { CoachShare } from './share/CoachShare.jsx';
 import { useGymRead } from './useGymRead.js';
 
+// The thesis of §G17, said on the screen it is about rather than only in the canon.
+const PLAN_BESIDE_ACTUAL = 'Dim is what the plan said. Bright is what you did. A miss gets one line and no scolding.';
+
 export function LogList({ log }) {
   const { phase, summaries, older, session } = log;
   const [refused, setRefused] = useState(false);
+  // The fold is over the page in hand, and it is told whether that page is the whole log: the
+  // oldest week's tonnage is a floor until nothing more can be added to it (log.js).
+  const weeks = weeksOf(summaries, { complete: older.status === 'end' });
 
   return (
     <>
       <header className="gym-head gym-log-head">
-        <h1 className="gym-title">The log</h1>
+        <div>
+          <h1 className="gym-title">The log</h1>
+          {summaries.length > 0 && (
+            <p className="gym-log-count">{loadedLine(summaries.length, weeks.length)}</p>
+          )}
+        </div>
         <button
           type="button"
           className="gym-door-past"
@@ -60,31 +76,39 @@ export function LogList({ log }) {
       )}
       {summaries.length > 0 && (
         <>
-          <ul className="gym-sessions">
-            {summaries.map((summary) => <SessionRow key={summary.id} summary={summary} />)}
-          </ul>
+          {weeks.map((week) => (
+            <section className="gym-week" key={week.startedAt}>
+              <div className="gym-week-head">
+                <span className="gym-week-label">{week.label}</span>
+                <span className="gym-week-rule" aria-hidden="true" />
+                {week.tonnage && <span className="gym-week-tonnage">{week.tonnage}</span>}
+              </div>
+              <ul className="gym-sessions">
+                {week.sessions.map((summary) => <SessionRow key={summary.id} summary={summary} />)}
+              </ul>
+            </section>
+          ))}
           {/* The rows stay when the read failed — they are real sessions and worth reading. The foot
               does not: a screen already admitting it could not load has not earned the right to also
               say the log ends here, least of all to someone checking whether an import came across. */}
-          {phase !== 'failed' && <OlderSessions older={older} />}
+          {phase !== 'failed' && <LogFoot older={older} oldest={summaries[summaries.length - 1]} />}
         </>
       )}
     </>
   );
 }
 
-// The foot of the log. One page deeper per press, in words rather than a spinner — everything else
-// in gym says it is waiting by saying so. The bottom is stated out loud because it is a real answer:
-// a lifter who has just imported years of training is reading this list to find out whether all of
-// it came across.
-function OlderSessions({ older }) {
-  if (older.status === 'end') return <p className="gym-log-bottom">That’s the start of your log.</p>;
+// THE FOOT OF THE LOG, in the order a scroll meets its four states (§G16). One page deeper per
+// press — a tap and not a scroll, so the request is the lifter's. Loading is the same box dimmed,
+// with no spinner and no skeleton rows pretending to be sessions. The bottom is a DATE, because a
+// lifter who has just imported years of training is reading this list to find out whether all of it
+// came across, and the day they started is the one fact worth arriving at. A read that failed says
+// so in alarm ink and offers the one move.
+function LogFoot({ older, oldest }) {
+  if (older.status === 'end') return <p className="gym-log-bottom">{firstSessionLabel(oldest.startedAt)}</p>;
   if (older.status === 'failed') {
     return (
-      <p className="gym-read-failed gym-older-failed">
-        The older sessions didn’t load.
-        <button type="button" className="gym-retry" onClick={older.load}>Try again</button>
-      </p>
+      <button type="button" className="gym-log-failed" onClick={older.load}>That read failed · retry</button>
     );
   }
   return (
@@ -99,41 +123,41 @@ function OlderSessions({ older }) {
       aria-disabled={older.status === 'loading'}
       aria-busy={older.status === 'loading'}
     >
-      {older.status === 'loading' ? 'Loading older sessions…' : 'Load older sessions'}
+      {older.status === 'loading' ? <><span className="gym-older-dot" aria-hidden="true" />Loading</> : 'Load older'}
     </button>
   );
 }
 
-// The day leads and the routine sits beside it, because a lifter looking for a session knows when it
-// was before they know what it was. A session with no routine reads one step quieter and never as a
-// fault: most rows in most logs will not have one. The length and the count are the meta line's and
-// are not repeated up here — one fact, one place, which is the same rule that keeps the day out of
-// `sessionMetaLabel`.
+// The routine leads and when it happened sits opposite it, because a lifter scanning a log for a
+// session is looking for what it was — the week divider above already answered roughly when. A
+// session with no routine is named at full strength like any other (§G16): the phrase itself is
+// what keeps it from reading as a fault, so nothing dims it. Underneath, the three numbers, and a
+// row draws only the ones it was actually sent.
 function SessionRow({ summary }) {
-  const routine = routineNameOf(summary);
-  const exercises = summary.exercises ?? [];
-  const top = topSetOf(summary);
+  const facts = [
+    typeof summary.workingSetCount === 'number' ? workingLabel(summary.workingSetCount) : null,
+    tonnageLabel(summary.tonnageKg),
+    e1rmLabel(summary.topE1rm),
+  ].filter(Boolean);
   return (
     <li>
       <a className="gym-row" href={sessionHref(summary.id)}>
-        <div className="gym-row-body">
-          <div className="gym-row-top">
-            <span className="gym-row-day">{dayLabel(summary.startedAt)}</span>
-            <span className={routine ? 'gym-row-title' : 'gym-row-title is-adhoc'}>{routine ?? NO_ROUTINE}</span>
-          </div>
-          <div className="gym-row-meta">{sessionMetaLabel(summary, summary.setCount ?? 0)}</div>
-          {exercises.length > 0 && <div className="gym-row-movements">{exercises.join('   ·   ')}</div>}
-          {/* Said once by the band at the moment it happens; this is the permanent record (G8). */}
-          {closedOnItsOwn(summary) && <div className="gym-row-closed">{CLOSED_ITSELF_NOTE}</div>}
+        <div className="gym-row-head">
+          <span className="gym-row-title">{routineNameOf(summary) ?? NO_ROUTINE}</span>
+          {/* The space beside the title belongs to what a session IS rather than what it holds. A
+              hollow ring is the one mark drawn there today; the gold PR dot §G16 asks for waits on
+              the record rules being replayable as of a past session (W1c), and a cheaper dot that
+              is sometimes wrong is worse than the space. */}
+          {onThisDevice(summary) && <span className="gym-row-ring" title="saved on this device only" />}
+          <span className="gym-row-when">{logWhenLabel(summary)}</span>
         </div>
-        {/* A session holding no working set has no top set, and the column is absent rather than
-            dashed: a row is not a table, and nothing is missing from it. */}
-        {top && (
-          <div className="gym-row-top-set">
-            <span className="gym-row-top-value">{topSetLabel(top)}</span>
-            <span className="gym-row-top-label">top set</span>
+        {facts.length > 0 && (
+          <div className="gym-row-facts">
+            {facts.map((fact) => <span key={fact}>{fact}</span>)}
           </div>
         )}
+        {/* Said once by the band at the moment it happens; this is the permanent record (G8). */}
+        {closedOnItsOwn(summary) && <div className="gym-row-closed">{CLOSED_ITSELF_NOTE}</div>}
       </a>
     </li>
   );
@@ -150,7 +174,7 @@ export function SessionDetail({ id }) {
   if (view.phase === 'absent') {
     return (
       <>
-        <a className="gym-back" href="#/gym/log"><ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> Log</a>
+        <a className="gym-back" href="#/gym/log"><ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> The log</a>
         <p className="gym-quiet">This session isn’t in your log.</p>
       </>
     );
@@ -158,7 +182,7 @@ export function SessionDetail({ id }) {
   if (view.phase === 'failed') {
     return (
       <>
-        <a className="gym-back" href="#/gym/log"><ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> Log</a>
+        <a className="gym-back" href="#/gym/log"><ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> The log</a>
         <p className="gym-read-failed">
           The session didn’t load.
           <button type="button" className="gym-retry" onClick={view.retry}>Retry</button>
@@ -169,18 +193,19 @@ export function SessionDetail({ id }) {
 
   const { session, sets } = view.data.detail;
   const names = new Map(view.data.catalog.map((exercise) => [exercise.id, exercise.name]));
-  const routine = routineNameOf(session);
-  const top = topSetOf(session, sets);
+  const frozen = planFrozenLabel(session);
   return (
     <>
       <header className="gym-detail-head">
-        <a className="gym-back" href="#/gym/log"><ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> Log</a>
-        <h1 className="gym-title">
-          {dayLabel(session.startedAt)}
-          <span className="gym-detail-routine">{`  ·  ${routine ?? NO_ROUTINE}`}</span>
-        </h1>
-        <p className="gym-detail-when">{sessionMetaLabel(session, sets.length)}</p>
-        {top && <p className="gym-detail-top">{`top set  ·  ${topSetLabel(top)}`}</p>}
+        <a className="gym-back" href="#/gym/log"><ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> The log</a>
+        <h1 className="gym-title">{routineNameOf(session) ?? NO_ROUTINE}</h1>
+        <p className="gym-detail-when">{sessionDetailMeta(session, sets)}</p>
+        {frozen && (
+          <p className="gym-detail-plan">
+            <span className="gym-detail-plan-dot" aria-hidden="true" />
+            {frozen}
+          </p>
+        )}
         {closedOnItsOwn(session, sets) && <p className="gym-detail-closed">{CLOSED_ITSELF_NOTE}</p>}
         {/* The review — the store's own reading of the session (Finish.jsx) — used to be reachable
             only from the web finish, and the web no longer finishes anything: this door is what
@@ -189,27 +214,48 @@ export function SessionDetail({ id }) {
         {isFinished(session) && <a className="gym-detail-review" href={finishHref(session.id)}>Session review ›</a>}
       </header>
       {sets.length === 0 && <p className="gym-quiet">No sets in this session.</p>}
-      {groupByExercise(sets).map(([exerciseId, group]) => (
-        <section className="gym-exercise" key={exerciseId}>
-          <h2 className="gym-exercise-name">{names.get(exerciseId) ?? exerciseId}</h2>
-          <ul className="gym-sets">
-            {group.map((set) => (
-              <li key={set.id} className={set.kind === 'warmup' ? 'gym-set gym-set-warmup' : 'gym-set'}>
-                <span className="gym-set-number">{set.setNumber}</span>
-                <span className="gym-set-load">{`${fmt(set.weightKg)} × ${set.reps}`}</span>
-                {set.kind !== 'working' && <span className="gym-set-kind">{set.kind}</span>}
-                {set.rpe != null && <span className="gym-set-rpe">rpe {set.rpe}</span>}
-                <span className="gym-set-time">{timeLabel(set.completedAt)}</span>
-                {set.note && <span className="gym-set-note">{set.note}</span>}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
+      {groupByExercise(sets).map(([exerciseId, group]) => {
+        const reading = planReadingOf(session, exerciseId);
+        // `added today` is said once, on the first WORKING set — not on the first set. A movement
+        // warmed up before it was worked would otherwise spend the note on a slot that never
+        // carries one (a set the plan never asked for says only its own kind, log.js), and the
+        // movement would never say it was added at all.
+        const opener = group.find((set) => set.kind === 'working');
+        return (
+          <section className="gym-exercise" key={exerciseId}>
+            <div className="gym-exercise-head">
+              <h2 className="gym-exercise-name">{names.get(exerciseId) ?? exerciseId}</h2>
+              {reading.line && (
+                <span className={reading.entry ? 'gym-exercise-plan' : 'gym-exercise-plan is-added'}>
+                  {reading.line}
+                </span>
+              )}
+            </div>
+            <ul className="gym-sets">
+              {group.map((set) => {
+                const note = setNoteOf(set, reading, set === opener);
+                return (
+                  <li key={set.id} className={set.kind === 'warmup' ? 'gym-set gym-set-warmup' : 'gym-set'}>
+                    <span className="gym-set-mark" aria-hidden="true">{set.kind === 'warmup' ? '·' : '✓'}</span>
+                    <span className="gym-set-load">{setLoadLabel(set)}</span>
+                    {set.rpe != null && <span className="gym-set-rpe">rpe {set.rpe}</span>}
+                    {note && <span className="gym-set-plan">{note}</span>}
+                    {set.note && <span className="gym-set-note">{set.note}</span>}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        );
+      })}
+      {frozen && sets.length > 0 && <p className="gym-detail-thesis">{PLAN_BESIDE_ACTUAL}</p>}
       {/* The same two doors the finish screen carries, at the other end of a session's life: a
           workout worth asking about, or sending to a coach, is usually one somebody went back and
-          looked at. */}
-      <CoachPanel sessionId={id} />
+          looked at. The chat is never offered MID-SESSION (§L, and ARCHITECTURE §12 cuts "any chat
+          not attached to one finished workout") — this screen is the mirror of a workout still
+          running, and an answer about a session that is still changing is out of date before it is
+          read. */}
+      {isFinished(session) && <CoachPanel sessionId={id} />}
       <CoachShare sessionId={id} />
     </>
   );

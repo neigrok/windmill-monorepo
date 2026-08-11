@@ -262,16 +262,24 @@ public struct TopSet: Equatable, Codable, Sendable {
     }
 }
 
-// A row of the log. The wire is FLAT — the session's own fields with the row's four facts beside
-// them — so this decodes the session off the same container rather than from a nested key that is
-// not there.
+// A row of the log. The wire is FLAT — the session's own fields with the row's facts beside them —
+// so this decodes the session off the same container rather than from a nested key that is not
+// there.
 //
 // `closedItself` is drawn where it is a fact worth having — the session detail says so under the
 // clock, because a four-hour span that ended in a rule rather than in a tap is a phone left running
-// and not a workout that lasted that long. `topSet` is decoded and NOT drawn: Today's "Last session"
-// row has fixed copy (contract screen 4) that does not name it, and the detail lists every set
-// anyway, so printing the heaviest one over that list would be the same fact twice. It stays on the
-// model because the web's log row draws it and one wire shape is one wire shape.
+// and not a workout that lasted that long. `topSet` is decoded and NOT drawn on this surface: the
+// log row prints the estimate over it instead (§G16) and the detail lists every set anyway, so the
+// heaviest one over that list would be the same fact twice. It stays on the model because the web's
+// row draws it and one wire shape is one wire shape.
+//
+// THE THREE FACTS §G16's ROW READS ARE THE LAST THREE, and none of them is `setCount`: the log
+// printed that beside a top set the store had already filtered to WORKING, so a session's "sets"
+// counted warmups and its top set did not. `setCount` keeps its own meaning — every set, every kind
+// — and its own consumers. Each of the three is optional and an ABSENT one draws nothing at all:
+// `topE1rm` is the domain's best Epley over EVERY working set — not over the heaviest one — and
+// Epley is the domain's, one copy per language and none of them Swift, so a session this device is
+// still holding alone has a working count and a tonnage and no estimate.
 public struct SessionSummary: Equatable, Codable, Sendable, Identifiable {
     public let session: Session
     public let setCount: Int
@@ -282,20 +290,27 @@ public struct SessionSummary: Equatable, Codable, Sendable, Identifiable {
     // rule's signature. A manual finish on the same millisecond is a coincidence whose whole cost is
     // one wrong subtitle.
     public let closedItself: Bool
+    public let workingSetCount: Int?
+    public let tonnageKg: Double?
+    public let topE1rm: Double?
 
     public init(session: Session, setCount: Int = 0, exercises: [String] = [],
-                topSet: TopSet? = nil, closedItself: Bool = false) {
+                topSet: TopSet? = nil, closedItself: Bool = false,
+                workingSetCount: Int? = nil, tonnageKg: Double? = nil, topE1rm: Double? = nil) {
         self.session = session
         self.setCount = setCount
         self.exercises = exercises
         self.topSet = topSet
         self.closedItself = closedItself
+        self.workingSetCount = workingSetCount
+        self.tonnageKg = tonnageKg
+        self.topE1rm = topE1rm
     }
 
     public var id: String { session.id }
 
     enum CodingKeys: String, CodingKey {
-        case setCount, exercises, topSet, closedItself
+        case setCount, exercises, topSet, closedItself, workingSetCount, tonnageKg, topE1rm
     }
 
     public init(from decoder: Decoder) throws {
@@ -305,6 +320,9 @@ public struct SessionSummary: Equatable, Codable, Sendable, Identifiable {
         exercises = try fields.decodeIfPresent([String].self, forKey: .exercises) ?? []
         topSet = try fields.decodeIfPresent(TopSet.self, forKey: .topSet)
         closedItself = try fields.decodeIfPresent(Bool.self, forKey: .closedItself) ?? false
+        workingSetCount = try fields.decodeIfPresent(Int.self, forKey: .workingSetCount)
+        tonnageKg = try fields.decodeIfPresent(Double.self, forKey: .tonnageKg)
+        topE1rm = try fields.decodeIfPresent(Double.self, forKey: .topE1rm)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -314,6 +332,9 @@ public struct SessionSummary: Equatable, Codable, Sendable, Identifiable {
         try fields.encode(exercises, forKey: .exercises)
         try fields.encodeIfPresent(topSet, forKey: .topSet)
         try fields.encode(closedItself, forKey: .closedItself)
+        try fields.encodeIfPresent(workingSetCount, forKey: .workingSetCount)
+        try fields.encodeIfPresent(tonnageKg, forKey: .tonnageKg)
+        try fields.encodeIfPresent(topE1rm, forKey: .topE1rm)
     }
 }
 
@@ -394,6 +415,18 @@ public struct Routine: Equatable, Codable, Sendable, Identifiable {
         self.position = position
         self.lastTrainedAtMs = lastTrainedAtMs
         self.entries = entries
+    }
+
+    // Newest-trained first, and never by when they were made — that is how a lifter picks one, and
+    // it is the order `GET /v1/gym/routines` already answers in (PgTrainingRepository, last_trained
+    // DESC NULLS LAST then position). Stated here as well because the device's own unclaimed
+    // routines are folded in AFTER the served ones, and one list may not read in two orders.
+    public static func byLastTrained(_ routines: [Routine]) -> [Routine] {
+        routines.sorted { left, right in
+            let trained = (left.lastTrainedAtMs ?? .min, right.lastTrainedAtMs ?? .min)
+            guard trained.0 == trained.1 else { return trained.0 > trained.1 }
+            return left.position < right.position
+        }
     }
 
     // The mid-session change offer, applied (screen 8). Read-modify-write is the whole shape: the

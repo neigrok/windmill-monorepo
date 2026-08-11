@@ -687,7 +687,7 @@ TEST(gym_a_storage_failure_on_start_is_never_the_clients_400) {
 
 // ---- the log reads ------------------------------------------------------------------------
 
-TEST(gym_list_sessions_wraps_summaries_with_counts_names_and_the_top_set) {
+TEST(gym_list_sessions_wraps_rows_with_both_counts_the_tonnage_and_the_top_sets_estimate) {
   Harness h;
   h.signIn("s-live");
   send(h.api, &GymApi::startSession, postRequest("/v1/gym/sessions", startBody(), "s-live"));
@@ -702,13 +702,16 @@ TEST(gym_list_sessions_wraps_summaries_with_counts_names_and_the_top_set) {
       send(h.api, &GymApi::listSessions, getRequest("/v1/gym/sessions", "s-live"));
 
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
-  // The row's four facts: how many sets, which movements, the heaviest working set in it, and
-  // whether the four-hour rule ended it — this one is still running, so nothing ended it.
+  // The facts §G16 draws a row from: how many sets and how many of those were working, the tonnage
+  // those working sets moved, which movements, the heaviest working set, the domain's estimate for
+  // the session, and whether the four-hour rule ended it — this one is still running, so nothing
+  // did. Both sets are straight work here, so the session's estimate is also the top set's.
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"sessions":[{"closedItself":false,)"
                        R"("exercises":["Back Squat","Bench Press"],"id":"ses_11111111",)"
-                       R"("setCount":2,"startedAt":1700000000000,)"
-                       R"("topSet":{"reps":8,"weightKg":100.0}}]})"));
+                       R"("setCount":2,"startedAt":1700000000000,"tonnageKg":1460.0,)"
+                       R"("topE1rm":126.7,"topSet":{"reps":8,"weightKg":100.0},)"
+                       R"("workingSetCount":2}]})"));
 }
 
 // The log row G8 draws: `Legs closed on its own` under a session nobody finished, and no top set at
@@ -727,10 +730,46 @@ TEST(gym_list_sessions_says_which_row_closed_itself_and_omits_an_absent_top_set)
       send(h.api, &GymApi::listSessions, getRequest("/v1/gym/sessions", "s-live"));
 
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  // A ramp-up and nothing else: one set held, none of them working, and so no top set, no estimate
+  // over one, and a tonnage of zero — which the screen draws as nothing rather than as `0.0 t`.
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"sessions":[{"closedItself":true,"exercises":["Bench Press"],)"
                        R"("finishedAt":1700000060000,"id":"ses_11111111","setCount":1,)"
-                       R"("startedAt":1700000000000}]})"));
+                       R"("startedAt":1700000000000,"tonnageKg":0.0,"workingSetCount":0}]})"));
+}
+
+// The number §G16 puts on the row is the SESSION's e1RM, and this is the session that proves it is
+// not the top set's: 100 × 5 is the heaviest bar, and the three back-offs at 95 × 10 estimate above
+// it. The finish screen has always shown 126.7 here; until 2026-08-12 the log row beside it showed
+// 116.7, and both come off this wire, so no client could have reconciled them.
+TEST(gym_list_sessions_carries_the_sessions_estimate_not_its_top_sets) {
+  Harness h;
+  UserId user = h.signIn("s-live");
+  h.repo.sessions.push_back(
+      Session{sid("ses_11111111"), user, 1'700'000'000'000, 1'700'000'300'000});
+  h.repo.sets.push_back(Set{setId("set_11111111"), sid("ses_11111111"), ExerciseId{"back-squat"},
+                            1, 100.0, 5, SetKind::working, std::nullopt, "", 1'700'000'060'000});
+  for (int number = 2; number <= 4; ++number)
+    h.repo.sets.push_back(Set{setId("set_1111111" + std::to_string(number)), sid("ses_11111111"),
+                              ExerciseId{"back-squat"}, number, 95.0, 10, SetKind::working,
+                              std::nullopt, "",
+                              1'700'000'060'000 + static_cast<std::uint64_t>(number) * 1'000});
+
+  drogon::HttpResponsePtr response =
+      send(h.api, &GymApi::listSessions, getRequest("/v1/gym/sessions", "s-live"));
+  drogon::HttpResponsePtr finish =
+      send(h.api, &GymApi::reviewSession,
+           getRequest("/v1/gym/sessions/ses_11111111/review", "s-live"), "ses_11111111");
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(response)),
+           std::string(R"({"sessions":[{"closedItself":false,"exercises":["Back Squat"],)"
+                       R"("finishedAt":1700000300000,"id":"ses_11111111","setCount":4,)"
+                       R"("startedAt":1700000000000,"tonnageKg":3350.0,"topE1rm":126.7,)"
+                       R"("topSet":{"reps":5,"weightKg":100.0},"workingSetCount":4}]})"));
+  // The same session read through the other door, on the same wire, saying the same number.
+  CHECK_EQ(bodyOf(finish)["stats"]["topE1rm"].asDouble(),
+           bodyOf(response)["sessions"][0]["topE1rm"].asDouble());
 }
 
 TEST(gym_list_sessions_with_a_malformed_cursor_is_400) {

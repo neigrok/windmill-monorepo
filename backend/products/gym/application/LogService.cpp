@@ -1,5 +1,7 @@
 #include "products/gym/application/LogService.h"
 
+#include <utility>
+
 namespace wm::gym {
 
 namespace {
@@ -120,9 +122,14 @@ FinishOutcome LogService::finish(const UserId& user, const SessionId& session,
   return {*closed, FinishError::none};
 }
 
-std::vector<SessionSummary> LogService::log(const UserId& user, const LogCursor& cursor) {
+std::vector<LogRow> LogService::log(const UserId& user, const LogCursor& cursor) {
   settleOpen(repo_, user, clock_.nowMs());
-  return repo_.log(user, cursor);
+  std::vector<LogRow> rows;
+  for (SessionSummary& summary : repo_.log(user, cursor)) {
+    std::optional<double> estimate = topE1rmOf(summary.workingLoads);
+    rows.push_back(LogRow{std::move(summary), estimate});
+  }
+  return rows;
 }
 
 std::optional<SessionDetail> LogService::detail(const UserId& user, const SessionId& session) {

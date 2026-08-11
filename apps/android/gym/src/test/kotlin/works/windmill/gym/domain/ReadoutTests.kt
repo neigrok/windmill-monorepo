@@ -1,8 +1,10 @@
 package works.windmill.gym.domain
 
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 // One product, one spelling. Every number gym prints goes through this file, so what is pinned here
@@ -84,6 +86,63 @@ class ReadoutTests {
         assertEquals("two hours is yesterday once it has",
                      "yesterday", Readout.ago(at(0, 23), now = at(1, 1)))
         assertEquals("5 days ago", Readout.ago(at(0, 23), now = at(5, 1)))
+    }
+
+    // TONNAGE NEVER PRINTS A ZERO. A week of chin-ups and dips moved no external load, and `0.0 t`
+    // would be a number nobody lifted standing where a fact belongs — so does anything that would
+    // round to it. Nothing is formatted and nothing is localised: the tenths are an integer, for
+    // the same reason the days are spelled out by hand — one product may not print one week two
+    // ways, and a decimal comma or a platform's own rounding is exactly how that starts.
+    @Test
+    fun testTonnagePrintsOneDecimalAndSaysNothingAtZero() {
+        assertEquals("14.2 t", Readout.tonnes(14_200.0))
+        assertEquals("5.4 t", Readout.tonnes(5_350.0))
+        assertEquals("1.0 t", Readout.tonnes(1_000.0))
+        assertNull("a session that moved nothing has nothing to say", Readout.tonnes(0.0))
+        assertNull("and neither does one that would round to nothing", Readout.tonnes(40.0))
+    }
+
+    // AND IT ROUNDS HALF AWAY FROM ZERO, which is `Ladder.round`'s law one decimal up rather than
+    // a preference. Every one of these is a tie that a platform's own spelling gets to have an
+    // opinion about — C and Swift's "%.1f" round the binary approximation half-to-even and answer
+    // 1.1 for 1150, JS `toFixed` answers 1.1 for 1150 and 1.3 for 1250 — and a tonnage is a decimal
+    // count of kilograms, so it rounds like one on every surface or the two phones in one lifter's
+    // pockets caption the same week differently.
+    @Test
+    fun testTonnageRoundsHalfAwayFromZeroRatherThanHoweverThePlatformWould() {
+        assertEquals("0.2 t", Readout.tonnes(150.0))
+        assertEquals("0.3 t", Readout.tonnes(250.0))
+        assertEquals("1.2 t", Readout.tonnes(1_150.0))
+        assertEquals("1.3 t", Readout.tonnes(1_250.0))
+        assertEquals("2.3 t", Readout.tonnes(2_250.0))
+    }
+
+    // The estimate is spelled here and computed nowhere on this phone: Epley lives in one place per
+    // language and no client holds a copy.
+    @Test
+    fun testAnEstimateIsSpelledOnTheSameGridAsAWeight() {
+        assertEquals("e1RM 122.5", Readout.estimate(122.5))
+        assertEquals("e1RM 141", Readout.estimate(141.0))
+    }
+
+    // A miss is said as a word — a digit in that column reads like a score, and this product does
+    // not score anybody against a plan they were free to change. Past the words it is a numeral,
+    // because "seventeen short" is not a sentence anybody wants under a set.
+    @Test
+    fun testASmallCountIsSpelledAsAWord() {
+        assertEquals("one", Readout.spelled(1))
+        assertEquals("two", Readout.spelled(2))
+        assertEquals("ten", Readout.spelled(10))
+        assertEquals("11", Readout.spelled(11))
+    }
+
+    // The bottom of the log is the one place gym prints a year: it is the fact somebody scrolled all
+    // the way down to arrive at.
+    @Test
+    fun testTheFirstSessionIsADateWithItsYear() {
+        val at = LocalDate.parse("2026-05-06").atStartOfDay(ZoneId.systemDefault())
+        assertEquals("6 May 2026", Readout.date(at.toInstant().toEpochMilli()))
+        assertEquals("week of 4 May", Readout.weekOf(at.minusDays(2).toInstant().toEpochMilli()))
     }
 
     @Test

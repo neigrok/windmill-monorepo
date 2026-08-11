@@ -168,23 +168,29 @@ struct FinishedSession: Equatable {
 // ONE DRAWING OF A REVIEW, used by the screen a session ends on and by the screen it is revisited
 // from. The three facts, the rare record line and the comparison are one readout, and two copies of
 // it would be two chances for the product to say the same session two ways.
+//
+// `stats` is off in exactly one place: the session detail's head already states those three facts on
+// its own line (§G17), and the tiles under it would be the same session counted twice. What is left
+// is the domain's OPINION — the record and the comparison — which no head line can say, and which
+// ~190 sessions in 200 do not have, so a review that never came back costs that screen nothing.
 struct ReviewReadout: View {
     let review: Review?
     let catalog: [Exercise]
+    var stats = true
 
     @Environment(\.gymSkin) private var skin
 
     var body: some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x5) {
             if let review {
-                tiles(review.stats)
+                if stats { tiles(review.stats) }
                 if let sentence = Finish.recordSentence(review.record, catalog: catalog) {
                     record(sentence)
                 }
                 if let comparison = Finish.comparison(review.against, catalog: catalog) {
                     against(comparison)
                 }
-            } else {
+            } else if stats {
                 // The three facts are the domain's and this read did not come back. Nothing takes
                 // their place: a duration counted on the phone would be a second opinion in the one
                 // screen that exists to state the first.

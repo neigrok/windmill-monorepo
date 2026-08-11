@@ -68,16 +68,6 @@ std::optional<TopSet> topSetOf(const std::vector<Set>& sets) {
   return TopSet{top->weightKg, top->reps, atLoad};
 }
 
-std::optional<double> topE1rmOf(const std::vector<Set>& working) {
-  std::optional<double> top;
-  for (const Set& set : working) {
-    std::optional<double> value = e1rm(set.weightKg, set.reps);
-    if (!value || (top && *value <= *top)) continue;
-    top = value;
-  }
-  return top;
-}
-
 // How long the session covers: start to finish, or — while it is still open — to the last set
 // logged into it, and nothing at all for one that holds none. Clock-free like every rule here,
 // because a duration the server timed would disagree with the device that actually lived it. The
@@ -222,14 +212,29 @@ std::optional<double> e1rm(double weightKg, int reps) {
   return std::round(weightKg * (1.0 + reps / 30.0) * 10.0) / 10.0;
 }
 
+std::optional<double> topE1rmOf(const std::vector<WorkingLoad>& loads) {
+  std::optional<double> top;
+  for (const WorkingLoad& load : loads) {
+    std::optional<double> value = e1rm(load.weightKg, load.reps);
+    if (!value || (top && *value <= *top)) continue;
+    top = value;
+  }
+  return top;
+}
+
 Review review(const Session& session, const std::vector<Set>& sets, const SessionHistory& history) {
   std::vector<Set> working;
   for (const Set& set : sets)
     if (set.kind == SetKind::working) working.push_back(set);
 
   // The span counts every set, warmups included — a ramp-up is time spent — while everything below
-  // counts only working sets, which is the whole of what a warmup, a drop and a failure earn.
-  ReviewStats stats{spanOf(session, sets), static_cast<int>(working.size()), topE1rmOf(working)};
+  // counts only working sets, which is the whole of what a warmup, a drop and a failure earn. The
+  // estimate goes through the same topE1rmOf the log row does, over every working set rather than
+  // the store's per-load projection of them: one definition, so the finish screen and the log can
+  // never print two numbers for one workout.
+  std::vector<WorkingLoad> loads;
+  for (const Set& set : working) loads.push_back(WorkingLoad{set.weightKg, set.reps});
+  ReviewStats stats{spanOf(session, sets), static_cast<int>(working.size()), topE1rmOf(loads)};
   if (stats.workingSets < kSlightWorkingSets)
     return Review{stats, true, std::nullopt, std::nullopt};
   return Review{stats, false, recordIn(working, history.marks),

@@ -13,15 +13,27 @@
 //                                           reps, kind, rpe?, note, completedAt}
 //   POST /v1/gym/sessions/:id/finish     -> {finishedAt} in; the session out, idempotent
 //   GET  /v1/gym/sessions?before=&beforeId=&limit=
-//                                        -> { sessions: [{...session, setCount, exercises, topSet?,
-//                                           closedItself}] } newest first, keyset-paged on
-//                                           (startedAt, id). `topSet` is {weightKg, reps} — the
-//                                           heaviest WORKING set, ties to more reps, OMITTED when
-//                                           the session holds none — and `closedItself` says the
-//                                           four-hour rule closed it rather than a tap. Both are
-//                                           the two columns G8 draws on a row and neither can be
-//                                           derived from a set COUNT; the list carries no sets, so
-//                                           the store answers them where the sets are
+//                                        -> { sessions: [{...session, setCount, workingSetCount,
+//                                           tonnageKg, exercises, topSet?, topE1rm?, closedItself}] }
+//                                           newest first, keyset-paged on (startedAt, id). THE LIST
+//                                           CARRIES NO SETS, so everything a §G16 row draws is
+//                                           answered where the sets are and none of it is derivable
+//                                           from a set COUNT: `setCount` is every set of every kind
+//                                           and `workingSetCount` only the working ones; `tonnageKg`
+//                                           sums working weight × reps with an assisted set clamped
+//                                           to zero, and is always present — a zero is a real answer
+//                                           and the client draws nothing for it; `topSet` is
+//                                           {weightKg, reps}, the heaviest WORKING set with ties to
+//                                           more reps, OMITTED when the session holds none, and
+//                                           `topE1rm` is the domain's best Epley over EVERY working
+//                                           set rather than over that one (domain/Review.h: 100 × 5
+//                                           beats a back-off 95 × 10 on the bar and loses on the
+//                                           estimate), omitted where Epley is undefined — no working
+//                                           set at all, or none of them loaded, so a bodyweight
+//                                           session carries `topSet` and no `topE1rm`. The web
+//                                           computes no estimate of its own (review.js).
+//                                           `closedItself` says the four-hour rule closed the
+//                                           session rather than a tap
 //   GET  /v1/gym/sessions/:id            -> { session, sets } — or null on 404 (absent and
 //                                           another's are the same byte). Every 200 carries a weak
 //                                           ETag — opaque bytes this client only ever echoes; a

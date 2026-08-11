@@ -416,6 +416,72 @@ TEST(pg_gym_log_carries_the_top_working_set_and_says_which_row_closed_itself) {
   CHECK_FALSE(listed[3].closedItself);
 }
 
+// The aggregate's two counts and its tonnage, against the real statement. Both counts come off ONE
+// GROUP BY so they cannot disagree about which sets a session held, and the tonnage filters to the
+// same working rows the top set is picked from. `greatest(weight_kg, 0)` is the load-bearing clamp:
+// gym_sets stores a NEGATIVE kg for band-assisted work (§2.3), and an unclamped sum would let an
+// assisted pull-up subtract from a week somebody trained. A session whose working sets are all
+// unloaded sums to zero, which is a real answer and not an absence.
+TEST(pg_gym_log_counts_working_sets_apart_and_clamps_an_assisted_set_out_of_the_tonnage) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  repo.insertSet(squatSet("set_pg000001", "ses_pg000001", 60, 10, t1 + 1'000, SetKind::warmup));
+  repo.insertSet(squatSet("set_pg000002", "ses_pg000001", 100, 5, t1 + 2'000));
+  repo.insertSet(squatSet("set_pg000003", "ses_pg000001", 100, 5, t1 + 3'000));
+  repo.insertSet(benchSet("set_pg000004", 82.5, t1 + 4'000));                     // 82.5 × 8
+  repo.insertSet(benchSet("set_pg000005", -20, t1 + 5'000));                      // assisted × 8
+  repo.close(SessionId{"ses_pg000001"}, t1 + 6'000);
+  // A whole session of chin-ups: working sets that moved no measurable load at all.
+  repo.insertSession(sessionAt("ses_pg000002", t1 + 100'000));
+  repo.insertSet(benchSet("set_pg000006", 0, t1 + 101'000, "ses_pg000002"));
+  repo.close(SessionId{"ses_pg000002"}, t1 + 102'000);
+
+  std::vector<SessionSummary> listed = repo.log(wm::UserId{kUser}, page(t1 + 200'000, 50));
+
+  REQUIRE_EQ(listed.size(), static_cast<std::size_t>(2));
+  CHECK_EQ(listed[0].setCount, 1);
+  CHECK_EQ(listed[0].workingSetCount, 1);
+  CHECK_EQ(listed[0].tonnageKg, 0.0);
+  CHECK_EQ(listed[1].setCount, 5);
+  CHECK_EQ(listed[1].workingSetCount, 4);          // the ramp-up is counted, never worked
+  CHECK_EQ(listed[1].tonnageKg, 100.0 * 5 + 100.0 * 5 + 82.5 * 8);   // the assisted set adds none
+}
+
+// The load ladder against the real statement: one row per distinct WORKING load, carrying the best
+// reps done at it, heaviest first. It is what the log row's e1RM is computed from, and it has to be
+// the loads rather than the top set — the heaviest set here is 100 × 5 and the session's estimate
+// belongs to the 95 × 10 back-offs. The warmup is not in it, and a load at or below zero rides along
+// unfiltered because which loads Epley is defined for is the domain's rule, stated in one place.
+TEST(pg_gym_log_hands_back_one_row_per_working_load_with_the_best_reps_at_it) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  repo.insertSet(squatSet("set_pg000001", "ses_pg000001", 60, 10, t1 + 1'000, SetKind::warmup));
+  repo.insertSet(squatSet("set_pg000002", "ses_pg000001", 100, 5, t1 + 2'000));
+  repo.insertSet(squatSet("set_pg000003", "ses_pg000001", 95, 6, t1 + 3'000));
+  repo.insertSet(squatSet("set_pg000004", "ses_pg000001", 95, 10, t1 + 4'000));
+  repo.insertSet(squatSet("set_pg000005", "ses_pg000001", 95, 8, t1 + 5'000));
+  repo.insertSet(squatSet("set_pg000006", "ses_pg000001", -20, 12, t1 + 6'000));
+  repo.close(SessionId{"ses_pg000001"}, t1 + 7'000);
+
+  std::vector<SessionSummary> listed = repo.log(wm::UserId{kUser}, page(t1 + 100'000, 50));
+
+  REQUIRE_EQ(listed.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(listed[0].workingLoads,
+           (std::vector<WorkingLoad>{WorkingLoad{100.0, 5}, WorkingLoad{95.0, 10},
+                                     WorkingLoad{-20.0, 12}}));
+  // And what the application makes of it: the session's number, not its heaviest set's.
+  CHECK_EQ(topE1rmOf(listed[0].workingLoads), e1rm(95.0, 10));
+  CHECK_EQ(listed[0].topSet, std::optional<TopWorkingSet>(TopWorkingSet{100.0, 5}));
+}
+
 // The summary's movements are framed by the rows they come back in, so a display name holding
 // whatever separator a hand-rolled aggregate would have used is still ONE movement.
 TEST(pg_gym_log_names_a_movement_whose_display_name_holds_a_newline_once) {

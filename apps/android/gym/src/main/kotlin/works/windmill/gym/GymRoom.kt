@@ -4,11 +4,13 @@ import android.app.Activity
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -26,6 +29,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,7 +61,9 @@ import works.windmill.gym.ui.FinishedSession
 import works.windmill.gym.ui.GymSkin
 import works.windmill.gym.ui.GymTap
 import works.windmill.gym.ui.GymType
+import works.windmill.gym.ui.LogScreen
 import works.windmill.gym.ui.LoggerScreen
+import works.windmill.gym.ui.RoutinesScreen
 import works.windmill.gym.ui.SessionScreen
 import works.windmill.gym.ui.StatisticsScreen
 import works.windmill.gym.ui.TodayScreen
@@ -65,6 +71,7 @@ import works.windmill.platform.Account
 import works.windmill.platform.LocalShellActions
 import works.windmill.platform.ProductModule
 import works.windmill.platform.design.WindmillFont
+import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
 // Gym's one seam into the superapp. Everything the product is sits behind this; the shell knows
@@ -79,27 +86,41 @@ class GymModule : ProductModule {
     }
 }
 
-// Where Today can send you, and both are read-only: the long window over every finished session,
-// and one past session with its sets. The session travels as the ROW Today already holds rather
-// than as an id, because that row carries facts no other read gives back — the set count, and
-// whether the four-hour rule closed it rather than a tap.
+// THE THREE TABS, which are the room's whole navigation — §F, decided 2026-08-12. Today, the log,
+// the routines, in one pill rail past which sits the shell's own seat.
+//
+// WHAT THE OLD SHAPE GOT RIGHT AND WHAT IT DID NOT. This room refused a tab bar outright, reasoning
+// that any bar "invites a third and a fourth tab, which is the fourth Insights tab gym's canon
+// refused". The refusal of a fourth INSIGHTS tab is canon and stands — there is no dashboard in
+// this product and there will not be one. "Therefore no tab bar" was this room's own inference, and
+// §F contradicts it: gym is three tabs plus the seat. What the old reasoning was actually right
+// about survives in one line below — the rail is not drawn over the logger, because a workout owns
+// the screen it is being logged on.
+private enum class Tab(val title: String) {
+    Today("Today"),
+    Log("The log"),
+    Routines("Routines"),
+}
+
+// What a tab can push on top of itself, and both are read-only: the long window over every finished
+// session, and one past session with its sets. The session travels as the ROW the list already
+// holds rather than as an id, because that row carries facts no other read gives back — the working
+// set count, the tonnage, and whether the four-hour rule closed it rather than a tap.
 private sealed interface Away {
     data object Statistics : Away
     data class Session(val summary: SessionSummary) : Away
 }
 
-// THE ROOM — gym's whole surface, and the five places a lifter can stand in it: Today, the session
-// they are in the middle of, the screen a session ends on, and the two retrospective screens Today
-// opens (Statistics, and one past session). It draws no capsule, no theme control and nothing about
-// billing: the shell owns all three, and a room that drew one of them would be a second copy of a
-// decision the shell already made.
+// THE ROOM — gym's whole surface: the three tabs a lifter stands on at rest, the session they are
+// in the middle of, the screen a session ends on, and the two screens a tab can push. It draws no
+// capsule, no theme control and nothing about billing: the shell owns all three, and a room that
+// drew one of them would be a second copy of a decision the shell already made. No top-right
+// anything, for the same reason.
 //
-// NAVIGATION IS A DOOR OFF TODAY AND NOT A TAB BAR, deliberately. A tab bar is permanent furniture:
-// it would draw a second destination across the logger, where this product's whole rule is that the
-// workout owns the screen — and it is the shape that invites a third and a fourth tab, which is the
-// "fourth Insights tab" gym's canon refused. A door only exists where it leads somewhere, so Today
-// offers Statistics and the last session exactly when the log holds a finished session, and the way
-// back is the leading end of the room's own bar, opposite the shell's seat.
+// A LIVE SESSION TAKES THE WHOLE SCREEN, rail included. Every other screen in this product can wait;
+// the one a lifter is under a bar for cannot, and a second destination drawn across it is an offer
+// to leave mid-set. A pushed screen covers the rail too — it came from a tab and the way back is the
+// row at its head, which names where it goes.
 //
 // A ROOM'S STATE DIES WHEN YOU LEAVE IT — the store and everything it scheduled go with the
 // subtree. That is why the queue is on disk after every tap and why leaving flushes: gym would pay
@@ -122,25 +143,43 @@ fun GymRoom(account: Account) {
     var keptRoutine by remember { mutableStateOf(false) }
     var starting by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf<String?>(null) }
+    // Saveable, and it is the one piece of this room's state that has to be: everything else is
+    // rebuilt from disk when the activity is recreated, but which tab was open exists nowhere but
+    // here — and a rotation that dropped a lifter back on Today would be the room forgetting where
+    // they were standing.
+    var tab by rememberSaveable { mutableStateOf(Tab.Today) }
 
-    // Every door in and out of a retrospective screen goes through here for one reason: the bar's
-    // note is what the room has to say about the door that did not open ON THE SCREEN YOU ARE ON,
-    // and a refusal from Today carried under a chart is a sentence about something that is no
-    // longer in front of the lifter.
+    // Every door in and out of a retrospective screen goes through here for one reason: the note
+    // above the rail is what the room has to say about the door that did not open ON THE SCREEN YOU
+    // ARE ON, and a refusal from Today carried under a chart is a sentence about something that is
+    // no longer in front of the lifter. Every move between destinations clears it — this one, the
+    // rail's own tap, and the back gesture.
     fun look(at: Away?) {
         note = null
         away = at
     }
 
-    // What the system back gesture means here, decided rather than inherited: a retrospective
-    // screen pops to Today, the same move as the bar's own door. On the finish screen back is
-    // CLAIMED AND INERT — its once-only offers (the review, keep-as-routine) leave through Done or
-    // Discard, and a reflex gesture that silently dropped them would cost a routine nobody chose
-    // to decline. Everywhere else back keeps its Android meaning and backgrounds the app — the
-    // logger survives that; the queue is on disk after every tap.
-    BackHandler(enabled = away != null || finished != null) {
+    // What the system back gesture means here, decided rather than inherited: a pushed screen pops
+    // to the tab it came from, and a tab that is not Today falls back to Today — the Android
+    // convention, and the one the rail already agrees with. On the finish screen back is CLAIMED
+    // AND INERT: its once-only offers (the review, keep-as-routine) leave through Done or Discard,
+    // and a reflex gesture that silently dropped them would cost a routine nobody chose to decline.
+    // MID-WORKOUT IT IS THE PLATFORM'S AGAIN and backgrounds the app — the logger owns the whole
+    // screen, so there is nothing under it to pop, and moving a tab nobody can see would be a
+    // gesture that did something invisible. The logger survives it; the queue is on disk after
+    // every tap.
+    val live = store.session != null
+    BackHandler(enabled = finished != null || (!live && (away != null || tab != Tab.Today))) {
         if (finished != null) return@BackHandler
-        look(null)
+        if (away != null) {
+            look(null)
+            return@BackHandler
+        }
+        // The note goes with the tab it was said on, exactly as it does through `look` and the
+        // rail: a start the Routines tab refused is a sentence about a row that is no longer on
+        // screen, and Today is not the place to read it.
+        note = null
+        tab = Tab.Today
     }
 
     // Re-runs whenever who is signed in changes. `connect` drains what the device is still holding
@@ -198,9 +237,10 @@ fun GymRoom(account: Account) {
                     note = opened.why.line("a session starts there")
                     return@launch
                 }
-                // Whatever retrospective screen was open is over: the workout is what this phone is
-                // for, and Done on the finish screen must land on Today rather than back on a chart.
+                // Whatever screen was open is over: the workout is what this phone is for, and Done
+                // on the finish screen must land on Today rather than back on a chart or a list.
                 away = null
+                tab = Tab.Today
                 // A start JOINS whatever session is already open, so what came back may be a workout
                 // with sets in it — stand where that workout is, not at the head of the routine.
                 val movement = LiveOrder.resume(store.order, store.sets) ?: return@launch
@@ -277,18 +317,35 @@ fun GymRoom(account: Account) {
             .background(GymSkin.canvas)
             .systemBarsPadding(),
     ) {
-        // A LIVE SESSION OUTRANKS A RETROSPECTIVE SCREEN. Statistics and a past session are only
-        // reachable from Today, which is only drawn at rest — but a workout that opens while one of
-        // them is up (a start on this phone, a session joined from another device) puts the lifter
-        // back where the sets are, because that is the one screen in this product that is
-        // time-critical.
+        val ended = finished
+        val standing = away
+
+        // The way back out of a pushed screen, at its head and naming where it goes — §G17 puts it
+        // there rather than at the foot, because "‹ The log" is a destination and a bare chevron in
+        // a bar is not.
+        if (ended == null && !live && standing != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
+                modifier = Modifier
+                    .heightIn(min = GymTap.minimum)
+                    .padding(horizontal = WindmillSpace.x5)
+                    .clickable { look(null) },
+            ) {
+                Text("‹", style = WindmillFont.body(19, FontWeight.SemiBold), color = GymSkin.inkDim)
+                Text(tab.title, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkDim)
+            }
+        }
+
+        // A LIVE SESSION OUTRANKS EVERY OTHER SCREEN. A pushed screen is only reachable at rest —
+        // but a workout that opens while one is up (a start on this phone, a session joined from
+        // another device) puts the lifter back where the sets are, because that is the one screen in
+        // this product that is time-critical.
         Box(
             Modifier
                 .weight(1f)
                 .fillMaxWidth(),
         ) {
-            val ended = finished
-            val standing = away
             when {
                 ended != null -> FinishScreen(
                     finished = ended,
@@ -299,7 +356,7 @@ fun GymRoom(account: Account) {
                     onDiscard = { discard(ended.session.id) },
                     onDone = { finished = null },
                 )
-                store.session != null -> LoggerScreen(
+                live -> LoggerScreen(
                     store = store,
                     say = { note = it },
                     onFinish = { close() },
@@ -310,6 +367,8 @@ fun GymRoom(account: Account) {
                     store = store,
                     coach = coach,
                 )
+                tab == Tab.Log -> LogScreen(store, onOpenSession = { look(Away.Session(it)) })
+                tab == Tab.Routines -> RoutinesScreen(store, onStart = { routineId -> open(routineId) })
                 else -> TodayScreen(
                     store = store,
                     isSignedIn = account.isSignedIn,
@@ -321,38 +380,85 @@ fun GymRoom(account: Account) {
             }
         }
 
-        // The shell's seat, at the trailing end of the room's own bar and past its own hairline. At
-        // the leading end, the room's own way back out of a screen Today opened. Between them, and
-        // in one place on every screen, whatever the room has to say about a door that did not
-        // open: mono, quiet, and never a toast, a spinner or an alert.
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = GymTap.minimum)
-                .padding(horizontal = WindmillSpace.x5)
-                .padding(bottom = WindmillSpace.x2),
-        ) {
-            if (away != null) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
-                    modifier = Modifier
-                        .heightIn(min = GymTap.minimum)
-                        .clickable { look(null) },
-                ) {
-                    Text("‹", style = WindmillFont.body(17, FontWeight.SemiBold), color = GymSkin.inkDim)
-                    Text("Today", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkDim)
-                }
-            }
-            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-                note?.let {
-                    Text(it, style = GymType.numeral(12), color = GymSkin.inkDim, maxLines = 2)
-                }
-            }
-            YouSeat(initial = account.user?.email?.take(1) ?: "")
+        // In one place on every screen, whatever the room has to say about a door that did not open:
+        // mono, quiet, and never a toast, a spinner or an alert. It sits above the rail rather than
+        // inside it because the logger has no rail and is the screen that says the most.
+        note?.let {
+            Text(
+                it,
+                style = GymType.numeral(12),
+                color = GymSkin.inkDim,
+                maxLines = 2,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = WindmillSpace.x5)
+                    .padding(bottom = WindmillSpace.x2),
+            )
         }
+
+        // The rail belongs to the three tabs and to nothing else: the logger, the finish and a
+        // pushed screen each own their whole surface, and the shell's seat goes with the rail
+        // because it lives past the rail's own hairline.
+        if (ended == null && !live && standing == null) {
+            TabRail(
+                current = tab,
+                onPick = { picked ->
+                    note = null
+                    tab = picked
+                },
+                initial = account.user?.email?.take(1) ?: "",
+            )
+        }
+    }
+}
+
+// THE RAIL — three tabs 14dp off each edge, then a hairline, then the shell's seat. The seat reads
+// as the shell's because of the hairline and not because of a different colour, and the room draws
+// nothing else in this band: no account button of its own, no hamburger, no theme toggle.
+// Appearance is chosen once, in You, and this room only answers it.
+//
+// A tab's pill is 40 tall and its TARGET is the rail's full 50, which clears the room's own floor
+// of 46 — the design's 44 is the platform's habit, and this product's rule is a chalked hand.
+@Composable
+private fun TabRail(current: Tab, onPick: (Tab) -> Unit, initial: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp)
+            .padding(bottom = WindmillSpace.x2)
+            .height(50.dp)
+            .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.full))
+            .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.full))
+            .padding(horizontal = 5.dp),
+    ) {
+        Tab.entries.forEach { entry ->
+            val selected = entry == current
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clickable { onPick(entry) },
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(40.dp)
+                        .clip(RoundedCornerShape(WindmillRadius.full))
+                        .background(if (selected) GymSkin.accentSoft else Color.Transparent),
+                ) {
+                    Text(
+                        entry.title,
+                        style = WindmillFont.body(13, if (selected) FontWeight.Bold else FontWeight.SemiBold),
+                        color = if (selected) GymSkin.accent else GymSkin.inkFaint,
+                    )
+                }
+            }
+        }
+        YouSeat(initial = initial)
     }
 }
 

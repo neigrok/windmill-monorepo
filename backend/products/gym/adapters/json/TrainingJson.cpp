@@ -215,25 +215,37 @@ Json::Value toJson(const std::vector<Set>& sets) {
   return array;
 }
 
-// One row of the log, which is the session plus the four things the list says about it without
-// loading its sets. topSet is omitted for a session holding no working set — a warmup-only session,
-// or one still empty — because "0 kg × 0" is not a lighter workout, it is no workout yet.
-// closedItself is always present: it is a fact about every row rather than an optional the client
-// tests for, and the note it draws ("closed on its own — no set for four hours") is a sentence the
-// row either says or does not.
-Json::Value toJson(const SessionSummary& summary) {
-  Json::Value body = toJson(summary.session);
-  body["setCount"] = summary.setCount;
+// One row of the log, which is the session plus what the list says about it without loading its
+// sets. Both counts travel: setCount is every row the session holds, workingSetCount is the number
+// the screen prints, and they are different numbers on any session that warmed up.
+//
+// tonnageKg is always present and a zero is a real answer — the working sets moved no measurable
+// load — so it is a NUMBER and not an omission, because a week divider sums the rows under it and
+// an absence would have to be read as a zero anyway. What a zero means is a rendering rule and it
+// is the same on every surface: draw nothing where the tonnage would go, never `0.0 t`.
+//
+// topSet is omitted for a session holding no working set — a warmup-only session, or one still
+// empty — because "0 kg × 0" is not a lighter workout, it is no workout yet, and topE1rm is omitted
+// with it and also where the heaviest working set was unloaded (Epley is undefined at and below
+// zero). closedItself is always present: it is a fact about every row rather than an optional the
+// client tests for, and the note it draws ("closed on its own — no set for four hours") is a
+// sentence the row either says or does not.
+Json::Value toJson(const LogRow& row) {
+  Json::Value body = toJson(row.summary.session);
+  body["setCount"] = row.summary.setCount;
+  body["workingSetCount"] = row.summary.workingSetCount;
+  body["tonnageKg"] = row.summary.tonnageKg;
   Json::Value names(Json::arrayValue);
-  for (const std::string& name : summary.exerciseNames) names.append(name);
+  for (const std::string& name : row.summary.exerciseNames) names.append(name);
   body["exercises"] = names;
-  if (summary.topSet) {
+  if (row.summary.topSet) {
     Json::Value top(Json::objectValue);
-    top["weightKg"] = summary.topSet->weightKg;
-    top["reps"] = summary.topSet->reps;
+    top["weightKg"] = row.summary.topSet->weightKg;
+    top["reps"] = row.summary.topSet->reps;
     body["topSet"] = top;
   }
-  body["closedItself"] = summary.closedItself;
+  if (row.topE1rm) body["topE1rm"] = *row.topE1rm;
+  body["closedItself"] = row.summary.closedItself;
   return body;
 }
 

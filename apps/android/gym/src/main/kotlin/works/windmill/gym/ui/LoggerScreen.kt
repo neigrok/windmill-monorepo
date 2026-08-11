@@ -177,7 +177,7 @@ fun LoggerScreen(store: TrainingStore, say: (String?) -> Unit, onFinish: () -> U
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
     ) {
         Header(
-            routine = store.session?.plan?.routine ?: "Ad-hoc session",
+            routine = store.session?.plan?.routine ?: Readout.noRoutine,
             elapsedMs = nowMs - (store.session?.startedAtMs ?: 0L),
             onFinish = onFinish,
         )
@@ -195,7 +195,7 @@ fun LoggerScreen(store: TrainingStore, say: (String?) -> Unit, onFinish: () -> U
         val movement = store.exerciseId
         if (movement == null) {
             Assembling(
-                title = store.session?.plan?.routine ?: "Ad-hoc session",
+                title = store.session?.plan?.routine ?: Readout.noRoutine,
                 line = if (store.session?.plan == null)
                     "No routine, no plan snapshot. Pick what you are about to lift."
                 else

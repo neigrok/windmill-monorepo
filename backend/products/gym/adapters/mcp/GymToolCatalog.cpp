@@ -175,10 +175,15 @@ std::vector<ToolDeclaration> gymToolCatalog() {
     p["beforeId"] = str("That same row's `id`. Send it with `before` — an id alone names no row.");
     p["limit"] = boundedInt("How many workouts (default 20).", 1, kMaxLogLimit);
     tools.push_back(tool("list_sessions", Access::read,
-        "Your training log, newest first — one row per workout: the session plus how many sets it "
-        "held, which movements were in it, its heaviest working set, and `closedItself` (the "
-        "four-hour rule ended it rather than a tap). Page with BOTH halves of the last row's key, "
-        "`before` and `beforeId`, because two workouts can start in the same millisecond.",
+        "Your training log, newest first — one row per workout: the session, `setCount` (every set "
+        "it held) beside `workingSetCount` (only the working ones, which are the only sets that "
+        "count toward anything), `tonnageKg` (the load those working sets moved, an assisted or "
+        "bodyweight set contributing zero — so a zero tonnage is not a claim that nothing was "
+        "done), which movements were in it, its heaviest working set, `topE1rm` (the best Epley "
+        "estimate any working set in it earned — the session's own number, not the heaviest set's), "
+        "and `closedItself` (the four-hour rule ended it rather than a "
+        "tap). Page with BOTH halves of the last row's key, `before` and `beforeId`, because two "
+        "workouts can start in the same millisecond.",
         p, {}));
   }
   {

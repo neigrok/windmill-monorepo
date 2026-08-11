@@ -1,19 +1,29 @@
 import SwiftUI
 import WindmillPlatform
 
-// THE ROOM — gym's whole surface, and the five places a lifter can stand in it: Today, the session
-// they are in the middle of, the screen a session ends on, and the two retrospective screens Today
-// opens (Statistics, and one past session). It draws no capsule, no theme control and nothing about
+// THE ROOM — gym's whole surface: the three tabs a lifter stands in at rest (Today, The log,
+// Routines), the session they are in the middle of, the screen a session ends on, and the two
+// read-only screens a tab opens over itself. It draws no capsule, no theme control and nothing about
 // billing: the shell owns all three, and a room that drew one of them would be a second copy of a
 // decision the shell already made.
 //
-// NAVIGATION IS A DOOR OFF TODAY AND NOT A TAB BAR, deliberately. A tab bar is permanent furniture:
-// it would draw a second destination across the logger, where this product's whole rule is that the
-// workout owns the screen — and it is the shape that invites a third and a fourth tab, which is the
-// "fourth Insights tab" gym's canon refused. A door only exists where it leads somewhere, so Today
-// offers Statistics and the last session exactly when the log holds a finished session, and the way
-// back is the leading end of the room's own bar, opposite the shell's seat. The shell's back gesture
-// is the left screen edge and takes you HOME, so a room screen may not claim that edge for itself.
+// THE FRAME, §F, 2026-08-12. Three tabs in one pill rail 14pt off each edge — Today · The log ·
+// Routines — then a hairline, then the shell's You seat, which reads as the shell's because of the
+// hairline and not because of a different colour. Rail 50, tab 40, nothing tappable under 44. The
+// primary action is never in the bar and never in a corner: it is full-width, above the rail, where
+// a chalked thumb reaches it without regripping. No top-right anything — no account button, no
+// hamburger, no theme toggle: appearance is chosen once, in You, and this room only answers it.
+//
+// WHAT SURVIVED THE COMMENT THIS REPLACED: gym's canon refuses a FOURTH tab — there is no dashboard
+// in this product, and Insights was refused by name. That stands. "Therefore no tab bar at all" was
+// this room's own inference from it and §F contradicts it; the block arguing for the shape is gone
+// with the shape. The rail is drawn on the three tabs and nowhere else: the logger, the finish and
+// the two read-only screens carry the bar alone, because a workout owns the screen it is on.
+//
+// The way back out of a read-only screen is the leading end of the room's own bar, opposite the
+// seat, and not the top-left corner §G17 draws it in: that corner is the shell's 38pt capsule lane,
+// reserved by a safe-area inset in every app. The shell's back GESTURE is the left screen edge and
+// takes you home, so a room screen may not claim that edge either.
 //
 // The skin is stated rather than followed. Journal's night and day are the writer's choice; gym is
 // an instrument, so the room says `.dark` outward and the shell dresses the capsule to match.
@@ -31,6 +41,7 @@ public struct GymRoom: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.shellActions) private var shell
     @State private var finished: FinishedSession?
+    @State private var tab: Tab = .today
     @State private var away: Away?
     @State private var keptRoutine = false
     @State private var starting = false
@@ -40,10 +51,19 @@ public struct GymRoom: View {
         self.account = account
     }
 
-    // Where Today can send you, and both are read-only: the long window over every finished session,
-    // and one past session with its sets. The session travels as the ROW Today already holds rather
-    // than as an id, because that row carries facts no other read gives back — the set count, and
-    // whether the four-hour rule closed it rather than a tap.
+    // The three tabs, in the order the rail draws them.
+    private enum Tab: String, CaseIterable, Identifiable {
+        case today = "Today"
+        case log = "The log"
+        case routines = "Routines"
+
+        var id: String { rawValue }
+    }
+
+    // What a tab can open OVER itself, and both are read-only: the long window over every finished
+    // session, and one past session with its sets. The session travels as the ROW the list already
+    // holds rather than as an id, because that row carries facts no other read gives back — the
+    // working count, the tonnage, and whether the four-hour rule closed it rather than a tap.
     private enum Away: Equatable {
         case statistics
         case session(SessionSummary)
@@ -54,7 +74,19 @@ public struct GymRoom: View {
     public var body: some View {
         VStack(spacing: 0) {
             stage
-            bar
+            // Whatever the room has to say about a door that did not open, in ONE place on every
+            // screen and always directly above the furniture at the foot: mono, quiet, and never a
+            // toast, a spinner or an alert.
+            if let note {
+                Text(note)
+                    .font(GymType.numeral(12))
+                    .foregroundStyle(skin.inkDim)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, WindmillSpace.x5)
+                    .padding(.bottom, WindmillSpace.x2)
+            }
+            if isAtRest { rail } else { bar }
         }
         .background(skin.canvas.ignoresSafeArea())
         .environment(\.gymSkin, skin)
@@ -82,10 +114,9 @@ public struct GymRoom: View {
         .onDisappear { Task { await store.flushPendingSets(force: true) } }
     }
 
-    // A LIVE SESSION OUTRANKS A RETROSPECTIVE SCREEN. Statistics and a past session are only
-    // reachable from Today, which is only drawn at rest — but a workout that opens while one of them
-    // is up (a start on this phone, a session joined from another device) puts the lifter back where
-    // the sets are, because that is the one screen in this product that is time-critical.
+    // A LIVE SESSION OUTRANKS EVERY TAB AND EVERY READ-ONLY SCREEN. A workout that opens while one
+    // of them is up (a start on this phone, a session joined from another device) puts the lifter
+    // back where the sets are, because that is the one screen in this product that is time-critical.
     @ViewBuilder
     private var stage: some View {
         if let finished {
@@ -105,28 +136,61 @@ public struct GymRoom: View {
                               coach: doors(to: summary.session.id))
             }
         } else {
-            TodayScreen(store: store, isSignedIn: account.isSignedIn,
-                        onStart: { routineId in Task { await open(routineId) } },
-                        onStatistics: { look(at: .statistics) },
-                        onOpenSession: { look(at: .session($0)) },
-                        onSignIn: { shell.openYou() })
+            switch tab {
+            case .today:
+                TodayScreen(store: store, isSignedIn: account.isSignedIn,
+                            onStart: { routineId in Task { await open(routineId) } },
+                            onStatistics: { look(at: .statistics) },
+                            onOpenSession: { look(at: .session($0)) },
+                            onSignIn: { shell.openYou() })
+            case .log:
+                LogScreen(store: store, onOpen: { look(at: .session($0)) })
+            case .routines:
+                RoutinesScreen(store: store, onStart: { routineId in Task { await open(routineId) } })
+            }
         }
     }
 
-    // Every door in and out of a retrospective screen goes through here for one reason: the bar's
-    // note is what the room has to say about the door that did not open ON THE SCREEN YOU ARE ON,
-    // and a refusal from Today carried under a chart is a sentence about something that is no longer
-    // in front of the lifter.
+    private var isAtRest: Bool {
+        finished == nil && store.session == nil && away == nil
+    }
+
+    // Every door in and out of a read-only screen goes through here for one reason: the note is what
+    // the room has to say about the door that did not open ON THE SCREEN YOU ARE ON, and a refusal
+    // from Today carried under a chart is a sentence about something that is no longer in front of
+    // the lifter.
     private func look(at destination: Away?) {
         note = nil
         away = destination
     }
 
-    // The shell's seat, at the trailing end of the room's own bar and past its own hairline — the
-    // same right edge it sits at in every other app, on every screen gym has. At the leading end,
-    // the room's own way back out of a screen Today opened. Between them, and in one place on every
-    // screen, whatever the room has to say about a door that did not open: mono, quiet, and never a
-    // toast, a spinner or an alert.
+    // THE RAIL, §F: three tabs in one pill, then the hairline and the shell's seat, which `YouSeat`
+    // brings with it. It is only ever drawn at rest — see the head of this file.
+    private var rail: some View {
+        HStack(spacing: WindmillSpace.x1) {
+            ForEach(Tab.allCases) { destination in
+                Button { look(at: nil); tab = destination } label: {
+                    Text(destination.rawValue)
+                        .font(WindmillFont.body(13, destination == tab ? .bold : .semibold))
+                        .foregroundStyle(destination == tab ? skin.accent : skin.inkFaint)
+                        .frame(maxWidth: .infinity, minHeight: 40)
+                        .background(RoundedRectangle(cornerRadius: WindmillRadius.full)
+                            .fill(destination == tab ? skin.accentSoft : .clear))
+                }
+                .accessibilityAddTraits(destination == tab ? [.isSelected] : [])
+            }
+            YouSeat()
+        }
+        .padding(WindmillSpace.x1)
+        .frame(minHeight: 50)
+        .background(Capsule().fill(skin.surface))
+        .overlay(Capsule().strokeBorder(skin.line, lineWidth: 1))
+        .padding(.horizontal, 14)
+        .padding(.bottom, WindmillSpace.x2)
+    }
+
+    // The bar every screen that is NOT a tab carries: the room's own way back at the leading end,
+    // and the shell's seat at the trailing one — the same right edge it sits at in every other app.
     private var bar: some View {
         HStack(spacing: WindmillSpace.x3) {
             if away != nil {
@@ -134,18 +198,12 @@ public struct GymRoom: View {
                     HStack(spacing: WindmillSpace.x1) {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 12, weight: .semibold))
-                        Text("Today")
+                        Text(tab.rawValue)
                             .font(WindmillFont.body(15, .semibold))
                     }
                     .foregroundStyle(skin.inkDim)
                     .frame(minHeight: GymTap.minimum)
                 }
-            }
-            if let note {
-                Text(note)
-                    .font(GymType.numeral(12))
-                    .foregroundStyle(skin.inkDim)
-                    .lineLimit(2)
             }
             Spacer(minLength: 0)
             YouSeat()
@@ -179,9 +237,11 @@ public struct GymRoom: View {
             note = why.line("a session starts there")
             return
         }
-        // Whatever retrospective screen was open is over: the workout is what this phone is for, and
-        // Done on the finish screen must land on Today rather than back on a chart.
+        // Whatever was open is over: the workout is what this phone is for, and Done on the finish
+        // screen must land on Today — never back on a chart, and never on the routines list a start
+        // happened to be tapped from.
         away = nil
+        tab = .today
         // A start JOINS whatever session is already open, so what came back may be a workout with
         // sets in it — stand where that workout is, not at the head of the routine that was asked for.
         guard let movement = LiveOrder.resume(order: store.order, sets: store.sets) else { return }
@@ -195,7 +255,7 @@ public struct GymRoom: View {
     // running because a set had not landed is a fact the lifter can act on, and a Finish that
     // silently did nothing is the same screen as a Finish that worked.
     private func close() async {
-        guard let live = store.session else { return }
+        guard store.session != nil else { return }
         let performed = store.sets
         note = nil
         switch await store.finish() {

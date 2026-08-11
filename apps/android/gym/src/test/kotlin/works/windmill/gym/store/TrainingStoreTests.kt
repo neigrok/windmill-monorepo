@@ -1,6 +1,7 @@
 package works.windmill.gym.store
 
 import java.io.File
+import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
@@ -1078,5 +1079,123 @@ class TrainingStoreTests {
             listOf("set_a"), LocalLog(localFile).details().single().sets.map { it.id })
         assertEquals("under the finish that actually happened",
             2_000L, LocalLog(localFile).details().single().session.finishedAtMs)
+    }
+
+    // THE FOOT OF THE LOG IS PAGING ARITHMETIC AND NOTHING ELSE. A full page means there may be
+    // more; a short one is the bottom, and the bottom is a real arrival rather than a box that
+    // stopped offering. The cursor is the oldest row the LOG sent — never one off the shelf, which
+    // the log has never heard of.
+    @Test
+    fun testTheLogPagesOlderOnAskAndKnowsWhenItHasReachedTheBottom() = runTest {
+        val server = FakeTraining()
+        repeat(60) { index ->
+            server.open(Session(id = "ses_$index", startedAtMs = 1_000L + index,
+                finishedAtMs = 2_000L + index))
+        }
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+
+        assertEquals("a full page, so there may be more", Older.More, store.older)
+        assertEquals(50, store.logged.size)
+        assertEquals("newest first", "ses_59", store.logged.first().id)
+
+        store.loadOlder()
+
+        assertEquals("sixty sessions, no row twice", 60, store.logged.size)
+        assertEquals(60, store.logged.map { it.id }.toSet().size)
+        assertEquals("a short page is the bottom", Older.End, store.older)
+        assertEquals("ses_0", store.logged.last().id)
+
+        val asked = server.calls.count { it == "sessions" }
+        store.loadOlder()
+        assertEquals("the bottom does not ask again", asked, server.calls.count { it == "sessions" })
+    }
+
+    // A RE-READ MAY NOT UNDO A WALK. The delivery cadence re-reads the log on a TIMER — nobody taps
+    // anything — the moment a claim it owed comes good, and the lifter is not somewhere else while
+    // that fires: they are on the log, ten rows into a page they asked for. So the head is
+    // refreshed, the claimed session lands in it, the pages underneath stay, and the foot is still
+    // the bottom they walked to.
+    @Test
+    fun testTheCadencesReReadKeepsThePagesTheLifterWalked() = runTest {
+        val server = FakeTraining()
+        repeat(60) { index ->
+            server.open(Session(id = "ses_$index", startedAtMs = 1_000L + index,
+                finishedAtMs = 2_000L + index))
+        }
+        // A session on the shelf the log will not take yet, so the boot claim stops RETRYABLY and
+        // arms the cadence. Reads are healthy throughout — this is a claim that failed, not a phone
+        // that is offline.
+        LocalLog(localFile).hold(LocalLog.FinishedSession(
+            Session(id = "ses_shelf", startedAtMs = 9_000, finishedAtMs = 9_500),
+            listOf(TrainingSet(id = "set_a", exerciseId = "bench-press", weightKg = 100.0,
+                reps = 5, completedAtMs = 9_100))))
+        server.refuseStart = { IOException("offline") }
+
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+        store.loadOlder()
+
+        assertEquals(60, store.logged.size)
+        assertEquals(Older.End, store.older)
+        assertEquals(listOf("ses_shelf"), store.shelved.map { it.id })
+
+        server.refuseStart = { null }
+        advanceTimeBy(4_100)
+        runCurrent()
+
+        assertEquals("the shelf emptied — that is what the timer was armed for",
+            emptyList<String>(), store.shelved.map { it.id })
+        assertEquals("and the pages the lifter walked are still under their thumb",
+            61, store.logged.size)
+        assertEquals("no row twice", 61, store.logged.map { it.id }.toSet().size)
+        assertEquals("newest first, with the claimed session at the head",
+            "ses_shelf", store.logged.first().id)
+        assertEquals("the deepest row is where the walk left it", "ses_0", store.logged.last().id)
+        assertEquals("and the foot is still the bottom they arrived at", Older.End, store.older)
+    }
+
+    // Signed out the shelf IS the whole log, so the foot is already at the bottom — there is no
+    // page behind it to ask for, and a `Load older` over a device's own history would be a request
+    // nobody could answer.
+    @Test
+    fun testSignedOutTheShelfIsTheWholeLogAndThereIsNothingOlder() = runTest {
+        LocalLog(localFile).hold(LocalLog.FinishedSession(
+            Session(id = "ses_shelf", startedAtMs = 1_000, finishedAtMs = 2_000),
+            listOf(TrainingSet(id = "set_a", exerciseId = "bench-press", weightKg = 100.0,
+                reps = 5, completedAtMs = 1_100))))
+
+        val store = makeStore(sync = null)
+        store.connect(account(signedIn = false))
+
+        assertEquals(Older.End, store.older)
+        assertEquals(listOf("ses_shelf"), store.shelved.map { it.id })
+        assertEquals("saved on this device is the only thing it is", emptyList<String>(),
+            store.logged.map { it.id })
+        assertEquals("and the row carries what the log's own row would",
+            listOf(1), store.recent.map { it.workingSetCount })
+        assertEquals(listOf(500.0), store.recent.map { it.tonnageKg })
+    }
+
+    // A read that never came back is not an empty log. The rows already in hand stay — they are
+    // real sessions — and the foot is where the failure is SAID, with the one move that answers it:
+    // the retry re-asks the same question, from the top when nothing landed at all.
+    @Test
+    fun testAFailedLogReadIsSaidAtTheFootAndRetriedFromWhereItStopped() = runTest {
+        val server = FakeTraining()
+        server.open(Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000))
+        server.online = false
+
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+
+        assertEquals(Older.Failed, store.older)
+        assertTrue(store.logged.isEmpty())
+
+        server.online = true
+        store.loadOlder()
+
+        assertEquals(listOf("ses_1"), store.logged.map { it.id })
+        assertEquals(Older.End, store.older)
     }
 }

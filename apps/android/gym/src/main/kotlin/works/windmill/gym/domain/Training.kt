@@ -97,6 +97,11 @@ data class SessionDetail(val session: Session, val sets: List<TrainingSet> = emp
 data class TopSet(val weightKg: Double, val reps: Int)
 
 // A log row is a Session plus its shape — the session fields arrive FLAT on the same object.
+//
+// `setCount` is every set of every kind and keeps that meaning; `workingSetCount` beside it is the
+// only kind that counts toward anything, and the log draws THAT one — the row used to print the
+// total next to a top set picked from the working sets alone, so a session's "sets" number counted
+// warmups and its top set did not.
 @Serializable
 data class SessionSummary(
     val id: String,
@@ -105,12 +110,24 @@ data class SessionSummary(
     val routineId: String? = null,
     val plan: PlanSnapshot? = null,
     val setCount: Int = 0,
+    // Absent rather than zero when the log does not send them. A release APK outlives a deploy, and
+    // a `0` defaulted in for a field an older server never wrote would print `0 working` over a
+    // session somebody spent an hour on — the exact false zero this wave exists to refuse.
+    val workingSetCount: Int? = null,
+    val tonnageKg: Double? = null,
     val exercises: List<String> = emptyList(),
     val topSet: TopSet? = null,
+    // The best Epley over EVERY working set the session held — not over its heaviest one — made by
+    // the log's DOMAIN, because the selection is an ordering and the estimate on top of it is a
+    // formula. There is one copy of that formula per language and no phone holds one, so a row with
+    // no estimate draws no estimate rather than computing a second.
+    val topE1rm: Double? = null,
     val closedItself: Boolean = false,
 ) {
     // A log row composed on the device, for a session only the device holds: the same facts the
-    // server's row carries, read off the session and its own sets.
+    // server's row carries, read off the session and its own sets. `topE1rm` stays absent for the
+    // reason it is absent from `Review.of` and from every local statistics point — no Epley is
+    // computed here, and a session claimed onto an account gets the log's own estimate back.
     constructor(session: Session, sets: List<TrainingSet>) : this(
         id = session.id,
         startedAtMs = session.startedAtMs,
@@ -118,10 +135,16 @@ data class SessionSummary(
         routineId = session.routineId,
         plan = session.plan,
         setCount = sets.size,
+        workingSetCount = sets.count { it.kind == SetKind.Working },
+        // The server's own sum, clamped the same way: an assisted set moved no external load, so it
+        // adds zero rather than subtracting from the week it happened in.
+        tonnageKg = sets.filter { it.kind == SetKind.Working }
+            .sumOf { max(0.0, it.weightKg) * it.reps },
         exercises = sets.sortedBy { it.completedAtMs }.map { it.exerciseId }.distinct(),
         topSet = sets.filter { it.kind == SetKind.Working }
             .maxWithOrNull(compareBy({ it.weightKg }, { it.reps }))
             ?.let { TopSet(it.weightKg, it.reps) },
+        topE1rm = null,
         closedItself = false,
     )
 

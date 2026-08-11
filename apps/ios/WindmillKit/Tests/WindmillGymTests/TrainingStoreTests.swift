@@ -441,6 +441,108 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(relaunched.catalog.map(\.name), ["Bench Press", "Back Squat"],
                        "signing out does not forget what a movement is called")
     }
+
+    // ── the foot of the log ────────────────────────────────────────────────────────────────────
+
+    // The server's page is 50 (`TrainingStore.logPage`), so a full one means there may be more and a
+    // short one is the bottom. Nothing here counts sessions to decide that — the page length is the
+    // only thing that knows.
+    private func finished(_ count: Int, from: Int64 = 100_000) -> [Session] {
+        (0..<count).map { Session(id: "ses_\($0)", startedAtMs: from + Int64($0) * 1_000,
+                                  finishedAtMs: from + Int64($0) * 1_000 + 500) }
+    }
+
+    private func log(_ sessions: [Session]) -> FakeTraining {
+        let server = FakeTraining()
+        for session in sessions { server.stored[session.id] = session }
+        return server
+    }
+
+    // A short first page IS the bottom, and the bottom is the one state that may name somebody's
+    // first session — so nothing reaches it on a guess.
+    func testAShortFirstPageIsTheBottomOfTheLog() async {
+        let store = makeStore(sync: log(finished(3)))
+        await store.connect(to: account(signedIn: true))
+
+        XCTAssertEqual(store.logFoot, .bottom)
+        XCTAssertEqual(store.recent.count, 3)
+    }
+
+    // A full page is not an answer about the log's length — it is the reason `Load older` is there.
+    // The tap is the lifter's: twelve weeks back is a destination and infinite scroll has no arrival.
+    func testAFullPageOffersOlderAndTheNextTapAppendsRatherThanReplaces() async {
+        let store = makeStore(sync: log(finished(58)))
+        await store.connect(to: account(signedIn: true))
+
+        XCTAssertEqual(store.logFoot, .more)
+        XCTAssertEqual(store.recent.count, 50)
+
+        await store.loadOlder()
+
+        XCTAssertEqual(store.logFoot, .bottom)
+        XCTAssertEqual(store.recent.count, 58, "the page landed on top of what was already loaded")
+        XCTAssertEqual(store.recent.first?.id, "ses_57", "newest first, across the page edge")
+        XCTAssertEqual(store.recent.last?.id, "ses_0")
+        XCTAssertEqual(Set(store.recent.map(\.id)).count, 58, "no row is read twice across the edge")
+    }
+
+    // A read that failed says so and offers the one move. The rows already loaded STAY — they are
+    // real sessions and worth reading — and the foot never claims the log ends where a failure did.
+    func testAFailedFirstReadIsSaidAndTheRetryAsksForTheHeadOfTheLogAgain() async {
+        let server = log(finished(3))
+        server.online = false
+        let store = makeStore(sync: server)
+        await store.connect(to: account(signedIn: true))
+
+        XCTAssertEqual(store.logFoot, .failed)
+        XCTAssertTrue(store.recent.isEmpty)
+
+        server.online = true
+        await store.loadOlder()
+
+        XCTAssertEqual(store.logFoot, .bottom)
+        XCTAssertEqual(store.recent.count, 3, "the retry read the head, not what comes before nothing")
+    }
+
+    func testAPageThatFailedLeavesTheRowsAlreadyLoadedOnScreen() async {
+        let server = log(finished(58))
+        let store = makeStore(sync: server)
+        await store.connect(to: account(signedIn: true))
+
+        server.online = false
+        await store.loadOlder()
+
+        XCTAssertEqual(store.logFoot, .failed)
+        XCTAssertEqual(store.recent.count, 50)
+    }
+
+    // HOW FAR THE READING GOT IS THE SERVER'S ANSWER AND NOT THE SCREEN'S BOTTOM ROW. This device's
+    // unclaimed sessions are merged into the log at ANY age, so one whose claim cannot land sits
+    // BELOW the served page — and the log's fold takes its floor from here. Taking it from `recent`
+    // instead would call the half-loaded week above that row whole and caption it with a total that
+    // grows on the next tap of `Load older`.
+    func testTheServedFloorIsTheOldestRowTheSERVERAnsweredWith() async {
+        let shelf = LocalLog(url: localURL)
+        shelf.keep(Session(id: "ses_local", startedAtMs: 1_000, finishedAtMs: 2_000), sets: [])
+        shelf.flush()
+
+        let server = log(finished(58))
+        server.refuseStart = storageFailure          // the claim is retryable, so it never lands
+        let store = makeStore(sync: server, retryAfter: .seconds(600))
+        await store.connect(to: account(signedIn: true))
+
+        XCTAssertEqual(store.logFoot, .more)
+        XCTAssertEqual(store.deviceOnly, ["ses_local"])
+        XCTAssertEqual(store.recent.last?.id, "ses_local",
+                       "the device's own session is the oldest row on screen")
+        XCTAssertEqual(store.servedOldestMs, 108_000,
+                       "and the floor is ses_8, the oldest row the server has answered with")
+
+        await store.loadOlder()
+
+        XCTAssertEqual(store.logFoot, .bottom)
+        XCTAssertEqual(store.servedOldestMs, 100_000, "the second page moved the floor to ses_0")
+    }
 }
 
 // The four verdicts, derived from the status and the machine word and NEVER from the sentence. The
@@ -806,16 +908,28 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         sets[sessionId] = nil
     }
 
+    // A page of the log, and it honours the CURSOR and the LIMIT, because the client's paging is what
+    // half these tests are about: the cursor is both halves of the sort key, so a fake that ignored
+    // the id would hide the one bug a shared instant can cause.
     func sessions(before: Int64?, beforeId: String?, limit: Int) async throws -> [SessionSummary] {
         calls.append("sessions")
         guard online else { throw WindmillApiError.offline }
-        return stored.values
-            .sorted { $0.startedAtMs > $1.startedAtMs }
-            .map { session in
-                let held = sets[session.id] ?? []
-                return SessionSummary(session: session, setCount: held.count,
-                                      exercises: held.map(\.exerciseId))
-            }
+        let ordered = stored.values.sorted {
+            $0.startedAtMs == $1.startedAtMs ? $0.id > $1.id : $0.startedAtMs > $1.startedAtMs
+        }
+        let older = ordered.filter { session in
+            guard let before else { return true }
+            guard session.startedAtMs == before else { return session.startedAtMs < before }
+            return session.id < (beforeId ?? "")
+        }
+        return older.prefix(limit).map { session in
+            let held = sets[session.id] ?? []
+            let working = held.filter { $0.kind == .working }
+            return SessionSummary(session: session, setCount: held.count,
+                                  exercises: held.map(\.exerciseId),
+                                  workingSetCount: working.count,
+                                  tonnageKg: working.reduce(0) { $0 + max($1.weightKg, 0) * Double($1.reps) })
+        }
     }
 
     func session(_ id: String) async throws -> SessionDetail? {

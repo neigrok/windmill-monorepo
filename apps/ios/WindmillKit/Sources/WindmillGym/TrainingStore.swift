@@ -20,6 +20,11 @@ public final class TrainingStore: ObservableObject {
     @Published public private(set) var catalog: [Exercise] = []
     @Published public private(set) var routines: [Routine] = []
     @Published public private(set) var recent: [SessionSummary] = []      // the log, newest first
+    // Which of those rows this device is still the only home for — the hollow ring on the log (§G16).
+    // Set by the same fold that puts them in `recent`, because it is one fact read twice: a session
+    // is the device's alone exactly when the served page did not name it.
+    @Published public private(set) var deviceOnly: Set<String> = []
+    @Published public private(set) var logFoot: LogFoot = .loading
     @Published public private(set) var session: Session?                  // the open one, or none
     @Published public private(set) var sets: [TrainingSet] = []           // its sets, performed order
     @Published public private(set) var order: [String] = []               // its movements, walk order
@@ -43,6 +48,17 @@ public final class TrainingStore: ObservableObject {
     // forever. Published rather than private so the room can say where that set can still go —
     // silently dropping the tap and silently taking it are both ways of losing a lift.
     @Published public private(set) var isFinishing = false
+
+    // The log as the SERVER has answered it so far, page after page, in the order it came back. The
+    // cursor for the next page is its tail, and the fold that makes `recent` runs over the whole of
+    // it — a page that replaced the last one would drop everything a lifter had already loaded.
+    private var served: [SessionSummary] = []
+
+    // The oldest instant the SERVER has answered for — the floor of everything that has been read,
+    // and what tells the log's fold which weeks are whole. `recent`'s own oldest cannot stand in for
+    // it: this device's unclaimed sessions are merged in at ANY age, so one of them sits below the
+    // served page and would pass off a half-loaded week as a finished one.
+    public var servedOldestMs: Int64? { served.last?.session.startedAtMs }
 
     private let queue: SetQueue
     private let deviceCatalog: DeviceCatalog
@@ -163,6 +179,21 @@ public final class TrainingStore: ObservableObject {
         case noAnswer
     }
 
+    // THE FOOT OF THE LOG, and its four states in the order a scroll meets them (§G16). They are the
+    // paging read stated as a place to stand: there is more and the tap is yours, that tap is in
+    // flight, there is nothing older, or the read failed and can be asked again.
+    //
+    // `.bottom` is the only one that is an ANSWER rather than a step — "first session · 6 May 2026"
+    // — so nothing may reach it on a guess: a store that has not read yet starts at `.loading`, and
+    // a store with nobody signed in is at the bottom the moment it draws, because the device holds
+    // the whole log and there is no page to ask anybody for.
+    public enum LogFoot: Equatable {
+        case more
+        case loading
+        case bottom
+        case failed
+    }
+
     // This movement's sets in this session, performed order, warmups included — the whole record of
     // it, which is what the today list draws. What CARRIES FORWARD is narrower: `Prefill` follows the
     // working sets only, because a ramp-up is not what the next set is aimed at.
@@ -220,11 +251,15 @@ public final class TrainingStore: ObservableObject {
         drawFromQueue()
         // The device's shelves are on screen before any wire answers — the room mounts on local
         // state, and a signed-in read that lands later only ever adds to it.
-        routines = localLog.routines
+        routines = Routine.byLastTrained(localLog.routines)
+        served = []
         recent = mergedRecent([])
         isLoading = false
 
         guard let gym else {
+            // Nobody signed in: the device holds the whole log, so its oldest session really is the
+            // first one and the foot may say so. There is no page to ask anybody for.
+            logFoot = .bottom
             claimOwedRetryably = false
             saveState = queue.pending.isEmpty ? .idle : .onThisDevice
             if session != nil, let movement = exerciseId { await choose(movement) }
@@ -249,7 +284,9 @@ public final class TrainingStore: ObservableObject {
             catalog = merged(exercises)
             deviceCatalog.hold(catalog)
         }
-        if let written = try? await gym.routines() { routines = written + localLog.routines }
+        if let written = try? await gym.routines() {
+            routines = Routine.byLastTrained(written + localLog.routines)
+        }
         if session != nil, let movement = exerciseId { await choose(movement) }
     }
 
@@ -463,7 +500,7 @@ public final class TrainingStore: ObservableObject {
             await loadLog()
             return .closed(landed[closed.id] ?? localLog.session(closed.id)?.session ?? closed)
         }
-        routines = localLog.routines
+        routines = Routine.byLastTrained(localLog.routines)
         recent = mergedRecent([])
         return .closed(localLog.session(closed.id)?.session ?? closed)
     }
@@ -480,6 +517,7 @@ public final class TrainingStore: ObservableObject {
             queue.flush()
             drawFromQueue()
             recent = recent.filter { $0.id != sessionId }
+            deviceOnly.remove(sessionId)
             return true
         }
         guard let gym else { return false }
@@ -1072,7 +1110,16 @@ public final class TrainingStore: ObservableObject {
 
     private func loadLog() async {
         guard let gym else { return }
-        guard let page = try? await gym.sessions(before: nil, beforeId: nil, limit: Self.logPage) else { return }
+        logFoot = .loading
+        guard let page = try? await gym.sessions(before: nil, beforeId: nil, limit: Self.logPage) else {
+            // The rows already on screen stay — they are real sessions and worth reading — and the
+            // foot says the read failed rather than that the log ends here. A screen admitting it
+            // could not load has not earned the right to also name somebody's first session.
+            logFoot = .failed
+            return
+        }
+        served = page
+        logFoot = page.count < Self.logPage ? .bottom : .more
         recent = mergedRecent(page)
 
         // A page read while the claim is mid-replay may hold the replay's own past session open.
@@ -1100,12 +1147,36 @@ public final class TrainingStore: ObservableObject {
         await adopt(open.session, joined: true)
     }
 
+    // ONE PAGE OLDER, and the tap is the lifter's (§G16): twelve weeks back is a destination, and
+    // infinite scroll has no arrival. The cursor is BOTH halves of the sort key, because two
+    // sessions can share an instant and an instant alone would repeat one across the page edge.
+    //
+    // It is also the retry, and that is why it reads from the head when nothing has been served yet:
+    // the state the foot offers `retry` in is most often the FIRST read having failed, and asking
+    // for what comes before nothing would answer with the bottom of a log nobody has seen.
+    public func loadOlder() async {
+        guard let gym, logFoot != .loading else { return }
+        let cursor = served.last
+        logFoot = .loading
+        guard let page = try? await gym.sessions(before: cursor?.session.startedAtMs,
+                                                 beforeId: cursor?.id,
+                                                 limit: Self.logPage) else {
+            logFoot = .failed
+            return
+        }
+        served += page
+        logFoot = page.count < Self.logPage ? .bottom : .more
+        recent = mergedRecent(served)
+    }
+
     // The log's page with this device's unclaimed sessions folded in, newest first — the merge rule
     // of section D: after a claim confirms, the server row is the truth, so a local copy that shares
-    // an id with a served row stands down.
+    // an id with a served row stands down. The device's own sessions are ALL of them, never a page:
+    // there is nothing to ask anybody for, so they never move the foot.
     private func mergedRecent(_ server: [SessionSummary]) -> [SessionSummary] {
         let known = Set(server.map(\.id))
         let local = localLog.summaries().filter { !known.contains($0.id) }
+        deviceOnly = Set(local.map(\.id))
         return (server + local).sorted { $0.session.startedAtMs > $1.session.startedAtMs }
     }
 

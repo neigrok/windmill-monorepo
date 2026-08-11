@@ -24,7 +24,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Routine
-import works.windmill.gym.domain.RoutineEntry
 import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.design.WindmillFont
@@ -38,9 +37,11 @@ import works.windmill.platform.design.WindmillSpace
 // program; the app's job is to CATCH it, not to write it — which is why the empty state's one door
 // is an empty session, and the routine is the thing you name on the way out.
 //
-// Looking BACK lives at the foot of this screen and nowhere else in the room: two doors, under
-// everything that starts a workout, and only once the log holds a session that has finished. That
-// is the whole of gym's navigation and it is deliberately not a tab bar — see GymRoom for why.
+// Looking BACK is the frame's job now — the log is a tab under every screen (§F, GymRoom) — so what
+// is left at the foot of this one is the pair of doors a tab cannot be: Statistics, which is retired
+// in W1c the wave its replacement is built, and the last session, which is a shortcut into the log
+// rather than a second copy of it. Both appear only once the log holds a finished session, because a
+// door onto an empty screen is the same defect as a chevron that goes nowhere.
 //
 // SIGNED OUT, TODAY IS THE SAME SCREEN. The room works before there is an account — a session
 // starts from a local routine or empty, and the log it writes is saved on this device — so every
@@ -151,7 +152,11 @@ private fun RoutineCard(routine: Routine, store: TrainingStore, nowMs: Long, onS
                     color = GymSkin.inkDim,
                 )
                 Spacer(Modifier.weight(1f))
-                Text(target(entry), style = GymType.numeral(13), color = GymSkin.targetInk)
+                Text(
+                    Readout.target(entry.targetSets, entry.targetReps, entry.targetWeightKg),
+                    style = GymType.numeral(13),
+                    color = GymSkin.targetInk,
+                )
             }
         }
         if (routine.entries.size > 3) {
@@ -179,7 +184,7 @@ private fun RoutineRow(routine: Routine, nowMs: Long, onStart: (String?) -> Unit
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(routine.name, style = WindmillFont.body(17), color = GymSkin.ink)
-            Text(meta(routine, nowMs), style = GymType.numeral(12), color = GymSkin.inkFaint)
+            Text(Readout.routineLine(routine, nowMs), style = GymType.numeral(12), color = GymSkin.inkFaint)
         }
         Spacer(Modifier.weight(1f))
         Text("›", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkFaint)
@@ -275,7 +280,7 @@ private fun LookingBack(
             Text("Last session", style = GymType.numeral(11), color = GymSkin.inkFaint)
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    last.plan?.routine ?: "Ad-hoc",
+                    last.plan?.routine ?: Readout.noRoutine,
                     style = WindmillFont.body(16),
                     color = GymSkin.ink,
                 )
@@ -303,20 +308,6 @@ private fun StartButton(label: String, onStart: () -> Unit) {
     ) {
         Text(label, style = WindmillFont.body(17, FontWeight.Bold), color = GymSkin.onAccent)
     }
-}
-
-private fun meta(routine: Routine, nowMs: Long): String {
-    val count = routine.entries.size
-    val movements = if (count == 1) "1 exercise" else "$count exercises"
-    val trained = routine.lastTrainedAtMs ?: return "$movements · never trained"
-    return "$movements · trained ${Readout.ago(trained, nowMs)}"
-}
-
-private fun target(entry: RoutineEntry): String {
-    val count = "${entry.targetSets} × ${Readout.repTarget(entry.targetReps)}"
-    val weight = entry.targetWeightKg
-    if (weight == null || weight == 0.0) return count
-    return "$count · ${Readout.weight(weight)}"
 }
 
 private fun lastMeta(summary: SessionSummary): String {

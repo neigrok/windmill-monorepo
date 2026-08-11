@@ -24,8 +24,36 @@ struct TopWorkingSet {
 };
 
 // One row of the training log read: the session plus what the list needs to say about it without
-// loading its sets — how many sets, which movements by display name, the heaviest working set in
-// it, and whether the four-hour rule ended it rather than a tap.
+// loading its sets — how many sets it holds and how many of those were working, the tonnage those
+// working sets moved, which movements by display name, the heaviest working set in it, the loads it
+// worked, and whether the four-hour rule ended it rather than a tap.
+//
+// BOTH counts are here because they answer different questions and the log screen asks the second
+// one. Until 2026-08-12 the row printed setCount beside topSet, and topSet is a lateral over the
+// working sets alone — so the count included the ramp-up while the top set beside it could not, and
+// a five-set session with two warmups read "5 sets" over a number three sets earned. setCount keeps
+// its meaning — every set, every kind — because it already has readers, and redefining a field
+// under its readers is how a number starts lying quietly. The log screen reads workingSetCount.
+//
+// tonnageKg is `sum(greatest(weight_kg, 0) * reps)` over the working sets, and the clamp is the
+// whole of what makes it honest: band-assisted work logs a NEGATIVE load, so a naive sum lets an
+// assisted pull-up subtract from a week the lifter trained. An assisted set moved no external load,
+// so it contributes nothing; a bodyweight set contributes nothing for the same reason, gym holding
+// no bodyweight to add to it. Zero is therefore a real answer meaning "nothing here moved a
+// measurable load", never "no work" — which is why every surface draws NOTHING where a zero tonnage
+// would go rather than `0.0 t` (domain/Statistics.h states that rule and why it is not the volume
+// this product refuses).
+//
+// workingLoads is the session's working sets collapsed to one row per distinct load, carrying the
+// best reps done at it — PriorMark's projection (domain/Review.h) narrowed to a single session, and
+// heaviest first so both implementations of this port hand back the same vector. It is here because
+// the row's e1RM is Epley over EVERY working set, not over topSet: the heaviest set is rarely the
+// best estimate, and a row that ran Epley on topSet alone printed 116.7 under a session whose finish
+// screen said 126.7. Picking a set by e1RM is not an ordering the store can make — it IS the
+// formula, and the formula does not reach the database (§11.5) — so the store hands over the fewest
+// rows the answer can honestly be computed from and `LogService` runs `topE1rmOf` over them. Loads
+// at or below zero ride along unfiltered: which of them Epley is defined for is the domain's rule to
+// state, and it states it in exactly one place.
 //
 // closedItself is INFERRED and carries no column, because the rule that closes a session already
 // signs its work: autoCloseAt (§3.2) stamps finished_at at the last set's instant exactly, or at
@@ -38,8 +66,11 @@ struct TopWorkingSet {
 struct SessionSummary {
   Session session;
   int setCount;
+  int workingSetCount;
+  double tonnageKg;
   std::vector<std::string> exerciseNames;
   std::optional<TopWorkingSet> topSet;
+  std::vector<WorkingLoad> workingLoads;   // heaviest first, best reps at each
   bool closedItself = false;
 
   bool operator==(const SessionSummary&) const = default;

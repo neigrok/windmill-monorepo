@@ -260,7 +260,7 @@ void GymApi::listSessions(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
   }
 
   Json::Value sessions(Json::arrayValue);
-  for (const SessionSummary& summary : log_->log(*caller, cursor)) sessions.append(toJson(summary));
+  for (const LogRow& row : log_->log(*caller, cursor)) sessions.append(toJson(row));
   Json::Value body(Json::objectValue);
   body["sessions"] = sessions;
   cb(jsonResponse(body));

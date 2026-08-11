@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <ctime>
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
@@ -214,28 +215,42 @@ public:
     std::vector<SessionSummary> out;
     for (const Session& session : page) {
       int count = 0;
+      int working = 0;
+      double tonnage = 0;
       std::set<std::string> names;   // iterates sorted, exactly like the SQL's ORDER BY e.name
       std::optional<TopWorkingSet> top;
+      // The ladder statement's `GROUP BY weight_kg` with `max(reps)`, ordered heaviest first — one
+      // row per distinct working load, which is every candidate the domain's e1RM has to consider.
+      std::map<double, int, std::greater<double>> bestRepsAtLoad;
       std::optional<std::uint64_t> lastSetAtMs;
       for (const Set& set : sets) {
         if (!(set.session == session.id)) continue;
         ++count;
         if (std::optional<std::string> name = nameOf(set.exercise)) names.insert(*name);
         if (!lastSetAtMs || set.completedAtMs > *lastSetAtMs) lastSetAtMs = set.completedAtMs;
+        if (set.kind != SetKind::working) continue;
+        ++working;
+        // The aggregate's `greatest(weight_kg, 0) * reps`: an assisted set logs a negative load and
+        // moved no external weight, so it adds nothing rather than subtracting.
+        tonnage += std::max(set.weightKg, 0.0) * set.reps;
+        int& bestReps = bestRepsAtLoad[set.weightKg];
+        bestReps = std::max(bestReps, set.reps);
         // The lateral's ORDER BY weight_kg DESC, reps DESC over the WORKING sets, and the same rule
         // stated once in TopWorkingSet: heaviest, ties to more reps, never volume.
-        if (set.kind != SetKind::working) continue;
         if (top && std::pair(set.weightKg, set.reps) <= std::pair(top->weightKg, top->reps))
           continue;
         top = TopWorkingSet{set.weightKg, set.reps};
       }
+      std::vector<WorkingLoad> loads;
+      for (const auto& [weightKg, reps] : bestRepsAtLoad)
+        loads.push_back(WorkingLoad{weightKg, reps});
       // The SQL's `finished_at = coalesce(max(completed_at), started_at)`: the four-hour rule's own
       // signature, inferred rather than stored, for the reason SessionSummary spells out.
       const bool closedItself = session.finishedAtMs &&
                                 *session.finishedAtMs == lastSetAtMs.value_or(session.startedAtMs);
-      out.push_back(SessionSummary{session, count,
+      out.push_back(SessionSummary{session, count, working, tonnage,
                                    std::vector<std::string>(names.begin(), names.end()), top,
-                                   closedItself});
+                                   std::move(loads), closedItself});
     }
     return out;
   }

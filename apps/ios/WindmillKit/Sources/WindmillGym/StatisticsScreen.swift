@@ -1,8 +1,12 @@
 import SwiftUI
 import WindmillPlatform
 
-// STATISTICS — the long window, and the second place a lifter can stand in this room at rest. It
-// RENDERS what `Stats.board` decided and computes nothing itself: no e1RM, no normalisation, no
+// STATISTICS — the long window, and a READ-ONLY screen a tab opens over itself rather than a place
+// to stand: the room's at-rest places are its three tabs (Today, The log, Routines · §F), and this
+// is a door at the foot of the first of them. It carries the plain bar and no rail, for the same
+// reason the logger does. It is retired in W1c, in the same wave that builds its replacement.
+//
+// It RENDERS what `Stats.board` decided and computes nothing itself: no e1RM, no normalisation, no
 // sorting, no arithmetic in a view body.
 //
 // A CHART ON A PHONE HAS NO SCRUB AND NO HOVER, so every number a mark would otherwise reveal on

@@ -229,18 +229,22 @@ internal class FakeTraining : TrainingSyncing {
         sets.remove(sessionId)
     }
 
+    // Paged the way the log pages: newest first, and the cursor is BOTH halves of the sort key,
+    // because two sessions can share an instant and an instant alone would repeat one across the
+    // page edge or skip it. The row itself is composed by the summary's own rule — the working
+    // count and the tonnage a client reads off a page are the same aggregation either side.
     override suspend fun sessions(limit: Int, before: Long?, beforeId: String?): List<SessionSummary> {
         calls.add("sessions")
         reachable()
         return stored.values
-            .sortedByDescending { it.startedAtMs }
-            .map { session ->
-                val heldSets = sets[session.id] ?: emptyList()
-                SessionSummary(id = session.id, startedAtMs = session.startedAtMs,
-                    finishedAtMs = session.finishedAtMs, routineId = session.routineId,
-                    plan = session.plan, setCount = heldSets.size,
-                    exercises = heldSets.map { it.exerciseId })
+            .sortedWith(compareByDescending<Session> { it.startedAtMs }.thenByDescending { it.id })
+            .filter { row ->
+                if (before == null) true
+                else row.startedAtMs < before ||
+                    (row.startedAtMs == before && beforeId != null && row.id < beforeId)
             }
+            .take(limit)
+            .map { session -> SessionSummary(session, sets[session.id] ?: emptyList()) }
     }
 
     override suspend fun session(id: String): SessionDetail? {

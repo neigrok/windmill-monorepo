@@ -65,6 +65,10 @@
   --set-done-soft: var(--color-success-bg);
   --set-done-glow: rgba(154, 168, 89, 0.8);      /* dark-theme glow depth, per --kind-*-glow */
   --warmup-ink: var(--neutral-500);              /* does not count toward volume */
+  --unsynced-ink: var(--neutral-500);            /* saved on this device only — the phones' own ink
+                                                    for it (unsyncedInk, GymSkin.swift/.kt). Nothing
+                                                    the web reads can be in this state; the log row
+                                                    can say it and never invents one */
   --target-ink: var(--color-brand);              /* what the plan said */
   --pr-ink: var(--color-warning);                /* gold as a KIND of moment, not a state */
   --pr-soft: var(--color-warning-bg);
@@ -73,7 +77,8 @@
      reason in the other direction. brick-400 was cut for the family's near-black night and
      measures 3.98:1 on gym's card; the room is basalt now, and the destructive and the invalid
      must never be the hardest line to read. */
-  --alarm-ink: var(--accent-brick-300);          /* the discard, the keypad's refused entry. nothing else */
+  --alarm-ink: var(--accent-brick-300);          /* the destructive, the invalid, and a read or
+                                                    write that failed (§G16). Nothing else */
   --alarm-soft: var(--color-danger-bg);
 
   /* Numeral treatment — the one place gym extends rather than
@@ -121,6 +126,7 @@
   --set-done-soft: var(--color-success-bg);
   --set-done-glow: rgba(125, 140, 67, 0.4);
   --warmup-ink: var(--neutral-500);
+  --unsynced-ink: var(--neutral-500);
   --target-ink: var(--color-brand);
   /* The 600, because --color-warning is the 500 and gold gets lighter, not darker, from here.
      MEASURED, not assumed: on the tinted record card it is 3.4:1 at 10.5px — a real miss of the
@@ -197,16 +203,17 @@
   color: var(--gym-ink-dim);
 }
 
-/* A read that did not come back. Dim ink on purpose: nothing was lost, so this is not the alarm —
-   --alarm-ink is for the destructive and the invalid (the discard, the keypad's refused entry),
-   never for a network that went quiet. */
+/* A read that did not come back, and it wears the alarm. §G16 settles what that ink is FOR: a
+   failed read or a failed write, and nothing else — alongside the destructive and the invalid it
+   already carried. This line used to be dim on the argument that nothing was lost; nothing is, but
+   a number that never arrived is exactly the case a lifter must not mistake for a number. */
 .gym-read-failed {
   margin: 0;
   display: flex;
   align-items: center;
   gap: 10px;
   font-size: 15px;
-  color: var(--gym-ink-dim);
+  color: var(--alarm-ink);
 }
 .gym-retry {
   min-height: 36px;
@@ -255,24 +262,62 @@
   background: var(--color-brand-active);
 }
 
-/* The log — one row per session, recognisable without opening. */
+/* The log — one row per session, recognisable without opening, under a divider per week (§G16). */
+.gym-log-count {
+  margin: 3px 0 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--gym-ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+/* The week carries the tonnage, because the scale of a week is the one thing a row cannot show and
+   a lifter still wants: the label, a rule across the gap, and the sum at the end of it. A week we
+   cannot sum honestly — the oldest loaded one, or one that adds up to nothing — draws the rule and
+   stops there (log.js). */
+.gym-week + .gym-week {
+  margin-top: 8px;
+}
+.gym-week-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 2px 8px;
+}
+.gym-week-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--gym-ink-faint);
+}
+.gym-week-rule {
+  flex: 1;
+  height: 1px;
+  background: var(--gym-line);
+}
+.gym-week-tonnage {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--gym-ink-dim);
+  font-variant-numeric: tabular-nums;
+}
 .gym-sessions {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 7px;
 }
-/* What the session was on the left, what it lifted on the right (G8). The top set gets a column of
-   its own because it is the one number a lifter scans a log for. */
+/* What the session was and when, then what it held. Two lines and no third column: the top set's
+   own column is retired, because the e1RM below is the estimate of it and one of the two is
+   enough. */
 .gym-row {
   display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  padding: 14px 16px;
+  flex-direction: column;
+  padding: 13px 14px;
   border: 1px solid var(--gym-line);
-  border-radius: 12px;
+  border-radius: 16px;
   background: var(--gym-surface);
   color: var(--gym-ink);
   text-decoration: none;
@@ -282,35 +327,46 @@
   background: var(--gym-raised);
   border-color: var(--gym-line-strong);
 }
-.gym-row-body {
-  flex: 1;
+.gym-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.gym-row-title {
   min-width: 0;
-}
-.gym-row-top {
-  display: flex;
-  gap: 12px;
-  font-size: 13px;
-  color: var(--gym-ink-dim);
-  font-variant-numeric: tabular-nums;
-}
-.gym-row-top-set {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-}
-.gym-row-top-value {
-  font-family: var(--font-mono);
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 800;
   color: var(--gym-ink);
-  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
-.gym-row-top-label {
-  font-size: 11px;
+/* Hollow, never filled: a filled dot is a moment that happened and this is a place a session has
+   not got to yet. */
+.gym-row-ring {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border: 1.5px solid var(--unsynced-ink);
+  border-radius: 99px;
+}
+.gym-row-when {
+  flex: none;
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
   color: var(--gym-ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.gym-row-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--gym-ink-dim);
+  font-variant-numeric: tabular-nums;
 }
 /* A close nobody pressed is a fact about the session, never a fault of it. */
 .gym-row-closed {
@@ -318,58 +374,25 @@
   font-size: 12px;
   color: var(--gym-ink-faint);
 }
-.gym-row-length {
-  color: var(--gym-ink-faint);
-}
-.gym-row-open {
-  color: var(--color-brand);
-}
-/* The day leads and the routine sits beside it on the same line (G8): a lifter looking for a
-   session knows when it was before they know what it was. The length and the set count live one
-   line down, in the meta, and are not repeated up here. */
-.gym-row-day {
-  flex: none;
-}
-.gym-row-title {
-  min-width: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--gym-ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.gym-row-meta {
-  margin-top: 5px;
-  font-size: 13px;
-  color: var(--gym-ink-dim);
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  white-space: pre;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.gym-row-movements {
-  margin-top: 3px;
-  font-size: 12.5px;
-  color: var(--gym-ink-faint);
-  white-space: pre;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
-/* The foot of the log — one page deeper, or the bottom said out loud. Quieter than a session row:
-   it is a way further down, not something that happened. */
+/* THE FOOT OF THE LOG — four states, and each one is the same box wearing what it means (§G16).
+   One page deeper per press: quieter than a session row, because it is a way further down and not
+   something that happened. */
 .gym-older {
   width: 100%;
-  min-height: 44px;
+  min-height: 46px;
   margin-top: 12px;
-  border: 1px solid var(--gym-line);
-  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 14px;
   background: transparent;
   color: var(--gym-ink-dim);
   font: inherit;
   font-size: 14px;
+  font-weight: 700;
   cursor: pointer;
   transition: background 140ms var(--ease-standard), border-color 140ms var(--ease-standard);
 }
@@ -378,7 +401,8 @@
   border-color: var(--gym-line-strong);
   color: var(--gym-ink);
 }
-/* Busy overrides hover, and must repeat every property hover sets — a phone leaves :hover stuck
+/* Loading is the same box dimmed — no spinner, and no skeleton rows pretending to be sessions.
+   Busy overrides hover and must repeat every property hover sets: a phone leaves :hover stuck
    after the tap, so without these the button stays lit as pressable for the whole load. */
 .gym-older[aria-disabled='true'],
 .gym-older[aria-disabled='true']:hover {
@@ -387,14 +411,34 @@
   border-color: var(--gym-line);
   color: var(--gym-ink-faint);
 }
-.gym-older-failed {
-  margin-top: 14px;
+.gym-older-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  background: var(--gym-ink-faint);
 }
+/* The bottom is a date, not an empty box. */
 .gym-log-bottom {
   margin: 16px 0 0;
   text-align: center;
-  font-size: 13px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
   color: var(--gym-ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+/* The whole box is the retry, because the one move on offer is the one that failed. */
+.gym-log-failed {
+  width: 100%;
+  min-height: 46px;
+  margin-top: 12px;
+  border: 1px solid var(--alarm-ink);
+  border-radius: 14px;
+  background: var(--alarm-soft);
+  color: var(--alarm-ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 /* Session detail — sets grouped by exercise in first-performed order, read-only. */
@@ -430,14 +474,57 @@
   white-space: pre;
 }
 
+/* The chip that names the snapshot the sets below are read against — a dot in the plan's own ink,
+   because "what the plan said" is one colour everywhere in this product. */
+.gym-detail-plan {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 10px 0 0;
+  padding: 6px 11px;
+  border: 1px solid var(--gym-line);
+  border-radius: 99px;
+  background: var(--gym-sunken);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--gym-ink-dim);
+}
+.gym-detail-plan-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--target-ink);
+}
+
 .gym-exercise {
   margin-bottom: 22px;
 }
+/* The movement on the left, what the plan asked of it on the right and one step dimmer — the
+   arrangement IS the thesis of this screen. */
+.gym-exercise-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
 .gym-exercise-name {
-  margin: 0 0 8px;
+  margin: 0;
   font-size: 15px;
   font-weight: 600;
   color: var(--gym-ink);
+}
+.gym-exercise-plan {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--target-ink);
+  font-variant-numeric: tabular-nums;
+}
+/* A movement the plan never named has no target to print, so this says which case it is instead —
+   a fact about the session, in the ink of a fact and not of a plan. */
+.gym-exercise-plan.is-added {
+  color: var(--gym-ink-faint);
 }
 .gym-sets {
   list-style: none;
@@ -465,9 +552,25 @@
   font-size: 13px;
   color: var(--gym-ink-faint);
 }
+/* A set is a thing that happened, so it is marked rather than numbered: the tick is the same
+   --set-done the logger settles a set with. A warmup gets a bare point, in its own ink. */
+.gym-set-mark {
+  width: 12px;
+  color: var(--set-done);
+  font-size: 13px;
+}
 .gym-set-load {
+  font-family: var(--font-mono);
   font-size: var(--readout-size);
   font-weight: 600;
+}
+/* WHAT THE PLAN MAKES OF THIS SET, in one word at the end of its line (§G17). Never coloured: a
+   miss and an overreach are facts with a direction, not grades, and the one thing this column may
+   not become is a score. */
+.gym-set-plan {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--gym-ink-faint);
 }
 .gym-set-kind,
 .gym-set-rpe {
@@ -489,7 +592,9 @@
   color: var(--warmup-ink);
   font-weight: 500;
 }
-.gym-set-warmup .gym-set-kind {
+.gym-set-warmup .gym-set-kind,
+.gym-set-warmup .gym-set-mark,
+.gym-set-warmup .gym-set-plan {
   color: var(--warmup-ink);
 }
 
@@ -784,11 +889,6 @@
   color: var(--color-brand);
 }
 
-/* A session with no routine is one step quieter, never degraded. */
-.gym-row-title.is-adhoc {
-  color: var(--gym-ink-dim);
-}
-
 /* The focus ring is the brand's, not the browser's — a keyboard is not a second-class hand. */
 .gym-picker :focus-visible {
   outline: 2px solid var(--color-brand);
@@ -901,6 +1001,14 @@
 }
 .gym-detail-review:hover {
   text-decoration: underline;
+}
+/* The thesis of the screen, on the screen. Drawn only where there is a plan to be dim beside — a
+   session nobody planned has no comparison on it, and the line would be describing nothing. */
+.gym-detail-thesis {
+  margin: 14px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--gym-ink-faint);
 }
 
 /* ── Today ─────────────────────────────────────────────────── */

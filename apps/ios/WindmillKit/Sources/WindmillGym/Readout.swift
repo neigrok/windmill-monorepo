@@ -17,8 +17,16 @@ public enum Readout {
     // the number line here — band-assisted work sits below zero. The grid is the LADDER's own and
     // never a second opinion: this rounded to two decimals itself until the two spellings disagreed
     // on a negative half-cent, and only one of them has a golden.
+    //
+    // TOTAL BY CONSTRUCTION, and the bound is not decoration. A load and an estimate both arrive as
+    // unvalidated Doubles — off the wire, off the device shelf — and a JSON number runs to 1e308
+    // while `Int(…)` TRAPS above 9.2e18. One absurd number in one field would take down every screen
+    // that rendered it rather than spoiling the row it belongs to. Nothing a barbell holds is
+    // anywhere near the bound; past it there is no spelling, and the product's mark for a fact it
+    // does not have is the dash.
     public static func weight(_ kg: Double) -> String {
         let magnitude = Ladder.round(abs(kg))
+        guard magnitude.isFinite, magnitude < 1e15 else { return "—" }
         let digits = magnitude == magnitude.rounded() ? String(Int(magnitude)) : String(magnitude)
         return (kg < 0 ? "\u{2212}" : "") + digits
     }
@@ -33,6 +41,20 @@ public enum Readout {
     public static func repTarget(_ reps: Int?) -> String {
         guard let reps else { return "max" }
         return String(reps)
+    }
+
+    // What a routine asks a movement for, in one line — the routine card, the session detail's plan
+    // line and the finish comparison all print it, so a target reads the same wherever it is read
+    // (log.js `entryLabel`). An absent weight is "whatever you did last time" and prints nothing
+    // rather than a zero; so does an actual zero, because zero is not a load but the absence of one,
+    // while a band-assisted −20 is a real point on this number line and prints.
+    //
+    // The plan and the routine spell their targets with different field names and the same three
+    // numbers, so both hand them over rather than each writing the grammar out again.
+    public static func target(sets: Int, reps: Int?, weightKg: Double?) -> String {
+        let count = "\(sets) × \(repTarget(reps))"
+        guard let weightKg, weightKg != 0 else { return count }
+        return "\(count) · \(weight(weightKg))"
     }
 
     public static func time(_ ms: Int64) -> String {
@@ -59,16 +81,37 @@ public enum Readout {
         return names[max(0, min(6, (components(ms).weekday ?? 1) - 1))]
     }
 
+    // A date with no weekday in front, for the two places gym names a square on the calendar rather
+    // than a moment somebody lived through: the Monday a week of the log opens on, and the bottom of
+    // that log. The bottom carries its YEAR, because "6 May" cannot say which May a training history
+    // began in and that is the one fact worth arriving at.
+    public static func date(_ ms: Int64) -> String {
+        let parts = components(ms)
+        return "\(parts.day ?? 1) \(months[max(0, min(11, (parts.month ?? 1) - 1))])"
+    }
+
+    public static func dateWithYear(_ ms: Int64) -> String {
+        "\(date(ms)) \(components(ms).year ?? 1970)"
+    }
+
     // "Yesterday" is a claim about the CALENDAR and not about elapsed hours: a session finished at
     // 07:00 is still today at 21:00, and one finished at 23:00 is already yesterday by 01:00. So both
     // instants fall to their own local midnight before the difference is taken — which also makes the
     // count right across the 23- and the 25-hour day, where dividing by 86_400_000 is not. The web
     // says it the same way (log.js `agoLabel`), over the same stored instant.
-    public static func ago(_ ms: Int64, now: Int64) -> String {
+    //
+    // The count is its own answer because the log's rows ask the same question in different words —
+    // a row reads `today · 18:44` on the day it happened and `Fri 7 Aug` after — and two places
+    // deciding where midnight falls is how one product shows one session on two days.
+    public static func daysAgo(_ ms: Int64, now: Int64) -> Int {
         let calendar = Calendar.current
         let then = calendar.startOfDay(for: Date(timeIntervalSince1970: Double(ms) / 1000))
         let today = calendar.startOfDay(for: Date(timeIntervalSince1970: Double(now) / 1000))
-        let days = calendar.dateComponents([.day], from: then, to: today).day ?? 0
+        return calendar.dateComponents([.day], from: then, to: today).day ?? 0
+    }
+
+    public static func ago(_ ms: Int64, now: Int64) -> String {
+        let days = daysAgo(ms, now: now)
         if days <= 0 { return "today" }
         if days == 1 { return "yesterday" }
         return "\(days) days ago"
@@ -103,6 +146,43 @@ public enum Readout {
         count == 1 ? "1 session" : "\(count) sessions"
     }
 
+    // The count the log's row and the session detail's head both print (§G16, §G17), and it is not
+    // `setCount`: a warmup counts toward nothing in this product, so the number beside a top set
+    // filtered to working has to be filtered the same way or the row states two different sessions.
+    public static func workingCount(_ count: Int) -> String {
+        "\(count) working"
+    }
+
+    // A week's or a session's tonnage, in tonnes to one decimal — the CAPTION §G16 hangs on a week
+    // divider, and never a metric. domain/Statistics refuses volume as one and that refusal stands:
+    // band-assisted work logs a negative load, so weight × reps falls as a lifter gets stronger, and
+    // four light sets outrank three heavy ones. Nothing is ranked or tracked by this.
+    //
+    // An assisted set contributes zero rather than subtracting — it moved no external load — and a
+    // bodyweight set contributes zero for the same reason, gym not knowing anybody's bodyweight. So
+    // a chin-up-and-dips week sums to zero, and zero prints NOTHING: that week did not move zero
+    // kilograms, we simply have nothing true to say about it. The floor is the same rule one decimal
+    // further down — under 50 kg what this would print IS `0.0 t`.
+    //
+    // Its argument is a SUM, which is the one way a number in this product goes non-finite: the
+    // decoder refuses a JSON number it cannot represent, but adding representable ones can still
+    // overflow. `inf t` on a week divider is not a caption.
+    public static func tonnage(_ kg: Double) -> String? {
+        guard kg.isFinite, kg >= 50 else { return nil }
+        return String(format: "%.1f t", kg / 1000)
+    }
+
+    // ONE WORD FOR A SESSION NOBODY PLANNED, everywhere this surface names one — the log's row, the
+    // session read back, Today's last-session line. It is the design's own (§G16) and it replaced
+    // "Ad-hoc", which the web retired for the same reason: a session with no routine is the ordinary
+    // case in most logs and must not read as a fault or as jargon.
+    public static let noRoutine = "Session · no routine"
+
+    public static func routine(of session: Session) -> String {
+        guard let named = session.plan?.routine, !named.isEmpty else { return noRoutine }
+        return named
+    }
+
     // A movement is a stable id everywhere except on screen. Falling back to the id keeps a sentence
     // readable while the catalog has not answered — a slug a lifter can still recognise beats a
     // blank where the movement should be.
@@ -113,7 +193,7 @@ public enum Readout {
     private static func components(_ ms: Int64, utc: Bool = false) -> DateComponents {
         var calendar = Calendar.current
         if utc, let zone = TimeZone(identifier: "UTC") { calendar.timeZone = zone }
-        return calendar.dateComponents([.hour, .minute, .weekday, .day, .month],
+        return calendar.dateComponents([.hour, .minute, .weekday, .day, .month, .year],
                                        from: Date(timeIntervalSince1970: Double(ms) / 1000))
     }
 

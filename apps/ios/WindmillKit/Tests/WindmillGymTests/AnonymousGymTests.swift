@@ -110,6 +110,49 @@ final class AnonymousGymTests: XCTestCase {
                       "the finished session's sets moved shelves — the queue owes nothing")
     }
 
+    // THE DEVICE'S LOG IS THE WHOLE LOG WHEN NOBODY IS SIGNED IN — there is no page to ask anybody
+    // for, so the foot of the log is its bottom from the first frame, and every row on it is one
+    // only this phone has. That is what the hollow ring says, and on this surface it is REAL.
+    //
+    // The two numbers beside it are arithmetic and this device does them: the working sets, and the
+    // tonnage with every set clamped at zero. The estimate is not arithmetic — Epley lives in one
+    // place per language and this is not it — so the row carries none and draws nothing there.
+    func testSignedOutEveryRowIsThisDevicesAndCarriesTheTwoNumbersItCanHonestlyMake() async {
+        let store = makeStore(sync: nil)
+        await store.connect(to: account(signedIn: false))
+        _ = await store.start()
+        await store.choose("bench-press")
+        await store.logSet(weightKg: 40, reps: 8, kind: .warmup)
+        await store.logSet(weightKg: 82.5, reps: 5)
+        await store.logSet(weightKg: -20, reps: 6)
+        _ = await store.finish()
+
+        XCTAssertEqual(store.logFoot, .bottom)
+        XCTAssertEqual(store.deviceOnly, Set(store.recent.map(\.id)))
+        XCTAssertEqual(store.recent.first?.setCount, 3)
+        XCTAssertEqual(store.recent.first?.workingSetCount, 2, "a warmup counts toward nothing")
+        XCTAssertEqual(store.recent.first?.tonnageKg, 412.5,
+                       "band-assisted work moved no external load — it contributes zero, never less")
+        XCTAssertEqual(store.recent.first?.topE1rm, nil)
+    }
+
+    // A row the log has answered for is not this device's any more, and the ring goes with it.
+    func testARowTheLogHasTakenIsNoLongerMarkedAsThisDevices() async {
+        let server = FakeTraining()
+        let store = makeStore(sync: server)
+        await store.connect(to: account(signedIn: false))
+        _ = await store.start()
+        await store.choose("bench-press")
+        await store.logSet(weightKg: 82.5, reps: 5)
+        _ = await store.finish()
+        XCTAssertEqual(store.deviceOnly.count, 1)
+
+        await store.connect(to: account(signedIn: true))
+
+        XCTAssertEqual(store.recent.count, 1, "one session, not two — the claim converged")
+        XCTAssertTrue(store.deviceOnly.isEmpty, "the account holds it now")
+    }
+
     // The plan freezes off the LOCAL routine at start — same staleness rule as the server's,
     // different shelf — so a retarget after Start must not re-plan the running workout.
     func testSignedOutThePlanFreezesOffTheLocalRoutineAtStart() async {

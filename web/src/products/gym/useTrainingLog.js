@@ -20,7 +20,7 @@ const POLL_MS = 5000;
 const TOAST_MS = 5000;
 // Must stay at or under the server's own ceiling: the handler clamps limit to 200, so a larger page
 // size here would come back short of what was asked for and read as the bottom of the log — half a
-// lifter's history hidden under "that's the start of your log".
+// lifter's history hidden under a foot that names the wrong day as their first session.
 const LOG_PAGE = 50;
 
 // The key the retired web logger kept its resume note under. No build writes it any more, and the

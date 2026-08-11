@@ -80,7 +80,8 @@ fun StatisticsScreen(store: TrainingStore) {
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = WindmillSpace.x5)
-            .padding(top = WindmillSpace.x10, bottom = WindmillSpace.x8),
+            // Short at the top: this screen is PUSHED, and the frame's own back row sits above it.
+            .padding(top = WindmillSpace.x2, bottom = WindmillSpace.x8),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
             Text("Statistics", style = WindmillFont.display(32), color = GymSkin.ink)

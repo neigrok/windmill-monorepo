@@ -33,7 +33,7 @@ test('finishHead — the word above a session, and the day it ran', () => {
     when: 'Tue 4 Aug · 18:12 – 19:14',
   });
   assert.equal(finishHead({ startedAt, finishedAt, first: true }).subtitle, 'Your first session');
-  assert.equal(finishHead({ startedAt, finishedAt }).subtitle, 'No routine');
+  assert.equal(finishHead({ startedAt, finishedAt }).subtitle, 'Session · no routine');
 });
 
 // A chin-up at zero and a band-assisted pull-up at −20 have no honest one-rep estimate, and the

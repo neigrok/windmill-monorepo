@@ -54,6 +54,33 @@ test('the tab bar draws the same number of tabs the grid has columns for', () =>
   assert.equal(read('GymApp.jsx').includes("const TAB_SCREENS = ['today', 'log', 'routines', 'stats'];"), true);
 });
 
+// THE CHAT IS NEVER OFFERED MID-SESSION — §L (the Ask section), and ARCHITECTURE §12 cuts "any chat
+// not attached to one finished workout". A session detail is reachable for the OPEN session too —
+// the log lists it and the mirror is polling it — and a panel mounted there would be asking a model
+// about a workout that is still changing: the answer is out of date before it is read, and every
+// tool call behind it names a read of a session that has since moved. The gate is on the session
+// being finished, which is the same condition the review door beside it is drawn under.
+//
+// A mounted-component test cannot see this: the panel renders its locked face for a signed-in
+// non-subscriber either way, and the difference is whether it is in the tree at all.
+test('the coach panel is mounted only on a session that is over', () => {
+  const source = read('Log.jsx');
+  assert.equal(source.includes('{isFinished(session) && <CoachPanel sessionId={id} />}'), true);
+  assert.equal((source.match(/<CoachPanel/g) ?? []).length, 1);
+});
+
+// `ADDED TODAY` IS SAID ONCE, ON THE FIRST WORKING SET — and which set that is, is decided in the
+// JSX and nowhere a pure module can be asked. A movement warmed up before it was worked spends the
+// note on the warmup slot if the rule is "the first set": `setNoteOf` answers a non-working set
+// with its own kind and nothing else, so the note is computed, discarded, and the movement never
+// says it was added at all. Position in the group, not `index === 0`.
+test('the “added today” note is offered to the first working set of a movement', () => {
+  const source = read('Log.jsx');
+  assert.equal(source.includes("const opener = group.find((set) => set.kind === 'working');"), true);
+  assert.equal(source.includes('setNoteOf(set, reading, set === opener)'), true);
+  assert.equal(source.includes('index === 0'), false);
+});
+
 // THE COACH'S PAGE IS ANSWERED BEFORE THE ACCOUNT IS. The token in the URL is the whole credential,
 // so a visitor with no account must not resolve through 'loading' into the sign-in pitch — and the
 // branch must sit ABOVE the auth switch rather than inside it, which is a fact about where one line

@@ -73,7 +73,22 @@ class TrainingStore(
         private set
     var routines: List<Routine> by mutableStateOf(emptyList())
         private set
-    var recent: List<SessionSummary> by mutableStateOf(emptyList())      // the log, newest first
+    // THE LOG IN ITS TWO HALVES, kept apart rather than merged into one list because two questions
+    // need the seam. Which rows are saved on THIS DEVICE ONLY — the log's hollow ring, and every row
+    // a signed-out lifter has. And where the next page starts: the cursor is the oldest row the LOG
+    // sent, never one of ours, or `Load older` would ask the server to page from a session it has
+    // never heard of.
+    var logged: List<SessionSummary> by mutableStateOf(emptyList())      // the account's pages, newest first
+        private set
+    var shelved: List<SessionSummary> by mutableStateOf(emptyList())     // the device's own, unclaimed
+        private set
+    // The reader sees both, merged on the clock, until the claim empties the shelf.
+    val recent: List<SessionSummary>
+        get() = (logged + shelved).sortedByDescending { it.startedAtMs }
+    // The foot of the log, and it is four states rather than a spinner: there is more, it is being
+    // fetched, there is nothing older, or the read failed. Paging is a TAP and never a scroll, so
+    // the request is always the lifter's own.
+    var older: Older by mutableStateOf(Older.More)
         private set
     var session: Session? by mutableStateOf(null)                        // the open one, or none
         private set
@@ -181,6 +196,11 @@ class TrainingStore(
         // dies with the seat — the movement in hand is re-asked at the end of connect, and the
         // log's answer replaces the one the nobody pass computed off the device.
         lastTimes.clear()
+        // The pages go with the seat, and this is the ONE place they do: `loadLog` keeps whatever
+        // walk is under a thumb, which it may only do while every row it keeps belongs to the
+        // account now asking. Rows read for somebody else are not this lifter's log.
+        logged = emptyList()
+        older = Older.More
         // A crash between finishOnDevice's hold and the queue's forget leaves one workout both
         // finished on the shelf and live in the queue. The shelf's copy is the finish that
         // happened, so the queue lets go — after its sets, which are the same lift, merge into
@@ -199,11 +219,14 @@ class TrainingStore(
         val log = gym
         if (log == null) {
             // Signed out the shelf is the log: routines and history are the device's own, and
-            // nothing here is pending against a server nobody named.
+            // nothing here is pending against a server nobody named. It is also the WHOLE log, so
+            // the foot is already at the bottom — there is no page behind it to ask for.
             liveUnclaimed = false
             claimOwed = false
             routines = localLog.routines
-            recent = localLog.summaries()
+            logged = emptyList()
+            shelved = localLog.summaries()
+            older = Older.End
             saveState = if (queue.pending.isEmpty()) SaveState.Idle else SaveState.OnThisDevice
             resume()
             return
@@ -212,7 +235,7 @@ class TrainingStore(
         // sessions oldest-first (start → sets → finish, each) → the live session's own start. What
         // was made signed out becomes the account's, and a loss is SAID through the same banner a
         // refused set uses. Local history is drawn immediately so an offline boot still shows it.
-        recent = localLog.summaries()
+        shelved = localLog.summaries()
         runClaim()
         // The queue goes out BEFORE the first read, and it is not an optimisation: reading the log
         // SETTLES a stale open session, and a set that arrives after that close is refused forever.
@@ -439,7 +462,7 @@ class TrainingStore(
         exerciseId = null
         lastTime = null
         drawFromQueue()
-        recent = localLog.summaries()
+        shelved = localLog.summaries()
         // Signed in, the shelf does not wait for a relaunch: the claim runs now — or, if a replay
         // is already mid-flight, is marked to run again the moment that pass ends — and once the
         // log is ready the session lands. A start tapped while it runs composes on the device
@@ -463,7 +486,7 @@ class TrainingStore(
             queue.forget(sessionId)
             queue.flush()
             drawFromQueue()
-            recent = if (gym == null) localLog.summaries() else recent.filterNot { it.id == sessionId }
+            shelved = localLog.summaries()
             return true
         }
         val log = gym ?: return false
@@ -593,6 +616,28 @@ class TrainingStore(
         } catch (refusing: Exception) {
             GymResult.Failed(WriteFailure(refusing))
         }
+    }
+
+    // ONE PAGE DEEPER, and the foot's only move. It doubles as the retry for a first page that
+    // failed: the cursor is the oldest row the LOG sent, and with no rows from the log at all that
+    // cursor is absent, which is the top of the log — so a retry after a failed boot read asks the
+    // same question the boot read asked rather than needing a second verb.
+    //
+    // The cursor is BOTH halves of the sort key: two sessions can share an instant, and an instant
+    // alone would repeat one across the page edge or skip it. Signed out there is nothing to ask —
+    // the shelf is the whole log and connect has already said so.
+    suspend fun loadOlder() {
+        if (older == Older.Loading || older == Older.End) return
+        val log = gym ?: return
+        val oldest = logged.lastOrNull()
+        older = Older.Loading
+        val page = tried { log.sessions(limit = logPage, before = oldest?.startedAtMs, beforeId = oldest?.id) }
+        if (page == null) {
+            older = Older.Failed
+            return
+        }
+        logged = logged + page.filter { fresh -> logged.none { it.id == fresh.id } }
+        older = if (page.size < logPage) Older.End else Older.More
     }
 
     // The statistics read. Nothing is held: the store keeps no copy to invalidate, so there is no
@@ -796,11 +841,36 @@ class TrainingStore(
         // (`reclaimed`, `finishOnDevice`, connect), so a skipped read still lands.
         if (claiming) return
         val log = gym ?: return
-        val page = tried { log.sessions(limit = logPage, before = null, beforeId = null) } ?: return
+        val page = tried { log.sessions(limit = logPage, before = null, beforeId = null) }
+        if (page == null) {
+            // The log went quiet, and the foot is where that is said — the rows already in hand
+            // stay, because they are real sessions and worth reading.
+            older = Older.Failed
+            return
+        }
         if (claiming) return
-        // The server is the truth and the shelf is what it does not have yet — the reader sees
-        // both, merged on the clock, until the claim empties the shelf.
-        recent = (page + localLog.summaries()).sortedByDescending { it.startedAtMs }
+        // A RE-READ IS OF THE HEAD, AND IT DOES NOT UNDO A WALK. Not every caller is a moment the
+        // lifter is somewhere else: `reclaimed` runs off the delivery cadence's TIMER, so this
+        // lands while a thumb is halfway down the log, and a list that replaced itself there would
+        // collapse sixty rows back to fifty under it — the foot flipping from `first session · 6
+        // May 2026` back to `Load older`, and the row being read sliding behind a page the lifter
+        // has to walk for a second time.
+        //
+        // So the fresh page is authoritative over the span it covers — a session finished, claimed
+        // or discarded is inside it — and every row OLDER than its last one survives. The key is
+        // the cursor's own, both halves of it, for the reason `loadOlder` states. A change of seat
+        // is the one re-read that keeps nothing, and `connect` empties the log itself before it
+        // asks, because those rows are another account's.
+        val edge = page.lastOrNull()
+        val deeper = logged.filter { held ->
+            edge != null && (held.startedAtMs < edge.startedAtMs ||
+                (held.startedAtMs == edge.startedAtMs && held.id < edge.id))
+        }
+        logged = page + deeper
+        shelved = localLog.summaries()
+        // The foot is about the deepest row in hand, so it is recomputed only when this page IS the
+        // whole of what is held. Below a walked page the answer is the one that walk arrived at.
+        if (deeper.isEmpty()) older = if (page.size < logPage) Older.End else Older.More
 
         val open = page.firstOrNull { it.session.isOpen }
         if (open == null) {
@@ -893,6 +963,12 @@ class TrainingStore(
         null
     }
 }
+
+// The foot of the log, drawn from the paging arithmetic and nothing else. `More` is the offer,
+// `End` is a real arrival — the date of the first session ever logged — and `Failed` says what
+// failed and offers the one move. There is no fifth state for "empty": a log with no rows has no
+// foot, because there is nothing for a foot to sit under.
+enum class Older { More, Loading, End, Failed }
 
 sealed interface GymResult<out T> {
     data class Ok<T>(val value: T) : GymResult<T>

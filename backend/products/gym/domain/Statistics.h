@@ -10,13 +10,26 @@
 namespace wm::gym {
 
 // The statistics surface is a READ over values this product has already decided, and the list of
-// what it refuses is as load-bearing as the list of what it answers. No volume — band-assisted work
-// logs a negative load, so `weight × reps` goes down when a lifter gets stronger, and four light
-// sets outrank three heavy ones. No muscle-group anything: pattern is the only classification gym
-// has, single-valued on purpose, and a taxonomy that double-counts a bench set into chest and
-// triceps is the bug the schema was written against. No streak, no cardio, no duration axis, and
-// nothing here is a grade — no score, no percentage, nothing green or red. Every number below is a
-// fact with a direction, which is the finish screen's rule (§5) applied to a longer window.
+// what it refuses is as load-bearing as the list of what it answers.
+//
+// No volume AS A METRIC — no headline number, no series anyone is asked to watch, nothing sessions
+// are ranked by — because `weight × reps` does not rise with getting stronger: band-assisted work
+// logs a negative load, so the total FALLS as the band comes off, and four light sets outrank three
+// heavy ones. e1RM is the headline here and everywhere else. What that refuses is not tonnage as a
+// CAPTION, which the log prints on its week dividers and its rows (the sum is the store's, in
+// ports/TrainingRepository.h) — the scale of a week, sitting beside the facts a lifter scans. It is
+// allowed there because it is stated with the negative case handled rather than ignored: an
+// assisted set contributes ZERO, having moved no external load, and a bodyweight set contributes
+// zero for the same reason, gym holding no bodyweight to add to it. That carries one rule with it,
+// and the rule is what keeps the caption honest — a session or a week whose tonnage is zero shows
+// NOTHING where the tonnage would go, never `0.0 t`. A chin-up-and-dips week did not move zero
+// kilograms; we simply have nothing true to say about it, and an absence beats a false zero.
+//
+// No muscle-group anything: pattern is the only classification gym has, single-valued on purpose,
+// and a taxonomy that double-counts a bench set into chest and triceps is the bug the schema was
+// written against. No streak, no cardio, no duration axis, and nothing here is a grade — no score,
+// no percentage, nothing green or red. Every number below is a fact with a direction, which is the
+// finish screen's rule (§5) applied to a longer window.
 
 // What one movement did in one session, as the store hands it over. The instant is the SESSION's
 // own start and never a set's `completed_at`: that is the device's wall clock and nothing ties it

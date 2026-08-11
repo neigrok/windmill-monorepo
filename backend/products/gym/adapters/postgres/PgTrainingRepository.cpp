@@ -96,12 +96,18 @@ PriorMark markFrom(const Row& row) {
                    instantFrom(row["at_ms"])};
 }
 
-// One row of the log summary's aggregate: a session, one movement it holds, and how many sets of
-// it. The names are framed by the row structure — never by a separator packed into one string, so
-// a display name that happens to contain the separator cannot mint a movement nobody trained.
+// One row of the log summary's aggregate: a session, one movement it holds, how many sets of it and
+// how much those sets moved. The names are framed by the row structure — never by a separator packed
+// into one string, so a display name that happens to contain the separator cannot mint a movement
+// nobody trained. Every session-level number is a sum over these per-movement rows, which is what
+// keeps the two counts consistent with each other: they come off one GROUP BY and not off two
+// statements that could disagree about which sets a session held.
 struct Tally {
   int setCount = 0;
+  int workingSetCount = 0;
+  double tonnageKg = 0;
   std::vector<std::string> exerciseNames;
+  std::vector<WorkingLoad> workingLoads;
 };
 
 template <typename Row>
@@ -397,18 +403,38 @@ SetInsertOutcome PgTrainingRepository::insertSet(const Set& incoming) {
 
 std::vector<SessionSummary> PgTrainingRepository::log(const UserId& user,
                                                       const LogCursor& cursor) {
-  // Two queries over the same keyset window, merged by session id: the page of sessions, then one
-  // aggregate pass for its set counts and display names (alphabetical — first-performed order is
-  // the detail read's business, not the summary's).
+  // Three queries over the same keyset window, merged by session id: the page of sessions, one
+  // aggregate pass for its set counts, its tonnage and its display names (alphabetical —
+  // first-performed order is the detail read's business, not the summary's), and one for the loads
+  // each session worked. All three run inside one transaction, so no row of a page can lose an
+  // aggregate to a write that lands between them.
+  //
+  // The aggregate counts twice on purpose. `set_count` is every row a session holds;
+  // `working_set_count` filters to the working ones, and that is the number the log screen prints
+  // beside the top set. They have to be two numbers, because the top set is a lateral over the
+  // working sets alone — a row printing `set_count` there counts a ramp-up the number beside it
+  // could never have come from, which is exactly what the log did until 2026-08-12.
+  // `tonnage_kg` sums the same filtered rows with the load CLAMPED at zero: band-assisted work
+  // stores a negative kg (§2.3), and an unclamped sum lets an assisted pull-up subtract from a week
+  // somebody trained. Zero is a real answer — nothing here moved a measurable load — and never a
+  // claim that nothing was done.
   //
   // The window sorts on (started_at, id), which is unique, and compares the pair against the whole
   // cursor: on a plain started_at cursor two sessions sharing a start instant across a page edge
   // hide one of them from every page, forever. An absent tiebreaker passes the empty id — the floor
   // of the text order — so the first page degrades to a plain "strictly before this instant".
   //
-  // The row's two other facts ride the same statement. The top set is a lateral over this session's
-  // WORKING sets, heaviest first and ties to more reps — the rule TopWorkingSet states, and never
-  // volume. `closed_itself` is the auto-close's own signature rather than a column: autoCloseAt
+  // The third statement is the session's LOAD LADDER — one row per distinct working load, carrying
+  // the best reps done at it. It exists because the row's e1RM is Epley over every working set and
+  // not over the top set, and picking a set by e1RM is the formula itself rather than an ordering
+  // this store may make. Grouping is all it takes: at a fixed load Epley rises with reps, so the
+  // best-repped set at a load is the best set at that load, and a handful of rows per session is the
+  // whole of what `topE1rmOf` needs. Loads at or below zero are NOT filtered out here — definedness
+  // is the domain's rule and it is stated in domain/Review.h alone.
+  //
+  // The row's two other facts ride the sessions statement. The top set is a lateral over this
+  // session's WORKING sets, heaviest first and ties to more reps — the rule TopWorkingSet states,
+  // and never volume. `closed_itself` is the auto-close's own signature rather than a column: autoCloseAt
   // stamps finished_at at the last set's instant exactly (or at started_at for a session holding
   // none), so a finish equal to that instant is the four-hour rule's work. A manual finish landing
   // on precisely the same millisecond reads as an auto-close, and the whole cost of that
@@ -431,7 +457,10 @@ std::vector<SessionSummary> PgTrainingRepository::log(const UserId& user,
           "ORDER BY started_at DESC, id DESC LIMIT $4",
       user.str(), static_cast<long long>(cursor.beforeMs), beforeId, cursor.limit);
   pqxx::result tallies = txn.exec_params(
-      "SELECT st.session_id, e.name, count(*)::int AS set_count "
+      "SELECT st.session_id, e.name, count(*)::int AS set_count, "
+      "  (count(*) FILTER (WHERE st.kind = 'working'))::int AS working_set_count, "
+      "  coalesce(sum(greatest(st.weight_kg, 0) * st.reps) "
+      "           FILTER (WHERE st.kind = 'working'), 0)::float8 AS tonnage_kg "
       "FROM gym_sets st JOIN gym_exercises e ON e.id = st.exercise_id "
       "WHERE st.session_id IN "
       "  (SELECT id FROM gym_sessions WHERE user_id = $1::uuid "
@@ -439,13 +468,27 @@ std::vector<SessionSummary> PgTrainingRepository::log(const UserId& user,
       "   ORDER BY started_at DESC, id DESC LIMIT $4) "
       "GROUP BY st.session_id, e.name ORDER BY st.session_id, e.name",
       user.str(), static_cast<long long>(cursor.beforeMs), beforeId, cursor.limit);
+  pqxx::result ladders = txn.exec_params(
+      "SELECT st.session_id, st.weight_kg::float8 AS weight_kg, max(st.reps)::int AS reps "
+      "FROM gym_sets st "
+      "WHERE st.kind = 'working' AND st.session_id IN "
+      "  (SELECT id FROM gym_sessions WHERE user_id = $1::uuid "
+      "   AND (started_at, id) < (to_timestamp($2::bigint / 1000.0), $3) "
+      "   ORDER BY started_at DESC, id DESC LIMIT $4) "
+      "GROUP BY st.session_id, st.weight_kg ORDER BY st.session_id, st.weight_kg DESC",
+      user.str(), static_cast<long long>(cursor.beforeMs), beforeId, cursor.limit);
 
   std::map<std::string, Tally> tallyBySession;
   for (const auto& row : tallies) {
     Tally& tally = tallyBySession[row["session_id"].as<std::string>()];
     tally.setCount += row["set_count"].as<int>();
+    tally.workingSetCount += row["working_set_count"].as<int>();
+    tally.tonnageKg += row["tonnage_kg"].as<double>();
     tally.exerciseNames.push_back(row["name"].as<std::string>());
   }
+  for (const auto& row : ladders)
+    tallyBySession[row["session_id"].as<std::string>()].workingLoads.push_back(
+        WorkingLoad{row["weight_kg"].as<double>(), row["reps"].as<int>()});
 
   std::vector<SessionSummary> out;
   for (const auto& row : sessions) {
@@ -456,11 +499,12 @@ std::vector<SessionSummary> PgTrainingRepository::log(const UserId& user,
     const bool closedItself = row["closed_itself"].as<bool>();
     const auto tally = tallyBySession.find(session.id.str());
     if (tally == tallyBySession.end()) {
-      out.push_back(SessionSummary{session, 0, {}, top, closedItself});
+      out.push_back(SessionSummary{session, 0, 0, 0, {}, top, {}, closedItself});
       continue;
     }
-    out.push_back(SessionSummary{session, tally->second.setCount, tally->second.exerciseNames, top,
-                                 closedItself});
+    out.push_back(SessionSummary{session, tally->second.setCount, tally->second.workingSetCount,
+                                 tally->second.tonnageKg, tally->second.exerciseNames, top,
+                                 tally->second.workingLoads, closedItself});
   }
   return out;
 }

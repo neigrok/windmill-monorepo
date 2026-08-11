@@ -131,7 +131,7 @@ test('overlapWith — a crossed session is named, in the sentence that routes to
   assert.equal(OVERLAP_TITLE, 'These times cross a session already in the log.');
   assert.equal(overlapWith({ startedAt: day - 3 * 86_400_000, durationMs: 45 * 60_000 }, log).session.id, 'ses_2');
   assert.equal(
-    overlapWith({ startedAt: day - 3 * 86_400_000, durationMs: 45 * 60_000 }, log).body.startsWith('No routine · '),
+    overlapWith({ startedAt: day - 3 * 86_400_000, durationMs: 45 * 60_000 }, log).body.startsWith('Session · no routine · '),
     true,
   );
 });

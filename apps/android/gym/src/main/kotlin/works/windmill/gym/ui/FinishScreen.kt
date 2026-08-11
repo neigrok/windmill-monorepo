@@ -204,20 +204,32 @@ fun ReviewReadout(review: Review?, catalog: List<Exercise>) {
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x5),
         modifier = Modifier.fillMaxWidth(),
     ) {
+        review?.let { Tiles(Finish.tiles(it.stats)) }
+        ReviewRemarks(review, catalog)
+    }
+}
+
+// The two things the domain says about a session that its three facts do not. Split out because a
+// session read back later states those three facts in its own head (§G17), and a second copy of
+// `58m` underneath would be two answers to one question.
+@Composable
+fun ReviewRemarks(review: Review?, catalog: List<Exercise>) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x5),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
         if (review == null) {
-            // The three facts are the domain's and this read did not come back. Nothing takes their
-            // place: a duration counted on the phone would be a second opinion in the one screen
-            // that exists to state the first.
+            // The read did not come back, and nothing takes its place — drawing no record where a
+            // record may have happened is why this sentence is here rather than a blank.
             Text(
                 "the log didn’t answer — the session is saved",
                 style = GymType.numeral(13),
                 color = GymSkin.inkFaint,
             )
-        } else {
-            Tiles(Finish.tiles(review.stats))
-            Finish.recordSentence(review.record, catalog)?.let { RecordLine(it) }
-            Finish.comparison(review.against, catalog)?.let { AgainstBlock(it) }
+            return@Column
         }
+        Finish.recordSentence(review.record, catalog)?.let { RecordLine(it) }
+        Finish.comparison(review.against, catalog)?.let { AgainstBlock(it) }
     }
 }
 

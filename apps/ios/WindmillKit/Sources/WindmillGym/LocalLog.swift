@@ -226,20 +226,30 @@ public final class LocalLog {
 
     // ── what the log answers signed out ────────────────────────────────────────────────────────
 
-    // The log page Today draws, newest first — the same summary rows the server sends, computed by
-    // its rules: the top set is the heaviest WORKING set, ties to the reps.
+    // The log page the room draws, newest first — the same summary rows the server sends, computed
+    // by its rules: the top set is the heaviest WORKING set, ties to the reps, and the count and the
+    // tonnage beside it are over the working sets and nothing else.
+    //
+    // The tonnage clamps each set at zero rather than subtracting, which is the whole reason gym can
+    // caption a week with one at all: a band-assisted set moved no external load, and neither did a
+    // chin-up. `topE1rm` stays absent — Epley is the domain's, and this device does not hold a copy —
+    // so a row this device is the only home for reads its two honest numbers and draws nothing where
+    // the estimate would go.
     public func summaries() -> [SessionSummary] {
         sessions.reversed().map { local in
             var walked: [String] = []
             for set in local.sets where !walked.contains(set.exerciseId) {
                 walked.append(set.exerciseId)
             }
+            let working = local.sets.filter { $0.kind == .working }
             return SessionSummary(session: local.session,
                                   setCount: local.sets.count,
                                   exercises: walked,
                                   topSet: topWorkingSet(of: local.sets).map {
                                       TopSet(weightKg: $0.weightKg, reps: $0.reps)
-                                  })
+                                  },
+                                  workingSetCount: working.count,
+                                  tonnageKg: working.reduce(0) { $0 + max($1.weightKg, 0) * Double($1.reps) })
         }
     }
 

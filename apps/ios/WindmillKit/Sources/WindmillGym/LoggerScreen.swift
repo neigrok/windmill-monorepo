@@ -125,9 +125,10 @@ struct LoggerScreen: View {
         TimelineView(.periodic(from: .now, by: 1)) { beat in
             HStack(spacing: WindmillSpace.x3) {
                 Circle().fill(skin.accent).frame(width: 8, height: 8)
-                Text(store.session?.plan?.routine ?? "Ad-hoc session")
+                Text(store.session.map(Readout.routine) ?? Readout.noRoutine)
                     .font(WindmillFont.body(15, .semibold))
                     .foregroundStyle(skin.ink)
+                    .lineLimit(1)
                 Text(Readout.clock(stamp(beat.date) - (store.session?.startedAtMs ?? 0)))
                     .font(GymType.numeral(14))
                     .foregroundStyle(skin.inkDim)
@@ -153,7 +154,7 @@ struct LoggerScreen: View {
     private var assembling: some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x4) {
             Spacer(minLength: WindmillSpace.x8)
-            Text(store.session?.plan?.routine ?? "Ad-hoc session")
+            Text(store.session.map(Readout.routine) ?? Readout.noRoutine)
                 .font(WindmillFont.display(26))
                 .foregroundStyle(skin.ink)
             Text(store.session?.plan == nil

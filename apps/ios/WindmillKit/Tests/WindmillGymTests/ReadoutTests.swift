@@ -25,6 +25,18 @@ final class ReadoutTests: XCTestCase {
         XCTAssertEqual(Readout.weight(0.1 + 0.2), "0.3")
     }
 
+    // A LOAD IS AN UNVALIDATED DOUBLE — the wire's and the shelf's, both — and a JSON number runs to
+    // 1e308 while converting one to an Int traps above 9.2e18. The spelling has to be total: an
+    // absurd number in one field spoils the row it belongs to and never the screen around it. Every
+    // load a barbell has ever held is many orders of magnitude inside this.
+    func testAWeightNoRealBarbellCouldHoldIsSpelledRatherThanCrashing() {
+        XCTAssertEqual(Readout.weight(1e19), "—")
+        XCTAssertEqual(Readout.weight(1e308), "—")
+        XCTAssertEqual(Readout.weight(.infinity), "—")
+        XCTAssertEqual(Readout.weight(.nan), "—")
+        XCTAssertEqual(Readout.weight(999_999), "999999", "the bound is nowhere near a real load")
+    }
+
     func testASetReadsAsItsLoadAndItsReps() {
         XCTAssertEqual(Readout.effort(weightKg: 82.5, reps: 5), "82.5 × 5")
         XCTAssertEqual(Readout.effort(weightKg: 0, reps: 9), "0 × 9")
@@ -91,5 +103,63 @@ final class ReadoutTests: XCTestCase {
         XCTAssertEqual(Readout.movement("bench-press", in: catalog), "Bench Press")
         XCTAssertEqual(Readout.movement("zercher-squat", in: catalog), "zercher-squat")
         XCTAssertEqual(Readout.movement("bench-press", in: []), "bench-press")
+    }
+
+    func testWorkingSetsAreCountedUnderTheirOwnWord() {
+        XCTAssertEqual(Readout.workingCount(11), "11 working")
+        XCTAssertEqual(Readout.workingCount(0), "0 working")
+    }
+
+    // TONNAGE IS A CAPTION, NEVER A METRIC — and the rule that keeps it honest is that it answers
+    // with NOTHING where there is nothing true to say. A chin-up-and-dips session did not move zero
+    // kilograms; `0.0 t` would be a claim that it moved none of any kind, so nothing is drawn. The
+    // floor is that same rule one decimal further down.
+    func testTonnageIsAbsentRatherThanAFalseZero() {
+        XCTAssertEqual(Readout.tonnage(14_200), "14.2 t")
+        XCTAssertEqual(Readout.tonnage(5_400), "5.4 t")
+        XCTAssertEqual(Readout.tonnage(5_000), "5.0 t")
+        XCTAssertEqual(Readout.tonnage(0), nil)
+        XCTAssertEqual(Readout.tonnage(40), nil, "under 50 kg the one decimal this prints IS zero")
+        XCTAssertEqual(Readout.tonnage(-120), nil, "a sum cannot go below zero — every set clamps at it")
+        XCTAssertEqual(Readout.tonnage(.infinity), nil,
+                       "a SUM is the one way a number here goes non-finite — `inf t` is not a caption")
+    }
+
+    // A target reads the same on the routine card, on the log's plan line and in the comparison,
+    // because all three ask this. An absent weight prints nothing, and so does a zero: zero is not a
+    // load but the absence of one, while a band-assisted −20 is a real point on this number line.
+    func testATargetIsSpelledOneWayForTheWholeProduct() {
+        XCTAssertEqual(Readout.target(sets: 5, reps: 5, weightKg: 82.5), "5 × 5 · 82.5")
+        XCTAssertEqual(Readout.target(sets: 3, reps: nil, weightKg: nil), "3 × max")
+        XCTAssertEqual(Readout.target(sets: 3, reps: 8, weightKg: 0), "3 × 8")
+        XCTAssertEqual(Readout.target(sets: 3, reps: 8, weightKg: -20), "3 × 8 · \u{2212}20")
+    }
+
+    // A date, with no weekday in front — the Monday a week of the log opens on, and the bottom of
+    // that log, which carries its year because that is the one fact worth arriving at.
+    func testADateDropsTheWeekdayAndKeepsTheYearOnlyAtTheBottom() {
+        var parts = DateComponents()
+        parts.year = 2026
+        parts.month = 5
+        parts.day = 6
+        parts.hour = 9
+        let ms = Int64((Calendar.current.date(from: parts) ?? Date()).timeIntervalSince1970 * 1000)
+
+        XCTAssertEqual(Readout.date(ms), "6 May")
+        XCTAssertEqual(Readout.dateWithYear(ms), "6 May 2026")
+    }
+
+    // ONE WORD FOR A SESSION NOBODY PLANNED, and an empty routine name on a snapshot is the same
+    // fact as no snapshot at all — the wire defaults that field to a blank string.
+    func testASessionWithNoRoutineIsNamedOneWay() {
+        let bare = Session(id: "ses_1", startedAtMs: 1_000)
+        let blank = Session(id: "ses_2", startedAtMs: 1_000,
+                            plan: PlanSnapshot(routine: "", entries: []))
+        let named = Session(id: "ses_3", startedAtMs: 1_000,
+                            plan: PlanSnapshot(routine: "Push A", entries: []))
+
+        XCTAssertEqual(Readout.routine(of: bare), "Session · no routine")
+        XCTAssertEqual(Readout.routine(of: blank), "Session · no routine")
+        XCTAssertEqual(Readout.routine(of: named), "Push A")
     }
 }

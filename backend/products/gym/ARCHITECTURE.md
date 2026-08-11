@@ -445,6 +445,8 @@ struct Against         { SessionId session; std::string routineName; std::uint64
                          std::vector<AgainstMovement> movements; };
 struct ReviewStats     { std::uint64_t durationMs; int workingSets;
                          std::optional<double> topE1rm; };
+struct WorkingLoad     { double weightKg; int reps; };
+std::optional<double> topE1rmOf(const std::vector<WorkingLoad>&);
 struct Review          { ReviewStats stats; bool slight; std::optional<PersonalRecord> record;
                          std::optional<Against> against; };
 
@@ -459,6 +461,13 @@ chin-up at 0 kg and a band-assisted pull-up at −20 have no honest one-rep esti
 screen's loudest pixel must never hold a number the domain made up. It returns the value **rounded
 to the one decimal the screen prints**, and every comparison here uses that rounded number, so a
 record the product cannot show can never be minted by float noise.
+
+**`topE1rmOf` is the one definition of a session's e1RM**, and both surfaces that print one come
+through it: the finish screen hands it every working set, the log's page read hands it the store's
+per-load projection of them (`WorkingLoad`), and the two agree because at a fixed load Epley rises
+with reps. It is the best estimate over the whole session and never the estimate over its heaviest
+set — 3 × 95 × 10 beats 100 × 5 — which is the bug the log row carried on 2026-08-12 and the reason
+the number is computed in one place rather than twice.
 
 **`PriorMark` is a projection, not a history**: one row per (movement, load) carrying the *best reps*
 ever done at it. At a fixed weight e1RM rises with reps, so that row is the best set at that load,
@@ -706,9 +715,20 @@ struct TrainingRepository {
 };
 
 struct TopWorkingSet  { double weightKg; int reps; };   // the session's heaviest, ties to more reps
-struct SessionSummary { Session session; int setCount; std::vector<std::string> exerciseNames;
+struct SessionSummary { Session session;
+                        int setCount;                          // every set, every kind
+                        int workingSetCount;                   // the number the log screen prints
+                        double tonnageKg;                      // working load, clamped at zero
+                        std::vector<std::string> exerciseNames;
                         std::optional<TopWorkingSet> topSet;   // absent = no working set in it
+                        std::vector<WorkingLoad> workingLoads; // one row per load, best reps at it
                         bool closedItself; };                  // the four-hour rule ended it
+
+// The application puts the ONE number on the row that is a formula rather than an aggregation
+// (`application/LogService.h`); the store never sees Epley and neither does any client. It runs
+// `domain/Review`'s topE1rmOf over `workingLoads` — the same function the finish screen goes
+// through, so one workout cannot carry two numbers under the word `e1RM`.
+struct LogRow { SessionSummary summary; std::optional<double> topE1rm; };
 struct LogCursor { std::uint64_t beforeMs; std::optional<SessionId> beforeId; int limit; };
 
 enum class SetInsertError { none, idTaken, unknownExercise, finished };
@@ -826,16 +846,61 @@ query, ordered by pattern then name. Identity rules, stated once:
 
 - **The log** (`log` + `setsOf`) — sessions newest-first, keyset-paged on the **pair**
   `(started_at, id)` (`?before=<ms>&beforeId=<id>&limit=`, default 50, cap 200), summaries
-  carrying set count, exercise names, the session's top working set and whether it closed itself;
-  detail is per-exercise grouping in first-performed order, assembled client-side from numbered
-  sets. Read-only in phase 1 — the fix-it path is phase 2's `log-editing`.
+  carrying both set counts, the tonnage the working sets moved, exercise names, the session's top
+  working set, the loads it worked with the session's best estimate over them, and whether it closed
+  itself; detail is per-exercise
+  grouping in first-performed order, assembled client-side from numbered sets. Read-only in phase 1
+  — the fix-it path is phase 2's `log-editing`.
 
-  **The row's two derived facts ride the same statement**, because the whole point of a summary is
+  **The row's derived facts ride the same statement**, because the whole point of a summary is
   that the list never loads a session's sets. `topSet` is a lateral over the session's *working*
   sets — heaviest, ties to more reps, never volume, and absent for a session holding none, because
-  "0 kg × 0" is not a lighter workout. `closedItself` is **inferred and has no column**: `autoCloseAt`
-  stamps `finished_at` at the last set's instant exactly, or at `started_at` for a session holding
-  none, while a lifter's own finish carries the instant their device named — so
+  "0 kg × 0" is not a lighter workout.
+
+  **Both set counts travel, and the log screen prints the second one.** `setCount` is every row a
+  session holds; `workingSetCount` filters to the working sets, which are the only sets that count
+  toward anything. They were one number until 2026-08-12, and that was the bug the log's own design exposed: the row
+  printed `setCount` beside `topSet`, a working-sets-only pick, so a five-set session with two
+  warmups read *5 sets* over a number three sets earned. `setCount` keeps its meaning and its
+  consumers rather than being redefined under them.
+
+  **`tonnageKg` is `sum(greatest(weight_kg, 0) * reps)` over the same working rows**, and the clamp
+  is what makes it printable at all: band-assisted work stores a negative kg (§2.3), so an unclamped
+  sum lets an assisted pull-up *subtract* from a week somebody trained. An assisted set moved no
+  external load and contributes zero; a bodyweight set contributes zero for the same reason, gym
+  holding no bodyweight to add. This is not the volume the statistics bullet below refuses — that
+  refusal is of volume **as a metric**, a headline, a tracked series, a ranking key, and it stands. This is
+  tonnage **as a caption**, the scale of a week on a divider. It carries one rule with it: **a
+  session or a week whose tonnage is zero shows nothing where the tonnage would go, never `0.0 t`.**
+  A chin-up-and-dips week did not move zero kilograms; we have nothing true to say about it, and an
+  absence beats a false zero. Weeks are the client's own fold over the page it holds — there is no
+  week endpoint — so the same rule covers the oldest loaded week, which is the one week paging can
+  leave incomplete and which therefore omits its tonnage until more is loaded.
+
+  **`topE1rm` is the domain's, and it has to come off the wire.** It is `domain/Review`'s
+  `topE1rmOf` — the best Epley estimate over *every* working set the session held, which is the same
+  function and the same number `ReviewStats::topE1rm` gives the finish screen. It is **not** Epley
+  over `topSet`: a session of 100 × 5 and then three back-offs at 95 × 10 estimates **126.7** off the
+  back-offs and **116.7** off its heaviest set, so a row that ran Epley on `topSet` made one workout
+  say two different things under the word `e1RM` two taps apart. Picking a set *by* e1RM is not an
+  ordering the store can make — it is the formula — so the store hands over `workingLoads`, one row
+  per distinct working load carrying the best reps at it, and `LogService` runs the domain over that.
+  At a fixed load Epley rises with reps, so that projection and the full set list answer identically.
+  This is the §11.5 rule applied to the second formula in the product: one copy per language and none
+  in the database. A client computing an e1RM from `topSet` would be the second copy in that
+  language — and a wrong one — which is exactly what `web/src/products/gym/review.js` says the web
+  does not hold. Absent where Epley is undefined: no working set, or none of them loaded.
+
+  **The wire's doubles are doubles.** `topE1rm` is rounded to one decimal as a *value*; the JSON
+  text is not, because the writer renders the double at its own precision — a value like `20.7` can
+  cross as `20.699999999999999` and parse back to exactly that double. Every surface parses and
+  formats; nothing prints the raw token, re-rounds, or re-derives the estimate. This is the wire's
+  behaviour for every double gym sends (`weightKg`, `rpe`, the review's own estimate) and the
+  precision belongs to the platform's HTTP and MCP writers, not to this product.
+
+  `closedItself` is **inferred and has no column**: `autoCloseAt` stamps `finished_at` at the last
+  set's instant exactly, or at `started_at` for a session holding none, while a lifter's own finish
+  carries the instant their device named — so
   `finished_at = coalesce(max(completed_at), started_at)` *is* that rule's signature. A manual finish
   landing on precisely the same millisecond reads as an auto-close, and the whole cost of that
   coincidence is one wrong subtitle on one log row; a column would be a second writer to keep honest
@@ -955,10 +1020,15 @@ query, ordered by pattern then name. Identity rules, stated once:
   "I did not train that week".
 
   **What is not in it, and each was cut for a reason that has not changed:** muscle-group volume
-  and any taxonomy for it, streaks, any cardio or duration axis, volume as a headline number (it
-  goes *negative* on band-assisted work and lies about four light sets against three heavy ones),
-  and any grade, score, percentage or green/red. The finish screen's rule holds over the longer
-  window too — *a fact with a direction, never a grade*.
+  and any taxonomy for it, streaks, any cardio or duration axis, volume **as a metric** — a headline
+  number, a series anyone is asked to watch, a key sessions are ranked by — because `weight × reps`
+  goes *negative* on band-assisted work and lies about four light sets against three heavy ones, and
+  any grade, score, percentage or green/red. The finish screen's rule holds over the longer window
+  too — *a fact with a direction, never a grade*.
+
+  That refusal is of volume as a metric and not of the log's **tonnage caption**, which is a
+  different claim made under the clamp and the never-print-zero rule this section's log bullet
+  states. e1RM remains the headline everywhere, here and on the row.
 - **Export** (`exportedSets` + `toCsv`) — `GET /v1/gym/export`, CSV of every set this account
   holds, the open session included: an export missing today is the one row a lifter goes looking
   for. It is the trust argument for a multi-year artifact and so it is deliberately dull — one
@@ -1083,8 +1153,9 @@ numbers in kg, sets serialize as
 `{id, name, position, lastTrainedAt?, entries:[{position, exerciseId, targetSets, targetReps?,
 targetWeightKg?, restSeconds?}]}`; list replies wrap (`{"exercises":[…]}`, `{"sessions":[…]}`,
 `{"routines":[…]}`, detail `{"session":…, "sets":[…]}`). A log row is a session plus
-`{setCount, exercises:[…], topSet?: {weightKg, reps}, closedItself}`. Parsing type-checks every
-jsoncpp field before `.as*()` and throws `InvalidTraining` → 400.
+`{setCount, workingSetCount, tonnageKg, exercises:[…], topSet?: {weightKg, reps}, topE1rm?,
+closedItself}`. Parsing type-checks every jsoncpp field before `.as*()` and throws
+`InvalidTraining` → 400.
 
 **An absent `targetReps` is `max`, not a missing value.** It is omitted on the way in and omitted on
 the way out — on the routine entry, on the frozen plan's line, and on the review's `planned` — under

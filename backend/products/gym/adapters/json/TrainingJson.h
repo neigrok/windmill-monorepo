@@ -13,8 +13,8 @@ namespace wm::gym {
 // The wire boundary for training data. A cross-surface contract — web, iOS, Android and later the
 // MCP tools all speak it — so it lives in one place and changes deliberately. Instants are epoch-ms
 // numbers, weights are numbers in kg. Optional fields are OMITTED when absent (rpe, finishedAt,
-// routineId, plan, lastTrainedAt, targetReps, targetWeightKg, restSeconds, topSet), never null;
-// note is always present.
+// routineId, plan, lastTrainedAt, targetReps, targetWeightKg, restSeconds, topSet, topE1rm), never
+// null; note is always present.
 //
 //   session in  : { "id": "ses_…", "startedAt": ms, "joinOpenSession"?: bool, "routineId"?: "rt_…" }
 //   set in      : { "id": "set_…", "exerciseId": "…", "weightKg": n, "reps": n, "completedAt": ms,
@@ -25,8 +25,9 @@ namespace wm::gym {
 //   movement in : { "id": "ex_…", "name": "…", "pattern": "squat"|…, "equipment": "barbell"|…,
 //                   "stepKg"?: n }
 //   session out : { "id", "startedAt", "finishedAt"?, "routineId"?, "plan"? }
-//   log row out : the session, plus { "setCount", "exercises": ["…"],
-//                                     "topSet"?: { "weightKg", "reps" }, "closedItself": bool }
+//   log row out : the session, plus { "setCount", "workingSetCount", "tonnageKg",
+//                                     "exercises": ["…"], "topSet"?: { "weightKg", "reps" },
+//                                     "topE1rm"?: n, "closedItself": bool }
 //   set out     : { "id", "exerciseId", "setNumber", "weightKg", "reps", "kind", "rpe"?, "note",
 //                   "completedAt" }
 //   exercise out: { "id", "name", "pattern", "equipment", "stepKg", "custom" }
@@ -95,7 +96,22 @@ RoutineWrite parseRoutineWrite(const Json::Value& body);   // throws InvalidTrai
 ExerciseWrite parseExerciseWrite(const Json::Value& body); // throws InvalidTraining
 
 Json::Value toJson(const Session& session);
-Json::Value toJson(const SessionSummary& summary);
+// The log row carries the estimate the application put on it, not the store's summary alone: a
+// client that computed an e1RM from `topSet` would be the second copy of Epley in that language,
+// which is the one thing §11.5 does not allow — and it would be a WRONG second copy, because
+// `topE1rm` is the best estimate over every working set the session held and `topSet` is only its
+// heaviest one. The two are the same number on a straight-sets day and differ on every session with
+// back-offs in it.
+//
+// Both `topE1rm` and every other double here leave as a JSON number, and the number is the double —
+// not a decimal string. `topE1rm` is rounded to one decimal as a VALUE (domain/Review.h); the text
+// is not, because the writer renders the double at its own precision, so a value like `20.7` can
+// reach a client as `20.699999999999999` and parse back to exactly the double the domain rounded.
+// Clients parse and format: nothing prints the raw token, and nothing re-rounds or re-derives the
+// estimate. Nothing gym owns decides that precision — it is one writer setting away, in the
+// platform's HTTP and MCP edges, and it is the same for `weightKg`, `rpe` and the review's own
+// estimate.
+Json::Value toJson(const LogRow& row);
 Json::Value toJson(const Set& set);
 Json::Value toJson(const std::vector<Set>& sets);
 Json::Value toJson(const Exercise& exercise);

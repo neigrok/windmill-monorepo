@@ -121,6 +121,15 @@ export function timeLabel(ms) {
   return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
 }
 
+// The bottom of the log, and it is a date rather than an empty box (§G16): a lifter who has just
+// imported years of training reads this list to find out whether all of it came across, and the day
+// they started is the one fact worth arriving at. The year is spelled here and nowhere else —
+// everywhere else in gym is a day inside the last few months, where a year is noise.
+export function firstSessionLabel(ms) {
+  const day = new Date(ms);
+  return `first session · ${day.getDate()} ${MONTHS[day.getMonth()]} ${day.getFullYear()}`;
+}
+
 export function whenLabel(ms) {
   return `${dayLabel(ms)} · ${timeLabel(ms)}`;
 }
@@ -133,6 +142,21 @@ export function sessionMetaLabel(session, setCount) {
   if (!isFinished(session)) return `${started}   ·   in progress   ·   ${setCountLabel(setCount)}`;
   const length = durLabel(session.finishedAt - session.startedAt);
   return `${started}–${timeLabel(session.finishedAt)}   ·   ${length}   ·   ${setCountLabel(setCount)}`;
+}
+
+// WHEN, ON A LOG ROW (§G16). A session from today is named by its clock, because the day is the one
+// thing every row on the screen would otherwise share; every older one is named by its day, because
+// by then the hour is not what a lifter is looking for. The calendar-day rule is agoLabel's own — a
+// session finished at 07:00 is still today at 21:00 — so both spellings agree about which day it is.
+//
+// A session nobody has ended says so. It is the phone's workout, mirrored (§11.2), and its counts
+// are what has been logged so far rather than what the session will hold.
+export function logWhenLabel(session, now = Date.now()) {
+  const when = agoLabel(session.startedAt, now) === 'today'
+    ? `today · ${timeLabel(session.startedAt)}`
+    : dayLabel(session.startedAt);
+  if (!isFinished(session)) return `${when} · in progress`;
+  return when;
 }
 
 // "Yesterday" is a claim about the calendar, not about elapsed hours: a session finished at 07:00
@@ -188,6 +212,127 @@ export function setCountLabel(count) {
   return count === 1 ? '1 set' : `${count} sets`;
 }
 
+// THE FOUR FACTS §G16 SCANS FOR, spelled once each. `setCountLabel` above counts every set of every
+// kind and has its own consumers; a log row counts WORKING sets, because that is the word for what
+// counts in this product and the top set beside it was already picked under the same rule.
+export function workingLabel(count) {
+  return `${count} working`;
+}
+
+// The estimate, and the web computes none of it: `topE1rm` is the domain's best Epley over EVERY
+// working set the session held — not the estimate over its heaviest one — carried on the wire
+// (gymApi.js). There is one copy of that formula per language and this is not one of them
+// (review.js); a second opinion drawn here would be the product arguing with itself in its own
+// loudest pixel, and it would disagree with the finish screen, which comes through the same rule.
+export function e1rmLabel(topE1rm) {
+  if (topE1rm == null) return null;
+  return `e1RM ${fmt(topE1rm)}`;
+}
+
+// TONNAGE IS A CAPTION AND NEVER A METRIC. The domain refuses volume brand-wide (domain/
+// Statistics.h) for a good reason — four light sets must not outrank three heavy ones — and that
+// refusal stands: e1RM is the headline everywhere. What this is, is the scale of a week sitting on
+// a divider, and the scale of one session in its header.
+//
+// AN ASSISTED SET CONTRIBUTES ZERO. A band takes load off the bar, so its negative load moved no
+// external weight; bodyweight work is zero for the same reason, and gym does not know a lifter's
+// bodyweight. So the sum clamps at zero rather than subtracting.
+//
+// Two sources, one rule, exactly as the top set has. A session in the LIST carries the store's own
+// aggregation under `tonnageKg`, because the list carries no sets; a session read whole carries the
+// sets and the sum is made here.
+export function tonnageOf(session, sets = null) {
+  if (typeof session?.tonnageKg === 'number') return session.tonnageKg;
+  if (sets == null) return null;
+  return workingSetsOf(sets).reduce((total, set) => total + Math.max(set.weightKg, 0) * set.reps, 0);
+}
+
+// AND A ZERO TONNAGE SAYS NOTHING AT ALL. A chin-up-and-dips week did not move zero kilograms; we
+// simply have nothing true to say about its scale, and absence beats a false zero.
+//
+// UNDER A TONNE THE FIGURE IS SPELLED IN KILOGRAMS, and the threshold is the tonne itself rather
+// than wherever `toFixed(1)` happens to stop producing `0.0`. One decimal of a tonne cannot hold a
+// small number: `0.1 t` for 51 kg is not a rounding, it is double, and a divider that doubles a
+// beginner's week is the same false number the zero would have been. Above a tonne the decimal is
+// worth a hundred kilograms, which is the scale the caption is a caption OF.
+export function tonnageLabel(kg) {
+  if (kg == null || kg <= 0) return null;
+  if (kg < 1000) return `${round(kg)} kg`;
+  return `${(kg / 1000).toFixed(1)} t`;
+}
+
+// THE HEAD OF THE LOG. Both numbers are of what is IN HAND — the log carries no total, and a page
+// short of the one asked for is the only signal there is that the bottom has been reached — so
+// "loaded" is not decoration on the sentence: it is what makes it true while there is more.
+export function loadedLine(sessions, weeks) {
+  const list = sessions === 1 ? '1 session' : `${sessions} sessions`;
+  const span = weeks === 1 ? '1 week' : `${weeks} weeks`;
+  return `${list} · ${span} loaded`;
+}
+
+// WEEKS ARE A FOLD OVER THE PAGE IN HAND, not a read: there is no week endpoint, and the log
+// arrives newest-first in one order the server guarantees, so a week is a run of adjacent rows.
+// They start Monday and they start in the lifter's own zone — a session is an instant somebody
+// stood in, and the statistics week's UTC Monday (utcDayLabel) is a different question with a
+// different reason.
+//
+// THE OLDEST LOADED WEEK KEEPS ITS TONNAGE TO ITSELF. It is the one week `Load older` can still add
+// sessions to, so its sum is a floor rather than a fact — and a divider understating a week is the
+// same false number a zero would be. Once the log has reached its end nothing can be added to it,
+// and the week is whole.
+export function weeksOf(summaries, { complete = false } = {}) {
+  const weeks = [];
+  for (const summary of summaries) {
+    // THE ARITHMETIC RUNS AT NOON AND THE MONDAY IS REBUILT FROM THE DATE IT LANDS ON, because the
+    // instant is this fold's EQUALITY KEY. A zone whose clocks jump at local midnight — Santiago,
+    // Havana, Beirut — has no 00:00 at all on the transition day: `setHours(0, …)` lands on 01:00
+    // there and `setDate` carries that hour back to the Monday, so two sessions of one week answer
+    // two different instants, the week splits into two dividers and each carries a tonnage the week
+    // never moved. Noon exists on every day in every zone, and rebuilding from the calendar date
+    // leaves no hour that could have leaked in from one session's own day. (`agoLabel` uses the
+    // midnight idiom safely: it DIFFERENCES two of them, and this compares them.)
+    const day = new Date(summary.startedAt);
+    day.setHours(12, 0, 0, 0);
+    day.setDate(day.getDate() - ((day.getDay() + 6) % 7));
+    const monday = new Date(day.getFullYear(), day.getMonth(), day.getDate());
+    const startedAt = monday.getTime();
+    const open = weeks[weeks.length - 1];
+    if (open && open.startedAt === startedAt) {
+      open.sessions.push(summary);
+      continue;
+    }
+    weeks.push({
+      startedAt,
+      label: `week of ${monday.getDate()} ${MONTHS[monday.getMonth()].toLowerCase()}`,
+      sessions: [summary],
+    });
+  }
+  return weeks.map((week, index) => {
+    const partial = index === weeks.length - 1 && !complete;
+    // A row from a deployment that does not aggregate tonnage yet leaves the week unsummable, and
+    // summing the rest would understate it exactly as a partial week does.
+    const unknown = week.sessions.some((session) => typeof session.tonnageKg !== 'number');
+    if (partial || unknown) return { ...week, tonnage: null };
+    const kg = week.sessions.reduce((total, session) => total + session.tonnageKg, 0);
+    return { ...week, tonnage: tonnageLabel(kg) };
+  });
+}
+
+// A HOLLOW RING MEANS THIS SESSION IS SAVED ON THIS DEVICE ONLY — the state this surface can never
+// be in: the web holds nothing locally, so no read here sets it and no row ever wears one. It is
+// asked for anyway, because a row that cannot express the state is a row that will be wrong the day
+// the desk gets a queue of its own.
+//
+// IT IS NOT A WIRE FIELD AND NO SERVER SENDS ONE. Each surface decides it from the queue it is
+// holding — iOS off `LogWeeks.Row.deviceOnly` (LogScreen.swift), Android off
+// `LogFold.Row.onThisDeviceOnly` (LogScreen.kt), both fed by the ids their own store has not
+// flushed yet. So `summary.onThisDevice` is where the desk will write its own answer when it has a
+// queue, not a name a read fills in, and the ink is the one both phones already wear
+// (`unsyncedInk`, GymSkin.swift / GymSkin.kt — `--unsynced-ink` here).
+export function onThisDevice(session) {
+  return session?.onThisDevice === true;
+}
+
 // A routine row says what it holds and when it was last used, because that is how a lifter picks
 // one — and it is the same fact the list is sorted by, so the row never has to explain its own
 // order. A routine nobody has trained yet says exactly that rather than borrowing today.
@@ -198,19 +343,29 @@ export function routineMetaLabel(routine, now = Date.now()) {
   return `${movements} · trained ${agoLabel(routine.lastTrainedAt, now)}`;
 }
 
+// WHAT WEIGHT A PLAN ASKED FOR, OR NOTHING AT ALL — and this is the ONE place that question is
+// answered, because a target read two ways is a screen whose exercise header says the plan named no
+// weight while a set under it says the lifter went 5 kg over it. "No target" has two spellings on
+// the wire — the field omitted, and a zero — and gym writes the second itself: `routineFromSession`
+// takes the heaviest load of a movement, which is 0 for a session of chin-ups, and the routine write
+// only drops a target that is null. Zero is not a load, it is the absence of one. A band-assisted
+// −20 IS a target: it is a real point on this number line.
+export function targetLoadOf(weightKg) {
+  if (weightKg == null || weightKg === 0) return null;
+  return round(weightKg);
+}
+
 // What a routine asks a movement for, in one line: the editor's row, Today's preview of the routine
 // due next, and the finish screen's offer all print it, so a target reads the same wherever it is
-// read. An absent weight is "whatever you did last time" and prints nothing rather than a zero —
-// and neither does an actual zero, because zero is not a load but the absence of one, so a chin-up
-// reads `3 × 8` while a band-assisted −20 prints, being a real point on this number line.
+// read. An absent weight is "whatever you did last time" and prints nothing, by the rule above.
 //
 // An absent REP target is canon screen 6's `3 × max` — a movement taken to whatever it gives that
 // day. It is not a zero and it is not a blank, and the wire spells it by omission (gymApi.js).
 export function entryLabel(entry) {
   const reps = entry.targetReps ?? 'max';
-  const weight = entry.targetWeightKg;
-  if (weight == null || weight === 0) return `${entry.targetSets} × ${reps}`;
-  return `${entry.targetSets} × ${reps} · ${fmt(weight)}`;
+  const target = targetLoadOf(entry.targetWeightKg);
+  if (target == null) return `${entry.targetSets} × ${reps}`;
+  return `${entry.targetSets} × ${reps} · ${fmt(target)}`;
 }
 
 // ONE WORD FOR WHAT COUNTS. A set counts toward a target, a plan counter, a record and the number
@@ -225,9 +380,13 @@ export function workingSetsOf(sets, exerciseId = null) {
   ));
 }
 
-// The heaviest WORKING set of a session — the column G8 draws beside a log row, and what a
-// movement's line is measured on everywhere else in this product: never volume, because four light
-// sets must not beat three heavy ones. A tie goes to the set that got more reps at the same load.
+// The heaviest WORKING set of a session — what a movement's line is measured on everywhere in this
+// product: never volume, because four light sets must not beat three heavy ones. A tie goes to the
+// set that got more reps at the same load.
+//
+// It is also what the log row's e1RM is the estimate OF. The row draws the estimate now (§G16) and
+// the coach's shared page still draws the set itself, which is the whole difference between them:
+// a page with no account behind it gets the fact, not a formula's reading of it.
 //
 // Two sources, one rule. A session in the LIST carries the store's own pick under `topSet`
 // (gymApi.js), because the list carries no sets; a session read whole carries the sets and the pick
@@ -299,11 +458,107 @@ export function planOf(session) {
   try { return JSON.parse(plan); } catch { return null; }
 }
 
+// A session read whole, in one line (§G17): the day, how long it took, and the two facts the header
+// is measured in. The routine is the title above this line, so it is never printed twice — the same
+// rule that keeps the day out of `sessionMetaLabel`. An open session gets no length invented for it.
+export function sessionDetailMeta(session, sets) {
+  const parts = [dayLabel(session.startedAt)];
+  if (isFinished(session)) parts.push(durLabel(session.finishedAt - session.startedAt));
+  else parts.push('in progress');
+  parts.push(workingLabel(workingSetsOf(sets).length));
+  const tonnage = tonnageLabel(tonnageOf(session, sets));
+  if (tonnage) parts.push(tonnage);
+  return parts.join(' · ');
+}
+
+// The chip that names the snapshot the section below is read against. The instant is the session's
+// START, because that is when the plan was frozen (backend LogService) — a routine renamed or
+// retargeted since must not rewrite what the log says about the past, and this line is what says
+// out loud that it cannot. A session with no snapshot has no chip and no comparison to draw.
+export function planFrozenLabel(session) {
+  if (!planOf(session)) return null;
+  return `plan snapshot · frozen ${timeLabel(session.startedAt)}`;
+}
+
+export const NOT_IN_PLAN = 'not in the plan';
+
+// WHAT THE PLAN SAID ABOUT ONE MOVEMENT — read off the frozen snapshot and never off today's
+// routine, which is the whole reason the snapshot exists. A snapshot entry names its fields the
+// way the domain does (`sets` · `reps` · `weightKg`, TrainingJson.cpp) while a routine entry names
+// them `target…`, so this is where the two vocabularies meet; the target is spelled by the one
+// function that spells every target in this product, so the log and the editor cannot drift.
+//
+// ⚠ A PLAN MAY NAME ONE MOVEMENT TWICE — the heavy line and the back-off line — and `PlanEntry`
+// carries no id, so nothing here can tell which of the two a logged set was performed against.
+// That case answers `ambiguous`: no target on the header and no note on any set. Guessing would
+// label half of them against the wrong line, and a wrong annotation is worse than none.
+export function planReadingOf(session, exerciseId) {
+  // The snapshot is frozen jsonb the server echoes back verbatim, so a list of entries is only a
+  // convention — the same reason `routineNameOf` below asks whether the routine is a string, and
+  // `?? []` would not catch a plan that is itself an array, whose `.entries` is a function. A plan
+  // nothing can be read out of has no comparison to draw, exactly like a session that had none; an
+  // EMPTY list is a different fact, and it does mean every movement was added today.
+  const plan = planOf(session);
+  if (!plan || !Array.isArray(plan.entries)) return { kind: 'unplanned', line: null, entry: null };
+  const entries = plan.entries.filter((entry) => entry?.exerciseId === exerciseId);
+  if (entries.length === 0) return { kind: 'added', line: NOT_IN_PLAN, entry: null };
+  if (entries.length > 1) return { kind: 'ambiguous', line: null, entry: null };
+  const entry = entries[0];
+  const line = entryLabel({
+    targetSets: entry.sets, targetReps: entry.reps, targetWeightKg: entry.weightKg,
+  });
+  return { kind: 'planned', line: `plan ${line}`, entry };
+}
+
+// Spelled out to ten, because "two short" is a sentence and "2 short" is a score. Past ten the word
+// stops being one a lifter would say, and a rep target that far out is a different session anyway.
+const SHORT_WORDS = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+
+// THE ONE THING WORTH SAYING ABOUT A SET, beside what it was. Dim is what the plan said, bright is
+// what you did, and a miss gets one line and no scolding (§G17) — which is why there is no note for
+// a lighter bar: the plan is what was agreed to, not a score to fall below.
+//
+// A set that is not `working` says only its own kind. Warmup, drop and failure are all sets the
+// plan never asked for — the same word for what counts that `workingSetsOf` reads — so none of them
+// is measured against a target.
+//
+// SHORT ONLY WHEN THE BAR DID NOT GO UP. Heavier for fewer is a different session rather than a
+// smaller one, and calling it short would grade a lifter for a choice they made on purpose. This is
+// review.js's rule for the same comparison, said once more where the sets are.
+export function setNoteOf(set, reading, first) {
+  if (set.kind !== 'working') return set.kind;
+  if (reading.kind === 'added') return first ? 'added today' : null;
+  if (reading.kind !== 'planned') return null;
+  const { reps, weightKg } = reading.entry;
+  // The same reading of the target the exercise header above these sets printed (`entryLabel`), and
+  // it has to be: a plan that named no weight can be neither gone over nor met.
+  const target = targetLoadOf(weightKg);
+  const load = round(set.weightKg);
+  if (reps != null && set.reps < reps && (target == null || load <= target)) {
+    const missing = reps - set.reps;
+    return `${SHORT_WORDS[missing] ?? missing} short`;
+  }
+  if (target == null) return null;
+  if (load > target) return `+${fmt(load - target)} over plan`;
+  if (load === target) return 'on plan';
+  return null;
+}
+
+// Zero is not a load, it is the absence of one — the rule `entryLabel` already reads a target by —
+// so a set logged at nothing is the movement done at bodyweight. A band-assisted −20 prints its
+// load, being a real point on this number line.
+export function setLoadLabel(set) {
+  if (set.weightKg === 0) return `bodyweight × ${set.reps}`;
+  return `${fmt(set.weightKg)} × ${set.reps}`;
+}
+
 // ONE WORD FOR A SESSION NOBODY PLANNED, everywhere it is named: the log row, the session read
-// whole, the review subtitle, the overlap panel and the mirror's head. It reads one step quieter
-// than a routine name and never as a fault — most rows in most logs will not have one — and it is
-// the word G8 and canon screen 2 both use, which is why "Ad-hoc" was retired for the same session.
-export const NO_ROUTINE = 'No routine';
+// whole, the review subtitle, the overlap panel and the mirror's head. It is the phrase the design
+// board names a session by on every screen that has to (§G16's row, the between-sets header, the
+// first session), which is why "Ad-hoc" and then the bare "No routine" were each retired for the
+// same session. Nothing dims it: most rows in most logs will not have a routine, and the phrase
+// itself is what keeps it from reading as a fault.
+export const NO_ROUTINE = 'Session · no routine';
 
 export function routineNameOf(session) {
   // The snapshot is frozen jsonb the server echoes back verbatim, so `routine` is only a name by

@@ -17,6 +17,29 @@ namespace wm::gym {
 // record the product cannot show is not a record, and float noise must never be able to mint one.
 std::optional<double> e1rm(double weightKg, int reps);
 
+// The two numbers Epley reads, and nothing else — a load a session's working sets reached and reps
+// done at it. It is a DOMAIN type for the reason PriorMark below is one: the rule defines the shape
+// and the store's job is to fill it, so nothing under domain/ has to know a port exists.
+struct WorkingLoad {
+  double weightKg;
+  int reps;
+
+  bool operator==(const WorkingLoad&) const = default;
+};
+
+// The best one-rep estimate a session earned, and the ONE definition of it in the product — the
+// finish screen and the log row both come through here, which is what stops one workout from
+// carrying two numbers under the word `e1RM`. It is the best estimate over EVERY working set and
+// deliberately not the estimate over the heaviest one: a lifter who squats 100 × 5 and then three
+// back-offs at 95 × 10 earned 126.7, and the top set's own 116.7 is the smaller, later-superseded
+// answer. Absent exactly where Epley is undefined — no working set at all, or none of them loaded.
+//
+// The caller may hand over every working set (the finish read has them all in hand) or one row per
+// distinct load carrying the best reps at it (the log's page read, which will not load a session's
+// sets to make a list). Both answer the same number: at a fixed load Epley rises with reps, so the
+// best-repped set at a load IS the best set at that load — the projection PriorMark is built on.
+std::optional<double> topE1rmOf(const std::vector<WorkingLoad>& loads);
+
 // Every distinct load of a movement, carrying the BEST reps ever done at it in a finished session
 // that started before this one. The shape is deliberate: at a fixed weight e1RM rises with reps, so
 // the best-repped set at a load IS the best set at that load — which makes all three record rules

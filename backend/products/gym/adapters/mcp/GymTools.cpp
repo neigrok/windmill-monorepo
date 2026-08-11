@@ -95,7 +95,7 @@ ToolResult listSessions(LogService& log, const UserId& caller, const Json::Value
   }
 
   Json::Value sessions(Json::arrayValue);
-  for (const SessionSummary& summary : log.log(caller, cursor)) sessions.append(toJson(summary));
+  for (const LogRow& row : log.log(caller, cursor)) sessions.append(toJson(row));
   Json::Value out(Json::objectValue);
   out["sessions"] = sessions;
   return ToolResult::json(out);

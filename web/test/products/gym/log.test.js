@@ -1,19 +1,24 @@
 // The log's reading rules, pinned. Where the hash points and what each room is called, what a
 // session is named when the plan arrives in either wire shape, and the first-performed order the
-// detail view groups sets in — plus the two facts G8 draws on every row: which set was the top one,
-// and whether anybody actually pressed Finish. Both have two sources and one rule, because a
-// session in the list carries the store's own answer and a session read whole carries its sets.
+// detail view groups sets in — then §G16's four facts a row is scanned for and the week they are
+// folded into, and §G17's reading of one session against the plan frozen at its start.
+//
+// Several of these have TWO SOURCES AND ONE RULE — the top set, the auto-close note, the tonnage,
+// the working count — because a session in the LIST carries the store's own answer and a session
+// read WHOLE carries its sets. Both sources are asserted here, side by side, for each of them.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
   agoLabel, BACKFILL_HREF, clockOf, CLOSED_ITSELF_NOTE, closedOnItsOwn, dayLabel, durLabel,
-  entryLabel, finishHref, finishIdOf, fmt, groupByExercise, isFinished, isFirstSession,
-  nameOfMovement, NEW_ROUTINE_ID, NO_ROUTINE, planOf, routineHref, routineIdOf, routineMetaLabel,
-  routineNameOf, ROUTINES_HREF, screenOf, sessionHref, sessionIdOf, sessionMetaLabel,
-  setCountLabel, sharedHref, sharedTokenOf, STATS_HREF, timeLabel, topSetLabel,
-  topSetOf, utcDayLabel, weekdayName, workingSetsOf,
+  e1rmLabel, entryLabel, finishHref, finishIdOf, firstSessionLabel, fmt, groupByExercise,
+  isFinished, isFirstSession, loadedLine, logWhenLabel, nameOfMovement, NEW_ROUTINE_ID, NO_ROUTINE,
+  NOT_IN_PLAN, onThisDevice, planFrozenLabel, planOf, planReadingOf, routineHref, routineIdOf,
+  routineMetaLabel, routineNameOf, ROUTINES_HREF, screenOf, sessionDetailMeta, sessionHref,
+  sessionIdOf, sessionMetaLabel, setCountLabel, setLoadLabel, setNoteOf, sharedHref, sharedTokenOf,
+  STATS_HREF, timeLabel, tonnageLabel, tonnageOf, topSetLabel, topSetOf, utcDayLabel, weekdayName,
+  weeksOf, workingLabel, workingSetsOf,
 } from '../../../src/products/gym/log.js';
 
 test('sessionIdOf — a session hash yields its id, everything else yields nothing', () => {
@@ -406,10 +411,12 @@ test('agoLabel — the day is counted from midnight, not from a rounded number o
   assert.equal(agoLabel(new Date(2026, 6, 18, 23, 0).getTime(), new Date(2026, 6, 22, 6, 0).getTime()), '4 days ago');
 });
 
-// One word for a session nobody planned, wherever it is named: the row, the detail, the review
-// subtitle, the overlap panel and the mirror's head. "Ad-hoc" was retired for the same session.
-test('NO_ROUTINE — the one word for a session with no routine', () => {
-  assert.equal(NO_ROUTINE, 'No routine');
+// One phrase for a session nobody planned, wherever it is named: the row, the detail, the review
+// subtitle, the overlap panel and the mirror's head. It is the design board's own (§G16's row, the
+// between-sets header, the first session), which is why "Ad-hoc" and then the bare "No routine"
+// were each retired for the same session.
+test('NO_ROUTINE — the one phrase for a session with no routine', () => {
+  assert.equal(NO_ROUTINE, 'Session · no routine');
 });
 
 test('planOf — the frozen snapshot, parsed once for every surface that reads it', () => {
@@ -420,4 +427,378 @@ test('planOf — the frozen snapshot, parsed once for every surface that reads i
   assert.equal(planOf({ plan: null }), null);
   assert.equal(planOf({}), null);
   assert.equal(planOf(null), null);
+});
+
+// ── §G16 · the log ────────────────────────────────────────────────────────────────────────────
+
+// The bottom of the log is a date rather than an empty box, and it is the one place in gym a year
+// is printed: everywhere else is a day inside the last few months, where a year is noise.
+test('firstSessionLabel — the bottom of the log is the day it started', () => {
+  assert.equal(firstSessionLabel(new Date(2026, 4, 6, 7, 30).getTime()), 'first session · 6 May 2026');
+  assert.equal(firstSessionLabel(new Date(2024, 11, 31, 23, 59).getTime()), 'first session · 31 Dec 2024');
+  assert.equal(firstSessionLabel(new Date(2025, 0, 1, 0, 0).getTime()), 'first session · 1 Jan 2025');
+});
+
+// A session from today is named by its clock — the day is the one thing every row would otherwise
+// share — and every older one by its day. A session nobody has ended says so, because the numbers
+// beside it are what has been logged so far and not what the session will hold.
+test('logWhenLabel — today is a time, everything older is a day, and an open session says so', () => {
+  const now = new Date(2026, 7, 10, 20, 15).getTime();
+  const today = new Date(2026, 7, 10, 18, 44).getTime();
+  const friday = new Date(2026, 7, 7, 9, 5).getTime();
+  assert.equal(logWhenLabel({ startedAt: today, finishedAt: today + 3_600_000 }, now), 'today · 18:44');
+  assert.equal(logWhenLabel({ startedAt: friday, finishedAt: friday + 3_600_000 }, now), 'Fri 7 Aug');
+  assert.equal(logWhenLabel({ startedAt: today, finishedAt: null }, now), 'today · 18:44 · in progress');
+  assert.equal(logWhenLabel({ startedAt: friday, finishedAt: null }, now), 'Fri 7 Aug · in progress');
+  // Midnight decides the day, not elapsed hours — the same rule agoLabel is written to.
+  assert.equal(
+    logWhenLabel({ startedAt: today, finishedAt: today + 60_000 }, new Date(2026, 7, 11, 0, 30).getTime()),
+    'Mon 10 Aug',
+  );
+});
+
+// The count is of WORKING sets, and the estimate is the domain's — the web computes no e1RM, so an
+// absent one draws nothing rather than a dash a lifter could mistake for a reading.
+test('workingLabel and e1rmLabel — the two facts the wire hands a row', () => {
+  assert.equal(workingLabel(11), '11 working');
+  assert.equal(workingLabel(1), '1 working');
+  assert.equal(workingLabel(0), '0 working');
+  assert.equal(e1rmLabel(122.5), 'e1RM 122.5');
+  assert.equal(e1rmLabel(84), 'e1RM 84');
+  assert.equal(e1rmLabel(null), null);
+  assert.equal(e1rmLabel(undefined), null);
+});
+
+// TWO SOURCES, ONE RULE, exactly as the top set has: the list carries the store's own aggregation
+// and a session read whole carries its sets. An assisted set contributes zero — a band took load
+// OFF the bar — and so does bodyweight, and only working sets count at all.
+test('tonnageOf — the store’s sum on a row, the same sum from the sets on a session', () => {
+  const set = (kind, weightKg, reps) => ({ kind, weightKg, reps });
+  assert.equal(tonnageOf({ id: 'ses_1', tonnageKg: 5400 }), 5400);
+  assert.equal(tonnageOf({ id: 'ses_1', tonnageKg: 0 }), 0);
+  assert.equal(tonnageOf({ id: 'ses_1' }), null);
+  assert.equal(tonnageOf({ id: 'ses_1' }, [set('working', 100, 5), set('working', 80, 10)]), 1300);
+  // The warmup is not in it, and neither is the failure or the drop set beside it.
+  assert.equal(
+    tonnageOf({ id: 'ses_1' }, [set('warmup', 40, 8), set('working', 100, 5), set('drop', 60, 8), set('failure', 100, 1)]),
+    500,
+  );
+  assert.equal(tonnageOf({ id: 'ses_1' }, [set('working', -20, 9), set('working', 0, 12)]), 0);
+  assert.equal(tonnageOf({ id: 'ses_1' }, [set('working', -20, 9), set('working', 60, 5)]), 300);
+  assert.equal(tonnageOf({ id: 'ses_1' }, []), 0);
+  // The wire wins where it spoke: the summary carries no sets to be re-read from.
+  assert.equal(tonnageOf({ id: 'ses_1', tonnageKg: 5400 }, [set('working', 100, 5)]), 5400);
+});
+
+// A chin-up-and-dips week did not move zero kilograms — we simply have nothing true to say about
+// its scale, and absence beats a false zero. Under a TONNE the figure is spelled in kilograms,
+// because one decimal of a tonne cannot hold a small number: `0.1 t` for 51 kg is not a rounding,
+// it is double, and a divider doubling a beginner's week is the same false number a zero would be.
+test('tonnageLabel — a zero says nothing at all, and no figure is ever spelled at a scale that doubles it', () => {
+  assert.equal(tonnageLabel(14_200), '14.2 t');
+  assert.equal(tonnageLabel(5400), '5.4 t');
+  assert.equal(tonnageLabel(1200), '1.2 t');
+  assert.equal(tonnageLabel(18_949), '18.9 t');
+  // The threshold is the tonne itself, so there is one of them to know and it is where the decimal
+  // starts being worth a hundred kilograms.
+  assert.equal(tonnageLabel(1000), '1.0 t');
+  assert.equal(tonnageLabel(999), '999 kg');
+  assert.equal(tonnageLabel(825), '825 kg');
+  assert.equal(tonnageLabel(51), '51 kg');
+  assert.equal(tonnageLabel(50), '50 kg');
+  assert.equal(tonnageLabel(49.5), '49.5 kg');
+  assert.equal(tonnageLabel(12), '12 kg');
+  assert.equal(tonnageLabel(0), null);
+  assert.equal(tonnageLabel(null), null);
+  assert.equal(tonnageLabel(undefined), null);
+});
+
+// The head of the log counts what is IN HAND: the log carries no total, so "loaded" is not
+// decoration on the sentence — it is what makes it true while there is more.
+test('loadedLine — the head says how much of the log is on the screen', () => {
+  assert.equal(loadedLine(41, 12), '41 sessions · 12 weeks loaded');
+  assert.equal(loadedLine(1, 1), '1 session · 1 week loaded');
+  assert.equal(loadedLine(2, 1), '2 sessions · 1 week loaded');
+});
+
+// The ring is the phones' state and the web's impossibility: nothing this surface reads can be in
+// it, so the row can say it and never invents one.
+test('onThisDevice — only a session that says so is saved on this device only', () => {
+  assert.equal(onThisDevice({ id: 'ses_1', onThisDevice: true }), true);
+  assert.equal(onThisDevice({ id: 'ses_1', onThisDevice: false }), false);
+  assert.equal(onThisDevice({ id: 'ses_1' }), false);
+  assert.equal(onThisDevice(null), false);
+});
+
+// WEEKS ARE A FOLD OVER THE PAGE IN HAND. They start Monday, in the lifter's own zone, and the
+// OLDEST loaded one keeps its tonnage to itself: `Load older` can still add sessions to it, so its
+// sum is a floor rather than a fact. Once the log has reached its end nothing more can land in it.
+test('weeksOf — Monday to Monday, newest first, and the oldest week withholds its tonnage', () => {
+  const row = (id, at, tonnageKg) => ({ id, startedAt: at.getTime(), tonnageKg });
+  const summaries = [
+    row('ses_5', new Date(2026, 7, 10, 18, 44), 5400),
+    row('ses_4', new Date(2026, 7, 7, 9, 5), 6100),
+    row('ses_3', new Date(2026, 7, 5, 18, 0), 9800),
+    row('ses_2', new Date(2026, 7, 3, 7, 30), 1200),
+    row('ses_1', new Date(2026, 7, 1, 11, 0), 5000),
+  ];
+  const weeks = weeksOf(summaries);
+  assert.deepEqual(weeks.map((week) => week.label), ['week of 10 aug', 'week of 3 aug', 'week of 27 jul']);
+  assert.deepEqual(weeks.map((week) => week.tonnage), ['5.4 t', '17.1 t', null]);
+  assert.deepEqual(weeks.map((week) => week.sessions.map((session) => session.id)), [
+    ['ses_5'], ['ses_4', 'ses_3', 'ses_2'], ['ses_1'],
+  ]);
+  assert.deepEqual(weeks.map((week) => week.startedAt), [
+    new Date(2026, 7, 10).getTime(), new Date(2026, 7, 3).getTime(), new Date(2026, 6, 27).getTime(),
+  ]);
+  // The bottom of the log reached: nothing can be added to the oldest week, so it is whole.
+  assert.deepEqual(weeksOf(summaries, { complete: true }).map((week) => week.tonnage), ['5.4 t', '17.1 t', '5.0 t']);
+  assert.deepEqual(weeksOf([]), []);
+});
+
+test('weeksOf — a week nobody can sum, and a week that adds up to nothing, both say nothing', () => {
+  const row = (id, at, tonnageKg) => ({ id, startedAt: at.getTime(), tonnageKg });
+  // A deployment that does not aggregate tonnage yet: summing the rest would understate the week.
+  const partly = [
+    row('ses_3', new Date(2026, 7, 10, 18, 44), 5400),
+    { id: 'ses_2', startedAt: new Date(2026, 7, 12, 7, 0).getTime() },
+    row('ses_1', new Date(2026, 7, 4, 18, 0), 3000),
+  ];
+  assert.deepEqual(weeksOf(partly, { complete: true }).map((week) => week.tonnage), [null, '3.0 t']);
+  // A week of chin-ups and dips moved no external load, and prints nothing where the tonnage goes.
+  const bodyweight = [
+    row('ses_2', new Date(2026, 7, 12, 7, 0), 0),
+    row('ses_1', new Date(2026, 7, 10, 7, 0), 0),
+  ];
+  assert.deepEqual(weeksOf(bodyweight, { complete: true }).map((week) => week.tonnage), [null]);
+});
+
+// A ZONE WHOSE CLOCKS JUMP AT LOCAL MIDNIGHT HAS NO MIDNIGHT THAT DAY, and this fold compares
+// instants for equality rather than differencing them (agoLabel does the other thing, safely).
+// `setHours(0, …)` landed on 01:00 on the transition day and `setDate` carried that hour back to
+// the Monday, so one training week folded into TWO dividers — each carrying a tonnage the week
+// never moved, over a head that said two weeks were loaded. Chile, Lebanon, Cuba and Paraguay all
+// transition at midnight; noon exists everywhere on every day, which is why the arithmetic runs
+// there and the Monday is rebuilt from the calendar date it lands on.
+test('weeksOf — one training week is one divider in a zone whose clocks jump at midnight', () => {
+  const zone = process.env.TZ;
+  try {
+    // Chile, 2026-09-06: 00:00 → 01:00. Monday 31 Aug through the Sunday the clocks moved.
+    process.env.TZ = 'America/Santiago';
+    const chile = weeksOf([
+      { id: 'ses_4', startedAt: new Date(2026, 8, 6, 10, 0).getTime(), tonnageKg: 1000 },
+      { id: 'ses_3', startedAt: new Date(2026, 8, 5, 10, 0).getTime(), tonnageKg: 1000 },
+      { id: 'ses_2', startedAt: new Date(2026, 8, 2, 10, 0).getTime(), tonnageKg: 1000 },
+      { id: 'ses_1', startedAt: new Date(2026, 7, 31, 10, 0).getTime(), tonnageKg: 1000 },
+    ], { complete: true });
+    assert.deepEqual(chile.map((week) => [week.label, week.tonnage, week.sessions.length]), [
+      ['week of 31 aug', '4.0 t', 4],
+    ]);
+
+    // Lebanon, 2026-03-29: the same jump, and the transition day is the Sunday that CLOSES a week.
+    process.env.TZ = 'Asia/Beirut';
+    const lebanon = weeksOf([
+      { id: 'ses_2', startedAt: new Date(2026, 2, 29, 10, 0).getTime(), tonnageKg: 1000 },
+      { id: 'ses_1', startedAt: new Date(2026, 2, 23, 10, 0).getTime(), tonnageKg: 1000 },
+    ], { complete: true });
+    assert.deepEqual(lebanon.map((week) => [week.label, week.tonnage, week.sessions.length]), [
+      ['week of 23 mar', '2.0 t', 2],
+    ]);
+
+    // And a zone that jumps at 02:00 like everybody else still reads the same.
+    process.env.TZ = 'Europe/Berlin';
+    const berlin = weeksOf([
+      { id: 'ses_2', startedAt: new Date(2026, 2, 29, 10, 0).getTime(), tonnageKg: 1000 },
+      { id: 'ses_1', startedAt: new Date(2026, 2, 23, 10, 0).getTime(), tonnageKg: 1000 },
+    ], { complete: true });
+    assert.deepEqual(berlin.map((week) => [week.label, week.tonnage, week.sessions.length]), [
+      ['week of 23 mar', '2.0 t', 2],
+    ]);
+  } finally {
+    if (zone == null) delete process.env.TZ; else process.env.TZ = zone;
+  }
+});
+
+// A week is a run of ADJACENT rows, because the log arrives in one order the server guarantees.
+test('weeksOf — a session that crosses midnight into Monday starts the new week, not the old one', () => {
+  const summaries = [
+    { id: 'ses_2', startedAt: new Date(2026, 7, 10, 0, 20).getTime(), tonnageKg: 1000 },
+    { id: 'ses_1', startedAt: new Date(2026, 7, 9, 23, 40).getTime(), tonnageKg: 2000 },
+  ];
+  const weeks = weeksOf(summaries, { complete: true });
+  assert.deepEqual(weeks.map((week) => [week.label, week.tonnage]), [
+    ['week of 10 aug', '1.0 t'], ['week of 3 aug', '2.0 t'],
+  ]);
+});
+
+// ── §G17 · session detail ─────────────────────────────────────────────────────────────────────
+
+// The routine is the title above this line, so it is never printed twice. An open session is given
+// no length it does not have, and a session that moved no external load prints no tonnage.
+test('sessionDetailMeta — the day, the length, and the two facts the header is measured in', () => {
+  const startedAt = new Date(2026, 7, 10, 18, 2).getTime();
+  const set = (kind, weightKg, reps) => ({ kind, weightKg, reps });
+  const sets = [set('warmup', 40, 8), set('working', 82.5, 5), set('working', 82.5, 5)];
+  assert.equal(
+    sessionDetailMeta({ startedAt, finishedAt: startedAt + 58 * 60_000 }, sets),
+    'Mon 10 Aug · 58m · 2 working · 825 kg',
+  );
+  assert.equal(
+    sessionDetailMeta({ startedAt, finishedAt: null }, sets),
+    'Mon 10 Aug · in progress · 2 working · 825 kg',
+  );
+  // The design's own header, at the scale a tonne is a caption of.
+  const wholeSession = [set('warmup', 40, 8), ...Array.from({ length: 11 }, () => set('working', 98, 5))];
+  assert.equal(
+    sessionDetailMeta({ startedAt, finishedAt: startedAt + 58 * 60_000 }, wholeSession),
+    'Mon 10 Aug · 58m · 11 working · 5.4 t',
+  );
+  assert.equal(
+    sessionDetailMeta({ startedAt, finishedAt: startedAt + 3_600_000 }, [set('working', 0, 9), set('working', 0, 7)]),
+    'Mon 10 Aug · 1h 00m · 2 working',
+  );
+  assert.equal(sessionDetailMeta({ startedAt, finishedAt: startedAt + 600_000 }, []), 'Mon 10 Aug · 10m · 0 working');
+});
+
+// The instant is the session's START, because that is when the plan was frozen — and the chip is
+// what says out loud that a routine retargeted since cannot rewrite what the log says about it.
+test('planFrozenLabel — the snapshot is named by the moment it was taken', () => {
+  const startedAt = new Date(2026, 7, 10, 18, 2).getTime();
+  const plan = { routine: 'Push A', entries: [{ exerciseId: 'bench-press', sets: 5, reps: 5, weightKg: 82.5 }] };
+  assert.equal(planFrozenLabel({ startedAt, plan }), 'plan snapshot · frozen 18:02');
+  assert.equal(planFrozenLabel({ startedAt, plan: JSON.stringify(plan) }), 'plan snapshot · frozen 18:02');
+  assert.equal(planFrozenLabel({ startedAt }), null);
+  assert.equal(planFrozenLabel({ startedAt, plan: 'not json at all' }), null);
+});
+
+// WHAT THE PLAN SAID ABOUT ONE MOVEMENT, off the frozen snapshot — whose entries name their fields
+// the way the domain does (`sets` · `reps` · `weightKg`) — and spelled by the one function that
+// spells every target in this product.
+test('planReadingOf — the target, the movement nobody planned, and the plan that names one twice', () => {
+  const session = {
+    startedAt: 1_900_000_000_000,
+    plan: {
+      routine: 'Push A',
+      entries: [
+        { exerciseId: 'bench-press', sets: 5, reps: 5, weightKg: 82.5 },
+        { exerciseId: 'overhead-press', sets: 5, reps: 5 },
+      ],
+    },
+  };
+  assert.deepEqual(planReadingOf(session, 'bench-press'), {
+    kind: 'planned',
+    line: 'plan 5 × 5 · 82.5',
+    entry: { exerciseId: 'bench-press', sets: 5, reps: 5, weightKg: 82.5 },
+  });
+  // A target the routine declines to set is "whatever you did last time", and prints no weight.
+  assert.equal(planReadingOf(session, 'overhead-press').line, 'plan 5 × 5');
+  assert.deepEqual(planReadingOf(session, 'chin-up'), { kind: 'added', line: NOT_IN_PLAN, entry: null });
+  assert.equal(NOT_IN_PLAN, 'not in the plan');
+
+  // ⚠ A plan may name one movement twice — the heavy line and the back-off line — and a PlanEntry
+  // carries no id, so nothing can tell which of the two a logged set was performed against.
+  const twice = {
+    startedAt: 1_900_000_000_000,
+    plan: {
+      routine: 'Squat day',
+      entries: [
+        { exerciseId: 'back-squat', sets: 3, reps: 3, weightKg: 140 },
+        { exerciseId: 'back-squat', sets: 3, reps: 8, weightKg: 100 },
+      ],
+    },
+  };
+  assert.deepEqual(planReadingOf(twice, 'back-squat'), { kind: 'ambiguous', line: null, entry: null });
+
+  // A session nobody planned has no comparison to draw, and never says a movement was "added".
+  assert.deepEqual(planReadingOf({ startedAt: 1 }, 'bench-press'), { kind: 'unplanned', line: null, entry: null });
+
+  // The snapshot is frozen jsonb the server echoes back verbatim, so a list of entries is only a
+  // convention — the same reason a routine name is checked for being a string. A plan nothing can be
+  // read out of draws no comparison; it does NOT claim every movement was added, and it never throws
+  // the screen away. (`plan.entries` on a bare array is `Array.prototype.entries`, which `?? []`
+  // does not catch and `.filter` is not.)
+  const unreadable = { kind: 'unplanned', line: null, entry: null };
+  assert.deepEqual(planReadingOf({ plan: { routine: 'Push A', entries: {} } }, 'bench-press'), unreadable);
+  assert.deepEqual(planReadingOf({ plan: { routine: 'Push A' } }, 'bench-press'), unreadable);
+  assert.deepEqual(planReadingOf({ plan: [{ exerciseId: 'bench-press', sets: 5 }] }, 'bench-press'), unreadable);
+  // An EMPTY list is a different fact, and it does mean every movement was added today.
+  assert.deepEqual(planReadingOf({ plan: { routine: 'Push A', entries: [] } }, 'bench-press'), {
+    kind: 'added', line: NOT_IN_PLAN, entry: null,
+  });
+});
+
+// Dim is what the plan said, bright is what you did, and a miss gets one line and no scolding —
+// which is why a lighter bar earns no note at all: the plan was agreed to, not a score to fall
+// below. Short is only short when the bar did not go up, exactly as review.js reads the same
+// comparison: heavier for fewer is a different session, not a smaller one.
+test('setNoteOf — one word per set, and never a grade', () => {
+  const planned = planReadingOf({
+    plan: { routine: 'Push A', entries: [{ exerciseId: 'bench-press', sets: 5, reps: 5, weightKg: 82.5 }] },
+  }, 'bench-press');
+  const set = (kind, weightKg, reps) => ({ kind, weightKg, reps });
+
+  assert.equal(setNoteOf(set('working', 82.5, 5), planned, false), 'on plan');
+  assert.equal(setNoteOf(set('working', 82.5, 3), planned, false), 'two short');
+  assert.equal(setNoteOf(set('working', 82.5, 4), planned, false), 'one short');
+  assert.equal(setNoteOf(set('working', 85, 5), planned, false), '+2.5 over plan');
+  assert.equal(setNoteOf(set('working', 100, 5), planned, false), '+17.5 over plan');
+  // Heavier for fewer is a different session rather than a smaller one.
+  assert.equal(setNoteOf(set('working', 85, 3), planned, false), '+2.5 over plan');
+  // A lighter bar is not annotated at all.
+  assert.equal(setNoteOf(set('working', 70, 5), planned, false), null);
+  assert.equal(setNoteOf(set('working', 70, 3), planned, false), 'two short');
+  // Past ten the word stops being one a lifter would say.
+  assert.equal(setNoteOf(set('working', 82.5, 0), { ...planned, entry: { ...planned.entry, reps: 12 } }, false), '12 short');
+
+  // A set the plan never asked for says only its own kind, whatever the plan says about the lift.
+  assert.equal(setNoteOf(set('warmup', 40, 8), planned, true), 'warmup');
+  assert.equal(setNoteOf(set('drop', 60, 8), planned, false), 'drop');
+  assert.equal(setNoteOf(set('failure', 82.5, 1), planned, false), 'failure');
+
+  // The movement is in the session and not in the plan: said once, on the first set of it.
+  const added = planReadingOf({ plan: { routine: 'Push A', entries: [] } }, 'chin-up');
+  assert.equal(setNoteOf(set('working', 0, 9), added, true), 'added today');
+  assert.equal(setNoteOf(set('working', 0, 7), added, false), null);
+
+  // Ambiguous and unplanned both annotate nothing rather than guessing.
+  assert.equal(setNoteOf(set('working', 140, 3), { kind: 'ambiguous', line: null, entry: null }, true), null);
+  assert.equal(setNoteOf(set('working', 140, 3), { kind: 'unplanned', line: null, entry: null }, true), null);
+
+  // A plan with no rep target is canon screen 6's `3 × max`: there is no count to fall short of,
+  // and with no weight named either there is nothing to be over or on.
+  const toMax = planReadingOf({
+    plan: { routine: 'Pull A', entries: [{ exerciseId: 'chin-up', sets: 3 }] },
+  }, 'chin-up');
+  assert.equal(toMax.line, 'plan 3 × max');
+  assert.equal(setNoteOf(set('working', 0, 9), toMax, true), null);
+  assert.equal(setNoteOf(set('working', 5, 9), toMax, true), null);
+
+  // ZERO IS THE OTHER SPELLING OF "NO TARGET", and the note must read it the way the header above
+  // the sets does — the exercise line prints `plan 3 × 9` for both, so a set beside it may not
+  // claim the lifter went 5 kg over a weight the plan never named. Gym writes that spelling itself:
+  // a routine kept from a session of chin-ups carries `targetWeightKg: 0` (routines.js).
+  const bodyweight = planReadingOf({
+    plan: { routine: 'Pull A', entries: [{ exerciseId: 'chin-up', sets: 3, reps: 9, weightKg: 0 }] },
+  }, 'chin-up');
+  assert.equal(bodyweight.line, 'plan 3 × 9');
+  assert.equal(setNoteOf(set('working', 0, 9), bodyweight, true), null);
+  assert.equal(setNoteOf(set('working', 5, 9), bodyweight, true), null);
+  assert.equal(setNoteOf(set('working', 0, 7), bodyweight, false), 'two short');
+
+  // A band-assisted target IS a target: a negative load is a real point on this number line.
+  const assisted = planReadingOf({
+    plan: { routine: 'Pull A', entries: [{ exerciseId: 'chin-up', sets: 3, reps: 6, weightKg: -20 }] },
+  }, 'chin-up');
+  assert.equal(assisted.line, 'plan 3 × 6 · −20');
+  assert.equal(setNoteOf(set('working', -20, 6), assisted, true), 'on plan');
+  assert.equal(setNoteOf(set('working', -10, 6), assisted, true), '+10 over plan');
+});
+
+// Zero is not a load, it is the absence of one — so a set logged at nothing is the movement done at
+// bodyweight, and a band-assisted −20 prints its load, being a real point on this number line.
+test('setLoadLabel — what a set was, in the one spelling a weight has here', () => {
+  assert.equal(setLoadLabel({ weightKg: 82.5, reps: 5 }), '82.5 × 5');
+  assert.equal(setLoadLabel({ weightKg: 0, reps: 9 }), 'bodyweight × 9');
+  assert.equal(setLoadLabel({ weightKg: -20, reps: 9 }), '−20 × 9');
+  assert.equal(setLoadLabel({ weightKg: 100, reps: 1 }), '100 × 1');
 });

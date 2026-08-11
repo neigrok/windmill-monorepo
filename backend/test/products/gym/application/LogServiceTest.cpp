@@ -80,7 +80,7 @@ struct Harness {
                               startedAtMs + static_cast<std::uint64_t>(number) * 60'000});
   }
 
-  std::vector<SessionSummary> logBefore(std::uint64_t beforeMs, int limit = 50) {
+  std::vector<LogRow> logBefore(std::uint64_t beforeMs, int limit = 50) {
     return service.log(uid(), LogCursor{beforeMs, std::nullopt, limit});
   }
 };
@@ -505,10 +505,10 @@ TEST(log_auto_closes_the_stale_open_session_before_listing) {
   h.startAt(started);
   h.clock.now += kAutoCloseMs;
 
-  std::vector<SessionSummary> listed = h.logBefore(h.clock.now + 1);
+  std::vector<LogRow> listed = h.logBefore(h.clock.now + 1);
 
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(1));
-  CHECK_EQ(listed[0].session.finishedAtMs, std::optional<std::uint64_t>(started));
+  CHECK_EQ(listed[0].summary.session.finishedAtMs, std::optional<std::uint64_t>(started));
   CHECK_EQ(h.repo.sessions[0].finishedAtMs, std::optional<std::uint64_t>(started));
 }
 
@@ -523,15 +523,16 @@ TEST(log_lists_newest_first_with_counts_and_sorted_names) {
   h.clock.now += 10'000;
   h.startAt(h.clock.now, "ses_00000002");
 
-  std::vector<SessionSummary> listed = h.logBefore(h.clock.now + 1);
+  std::vector<LogRow> listed = h.logBefore(h.clock.now + 1);
 
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(2));
-  CHECK_EQ(listed[0].session.id.str(), std::string("ses_00000002"));
-  CHECK_EQ(listed[0].setCount, 0);
-  CHECK_EQ(listed[0].exerciseNames, std::vector<std::string>{});
-  CHECK_EQ(listed[1].session.id.str(), std::string("ses_00000001"));
-  CHECK_EQ(listed[1].setCount, 2);
-  CHECK_EQ(listed[1].exerciseNames, (std::vector<std::string>{"Back Squat", "Bench Press"}));
+  CHECK_EQ(listed[0].summary.session.id.str(), std::string("ses_00000002"));
+  CHECK_EQ(listed[0].summary.setCount, 0);
+  CHECK_EQ(listed[0].summary.exerciseNames, std::vector<std::string>{});
+  CHECK_EQ(listed[1].summary.session.id.str(), std::string("ses_00000001"));
+  CHECK_EQ(listed[1].summary.setCount, 2);
+  CHECK_EQ(listed[1].summary.exerciseNames,
+           (std::vector<std::string>{"Back Squat", "Bench Press"}));
 }
 
 // The log row's own two facts (§A2): the heaviest WORKING set of the session — ties to more reps,
@@ -554,11 +555,163 @@ TEST(log_carries_the_top_working_set_of_each_session) {
   h.clock.now += 10'000;
   h.startAt(h.clock.now, "ses_00000002");   // nothing logged into it yet
 
-  std::vector<SessionSummary> listed = h.logBefore(h.clock.now + 1);
+  std::vector<LogRow> listed = h.logBefore(h.clock.now + 1);
 
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(2));
-  CHECK_EQ(listed[0].topSet, std::optional<TopWorkingSet>());   // no working set is not 0 kg × 0
-  CHECK_EQ(listed[1].topSet, std::optional<TopWorkingSet>(TopWorkingSet{100.0, 8}));
+  CHECK_EQ(listed[0].summary.topSet, std::optional<TopWorkingSet>());   // not 0 kg × 0
+  CHECK_EQ(listed[1].summary.topSet, std::optional<TopWorkingSet>(TopWorkingSet{100.0, 8}));
+}
+
+// The two counts are different numbers on any session that warmed up, and the log screen prints the
+// second one: setCount counted the ramp-up while the top set beside it — a working-sets-only pick —
+// could not have come from it, so the row said "4 sets" over a number three sets earned. Tonnage
+// obeys the same filter, so the caption and the count are about the same rows.
+TEST(log_counts_the_working_sets_apart_from_every_set_and_sums_what_they_moved) {
+  Harness h;
+  h.startAt(h.clock.now, "ses_00000001");
+  h.service.append(uid(), sid(),
+                   SetWrite{setId("set_00000001"), ExerciseId{"back-squat"}, 60.0, 10,
+                            SetKind::warmup, std::nullopt, "", h.clock.now + 1});
+  h.service.append(uid(), sid(),
+                   SetWrite{setId("set_00000002"), ExerciseId{"back-squat"}, 100.0, 5,
+                            SetKind::working, std::nullopt, "", h.clock.now + 2});
+  h.service.append(uid(), sid(),
+                   SetWrite{setId("set_00000003"), ExerciseId{"back-squat"}, 100.0, 5,
+                            SetKind::working, std::nullopt, "", h.clock.now + 3});
+  h.service.append(uid(), sid(), h.bench("set_00000004", 82.5, h.clock.now + 4));   // 82.5 × 8
+  h.service.finish(uid(), sid(), h.clock.now + 5);
+
+  std::vector<LogRow> listed = h.logBefore(h.clock.now + 10);
+
+  REQUIRE_EQ(listed.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(listed[0].summary.setCount, 4);
+  CHECK_EQ(listed[0].summary.workingSetCount, 3);
+  CHECK_EQ(listed[0].summary.tonnageKg, 100.0 * 5 + 100.0 * 5 + 82.5 * 8);   // the warmup is not in
+}
+
+// Band-assisted work logs a NEGATIVE load, and an unclamped sum would let it subtract from a week
+// somebody trained — the exact arithmetic gym refuses volume for. An assisted set moved no external
+// load, so it adds nothing, and a session holding only such sets sums to zero: a real answer that
+// means "nothing here moved a measurable load", which every surface draws as nothing at all.
+TEST(log_gives_an_assisted_or_bodyweight_set_no_tonnage_rather_than_letting_it_subtract) {
+  Harness h;
+  h.startAt(h.clock.now, "ses_00000001");
+  h.service.append(uid(), sid(),
+                   SetWrite{setId("set_00000001"), ExerciseId{"back-squat"}, 100.0, 5,
+                            SetKind::working, std::nullopt, "", h.clock.now + 1});
+  h.service.append(uid(), sid(),
+                   SetWrite{setId("set_00000002"), ExerciseId{"bench-press"}, -20.0, 10,
+                            SetKind::working, std::nullopt, "", h.clock.now + 2});
+  h.service.finish(uid(), sid(), h.clock.now + 3);
+  h.clock.now += 10'000;
+  h.startAt(h.clock.now, "ses_00000002");
+  h.service.append(uid(), sid("ses_00000002"),
+                   SetWrite{setId("set_00000003"), ExerciseId{"bench-press"}, 0.0, 9,
+                            SetKind::working, std::nullopt, "", h.clock.now + 1});
+  h.service.finish(uid(), sid("ses_00000002"), h.clock.now + 2);
+
+  std::vector<LogRow> listed = h.logBefore(h.clock.now + 10);
+
+  REQUIRE_EQ(listed.size(), static_cast<std::size_t>(2));
+  CHECK_EQ(listed[0].summary.workingSetCount, 1);
+  CHECK_EQ(listed[0].summary.tonnageKg, 0.0);          // chin-ups moved no measurable load
+  CHECK_EQ(listed[1].summary.workingSetCount, 2);
+  CHECK_EQ(listed[1].summary.tonnageKg, 500.0);        // the assisted set took nothing away
+}
+
+// The split the row is built on: the store hands over the loads a session worked, the domain's
+// Epley runs over them here, and no client ever computes a second copy. It is absent exactly where
+// Epley is undefined — every working set at or below zero has no honest one-rep estimate — and the
+// top set stays, so an unloaded movement still prints a load with no invented number over it.
+TEST(log_puts_the_domains_estimate_on_the_row_and_omits_it_where_there_is_no_estimate) {
+  Harness h;
+  h.startAt(h.clock.now, "ses_00000001");
+  h.service.append(uid(), sid(),
+                   SetWrite{setId("set_00000001"), ExerciseId{"back-squat"}, 100.0, 5,
+                            SetKind::working, std::nullopt, "", h.clock.now + 1});
+  h.service.finish(uid(), sid(), h.clock.now + 2);
+  h.clock.now += 10'000;
+  h.startAt(h.clock.now, "ses_00000002");
+  h.service.append(uid(), sid("ses_00000002"),
+                   SetWrite{setId("set_00000002"), ExerciseId{"bench-press"}, 0.0, 9,
+                            SetKind::working, std::nullopt, "", h.clock.now + 1});
+  h.service.finish(uid(), sid("ses_00000002"), h.clock.now + 2);
+  h.clock.now += 10'000;
+  h.startAt(h.clock.now, "ses_00000003");   // warmed up and nothing else
+  h.service.append(uid(), sid("ses_00000003"),
+                   SetWrite{setId("set_00000003"), ExerciseId{"bench-press"}, 40.0, 10,
+                            SetKind::warmup, std::nullopt, "", h.clock.now + 1});
+  h.service.finish(uid(), sid("ses_00000003"), h.clock.now + 2);
+
+  std::vector<LogRow> listed = h.logBefore(h.clock.now + 10);
+
+  REQUIRE_EQ(listed.size(), static_cast<std::size_t>(3));
+  CHECK_EQ(listed[0].summary.topSet, std::optional<TopWorkingSet>());
+  CHECK_EQ(listed[0].topE1rm, std::optional<double>());
+  CHECK_EQ(listed[1].summary.topSet, std::optional<TopWorkingSet>(TopWorkingSet{0.0, 9}));
+  CHECK_EQ(listed[1].topE1rm, std::optional<double>());
+  CHECK_EQ(listed[2].summary.topSet, std::optional<TopWorkingSet>(TopWorkingSet{100.0, 5}));
+  CHECK_EQ(listed[2].topE1rm, e1rm(100.0, 5));         // 116.7, and the one copy that computes it
+}
+
+// The ordinary top-set-and-back-offs session, and the reason the row cannot run Epley on `topSet`:
+// the heaviest set is 100 × 5 and the best estimate belongs to a lighter one. The row and the finish
+// screen come through the same `topE1rmOf`, so they answer with one number — the log said 116.7
+// under a finish screen saying 126.7 until 2026-08-12, on one session, two taps apart.
+TEST(log_and_the_finish_screen_agree_on_a_session_whose_back_offs_beat_its_top_set) {
+  Harness h;
+  h.startAt(h.clock.now, "ses_00000001");
+  h.service.append(uid(), sid(),
+                   SetWrite{setId("set_00000001"), ExerciseId{"back-squat"}, 100.0, 5,
+                            SetKind::working, std::nullopt, "", h.clock.now + 1});
+  for (int number = 2; number <= 4; ++number)
+    h.service.append(uid(), sid(),
+                     SetWrite{setId("set_0000000" + std::to_string(number)),
+                              ExerciseId{"back-squat"}, 95.0, 10, SetKind::working, std::nullopt,
+                              "", h.clock.now + static_cast<std::uint64_t>(number)});
+  h.service.finish(uid(), sid(), h.clock.now + 5);
+
+  std::vector<LogRow> listed = h.logBefore(h.clock.now + 10);
+  std::optional<Review> finished = h.service.review(uid(), sid());
+
+  REQUIRE_EQ(listed.size(), static_cast<std::size_t>(1));
+  // The store still picks the HEAVIEST set — that is an ordering and it has its own readers — and
+  // the estimate beside it is the session's, off the back-offs the heaviest set did not earn.
+  CHECK_EQ(listed[0].summary.topSet, std::optional<TopWorkingSet>(TopWorkingSet{100.0, 5}));
+  CHECK_EQ(listed[0].topE1rm, e1rm(95.0, 10));         // 126.7, not the top set's 116.7
+  CHECK_EQ(listed[0].topE1rm, finished->stats.topE1rm);
+  CHECK(e1rm(95.0, 10) > e1rm(100.0, 5));              // the two really do disagree
+}
+
+// The store hands over one row per LOAD carrying the best reps at it, not one row per set, and that
+// projection is only sound because Epley rises with reps at a fixed load. Three sets at 95 collapse
+// to the ten-rep one, and the estimate is the same number a walk over all three would have found.
+TEST(log_reads_the_stores_per_load_projection_and_lands_where_a_walk_over_every_set_would) {
+  Harness h;
+  h.startAt(h.clock.now, "ses_00000001");
+  h.service.append(uid(), sid(),
+                   SetWrite{setId("set_00000001"), ExerciseId{"back-squat"}, 95.0, 6,
+                            SetKind::working, std::nullopt, "", h.clock.now + 1});
+  h.service.append(uid(), sid(),
+                   SetWrite{setId("set_00000002"), ExerciseId{"back-squat"}, 95.0, 10,
+                            SetKind::working, std::nullopt, "", h.clock.now + 2});
+  h.service.append(uid(), sid(),
+                   SetWrite{setId("set_00000003"), ExerciseId{"back-squat"}, 95.0, 8,
+                            SetKind::working, std::nullopt, "", h.clock.now + 3});
+  h.service.append(uid(), sid(),
+                   SetWrite{setId("set_00000004"), ExerciseId{"bench-press"}, 60.0, 12,
+                            SetKind::warmup, std::nullopt, "", h.clock.now + 4});
+  h.service.finish(uid(), sid(), h.clock.now + 5);
+
+  std::vector<LogRow> listed = h.logBefore(h.clock.now + 10);
+
+  REQUIRE_EQ(listed.size(), static_cast<std::size_t>(1));
+  // One load, its best reps, and the warmup nowhere in it — a ramp-up is not what a session was.
+  CHECK_EQ(listed[0].summary.workingLoads, (std::vector<WorkingLoad>{WorkingLoad{95.0, 10}}));
+  CHECK_EQ(listed[0].topE1rm, e1rm(95.0, 10));
+  CHECK_EQ(topE1rmOf(std::vector<WorkingLoad>{WorkingLoad{95.0, 6}, WorkingLoad{95.0, 10},
+                                              WorkingLoad{95.0, 8}}),
+           listed[0].topE1rm);
 }
 
 // closedItself is inferred from the auto-close's own signature — finished_at at the last set's
@@ -577,13 +730,14 @@ TEST(log_says_which_sessions_the_four_hour_rule_closed) {
   const std::uint64_t abandoned = h.clock.now + 60'000;
   h.clock.now = abandoned + kAutoCloseMs;   // the next log read settles it
 
-  std::vector<SessionSummary> listed = h.logBefore(h.clock.now + 1);
+  std::vector<LogRow> listed = h.logBefore(h.clock.now + 1);
 
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(2));
-  CHECK_EQ(listed[0].session.finishedAtMs, std::optional<std::uint64_t>(abandoned));
-  CHECK(listed[0].closedItself);
-  CHECK_EQ(listed[1].session.finishedAtMs, std::optional<std::uint64_t>(started + 3'600'000));
-  CHECK_FALSE(listed[1].closedItself);
+  CHECK_EQ(listed[0].summary.session.finishedAtMs, std::optional<std::uint64_t>(abandoned));
+  CHECK(listed[0].summary.closedItself);
+  CHECK_EQ(listed[1].summary.session.finishedAtMs,
+           std::optional<std::uint64_t>(started + 3'600'000));
+  CHECK_FALSE(listed[1].summary.closedItself);
 }
 
 // A session left running is not closed by anything yet, and a setless one the rule ended reads as
@@ -593,16 +747,16 @@ TEST(log_calls_an_open_session_closed_by_nothing_and_a_setless_auto_close_its_ow
   const std::uint64_t started = h.clock.now;
   h.startAt(started, "ses_00000001");
 
-  std::vector<SessionSummary> running = h.logBefore(started + 1);
+  std::vector<LogRow> running = h.logBefore(started + 1);
   h.clock.now = started + kAutoCloseMs;
-  std::vector<SessionSummary> settled = h.logBefore(h.clock.now + 1);
+  std::vector<LogRow> settled = h.logBefore(h.clock.now + 1);
 
   REQUIRE_EQ(running.size(), static_cast<std::size_t>(1));
-  CHECK_EQ(running[0].session.finishedAtMs, std::optional<std::uint64_t>());
-  CHECK_FALSE(running[0].closedItself);
+  CHECK_EQ(running[0].summary.session.finishedAtMs, std::optional<std::uint64_t>());
+  CHECK_FALSE(running[0].summary.closedItself);
   REQUIRE_EQ(settled.size(), static_cast<std::size_t>(1));
-  CHECK_EQ(settled[0].session.finishedAtMs, std::optional<std::uint64_t>(started));
-  CHECK(settled[0].closedItself);
+  CHECK_EQ(settled[0].summary.session.finishedAtMs, std::optional<std::uint64_t>(started));
+  CHECK(settled[0].summary.closedItself);
 }
 
 // Two sessions sharing a start instant across a page edge: on a cursor of the instant alone the
@@ -615,18 +769,20 @@ TEST(log_pages_across_a_tied_start_instant_without_losing_a_session) {
   h.repo.sessions.push_back(Session{sid("ses_00000003"), uid(), tied + 2, tied + 4});
   h.repo.sessions.push_back(Session{sid("ses_00000004"), uid(), tied + 1, tied + 4});
 
-  std::vector<SessionSummary> first = h.service.log(uid(), LogCursor{tied + 9, std::nullopt, 2});
-  std::vector<SessionSummary> second = h.service.log(
-      uid(), LogCursor{first.back().session.startedAtMs, first.back().session.id, 2});
-  std::vector<SessionSummary> third = h.service.log(
-      uid(), LogCursor{second.back().session.startedAtMs, second.back().session.id, 2});
+  std::vector<LogRow> first = h.service.log(uid(), LogCursor{tied + 9, std::nullopt, 2});
+  std::vector<LogRow> second =
+      h.service.log(uid(), LogCursor{first.back().summary.session.startedAtMs,
+                                     first.back().summary.session.id, 2});
+  std::vector<LogRow> third =
+      h.service.log(uid(), LogCursor{second.back().summary.session.startedAtMs,
+                                     second.back().summary.session.id, 2});
 
   REQUIRE_EQ(first.size(), static_cast<std::size_t>(2));
-  CHECK_EQ(first[0].session.id, sid("ses_00000001"));
-  CHECK_EQ(first[1].session.id, sid("ses_00000003"));
+  CHECK_EQ(first[0].summary.session.id, sid("ses_00000001"));
+  CHECK_EQ(first[1].summary.session.id, sid("ses_00000003"));
   REQUIRE_EQ(second.size(), static_cast<std::size_t>(2));
-  CHECK_EQ(second[0].session.id, sid("ses_00000002"));   // the tie-mate the old cursor skipped
-  CHECK_EQ(second[1].session.id, sid("ses_00000004"));
+  CHECK_EQ(second[0].summary.session.id, sid("ses_00000002"));   // the tie the old cursor skipped
+  CHECK_EQ(second[1].summary.session.id, sid("ses_00000004"));
   CHECK(third.empty());
 }
 
@@ -849,12 +1005,13 @@ TEST(last_time_is_the_newest_session_even_when_an_older_one_holds_a_future_stamp
   h.service.finish(uid(), sid("ses_00000002"), h.clock.now + 2);
 
   LastTimeOutcome last = h.service.lastTime(uid(), ExerciseId{"bench-press"});
-  std::vector<SessionSummary> listed = h.logBefore(h.clock.now + 10'000);
+  std::vector<LogRow> listed = h.logBefore(h.clock.now + 10'000);
 
   CHECK(last.error == LastTimeError::none);
   CHECK_EQ(last.lastTime->session.id, sid("ses_00000002"));
   CHECK_EQ(last.lastTime->sets, std::vector<Set>{*yesterday.set});
-  CHECK_EQ(listed[0].session.id, last.lastTime->session.id);   // the two reads agree, by the key
+  // The two reads agree about which session is newest, because both sort on the same key.
+  CHECK_EQ(listed[0].summary.session.id, last.lastTime->session.id);
 }
 
 // The name is read off the session's own frozen snapshot, never off gym_routines: the prefill card

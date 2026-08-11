@@ -1,16 +1,21 @@
 import SwiftUI
 import WindmillPlatform
 
-// TODAY — the home, and the only surface in gym that ever asks for attention, because this product
-// has no notifications. It answers one question: what am I doing right now.
+// TODAY — the home, the first of the room's three tabs, and the only surface in gym that ever asks
+// for attention, because this product has no notifications. It answers one question: what am I doing
+// right now.
 //
 // No tour, no sample program, no questions about goals or experience. This lifter already has a
 // program; the app's job is to CATCH it, not to write it — which is why the empty state's one door
 // is an empty session, and the routine is the thing you name on the way out.
 //
-// Looking BACK lives at the foot of this screen and nowhere else in the room: two doors, under
-// everything that starts a workout, and only once the log holds a session that has finished. That
-// is the whole of gym's navigation and it is deliberately not a tab bar — see GymRoom for why.
+// ONE routine is on this screen and it is the one trained most recently (§B screen 4). The whole
+// list is a tab of its own now, so a lifter who wants a different day goes there rather than
+// scrolling past it here — Today is what is happening, not a menu.
+//
+// The two read-only doors sit at the foot, under everything that starts a workout, and only once the
+// log holds a session that has finished: a door onto an empty screen is the same defect as a chevron
+// that goes nowhere. Statistics is one of them until its replacement exists (W1c).
 
 struct TodayScreen: View {
     @ObservedObject var store: TrainingStore
@@ -36,13 +41,11 @@ struct TodayScreen: View {
                 // instead of this screen, so the loss is never said twice.
                 RefusalRows(refusals: store.refusals, catalog: store.catalog,
                             onDismiss: { store.clearRefusals() })
-                if store.routines.isEmpty {
-                    empty
-                } else {
-                    ForEach(Array(store.routines.enumerated()), id: \.element.id) { index, routine in
-                        if index == 0 { card(routine) } else { row(routine) }
-                    }
+                if let due = store.routines.first {
+                    card(due)
                     logWithoutARoutine
+                } else {
+                    empty
                 }
                 if !isSignedIn { claimOffer }
                 lookingBack
@@ -95,13 +98,16 @@ struct TodayScreen: View {
                     .foregroundStyle(skin.inkFaint)
             }
 
-            ForEach(routine.entries.sorted { $0.position < $1.position }.prefix(3), id: \.exerciseId) { entry in
+            // Keyed on POSITION, because a routine may name a movement twice — bench heavy then
+            // bench back-off — and two rows sharing an id is undefined behaviour in a ForEach.
+            ForEach(routine.entries.sorted { $0.position < $1.position }.prefix(3), id: \.position) { entry in
                 HStack {
                     Text(Readout.movement(entry.exerciseId, in: store.catalog))
                         .font(WindmillFont.body(15))
                         .foregroundStyle(skin.inkDim)
                     Spacer(minLength: WindmillSpace.x3)
-                    Text(target(entry))
+                    Text(Readout.target(sets: entry.targetSets, reps: entry.targetReps,
+                                        weightKg: entry.targetWeightKg))
                         .font(GymType.numeral(13))
                         .foregroundStyle(skin.targetInk)
                 }
@@ -118,28 +124,6 @@ struct TodayScreen: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
         .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg).strokeBorder(skin.line, lineWidth: 1))
-    }
-
-    // Sorted by last trained and never by when they were made, because that is how a lifter picks
-    // one — and it is the same fact the row prints, so the list never has to explain its own order.
-    private func row(_ routine: Routine) -> some View {
-        Button { onStart(routine.id) } label: {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(routine.name)
-                        .font(WindmillFont.body(17))
-                        .foregroundStyle(skin.ink)
-                    Text(meta(routine))
-                        .font(GymType.numeral(12))
-                        .foregroundStyle(skin.inkFaint)
-                }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(skin.inkFaint)
-            }
-            .frame(minHeight: GymTap.minimum + 8)
-        }
     }
 
     private var logWithoutARoutine: some View {
@@ -208,7 +192,7 @@ struct TodayScreen: View {
                             .font(GymType.numeral(11))
                             .foregroundStyle(skin.inkFaint)
                         HStack {
-                            Text(last.session.plan?.routine ?? "Ad-hoc")
+                            Text(Readout.routine(of: last.session))
                                 .font(WindmillFont.body(16))
                                 .foregroundStyle(skin.ink)
                             Spacer(minLength: WindmillSpace.x3)
@@ -237,26 +221,17 @@ struct TodayScreen: View {
         }
     }
 
-    private func meta(_ routine: Routine) -> String {
-        let count = routine.entries.count
-        let movements = count == 1 ? "1 exercise" : "\(count) exercises"
-        guard let trained = routine.lastTrainedAtMs else { return "\(movements) · never trained" }
-        return "\(movements) · trained \(Readout.ago(trained, now: nowMs))"
-    }
-
-    private func target(_ entry: RoutineEntry) -> String {
-        let count = "\(entry.targetSets) × \(Readout.repTarget(entry.targetReps))"
-        guard let weight = entry.targetWeightKg, weight != 0 else { return count }
-        return "\(count) · \(Readout.weight(weight))"
-    }
-
+    // `16 sets` — EVERY set, every kind — because that is what §B screen 4 draws on this row, and it
+    // is the design's own choice rather than an oversight: §G17 spells the same session `11 working`
+    // in the log's head, where the number sits beside a top set that is filtered to working and
+    // would otherwise contradict it. Here nothing is filtered and nothing is compared, so the row
+    // says how much work happened. Two labelled counts are not two answers.
     private func lastMeta(_ summary: SessionSummary) -> String {
-        let day = Readout.day(summary.session.startedAtMs)
-        guard let finished = summary.session.finishedAtMs else {
-            return "\(day) · \(Readout.setCount(summary.setCount))"
+        var said = [Readout.day(summary.session.startedAtMs), Readout.setCount(summary.setCount)]
+        if let finished = summary.session.finishedAtMs {
+            said.append(Readout.duration(finished - summary.session.startedAtMs))
         }
-        let length = Readout.duration(finished - summary.session.startedAtMs)
-        return "\(day) · \(Readout.setCount(summary.setCount)) · \(length)"
+        return said.joined(separator: " · ")
     }
 
     private var nowMs: Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
