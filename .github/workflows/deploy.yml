@@ -22,10 +22,26 @@ name: Deploy to VPS
 # (DOMAIN_*, ACME_EMAIL, POSTGRES_PASSWORD, RESEND_FROM) are GUARDED below and fail the run before it
 # touches the host.
 #
-# Manual (workflow_dispatch) so the first run is watched. The prior .env is backed up and restored if
-# the rendered file won't validate against compose — a bad render can't outlive the job.
+# AUTOMATIC since 2026-08-11: every backend commit on main that goes green deploys itself. The
+# trigger is `workflow_run` on Backend CI/CD rather than `push`, and that is the whole safety
+# property — Backend CI/CD is what runs ctest and what publishes the image, so waiting for its
+# SUCCESS means a red suite never reaches the VPS and the tag being pulled is guaranteed to exist.
+# A `push` trigger would race the image build and deploy a tag that is not there yet.
+#
+# It deploys the exact commit that passed (`workflow_run.head_sha`), never `latest`: two pushes in
+# quick succession would otherwise both pull whatever `latest` pointed at by then, and the older run
+# would silently ship the newer binary. The same sha is the checkout ref — under `workflow_run`,
+# actions/checkout defaults to the branch head rather than the triggering commit, so without it the
+# compose file and Caddyfile shipped could be from a different commit than the image.
+#
+# workflow_dispatch stays, for deploying a chosen tag by hand and for rolling back to an older sha.
+# The prior .env is backed up and restored if the rendered file won't validate against compose — a
+# bad render can't outlive the job.
 
 on:
+  workflow_run:
+    workflows: [Backend CI/CD]
+    types: [completed]
   workflow_dispatch:
     inputs:
       image_tag:
@@ -38,9 +54,23 @@ concurrency:
 
 jobs:
   deploy:
+    # Three conditions on the automatic path, and each one is a way the image might not be there.
+    # SUCCESS: a red ctest never ships. MAIN: no branch build deploys. PUSH: a pull_request run of
+    # Backend CI/CD skips its own build-and-push job entirely, so its "success" describes a tag that
+    # was never published. A workflow_dispatch of THIS file has no workflow_run at all and passes on
+    # the first clause.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The commit that passed, not the branch head — see the header. Empty on workflow_dispatch,
+          # where checkout's default (the branch this run was dispatched from) is what is wanted.
+          ref: ${{ github.event.workflow_run.head_sha }}
       - name: Render .env + deploy the stack
         env:
           SSH_KEY: ${{ secrets.SSH_KEY }}
@@ -68,7 +98,7 @@ jobs:
           # the commit they came from. The release is the sha so a regression names the deploy.
           SENTRY_ENVIRONMENT: ${{ vars.SENTRY_ENVIRONMENT || 'production' }}
           SENTRY_LOG_LEVEL: ${{ vars.SENTRY_LOG_LEVEL || 'info' }}
-          SENTRY_RELEASE: ${{ github.sha }}
+          SENTRY_RELEASE: ${{ github.event.workflow_run.head_sha || github.sha }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
@@ -102,7 +132,9 @@ jobs:
           JOURNAL_NUDGE_ENABLED: ${{ vars.JOURNAL_NUDGE_ENABLED }}
           JOURNAL_NUDGE_ALLOWLIST: ${{ vars.JOURNAL_NUDGE_ALLOWLIST }}
           WINDMILL_MCP_ALLOWED_ORIGINS: ${{ vars.WINDMILL_MCP_ALLOWED_ORIGINS }}
-          IMAGE_TAG: ${{ inputs.image_tag }}
+          # The sha Backend CI/CD tagged the image with, so the deploy names the commit it is
+          # shipping. `latest` is only ever the hand-dispatched default.
+          IMAGE_TAG: ${{ inputs.image_tag || github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
 

@@ -1,14 +1,21 @@
 # Deploying windmill-backend
 
-CI builds one Docker image and publishes it. A separate, **manual** workflow puts it on the
-single VPS that runs the whole stack under `docker compose`. A push to `main` is not a
-deploy — it is a new `:latest` image waiting for one.
+CI builds one Docker image and publishes it, and a second workflow puts it on the single VPS that
+runs the whole stack under `docker compose`. **Since 2026-08-11 that second workflow runs itself**:
+a backend commit on `main` whose CI goes green deploys, with no hand on it. It is still a separate
+workflow, and it still refuses to run on anything but a SUCCESSFUL `push`-triggered Backend CI/CD
+on `main` — a red `ctest`, a branch, or a pull request all stop at the image.
+
+It deploys the sha that passed, never `:latest`, so two pushes in a row cannot cross and ship each
+other's binary. `workflow_dispatch` remains for deploying a chosen tag by hand — which is also how a
+rollback is done: dispatch with the older commit's sha.
 
 ```
  push to main ─▶ test (ctest in builder image)
                    └▶ build-and-push (slim runtime image ─▶ ghcr.io)
+                        └▶ deploy.yml, automatically, on that run's success
 
- run deploy.yml ─▶ render ~/windmill/.env ─▶ ship compose + Caddyfile ─▶ pull + up + migrate
+ (or by hand) run deploy.yml ─▶ render ~/windmill/.env ─▶ ship compose + Caddyfile ─▶ pull + up + migrate
 
  VPS
  ┌──────────────────── docker compose (private network) ────────────────────┐
@@ -27,7 +34,7 @@ deploy — it is a new `:latest` image waiting for one.
 | --- | --- |
 | Build (Drogon + libpqxx-from-source, compile, `ctest`) | `/Dockerfile` |
 | Build + test + publish the image (on push to `main`) | `/.github/workflows/backend.yml` |
-| Deploy to the VPS (**manual** `workflow_dispatch`; renders `~/windmill/.env`) | `/.github/workflows/deploy.yml` |
+| Deploy to the VPS (**automatic** on a green Backend CI/CD; renders `~/windmill/.env`) | `/.github/workflows/deploy.yml` |
 | VPS runtime topology | `deploy/docker-compose.yml` |
 | TLS + reverse proxy | `deploy/Caddyfile` |
 | Env keys the deploy renders | `deploy/.env.example` |

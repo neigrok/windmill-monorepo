@@ -97,6 +97,8 @@ one side and fail on the other:
   throw on it instead, so the two toolchains can disagree on the same value
   (`ToolArgs.cpp:69` names such a value rather than rendering it).
 
-So: watch `gh run list` after every backend push. And a push is not a deploy — CI builds
-and publishes the image (`.github/workflows/backend.yml`); the VPS deploy
-(`.github/workflows/deploy.yml`) is manual.
+So: watch `gh run list` after every backend push — and since 2026-08-11 watch it for a second
+reason, because **a push to `main` now IS a deploy**. `.github/workflows/backend.yml` builds,
+tests and publishes the image, and a green run of it triggers `deploy.yml` on that exact sha with
+nobody in the loop. Red `ctest` still ships nothing, and a hand-dispatched `deploy.yml` with an
+older sha is the rollback.
