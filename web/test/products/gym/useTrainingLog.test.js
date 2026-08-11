@@ -5,6 +5,8 @@
 //     leaves a tied session in no page, ever;
 //   · the mirror polls only while the tab is visible, refetches the moment it comes back, and
 //     never survives the session it shows closing on the phone;
+//   · the poll rides the read's weak ETag — the last reply's tag goes up as If-None-Match, and a
+//     304 leaves the state in hand untouched, no re-render over a workout that did not move;
 //   · the retired web logger's resume note is cleared on boot, and the old offline queue's bytes
 //     are NOT — whatever sets a pre-mirror build still owed the log are the lifter's.
 //
@@ -15,7 +17,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 
-import { GymError } from '../../../src/products/gym/gymApi.js';
+import { GymError, UNCHANGED } from '../../../src/products/gym/gymApi.js';
 
 const { ReactCurrentDispatcher } = React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
 const HOUR = 3600_000;
@@ -168,6 +170,38 @@ function phoneWorkout({ startedAt, sets = [] }) {
       async createExercise(body) {
         wire.push(`POST /exercises ${body.name}`);
         return { ...body };
+      },
+    },
+  };
+}
+
+// The same phone workout, over a log that speaks the freshness contract the server speaks: every
+// 200 hands back a weak tag — opaque bytes the hook must only ever echo, which is why this fake
+// minting a shape of its own is fine — and a read that sends the current tag back up is answered
+// UNCHANGED with no detail at all. `asked` keeps the tag each detail read carried, because the
+// ride itself is what the tests below assert.
+function taggedWorkout({ startedAt, sets = [] }) {
+  const asked = [];
+  const session = { id: 'ses_phone', startedAt, finishedAt: null };
+  const stored = [...sets];
+  const tagOf = () =>
+    `W/"${stored.length}-${stored.length === 0 ? 0 : stored[stored.length - 1].completedAt}-${session.finishedAt ?? 0}"`;
+  return {
+    asked,
+    session,
+    stored,
+    tagOf,
+    api: {
+      async exercises() {
+        return [{ id: 'back-squat', name: 'Back Squat' }];
+      },
+      async sessions() {
+        return [{ ...session, setCount: stored.length, exercises: [] }];
+      },
+      async session(id, { etag } = {}) {
+        asked.push(etag ?? null);
+        if (etag === tagOf()) return UNCHANGED;
+        return { session: { ...session }, sets: stored.slice(), etag: tagOf() };
       },
     },
   };
@@ -362,6 +396,60 @@ test('the mirror polls the open session every five seconds and takes what the lo
   t.mock.timers.tick(POLL_MS);
   await settle();
   assert.deepEqual(backend.wire.filter((line) => line === 'GET /sessions/ses_phone').length, 3);
+});
+
+// THE FRESHNESS RIDE, first half: the boot's detail read carries no tag — there is nothing in hand
+// yet — and every beat after it sends the last reply's tag back. While nobody lifted, the answer is
+// a 304 and the mirror replaces NOTHING: the very same objects stay on the surface, which is the
+// no-re-render promise stated as identity rather than as a spy on React.
+test('the first poll sends the boot read’s tag, and a 304 leaves the state in hand untouched', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const now = Date.now();
+  browserWith();
+  const backend = taggedWorkout({ startedAt: now - HOUR, sets: [loggedSet(0, now - 300_000, 100)] });
+  const bootTag = backend.tagOf();
+
+  const view = await open(t, backend.api);
+  assert.deepEqual(backend.asked, [null]);
+  const heldSession = view.log.session;
+  const heldSets = view.log.sets;
+
+  t.mock.timers.tick(POLL_MS);
+  await settle();
+  t.mock.timers.tick(POLL_MS);
+  await settle();
+
+  assert.deepEqual(backend.asked, [null, bootTag, bootTag]);
+  assert.equal(view.log.session, heldSession);
+  assert.equal(view.log.sets, heldSets);
+});
+
+// THE FRESHNESS RIDE, second half: a set landing on the phone unmatches the tag, the next beat
+// takes the full read, and the beat after that asks with the NEW tag — proving the mirror moves
+// its tag with every 200 it takes, not just the boot's.
+test('a set landing after a 304 reaches the mirror on the next beat, under the new tag', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const now = Date.now();
+  browserWith();
+  const backend = taggedWorkout({ startedAt: now - HOUR, sets: [loggedSet(0, now - 300_000, 100)] });
+  const bootTag = backend.tagOf();
+
+  const view = await open(t, backend.api);
+  t.mock.timers.tick(POLL_MS);
+  await settle();
+  assert.deepEqual(backend.asked, [null, bootTag]);
+
+  backend.stored.push(loggedSet(1, now - 10_000, 105));
+  const grownTag = backend.tagOf();
+  t.mock.timers.tick(POLL_MS);
+  await settle();
+  assert.deepEqual(view.log.sets.map((set) => set.id), ['set_stored0', 'set_stored1']);
+  const heldSets = view.log.sets;
+
+  t.mock.timers.tick(POLL_MS);
+  await settle();
+  assert.deepEqual(backend.asked, [null, bootTag, bootTag, grownTag]);
+  assert.equal(view.log.sets, heldSets);
 });
 
 // A hidden tab asks no questions, and the moment it comes back it asks at once rather than waiting

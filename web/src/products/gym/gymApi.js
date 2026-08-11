@@ -23,7 +23,10 @@
 //                                           derived from a set COUNT; the list carries no sets, so
 //                                           the store answers them where the sets are
 //   GET  /v1/gym/sessions/:id            -> { session, sets } — or null on 404 (absent and
-//                                           another's are the same byte)
+//                                           another's are the same byte). Every 200 carries a weak
+//                                           ETag — opaque bytes this client only ever echoes; a
+//                                           poll that sends it back as If-None-Match is answered
+//                                           304 with no body while the workout is what it was
 //   DELETE /v1/gym/sessions/:id          -> 204, nothing back — the discard offered at the finish
 //                                           screen. A session still running is refused, 409
 //   GET  /v1/gym/sessions/:id/review     -> Review — the finish screen read whole
@@ -170,6 +173,11 @@ export function failureReason(error) {
   return 'the log didn’t answer. Try again when you have signal';
 }
 
+// What a 304 hands back: the workout is exactly what the caller already holds. A sentinel rather
+// than null — null already means "no such session" on the same read — and a symbol rather than a
+// shape so nothing downstream can half-read it as a detail.
+export const UNCHANGED = Symbol('gym-session-unchanged');
+
 export const gymApi = {
   async exercises() {
     return (await json(await call('/exercises'))).exercises;
@@ -228,10 +236,17 @@ export const gymApi = {
     return (await json(await call(`/sessions${suffix ? `?${suffix}` : ''}`))).sessions;
   },
 
-  async session(id) {
-    const response = await call(`/sessions/${id}`);
+  // The mirror's poll rides the server's freshness tag: the last reply's `etag` goes back up as
+  // If-None-Match, and while the workout is what it was the answer is UNCHANGED — no body to parse,
+  // no state to replace. The tag is attached to the reply only when the server sent one, so a read
+  // against an older deployment is exactly the read it always was.
+  async session(id, { etag } = {}) {
+    const response = await call(`/sessions/${id}`, etag ? { headers: { 'if-none-match': etag } } : {});
     if (response.status === 404) return null;
-    return json(response);
+    if (response.status === 304) return UNCHANGED;
+    const tag = response.headers?.get('etag');
+    const detail = await json(response);
+    return tag ? { ...detail, etag: tag } : detail;
   },
 
   // The finish screen, computed by the store: three facts, at most one record, and the comparison

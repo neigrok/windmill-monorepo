@@ -807,6 +807,162 @@ TEST(gym_session_detail_wraps_the_session_and_its_sets) {
                        R"("setNumber":1,"weightKg":82.5}]})"));
 }
 
+// The mirror's freshness tag: stable while the workout is what it was — a replayed read answers the
+// same bytes — and moved by exactly the two things a poll acts on, a set landing and the close.
+TEST(gym_session_detail_etag_is_stable_replayed_and_moved_by_a_set_and_by_finish) {
+  Harness h;
+  h.signIn("s-live");
+  send(h.api, &GymApi::startSession, postRequest("/v1/gym/sessions", startBody(), "s-live"));
+  send(h.api, &GymApi::appendSet,
+       postRequest("/v1/gym/sessions/ses_11111111/sets", setBody(), "s-live"), "ses_11111111");
+
+  drogon::HttpResponsePtr first = send(h.api, &GymApi::getSession,
+                                       getRequest("/v1/gym/sessions/ses_11111111", "s-live"),
+                                       "ses_11111111");
+  drogon::HttpResponsePtr replayed = send(h.api, &GymApi::getSession,
+                                          getRequest("/v1/gym/sessions/ses_11111111", "s-live"),
+                                          "ses_11111111");
+  CHECK_EQ(first->getHeader("ETag"), std::string(R"(W/"1700000000000-1-1700000060000-0")"));
+  CHECK_EQ(replayed->getHeader("ETag"), std::string(R"(W/"1700000000000-1-1700000060000-0")"));
+
+  send(h.api, &GymApi::appendSet,
+       postRequest("/v1/gym/sessions/ses_11111111/sets",
+                   setBody("set_22222222", "bench-press", 85.0, 1'700'000'120'000), "s-live"),
+       "ses_11111111");
+  drogon::HttpResponsePtr grown = send(h.api, &GymApi::getSession,
+                                       getRequest("/v1/gym/sessions/ses_11111111", "s-live"),
+                                       "ses_11111111");
+  CHECK_EQ(grown->getHeader("ETag"), std::string(R"(W/"1700000000000-2-1700000120000-0")"));
+
+  send(h.api, &GymApi::finishSession,
+       postRequest("/v1/gym/sessions/ses_11111111/finish", finishBody(1'700'000'180'000), "s-live"),
+       "ses_11111111");
+  drogon::HttpResponsePtr closed = send(h.api, &GymApi::getSession,
+                                        getRequest("/v1/gym/sessions/ses_11111111", "s-live"),
+                                        "ses_11111111");
+  CHECK_EQ(closed->getHeader("ETag"),
+           std::string(R"(W/"1700000000000-2-1700000120000-1700000180000")"));
+}
+
+// The steady state of the poll: a matching If-None-Match answers 304 with no body at all — the tag
+// still rides the reply, per RFC 9110 — and the moment a set lands the same stale tag no longer
+// matches, so the next beat is the full 200 again.
+TEST(gym_session_detail_matching_if_none_match_is_304_and_a_new_set_unmatches_it) {
+  Harness h;
+  h.signIn("s-live");
+  send(h.api, &GymApi::startSession, postRequest("/v1/gym/sessions", startBody(), "s-live"));
+  send(h.api, &GymApi::appendSet,
+       postRequest("/v1/gym/sessions/ses_11111111/sets", setBody(), "s-live"), "ses_11111111");
+
+  drogon::HttpRequestPtr steady = getRequest("/v1/gym/sessions/ses_11111111", "s-live");
+  steady->addHeader("If-None-Match", R"(W/"1700000000000-1-1700000060000-0")");
+  drogon::HttpResponsePtr unchanged =
+      send(h.api, &GymApi::getSession, steady, "ses_11111111");
+  CHECK_EQ(unchanged->getStatusCode(), drogon::k304NotModified);
+  CHECK_EQ(unchanged->getHeader("ETag"), std::string(R"(W/"1700000000000-1-1700000060000-0")"));
+  CHECK_EQ(unchanged->getBody(), std::string(""));
+  CHECK_EQ(unchanged->contentType(), drogon::CT_NONE);
+
+  send(h.api, &GymApi::appendSet,
+       postRequest("/v1/gym/sessions/ses_11111111/sets",
+                   setBody("set_22222222", "bench-press", 85.0, 1'700'000'120'000), "s-live"),
+       "ses_11111111");
+  drogon::HttpRequestPtr stale = getRequest("/v1/gym/sessions/ses_11111111", "s-live");
+  stale->addHeader("If-None-Match", R"(W/"1700000000000-1-1700000060000-0")");
+  drogon::HttpResponsePtr changed = send(h.api, &GymApi::getSession, stale, "ses_11111111");
+  CHECK_EQ(changed->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(changed->getHeader("ETag"), std::string(R"(W/"1700000000000-2-1700000120000-0")"));
+  CHECK_EQ(bodyOf(changed)["sets"].size(), 2u);
+}
+
+// The forms RFC 9110 §13.1.2 lets a client or a proxy send: the strong-form echo of our weak tag
+// (weak comparison strips W/ from both sides), the tag inside a comma-separated list, and the lone
+// "*" — each earns the 304 — while a list of tags that are all somebody else's earns the full 200.
+TEST(gym_session_detail_if_none_match_reads_the_rfc_9110_forms) {
+  Harness h;
+  h.signIn("s-live");
+  send(h.api, &GymApi::startSession, postRequest("/v1/gym/sessions", startBody(), "s-live"));
+  send(h.api, &GymApi::appendSet,
+       postRequest("/v1/gym/sessions/ses_11111111/sets", setBody(), "s-live"), "ses_11111111");
+
+  drogon::HttpRequestPtr strongForm = getRequest("/v1/gym/sessions/ses_11111111", "s-live");
+  strongForm->addHeader("If-None-Match", R"("1700000000000-1-1700000060000-0")");
+  drogon::HttpResponsePtr strong = send(h.api, &GymApi::getSession, strongForm, "ses_11111111");
+  CHECK_EQ(strong->getStatusCode(), drogon::k304NotModified);
+  CHECK_EQ(strong->getHeader("ETag"), std::string(R"(W/"1700000000000-1-1700000060000-0")"));
+
+  drogon::HttpRequestPtr listForm = getRequest("/v1/gym/sessions/ses_11111111", "s-live");
+  listForm->addHeader("If-None-Match",
+                      R"(W/"other", "stale", W/"1700000000000-1-1700000060000-0")");
+  drogon::HttpResponsePtr listed = send(h.api, &GymApi::getSession, listForm, "ses_11111111");
+  CHECK_EQ(listed->getStatusCode(), drogon::k304NotModified);
+  CHECK_EQ(listed->getHeader("ETag"), std::string(R"(W/"1700000000000-1-1700000060000-0")"));
+
+  drogon::HttpRequestPtr anyForm = getRequest("/v1/gym/sessions/ses_11111111", "s-live");
+  anyForm->addHeader("If-None-Match", "*");
+  drogon::HttpResponsePtr any = send(h.api, &GymApi::getSession, anyForm, "ses_11111111");
+  CHECK_EQ(any->getStatusCode(), drogon::k304NotModified);
+  CHECK_EQ(any->getHeader("ETag"), std::string(R"(W/"1700000000000-1-1700000060000-0")"));
+
+  drogon::HttpRequestPtr strangers = getRequest("/v1/gym/sessions/ses_11111111", "s-live");
+  strangers->addHeader("If-None-Match", R"(W/"other", garbage, "1-1700000060000-0")");
+  drogon::HttpResponsePtr full = send(h.api, &GymApi::getSession, strangers, "ses_11111111");
+  CHECK_EQ(full->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(full->getHeader("ETag"), std::string(R"(W/"1700000000000-1-1700000060000-0")"));
+  CHECK_EQ(bodyOf(full)["sets"].size(), 1u);
+}
+
+// Why startedAt leads the tag: a workout discarded and recreated under the SAME id with the same
+// sets replayed is a NEW representation, and without startedAt its tag — count, last completedAt,
+// finished_at — would be byte-identical to the dead workout's, hiding the recreate behind a 304.
+TEST(gym_session_detail_recreated_under_the_same_id_never_echoes_the_dead_workouts_tag) {
+  Harness h;
+  h.signIn("s-live");
+  send(h.api, &GymApi::startSession, postRequest("/v1/gym/sessions", startBody(), "s-live"));
+  send(h.api, &GymApi::appendSet,
+       postRequest("/v1/gym/sessions/ses_11111111/sets", setBody(), "s-live"), "ses_11111111");
+  send(h.api, &GymApi::finishSession,
+       postRequest("/v1/gym/sessions/ses_11111111/finish", finishBody(1'700'000'180'000), "s-live"),
+       "ses_11111111");
+  send(h.api, &GymApi::discardSession, deleteRequest("/v1/gym/sessions/ses_11111111", "s-live"),
+       "ses_11111111");
+
+  send(h.api, &GymApi::startSession,
+       postRequest("/v1/gym/sessions", startBody("ses_11111111", 1'700'000'030'000), "s-live"));
+  send(h.api, &GymApi::appendSet,
+       postRequest("/v1/gym/sessions/ses_11111111/sets", setBody("set_33333333"), "s-live"),
+       "ses_11111111");
+  send(h.api, &GymApi::finishSession,
+       postRequest("/v1/gym/sessions/ses_11111111/finish", finishBody(1'700'000'180'000), "s-live"),
+       "ses_11111111");
+  drogon::HttpRequestPtr dead = getRequest("/v1/gym/sessions/ses_11111111", "s-live");
+  dead->addHeader("If-None-Match", R"(W/"1700000000000-1-1700000060000-1700000180000")");
+  drogon::HttpResponsePtr recreated = send(h.api, &GymApi::getSession, dead, "ses_11111111");
+
+  CHECK_EQ(recreated->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(recreated->getHeader("ETag"),
+           std::string(R"(W/"1700000030000-1-1700000060000-1700000180000")"));
+}
+
+// The refusals stay byte-identical to what they always answered: no tag on a session this account
+// cannot read — absent and another's alike — and none on the unsigned 401.
+TEST(gym_session_detail_refusals_carry_no_etag) {
+  Harness h;
+  h.signIn("s-live");
+
+  drogon::HttpResponsePtr absent = send(h.api, &GymApi::getSession,
+                                        getRequest("/v1/gym/sessions/ses_99999999", "s-live"),
+                                        "ses_99999999");
+  drogon::HttpResponsePtr anonymous = send(h.api, &GymApi::getSession,
+                                           getRequest("/v1/gym/sessions/ses_11111111"),
+                                           "ses_11111111");
+
+  CHECK_EQ(absent->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(absent->getHeader("ETag"), std::string(""));
+  CHECK_EQ(anonymous->getStatusCode(), drogon::k401Unauthorized);
+  CHECK_EQ(anonymous->getHeader("ETag"), std::string(""));
+}
+
 // ---- last time: the prefill read ----------------------------------------------------------
 
 TEST(gym_last_answers_the_newest_finished_session_with_its_block) {

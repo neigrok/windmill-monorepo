@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <charconv>
 #include <optional>
+#include <string_view>
 #include <utility>
 
 namespace wm::gym {
@@ -19,6 +20,27 @@ std::optional<std::uint64_t> digitsOnlyMs(const std::string& text) {
   const std::from_chars_result parsed = std::from_chars(text.data(), last, value);
   if (parsed.ec != std::errc{} || parsed.ptr != last) return std::nullopt;
   return std::min(value, kMaxInstantMs);
+}
+
+// If-None-Match read per RFC 9110 §13.1.2: the field is a comma-separated list of entity-tags —
+// each optionally W/-prefixed — or the lone "*", and the comparison is the WEAK one: strip W/ from
+// both sides and compare the quoted opaque-tags byte for byte. "*" matches any current
+// representation, which the caller only asks about after finding one.
+bool ifNoneMatchAccepts(const std::string& header, std::string_view tag) {
+  if (tag.substr(0, 2) == "W/") tag.remove_prefix(2);
+  std::size_t at = 0;
+  while (at < header.size()) {
+    std::size_t comma = header.find(',', at);
+    if (comma == std::string::npos) comma = header.size();
+    std::string_view entry{header.data() + at, comma - at};
+    while (!entry.empty() && (entry.front() == ' ' || entry.front() == '\t')) entry.remove_prefix(1);
+    while (!entry.empty() && (entry.back() == ' ' || entry.back() == '\t')) entry.remove_suffix(1);
+    if (entry == "*") return true;
+    if (entry.substr(0, 2) == "W/") entry.remove_prefix(2);
+    if (entry == tag) return true;
+    at = comma + 1;
+  }
+  return false;
 }
 }
 
@@ -256,10 +278,34 @@ void GymApi::getSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     cb(error(drogon::k404NotFound, "no such session"));
     return;
   }
+  // The mirror's freshness tag (§11.3): WEAK, because it certifies the facts a poll acts on — not
+  // byte equality of a body this handler never compared. Sets are insert-only and the rest is
+  // frozen at start, so (set count, last completedAt, finished_at) is the whole of what can move —
+  // and startedAt leads the tag so a session discarded and recreated under the same id is a new
+  // representation, never a 304 echo of the dead workout. Only the two success paths carry it — the
+  // 401 and the 404 above stay byte-identical to what they always answered.
+  const std::vector<Set>& sets = detail->sets;
+  const std::string tag = "W/\"" + std::to_string(detail->session.startedAtMs) + "-" +
+                          std::to_string(sets.size()) + "-" +
+                          std::to_string(sets.empty() ? 0 : sets.back().completedAtMs) + "-" +
+                          std::to_string(detail->session.finishedAtMs.value_or(0)) + "\"";
+  if (ifNoneMatchAccepts(req->getHeader("if-none-match"), tag)) {
+    auto unchanged = drogon::HttpResponse::newHttpResponse();
+    unchanged->setStatusCode(drogon::k304NotModified);
+    // CT_NONE maps to the empty mime string, which drogon renders as no content-type line at all;
+    // the `content-length: 0` it still writes on a 304 is accepted noise — suppressing it means
+    // setPassThrough, which drops connection handling with it.
+    unchanged->setContentTypeCode(drogon::CT_NONE);
+    unchanged->addHeader("ETag", tag);
+    cb(unchanged);
+    return;
+  }
   Json::Value body(Json::objectValue);
   body["session"] = toJson(detail->session);
   body["sets"] = toJson(detail->sets);
-  cb(jsonResponse(body));
+  drogon::HttpResponsePtr response = jsonResponse(body);
+  response->addHeader("ETag", tag);
+  cb(response);
 }
 
 // The finish screen, and the same readout the session detail draws. It is a pure read — computed

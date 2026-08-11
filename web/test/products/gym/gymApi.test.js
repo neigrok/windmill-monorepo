@@ -11,7 +11,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { API_BASE } from '../../../src/shell/apiBase.js';
-import { EXPORT_HREF, failureReason, gymApi, GymError } from '../../../src/products/gym/gymApi.js';
+import { EXPORT_HREF, failureReason, gymApi, GymError, UNCHANGED } from '../../../src/products/gym/gymApi.js';
 
 const realFetch = global.fetch;
 let calls = [];
@@ -115,6 +115,32 @@ test('session — an absent session is null, not an error: absent and another ow
   const detail = { session: { id: 'ses_1', startedAt: 1_900_000_000_000 }, sets: [] };
   serve(ok(detail));
   assert.deepEqual(await gymApi.session('ses_1'), detail);
+});
+
+// The mirror's freshness ride: a 200's weak ETag comes back on the reply, goes up again as
+// If-None-Match, and the 304 while nothing changed is the UNCHANGED sentinel — never null, which
+// already means "no such session" on this same read.
+test('session — the ETag rides the reply, If-None-Match rides the next ask, and 304 is UNCHANGED', async () => {
+  const detail = { session: { id: 'ses_1', startedAt: 1_900_000_000_000 }, sets: [] };
+  const tagged = {
+    ok: true,
+    status: 200,
+    headers: { get: (name) => (name.toLowerCase() === 'etag' ? 'W/"0-0-0"' : null) },
+    json: async () => detail,
+  };
+  serve(tagged);
+  assert.deepEqual(await gymApi.session('ses_1'), { ...detail, etag: 'W/"0-0-0"' });
+  assert.equal(calls[0].options.headers['if-none-match'], undefined);
+
+  const notModified = {
+    ok: false,
+    status: 304,
+    headers: { get: () => null },
+    json: async () => { throw new SyntaxError('Unexpected end of JSON input'); },
+  };
+  serve(notModified);
+  assert.equal(await gymApi.session('ses_1', { etag: 'W/"0-0-0"' }), UNCHANGED);
+  assert.equal(calls[0].options.headers['if-none-match'], 'W/"0-0-0"');
 });
 
 // The bytes below are what the running server answered on the probe of this route: the movement

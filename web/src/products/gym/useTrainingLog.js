@@ -7,10 +7,12 @@
 //
 // The mirror is a poll and not a socket, by decision (§11.3): GET /v1/gym/sessions/{id} every five
 // seconds while the tab is visible, nothing while it is hidden, and a refetch the moment it comes
-// back. A set lands once every minute or two; a live transport for that is unearned.
+// back. A set lands once every minute or two; a live transport for that is unearned. The poll rides
+// the read's weak ETag — If-None-Match up, 304 back while nothing changed — so the steady state
+// costs a header exchange, not a body and a re-render.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { failureReason, gymApi } from './gymApi.js';
+import { failureReason, gymApi, UNCHANGED } from './gymApi.js';
 import { mintId } from './mint.js';
 import { CREATED_MOVEMENT } from './logger/movements.js';
 
@@ -55,6 +57,11 @@ export function useTrainingLog({ api = gymApi } = {}) {
   // list's tail is dropped rather than appended onto a list it no longer continues.
   const walk = useRef(0);
 
+  // The mirror's freshness tag: the ETag of the last detail read the mirror took, sent back up as
+  // If-None-Match so the steady state is a 304 the poll can ignore. A ref, not state — the tag
+  // changes exactly when the detail does, and it must never be a render of its own.
+  const mirrorTag = useRef(null);
+
   const say = useCallback((text) => setToast({ text }), []);
 
   useEffect(() => {
@@ -85,6 +92,7 @@ export function useTrainingLog({ api = gymApi } = {}) {
         const detail = open ? await api.session(open.id).catch(() => null) : null;
         if (!alive) return;
         if (detail && detail.session.finishedAt == null) {
+          mirrorTag.current = detail.etag ?? null;
           setSession(detail.session);
           setSets(detail.sets);
         }
@@ -158,10 +166,12 @@ export function useTrainingLog({ api = gymApi } = {}) {
   // THE MIRROR'S BEAT (§11.3 flow 2). Five seconds while the tab is visible, nothing while it is
   // hidden — a hidden tab asks no questions — and one immediate read when it comes back, because a
   // lifter glancing at a laptop mid-set should not wait out a poll interval to see the set land.
-  // A poll that fails keeps the last true read on screen and says nothing: "last set 3:40 ago" is
-  // still a fact, and the next beat is the retry. The mirror ends when the read says the session
-  // finished — or 404s, which is a discard — and the log is re-read so the closed session appears
-  // where it now belongs.
+  // Each beat sends the last read's ETag as If-None-Match, so the steady state — nobody lifted in
+  // the last five seconds — is a 304 the mirror ignores: the state in hand stands untouched and no
+  // re-render runs. A poll that fails keeps the last true read on screen and says nothing: "last
+  // set 3:40 ago" is still a fact, and the next beat is the retry. The mirror ends when the read
+  // says the session finished — or 404s, which is a discard — and the log is re-read so the closed
+  // session appears where it now belongs.
   useEffect(() => {
     const id = session?.id;
     if (!id) return undefined;
@@ -169,17 +179,20 @@ export function useTrainingLog({ api = gymApi } = {}) {
     const read = async () => {
       let detail;
       try {
-        detail = await api.session(id);
+        detail = await api.session(id, { etag: mirrorTag.current });
       } catch {
         return;
       }
       if (!alive) return;
+      if (detail === UNCHANGED) return;
       if (detail == null || detail.session.finishedAt != null) {
+        mirrorTag.current = null;
         setSession(null);
         setSets([]);
         reloadLog();
         return;
       }
+      mirrorTag.current = detail.etag ?? null;
       setSession(detail.session);
       setSets(detail.sets);
     };

@@ -1004,7 +1004,7 @@ query, ordered by pattern then name. Identity rules, stated once:
 | `POST /v1/gym/sessions/{id}/sets` | append a set — `{id, exerciseId, weightKg, reps, completedAt, kind?, rpe?, note?}` | 0 |
 | `POST /v1/gym/sessions/{id}/finish` | close — `{finishedAt}`, idempotent | 0 |
 | `GET  /v1/gym/sessions?before=&beforeId=&limit=` | the log, newest first | 0 |
-| `GET  /v1/gym/sessions/{id}` | one session with its sets | 0 |
+| `GET  /v1/gym/sessions/{id}` | one session with its sets; 200s carry a weak `ETag`, a matching `If-None-Match` answers 304 (§11.3) | 0 |
 | `GET  /v1/gym/sessions/{id}/review` | the finish surface — three facts, at most one record, the comparison | 2 |
 | `DELETE /v1/gym/sessions/{id}` | discard — `204`; refused `409 session-open` while it is still running | 2 |
 | `GET  /v1/gym/last?exercise=` | last-time prefill | 1 |
@@ -1516,9 +1516,16 @@ stand behind: *last set 1:47 ago*.
    boots on the log read — which is also what lazily settles a stale open session (§3.2) — finds
    the open session, then polls `GET /v1/gym/sessions/{id}`, which already answers
    `{session, sets}` owner-scoped. Five seconds while the tab is visible, stopped when hidden,
-   refetched on `visibilitychange`. The `ETag` over `(setCount, last completedAt, finishedAt)` that
-   would make the steady state a 304 is still unbuilt — the poll ships as full 200s, one small read
-   every five seconds, for one lifter's own open session.
+   refetched on `visibilitychange`. The `ETag` over `(startedAt, setCount, last completedAt,
+   finishedAt)` is built (2026-08-11): every 200 from `GET /v1/gym/sessions/{id}` carries it —
+   weak, because it certifies those facts and not byte equality; the last three are the whole of
+   what can move on an insert-only session, and `startedAt` leads so a session discarded and
+   recreated under the same id can never answer the dead workout's tag with a 304. The poll sends
+   it back as `If-None-Match` — read per RFC 9110 §13.1.2: a comma-separated list, `W/` stripped
+   per entry, `*` matching any current representation — and an unchanged workout answers 304 with
+   no body, so the steady state costs a header exchange and no re-render. The tag lives at the
+   HTTP edge (`GymApi.cpp`); `LogService` stays wire-blind and the MCP tools never see it. The 401
+   and the 404 never carry the header — absent stays byte-identical to forbidden.
 
    **No socket, and that is a decision.** A set lands once every 60–120 seconds. Roadmap already
    runs a CRDT room cluster for a value that changes per keystroke; a second live transport for one
