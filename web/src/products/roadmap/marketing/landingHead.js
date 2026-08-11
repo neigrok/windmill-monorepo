@@ -35,7 +35,7 @@ export const roadmapLandingHead = {
     trust: 'No account needed — your first tree lives in your browser.',
     notes: [
       'How it works: Map your plan → Finish a step → Watch it unlock.',
-      'Dev paths adapted from the roadmap.sh community maps (CC BY-SA).',
+      'Three of the dev paths adapted from the roadmap.sh community maps (CC BY-SA).',
     ],
   },
   schema: [
@@ -58,8 +58,16 @@ export const roadmapLandingHead = {
         'Share any tree as a page; anyone can fork a copy and grow their own',
         'Speaks MCP so Claude, Cursor, or any agent can plant and tend a tree',
         'Sign in once and your trees sync across phone and desktop',
-        'Authored developer learning paths adapted from roadmap.sh (CC BY-SA)',
+        'Nine authored starter quests; three of the developer paths adapted from roadmap.sh (CC BY-SA)',
       ],
+      // One offer, because there is one thing a crawler can truthfully be told is available.
+      // Windmill One had an Offer here at $12 with availability InStock — a machine-readable
+      // claim that it can be bought now, which feeds price and shopping surfaces. It cannot:
+      // paidPlansOpen() is false (shell/billing/checkout.js) and the server answers every
+      // checkout 503 while PADDLE_PRICE_ID is unset. No availability token says "announced,
+      // till shut" — PreOrder, PreSale and BackOrder all mean orderable, OutOfStock means a
+      // supply that ran out — so the honest structured statement is the absence of the offer.
+      // Put it back in the same wave that opens paid plans.
       'offers': [
         {
           '@type': 'Offer',
@@ -68,16 +76,7 @@ export const roadmapLandingHead = {
           'priceCurrency': 'USD',
           'availability': 'https://schema.org/InStock',
           'url': `${SITE_ORIGIN}/pricing.html`,
-          'description': 'All of Windmill, free: unlimited trees and steps, private trees, the whole editor, paste import, sharing, forking, export, the MCP server with an API key, and a monthly allowance of AI tendings.',
-        },
-        {
-          '@type': 'Offer',
-          'name': 'Windmill One',
-          'price': '12',
-          'priceCurrency': 'USD',
-          'availability': 'https://schema.org/InStock',
-          'url': `${SITE_ORIGIN}/pricing.html`,
-          'description': 'A larger monthly allowance of tending — the AI that plants and reshapes your tree. Billed monthly, cancel any time, 30-day money-back guarantee.',
+          'description': 'All of Windmill, free: as many trees as you like, up to 10,000 steps in each, private trees, the whole editor, paste import, sharing, forking, export, and the MCP server with an API key. Tending — the AI that plants and reshapes a tree — is not switched on yet. When it is, a free account gets a monthly allowance of it.',
         },
       ],
       'publisher': { '@id': `${SITE_ORIGIN}/#organization` },

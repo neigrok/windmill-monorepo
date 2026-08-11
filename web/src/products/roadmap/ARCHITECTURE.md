@@ -4,7 +4,9 @@ One product package: `web/src/products/roadmap/`. It renders a Windmill roadmap 
 a step can have several prerequisites) as a painterly RPG skill tree on a **hand-rolled WebGL2
 renderer** (no three.js). Target: **60fps at 5,000+ nodes, 2 GPU draw calls** — one instanced
 node draw plus one connector draw, with labels and near-LOD icons as a pooled DOM overlay —
-with pan/zoom, hover, direct-manipulation editing and live collaboration.
+with pan/zoom, hover, direct-manipulation editing, live sync across one account's own devices, and
+a presence cursor layer. Writes are owner-only (`canWrite`, `backend/platform/domain/Access.h`), so
+multi-account collaboration is not built — a second account can watch a shared tree, never edit it.
 
 The renderer began on three.js and was rewritten in raw WebGL2; the reasons and the lesson live
 in `NOTES.md`, which is this package's chronological build log and is *history* — where it and
@@ -65,7 +67,7 @@ Every directory, one line. The six marked **↓** have a section of their own be
 | `ceremony/` | `CeremonyDirector` — sequences the motion language's camera → travel → bloom → pulse → toast into one ceremony at a time. |
 | `selection/` | The multi-selection predicates (a set of two or more is one thing, not N picks). |
 | `shortcuts/` | The canonical keyboard map and the reference dialog built from it. |
-| `presence/` | The live-collaboration cursor layer, drawn on its own rAF loop above the canvas. |
+| `presence/` | The presence cursor layer, drawn on its own rAF loop above the canvas. |
 | `paste/` | Paste-import: the deterministic plan grammar, the composer, the ghost preview, the graft rule, the AI-compose stream, and the ZIP writer the data export shares. |
 | `quests/` | The nine authored starter quests (`roster/`) and the shelf + seed-packet thumbnails that plant them. |
 | `browse/` | The in-product public wall `#/browse` — the client-rendered twin of the marketing gallery. |
@@ -257,7 +259,7 @@ projection — what the render pipeline consumes.
   sharing one HLC stamp so the gesture is atomic on the wire. **This retired `editing/edits.js`:**
   the splice, fan-out and reduction logic lives here now, over the lattice instead of over
   `TreeData`, and there is exactly one encoding of it.
-- `sync/SyncSession.js` — the one seam `SkillTreeView` talks to for collaboration *and*
+- `sync/SyncSession.js` — the one seam `SkillTreeView` talks to for live sync *and*
   durability: it owns the lattice, the HLC clock, the socket and the IndexedDB store, and it owns
   **undo/redo** (it banks each gesture's inverse and re-dispatches it re-stamped). "The lattice is
   the outbox" — there is no queue; an offline edit is already in the durable frame.
@@ -348,7 +350,7 @@ Runs the pipeline above, then hands the tree to a `SyncSession` and hosts every 
 canvas. Each edit is dispatched as one gesture (`collab.dispatch({kind, …})`), materialized into
 stamped writes, joined into the lattice, persisted, and — when live — sent as one frame; the new
 projection comes back through `onTreeChanged` → `syncStructure()` (re-derive, re-validate, then
-`scene.applyModel`), which is the *same* path a collaborator's frame takes. Keys: ⌘Z/⇧⌘Z →
+`scene.applyModel`), which is the *same* path another device's frame takes. Keys: ⌘Z/⇧⌘Z →
 `SyncSession.undo`/`redo`, ⌫/Delete on the selection, Esc deselects; a `selectedId` →
 `scene.setSelection` effect keeps the canvas chrome in step with React.
 

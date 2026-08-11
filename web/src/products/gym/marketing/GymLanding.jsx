@@ -10,8 +10,9 @@
 // that pointed at what was already open, and a promise that gym "joins the same account when it
 // opens" — and every one of those had stopped being true: the log, the logger, routines, the
 // finish, statistics, the coach share, the CSV and the MCP tools are all built and reachable at
-// #/gym, on the account this page names. The one verb is that same door, and it is the same door
-// after the flip: #/gym renders the log now and upgrades in place to /app/gym once gym is open.
+// #/gym, on the account this page names. The one verb is that same door, and it was the same door
+// across the flip to 'open' on 2026-08-08: #/gym renders the log and now upgrades in place to
+// /app/gym.
 //
 // The nav's verb is a RESUME and not a CTA, which is the one place the account shows through the
 // copy: gym answers a visitor with no account with a sign-in pitch, so the nav offers the log to
@@ -342,7 +343,7 @@ function ConnectedLog() {
     <section className="wrap" style={{ paddingTop: 96 }}>
       <div className="eyebrow">The connected log</div>
       <h2 className="sectionTitle">Your log is an endpoint your own AI tools can use.</h2>
-      <p className="sectionSub">The log is free — all of it. The connected log comes with the paid layer.</p>
+      <p className="sectionSub">The log is free — all of it, and so are these tools. The coach panel is part of Windmill One, which isn’t on sale yet.</p>
       <div style={{ background: 'var(--surface-card)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-2xl)', boxShadow: 'var(--shadow-sm)', padding: 'clamp(24px,3vw,36px)', marginTop: 40, display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))', gap: 'clamp(24px,3vw,40px)' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, alignItems: 'flex-start' }}>
           <div style={PANEL_LABEL}>Works with</div>

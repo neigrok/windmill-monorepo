@@ -3,10 +3,10 @@
 // Pure data, no browser globals: the build script reads this chain in plain Node.
 //
 // Every line here describes what the product DOES, and none of them describes when it arrives. That
-// is deliberate: gym is complete and reachable at #/gym while `shell.status` is still 'pre-open'
-// (products/gym/routes.js), so a sentence dated against that word was false the day it was written
-// and would be false again the day the word moves. The one action is the same door in both states —
-// #/gym renders the log today and upgrades in place to /app/gym the moment gym opens.
+// is deliberate, and it paid off: gym flipped to `shell.status: 'open'` on 2026-08-08 (products/gym/
+// routes.js) and not one word here needed editing. A sentence dated against that word is false
+// either before the word moves or after. The one action is the same door in both states — #/gym
+// renders the log and upgrades in place to /app/gym.
 
 import { SITE_ORIGIN, SHARE_CARD_ALT } from '../../../shell/marketing/siteIdentity.js';
 

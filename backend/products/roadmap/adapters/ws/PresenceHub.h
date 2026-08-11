@@ -39,8 +39,9 @@ struct Principal {
 // log. Each participant's latest state is buffered and flushed to the tree's other
 // participants at ≤ 20 Hz (latest-wins per actor, deltas only — §12), so a 60 Hz cursor
 // stream costs at most 20 frames/sec per peer. Join/leave are announced so a peer's
-// cursor appears and is removed on cue. Profiles are assigned here for now (one colour
-// per actor); real display names/colours arrive with accounts (Phase 1).
+// cursor appears and is removed on cue. Colour is assigned here, one hash-derived hue per
+// actor. The name is not: an account that chose a display name wears it (`Principal::name`,
+// resolved once at the upgrade), and everyone else gets a generated traveller's name.
 class PresenceHub {
 public:
   void join(const drogon::WebSocketConnectionPtr& conn, const TreeId& tree);

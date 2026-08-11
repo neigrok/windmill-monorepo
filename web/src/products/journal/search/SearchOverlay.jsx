@@ -86,6 +86,6 @@ export function SearchOverlay({ open, onClose, onSelect, signedIn = true }) {
 function footNote(indexing, sharpening, mode) {
   if (indexing) return 'reading your pages · one time';
   if (sharpening) return 'sharpening · matching by meaning now';
-  if (mode === 'neural') return 'Matched by meaning, on your device. Nothing is sent anywhere to search.';
-  return 'Matched on your device. Nothing is sent anywhere to search.';
+  if (mode === 'neural') return 'Matched by meaning, on your device. Nothing you wrote is sent anywhere to search.';
+  return 'Matched on your device. Nothing you wrote is sent anywhere to search.';
 }

@@ -15,7 +15,7 @@ import { roadmapRoutes } from '../products/roadmap/routes.js';
 import { journalRoutes } from '../products/journal/routes.js';
 import { gymRoutes } from '../products/gym/routes.js';
 
-// Three products, in rail order. Roadmap and journal are open; gym is built and holds itself shut
+// Three products, in rail order. All three are open. A product that is not ready holds itself shut
 // through `shell.status: 'pre-open'` in its own route table — readiness is a flag a product sets,
 // never something the shell infers from whether the product has code.
 export const PRODUCTS = [roadmapRoutes, journalRoutes, gymRoutes];

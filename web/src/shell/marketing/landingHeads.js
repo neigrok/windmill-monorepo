@@ -46,7 +46,7 @@ const BRAND_ROOT = {
     h1: 'Grow, gently.',
     sub: 'Three quiet tools for looking after yourself — a roadmap for what you’re learning, a journal for what you’re noticing, and a log for how you’re training. One account. One subscription.',
     actions: start ? [{ href: start.landing.href, label: `Start with ${start.label}` }] : [],
-    trust: 'Free to use by hand, all of it. The paid layer is only ever the AI doing the work for you.',
+    trust: 'Free to use by hand, all of it. The paid layer is the AI doing the work for you — and it is not on sale yet.',
     notes: [
       'Three tools, one account.',
       'Whichever tool you open, it’s the same account — and the roadmap doesn’t need one to begin.',
@@ -72,7 +72,7 @@ const BRAND_ROOT = {
           'name': 'How much does Windmill cost?',
           'acceptedAnswer': {
             '@type': 'Answer',
-            'text': 'Windmill is free — building, sharing, exporting, and keeping a tree private cost nothing, and no account is needed to start. The one paid thing is tending: the AI that plants and reshapes your tree for you. Every account gets a free monthly allowance; Windmill One is $12 a month for a larger one, billed monthly, cancellable any time, with a 30-day money-back guarantee. Nothing that is free today moves behind the paywall.',
+            'text': 'Windmill is free — building, sharing, exporting, and keeping a tree private cost nothing, and no account is needed to start. Nothing is on sale today: Windmill One is not open, and no card is asked for anywhere in Windmill. What it will cover when it opens is the AI doing the work for you: tending in the roadmap, Talk and echoes in the journal, the coach in the gym — one plan at $12 a month. Tending itself is not switched on yet. Nothing that is free today moves behind the paywall.',
           },
         },
         {
@@ -96,7 +96,7 @@ const BRAND_ROOT = {
           'name': 'Can I share a tree with other people?',
           'acceptedAnswer': {
             '@type': 'Answer',
-            'text': 'Every tree is a page. Send the link or post the picture, and anyone can fork a copy to grow their own version.',
+            'text': 'Trees start private. Share one and it becomes a page anyone holding the link can open — and anyone who opens it can fork a copy to grow their own version.',
           },
         },
         {
@@ -104,7 +104,7 @@ const BRAND_ROOT = {
           'name': 'Are there ready-made learning paths for developers?',
           'acceptedAnswer': {
             '@type': 'Answer',
-            'text': 'Yes. Windmill ships nine starter quests with real prerequisite logic — including Frontend, Rust from zero, ML foundations, and Ship v1.0 — adapted from the roadmap.sh community maps (CC BY-SA).',
+            'text': 'Yes. Windmill ships nine starter quests with real prerequisite logic. Three of the developer paths — Frontend path, Rust from zero and ML foundations — are adapted from the roadmap.sh community maps (CC BY-SA); the rest, including Ship v1, are Windmill’s own.',
           },
         },
       ],

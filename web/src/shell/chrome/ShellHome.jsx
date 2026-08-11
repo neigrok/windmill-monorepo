@@ -33,9 +33,9 @@ export function ShellHome() {
             </Suspense>
           )
           : null))}
-        {/* A product without a room here is not necessarily a product without a product: gym is built
-            and reachable at its own landing while `status` stays 'pre-open', so this cell says the room
-            is missing rather than that the thing is unbuilt or undesigned. */}
+        {/* A product without a room here is not necessarily a product without a product: a pre-open
+            product can be built and reachable at its own landing while `status` stays 'pre-open', so
+            this cell says the room is missing rather than that the thing is unbuilt or undesigned. */}
         {preOpen.map((p) => (
           <div key={p.id} className="wm-home-cell wm-home-cell--preopen">
             <div className="wm-home-cell-head">

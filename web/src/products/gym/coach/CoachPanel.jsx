@@ -1,6 +1,7 @@
 // THE COACH PANEL — the second door onto the tools an agent drives over MCP, for a lifter who does
-// not have an agent of their own. Same log, same fifteen tools, same read-only grant; what is
-// different is only that the model sits on our side of the wire.
+// not have an agent of their own. Same log, and six of gym's fifteen tools — the reads, which are
+// all CoachTools hands a panel; what is different is only that the model sits on our side of the
+// wire.
 //
 // THE PAYWALL IS HONEST UP FRONT. It is the rule journal's TalkButton set and the reason it exists:
 // the mic never records a non-subscriber's words only to lose them to a 403. Here that means a

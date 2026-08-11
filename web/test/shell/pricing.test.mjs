@@ -36,9 +36,19 @@ test('the pricing page offers a purchase exactly when one can be opened', () => 
 
 // Pulling the button is only half of honest. The page keeps the price on purpose — a person deciding
 // whether to build years of work on Windmill deserves the number up front — so it has to say, in
-// words and not by omission, that the number is not yet chargeable.
-test('while nothing is for sale, the page says so plainly', () => {
-  if (paidPlansOpen()) return;
+// words and not by omission, that the number is not yet chargeable. Both directions, because the
+// stale state that actually costs a visitor money is the other one: the till open and the page still
+// telling them not to reach for a card.
+test('the not-open-yet language moves with the till', () => {
+  if (paidPlansOpen()) {
+    assert.equal(pricing.includes('There is nothing to buy yet.'), false,
+                 'paid plans are open but pricing.html still says there is nothing to buy');
+    assert.equal(pricing.includes('not open yet'), false,
+                 'paid plans are open but pricing.html still wears a not-open-yet chip');
+    assert.equal(pricing.includes('nothing on this page can be bought today'), false,
+                 'paid plans are open but pricing.html still says nothing here can be bought');
+    return;
+  }
   assert.equal(pricing.includes('nothing on this page can be bought today'), true);
   assert.equal(pricing.includes('There is nothing to buy yet.'), true);
 });

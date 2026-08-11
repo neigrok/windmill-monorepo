@@ -40,9 +40,10 @@ function ProductDoor({ product }) {
       <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
         <h3 className="trioTitle">{label}</h3>
         {/* "Not open yet", never "In design" — the same words the /app home cell uses. A pre-open
-            product here is one whose ROOM has not opened; it is not a product nobody has built.
-            Gym is finished and reachable at its own landing, and a badge calling it a design was
-            the brand root telling a visitor something the next click contradicts. */}
+            product here is one whose ROOM has not opened; it is not a product nobody has built. A
+            product can be finished and reachable at its own landing while it wears this badge, and
+            a badge calling it a design would be the brand root telling a visitor something the next
+            click contradicts. */}
         {shell.status === 'pre-open' && <Badge tone="neutral">Not open yet</Badge>}
       </div>
       <p className="trioCopy" style={{ flex: 1 }}>{landing.summary}</p>
@@ -53,7 +54,7 @@ function ProductDoor({ product }) {
 
 export function BrandLanding() {
   // The brand root has one door, not three: the first product the registry calls open. Derived, so
-  // the day gym opens or a product closes the front door moves with it instead of lying.
+  // the day a product opens or closes the front door moves with it instead of lying.
   const start = PRODUCTS.find((p) => p.shell.status === 'open') ?? null;
   const cta = start ? { href: start.landing.href, label: 'Start' } : null;
 
@@ -81,7 +82,8 @@ export function BrandLanding() {
           </div>
         )}
         <div style={{ fontFamily: 'var(--font-body)', fontSize: 13.5, color: 'var(--text-tertiary)', marginTop: 14 }}>
-          Free to use by hand, all of it. The paid layer is only ever the AI doing the work for you.
+          Free to use by hand, all of it. The paid layer is the AI doing the work for you — and it is
+          not on sale yet.
         </div>
       </section>
 

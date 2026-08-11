@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Connect your AI tools — Windmill</title>
-    <meta name="description" content="Windmill speaks MCP. Point Claude, Cursor, or Codex at one hosted URL and your agent can plant and tend your roadmaps — no keys to paste, your browser handles the sign-in." />
+    <meta name="description" content="Windmill speaks MCP. Point Claude, Cursor, or Codex at one hosted URL and your agent can build your roadmaps and keep your training log — no keys to paste, your browser handles the sign-in." />
     <link rel="canonical" href="https://windmill.works/connect.html" />
     <meta name="theme-color" content="#F9F5EB" />
     <meta name="color-scheme" content="light" />
@@ -74,8 +74,8 @@
     <main class="wrap" id="content">
       <article class="doc">
         <h1>Build Windmill with your AI tools</h1>
-        <div class="upd">Updated July 2026</div>
-        <p class="lede">Windmill speaks MCP. Point Claude, Cursor, or Codex at one hosted URL and your agent can plant and tend your roadmaps with you. The snippet carries no secret — your browser handles the sign-in.</p>
+        <div class="upd">Updated August 2026</div>
+        <p class="lede">Windmill speaks MCP. Point Claude, Cursor, or Codex at one hosted URL and your agent can build your roadmaps and keep your training log with you. The snippet carries no secret — your browser handles the sign-in.</p>
 
         <div class="clients">
           <span class="client">Claude Desktop</span>
@@ -93,10 +93,11 @@
           <li><span class="vd" style="background: #8D4F83;"></span><span><strong>Mark progress</strong> — set a step active or done.</span></li>
           <li><span class="vd" style="background: #5F8494;"></span><span><strong>Read roadmaps</strong> — inspect a tree and see what's ready next.</span></li>
         </ul>
+        <p>Your training log is on the same URL. An agent can open a workout, log sets, keep your routines and read your history back — and Gym's levels are approved separately from Roadmap's.</p>
 
         <h2>No keys to paste</h2>
-        <p>First connect opens your browser to approve — no keys to paste. It can't share roadmaps, delete them, or see your chats.</p>
-        <p>Need a static token for a client that can't do OAuth? Sign in, then <a href="/#/connect">Connect &rarr; Advanced</a> to mint one — it's a credential you guard yourself.</p>
+        <p>First connect opens your browser to approve — no keys to paste. The screen lists exactly what the tool asked for: product by product, and level by level — read, write, delete. A level you didn't grant is a tool it can never see. None of them sees your chats. A tool that asks for nothing in particular is asking for your whole account, deleting included; the screen says so in those words.</p>
+        <p>Need a static token for a client that can't do OAuth? Sign in, then <a href="/#/connect">Connect &rarr; Advanced</a> to mint one. A minted key has no levels to pick: it carries the whole account — every product, every level, deleting included — so guard it like a password and revoke it from account settings the moment you don't need it.</p>
 
         <h2>Quickstart</h2>
         <p>Any MCP client — drop this in your config, pointed at <a href="https://windmill.works/mcp">https://windmill.works/mcp</a>:</p>
@@ -138,7 +139,7 @@
 url = "<span class="hl">https://windmill.works/mcp</span>"</pre>
         </div>
 
-        <p>Streamable HTTP + OAuth 2.1, with an SSE fallback at <code>/sse</code> for older clients.</p>
+        <p>Streamable HTTP (MCP 2025-06-18) + OAuth 2.1. There is no SSE transport: a client that speaks only the older SSE protocol can't connect yet.</p>
 
         <a class="setup" href="/#/connect">Set it up at windmill.works &rarr;</a>
 
@@ -150,8 +151,8 @@ One hosted URL, OAuth in the browser — no keys to paste.
 
 { "mcpServers": { "windmill": { "url": "<span class="hl">https://windmill.works/mcp</span>" } } }
 
-Your agent can: plant a roadmap · add &amp; connect steps · paint with the legend · mark progress · read roadmaps.
-It can't share roadmaps, delete them, or see your chats.
+Your agent can: plant a roadmap · add &amp; connect steps · paint with the legend · mark progress · read roadmaps · keep a training log.
+You approve what it may do — read, write, delete, per product — on the browser screen. It never sees your chats.
 
 Set it up &rarr; <span class="hl">https://windmill.works/#/connect</span></pre>
         </div>

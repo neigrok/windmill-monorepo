@@ -62,9 +62,10 @@ export class SearchIndex {
   }
 }
 
-// The content word the passage and the query share, else the passage's own strongest word —
-// "close to · dread about the review". A real, countable overlap; it never interprets. Stays a lexical
-// signal even under the neural embedder: the score is the meaning, the why is the honest anchor.
+// The content word the passage and the query share, else the passage's own strongest word — one
+// token, never a phrase: "close to · comparing". A real, countable overlap; it never interprets.
+// Stays a lexical signal even under the neural embedder: the score is the meaning, the why is the
+// honest anchor.
 function reason(passageText, queryWords) {
   const passageWords = contentWords(passageText);
   const shared = passageWords.find((w) => queryWords.has(w));

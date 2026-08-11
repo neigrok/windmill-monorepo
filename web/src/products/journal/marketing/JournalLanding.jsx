@@ -1,8 +1,7 @@
-// The journal landing at /journal — ported from the static public/journal/index.html onto the
-// family chrome, section for section and word for word. The static page could only fake the auth
-// cluster (a localStorage hint, then a hand-off URL that dropped a signed-out visitor into the
-// dark room), which is exactly what the chrome now does for real. Register: quiet and warm, no
-// game metaphor anywhere, and journal never claims share — because it has none.
+// The journal landing at /journal, on the family chrome. The static page it replaced could only
+// fake the auth cluster (a localStorage hint, then a hand-off URL that dropped a signed-out visitor
+// into the dark room), which is exactly what the chrome now does for real. Register: quiet and warm,
+// no game metaphor anywhere, and journal never claims share — because it has none.
 
 import React from 'react';
 import { Button } from '../../../design-system';
@@ -156,16 +155,17 @@ function LookBackScene() {
   );
 }
 
-// A week of columns: how much was written, and the mood that survived it. A day with no writing
-// gets a grey stub and a hollow dot — the gap stays a gap here too.
+// A week of columns, drawn the way the product draws them (zoom/ZoomView.jsx): the mood square and
+// the three energy ticks, one column a day, with the count of days written and words beside them.
+// A day with no writing gets a hollow square and no lit tick — the gap stays a gap here too.
 const WEEK = [
-  { bar: 14, mood: 'var(--lamp-500)' },
-  { bar: 20, mood: 'var(--lamp-400)' },
-  { bar: 4, mood: null },
-  { bar: 10, mood: 'var(--lamp-600)' },
-  { bar: 18, mood: 'var(--lamp-400)' },
-  { bar: 24, mood: 'var(--lamp-200)' },
-  { bar: 20, mood: 'var(--lamp-400)' },
+  { dow: 'M', mood: 'var(--lamp-500)', energy: 2 },
+  { dow: 'T', mood: 'var(--lamp-400)', energy: 3 },
+  { dow: 'W', mood: null, energy: null },
+  { dow: 'T', mood: 'var(--lamp-600)', energy: 1 },
+  { dow: 'F', mood: 'var(--lamp-400)', energy: 2 },
+  { dow: 'S', mood: 'var(--lamp-200)', energy: 3 },
+  { dow: 'S', mood: 'var(--lamp-400)', energy: 2 },
 ];
 
 function HearBackScene() {
@@ -173,17 +173,21 @@ function HearBackScene() {
   return (
     <div ref={ref} className="jn-scene" title="Click to replay" aria-hidden="true">
       <div style={STAMP}>The week</div>
-      <div style={{ display: 'flex', gap: 10, marginTop: 12, alignItems: 'flex-end' }}>
+      <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
         {WEEK.map((day, index) => (
           <div key={index} className="jn-weekday">
-            <span style={{ width: 14, height: day.bar, borderRadius: 4, background: day.mood ? 'var(--accent-olive-400)' : 'var(--neutral-300)', opacity: .75 }} />
-            <span style={{ width: 13, height: 13, borderRadius: '50%', background: day.mood ?? undefined, border: day.mood ? undefined : '1px solid var(--neutral-300)' }} />
+            <span style={{ width: 15, height: 15, borderRadius: 4, background: day.mood ?? undefined, border: day.mood ? undefined : '1px solid var(--neutral-300)' }} />
+            <span style={{ display: 'flex', gap: 2, alignItems: 'flex-end', height: 9 }}>
+              {[1, 2, 3].map((step) => (
+                <span key={step} style={{ width: 3, height: '100%', borderRadius: 1, background: day.energy && step <= day.energy ? 'var(--accent-olive-500)' : 'var(--neutral-300)' }} />
+              ))}
+            </span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-tertiary)' }}>{day.dow}</span>
           </div>
         ))}
       </div>
       <div data-word>
-        <div style={{ fontSize: 13, lineHeight: '20px', color: 'var(--text-primary)', marginTop: 14 }}>“Tired” appeared four times this week.</div>
-        <div style={{ fontSize: 12, lineHeight: '18px', color: 'var(--text-secondary)', marginTop: 6 }}>One line worth keeping: “Some detours are the point.”</div>
+        <div style={{ fontSize: 13, lineHeight: '20px', color: 'var(--text-primary)', marginTop: 14 }}>6 of 7 days · 812 words</div>
         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--lamp-600)', marginTop: 10 }}>Close and write</div>
       </div>
     </div>
@@ -192,9 +196,9 @@ function HearBackScene() {
 
 function HowItWorks() {
   const beats = [
-    { num: '01', title: 'Write', Scene: WriteScene, copy: 'The cursor is already waiting. No prompts, no blank-page ritual — yesterday sits just above, a little dimmed, and you keep going from where you are.' },
+    { num: '01', title: 'Write', Scene: WriteScene, copy: 'The cursor is already waiting. No prompts, no blank-page ritual — yesterday sits just above, in the same ink, and you keep going from where you are.' },
     { num: '02', title: 'Look back', Scene: LookBackScene, copy: 'The same canvas, pinched down to a year. Mood is what survives at that height. The days you didn’t write stay gaps — drawn as gaps, counted at nobody.' },
-    { num: '03', title: 'Hear it back', Scene: HearBackScene, copy: 'An echo, or the week, says something true — with the count visible. “Tired” appeared four times this week. It never interprets. It never advises.' },
+    { num: '03', title: 'Hear it back', Scene: HearBackScene, copy: 'An echo, or the week, says something true — with the count visible. Six of seven days, and the mood and energy of each. It never interprets. It never advises.' },
   ];
   return (
     <section id="how" className="wrap" style={{ paddingTop: 96 }}>
@@ -245,7 +249,7 @@ function SearchSheet() {
           <span style={{ width: 56, flex: 'none', fontFamily: 'var(--font-mono)', fontSize: 10, textTransform: 'uppercase', color: 'var(--lamp-600)', paddingTop: 2 }}>Fri 24</span>
           <span style={{ flex: 1, minWidth: 0 }}>
             <span style={{ display: 'block', fontSize: 14.5, lineHeight: '23px', color: 'var(--text-primary)' }}>Everyone at dinner seemed further along. I kept comparing timelines instead of tasting anything.</span>
-            <span style={{ display: 'block', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--lamp-600)', marginTop: 6 }}>close to · measuring yourself against others</span>
+            <span style={{ display: 'block', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--lamp-600)', marginTop: 6 }}>close to · everyone</span>
           </span>
         </div>
         <div style={{ display: 'flex', gap: 14, marginTop: 12, opacity: .38 }}>
@@ -268,7 +272,7 @@ function Search() {
       <p className="sectionSub">Search by meaning — a feeling finds the passage that never used those words.</p>
       <div style={{ maxWidth: 720, margin: '40px auto 0' }}>
         <SearchSheet />
-        <div style={{ textAlign: 'center', fontSize: 13, color: 'var(--text-tertiary)', marginTop: 14 }}>Search runs on your device. Your pages never leave it.</div>
+        <div style={{ textAlign: 'center', fontSize: 13, color: 'var(--text-tertiary)', marginTop: 14 }}>Search runs on your device — the model, the index and your query. Nothing you write is sent anywhere to answer it.</div>
       </div>
     </section>
   );
@@ -276,7 +280,7 @@ function Search() {
 
 const CAN = [
   'Write on anything with a browser — install it as an app on your phone.',
-  'Search by meaning without your pages leaving your device.',
+  'Search by meaning — it runs on your device, and nothing you wrote is sent to answer a query.',
 ];
 const CANT = [
   { lead: 'Share a page.', copy: 'There is no share button — not hidden, not disabled. The data model has no share in it.' },
@@ -324,7 +328,7 @@ function Echoes() {
           When tonight rhymes with something you wrote months ago, Journal says it back — the older line itself, its date, and how far back it was: “07 JAN 2026 · seven months ago”. It never interprets. It just remembers with you.
         </p>
         <p style={{ fontSize: 15.5, lineHeight: 1.6, color: 'var(--text-secondary)', margin: '14px 0 0', textWrap: 'pretty' }}>
-          The mark on the page is the same for everyone. One is what read across everything you have ever written to find it — without One the nearest passage stops mid-sentence and the words it held back are counted out loud, and that older page is still yours to scroll to, free. Talk comes with One too. If One ever lapses, the echoes you already have stay.
+          The mark on the page is the same for everyone, and so is the reading that found it — every echo is computed across everything you have ever written, subscribed or not. What One buys is the passage whole: without it the nearest one stops after eight words and the rest are counted out loud, and that older page is still yours to scroll to, free. Talk comes with One too. One is not on sale yet, so there is nothing to buy here today. If One lapses, nothing you wrote is touched — every page and every date stays, and the passages go back to their opening words, as they were before it.
         </p>
       </div>
     </section>
@@ -334,7 +338,7 @@ function Echoes() {
 const ROOMS = [
   {
     title: 'One account, three rooms',
-    copy: 'Roadmap and Journal today, Gym when it opens — one account and one subscription across them all. No separate sign-ups, no bundle math.',
+    copy: 'Roadmap, Journal and Gym — one account across all three, one sign-in, one settings page. No separate sign-ups, no bundle math.',
     glyph: <><circle cx="12" cy="8" r="5" /><path d="M20 21a8 8 0 0 0-16 0" /></>,
   },
   {

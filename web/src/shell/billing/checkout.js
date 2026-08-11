@@ -22,10 +22,15 @@ export function billingConfigured() {
   return !!TOKEN;
 }
 
-// Nothing is for sale right now. The paid line is tending — the in-app AI, which costs us
-// something per run. Until it ships there is no plan to be on and no Upgrade, so the settings
-// page carries no Plan section at all: naming a tier nobody can buy is an advertisement, not a
-// setting. Flip this to true when tending arms, and the section comes back with it.
+// Nothing is for sale right now. Windmill One already gates four shipped surfaces — tending in
+// roadmap (TendingService.cpp:97), Talk and echoes in journal (VoiceApi.cpp:26, EchoApi.cpp:132),
+// the coach panel in gym (CoachService.cpp:82) — but no catalog stands behind it: the server 503s a
+// checkout it has no price id for (platform/adapters/paddle/BillingApi.cpp:89), so a buy control can
+// only fail. Until this flips there is no plan to be on and no Upgrade, so the settings page carries
+// no Plan section at all: naming a tier nobody can buy is an advertisement, not a setting. Every buy
+// control in the app must read this first — a checkout that cannot complete is worse than no button,
+// and a page offering one makes a promise the server refuses. Flip this to true when billing arms,
+// and the doors come back with it.
 export function paidPlansOpen() {
   return false;
 }

@@ -17,7 +17,7 @@ const PLAN_COPY = {
   past_due: { name: 'Windmill One', note: 'The last payment didn’t go through — Paddle is retrying. Nothing is switched off.' },
   paused: { name: 'Paused', note: 'Billing is paused, so Windmill One is off for now.' },
   canceled: { name: 'Free', note: 'Your Windmill One subscription has ended.' },
-  none: { name: 'Free', note: 'Everything Windmill does, plus a monthly allowance of AI tending. Windmill One — a larger tending allowance — arrives with tending itself.' },
+  none: { name: 'Free', note: 'Everything Windmill does by hand, plus a monthly allowance of tending — the AI that plants and reshapes your tree. Windmill One raises that allowance.' },
 };
 
 const asDate = (iso) => {

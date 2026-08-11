@@ -47,11 +47,20 @@ original 2026-07-19 packaging is withdrawn and deliberately not restated here.
 - **OPEN** — silent abuse ceilings (trees/account, nodes/tree). Partially done: the node cap now
   applies on the PUT path too. Never market these as limits.
 
-### The upgrade moments (only the first is built)
-1. User picks **Private** in the visibility control → 402 `pro_required` → offer Pro inline, then
-   set private on success. *(backend shipped; the inline UI prompt is not)*
+### The upgrade moments (none of the three is built)
+1. ~~User picks **Private** in the visibility control → 402 `pro_required` → offer Pro inline, then
+   set private on success.~~ **Reverted 2026-07-19**, when the private-tree paywall was withdrawn
+   and the paid line moved to the in-site AI (`docs/EXPLORATION-in-site-ai.md`). There is no 402 and
+   no `pro_required` anywhere in the backend: the visibility PATCH
+   (`backend/products/roadmap/adapters/http/TreeRegistryApi.cpp`) answers 400/404/403/204 and reads
+   no entitlement. Visibility is not a billing surface, as the Status bullet above already says.
 2. Sixth AI import in a month → the paste box keeps working via the deterministic grammar.
-3. Attempt to create a second API key.
+   *(No per-account import allowance exists — compose is anonymous by design, so there is no account
+   to meter. It is guarded by per-IP and global rate limiters, a 24KB paste cap, and since
+   2026-08-09 the process-wide AI spend fuse, which degrades it to the deterministic grammar rather
+   than refusing — the birth canvas never 503s on our own ceiling.)*
+3. Attempt to create a second API key. *(`McpKeyService` caps nothing; a user may mint any
+   number of keys.)*
 
 ---
 

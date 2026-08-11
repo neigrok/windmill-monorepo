@@ -1,4 +1,5 @@
-// The One sheet — the only surface in Journal that asks for money.
+// The One sheet — the only surface in Journal that asks for money, and it asks only when there is
+// something to buy. Windmill One is not on sale today, so the verb is a line saying so.
 //
 // A sheet, not a page: the canvas stays behind it and the cursor is never lost. It opens with THEIR
 // cut sentence, because that is what they are buying the end of. The canvas itself carries no price,
@@ -11,14 +12,20 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../../shell/auth/AuthProvider.jsx';
 import { useEntitlements } from '../../../shell/billing/EntitlementsProvider.jsx';
-import { beginUpgrade } from '../../../shell/billing/checkout.js';
+import { beginUpgrade, paidPlansOpen } from '../../../shell/billing/checkout.js';
 import { distanceStamp, reachInWords, stampStacked } from './echoDates.js';
 
 // A real A/B switch, not a preference: the price on the verb, or the plan's name. Both are honest;
-// only one can be measured at a time.
+// only one can be measured at a time. Nothing is being measured today — the verb only renders when
+// there is something to buy, and there is not.
 const PRICE_ON_CTA = true;
 
 const BUY_VERB = PRICE_ON_CTA ? 'Get One — $12/mo' : 'Get Windmill One';
+
+// Journal's copy of the rule gym's CoachPanel keeps: the verb appears only when there is a door
+// behind it. Windmill One is not on sale (shell/billing/checkout.js — paidPlansOpen), so a buy
+// button here could only open a checkout nobody can complete. This line stands where it will be.
+const ONE_NOT_FOR_SALE = 'Windmill One isn’t on sale yet — nothing here is billable, and the passage stays cut until it is.';
 
 export function OneSheet({ page, onClose, onNeedSignIn, onNotNow }) {
   const [note, setNote] = useState('');
@@ -28,6 +35,7 @@ export function OneSheet({ page, onClose, onNeedSignIn, onNotNow }) {
   const oldest = page.matches[page.matches.length - 1];
   const rest = page.matches.length - 1;
   const { head, year } = stampStacked(nearest.day);
+  const forSale = paidPlansOpen();
 
   const buy = async () => {
     if (status !== 'signed-in') { onNeedSignIn?.(); return; }
@@ -61,7 +69,7 @@ export function OneSheet({ page, onClose, onNeedSignIn, onNotNow }) {
         </div>
 
         <p className="je-offer-line">
-          You wrote all of it. One is what read across {reachInWords(oldest.day, page.day)} to find it.
+          You wrote all of it. It was found across {reachInWords(oldest.day, page.day)}; One is what shows it to you whole.
         </p>
 
         <div className="je-plan">
@@ -70,20 +78,22 @@ export function OneSheet({ page, onClose, onNeedSignIn, onNotNow }) {
         </div>
 
         <ul className="je-bullets">
-          <li>Echoes on every page, computed across everything you’ve ever written</li>
-          <li>300 tendings a month in Windmill, up from 30</li>
-          <li>Everything else in Journal stays free, as it always was</li>
+          <li>Every echo in full — the whole passage, not its opening eight words</li>
+          <li>300 tendings a month in your roadmaps, up from 30</li>
+          <li>Everything you wrote stays free to read, as it always was</li>
         </ul>
 
         <div className="je-sheet-buttons">
-          <button type="button" className="je-sheet-buy" onClick={buy}>{BUY_VERB}</button>
+          {forSale && <button type="button" className="je-sheet-buy" onClick={buy}>{BUY_VERB}</button>}
           <button type="button" className="je-sheet-not-now" onClick={onNotNow}>Not now</button>
         </div>
+        {!forSale && <p className="je-sheet-note">{ONE_NOT_FOR_SALE}</p>}
         {note && <p className="je-sheet-note">{note}</p>}
 
         <p className="je-fine">
-          Cancel any time, from Settings. Nothing you wrote is ever withdrawn — if One lapses, the
-          echoes you already have stay. 30-day money back. Paddle is the seller; USD before tax.
+          Nothing you wrote is ever withdrawn — if One lapses, your pages and their dates stay, and
+          the passages go back to their opening words. 30-day money back when it opens. Paddle is
+          the seller; USD before tax.
         </p>
       </div>
     </div>

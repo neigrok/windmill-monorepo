@@ -195,7 +195,7 @@ function Paths() {
           Browse all nine starter quests →
         </a>
         <div style={{ fontFamily: 'var(--font-body)', fontSize: 12.5, color: 'var(--text-tertiary)' }}>
-          Dev paths adapted from the roadmap.sh community maps (CC BY-SA).
+          Three of the dev paths adapted from the roadmap.sh community maps (CC BY-SA).
         </div>
       </div>
     </section>

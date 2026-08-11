@@ -1,6 +1,6 @@
 # https://windmill.works/robots.txt
 # Windmill is a single-page app plus static pages: the product landings
-# (/roadmap via the SPA, /journal and /gym as static files) and the shelf
+# (/roadmap, /journal and /gym — each a static shell that boots the SPA) and the shelf
 # (connect, privacy, terms, changelog). connect.html is the crawlable MCP
 # works-with page; the interactive workbench lives at the #/connect hash
 # route. Hash routes (#/app, #/t/:id, #/connect, #/showcase, #/welcome) are

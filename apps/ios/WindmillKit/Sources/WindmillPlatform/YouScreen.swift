@@ -6,13 +6,17 @@ import SwiftUI
 // You seat at the end of any app's bar. Windmill One lives INSIDE You and nowhere else, so the
 // switcher stays about rooms and never about billing.
 //
-// Two deliberate departures from the board, both toward honesty:
+// Three deliberate departures from the board, all toward honesty:
 //
 //  · It says "Windmill Pro". The name was settled as **Windmill One** on 2026-08-02 (the design
-//    project's own consistency ledger, entry 0 — the backend, every legal surface and the live
-//    Paddle product were all renamed). The board is behind; the name here is the settled one.
+//    project's own consistency ledger, entry 0 — the backend and every legal surface were
+//    renamed). The board is behind; the name here is the settled one.
 //  · The board shows a plan meter. This client has no entitlements call, so it is not drawn — a
 //    meter that invented a number would be worse than the gap.
+//  · The board's plan screen buys. This one cannot: there is no StoreKit and no checkout call
+//    anywhere in this app, and the web it links to keeps paid plans closed (paidPlansOpen() in
+//    web/src/shell/billing/checkout.js returns false). So the screen states the price and then
+//    says plainly that it is not on sale.
 //
 // Appearance IS drawn, and it works: the shell's role tokens are aliases onto an adaptive ramp
 // (Tokens.swift), so choosing Dark actually darkens the hub, the switcher, this screen and every
@@ -57,7 +61,7 @@ struct YouScreen: View {
                         }
                     }
                 } footer: {
-                    Text("Windmill is free. One buys tending — the AI that plants and reshapes your plans.")
+                    Text("Windmill is free. One buys the AI — tending in Roadmap, Talk and echoes in Journal, the coach in Gym. It is not on sale yet.")
                 }
 
                 // The honest version of a save-your-work nudge: it states what is actually at
@@ -141,8 +145,11 @@ struct YouScreen: View {
     }
 }
 
-// Windmill One — the superapp's only paywall, and it sells tending rather than re-selling a
-// default. Every number and every line below is the pricing canon's.
+// Windmill One — the superapp's only paywall, and what it gates is the AI: tending in Roadmap,
+// Talk and echoes in Journal, the coach in Gym. The two allowances below are the backend's
+// (roadmap/domain/Tending.h — 30 free, 300 paid, and they meter tending alone; Talk, echoes and
+// the coach are boolean gates with no allowance at all). Nothing here can be bought — see the
+// third note at the top of this file — so the copy says so rather than implying otherwise.
 struct ProScreen: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -168,19 +175,18 @@ struct ProScreen: View {
                             .foregroundStyle(WindmillColor.textTertiary)
                     }
 
-                    Text("Windmill is free — every app, every device, hand editing forever. One buys tending: the AI that plants and reshapes your plans, with a receipt for every run.")
+                    Text("Windmill is free — every app, every device, hand editing forever. One buys the AI: tending in Roadmap, Talk and echoes in Journal, the coach in Gym. It is not on sale yet.")
                         .font(WindmillFont.body(15))
                         .lineSpacing(4)
                         .foregroundStyle(WindmillColor.textSecondary)
 
                     VStack(alignment: .leading, spacing: WindmillSpace.x3) {
-                        included("300 tendings a month", "Across Roadmap, Journal and Gym")
+                        included("300 tendings a month", "In Roadmap, where tending lives")
                         included("Every run is a visible receipt", nil)
-                        included("Cancel anytime", nil)
                     }
                     .padding(.vertical, WindmillSpace.x1)
 
-                    Text("Free keeps 30 tendings a month — a real allowance, not a teaser.")
+                    Text("Free keeps 30 tendings a month in Roadmap — a real allowance, not a teaser. Tending is not switched on yet.")
                         .font(WindmillFont.body(13))
                         .foregroundStyle(WindmillColor.textTertiary)
 
@@ -192,7 +198,7 @@ struct ProScreen: View {
                             .actionCapsule(.primary)
                     }
 
-                    Text("USD · before tax · one subscription, three apps")
+                    Text("USD · before tax · one subscription, three apps · not on sale yet")
                         .font(WindmillFont.body(12))
                         .foregroundStyle(WindmillColor.textTertiary)
                         .frame(maxWidth: .infinity, alignment: .center)

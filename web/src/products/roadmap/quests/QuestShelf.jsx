@@ -185,7 +185,7 @@ export function QuestShelf() {
         </section>
 
         <footer className="quest-shelf-credit">
-          Dev paths adapted from the roadmap.sh community maps (CC BY-SA).
+          Three of the dev paths adapted from the roadmap.sh community maps (CC BY-SA).
         </footer>
       </main>
     </div>
