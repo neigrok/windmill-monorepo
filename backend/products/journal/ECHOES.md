@@ -73,6 +73,7 @@ selection rules below stop the cruel case arriving ten times on the worst night 
 | How many shown | **Up to 10** per page |
 | Persistence | **Persisted and navigable** — echoes are a durable property of a page |
 | Quality vs. cost | **Quality wins.** Vendor inference permitted under a no-retention agreement |
+| A vendor refusal | **Terminal** — ruled 2026-08-11. The page is settled, carries no echoes, and is never asked about again until its body is edited. See *A refusal is final* |
 
 ## Pipeline
 
@@ -141,6 +142,42 @@ which trigger reached it.
 
 **No pending state is served, by design.** There is no progress route and no spinner: the journal
 never speaks on its own initiative, and the client re-reads on its own.
+
+### A refusal is final — ruled 2026-08-11
+
+A curator call that comes back `stop_reason: refusal` is a failure that **settles the page**. It is
+the only one. Every other failure — transport, a rate limit, a truncation, an unreadable answer —
+leaves both stamps where they were so the page comes back as owed; a refusal advances them, and
+`duePages` / `duePage` additionally never re-open a row whose status is `refused` on corpus
+movement. **Only the writer editing that body makes it due again**, and then it is different text
+and a fair thing to ask about.
+
+The reasoning is two things at once, and either would be enough:
+
+- **It is an answer about the text, not a blip in front of it.** A vendor that declined this body
+  declines it again in six hours and every six hours after. Retrying bills forever for an echo that
+  can never arrive, and the bodies that draw refusals are the heaviest ones a journal holds — the
+  loop would land hardest on exactly the pages nobody wants a machine grinding over. Advancing the
+  body stamp alone is *not* enough to stop it: the corpus stamp is the newest passage anywhere in
+  the account, so the writer's next page anywhere would move it and make the refused body due all
+  over again. Hence the status clause in both queries.
+- **We do not want these pages echoed.** Self-harm, hate, an ideology someone is spiralling into —
+  surfacing "you wrote this before" under it is the cruel juxtaposition this file's *What an echo is
+  not* section spends its length bounding, and the one case where the bounding does not hold.
+  Refusal is a blunt, vendor-owned signal and it is not a safety classifier; it is not treated as
+  one, and nothing is inferred from it or shown because of it. It is taken only as: do not ask, do
+  not echo, do not ask again.
+
+A refused page therefore ends **carrying no echoes at all** — `EchoSweep::derive` writes an empty
+set. Step 3 has already replaced that page's spans, so any rows an earlier body's pass left behind
+point at identities that no longer exist.
+
+**Nothing is shown to the reader about any of this, ever.** No badge, no "this page could not be
+curated", no absence explained. A page with no echoes looks like a page with nothing to reach back
+to, which is what the surface already shows a thousand times a night. The count lives in the sweep
+log (`pagesRefused`, apart from `pagesFailed` because one is work still owed and the other is work
+that will never be done) and in `journal_page_curation.status`, and it stays a COUNT: which pages,
+and what was in them, is not something this feature looks at.
 
 **Save-to-echo, reasoned rather than measured** (nothing below has been run against a live vendor):
 8 s quiet + one embed round trip + a 14 ms cosine scan + the curator's 1.5–8 s ≈ **10–17 seconds**,
@@ -391,7 +428,8 @@ create table journal_page_curation (
 `CHECK (match_day < trigger_day)` makes reaching forward unrepresentable rather than merely
 unimplemented. `journal_echo_inbound` is what makes reverse-edge re-derivation a lookup rather than
 a scan. `journal_page_curation` is what stops a page that failed at 02:14 from being echo-less
-forever — **never advance `body_stamp_ms` on a failed curate**; the shipped vector path advances it
+forever — **never advance `body_stamp_ms` on a failed curate** (except a refusal, which settles the
+page — see *A refusal is final*); the shipped vector path advances it
 on completion and porting that idiom naively loses the page permanently.
 
 ## Layering
@@ -593,7 +631,8 @@ Four traps, each of which produces a silent failure:
 - **`max_tokens` caps thinking + response together.** A curator sized around its JSON output will
   truncate mid-JSON, because thinking is on by default.
 - **Check `stop_reason` before reading `content`** — a refusal is HTTP 200 with empty or partial
-  content, and Sonnet 5 carries the same cyber-capable safeguards Opus 5 does.
+  content, and Sonnet 5 carries the same cyber-capable safeguards Opus 5 does. It reaches the sweep
+  as `refused`, which **settles** the page rather than owing it another night: *A refusal is final*.
 - **Do not disable thinking to save money** — lower `effort` instead. On Sonnet 5 `adaptive` is the
   only on-mode, and turning it off degrades the judgement without a matching saving.
 - **Use structured outputs** (`output_config.format`) — it eliminates the schema-invalid branch, and

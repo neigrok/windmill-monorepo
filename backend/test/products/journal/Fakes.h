@@ -378,7 +378,7 @@ public:
   }
 
   // A page stops being owed once it has been derived, exactly as advancing body_stamp_ms takes it
-  // out of the duePages query. Only a SUCCESS calls this — a failed curate leaves it owed.
+  // out of the duePages query. Only a SETTLED pass calls this — a failure that clears leaves it owed.
   void settle(const UserId& user, const LocalDate& day) {
     std::vector<DuePage>& pages = due[user.str()];
     pages.erase(std::remove_if(pages.begin(), pages.end(),
@@ -536,14 +536,15 @@ public:
                      const CuratedEchoes& curated) override {
     echoesByPage[pageKey(user, day)] = curated;
   }
-  // Success advances the page's stamps, which is what takes it off the owed list; a FAILURE writes
-  // the error and leaves both stamps where they were, so the page is still owed. Mirrored here
-  // exactly, because "a failed curate leaves the page still due" is a claim about this branch and a
-  // fake that settled either way would let it pass while production lost the page.
+  // A SETTLED pass advances the page's stamps, which is what takes it off the owed list; a failure
+  // that will clear on its own writes the error and leaves both stamps where they were, so the page
+  // is still owed. Mirrored here exactly, because "a failed curate leaves the page still due" and
+  // "a refused page never comes back" are both claims about this branch, and a fake that settled
+  // either way would let both pass while production lost the page or billed it forever.
   void recordCuration(const UserId& user, const LocalDate& day,
                       const CurationOutcome& outcome) override {
     outcomes.push_back(outcome);
-    if (isSuccess(outcome.status)) settle(user, day);
+    if (isSettled(outcome.status)) settle(user, day);
   }
 
   std::vector<LocalDate> inboundPages(const UserId& user, const LocalDate& day) override {

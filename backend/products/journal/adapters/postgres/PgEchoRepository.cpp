@@ -163,6 +163,13 @@ std::vector<DuePage> PgEchoRepository::duePages(const UserId& user, std::uint64_
   // corpus that moved past it. The third is what makes a backfill work — write "i like c++" in May,
   // add the January page in July, and the May page has to learn January exists even though its own
   // body never changed.
+  //
+  // And one way to be owed nothing ever again, which is the `status` clause: a body the vendor
+  // REFUSED to judge is not asked about twice. Advancing its stamps is not enough on its own —
+  // the corpus stamp is the newest passage anywhere in the account, so the writer's next page
+  // anywhere would move it and make the refused body due all over again, every night, forever. Only
+  // an edit to that body reopens it, and then it is different text. The literal is the one
+  // `statusText` writes; the two spellings live one file apart and must stay in step.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
@@ -170,7 +177,8 @@ std::vector<DuePage> PgEchoRepository::duePages(const UserId& user, std::uint64_
       "FROM journal_page p "
       "LEFT JOIN journal_page_curation c ON c.user_id = p.user_id AND c.day = p.day "
       "WHERE p.user_id = $1::uuid "
-      "AND (c.day IS NULL OR c.body_stamp_ms < p.stamp_ms OR c.corpus_stamp < $2) "
+      "AND (c.day IS NULL OR c.body_stamp_ms < p.stamp_ms "
+      "     OR (c.corpus_stamp < $2 AND c.status <> 'refused')) "
       "ORDER BY p.day",
       user.str(), static_cast<long long>(corpusStamp));
 
@@ -186,10 +194,10 @@ std::vector<DuePage> PgEchoRepository::duePages(const UserId& user, std::uint64_
 
 std::optional<DuePage> PgEchoRepository::duePage(const UserId& user, const LocalDate& day,
                                                  std::uint64_t corpusStamp) {
-  // The same three ways to be owed a pass as duePages, asked of one named row. The live path calls
-  // this the moment a writer stops typing, so it is also the guard that makes a debounced second
-  // save free: a page already derived against this body and this corpus is not due, and nothing
-  // downstream of here is reached.
+  // The same conditions duePages asks, asked of one named row — including the refusal clause, so a
+  // refused body is not re-derived by the live path either. The live path calls this the moment a
+  // writer stops typing, so it is also the guard that makes a debounced second save free: a page
+  // already derived against this body and this corpus is not due, and nothing downstream is reached.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
@@ -197,7 +205,8 @@ std::optional<DuePage> PgEchoRepository::duePage(const UserId& user, const Local
       "FROM journal_page p "
       "LEFT JOIN journal_page_curation c ON c.user_id = p.user_id AND c.day = p.day "
       "WHERE p.user_id = $1::uuid AND p.day = $2::date "
-      "AND (c.day IS NULL OR c.body_stamp_ms < p.stamp_ms OR c.corpus_stamp < $3)",
+      "AND (c.day IS NULL OR c.body_stamp_ms < p.stamp_ms "
+      "     OR (c.corpus_stamp < $3 AND c.status <> 'refused'))",
       user.str(), day.iso(), static_cast<long long>(corpusStamp));
 
   if (rows.empty()) return std::nullopt;
@@ -454,11 +463,12 @@ void PgEchoRepository::recordCuration(const UserId& user, const LocalDate& day,
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
 
-  // A failed pass records WHAT failed and leaves both stamps exactly where they were, so the page
-  // comes back as due on the next sweep. Advancing them here — the idiom the shipped vector path
-  // used, where completion and success were the same thing — loses the page permanently to one
-  // transient blip at 02:14.
-  if (!isSuccess(outcome.status)) {
+  // An UNSETTLED pass records WHAT failed and leaves both stamps exactly where they were, so the
+  // page comes back as due on the next sweep. Advancing them here — the idiom the shipped vector
+  // path used, where completion and success were the same thing — loses the page permanently to one
+  // transient blip at 02:14. A refusal is not in this branch: it is a failure that is nonetheless
+  // finished, and it settles below (ports/EchoRepository.h, isSettled).
+  if (!isSettled(outcome.status)) {
     txn.exec_params(
         "INSERT INTO journal_page_curation (user_id, day, status, attempts, last_error, updated_at) "
         "VALUES ($1::uuid, $2::date, $3, 1, $4, now()) "
@@ -470,15 +480,19 @@ void PgEchoRepository::recordCuration(const UserId& user, const LocalDate& day,
     return;
   }
 
+  // Settled: both stamps advance, so nothing but an edit to this body makes the page due again.
+  // `last_error` still carries the word — empty on a success, "refused" on the one settled failure —
+  // because a page sitting at status refused is a question someone will eventually ask about, and
+  // the row is the only place the answer exists.
   txn.exec_params(
       "INSERT INTO journal_page_curation "
       "(user_id, day, body_stamp_ms, corpus_stamp, status, attempts, last_error, updated_at) "
-      "VALUES ($1::uuid, $2::date, $3, $4, $5, 0, '', now()) "
+      "VALUES ($1::uuid, $2::date, $3, $4, $5, 0, $6, now()) "
       "ON CONFLICT (user_id, day) DO UPDATE "
       "SET body_stamp_ms = EXCLUDED.body_stamp_ms, corpus_stamp = EXCLUDED.corpus_stamp, "
-      "status = EXCLUDED.status, attempts = 0, last_error = '', updated_at = now()",
+      "status = EXCLUDED.status, attempts = 0, last_error = EXCLUDED.last_error, updated_at = now()",
       user.str(), day.iso(), static_cast<long long>(outcome.bodyStampMs),
-      static_cast<long long>(outcome.corpusStamp), statusText(outcome.status));
+      static_cast<long long>(outcome.corpusStamp), statusText(outcome.status), outcome.error);
   txn.commit();
 }
 

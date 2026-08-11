@@ -1005,11 +1005,18 @@ create table if not exists journal_echo_offer_dismissal (
 -- makes a backfilled year reach the pages that were already written.
 --
 -- These two stamps ARE the "am I done" record, so: NEVER advance them on a failed curate. status
--- is ok | empty_ok | transport | rate_limited | truncated | schema_invalid | refused; only the
--- first two advance. The shipped vector path advanced its stamp on completion, and porting that
--- idiom naively loses a page that failed at 02:14 forever. attempts counts consecutive failures and
--- rides out on every due page so the sweep can back off one the vendor keeps refusing; nothing
--- backs off on it yet, so today it is a diagnostic.
+-- is ok | empty_ok | transport | rate_limited | truncated | schema_invalid | refused. ok, empty_ok
+-- and refused advance them; the rest do not. The shipped vector path advanced its stamp on
+-- completion, and porting that idiom naively loses a page that failed at 02:14 forever.
+--
+-- refused is the odd one and it is deliberate: a vendor that declined to judge a body declines the
+-- same body every six hours forever, so it settles the page instead of owing it another night — and
+-- the due queries additionally skip a refused row on corpus movement, because the corpus stamp moves
+-- every time the account writes ANY page and would otherwise reopen it nightly regardless of its own
+-- stamps. Only an edit to that body makes it due again (products/journal/ECHOES.md, "A refusal is
+-- final"). attempts therefore counts consecutive UNSETTLED failures — a refusal never counts up —
+-- and rides out on every due page so the sweep can one day back off a page the vendor keeps failing;
+-- nothing backs off on it yet, so today it is a diagnostic.
 create table if not exists journal_page_curation (
   user_id       uuid not null references users(id) on delete cascade,
   day           date not null,

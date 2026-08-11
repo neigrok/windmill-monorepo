@@ -20,6 +20,12 @@ struct EchoSweepReport {
   int passagesEmbedded = 0;
   int echoesWritten = 0;
   int pagesFailed = 0;
+  // Pages the vendor declined to judge. Its own counter rather than a share of `pagesFailed`,
+  // because it is the opposite kind of number: a failure is work still owed and this is work that
+  // will never be done and is no longer owed. It is also the only signal anyone gets that a body is
+  // drawing refusals, and it must stay a count — which pages, and what was in them, is not
+  // something this feature looks at.
+  int pagesRefused = 0;
   int inboundEnqueued = 0;
   int pagesOverBudget = 0;
   int usersOverAiBudget = 0;
@@ -51,11 +57,13 @@ struct SweepBudget {
 // Nobody receives an echo from `run` any more — they receive it seconds after they wrote it, and
 // `run` is what makes sure a page nothing triggered is not left behind.
 //
-// Two properties hold the whole thing together, and both are about failure rather than success.
-// A page's derivation stamps advance ONLY when the pass succeeded, so a vendor blip at 02:14 costs
-// that page a night rather than its echoes forever. And "the curator found nothing" is a different
-// outcome from "the curator call failed" — conflating them stores a silence the user can never
-// recover from.
+// Three properties hold the whole thing together, and all three are about failure rather than
+// success. A page's derivation stamps advance ONLY when the pass SETTLED, so a vendor blip at 02:14
+// costs that page a night rather than its echoes forever. "The curator found nothing" is a
+// different outcome from "the curator call failed" — conflating them stores a silence the user can
+// never recover from. And a REFUSAL settles the page though it failed: it is an answer about the
+// text rather than a blip in front of it, so retrying it bills forever for an echo that can never
+// arrive (ports/EchoRepository.h, isSettled). Only an edit to the body reopens it.
 //
 // The sweep is deliberately entitlement-blind about WHAT it derives: it derives for everyone, and
 // the read layer decides how much of a passage a given reader is served. The gate moved there when
@@ -82,8 +90,9 @@ public:
   EchoSweepReport run(std::uint64_t sinceMs);
 
   // One page, because its writer just saved it. The counters mean the same things they mean above,
-  // counting to one — `usersOverAiBudget` is the skip, `pagesFailed` is the vendor blip, and both
+  // counting to one — `usersOverAiBudget` is the skip and `pagesFailed` is the vendor blip, and both
   // leave the page's stamps exactly where they were, so the repair pass still owes it.
+  // `pagesRefused` is the one that does not come back.
   //
   // It does NOT walk the reverse edge. A page whose passages moved has to be chased back through
   // every page reaching into it, and that walk is unbounded in the writer's own body — it belongs

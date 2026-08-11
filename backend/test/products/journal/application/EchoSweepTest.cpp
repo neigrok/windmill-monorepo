@@ -130,6 +130,61 @@ TEST(a_failed_curate_is_recorded_as_a_failure_and_never_as_an_empty_page) {
   CHECK(!isSuccess(echoes.outcomes[0].status));
 }
 
+// The other half of that taxonomy, and the opposite ruling. A vendor that DECLINED to judge a body
+// will decline the same body tomorrow, so a page it refused is finished: asking again bills every
+// six hours, forever, for an echo that can never arrive.
+TEST(a_refused_page_is_finished_rather_than_asked_again_every_night) {
+  FakeEchoRepository echoes;
+  FakeEmbedder embedder;
+  FakeCurator curator;
+  FakeClock clock;
+  armReachingBack(echoes, embedder);
+  curator.callSucceeds = false;
+  curator.failure = "refused";
+
+  SweepLedger ledger;
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
+  const EchoSweepReport report = sweep.run(kNow - kDay);
+
+  CHECK_EQ(report.pagesRefused, 1);
+  CHECK_EQ(report.pagesFailed, 0);      // never blended into the number that means "still owed"
+  CHECK_EQ(report.pagesDerived, 0);
+  CHECK_EQ(report.echoesWritten, 0);
+  REQUIRE_EQ(echoes.outcomes.size(), std::size_t{1});
+  CHECK(echoes.outcomes[0].status == CurationStatus::refused);
+  CHECK(!isSuccess(echoes.outcomes[0].status));
+  CHECK(isSettled(echoes.outcomes[0].status));
+
+  // The whole point: the next pass does not spend a second call on it.
+  const EchoSweepReport again = sweep.run(kNow - kDay);
+  CHECK_EQ(curator.calls, 1);
+  CHECK_EQ(again.pagesRefused, 0);
+  CHECK_EQ(echoes.outcomes.size(), std::size_t{1});
+}
+
+// A page that had echoes and then drew a refusal on its edited body ends EMPTY rather than keeping
+// them: its spans were replaced before the curator was asked, so the old rows point at identities
+// that no longer exist, and a page the vendor will not judge carries none.
+TEST(a_refusal_leaves_the_page_carrying_no_echoes_at_all) {
+  FakeEchoRepository echoes;
+  FakeEmbedder embedder;
+  FakeCurator curator;
+  FakeClock clock;
+  armReachingBack(echoes, embedder);
+
+  SweepLedger ledger;
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
+  sweep.run(kNow - kDay);
+  REQUIRE_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay)).size(), std::size_t{1});
+
+  curator.callSucceeds = false;
+  curator.failure = "refused";
+  echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine);
+  sweep.run(kNow - kDay);
+
+  CHECK_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay)).size(), std::size_t{0});
+}
+
 TEST(a_curator_that_finds_nothing_finishes_the_page_rather_than_failing_it) {
   FakeEchoRepository echoes;
   FakeEmbedder embedder;

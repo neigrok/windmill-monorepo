@@ -35,6 +35,16 @@ CurationStatus statusFor(const std::string& failure) {
   if (failure == "refused") return CurationStatus::refused;
   return CurationStatus::transport;
 }
+
+// Three disjoint counters over one status, because the three mean three different things to whoever
+// reads the log line: work delivered, work still owed, and work that will never be delivered and is
+// no longer owed either. Blending the last into `pagesFailed` is how a permanent silence reads as a
+// vendor having a bad night.
+void countPage(EchoSweepReport& report, CurationStatus status) {
+  if (isSuccess(status)) ++report.pagesDerived;
+  else if (status == CurationStatus::refused) ++report.pagesRefused;
+  else ++report.pagesFailed;
+}
 }
 
 EchoSweep::EchoSweep(EchoRepository& echoes, Embedder& embedder, Curator& curator, Clock& clock,
@@ -47,10 +57,11 @@ void EchoSweep::start() {
   heartbeat_.start(kEchoFirstTickSeconds, kEchoTickSeconds, [this] {
     const std::uint64_t now = clock_.nowMs();
     const EchoSweepReport report = run(now - kEchoLookbackMs);
-    if (report.pagesDerived > 0 || report.pagesFailed > 0)
+    if (report.pagesDerived > 0 || report.pagesFailed > 0 || report.pagesRefused > 0)
       LOG_INFO << "journal echo: " << report.usersScanned << " users, " << report.pagesDerived
                << " pages, " << report.passagesEmbedded << " passages, " << report.echoesWritten
-               << " echoes, " << report.pagesFailed << " failed, " << report.pagesOverBudget
+               << " echoes, " << report.pagesFailed << " failed, " << report.pagesRefused
+               << " refused, " << report.pagesOverBudget
                << " over budget, " << report.usersOverAiBudget << " users out of AI budget";
   });
   const bool armed = embedder_.configured() && curator_.configured();
@@ -78,8 +89,7 @@ EchoSweepReport EchoSweep::derivePage(const UserId& user, const LocalDate& day) 
 
   const CurationOutcome outcome = derive(user, *page, corpusStamp, report);
   echoes_.recordCuration(user, page->day, outcome);
-  if (!isSuccess(outcome.status)) ++report.pagesFailed;
-  else ++report.pagesDerived;
+  countPage(report, outcome.status);
   return report;
 }
 
@@ -122,11 +132,11 @@ EchoSweepReport EchoSweep::run(std::uint64_t sinceMs) {
       const DuePage page = pages[i];
       const CurationOutcome outcome = derive(user, page, corpusStamp, report);
       echoes_.recordCuration(user, page.day, outcome);
-      if (!isSuccess(outcome.status)) {
-        ++report.pagesFailed;
-        continue;
-      }
-      ++report.pagesDerived;
+      countPage(report, outcome.status);
+      // The reverse edge is walked on SETTLED, not on success: a refused page still replaced its own
+      // spans at step 3, so the pages reaching into it still hold quotes that have moved, and they
+      // are owed a re-derivation whether or not this page got an answer.
+      if (!isSettled(outcome.status)) continue;
 
       int enqueued = 0;
       for (const LocalDate& inbound : echoes_.inboundPages(user, page.day)) {
@@ -239,6 +249,12 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
   if (!curation.ok) {
     outcome.status = statusFor(curation.failure);
     outcome.error = curation.failure;
+    // A refusal settles the page, so it leaves it in a DEFINITE state rather than carrying whatever
+    // an earlier body's pass wrote. Step 3 has already replaced this page's spans; echoes aimed from
+    // here at span ids that no longer exist are not a record of anything, and a page the vendor will
+    // not judge is a page that carries none.
+    if (outcome.status == CurationStatus::refused)
+      echoes_.replaceEchoes(user, page.day, CuratedEchoes{curator_.version(), {}});
     return outcome;
   }
 

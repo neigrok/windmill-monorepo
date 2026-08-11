@@ -24,8 +24,9 @@ struct EchoUser {
 // (products/journal/domain/Passage.h), and a spoken page is segmented exactly like a typed one.
 // ECHOES.md designs a separate spoken path and marks it as not built; when it is built, this is
 // where the discriminator comes back. `attempts` is how many passes in a row have failed on this
-// page: it is here so the sweep can back off one the vendor keeps refusing rather than billing for
-// it every night, and nothing backs off on it yet.
+// page WITHOUT settling it — a transport blip, a rate limit, the failures that clear on their own.
+// A refusal is not one of them: it settles the page (`isSettled` below), so it never counts up
+// here. Nothing backs off on this number yet.
 struct DuePage {
   LocalDate day;
   std::string body;
@@ -75,13 +76,31 @@ struct CuratedEchoes {
 // stored as an empty result, which would lose the page to a transient blip at 02:14.
 enum class CurationStatus { ok, emptyOk, transport, rateLimited, truncated, schemaInvalid, refused };
 
+// Did the page get an answer it can keep? Only this decides what the reader is served and what the
+// report calls a derivation.
 inline bool isSuccess(CurationStatus status) {
   return status == CurationStatus::ok || status == CurationStatus::emptyOk;
 }
 
+// Is the page's pass OVER — a different question, and the only one the stamps answer to. Success
+// settles a page, and so does a refusal, which is the whole of the difference between the two
+// predicates.
+//
+// A refusal is the one failure that will not clear on its own. The vendor declining to judge a body
+// is an answer ABOUT that text, not a blip in front of it, and it is the same answer at 02:14
+// tomorrow and every night after. Retried it re-bills, forever, a page that can never receive an
+// echo — and the bodies that draw it are the heaviest ones a journal holds, so the loop would land
+// hardest on exactly the pages nobody wants a machine grinding over. So a refusal ends the page at
+// its current body. Both stamps advance, which means a corpus that moves under it does not reopen
+// the question either; only the writer editing that body does, and then it is different text and a
+// fair thing to ask again.
+inline bool isSettled(CurationStatus status) {
+  return isSuccess(status) || status == CurationStatus::refused;
+}
+
 // What the pass derived from, and how it went. The two stamps are the page's "I am done" record,
-// and storage advances them only on success — the one rule that keeps a failed night from costing
-// a page its echoes permanently.
+// and storage advances them only on a settled pass — the one rule that keeps a failed night from
+// costing a page its echoes permanently.
 struct CurationOutcome {
   CurationStatus status = CurationStatus::ok;
   std::uint64_t bodyStampMs = 0;

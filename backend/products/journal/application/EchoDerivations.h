@@ -41,6 +41,10 @@ struct LiveDerivationRules {
 struct EchoLiveReport {
   int derived = 0;
   int failed = 0;
+  // The vendor declined to judge the page. Counted apart from `failed` for the same reason the sweep
+  // counts it apart — a failure comes back and this does not — and charged to the daily cap all the
+  // same, because it was bought.
+  int refused = 0;
   int deferred = 0;
   int skippedOverBudget = 0;
   int alreadyDerived = 0;

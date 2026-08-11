@@ -27,10 +27,10 @@ EchoDerivations::EchoDerivations(EchoSweep& sweep, Clock& clock, LiveDerivationR
 void EchoDerivations::start() {
   heartbeat_.start(kDrainFirstTickSeconds, kDrainTickSeconds, [this] {
     const EchoLiveReport report = drain(clock_.nowMs());
-    if (report.derived > 0 || report.failed > 0 || report.deferred > 0)
+    if (report.derived > 0 || report.failed > 0 || report.refused > 0 || report.deferred > 0)
       LOG_INFO << "journal echo live: " << report.derived << " derived, " << report.failed
-               << " failed, " << report.deferred << " deferred to the repair pass, "
-               << report.skippedOverBudget << " over AI budget";
+               << " failed, " << report.refused << " refused, " << report.deferred
+               << " deferred to the repair pass, " << report.skippedOverBudget << " over AI budget";
   });
   LOG_INFO << "journal echo: live derivations armed, quiet time " << rules_.quietMs << "ms";
 }
@@ -89,16 +89,17 @@ EchoLiveReport EchoDerivations::drain(std::uint64_t nowMs) {
     }
 
     const EchoSweepReport outcome = sweep_.derivePage(page.user, page.day);
+    const int answered = outcome.pagesDerived + outcome.pagesFailed + outcome.pagesRefused;
     report.derived += outcome.pagesDerived;
     report.failed += outcome.pagesFailed;
+    report.refused += outcome.pagesRefused;
     report.skippedOverBudget += outcome.usersOverAiBudget;
-    if (outcome.pagesDerived == 0 && outcome.pagesFailed == 0 && outcome.usersOverAiBudget == 0)
-      ++report.alreadyDerived;
+    if (answered == 0 && outcome.usersOverAiBudget == 0) ++report.alreadyDerived;
 
     // The cap counts what was BOUGHT. An over-budget skip and a page that turned out not to be due
     // both spent nothing, and charging a page for them would ration it out of derivations it never
-    // had.
-    if (outcome.pagesDerived == 0 && outcome.pagesFailed == 0) continue;
+    // had. A refusal is not one of those: it was thought about and paid for.
+    if (answered == 0) continue;
     std::lock_guard<std::mutex> guard{lock_};
     ++spent_.try_emplace(key, Spent{0, nowMs}).first->second.derivations;
   }

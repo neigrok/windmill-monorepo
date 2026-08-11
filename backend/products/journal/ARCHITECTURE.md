@@ -219,7 +219,9 @@ create index if not exists journal_page_revision_key on journal_page_revision (u
 --                                  judgement is about the pairing that was on screen), carrying
 --                                  the cosine, relation and curator_version that produced it
 --   journal_page_curation          what the last pass over a page decided, and against which two
---                                  stamps; never advanced on a failed curate
+--                                  stamps; never advanced on a failed curate — except a REFUSAL,
+--                                  which settles the page and is never asked again until the
+--                                  writer edits that body (ECHOES.md, "A refusal is final")
 --
 -- journal_page_vector is dropped (schema.sql), and nothing replaced it: vectors are per passage.
 

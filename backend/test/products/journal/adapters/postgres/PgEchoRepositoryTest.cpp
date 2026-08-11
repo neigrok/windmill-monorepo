@@ -251,6 +251,52 @@ TEST(pg_echo_a_failed_curate_leaves_the_named_page_owed) {
   CHECK_EQ(owed->attempts, 1);
 }
 
+// The one failure that finishes the page. Both stamps advance, so neither the next sweep nor a
+// corpus that moves under it asks the vendor about this body again — only the writer editing it can.
+TEST(pg_echo_a_refused_curate_settles_the_page_and_a_moving_corpus_does_not_reopen_it) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  const std::string day = "2026-05-01";
+  writePage(kMine, day, "wrote a little.");
+  PgEchoRepository repo{pgTestPool()};
+  {
+    PgLease c{*pgTestPool()};
+    pqxx::work w{*c};
+    w.exec_params("UPDATE journal_page SET stamp_ms = 500 WHERE user_id = $1::uuid AND day = $2::date",
+                  kMine, day);
+    w.commit();
+  }
+
+  repo.recordCuration(UserId{kMine}, LocalDate{day},
+                      CurationOutcome{CurationStatus::refused, 500, 9, "refused"});
+  CHECK(!repo.duePage(UserId{kMine}, LocalDate{day}, 9).has_value());
+  CHECK(!repo.duePage(UserId{kMine}, LocalDate{day}, 10).has_value());
+
+  // The row still says what happened, and says it without counting a retry that will never come.
+  {
+    PgLease c{*pgTestPool()};
+    pqxx::work w{*c};
+    pqxx::result rows = w.exec_params(
+        "SELECT status, attempts, last_error FROM journal_page_curation "
+        "WHERE user_id = $1::uuid AND day = $2::date",
+        kMine, day);
+    REQUIRE_EQ(rows.size(), std::size_t{1});
+    CHECK_EQ(rows[0]["status"].as<std::string>(), std::string("refused"));
+    CHECK_EQ(rows[0]["attempts"].as<int>(), 0);
+    CHECK_EQ(rows[0]["last_error"].as<std::string>(), std::string("refused"));
+  }
+
+  // The writer edits it: different text, and a fair thing to ask about again.
+  {
+    PgLease c{*pgTestPool()};
+    pqxx::work w{*c};
+    w.exec_params("UPDATE journal_page SET stamp_ms = 900 WHERE user_id = $1::uuid AND day = $2::date",
+                  kMine, day);
+    w.commit();
+  }
+  CHECK(repo.duePage(UserId{kMine}, LocalDate{day}, 9).has_value());
+}
+
 // Storage hands back what it stored, minted identities and all. This is what a warm corpus splices
 // on, so an id it invented has to travel out of the INSERT rather than be read for a second time.
 TEST(pg_echo_replacing_a_pages_spans_hands_back_the_identities_it_minted) {
