@@ -206,6 +206,11 @@ public:
   void deleteSet(const UserId& user, const SessionId& session, const SetId& id);
   std::vector<LogRow> log(const UserId& user, const LogCursor& cursor);
   std::optional<SessionDetail> detail(const UserId& user, const SessionId& session);
+  // Is a workout running? Settled first — the same lazy close a log read takes — so a session
+  // somebody walked away from yesterday answers as the closed thing it is rather than as a workout
+  // in flight. Ask asks this before it will answer at all (§L: never offered mid-session), and it is
+  // one row rather than a search because one open session per account is the store's own index.
+  std::optional<Session> openSession(const UserId& user);
   std::vector<Exercise> catalog(const UserId& user);
   LastTimeOutcome lastTime(const UserId& user, const ExerciseId& exercise);
   // The picker's meta beside the catalog, and deliberately NOT inside it: the catalog is 64 rows

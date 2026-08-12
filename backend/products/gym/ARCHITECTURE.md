@@ -46,8 +46,8 @@ happens on the device. The backend's job is narrow and load-bearing:
    to the program**, `gym:delete` destroys a workout or a coach link and **proposes** destructive
    changes to the program, and **none of the three implies another**. Every tool goes through
    `LogService` — the same core the REST handlers use, never the repository — and acts **as** the
-   caller, so an agent is one more owner-scoped client and never an admin. The coach is the user's
-   own agent. (§6, §8)
+   caller, so an agent is one more owner-scoped client and never an admin. There is no coach here —
+   there is the lifter's own agent, and Ask (§12) for a lifter who has none. (§6, §8)
 5. **The proposal ledger — shipped W6, 2026-08-12.** An agent reads this log and never writes to the
    program: a change to a day that already stands arrives as a typed field-level diff that does
    nothing until the lifter taps Apply. It is one object with a `source` column, because W7's Ask
@@ -84,10 +84,10 @@ happens on the device. The backend's job is narrow and load-bearing:
   user hands to roadmap — coupling by the account and the user's own hand, never a cross-product
   read.
 - **One agent path with two doors.** Gym ships a **catalog**, and whatever talks to it reaches this
-  log only through those tools, under a grant: the lifter's own Claude over MCP, or the coach panel
-  (§12) for someone who has no agent. It is not a SECOND system — same tools, same service, same
-  ownership rules, and a scope narrower than any MCP connection's. Still cut: streaming (no SSE
-  parser) and any chat not attached to one finished workout.
+  log only through those tools, under a grant: the lifter's own Claude over MCP, or **Ask** (§12) for
+  someone who has no agent. It is not a SECOND system — same tools, same service, same ownership
+  rules, and a run-scope narrower than any MCP connection's. Still cut: streaming (no SSE parser),
+  a conversation table, and any chat that speaks first.
 - **It reads. It proposes. It never writes to your program.** Every gym mutation an agent can make
   declares itself `record` or `intent` (`domain/Proposal.h`), and the split is by what class of
   object it touches. **A mutation that records something that already happened executes immediately,
@@ -106,10 +106,15 @@ happens on the device. The backend's job is narrow and load-bearing:
   `PUT /v1/gym/routines/{id}` and is unreachable from `GymTools`, and there is **no apply tool at any
   grant level** — Apply is not a capability, it is a human act (§2.9, §6).
 
-**Billing in gym is one predicate, read in one place.** The log is free — every route in §6 answers a
-signed-in lifter whether or not they pay. The *connected* log is Windmill One, and the only code in
-this product that knows that is `CoachService`, which reads the same `hasWindmillOne` journal's Talk
-reads before the question travels anywhere. No plan enum, no tier arithmetic, no second gate.
+**Billing in gym is one predicate, and today it gates nothing.** The log is free — every route in §6
+answers a signed-in lifter whether or not they pay — and since W7 so is **Ask**. Windmill One cannot
+be BOUGHT (`paidPlansOpen()` is a hardcoded `false` and `BillingApi` 503s while no Paddle price id is
+configured), so a locked Ask offering an upgrade would advertise a purchase that answers 503: a dark
+pattern by accident, and the trade this brand's mission forecloses. What bounds Ask instead is a
+plainly-worded daily limit (§12) and the platform's own dollar ceilings. **The gate is one predicate
+away**: `AskService::ask` already reads `Entitlements::aiAllowanceFor`, which reads the plan to pick
+the ceiling, so arming it is a `hasWindmillOne` refusal on that line and nothing else moves. No plan
+enum, no tier arithmetic, no second gate.
 
 ---
 
@@ -127,19 +132,21 @@ backend/products/gym/
   domain/Review.h/.cpp       e1RM · the three record rules · the comparison   (pure, no I/O)
   domain/Statistics.h/.cpp   the per-movement line · the standing bests       (pure, no I/O)
   domain/Record.h/.cpp       a movement's record — chart · ladder · tiles     (pure, no I/O)
+  domain/ReadReceipt.h/.cpp  what a read SERVED, counted by id: sets · sessions · weeks (pure)
   ports/TrainingRepository.h the one store port + its DTOs
-  ports/CoachAgent.h         the panel's port: CoachTurn · CoachStep · CoachAnswer
+  ports/AskAgent.h           Ask's port: AskTurn · AskStep · AskAnswer
   application/LogService.h/.cpp   start/finish/append/log/routines/proposals/stats/export/share
-  application/CoachService.h/.cpp CoachTools (read-only, one workout) + the panel's refusal ladder
+  application/AskService.h/.cpp   AskTools (reads + the two proposal mints) + Ask's refusal ladder
   adapters/
     json/TrainingJson.h/.cpp      the cross-surface wire codec
     csv/TrainingCsv.h/.cpp        the export's framing, and nothing else
     postgres/PgTrainingRepository.h/.cpp
     http/GymApi.h/.cpp            every /v1/gym/* route but one
-    http/CoachApi.h/.cpp          POST /v1/gym/sessions/{id}/coach — the one conditional route
+    http/AskApi.h/.cpp            POST /v1/gym/ask — the one conditional route
     mcp/GymToolCatalog.h/.cpp     the seventeen declarations + the handshake paragraph
     mcp/GymTools.h/.cpp           the dispatch behind them, over LogService alone
-    llm/AnthropicCoach.h/.cpp     the panel's tool loop and its one vendor call
+    llm/AnthropicAsk.h/.cpp       Ask's prompt, its opening read, and its one vendor call
+                                  (the LOOP is platform's: adapters/llm/AgentLoop.h)
   routes.h/.cpp              gym::GymDeps + gym::registerRoutes(app, deps)
 ```
 
@@ -655,7 +662,7 @@ and superseded alike stay as a dated record on the routine, which is the History
 cascades, so an applied REMOVAL takes the whole ledger with it, the applied rows included (below).
 
 **`door` / `connection` / `agent` are provenance, and they are COLUMNS rather than a fork.** *"A
-change appeared in my Tuesday and I cannot tell whether it was my Claude or Windmill's coach"* is the
+change appeared in my Tuesday and I cannot tell whether it was my Claude or Windmill's own chat"* is the
 exact mental-model failure this design exists to prevent, and W7's Ask mints through this same object
 with `door = 'ask'`. **`connection` and `agent` are empty today and that is a fact about the
 transport rather than a shrug:** `ToolCaller` (`platform/domain/ToolScope.h`) carries the account and
@@ -1619,7 +1626,7 @@ query, ordered by pattern then name. Identity rules, stated once:
 | `POST /v1/gym/sessions/{id}/share` | mint a coach share — `{token, expiresAt}`, idempotent on the session | 2 |
 | `DELETE /v1/gym/sessions/{id}/share` | revoke it — `204`; nothing to revoke is `404 no such session` | 2 |
 | `GET  /v1/gym/shared/{token}` | **the one unauthenticated route.** One session and its sets; revoked, expired and unknown are one `404` | 2 |
-| `POST /v1/gym/sessions/{id}/coach` | **the one conditional route.** The panel (§12) — `{turns:[{from,text}]}` in, `{answer, steps}` out. Absent entirely on a deployment with no `ANTHROPIC_API_KEY`, which is why its own `404` carries `coach-no-session` and the framework's does not | 3 |
+| `POST /v1/gym/ask` | **the one conditional route.** Ask (§12) — `{turns:[{from:"lifter"\|"ask",text}]}` in, `{answer, steps, read:{sets,sessions,weeks}, proposals:[id]}` out. It hangs off the PRODUCT and not a session, because Ask reads the log. `409 ask-session-open` mid-workout, `429 ask-daily-limit` / `ask-out-of-budget`, `502` when the model does not answer. Absent entirely on a deployment with no `ANTHROPIC_API_KEY` | 3 |
 
 ### The MCP tool catalog (`adapters/mcp/GymToolCatalog`, dispatched by `adapters/mcp/GymTools`)
 
@@ -1707,7 +1714,7 @@ a `tools/list` slot and a context window to say what three tools already say.
 economy.** *No agent may edit or delete a logged set — not under `gym:write`, not under
 `gym:delete`, not at any level a future grant invents.* This is §L's safeguard ladder made
 structural: the tool layer is the only place gym can tell an agent from a hand, and rewriting what
-somebody lifted is the one verb reserved for the hand. §27 draws the refusal in the coach's own
+somebody lifted is the one verb reserved for the hand. §L's screen 27 draws the refusal in Ask's own
 words — *"That one is yours to change. I can read what you lifted; I can't edit it."* — and that
 sentence is only honest while this row stays empty. The reason is written beside the two mounts in
 `routes.cpp` so a later wave does not "complete the catalog", and `GymToolsTest` pins the absence by
@@ -2387,68 +2394,118 @@ The undo window stays 9000 ms on every surface. Copy may change; the verdict cod
 
 ---
 
-## 12. The coach panel — the second door, not the second system
+## 12. Ask — the second door, not the second system
 
-`ports/CoachAgent.h` · `application/CoachService.{h,cpp}` · `adapters/llm/AnthropicCoach.{h,cpp}` ·
-`adapters/http/CoachApi.{h,cpp}`
+`ports/AskAgent.h` · `application/AskService.{h,cpp}` · `adapters/llm/AnthropicAsk.{h,cpp}` ·
+`adapters/http/AskApi.{h,cpp}` · `domain/ReadReceipt.{h,cpp}` · `platform/adapters/llm/AgentLoop.h`
 
-A lifter with Claude connects it and asks. A lifter without one gets a panel under any finished
-workout that asks the same questions of the same tools. **That is one system with two doors**, and
-everything below exists to keep it that way rather than letting a second, looser path grow beside the
-first. §0's refusal of an in-app chat is reversed here, in writing, with the bounds it is reversed
-under.
+A lifter with Claude connects it and asks. A lifter without one opens **Ask**, which asks the same
+questions of the same tools. **That is one system with two doors**, and everything below exists to
+keep it that way rather than letting a second, looser path grow beside the first. §0's refusal of an
+in-app chat is reversed here, in writing, with the bounds it is reversed under.
+
+**It is not a coach, and the word is gone from every surface a lifter reads** — the brief that owns
+gym's vocabulary says there is no coach, there is your agent. The coach *share* (§2.6) is a different
+object and keeps its name: that one really is a coach, a human being holding a link.
+
+W7 widened the panel this replaces rather than building a second thing beside it: same loop, same
+catalog, same refusal ladder — pointed at the LOG instead of at one finished workout.
 
 ### 12.1 The narrowing, in two independent layers
 
 `GymTools` does not gate — deliberately, because over MCP the grant was settled above it by
-`CompositeToolHost` — so a panel wired straight to it would be a door with no lock, and a
-hallucinated `discard_session` would execute. Two things stand in the way, and they stack rather than
-merge, exactly as `ScopedToolHost` and the composite do for a tend:
+`CompositeToolHost` — so a chat wired straight to it would be a door with no lock, and a hallucinated
+`discard_session` would execute. Two things stand in the way, and they stack rather than merge,
+exactly as `ScopedToolHost` and the composite do for a tend:
 
-- **The scope, stated at the call site.** `CoachService::ask` constructs
-  `ToolCaller{caller, ToolScope({{"gym", Access::read}})}` on the line that dispatches the run. Not a
-  default, not inherited, not `everything()` — the widest thing a panel could inherit is everything
-  the *account* may do, which for a question about a workout that already happened is ten tools too
-  many.
-- **`CoachTools`, which is gym's `ScopedToolHost`.** It drops every declaration whose access is not
-  `read` (so the model is handed seven tools, not seventeen), refuses a non-read name if one is called
-  anyway, and **forces `sessionId`** on every tool that takes one — so a set note somebody typed at
-  the rack cannot steer the panel onto another workout. It decides all of this by reading the
-  declarations, never a list of names, so it cannot drift from the catalog.
+- **The scope, stated at the call site.** `AskService::ask` constructs
+  `ToolCaller{caller, ToolScope({{"gym", read}, {"gym", write}, {"gym", del}})}` on the line that
+  dispatches the run — three levels named one by one rather than `everything()`, so a fourth level or
+  a second product never rides along on a token nobody widened.
+- **`AskTools`, which is gym's `ScopedToolHost`.** It offers every `Access::read` declaration plus
+  `mintsProposal(name)` — the two `propose_` tools — and refuses everything else by reading the
+  DECLARATIONS rather than a list of names that could drift from them. So Ask can read the log and
+  hand the lifter a diff, and cannot log a set, finish a workout, mint a share, create a movement or
+  discard anything.
 
 Either layer alone would hold today. Both is what survives someone widening the other by accident.
+And underneath both sits the rule W6 made structural: **no tool at any level edits or deletes a
+logged set**, so Ask's most important refusal is not a sentence in its prompt at all — a prompt-level
+refusal is a lie waiting for the right jailbreak.
+
+`AskTools` also keeps the schema promise the OTHER door keeps, and that is parity rather than a third
+layer: every declaration publishes `additionalProperties: false`, over MCP `CompositeToolHost`
+enforces it, and Ask does not pass through the composite. Until it did so itself, a misspelt argument
+was named on one door and silently dropped on the other — `get_stats {"exerciseID": …}` answered with
+every movement a lifter has ever trained while the model believed it had asked about one. The two
+doors differ in transport, prompt and who pays; nothing else. The check is written twice today
+because the composite keeps its copy private to `platform/adapters/mcp`; the standing request is to
+hang it off `ToolDeclaration`, where both doors would read one copy.
 
 ### 12.2 Every bound, and why each one is there
 
 | Bound | Value | Why |
 |---|---|---|
-| Grant | `gym:read` | a question about a finished workout needs no write, ever |
-| Reach | one session | the panel is about the workout it was opened on; `CoachTools` pins it |
-| Iterations | 6, and hitting it is a **failure** | an unfinished answer printed under somebody's log is worse than "the coach didn't answer" |
+| Grant | `gym:read` + the two proposal mints | it answers questions and proposes; it changes nothing |
+| Reach | the whole log | Ask is reached from Today and from a proposal card, not from one workout |
+| Never mid-session | `409 ask-session-open`, checked on the server | §L says Ask is not offered while a workout runs, and three clients each remembering that is three chances to forget |
+| Iterations | 8, and hitting it is a **failure** | the log is wider than one workout; an unfinished answer is still worse than "Ask didn't answer" |
 | Turns | 8, 1000 bytes each | the server is stateless, so the request body *is* the prompt somebody pays for |
-| Entitlement | `hasWindmillOne`, read before the question travels | the same predicate journal's Talk reads; a non-subscriber's words never reach the vendor |
-| Rate | ~6 asks / 10 min / **account** | the spend is the account's; a household behind one address should not share a budget |
-| Ownership | `LogService::detail` before dispatch | absent and another account's are one fact here as everywhere |
-| Vendor | absent when unkeyed | no `ANTHROPIC_API_KEY` ⇒ no `CoachService` ⇒ `registerRoutes` never mounts the path |
+| Entitlement | **none — it ships open** | Windmill One cannot be bought, so a locked Ask would advertise a 503 (§0). The gate is one predicate away, on the allowance line |
+| Daily limit | ~10 a day, 3 back to back, per **account** (`AskRation`) | the first Windmill feature with a marginal cost per use, so the ration is stated on screen instead of hidden as a weaker model. A bucket in memory, so a deploy refills it — soft on purpose, because the row below is what has to be hard. **Taken last and given back**: every other refusal above it costs nothing, and a run the vendor never answered is returned, because the cap's copy is a promise and three outages must not spend a burst that answered nobody. That return is why the bucket is gym's own and not platform's `RateLimiter`, which has no way to hand a token back |
+| Dollar ceiling | the platform's own: `AiFuse` hourly + `aiAllowanceFor` over 30 days | ours, never shown as money to anybody, and the same rows the owner page reads |
+| Vendor | absent when unkeyed | no `ANTHROPIC_API_KEY` ⇒ no `AskService` ⇒ `registerRoutes` never mounts the path |
 
-### 12.3 The shapes it refused
+### 12.3 The receipt is server-observed or it is a laundered hallucination
+
+§L's rule is that every answer states what it read — `read 214 sets · 12 weeks · 34 sessions`. **That
+count is printable only because we served those rows to that connection**, so it lives in the TOOL
+RESPONSE ENVELOPE and not in Ask's chrome: every gym read that hands over log rows answers with
+`"read": {sets, sessions, weeks}`, counted by `domain/ReadReceipt` as the rows go out. A lifter's own
+Claude over MCP therefore reads exactly the accounting the app prints, and a number that existed only
+in a UI layer — a number the model could simply have made up — has nowhere to be invented.
+
+Four rules keep it honest: it counts by **identity**, so one workout read twice is one workout; a
+read that serves a SUMMARY claims only what it NAMED (`list_sessions` adds thirty-four sessions and
+not one set); a REFUSED read counts nothing, because a refusal hands the model one sentence and no
+rows — so the run's line only ever merges a reply the model actually got, and every read settles its
+arguments before it marks anything; and a reply that served no log rows says nothing at all rather
+than `read 0 sets`. The
+run's total is merged inside `GymTools`, where the ids are, because a layer above could only have
+summed the replies — and a sum counts the same set twice.
+
+The proposals in the reply are observed the same way: `AskTools` takes the id off the tool's own
+result, never out of the answer's prose, so the app has the diff to open whether or not the model
+remembered to mention it.
+
+### 12.4 The shapes it refused
 
 - **No streaming.** The only SSE machinery in the repo is roadmap's hand-rolled HTTP/1.1 + chunked
   decoder, and one reply per ask does not earn a second consumer of two hundred lines of parser.
 - **No conversation table.** The client sends the turns so far. There is no thread id to leak, no row
   to garbage-collect, and nothing extra to name on the account-close screen.
-- **No blocking the request loop.** `CoachAgent::answer` blocks for as long as the vendor takes;
-  `CoachService` owns a two-thread pool and the handler hands its callback over. Four handler threads
-  parked on a model is a training log that stops answering everybody.
-- **Not a shared loop with roadmap's.** `AnthropicCoach` is a sibling of `AnthropicAgent`, not a lift
-  of it: same shape, different port, different bootstrap, and a conversation instead of one sentence.
-  A **third** consumer is what earns promoting `agentTools`/`toolResultBlock`/`markCachePoint` into
-  `platform/adapters/llm/`; two is not enough evidence about what the shared shape actually is.
+- **No blocking the request loop.** `AskAgent::answer` blocks for as long as the vendor takes;
+  `AskService` owns a two-thread pool and the handler hands its callback over. Four handler threads
+  parked on a model is a training log that stops answering everybody. The run is guarded on that
+  thread, because **nothing sits above a worker loop**: an exception leaving it would be every product
+  on the box, and a request nobody answers. It becomes the same 502 a dead upstream gets — and, like
+  one, gives the day's question back.
+- **No second loop.** W7 lifted the tool loop into `platform/adapters/llm/AgentLoop.h`, where it sits
+  beside the ToolHost it drives. What stays in gym is the prompt and what the answer is made of; no
+  domain code knows an Anthropic API exists. Roadmap's tend still carries its own copy of the same
+  shape — re-pointing it is mechanical and was out of W7's territory, and it needs one addition, a
+  per-tool callback, because a tend stamps each step somewhere a disconnected browser cannot take it.
+- **It does not speak first**, has no personality, no encouragement, no streaks, no daily check-in
+  and no unread badge. The prompt bans a grade as firmly as the finish screen does.
 
-### 12.4 What the lifter is told
+### 12.5 What the lifter is told
 
-The panel draws its terms before anything is typed — what it reaches and, in the same breath, that it
-only reads — and it prints **which tools each answer came from**, in call order
-(`web/src/products/gym/coach/coach.js`). That line is the product's whole stance made visible: a model
-reads your log through the same doors you do. Without it this would be a chatbot claiming to know
-things.
+Ask prints **which tools each answer came from**, in call order, and **what those tools served**,
+counted by the server. That pair is the product's whole stance made visible: a model reads your log
+through the same doors you do, and you can check it without trusting it. Without them this would be a
+chatbot claiming to know things.
+
+The empty state points at the free door — *if you already use Claude or ChatGPT, connect them
+instead: it is free, and it is better, because it knows the rest of your life.* An in-app chat that
+tells you how to stop paying us costs one paragraph and is the strongest available proof that the MCP
+thesis is real.

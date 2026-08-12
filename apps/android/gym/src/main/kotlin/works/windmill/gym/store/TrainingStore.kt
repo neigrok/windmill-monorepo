@@ -9,6 +9,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import works.windmill.gym.domain.AskAnswer
+import works.windmill.gym.domain.AskThread
+import works.windmill.gym.domain.AskTurn
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.ExerciseWrite
 import works.windmill.gym.domain.GymPreferences
@@ -245,6 +248,12 @@ class TrainingStore(
         // No screen in this room can reach these verbs signed out — this is what they answer if one
         // ever could.
         const val proposalsWantAnAccount = "a proposal needs your account — sign in first"
+
+        // Ask reads the log, and the log is the account's: signed out there is nothing to read and
+        // nobody to read it for. The door is not drawn signed out either, so this is the floor under
+        // a session that expired mid-conversation rather than a sentence anybody meets by walking
+        // into it.
+        const val askWantsAnAccount = "Ask reads your account's log — sign in first"
     }
 
     // This movement's sets in this session, performed order, warmups included — the whole record of
@@ -948,6 +957,39 @@ class TrainingStore(
         val log = gym ?: return
         val written = tried { log.routines() } ?: return
         routines = written + localLog.routines
+    }
+
+    // ASK — one turn of the conversation, and the only verb in this store that spends money. The
+    // whole thread goes out because the server keeps none of it, and what comes back is drawn as it
+    // arrived: the prose, the server's own count of the rows it served, and the ids of any proposals
+    // minted along the way. NOTHING HERE COMPOSES A NUMBER — a receipt this room could arrive at on
+    // its own is a receipt the model could have invented.
+    //
+    // A PROPOSAL MINTED IN A CONVERSATION IS A CARD ON TODAY TOO, so the program is re-read the
+    // moment one appears. Without that, the room would hold the routines it read at connect and the
+    // lifter would have to leave and come back before the card they were just told about existed —
+    // and the card is this product's whole notification design.
+    //
+    // A CANCELLATION HERE MEANS THE ROOM ITSELF WENT DOWN — the caller is the room's own coroutine
+    // and not the screen's, so nothing shorter reaches this. The request was already served by then
+    // and the day's question already counted; the re-read below is what does not happen, and the
+    // next `connect` is what makes up for it, because a proposal is the log's object rather than the
+    // conversation's and it is waiting there either way.
+    suspend fun ask(turns: List<AskTurn>): AskOutcome {
+        val log = gym ?: return AskOutcome.Refused(askWantsAnAccount)
+        return try {
+            val answered = log.ask(AskThread(turns))
+            if (answered.proposals.isNotEmpty()) reread()
+            AskOutcome.Answered(answered)
+        } catch (interrupted: CancellationException) {
+            throw interrupted
+        } catch (refusing: Exception) {
+            when (val verdict = AskVerdict.refusing(RefusalFacts(refusing))) {
+                is AskVerdict.Said -> AskOutcome.Refused(verdict.said)
+                is AskVerdict.Again -> AskOutcome.Failed(verdict.said)
+                AskVerdict.Absent -> AskOutcome.Absent
+            }
+        }
     }
 
     // A movement the catalog has never heard of, minted from the picker's `Create "{query}"`. The
@@ -1654,6 +1696,20 @@ sealed interface ProposalOutcome {
     data class Settled(val said: String) : ProposalOutcome
     data class Gone(val said: String) : ProposalOutcome
     data class Failed(val why: WriteFailure) : ProposalOutcome
+}
+
+// HOW A QUESTION CAN END. `Answered` carries the reply whole — the prose, the server's receipt and
+// any proposal ids — and the screen draws it without adding to it. The two refusals are the house's
+// oldest distinction one more time: `Refused` is the log answering in its own words, which a retry
+// cannot change, and `Failed` is the log going quiet, which is the one worth another tap.
+//
+// `Absent` is the fourth because it is not about this question at all: the deployment has no Ask, so
+// the room takes the door down rather than leaving one that answers 404 forever.
+sealed interface AskOutcome {
+    data class Answered(val answer: AskAnswer) : AskOutcome
+    data class Refused(val said: String) : AskOutcome
+    data class Failed(val said: String) : AskOutcome
+    data object Absent : AskOutcome
 }
 
 sealed interface FinishOutcome {

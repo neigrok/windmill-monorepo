@@ -135,15 +135,29 @@
 //                                           UNAUTHENTICATED READ, and the token is the whole
 //                                           credential; revoked, expired and never-minted are one
 //                                           byte, so a null here says nothing about which
-//   POST /v1/gym/sessions/:id/coach      -> { turns: [{from: 'lifter'|'coach', text}] } in;
-//                                           { answer, steps: [{tool, failed}] } out. THE ONE ROUTE
-//                                           THAT MAY NOT EXIST: a deployment with no model wired
-//                                           never mounts it, and that absence is a bare 404 while a
-//                                           workout this account cannot read is a 404 carrying
-//                                           `coach-no-session`. Windmill One only (403
-//                                           `coach-not-entitled`), braked per account (429
-//                                           `coach-rate-limited`), and stateless — the client holds
-//                                           the conversation, the server holds none of it
+//   POST /v1/gym/ask                     -> { turns: [{from: 'lifter'|'ask', text}] } in;
+//                                           { answer, steps: [{tool, failed}], read: {sets,
+//                                           sessions, weeks}, proposals: [id…] } out (§L). `steps`
+//                                           is the tools the MODEL asked for, in call order — Ask's
+//                                           own opening read of your newest workouts is not one of
+//                                           them. `read` is ALWAYS present and is SERVER-COUNTED
+//                                           over the rows it actually served, deduped by id across
+//                                           the whole exchange: nothing on this surface may sum,
+//                                           compute or infer it. `proposals` is the ids minted
+//                                           during the exchange, in mint order and possibly empty —
+//                                           each opens through GET /v1/gym/proposals/:id above and
+//                                           applies on the same all-or-none tap as any other.
+//                                           THE ONE ROUTE THAT MAY NOT EXIST: a deployment with no
+//                                           model wired never mounts it, so a bare 404 means there
+//                                           is no Ask here at all. Open to every account, with a
+//                                           plainly-worded cap: 429 `ask-daily-limit` is the pace
+//                                           brake and 429 `ask-out-of-budget` the rolling 30-day AI
+//                                           ceiling — neither is a purchase, and nothing on this
+//                                           wire offers one. 409 `ask-session-open` while a workout
+//                                           is running, 400 for a thread that is not a conversation
+//                                           (≥1, ≤8 turns, strictly alternating, first and last
+//                                           from the lifter, ≤1000 BYTES each), and stateless — the
+//                                           client holds the conversation, the server holds none
 //   GET  /v1/gym/preferences             -> the settings document (§I). NEVER 404s: an account with
 //                                           no row stored is served the defaults, so every caller
 //                                           gets a whole document on the first read and the store
@@ -610,18 +624,20 @@ export const gymApi = {
     return json(response);
   },
 
-  // The coach panel: the whole thread so far in, one answer and the tools it read out. The server
-  // keeps nothing between asks — it is the client that holds the conversation — so this call carries
-  // every turn every time, and the caps on that (eight turns, a thousand bytes each) are the server's.
+  // ASK (§L): the whole thread so far in, and out one answer, the tools the model called, the count
+  // of rows the server served it, and any proposal it minted. The server keeps nothing between asks
+  // — it is the client that holds the conversation — so this call carries every turn every time, and
+  // the caps on that (eight turns, a thousand bytes each) are the server's.
   //
-  // It is the ONE call in this file that may not exist. A deployment with no model wired never mounts
-  // the route, so a 404 with no `code` means "no coach here" while a 404 carrying `coach-no-session`
-  // means "not your workout"; coach.js's askFailure is the one place that difference is read.
-  async askCoach(sessionId, turns) {
-    return json(await call(`/sessions/${sessionId}/coach`, {
-      method: 'POST',
-      body: JSON.stringify({ turns }),
-    }));
+  // IT IS ABOUT THE LOG AND NOT ABOUT ONE WORKOUT, which is why no session id travels with it: the
+  // questions worth asking are "how has my bench moved", and the tools behind this are the same
+  // catalog a lifter's own Claude drives over MCP.
+  //
+  // It is the ONE call in this file that may not exist. A deployment with no model wired never
+  // mounts the route, so a bare 404 is "no Ask on this deployment"; ask.js's askFailure is the one
+  // place that is read, and the room retires on it rather than offering a retry.
+  async ask(turns) {
+    return json(await call('/ask', { method: 'POST', body: JSON.stringify({ turns }) }));
   },
 };
 

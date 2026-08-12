@@ -69,12 +69,19 @@ object ProposalStateSerializer : KSerializer<ProposalState> {
 }
 
 // WHICH DOOR, WHICH CONNECTION, WHICH MODEL — provenance as a column and never a fork, because "a
-// change appeared in my Tuesday and I cannot tell whether it was my Claude or Windmill's coach" is
-// the exact mental-model failure this design exists to prevent.
+// change appeared in my Tuesday and I cannot tell whether it was my own Claude or the app's own
+// Ask" is the exact mental-model failure this design exists to prevent. The two doors mint the same
+// type through the same mechanism and land in the same list; only this field differs.
 //
-// Both names are OMITTED by the log today — the MCP transport carries no connection identity yet —
-// so `name` is a fallback rather than a blank: a byline reading `from` and then nothing would be a
-// proposal from nobody, and the lifter can still act on "your connected agent".
+// Both NAMES are omitted by the log today — the MCP transport carries no connection identity yet —
+// so the fallback is the one fact the column always holds: which door. Ask is a door this app can
+// name outright, so it is; anything else is somebody's own agent, and "your connected agent" is the
+// true thing to say about a name gym does not have. A byline reading `from` and then nothing would
+// be a proposal from nobody.
+//
+// `door` stays a String where `state` and `kind` are closed enums, and the difference is what each
+// decides: a door this build has never heard of only picks which fallback to print, while an
+// unknown state would put a wrong control in front of a tap.
 @Serializable
 data class ProposalSource(
     val door: String = "mcp",
@@ -84,7 +91,11 @@ data class ProposalSource(
     val name: String
         get() = agent?.takeIf { it.isNotBlank() }
             ?: connection?.takeIf { it.isNotBlank() }
-            ?: "your connected agent"
+            ?: if (door == askDoor) "Ask" else "your connected agent"
+
+    companion object {
+        const val askDoor = "ask"
+    }
 }
 
 // What a routine line asks a movement for, either side of a change. The absences mean what they

@@ -161,6 +161,13 @@ public enum Readout {
         count == 1 ? "1 session" : "\(count) sessions"
     }
 
+    // The third noun the read line counts (§L). A week here is the SERVER's Monday-UTC bucket, the
+    // same one `date_trunc('week')` cuts, and this spells it rather than deciding it — nothing on
+    // this device works out which weeks a set fell in.
+    public static func weekCount(_ count: Int) -> String {
+        count == 1 ? "1 week" : "\(count) weeks"
+    }
+
     // The count the log's row and the session detail's head both print (§G16, §G17), and it is not
     // `setCount`: a warmup counts toward nothing in this product, so the number beside a top set
     // filtered to working has to be filtered the same way or the row states two different sessions.

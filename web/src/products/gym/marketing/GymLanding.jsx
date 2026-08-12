@@ -342,12 +342,23 @@ function ForTheBarbell() {
   );
 }
 
+// THE SECTION THAT PRICES THE PRODUCT, so it is the section a wave can most easily make lie. Until
+// W7 it sold a coach panel under one finished workout, gated on Windmill One: that panel is deleted
+// and Ask stands where it stood, over the WHOLE log rather than one workout, open to everyone with a
+// daily cap the room states in words (backend AskService: no plan predicate, kAskPerDay = 10). So
+// both halves of the old sentence had to go — the feature and the price — and what replaced them is
+// the one honest reading: nothing in gym is behind a plan, because nothing in Windmill can be bought
+// (shell/billing/checkout.js `paidPlansOpen()` is a hardcoded false).
+//
+// Ask can also PROPOSE, which the panel could not — its grant is the reads plus the two tools that
+// mint a proposal — so a line calling it read-only would be a safety promise that is nearly true,
+// which is worth less than none.
 function ConnectedLog() {
   return (
     <section className="wrap" style={{ paddingTop: 96 }}>
       <div className="eyebrow">The connected log</div>
       <h2 className="sectionTitle">Your log is an endpoint your own AI tools can use.</h2>
-      <p className="sectionSub">The log is free — all of it, and so are these tools. The coach panel is part of Windmill One, which isn’t on sale yet.</p>
+      <p className="sectionSub">The log is free — all of it, and so are these tools. So is Ask, the room in the app for a lifter who hasn’t got an agent of their own — about ten questions a day, and nothing in Gym is on sale.</p>
       <div style={{ background: 'var(--surface-card)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-2xl)', boxShadow: 'var(--shadow-sm)', padding: 'clamp(24px,3vw,36px)', marginTop: 40, display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))', gap: 'clamp(24px,3vw,40px)' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, alignItems: 'flex-start' }}>
           <div style={PANEL_LABEL}>Works with</div>
@@ -375,9 +386,10 @@ function ConnectedLog() {
             levels you approved. Delete is never implied by write.
           </p>
           <p style={{ fontSize: 14.5, lineHeight: 1.55, color: 'var(--text-secondary)', margin: 0 }}>
-            No agent of your own? A panel under any finished workout asks the same questions through the same
-            read tools, and shows you which ones it read. It only reads — it can’t log a set, change your
-            program or delete anything.
+            No agent of your own? Ask is a room in the app, over the same tools and the same rules — it reads
+            your whole log and it proposes, and a change it writes is the same diff you tap Apply on. Every
+            answer says what it read: which tools it called, and how many of your rows they served. It can’t
+            log a set, correct one you lifted, or delete anything.
           </p>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>

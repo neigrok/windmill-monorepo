@@ -18,6 +18,7 @@ import {
   clockOf, dayLabel, durLabel, fmt, isFinished, nameOfMovement, NEW_ROUTINE_ID, NO_ROUTINE,
   recordHref, routineHref, routineNameOf, sessionHref, setCountLabel,
 } from './log.js';
+import { AskDoor } from './ask/AskRoom.jsx';
 import { PendingProposals } from './Proposals.jsx';
 import { restLabel } from './settings/preferences.js';
 
@@ -69,6 +70,14 @@ export function Today({ log }) {
           </a>
         </section>
       )}
+
+      {/* THE BAND AT THE BOTTOM (§L). On a phone this band carries the two Starts and Ask beside
+          them; at the desk no session starts (§11), so Ask is the whole of it — which is fitting,
+          because "never offered mid-session" is exactly what a phone is doing most of the time and
+          this is the surface that is never in one. It goes while a workout is running, and the
+          server refuses one anyway (409 ask-session-open) — the door is the rule's first half and
+          not its only one. */}
+      <AskDoor training={log.session != null} />
     </section>
   );
 }

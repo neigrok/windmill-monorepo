@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import works.windmill.gym.domain.Ask
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Routine
@@ -64,6 +65,13 @@ fun TodayScreen(
     onOpenSession: (SessionSummary) -> Unit,
     onOpenMovement: (String) -> Unit,
     onOpenSettings: () -> Unit,
+    // NULL IS THE DOOR NOT BEING THERE, and it is two facts with one drawing: nobody is signed in,
+    // so there is no log for Ask to read; or this deployment has already answered a question with
+    // the bare 404 that means it has no Ask at all. Neither is worth a sentence on Today — an offer
+    // that cannot be taken is not made — so the row is simply absent. The second fact is LEARNED
+    // rather than advertised: nothing on the wire carries it, so on a server with no vendor key the
+    // first question is what finds out, and the door goes down behind it.
+    onOpenAsk: (() -> Unit)?,
     onReview: (Proposal) -> Unit,
     onLater: (Proposal) -> Unit,
     onSignIn: () -> Unit,
@@ -115,7 +123,36 @@ fun TodayScreen(
         }
         if (!isSignedIn) ClaimCard(onSignIn)
         LastSession(store.recent, onOpenSession)
+        onOpenAsk?.let { AskDoor(it) }
         SettingsDoor(onOpenSettings)
+    }
+}
+
+// ASK'S ONE DOOR (§L) — in Today's bottom band, under the workout a lifter came here to start and
+// over the settings row. It is not a tab and it is not a button: the bar belongs to the three tabs,
+// and a chat is not a place anybody lives.
+//
+// IT IS NOT DRAWN MID-SESSION, and that costs no check here: a live session takes the whole screen,
+// so this one is not on it. It is the same rule the server enforces from the other side — a lifter
+// between sets is training, and the log is the thing in front of them.
+//
+// The line under it is what Ask is rather than a pitch for it, and there is nothing to buy: no
+// price, no lock, no upgrade, and no count of how many times it was walked past.
+@Composable
+private fun AskDoor(onOpenAsk: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = GymTap.minimum + 8.dp)
+            .clickable(onClick = onOpenAsk),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("Ask", style = WindmillFont.body(17), color = GymSkin.ink)
+            Text(Ask.subtitle, style = GymType.numeral(12), color = GymSkin.inkFaint)
+        }
+        Spacer(Modifier.weight(1f))
+        Text("›", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkFaint)
     }
 }
 

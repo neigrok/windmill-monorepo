@@ -196,6 +196,11 @@ std::vector<LogRow> LogService::log(const UserId& user, const LogCursor& cursor)
   return rows;
 }
 
+std::optional<Session> LogService::openSession(const UserId& user) {
+  settleOpen(repo_, user, clock_.nowMs());
+  return repo_.open(user);
+}
+
 std::optional<SessionDetail> LogService::detail(const UserId& user, const SessionId& session) {
   std::optional<Session> stored = repo_.session(user, session);
   if (!stored) return std::nullopt;

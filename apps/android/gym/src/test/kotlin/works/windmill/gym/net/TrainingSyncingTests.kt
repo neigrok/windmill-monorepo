@@ -6,6 +6,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.fail
 import org.junit.Test
+import works.windmill.gym.domain.AskAnswer
+import works.windmill.gym.domain.AskThread
+import works.windmill.gym.domain.ReadTally
 import works.windmill.gym.domain.ChangeKind
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.ExerciseWrite
@@ -163,6 +166,11 @@ internal class FakeTraining : TrainingSyncing {
     var refuseFix: (String) -> Exception? = { null }
     var refuseDelete: Exception? = null
     var refusePreferences: Exception? = null
+    var refuseAsk: Exception? = null
+    // Answers queued in the order they will be given, so a test can put a proposal in the second
+    // reply and nothing in the first.
+    val answers = mutableListOf<AskAnswer>()
+    val asked = mutableListOf<AskThread>()
     var swallowReplies = 0
     // The close is a round trip, and this is the only way a test can stand inside it.
     var onFinish: suspend () -> Unit = {}
@@ -556,5 +564,19 @@ internal class FakeTraining : TrainingSyncing {
         val stored = document.normalized()
         settings = stored
         return stored
+    }
+
+    // ASK. The thread that went out is kept whole, because the rule the client has to get right is
+    // about the SHAPE of it — alternating, lifter-first, lifter-last, and inside the ceiling — and a
+    // fake that only answered would prove nothing about that.
+    override suspend fun ask(thread: AskThread): AskAnswer {
+        calls.add("ask")
+        asked.add(thread)
+        reachable()
+        refuseAsk?.let { throw it }
+        if (answers.isEmpty()) {
+            return AskAnswer(answer = "nothing has moved in three weeks.", read = ReadTally(sets = 12))
+        }
+        return answers.removeAt(0)
     }
 }

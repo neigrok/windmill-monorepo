@@ -46,11 +46,14 @@ import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import works.windmill.gym.domain.Ask
+import works.windmill.gym.domain.AskExchange
 import works.windmill.gym.domain.CoachDoors
 import works.windmill.gym.domain.LiveOrder
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.store.AskOutcome
 import works.windmill.gym.store.DeviceCatalog
 import works.windmill.gym.store.FinishOutcome
 import works.windmill.gym.store.GymResult
@@ -58,6 +61,7 @@ import works.windmill.gym.store.LocalLog
 import works.windmill.gym.store.LocalPreferences
 import works.windmill.gym.store.SetQueue
 import works.windmill.gym.store.TrainingStore
+import works.windmill.gym.ui.AskScreen
 import works.windmill.gym.ui.FinishScreen
 import works.windmill.gym.ui.FinishedSession
 import works.windmill.gym.ui.GymSkin
@@ -72,6 +76,7 @@ import works.windmill.gym.ui.RoutinesScreen
 import works.windmill.gym.ui.SessionScreen
 import works.windmill.gym.ui.SettingsScreen
 import works.windmill.gym.ui.TodayScreen
+import works.windmill.gym.ui.askThreadSaver
 import works.windmill.platform.Account
 import works.windmill.platform.LocalShellActions
 import works.windmill.platform.ProductModule
@@ -137,11 +142,18 @@ private enum class Tab(val title: String) {
 // program as it was when it was opened. The proposal carries the routine it is about beside it —
 // the base it was written against is what decides whether it can still be applied, and the diff
 // read alone cannot say what this room is holding.
+//
+// ASK IS PUSHED AND IS NOT A TAB (§L). The rail is the app's three tabs and a chat is not a place
+// anybody lives — so it arrives the way a record and a proposal do, over the screen that sent for
+// it, and leaves the same way. What it carries is a DRAFT and not a conversation: the thread itself
+// is hoisted into the room below, because it has to outlive this stack. A proposal's door seeds the
+// composer with a question about that diff; Today's seeds nothing.
 private sealed interface Away {
     data class Session(val summary: SessionSummary) : Away
     data class Movement(val exerciseId: String) : Away
     data class Program(val routineId: String) : Away
     data class Proposal(val proposalId: String, val routineId: String) : Away
+    data class Ask(val seed: String = "") : Away
     data object Settings : Away
 }
 
@@ -204,6 +216,27 @@ fun GymRoom(account: Account) {
     // the routine still carries the card, and the room forgetting this on a relaunch is the
     // direction it is allowed to fail in.
     var putOff by rememberSaveable { mutableStateOf("") }
+    // THE CONVERSATION, AND IT LIVES HERE RATHER THAN ON THE SCREEN THAT DRAWS IT, for one reason:
+    // the server keeps none of it. A thread is the only thing in this room that exists nowhere but
+    // in memory — the log survives a recreation because it is on disk and on the account, and a
+    // chat has neither — so it is hoisted to the room and saved, and a lifter who is thrown out by
+    // an activity recreation finds what they asked still standing when they open the door again.
+    var conversation by rememberSaveable(stateSaver = askThreadSaver) {
+        mutableStateOf(emptyList<AskExchange>())
+    }
+    // Whether a question is out. It belongs beside the thread and not on the screen for the same
+    // reason the ask itself does: the request outlives the screen, so the flag that closes the door
+    // on a second one has to outlive it too.
+    var asking by remember { mutableStateOf(false) }
+    // Which seat the thread above belongs to — the empty string for the anonymous one, which can
+    // never hold a conversation anyway. It is saved with the thread and for the same reason: a
+    // recreation must not read its own restart as a lifter changing.
+    var seat by rememberSaveable { mutableStateOf(account.user?.id ?: "") }
+    // THIS DEPLOYMENT HAS NO ASK — a bare 404 from the route, which means the feature is absent
+    // rather than that something failed. The door goes for the life of the room and is deliberately
+    // NOT remembered past it: whether a server has a model configured is the server's fact, and a
+    // phone that wrote it down would keep hiding a door the day it was switched on.
+    var askAbsent by remember { mutableStateOf(false) }
 
     // Every door in and out of a retrospective screen goes through these two for one reason: the
     // note above the rail is what the room has to say about the door that did not open ON THE
@@ -248,6 +281,23 @@ fun GymRoom(account: Account) {
     // arrives after that close is refused forever; and landing back inside a workout that never
     // stopped stands where the lifter was, not in the picker over a session of sets.
     LaunchedEffect(account.user?.id) {
+        // A CONVERSATION BELONGS TO THE LOG IT WAS ABOUT, and this is where it changes hands: every
+        // question and every answer in a thread is somebody's own training, so a phone that changed
+        // seats would be showing one lifter's numbers to the next person holding it. Compared
+        // against the seat this room last stood in — SAVEABLE, so a recreation restores the thread
+        // it belongs to rather than reading its own restart as a change of lifter.
+        val standing = account.user?.id ?: ""
+        if (standing != seat) {
+            conversation = emptyList()
+            seat = standing
+        }
+        // A QUESTION THE ACTIVITY WENT DOWN UNDER, settled on the way back in. The thread is saved
+        // and the request is not, so a recreation mid-answer restores a question with nothing under
+        // it and nothing coming — left alone it would sit there un-retryable for the life of the
+        // install, which is the one way this room could lose something a lifter typed. Nothing
+        // shorter than the activity can strand one: the ask below is the room's, so leaving Ask for
+        // Today lets the answer land in a thread nobody is looking at.
+        conversation = Ask.settled(conversation)
         store.connect(account)
         // Deviates from iOS, where the ROOM resumes after connect: here connect() owns the resume, so a boot cannot race it.
 
@@ -407,6 +457,46 @@ fun GymRoom(account: Account) {
         }
     }
 
+    // ONE QUESTION, ASKED FROM THE ROOM AND NOT FROM THE SCREEN THAT DRAWS IT. Ask is the one door
+    // in this product that COSTS something per use — the day's questions are counted at the edge the
+    // moment the request lands, before a token is spent — so an answer must not be thrown away by a
+    // lifter walking back to Today mid-wait. The thread lives here, the coroutine lives here, and
+    // the answer lands in it whether or not anybody is standing on the screen.
+    //
+    // It also carries the two things that outlive the conversation: a proposal the answer minted is
+    // read back into the program by the store (the card on Today IS this product's notification
+    // design), and a deployment with no Ask at all takes its own door down.
+    //
+    // The door closes on the way IN rather than inside the coroutine: two taps on one question would
+    // be two round trips, two spends and two answers against one bubble.
+    fun ask(from: List<AskExchange>, question: String) {
+        if (asking || !Ask.sendable(question)) return
+        val asked = question.trim()
+        asking = true
+        conversation = from + AskExchange(question = asked)
+        scope.launch {
+            try {
+                // The WHOLE conversation goes out — the server keeps none of it — trimmed to what
+                // the wire takes by the domain, which is the only thing that knows the rule.
+                when (val outcome = store.ask(Ask.thread(from, asked))) {
+                    is AskOutcome.Answered ->
+                        conversation = from + AskExchange(question = asked, answer = outcome.answer)
+                    is AskOutcome.Refused ->
+                        conversation = from + AskExchange(question = asked, trouble = outcome.said)
+                    is AskOutcome.Failed ->
+                        conversation = from + AskExchange(
+                            question = asked, trouble = outcome.said, again = true)
+                    AskOutcome.Absent -> {
+                        conversation = from + AskExchange(question = asked, trouble = Ask.notHere)
+                        askAbsent = true
+                    }
+                }
+            } finally {
+                asking = false
+            }
+        }
+    }
+
     // Nothing is created until the tap, and nothing is CLAIMED until the log says it was: a screen
     // that hid the offer on the tap would tell the lifter their program had changed on the strength
     // of a request that may never have landed.
@@ -446,6 +536,7 @@ fun GymRoom(account: Account) {
             // took with it says so rather than naming a program that is gone.
             is Away.Program -> store.routine(under.routineId)?.name ?: "Routines"
             is Away.Proposal -> "Proposal"
+            is Away.Ask -> "Ask"
             Away.Settings -> "Gym"
             null -> tab.title
         }
@@ -533,6 +624,38 @@ fun GymRoom(account: Account) {
                     store = store,
                     backLabel = beneath,
                     onBack = { back() },
+                    // §L's second door onto Ask, and the only one that arrives carrying a subject:
+                    // the diff is on screen, so the question is about this diff. It is offered only
+                    // where Ask itself is — an account, and a deployment that has one.
+                    onAsk = if (account.isSignedIn && !askAbsent) {
+                        { about -> look(Away.Ask("What would this change to $about do?")) }
+                    } else {
+                        null
+                    },
+                )
+                // NEVER OFFERED MID-SESSION, and on this phone that is structure rather than a
+                // check: a live session takes the whole screen above, so neither door that reaches
+                // here is drawn while a workout is open. The server refuses one anyway — three
+                // clients each remembering a rule is three chances to forget it.
+                standing is Away.Ask -> AskScreen(
+                    store = store,
+                    thread = conversation,
+                    asking = asking,
+                    onAsk = { asked -> ask(conversation, asked) },
+                    // ONLY THE NEWEST QUESTION IS EVER ASKED AGAIN — the screen offers the retry
+                    // nowhere else, because a retry further up would have to send the thread as it
+                    // stood then, dropping everything asked since. So the room does not need to be
+                    // told which one: it is the last, and it replaces itself.
+                    onRetry = {
+                        conversation.lastOrNull()?.let { ask(conversation.dropLast(1), it.question) }
+                    },
+                    seed = standing.seed,
+                    // The same origin the share link is spelled off, and for the same reason: the
+                    // free door Ask points at is a page on the server this build talks to.
+                    origin = origin,
+                    backLabel = beneath,
+                    onBack = { back() },
+                    onReview = { look(Away.Proposal(it.id, it.routineId)) },
                 )
                 tab == Tab.Log -> LogScreen(store, onOpenSession = { look(Away.Session(it)) })
                 tab == Tab.Routines -> RoutinesScreen(
@@ -550,6 +673,15 @@ fun GymRoom(account: Account) {
                     onOpenSession = { look(Away.Session(it)) },
                     onOpenMovement = { look(Away.Movement(it)) },
                     onOpenSettings = { look(Away.Settings) },
+                    // ASK'S OWN DOOR, in Today's bottom band and nowhere else on this screen. It is
+                    // withheld from a signed-out room for the reason the proposal card is: Ask reads
+                    // the ACCOUNT's log, and a door onto a 401 is a door onto nothing. It goes too
+                    // on a deployment that has no Ask at all.
+                    onOpenAsk = if (account.isSignedIn && !askAbsent) {
+                        { look(Away.Ask()) }
+                    } else {
+                        null
+                    },
                     onReview = { look(Away.Proposal(it.id, it.routineId)) },
                     // LATER IS NOT A DECISION AND NOTHING IS SENT. It puts this card away on Today
                     // for as long as the room stands — the routine it belongs to still carries it,

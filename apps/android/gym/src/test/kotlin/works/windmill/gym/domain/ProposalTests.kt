@@ -133,6 +133,19 @@ class ProposalTests {
         assertEquals("Claude", ProposalSource(connection = "Claude Desktop", agent = "Claude").name)
     }
 
+    // THE ONE DOOR THIS APP CAN NAME OUTRIGHT. A proposal minted in gym's own chat came through
+    // `ask`, and calling it "your connected agent" would be the app describing itself as somebody
+    // else's software — the exact confusion the column exists to prevent, arriving from the side
+    // nobody expected. A name the agent sent still wins: it is more specific than the door.
+    @Test
+    fun testAProposalMintedInAskSaysSo() {
+        assertEquals("Ask", ProposalSource(door = "ask").name)
+        assertEquals("Claude", ProposalSource(door = "ask", agent = "Claude").name)
+        assertEquals("your connected agent", ProposalSource(door = "mcp").name)
+        assertEquals("a door this build has never heard of is somebody's own agent",
+            "your connected agent", ProposalSource(door = "carrier-pigeon").name)
+    }
+
     // KEPT ROWS EXIST AND ARE NOT CHANGES. They are context the routine already shows, and a screen
     // that drew them under a header saying "changes" would be arguing with its own button.
     @Test

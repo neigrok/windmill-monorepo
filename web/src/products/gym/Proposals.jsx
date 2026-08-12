@@ -2,7 +2,9 @@
 // never writes to a routine you already have (backend §2.9, canon §D14 and §L's safeguard ladder):
 // every change it wants waits here, as a typed diff, until a thumb lands on Apply. This file is the
 // three places that fact reaches a lifter — the card that says a proposal is waiting, the routine's
-// dated history of every one ever written against it, and the diff itself.
+// dated history of every one ever written against it, and the diff itself. Ask draws a fourth, in
+// its own room, off `DiffRow` below: a proposal minted by our model and one minted by a lifter's own
+// Claude are the same object read the same way, which is exactly what `source` being a column buys.
 //
 // THE WEB IS THE DESK, AND READING A DIFF IS A SITTING-DOWN ACT. Everything else in gym's web
 // surface is a mirror of a workout happening somewhere else (§11.2); this is the one screen the desk
@@ -20,7 +22,7 @@
 import React, { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { failureReason, gymApi } from './gymApi.js';
-import { arrivedLabel, nameOfMovement, proposalHref, recordHref, routineHref, ROUTINES_HREF } from './log.js';
+import { arrivedLabel, ASK_HREF, nameOfMovement, proposalHref, recordHref, routineHref, ROUTINES_HREF } from './log.js';
 import {
   applyLabel, atomicLine, diffRows, documentLine, historyLabel, intentLine, isPending, reviewLabel,
   settledLine, sourceLabel, stateChip, summaryLine,
@@ -250,6 +252,14 @@ export function ProposalDiff({ id, log }) {
           <p className="gym-proposal-atomic">{atomicLine(proposal)}</p>
         </div>
       )}
+
+      {/* THE SECOND PLACE ASK IS REACHED FROM (§L: Today's band, and a proposal). This is the screen
+          where "why?" is the question, and the room that answers it reads the same log the proposal
+          was written from. It is a quiet link and never a second verb — the two verbs on this screen
+          are the decision, and nothing may compete with them.
+          Not while a workout is running: Ask is never offered mid-session, and the server refuses
+          one anyway. */}
+      {!log.session && <a className="gym-ask-aside" href={ASK_HREF}>Ask about your training ›</a>}
     </>
   );
 }
@@ -258,7 +268,11 @@ export function ProposalDiff({ id, log }) {
 // movement is named — and it earns its place twice over on this screen: "should I take heavier
 // triples" is a question about where that lift stands, and the page that answers it is one tap away.
 // Nothing is held here, so leaving costs a re-read and nothing else.
-function DiffRow({ row, catalog }) {
+//
+// EXPORTED FOR ASK, which draws a proposal it just minted with this renderer rather than a compact
+// copy of it. A second reading of one change would be the product disagreeing with itself about one
+// routine on two screens — and Ask's card is the first place a lifter sees that change at all.
+export function DiffRow({ row, catalog }) {
   if (row.kind === 'renamed') {
     return (
       <>

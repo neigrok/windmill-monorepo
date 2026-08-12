@@ -664,6 +664,18 @@ Json::Value toJson(const Review& review) {
   return body;
 }
 
+// WHAT A READ SERVED, and the only number on this surface that is about the CALL rather than the
+// log. Three counts and no prose: the server's own tally of the rows it handed over, deduped by id
+// where it counted them (domain/ReadReceipt.h). It rides in the read's own reply, so the line a
+// lifter checks an answer against is one we counted rather than one a model could invent.
+Json::Value toJson(const ReadTally& tally) {
+  Json::Value out(Json::objectValue);
+  out["sets"] = tally.sets;
+  out["sessions"] = tally.sessions;
+  out["weeks"] = tally.weeks;
+  return out;
+}
+
 // The statistics ENGINE, one way — there has been no statistics surface since W1c retired the room
 // (domain/Statistics.h says what stayed and why). Every absence is a sentence: no `e1rm` on a point
 // or a best

@@ -1,6 +1,6 @@
 #include "products/gym/routes.h"
 
-#include "products/gym/adapters/http/CoachApi.h"
+#include "products/gym/adapters/http/AskApi.h"
 #include "products/gym/adapters/http/GymApi.h"
 
 #include <drogon/drogon.h>
@@ -79,7 +79,7 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
   // Not under `gym:write`, not under `gym:delete`, not at any level a future grant invents. This is
   // a design rule and it is load-bearing, not a gap in the catalog somebody forgot to fill: the tool
   // layer is the ONLY place gym can tell an agent from a hand, and rewriting what somebody lifted is
-  // the one verb reserved for the hand. The coach says so out loud rather than failing quietly —
+  // the one verb reserved for the hand. Ask says so out loud rather than failing quietly —
   // *"That one is yours to change. I can read what you lifted; I can't edit it."* A wave that
   // "completes the catalog" here deletes that sentence from the product. `GymToolsTest` pins the
   // absence so it cannot be added by accident.
@@ -245,17 +245,18 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
       },
       {drogon::Get});
 
-  // The panel, and the only conditional mount in the product. No vendor key means no coach: the path
-  // does not exist, `POST` to it 404s like any other unrouted path, and the web hides the panel on
-  // that answer. A route that existed only to say "not available" would be a promise this deployment
-  // cannot keep, printed under somebody's workout.
-  if (!deps.coachService || !deps.coachService->configured()) return;
-  auto coach = std::make_shared<CoachApi>(deps.coachService, deps.authService);
+  // Ask, and the only conditional mount in the product. No vendor key means no Ask: the path does not
+  // exist, `POST` to it 404s like any other unrouted path, and every client hides the door on that
+  // answer. A route that existed only to say "not available" would be a promise this deployment
+  // cannot keep, printed inside somebody's log.
+  //
+  // It hangs off the PRODUCT and not off a session, which is the whole of what W7 widened: Ask reads
+  // the log, so pinning it to one workout belonged to the shape W7 widened and not to this one.
+  if (!deps.askService || !deps.askService->configured()) return;
+  auto ask = std::make_shared<AskApi>(deps.askService, deps.authService);
   app.registerHandler(
-      "/v1/gym/sessions/{id}/coach",
-      [coach](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
-        coach->ask(req, std::move(cb), id);
-      },
+      "/v1/gym/ask",
+      [ask](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { ask->ask(req, std::move(cb)); },
       {drogon::Post});
 }
 

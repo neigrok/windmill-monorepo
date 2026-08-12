@@ -1,6 +1,8 @@
 package works.windmill.gym.net
 
 import kotlinx.serialization.Serializable
+import works.windmill.gym.domain.AskAnswer
+import works.windmill.gym.domain.AskThread
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.ExerciseRename
 import works.windmill.gym.domain.ExerciseWrite
@@ -42,6 +44,7 @@ import works.windmill.platform.net.WindmillApiException
 //   POST /v1/gym/proposals/:id/apply  ·  POST /v1/gym/proposals/:id/dismiss
 //   POST /v1/gym/sessions/:id/share   ·  DELETE /v1/gym/sessions/:id/share
 //   GET  /v1/gym/preferences          ·  PUT   /v1/gym/preferences
+//   POST /v1/gym/ask
 // The session rides as a Bearer header rather than a cookie (WindmillApi); nothing else differs.
 //
 // `GET /v1/gym/stats` is gone from this list and NOT from the server: the statistics room was
@@ -179,6 +182,13 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
     // not a coincidence of the encoder — see GymPreferences.
     override suspend fun savePreferences(document: GymPreferences): GymPreferences =
         api.send<GymPreferences>("PUT", "/v1/gym/preferences", document)
+
+    // The whole thread, every time — the server stores none of it. Nothing is folded here: a 404 is
+    // the route being absent on this deployment rather than a missing object, and it means something
+    // to the room (the door goes) rather than nothing to a caller, so it travels as the refusal it
+    // is and AskVerdict reads it.
+    override suspend fun ask(thread: AskThread): AskAnswer =
+        api.send<AskAnswer>("POST", "/v1/gym/ask", thread)
 
     // Ids are [A-Za-z0-9_-] by the server's own rule, so this only ever has work to do on the two
     // punctuation marks in that set — and doing it anyway costs nothing and cannot be forgotten

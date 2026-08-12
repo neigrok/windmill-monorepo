@@ -26,11 +26,17 @@ struct TodayScreen: View {
     // answer survives a walk to the log and back — and dies with the room, which is the whole of
     // what "later" promises.
     let setAside: Set<String>
+    // Whether this deployment mounts Ask at all. It is not a preference and not a plan: a Windmill
+    // with no Anthropic key does not carry the route, and the room learns that from a 404 the first
+    // time somebody asks. Until then the door is drawn — the alternative is hiding a feature from
+    // every lifter on the chance that one deployment lacks it.
+    let askOnThisDeployment: Bool
     let onStart: (String?) -> Void
     let onMovement: (String) -> Void
     let onOpenSession: (SessionSummary) -> Void
     let onProposal: (String) -> Void
     let onLater: (String) -> Void
+    let onAsk: () -> Void
     let onSettings: () -> Void
     let onSignIn: () -> Void
 
@@ -38,8 +44,8 @@ struct TodayScreen: View {
 
     // SIGNED OUT, TODAY IS THE SAME SCREEN. The room is anonymous-first: sessions open against the
     // device's own log, the plan freezes off the local routine, and every Start below is real before
-    // there is an account. What signing in adds is reach — the account, the web mirror, the coach —
-    // so the door is a quiet claim offer under the work, never a wall in front of it.
+    // there is an account. What signing in adds is reach — the account, the web mirror, agents that
+    // read the log — so the door is a quiet claim offer under the work, never a wall in front of it.
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: WindmillSpace.x5) {
@@ -59,6 +65,7 @@ struct TodayScreen: View {
                 waiting
                 if !isSignedIn { claimOffer }
                 lookingBack
+                askDoor
                 settingsDoor
             }
             .padding(.horizontal, WindmillSpace.x5)
@@ -180,7 +187,10 @@ struct TodayScreen: View {
            let routine = store.routines.first(where: { $0.id == head.routineId }) {
             ProposalCard(head: head, routineName: routine.name,
                          onReview: { onProposal(head.id) },
-                         onLater: { onLater(head.id) })
+                         onLater: { onLater(head.id) },
+                         onAsk: Ask.doorIsOpen(signedIn: isSignedIn,
+                                               sessionIsOpen: store.session != nil,
+                                               onThisDeployment: askOnThisDeployment) ? onAsk : nil)
         }
     }
 
@@ -246,6 +256,41 @@ struct TodayScreen: View {
                 .frame(minHeight: GymTap.minimum)
             }
             .padding(.top, WindmillSpace.x2)
+        }
+    }
+
+    // ASK (§L), IN TODAY'S BOTTOM BAND — under everything that starts a workout, beside the two other
+    // doors that lead away from the day. It is never a fourth tab and it is NEVER OFFERED
+    // MID-SESSION: `Ask.doorIsOpen` states both halves of that once, so this screen and the proposal
+    // card below cannot come to different answers about when a chat may be reached.
+    //
+    // The subtitle is the promise, not a tagline: what is behind this row reads the log and can
+    // propose. Nothing here mentions a plan, a price or an upgrade, because Ask is open to every
+    // account with a plainly-worded daily limit and there is nothing to sell against it.
+    @ViewBuilder
+    private var askDoor: some View {
+        if Ask.doorIsOpen(signedIn: isSignedIn, sessionIsOpen: store.session != nil,
+                          onThisDeployment: askOnThisDeployment) {
+            Button(action: onAsk) {
+                HStack(spacing: WindmillSpace.x3) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(Ask.title)
+                            .font(WindmillFont.body(16, .semibold))
+                            .foregroundStyle(skin.ink)
+                        Text(Ask.subtitle)
+                            .font(GymType.numeral(12))
+                            .foregroundStyle(skin.inkFaint)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(skin.inkFaint)
+                }
+                .padding(.horizontal, WindmillSpace.x4)
+                .frame(maxWidth: .infinity, minHeight: GymTap.minimum + 12)
+                .background(RoundedRectangle(cornerRadius: WindmillRadius.lg)
+                    .strokeBorder(skin.lineStrong, lineWidth: 1))
+            }
         }
     }
 

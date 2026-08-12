@@ -61,7 +61,7 @@ enum class ProposalState { pending, applied, dismissed, superseded };
 
 // Which door it came through. Two doors onto one engine — the lifter's own agent over MCP, and
 // gym's own Ask — and the state below is deliberately a COLUMN rather than a fork: "a change
-// appeared in my Tuesday and I cannot tell whether it was my Claude or Windmill's coach" is the
+// appeared in my Tuesday and I cannot tell whether it was my Claude or Windmill's own chat" is the
 // exact mental-model failure this design exists to prevent, and one type is what makes the two
 // impossible to tell apart in code and trivial to tell apart on screen.
 enum class ProposalDoor { mcp, ask };

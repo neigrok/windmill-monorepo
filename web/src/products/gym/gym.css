@@ -2735,144 +2735,305 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-dim);
 }
 
-/* ── The coach panel ──────────────────────────────────────────
-   Deliberately the same quiet block as the share above it, and
-   deliberately NOT a chat app: no bubbles, no avatars, no
-   typing dots, no send icon. Two turns on one surface, the
-   lifter's set slightly in from the edge and the answer flush
-   with it, and under every answer one small line saying what it
-   read. It sits at the bottom of a session and never competes
-   with the sets, because the sets are what happened. */
-.gym-coach {
-  margin-top: 22px;
-  padding: 14px;
-  border: 1px solid var(--gym-line);
-  border-radius: 13px;
-  background: var(--gym-surface);
+/* ── Ask ──────────────────────────────────────────────────────
+   §L, and the one thing it is not is a coach. A room rather
+   than a panel: the thread runs down the column, the composer
+   sits under it, and there is no avatar, no typing dot, no
+   unread mark and no personality anywhere in here. It does not
+   speak first, so an empty room is one paragraph pointing at
+   the free door and nothing else. */
+.gym-ask {
+  padding-bottom: 24px;
 }
-.gym-coach-title {
-  margin: 0;
-  font-size: 10.5px;
-  font-weight: 800;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--gym-ink-dim);
+.gym-ask-head {
+  margin: 8px 0 18px;
 }
-/* The terms are on screen before anything is typed — what it
-   may do, and what it may not. Same rule as the share's. */
-.gym-coach-terms {
-  margin: 6px 0 12px;
-  font-size: 12.5px;
-  line-height: 1.45;
+/* What it reaches and — in the same breath — that proposing is
+   the most it can do. On screen before a word is typed, never
+   in a tooltip after. */
+.gym-ask-terms {
+  margin: 4px 0 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
   color: var(--gym-ink-faint);
 }
-.gym-coach-thread {
+
+/* THE EMPTY ROOM POINTS SOMEWHERE ELSE. It is the strongest
+   thing this product can say about itself, so it is drawn as a
+   statement and not as a hint — full width, quiet ink, and one
+   real door under it. */
+.gym-ask-empty {
+  padding: 16px;
+  border: 1px solid var(--gym-line);
+  border-radius: 14px;
+  background: var(--gym-surface);
+}
+.gym-ask-free {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--gym-ink-dim);
+}
+.gym-ask-free-door {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  margin-top: 10px;
+  padding: 0 16px;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 12px;
+  color: var(--gym-ink);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.gym-ask-free-door:hover {
+  border-color: var(--color-brand);
+  color: var(--color-brand);
+}
+
+.gym-ask-thread {
   list-style: none;
-  margin: 0 0 12px;
+  margin: 0 0 16px;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 18px;
 }
-.gym-coach-turn {
+.gym-ask-turn {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 8px;
 }
-.gym-coach-turn.is-lifter {
-  padding-left: 11px;
-  border-left: 2px solid var(--gym-line-strong);
+/* The lifter's own turn, set in from the edge in the brand's
+   soft ink — the one bubble on the screen, because it is the
+   one thing here somebody typed. The answer is flush and
+   unboxed: it is the page speaking, not a character. */
+.gym-ask-turn.is-lifter {
+  align-self: flex-end;
+  max-width: 80%;
+  padding: 11px 13px;
+  border: 1px solid var(--color-brand);
+  border-radius: 16px 16px 5px 16px;
+  background: var(--color-brand-soft);
 }
-.gym-coach-text {
+.gym-ask-text {
   margin: 0;
-  font-size: 14px;
+  font-size: 14.5px;
   line-height: 1.55;
   white-space: pre-wrap;
   color: var(--gym-ink);
 }
-.gym-coach-turn.is-lifter .gym-coach-text {
-  color: var(--gym-ink-dim);
-}
-/* WHAT IT READ. Small, quiet, and never omitted — this line is
-   the difference between an instrument and a chatbot. */
-.gym-coach-read {
+/* THE RECEIPT. Server-counted, over the rows it actually served
+   — this line is the whole difference between a claim and a
+   checkable one, so it is mono and tabular and never omitted
+   when the wire carries it. */
+.gym-ask-read {
   margin: 0;
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.45;
+  font-variant-numeric: tabular-nums;
   color: var(--gym-ink-faint);
 }
-.gym-coach-compose {
+/* And WHERE it looked, one step quieter than how much: the
+   count is the audit, the tools are the trail behind it. */
+.gym-ask-steps {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--gym-ink-faint);
+}
+
+/* A PROPOSAL IT MINTED, drawn as the diff every other door
+   draws (§D14). The card is the brand's, like the one waiting
+   on Today, because it is the same object arriving by another
+   route. */
+.gym-ask-proposal {
+  padding: 14px 15px 13px;
+  border: 1px solid var(--color-brand);
+  border-radius: 14px;
+  background: var(--gym-surface);
+}
+.gym-ask-proposal .gym-diff {
+  margin: 10px 0 0;
+}
+.gym-ask-proposal .gym-proposal-review {
+  height: 42px;
+  font-size: 14px;
+}
+/* Both halves of the promise: the tap is on the diff, and a set
+   you lifted is never in one. */
+.gym-ask-proposal-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--gym-ink-faint);
+}
+/* The proposal exists — it was minted — and this read did not
+   answer. The door is what a lifter needs either way. */
+.gym-ask-proposal-door {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  color: var(--color-brand);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.gym-ask-compose {
   display: flex;
   gap: 8px;
   align-items: flex-end;
+  margin-top: 14px;
 }
-.gym-coach-input {
+.gym-ask-input {
   flex: 1;
   box-sizing: border-box;
-  padding: 10px 11px;
-  border: 1px solid var(--gym-line);
-  border-radius: 10px;
+  padding: 13px 14px;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 14px;
   background: var(--gym-sunken);
   color: var(--gym-ink);
   font: inherit;
-  font-size: 13.5px;
+  font-size: 14.5px;
   line-height: 1.45;
   resize: vertical;
 }
-.gym-coach-input::placeholder {
+.gym-ask-input::placeholder {
   color: var(--gym-ink-faint);
 }
-.gym-coach-ask {
+.gym-ask-send {
   flex: none;
-  min-height: 40px;
-  padding: 0 18px;
+  width: 50px;
+  height: 50px;
   border: none;
-  border-radius: 10px;
+  border-radius: 14px;
   background: var(--color-brand);
   color: var(--gym-on-accent);
   font: inherit;
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 19px;
+  font-weight: 800;
   cursor: pointer;
 }
-.gym-coach-ask:hover {
+.gym-ask-send:hover {
   background: var(--color-brand-hover);
 }
-.gym-coach-ask.is-inert {
+.gym-ask-send.is-inert {
   opacity: 0.45;
   cursor: default;
 }
-/* The paywall, and the absence, share a face: a plain sentence
-   where the composer would have been. Neither is an alarm. */
-.gym-coach-locked {
+
+/* A room that has closed, and a room that is full, share a face:
+   a plain sentence where the composer would have been. Neither
+   is an alarm, and neither offers anything to buy — there is
+   nothing behind either one to sell. */
+.gym-ask-closed {
   margin: 0;
-  font-size: 13.5px;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--gym-ink-dim);
+}
+.gym-ask-note {
+  margin: 10px 0 0;
+  font-size: 13px;
   line-height: 1.45;
   color: var(--gym-ink-dim);
 }
-.gym-coach-upgrade {
-  margin-top: 10px;
+.gym-ask-full {
+  margin-top: 14px;
+}
+.gym-ask-again {
   min-height: 40px;
+  margin-top: 10px;
   padding: 0 16px;
   border: 1px solid var(--gym-line-strong);
-  border-radius: 10px;
+  border-radius: 12px;
   background: transparent;
   color: var(--gym-ink);
   font: inherit;
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 700;
   cursor: pointer;
 }
-.gym-coach-upgrade:hover {
+.gym-ask-again:hover {
   border-color: var(--color-brand);
   color: var(--color-brand);
 }
-.gym-coach-note {
-  margin: 10px 0 0;
+
+/* WHAT IT HANDS BACK. Standing, quiet, under everything —
+   because it is true of every answer and not of one refusal,
+   and nothing on this wire says which set a refusal was about. */
+.gym-ask-hand-back {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: 22px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--gym-line);
   font-size: 12.5px;
-  line-height: 1.45;
-  color: var(--gym-ink-dim);
+  line-height: 1.5;
+  color: var(--gym-ink-faint);
+}
+.gym-ask-hand-back-door {
+  color: var(--color-brand);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+/* THE DOOR, in Today's bottom band. Outlined in the brand rather
+   than filled with it: the loud control on a phone's band is
+   Start, and at this desk nothing starts — so Ask is the whole
+   band and still must not read as the room's purpose. */
+.gym-ask-door {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 52px;
+  margin-top: 22px;
+  padding: 0 16px;
+  border: 1px solid var(--color-brand);
+  border-radius: 15px;
+  color: var(--color-brand);
+  text-decoration: none;
+}
+.gym-ask-door:hover {
+  background: var(--color-brand-soft);
+}
+.gym-ask-door-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--color-brand);
+}
+.gym-ask-door-verb {
+  font-size: 14.5px;
+  font-weight: 800;
+}
+.gym-ask-door-line {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--gym-ink-faint);
+}
+
+/* The same door from a proposal, and only ever as a link: the
+   two verbs on that screen are the decision, and nothing beside
+   them may look like a third. */
+.gym-ask-aside {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-top: 18px;
+  color: var(--text-link);
+  font-size: 13.5px;
+  text-decoration: none;
+}
+.gym-ask-aside:hover {
+  color: var(--text-link-hover);
 }
 
 /* ── The coach's page ─────────────────────────────────────────

@@ -395,6 +395,40 @@ sealed class ProposalVerdict {
     }
 }
 
+// THE SEVENTH WORD, and it is about a QUESTION rather than about a row. Ask is the one door in this
+// product that spends money per use, so it is also the only one whose refusals include a ceiling —
+// and a ceiling is a sentence, never a checkout: there is nothing to buy in this product, and an
+// upgrade offered against a cap would advertise a purchase that answers 503.
+//
+// `Absent` is the one nothing else here has. A deployment with no model configured does not register
+// the route at all, so the answer is the framework's bare 404 — the feature not existing rather than
+// an object being missing — and the room takes the door down rather than saying anything about it.
+//
+// TOLD APART BY STATUS AND CODE, never by the English: `ask-daily-limit` and `ask-out-of-budget` are
+// two ceilings that read alike and are worded differently, and both are terminal for now. Only a log
+// that went quiet is worth another tap.
+sealed class AskVerdict {
+    data class Said(val said: String) : AskVerdict()   // the answer is the sentence, and it will not change on a retry
+    data class Again(val said: String) : AskVerdict()  // 5xx, no reply at all — the one worth offering a retry on
+    data object Absent : AskVerdict()                  // 404 — this deployment has no Ask
+
+    companion object {
+        fun refusing(facts: RefusalFacts): AskVerdict {
+            val status = facts.status
+            if (facts.offline || facts.malformed || status == null) return Again(noAnswer)
+            if (status == 404) return Absent
+            if (status >= 500) return Again(facts.sentence ?: noAnswer)
+            // Everything else is the log answering in its own words — the cap, the ceiling, the
+            // workout still open, a thread it could not read, a session that has expired. The
+            // sentence is the whole of what the lifter needs, and a fallback exists only so a
+            // refusal that arrived wordless still says something true.
+            return Said(facts.sentence ?: "Ask couldn't take that one")
+        }
+
+        private const val noAnswer = "Ask didn't answer. Try again in a moment"
+    }
+}
+
 // What is SAID when a write is lost for good — the one surface every loss rides, because a loss
 // dropped quietly would count as intended.
 sealed interface RefusedWrite {

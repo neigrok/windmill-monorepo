@@ -18,6 +18,8 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import works.windmill.gym.domain.AskAnswer
+import works.windmill.gym.domain.AskTurn
 import works.windmill.gym.domain.ChangeKind
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.GymPreferences
@@ -33,6 +35,7 @@ import works.windmill.gym.domain.ProposalIntent
 import works.windmill.gym.domain.ProposalSource
 import works.windmill.gym.domain.ProposalState
 import works.windmill.gym.domain.ProposalTargets
+import works.windmill.gym.domain.ReadTally
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineEntry
@@ -2393,5 +2396,80 @@ class TrainingStoreTests {
         store.dismissProposal("prop_old")
 
         assertEquals("prop_new", store.routine("rt_1")?.pendingProposal?.id)
+    }
+
+    // ASK READS THE ACCOUNT'S LOG, so signed out there is nothing to read and nobody to read it for.
+    // The door is not drawn signed out either — this is the floor under a session that expired
+    // mid-conversation, and it must not spend a round trip to find that out.
+    @Test
+    fun testAskSignedOutNeverReachesTheLogAndSaysWhy() = runTest {
+        val server = FakeTraining()
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = false))
+
+        assertEquals(AskOutcome.Refused("Ask reads your account's log — sign in first"),
+            store.ask(listOf(AskTurn("lifter", "what's stalled?"))))
+        assertFalse(server.calls.contains("ask"))
+    }
+
+    // A PROPOSAL MINTED IN A CONVERSATION IS A CARD ON TODAY, and the room must not have to be left
+    // and re-entered for it to exist. This room reads the routines once, at connect; an answer that
+    // mints one re-reads them, because the card IS this product's whole notification design.
+    @Test
+    fun testAProposalMintedInAConversationLandsOnTodayWithoutLeavingTheRoom() = runTest {
+        val server = FakeTraining()
+        server.written["rt_1"] = aRoutine()
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+        assertEquals(emptyList<Proposal>(), store.pendingProposals)
+
+        // The agent's tool mints it during the exchange; the reply carries the id and nothing else.
+        server.propose(aProposal(id = "prop_1"))
+        server.answers.add(AskAnswer(answer = "Done — as a proposal on Push A.",
+            read = ReadTally(sets = 214, sessions = 34, weeks = 12), proposals = listOf("prop_1")))
+
+        val outcome = store.ask(listOf(AskTurn("lifter", "write the triples block")))
+
+        assertEquals(AskOutcome.Answered(AskAnswer(answer = "Done — as a proposal on Push A.",
+            read = ReadTally(sets = 214, sessions = 34, weeks = 12), proposals = listOf("prop_1"))),
+            outcome)
+        assertEquals(listOf("prop_1"), store.pendingProposals.map { it.id })
+    }
+
+    // The receipt is drawn from the reply and NEVER composed here: a count this room could arrive at
+    // on its own is a count the model could have invented. The store hands over exactly what the
+    // server served.
+    @Test
+    fun testTheReceiptIsTheServersNumberCarriedThrough() = runTest {
+        val server = FakeTraining()
+        server.answers.add(AskAnswer(answer = "three sessions at the same top set.",
+            read = ReadTally(sets = 214, sessions = 34, weeks = 12)))
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+
+        val outcome = store.ask(listOf(AskTurn("lifter", "what's stalled?")))
+
+        assertEquals(ReadTally(sets = 214, sessions = 34, weeks = 12),
+            (outcome as AskOutcome.Answered).answer.read)
+    }
+
+    // The three shapes the screen acts on differently, and the one that must never be dressed as a
+    // failure: a ceiling is an answer, a quiet log is worth another tap, and a deployment with no
+    // Ask at all takes the door down.
+    @Test
+    fun testACeilingIsAnAnswerAQuietLogIsARetryAndAnAbsentRouteTakesTheDoorDown() = runTest {
+        val server = FakeTraining()
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+        val question = listOf(AskTurn("lifter", "what's stalled?"))
+
+        server.refuseAsk = refusal(429, code = "ask-daily-limit", message = "that's Ask for now")
+        assertEquals(AskOutcome.Refused("that's Ask for now"), store.ask(question))
+
+        server.refuseAsk = storageFailure
+        assertEquals(AskOutcome.Failed("internal error"), store.ask(question))
+
+        server.refuseAsk = refusal(404, message = "not found")
+        assertEquals(AskOutcome.Absent, store.ask(question))
     }
 }

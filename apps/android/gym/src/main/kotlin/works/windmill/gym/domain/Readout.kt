@@ -231,6 +231,12 @@ object Readout {
     // noun for the same thing.
     fun sessionCount(count: Int): String = if (count == 1) "1 session" else "$count sessions"
 
+    // The third noun the read line counts (§L). A week here is the SERVER's Monday-UTC bucket, the
+    // same one `date_trunc('week')` cuts, and this only SPELLS it — nothing on this device works out
+    // which weeks a set fell in, because a count this phone could arrive at is a count the model
+    // could have invented.
+    fun weekCount(count: Int): String = if (count == 1) "1 week" else "$count weeks"
+
     // A movement is a stable id everywhere except on screen. Falling back to the id keeps a sentence
     // readable while the catalog has not answered — a slug a lifter can still recognise beats a
     // blank where the movement should be.

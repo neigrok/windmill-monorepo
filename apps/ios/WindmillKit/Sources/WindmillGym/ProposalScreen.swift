@@ -278,6 +278,13 @@ struct ProposalCard: View {
     // proposal is untouched, it still waits on its own routine, and it is back on Today the next
     // time the room is. Dismissing is a decision with a record; this is not one, so it takes none.
     let onLater: () -> Void
+    // ASK'S SECOND ENTRANCE (§L): the two places a chat is reached from are Today's bottom band and
+    // this card. It is nil wherever Ask is not open — mid-session, signed out, or on a deployment
+    // that carries no Ask — so the row is absent rather than dead.
+    //
+    // IT SEEDS NOTHING. A question written for the lifter would be the same fault `line(about:)`
+    // refuses two properties down: the words somebody is about to judge an agent by are their own.
+    let onAsk: (() -> Void)?
 
     @Environment(\.gymSkin) private var skin
 
@@ -318,6 +325,17 @@ struct ProposalCard: View {
                         .frame(minHeight: GymTap.minimum)
                         .background(RoundedRectangle(cornerRadius: WindmillRadius.md)
                             .strokeBorder(skin.lineStrong, lineWidth: 1))
+                }
+                if let onAsk {
+                    Button(action: onAsk) {
+                        Text(Ask.title)
+                            .font(WindmillFont.body(14, .semibold))
+                            .foregroundStyle(skin.inkDim)
+                            .padding(.horizontal, WindmillSpace.x3)
+                            .frame(minHeight: GymTap.minimum)
+                            .background(RoundedRectangle(cornerRadius: WindmillRadius.md)
+                                .strokeBorder(skin.lineStrong, lineWidth: 1))
+                    }
                 }
             }
         }

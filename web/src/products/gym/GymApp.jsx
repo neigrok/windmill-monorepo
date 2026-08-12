@@ -1,7 +1,7 @@
 // Gym — the training log's web surface, in the instrument skin. This file is the frame and none of
 // the rooms: it resolves the account, holds the ONE read of the log every room shares, and hands
 // each hash to the screen that answers it (Today · The log · Routines, plus one session, one
-// routine, one movement's record, one proposal, one review and the past-workout door).
+// routine, one movement's record, one proposal, one review, the past-workout door and Ask).
 //
 // The web is the mirror and the desk, never the capture surface: workouts start on the phone, Today
 // mirrors the one that is running read-only (§11.2), and the write doors here are the backfill, the
@@ -20,6 +20,7 @@ import { ProductSwitcher } from '../../shell/ProductSwitcher.jsx';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
 import { AccountSeat } from '../../shell/auth/AccountSeat.jsx';
 import { useSignInDoor, useSignInDoorHost } from '../../shell/auth/SignInDoor.jsx';
+import { AskRoom } from './ask/AskRoom.jsx';
 import { Backfill } from './Backfill.jsx';
 import { FinishScreen } from './Finish.jsx';
 import { LogList, SessionDetail } from './Log.jsx';
@@ -154,6 +155,10 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
         {screen === 'session' && <SessionDetail key={sessionIdOf(hash)} id={sessionIdOf(hash)} log={log} />}
         {screen === 'finish' && <FinishScreen id={finishIdOf(hash)} log={log} />}
         {screen === 'backfill' && <Backfill log={log} />}
+        {/* ASK (§L). It is handed the one read every room here shares, for two things it may not
+            work out for itself: whether a workout is running — the room is never offered
+            mid-session — and the movement names a proposal's rows are drawn under. */}
+        {screen === 'ask' && <AskRoom log={log} />}
       </main>
       {TAB_SCREENS.includes(screen) && <TabBar screen={screen} />}
       {log.toast && (

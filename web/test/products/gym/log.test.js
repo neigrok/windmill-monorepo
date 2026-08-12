@@ -11,7 +11,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  agoLabel, alsoReadsLabel, arrivedLabel, BACKFILL_HREF, clockOf, CLOSED_ITSELF_NOTE, closedOnItsOwn,
+  agoLabel, alsoReadsLabel, arrivedLabel, ASK_HREF, BACKFILL_HREF, clockOf, CLOSED_ITSELF_NOTE,
+  closedOnItsOwn,
   dayLabel,
   durLabel, e1rmLabel, entryLabel, finishHref, finishIdOf, firstSessionLabel, fmt, fmtKg,
   groupByExercise,
@@ -147,7 +148,7 @@ test('sessionMetaLabel — a session read whole, without printing its day twice'
   );
 });
 
-test('screenOf — one grammar decides which of the ten rooms a hash names', () => {
+test('screenOf — one grammar decides which of the eleven rooms a hash names', () => {
   assert.equal(screenOf('#/gym'), 'today');
   assert.equal(screenOf('#/gym/'), 'today');
   assert.equal(screenOf('#/gym/log'), 'log');
@@ -160,6 +161,11 @@ test('screenOf — one grammar decides which of the ten rooms a hash names', () 
   assert.equal(screenOf('#/gym/routines?new=1'), 'routines');
   assert.equal(screenOf('#/gym/routines/rt_9f2c'), 'routine');
   assert.equal(screenOf('#/gym/proposals/prop_2f9c40a1'), 'proposal');
+  // ASK IS A ROOM AND NOT A TAB (§L) — it has a URL like every other position here, and it carries
+  // no id, because it is about the log and not about one workout.
+  assert.equal(screenOf(ASK_HREF), 'ask');
+  assert.equal(screenOf('#/gym/ask'), 'ask');
+  assert.equal(screenOf('#/gym/ask?from=proposal'), 'ask');
   assert.equal(screenOf(routineHref(NEW_ROUTINE_ID)), 'routine');
   assert.equal(screenOf(MOVEMENTS_HREF), 'record');
   assert.equal(screenOf(recordHref('back-squat')), 'record');

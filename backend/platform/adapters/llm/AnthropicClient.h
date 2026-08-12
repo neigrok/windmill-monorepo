@@ -122,7 +122,7 @@ private:
 // feature has no clock seam by design, and the fuse only ever compares two of these to each other.
 long long nowMs();
 
-// A fresh id for one logical operation — a tend conversation, a coach exchange — so its dozen turns
+// A fresh id for one logical operation — a tend conversation, an Ask exchange — so its dozen turns
 // sum as one act in the ledger instead of reading as a dozen unrelated calls. It names rows and
 // authorises nothing.
 std::string newRunId(const std::string& prefix);
@@ -134,7 +134,7 @@ void meterSpend(AiSpend spend, const std::shared_ptr<AiFuse>& fuse,
                 const std::shared_ptr<UsageSink>& usage);
 
 // One tool-loop turn: the request body in, the parsed reply out, nullopt on any transport or parse
-// failure. Roadmap's `MessagesCall` and gym's `CoachCall` are this type under two product names.
+// failure. Roadmap's `MessagesCall` and gym's `AskCall` are this type under two product names.
 using ModelCall = std::function<std::optional<Json::Value>(const Json::Value& request)>;
 
 // Wrap a tool loop's model call so every turn it takes is metered. `frame` carries what the run
@@ -142,8 +142,8 @@ using ModelCall = std::function<std::optional<Json::Value>(const Json::Value& re
 // knows: the iteration number (it is invoked exactly once per turn), the outcome, and the `usage`
 // the raw reply carries and the loop itself discards.
 //
-// Wrapping rather than reaching into driveAgent/driveCoach is the point. Those loops are pure: they
-// have never seen a model name, a product, or a clock, and they gain nothing by starting now.
+// Wrapping rather than reaching into the loop itself is the point. driveAgentLoop is pure: it
+// has never seen a model name, a product, or a clock, and it gains nothing by starting now.
 //
 // Over the fuse it refuses without calling and answers nullopt, which is the failure both loops
 // already handle — and reports the first trip through `report` under "ai.fuse", once, because a

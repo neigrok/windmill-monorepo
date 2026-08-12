@@ -17,6 +17,7 @@ import WindmillPlatform
 //   POST /v1/gym/proposals/:id/apply  ·  POST /v1/gym/proposals/:id/dismiss
 //   POST /v1/gym/sessions/:id/share   ·  DELETE /v1/gym/sessions/:id/share
 //   GET  /v1/gym/preferences          ·  PUT /v1/gym/preferences
+//   POST /v1/gym/ask
 //
 // `GET /v1/gym/stats` is NOT here and its absence is deliberate: the statistics ENGINE stays on the
 // server, where an agent asking "how has my squat moved" reads it through `get_stats`, but the room
@@ -298,6 +299,27 @@ public struct GymApi: TrainingSyncing {
         try await api.send("PUT", "/v1/gym/preferences", body: preferences, as: GymPreferences.self)
     }
 
+    // THE WHOLE THREAD, EVERY TIME. The server keeps no conversation — there is no table and no id
+    // for one — so what this sends is the entire exchange it wants answered, and what comes back is
+    // an answer with the accounting for the rows that produced it.
+    //
+    // It is deliberately NOT part of `TrainingSyncing`. That protocol is what the live session needs
+    // of the network — the reads and writes a set's survival depends on, which is why the store owns
+    // them, queues them and replays them. A question has none of that: nothing is minted, nothing is
+    // owed, and a question nobody answered is simply a question nobody answered. Folding it into the
+    // store would have put a chat inside the file that owns whether a lift is lost. It is a plain
+    // method rather than a second protocol because nothing injects it: the room hands the screen a
+    // closure over this call (`AskDoors.send`), so an abstraction with one conformer and no consumer
+    // would be a seam that only looks like one.
+    //
+    // Nothing here is folded into an optional: an Ask that did not answer is never a screen that
+    // draws nothing, it is a sentence the lifter is owed, and `AskRefusal` writes that sentence from
+    // the status and whatever the server sent with it — the codes ride along on the wire and this
+    // client branches on none of them, because every one of them reads the same to a lifter.
+    public func ask(_ turns: [AskTurn]) async throws -> AskAnswer {
+        try await api.send("POST", "/v1/gym/ask", body: AskRequest(turns: turns), as: AskAnswer.self)
+    }
+
     // Ids are [A-Za-z0-9_-] by the server's own rule, so this only ever has work to do on the two
     // punctuation marks in that set — and doing it anyway costs nothing and cannot be forgotten
     // later, when an id from somewhere else reaches a query string.
@@ -305,6 +327,7 @@ public struct GymApi: TrainingSyncing {
         value.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? value
     }
 
+    private struct AskRequest: Encodable { let turns: [AskTurn] }
     private struct Catalog: Decodable { let exercises: [Exercise] }
     private struct LastSets: Decodable { let movements: [LastSet] }
     private struct Log: Decodable { let sessions: [SessionSummary] }

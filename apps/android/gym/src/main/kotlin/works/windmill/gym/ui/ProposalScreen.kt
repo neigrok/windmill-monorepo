@@ -77,6 +77,17 @@ fun ProposalScreen(
     store: TrainingStore,
     backLabel: String,
     onBack: () -> Unit,
+    // §L'S SECOND DOOR ONTO ASK, and it carries the subject with it: the diff is on screen, so the
+    // question is about this diff. Null where Ask is not offered — nobody signed in, or a
+    // deployment already known to have no model — because a door onto a 404 is worse than no door.
+    //
+    // KNOWN IS THE HONEST WORD AND NOT ADVERTISED: nothing on the wire says whether this deployment
+    // has Ask. The route simply is not mounted without a vendor key, so the room learns it from the
+    // first bare 404 and takes both doors down for the life of the room — which means the first
+    // question asked against a keyless server is answered by "Ask isn't part of this Windmill"
+    // rather than by a door that was never there. A signal on the wire would close that one gap and
+    // it is the server's to send.
+    onAsk: ((String) -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     val nowMs = System.currentTimeMillis()
@@ -183,6 +194,23 @@ fun ProposalScreen(
                 )
             }
             standing?.let { Body(it, store.catalog, nowMs, superseded) }
+            // Under the diff and never beside the two taps: this is a question about a decision,
+            // and it may not be mistaken for one. It reads the routine's name off the proposal
+            // itself, so what Ask is asked about is the routine this diff was written against.
+            standing?.let { proposal ->
+                onAsk?.let { ask ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
+                        modifier = Modifier
+                            .heightIn(min = GymTap.minimum)
+                            .clickable { ask(proposal.routineName) },
+                    ) {
+                        Text("Ask about this", style = GymType.numeral(12), color = GymSkin.accent)
+                        Text("›", style = WindmillFont.body(13, FontWeight.SemiBold), color = GymSkin.accent)
+                    }
+                }
+            }
         }
         standing?.let { Foot(it, decidable, deciding, said, onDecide = ::decide) }
     }

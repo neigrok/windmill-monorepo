@@ -1302,3 +1302,66 @@ TEST(gym_a_proposal_that_changes_nothing_is_refused_rather_than_shown_to_a_lifte
   CHECK(message(refused).find("already says") != std::string::npos);
   CHECK(h.repo.proposalRows.empty());
 }
+
+// --- The read receipt, in the envelope --------------------------------------------------------
+//
+// §L's line — `read 214 sets · 12 weeks · 34 sessions` — is printable only because the server counted
+// the rows it served. It rides HERE, in the tool's own reply, rather than in Ask's chrome, so a
+// lifter's own Claude reads the same accounting the app prints, and so that no layer above can print
+// a number nobody counted.
+
+TEST(gym_a_workout_read_answers_with_the_rows_it_served) {
+  Harness h;
+  h.start("ses_00000001", 1'700'000'000'000);
+  h.logSet("ses_00000001", "set_00000001", "bench-press", 82.5, 5, 1'700'000'300'000);
+  h.logSet("ses_00000001", "set_00000002", "bench-press", 82.5, 5, 1'700'000'600'000);
+  h.finish("ses_00000001", 1'700'000'900'000);
+
+  Json::Value args(Json::objectValue);
+  args["sessionId"] = "ses_00000001";
+  const Json::Value read = body(h.call("get_session", args))["read"];
+
+  CHECK_EQ(read["sets"].asInt(), 2);
+  CHECK_EQ(read["sessions"].asInt(), 1);
+  CHECK_EQ(read["weeks"].asInt(), 1);
+}
+
+// A page NAMES workouts and counts their sets; it hands over no set rows, so it claims none. The
+// conservative direction is the whole point: a receipt never claims a row it did not serve.
+TEST(gym_a_log_page_claims_the_workouts_it_named_and_not_their_sets) {
+  Harness h;
+  h.start("ses_00000001", 1'700'000'000'000);
+  h.logSet("ses_00000001", "set_00000001", "bench-press", 82.5, 5, 1'700'000'300'000);
+  h.finish("ses_00000001", 1'700'000'900'000);
+  h.start("ses_00000002", 1'700'600'000'000);
+  h.logSet("ses_00000002", "set_00000002", "back-squat", 100, 5, 1'700'600'300'000);
+  h.finish("ses_00000002", 1'700'600'900'000);
+
+  const Json::Value read = body(h.call("list_sessions", Json::Value(Json::objectValue)))["read"];
+
+  CHECK_EQ(read["sets"].asInt(), 0);
+  CHECK_EQ(read["sessions"].asInt(), 2);
+  CHECK_EQ(read["weeks"].asInt(), 2);  // a Tuesday and the Tuesday after: two Monday-to-Monday weeks
+}
+
+// The catalog and the settings are not the log, so they make no claim at all — "read 0 sets" is noise
+// rather than a fact, and an agent that saw it might repeat it.
+TEST(gym_a_read_that_served_no_log_rows_says_nothing_about_what_it_read) {
+  Harness h;
+  CHECK_FALSE(body(h.call("list_exercises", Json::Value(Json::objectValue))).isMember("read"));
+  CHECK_FALSE(body(h.call("get_preferences", Json::Value(Json::objectValue))).isMember("read"));
+  CHECK_FALSE(body(h.call("list_routines", Json::Value(Json::objectValue))).isMember("read"));
+}
+
+// Provenance is a column and not a fork (W6): the same tool, called through the MCP door, mints a
+// proposal that says so — and Ask's own door is what AskTools passes instead (AskServiceTest).
+TEST(gym_a_proposal_minted_over_mcp_carries_the_mcp_door) {
+  Harness h;
+  h.repo.routineRows.push_back(pushA());
+
+  const ToolResult minted =
+      h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", 5, 3, 87.5));
+
+  CHECK_FALSE(minted.isError);
+  CHECK_EQ(body(minted)["proposal"]["source"]["door"].asString(), std::string("mcp"));
+}

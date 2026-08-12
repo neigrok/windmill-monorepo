@@ -91,6 +91,7 @@ add_library(windmill_gym
   products/gym/domain/Review.cpp
   products/gym/domain/Statistics.cpp
   products/gym/domain/Record.cpp
+  products/gym/domain/ReadReceipt.cpp
   products/gym/application/LogService.cpp)
 target_include_directories(windmill_gym PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(windmill_gym PUBLIC windmill_platform)
@@ -168,6 +169,7 @@ add_executable(windmill_domain_tests
   test/products/gym/domain/ReviewTest.cpp
   test/products/gym/domain/StatisticsTest.cpp
   test/products/gym/domain/RecordTest.cpp
+  test/products/gym/domain/ReadReceiptTest.cpp
   test/products/gym/application/LogServiceTest.cpp)
 target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_journal windmill_gym)
 
@@ -205,6 +207,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     platform/adapters/crypto/OpenSslTokenGenerator.cpp
     platform/adapters/email/ResendClient.cpp
     platform/adapters/llm/AnthropicClient.cpp
+    platform/adapters/llm/AgentLoop.cpp
     platform/adapters/email/ResendEmailSender.cpp
     platform/adapters/email/ResendSignature.cpp
     platform/adapters/email/ResendWebhookApi.cpp
@@ -290,11 +293,11 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     products/gym/adapters/csv/TrainingCsv.cpp
     products/gym/adapters/postgres/PgTrainingRepository.cpp
     products/gym/adapters/http/GymApi.cpp
-    products/gym/adapters/http/CoachApi.cpp
-    products/gym/adapters/llm/AnthropicCoach.cpp
+    products/gym/adapters/http/AskApi.cpp
+    products/gym/adapters/llm/AnthropicAsk.cpp
     products/gym/adapters/mcp/GymTools.cpp
     products/gym/adapters/mcp/GymToolCatalog.cpp
-    products/gym/application/CoachService.cpp
+    products/gym/application/AskService.cpp
     products/gym/routes.cpp)
 
   # One process serves REST, the collab socket, AND MCP over the same rooms. main.cpp is the
@@ -361,6 +364,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/products/roadmap/adapters/http/TreeRegistryApiTest.cpp
     test/products/roadmap/adapters/http/RemindersApiTest.cpp
     test/products/roadmap/adapters/ws/CollabTest.cpp
+    test/platform/adapters/llm/AgentLoopTest.cpp
     test/products/roadmap/adapters/llm/AnthropicComposerTest.cpp
     test/products/roadmap/adapters/llm/AnthropicAgentTest.cpp
     test/products/journal/adapters/http/JournalApiTest.cpp
@@ -371,8 +375,8 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/products/journal/adapters/postgres/PgJournalRepositoryTest.cpp
     test/products/journal/adapters/postgres/PgEchoRepositoryTest.cpp
     test/products/gym/adapters/http/GymApiTest.cpp
-    test/products/gym/adapters/llm/AnthropicCoachTest.cpp
-    test/products/gym/application/CoachServiceTest.cpp
+    test/products/gym/adapters/llm/AnthropicAskTest.cpp
+    test/products/gym/application/AskServiceTest.cpp
     test/products/gym/adapters/postgres/PgTrainingRepositoryTest.cpp)
   target_link_libraries(windmill_adapters_tests PRIVATE windmill_roadmap windmill_journal windmill_gym)
   add_test(NAME adapters COMMAND windmill_adapters_tests)

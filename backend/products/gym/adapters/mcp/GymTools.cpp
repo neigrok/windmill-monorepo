@@ -65,7 +65,8 @@ ToolResult listExercises(LogService& log, const UserId& caller) {
   return ToolResult::json(out);
 }
 
-ToolResult listSessions(LogService& log, const UserId& caller, const Json::Value& args) {
+ToolResult listSessions(LogService& log, const UserId& caller, const Json::Value& args,
+                        ReadReceipt& served) {
   // The cursor is the previous page's LAST ROW, both halves of it, because only the pair is unique:
   // a bare instant cursor drops a workout whose start ties with another's across a page edge, and it
   // is then in no page, ever. No cursor at all means "from now".
@@ -95,7 +96,11 @@ ToolResult listSessions(LogService& log, const UserId& caller, const Json::Value
   }
 
   Json::Value sessions(Json::arrayValue);
-  for (const LogRow& row : log.log(caller, cursor)) sessions.append(toJson(row));
+  for (const LogRow& row : log.log(caller, cursor)) {
+    // A page names workouts and counts their sets; it hands over no set rows, so it claims none.
+    served.sawSession(row.summary.session.id, row.summary.session.startedAtMs);
+    sessions.append(toJson(row));
+  }
   Json::Value out(Json::objectValue);
   out["sessions"] = sessions;
   return ToolResult::json(out);
@@ -104,7 +109,8 @@ ToolResult listSessions(LogService& log, const UserId& caller, const Json::Value
 // One workout with its sets, and — asked for — the finish readout over the same rows. The two ride
 // on one tool because they are one question about one workout, and a second tool for the second half
 // would cost every connection a slot in tools/list to save this one an argument.
-ToolResult getSession(LogService& log, const UserId& caller, const Json::Value& args) {
+ToolResult getSession(LogService& log, const UserId& caller, const Json::Value& args,
+                      ReadReceipt& served) {
   std::string id;
   if (std::optional<std::string> bad =
           idArgument(args, "sessionId", "Call list_sessions for the ids you own.", id))
@@ -114,6 +120,8 @@ ToolResult getSession(LogService& log, const UserId& caller, const Json::Value& 
 
   std::optional<SessionDetail> detail = log.detail(caller, SessionId{id});
   if (!detail) return ToolResult::failure(kNoSession);
+  served.sawSession(detail->session.id, detail->session.startedAtMs);
+  for (const Set& set : detail->sets) served.sawSet(set.id, set.completedAtMs);
   Json::Value out(Json::objectValue);
   out["session"] = toJson(detail->session);
   out["sets"] = toJson(detail->sets);
@@ -123,7 +131,8 @@ ToolResult getSession(LogService& log, const UserId& caller, const Json::Value& 
   return ToolResult::json(out);
 }
 
-ToolResult lastTime(LogService& log, const UserId& caller, const Json::Value& args) {
+ToolResult lastTime(LogService& log, const UserId& caller, const Json::Value& args,
+                    ReadReceipt& served) {
   std::string id;
   if (std::optional<std::string> bad =
           idArgument(args, "exerciseId", "Call list_exercises for the catalog.", id))
@@ -137,6 +146,8 @@ ToolResult lastTime(LogService& log, const UserId& caller, const Json::Value& ar
   Json::Value out(Json::objectValue);
   out["exerciseId"] = id;
   if (outcome.lastTime) {
+    served.sawSession(outcome.lastTime->session.id, outcome.lastTime->session.startedAtMs);
+    for (const Set& set : outcome.lastTime->sets) served.sawSet(set.id, set.completedAtMs);
     out["session"] = toJson(outcome.lastTime->session);
     if (!outcome.lastTime->routineName.empty()) out["routine"] = outcome.lastTime->routineName;
     out["sets"] = toJson(outcome.lastTime->sets);
@@ -177,16 +188,25 @@ ToolResult listRoutines(LogService& log, const UserId& caller, const Json::Value
 // PROJECTION and nothing else — the same numbers the domain already decided, with the rows a caller
 // did not ask for left out — because an account with two years of training answers with a line per
 // movement, and that is the one read here that can fill a context window on its own.
-ToolResult getStats(LogService& log, const UserId& caller, const Json::Value& args) {
-  Statistics stats = log.statistics(caller);
-  if (!args["exerciseId"].isNull()) {
-    std::string id;
+ToolResult getStats(LogService& log, const UserId& caller, const Json::Value& args,
+                    ReadReceipt& served) {
+  // The narrowing is settled BEFORE the store is read, so a refusal costs no query and — the reason
+  // the order is load-bearing — marks nothing on the receipt. A call that answers with a refusal
+  // hands the model no rows, and the receipt only ever counts rows it handed over.
+  std::string only;
+  if (!args["exerciseId"].isNull())
     if (std::optional<std::string> bad =
-            idArgument(args, "exerciseId", "Omit it for every movement you have trained.", id))
+            idArgument(args, "exerciseId", "Omit it for every movement you have trained.", only))
       return ToolResult::failure(*bad);
+
+  Statistics stats = log.statistics(caller);
+  // The weeks and nothing else. A movement's line is a PROJECTION over sets — one point per session,
+  // chosen by the store — so counting a point as a set would claim a row this reply never handed
+  // over, and would double-count the one `get_session` hands over whole.
+  for (const TrainingWeek& week : stats.weeks) served.sawWeek(week.startedAtMs);
+  if (!only.empty())
     std::erase_if(stats.movements,
-                  [&](const MovementProgress& line) { return line.exercise.str() != id; });
-  }
+                  [&](const MovementProgress& line) { return line.exercise.str() != only; });
   return ToolResult::json(toJson(stats));
 }
 
@@ -360,10 +380,9 @@ ToolResult mintOutcome(const ProposalMintOutcome& outcome, const std::string& ap
 }
 
 ToolResult proposeRoutineChange(LogService& log, const UserId& caller, const Json::Value& args,
-                                const std::string& appBaseUrl) {
+                                ProposalDoor door, const std::string& appBaseUrl) {
   static_assert(classify(Subject::program, Standing::existing) == Mutation::intent);
-  return mintOutcome(log.propose(caller, parseProposalWrite(args, ProposalSource{ProposalDoor::mcp,
-                                                                                 "", ""})),
+  return mintOutcome(log.propose(caller, parseProposalWrite(args, ProposalSource{door, "", ""})),
                      appBaseUrl);
 }
 
@@ -418,7 +437,7 @@ ToolResult discardSession(LogService& log, const UserId& caller, const Json::Val
 // The other intent, at the level that buys the right to PROPOSE a destructive change — and buys
 // nothing else, because `gym:delete` does not imply apply any more than `gym:write` does.
 ToolResult proposeRoutineRemoval(LogService& log, const UserId& caller, const Json::Value& args,
-                                 const std::string& appBaseUrl) {
+                                 ProposalDoor door, const std::string& appBaseUrl) {
   static_assert(classify(Subject::program, Standing::existing) == Mutation::intent);
   std::string id;
   if (std::optional<std::string> bad =
@@ -437,7 +456,7 @@ ToolResult proposeRoutineRemoval(LogService& log, const UserId& caller, const Js
   }
 
   return mintOutcome(log.proposeRemoval(caller, ProposalId{id}, RoutineId{routine}, summary,
-                                        ProposalSource{ProposalDoor::mcp, "", ""}),
+                                        ProposalSource{door, "", ""}),
                      appBaseUrl);
 }
 
@@ -470,10 +489,32 @@ std::vector<ToolDeclaration> GymTools::declareTools() const { return gymToolCata
 // flattens them.
 ToolResult GymTools::callTool(const std::string& name, const Json::Value& arguments,
                               const ToolCaller& caller) {
+  // The MCP door: a connected agent, and every call standing alone, so the reply's envelope is the
+  // whole accounting there is.
+  ReadReceipt oneReply;
+  return callTool(name, arguments, caller, ProposalDoor::mcp, oneReply);
+}
+
+ToolResult GymTools::callTool(const std::string& name, const Json::Value& arguments,
+                              const ToolCaller& caller, ProposalDoor door, ReadReceipt& run) {
+  ReadReceipt served;
   try {
-    ToolResult outcome = dispatch(name, arguments, caller.user);
-    if (!outcome.isError) return outcome;
-    return ToolResult::failure(name + ": " + outcome.content[0]["text"].asString());
+    ToolResult outcome = dispatch(name, arguments, caller.user, door, served);
+    // A REFUSAL SERVED NOTHING, SO IT COUNTS NOTHING. The tool answers with one sentence and no rows,
+    // and the run's line under the answer is the lifter's way of checking a claim without trusting
+    // it — a refused read that still moved the number would be the receipt claiming a row it never
+    // handed to the model (domain/ReadReceipt.h), which is the one thing it promises never to do.
+    // The two throw paths below say the same thing by never reaching this line.
+    if (outcome.isError) return ToolResult::failure(name + ": " + outcome.content[0]["text"].asString());
+    run.merge(served);
+    // THE READ, IN THE ENVELOPE. It is stated where the rows were served rather than drawn in
+    // somebody's chrome, so a lifter's own Claude reads the same accounting Ask prints — and so that
+    // the number under an answer is one we counted rather than one a model could invent. A reply that
+    // served no log rows says nothing, because "read 0 sets" is noise rather than a fact.
+    if (!served.tally().anything() || !outcome.payload.isObject()) return outcome;
+    Json::Value answer = outcome.payload;
+    answer["read"] = toJson(served.tally());
+    return ToolResult::json(answer);
   } catch (const std::bad_alloc&) {
     throw;  // not a tool failure: an exhausted process must die loudly, not answer politely
   } catch (const InvalidTraining& malformed) {
@@ -492,7 +533,7 @@ ToolResult GymTools::callTool(const std::string& name, const Json::Value& argume
 }
 
 ToolResult GymTools::dispatch(const std::string& name, const Json::Value& arguments,
-                              const UserId& caller) {
+                              const UserId& caller, ProposalDoor door, ReadReceipt& served) {
   // The outermost shape: everything below reads `arguments` by key, and jsoncpp throws rather than
   // answers when a key is asked of something that is not an object.
   if (!arguments.isObject())
@@ -500,11 +541,11 @@ ToolResult GymTools::dispatch(const std::string& name, const Json::Value& argume
                                typeName(arguments));
 
   if (name == "list_exercises")  return listExercises(log_, caller);
-  if (name == "list_sessions")   return listSessions(log_, caller, arguments);
-  if (name == "get_session")     return getSession(log_, caller, arguments);
-  if (name == "last_time")       return lastTime(log_, caller, arguments);
+  if (name == "list_sessions")   return listSessions(log_, caller, arguments, served);
+  if (name == "get_session")     return getSession(log_, caller, arguments, served);
+  if (name == "last_time")       return lastTime(log_, caller, arguments, served);
   if (name == "list_routines")   return listRoutines(log_, caller, arguments);
-  if (name == "get_stats")       return getStats(log_, caller, arguments);
+  if (name == "get_stats")       return getStats(log_, caller, arguments, served);
   if (name == "get_preferences") return getPreferences(log_, caller);
 
   if (name == "start_session")   return startSession(log_, caller, arguments);
@@ -512,13 +553,13 @@ ToolResult GymTools::dispatch(const std::string& name, const Json::Value& argume
   if (name == "finish_session")  return finishSession(log_, caller, arguments);
   if (name == "create_routine")  return createRoutine(log_, caller, arguments);
   if (name == "propose_routine_change")
-    return proposeRoutineChange(log_, caller, arguments, appBaseUrl_);
+    return proposeRoutineChange(log_, caller, arguments, door, appBaseUrl_);
   if (name == "create_exercise") return createExercise(log_, caller, arguments);
   if (name == "share_session")   return shareSession(log_, caller, arguments, appBaseUrl_);
 
   if (name == "discard_session") return discardSession(log_, caller, arguments);
   if (name == "propose_routine_removal")
-    return proposeRoutineRemoval(log_, caller, arguments, appBaseUrl_);
+    return proposeRoutineRemoval(log_, caller, arguments, door, appBaseUrl_);
   if (name == "revoke_share")    return revokeShare(log_, caller, arguments);
 
   // THE RETIREMENT ANSWER. An agent written against the old catalog calls one of these on its very

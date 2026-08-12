@@ -1,5 +1,7 @@
 package works.windmill.gym.net
 
+import works.windmill.gym.domain.AskAnswer
+import works.windmill.gym.domain.AskThread
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.ExerciseWrite
 import works.windmill.gym.domain.GymPreferences
@@ -171,4 +173,14 @@ interface TrainingSyncing {
     // The document it answers with is the STORED one and may not be the one that went out: plates
     // come back sorted heaviest-first with duplicates gone. Draw the reply, never the send.
     suspend fun savePreferences(document: GymPreferences): GymPreferences
+
+    // ASK — one turn of the conversation, and the only door in this interface that spends money. The
+    // whole thread goes out every time because the server keeps none of it, and what comes back
+    // carries the SERVER'S OWN count of the rows its tools served: the receipt under an answer is
+    // read off this reply and never composed here.
+    //
+    // Its refusals are the ones no other door has: a cap that is stated plainly and sold nothing
+    // against, a workout still open, and — on a deployment with no model configured — a 404 with no
+    // body at all, which is the route being ABSENT rather than an error. AskVerdict tells them apart.
+    suspend fun ask(thread: AskThread): AskAnswer
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "products/gym/application/LogService.h"
+#include "products/gym/domain/ReadReceipt.h"
 
 #include <json/value.h>
 
@@ -219,6 +220,11 @@ Json::Value toJson(const Review& review);
 Json::Value toJson(const Statistics& statistics);
 Json::Value toJson(const MovementRecord& record);
 Json::Value toJson(const SharedSession& shared);
+// What a read served, as it rides in that read's own reply — `{"sets": 214, "sessions": 34,
+// "weeks": 12}`. The one number on this surface that is about the CALL rather than the log, and it
+// is here rather than in a UI for the reason domain/ReadReceipt.h gives: a count only a screen knows
+// is a count the model could have invented.
+Json::Value toJson(const ReadTally& tally);
 std::optional<PlanSnapshot> planFrom(const Json::Value& stored);   // clamps, never throws
 
 // The one place a share token becomes a link, because it has been three places and they disagreed:

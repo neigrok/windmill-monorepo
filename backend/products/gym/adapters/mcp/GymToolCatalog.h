@@ -24,6 +24,15 @@ inline const std::vector<const char*> kSetKinds = {"warmup", "working", "drop", 
 constexpr int kDefaultLogLimit = 20;
 constexpr int kMaxLogLimit = 200;
 
+// The tools that CHANGE NOTHING and hand the lifter a typed diff instead. It reads the NAME because
+// W6 made the name the contract — `propose_` says this call lands nothing and waits for a tap — and
+// a second list of names beside the catalog is the thing that drifts from it. Ask holds every read
+// plus exactly these: the safeguard ladder's middle rung (§L), and the whole of what an in-app chat
+// is allowed to reach.
+inline bool mintsProposal(const std::string& toolName) {
+  return toolName.rfind("propose_", 0) == 0;
+}
+
 // What gym advertises to an agent: every tool, its sentence, the JSON Schema its arguments are
 // pre-validated against, and the grant level that reaches it. It is the whole published contract and
 // nothing else — no service, no caller — so what an agent is promised reads in one file, apart from

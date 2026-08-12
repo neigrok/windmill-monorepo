@@ -47,9 +47,9 @@ public enum ProposalState: String, Decodable, Sendable {
 }
 
 // WHICH DOOR IT CAME THROUGH, and which agent behind it. "A change appeared in my Tuesday and I
-// cannot tell whether it was my Claude or Windmill's coach" is the exact mental-model failure this
-// column exists to prevent — so provenance is a field on every proposal rather than a fork in the
-// object.
+// cannot tell whether it was my own Claude or the app's own Ask" is the exact mental-model failure
+// this column exists to prevent — so provenance is a field on every proposal rather than a fork in
+// the object. The two doors mint the same type through the same mechanism; only this field differs.
 //
 // `door` stays a String where `state` and `kind` are closed enums, and the difference is what each
 // one decides: a door this build has never heard of only picks which fallback name to print, while
@@ -148,7 +148,9 @@ public struct ProposalHead: Equatable, Decodable, Sendable, Identifiable {
         }
     }
 
-    private var changes: String {
+    // `4 changes` — the count as a NOUN, for the two places that print it without a verb in front:
+    // the review button's own label above, and the chip on the card Ask draws in its message stream.
+    public var changes: String {
         changeCount == 1 ? "1 change" : "\(changeCount) changes"
     }
 

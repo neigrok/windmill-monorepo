@@ -72,11 +72,11 @@
 #include "products/journal/application/PageService.h"
 #include "products/journal/application/WarmEchoRepository.h"
 #include "products/journal/routes.h"
-#include "products/gym/adapters/llm/AnthropicCoach.h"
+#include "products/gym/adapters/llm/AnthropicAsk.h"
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
 #include "products/gym/adapters/mcp/GymTools.h"
 #include "products/gym/adapters/postgres/PgTrainingRepository.h"
-#include "products/gym/application/CoachService.h"
+#include "products/gym/application/AskService.h"
 #include "products/gym/application/LogService.h"
 #include "products/gym/routes.h"
 
@@ -406,18 +406,18 @@ int main() {
   auto logService = std::make_shared<gym::LogService>(*gymRepository, *systemClock, *tokens);
   auto gymTools = std::make_shared<gym::GymTools>(*logService, appBaseUrl);
 
-  // The in-app coach panel — the SECOND door onto the very tools built above, for a lifter who has no
-  // agent of their own. Same key as the roadmap composer and the tend agent: one Anthropic account,
-  // one credential, three products asking it different questions. Dark when unconfigured, and dark
-  // here means ABSENT: with no key there is no CoachService, so gym::registerRoutes never mounts the
-  // path and the panel's client hides itself on the 404. The narrowing that makes this safe is not
-  // here — it is the read-only ToolScope CoachService states at its own call site, plus CoachTools,
-  // which drops every write and delete tool from the catalog the model is handed.
-  auto gymCoachAgent = std::make_shared<gym::AnthropicCoach>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiSpendSink);
-  std::shared_ptr<gym::CoachService> gymCoach;
-  if (gymCoachAgent->configured())
-    gymCoach = std::make_shared<gym::CoachService>(*logService, *gymCoachAgent, *gymTools,
-                                                   *entitlements);
+  // ASK — the SECOND door onto the very tools built above, for a lifter who has no agent of their
+  // own. Same key as the roadmap composer and the tend agent: one Anthropic account, one credential,
+  // three products asking it different questions. Dark when unconfigured, and dark here means
+  // ABSENT: with no key there is no AskService, so gym::registerRoutes never mounts the path and
+  // every client hides the door on the 404. The narrowing that makes this safe is not here — it is
+  // the three levels AskService names at its own call site, plus AskTools, which hands the model
+  // gym's reads and the two tools that mint a proposal, and refuses everything that would change
+  // what a lifter logged.
+  auto gymAskAgent = std::make_shared<gym::AnthropicAsk>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiSpendSink);
+  std::shared_ptr<gym::AskService> gymAsk;
+  if (gymAskAgent->configured())
+    gymAsk = std::make_shared<gym::AskService>(*logService, *gymAskAgent, *gymTools, *entitlements);
 
   // The tool surface a connected client sees: every product's module behind one host, filtered by
   // the grant its credential carries. Roadmap and gym are wired today; adding one is a line here,
@@ -950,11 +950,11 @@ int main() {
   // The gym product — the third room — mounted behind its own seam (products/gym/routes.h). The
   // durable set write is still the heart of it: owner-scoped, idempotent by client-minted id,
   // auto-close applied lazily by the service. No arming flags and no sweeps; the one vendor key it
-  // reads is ANTHROPIC_API_KEY, and only the coach panel reads it — every route below exists whether
-  // or not it is set. Its collaborators were built up with the MCP surface, because gym's tools ride
+  // reads is ANTHROPIC_API_KEY, and only Ask reads it — every other route below exists whether or
+  // not it is set. Its collaborators were built up with the MCP surface, because gym's tools ride
   // the same service these routes do — one core, two doors, and no second copy of a rule.
   gym::GymDeps gymDeps{
-      .logService = logService, .authService = authService, .coachService = gymCoach,
+      .logService = logService, .authService = authService, .askService = gymAsk,
       .appBaseUrl = appBaseUrl};
   gym::registerRoutes(app, gymDeps);
 

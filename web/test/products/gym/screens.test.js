@@ -21,7 +21,8 @@ const read = (file) => fs.readFileSync(path.join(GYM, file), 'utf8');
 // The source with its commentary stripped — roughly, what could end up in front of a lifter, as
 // against what a file says ABOUT what it puts there. A scan for banned copy runs over this: a
 // comment has to stay free to name the promise it is refusing to make.
-const speech = (file) => read(file).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+const spoken = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+const speech = (file) => spoken(read(file));
 
 // A DRAFT MAY NOT OUTLIVE THE DOCUMENT IT IS OF. The editor holds one routine under the lifter's
 // hand and nothing reaches the store until Done, so the instance is scoped to the routine id: the
@@ -107,19 +108,175 @@ test('the record page’s block heads do not take the finish screen’s gold cla
   assert.equal(read('Record.jsx').includes('gym-record-title'), false);
 });
 
-// THE CHAT IS NEVER OFFERED MID-SESSION — §L (the Ask section), and ARCHITECTURE §12 cuts "any chat
-// not attached to one finished workout". A session detail is reachable for the OPEN session too —
-// the log lists it and the mirror is polling it — and a panel mounted there would be asking a model
-// about a workout that is still changing: the answer is out of date before it is read, and every
-// tool call behind it names a read of a session that has since moved. The gate is on the session
-// being finished, which is the same condition the review door beside it is drawn under.
+// ASK IS A ROOM AND THERE IS ONLY ONE OF IT (§L). It replaced the composer that used to sit under
+// one finished workout rather than landing beside it: two chat-shaped things is the two-systems
+// failure arriving early, and the panel's whole virtue was that it was not a second system. So the
+// session screens carry no chat at all now, and the room is mounted in exactly one place — the
+// frame, off one hash. A second `<AskRoom` anywhere would be the panel growing back.
+test('the chat is one room in the frame, and no session screen carries one', () => {
+  const app = read('GymApp.jsx');
+  assert.equal(app.includes("{screen === 'ask' && <AskRoom log={log} />}"), true);
+  for (const file of gymFiles()) {
+    const source = fs.readFileSync(file, 'utf8');
+    const mine = path.basename(file) === 'GymApp.jsx';
+    assert.equal(source.includes('<AskRoom') && !mine, false, file);
+    // And the thing it replaced is gone, name and all — not kept beside it for a wave.
+    assert.equal(source.includes('CoachPanel'), false, file);
+  }
+  for (const screen of ['Log.jsx', 'Finish.jsx']) {
+    assert.equal(read(screen).includes('askCoach'), false, screen);
+  }
+});
+
+// AND IT IS NOT A FOURTH TAB — canon says so in as many words: the bar is the app's three rooms, and
+// a chat is not a place you live. The tab bar is drawn over TAB_SCREENS and 'ask' is deliberately
+// not one of them, which is also what keeps a fixed rail off the composer at the bottom of it.
+test('Ask is a room the tab bar does not draw a column for', () => {
+  const app = read('GymApp.jsx');
+  const rooms = /const TAB_SCREENS = \[([^\]]*)\];/.exec(app);
+  assert.equal(rooms?.[1], "'today', 'log', 'routines'");
+  // Which is also the count the grid has columns for — the rule three tests above, from the other
+  // side: a fourth column would be the room becoming a place you live.
+  assert.equal(/\.gym-tabs \{[^}]*grid-template-columns: repeat\(3, 1fr\)/.test(read('gym.css')), true);
+});
+
+// NEVER OFFERED MID-SESSION (§L), and the door is where that rule is kept on this surface: an answer
+// about a workout that is still moving is out of date before it is read. Both doors ask the same
+// component the same question rather than each writing the condition out — a second copy of a gate
+// is the one that gets forgotten — and the server is the floor under both (409 ask-session-open).
 //
-// A mounted-component test cannot see this: the panel renders its locked face for a signed-in
-// non-subscriber either way, and the difference is whether it is in the tree at all.
-test('the coach panel is mounted only on a session that is over', () => {
-  const source = read('Log.jsx');
-  assert.equal(source.includes('{isFinished(session) && <CoachPanel sessionId={id} />}'), true);
-  assert.equal((source.match(/<CoachPanel/g) ?? []).length, 1);
+// A mounted-component test cannot see this: the difference is whether the door is in the tree at
+// all, and both hosts render perfectly well without it.
+test('the Ask door is drawn from Today and from a proposal, and never while a workout is running', () => {
+  assert.equal(read('Today.jsx').includes('<AskDoor training={log.session != null} />'), true);
+  assert.equal(read('Proposals.jsx').includes('{!log.session && <a className="gym-ask-aside" href={ASK_HREF}>'), true);
+  // The guard is a top-of-component early return, so a third caller cannot forget it.
+  assert.equal(read('ask/AskRoom.jsx').includes('function AskDoor({ training }) {\n  if (training) return null;'), true);
+  // And the room itself says it before anything is typed rather than letting the send fail.
+  assert.equal(read('ask/AskRoom.jsx').includes('if (log.session) {'), true);
+});
+
+// THE RECEIPT IS THE SERVER'S OR IT IS A LAUNDERED HALLUCINATION. `read` is counted over the rows
+// the server actually served this connection, deduped by id, and printed as it arrives — a count
+// this surface summed would be an audit the model could have written itself. So no arithmetic
+// touches it anywhere: `readLine` reads three fields and the room passes `reply.read` through whole.
+test('nothing on this surface computes the number an answer is checked against', () => {
+  // The reply's own object, passed through whole by the one function allowed to make a turn out of
+  // a reply. Nothing composes a `read` here and nothing carries one forward from a previous turn:
+  // each answer is checked against what THAT exchange read.
+  assert.equal(speech('ask/ask.js').includes('read: reply.read,'), true);
+  for (const file of ['ask/ask.js', 'ask/AskRoom.jsx']) {
+    assert.equal(/read:\s*\{/.test(read(file)), false, file);
+  }
+  // And the line that prints it does no arithmetic at all — it reads three fields and decides one
+  // plural. A sum, a running total or a fold here would be the audit writing itself.
+  const rules = speech('ask/ask.js');
+  for (const arithmetic of ['reduce(', '+=', 'Math.', 'sum']) {
+    assert.equal(rules.includes(arithmetic), false, arithmetic);
+  }
+});
+
+// AND AN ANSWER WITH NO RECEIPT IS NOT DRAWN AT ALL. §L's rule is that EVERY answer states what it
+// read, so the receipt cannot be a thing the room prints when the server remembered to send one:
+// `answerTurn` is the only door onto a turn, and a body it refuses is said as the model not having
+// answered. Both phones fail closed on the same body, so a web room that drew it would be the one
+// door where unverifiable model prose reaches a lifter.
+//
+// The wiring is the fact under test — that the room builds no answer turn of its own — and no pure
+// module can be asked where a component put an object literal.
+test('the room makes no answer of its own, so prose with no receipt never reaches the screen', () => {
+  const room = read('ask/AskRoom.jsx');
+  assert.equal(room.includes('const answer = answerTurn(reply);'), true);
+  assert.equal(room.includes('if (answer) setTurns((held) => [...held, answer]);'), true);
+  assert.equal(room.includes('else setNote(NO_ANSWER_NOTE);'), true);
+  // The turn's own shape is minted in exactly one place, and it is not this file.
+  assert.equal(room.includes("from: 'ask',"), false);
+  assert.equal(speech('ask/ask.js').includes("from: 'ask',"), true);
+  // Which is also why the receipt is drawn unconditionally: there is no turn without one, so a
+  // guard here would be a branch for a state that cannot exist — and a reader would take it for
+  // proof that one can.
+  assert.equal(room.includes('<p className="gym-ask-read">{readLine(turn.read)}</p>'), true);
+});
+
+// NOTHING A LIFTER READS SAYS COACH. The brief that owns gym's vocabulary bans it — there is no
+// coach, there is your agent — and the word was on screen until this wave. The COACH SHARE is a
+// different object and keeps the word honestly: it is a link you send to a person who coaches you,
+// and that person is what it names.
+//
+// The scan is over the SPEECH, because a comment has to stay free to name the thing it replaced.
+test('the word coach is off every gym surface but the share, which is about a person', () => {
+  for (const file of gymFiles()) {
+    if (path.dirname(file).endsWith('/share')) continue;
+    // `CoachShare` is the share COMPONENT's name where two screens mount it — an identifier and not
+    // a sentence, and the object it names keeps the word honestly. It is exempted by name so that a
+    // sentence sneaking the word back in still fails.
+    const said = spoken(fs.readFileSync(file, 'utf8')).replaceAll('CoachShare', '').toLowerCase();
+    assert.equal(said.includes('coach'), false, file);
+  }
+  // And the share still says it, because that sentence is about a human being.
+  assert.equal(read('share/share.js').includes('Share with a coach'), true);
+});
+
+// NO UPGRADE, NO PRICE, NO LOCKED FACE (W7 §4). Ask ships open to everyone with a plainly-worded
+// cap, because Windmill One cannot be bought — `paidPlansOpen()` is a hardcoded false and BillingApi
+// 503s — so a locked chat offering a purchase would advertise a checkout that returns 503, which is
+// a dark pattern by accident and exactly the trade this brand's mission forecloses. The gate arms in
+// the wave that opens checkout and not before, and it is one predicate on the server.
+//
+// The scan is for the APIs as well as the words: copy can be reworded, an import cannot.
+test('Ask offers nothing to buy, and reads no entitlement to decide whether to answer', () => {
+  for (const file of ['ask/ask.js', 'ask/AskRoom.jsx']) {
+    // The SPEECH, so that a comment stays free to name the door it is refusing to open — an import
+    // survives the strip and a sentence about one does not.
+    const said = speech(file);
+    for (const door of ['useEntitlements', 'paidPlansOpen', 'beginUpgrade', 'windmillOne', 'checkout']) {
+      assert.equal(said.includes(door), false, `${file} reaches for ${door}`);
+    }
+    // A price is a currency mark with a number after it — `${` is a template, not a fee.
+    assert.equal(/[Uu]pgrade|Windmill One|[Ss]ubscri|\$\d|£\d|€\d/.test(said), false, file);
+  }
+  // The two caps say what they are — pace, and a rolling 30-day ceiling — and neither points at a
+  // purchase, because there is no door behind one to point at.
+  const rules = speech('ask/ask.js');
+  assert.equal(rules.includes('about ten questions a day, three back to back'), true);
+  assert.equal(rules.includes('AI ceiling for the last 30 days'), true);
+});
+
+// AND THE PAGE THAT PRICES THE PRODUCT SAYS THE SAME THING. The landing is the one gym file the
+// blanket coach scan above skips — it may say the word, because the coach SHARE is a link you send
+// to a person — and that exemption is exactly where the deleted panel survived: "The coach panel is
+// part of Windmill One, which isn't on sale yet" priced a feature this wave deleted, and the
+// paragraph under it described a read-only composer bolted under one finished workout. Both went
+// false the moment CoachPanel.jsx did, and a false line about MONEY is the worst one on any page.
+test('the landing sells no panel, no plan behind Ask, and names the cap Ask really has', () => {
+  const said = speech('marketing/GymLanding.jsx');
+  for (const gone of ['coach panel', 'A panel under any finished workout', 'Windmill One', 'It only reads']) {
+    assert.equal(said.includes(gone), false, gone);
+  }
+  // What stands in their place is the room that does exist, priced the way it is actually priced:
+  // open to everyone, with the server's own pace cap said in words (backend AskService.h,
+  // kAskPerDay = 10) rather than a plan nobody can buy.
+  assert.equal(said.includes('about ten questions a day'), true);
+  assert.equal(said.includes('nothing in Gym is on sale'), true);
+  // ASK PROPOSES AS WELL AS READS — its grant is the seven reads plus the two tools that mint a
+  // proposal — so the page may not sell it as read-only, and it names the receipt an answer carries.
+  assert.equal(said.includes('your whole log and it proposes'), true);
+  assert.equal(said.includes('how many of your rows they served'), true);
+  assert.equal(said.includes('log a set, correct one you lifted, or delete anything'), true);
+  // And the word that is left on this page is only ever the link sent to a human being.
+  assert.equal(said.replaceAll('coach link', '').includes('coach'), false);
+});
+
+// THE EMPTY STATE POINTS AT THE FREE DOOR (W7 §5). An in-app chat that tells you how to stop paying
+// us costs one paragraph and is the strongest available proof the MCP thesis is real — shipping Ask
+// without that line is the retreat. It is on the SCREEN, in the speech, with a door under it.
+test('an empty Ask says the free door is better, and walks to it', () => {
+  const said = speech('ask/ask.js');
+  assert.equal(said.includes('If you already use Claude or ChatGPT, connect them instead'), true);
+  assert.equal(said.includes('it knows the rest of your life'), true);
+  const room = read('ask/AskRoom.jsx');
+  assert.equal(room.includes('{turns.length === 0 && <FreeDoor />}'), true);
+  assert.equal(room.includes('<a className="gym-ask-free-door" href="#/connect">{FREE_DOOR_VERB}</a>'), true);
 });
 
 // `ADDED TODAY` IS SAID ONCE, ON THE FIRST WORKING SET — and which set that is, is decided in the
@@ -316,7 +473,7 @@ test('nothing on the fix path refuses a set because its workout is over', () => 
     assert.equal(source.includes('isFinished'), false, file);
   }
   // The sheet is mounted on any set of the session, not on a condition about the session — unlike
-  // the coach panel three lines above it, which is gated on the workout being over.
+  // the review door in the header above it, which is drawn only once the workout is over.
   assert.equal(read('Log.jsx').includes('{fixing && (\n        <FixSheet'), true);
 });
 

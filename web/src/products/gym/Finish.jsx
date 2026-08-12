@@ -22,7 +22,6 @@ import {
 import { mintId } from './mint.js';
 import { comparison, finishHead, RECORD_TITLE, recordSentence, statTiles } from './review.js';
 import { routineFromSession } from './routines.js';
-import { CoachPanel } from './coach/CoachPanel.jsx';
 import { CoachShare } from './share/CoachShare.jsx';
 import { useGymRead } from './useGymRead.js';
 
@@ -104,10 +103,10 @@ export function FinishScreen({ id, log }) {
                 says "+2.5 on squat" is checkable in one tap, on the one screen that says it. It is
                 a door OUT of this screen, and the screen keeps nothing the store has not already
                 answered — the three facts, the record and this band are all re-read on the way back
-                in, which is why the finish is a place and not a moment (above). The two things
-                below it that a lifter can type into — the routine name, the coach's chat — sit
-                under this band rather than around it, and every state of this screen already draws
-                a link out of it. */}
+                in, which is why the finish is a place and not a moment (above). The one thing
+                below it that a lifter can type into — the routine name — sits under this band
+                rather than around it, and every state of this screen already draws a link out
+                of it. */}
             {against.rows.map((row) => (
               <li className="gym-against-row" key={row.exerciseId}>
                 <a className="gym-against-movement gym-movement-door" href={recordHref(row.exerciseId)}>
@@ -125,10 +124,13 @@ export function FinishScreen({ id, log }) {
         <KeepAsRoutine session={session} sets={sets} catalog={catalog} log={log} />
       )}
 
-      {/* Neither of these is offered on a short session, for the same reason: a screen asking "keep
-          it in the log, or drop it?" must not also offer to send it to somebody or to talk about it.
-          The session detail carries both doors, so a session kept is one tap from either. */}
-      {!review.slight && <CoachPanel sessionId={id} />}
+      {/* Not offered on a short session: a screen asking "keep it in the log, or drop it?" must not
+          also offer to send it to somebody. The session detail carries the same door, so a session
+          kept is one tap from it.
+          THE CHAT IS NOT HERE ANY MORE, and its absence is the decision. It used to be a composer
+          under this one workout; §L widened it into a room over the whole log, reached from Today's
+          band — because "what happened in this session" is the screen above, and the questions worth
+          asking a model are about the months behind it. */}
       {!review.slight && <CoachShare sessionId={id} />}
 
       {!review.slight && (

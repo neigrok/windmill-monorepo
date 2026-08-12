@@ -29,7 +29,6 @@ import {
   planFrozenLabel, planReadingOf, recordHref, routineNameOf, sessionDetailMeta, sessionHref,
   setLoadLabel, setNoteOf, tonnageLabel, weeksOf, workingLabel,
 } from './log.js';
-import { CoachPanel } from './coach/CoachPanel.jsx';
 import { CoachShare } from './share/CoachShare.jsx';
 import { useGymRead } from './useGymRead.js';
 
@@ -362,13 +361,13 @@ export function SessionDetail({ id, log }) {
         );
       })}
       {frozen && sets.length > 0 && <p className="gym-detail-thesis">{PLAN_BESIDE_ACTUAL}</p>}
-      {/* The same two doors the finish screen carries, at the other end of a session's life: a
-          workout worth asking about, or sending to a coach, is usually one somebody went back and
-          looked at. The chat is never offered MID-SESSION (§L, and ARCHITECTURE §12 cuts "any chat
-          not attached to one finished workout") — this screen is the mirror of a workout still
-          running, and an answer about a session that is still changing is out of date before it is
-          read. */}
-      {isFinished(session) && <CoachPanel sessionId={id} />}
+      {/* The same door the finish screen carries, at the other end of a session's life: a workout
+          worth sending to a coach is usually one somebody went back and looked at. It is offered on
+          an open session too — a link to one person says nothing about how the session went.
+          THE CHAT IS NOT HERE, and it never was a door onto one workout in the first place: §L makes
+          Ask a room over the whole log, reached from Today's band and never while a workout is
+          running. A composer under a session still being logged would be asking a model about a
+          workout that is still changing. */}
       <CoachShare sessionId={id} />
       {/* KEYED BY THE SET IT IS OF, for the reason the routine editor is keyed by its routine: the
           sheet holds a draft, and a draft may not outlive the thing it is a draft of. */}

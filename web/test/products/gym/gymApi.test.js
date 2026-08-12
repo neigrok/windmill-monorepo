@@ -1554,3 +1554,60 @@ test('failureReason — a refusal and a silence do not get the same sentence', a
   assert.equal(failureReason(new TypeError('Failed to fetch')), 'the log didn’t answer. Try again when you have signal');
   assert.equal(failureReason(undefined), 'the log didn’t answer. Try again when you have signal');
 });
+
+// ASK (§L) — the one route in this file that may not exist, and the only one that carries a whole
+// conversation. There is no session id in the path: Ask is about the LOG, which is what made it a
+// room instead of a composer under one finished workout.
+//
+// The reply's `read` is the SERVER's count of the rows it served this exchange, deduped by id — the
+// number an answer is checked against — and it arrives whole. Nothing in this client sums it, and
+// the test asserts the object comes back untouched rather than reshaped on the way through.
+test('ask — the whole thread up, and the answer with its receipt, its steps and its proposals back', async () => {
+  serve(ok({
+    answer: 'Three sessions at the same top set, and the fourth lost a rep.',
+    steps: [{ tool: 'get_stats', failed: false }, { tool: 'propose_routine_change', failed: false }],
+    read: { sets: 214, sessions: 34, weeks: 12 },
+    proposals: ['prop_0a1b2c3d'],
+  }));
+  const reply = await gymApi.ask([
+    { from: 'lifter', text: 'bench has been stuck at 82.5 for three weeks. What do you see?' },
+  ]);
+  assert.deepEqual(reply, {
+    answer: 'Three sessions at the same top set, and the fourth lost a rep.',
+    steps: [{ tool: 'get_stats', failed: false }, { tool: 'propose_routine_change', failed: false }],
+    read: { sets: 214, sessions: 34, weeks: 12 },
+    proposals: ['prop_0a1b2c3d'],
+  });
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/gym/ask',
+    method: 'POST',
+    credentials: 'include',
+    contentType: 'application/json',
+    body: '{"turns":[{"from":"lifter","text":"bench has been stuck at 82.5 for three weeks. What do you see?"}]}',
+  });
+});
+
+// THE FOUR REFUSALS A ROOM BRANCHES ON, and it branches on the CODE — the sentence beside it is
+// prose that may be reworded any day. Two of them are 429s and they are different facts: one is
+// about pace, the other about a rolling 30-day AI ceiling. Neither is a purchase, and the bare 404
+// is the framework's own — the route was never mounted, so there is no Ask on this deployment.
+test('ask — every refusal arrives with the machine word the room reads it by', async () => {
+  const refusals = [
+    [409, 'finish your workout first', 'ask-session-open'],
+    [429, 'that’s Ask for now', 'ask-daily-limit'],
+    [429, 'this account has reached its AI ceiling', 'ask-out-of-budget'],
+  ];
+  for (const [status, sentence, code] of refusals) {
+    serve(refusal(status, sentence, code));
+    const error = await gymApi.ask([{ from: 'lifter', text: 'q' }]).catch((held) => held);
+    assert.equal(error.status, status, code);
+    assert.equal(error.code, code);
+    assert.equal(error.detail, sentence);
+  }
+  // The absence: no body at all, because the framework answered before gym did.
+  serve({ ok: false, status: 404, json: async () => { throw new SyntaxError('Unexpected end of JSON input'); } });
+  const absent = await gymApi.ask([{ from: 'lifter', text: 'q' }]).catch((held) => held);
+  assert.equal(absent.status, 404);
+  assert.equal(absent.code, '');
+  assert.equal(absent.detail, '');
+});

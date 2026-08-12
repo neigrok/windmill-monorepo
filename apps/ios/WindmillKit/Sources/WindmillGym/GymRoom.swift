@@ -54,6 +54,16 @@ public struct GymRoom: View {
     // rather than on disk because "later" means exactly this visit: the card is on Today again the
     // next time the room is opened, which is what makes it a not-now and not a decision.
     @State private var setAside: Set<String> = []
+    // ASK'S THREAD, held by the ROOM for the same reason `setAside` is: opening a proposal from an
+    // answer tears the chat screen down — one screen is mounted at a time — and a conversation that
+    // vanished on the walk to the diff and back would be the one thing a chat may not do. It dies
+    // with the room, which is the right lifetime: leaving gym ends the conversation, and nothing
+    // about it is ever written to this device or to the log.
+    @State private var askThread: [AskExchange] = []
+    // Whether this Windmill mounts Ask at all. It is a deployment fact, not a plan: a server with no
+    // Anthropic key answers the route's own 404, and the entry goes for the rest of the visit rather
+    // than staying as a door onto a sentence.
+    @State private var askOnThisDeployment = true
 
     public init(account: Account) {
         self.account = account
@@ -85,6 +95,9 @@ public struct GymRoom: View {
         // handed a copy the card was drawn from would be deciding against a document that may have
         // been settled from the web while this room was open.
         case proposal(String)
+        // ASK (§L). It carries no argument at all — the thread is the ROOM's, so this case is only
+        // ever "the chat is on screen", and a copy handed down the stack would be a second one.
+        case ask
         // §I's five rows. It is HERE, on the room's own stack, because the native ProductModule seam
         // has no settings slot for the shell to compose — see the head of SettingsScreen. Nothing
         // ever stacks over it, so its label is only ever read by a way back that cannot be drawn.
@@ -96,6 +109,7 @@ public struct GymRoom: View {
             case .session(let summary): return Readout.routine(of: summary.session)
             case .movement(let exerciseId): return Readout.movement(exerciseId, in: catalog)
             case .proposal: return "Proposal"
+            case .ask: return Ask.title
             case .settings: return "Gym"
             }
         }
@@ -160,7 +174,7 @@ public struct GymRoom: View {
                          onDone: { self.finished = nil })
         } else if store.session != nil {
             LoggerScreen(store: store, isSignedIn: account.isSignedIn,
-                         onBuildRoutine: buildMyRoutine,
+                         onBuildRoutine: openConnect,
                          say: { note = $0 }, onFinish: { Task { await close() } })
         } else if let showing {
             switch showing {
@@ -174,6 +188,8 @@ public struct GymRoom: View {
                 ProposalScreen(proposalId: proposalId, store: store,
                                onClosed: { said in back(); note = said },
                                say: { note = $0 })
+            case .ask:
+                AskScreen(store: store, exchanges: $askThread, doors: askDoors)
             case .settings:
                 SettingsScreen(store: store, web: account.api.baseURL, say: { note = $0 })
             }
@@ -181,11 +197,13 @@ public struct GymRoom: View {
             switch tab {
             case .today:
                 TodayScreen(store: store, isSignedIn: account.isSignedIn, setAside: setAside,
+                            askOnThisDeployment: askOnThisDeployment,
                             onStart: { routineId in Task { await open(routineId) } },
                             onMovement: { look(at: .movement($0)) },
                             onOpenSession: { look(at: .session($0)) },
                             onProposal: { look(at: .proposal($0)) },
                             onLater: { setAside.insert($0) },
+                            onAsk: { look(at: .ask) },
                             onSettings: { look(at: .settings) },
                             onSignIn: { shell.openYou() })
             case .log:
@@ -289,6 +307,22 @@ public struct GymRoom: View {
                    revoke: { await store.revokeShare(sessionId) })
     }
 
+    // WHAT ASK IS LENT, and the network half of it does not go through the store on purpose: a
+    // question mints nothing, owes nothing and has no offline half, where every call the store owns
+    // decides whether a set somebody lifted survives. The refusal is read at this seam so the screen
+    // is handed a sentence rather than an HTTP status.
+    private var askDoors: AskDoors {
+        let gym = GymApi(api: account.api)
+        return AskDoors(
+            send: { turns in
+                do { return .success(try await gym.ask(turns)) }
+                catch { return .failure(AskRefusal(error)) }
+            },
+            connect: openConnect,
+            openProposal: { look(at: .proposal($0)) },
+            absent: { askOnThisDeployment = false })
+    }
+
     // ARRIVING STARTS IT (§J22). Gym's answer to the shell's one question is not a tour and not a
     // pitch: it is the real surface with its first move already made — a session running, the picker
     // already up, nobody having pressed start. It goes through the same `open` every Start button
@@ -317,12 +351,14 @@ public struct GymRoom: View {
         firstSessionOpened = true
     }
 
-    // The room's one account verb, §J22's card. Signed out it opens the shell's door — the account is
-    // the shell's business, and everything the lifter has already logged is claimed on the way back.
-    // Signed in the door is already open and what is left is the grant, which lives on the web page
-    // that owns it (the same door §I's settings draw), because this client cannot read entitlements
-    // and a screen naming a connection it never checked would be worse than the door.
-    private func buildMyRoutine() {
+    // THE FREE DOOR, and both screens that offer it come here: §J22's card in the logger, and the
+    // paragraph in Ask's empty state that tells a lifter how to stop needing Ask. Signed out it opens
+    // the shell's door — the account is the shell's business, and everything already logged is
+    // claimed on the way back. Signed in the door is already open and what is left is the grant,
+    // which lives on the web page that owns it (the same door §I's settings draw), because this
+    // client cannot read entitlements and a screen naming a connection it never checked would be
+    // worse than the door.
+    private func openConnect() {
         guard account.isSignedIn else {
             shell.openYou()
             return
