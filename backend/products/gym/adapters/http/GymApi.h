@@ -27,8 +27,10 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // The status ladder is the whole contract with the client's flush queue, which branches on the
 // status and the machine word beside it (ARCHITECTURE §6): 400 is the client's and terminal — an
 // unreadable body, an instant outside the wire's bounds, a set or a routine entry naming no known
-// movement; 404 is the fact that a session or a routine is absent, which is byte-identical to it
-// being another account's; 409 is the family about something already spent or already running — a
+// movement; 404 is the fact that a session, a routine or a movement named IN THE PATH is absent,
+// which is byte-identical to it being another account's — `/v1/gym/last?exercise=` keeps its 400
+// `unknown-exercise` because the movement is an argument to a read about the log there, not the
+// thing the path asks for; 409 is the family about something already spent or already running — a
 // session, set, routine or movement id that is taken, the start that would have joined a live
 // workout, and the discard of a workout still being logged into; 500 is the server's and retryable —
 // a storage failure rides past the handlers' `catch (InvalidTraining&)` to the house exception
@@ -46,6 +48,10 @@ public:
 
   void listExercises(const drogon::HttpRequestPtr& req, HttpCallback&& cb);   // GET  /v1/gym/exercises
   void createExercise(const drogon::HttpRequestPtr& req, HttpCallback&& cb);  // POST /v1/gym/exercises
+  void renameExercise(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                      const std::string& id);                                 // PATCH /v1/gym/exercises/{id}
+  void exerciseRecord(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                      const std::string& id);                                 // GET  /v1/gym/exercises/{id}/record
   void startSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb);    // POST /v1/gym/sessions
   void appendSet(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                  const std::string& id);                                      // POST /v1/gym/sessions/{id}/sets

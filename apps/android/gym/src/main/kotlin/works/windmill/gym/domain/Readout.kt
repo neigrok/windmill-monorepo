@@ -2,7 +2,6 @@ package works.windmill.gym.domain
 
 import java.time.Instant
 import java.time.ZoneId
-import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.time.temporal.ChronoUnit
 import kotlin.math.abs
@@ -113,8 +112,8 @@ object Readout {
     fun workingSets(count: Int): String = "$count working"
 
     // The estimate arrives from the log or not at all: Epley lives in one place per language and
-    // this phone is not one of them (Review.of and TrainingStatistics.of say the same). This spells
-    // the number the server computed; it never makes one.
+    // this phone is not one of them (Review.of and MovementRecord.of say the same). This spells the
+    // number the server computed; it never makes one.
     fun estimate(e1rm: Double): String = "e1RM ${weight(e1rm)}"
 
     // A count said as a word, for the one column that reads better without a numeral in it: a set
@@ -146,14 +145,32 @@ object Readout {
         return day(ms)
     }
 
-    // `utc` is for one caller and one reason: the statistics weeks are bucketed by
-    // `date_trunc('week', … AT TIME ZONE 'UTC')`, so a bucket's start instant is a UTC Monday
-    // midnight. Rendered in the reader's own zone it comes out as Sunday for half the planet, and a
-    // week label that names the wrong day is worse than none. Everything else in gym is an instant a
-    // person lived through and reads in the zone they are standing in, which is the default.
-    fun day(ms: Long, utc: Boolean = false): String {
-        val at = at(ms, utc)
+    fun day(ms: Long): String {
+        val at = at(ms)
         return "${weekdays[at.dayOfWeek.value % 7]} ${at.dayOfMonth} ${months[at.monthValue - 1]}"
+    }
+
+    // A day at its shortest that is still unambiguous — `3 Aug` inside the year being lived in, and
+    // `13 Jul 2025` outside it, for the reason the log's foot prints a year: a bare day and month
+    // three years back is the fact somebody came for with the interesting half missing. §H stacks
+    // dates in three narrow columns and a weekday in each would take the width the numbers need,
+    // which is why this drops the one `day` keeps.
+    fun shortDate(ms: Long, now: Long): String {
+        val at = at(ms)
+        val here = at(now)
+        val date = "${at.dayOfMonth} ${months[at.monthValue - 1]}"
+        if (at.year == here.year) return date
+        return "$date ${at.year}"
+    }
+
+    // The same day said the way a person says the one they are standing in. The record page's
+    // tiles, its personal records and its recent sets all print this; the chart's two axis ends
+    // print `shortDate`, because an end of an axis is a date and never a word.
+    fun briefDay(ms: Long, now: Long): String {
+        val zone = ZoneId.systemDefault()
+        val then = Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
+        if (then == Instant.ofEpochMilli(now).atZone(zone).toLocalDate()) return "today"
+        return shortDate(ms, now)
     }
 
     // The day a session ran, spelled in full — the one place gym prints a weekday as a NAME rather
@@ -210,8 +227,8 @@ object Readout {
     }
 
     // The product counts SESSIONS — never workouts and never entries — so the word is spelled here
-    // beside the set's, and the movement lines on the statistics screen borrow it rather than
-    // inventing a second noun for the same thing.
+    // beside the set's, and the record page's subhead borrows it rather than inventing a second
+    // noun for the same thing.
     fun sessionCount(count: Int): String = if (count == 1) "1 session" else "$count sessions"
 
     // A movement is a stable id everywhere except on screen. Falling back to the id keeps a sentence
@@ -220,8 +237,8 @@ object Readout {
     fun movement(exerciseId: String, catalog: List<Exercise>): String =
         catalog.firstOrNull { it.id == exerciseId }?.name ?: exerciseId
 
-    private fun at(ms: Long, utc: Boolean = false): ZonedDateTime =
-        Instant.ofEpochMilli(ms).atZone(if (utc) ZoneOffset.UTC else ZoneId.systemDefault())
+    private fun at(ms: Long): ZonedDateTime =
+        Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault())
 
     private fun pad(value: Int): String = if (value < 10) "0$value" else value.toString()
 }

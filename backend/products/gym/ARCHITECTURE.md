@@ -36,7 +36,8 @@ happens on the device. The backend's job is narrow and load-bearing:
 2. **Exercise identity** — a seeded catalog of stable ids. Every structural bug in Lift traces
    to one line: an exercise is a display string. (§4)
 3. **The reads the device can't fake** — the training log (sessions + sets back), last-time
-   prefill, the finish, the statistics surface, the export, and the coach share. (§5)
+   prefill, the finish, a movement's record, the statistics engine, the export, and the coach
+   share. (§5)
 4. **The wedge — shipped.** Gym's fifteen MCP tools on `windmill.works/mcp`, behind the platform's
    grant gate: `gym:read` answers questions, `gym:write` logs and plans, `gym:delete` destroys, and
    **none of the three implies another**. Every tool goes through `LogService` — the same core the
@@ -62,8 +63,7 @@ happens on the device. The backend's job is narrow and load-bearing:
   "sharing does not exist — structurally", inheriting journal's §0.1 whole, and gym no longer
   inherits it whole: a lifter can hand one finished workout to a coach. What was load-bearing about
   that refusal is kept intact and is the reason the share is shaped the way it is:
-  **there is still no visibility column, and not one of the fifteen routes that already existed
-  changed.**
+  **there is still no visibility column, and not one of the routes that already existed changed.**
   Every one of them is still `WHERE user_id = :caller`, and absent is still byte-identical to
   forbidden on all of them. The one reader who is not the owner comes in through a **separate
   table** (`gym_session_shares`, §2.6) and one unauthenticated route that reads nothing else — so
@@ -103,6 +103,7 @@ backend/products/gym/
   domain/Routine.h/.cpp      Routine · RoutineEntry · snapshotOf              (pure, no I/O)
   domain/Review.h/.cpp       e1RM · the three record rules · the comparison   (pure, no I/O)
   domain/Statistics.h/.cpp   the per-movement line · the standing bests       (pure, no I/O)
+  domain/Record.h/.cpp       a movement's record — chart · ladder · tiles     (pure, no I/O)
   ports/TrainingRepository.h the one store port + its DTOs
   ports/CoachAgent.h         the panel's port: CoachTurn · CoachStep · CoachAnswer
   application/LogService.h/.cpp   start/finish/append/log/routines/stats/export/share
@@ -157,6 +158,8 @@ epoch-ms `uint64`; no C++ calendar function is ever consulted (the mac/CI split)
 -- Seeded with 64 movements in this migration (ON CONFLICT DO NOTHING — re-runnable, and user
 -- edits to name survive redeploys). created_by NULL marks a seed; a movement a lifter creates
 -- (POST /v1/gym/exercises) lands as a row with created_by = the owner, visible only to them.
+-- A SEED row is GLOBAL — one row shared by every account on this server — so a rename of one is a
+-- line in gym_exercise_names below and never an UPDATE here.
 create table if not exists gym_exercises (
   id          text primary key,
   name        text not null,
@@ -171,6 +174,20 @@ create table if not exists gym_exercises (
                                                    -- this column is reserved and not yet load-bearing
   created_by  uuid references users(id) on delete cascade,   -- null = catalog seed
   created_at  timestamptz not null default now()
+);
+
+-- What a lifter calls a SEEDED movement, per account. `UPDATE gym_exercises SET name` on a seed
+-- renames Back Squat for EVERY lifter on the server, and this table is the whole of why that
+-- statement is never written for one. Every read that returns a movement name coalesces this over
+-- the seed's — the catalog, the log row's movement list, the record page, the export, the coach
+-- share (resolved against the OWNER of the shared workout) and the MCP projections that ride on
+-- them. Renaming back to the seed's own name DELETES the line rather than storing a copy of it.
+create table if not exists gym_exercise_names (
+  user_id     uuid not null references users(id) on delete cascade,
+  exercise_id text not null references gym_exercises(id) on delete cascade,
+  name        text not null,
+  updated_at  timestamptz not null default now(),
+  primary key (user_id, exercise_id)
 );
 ```
 
@@ -355,10 +372,11 @@ create table if not exists gym_session_shares (
 **Why a table and not a `visibility` column on `gym_sessions`** — this is the decision a future
 reader will otherwise undo, so it is written down here rather than implied. A column puts a stance
 on every session row, and the moment one exists every read in the product has to be re-decided in
-terms of it: fifteen `WHERE user_id = :caller` queries become fifteen places where a gate can be
-forgotten, and the property §0 is built on — *absent is byte-identical to forbidden* — stops being
-structural and becomes something fifteen queries have to keep agreeing about. A separate table
-leaves all fifteen exactly as they were and adds **one** door beside them. Sharing is then
+terms of it: every `WHERE user_id = :caller` query becomes a place where a gate can be forgotten,
+and the property §0 is built on — *absent is byte-identical to forbidden* — stops being structural
+and becomes something every one of those queries has to keep agreeing about, forever, as more of
+them are written. A separate table leaves all of them exactly as they were and adds **one** door
+beside them. Sharing is then
 unreachable by accident, because no existing query names this table; the whole share feature is
 three methods on the port, and deleting the table would delete the feature and nothing else.
 
@@ -445,8 +463,14 @@ struct Against         { SessionId session; std::string routineName; std::uint64
                          std::vector<AgainstMovement> movements; };
 struct ReviewStats     { std::uint64_t durationMs; int workingSets;
                          std::optional<double> topE1rm; };
-struct WorkingLoad     { double weightKg; int reps; };
-std::optional<double> topE1rmOf(const std::vector<WorkingLoad>&);
+std::vector<PriorMark> marksOf(const std::vector<Set>&);          // one session's own projection
+std::optional<double> topE1rmOf(const std::vector<PriorMark>&);
+std::optional<PersonalRecord> recordAgainst(const std::vector<PriorMark>& earned,
+                                            const std::vector<PriorMark>& standing);
+struct SessionMarks    { SessionId session; std::vector<PriorMark> marks; int workingSets;
+                         bool finished; };   // an open row is judged, and folds under nothing
+std::vector<SessionId> recordedIn(const std::vector<SessionMarks>& page,   // the log's gold dot
+                                  const std::vector<PriorMark>& standing);
 struct Review          { ReviewStats stats; bool slight; std::optional<PersonalRecord> record;
                          std::optional<Against> against; };
 
@@ -462,17 +486,36 @@ screen's loudest pixel must never hold a number the domain made up. It returns t
 to the one decimal the screen prints**, and every comparison here uses that rounded number, so a
 record the product cannot show can never be minted by float noise.
 
-**`topE1rmOf` is the one definition of a session's e1RM**, and both surfaces that print one come
-through it: the finish screen hands it every working set, the log's page read hands it the store's
-per-load projection of them (`WorkingLoad`), and the two agree because at a fixed load Epley rises
-with reps. It is the best estimate over the whole session and never the estimate over its heaviest
-set — 3 × 95 × 10 beats 100 × 5 — which is the bug the log row carried on 2026-08-12 and the reason
-the number is computed in one place rather than twice.
+**`topE1rmOf` is the one definition of a session's e1RM**, and all three surfaces that print one
+come through it: the finish screen makes the projection from the sets in hand (`marksOf`), the log's
+page read and the record page are handed it by the store, and they agree because at a fixed load
+Epley rises with reps. It is the best estimate over the whole session and never the estimate over
+its heaviest set — 3 × 95 × 10 beats 100 × 5 — which is the bug the log row carried on 2026-08-12
+and the reason the number is computed in one place rather than twice.
+
+**`recordAgainst` is the one implementation of the three record rules**, and both the finish
+screen's loud line and the log's gold dot come through it — a session's own marks against the marks
+that stood before it. `recordedIn` is that walked forward over a page: the standing marks come off
+the store, each session is judged against the history as it stood that day, and the session then
+folds into it **if it is over**. An open workout is a row on the page like any other and is judged
+like one — its own finish screen judges it mid-session — but its marks stand under nothing, because
+the finish read of every session counts FINISHED ones alone and a page whose two halves were
+filtered differently would take a real dot off a row (2026-08-12; a page is not sorted by
+finishedness, since `started_at` is the device's and a queued offline start can flush late).
+A session under `kSlightWorkingSets` earns no dot for the reason its finish screen
+says nothing about it — two surfaces printing different verdicts on one workout is what one shared
+rule prevents. The dot is judged against the log **as it is now** and frozen nowhere, so a set
+arriving late from a flush queue, or a later correction, moves it rather than leaving it lying.
 
 **`PriorMark` is a projection, not a history**: one row per (movement, load) carrying the *best reps*
 ever done at it. At a fixed weight e1RM rises with reps, so that row is the best set at that load,
 and all three record rules follow from it — which is what keeps the Epley formula out of SQL
-entirely (§11.5's ladder lesson applied to the second formula in the product). `SessionHistory` is a
+entirely (§11.5's ladder lesson applied to the second formula in the product). A mark is dated by
+the **session** it was set in wherever the store hands one over — `completed_at` is the device's
+wall clock (§2.2), and dating a mark by it put the same standing best on two calendar days, one off
+`GET /v1/gym/stats` and one off the record page (2026-08-12). `marksOf` is the single exception and
+carries set instants, because inside one workout they are the only ordering there is and the record
+ranking breaks its last tie on the earlier set. `SessionHistory` is a
 **domain** type although the port returns it: the review is pure, so nothing under `domain/` may
 depend on `ports/`, and the rule is what defines the shape the store fills.
 
@@ -493,8 +536,12 @@ with an identity would be a second thing to keep in step with the store's key, a
 position is the key is that the same movement may appear twice. `Routine::lastTrainedAtMs` is the
 store's aggregate over the log (`max(started_at)` of the sessions run under it), not a column
 anyone writes, so it cannot fall out of step with the sessions it describes. Both types validate in
-their constructors like every other entity here: a name that is non-empty, at most `kMaxNameLength`
-(80) **bytes** — the unit the column counts — and free of NUL bytes; at least one entry and at most
+their constructors like every other entity here: a name **trimmed** (`trimmedName`, the one rule
+both display names go through) and then non-empty, at most `kMaxNameLength`
+(80) **bytes** — the unit the column counts — and free of NUL bytes. Trimming is what makes
+`"   "` the empty name it is rather than a movement that stores and then draws blank everywhere it
+appears, and what makes `" Back Squat "` the seed's own name, so renaming back to it still clears
+the override instead of pinning a copy one byte different. Then: at least one entry and at most
 `kMaxRoutineEntries` (50);
 positions `1..n` in order; `targetSets` 1–20, `targetReps` 1–100 *when it names one*,
 `targetWeightKg` within ±500, `restSeconds` 15–900 — the column checks, refused before the column
@@ -693,7 +740,7 @@ struct TrainingRepository {
   virtual SetInsertOutcome insertSet(const Set& incoming) = 0;       // assigns number; refusals as
                                                                      // values. The REPLAY is the
                                                                      // service's, through setOf
-  virtual std::vector<SessionSummary> log(const UserId&, const LogCursor&) = 0;
+  virtual LogPage log(const UserId&, const LogCursor&) = 0;   // the rows + the marks before them
   virtual std::vector<Set> setsOf(const SessionId&) = 0;
   virtual LastTimeOutcome lastTime(const UserId&, const ExerciseId&) = 0;  // the prefill read (§5)
   virtual SessionHistory historyFor(const UserId&, const Session&) = 0;    // the finish read (§5)
@@ -704,6 +751,11 @@ struct TrainingRepository {
   virtual RoutineWriteOutcome replaceRoutine(const Routine&) = 0; // whole-document replace
   virtual bool deleteRoutine(const UserId&, const RoutineId&) = 0;
   virtual ExerciseInsertOutcome insertExercise(const UserId& owner, const Exercise&) = 0;
+  // The rename (§4). A movement the caller CREATED renames in place; a seed is a global row and
+  // takes a per-account display name instead. Absent = this account's catalog holds no such id.
+  virtual std::optional<Exercise> renameExercise(const UserId&, const ExerciseId&,
+                                                 const std::string& name) = 0;
+  virtual MovementHistory movementHistory(const UserId&, const ExerciseId&) = 0;  // the record (§5)
   virtual TrainingLog trainingLog(const UserId&) = 0;                     // the statistics read (§5)
   virtual std::vector<ExportedSet> exportedSets(const UserId&) = 0;       // the export (§5)
   virtual std::optional<SessionShare> insertShare(const SessionShare&, std::uint64_t nowMs) = 0;
@@ -721,14 +773,22 @@ struct SessionSummary { Session session;
                         double tonnageKg;                      // working load, clamped at zero
                         std::vector<std::string> exerciseNames;
                         std::optional<TopWorkingSet> topSet;   // absent = no working set in it
-                        std::vector<WorkingLoad> workingLoads; // one row per load, best reps at it
+                        std::vector<PriorMark> workingMarks;   // per (movement, load), best reps,
+                                                               //   dated by the SESSION's start
                         bool closedItself; };                  // the four-hour rule ended it
 
-// The application puts the ONE number on the row that is a formula rather than an aggregation
-// (`application/LogService.h`); the store never sees Epley and neither does any client. It runs
-// `domain/Review`'s topE1rmOf over `workingLoads` — the same function the finish screen goes
-// through, so one workout cannot carry two numbers under the word `e1RM`.
-struct LogRow { SessionSummary summary; std::optional<double> topE1rm; };
+// One page, and everything the rules that read a page need in one round trip: `standing` is the
+// projection over everything FINISHED before the page's oldest row, narrowed to its movements,
+// because a record is judged against the history before its session and page two has history page
+// two cannot see.
+struct LogPage { std::vector<SessionSummary> sessions; std::vector<PriorMark> standing; };
+
+// The application puts the two facts on the row that are RULES rather than aggregations
+// (`application/LogService.h`); the store never sees Epley and neither does any client. Both run
+// over `workingMarks` — `topE1rmOf` for the estimate, which the movement simply does not enter, and
+// `recordedIn` for the gold dot, which is per movement. One projection, and the same functions the
+// finish screen goes through, so one workout cannot carry two verdicts two taps apart.
+struct LogRow { SessionSummary summary; std::optional<double> topE1rm; bool record; };
 struct LogCursor { std::uint64_t beforeMs; std::optional<SessionId> beforeId; int limit; };
 
 enum class SetInsertError { none, idTaken, unknownExercise, finished };
@@ -824,7 +884,17 @@ hold different opinions about what an unknown movement means.
 The catalog read is `catalog(user)`: all seeds plus the caller's own created movements, one
 query, ordered by pattern then name. Identity rules, stated once:
 
-- The slug id never changes and never renders; the display name is one mutable column.
+- The slug id never changes and never renders; the display name is one mutable column — and since
+  2026-08-12 a lifter can change it, through `PATCH /v1/gym/exercises/{id}` with `{name}` alone.
+  **A movement they created renames in place. A SEED does not**, because the 64 seeds are one
+  global row each and an `UPDATE gym_exercises SET name` on one renames Back Squat for every lifter
+  on the server; a seed takes a per-account line in `gym_exercise_names` (§2.1) and every read of a
+  movement name coalesces it over the seed's. Renaming back to the seed's own name clears the line
+  rather than storing a copy of it. The id never moves either way, so every set, routine entry and
+  frozen plan snapshot still points at the same movement — which is exactly the promise this
+  section exists to keep, and the record page (§5) is where it becomes visible. A PATCH and not a
+  PUT because one field is a lifter's to change: pattern, equipment and step of a seed are the
+  catalog's, and a body naming them is a `400`.
 - Custom movements are rows with `created_by`, ids minted like every other client id and obeying
   the same id-shape rule — applied at the **wire**, not in the `Exercise` constructor, because the
   64 seeded slugs (`dip`) are the schema's own and predate it. `POST /v1/gym/exercises` is
@@ -847,8 +917,8 @@ query, ordered by pattern then name. Identity rules, stated once:
 - **The log** (`log` + `setsOf`) — sessions newest-first, keyset-paged on the **pair**
   `(started_at, id)` (`?before=<ms>&beforeId=<id>&limit=`, default 50, cap 200), summaries
   carrying both set counts, the tonnage the working sets moved, exercise names, the session's top
-  working set, the loads it worked with the session's best estimate over them, and whether it closed
-  itself; detail is per-exercise
+  working set, the marks it made with the session's best estimate over them, whether a personal
+  record happened in it, and whether it closed itself; detail is per-exercise
   grouping in first-performed order, assembled client-side from numbered sets. Read-only in phase 1
   — the fix-it path is phase 2's `log-editing`.
 
@@ -883,8 +953,9 @@ query, ordered by pattern then name. Identity rules, stated once:
   over `topSet`: a session of 100 × 5 and then three back-offs at 95 × 10 estimates **126.7** off the
   back-offs and **116.7** off its heaviest set, so a row that ran Epley on `topSet` made one workout
   say two different things under the word `e1RM` two taps apart. Picking a set *by* e1RM is not an
-  ordering the store can make — it is the formula — so the store hands over `workingLoads`, one row
-  per distinct working load carrying the best reps at it, and `LogService` runs the domain over that.
+  ordering the store can make — it is the formula — so the store hands over `workingMarks`, one row
+  per (movement, working load) carrying the best reps at it, and `LogService` runs the domain over
+  that.
   At a fixed load Epley rises with reps, so that projection and the full set list answer identically.
   This is the §11.5 rule applied to the second formula in the product: one copy per language and none
   in the database. A client computing an e1RM from `topSet` would be the second copy in that
@@ -914,7 +985,8 @@ query, ordered by pattern then name. Identity rules, stated once:
   express a tie; **both halves travel or the walk is lossy**, and `beforeId` without `before`
   names no row and is a bad cursor. The summary's movement names come back as one row per
   movement, not as one string a separator has to be picked out of: a display name is user text
-  (phase-2 rename), and hand-rolled framing turns one movement holding the separator into two.
+  — a lifter renames one — and hand-rolled framing turns one movement holding the separator into
+  two.
 - **Last-time prefill** (phase 1, `last-time-prefill` bet) — `GET /v1/gym/last?exercise=`, one
   route over the two gym indexes: the most recent *finished* session containing the exercise, its
   sets in order. "Last time: 82.5 × 8, 82.5 × 8, 80 × 7", weight pre-dialled. The
@@ -969,12 +1041,36 @@ query, ordered by pattern then name. Identity rules, stated once:
   column, so it can never disagree with the log that produced it; ties fall back to `(position, id)`
   so the walk is deterministic rather than the planner's choice. Two statements, merged by routine
   id — the log read's shape applied to the plan.
+- **A movement's record** (`movementHistory` + the pure `movementRecord`) —
+  `GET /v1/gym/exercises/{id}/record`, and the surface that replaced the statistics room: one
+  exercise, one page, one read. Four statements in one transaction, and the first is the catalog's
+  own predicate — no row means this account holds no such movement (`404 no such movement`) and the
+  other three never fire. The **ladders** are `DISTINCT ON (session, load)` over the movement's
+  working sets in FINISHED sessions, oldest session first, and they are the whole of what the two
+  tiles, the twelve weeks of bars and the record ladder are computed from: each is a question about
+  the best e1RM of a session, which is a *formula*, so the store hands over orderings and the domain
+  runs `topE1rmOf` over them. Their window is a LIFETIME rather than twelve weeks — only the chart
+  is windowed, by the domain, against the clock the service read once — because "your best ever"
+  that quietly meant "your best this quarter" would be the loudest false number in the product. The
+  **recent days** are a separate statement because the ladder collapses a session's sets and the
+  page prints them (`105 × 5 · 105 × 5 · 105 × 4` is three sets and two loads); warmups are not
+  among them, for the reason the prefill block excludes them.
+
+  Everything on the page is dated by the **session's own start**, never by a set's `completed_at`
+  (§5's statistics rule, same reason). The record **ladder** is every session whose best estimate
+  beat every session before it, newest first, and the first one is not on it: a mark has to be
+  passed, which is the finish screen's own rule. Where Epley is undefined — a chin-up at 0 kg, a
+  band-assisted pull-up at −20 — there is no best-e1RM tile, no chart and no ladder at all, and the
+  heaviest tile and the sets carry the page; a dash inside a chart frame is worse than no chart.
+  Every list is **omitted from the wire when empty**, so a movement in the catalog nobody has lifted
+  answers 200 with two zero counts and nothing else, which is the picker's `never logged`.
 - **The finish** (`historyFor` + the pure `review`) — `GET /v1/gym/sessions/{id}/review`, one read
   behind one rule. The read is a projection and not a history: `DISTINCT ON (exercise_id, weight_kg)`
   over the *working* sets of *finished* sessions that started earlier, ordered `reps DESC,
-  completed_at ASC`, restricted to the movements this session works. `DISTINCT ON` is what a bare
+  started_at ASC`, restricted to the movements this session works. `DISTINCT ON` is what a bare
   `max(reps)` cannot do — it hands back the winning **row**, so the mark is dated by the earliest
-  instant those reps were hit, which is the day the mark was set and the date the record line prints.
+  SESSION those reps were hit in, which is the day the mark was set and the date the record line
+  prints.
 
   Both of its windows compare the **pair** `(started_at, id)` against the reviewed session's own —
   the unique key every other read here pages and locates on. That is not decoration: it excludes the
@@ -984,10 +1080,17 @@ query, ordered by pattern then name. Identity rules, stated once:
   Nothing is stored. The review is recomputed on every call, which is what keeps it right when a set
   arrives late from a flush queue, and it is why there is no `ReviewService`: one load, one pure
   rule, one answer, on `LogService` beside `detail`.
-- **The statistics surface** (`trainingLog` + the pure `statistics`) — `GET /v1/gym/stats`, the
+- **The statistics ENGINE** (`trainingLog` + the pure `statistics`) — `GET /v1/gym/stats`, the
   review's shape over a longer window: one load, one pure rule, one answer, computed on every read
   and stored nowhere. It takes no parameters at all — no window, no movement filter, no page —
   because the whole point of it is the long view.
+
+  **It is an engine and no longer a room.** 2026-08-12 retired the statistics *surface* on all three
+  clients — there is no fourth tab and no dashboard in this product — and what replaced it is a
+  movement's record (below), one exercise at a time. Nothing was removed here: `GET /v1/gym/stats`
+  and the `get_stats` tool both stay, because an agent asking "how has my squat moved" is the
+  product's own thesis, and the long view is exactly what an agent reads. Do not "clean up" this
+  read as orphaned — it has two callers, one of them a model.
 
   Three statements in one transaction, and not one of them is a new opinion about training. The
   **series** is `DISTINCT ON (exercise_id, started_at, id)` over the working sets of finished
@@ -1002,7 +1105,10 @@ query, ordered by pattern then name. Identity rules, stated once:
   `historyFor`'s projection with both of its windows removed — every movement instead of one
   session's, the whole finished log instead of what came before one session — and the two standing
   bests (highest e1RM, heaviest load) are the *prior* halves of the finish's record rules asked with
-  no session to compare against. The third record rule has no standing form on purpose: "more reps
+  no session to compare against. A best is dated by the session too, so the tile and the point that
+  *is* that tile carry one instant: until 2026-08-12 a best came off the set's own clock while its
+  point came off the session's, and the same PR read as two calendar days across this route and the
+  record page. The third record rule has no standing form on purpose: "more reps
   at a load you have used before" is a comparison, and with nothing to compare against every mark
   already *is* the best reps ever done at its load. The **weeks** are counted in Postgres because
   they are dates, truncated `AT TIME ZONE 'UTC'` rather than in the server's own zone (`date_trunc`
@@ -1073,8 +1179,10 @@ query, ordered by pattern then name. Identity rules, stated once:
 
 | Method & path | Purpose | Phase |
 |---|---|---|
-| `GET  /v1/gym/exercises` | the catalog (seeds + own customs) | 0 |
+| `GET  /v1/gym/exercises` | the catalog (seeds + own customs), each under the name THIS account calls it | 0 |
 | `POST /v1/gym/exercises` | create a movement — `{id, name, pattern, equipment, stepKg?}` | 2 |
+| `PATCH /v1/gym/exercises/{id}` | rename a movement — `{name}` and nothing else; a seed takes a per-account name, the caller's own row renames in place, the id never moves (§4) | 2 |
+| `GET  /v1/gym/exercises/{id}/record` | a movement's record — the two tiles, twelve weeks of bars, the record ladder and the recent days, in ONE read (§5) | 2 |
 | `POST /v1/gym/sessions` | start — `{id, startedAt, joinOpenSession?, routineId?}`, idempotent; joins an open session unless the caller says it will not (§11.4); a named routine is frozen onto the row (§2.5) | 0 |
 | `POST /v1/gym/sessions/{id}/sets` | append a set — `{id, exerciseId, weightKg, reps, completedAt, kind?, rpe?, note?}` | 0 |
 | `POST /v1/gym/sessions/{id}/finish` | close — `{finishedAt}`, idempotent | 0 |
@@ -1088,7 +1196,7 @@ query, ordered by pattern then name. Identity rules, stated once:
 | `GET  /v1/gym/routines/{id}` | one routine | 2 |
 | `PUT  /v1/gym/routines/{id}` | replace a routine — the whole document | 2 |
 | `DELETE /v1/gym/routines/{id}` | remove a routine — `204`; entries cascade, sessions keep their snapshots | 2 |
-| `GET  /v1/gym/stats` | the statistics surface — per-movement line, standing bests, weekly counts (§5) | 2 |
+| `GET  /v1/gym/stats` | the statistics ENGINE — per-movement line, standing bests, weekly counts. It has no room of its own on any client since 2026-08-12; its readers are the record page's rules and any agent asking the long question (§5) | 2 |
 | `GET  /v1/gym/export` | every set, CSV — `text/csv`, a header row, `Content-Disposition: attachment` | 2 |
 | `POST /v1/gym/sessions/{id}/share` | mint a coach share — `{token, expiresAt}`, idempotent on the session | 2 |
 | `DELETE /v1/gym/sessions/{id}/share` | revoke it — `204`; nothing to revoke is `404 no such session` | 2 |
@@ -1154,7 +1262,8 @@ numbers in kg, sets serialize as
 targetWeightKg?, restSeconds?}]}`; list replies wrap (`{"exercises":[…]}`, `{"sessions":[…]}`,
 `{"routines":[…]}`, detail `{"session":…, "sets":[…]}`). A log row is a session plus
 `{setCount, workingSetCount, tonnageKg, exercises:[…], topSet?: {weightKg, reps}, topE1rm?,
-closedItself}`. Parsing type-checks every jsoncpp field before `.as*()` and throws
+record, closedItself}` — `record` always present, never omitted. Parsing type-checks every jsoncpp
+field before `.as*()` and throws
 `InvalidTraining` → 400.
 
 **An absent `targetReps` is `max`, not a missing value.** It is omitted on the way in and omitted on
@@ -1335,7 +1444,7 @@ The full cost of mounting the third product, itemized against the actual seams:
 - **CMake:** `add_library(windmill_gym products/gym/domain/Training.cpp
   products/gym/domain/Routine.cpp products/gym/domain/Review.cpp
   products/gym/domain/Statistics.cpp products/gym/application/LogService.cpp)` linking
-  `windmill_platform PUBLIC`, after the journal block; adapters + `routes.cpp` folded in via `target_sources` under the existing
+  `windmill_platform PUBLIC` — plus `products/gym/domain/Record.cpp` — after the journal block; adapters + `routes.cpp` folded in via `target_sources` under the existing
   `Drogon_FOUND AND libpqxx_FOUND` guard; `windmill_gym` added to the four
   `target_link_libraries` lines (domain tests, server, adapters tests, and — since the tool
   catalog — the mcp tests). Tests are **appended to the existing executables** — a new test binary
@@ -1368,7 +1477,12 @@ The full cost of mounting the third product, itemized against the actual seams:
   share's secret, from the same mint that makes a session cookie, so the one unguessable string gym
   hands out is the platform's and not gym's own. `{"gym_session_shares", "user_id"}` joins
   `gym_sessions`/`gym_sets`/`gym_routines` in `PgAccountFootprint`'s owned list: a live coach link
-  is data, and an account holding one is not empty.
+  is data, and an account holding one is not empty. So do `{"gym_exercises", "created_by"}` and
+  `{"gym_exercise_names", "user_id"}` — a movement someone created or renamed is their data, and a
+  lifter holding only one of those was reported empty until 2026-08-12, which is an account the
+  link door had proved deletable. The column there is `created_by` and **not** `user_id` precisely
+  because the 64 seeds carry it NULL: a probe that matched the seeds would report every account on
+  the server non-empty and break the same door the other way round.
 - **Schema:** the `-- ── Gym (products/gym) ──` section + the 64-row seed, appended at EOF,
   idempotent end-to-end (`create … if not exists`, seed `ON CONFLICT (id) DO NOTHING` so a
   redeploy never clobbers a renamed display name). A column that has to *change* gets its own
@@ -1377,7 +1491,8 @@ The full cost of mounting the third product, itemized against the actual seams:
   deploy and there is no migration ledger to carry the change instead. The bar for such a line is
   that a database created before it and one created after it end up identically shaped.
 - **Tests:** `test/products/gym/{Fakes.h, domain/TrainingTest.cpp, domain/RoutineTest.cpp,
-  domain/ReviewTest.cpp, domain/StatisticsTest.cpp, application/LogServiceTest.cpp,
+  domain/ReviewTest.cpp, domain/StatisticsTest.cpp, domain/RecordTest.cpp,
+  application/LogServiceTest.cpp,
   adapters/http/GymApiTest.cpp, adapters/mcp/GymToolsTest.cpp,
   adapters/postgres/PgTrainingRepositoryTest.cpp}` mirroring the tree, full assertions —
   `GymToolsTest` rides in `windmill_mcp_tests` beside roadmap's, the other three in the domain and
@@ -1450,7 +1565,7 @@ with the coach's `#/gym/shared/<token>` link held outside the room chrome by the
    is a product decision now, blocked by nothing. Gym still holds no plan enum and gates nothing.
    (§0, §6, §8)
 9. **The coach share is a table, not a column.** §0's refusal is narrowed rather than dropped: there
-   is still no `visibility` on `gym_sessions` and not one of the fifteen routes that predate it
+   is still no `visibility` on `gym_sessions` and not one of the owner-scoped routes that predate it
    changed, so *absent is byte-identical to forbidden* stays a structural property of every one of
    them. The second reader arrives through `gym_session_shares` and one unauthenticated route, and
    sharing is therefore unreachable by accident — no existing query names that table. Per session,
@@ -1458,7 +1573,11 @@ with the coach's `#/gym/shared/<token>` link held outside the room chrome by the
    server-minted token, stored in the clear because the mint must be idempotent; the reply names no
    account and holds no id. Journal's §0.1 is no longer inherited *whole* — journal still has no
    share entity, gym now has one. (§0, §2.6, §5)
-10. **The statistics surface answers only over values the domain already decides.** The series is
+10. **The statistics engine answers only over values the domain already decides — and it is an
+    engine, not a room.** The 2026-08-12 wave retired the statistics *surface* on web, iOS and
+    Android (there is no fourth tab and no dashboard in this product) and put a movement's record in
+    its place. Nothing was removed on this side: `GET /v1/gym/stats` and `get_stats` stay, because
+    the long view is exactly what an agent reads. The series is
     `TopSet`'s rule, the estimate is Epley from `domain/Review.h`, the records are the *prior*
     halves of the finish's own record rules — no new arithmetic and no second ranking vocabulary.
     All date work stays in Postgres, weeks are Monday-to-Monday in UTC, and finished sessions only.
@@ -1513,8 +1632,10 @@ the local stack → push → watch CI → probe prod).
   What the gate protected is preserved a different way — the surface answers only over values the
   domain already decides, so shipping it early cost no new opinion about training, and the cut list
   in §8 is unchanged. Still ahead: plan-vs-actual, the strength tree, nudges on the shared sweep
-  primitive, the native shell — and the client half of the charts, which has no design canon yet
-  (there is no chart brief among gym's G1–G7).
+  primitive, and the native shell. The client half of the charts is no longer among them: §H of the
+  design canon gave it a home on 2026-08-12 — one movement's record, bars rather than a line
+  because a training log is discrete events — and all three surfaces draw it off
+  `GET /v1/gym/exercises/{id}/record`.
 
 The order is deliberate: the durable write is the product; everything else is optional on top
 of that row.

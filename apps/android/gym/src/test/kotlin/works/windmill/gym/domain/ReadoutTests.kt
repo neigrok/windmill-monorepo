@@ -145,6 +145,27 @@ class ReadoutTests {
         assertEquals("week of 4 May", Readout.weekOf(at.minusDays(2).toInstant().toEpochMilli()))
     }
 
+    // The record page stacks dates in three narrow columns, so it drops the weekday `day` keeps —
+    // and keeps the year the moment a bare day and month would be ambiguous, for the same reason
+    // the log's foot prints one. `today` is a word rather than a date only where it is literally
+    // the day being stood in; "yesterday" is not offered, because §H's columns print dates.
+    @Test
+    fun testTheRecordPagesDayDropsTheWeekdayAndKeepsTheYearOnlyWhereItMatters() {
+        val zone = ZoneId.systemDefault()
+        val now = LocalDate.parse("2026-08-11").atStartOfDay(zone).plusHours(9).toInstant().toEpochMilli()
+        val earlier = LocalDate.parse("2026-08-11").atStartOfDay(zone).plusHours(6).toInstant().toEpochMilli()
+        val august = LocalDate.parse("2026-08-03").atStartOfDay(zone).plusHours(18).toInstant().toEpochMilli()
+        val lastYear = LocalDate.parse("2025-07-13").atStartOfDay(zone).plusHours(18).toInstant().toEpochMilli()
+
+        assertEquals("today", Readout.briefDay(earlier, now))
+        assertEquals("3 Aug", Readout.briefDay(august, now))
+        assertEquals("13 Jul 2025", Readout.briefDay(lastYear, now))
+
+        assertEquals("an axis end is a date and never a word", "11 Aug", Readout.shortDate(earlier, now))
+        assertEquals("3 Aug", Readout.shortDate(august, now))
+        assertEquals("13 Jul 2025", Readout.shortDate(lastYear, now))
+    }
+
     @Test
     fun testACountOfSetsIsSingularAtOne() {
         assertEquals("1 set", Readout.setCount(1))

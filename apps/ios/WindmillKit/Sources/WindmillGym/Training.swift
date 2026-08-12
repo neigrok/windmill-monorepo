@@ -280,6 +280,13 @@ public struct TopSet: Equatable, Codable, Sendable {
 // `topE1rm` is the domain's best Epley over EVERY working set — not over the heaviest one — and
 // Epley is the domain's, one copy per language and none of them Swift, so a session this device is
 // still holding alone has a working count and a tonnage and no estimate.
+//
+// `record` is the gold dot (§G16), and it is a BOOL the server always sends rather than an optional:
+// false is the answer on ~190 rows in 200. It is judged against the log AS IT IS NOW and never
+// frozen at finish — W3's corrections will move records, and a dot that lied after a fix would be
+// worse than no dot. It defaults to false for the rows this device composes itself, because the
+// three record rules are claims against a history the device does not hold: no dot there is an
+// omission, which a local read may make, and never an assertion, which it may not.
 public struct SessionSummary: Equatable, Codable, Sendable, Identifiable {
     public let session: Session
     public let setCount: Int
@@ -293,10 +300,12 @@ public struct SessionSummary: Equatable, Codable, Sendable, Identifiable {
     public let workingSetCount: Int?
     public let tonnageKg: Double?
     public let topE1rm: Double?
+    public let record: Bool
 
     public init(session: Session, setCount: Int = 0, exercises: [String] = [],
                 topSet: TopSet? = nil, closedItself: Bool = false,
-                workingSetCount: Int? = nil, tonnageKg: Double? = nil, topE1rm: Double? = nil) {
+                workingSetCount: Int? = nil, tonnageKg: Double? = nil, topE1rm: Double? = nil,
+                record: Bool = false) {
         self.session = session
         self.setCount = setCount
         self.exercises = exercises
@@ -305,12 +314,13 @@ public struct SessionSummary: Equatable, Codable, Sendable, Identifiable {
         self.workingSetCount = workingSetCount
         self.tonnageKg = tonnageKg
         self.topE1rm = topE1rm
+        self.record = record
     }
 
     public var id: String { session.id }
 
     enum CodingKeys: String, CodingKey {
-        case setCount, exercises, topSet, closedItself, workingSetCount, tonnageKg, topE1rm
+        case setCount, exercises, topSet, closedItself, workingSetCount, tonnageKg, topE1rm, record
     }
 
     public init(from decoder: Decoder) throws {
@@ -323,6 +333,7 @@ public struct SessionSummary: Equatable, Codable, Sendable, Identifiable {
         workingSetCount = try fields.decodeIfPresent(Int.self, forKey: .workingSetCount)
         tonnageKg = try fields.decodeIfPresent(Double.self, forKey: .tonnageKg)
         topE1rm = try fields.decodeIfPresent(Double.self, forKey: .topE1rm)
+        record = try fields.decodeIfPresent(Bool.self, forKey: .record) ?? false
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -335,6 +346,7 @@ public struct SessionSummary: Equatable, Codable, Sendable, Identifiable {
         try fields.encodeIfPresent(workingSetCount, forKey: .workingSetCount)
         try fields.encodeIfPresent(tonnageKg, forKey: .tonnageKg)
         try fields.encodeIfPresent(topE1rm, forKey: .topE1rm)
+        try fields.encode(record, forKey: .record)
     }
 }
 
@@ -750,6 +762,21 @@ public struct ExerciseWrite: Equatable, Codable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case id, name, pattern, equipment, stepKg
+    }
+}
+
+// A rename, and it carries ONE field on purpose: the pattern, the equipment and the step are facts
+// about the movement rather than about what this account calls it, and a body that resent them would
+// let a rename quietly re-classify somebody else's seeded row. The server refuses any other key.
+public struct ExerciseRename: Equatable, Codable, Sendable {
+    public let name: String
+
+    public init(name: String) {
+        self.name = name
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case name
     }
 }
 

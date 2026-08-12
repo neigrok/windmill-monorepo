@@ -91,6 +91,61 @@ void GymApi::createExercise(const drogon::HttpRequestPtr& req, HttpCallback&& cb
   cb(jsonResponse(toJson(*outcome.exercise)));
 }
 
+// The rename, and the whole point of stable exercise identity made visible: the movement keeps its
+// id, so every set, every routine entry and every frozen plan snapshot still names it and the
+// history stays whole. What the store does under this depends on whose row it is — a movement the
+// caller created renames in place, a SEED takes a per-account display name, because the 64 seeds
+// are global rows and renaming one in place would rename it for every lifter on the server.
+void GymApi::renameExercise(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                            const std::string& id) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
+    return;
+  }
+  std::shared_ptr<Json::Value> json = req->getJsonObject();
+  if (!json) {
+    cb(error(drogon::k400BadRequest, "expected json"));
+    return;
+  }
+  std::optional<Exercise> renamed;
+  try {
+    renamed = log_->renameExercise(*caller, ExerciseId{id}, parseExerciseRename(*json));
+  } catch (const InvalidTraining&) {
+    cb(error(drogon::k400BadRequest, "could not read that name"));
+    return;
+  }
+  if (!renamed) {
+    // The path names a movement this account's catalog does not hold. Absent and another lifter's
+    // private movement are the one fact, exactly as an absent session is.
+    cb(error(drogon::k404NotFound, "no such movement"));
+    return;
+  }
+  cb(jsonResponse(toJson(*renamed)));
+}
+
+// A movement's record: one exercise, one page, and one read behind it — the two tiles, the twelve
+// weeks of bars, the record ladder and the recent days all come off a single call, because a page
+// that made a request per tile is a page that draws in four stages. Every number in it is computed
+// from stored rows on this call and kept nowhere, the rule every read surface in this product
+// obeys. A movement in the catalog nobody has lifted answers 200 with its counts at zero and no
+// lists at all — that is a fact, not a fault, and it is what the picker's `never logged` is drawn
+// from; the 404 below is the different sentence "no such movement".
+void GymApi::exerciseRecord(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                            const std::string& id) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
+    return;
+  }
+  std::optional<MovementRecord> record = log_->movementRecord(*caller, ExerciseId{id});
+  if (!record) {
+    cb(error(drogon::k404NotFound, "no such movement"));
+    return;
+  }
+  cb(jsonResponse(toJson(*record)));
+}
+
 void GymApi::startSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
@@ -510,11 +565,16 @@ void GymApi::deleteRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
   cb(response);
 }
 
-// The statistics surface, over values the domain already decides: a per-movement line of top
-// working sets with Epley on top, the two standing bests, when each movement was last trained, and
-// the weekly counts. It takes no parameters at all — no window, no movement filter, no page —
-// because the whole point of it is the long view, and every number in it is a fact with a
-// direction rather than a grade.
+// The statistics ENGINE, over values the domain already decides: a per-movement line of top working
+// sets with Epley on top, the two standing bests, when each movement was last trained, and the
+// weekly counts. It takes no parameters at all — no window, no movement filter, no page — because
+// the whole point of it is the long view, and every number in it is a fact with a direction rather
+// than a grade.
+//
+// No app screen reads this route: W1c retired the statistics room on all three surfaces and put a
+// movement's record (`GET /v1/gym/exercises/{id}/record`) where a lifter goes instead. It stays for
+// the reader it was always best for — an agent through `get_stats`, asking how a lift has moved
+// (domain/Statistics.h). Unreached by a tab is not unreachable.
 void GymApi::stats(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {

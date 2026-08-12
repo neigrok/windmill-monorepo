@@ -181,7 +181,9 @@ std::vector<ToolDeclaration> gymToolCatalog() {
         "bodyweight set contributing zero — so a zero tonnage is not a claim that nothing was "
         "done), which movements were in it, its heaviest working set, `topE1rm` (the best Epley "
         "estimate any working set in it earned — the session's own number, not the heaviest set's), "
-        "and `closedItself` (the four-hour rule ended it rather than a "
+        "`record` (a personal record happened in that workout — best e1RM, most reps at a load, or "
+        "the heaviest load, judged against the log as it stands now, and false on around 190 rows "
+        "in 200), and `closedItself` (the four-hour rule ended it rather than a "
         "tap). Page with BOTH halves of the last row's key, `before` and `beforeId`, because two "
         "workouts can start in the same millisecond.",
         p, {}));

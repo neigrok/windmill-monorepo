@@ -307,3 +307,78 @@ TEST(the_span_runs_to_the_finish_and_to_the_last_set_while_the_session_is_open) 
   // Open and empty — a workout that has not started yet spans nothing at all.
   CHECK_EQ(review(open, {}, SessionHistory{}).stats.durationMs, 0ull);
 }
+
+// ---- the log's gold dot: the same three rules, walked forward over a page --------------------
+
+namespace {
+SessionMarks earned(const std::string& id, std::vector<PriorMark> marks, int workingSets = 4,
+                    bool finished = true) {
+  return SessionMarks{SessionId{id}, std::move(marks), workingSets, finished};
+}
+}
+
+// The walk carries history forward one session at a time, so every row is judged against the log as
+// it stood THAT day: the second session beats the first's 100 × 5 and the third beats the second's,
+// while the fourth repeats what already stands and earns nothing.
+TEST(the_page_walk_marks_every_session_that_passed_a_mark_and_no_others) {
+  const std::vector<SessionMarks> page{earned("ses_00000001", {mark("back-squat", 100, 5, at(1))}),
+                                       earned("ses_00000002", {mark("back-squat", 102.5, 5, at(2))}),
+                                       earned("ses_00000003", {mark("back-squat", 105, 5, at(3))}),
+                                       earned("ses_00000004", {mark("back-squat", 105, 5, at(4))})};
+
+  const std::vector<SessionId> marked = recordedIn(page, {});
+
+  CHECK_EQ(marked, (std::vector<SessionId>{SessionId{"ses_00000002"}, SessionId{"ses_00000003"}}));
+}
+
+// A page has history in front of it that is not on the page. Handed the marks that stood before its
+// oldest row, the same first session that claimed nothing above now beats them.
+TEST(the_page_walk_judges_its_oldest_row_against_the_marks_standing_before_the_page) {
+  const std::vector<SessionMarks> page{earned("ses_00000001", {mark("back-squat", 100, 5, at(1))})};
+
+  CHECK_EQ(recordedIn(page, {}), std::vector<SessionId>{});
+  CHECK_EQ(recordedIn(page, {mark("back-squat", 95, 5)}),
+           std::vector<SessionId>{SessionId{"ses_00000001"}});
+}
+
+// A slight session earns no dot, exactly as its own finish screen says nothing about it — two
+// surfaces printing different verdicts on one workout is what one shared rule prevents. Its marks
+// still fold in: the sets happened, and the next session is judged against them.
+TEST(a_slight_session_earns_no_dot_and_still_moves_the_marks_it_set) {
+  const std::vector<SessionMarks> page{
+      earned("ses_00000001", {mark("back-squat", 105, 5, at(1))}, kSlightWorkingSets - 1),
+      earned("ses_00000002", {mark("back-squat", 105, 5, at(2))})};
+
+  CHECK_EQ(recordedIn(page, {mark("back-squat", 100, 5)}), std::vector<SessionId>{});
+}
+
+// The dot is the finish screen's own judgement, so the two are computed by ONE function over ONE
+// projection: what `review` says about a session is what the walk says about its row.
+TEST(the_dot_and_the_finish_screens_record_are_the_same_judgement) {
+  SessionHistory history;
+  history.marks = {mark("back-squat", 100, 5)};
+  const std::vector<Set> sets = fourFives(105);
+
+  const Review finish = review(legs(), sets, history);
+  const std::vector<SessionId> marked =
+      recordedIn({earned("ses_00000001", marksOf(sets), static_cast<int>(sets.size()))},
+                 history.marks);
+
+  CHECK(finish.record.has_value());
+  CHECK_EQ(marked, std::vector<SessionId>{SessionId{"ses_00000001"}});
+}
+
+// An OPEN workout sits on the page like any other row, and a page is not sorted by finishedness: a
+// device clock or a queued offline start can put the open one in the middle. It is judged like any
+// other row — its own finish screen judges it mid-workout — and its marks do NOT fold, because the
+// finish read of every row above it counts finished sessions alone. Fold it and the newest row here
+// is judged against 110 × 5, which its own finish screen cannot see, and loses a real dot.
+TEST(an_open_session_on_the_page_is_judged_but_never_stands_under_the_rows_above_it) {
+  const std::vector<SessionMarks> page{
+      earned("ses_00000001", {mark("back-squat", 100, 5, at(1))}),
+      earned("ses_00000002", {mark("back-squat", 110, 5, at(2))}, 4, false),
+      earned("ses_00000003", {mark("back-squat", 105, 5, at(3))})};
+
+  CHECK_EQ(recordedIn(page, {}), (std::vector<SessionId>{SessionId{"ses_00000002"},
+                                                        SessionId{"ses_00000003"}}));
+}

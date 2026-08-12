@@ -64,6 +64,11 @@ object LogFold {
         val tonnage: String?,
         val estimate: String?,
         val onThisDeviceOnly: Boolean,
+        // §G's gold dot: a personal record happened in this workout. The log judges it against
+        // itself AS IT IS NOW and not frozen at finish, so a correction that moves a record moves
+        // the dot with it — a dot that lied after a fix would be worse than none. A row the log
+        // never spoke for draws none, which is an omission and not a denial.
+        val record: Boolean,
     )
 
     data class Week(val label: String, val tonnage: String?, val rows: List<Row>)
@@ -105,6 +110,7 @@ object LogFold {
                         tonnage = summary.tonnageKg?.let(Readout::tonnes),
                         estimate = summary.topE1rm?.let(Readout::estimate),
                         onThisDeviceOnly = summary.id in onThisDevice,
+                        record = summary.record,
                     )
                 },
             )
@@ -209,9 +215,18 @@ private fun WeekDivider(week: LogFold.Week) {
 // — a bodyweight session moved no external load, and a session claimed by no account has no e1RM
 // because no phone computes one.
 //
-// The space left of the clock is where a gold PR dot belongs (W1c): deciding whether a record
-// happened inside a past session needs the record rules replayed against the log as it stood THEN,
-// and a cheaper dot that is sometimes wrong is worse than no dot at all.
+// Beside the title, one gold dot on the ~ten rows in two hundred that hold a personal record. It is
+// the log's own verdict, replayed against the log as it stands now, which is why nothing on this
+// phone tries to compute one: a cheaper dot that is sometimes wrong is worse than no dot at all.
+//
+// THE DOT IS THE WHOLE CLAIM AND THE NUMBERS UNDER IT STAY IRON, which is where this row differs
+// from the design's mock. `record` is one bool over THREE rules — best e1RM, most reps at a weight,
+// heaviest load for any reps — and the wire does not say which one was earned. Colouring the
+// estimate gold would read as "this figure is the record", and it is that for only one of the
+// three: a session that beat its own reps at 100 kg can carry a top e1RM well under the standing
+// one. §G asks for a dot meaning "a PR happened in there", which is exactly what a dot says and no
+// more. iOS says it the same way. If the row is ever to point at the number, the kind has to ride
+// on the wire first.
 @Composable
 private fun SessionRow(row: LogFold.Row, onOpen: () -> Unit) {
     Column(
@@ -230,6 +245,16 @@ private fun SessionRow(row: LogFold.Row, onOpen: () -> Unit) {
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(row.title, style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
+            // Filled, because a record is a thing that happened. It shares the slot the hollow ring
+            // uses and cannot collide with it: an unclaimed row is one no account has judged, so it
+            // never carries a verdict.
+            if (row.record) {
+                Box(
+                    Modifier
+                        .size(7.dp)
+                        .background(GymSkin.prInk, CircleShape),
+                )
+            }
             // Hollow, because the session is real and only its second home is missing.
             if (row.onThisDeviceOnly) {
                 Box(

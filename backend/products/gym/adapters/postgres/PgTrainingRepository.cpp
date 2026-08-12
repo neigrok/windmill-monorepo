@@ -28,8 +28,21 @@ constexpr std::string_view kSetColumns =
     "id, session_id, exercise_id, set_number, weight_kg::float8 AS weight_kg, reps, kind, "
     "rpe::float8 AS rpe, note, (extract(epoch from completed_at) * 1000)::bigint AS completed_ms";
 
+// The catalog's columns, and the display name is the CALLER'S. The 64 seeds are global rows shared
+// by every account on this server, so the name a lifter gave one lives in gym_exercise_names and is
+// coalesced over the seed's own — while a movement they created carries its name on its own row and
+// has no line to coalesce. The join is written into the column list on purpose: `e.` and `n.` are
+// both named here, so a read that selects these columns without joining the override does not
+// compile a query at all, rather than quietly printing the seed name to the one account that
+// renamed it. kExerciseFrom takes the caller's id at $1; insertExercise, whose $1 is the movement,
+// spells the same join out with its own parameter.
 constexpr std::string_view kExerciseColumns =
-    "id, name, pattern, equipment, step_kg::float8 AS step_kg, created_by";
+    "e.id, coalesce(n.name, e.name) AS name, e.pattern, e.equipment, "
+    "e.step_kg::float8 AS step_kg, e.created_by";
+
+constexpr std::string_view kExerciseFrom =
+    "gym_exercises e LEFT JOIN gym_exercise_names n "
+    "  ON n.exercise_id = e.id AND n.user_id = $1::uuid";
 
 // lastTrainedAtMs is an aggregate over the log, not a column: the newest session started under this
 // routine, correlated on the routine's OWN owner so the one read and the list read carry the same
@@ -107,7 +120,7 @@ struct Tally {
   int workingSetCount = 0;
   double tonnageKg = 0;
   std::vector<std::string> exerciseNames;
-  std::vector<WorkingLoad> workingLoads;
+  std::vector<PriorMark> workingMarks;
 };
 
 template <typename Row>
@@ -217,12 +230,15 @@ PgTrainingRepository::PgTrainingRepository(std::shared_ptr<PgPool> pool)
     : pool_(std::move(pool)) {}
 
 std::vector<Exercise> PgTrainingRepository::catalog(const UserId& user) {
+  // Ordered by the name the CALLER sees, not by the name the seed carries: the picker is an
+  // alphabetical list, and a renamed movement that stayed sorted under its old name would be
+  // findable only by someone who remembered what it used to be called.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
-      "SELECT " + std::string(kExerciseColumns) +
-          " FROM gym_exercises WHERE created_by IS NULL OR created_by = $1::uuid "
-          "ORDER BY pattern, name",
+      "SELECT " + std::string(kExerciseColumns) + " FROM " + std::string(kExerciseFrom) +
+          " WHERE e.created_by IS NULL OR e.created_by = $1::uuid "
+          "ORDER BY e.pattern, name",
       user.str());
 
   std::vector<Exercise> out;
@@ -401,13 +417,12 @@ SetInsertOutcome PgTrainingRepository::insertSet(const Set& incoming) {
   return {stored, SetInsertError::none};
 }
 
-std::vector<SessionSummary> PgTrainingRepository::log(const UserId& user,
-                                                      const LogCursor& cursor) {
-  // Three queries over the same keyset window, merged by session id: the page of sessions, one
+LogPage PgTrainingRepository::log(const UserId& user, const LogCursor& cursor) {
+  // Four queries over the same keyset window, merged by session id: the page of sessions, one
   // aggregate pass for its set counts, its tonnage and its display names (alphabetical —
-  // first-performed order is the detail read's business, not the summary's), and one for the loads
-  // each session worked. All three run inside one transaction, so no row of a page can lose an
-  // aggregate to a write that lands between them.
+  // first-performed order is the detail read's business, not the summary's), one for the marks
+  // each session made, and one for the marks that stood before the whole page. All four run inside
+  // one transaction, so no row of a page can lose an aggregate to a write that lands between them.
   //
   // The aggregate counts twice on purpose. `set_count` is every row a session holds;
   // `working_set_count` filters to the working ones, and that is the number the log screen prints
@@ -424,13 +439,29 @@ std::vector<SessionSummary> PgTrainingRepository::log(const UserId& user,
   // hide one of them from every page, forever. An absent tiebreaker passes the empty id — the floor
   // of the text order — so the first page degrades to a plain "strictly before this instant".
   //
-  // The third statement is the session's LOAD LADDER — one row per distinct working load, carrying
-  // the best reps done at it. It exists because the row's e1RM is Epley over every working set and
-  // not over the top set, and picking a set by e1RM is the formula itself rather than an ordering
-  // this store may make. Grouping is all it takes: at a fixed load Epley rises with reps, so the
-  // best-repped set at a load is the best set at that load, and a handful of rows per session is the
-  // whole of what `topE1rmOf` needs. Loads at or below zero are NOT filtered out here — definedness
-  // is the domain's rule and it is stated in domain/Review.h alone.
+  // The third statement is the session's MARKS — one row per (movement, load), carrying the best
+  // reps done at it. It answers both of the row's rules and is the only projection of a session's
+  // working sets in this module: the e1RM is the largest Epley over these rows, which simply
+  // ignores the movement, and the gold dot is the domain's three record rules read per movement.
+  // Grouping is all it takes: at a fixed load Epley rises with reps, so the best-repped set at a
+  // load is the best set at that load, and a handful of rows per session is the whole of it.
+  // DISTINCT ON rather than a bare `max(reps)` for the reason the finish read uses it — it hands
+  // back the winning ROW. Every mark this store makes is dated by the SESSION it was set in, never
+  // by the set's own completed_at (domain/Review.h states the rule and what dating by a device's
+  // wall clock cost), which is why the join is here at all. Loads at or below zero are NOT filtered
+  // out: definedness is the domain's rule and it is stated in domain/Review.h alone.
+  //
+  // The fourth is the marks STANDING BEFORE the page — the same projection with the window moved to
+  // "every FINISHED session older than the oldest row here", narrowed to the movements this page
+  // trains. It is what makes the dot answerable at all: a record is judged against the history
+  // before its session, and page 2 has ten years of history in front of it that page 2 cannot see.
+  // The floor is the page's last row, taken from the rows already in hand rather than recomputed in
+  // SQL, and an empty page skips the statement entirely — nothing stands before nothing.
+  //
+  // Only the fourth counts finished sessions, and the third deliberately does not: a page carries
+  // the OPEN workout as a row like any other. The two windows are reconciled in the domain, which is
+  // told which rows are over and folds only those (domain/Review.h, `SessionMarks::finished`) —
+  // filtering the page here instead would drop the open row off the log entirely.
   //
   // The row's two other facts ride the sessions statement. The top set is a lateral over this
   // session's WORKING sets, heaviest first and ties to more reps — the rule TopWorkingSet states,
@@ -457,25 +488,31 @@ std::vector<SessionSummary> PgTrainingRepository::log(const UserId& user,
           "ORDER BY started_at DESC, id DESC LIMIT $4",
       user.str(), static_cast<long long>(cursor.beforeMs), beforeId, cursor.limit);
   pqxx::result tallies = txn.exec_params(
-      "SELECT st.session_id, e.name, count(*)::int AS set_count, "
+      "SELECT st.session_id, coalesce(n.name, e.name) AS name, count(*)::int AS set_count, "
       "  (count(*) FILTER (WHERE st.kind = 'working'))::int AS working_set_count, "
       "  coalesce(sum(greatest(st.weight_kg, 0) * st.reps) "
       "           FILTER (WHERE st.kind = 'working'), 0)::float8 AS tonnage_kg "
       "FROM gym_sets st JOIN gym_exercises e ON e.id = st.exercise_id "
+      "                 LEFT JOIN gym_exercise_names n "
+      "                   ON n.exercise_id = e.id AND n.user_id = $1::uuid "
       "WHERE st.session_id IN "
       "  (SELECT id FROM gym_sessions WHERE user_id = $1::uuid "
       "   AND (started_at, id) < (to_timestamp($2::bigint / 1000.0), $3) "
       "   ORDER BY started_at DESC, id DESC LIMIT $4) "
-      "GROUP BY st.session_id, e.name ORDER BY st.session_id, e.name",
+      "GROUP BY st.session_id, coalesce(n.name, e.name) "
+      "ORDER BY st.session_id, coalesce(n.name, e.name)",
       user.str(), static_cast<long long>(cursor.beforeMs), beforeId, cursor.limit);
   pqxx::result ladders = txn.exec_params(
-      "SELECT st.session_id, st.weight_kg::float8 AS weight_kg, max(st.reps)::int AS reps "
-      "FROM gym_sets st "
+      "SELECT DISTINCT ON (st.session_id, st.exercise_id, st.weight_kg) "
+      "       st.session_id, st.exercise_id, st.weight_kg::float8 AS weight_kg, st.reps, "
+      "       (extract(epoch from s.started_at) * 1000)::bigint AS at_ms "
+      "FROM gym_sets st JOIN gym_sessions s ON s.id = st.session_id "
       "WHERE st.kind = 'working' AND st.session_id IN "
       "  (SELECT id FROM gym_sessions WHERE user_id = $1::uuid "
       "   AND (started_at, id) < (to_timestamp($2::bigint / 1000.0), $3) "
       "   ORDER BY started_at DESC, id DESC LIMIT $4) "
-      "GROUP BY st.session_id, st.weight_kg ORDER BY st.session_id, st.weight_kg DESC",
+      "ORDER BY st.session_id, st.exercise_id, st.weight_kg DESC, st.reps DESC, "
+      "         st.completed_at ASC",
       user.str(), static_cast<long long>(cursor.beforeMs), beforeId, cursor.limit);
 
   std::map<std::string, Tally> tallyBySession;
@@ -487,10 +524,9 @@ std::vector<SessionSummary> PgTrainingRepository::log(const UserId& user,
     tally.exerciseNames.push_back(row["name"].as<std::string>());
   }
   for (const auto& row : ladders)
-    tallyBySession[row["session_id"].as<std::string>()].workingLoads.push_back(
-        WorkingLoad{row["weight_kg"].as<double>(), row["reps"].as<int>()});
+    tallyBySession[row["session_id"].as<std::string>()].workingMarks.push_back(markFrom(row));
 
-  std::vector<SessionSummary> out;
+  LogPage page;
   for (const auto& row : sessions) {
     Session session = sessionFrom(row);
     std::optional<TopWorkingSet> top;
@@ -499,14 +535,35 @@ std::vector<SessionSummary> PgTrainingRepository::log(const UserId& user,
     const bool closedItself = row["closed_itself"].as<bool>();
     const auto tally = tallyBySession.find(session.id.str());
     if (tally == tallyBySession.end()) {
-      out.push_back(SessionSummary{session, 0, 0, 0, {}, top, {}, closedItself});
+      page.sessions.push_back(SessionSummary{session, 0, 0, 0, {}, top, {}, closedItself});
       continue;
     }
-    out.push_back(SessionSummary{session, tally->second.setCount, tally->second.workingSetCount,
-                                 tally->second.tonnageKg, tally->second.exerciseNames, top,
-                                 tally->second.workingLoads, closedItself});
+    page.sessions.push_back(SessionSummary{session, tally->second.setCount,
+                                           tally->second.workingSetCount, tally->second.tonnageKg,
+                                           tally->second.exerciseNames, top,
+                                           tally->second.workingMarks, closedItself});
   }
-  return out;
+  if (page.sessions.empty()) return page;
+
+  const Session& oldest = page.sessions.back().session;
+  pqxx::result standing = txn.exec_params(
+      "SELECT DISTINCT ON (st.exercise_id, st.weight_kg) "
+      "       st.exercise_id, st.weight_kg::float8 AS weight_kg, st.reps, "
+      "       (extract(epoch from s.started_at) * 1000)::bigint AS at_ms "
+      "FROM gym_sets st JOIN gym_sessions s ON s.id = st.session_id "
+      "WHERE st.user_id = $1::uuid AND st.kind = 'working' AND s.finished_at IS NOT NULL "
+      "  AND (s.started_at, s.id) < (to_timestamp($2::bigint / 1000.0), $3) "
+      "  AND st.exercise_id IN "
+      "    (SELECT p.exercise_id FROM gym_sets p JOIN gym_sessions ps ON ps.id = p.session_id "
+      "     WHERE ps.user_id = $1::uuid AND p.kind = 'working' "
+      "       AND (ps.started_at, ps.id) >= (to_timestamp($2::bigint / 1000.0), $3) "
+      "       AND (ps.started_at, ps.id) <  (to_timestamp($4::bigint / 1000.0), $5)) "
+      "ORDER BY st.exercise_id, st.weight_kg DESC, st.reps DESC, s.started_at ASC, s.id ASC, "
+      "         st.completed_at ASC",
+      user.str(), static_cast<long long>(oldest.startedAtMs), oldest.id.str(),
+      static_cast<long long>(cursor.beforeMs), beforeId);
+  for (const auto& row : standing) page.standing.push_back(markFrom(row));
+  return page;
 }
 
 LastTimeOutcome PgTrainingRepository::lastTime(const UserId& user, const ExerciseId& exercise) {
@@ -581,8 +638,9 @@ SessionHistory PgTrainingRepository::historyFor(const UserId& user, const Sessio
   // e1RM rises with reps, so that row is the best set at that load, and all three rules follow from
   // it — which is what keeps the Epley formula out of SQL entirely (§11.5's ladder lesson, applied
   // to the second formula in the product). DISTINCT ON is what a bare max(reps) cannot do: it hands
-  // back the winning ROW, so the mark is dated by the earliest instant those reps were hit, which is
-  // the day the mark was set and the date the record line prints.
+  // back the winning ROW, and the row it keeps is the one from the EARLIEST session to hit those
+  // reps — so the mark is dated by that workout, which is the day the record line prints beside the
+  // number it beat (the one dating rule, domain/Review.h).
   //
   // Both windows compare the PAIR (started_at, id) against this session's own, the unique key every
   // other read here pages and locates on. It is not decoration: it excludes this session from its
@@ -595,13 +653,14 @@ SessionHistory PgTrainingRepository::historyFor(const UserId& user, const Sessio
     pqxx::result marks = txn.exec_params(
         "SELECT DISTINCT ON (st.exercise_id, st.weight_kg) "
         "       st.exercise_id, st.weight_kg::float8 AS weight_kg, st.reps, "
-        "       (extract(epoch from st.completed_at) * 1000)::bigint AS at_ms "
+        "       (extract(epoch from s.started_at) * 1000)::bigint AS at_ms "
         "FROM gym_sets st JOIN gym_sessions s ON s.id = st.session_id "
         "WHERE st.user_id = $1::uuid AND st.kind = 'working' AND s.finished_at IS NOT NULL "
         "  AND (s.started_at, s.id) < (to_timestamp($2::bigint / 1000.0), $3) "
         "  AND st.exercise_id IN (SELECT exercise_id FROM gym_sets "
         "                         WHERE session_id = $3 AND kind = 'working') "
-        "ORDER BY st.exercise_id, st.weight_kg, st.reps DESC, st.completed_at ASC",
+        "ORDER BY st.exercise_id, st.weight_kg, st.reps DESC, s.started_at ASC, s.id ASC, "
+        "         st.completed_at ASC",
         user.str(), static_cast<long long>(session.startedAtMs), session.id.str());
     for (const auto& row : marks) history.marks.push_back(markFrom(row));
 
@@ -758,13 +817,158 @@ ExerciseInsertOutcome PgTrainingRepository::insertExercise(const UserId& owner,
         incoming.stepKg, owner.str());
     pqxx::result rows = txn.exec_params(
         "SELECT " + std::string(kExerciseColumns) +
-            " FROM gym_exercises WHERE id = $1 AND created_by = $2::uuid",
+            " FROM gym_exercises e LEFT JOIN gym_exercise_names n "
+            "  ON n.exercise_id = e.id AND n.user_id = $2::uuid "
+            "WHERE e.id = $1 AND e.created_by = $2::uuid",
         incoming.id.str(), owner.str());
     if (!rows.empty()) stored = exerciseFrom(rows[0]);
     txn.commit();
   }
   if (!stored) return {std::nullopt, ExerciseInsertError::idTaken};
   return {stored, ExerciseInsertError::none};
+}
+
+std::optional<Exercise> PgTrainingRepository::renameExercise(const UserId& user,
+                                                             const ExerciseId& id,
+                                                             const std::string& name) {
+  // Read, then decide which of two writes this is, then read back — one transaction, and the read
+  // that opens it is the whole owner check: the catalog's own predicate, so a seed and this
+  // account's own movement are renamable and another lifter's is simply not there.
+  //
+  // THE HAZARD THIS METHOD EXISTS FOR: `UPDATE gym_exercises SET name` renames a SEED for every
+  // lifter on the server, because the 64 seeds are one global row each. So the statement runs only
+  // where `created_by = the caller` — their own movement, their own row — and a seed takes a line
+  // in gym_exercise_names instead, which every read of a movement name coalesces over the seed's.
+  // Renaming a seed back to what it is called by default DELETES that line rather than storing a
+  // copy of the seed's own string: an override that says nothing is not an override, and the row
+  // would otherwise outlive a later change to the seed name it was pinning.
+  //
+  // The renamed entity is CONSTRUCTED before either write, from the row as it would be — the
+  // constructor is the entire validation (§ every other write in this module), so a name too long,
+  // empty, or holding the NUL that Postgres text stops at never reaches a column. Nothing else
+  // about the movement moves: not its pattern, not its step, and least of all its id, which is what
+  // keeps every set, routine entry and frozen plan snapshot pointing at the same movement.
+  std::optional<Exercise> stored;
+  {
+    PgLease conn{*pool_};
+    pqxx::work txn{*conn};
+    pqxx::result rows = txn.exec_params(
+        "SELECT " + std::string(kExerciseColumns) + ", e.name AS seed_name FROM " +
+            std::string(kExerciseFrom) +
+            " WHERE e.id = $2 AND (e.created_by IS NULL OR e.created_by = $1::uuid)",
+        user.str(), id.str());
+    if (rows.empty()) return std::nullopt;
+    const Exercise current = exerciseFrom(rows[0]);
+    const Exercise renamed{current.id,         name,           current.pattern,
+                           current.equipment,  current.stepKg, current.custom};
+
+    if (renamed.custom)
+      txn.exec_params("UPDATE gym_exercises SET name = $3 WHERE id = $2 AND created_by = $1::uuid",
+                      user.str(), id.str(), renamed.name);
+    else if (renamed.name == rows[0]["seed_name"].as<std::string>())
+      txn.exec_params("DELETE FROM gym_exercise_names WHERE user_id = $1::uuid AND exercise_id = $2",
+                      user.str(), id.str());
+    else
+      txn.exec_params("INSERT INTO gym_exercise_names (user_id, exercise_id, name) "
+                      "VALUES ($1::uuid, $2, $3) "
+                      "ON CONFLICT (user_id, exercise_id) DO UPDATE "
+                      "  SET name = excluded.name, updated_at = now()",
+                      user.str(), id.str(), renamed.name);
+
+    // The read-back carries the SAME predicate the read above did, though nothing another account
+    // owns could reach it — a query in this module that is owner-scoped only by where it happens to
+    // sit is one a later hand copies somewhere it is not.
+    pqxx::result named = txn.exec_params(
+        "SELECT " + std::string(kExerciseColumns) + " FROM " + std::string(kExerciseFrom) +
+            " WHERE e.id = $2 AND (e.created_by IS NULL OR e.created_by = $1::uuid)",
+        user.str(), id.str());
+    if (!named.empty()) stored = exerciseFrom(named[0]);
+    txn.commit();
+  }
+  return stored;
+}
+
+MovementHistory PgTrainingRepository::movementHistory(const UserId& user,
+                                                      const ExerciseId& exercise) {
+  // The record page, four statements in one transaction, and not one of them is a new opinion about
+  // training. The first is the catalog's own predicate: no row means this account holds no such
+  // movement, and the other three never fire — a movement nobody may see spends no query proving it.
+  //
+  // The LADDERS are `DISTINCT ON (session, load)` over this movement's working sets in finished
+  // sessions, oldest session first and heaviest load first inside each. It is the same projection
+  // the log page and the finish read make, windowed to one movement, and it is the whole of what
+  // the chart, the two tiles and the record ladder are computed from — because every one of those
+  // is a question about the best e1RM of a session, which is a FORMULA and does not reach the
+  // database (§11.5). The window is a lifetime rather than twelve weeks: the chart is windowed by
+  // the domain, and "your best ever" that quietly meant "this quarter" would be a lie in a tile.
+  // A ladder row is dated by its session like every mark this store makes, which is the instant the
+  // page dates its bar and its tiles by — one column read twice, so the two cannot drift apart.
+  //
+  // The RECENT days are the movement's last ten training days, warmups excluded for the reason the
+  // prefill excludes them — a ramp-up single is not what you did. They are a separate statement
+  // because the ladder collapses a session's sets and this list prints them: `105 × 5 · 105 × 5 ·
+  // 105 × 4` is three sets and two loads.
+  MovementHistory history;
+  {
+    PgLease conn{*pool_};
+    pqxx::work txn{*conn};
+    pqxx::result known = txn.exec_params(
+        "SELECT " + std::string(kExerciseColumns) + " FROM " + std::string(kExerciseFrom) +
+            " WHERE e.id = $2 AND (e.created_by IS NULL OR e.created_by = $1::uuid)",
+        user.str(), exercise.str());
+    if (known.empty()) return history;
+    history.exercise = exerciseFrom(known[0]);
+
+    // DISTINCT, because a routine may name one movement twice — bench heavy, then a back-off — and
+    // the subhead counts days of the program, not lines in them.
+    pqxx::result held = txn.exec_params(
+        "SELECT count(DISTINCT r.id)::int AS routines FROM gym_routines r "
+        "JOIN gym_routine_entries en ON en.routine_id = r.id "
+        "WHERE r.user_id = $1::uuid AND en.exercise_id = $2",
+        user.str(), exercise.str());
+    history.routines = held[0]["routines"].as<int>();
+
+    pqxx::result ladders = txn.exec_params(
+        "SELECT DISTINCT ON (s.started_at, s.id, st.weight_kg) "
+        "       s.id AS session_id, (extract(epoch from s.started_at) * 1000)::bigint AS started_ms, "
+        "       st.exercise_id, st.weight_kg::float8 AS weight_kg, st.reps, "
+        "       (extract(epoch from s.started_at) * 1000)::bigint AS at_ms "
+        "FROM gym_sets st JOIN gym_sessions s ON s.id = st.session_id "
+        "WHERE st.user_id = $1::uuid AND st.exercise_id = $2 AND st.kind = 'working' "
+        "  AND s.finished_at IS NOT NULL "
+        "ORDER BY s.started_at ASC, s.id ASC, st.weight_kg DESC, st.reps DESC, "
+        "         st.completed_at ASC",
+        user.str(), exercise.str());
+    for (const auto& row : ladders) {
+      const std::string session = row["session_id"].as<std::string>();
+      if (history.sessions.empty() || history.sessions.back().session.str() != session)
+        history.sessions.push_back(
+            MovementSession{SessionId{session}, instantFrom(row["started_ms"]), {}});
+      history.sessions.back().loads.push_back(markFrom(row));
+    }
+
+    pqxx::result recent = txn.exec_params(
+        "WITH ran AS ("
+        "  SELECT s.id AS ran_id, s.started_at AS ran_started FROM gym_sessions s "
+        "  WHERE s.user_id = $1::uuid AND s.finished_at IS NOT NULL "
+        "    AND EXISTS (SELECT 1 FROM gym_sets d WHERE d.session_id = s.id "
+        "                AND d.user_id = $1::uuid AND d.exercise_id = $2 AND d.kind <> 'warmup') "
+        "  ORDER BY s.started_at DESC, s.id DESC LIMIT $3) "
+        "SELECT ran_id, (extract(epoch from ran_started) * 1000)::bigint AS started_ms, " +
+            std::string(kSetColumns) +
+            " FROM ran JOIN gym_sets st ON st.session_id = ran_id "
+            "WHERE st.user_id = $1::uuid AND st.exercise_id = $2 AND st.kind <> 'warmup' "
+            "ORDER BY ran_started DESC, ran_id DESC, st.set_number ASC",
+        user.str(), exercise.str(), kRecentDays);
+    for (const auto& row : recent) {
+      const std::string session = row["ran_id"].as<std::string>();
+      if (history.recent.empty() || history.recent.back().session.str() != session)
+        history.recent.push_back(
+            MovementDay{SessionId{session}, instantFrom(row["started_ms"]), {}});
+      history.recent.back().sets.push_back(setFrom(row));
+    }
+  }
+  return history;
 }
 
 TrainingLog PgTrainingRepository::trainingLog(const UserId& user) {
@@ -808,10 +1012,11 @@ TrainingLog PgTrainingRepository::trainingLog(const UserId& user) {
     pqxx::result marks = txn.exec_params(
         "SELECT DISTINCT ON (st.exercise_id, st.weight_kg) "
         "       st.exercise_id, st.weight_kg::float8 AS weight_kg, st.reps, "
-        "       (extract(epoch from st.completed_at) * 1000)::bigint AS at_ms "
+        "       (extract(epoch from s.started_at) * 1000)::bigint AS at_ms "
         "FROM gym_sets st JOIN gym_sessions s ON s.id = st.session_id "
         "WHERE st.user_id = $1::uuid AND st.kind = 'working' AND s.finished_at IS NOT NULL "
-        "ORDER BY st.exercise_id, st.weight_kg, st.reps DESC, st.completed_at ASC",
+        "ORDER BY st.exercise_id, st.weight_kg, st.reps DESC, s.started_at ASC, s.id ASC, "
+        "         st.completed_at ASC",
         user.str());
     for (const auto& row : marks) log.marks.push_back(markFrom(row));
 
@@ -859,13 +1064,18 @@ std::vector<ExportedSet> PgTrainingRepository::exportedSets(const UserId& user) 
       "                        'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'), '') AS finished_at, "
       "       CASE WHEN jsonb_typeof(s.plan->'routine') = 'string' THEN s.plan->>'routine' "
       "            ELSE '' END AS routine, "
-      "       st.id AS set_id, st.exercise_id, e.name AS exercise, "
+      // The movement travels under the name the OWNER of this file calls it, which is the same
+      // coalesce every other read makes: an export whose column said "Back Squat" to the one lifter
+      // who renamed it would be a file that disagreed with the app it came out of.
+      "       st.id AS set_id, st.exercise_id, coalesce(n.name, e.name) AS exercise, "
       "       st.set_number::text AS set_number, st.weight_kg::text AS weight_kg, "
       "       st.reps::text AS reps, st.kind, coalesce(st.rpe::text, '') AS rpe, st.note, "
       "       to_char(st.completed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') "
       "         AS completed_at "
       "FROM gym_sets st JOIN gym_sessions s ON s.id = st.session_id "
       "                 JOIN gym_exercises e ON e.id = st.exercise_id "
+      "                 LEFT JOIN gym_exercise_names n "
+      "                   ON n.exercise_id = e.id AND n.user_id = $1::uuid "
       // Scoped on BOTH halves rather than through the invariant that a set row inherits its
       // session's owner — the same guard lastTime carries, for the same reason: this row prints a
       // session's instants and the day of the program it was, so a single mis-owned set is the one
@@ -969,7 +1179,7 @@ std::optional<SharedSession> PgTrainingRepository::sharedSession(const std::stri
     PgLease conn{*pool_};
     pqxx::work txn{*conn};
     pqxx::result sessions = txn.exec_params(
-        "SELECT s.id AS session_id, "
+        "SELECT s.id AS session_id, s.user_id AS owner, "
         "       (extract(epoch from s.started_at) * 1000)::bigint AS started_ms, "
         "       (extract(epoch from s.finished_at) * 1000)::bigint AS finished_ms, "
         "       CASE WHEN jsonb_typeof(s.plan->'routine') = 'string' THEN s.plan->>'routine' "
@@ -979,13 +1189,20 @@ std::optional<SharedSession> PgTrainingRepository::sharedSession(const std::stri
         token, static_cast<long long>(nowMs));
     if (sessions.empty()) return std::nullopt;
 
+    // The names are the OWNER's, resolved through the owner the session row itself names — the one
+    // read here with no caller still has an account to coalesce against, and it is the account
+    // whose workout this is. A coach reading the link sees the movement the lifter would name on
+    // the phone, which is the whole point of sending them the link.
     pqxx::result block = txn.exec_params(
-        "SELECT e.name AS exercise, st.set_number, st.weight_kg::float8 AS weight_kg, st.reps, "
+        "SELECT coalesce(n.name, e.name) AS exercise, st.set_number, "
+        "       st.weight_kg::float8 AS weight_kg, st.reps, "
         "       st.kind, st.rpe::float8 AS rpe, st.note, "
         "       (extract(epoch from st.completed_at) * 1000)::bigint AS completed_ms "
         "FROM gym_sets st JOIN gym_exercises e ON e.id = st.exercise_id "
+        "                 LEFT JOIN gym_exercise_names n "
+        "                   ON n.exercise_id = e.id AND n.user_id = $2::uuid "
         "WHERE st.session_id = $1 ORDER BY st.completed_at ASC, st.set_number ASC",
-        sessions[0]["session_id"].as<std::string>());
+        sessions[0]["session_id"].as<std::string>(), sessions[0]["owner"].as<std::string>());
     std::vector<SharedSet> sets;
     for (const auto& row : block) {
       std::optional<double> rpe;

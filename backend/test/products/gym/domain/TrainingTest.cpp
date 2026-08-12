@@ -189,6 +189,17 @@ TEST(exercise_construction_guards_the_name_and_the_step) {
   CHECK(rejects([] {
     Exercise{ExerciseId{"ex_11111111"}, "", Pattern::squat, Equipment::barbell, 2.5, true};
   }));
+  // A name of nothing but blanks is the empty one in disguise: it used to store, and then rendered
+  // as a movement with no name in its own header, the picker and every log row it appeared on.
+  CHECK(rejects([] {
+    Exercise{ExerciseId{"ex_11111111"}, "   ", Pattern::squat, Equipment::barbell, 2.5, true};
+  }));
+  // And an ordinary name keeps its middle and loses its ends, so " Bench Press " and "Bench Press"
+  // are one movement in the picker rather than two rows a lifter has to tell apart.
+  CHECK_EQ(Exercise(ExerciseId{"ex_11111111"}, "\t Front Squat \n", Pattern::squat,
+                    Equipment::barbell, 2.5, true)
+               .name,
+           std::string("Front Squat"));
   CHECK(rejects([] {
     Exercise{ExerciseId{"ex_11111111"}, "Zercher Squat", Pattern::squat, Equipment::barbell, 0, true};
   }));

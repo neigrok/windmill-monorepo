@@ -29,7 +29,7 @@ public:
   void insertSession(const Session& incoming) override;
   void close(const SessionId& id, std::uint64_t finishedAtMs) override;
   SetInsertOutcome insertSet(const Set& incoming) override;
-  std::vector<SessionSummary> log(const UserId& user, const LogCursor& cursor) override;
+  LogPage log(const UserId& user, const LogCursor& cursor) override;
   std::vector<Set> setsOf(const SessionId& id) override;
   LastTimeOutcome lastTime(const UserId& user, const ExerciseId& exercise) override;
   SessionHistory historyFor(const UserId& user, const Session& session) override;
@@ -40,6 +40,9 @@ public:
   RoutineWriteOutcome replaceRoutine(const Routine& incoming) override;
   bool deleteRoutine(const UserId& user, const RoutineId& id) override;
   ExerciseInsertOutcome insertExercise(const UserId& owner, const Exercise& incoming) override;
+  std::optional<Exercise> renameExercise(const UserId& user, const ExerciseId& id,
+                                         const std::string& name) override;
+  MovementHistory movementHistory(const UserId& user, const ExerciseId& exercise) override;
   TrainingLog trainingLog(const UserId& user) override;
   std::vector<ExportedSet> exportedSets(const UserId& user) override;
   std::optional<SessionShare> insertShare(const SessionShare& incoming,

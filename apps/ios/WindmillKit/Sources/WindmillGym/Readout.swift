@@ -62,13 +62,12 @@ public enum Readout {
         return pad(parts.hour ?? 0) + ":" + pad(parts.minute ?? 0)
     }
 
-    // `utc` is for one caller and one reason: the statistics weeks are bucketed by
-    // `date_trunc('week', … AT TIME ZONE 'UTC')`, so a bucket's start instant is a UTC Monday
-    // midnight. Rendered in the reader's own zone it comes out as Sunday for half the planet, and a
-    // week label that names the wrong day is worse than none. Everything else in gym is an instant a
-    // person lived through and reads in the zone they are standing in, which is the default.
-    public static func day(_ ms: Int64, utc: Bool = false) -> String {
-        let parts = components(ms, utc: utc)
+    // Every instant gym prints is one a person LIVED THROUGH, so every one of them is read in the
+    // zone they are standing in. This carried a `utc` switch for one caller — the retired statistics
+    // board, whose weeks were UTC Monday buckets the server had cut — and the switch went with the
+    // board rather than waiting for somebody to find a second use for it.
+    public static func day(_ ms: Int64) -> String {
+        let parts = components(ms)
         let weekday = weekdays[max(0, min(6, (parts.weekday ?? 1) - 1))]
         let month = months[max(0, min(11, (parts.month ?? 1) - 1))]
         return "\(weekday) \(parts.day ?? 1) \(month)"
@@ -117,6 +116,22 @@ public enum Readout {
         return "\(days) days ago"
     }
 
+    // WHEN A PAST DAY IS NAMED RATHER THAN COUNTED — the record page's records and its recent days
+    // (§H prints `today` on one row and `27 Jul` on the next). It is not `ago`: "16 days ago" is the
+    // wrong answer for a mark somebody wants to find in their log, and past a fortnight the count
+    // stops being a date at all.
+    //
+    // The YEAR arrives the moment the date is no longer this one. A record ladder is lifetime and a
+    // rarely-trained movement's last day can be two years back, where "13 Jul" names a square on
+    // nobody's calendar — the same fact the log's bottom prints its year for.
+    public static func when(_ ms: Int64, now: Int64) -> String {
+        let days = daysAgo(ms, now: now)
+        if days <= 0 { return "today" }
+        if days == 1 { return "yesterday" }
+        guard components(ms).year == components(now).year else { return dateWithYear(ms) }
+        return date(ms)
+    }
+
     // The session clock and the rest timer both read this, and both hand it a span computed from an
     // instant rather than a counter they incremented — so a locked phone and a relaunch both come
     // back showing the true elapsed time instead of the time the app was awake for.
@@ -140,8 +155,8 @@ public enum Readout {
     }
 
     // The product counts SESSIONS — never workouts and never entries — so the word is spelled here
-    // beside the set's, and the movement lines on the statistics screen borrow it rather than
-    // inventing a second noun for the same thing.
+    // beside the set's, and the record page's subhead borrows it rather than inventing a second noun
+    // for the same thing.
     public static func sessionCount(_ count: Int) -> String {
         count == 1 ? "1 session" : "\(count) sessions"
     }
@@ -190,11 +205,9 @@ public enum Readout {
         catalog.first { $0.id == exerciseId }?.name ?? exerciseId
     }
 
-    private static func components(_ ms: Int64, utc: Bool = false) -> DateComponents {
-        var calendar = Calendar.current
-        if utc, let zone = TimeZone(identifier: "UTC") { calendar.timeZone = zone }
-        return calendar.dateComponents([.hour, .minute, .weekday, .day, .month, .year],
-                                       from: Date(timeIntervalSince1970: Double(ms) / 1000))
+    private static func components(_ ms: Int64) -> DateComponents {
+        Calendar.current.dateComponents([.hour, .minute, .weekday, .day, .month, .year],
+                                        from: Date(timeIntervalSince1970: Double(ms) / 1000))
     }
 
     private static func pad(_ value: Int) -> String {

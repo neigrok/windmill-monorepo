@@ -14,8 +14,8 @@ import works.windmill.gym.domain.TrainingSet
 // deliberately not here; that is SetQueue's file, and one fact living in one file is what keeps a
 // crash from leaving two stores disagreeing about the same workout.
 //
-// Signed out this shelf IS the log: Today's history, the last-time prefill, statistics and the
-// session revisit all read it. On sign-in the claim replay (ClaimReplay) walks it onto the
+// Signed out this shelf IS the log: Today's history, the last-time prefill, a movement's record and
+// the session revisit all read it. On sign-in the claim replay (ClaimReplay) walks it onto the
 // account, and a row leaves the shelf only when the server has confirmed holding it — so the shelf
 // is always exactly what the account does not yet have, and merging reads is one concatenation.
 //
@@ -62,6 +62,19 @@ class LocalLog(private val file: File) {
     fun hold(exercise: Exercise) {
         held = held.copy(exercises = exercises + exercise)
         flush()
+    }
+
+    // The rename of a movement this device minted and no account holds yet. It is the whole of the
+    // signed-out rename: a catalog seed's per-lifter name is a row in the ACCOUNT's override table,
+    // and the claim creates movements rather than overrides — so a seed renamed here would be a
+    // name that silently reverted on the next connect, which is worse than a sentence saying where
+    // the door is. Answers null when the shelf does not hold it, and the caller says so.
+    fun renameExercise(id: String, name: String): Exercise? {
+        val mine = exercises.firstOrNull { it.id == id } ?: return null
+        val renamed = mine.copy(name = name)
+        held = held.copy(exercises = exercises.map { if (it.id == id) renamed else it })
+        flush()
+        return renamed
     }
 
     fun claimExercise(id: String) {

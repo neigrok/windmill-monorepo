@@ -316,24 +316,33 @@ class LiveWireTests {
         assertNull("an absent session folds to null", wire.session("ses_probe_a_gone404"))
     }
 
+    // ONE MOVEMENT READ WHOLE, off the rows this suite really wrote: the probe's bench session is
+    // the one working set the account has for it, so every number here is checkable by hand.
     @Test
-    fun t09_statisticsDecodeWholeWeeksAndStandingBests() = runBlocking {
-        val stats = wire.statistics()
-        assertTrue(stats.weeks.isNotEmpty())
-        assertTrue("weeks are contiguous — a silent week is present and zero",
-            stats.weeks.map { it.startedAtMs }.zipWithNext().all { (a, b) -> b - a == 604_800_000L })
-        assertEquals(2, stats.weeks.sumOf { it.sessions })
-        assertEquals(2, stats.weeks.sumOf { it.workingSets })
+    fun t09_theRecordReadsOneMovementWholeAndFoldsAnAbsentOneToNull() = runBlocking {
+        val bench = wire.record("bench-press")
+        assertNotNull(bench)
+        assertEquals("bench-press", bench!!.exercise.id)
+        assertEquals("Bench Press", bench.exercise.name)
+        assertEquals("barbell", bench.exercise.equipment)
 
-        val bench = stats.movements.first { it.exerciseId == "bench-press" }
-        assertEquals(startA, bench.lastTrainedAtMs)
-        assertEquals(1, bench.points.size)
-        assertEquals(startA, bench.points[0].atMs)
-        assertEquals(82.5, bench.points[0].weightKg, 0.0)
-        assertEquals(5, bench.points[0].reps)
-        assertNotNull("a barbell lift has an honest e1rm", bench.points[0].e1rm)
-        assertEquals(82.5, bench.bestE1rm!!.weightKg, 0.0)
+        // The warmup in session A counts toward nothing — the working set is the whole record.
+        assertEquals(1, bench.sessionCount)
         assertEquals(82.5, bench.heaviest!!.weightKg, 0.0)
+        assertEquals(5, bench.heaviest!!.reps)
+        assertEquals("a mark is stamped with its SESSION's start, never the set's clock",
+            startA, bench.heaviest!!.atMs)
+        assertNotNull("a barbell lift has an honest e1rm", bench.bestE1rm?.e1rm)
+        assertEquals(startA, bench.e1rmSeries.single().atMs)
+        assertNotNull("every point of this series carries an estimate", bench.e1rmSeries.single().e1rm)
+
+        // The warmup is excluded from the recent day and the working set is not.
+        val day = bench.recentDays.first { it.sessionId == sessionAId }
+        assertEquals(startA, day.startedAtMs)
+        assertEquals(listOf(workingId), day.sets.map { it.id })
+
+        assertNull("an absent movement folds to null, exactly as an absent session does",
+            wire.record("probe-not-a-movement"))
     }
 
     @Test

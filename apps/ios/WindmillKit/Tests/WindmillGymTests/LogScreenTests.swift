@@ -21,12 +21,13 @@ final class LogWeeksTests: XCTestCase {
 
     private func session(_ id: String, at startedAtMs: Int64, routine: String? = nil,
                          working: Int? = nil, tonnageKg: Double? = nil,
-                         topE1rm: Double? = nil) -> SessionSummary {
+                         topE1rm: Double? = nil, record: Bool = false) -> SessionSummary {
         let plan = routine.map { PlanSnapshot(routine: $0, entries: []) }
         return SessionSummary(session: Session(id: id, startedAtMs: startedAtMs,
                                                finishedAtMs: startedAtMs + 3_480_000, plan: plan),
                               setCount: 14,
-                              workingSetCount: working, tonnageKg: tonnageKg, topE1rm: topE1rm)
+                              workingSetCount: working, tonnageKg: tonnageKg, topE1rm: topE1rm,
+                              record: record)
     }
 
     // Newest first, Monday to Monday, and the divider names the Monday the week opened on — not the
@@ -175,6 +176,21 @@ final class LogWeeksTests: XCTestCase {
         // already yesterday by 01:00, and the row may not still be calling it today.
         XCTAssertEqual(LogWeeks.Row.when(at(2026, 8, 9, hour: 23), now: at(2026, 8, 10, hour: 1)),
                        "Sun 9 Aug")
+    }
+
+    // THE GOLD DOT IS THE LOG'S JUDGEMENT AND NEVER THIS CLIENT'S: a row wears one when the log says
+    // a record happened in there, judged against the log as it is now. A row this device is the only
+    // home for never wears one — the three record rules are claims against a history the device does
+    // not hold, and no dot there is an omission rather than the assertion a wrong dot would be.
+    func testARowWearsTheGoldDotOnlyWhenTheLogSaysARecordHappenedInIt() {
+        let weeks = LogWeeks.fold([
+            session("pr", at: at(2026, 8, 10, hour: 18), record: true),
+            session("ordinary", at: at(2026, 8, 10, hour: 8)),
+            session("mine", at: at(2026, 8, 10, hour: 6)),
+        ], deviceOnly: ["mine"], reach: .whole, now: at(2026, 8, 10, hour: 21))
+
+        XCTAssertEqual(weeks[0].rows.map(\.record), [true, false, false])
+        XCTAssertEqual(weeks[0].rows.map(\.deviceOnly), [false, false, true])
     }
 
     func testAnEmptyLogFoldsIntoNoWeeksAtAll() {

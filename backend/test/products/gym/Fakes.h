@@ -94,14 +94,23 @@ public:
   std::vector<Set> sets;
   std::vector<Routine> routineRows;   // the stored rows; lastTrainedAtMs is derived on every read
   std::vector<SessionShare> shares;   // one per session at most, exactly as the primary key says
+  // gym_exercise_names: what one account calls one SEED. Keyed (owner, movement) like the table's
+  // own primary key, and every read of a display name coalesces it over the seed's — a fake that
+  // resolved names off the catalog row alone would let the global-rename hazard ship behind green.
+  std::vector<std::pair<std::pair<std::string, std::string>, std::string>> displayNames;
 
   void seed(const Exercise& exercise) { seeds.push_back(exercise); }
   void seedCustom(const UserId& owner, const Exercise& exercise) {
     customs.push_back({owner.str(), exercise});
   }
 
+  // Seeds under the name THIS account calls them, then the account's own movements — and the sort
+  // is on the resolved name, exactly as the SQL orders by the coalesce rather than by the column.
   std::vector<Exercise> catalog(const UserId& user) override {
-    std::vector<Exercise> out = seeds;
+    std::vector<Exercise> out;
+    for (const Exercise& row : seeds)
+      out.push_back(Exercise{row.id, *nameOf(user, row.id), row.pattern, row.equipment, row.stepKg,
+                             row.custom});
     for (const auto& [owner, exercise] : customs)
       if (owner == user.str()) out.push_back(exercise);
     std::sort(out.begin(), out.end(), [](const Exercise& a, const Exercise& b) {
@@ -195,7 +204,7 @@ public:
     return {stored, SetInsertError::none};
   }
 
-  std::vector<SessionSummary> log(const UserId& user, const LogCursor& cursor) override {
+  LogPage log(const UserId& user, const LogCursor& cursor) override {
     // The same unique sort key the SQL uses: (startedAt, id) descending, the whole pair compared
     // against the whole cursor, so a tie at a page edge cannot swallow a session.
     const std::string beforeId = cursor.beforeId ? cursor.beforeId->str() : "";
@@ -212,46 +221,76 @@ public:
     if (static_cast<int>(page.size()) > cursor.limit)
       page.erase(page.begin() + cursor.limit, page.end());
 
-    std::vector<SessionSummary> out;
+    LogPage out;
     for (const Session& session : page) {
       int count = 0;
       int working = 0;
       double tonnage = 0;
-      std::set<std::string> names;   // iterates sorted, exactly like the SQL's ORDER BY e.name
+      std::set<std::string> names;   // iterates sorted, exactly like the SQL's ORDER BY the name
       std::optional<TopWorkingSet> top;
-      // The ladder statement's `GROUP BY weight_kg` with `max(reps)`, ordered heaviest first — one
-      // row per distinct working load, which is every candidate the domain's e1RM has to consider.
-      std::map<double, int, std::greater<double>> bestRepsAtLoad;
+      std::vector<Set> held;
       std::optional<std::uint64_t> lastSetAtMs;
       for (const Set& set : sets) {
         if (!(set.session == session.id)) continue;
         ++count;
-        if (std::optional<std::string> name = nameOf(set.exercise)) names.insert(*name);
+        if (std::optional<std::string> name = nameOf(user, set.exercise)) names.insert(*name);
         if (!lastSetAtMs || set.completedAtMs > *lastSetAtMs) lastSetAtMs = set.completedAtMs;
+        held.push_back(set);
         if (set.kind != SetKind::working) continue;
         ++working;
         // The aggregate's `greatest(weight_kg, 0) * reps`: an assisted set logs a negative load and
         // moved no external weight, so it adds nothing rather than subtracting.
         tonnage += std::max(set.weightKg, 0.0) * set.reps;
-        int& bestReps = bestRepsAtLoad[set.weightKg];
-        bestReps = std::max(bestReps, set.reps);
         // The lateral's ORDER BY weight_kg DESC, reps DESC over the WORKING sets, and the same rule
         // stated once in TopWorkingSet: heaviest, ties to more reps, never volume.
         if (top && std::pair(set.weightKg, set.reps) <= std::pair(top->weightKg, top->reps))
           continue;
         top = TopWorkingSet{set.weightKg, set.reps};
       }
-      std::vector<WorkingLoad> loads;
-      for (const auto& [weightKg, reps] : bestRepsAtLoad)
-        loads.push_back(WorkingLoad{weightKg, reps});
+      // The marks statement: the domain's own projection of this session's working sets, ordered
+      // the way `DISTINCT ON (session, movement, load) … ORDER BY movement, load DESC` hands them
+      // back. It goes through marksOf rather than being re-derived here, because a fake that made
+      // the projection its own way could agree with the rule while disagreeing with the store.
+      // Then dated by the SESSION, which is what every mark a STORE hands over carries
+      // (domain/Review.h) — marksOf dates by the set because it is used where a session's own sets
+      // are in hand, and a fake that skipped this would hand back a vector the SQL never would.
+      std::vector<PriorMark> marks = ordered(marksOf(held));
+      for (PriorMark& one : marks) one.atMs = session.startedAtMs;
       // The SQL's `finished_at = coalesce(max(completed_at), started_at)`: the four-hour rule's own
       // signature, inferred rather than stored, for the reason SessionSummary spells out.
       const bool closedItself = session.finishedAtMs &&
                                 *session.finishedAtMs == lastSetAtMs.value_or(session.startedAtMs);
-      out.push_back(SessionSummary{session, count, working, tonnage,
-                                   std::vector<std::string>(names.begin(), names.end()), top,
-                                   std::move(loads), closedItself});
+      out.sessions.push_back(SessionSummary{session, count, working, tonnage,
+                                            std::vector<std::string>(names.begin(), names.end()),
+                                            top, std::move(marks), closedItself});
     }
+    if (out.sessions.empty()) return out;
+
+    // The standing statement: the same projection over this account's FINISHED sessions strictly
+    // older than the page's last row, narrowed to the movements the page trains. The window is the
+    // pair (startedAt, id), the unique key every read here compares on. Each set is carried over
+    // stamped with its SESSION's start, so folding them gives the mark the SQL's DISTINCT ON keeps
+    // — the best reps, dated by the earliest workout that hit them.
+    const Session& oldest = out.sessions.back().session;
+    std::vector<Set> before;
+    for (const Set& prior : sets) {
+      if (prior.kind != SetKind::working) continue;
+      bool onPage = false;
+      for (const SessionSummary& row : out.sessions)
+        for (const PriorMark& mark : row.workingMarks)
+          if (mark.exercise == prior.exercise) onPage = true;
+      if (!onPage) continue;
+      for (const Session& ran : sessions) {
+        if (!(ran.id == prior.session) || !(ran.user == user) || !ran.finishedAtMs) continue;
+        if (std::pair(ran.startedAtMs, ran.id.str()) >=
+            std::pair(oldest.startedAtMs, oldest.id.str()))
+          continue;
+        Set dated = prior;
+        dated.completedAtMs = ran.startedAtMs;
+        before.push_back(dated);
+      }
+    }
+    out.standing = ordered(marksOf(before));
     return out;
   }
 
@@ -316,19 +355,25 @@ public:
     std::vector<Set> priorWorking;
     for (const Set& prior : sets) {
       if (prior.kind != SetKind::working) continue;
-      bool earlierAndFinished = false;
+      std::optional<Session> ranIn;
       for (const Session& ran : sessions) {
         if (!(ran.id == prior.session) || !(ran.user == user) || !ran.finishedAtMs) continue;
-        earlierAndFinished = std::pair(ran.startedAtMs, ran.id.str()) <
-                             std::pair(session.startedAtMs, session.id.str());
+        if (std::pair(ran.startedAtMs, ran.id.str()) <
+            std::pair(session.startedAtMs, session.id.str()))
+          ranIn = ran;
       }
-      if (!earlierAndFinished) continue;
+      if (!ranIn) continue;
       bool workedToday = false;
       for (const Set& today : sets)
         if (today.session == session.id && today.exercise == prior.exercise &&
             today.kind == SetKind::working)
           workedToday = true;
-      if (workedToday) priorWorking.push_back(prior);
+      if (!workedToday) continue;
+      // Carried over stamped with its SESSION's start: a mark the store hands back is dated by the
+      // workout that set it, so the fold below dates it by the earliest workout to hit those reps.
+      Set dated = prior;
+      dated.completedAtMs = ranIn->startedAtMs;
+      priorWorking.push_back(dated);
     }
     std::sort(priorWorking.begin(), priorWorking.end(), [](const Set& a, const Set& b) {
       return std::tuple(a.exercise.str(), a.weightKg, -a.reps, a.completedAtMs) <
@@ -448,6 +493,80 @@ public:
     return {incoming, ExerciseInsertError::none};
   }
 
+  // The rename, under the SAME split the SQL makes and for the same reason: a movement this account
+  // created is its own row and renames in place, a SEED is a global row shared by every account on
+  // the server and takes a per-account display name instead. Renaming a seed back to its own name
+  // deletes that line rather than storing a copy of it. The renamed entity is CONSTRUCTED before
+  // either write, so a name the store could not hold is refused before anything moves — a fake that
+  // skipped the construction would let an unstorable name pass every service test.
+  std::optional<Exercise> renameExercise(const UserId& user, const ExerciseId& id,
+                                         const std::string& name) override {
+    for (const Exercise& row : seeds) {
+      if (!(row.id == id)) continue;
+      const Exercise renamed{row.id, name, row.pattern, row.equipment, row.stepKg, row.custom};
+      std::erase_if(displayNames, [&](const auto& held) {
+        return held.first.first == user.str() && held.first.second == id.str();
+      });
+      if (renamed.name != row.name) displayNames.push_back({{user.str(), id.str()}, renamed.name});
+      return Exercise{row.id, *nameOf(user, id), row.pattern, row.equipment, row.stepKg, row.custom};
+    }
+    for (auto& [owner, exercise] : customs) {
+      if (!(exercise.id == id) || owner != user.str()) continue;
+      exercise = Exercise{exercise.id,        name,           exercise.pattern,
+                          exercise.equipment, exercise.stepKg, exercise.custom};
+      return exercise;
+    }
+    return std::nullopt;   // absent and another account's are the one fact
+  }
+
+  // The record read: the catalog's own predicate first — no row means this account holds no such
+  // movement and nothing else is loaded — then the routines that name it, then one ladder per
+  // FINISHED session oldest first, then the last kRecentDays days of non-warmup sets. Every number
+  // the page prints is computed from these by the pure rule; nothing here estimates anything.
+  MovementHistory movementHistory(const UserId& user, const ExerciseId& exercise) override {
+    MovementHistory history;
+    for (const Exercise& known : catalog(user))
+      if (known.id == exercise) history.exercise = known;
+    if (!history.exercise) return history;
+
+    for (const Routine& routine : routineRows) {
+      if (!(routine.user == user)) continue;
+      for (const RoutineEntry& entry : routine.entries)
+        if (entry.exercise == exercise) {
+          ++history.routines;   // DISTINCT: a routine naming it twice is still one routine
+          break;
+        }
+    }
+
+    std::vector<Session> ran;
+    for (const Session& session : sessions)
+      if (session.user == user && session.finishedAtMs) ran.push_back(session);
+    std::sort(ran.begin(), ran.end(), [](const Session& a, const Session& b) {
+      return std::pair(a.startedAtMs, a.id.str()) < std::pair(b.startedAtMs, b.id.str());
+    });
+    for (const Session& session : ran) {
+      std::vector<Set> held;
+      for (const Set& set : setsOf(session.id))
+        if (set.exercise == exercise) held.push_back(set);
+      std::vector<PriorMark> loads = ordered(marksOf(held));
+      if (loads.empty()) continue;
+      for (PriorMark& load : loads) load.atMs = session.startedAtMs;   // the store's dating rule
+      history.sessions.push_back(MovementSession{session.id, session.startedAtMs, std::move(loads)});
+    }
+
+    for (auto session = ran.rbegin(); session != ran.rend(); ++session) {
+      std::vector<Set> block;
+      for (const Set& set : setsOf(session->id))
+        if (set.exercise == exercise && set.kind != SetKind::warmup) block.push_back(set);
+      if (block.empty()) continue;
+      std::sort(block.begin(), block.end(),
+                [](const Set& a, const Set& b) { return a.setNumber < b.setNumber; });
+      history.recent.push_back(MovementDay{session->id, session->startedAtMs, std::move(block)});
+      if (static_cast<int>(history.recent.size()) == kRecentDays) break;
+    }
+    return history;
+  }
+
   // The same three answers the SQL gives. The series is `DISTINCT ON (movement, session)` keeping
   // the heaviest set with the most reps and then the earliest — TopSet's rule, made by the store
   // because it is an ordering — and every point carries the SESSION's start, never a set's device
@@ -474,7 +593,11 @@ public:
     }
 
     std::vector<Set> priors;
-    for (const auto& [ran, set] : lived) priors.push_back(set);
+    for (const auto& [ran, set] : lived) {
+      Set dated = set;
+      dated.completedAtMs = ran.startedAtMs;   // a mark is dated by the workout that set it
+      priors.push_back(dated);
+    }
     std::sort(priors.begin(), priors.end(), [](const Set& a, const Set& b) {
       return std::tuple(a.exercise.str(), a.weightKg, -a.reps, a.completedAtMs) <
              std::tuple(b.exercise.str(), b.weightKg, -b.reps, b.completedAtMs);
@@ -532,7 +655,7 @@ public:
 
     std::vector<ExportedSet> out;
     for (const auto& [ran, set] : lived) {
-      std::optional<std::string> movement = nameOf(set.exercise);
+      std::optional<std::string> movement = nameOf(user, set.exercise);
       if (!movement) continue;
       out.push_back(ExportedSet{ran.id.str(),
                                 isoUtc(ran.startedAtMs),
@@ -594,7 +717,7 @@ public:
         if (!(ran.id == held.session)) continue;
         std::vector<SharedSet> block;
         for (const Set& set : setsOf(ran.id)) {
-          std::optional<std::string> movement = nameOf(set.exercise);
+          std::optional<std::string> movement = nameOf(ran.user, set.exercise);
           if (!movement) continue;
           block.push_back(SharedSet{*movement, set.setNumber, set.weightKg, set.reps, set.kind,
                                     set.rpe, set.note, set.completedAtMs});
@@ -644,12 +767,26 @@ private:
     return false;
   }
 
-  std::optional<std::string> nameOf(const ExerciseId& id) const {
+  // What THIS account calls a movement: its own line over the seed's name, the seed's name where
+  // there is none, and a created movement's own row. The account is a parameter because a seed row
+  // is global — the whole reason gym_exercise_names exists — so "the name" is not a property of the
+  // catalog row alone.
+  std::optional<std::string> nameOf(const UserId& user, const ExerciseId& id) const {
+    for (const auto& [key, name] : displayNames)
+      if (key.first == user.str() && key.second == id.str()) return name;
     for (const Exercise& exercise : seeds)
       if (exercise.id == id) return exercise.name;
     for (const auto& [owner, exercise] : customs)
       if (exercise.id == id) return exercise.name;
     return std::nullopt;
+  }
+
+  // The order both DISTINCT ON statements hand marks back in: by movement, heaviest load first.
+  static std::vector<PriorMark> ordered(std::vector<PriorMark> marks) {
+    std::sort(marks.begin(), marks.end(), [](const PriorMark& a, const PriorMark& b) {
+      return std::pair(a.exercise.str(), -a.weightKg) < std::pair(b.exercise.str(), -b.weightKg);
+    });
+    return marks;
   }
 };
 

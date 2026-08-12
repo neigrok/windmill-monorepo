@@ -4,7 +4,7 @@ import XCTest
 
 // THE ANONYMOUS-FIRST ROOM AND ITS CLAIM (wave contract §C and §D). Signed out, gym runs whole out
 // of two files on this device — a session starts, freezes its plan off the LOCAL routine, logs,
-// finishes into local history, and feeds the prefill, the review and the statistics. Signing in
+// finishes into local history, and feeds the prefill, the review and a movement's record. Signing in
 // CLAIMS all of it, and the replay's order is the part that loses lifts if it drifts: movements,
 // then routines, then sessions oldest first — each strictly start (joinOpenSession: false, the join
 // default once filed a past session's sets into a live workout) → sets per lane in original order →
@@ -235,10 +235,11 @@ final class AnonymousGymTests: XCTestCase {
         XCTAssertFalse(store.lastTimeFailed)
     }
 
-    // The review and the statistics answer from the local shelf — the three facts and the honest
-    // word over a short session, weeks and movement lines over the finished history. No e1RM is
-    // invented on this device, so the movement line's axis is the load.
-    func testSignedOutReviewAndStatisticsAnswerFromTheLocalLog() async {
+    // The review and a movement's record answer from the local shelf — the three facts and the
+    // honest word over a short session, and the counts, the heaviest set and the recent days over
+    // the finished history. No e1RM is invented on this device, so the estimate, the series and the
+    // record ladder are ABSENT rather than zero, and §H's page draws no chart over them.
+    func testSignedOutReviewAndTheMovementRecordAnswerFromTheLocalLog() async {
         let store = makeStore(sync: nil)
         await store.connect(to: account(signedIn: false))
         guard case .success(let opened) = await store.start() else { return XCTFail("no session") }
@@ -259,17 +260,68 @@ final class AnonymousGymTests: XCTestCase {
         }
         XCTAssertEqual(detail.sets.map(\.weightKg), [60, 82.5, 85])
 
-        guard case .success(let statistics) = await store.statistics() else {
+        guard case .success(let answered) = await store.record(of: "bench-press") else {
             return XCTFail("the local log always answers")
         }
-        XCTAssertEqual(statistics.weeks.map(\.sessions), [1])
-        XCTAssertEqual(statistics.weeks.map(\.workingSets), [2])
-        XCTAssertEqual(statistics.weeks.first?.startedAtMs,
-                       LocalLog.weekStartMs(of: opened.startedAtMs))
-        XCTAssertEqual(statistics.movements.map(\.exerciseId), ["bench-press"])
-        XCTAssertEqual(statistics.movements.first?.points.map(\.weightKg), [85])
-        XCTAssertNil(statistics.movements.first?.points.first?.e1rm, "no Epley is computed here")
-        XCTAssertEqual(statistics.movements.first?.heaviest?.weightKg, 85)
+        let record = answered.record
+        XCTAssertEqual(answered.source, .thisDevice,
+                       "it says who answered, because that decides what an absent estimate means")
+        XCTAssertEqual(record.sessionCount, 1)
+        XCTAssertEqual(record.routineCount, 0, "no program names it, and that zero is a real answer")
+        XCTAssertEqual(record.heaviest, MovementMark(weightKg: 85, reps: 3, atMs: opened.startedAtMs))
+        XCTAssertNil(record.bestE1rm, "no Epley is computed on this device")
+        XCTAssertEqual(record.e1rmSeries, [])
+        XCTAssertEqual(record.records, [])
+        XCTAssertEqual(record.recentDays.map(\.sessionId), [closed.id])
+        XCTAssertEqual(record.recentDays.first?.sets.map(\.weightKg), [82.5, 85],
+                       "a warmup counts toward nothing and is not a recent set")
+
+        // And the page over it: the tiles it can state, no chart at all, and the sets by day. The
+        // missing chart is blamed on WHERE THE ESTIMATE IS COMPUTED and never on the load, which is
+        // the one thing the device cannot know about a movement it holds every set of.
+        let page = Record.page(record, now: opened.startedAtMs, from: answered.source)
+        XCTAssertNil(page.best)
+        XCTAssertNil(page.chart, "no series is no chart — never an empty frame")
+        XCTAssertEqual(page.noChart, .onThisDevice)
+        XCTAssertEqual(page.heaviest, Record.Tile(caption: "heaviest", value: "85", under: "kg · for 3"))
+        XCTAssertEqual(page.subhead, "in no routine · 1 session")
+        XCTAssertEqual(page.days.map(\.sets), ["82.5 × 5 · 85 × 3"])
+        XCTAssertFalse(page.neverLogged)
+    }
+
+    // A SESSION OF NOTHING BUT DROP SETS, logged on the device, walked all the way to the page. The
+    // two lists count different things on purpose — the count is over working sets and the days are
+    // over everything but a warmup — so this is the one movement that is in the days and in no
+    // count, on the device exactly as on the server.
+    //
+    // The page therefore may not say `never logged` over the sets it is printing, may not draw a
+    // tile lane with nothing in it, and may not blame the bar: a 40 kg drop set has a load, and the
+    // reason there is no estimate is that nothing here counts a drop.
+    func testAMovementWorkedOnlyInDropSetsIsInTheDaysAndInNoCount() async {
+        let store = makeStore(sync: nil)
+        await store.connect(to: account(signedIn: false))
+        guard case .success(let opened) = await store.start() else { return XCTFail("no session") }
+        await store.choose("bench-press")
+        await store.logSet(weightKg: 60, reps: 10, kind: .warmup)
+        await store.logSet(weightKg: 40, reps: 12, kind: .drop)
+        guard case .closed = await store.finish() else { return XCTFail("no close") }
+
+        guard case .success(let answered) = await store.record(of: "bench-press") else {
+            return XCTFail("the local log always answers")
+        }
+        XCTAssertEqual(answered.record.sessionCount, 0, "a drop set is not a session worked")
+        XCTAssertNil(answered.record.heaviest, "and it is no standing best either")
+        XCTAssertEqual(answered.record.recentDays.first?.sets.map(\.weightKg), [40],
+                       "the warmup is gone and the drop is kept — that list is what you DID")
+
+        let page = Record.page(answered.record, now: opened.startedAtMs, from: answered.source)
+        XCTAssertFalse(page.neverLogged, "there are sets on this page")
+        XCTAssertEqual(page.subhead, "in no routine · no working sets")
+        XCTAssertNil(page.best)
+        XCTAssertNil(page.heaviest)
+        XCTAssertEqual(page.days.map(\.sets), ["40 × 12 drop"])
+        XCTAssertEqual(page.noChart, .onThisDevice,
+                       "who answered outranks it: this device computes no estimate for anything")
     }
 
     // The standing best at a TIED top load matches the server's marks projection: more reps takes
@@ -289,11 +341,11 @@ final class AnonymousGymTests: XCTestCase {
         await store.logSet(weightKg: 100, reps: 8)
         guard case .closed = await store.finish() else { return XCTFail("no second close") }
 
-        guard case .success(let statistics) = await store.statistics() else {
+        guard case .success(let record) = await store.record(of: "bench-press") else {
             return XCTFail("the local log always answers")
         }
-        XCTAssertEqual(statistics.movements.first?.heaviest,
-                       MovementBest(weightKg: 100, reps: 8, atMs: second.startedAtMs),
+        XCTAssertEqual(record.record.heaviest,
+                       MovementMark(weightKg: 100, reps: 8, atMs: second.startedAtMs),
                        "a tied load goes to more reps")
 
         _ = await store.start()
@@ -301,10 +353,13 @@ final class AnonymousGymTests: XCTestCase {
         await store.logSet(weightKg: 100, reps: 8)
         guard case .closed = await store.finish() else { return XCTFail("no third close") }
 
-        guard case .success(let again) = await store.statistics() else { return XCTFail("no statistics") }
-        XCTAssertEqual(again.movements.first?.heaviest,
-                       MovementBest(weightKg: 100, reps: 8, atMs: second.startedAtMs),
+        guard case .success(let again) = await store.record(of: "bench-press") else {
+            return XCTFail("no record")
+        }
+        XCTAssertEqual(again.record.heaviest,
+                       MovementMark(weightKg: 100, reps: 8, atMs: second.startedAtMs),
                        "a full tie keeps the earlier mark")
+        XCTAssertEqual(again.record.sessionCount, 3)
     }
 
     // Discarding a local session is the device's own delete — no server, no 404, and the shelf and

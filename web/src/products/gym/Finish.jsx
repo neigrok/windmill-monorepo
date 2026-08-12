@@ -17,7 +17,7 @@
 import React, { useRef, useState } from 'react';
 import { failureReason, gymApi } from './gymApi.js';
 import {
-  entryLabel, isFirstSession, nameOfMovement, routineNameOf, sessionHref, weekdayName,
+  entryLabel, isFirstSession, nameOfMovement, recordHref, routineNameOf, sessionHref, weekdayName,
 } from './log.js';
 import { mintId } from './mint.js';
 import { comparison, finishHead, RECORD_TITLE, recordSentence, statTiles } from './review.js';
@@ -100,9 +100,19 @@ export function FinishScreen({ id, log }) {
         <section className="gym-against">
           <h2 className="gym-against-title">{against.title}</h2>
           <ul className="gym-against-rows">
+            {/* THE NAME IS A DOOR (§H), and this band is the case §H's own note names: a line that
+                says "+2.5 on squat" is checkable in one tap, on the one screen that says it. It is
+                a door OUT of this screen, and the screen keeps nothing the store has not already
+                answered — the three facts, the record and this band are all re-read on the way back
+                in, which is why the finish is a place and not a moment (above). The two things
+                below it that a lifter can type into — the routine name, the coach's chat — sit
+                under this band rather than around it, and every state of this screen already draws
+                a link out of it. */}
             {against.rows.map((row) => (
               <li className="gym-against-row" key={row.exerciseId}>
-                <span className="gym-against-movement">{row.movement}</span>
+                <a className="gym-against-movement gym-movement-door" href={recordHref(row.exerciseId)}>
+                  {row.movement}
+                </a>
                 <span className="gym-against-detail">{row.detail}</span>
               </li>
             ))}

@@ -1,8 +1,6 @@
 package works.windmill.gym.domain
 
 import java.security.SecureRandom
-import java.time.Instant
-import java.time.ZoneOffset
 import kotlin.math.max
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
@@ -122,12 +120,20 @@ data class SessionSummary(
     // formula. There is one copy of that formula per language and no phone holds one, so a row with
     // no estimate draws no estimate rather than computing a second.
     val topE1rm: Double? = null,
+    // §G's gold dot: a personal record happened inside this workout, judged by the log against
+    // itself AS IT IS NOW rather than frozen at finish — W3's corrections move records, and a dot
+    // that lied after a fix would be worse than no dot. Defaulted FALSE and not to null, because
+    // the dot is an ASSERTION and its absence is merely an omission: a release APK outlives a
+    // deploy, and a server that never wrote this field has said nothing, which is exactly what no
+    // dot means. A session composed on the device is false for the same reason its `topE1rm` is
+    // absent — the three record rules need the log's whole history and Epley, and neither is here.
+    val record: Boolean = false,
     val closedItself: Boolean = false,
 ) {
     // A log row composed on the device, for a session only the device holds: the same facts the
     // server's row carries, read off the session and its own sets. `topE1rm` stays absent for the
-    // reason it is absent from `Review.of` and from every local statistics point — no Epley is
-    // computed here, and a session claimed onto an account gets the log's own estimate back.
+    // reason it is absent from `Review.of` and from every mark `MovementRecord.of` composes — no
+    // Epley is computed here, and a session claimed onto an account gets the log's own estimate back.
     constructor(session: Session, sets: List<TrainingSet>) : this(
         id = session.id,
         startedAtMs = session.startedAtMs,
@@ -145,6 +151,7 @@ data class SessionSummary(
             .maxWithOrNull(compareBy({ it.weightKg }, { it.reps }))
             ?.let { TopSet(it.weightKg, it.reps) },
         topE1rm = null,
+        record = false,
         closedItself = false,
     )
 
@@ -294,100 +301,91 @@ data class Review(
     }
 }
 
+// ONE MOVEMENT READ WHOLE — `GET /v1/gym/exercises/:id/record`, the page §H is. A mark is one set
+// stamped with its SESSION's start, which is what every date on that page is placed by.
+//
+// `e1rm` is absent exactly where Epley is undefined — at or below zero load — and an absence is
+// never a zero: a mark without one is a real set the estimator has nothing to say about.
 @Serializable
-data class StatPoint(
-    @SerialName("at") val atMs: Long,
+data class RecordMark(
     val weightKg: Double,
     val reps: Int,
+    @SerialName("at") val atMs: Long,
     val e1rm: Double? = null,
 )
 
 @Serializable
-data class StatWeek(
+data class RecordDay(
+    val sessionId: String,
     @SerialName("startedAt") val startedAtMs: Long,
-    val sessions: Int,
-    val workingSets: Int,
+    val sets: List<TrainingSet> = emptyList(),
 )
 
+// The two counts are OPTIONAL for the reason `workingSetCount` is: a release APK outlives a
+// deploy, and a `0` defaulted in for a field an older server never wrote would print `never
+// logged` over a movement with thirty-four sessions in it. Zero itself is a real answer and means
+// what it says.
+//
+// `bestE1rm`, `e1rmSeries` and `records` are all absent together wherever the estimator has
+// nothing to say — a bodyweight or band-assisted movement has no e1RM at all, so it draws no
+// tile and no chart rather than a dash inside a chart frame.
 @Serializable
-data class StatMovement(
-    val exerciseId: String,
-    @SerialName("lastTrainedAt") val lastTrainedAtMs: Long? = null,
-    val points: List<StatPoint> = emptyList(),
-    val bestE1rm: StatPoint? = null,
-    val heaviest: StatPoint? = null,
-)
-
-@Serializable
-data class TrainingStatistics(
-    val weeks: List<StatWeek> = emptyList(),
-    val movements: List<StatMovement> = emptyList(),
+data class MovementRecord(
+    val exercise: Exercise,
+    val routineCount: Int? = null,
+    val sessionCount: Int? = null,
+    val bestE1rm: RecordMark? = null,
+    val heaviest: RecordMark? = null,
+    val e1rmSeries: List<RecordMark> = emptyList(),   // oldest first, the last twelve weeks
+    val records: List<RecordMark> = emptyList(),      // NEWEST first, lifetime
+    val recentDays: List<RecordDay> = emptyList(),    // newest first, at most ten
 ) {
     companion object {
-        // The signed-out statistics, computed from the device's own finished sessions by the
-        // server's rules: weeks are contiguous UTC-Monday buckets so a gap reads as a gap, a point
-        // is a session's heaviest working set with ties going to more reps, movements read most
-        // recently trained first with ties to the id ascending (Statistics.cpp's own order — every
-        // multi-movement session ties, and the list may not reorder the moment the claim lands),
-        // and only working sets count toward anything. e1RM stays absent — an estimate arrives
-        // with a point or not at all, and the estimator is not written on this phone.
-        fun of(finished: List<SessionDetail>): TrainingStatistics {
-            val closed = finished
-                .filter { it.session.finishedAtMs != null }
-                .sortedBy { it.session.startedAtMs }
-            if (closed.isEmpty()) return TrainingStatistics()
+        // The server's own ceiling on the recent list, restated so the shelf answers the same
+        // question the log does.
+        const val recentDaysShown = 10
 
-            val weekMs = 7 * 86_400_000L
-            val first = weekStart(closed.first().session.startedAtMs)
-            val last = weekStart(closed.last().session.startedAtMs)
-            val weeks = generateSequence(first) { it + weekMs }
-                .takeWhile { it <= last }
-                .map { start ->
-                    val inWeek = closed.filter { weekStart(it.session.startedAtMs) == start }
-                    StatWeek(
-                        startedAtMs = start,
-                        sessions = inWeek.size,
-                        workingSets = inWeek.sumOf { detail ->
-                            detail.sets.count { it.kind == SetKind.Working }
-                        },
-                    )
-                }
-                .toList()
-
-            val movements = closed
+        // The signed-out record, read off the device's own finished sessions by the server's
+        // rules: a session counts when it holds a WORKING set of the movement, the heaviest is the
+        // heaviest working set with ties going to more reps, and a recent day carries the
+        // movement's non-warmup sets in performed order.
+        //
+        // The three e1RM fields stay absent, and that is the same refusal `Review.of` makes:
+        // Epley lives in one place per language and this phone is not one of them. So an anonymous
+        // record page draws exactly what a bodyweight movement's does — the heaviest set and the
+        // sets — and the screen says which of the two absences it is looking at rather than
+        // collapsing them into one silence.
+        fun of(exercise: Exercise, history: List<SessionDetail>, routines: List<Routine>): MovementRecord {
+            val closed = history.filter { it.session.finishedAtMs != null }
+            val worked = closed.filter { detail ->
+                detail.sets.any { it.exerciseId == exercise.id && it.kind == SetKind.Working }
+            }
+            val heaviest = worked
                 .flatMap { detail ->
-                    detail.sets.filter { it.kind == SetKind.Working }.map { it.exerciseId }
+                    detail.sets
+                        .filter { it.exerciseId == exercise.id && it.kind == SetKind.Working }
+                        .map { RecordMark(it.weightKg, it.reps, detail.session.startedAtMs) }
                 }
-                .distinct()
-                .map { id ->
-                    val points = closed.mapNotNull { detail ->
-                        val top = detail.sets
-                            .filter { it.exerciseId == id && it.kind == SetKind.Working }
-                            .maxWithOrNull(compareBy({ it.weightKg }, { it.reps }))
-                            ?: return@mapNotNull null
-                        StatPoint(atMs = detail.session.startedAtMs, weightKg = top.weightKg,
-                            reps = top.reps, e1rm = null)
+                .maxWithOrNull(compareBy({ it.weightKg }, { it.reps }))
+
+            return MovementRecord(
+                exercise = exercise,
+                routineCount = routines.count { routine ->
+                    routine.entries.any { it.exerciseId == exercise.id }
+                },
+                sessionCount = worked.size,
+                heaviest = heaviest,
+                recentDays = closed
+                    .sortedByDescending { it.session.startedAtMs }
+                    .mapNotNull { detail ->
+                        val performed = detail.sets
+                            .filter { it.exerciseId == exercise.id && it.kind != SetKind.Warmup }
+                            .sortedBy { it.completedAtMs }
+                        if (performed.isEmpty()) return@mapNotNull null
+                        RecordDay(detail.session.id, detail.session.startedAtMs, performed)
                     }
-                    StatMovement(
-                        exerciseId = id,
-                        lastTrainedAtMs = points.last().atMs,
-                        points = points,
-                        bestE1rm = null,
-                        heaviest = points.maxWith(compareBy({ it.weightKg }, { it.reps })),
-                    )
-                }
-                .sortedWith(compareByDescending<StatMovement> { it.lastTrainedAtMs }
-                    .thenBy { it.exerciseId })
-
-            return TrainingStatistics(weeks, movements)
-        }
-
-        // The server buckets by date_trunc('week', … AT TIME ZONE 'UTC'), so a week starts on a
-        // UTC Monday midnight — Readout.day(utc = true) exists for exactly this instant.
-        private fun weekStart(ms: Long): Long {
-            val date = Instant.ofEpochMilli(ms).atZone(ZoneOffset.UTC).toLocalDate()
-            val monday = date.minusDays(((date.dayOfWeek.value + 6) % 7).toLong())
-            return monday.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+                    .take(recentDaysShown),
+            )
         }
     }
 }
@@ -438,6 +436,12 @@ data class ExerciseWrite(
     val equipment: String,
     val stepKg: Double? = null,
 )
+
+// The rename, and the ONE field it may carry: the server refuses any other key outright, because a
+// PATCH that quietly accepted a `pattern` beside the name would be a second door onto the catalog.
+// The id is not in here and never changes — that is the whole promise §H's page exists to show.
+@Serializable
+data class ExerciseRename(val name: String)
 
 @Serializable
 data class RoutineEntryWrite(

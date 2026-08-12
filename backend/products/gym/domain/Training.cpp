@@ -102,6 +102,13 @@ bool wellFormedId(std::string_view id) {
   return true;
 }
 
+std::string trimmedName(std::string text) {
+  const std::string_view blanks = " \t\n\r\f\v";
+  const std::size_t first = text.find_first_not_of(blanks);
+  if (first == std::string::npos) return {};
+  return text.substr(first, text.find_last_not_of(blanks) - first + 1);
+}
+
 double defaultStepKg(Equipment equipment) {
   switch (equipment) {
     case Equipment::barbell: return 2.5;      // the smallest plate pair
@@ -116,9 +123,12 @@ double defaultStepKg(Equipment equipment) {
 
 Exercise::Exercise(ExerciseId id, std::string name, Pattern pattern, Equipment equipment,
                    double stepKg, bool custom)
-    : id(std::move(id)), name(std::move(name)), pattern(pattern), equipment(equipment),
-      stepKg(stepKg), custom(custom) {
+    : id(std::move(id)), name(trimmedName(std::move(name))), pattern(pattern),
+      equipment(equipment), stepKg(stepKg), custom(custom) {
   if (this->id.empty()) throw InvalidTraining("an exercise needs an id");
+  // Trimmed first, so a name of nothing but blanks is refused here rather than stored as a movement
+  // whose header, picker row and log row all render empty — and so renaming a seed back to its own
+  // name with a stray space still clears the override instead of pinning a copy of it.
   if (this->name.empty()) throw InvalidTraining("an exercise needs a name");
   // The same eighty a routine's name lives under, and for a sharper reason: the catalog read hands
   // back EVERY movement this account can see, on every open of the movement picker, so a name with

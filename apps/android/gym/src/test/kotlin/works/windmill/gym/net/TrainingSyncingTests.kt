@@ -9,6 +9,7 @@ import org.junit.Test
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.ExerciseWrite
 import works.windmill.gym.domain.LastTime
+import works.windmill.gym.domain.MovementRecord
 import works.windmill.gym.domain.Review
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineEntry
@@ -21,9 +22,8 @@ import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TrainingSet
-import works.windmill.gym.domain.TrainingStatistics
 
-// The interface's eighteen doors, proven implementable before the HTTP twin arrives — and the
+// The interface's doors, proven implementable before the HTTP twin arrives — and the
 // behaviors every implementation leans on, pinned against the fake: the minted id is the
 // idempotency key, a start joins the open session, an absent session reads as null, and an
 // unreachable log throws rather than answering empty.
@@ -123,14 +123,15 @@ internal class FakeTraining : TrainingSyncing {
     val lastTimes = mutableMapOf<String, LastTime>()
     val reviews = mutableMapOf<String, Review>()
     val shares = mutableMapOf<String, SessionShare>()
-    var stats = TrainingStatistics()
+    val records = mutableMapOf<String, MovementRecord>()
     var refuse: (SetWrite) -> Exception? = { null }
     var refuseStart: (SessionStart) -> Exception? = { null }
     var refuseCreate: Exception? = null
     var refuseRoutine: (RoutineWrite) -> Exception? = { null }
     var refuseShare: Exception? = null
     var refuseRevoke: Exception? = null
-    var refuseStats: Exception? = null
+    var refuseRecord: Exception? = null
+    var refuseRename: Exception? = null
     var swallowReplies = 0
     // The close is a round trip, and this is the only way a test can stand inside it.
     var onFinish: suspend () -> Unit = {}
@@ -306,11 +307,23 @@ internal class FakeTraining : TrainingSyncing {
         written.remove(id)
     }
 
-    override suspend fun statistics(): TrainingStatistics {
-        calls.add("statistics")
+    // The record read, and the one absence it can produce on its own: a movement the catalog does
+    // not hold is the same 404 another account's private one gives, and folds to null.
+    override suspend fun record(exerciseId: String): MovementRecord? {
+        calls.add("record")
         reachable()
-        refuseStats?.let { throw it }
-        return stats
+        refuseRecord?.let { throw it }
+        return records[exerciseId]
+    }
+
+    override suspend fun renameExercise(exerciseId: String, name: String): Exercise {
+        calls.add("renameExercise")
+        reachable()
+        refuseRename?.let { throw it }
+        val standing = catalog.firstOrNull { it.id == exerciseId } ?: throw IllegalStateException("404")
+        val renamed = standing.copy(name = name)
+        catalog = catalog.map { if (it.id == exerciseId) renamed else it }
+        return renamed
     }
 
     // Idempotent on the session, exactly as the log is: a second mint for a session that already

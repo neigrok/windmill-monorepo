@@ -30,7 +30,7 @@ test('the frame is handed the chrome it is standing in, off the pathname the cal
   const bare = [
     ['#/gym', '/'],
     ['#/gym/log', '/gym'],
-    ['#/gym/stats', '/t/t_abc'],
+    ['#/gym/movement/back-squat', '/t/t_abc'],
     // A pathname that merely starts with the same letters is not the shell.
     ['#/gym', '/apples'],
   ];
@@ -41,7 +41,7 @@ test('the frame is handed the chrome it is standing in, off the pathname the cal
   const inShell = [
     ['#/gym', '/app'],
     ['#/gym', '/app/gym'],
-    ['#/gym/stats', '/app/gym'],
+    ['#/gym/movement/back-squat', '/app/gym'],
     ['#/gym/log', '/app/gym/'],
   ];
   for (const [hash, pathname] of inShell) {
@@ -140,9 +140,12 @@ test('the coach link is declared bare, so opening gym never drags it into the ro
   assert.equal(typeof gymRoutes.shell.bare, 'function');
   assert.equal(gymRoutes.shell.bare('#/gym/shared/tok_abc123'), true);
 
-  // Everything that IS a room stays one.
-  for (const hash of ['#/gym', '#/gym/log', '#/gym/routines', '#/gym/stats', '#/gym/backfill',
-                      '#/gym/session/ses_1', '#/gym/finish/ses_1']) {
+  // Everything that IS a room stays one — including a movement's record, which took the retired
+  // statistics hash's place in this list when §H cut the fourth tab. It is the lifter's own page
+  // about their own history, so it belongs inside the room like every other position here; only
+  // the coach's token, which belongs to somebody with no account, stays out.
+  for (const hash of ['#/gym', '#/gym/log', '#/gym/routines', '#/gym/movement/back-squat',
+                      '#/gym/backfill', '#/gym/session/ses_1', '#/gym/finish/ses_1']) {
     assert.equal(gymRoutes.shell.bare(hash), false, hash);
   }
 });

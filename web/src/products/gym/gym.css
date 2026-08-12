@@ -341,6 +341,17 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* THE GOLD DOT — a personal record happened in there (§G16). Filled, and gold, because it IS a
+   moment that happened: the ring below is hollow for the opposite reason. At most one dot on a row
+   and nothing beside it says how big — the session itself, and the movement's record, are where
+   that is answered. */
+.gym-row-pr {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  background: var(--pr-ink);
+}
 /* Hollow, never filled: a filled dot is a moment that happened and this is a place a session has
    not got to yet. */
 .gym-row-ring {
@@ -859,7 +870,7 @@
   color: var(--gym-ink-faint);
 }
 
-/* The four rooms' tab rail. */
+/* The three rooms' tab rail. */
 .gym-tabs {
   position: fixed;
   left: 50%;
@@ -869,9 +880,11 @@
   width: min(402px, 100vw);
   box-sizing: border-box;
   display: grid;
-  /* Four rooms, and the count is stated here and in the JSX that fills it (GymApp.jsx). Both have
-     to move together — a fifth anchor over a four-column grid wraps the tab bar onto two rows. */
-  grid-template-columns: repeat(4, 1fr);
+  /* Three rooms, and the count is stated here and in the JSX that fills it (GymApp.jsx). Both have
+     to move together — a fourth anchor over a three-column grid wraps the tab bar onto two rows.
+     There is no fourth room: §B cuts the Insights tab, and the statistics room that stood in that
+     column is retired with it. */
+  grid-template-columns: repeat(3, 1fr);
   padding: 0 14px 22px;
   background: linear-gradient(to bottom, transparent, var(--gym-canvas) 40%);
 }
@@ -1902,213 +1915,333 @@
   color: var(--color-brand);
 }
 
-/* ── Statistics (the fourth room) ─────────────────────────────
-   Matter-of-fact by construction. No animation on the way in,
-   no hover state that reveals a number, and nothing coloured
-   for whether it went up: the finish screen's rule over a
-   longer window — a fact with a direction, never a grade.
+/* ── A movement's record (§H) ─────────────────────────────────
+   The room that replaced the statistics tab, and the difference
+   is the whole point: one movement, not a dashboard. No weekly
+   bars, no volume by muscle group, nothing ranked against
+   anybody — those went with the tab, and §B says why in as many
+   words: there is no dashboard in this product.
 
-   The one accent in here is the mark colour, which is gym's own
-   brand step (--color-brand, sky-400 in the instrument skin).
-   It is a single-series palette — one line per movement, one
-   fill per bar row, never two series sharing a plot — so there
-   is no categorical separation at stake; what matters is that
-   the mark reads against the night canvas, and sky-400 on
-   #0D0B07 clears the 3:1 mark-contrast floor.               */
-.gym-stats-screen {
+   Matter-of-fact by construction, as that room was: nothing
+   animates on the way in, and no number hides behind a hover —
+   this is read on a phone at a rack, where hover does not exist.
+   The one colour in it is the gold, and it marks ONE mark
+   wherever that mark appears: the tile that prints the standing
+   best, the bar that holds it when that session is inside the
+   window, and its row in the ladder once a mark has been passed
+   — a first-ever session has a standing best and no ladder row,
+   so it wears gold twice and never three times. Never a second
+   number: at most one per session is the palette's rule, and a
+   page with gold on a third of its bars is a page where gold
+   means nothing.                                              */
+.gym-record-screen {
   display: flex;
   flex-direction: column;
-  gap: 6px;
 }
-
-.gym-weeks {
+.gym-record-head {
   display: flex;
-  flex-direction: column;
-  gap: 18px;
-  margin-top: 20px;
+  align-items: center;
+  gap: 10px;
 }
-.gym-chart {
-  margin: 0;
+.gym-record-rename {
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-brand);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
 }
-.gym-chart-title {
-  margin: 0 0 8px;
-  font-size: 10.5px;
+.gym-record-name {
+  margin: 8px 0 0;
+  font-size: 30px;
   font-weight: 800;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--gym-ink-dim);
+  line-height: 1.06;
+  letter-spacing: -0.015em;
+  color: var(--gym-ink);
 }
-.gym-chart-plot {
-  display: grid;
-  grid-template-columns: 22px 1fr;
-  gap: 8px;
-  height: 78px;
-}
-/* Both ends of the scale, said out loud. A reader who cannot see
-   where a scale starts has to trust it — and the whole reason
-   these are bars is that nobody should have to. */
-.gym-chart-scale {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  align-items: flex-end;
+.gym-record-sub {
+  margin: 3px 0 0;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12px;
+  color: var(--gym-ink-faint);
+}
+
+/* TWO TILES, OR ONE, OR NONE. A movement Epley has no answer for
+   carries no best-e1RM tile at all — never a dash in the frame
+   where a number goes — so this row is drawn on whatever it has
+   and each tile takes the width it is given. */
+.gym-record-tiles {
+  list-style: none;
+  display: flex;
+  gap: 9px;
+  margin: 16px 0 0;
+  padding: 0;
+}
+.gym-record-tile {
+  flex: 1;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--gym-line);
+  border-radius: 18px;
+  background: var(--gym-surface);
+}
+.gym-record-tile-label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--gym-ink-faint);
+}
+.gym-record-tile-value {
+  display: block;
+  margin-top: 5px;
+  font-family: var(--font-display);
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--gym-ink);
+  font-variant-numeric: tabular-nums;
+}
+/* Gold on the standing best, and this is the one page it belongs
+   on: the finish screen's gold is a MOMENT and happens once,
+   while this page is the mark itself — what somebody opens to
+   ask where a movement stands. */
+.gym-record-tile.is-standing .gym-record-tile-value {
+  color: var(--pr-ink);
+}
+.gym-record-tile-sub {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
   color: var(--gym-ink-faint);
   font-variant-numeric: tabular-nums;
 }
-.gym-bars {
+
+/* ONE CHART, AND IT IS BARS — a training log is discrete events,
+   and a line between them implies days that never happened. They
+   start at zero, because a bar's LENGTH is its value.
+
+   THE INK IS MEASURED, NOT PICKED. The board draws a resting bar
+   in --gym-raised, which is #2E2B32 on a #262329 card: 1.11:1,
+   a chart with nothing visible in it. Iris measures 5.25:1 on
+   the same card and gold 7.58, so the quiet bar is the room's
+   one vibrant hue and the loud one is the record's. */
+.gym-record-chart {
+  margin: 9px 0 0;
+  padding: 16px 14px 12px;
+  border: 1px solid var(--gym-line);
+  border-radius: 18px;
+  background: var(--gym-surface);
+}
+.gym-record-chart-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--gym-ink-faint);
+}
+.gym-record-chart-window {
+  letter-spacing: 0;
+  text-transform: none;
+  font-size: 11px;
+}
+.gym-record-bars {
   display: flex;
   align-items: flex-end;
-  gap: 3px;
-  border-bottom: 1px solid var(--gym-line);
+  gap: 6px;
+  height: 122px;
+  margin-top: 14px;
 }
-.gym-bar-col {
+.gym-record-bar {
   flex: 1;
   min-width: 0;
   height: 100%;
   display: flex;
   align-items: flex-end;
 }
-/* A week nobody trained draws NOTHING — no nub, no track, no
-   ghost. Zero has a length and its length is zero. */
-.gym-bar-fill {
+.gym-record-bar-fill {
   width: 100%;
-  border-radius: 3px 3px 0 0;
+  border-radius: 5px 5px 0 0;
   background: var(--color-brand);
 }
-.gym-weeks-span {
-  margin: 2px 0 0;
+.gym-record-bar.is-standing .gym-record-bar-fill {
+  background: var(--pr-ink);
+}
+/* The two ends of the window, as the days actually on screen —
+   never "the last 12 weeks", which would claim training that may
+   not have happened in the last of them. */
+.gym-record-span {
+  display: flex;
+  justify-content: space-between;
+  margin: 8px 0 0;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--gym-ink-faint);
   font-variant-numeric: tabular-nums;
 }
-.gym-weeks-older {
+
+.gym-record-block {
+  margin-top: 18px;
+}
+/* NOT `.gym-record-title` — that name is the finish screen's (above), where it is the gold heading
+   over a session's record and the one loud thing on that page. A second rule under the same name
+   won everywhere by source order and repainted it faint mono inside its own gold box. */
+.gym-record-block-title {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
   color: var(--gym-ink-faint);
 }
 
-.gym-moves {
-  margin-top: 26px;
+/* EVERY SESSION THAT BEAT EVERY SESSION BEFORE IT, newest first.
+   The first row is the one that still stands and wears the gold;
+   the rest are history, and history is not a trophy shelf. */
+.gym-record-marks {
+  list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 7px;
+  margin: 9px 0 0;
+  padding: 0;
 }
-.gym-moves-title {
-  margin: 0;
-  font-size: 10.5px;
-  font-weight: 800;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--gym-ink-dim);
-}
-/* One movement, one card, ONE SCALE OF ITS OWN. A bench and a
-   squat never share a Y axis here — that is the first bug in
-   Lift's Progress tab and it is a drawing decision, so the
-   card is the boundary that makes it unrepresentable. */
-.gym-move {
-  padding: 14px;
+.gym-record-mark {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 13px;
   border: 1px solid var(--gym-line);
-  border-radius: 13px;
+  border-radius: 14px;
   background: var(--gym-surface);
 }
-.gym-move-head {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
+.gym-record-mark.is-standing {
+  border-color: var(--pr-ink);
+  background: var(--pr-soft);
 }
-.gym-move-name {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  font-size: 15px;
-  font-weight: 700;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.gym-move-when {
-  flex: none;
-  font-size: 11.5px;
-  color: var(--gym-ink-faint);
-}
-.gym-move-caption {
-  margin: 3px 0 8px;
+.gym-record-mark-load {
   font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--gym-ink-faint);
-  font-variant-numeric: tabular-nums;
-}
-.gym-move-plot {
-  display: block;
-  width: 100%;
-  height: auto;
-  overflow: visible;
-}
-.gym-plot-zero {
-  stroke: var(--gym-line);
-  stroke-width: 1;
-}
-.gym-plot-line {
-  stroke: var(--color-brand);
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.gym-plot-dot {
-  fill: var(--color-brand);
-}
-.gym-move-flat {
-  margin: 10px 0;
-  font-size: 12.5px;
-  line-height: 1.45;
-  color: var(--gym-ink-faint);
-}
-/* The chart says its own ends, because there is no hover here to
-   reveal them and this is read on a phone at a rack. */
-.gym-move-ends {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin: 8px 0 0;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--gym-ink-dim);
-  font-variant-numeric: tabular-nums;
-}
-.gym-move-arrow {
-  color: var(--gym-ink-faint);
-}
-.gym-move-bests {
-  list-style: none;
-  margin: 10px 0 0;
-  padding: 10px 0 0;
-  border-top: 1px solid var(--gym-line);
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-.gym-move-best {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 12.5px;
-}
-.gym-move-best-label {
-  flex: none;
-  color: var(--gym-ink-faint);
-}
-.gym-move-best-value {
-  flex: 1;
-  min-width: 0;
-  font-family: var(--font-mono);
+  font-size: 14px;
   font-weight: 700;
   color: var(--gym-ink);
   font-variant-numeric: tabular-nums;
 }
-.gym-move-best-when {
-  flex: none;
+.gym-record-mark-e1rm {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--gym-ink-dim);
+  font-variant-numeric: tabular-nums;
+}
+.gym-record-mark-when {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
   color: var(--gym-ink-faint);
+}
+
+/* The last ten times it was trained, in the order they were
+   performed — one row per session, under the day it happened.
+   Read-only, and nothing here says otherwise: correcting a set
+   is the session's own screen, not this one. */
+.gym-record-days {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 9px 0 0;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.gym-record-day {
+  display: flex;
+  gap: 10px;
+}
+.gym-record-day-when {
+  flex: none;
+  min-width: 62px;
+  color: var(--gym-ink-faint);
+}
+.gym-record-day-sets {
+  min-width: 0;
+  color: var(--gym-ink);
+}
+
+/* Renaming is one field, and the line under it is the promise the
+   whole page exists to make visible: the id never moves. */
+.gym-rename-input {
+  width: 100%;
+  height: 48px;
+  box-sizing: border-box;
+  margin-top: 4px;
+  padding: 0 13px;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 13px;
+  background: var(--gym-sunken);
+  color: var(--gym-ink);
+  font: inherit;
+  font-size: 16px;
+}
+.gym-rename-input:focus {
+  outline: none;
+  border-color: var(--color-brand);
+}
+.gym-rename-line {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--gym-ink-faint);
+}
+.gym-rename-save {
+  width: 100%;
+  height: 52px;
+  margin-top: 14px;
+  border: none;
+  border-radius: 16px;
+  background: var(--color-brand);
+  color: var(--gym-on-accent);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.gym-rename-save.is-inert {
+  background: var(--gym-raised);
+  color: var(--gym-ink-faint);
+  cursor: default;
+}
+
+/* A NAME IS A DOOR (§H), and it is drawn as the text it already
+   was: underlining every movement in a session would turn a page
+   of facts into a page of links. The record is one tap away and
+   nothing about the line has to announce it. */
+.gym-movement-door {
+  color: inherit;
+  text-decoration: none;
+}
+.gym-movement-door:hover {
+  color: var(--color-brand);
+}
+/* In a routine's row the door takes the row's full inner height — the 40px the grab rail already
+   sets — rather than the 20px its text occupies. A thumb aiming at a name between two controls is
+   otherwise aiming at a line, and the row itself does not grow by a pixel.
+   THE HEIGHT IS A LINE BOX AND NOT A FLEX BOX: `text-overflow: ellipsis` is a property of a block
+   box's own inline content, and a flex container has none — `display: flex` here left a long name
+   hard-clipped mid-word, which reads as a complete name and is exactly the lie an ellipsis exists
+   to prevent (the Rename field takes 80 characters). */
+.gym-entry .gym-movement-door {
+  align-self: stretch;
+  line-height: 40px;
 }
 
 /* ── The coach share ──────────────────────────────────────────

@@ -89,6 +89,26 @@ final class ReadoutTests: XCTestCase {
         XCTAssertEqual(Readout.ago(at(0, 23), now: at(5, 1)), "5 days ago")
     }
 
+    // A PAST DAY THE RECORD PAGE NAMES rather than counts (§H prints `today` on one row and `27 Jul`
+    // on the next). Past the two days that have their own word it is a date — "16 days ago" is the
+    // wrong answer for a mark somebody wants to find in their log — and the YEAR arrives the moment
+    // the date is no longer this one, because a record ladder is lifetime and "13 Jul" names a
+    // square on nobody's calendar two years later.
+    func testADayIsNamedRatherThanCountedOnceItIsPastYesterday() {
+        var parts = DateComponents()
+        parts.year = 2026
+        parts.month = 8
+        parts.day = 10
+        parts.hour = 9
+        let now = Int64(Calendar.current.date(from: parts)!.timeIntervalSince1970 * 1000)
+        let day: Int64 = 86_400_000
+
+        XCTAssertEqual(Readout.when(now, now: now), "today")
+        XCTAssertEqual(Readout.when(now - day, now: now), "yesterday")
+        XCTAssertEqual(Readout.when(now - 14 * day, now: now), "27 Jul")
+        XCTAssertEqual(Readout.when(now - 400 * day, now: now), "6 Jul 2025")
+    }
+
     func testACountOfSetsIsSingularAtOne() {
         XCTAssertEqual(Readout.setCount(1), "1 set")
         XCTAssertEqual(Readout.setCount(16), "16 sets")

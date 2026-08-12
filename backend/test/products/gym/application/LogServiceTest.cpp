@@ -707,10 +707,14 @@ TEST(log_reads_the_stores_per_load_projection_and_lands_where_a_walk_over_every_
 
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(1));
   // One load, its best reps, and the warmup nowhere in it — a ramp-up is not what a session was.
-  CHECK_EQ(listed[0].summary.workingLoads, (std::vector<WorkingLoad>{WorkingLoad{95.0, 10}}));
+  // Dated by the SESSION's start rather than by the set that hit those reps: a store's mark belongs
+  // to the workout, not to whatever the device's clock said mid-set (domain/Review.h).
+  CHECK_EQ(listed[0].summary.workingMarks,
+           (std::vector<PriorMark>{PriorMark{ExerciseId{"back-squat"}, 95.0, 10, h.clock.now}}));
   CHECK_EQ(listed[0].topE1rm, e1rm(95.0, 10));
-  CHECK_EQ(topE1rmOf(std::vector<WorkingLoad>{WorkingLoad{95.0, 6}, WorkingLoad{95.0, 10},
-                                              WorkingLoad{95.0, 8}}),
+  CHECK_EQ(topE1rmOf(std::vector<PriorMark>{PriorMark{ExerciseId{"back-squat"}, 95.0, 6, 1},
+                                            PriorMark{ExerciseId{"back-squat"}, 95.0, 10, 2},
+                                            PriorMark{ExerciseId{"back-squat"}, 95.0, 8, 3}}),
            listed[0].topE1rm);
 }
 
@@ -1467,8 +1471,10 @@ TEST(review_reads_the_marks_of_earlier_sessions_and_never_the_one_it_is_reviewin
   std::optional<Review> result = h.service.review(uid(), sid("ses_00000002"));
   std::optional<Review> again = h.service.review(uid(), sid("ses_00000002"));
 
+  // The beaten mark is dated by the SESSION that set it — the day the record line prints beside the
+  // number, and not the instant a device stamped on the set inside it (domain/Review.h).
   const PersonalRecord estimate{RecordKind::e1rm, ExerciseId{"back-squat"}, 122.5, 105.0, 5, 116.7,
-                                h.clock.now - 2 * kWeek + 60'000};
+                                h.clock.now - 2 * kWeek};
   REQUIRE(result.has_value());
   REQUIRE(result->record.has_value());
   CHECK_EQ(*result->record, estimate);
@@ -1766,4 +1772,202 @@ TEST(revoke_never_reaches_another_accounts_share) {
 
   CHECK_EQ(h.repo.shares.size(), static_cast<std::size_t>(1));
   CHECK(h.service.shared("theirs"));   // and it is still live for the account that minted it
+}
+
+// ---- the log's gold dot, the rename, and a movement's record ---------------------------------
+
+// The dot walks the page forward: the first squat day claims nothing (no mark to pass), the second
+// beats it, the third repeats what stands. The page comes back newest first and the walk does not
+// reorder it.
+TEST(the_log_marks_the_rows_where_a_record_happened) {
+  Harness h;
+  h.trained("ses_00000001", h.clock.now, 100, 5, 4);
+  h.trained("ses_00000002", h.clock.now + kWeek, 105, 5, 4);
+  h.trained("ses_00000003", h.clock.now + 2 * kWeek, 105, 5, 4);
+
+  std::vector<LogRow> listed = h.logBefore(h.clock.now + 3 * kWeek);
+
+  REQUIRE_EQ(listed.size(), static_cast<std::size_t>(3));
+  CHECK_EQ(listed[0].summary.session.id, sid("ses_00000003"));
+  CHECK_FALSE(listed[0].record);
+  CHECK(listed[1].record);
+  CHECK_FALSE(listed[2].record);
+}
+
+// A page is judged against the history in front of it, not against itself: the same session that
+// claimed nothing as the first row of a page earns the dot once the page before it exists — the
+// store's standing marks are what carry that across the page edge.
+TEST(the_dot_survives_a_page_edge_because_the_marks_before_the_page_travel_with_it) {
+  Harness h;
+  h.trained("ses_00000001", h.clock.now, 100, 5, 4);
+  h.trained("ses_00000002", h.clock.now + kWeek, 105, 5, 4);
+
+  std::vector<LogRow> whole = h.logBefore(h.clock.now + 2 * kWeek);
+  std::vector<LogRow> newest = h.logBefore(h.clock.now + 2 * kWeek, 1);
+
+  REQUIRE_EQ(whole.size(), static_cast<std::size_t>(2));
+  REQUIRE_EQ(newest.size(), static_cast<std::size_t>(1));
+  CHECK(whole[0].record);
+  CHECK_EQ(newest[0].summary.session.id, sid("ses_00000002"));
+  CHECK(newest[0].record);
+}
+
+// The two halves of one history, filtered the same way. The page carries the OPEN workout as a row;
+// the marks standing before the page — and the finish read of every session — count FINISHED ones
+// alone. A page is not sorted by finishedness: started_at is the device's, one-open-at-a-time is
+// the only rule, and a queued offline start flushed after a later session finished puts the open row
+// in the middle. Fold it and the row above is judged against 110 × 5 that its own finish screen
+// cannot see, and a real record goes dark on the log while the finish screen still prints it.
+TEST(a_still_open_workout_on_the_page_never_stands_under_the_row_above_it) {
+  Harness h;
+  h.stored("ses_00000001", h.clock.now, h.clock.now + 3'600'000, 100, 5, 4);
+  h.stored("ses_00000002", h.clock.now + kWeek, std::nullopt, 110, 5, 4);   // never finished
+  h.stored("ses_00000003", h.clock.now + 2 * kWeek, h.clock.now + 2 * kWeek + 3'600'000, 105, 5, 4);
+
+  std::vector<LogRow> listed = h.logBefore(h.clock.now + 3 * kWeek);
+  std::optional<Review> finish = h.service.review(uid(), sid("ses_00000003"));
+
+  REQUIRE_EQ(listed.size(), static_cast<std::size_t>(3));
+  REQUIRE(finish.has_value());
+  CHECK_EQ(listed[0].summary.session.id, sid("ses_00000003"));
+  CHECK_EQ(listed[0].record, finish->record.has_value());   // the row and the screen, one judgement
+  CHECK(listed[0].record);
+  // The open workout is judged like any other row — its own finish screen judges it mid-session —
+  // and the first day claims nothing, having passed no mark.
+  CHECK_EQ(listed[1].summary.session.id, sid("ses_00000002"));
+  CHECK(listed[1].record);
+  CHECK_FALSE(listed[2].record);
+}
+
+// A three-set session says nothing on its finish screen, so it says nothing on its row either.
+TEST(a_slight_session_gets_no_dot_however_heavy_it_was) {
+  Harness h;
+  h.trained("ses_00000001", h.clock.now, 100, 5, 4);
+  h.trained("ses_00000002", h.clock.now + kWeek, 140, 5, kSlightWorkingSets - 1);
+
+  std::vector<LogRow> listed = h.logBefore(h.clock.now + 2 * kWeek);
+
+  REQUIRE_EQ(listed.size(), static_cast<std::size_t>(2));
+  CHECK_EQ(listed[0].summary.session.id, sid("ses_00000002"));
+  CHECK_FALSE(listed[0].record);
+}
+
+// THE HAZARD, in one case: a seed is a global row, so renaming one may not touch what any other
+// account sees. The caller reads their own name back; the stranger reads the seed's.
+TEST(renaming_a_seed_is_this_accounts_alone_and_the_id_never_moves) {
+  Harness h;
+  h.trained("ses_00000001", h.clock.now, 100, 5, 4);
+
+  std::optional<Exercise> renamed = h.service.renameExercise(uid(), ExerciseId{"back-squat"},
+                                                             "Low-bar Squat");
+
+  REQUIRE(renamed.has_value());
+  CHECK_EQ(renamed->id, ExerciseId{"back-squat"});
+  CHECK_EQ(renamed->name, std::string("Low-bar Squat"));
+  CHECK_EQ(renamed->custom, false);
+  // What the catalog says to each account, which is the whole of the hazard.
+  CHECK_EQ(h.service.catalog(uid())[1].name, std::string("Low-bar Squat"));
+  CHECK_EQ(h.service.catalog(uid("u2"))[1].name, std::string("Back Squat"));
+  // And the history is whole: the log row still names the movement, under its new name.
+  std::vector<LogRow> listed = h.logBefore(h.clock.now + kWeek);
+  REQUIRE_EQ(listed.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(listed[0].summary.exerciseNames, std::vector<std::string>{"Low-bar Squat"});
+}
+
+// Renaming back to the seed's own name clears the line rather than storing a copy of it: an
+// override that says nothing is not an override.
+TEST(renaming_a_seed_back_to_its_own_name_clears_the_line) {
+  Harness h;
+  h.service.renameExercise(uid(), ExerciseId{"back-squat"}, "Low-bar Squat");
+
+  std::optional<Exercise> restored =
+      h.service.renameExercise(uid(), ExerciseId{"back-squat"}, "Back Squat");
+
+  REQUIRE(restored.has_value());
+  CHECK_EQ(restored->name, std::string("Back Squat"));
+  CHECK(h.repo.displayNames.empty());
+}
+
+// A movement the caller created is their own row and renames in place — no line, nothing global.
+TEST(renaming_a_movement_of_your_own_edits_its_row) {
+  Harness h;
+  h.service.createExercise(uid(), ExerciseWrite{ExerciseId{"ex_00000001"}, "Zercher Squat",
+                                                Pattern::squat, Equipment::barbell, std::nullopt});
+
+  std::optional<Exercise> renamed =
+      h.service.renameExercise(uid(), ExerciseId{"ex_00000001"}, "Zercher");
+
+  REQUIRE(renamed.has_value());
+  CHECK_EQ(renamed->name, std::string("Zercher"));
+  CHECK_EQ(renamed->custom, true);
+  CHECK(h.repo.displayNames.empty());
+}
+
+// Absent, and another lifter's private movement, are the one fact — and a name the store could not
+// hold is refused where every other value is, by constructing the entity.
+TEST(a_rename_refuses_a_movement_this_account_cannot_see_and_a_name_it_cannot_hold) {
+  Harness h;
+  h.repo.seedCustom(uid("u2"), Exercise{ExerciseId{"ex_00000002"}, "Theirs", Pattern::squat,
+                                        Equipment::barbell, 2.5, true});
+
+  CHECK_EQ(h.service.renameExercise(uid(), ExerciseId{"ex_00000002"}, "Mine"), std::nullopt);
+  CHECK_EQ(h.service.renameExercise(uid(), ExerciseId{"no-such"}, "Mine"), std::nullopt);
+  bool refused = false;
+  try {
+    h.service.renameExercise(uid(), ExerciseId{"back-squat"}, std::string(kMaxNameLength + 1, 'x'));
+  } catch (const InvalidTraining&) {
+    refused = true;
+  }
+  CHECK(refused);
+  // A name of nothing but blanks is the empty name in disguise, and it landed until 2026-08-12 —
+  // the movement then had no name to find it by anywhere it was drawn.
+  bool blankRefused = false;
+  try {
+    h.service.renameExercise(uid(), ExerciseId{"back-squat"}, "   ");
+  } catch (const InvalidTraining&) {
+    blankRefused = true;
+  }
+  CHECK(blankRefused);
+  CHECK(h.repo.displayNames.empty());
+}
+
+// The record page, end to end through the service: the tiles and the ladder off the sessions, the
+// count off the routines that name it, and the movement under the name this account gave it.
+TEST(a_movements_record_answers_the_whole_page_from_one_read) {
+  Harness h;
+  h.service.createRoutine(uid(), h.pushAWrite({RoutineEntry{1, ExerciseId{"back-squat"}, 5, 5,
+                                                            100.0, 180}}));
+  h.trained("ses_00000001", h.clock.now, 100, 5, 4);
+  h.trained("ses_00000002", h.clock.now + kWeek, 105, 5, 4);
+  h.service.renameExercise(uid(), ExerciseId{"back-squat"}, "Low-bar Squat");
+
+  std::optional<MovementRecord> page = h.service.movementRecord(uid(), ExerciseId{"back-squat"});
+
+  REQUIRE(page.has_value());
+  CHECK_EQ(page->exercise.name, std::string("Low-bar Squat"));
+  CHECK_EQ(page->routines, 1);
+  CHECK_EQ(page->sessions, 2);
+  REQUIRE(page->bestE1rm.has_value());
+  CHECK_EQ(*page->bestE1rm, (Best{105, 5, h.clock.now + kWeek, e1rm(105, 5)}));
+  REQUIRE_EQ(page->records.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(page->records[0], (RecordPoint{h.clock.now + kWeek, 105, 5, *e1rm(105, 5)}));
+  REQUIRE_EQ(page->recent.size(), static_cast<std::size_t>(2));
+  CHECK_EQ(page->recent[0].session, sid("ses_00000002"));
+  CHECK_EQ(page->recent[0].sets.size(), static_cast<std::size_t>(4));
+}
+
+// A movement in the catalog nobody has lifted answers with its counts at zero and nothing else —
+// a fact, not a fault, and the sentence the picker draws as `never logged`. A movement no catalog
+// holds is the different answer.
+TEST(a_record_of_a_movement_never_lifted_is_empty_and_of_an_unknown_one_is_absent) {
+  Harness h;
+
+  std::optional<MovementRecord> page = h.service.movementRecord(uid(), ExerciseId{"bench-press"});
+
+  REQUIRE(page.has_value());
+  CHECK_EQ(page->sessions, 0);
+  CHECK_EQ(page->routines, 0);
+  CHECK_EQ(page->bestE1rm, std::nullopt);
+  CHECK(page->series.empty());
+  CHECK_EQ(h.service.movementRecord(uid(), ExerciseId{"no-such"}), std::nullopt);
 }

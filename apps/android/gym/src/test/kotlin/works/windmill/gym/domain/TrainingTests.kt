@@ -313,30 +313,6 @@ class RoutineWriteTests {
     }
 }
 
-class TrainingStatisticsTests {
-    private fun aSet(exerciseId: String, at: Long): TrainingSet = TrainingSet(
-        id = "set_$at", exerciseId = exerciseId, weightKg = 100.0, reps = 5, completedAtMs = at)
-
-    // Every multi-movement session TIES on lastTrainedAt — both movements stamp the session's own
-    // startedAt — so without the server's id tie-break (Statistics.cpp: most recently trained
-    // first, ties to the id) the signed-out list sits in encounter order and visibly reorders the
-    // moment the claim lands.
-    @Test
-    fun testMovementsOrderMostRecentFirstWithTiesToTheIdAsTheServerDoes() {
-        val statistics = TrainingStatistics.of(listOf(
-            SessionDetail(
-                Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 3_000),
-                listOf(aSet("ex_zeta", at = 1_100), aSet("ex_alpha", at = 1_200))),
-            SessionDetail(
-                Session(id = "ses_2", startedAtMs = 700_000_000, finishedAtMs = 700_060_000),
-                listOf(aSet("ex_omega", at = 700_000_100))),
-        ))
-
-        assertEquals(listOf("ex_omega", "ex_alpha", "ex_zeta"),
-                     statistics.movements.map { it.exerciseId })
-    }
-}
-
 class PrefillTests {
     private fun aSet(weightKg: Double, reps: Int, at: Long,
                      kind: SetKind = SetKind.Working): TrainingSet =

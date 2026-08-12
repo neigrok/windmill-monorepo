@@ -156,6 +156,12 @@ int main() {
                 {"gym_sets", "user_id"},              // gym
                 {"gym_routines", "user_id"},          // gym
                 {"gym_session_shares", "user_id"},    // gym — a live coach link is data too
+                // gym — a movement someone created is their data, and an account holding one and
+                // nothing else is not empty. The column is created_by rather than user_id BECAUSE
+                // the 64 catalog seeds carry it NULL: a probe matching the seeds would report every
+                // account on the server non-empty and break this door the other way round.
+                {"gym_exercises", "created_by"},
+                {"gym_exercise_names", "user_id"},    // gym — a movement someone RENAMED, likewise
                 {"paddle_subscriptions", "user_id"},  // platform — never fold away a payer
                 {"mcp_keys", "user_id"},              // platform
                 {"oauth_grants", "user_id"},          // platform

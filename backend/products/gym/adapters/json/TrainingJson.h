@@ -24,10 +24,11 @@ namespace wm::gym {
 //                                  "targetWeightKg"?: n, "restSeconds"?: n } ] }
 //   movement in : { "id": "ex_…", "name": "…", "pattern": "squat"|…, "equipment": "barbell"|…,
 //                   "stepKg"?: n }
+//   rename in   : { "name": "…" }                       PATCH /v1/gym/exercises/{id}
 //   session out : { "id", "startedAt", "finishedAt"?, "routineId"?, "plan"? }
 //   log row out : the session, plus { "setCount", "workingSetCount", "tonnageKg",
 //                                     "exercises": ["…"], "topSet"?: { "weightKg", "reps" },
-//                                     "topE1rm"?: n, "closedItself": bool }
+//                                     "topE1rm"?: n, "record": bool, "closedItself": bool }
 //   set out     : { "id", "exerciseId", "setNumber", "weightKg", "reps", "kind", "rpe"?, "note",
 //                   "completedAt" }
 //   exercise out: { "id", "name", "pattern", "equipment", "stepKg", "custom" }
@@ -46,6 +47,19 @@ namespace wm::gym {
 //                                    "points":    [ { "at", "weightKg", "reps", "e1rm"? } ],
 //                                    "bestE1rm"?: { "weightKg", "reps", "at", "e1rm"? },
 //                                    "heaviest"?: { "weightKg", "reps", "at", "e1rm"? } } ] }
+//   record out  : { "exercise": { "id", "name", … },  "routineCount": n,  "sessionCount": n,
+//                   "bestE1rm"?: { "weightKg", "reps", "at", "e1rm" },
+//                   "heaviest"?: { "weightKg", "reps", "at", "e1rm"? },
+//                   "e1rmSeries"?: [ { "at", "weightKg", "reps", "e1rm" } ],   oldest first
+//                   "records"?:    [ { "at", "weightKg", "reps", "e1rm" } ],   newest first
+//                   "recentDays"?: [ { "sessionId", "startedAt", "sets": [ … ] } ] }
+//
+// The record page is the one reply here whose LISTS are omitted when empty rather than sent as
+// `[]`, and that is the whole shape of it: a movement in the catalog you have never lifted draws a
+// page that says so, not a chart frame with no bars in it, and a bodyweight or band-assisted
+// movement — where Epley is undefined — carries no `bestE1rm`, no `e1rmSeries` and no `records`
+// while still drawing its heaviest tile and its sets. Both counts are always present, because zero
+// is a real answer there and the page prints it (`never logged`).
 //   shared out  : { "startedAt", "finishedAt"?, "routine"?,
 //                   "sets": [ { "exercise", "setNumber", "weightKg", "reps", "kind", "rpe"?,
 //                               "note", "completedAt" } ] }
@@ -94,6 +108,10 @@ SetWrite parseSetWrite(const Json::Value& body);           // throws InvalidTrai
 std::uint64_t parseFinish(const Json::Value& body);        // { "finishedAt": ms }; throws InvalidTraining
 RoutineWrite parseRoutineWrite(const Json::Value& body);   // throws InvalidTraining
 ExerciseWrite parseExerciseWrite(const Json::Value& body); // throws InvalidTraining
+// The rename carries ONE field, because one field is what a rename changes. The id is the path's,
+// and everything else about a movement — its pattern, its equipment, its step — is not a thing this
+// write may touch: a body that named them would be a body promising an edit this product refuses.
+std::string parseExerciseRename(const Json::Value& body);  // throws InvalidTraining
 
 Json::Value toJson(const Session& session);
 // The log row carries the estimate the application put on it, not the store's summary alone: a
@@ -125,6 +143,7 @@ Json::Value toJson(const Review& review);
 // deliberately NOT `toJson(const Session&)` — that one carries the ids and the frozen plan, and a
 // reader who is not the owner gets neither (ports/TrainingRepository.h says why).
 Json::Value toJson(const Statistics& statistics);
+Json::Value toJson(const MovementRecord& record);
 Json::Value toJson(const SharedSession& shared);
 std::optional<PlanSnapshot> planFrom(const Json::Value& stored);   // clamps, never throws
 

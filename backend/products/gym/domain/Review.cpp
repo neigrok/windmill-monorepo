@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <tuple>
 #include <utility>
 
 namespace wm::gym {
@@ -29,16 +30,56 @@ bool outranks(const Candidate& earned, const Candidate& best) {
 }
 
 // The movements this session trained, in the order they were first performed — the order the
-// comparison prints, and the order the record walk breaks its last tie in.
-std::vector<ExerciseId> movementsOf(const std::vector<Set>& working) {
+// comparison prints, and the order the record walk breaks its last tie in. It reads the session's
+// MARKS rather than its sets, and gets the same order for free: `marksOf` appends a mark the first
+// time it sees a (movement, load), so a movement first appears exactly where its first set is.
+std::vector<ExerciseId> movementsOf(const std::vector<PriorMark>& marks) {
   std::vector<ExerciseId> out;
-  for (const Set& set : working) {
+  for (const PriorMark& mark : marks) {
     bool seen = false;
     for (const ExerciseId& held : out)
-      if (held == set.exercise) seen = true;
-    if (!seen) out.push_back(set.exercise);
+      if (held == mark.exercise) seen = true;
+    if (!seen) out.push_back(mark.exercise);
   }
   return out;
+}
+
+std::vector<PriorMark> marksOfMovement(const std::vector<PriorMark>& marks,
+                                       const ExerciseId& exercise) {
+  std::vector<PriorMark> out;
+  for (const PriorMark& mark : marks)
+    if (mark.exercise == exercise) out.push_back(mark);
+  return out;
+}
+
+// The heaviest mark, ties broken by more reps and then by the earlier one — TopSet's rule over the
+// projection instead of over the sets. A well-formed projection holds one row per load, so the tie
+// arms are the guard rather than the common path.
+std::optional<PriorMark> heaviestMark(const std::vector<PriorMark>& marks) {
+  std::optional<PriorMark> top;
+  for (const PriorMark& mark : marks) {
+    if (top && std::tuple(mark.weightKg, mark.reps, top->atMs) <=
+                   std::tuple(top->weightKg, top->reps, mark.atMs))
+      continue;
+    top = mark;
+  }
+  return top;
+}
+
+// One mark folded into a running projection: more reps at a load it already holds replaces it, the
+// same reps hit earlier only re-dates it, and a load it has never seen is appended. This is the
+// walk that carries a page's history forward one session at a time.
+void fold(std::vector<PriorMark>& marks, const PriorMark& earned) {
+  for (PriorMark& held : marks) {
+    if (!(held.exercise == earned.exercise) || held.weightKg != earned.weightKg) continue;
+    if (earned.reps > held.reps) {
+      held = earned;
+      return;
+    }
+    if (earned.reps == held.reps && earned.atMs < held.atMs) held.atMs = earned.atMs;
+    return;
+  }
+  marks.push_back(earned);
 }
 
 std::vector<Set> setsOfMovement(const std::vector<Set>& working, const ExerciseId& exercise) {
@@ -86,12 +127,8 @@ std::uint64_t spanOf(const Session& session, const std::vector<Set>& sets) {
 // The three record rules of §2.4 for one movement, each answered from the marks alone, and the best
 // of them returned. Every one of them needs a mark to have been PASSED — with no prior history
 // there is nothing to beat, so a first session claims nothing.
-std::optional<Candidate> recordFor(const ExerciseId& exercise, const std::vector<Set>& today,
-                                   const std::vector<PriorMark>& marks) {
-  std::vector<PriorMark> priors;
-  for (const PriorMark& mark : marks)
-    if (mark.exercise == exercise) priors.push_back(mark);
-
+std::optional<Candidate> recordFor(const ExerciseId& exercise, const std::vector<PriorMark>& today,
+                                   const std::vector<PriorMark>& priors) {
   std::vector<Candidate> earned;
 
   double priorTopE1rm = 0;
@@ -103,45 +140,40 @@ std::optional<Candidate> recordFor(const ExerciseId& exercise, const std::vector
     priorTopE1rmAtMs = mark.atMs;
   }
   double topE1rm = 0;
-  std::optional<Set> byE1rm;
-  for (const Set& set : today) {
-    std::optional<double> value = e1rm(set.weightKg, set.reps);
+  std::optional<PriorMark> byE1rm;
+  for (const PriorMark& mark : today) {
+    std::optional<double> value = e1rm(mark.weightKg, mark.reps);
     if (!value || *value <= topE1rm) continue;
     topE1rm = *value;
-    byE1rm = set;
+    byE1rm = mark;
   }
   if (byE1rm && priorTopE1rm > 0 && topE1rm > priorTopE1rm)
     earned.push_back(Candidate{PersonalRecord{RecordKind::e1rm, exercise, topE1rm, byE1rm->weightKg,
                                               byE1rm->reps, priorTopE1rm, priorTopE1rmAtMs},
-                               topE1rm, byE1rm->completedAtMs});
+                               topE1rm, byE1rm->atMs});
 
   // The heaviest load is a different question from the best e1RM — 110 × 2 is the heavier bar and
   // 105 × 5 the better set — and a lifter is owed both answers. The prior stays optional here
   // because a load may legally be zero or negative, so no number can stand in for "no mark".
-  std::optional<double> priorTopLoad;
-  std::uint64_t priorTopLoadAtMs = 0;
-  for (const PriorMark& mark : priors) {
-    if (priorTopLoad && mark.weightKg <= *priorTopLoad) continue;
-    priorTopLoad = mark.weightKg;
-    priorTopLoadAtMs = mark.atMs;
-  }
-  std::optional<Set> byLoad = topWorkingSet(today);
-  if (byLoad && priorTopLoad && byLoad->weightKg > *priorTopLoad)
-    earned.push_back(
-        Candidate{PersonalRecord{RecordKind::heaviest, exercise, byLoad->weightKg, byLoad->weightKg,
-                                 byLoad->reps, *priorTopLoad, priorTopLoadAtMs},
-                  e1rm(byLoad->weightKg, byLoad->reps).value_or(0), byLoad->completedAtMs});
+  std::optional<PriorMark> priorTopLoad = heaviestMark(priors);
+  std::optional<PriorMark> byLoad = heaviestMark(today);
+  if (byLoad && priorTopLoad && byLoad->weightKg > priorTopLoad->weightKg)
+    earned.push_back(Candidate{
+        PersonalRecord{RecordKind::heaviest, exercise, byLoad->weightKg, byLoad->weightKg,
+                       byLoad->reps, priorTopLoad->weightKg, priorTopLoad->atMs},
+        e1rm(byLoad->weightKg, byLoad->reps).value_or(0), byLoad->atMs});
 
   // More reps at a load this lifter has used before — the record a plateau earns, and the reason a
-  // mark carries reps at all. One mark exists per (movement, load), so the inner walk answers once.
-  for (const Set& set : today)
-    for (const PriorMark& mark : priors) {
-      if (mark.weightKg != set.weightKg || set.reps <= mark.reps) continue;
+  // mark carries reps at all. One mark exists per (movement, load) on both sides, so a load is
+  // compared exactly once and the best reps at it are what stands on each.
+  for (const PriorMark& mark : today)
+    for (const PriorMark& prior : priors) {
+      if (prior.weightKg != mark.weightKg || mark.reps <= prior.reps) continue;
       earned.push_back(
           Candidate{PersonalRecord{RecordKind::repsAtWeight, exercise,
-                                   static_cast<double>(set.reps), set.weightKg, set.reps,
-                                   static_cast<double>(mark.reps), mark.atMs},
-                    e1rm(set.weightKg, set.reps).value_or(0), set.completedAtMs});
+                                   static_cast<double>(mark.reps), mark.weightKg, mark.reps,
+                                   static_cast<double>(prior.reps), prior.atMs},
+                    e1rm(mark.weightKg, mark.reps).value_or(0), mark.atMs});
     }
 
   if (earned.empty()) return std::nullopt;
@@ -151,25 +183,11 @@ std::optional<Candidate> recordFor(const ExerciseId& exercise, const std::vector
   return best;
 }
 
-// At most one record for the whole session: the best of each movement's best, under the same
-// ranking, because a maximum taken twice is the maximum taken once.
-std::optional<PersonalRecord> recordIn(const std::vector<Set>& working,
-                                       const std::vector<PriorMark>& marks) {
-  std::optional<Candidate> best;
-  for (const ExerciseId& movement : movementsOf(working)) {
-    std::optional<Candidate> earned =
-        recordFor(movement, setsOfMovement(working, movement), marks);
-    if (!earned) continue;
-    if (!best || outranks(*earned, *best)) best = *earned;
-  }
-  if (!best) return std::nullopt;
-  return best->record;
-}
-
 // The comparison exists only for a session that named a routine, and only where there is an earlier
 // one to stand against. Both absences are ordinary: an ad-hoc session is against nothing, and the
 // first time a day is run there is no last time to print.
 std::optional<Against> comparisonOf(const Session& session, const std::vector<Set>& working,
+                                    const std::vector<PriorMark>& earned,
                                     const SessionHistory& history) {
   if (!session.routine) return std::nullopt;
   if (!history.previous) return std::nullopt;
@@ -178,7 +196,7 @@ std::optional<Against> comparisonOf(const Session& session, const std::vector<Se
     if (set.kind == SetKind::working) before.push_back(set);
 
   std::vector<AgainstMovement> movements;
-  for (const ExerciseId& movement : movementsOf(working)) {
+  for (const ExerciseId& movement : movementsOf(earned)) {
     // A plan may name one movement twice (heavy, then a back-off), and the first line is its main
     // work — the comparison prints one target and never adds two of them together.
     std::optional<PlanEntry> planned;
@@ -212,14 +230,51 @@ std::optional<double> e1rm(double weightKg, int reps) {
   return std::round(weightKg * (1.0 + reps / 30.0) * 10.0) / 10.0;
 }
 
-std::optional<double> topE1rmOf(const std::vector<WorkingLoad>& loads) {
+std::vector<PriorMark> marksOf(const std::vector<Set>& sets) {
+  std::vector<PriorMark> marks;
+  for (const Set& set : sets) {
+    if (set.kind != SetKind::working) continue;
+    fold(marks, PriorMark{set.exercise, set.weightKg, set.reps, set.completedAtMs});
+  }
+  return marks;
+}
+
+std::optional<double> topE1rmOf(const std::vector<PriorMark>& marks) {
   std::optional<double> top;
-  for (const WorkingLoad& load : loads) {
-    std::optional<double> value = e1rm(load.weightKg, load.reps);
+  for (const PriorMark& mark : marks) {
+    std::optional<double> value = e1rm(mark.weightKg, mark.reps);
     if (!value || (top && *value <= *top)) continue;
     top = value;
   }
   return top;
+}
+
+// At most one record for the whole session: the best of each movement's best, under the same
+// ranking, because a maximum taken twice is the maximum taken once.
+std::optional<PersonalRecord> recordAgainst(const std::vector<PriorMark>& earned,
+                                            const std::vector<PriorMark>& standing) {
+  std::optional<Candidate> best;
+  for (const ExerciseId& movement : movementsOf(earned)) {
+    std::optional<Candidate> won = recordFor(movement, marksOfMovement(earned, movement),
+                                             marksOfMovement(standing, movement));
+    if (!won) continue;
+    if (!best || outranks(*won, *best)) best = *won;
+  }
+  if (!best) return std::nullopt;
+  return best->record;
+}
+
+std::vector<SessionId> recordedIn(const std::vector<SessionMarks>& page,
+                                  const std::vector<PriorMark>& standing) {
+  std::vector<PriorMark> history = standing;
+  std::vector<SessionId> earned;
+  for (const SessionMarks& session : page) {
+    if (session.workingSets >= kSlightWorkingSets && recordAgainst(session.marks, history))
+      earned.push_back(session.session);
+    if (!session.finished) continue;   // the workout is not over; nothing after it stands on it yet
+    for (const PriorMark& mark : session.marks) fold(history, mark);
+  }
+  return earned;
 }
 
 Review review(const Session& session, const std::vector<Set>& sets, const SessionHistory& history) {
@@ -229,16 +284,15 @@ Review review(const Session& session, const std::vector<Set>& sets, const Sessio
 
   // The span counts every set, warmups included — a ramp-up is time spent — while everything below
   // counts only working sets, which is the whole of what a warmup, a drop and a failure earn. The
-  // estimate goes through the same topE1rmOf the log row does, over every working set rather than
-  // the store's per-load projection of them: one definition, so the finish screen and the log can
-  // never print two numbers for one workout.
-  std::vector<WorkingLoad> loads;
-  for (const Set& set : working) loads.push_back(WorkingLoad{set.weightKg, set.reps});
-  ReviewStats stats{spanOf(session, sets), static_cast<int>(working.size()), topE1rmOf(loads)};
+  // session's own marks are made here from the sets in hand, where the log's page read has the
+  // store make them: one projection, so the estimate and the record on this screen are the numbers
+  // the log row beside it prints.
+  const std::vector<PriorMark> earned = marksOf(working);
+  ReviewStats stats{spanOf(session, sets), static_cast<int>(working.size()), topE1rmOf(earned)};
   if (stats.workingSets < kSlightWorkingSets)
     return Review{stats, true, std::nullopt, std::nullopt};
-  return Review{stats, false, recordIn(working, history.marks),
-                comparisonOf(session, working, history)};
+  return Review{stats, false, recordAgainst(earned, history.marks),
+                comparisonOf(session, working, earned, history)};
 }
 
 }

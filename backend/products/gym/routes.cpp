@@ -30,6 +30,24 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
         api->createExercise(req, std::move(cb));
       },
       {drogon::Post});
+  // The rename is a PATCH and not a PUT because ONE field of a movement is a lifter's to change:
+  // a PUT would promise the whole row, and the pattern, equipment and step of a seed belong to the
+  // catalog rather than to any one account.
+  app.registerHandler(
+      "/v1/gym/exercises/{id}",
+      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        api->renameExercise(req, std::move(cb), id);
+      },
+      {drogon::Patch});
+  // A movement's record — the page that replaced the statistics room. It hangs off the movement's
+  // own path because that is what it is about, and it is the one read in gym that answers a whole
+  // screen: the tiles, the chart, the ladder and the days in one call.
+  app.registerHandler(
+      "/v1/gym/exercises/{id}/record",
+      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        api->exerciseRecord(req, std::move(cb), id);
+      },
+      {drogon::Get});
   app.registerHandler(
       "/v1/gym/sessions",
       [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {

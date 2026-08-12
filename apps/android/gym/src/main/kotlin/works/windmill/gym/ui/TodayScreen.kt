@@ -38,10 +38,12 @@ import works.windmill.platform.design.WindmillSpace
 // is an empty session, and the routine is the thing you name on the way out.
 //
 // Looking BACK is the frame's job now — the log is a tab under every screen (§F, GymRoom) — so what
-// is left at the foot of this one is the pair of doors a tab cannot be: Statistics, which is retired
-// in W1c the wave its replacement is built, and the last session, which is a shortcut into the log
-// rather than a second copy of it. Both appear only once the log holds a finished session, because a
-// door onto an empty screen is the same defect as a chevron that goes nowhere.
+// is left at the foot of this one is the single door a tab cannot be: the last session, a shortcut
+// into the log rather than a second copy of it. It appears only once the log holds a finished
+// session, because a door onto an empty screen is the same defect as a chevron that goes nowhere.
+// The Statistics door that stood beside it was retired in W1c, the wave its replacement was built:
+// a movement's record, reached by tapping a movement's NAME — which is why every name in the
+// routine card below is a door of its own.
 //
 // SIGNED OUT, TODAY IS THE SAME SCREEN. The room works before there is an account — a session
 // starts from a local routine or empty, and the log it writes is saved on this device — so every
@@ -52,8 +54,8 @@ fun TodayScreen(
     store: TrainingStore,
     isSignedIn: Boolean,
     onStart: (String?) -> Unit,
-    onStatistics: () -> Unit,
     onOpenSession: (SessionSummary) -> Unit,
+    onOpenMovement: (String) -> Unit,
     onSignIn: () -> Unit,
 ) {
     val nowMs = System.currentTimeMillis()
@@ -74,7 +76,7 @@ fun TodayScreen(
             else -> {
                 store.routines.forEachIndexed { index, routine ->
                     if (index == 0) {
-                        RoutineCard(routine, store, nowMs, onStart)
+                        RoutineCard(routine, store, nowMs, onStart, onOpenMovement)
                     } else {
                         RoutineRow(routine, nowMs, onStart)
                     }
@@ -83,7 +85,7 @@ fun TodayScreen(
             }
         }
         if (!isSignedIn) ClaimCard(onSignIn)
-        LookingBack(store.recent, onStatistics, onOpenSession)
+        LastSession(store.recent, onOpenSession)
     }
 }
 
@@ -125,7 +127,13 @@ private fun EmptyStart(onStart: (String?) -> Unit) {
 // device's shelf signed out — so what is drawn here is a preview of the workout and never the
 // thing the session is planned from.
 @Composable
-private fun RoutineCard(routine: Routine, store: TrainingStore, nowMs: Long, onStart: (String?) -> Unit) {
+private fun RoutineCard(
+    routine: Routine,
+    store: TrainingStore,
+    nowMs: Long,
+    onStart: (String?) -> Unit,
+    onOpenMovement: (String) -> Unit,
+) {
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
         modifier = Modifier
@@ -144,8 +152,18 @@ private fun RoutineCard(routine: Routine, store: TrainingStore, nowMs: Long, onS
             )
         }
 
+        // AN EXERCISE NAME IS A DOOR, here and everywhere else this room is at rest (§H): it lands
+        // on that movement's record. The row is the target rather than the glyphs alone, so a
+        // thumb has the whole line to find — and the card itself is not clickable, so nothing here
+        // is competing for the tap.
         routine.entries.sortedBy { it.position }.take(3).forEach { entry ->
-            Row(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = GymTap.minimum)
+                    .clickable { onOpenMovement(entry.exerciseId) },
+            ) {
                 Text(
                     Readout.movement(entry.exerciseId, store.catalog),
                     style = WindmillFont.body(15),
@@ -234,64 +252,35 @@ private fun ClaimCard(onSignIn: () -> Unit) {
     }
 }
 
-// THE TWO RETROSPECTIVE DOORS, and they exist exactly when there is something behind them: a log
-// with no finished session has no statistics to draw and no last session to open, and a door onto
-// an empty screen is the same defect as a chevron that goes nowhere. Both are read-only — nothing
-// on either side of them can change the log.
+// THE ONE RETROSPECTIVE DOOR, and it exists exactly when there is something behind it: a log with
+// no finished session has no last session to open, and a door onto an empty screen is the same
+// defect as a chevron that goes nowhere. It is read-only — nothing on the other side of it can
+// change the log.
 @Composable
-private fun LookingBack(
-    recent: List<SessionSummary>,
-    onStatistics: () -> Unit,
-    onOpenSession: (SessionSummary) -> Unit,
-) {
+private fun LastSession(recent: List<SessionSummary>, onOpenSession: (SessionSummary) -> Unit) {
     val last = recent.firstOrNull { !it.session.isOpen } ?: return
     Column(
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x5),
+        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = WindmillSpace.x2),
+            .padding(top = WindmillSpace.x2)
+            .heightIn(min = GymTap.minimum)
+            .clickable { onOpenSession(last) },
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = GymTap.minimum + 8.dp)
-                .clickable(onClick = onStatistics),
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Statistics", style = WindmillFont.body(17), color = GymSkin.ink)
-                Text(
-                    "movement lines, standing bests, weeks",
-                    style = GymType.numeral(12),
-                    color = GymSkin.inkFaint,
-                )
-            }
+        Text("Last session", style = GymType.numeral(11), color = GymSkin.inkFaint)
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text(
+                last.plan?.routine ?: Readout.noRoutine,
+                style = WindmillFont.body(16),
+                color = GymSkin.ink,
+            )
             Spacer(Modifier.weight(1f))
-            Text("›", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkFaint)
-        }
-
-        Column(
-            verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = GymTap.minimum)
-                .clickable { onOpenSession(last) },
-        ) {
-            Text("Last session", style = GymType.numeral(11), color = GymSkin.inkFaint)
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    last.plan?.routine ?: Readout.noRoutine,
-                    style = WindmillFont.body(16),
-                    color = GymSkin.ink,
-                )
-                Spacer(Modifier.weight(1f))
-                Text(lastMeta(last), style = GymType.numeral(12), color = GymSkin.inkFaint)
-                Text(
-                    " ›",
-                    style = WindmillFont.body(15, FontWeight.SemiBold),
-                    color = GymSkin.inkFaint,
-                )
-            }
+            Text(lastMeta(last), style = GymType.numeral(12), color = GymSkin.inkFaint)
+            Text(
+                " ›",
+                style = WindmillFont.body(15, FontWeight.SemiBold),
+                color = GymSkin.inkFaint,
+            )
         }
     }
 }

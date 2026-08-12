@@ -14,6 +14,7 @@ import works.windmill.gym.domain.ExerciseWrite
 import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.LiveOrder
+import works.windmill.gym.domain.MovementRecord
 import works.windmill.gym.domain.PlanEntry
 import works.windmill.gym.domain.PlanSnapshot
 import works.windmill.gym.domain.Prefill
@@ -28,7 +29,6 @@ import works.windmill.gym.domain.SessionShare
 import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TrainingSet
-import works.windmill.gym.domain.TrainingStatistics
 import works.windmill.gym.net.GymHttp
 import works.windmill.gym.net.RefusalFacts
 import works.windmill.gym.net.TrainingSyncing
@@ -66,10 +66,14 @@ class TrainingStore(
     private val retryAfterMs: Long = 4_000,
     private val sync: (Account) -> TrainingSyncing? = { if (it.isSignedIn) GymHttp(it.api) else null },
 ) {
-    // The names before the first frame. A movement is a stable id everywhere except on screen, so a
-    // store that waited for the catalog read would draw `bench-press` at 28sp in the meantime — in
-    // a basement, for a whole session.
-    var catalog: List<Exercise> by mutableStateOf(deviceCatalog.movements)
+    // The names before the read. A movement is a stable id everywhere except on screen, so a store
+    // that waited for the catalog read would draw `bench-press` at 28sp in the meantime — in a
+    // basement, for a whole session. It is filled by `connect`, from the copy the device holds FOR
+    // THE SEAT NOW ASKING, because a name is per-account the moment a rename exists: one lifter's
+    // `Low-bar Squat` is nobody else's, and the frame before an account is known is no place to
+    // guess. `connect` runs from the room's first effect, so that frame is the one the effect
+    // completes in.
+    var catalog: List<Exercise> by mutableStateOf(emptyList())
         private set
     var routines: List<Routine> by mutableStateOf(emptyList())
         private set
@@ -128,6 +132,9 @@ class TrainingStore(
         private set
 
     private var gym: TrainingSyncing? = null
+    // Who the names on this device belong to — the account id, or none for the anonymous seat. The
+    // device catalog is keyed on it, so every hold has to say whose copy it is writing.
+    private var owner: String? = null
     private val lastTimes = mutableMapOf<String, LastTime>()
     private var retryTask: Job? = null
     // The open session could not be claimed yet — the account's other workout is still running, or
@@ -192,6 +199,23 @@ class TrainingStore(
     // always — a room that waited for a round trip would be a workout that waits.
     suspend fun connect(account: Account) {
         gym = sync(account)
+        // THE NAMES GO WITH THE SEAT, and this is where they change hands. A rename is a per-account
+        // override, so the copy on this device belongs to the account it was read for: drawing it
+        // for the next lifter to hold the phone would put one person's private name on another
+        // person's screen — on the first frame, and then indefinitely offline, where this room is
+        // built to live. A seat with no copy here draws slugs until its own read lands, which is the
+        // honest state: this phone does not know those names yet.
+        //
+        // The shelf's own movements ride with every seat, because a movement this device minted is
+        // nobody's until a claim lands it: signed out it is the whole catalog there is, and signed
+        // in offline it is what keeps the logger from drawing a slug at 28sp over the lifter's own
+        // lift. Held straight back, which wipes the last seat's names off the disk as well as off
+        // the screen — for the same seat it is the no-op it looks like.
+        owner = account.user?.id
+        catalog = deviceCatalog.movements(owner).let { held ->
+            held + localLog.exercises.filter { mine -> held.none { it.id == mine.id } }
+        }
+        deviceCatalog.hold(owner, catalog)
         // Who is signed in decides which shelf answers "what did I do last time", so the cache
         // dies with the seat — the movement in hand is re-asked at the end of connect, and the
         // log's answer replaces the one the nobody pass computed off the device.
@@ -253,7 +277,7 @@ class TrainingStore(
             launch {
                 tried { log.exercises() }?.let { known ->
                     catalog = known + localLog.exercises.filter { mine -> known.none { it.id == mine.id } }
-                    deviceCatalog.hold(catalog)
+                    deviceCatalog.hold(owner, catalog)
                 }
             }
             launch { tried { log.routines() }?.let { routines = it + localLog.routines } }
@@ -567,14 +591,14 @@ class TrainingStore(
             val made = Exercise(id = mintExercise(), name = name, custom = true)
             localLog.hold(made)
             catalog = catalog + made
-            deviceCatalog.hold(catalog)
+            deviceCatalog.hold(owner, catalog)
             return GymResult.Ok(made)
         }
         return try {
             val made = log.createExercise(ExerciseWrite(
                 id = mintExercise(), name = name, pattern = "isolation", equipment = "barbell"))
             catalog = catalog + made
-            deviceCatalog.hold(catalog)
+            deviceCatalog.hold(owner, catalog)
             GymResult.Ok(made)
         } catch (interrupted: CancellationException) {
             throw interrupted
@@ -640,23 +664,71 @@ class TrainingStore(
         older = if (page.size < logPage) Older.End else Older.More
     }
 
-    // The statistics read. Nothing is held: the store keeps no copy to invalidate, so there is no
-    // cache key here to get wrong — the banked lesson from Lift's progress tab, whose cache was
+    // ONE MOVEMENT READ WHOLE. Nothing is held: the store keeps no copy to invalidate, so there is
+    // no cache key here to get wrong — the banked lesson from Lift's progress tab, whose cache was
     // keyed on the number of sessions and went stale the day one was edited rather than added.
     //
     // It answers with a REASON and not with null, for the reason every write in this store does: a
     // log that refused with a sentence is not a log that went quiet, and a screen collapsing the
     // two points the lifter at their signal when the answer was on the server. Signed out the
-    // domain runs over the shelf's own finished sessions instead — same rules, different window.
-    suspend fun statistics(): GymResult<TrainingStatistics> {
-        val log = gym ?: return GymResult.Ok(TrainingStatistics.of(localLog.details()))
+    // domain runs over the shelf's own finished sessions instead — same rules, no estimator.
+    //
+    // SIGNED IN, THE LOG'S ANSWER STANDS ALONE and the shelf is not merged into it, exactly as the
+    // account's log page is not: a count that included unclaimed sessions beside a best e1RM that
+    // could not would be one aggregate telling two stories. The claim empties the shelf, and the
+    // log's hollow ring is where a device-only row is named.
+    suspend fun record(exerciseId: String): GymResult<MovementRecord> {
+        val log = gym
+        if (log == null) {
+            val movement = catalog.firstOrNull { it.id == exerciseId }
+                ?: return GymResult.Failed(WriteFailure.Refused("that movement is not on this device"))
+            return GymResult.Ok(MovementRecord.of(movement, localLog.details(), routines))
+        }
         return try {
-            GymResult.Ok(log.statistics())
+            val read = log.record(exerciseId)
+                ?: return GymResult.Failed(WriteFailure.Refused("that movement is no longer on the log"))
+            GymResult.Ok(read)
         } catch (interrupted: CancellationException) {
             throw interrupted
         } catch (refusing: Exception) {
             GymResult.Failed(WriteFailure(refusing))
         }
+    }
+
+    // THE RENAME, and the identity it exists to prove: the id never moves, so every set, routine
+    // line and frozen plan snapshot still points at the same movement afterwards. It answers with
+    // THE MOVEMENT AS IT NOW STANDS, or with what went wrong — never with a bool nobody can act on.
+    // This is the write that changes a name on every screen at once, and a field that closed
+    // identically either way would leave the lifter believing the catalog had changed.
+    //
+    // The movement it answers with is the one the log CONFIRMED and never the string that went out,
+    // so a page drawing it is drawing what was stored rather than what was typed.
+    //
+    // A movement still on the shelf is the device's to rename — signed out always, and signed in
+    // while its claim has not landed — because the claim sends the name it finds. Anything else is
+    // the log's: a movement the caller created renames in place, a seeded one gets a per-account
+    // override, and neither is a shelf this phone could hold.
+    suspend fun rename(exerciseId: String, to: String): GymResult<Exercise> {
+        val name = to.trim()
+        if (name.isEmpty()) return GymResult.Failed(WriteFailure.Refused("a movement needs a name"))
+        val renamed = localLog.renameExercise(exerciseId, name) ?: run {
+            val log = gym ?: return GymResult.Failed(
+                WriteFailure.Refused("renaming a catalog movement needs your account — sign in first"))
+            try {
+                log.renameExercise(exerciseId, name)
+            } catch (interrupted: CancellationException) {
+                throw interrupted
+            } catch (refusing: Exception) {
+                return GymResult.Failed(WriteFailure(refusing))
+            }
+        }
+        // Into the catalog every other screen reads and onto the disk the next cold launch draws
+        // from — or the record page would be right and the routine card behind it would still be
+        // printing the old name until the next connect. Held under the seat that renamed it: the
+        // override belongs to this account and to no other lifter holding this phone.
+        catalog = catalog.map { if (it.id == renamed.id) renamed else it }
+        deviceCatalog.hold(owner, catalog)
+        return GymResult.Ok(renamed)
     }
 
     // The coach share, minted and revoked. Both answer with WHAT WENT WRONG rather than with a bool

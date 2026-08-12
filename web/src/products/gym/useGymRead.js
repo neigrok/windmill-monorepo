@@ -1,7 +1,8 @@
 // ONE READ, FOUR ANSWERS — the shape every route-owned screen in gym uses to ask the store a
-// question: the session detail, Today's routines, the routines list, one routine's editor and the
-// finish screen. They all need the same four states and the same repair, and five copies of this
-// dance is five chances for one of them to leave a screen saying "opening…" forever.
+// question: the session detail, the routines list, one routine's editor, the finish screen, a
+// movement's record and the coach's shared page. They all need the same four states and the same
+// repair, and six copies of this dance is six chances for one of them to leave a screen saying
+// "opening…" forever.
 //
 // `absent` is its own answer and not a failure: a routine another account owns and a routine that
 // never existed are one fact on this wire, and a read that resolves to null is that fact. A read

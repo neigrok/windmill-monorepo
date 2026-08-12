@@ -43,6 +43,7 @@ void reset() {
   w.exec("DELETE FROM gym_sets WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_sessions WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_routines WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
+  w.exec("DELETE FROM gym_exercise_names WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_exercises WHERE created_by IN ('" + kUser + "', '" + kOther + "')");
   w.commit();
 }
@@ -70,6 +71,13 @@ PlanSnapshot pushA() {
 
 LogCursor page(std::uint64_t beforeMs, int limit) {
   return LogCursor{beforeMs, std::nullopt, limit};
+}
+
+// The rows of a page, for the cases that are about the rows. The marks standing before the page ride
+// back in the same value and have their own cases below.
+std::vector<SessionSummary> pageOf(PgTrainingRepository& repo, const wm::UserId& user,
+                                   const LogCursor& cursor) {
+  return repo.log(user, cursor).sessions;
 }
 
 Set benchSet(const std::string& id, double weightKg, std::uint64_t completedAtMs,
@@ -323,7 +331,7 @@ TEST(pg_gym_log_pages_newest_first_with_counts_and_names) {
   repo.close(SessionId{"ses_pg000001"}, t1 + 3'000);
   repo.insertSession(sessionAt("ses_pg000002", t2));
 
-  std::vector<SessionSummary> listed = repo.log(wm::UserId{kUser}, page(t2 + 1, 50));
+  std::vector<SessionSummary> listed = pageOf(repo, wm::UserId{kUser}, page(t2 + 1, 50));
 
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(2));
   CHECK_EQ(listed[0].session.id.str(), std::string("ses_pg000002"));
@@ -334,7 +342,7 @@ TEST(pg_gym_log_pages_newest_first_with_counts_and_names) {
   CHECK_EQ(listed[1].exerciseNames, (std::vector<std::string>{"Back Squat", "Bench Press"}));
 
   // The keyset cursor: strictly-before t2 drops the newer session from the page.
-  std::vector<SessionSummary> older = repo.log(wm::UserId{kUser}, page(t2, 50));
+  std::vector<SessionSummary> older = pageOf(repo, wm::UserId{kUser}, page(t2, 50));
   REQUIRE_EQ(older.size(), static_cast<std::size_t>(1));
   CHECK_EQ(older[0].session.id.str(), std::string("ses_pg000001"));
 }
@@ -355,11 +363,13 @@ TEST(pg_gym_log_walks_a_tied_start_instant_across_a_page_boundary) {
   repo.insertSession(sessionAt("ses_pg000004", t1 + 1'000));
   repo.close(SessionId{"ses_pg000004"}, t1 + 9'000);
 
-  std::vector<SessionSummary> first = repo.log(wm::UserId{kUser}, page(t1 + 9'000, 2));
-  std::vector<SessionSummary> second = repo.log(
-      wm::UserId{kUser}, LogCursor{first.back().session.startedAtMs, first.back().session.id, 2});
-  std::vector<SessionSummary> third = repo.log(
-      wm::UserId{kUser}, LogCursor{second.back().session.startedAtMs, second.back().session.id, 2});
+  std::vector<SessionSummary> first = pageOf(repo, wm::UserId{kUser}, page(t1 + 9'000, 2));
+  std::vector<SessionSummary> second = pageOf(
+      repo, wm::UserId{kUser},
+      LogCursor{first.back().session.startedAtMs, first.back().session.id, 2});
+  std::vector<SessionSummary> third = pageOf(
+      repo, wm::UserId{kUser},
+      LogCursor{second.back().session.startedAtMs, second.back().session.id, 2});
 
   REQUIRE_EQ(first.size(), static_cast<std::size_t>(2));
   CHECK_EQ(first[0].session.id.str(), std::string("ses_pg000001"));
@@ -399,7 +409,7 @@ TEST(pg_gym_log_carries_the_top_working_set_and_says_which_row_closed_itself) {
   repo.insertSet(squatSet("set_pg000005", "ses_pg000003", 60, 10, t1 + 20'060'000,
                           SetKind::warmup));
 
-  std::vector<SessionSummary> listed = repo.log(wm::UserId{kUser}, page(t1 + 40'000'000, 50));
+  std::vector<SessionSummary> listed = pageOf(repo, wm::UserId{kUser}, page(t1 + 40'000'000, 50));
 
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(4));
   CHECK_EQ(listed[0].session.id.str(), std::string("ses_pg000004"));
@@ -440,7 +450,7 @@ TEST(pg_gym_log_counts_working_sets_apart_and_clamps_an_assisted_set_out_of_the_
   repo.insertSet(benchSet("set_pg000006", 0, t1 + 101'000, "ses_pg000002"));
   repo.close(SessionId{"ses_pg000002"}, t1 + 102'000);
 
-  std::vector<SessionSummary> listed = repo.log(wm::UserId{kUser}, page(t1 + 200'000, 50));
+  std::vector<SessionSummary> listed = pageOf(repo, wm::UserId{kUser}, page(t1 + 200'000, 50));
 
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(2));
   CHECK_EQ(listed[0].setCount, 1);
@@ -471,14 +481,19 @@ TEST(pg_gym_log_hands_back_one_row_per_working_load_with_the_best_reps_at_it) {
   repo.insertSet(squatSet("set_pg000006", "ses_pg000001", -20, 12, t1 + 6'000));
   repo.close(SessionId{"ses_pg000001"}, t1 + 7'000);
 
-  std::vector<SessionSummary> listed = repo.log(wm::UserId{kUser}, page(t1 + 100'000, 50));
+  std::vector<SessionSummary> listed = pageOf(repo, wm::UserId{kUser}, page(t1 + 100'000, 50));
 
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(1));
-  CHECK_EQ(listed[0].workingLoads,
-           (std::vector<WorkingLoad>{WorkingLoad{100.0, 5}, WorkingLoad{95.0, 10},
-                                     WorkingLoad{-20.0, 12}}));
+  // One row per (movement, load) with the best reps at it, heaviest first — the projection both of
+  // the row's rules read, and the one the domain's record walk is handed. Every one of them is
+  // dated by the SESSION and not by the set that hit those reps: a mark belongs to the workout that
+  // set it, which is the day every surface prints beside it (domain/Review.h).
+  CHECK_EQ(listed[0].workingMarks,
+           (std::vector<PriorMark>{PriorMark{ExerciseId{"back-squat"}, 100.0, 5, t1},
+                                   PriorMark{ExerciseId{"back-squat"}, 95.0, 10, t1},
+                                   PriorMark{ExerciseId{"back-squat"}, -20.0, 12, t1}}));
   // And what the application makes of it: the session's number, not its heaviest set's.
-  CHECK_EQ(topE1rmOf(listed[0].workingLoads), e1rm(95.0, 10));
+  CHECK_EQ(topE1rmOf(listed[0].workingMarks), e1rm(95.0, 10));
   CHECK_EQ(listed[0].topSet, std::optional<TopWorkingSet>(TopWorkingSet{100.0, 5}));
 }
 
@@ -503,7 +518,7 @@ TEST(pg_gym_log_names_a_movement_whose_display_name_holds_a_newline_once) {
                      ExerciseId{"pg-zercher-squat"}, 0, 60.0, 5, SetKind::working, std::nullopt,
                      "", t1 + 2'000});
 
-  std::vector<SessionSummary> listed = repo.log(wm::UserId{kUser}, page(t1 + 9'000, 50));
+  std::vector<SessionSummary> listed = pageOf(repo, wm::UserId{kUser}, page(t1 + 9'000, 50));
 
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(1));
   CHECK_EQ(listed[0].setCount, 2);
@@ -619,7 +634,7 @@ TEST(pg_gym_last_time_walks_sessions_not_set_instants) {
   repo.close(SessionId{"ses_pg000002"}, t1 + 6 * day + 2'000);
 
   LastTimeOutcome last = repo.lastTime(wm::UserId{kUser}, ExerciseId{"bench-press"});
-  std::vector<SessionSummary> listed = repo.log(wm::UserId{kUser}, page(t1 + 7 * day, 50));
+  std::vector<SessionSummary> listed = pageOf(repo, wm::UserId{kUser}, page(t1 + 7 * day, 50));
 
   CHECK(last.error == LastTimeError::none);
   CHECK_EQ(last.lastTime->session.id, SessionId{"ses_pg000002"});
@@ -973,7 +988,8 @@ TEST(pg_gym_routines_are_listed_most_recently_trained_first) {
 // One row per (movement, load) carrying the BEST reps ever done at it — the projection all three
 // record rules are answered from, which is what keeps Epley out of SQL. Restricted to the movements
 // this session works, taken only from FINISHED sessions that started earlier, and dated by the
-// EARLIEST instant those reps were hit.
+// EARLIEST SESSION to hit those reps — the workout, never the set's own device stamp, which is what
+// puts one date under a record wherever it is read (domain/Review.h).
 TEST(pg_gym_history_marks_the_best_reps_at_each_load_this_session_works) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -1003,9 +1019,8 @@ TEST(pg_gym_history_marks_the_best_reps_at_each_load_this_session_works) {
   REQUIRE(reviewed.has_value());
   SessionHistory history = repo.historyFor(wm::UserId{kUser}, *reviewed);
 
-  const std::vector<PriorMark> marks{
-      PriorMark{ExerciseId{"back-squat"}, 90, 10, t1 - 2 * week + 240'000},
-      PriorMark{ExerciseId{"back-squat"}, 100, 8, t1 - 2 * week + 60'000}};
+  const std::vector<PriorMark> marks{PriorMark{ExerciseId{"back-squat"}, 90, 10, t1 - 2 * week},
+                                     PriorMark{ExerciseId{"back-squat"}, 100, 8, t1 - 2 * week}};
   CHECK_EQ(history.marks, marks);
   CHECK_EQ(history.previous, std::optional<Session>());   // no routine, nothing to stand against
   CHECK_EQ(history.previousSets, std::vector<Set>{});
@@ -1046,9 +1061,10 @@ TEST(pg_gym_history_stands_against_the_last_finished_session_of_the_same_routine
   CHECK_EQ(history.previous->plan, std::optional<PlanSnapshot>(pushA()));
   REQUIRE_EQ(history.previousSets.size(), static_cast<std::size_t>(1));
   CHECK_EQ(history.previousSets[0].weightKg, 95.0);
-  const std::vector<PriorMark> marks{
-      PriorMark{ExerciseId{"back-squat"}, 95, 5, t1 - 2 * week + 60'000},
-      PriorMark{ExerciseId{"back-squat"}, 100, 5, t1 - week + 60'000}};
+  // Each mark dated by the session it was set in — two sessions here, two dates, and neither of
+  // them the instant a set carried.
+  const std::vector<PriorMark> marks{PriorMark{ExerciseId{"back-squat"}, 95, 5, t1 - 2 * week},
+                                     PriorMark{ExerciseId{"back-squat"}, 100, 5, t1 - week}};
   CHECK_EQ(history.marks, marks);
 }
 
@@ -1171,7 +1187,7 @@ TEST(pg_gym_reads_a_pre_1970_legacy_row_instead_of_failing_the_whole_log) {
     w.commit();
   }
 
-  std::vector<SessionSummary> listed = repo.log(wm::UserId{kUser}, page(t1 + 9'000, 50));
+  std::vector<SessionSummary> listed = pageOf(repo, wm::UserId{kUser}, page(t1 + 9'000, 50));
 
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(2));
   CHECK_EQ(listed[0].session.id.str(), std::string("ses_pg000001"));
@@ -1211,10 +1227,12 @@ TEST(pg_gym_statistics_is_the_top_set_per_session_the_marks_and_the_weekly_count
   CHECK_EQ(log.tops, (std::vector<MovementTop>{MovementTop{ExerciseId{"back-squat"}, t1, 110, 2},
                                                MovementTop{ExerciseId{"back-squat"}, t1 + week,
                                                            105, 5}}));
+  // A mark carries the START of the session it was set in, which is the instant its point above
+  // carries too: the standing best and the point that IS that best cannot land on two days.
   CHECK_EQ(log.marks, (std::vector<PriorMark>{
-                          PriorMark{ExerciseId{"back-squat"}, 100, 5, t1 + 60'000},
-                          PriorMark{ExerciseId{"back-squat"}, 105, 5, t1 + week + 60'000},
-                          PriorMark{ExerciseId{"back-squat"}, 110, 2, t1 + 120'000}}));
+                          PriorMark{ExerciseId{"back-squat"}, 100, 5, t1},
+                          PriorMark{ExerciseId{"back-squat"}, 105, 5, t1 + week},
+                          PriorMark{ExerciseId{"back-squat"}, 110, 2, t1}}));
   // Monday 00:00 UTC, truncated `AT TIME ZONE 'UTC'` so the buckets do not move with the server's
   // own zone — 1699833600000 is 2023-11-13, the Monday of the week t1 falls in.
   CHECK_EQ(log.weeks, (std::vector<TrainingWeek>{TrainingWeek{1'699'833'600'000, 1, 2},
@@ -1411,4 +1429,238 @@ TEST(pg_gym_discarding_a_session_takes_its_share_with_it) {
   CHECK(repo.deleteSession(wm::UserId{kUser}, SessionId{"ses_pg000001"}));
 
   CHECK_FALSE(repo.sharedSession("pg-tok-doomed", now + 1));
+}
+
+// The marks standing BEFORE a page, against the real statement. A page is judged against the
+// history in front of it, and page two has history page two cannot see — so the read hands over the
+// same projection with the window moved to "every finished session older than this page's last row",
+// narrowed to the movements the page trains. The first page stands on the older session's marks;
+// paging past it leaves nothing standing at all.
+TEST(pg_gym_log_hands_over_the_marks_standing_before_the_page) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  const std::uint64_t t1 = 1'700'000'000'000;
+  const std::uint64_t day = 86'400'000;
+
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  repo.insertSet(squatSet("set_pg000001", "ses_pg000001", 100, 5, t1 + 1'000));
+  repo.insertSet(benchSet("set_pg000002", 80.0, t1 + 2'000, "ses_pg000001"));
+  repo.close(SessionId{"ses_pg000001"}, t1 + 3'000);
+  repo.insertSession(sessionAt("ses_pg000002", t1 + day));
+  repo.insertSet(squatSet("set_pg000003", "ses_pg000002", 105, 5, t1 + day + 1'000));
+  repo.close(SessionId{"ses_pg000002"}, t1 + day + 2'000);
+
+  const LogPage newest = repo.log(wm::UserId{kUser}, page(t1 + 2 * day, 1));
+  const LogPage whole = repo.log(wm::UserId{kUser}, page(t1 + 2 * day, 50));
+
+  // One row on the page, and the squat mark it has to beat comes back beside it. The BENCH mark
+  // does not: the page does not train it, so it is not history this page needs.
+  REQUIRE_EQ(newest.sessions.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(newest.standing,
+           (std::vector<PriorMark>{PriorMark{ExerciseId{"back-squat"}, 100.0, 5, t1}}));
+  // The whole log on one page: nothing was finished before its oldest row, so nothing stands.
+  REQUIRE_EQ(whole.sessions.size(), static_cast<std::size_t>(2));
+  CHECK_EQ(whole.standing, std::vector<PriorMark>{});
+}
+
+// The two windows this read applies are DIFFERENT on purpose, and the difference is what the domain
+// has to be told about: a page carries the OPEN workout as a row like any other, while the marks
+// standing before it count FINISHED sessions alone. Filtering the page here instead would drop the
+// open row off the log; folding its marks in the domain would judge the row above it against
+// history that session's own finish screen cannot see.
+TEST(pg_gym_log_lists_the_open_session_and_never_lets_its_marks_stand_before_a_page) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  const std::uint64_t t1 = 1'700'000'000'000;
+  const std::uint64_t day = 86'400'000;
+
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  repo.insertSet(squatSet("set_pg000001", "ses_pg000001", 100, 5, t1 + 1'000));
+  repo.close(SessionId{"ses_pg000001"}, t1 + 2'000);
+  repo.insertSession(sessionAt("ses_pg000002", t1 + day));   // still running, and the heavier day
+  repo.insertSet(squatSet("set_pg000002", "ses_pg000002", 110, 5, t1 + day + 1'000));
+
+  const LogPage newest = repo.log(wm::UserId{kUser}, page(t1 + 2 * day, 1));
+  const LogPage whole = repo.log(wm::UserId{kUser}, page(t1 + 2 * day, 50));
+
+  // The open workout is the newest row, and what stands before it is the finished day alone.
+  REQUIRE_EQ(newest.sessions.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(newest.sessions[0].session.id, SessionId{"ses_pg000002"});
+  CHECK_EQ(newest.sessions[0].session.finishedAtMs, std::optional<std::uint64_t>());
+  CHECK_EQ(newest.standing,
+           (std::vector<PriorMark>{PriorMark{ExerciseId{"back-squat"}, 100.0, 5, t1}}));
+  // Both rows on one page: the open one's 110 × 5 is a mark of the PAGE and never a standing one.
+  REQUIRE_EQ(whole.sessions.size(), static_cast<std::size_t>(2));
+  CHECK_EQ(whole.sessions[0].workingMarks,
+           (std::vector<PriorMark>{PriorMark{ExerciseId{"back-squat"}, 110.0, 5, t1 + day}}));
+  CHECK_EQ(whole.standing, std::vector<PriorMark>{});
+}
+
+// THE HAZARD, against the real table: the 64 seeds are GLOBAL rows, so a rename that touched
+// gym_exercises would rename Back Squat for every lifter on this server. This case is what stops
+// that statement from ever being written — it asserts the OTHER account's catalog, and the row
+// itself, are untouched.
+TEST(pg_gym_renaming_a_seed_is_one_accounts_alone_and_leaves_the_global_row_untouched) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+
+  const std::optional<Exercise> renamed =
+      repo.renameExercise(wm::UserId{kUser}, ExerciseId{"back-squat"}, "Low-bar Squat");
+
+  REQUIRE(renamed.has_value());
+  CHECK_EQ(renamed->id, ExerciseId{"back-squat"});      // the id never moves
+  CHECK_EQ(renamed->name, std::string("Low-bar Squat"));
+  CHECK_EQ(renamed->custom, false);
+  bool mine = false;
+  for (const Exercise& row : repo.catalog(wm::UserId{kUser}))
+    if (row.id == ExerciseId{"back-squat"} && row.name == "Low-bar Squat") mine = true;
+  bool theirs = false;
+  for (const Exercise& row : repo.catalog(wm::UserId{kOther}))
+    if (row.id == ExerciseId{"back-squat"} && row.name == "Back Squat") theirs = true;
+  CHECK(mine);
+  CHECK(theirs);
+  // And the global row itself still says what the seed says.
+  wm::PgLease conn{*wm::pgTestPool()};
+  pqxx::work txn{*conn};
+  CHECK_EQ(txn.exec_params("SELECT name FROM gym_exercises WHERE id = 'back-squat'")[0][0]
+               .as<std::string>(),
+           std::string("Back Squat"));
+}
+
+// A movement the caller CREATED is their own row and renames in place — no line beside it, because
+// there is no global row to protect. Renaming a seed back to its own name clears the line instead
+// of storing a copy of it.
+TEST(pg_gym_renaming_your_own_movement_edits_its_row_and_clearing_a_seeds_name_drops_the_line) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  repo.insertExercise(wm::UserId{kUser},
+                      Exercise{ExerciseId{"ex_pg000001"}, "Zercher Squat", Pattern::squat,
+                               Equipment::barbell, 2.5, true});
+
+  const std::optional<Exercise> own =
+      repo.renameExercise(wm::UserId{kUser}, ExerciseId{"ex_pg000001"}, "Zercher");
+  repo.renameExercise(wm::UserId{kUser}, ExerciseId{"back-squat"}, "Low-bar Squat");
+  // Typed back with the stray space a keyboard leaves: the entity trims before anything compares,
+  // so this is the seed's own name and clears the line rather than pinning a copy that differs from
+  // it by one byte.
+  const std::optional<Exercise> restored =
+      repo.renameExercise(wm::UserId{kUser}, ExerciseId{"back-squat"}, " Back Squat ");
+
+  REQUIRE(own.has_value());
+  CHECK_EQ(own->name, std::string("Zercher"));
+  CHECK_EQ(own->custom, true);
+  REQUIRE(restored.has_value());
+  CHECK_EQ(restored->name, std::string("Back Squat"));
+  wm::PgLease conn{*wm::pgTestPool()};
+  pqxx::work txn{*conn};
+  CHECK_EQ(txn.exec_params("SELECT count(*)::int FROM gym_exercise_names WHERE user_id = $1::uuid",
+                           kUser)[0][0]
+               .as<int>(),
+           0);
+  // The rename edited the caller's own row and nobody else's: another account cannot see it at all.
+  CHECK_EQ(repo.renameExercise(wm::UserId{kOther}, ExerciseId{"ex_pg000001"}, "Mine"),
+           std::optional<Exercise>());
+  CHECK_EQ(repo.renameExercise(wm::UserId{kUser}, ExerciseId{"no-such"}, "Mine"),
+           std::optional<Exercise>());
+}
+
+// Every read that prints a movement name reads the CALLER's name for it — the catalog, the log
+// row's movement list, the export, and the coach share (which resolves against the OWNER of the
+// workout, the one account a token's reader has). A read that missed the coalesce would print the
+// seed name to the one lifter who renamed it.
+TEST(pg_gym_every_read_that_names_a_movement_names_it_as_the_caller_does) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  const std::uint64_t t1 = 1'700'000'000'000;
+
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  repo.insertSet(squatSet("set_pg000001", "ses_pg000001", 100, 5, t1 + 1'000));
+  repo.close(SessionId{"ses_pg000001"}, t1 + 2'000);
+  repo.renameExercise(wm::UserId{kUser}, ExerciseId{"back-squat"}, "Low-bar Squat");
+  repo.insertShare(SessionShare{SessionId{"ses_pg000001"}, wm::UserId{kUser}, "tok_pg000001",
+                                t1 + 30ull * 86'400'000},
+                   t1);
+
+  const std::vector<SessionSummary> listed = pageOf(repo, wm::UserId{kUser}, page(t1 + 9'000, 50));
+  const std::vector<ExportedSet> exported = repo.exportedSets(wm::UserId{kUser});
+  const std::optional<SharedSession> shared = repo.sharedSession("tok_pg000001", t1 + 1);
+
+  REQUIRE_EQ(listed.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(listed[0].exerciseNames, std::vector<std::string>{"Low-bar Squat"});
+  REQUIRE_EQ(exported.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(exported[0].exerciseName, std::string("Low-bar Squat"));
+  CHECK_EQ(exported[0].exerciseId, std::string("back-squat"));   // the id in the file never moved
+  REQUIRE(shared.has_value());
+  REQUIRE_EQ(shared->sets.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(shared->sets[0].exercise, std::string("Low-bar Squat"));
+}
+
+// The record read against the real statements: one ladder per FINISHED session oldest first, the
+// routines that name the movement counted once each, and the last training days with their sets in
+// the order they were performed. The open session and another account's are nowhere in it.
+TEST(pg_gym_movement_history_is_a_ladder_per_finished_session_the_routines_and_the_recent_days) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  const std::uint64_t t1 = 1'700'000'000'000;
+  const std::uint64_t day = 86'400'000;
+  // The same movement twice in one routine — heavy, then a back-off — is still ONE routine.
+  repo.insertRoutine(routineAt("rt_pg000001", "Legs",
+                               {entryAt(1, "back-squat"), entryAt(2, "back-squat")}));
+
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  repo.insertSet(squatSet("set_pg000001", "ses_pg000001", 60, 10, t1 + 1'000, SetKind::warmup));
+  repo.insertSet(squatSet("set_pg000002", "ses_pg000001", 100, 5, t1 + 2'000));
+  repo.insertSet(squatSet("set_pg000003", "ses_pg000001", 95, 10, t1 + 3'000));
+  repo.close(SessionId{"ses_pg000001"}, t1 + 4'000);
+  repo.insertSession(sessionAt("ses_pg000002", t1 + day));   // still open: not history yet
+
+  const MovementHistory history =
+      repo.movementHistory(wm::UserId{kUser}, ExerciseId{"back-squat"});
+
+  REQUIRE(history.exercise.has_value());
+  CHECK_EQ(history.exercise->id, ExerciseId{"back-squat"});
+  CHECK_EQ(history.routines, 1);
+  REQUIRE_EQ(history.sessions.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(history.sessions[0].session, SessionId{"ses_pg000001"});
+  CHECK_EQ(history.sessions[0].startedAtMs, t1);   // the SESSION's start, never a set's stamp
+  // And the ladder's own rows carry that same instant, so the bar, the tile and the record line the
+  // page computes off them cannot land on three days.
+  CHECK_EQ(history.sessions[0].loads,
+           (std::vector<PriorMark>{PriorMark{ExerciseId{"back-squat"}, 100.0, 5, t1},
+                                   PriorMark{ExerciseId{"back-squat"}, 95.0, 10, t1}}));
+  REQUIRE_EQ(history.recent.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(history.recent[0].session, SessionId{"ses_pg000001"});
+  CHECK_EQ(history.recent[0].startedAtMs, t1);
+  // The warmup is not a set this page prints, for the reason the prefill block excludes it.
+  REQUIRE_EQ(history.recent[0].sets.size(), static_cast<std::size_t>(2));
+  CHECK_EQ(history.recent[0].sets[0].weightKg, 100.0);
+  CHECK_EQ(history.recent[0].sets[1].weightKg, 95.0);
+}
+
+// A movement this account's catalog does not hold answers with nothing at all, and the three reads
+// behind the first never fire. Another lifter's private movement is that same one fact.
+TEST(pg_gym_movement_history_of_a_movement_this_account_cannot_see_is_empty) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  repo.insertExercise(wm::UserId{kOther},
+                      Exercise{ExerciseId{"ex_pg000002"}, "Theirs", Pattern::squat,
+                               Equipment::barbell, 2.5, true});
+
+  CHECK_EQ(repo.movementHistory(wm::UserId{kUser}, ExerciseId{"ex_pg000002"}).exercise,
+           std::optional<Exercise>());
+  CHECK_EQ(repo.movementHistory(wm::UserId{kUser}, ExerciseId{"no-such"}).exercise,
+           std::optional<Exercise>());
+  // A movement in the catalog nobody has lifted is the OTHER answer: present, with nothing in it.
+  const MovementHistory never = repo.movementHistory(wm::UserId{kUser}, ExerciseId{"back-squat"});
+  REQUIRE(never.exercise.has_value());
+  CHECK_EQ(never.routines, 0);
+  CHECK(never.sessions.empty());
+  CHECK(never.recent.empty());
 }

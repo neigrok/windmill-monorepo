@@ -2,8 +2,10 @@ package works.windmill.gym.net
 
 import kotlinx.serialization.Serializable
 import works.windmill.gym.domain.Exercise
+import works.windmill.gym.domain.ExerciseRename
 import works.windmill.gym.domain.ExerciseWrite
 import works.windmill.gym.domain.LastTime
+import works.windmill.gym.domain.MovementRecord
 import works.windmill.gym.domain.Review
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineWrite
@@ -15,28 +17,32 @@ import works.windmill.gym.domain.SessionStart
 import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TrainingSet
-import works.windmill.gym.domain.TrainingStatistics
 import works.windmill.gym.store.RefusalFacts
 import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.net.WindmillApiException
 
 // The one place the native gym talks to the backend — the twin of the iOS GymApi and of
 // web/src/products/gym/gymApi.js, against the same routes:
-//   GET  /v1/gym/exercises            ·  POST /v1/gym/exercises
+//   GET  /v1/gym/exercises            ·  POST  /v1/gym/exercises
+//   GET  /v1/gym/exercises/:id/record ·  PATCH /v1/gym/exercises/:id
 //   POST /v1/gym/sessions             ·  POST /v1/gym/sessions/:id/sets
 //   POST /v1/gym/sessions/:id/finish  ·  DELETE /v1/gym/sessions/:id
 //   GET  /v1/gym/sessions?before=&beforeId=&limit=   ·  GET /v1/gym/sessions/:id
 //   GET  /v1/gym/sessions/:id/review  ·  GET /v1/gym/last?exercise=
 //   GET  /v1/gym/routines             ·  POST /v1/gym/routines
 //   PUT  /v1/gym/routines/:id         ·  DELETE /v1/gym/routines/:id
-//   GET  /v1/gym/stats
 //   POST /v1/gym/sessions/:id/share   ·  DELETE /v1/gym/sessions/:id/share
 // The session rides as a Bearer header rather than a cookie (WindmillApi); nothing else differs.
 //
+// `GET /v1/gym/stats` is gone from this list and NOT from the server: the statistics room was
+// retired in W1c, the wave the record page replaced it, and the route and its `get_stats` tool
+// stay as the engine an agent reads. A client asking for an answer it has nowhere to draw is the
+// orphan this room refuses to keep.
+//
 // `GET /v1/gym/shared/:token` — the coach's own read, and the one unauthenticated route in the
 // product — is deliberately NOT here. Nothing on this phone reads a shared session: the lifter is
-// the owner and reads their own log through the eighteen owner-scoped doors above. The token this
-// client mints is spelled as an address for somebody else to open (CoachShare.kt).
+// the owner and reads their own log through the owner-scoped doors above. The token this client
+// mints is spelled as an address for somebody else to open (CoachShare.kt).
 //
 // EVERY PATH IS PASSED WHOLE, query included. A path-segment append percent-encodes `?` and `&`
 // into the path and silently 404s every endpoint carrying a query — WindmillApi resolves the whole
@@ -99,11 +105,17 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
         api.send<Unit>("DELETE", "/v1/gym/routines/$id")
     }
 
-    // The long window, computed on every read and cached nowhere — server-side or here. There is no
-    // parameter: the window is the whole finished log, and a client that asked for a slice of it
-    // would be the second place in the product deciding what a week is.
-    override suspend fun statistics(): TrainingStatistics =
-        api.get<TrainingStatistics>("/v1/gym/stats")
+    // Composed on every read and cached nowhere — server-side or here. There is no window
+    // parameter: twelve weeks is the log's own, and a client that asked for a slice would be the
+    // second place in the product deciding what the arc is.
+    override suspend fun record(exerciseId: String): MovementRecord? = try {
+        api.get<MovementRecord>("/v1/gym/exercises/$exerciseId/record")
+    } catch (refused: WindmillApiException.Refused) {
+        if (refused.status == 404) null else throw refused
+    }
+
+    override suspend fun renameExercise(exerciseId: String, name: String): Exercise =
+        api.send<Exercise>("PATCH", "/v1/gym/exercises/$exerciseId", ExerciseRename(name))
 
     override suspend fun share(sessionId: String): SessionShare =
         api.send<SessionShare>("POST", "/v1/gym/sessions/$sessionId/share")

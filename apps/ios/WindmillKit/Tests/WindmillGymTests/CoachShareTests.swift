@@ -242,9 +242,10 @@ final class CoachShareStoreTests: XCTestCase {
     }
 
     // The coach share is a signed-in OFFER: a link is a capability the account mints, so signed out
-    // the doors answer with the plain precondition rather than pretending a log went quiet — and
-    // statistics answer from the device's own log, which with nothing finished is honestly empty.
-    func testSignedOutTheShareNamesItsPreconditionAndStatisticsAnswerLocally() async {
+    // the doors answer with the plain precondition rather than pretending a log went quiet — and a
+    // movement's record answers from the device's own log, which with nothing finished is honestly
+    // a movement that was never logged.
+    func testSignedOutTheShareNamesItsPreconditionAndTheRecordAnswersLocally() async {
         let store = store(nil)
         await store.connect(to: Account(
             api: WindmillApi(baseURL: URL(string: "https://windmill.works")!, credential: { nil }),
@@ -256,9 +257,12 @@ final class CoachShareStoreTests: XCTestCase {
         XCTAssertEqual(why, .refused("sharing needs your account — sign in first"))
         let revoked = await store.revokeShare("ses_1")
         XCTAssertEqual(revoked, .refused("sharing needs your account — sign in first"))
-        guard case .success(let local) = await store.statistics() else {
+        guard case .success(let local) = await store.record(of: "bench-press") else {
             return XCTFail("the device's own log always answers")
         }
-        XCTAssertEqual(local, TrainingStatistics())
+        XCTAssertEqual(local.record,
+                       MovementRecord(exercise: Exercise(id: "bench-press", name: "bench-press")))
+        XCTAssertEqual(local.source, .thisDevice, "and it says so, because it computes no estimate")
+        XCTAssertTrue(Record.page(local.record, now: 0, from: local.source).neverLogged)
     }
 }

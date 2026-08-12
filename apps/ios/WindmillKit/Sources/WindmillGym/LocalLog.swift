@@ -12,11 +12,15 @@ import Foundation
 // whole-file atomic writes, and a file this build cannot read opens EMPTY rather than taking the
 // room down with it.
 //
-// The reads at the foot of the file are what "the log" answers signed out — recent sessions, the
-// last-time prefill, the review of a finished session, the statistics window — computed from the
-// held sessions by the same rules the server states, minus the one number this device refuses to
-// invent: Epley lives in one place per language and this is not it, so every local point carries
-// `e1rm: nil` and the statistics axis falls honestly to load or reps (Statistics.swift).
+// The reads at the foot of the file are what THIS DEVICE answers — recent sessions, the last-time
+// prefill, the review of a finished session, one movement's record — computed from the held sessions
+// by the same rules the server states, minus the one number this device refuses to invent: Epley
+// lives in one place per language and this is not it, so no local read carries an estimate, and
+// every screen that would draw one draws nothing and says where it is computed.
+//
+// Signed out they answer everything, because there is no other log. Signed in they still answer for
+// whatever is still on these shelves — a session, or a movement whose create is still owed — because
+// the account's log has never heard of it and would answer a 404 over something that is on screen.
 
 public final class LocalLog {
     public struct LocalSession: Equatable, Codable {
@@ -195,6 +199,18 @@ public final class LocalLog {
         held.exercises = (held.exercises ?? []).filter { $0.id != id }
     }
 
+    // Renaming a movement this device minted and has not claimed yet: the shelf entry IS the pending
+    // create, so the new name is simply the name the log first hears. The id does not move, which is
+    // the same promise the account's own rename makes — every set and routine entry naming it stays
+    // pointed at the same movement.
+    public func rename(exercise id: String, to name: String) {
+        held.exercises = (held.exercises ?? []).map { write in
+            guard write.id == id else { return write }
+            return ExerciseWrite(id: write.id, name: name, pattern: write.pattern,
+                                 equipment: write.equipment, stepKg: write.stepKg)
+        }
+    }
+
     public func remint(exercise old: String, as fresh: String) {
         held.exercises = (held.exercises ?? []).map { write in
             guard write.id == old else { return write }
@@ -257,6 +273,15 @@ public final class LocalLog {
         session(sessionId).map { SessionDetail(session: $0.session, sets: $0.sets) }
     }
 
+    // Whether this shelf holds a set of the movement that a record page would DRAW — anything but a
+    // warmup, which counts toward nothing here. Signed in, every session on this shelf is one the
+    // log has not been told about, so this is the record page's own caveat asked per movement.
+    public func holdsSets(of exerciseId: String) -> Bool {
+        sessions.contains { local in
+            local.sets.contains { $0.exerciseId == exerciseId && $0.kind != .warmup }
+        }
+    }
+
     // The prefill's question, answered from this device's history: the newest finished session
     // holding a WORKING set of the movement, its working sets in performed order — warmups already
     // dropped, exactly as `GET /v1/gym/last` drops them.
@@ -282,58 +307,39 @@ public final class LocalLog {
                       slight: working < Self.slightWorkingSets)
     }
 
-    // The long window over the local log — weeks Monday to Monday in UTC, contiguous with the gaps
-    // in, and one line per movement from each session's top working set. Every point carries
-    // `e1rm: nil`: no Epley is computed on this device, and Stats.Axis falls to load or reps.
-    public func statistics() -> TrainingStatistics {
+    // ONE MOVEMENT'S RECORD as this device can honestly answer it (§H). The two counts, the heaviest
+    // working set and the recent days are all readable off the shelf. The estimate, the twelve-week
+    // series and the record ladder are NOT — every one of them is Epley, which lives in one place per
+    // language and none of them is Swift — so they stay ABSENT rather than arriving as zeros, and the
+    // page says where they are computed instead of drawing an empty chart frame.
+    //
+    // The session running right now is deliberately not in here: a record that moved under a lifter
+    // between two sets would be reporting on a workout in flight.
+    public func record(of exercise: Exercise, days limit: Int = 10) -> MovementRecord {
         let finished = sessions.filter { $0.session.finishedAtMs != nil }
-        guard !finished.isEmpty else { return TrainingStatistics() }
-
-        var weeks: [Int64: (sessions: Int, workingSets: Int)] = [:]
-        for local in finished {
-            let week = Self.weekStartMs(of: local.session.startedAtMs)
-            let working = local.sets.filter { $0.kind == .working }.count
-            let held = weeks[week] ?? (0, 0)
-            weeks[week] = (held.sessions + 1, held.workingSets + working)
-        }
-        let span = weeks.keys.sorted()
-        var contiguous: [TrainingWeek] = []
-        var cursor = span.first ?? 0
-        while cursor <= (span.last ?? 0) {
-            let counted = weeks[cursor] ?? (0, 0)
-            contiguous.append(TrainingWeek(startedAtMs: cursor, sessions: counted.sessions,
-                                           workingSets: counted.workingSets))
-            cursor += 7 * 86_400_000
-        }
-
-        var points: [String: [MovementPoint]] = [:]
-        var lastTrained: [String: Int64] = [:]
-        for local in finished {
-            var walked: [String] = []
-            for set in local.sets where set.kind == .working && !walked.contains(set.exerciseId) {
-                walked.append(set.exerciseId)
+        // A session counts as WORKED when it holds a working set of the movement — a warmup counts
+        // toward nothing — while a recent day is drawn from every set that is not a warmup, which is
+        // the same cut the served read makes.
+        let worked = finished.compactMap { local -> MovementMark? in
+            guard let top = topWorkingSet(of: local.sets.filter { $0.exerciseId == exercise.id }) else {
+                return nil
             }
-            for exerciseId in walked {
-                let mine = local.sets.filter { $0.exerciseId == exerciseId && $0.kind == .working }
-                guard let top = topWorkingSet(of: mine) else { continue }
-                points[exerciseId, default: []].append(
-                    MovementPoint(atMs: local.session.startedAtMs, weightKg: top.weightKg, reps: top.reps))
-                lastTrained[exerciseId] = local.session.startedAtMs
-            }
+            return MovementMark(weightKg: top.weightKg, reps: top.reps, atMs: local.session.startedAtMs)
         }
-        let movements = points.map { exerciseId, line in
-            MovementProgress(exerciseId: exerciseId,
-                             lastTrainedAtMs: lastTrained[exerciseId] ?? 0,
-                             points: line,
-                             heaviest: heaviest(of: line))
-        }.sorted { left, right in
-            if left.lastTrainedAtMs != right.lastTrainedAtMs {
-                return left.lastTrainedAtMs > right.lastTrainedAtMs
-            }
-            return left.exerciseId < right.exerciseId
+        let days = finished.reversed().compactMap { local -> TrainingDay? in
+            let performed = local.sets.filter { $0.exerciseId == exercise.id && $0.kind != .warmup }
+            guard !performed.isEmpty else { return nil }
+            return TrainingDay(sessionId: local.session.id,
+                               startedAtMs: local.session.startedAtMs, sets: performed)
         }
-
-        return TrainingStatistics(weeks: contiguous, movements: movements)
+        return MovementRecord(
+            exercise: exercise,
+            routineCount: routines.filter { routine in
+                routine.entries.contains { $0.exerciseId == exercise.id }
+            }.count,
+            sessionCount: worked.count,
+            heaviest: heaviest(of: worked),
+            recentDays: Array(days.prefix(limit)))
     }
 
     // The heaviest set, ties broken by more reps and then by the earlier one — Review.h's
@@ -352,26 +358,18 @@ public final class LocalLog {
 
     // A heavier load takes the mark; a tied load goes to more reps, then to the earlier one — the
     // server's marks projection (DISTINCT ON (exercise, weight) … reps DESC, completed_at ASC in
-    // PgTrainingRepository) feeding Statistics.cpp's bestByLoad, so the same log shows the same
-    // best before and after the claim. No estimate rides along, for the reason every local point
-    // has none.
-    private func heaviest(of points: [MovementPoint]) -> MovementBest? {
-        var best: MovementBest?
-        for point in points {
+    // PgTrainingRepository), so the same log shows the same best before and after the claim. The
+    // marks arrive oldest first, which is what makes "then the earlier one" a rule rather than an
+    // accident. No estimate rides along, for the reason no local read has one.
+    private func heaviest(of marks: [MovementMark]) -> MovementMark? {
+        var best: MovementMark?
+        for mark in marks {
             if let held = best {
-                if point.weightKg < held.weightKg { continue }
-                if point.weightKg == held.weightKg, point.reps <= held.reps { continue }
+                if mark.weightKg < held.weightKg { continue }
+                if mark.weightKg == held.weightKg, mark.reps <= held.reps { continue }
             }
-            best = MovementBest(weightKg: point.weightKg, reps: point.reps, atMs: point.atMs)
+            best = mark
         }
         return best
-    }
-
-    // Monday 00:00 UTC of the week holding this instant. Day zero of the epoch was a Thursday, so
-    // the Monday offset is four days.
-    static func weekStartMs(of ms: Int64) -> Int64 {
-        let day = Int64((Double(ms) / 86_400_000).rounded(.down))
-        let sinceMonday = (((day - 4) % 7) + 7) % 7
-        return (day - sinceMonday) * 86_400_000
     }
 }

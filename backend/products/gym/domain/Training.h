@@ -68,6 +68,17 @@ constexpr std::uint64_t kMaxInstantMs = 253402300799000ull;
 // BYTES, which is the unit the text column and the wire both count in.
 constexpr std::size_t kMaxNameLength = 80;
 
+// The one normalization every display name goes through, applied by both entities that hold one so
+// they cannot answer differently: the ends trimmed. " Bench Press " and "Bench Press" are one name
+// to a reader and two rows to a picker, and a name of nothing but blanks is the empty name the
+// constructors already refuse, arriving in disguise — it stored, and then rendered as a movement
+// with no name and no way to find it again. Trimming before the ceiling is measured is deliberate:
+// a name is judged by what it says, not by the spaces around it.
+//
+// ASCII whitespace only, which is what a keyboard's space bar and a paste from a text field carry.
+// A name made of Unicode blanks alone survives this, and that is where it stops being worth chasing.
+std::string trimmedName(std::string text);
+
 // What the step_kg column can hold: numeric(4,2), two decimals and a ceiling of 99.99. A value
 // outside this band is not an increment the store can keep, so it is refused at construction like
 // every other value in this module that meets a column's own bounds.

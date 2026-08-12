@@ -267,7 +267,7 @@ private fun RecordLine(sentence: String) {
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         modifier = Modifier
             .fillMaxWidth()
-            .background(GymSkin.prInk.copy(alpha = 0.12f), RoundedCornerShape(WindmillRadius.lg))
+            .background(GymSkin.prSoft, RoundedCornerShape(WindmillRadius.lg))
             .border(1.dp, GymSkin.prInk.copy(alpha = 0.35f), RoundedCornerShape(WindmillRadius.lg))
             .padding(WindmillSpace.x4),
     ) {

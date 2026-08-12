@@ -63,9 +63,9 @@ import works.windmill.gym.ui.GymTap
 import works.windmill.gym.ui.GymType
 import works.windmill.gym.ui.LogScreen
 import works.windmill.gym.ui.LoggerScreen
+import works.windmill.gym.ui.RecordScreen
 import works.windmill.gym.ui.RoutinesScreen
 import works.windmill.gym.ui.SessionScreen
-import works.windmill.gym.ui.StatisticsScreen
 import works.windmill.gym.ui.TodayScreen
 import works.windmill.platform.Account
 import works.windmill.platform.LocalShellActions
@@ -102,13 +102,22 @@ private enum class Tab(val title: String) {
     Routines("Routines"),
 }
 
-// What a tab can push on top of itself, and both are read-only: the long window over every finished
-// session, and one past session with its sets. The session travels as the ROW the list already
-// holds rather than as an id, because that row carries facts no other read gives back — the working
-// set count, the tonnage, and whether the four-hour rule closed it rather than a tap.
+// What a tab can push on top of itself, and both are read-only: one past session with its sets, and
+// one movement's whole record. The session travels as the ROW the list already holds rather than as
+// an id, because that row carries facts no other read gives back — the working set count, the
+// tonnage, and whether the four-hour rule closed it rather than a tap. A movement travels as its ID
+// and nothing else, which is the point of the page it opens: the name is the only thing about a
+// movement that can change, and a destination holding a copy of one would be the second place in
+// this room deciding what a movement is called.
+//
+// STATISTICS IS GONE FROM HERE, retired in W1c the wave the record page replaced it. That was a UI
+// deletion and not an engine one: `GET /v1/gym/stats` and the `get_stats` tool both stand, because
+// an agent asking "how has my squat moved" is the product's own thesis. What went is a room a
+// lifter visits when they are not training, and the weekly session and working-set bars went with
+// it — the design gives them no home.
 private sealed interface Away {
-    data object Statistics : Away
     data class Session(val summary: SessionSummary) : Away
+    data class Movement(val exerciseId: String) : Away
 }
 
 // THE ROOM — gym's whole surface: the three tabs a lifter stands on at rest, the session they are
@@ -139,7 +148,10 @@ fun GymRoom(account: Account) {
     }
 
     var finished by remember { mutableStateOf<FinishedSession?>(null) }
-    var away by remember { mutableStateOf<Away?>(null) }
+    // A STACK AND NOT A SLOT, because §H's premise makes one pushed screen reach another: an
+    // exercise name inside a past session lands on that movement's record, and a way back that
+    // named the tab from there would be a chevron skipping the screen it was standing on.
+    var away by remember { mutableStateOf<List<Away>>(emptyList()) }
     var keptRoutine by remember { mutableStateOf(false) }
     var starting by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf<String?>(null) }
@@ -149,14 +161,19 @@ fun GymRoom(account: Account) {
     // they were standing.
     var tab by rememberSaveable { mutableStateOf(Tab.Today) }
 
-    // Every door in and out of a retrospective screen goes through here for one reason: the note
-    // above the rail is what the room has to say about the door that did not open ON THE SCREEN YOU
-    // ARE ON, and a refusal from Today carried under a chart is a sentence about something that is
-    // no longer in front of the lifter. Every move between destinations clears it — this one, the
-    // rail's own tap, and the back gesture.
-    fun look(at: Away?) {
+    // Every door in and out of a retrospective screen goes through these two for one reason: the
+    // note above the rail is what the room has to say about the door that did not open ON THE
+    // SCREEN YOU ARE ON, and a refusal from Today carried under a record page is a sentence about
+    // something that is no longer in front of the lifter. Every move between destinations clears it
+    // — these, the rail's own tap, and the back gesture.
+    fun look(at: Away) {
         note = null
-        away = at
+        away = away + at
+    }
+
+    fun back() {
+        note = null
+        away = away.dropLast(1)
     }
 
     // What the system back gesture means here, decided rather than inherited: a pushed screen pops
@@ -169,10 +186,10 @@ fun GymRoom(account: Account) {
     // gesture that did something invisible. The logger survives it; the queue is on disk after
     // every tap.
     val live = store.session != null
-    BackHandler(enabled = finished != null || (!live && (away != null || tab != Tab.Today))) {
+    BackHandler(enabled = finished != null || (!live && (away.isNotEmpty() || tab != Tab.Today))) {
         if (finished != null) return@BackHandler
-        if (away != null) {
-            look(null)
+        if (away.isNotEmpty()) {
+            back()
             return@BackHandler
         }
         // The note goes with the tab it was said on, exactly as it does through `look` and the
@@ -238,8 +255,8 @@ fun GymRoom(account: Account) {
                     return@launch
                 }
                 // Whatever screen was open is over: the workout is what this phone is for, and Done
-                // on the finish screen must land on Today rather than back on a chart or a list.
-                away = null
+                // on the finish screen must land on Today rather than back on a record or a list.
+                away = emptyList()
                 tab = Tab.Today
                 // A start JOINS whatever session is already open, so what came back may be a workout
                 // with sets in it — stand where that workout is, not at the head of the routine.
@@ -318,22 +335,31 @@ fun GymRoom(account: Account) {
             .systemBarsPadding(),
     ) {
         val ended = finished
-        val standing = away
+        val standing = away.lastOrNull()
+        // What the way back LEADS TO, which after a second push is the screen underneath and not
+        // the tab. A movement is named off the catalog rather than carried, so a rename on the
+        // record page renames the row that leads back to it too.
+        val beneath = when (val under = away.getOrNull(away.size - 2)) {
+            is Away.Session -> under.summary.plan?.routine ?: Readout.noRoutine
+            is Away.Movement -> Readout.movement(under.exerciseId, store.catalog)
+            null -> tab.title
+        }
 
         // The way back out of a pushed screen, at its head and naming where it goes — §G17 puts it
         // there rather than at the foot, because "‹ The log" is a destination and a bare chevron in
-        // a bar is not.
-        if (ended == null && !live && standing != null) {
+        // a bar is not. The record page draws its own instead: §H hangs `Rename` off the right of
+        // this row, and a screen that owns an action in the row owns the row.
+        if (ended == null && !live && standing is Away.Session) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
                 modifier = Modifier
                     .heightIn(min = GymTap.minimum)
                     .padding(horizontal = WindmillSpace.x5)
-                    .clickable { look(null) },
+                    .clickable { back() },
             ) {
                 Text("‹", style = WindmillFont.body(19, FontWeight.SemiBold), color = GymSkin.inkDim)
-                Text(tab.title, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkDim)
+                Text(beneath, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkDim)
             }
         }
 
@@ -361,20 +387,30 @@ fun GymRoom(account: Account) {
                     say = { note = it },
                     onFinish = { close() },
                 )
-                standing is Away.Statistics -> StatisticsScreen(store)
+                standing is Away.Movement -> RecordScreen(
+                    exerciseId = standing.exerciseId,
+                    store = store,
+                    backLabel = beneath,
+                    onBack = { back() },
+                )
                 standing is Away.Session -> SessionScreen(
                     summary = standing.summary,
                     store = store,
                     coach = coach,
+                    onOpenMovement = { look(Away.Movement(it)) },
                 )
                 tab == Tab.Log -> LogScreen(store, onOpenSession = { look(Away.Session(it)) })
-                tab == Tab.Routines -> RoutinesScreen(store, onStart = { routineId -> open(routineId) })
+                tab == Tab.Routines -> RoutinesScreen(
+                    store = store,
+                    onStart = { routineId -> open(routineId) },
+                    onOpenMovement = { look(Away.Movement(it)) },
+                )
                 else -> TodayScreen(
                     store = store,
                     isSignedIn = account.isSignedIn,
                     onStart = { routineId -> open(routineId) },
-                    onStatistics = { look(Away.Statistics) },
                     onOpenSession = { look(Away.Session(it)) },
+                    onOpenMovement = { look(Away.Movement(it)) },
                     onSignIn = LocalShellActions.current.openYou,
                 )
             }
@@ -399,7 +435,7 @@ fun GymRoom(account: Account) {
         // The rail belongs to the three tabs and to nothing else: the logger, the finish and a
         // pushed screen each own their whole surface, and the shell's seat goes with the rail
         // because it lives past the rail's own hairline.
-        if (ended == null && !live && standing == null) {
+        if (ended == null && !live && away.isEmpty()) {
             TabRail(
                 current = tab,
                 onPick = { picked ->

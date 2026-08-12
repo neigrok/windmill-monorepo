@@ -21,9 +21,9 @@ import { gymApi } from './gymApi.js';
 import { MID_WORKOUT_REFUSAL } from './backfill.js';
 import {
   BACKFILL_HREF, CLOSED_ITSELF_NOTE, closedOnItsOwn, e1rmLabel, finishHref, firstSessionLabel,
-  groupByExercise, isFinished, loadedLine, logWhenLabel, NO_ROUTINE, onThisDevice, planFrozenLabel,
-  planReadingOf, routineNameOf, sessionDetailMeta, sessionHref, setLoadLabel, setNoteOf,
-  tonnageLabel, weeksOf, workingLabel,
+  groupByExercise, hasRecord, isFinished, loadedLine, logWhenLabel, NO_ROUTINE, onThisDevice,
+  planFrozenLabel, planReadingOf, recordHref, routineNameOf, sessionDetailMeta, sessionHref,
+  setLoadLabel, setNoteOf, tonnageLabel, weeksOf, workingLabel,
 } from './log.js';
 import { CoachPanel } from './coach/CoachPanel.jsx';
 import { CoachShare } from './share/CoachShare.jsx';
@@ -144,10 +144,11 @@ function SessionRow({ summary }) {
       <a className="gym-row" href={sessionHref(summary.id)}>
         <div className="gym-row-head">
           <span className="gym-row-title">{routineNameOf(summary) ?? NO_ROUTINE}</span>
-          {/* The space beside the title belongs to what a session IS rather than what it holds. A
-              hollow ring is the one mark drawn there today; the gold PR dot §G16 asks for waits on
-              the record rules being replayable as of a past session (W1c), and a cheaper dot that
-              is sometimes wrong is worse than the space. */}
+          {/* The space beside the title belongs to what a session IS rather than what it holds, and
+              it holds two marks: a gold dot means a personal record happened in there (§G16), a
+              hollow ring means the session is saved on this device only. Both are the store's
+              answer and neither is derived here (log.js). */}
+          {hasRecord(summary) && <span className="gym-row-pr" title="a personal record happened here" />}
           {onThisDevice(summary) && <span className="gym-row-ring" title="saved on this device only" />}
           <span className="gym-row-when">{logWhenLabel(summary)}</span>
         </div>
@@ -224,7 +225,12 @@ export function SessionDetail({ id }) {
         return (
           <section className="gym-exercise" key={exerciseId}>
             <div className="gym-exercise-head">
-              <h2 className="gym-exercise-name">{names.get(exerciseId) ?? exerciseId}</h2>
+              {/* THE NAME IS A DOOR (§H). A movement's record is reached by tapping its name
+                  wherever it appears, and a session is the likeliest place to want it: the line
+                  under the thumb says what happened today, and the record says where it stands. */}
+              <h2 className="gym-exercise-name">
+                <a className="gym-movement-door" href={recordHref(exerciseId)}>{names.get(exerciseId) ?? exerciseId}</a>
+              </h2>
               {reading.line && (
                 <span className={reading.entry ? 'gym-exercise-plan' : 'gym-exercise-plan is-added'}>
                   {reading.line}

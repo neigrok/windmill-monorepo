@@ -8,7 +8,8 @@ import WindmillPlatform
 //
 // TAPPING A SET DOES NOTHING YET, so nothing here says it does. §G17 draws `tap to fix` on one row;
 // the correction path is W3 and the copy waits for it — a line promising a move the product cannot
-// make is the same defect as a door onto a screen that does not exist.
+// make is the same defect as a door onto a screen that does not exist. A movement's NAME is a door,
+// and it is the one on this screen: it opens that movement's record (§H).
 //
 // THE FROZEN PLAN SNAPSHOT IS THE ONLY SOURCE for "what the plan said". Never today's routine: a
 // routine renamed or retargeted since must not rewrite what the log says about the past, and that is
@@ -136,6 +137,7 @@ struct SessionScreen: View {
     let summary: SessionSummary
     @ObservedObject var store: TrainingStore
     let coach: CoachDoors
+    let onMovement: (String) -> Void
 
     @Environment(\.gymSkin) private var skin
     @State private var detail: SessionDetail?
@@ -208,9 +210,12 @@ struct SessionScreen: View {
                                         plan: summary.session.plan)) { movement in
                 VStack(alignment: .leading, spacing: WindmillSpace.x3) {
                     HStack(alignment: .firstTextBaseline, spacing: WindmillSpace.x3) {
-                        Text(movement.movement)
-                            .font(WindmillFont.body(16, .bold))
-                            .foregroundStyle(skin.ink)
+                        // The name is a door onto that movement's record (§H) — one tap from "what
+                        // did I do here" to "how has this moved", which is the question a session
+                        // read back raises and cannot answer.
+                        MovementDoor(exerciseId: movement.id, name: movement.movement,
+                                     font: WindmillFont.body(16, .bold), ink: skin.ink,
+                                     open: onMovement)
                         Spacer(minLength: 0)
                         planLine(movement.against)
                     }

@@ -38,6 +38,7 @@ object GymSkin {
     val targetInk = Color(0xFF9A90BE)       // the accent — what the plan said
     val setDone = Color(0xFF9AA859)         // olive-400: logged. settled, not celebrated
     val prInk = Color(0xFFD9B04C)           // gold-400: the only loud state, at most one per session
+    val prSoft = Color(0x26D9B04C)          // the same gold at 15%, the wash a record sits on
     val warmupInk = Color(0xFF8D8896)       // counts toward nothing
     val unsyncedInk = Color(0xFF8D8896)     // saved on this device only
     val alarmInk = Color(0xFFD08268)        // brick-300: a write that failed. nothing else

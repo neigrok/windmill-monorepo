@@ -15,7 +15,8 @@ import React, { useRef, useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { failureReason, gymApi } from './gymApi.js';
 import {
-  entryLabel, fmt, nameOfMovement, NEW_ROUTINE_ID, routineHref, routineMetaLabel, ROUTINES_HREF,
+  entryLabel, fmt, nameOfMovement, NEW_ROUTINE_ID, recordHref, routineHref, routineMetaLabel,
+  ROUTINES_HREF,
 } from './log.js';
 import { mintId } from './mint.js';
 import { Keypad } from './logger/Keypad.jsx';
@@ -334,7 +335,13 @@ function EntryList({ entries, catalog, onMove, onTarget, onRemove }) {
           >
             ⠿
           </span>
-          <span className="gym-entry-name">{nameOfMovement(catalog, entry.exerciseId)}</span>
+          {/* THE NAME IS A DOOR (§H) — and, like the back arrow beside it, a door OUT of the
+              editor: this screen holds a draft and nothing reaches the store until Done, so a
+              lifter who leaves to check where a movement stands comes back to the routine as the
+              store has it. Done is the only thing here that writes, and that is the whole rule. */}
+          <a className="gym-entry-name gym-movement-door" href={recordHref(entry.exerciseId)}>
+            {nameOfMovement(catalog, entry.exerciseId)}
+          </a>
           <button type="button" className="gym-entry-target" onClick={() => onTarget(index)}>
             {entryLabel(entry)}
           </button>

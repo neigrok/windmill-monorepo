@@ -110,6 +110,13 @@ drogon::HttpRequestPtr putRequest(const std::string& path, const Json::Value& bo
   return request;
 }
 
+drogon::HttpRequestPtr patchRequest(const std::string& path, const Json::Value& body,
+                                    const std::string& session = "") {
+  drogon::HttpRequestPtr request = postRequest(path, body, session);
+  request->setMethod(drogon::Patch);
+  return request;
+}
+
 drogon::HttpRequestPtr deleteRequest(const std::string& path, const std::string& session = "") {
   drogon::HttpRequestPtr request = getRequest(path, session);
   request->setMethod(drogon::Delete);
@@ -146,6 +153,12 @@ Json::Value exerciseBody(const std::string& id = "ex_11111111",
   body["name"] = name;
   body["pattern"] = "squat";
   body["equipment"] = "barbell";
+  return body;
+}
+
+Json::Value renameBody(const std::string& name = "Low-bar Squat") {
+  Json::Value body(Json::objectValue);
+  body["name"] = name;
   return body;
 }
 
@@ -227,6 +240,12 @@ TEST(gym_routes_without_a_session_are_401) {
   drogon::HttpResponsePtr revoke =
       send(h.api, &GymApi::revokeShare, deleteRequest("/v1/gym/sessions/ses_11111111/share"),
            "ses_11111111");
+  drogon::HttpResponsePtr rename =
+      send(h.api, &GymApi::renameExercise,
+           patchRequest("/v1/gym/exercises/back-squat", renameBody()), "back-squat");
+  drogon::HttpResponsePtr record =
+      send(h.api, &GymApi::exerciseRecord, getRequest("/v1/gym/exercises/back-squat/record"),
+           "back-squat");
 
   CHECK_EQ(exercises->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(dump(bodyOf(exercises)), std::string(R"({"error":"sign in to open your training log"})"));
@@ -245,6 +264,8 @@ TEST(gym_routes_without_a_session_are_401) {
   CHECK_EQ(exported->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(share->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(revoke->getStatusCode(), drogon::k401Unauthorized);
+  CHECK_EQ(rename->getStatusCode(), drogon::k401Unauthorized);
+  CHECK_EQ(record->getStatusCode(), drogon::k401Unauthorized);
   CHECK(h.repo.sessions.empty());
   CHECK(h.repo.sets.empty());
   CHECK(h.repo.routineRows.empty());
@@ -709,7 +730,8 @@ TEST(gym_list_sessions_wraps_rows_with_both_counts_the_tonnage_and_the_top_sets_
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"sessions":[{"closedItself":false,)"
                        R"("exercises":["Back Squat","Bench Press"],"id":"ses_11111111",)"
-                       R"("setCount":2,"startedAt":1700000000000,"tonnageKg":1460.0,)"
+                       R"("record":false,"setCount":2,"startedAt":1700000000000,)"
+                            R"("tonnageKg":1460.0,)"
                        R"("topE1rm":126.7,"topSet":{"reps":8,"weightKg":100.0},)"
                        R"("workingSetCount":2}]})"));
 }
@@ -734,7 +756,8 @@ TEST(gym_list_sessions_says_which_row_closed_itself_and_omits_an_absent_top_set)
   // over one, and a tonnage of zero — which the screen draws as nothing rather than as `0.0 t`.
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"sessions":[{"closedItself":true,"exercises":["Bench Press"],)"
-                       R"("finishedAt":1700000060000,"id":"ses_11111111","setCount":1,)"
+                       R"("finishedAt":1700000060000,"id":"ses_11111111","record":false,)"
+                            R"("setCount":1,)"
                        R"("startedAt":1700000000000,"tonnageKg":0.0,"workingSetCount":0}]})"));
 }
 
@@ -764,7 +787,8 @@ TEST(gym_list_sessions_carries_the_sessions_estimate_not_its_top_sets) {
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"sessions":[{"closedItself":false,"exercises":["Back Squat"],)"
-                       R"("finishedAt":1700000300000,"id":"ses_11111111","setCount":4,)"
+                       R"("finishedAt":1700000300000,"id":"ses_11111111","record":false,)"
+                            R"("setCount":4,)"
                        R"("startedAt":1700000000000,"tonnageKg":3350.0,"topE1rm":126.7,)"
                        R"("topSet":{"reps":5,"weightKg":100.0},"workingSetCount":4}]})"));
   // The same session read through the other door, on the same wire, saying the same number.
@@ -1567,8 +1591,10 @@ TEST(gym_review_carries_the_three_facts_the_record_and_the_band) {
                        R"("exerciseId":"back-squat","now":{"reps":5,"sets":4,"weightKg":105.0},)"
                        R"("planned":{"reps":5,"sets":5,"weightKg":100.0}}],"routine":"Legs",)"
                        R"("sessionId":"ses_22222222","startedAt":1699000000000},)"
+                       // previousAt is the SESSION that set the mark, not the set inside it: a
+                       // device's clock does not get to date what a lifter reads (domain/Review.h).
                        R"("record":{"exerciseId":"back-squat","kind":"e1rm","previous":120.0,)"
-                       R"("previousAt":1699000060000,"reps":5,"value":122.5,"weightKg":105.0},)"
+                       R"("previousAt":1699000000000,"reps":5,"value":122.5,"weightKg":105.0},)"
                        R"("slight":false,)"
                        R"("stats":{"durationMs":3720000,"topE1rm":122.5,"workingSets":4}})"));
 }
@@ -1660,11 +1686,12 @@ TEST(gym_unknown_session_detail_is_404) {
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"no such session"})"));
 }
 
-// ---- the statistics surface ----------------------------------------------------------------
+// ---- the statistics engine, which no app screen reads any more ------------------------------
 
 // One point per finished session per movement, Epley over it, the standing bests beside it, and the
 // weekly counts — and nothing else. There is no total, no volume, no streak and no percentage in
-// this body, which is the surface's whole design and not an omission to fill in later.
+// this body, which is the engine's whole design and not an omission to fill in later. W1c retired
+// the room this fed; these cases guard the route an agent still reads through `get_stats`.
 TEST(gym_stats_answers_a_line_per_movement_and_the_weeks_around_it) {
   Harness h;
   h.signIn("s-live");
@@ -1673,11 +1700,15 @@ TEST(gym_stats_answers_a_line_per_movement_and_the_weeks_around_it) {
   drogon::HttpResponsePtr response = send(h.api, &GymApi::stats, getRequest("/v1/gym/stats", "s-live"));
 
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  // Every instant in this body is the SESSION's start — the bests, the point they sit on, and the
+  // last-trained line all name one workout. They did not until 2026-08-12: a best was dated by the
+  // set's own clock, so this reply put a PR on 1700000060000 and the point that IS that PR on
+  // 1700000000000, and an evening session crossed midnight between the two (domain/Review.h).
   CHECK_EQ(dump(bodyOf(response)),
-           std::string(R"({"movements":[{"bestE1rm":{"at":1700000060000,"e1rm":104.5,)"
+           std::string(R"({"movements":[{"bestE1rm":{"at":1700000000000,"e1rm":104.5,)"
                        R"("reps":8,"weightKg":82.5},)"
                        R"("exerciseId":"bench-press",)"
-                       R"("heaviest":{"at":1700000060000,"e1rm":104.5,"reps":8,"weightKg":82.5},)"
+                       R"("heaviest":{"at":1700000000000,"e1rm":104.5,"reps":8,"weightKg":82.5},)"
                        R"("lastTrainedAt":1700000000000,)"
                        R"("points":[{"at":1700000000000,"e1rm":104.5,"reps":8,"weightKg":82.5}]}],)"
                        R"("weeks":[{"sessions":1,"startedAt":1699833600000,"workingSets":4}]})"));
@@ -1907,4 +1938,124 @@ TEST(gym_revoke_answers_204_and_a_second_revoke_is_the_same_fact_as_never_having
   CHECK_EQ(dump(bodyOf(again)), std::string(R"({"error":"no such session"})"));
   CHECK(h.repo.shares.empty());
   CHECK_EQ(h.repo.sessions.size(), static_cast<std::size_t>(1));   // the workout itself is untouched
+}
+
+// ---- the rename, and a movement's record ----------------------------------------------------
+
+// The whole reply, byte for byte: the id has NOT moved, which is the promise the rename exists to
+// demonstrate, and only the name did.
+TEST(gym_rename_answers_the_movement_under_its_new_name_and_its_unchanged_id) {
+  Harness h;
+  h.signIn("s-live");
+
+  drogon::HttpResponsePtr response =
+      send(h.api, &GymApi::renameExercise,
+           patchRequest("/v1/gym/exercises/back-squat", renameBody(), "s-live"), "back-squat");
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(response)),
+           std::string(R"({"custom":false,"equipment":"barbell","id":"back-squat",)"
+                       R"("name":"Low-bar Squat","pattern":"squat","stepKg":2.5})"));
+}
+
+// A rename carries ONE field. A body naming anything else would be answered 200 with that field
+// silently ignored, which is a write doing less than it said — so it is a 400 instead.
+TEST(gym_rename_refuses_a_body_that_names_anything_but_the_name) {
+  Harness h;
+  h.signIn("s-live");
+  Json::Value body = renameBody();
+  body["stepKg"] = 5.0;
+
+  drogon::HttpResponsePtr response =
+      send(h.api, &GymApi::renameExercise,
+           patchRequest("/v1/gym/exercises/back-squat", body, "s-live"), "back-squat");
+  drogon::HttpResponsePtr empty =
+      send(h.api, &GymApi::renameExercise,
+           patchRequest("/v1/gym/exercises/back-squat", renameBody(""), "s-live"), "back-squat");
+
+  drogon::HttpResponsePtr blank =
+      send(h.api, &GymApi::renameExercise,
+           patchRequest("/v1/gym/exercises/back-squat", renameBody("   "), "s-live"), "back-squat");
+
+  CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"could not read that name"})"));
+  CHECK_EQ(empty->getStatusCode(), drogon::k400BadRequest);
+  // Blanks are the empty name in disguise, and they used to land: the movement then drew a blank
+  // header, a blank picker row and a blank name on every log row, with no way to find it again.
+  CHECK_EQ(blank->getStatusCode(), drogon::k400BadRequest);
+  CHECK_EQ(dump(bodyOf(blank)), std::string(R"({"error":"could not read that name"})"));
+}
+
+// The path names a movement this account's catalog does not hold — absent and another lifter's
+// private movement are the one fact, exactly as an absent session is.
+TEST(gym_rename_of_a_movement_this_account_cannot_see_is_404) {
+  Harness h;
+  h.signIn("s-live");
+
+  drogon::HttpResponsePtr response =
+      send(h.api, &GymApi::renameExercise,
+           patchRequest("/v1/gym/exercises/no-such", renameBody(), "s-live"), "no-such");
+
+  CHECK_EQ(response->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"no such movement"})"));
+}
+
+// The whole page in one reply, byte for byte: two tiles, the bars, the ladder and the days. The
+// session that set the standing best is not on the ladder — a mark has to be passed.
+TEST(gym_record_answers_the_whole_page_in_one_read) {
+  Harness h;
+  h.signIn("s-live");
+  trainedThrough(h, "s-live", "ses_11111111", 1'700'000'000'000, 4);
+
+  drogon::HttpResponsePtr response =
+      send(h.api, &GymApi::exerciseRecord,
+           getRequest("/v1/gym/exercises/bench-press/record", "s-live"), "bench-press");
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(response)),
+           std::string(R"({"bestE1rm":{"at":1700000000000,"e1rm":104.5,"reps":8,)"
+                       R"("weightKg":82.5},)"
+                       R"("e1rmSeries":[{"at":1700000000000,"e1rm":104.5,"reps":8,)"
+                       R"("weightKg":82.5}],)"
+                       R"("exercise":{"custom":false,"equipment":"barbell","id":"bench-press",)"
+                       R"("name":"Bench Press","pattern":"press","stepKg":2.5},)"
+                       R"("heaviest":{"at":1700000000000,"e1rm":104.5,"reps":8,"weightKg":82.5},)"
+                       R"("recentDays":[{"sessionId":"ses_11111111",)"
+                       R"("sets":[{"completedAt":1700000060000,"exerciseId":"bench-press",)"
+                       R"("id":"set_111111111","kind":"working","note":"","reps":8,)"
+                       R"("setNumber":1,"weightKg":82.5},)"
+                       R"({"completedAt":1700000120000,"exerciseId":"bench-press",)"
+                       R"("id":"set_111111112","kind":"working","note":"","reps":8,)"
+                       R"("setNumber":2,"weightKg":82.5},)"
+                       R"({"completedAt":1700000180000,"exerciseId":"bench-press",)"
+                       R"("id":"set_111111113","kind":"working","note":"","reps":8,)"
+                       R"("setNumber":3,"weightKg":82.5},)"
+                       R"({"completedAt":1700000240000,"exerciseId":"bench-press",)"
+                       R"("id":"set_111111114","kind":"working","note":"","reps":8,)"
+                       R"("setNumber":4,"weightKg":82.5}],)"
+                       R"("startedAt":1700000000000}],)"
+                       R"("routineCount":0,"sessionCount":1})"));
+}
+
+// A movement in the catalog nobody has lifted: two zero counts, and not one empty list beside them
+// — the page says `never logged` rather than drawing a chart frame with no bars in it. A movement
+// no catalog holds is the different answer, and it is the one every absent thing here gets.
+TEST(gym_record_of_a_movement_never_lifted_omits_every_list) {
+  Harness h;
+  h.signIn("s-live");
+
+  drogon::HttpResponsePtr response =
+      send(h.api, &GymApi::exerciseRecord,
+           getRequest("/v1/gym/exercises/back-squat/record", "s-live"), "back-squat");
+  drogon::HttpResponsePtr unknown =
+      send(h.api, &GymApi::exerciseRecord, getRequest("/v1/gym/exercises/no-such/record", "s-live"),
+           "no-such");
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(response)),
+           std::string(R"({"exercise":{"custom":false,"equipment":"barbell","id":"back-squat",)"
+                       R"("name":"Back Squat","pattern":"squat","stepKg":2.5},)"
+                       R"("routineCount":0,"sessionCount":0})"));
+  CHECK_EQ(unknown->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(dump(bodyOf(unknown)), std::string(R"({"error":"no such movement"})"));
 }

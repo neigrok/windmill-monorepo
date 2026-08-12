@@ -96,9 +96,11 @@ test('sessions — the pager sends the instant AND the id, and sends neither whe
   assert.deepEqual(await gymApi.sessions(), []);
   assert.deepEqual(wireOf(calls[0]).path, '/v1/gym/sessions');
 
-  serve(ok({ sessions: [{ id: 'ses_1', startedAt: 1_900_000_000_000, setCount: 5, exercises: ['Back Squat'] }] }));
+  // `record` is always on a row and its false is a real answer — a personal record happened in
+  // there, or one did not (log.js draws the dot off nothing else).
+  serve(ok({ sessions: [{ id: 'ses_1', startedAt: 1_900_000_000_000, setCount: 5, exercises: ['Back Squat'], record: false }] }));
   assert.deepEqual(await gymApi.sessions({ before: 1_900_000_000_000, beforeId: 'ses_1', limit: 20 }), [
-    { id: 'ses_1', startedAt: 1_900_000_000_000, setCount: 5, exercises: ['Back Squat'] },
+    { id: 'ses_1', startedAt: 1_900_000_000_000, setCount: 5, exercises: ['Back Squat'], record: false },
   ]);
   assert.equal(wireOf(calls[0]).path, '/v1/gym/sessions?before=1900000000000&beforeId=ses_1&limit=20');
 
@@ -614,37 +616,101 @@ test('discardSession — the one destructive call, and 204 is read as a status a
   });
 });
 
-// THE STATISTICS SURFACE IS ONE READ. No window parameter and no per-movement route: every number
-// in it is the domain's, and a client that could ask for a different window would be a client that
-// could ask for a different answer.
-test('stats — the whole surface in one read, with the wire’s omissions kept as omissions', async () => {
+// ONE MOVEMENT'S PAGE IS ONE READ (§H). No window parameter and no route per block: every number in
+// it is the domain's, and a client that could ask for a different window would be a client that
+// could ask for a different answer. What the old statistics room read — /v1/gym/stats — is still
+// mounted for the agent behind `get_stats`, and this surface no longer calls it at all.
+test('record — a movement’s page in one read, with the wire’s omissions kept as omissions', async () => {
   const reply = {
-    weeks: [
-      { startedAt: 1_909_000_000_000, sessions: 3, workingSets: 18 },
-      { startedAt: 1_909_604_800_000, sessions: 0, workingSets: 0 },
-    ],
-    movements: [
-      {
-        exerciseId: 'bench-press',
-        lastTrainedAt: 1_909_200_000_000,
-        points: [{ at: 1_909_000_000_000, weightKg: 100, reps: 5, e1rm: 116.7 }],
-        bestE1rm: { weightKg: 100, reps: 5, at: 1_909_000_000_000, e1rm: 116.7 },
-        heaviest: { weightKg: 110, reps: 1, at: 1_908_000_000_000 },
-      },
-      // A chin-up: no estimate on the point, and no e1RM best at all. Both absences are the wire's
-      // shape and neither arrives as a null to be mistaken for a zero.
-      { exerciseId: 'chin-up', lastTrainedAt: 1_909_100_000_000, points: [{ at: 1_909_100_000_000, weightKg: 0, reps: 9 }] },
-    ],
+    exercise: { id: 'back-squat', name: 'Back Squat', pattern: 'squat', equipment: 'barbell', stepKg: 2.5, custom: false },
+    routineCount: 2,
+    sessionCount: 34,
+    bestE1rm: { weightKg: 105, reps: 5, at: 1_909_000_000_000, e1rm: 122.5 },
+    heaviest: { weightKg: 105, reps: 5, at: 1_909_000_000_000, e1rm: 122.5 },
+    e1rmSeries: [{ at: 1_908_000_000_000, weightKg: 102.5, reps: 5, e1rm: 119.6 }],
+    records: [{ at: 1_909_000_000_000, weightKg: 105, reps: 5, e1rm: 122.5 }],
+    recentDays: [{
+      sessionId: 'ses_1',
+      startedAt: 1_909_000_000_000,
+      sets: [{
+        id: 'set_1', exerciseId: 'back-squat', setNumber: 1, weightKg: 105, reps: 5,
+        kind: 'working', note: '', completedAt: 1_909_000_600_000,
+      }],
+    }],
   };
   serve(ok(reply));
-  assert.deepEqual(await gymApi.stats(), reply);
+  assert.deepEqual(await gymApi.record('back-squat'), reply);
   assert.deepEqual(wireOf(calls[0]), {
-    path: '/v1/gym/stats',
+    path: '/v1/gym/exercises/back-squat/record',
     method: 'GET',
     credentials: 'include',
     contentType: 'application/json',
     body: undefined,
   });
+
+  // A chin-up: no estimate anywhere, so the three e1RM-shaped answers are absent TOGETHER, and a
+  // movement nobody has worked answers 200 with two counts and nothing else. Neither absence
+  // arrives as a null to be mistaken for a zero.
+  const bodyweight = {
+    exercise: { id: 'chin-up', name: 'Chin-up', pattern: 'pull', equipment: 'bodyweight', stepKg: 1, custom: false },
+    routineCount: 1,
+    sessionCount: 9,
+    heaviest: { weightKg: 0, reps: 12, at: 1_909_100_000_000 },
+    recentDays: [{
+      sessionId: 'ses_2',
+      startedAt: 1_909_100_000_000,
+      sets: [{
+        id: 'set_2', exerciseId: 'chin-up', setNumber: 1, weightKg: 0, reps: 12,
+        kind: 'working', note: '', completedAt: 1_909_100_600_000,
+      }],
+    }],
+  };
+  serve(ok(bodyweight));
+  assert.deepEqual(await gymApi.record('chin-up'), bodyweight);
+
+  serve(ok({ exercise: { id: 'dip', name: 'Dip', pattern: 'press', equipment: 'bodyweight', stepKg: 1, custom: false }, routineCount: 0, sessionCount: 0 }));
+  assert.deepEqual(await gymApi.record('dip'), {
+    exercise: { id: 'dip', name: 'Dip', pattern: 'press', equipment: 'bodyweight', stepKg: 1, custom: false },
+    routineCount: 0,
+    sessionCount: 0,
+  });
+});
+
+// Absent and another account's private movement are ONE fact on this wire, exactly as they are for
+// a session and a routine, so a null here says nothing about which.
+test('record — a movement that is not this account’s is null, not an error', async () => {
+  serve(refusal(404, 'no such movement'));
+  assert.equal(await gymApi.record('ex_somebody_elses'), null);
+
+  // And an id with a slash or a space in it is one segment of the path, never two.
+  serve(refusal(404, 'no such movement'));
+  await gymApi.record('back squat/2');
+  assert.equal(wireOf(calls[0]).path, '/v1/gym/exercises/back%20squat%2F2/record');
+});
+
+// THE NAME MOVES AND THE IDENTITY DOES NOT. One field goes up, the stored movement comes back under
+// the SAME id — which is the promise the record page exists to make visible, and the reason nothing
+// in the log has to be rewritten when a lifter renames a lift.
+test('renameExercise — one field, and the id it answers with is the id it was given', async () => {
+  const stored = { id: 'back-squat', name: 'High-bar Squat', pattern: 'squat', equipment: 'barbell', stepKg: 2.5, custom: false };
+  serve(ok(stored));
+  assert.deepEqual(await gymApi.renameExercise('back-squat', 'High-bar Squat'), stored);
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/gym/exercises/back-squat',
+    method: 'PATCH',
+    credentials: 'include',
+    contentType: 'application/json',
+    body: '{"name":"High-bar Squat"}',
+  });
+
+  // A name the store will not take is a refusal it READ — terminal, so the repair is a different
+  // name and never the same one again when the signal comes back.
+  serve(refusal(400, 'could not read that name'));
+  const refused = await gymApi.renameExercise('back-squat', '').catch((error) => error);
+  assert.equal(refused.status, 400);
+  assert.equal(refused.terminal, true);
+  assert.equal(refused.retryable, false);
+  assert.equal(failureReason(refused), 'the log wouldn’t take it as written');
 });
 
 // The mint is idempotent ON THE SESSION — there is no id for a client to send, so tapping Share

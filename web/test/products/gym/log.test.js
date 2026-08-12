@@ -12,13 +12,13 @@ import assert from 'node:assert/strict';
 
 import {
   agoLabel, BACKFILL_HREF, clockOf, CLOSED_ITSELF_NOTE, closedOnItsOwn, dayLabel, durLabel,
-  e1rmLabel, entryLabel, finishHref, finishIdOf, firstSessionLabel, fmt, groupByExercise,
-  isFinished, isFirstSession, loadedLine, logWhenLabel, nameOfMovement, NEW_ROUTINE_ID, NO_ROUTINE,
-  NOT_IN_PLAN, onThisDevice, planFrozenLabel, planOf, planReadingOf, routineHref, routineIdOf,
-  routineMetaLabel, routineNameOf, ROUTINES_HREF, screenOf, sessionDetailMeta, sessionHref,
-  sessionIdOf, sessionMetaLabel, setCountLabel, setLoadLabel, setNoteOf, sharedHref, sharedTokenOf,
-  STATS_HREF, timeLabel, tonnageLabel, tonnageOf, topSetLabel, topSetOf, utcDayLabel, weekdayName,
-  weeksOf, workingLabel, workingSetsOf,
+  e1rmLabel, entryLabel, finishHref, finishIdOf, firstSessionLabel, fmt, groupByExercise, hasRecord,
+  isFinished, isFirstSession, loadedLine, logWhenLabel, MOVEMENTS_HREF, movementIdOf, nameOfMovement,
+  NEW_ROUTINE_ID, NO_ROUTINE, NOT_IN_PLAN, onThisDevice, planFrozenLabel, planOf, planReadingOf,
+  recordHref, routineHref, routineIdOf, routineMetaLabel, routineNameOf, ROUTINES_HREF, screenOf,
+  sessionDetailMeta, sessionHref, sessionIdOf, sessionMetaLabel, setCountLabel, setLoadLabel,
+  setNoteOf, sharedHref, sharedTokenOf, shortDayLabel, timeLabel, tonnageLabel, tonnageOf,
+  topSetLabel, topSetOf, weekdayName, weeksOf, workingLabel, workingSetsOf,
 } from '../../../src/products/gym/log.js';
 
 test('sessionIdOf — a session hash yields its id, everything else yields nothing', () => {
@@ -156,9 +156,14 @@ test('screenOf — one grammar decides which of the nine rooms a hash names', ()
   assert.equal(screenOf('#/gym/routines?new=1'), 'routines');
   assert.equal(screenOf('#/gym/routines/rt_9f2c'), 'routine');
   assert.equal(screenOf(routineHref(NEW_ROUTINE_ID)), 'routine');
-  assert.equal(screenOf(STATS_HREF), 'stats');
-  assert.equal(screenOf('#/gym/stats'), 'stats');
-  assert.equal(screenOf('#/gym/stats?movement=bench-press'), 'stats');
+  assert.equal(screenOf(MOVEMENTS_HREF), 'record');
+  assert.equal(screenOf(recordHref('back-squat')), 'record');
+  // THE RETIRED TAB'S URL RESOLVES HERE, and this is the assertion that used to say '#/gym/stats'
+  // was the statistics room. §H retires that room — there is no dashboard in this product — and
+  // what replaces it is one movement's page, so a bookmark somebody kept lands one tap from the
+  // number they opened it for rather than on Today with no explanation.
+  assert.equal(screenOf('#/gym/stats'), 'record');
+  assert.equal(screenOf('#/gym/stats?movement=bench-press'), 'record');
   assert.equal(screenOf(''), 'today');
   // A hash this build does not know is a link from a build that did, and Today is where a lifter
   // can get anywhere from — never a blank screen with a working URL in the bar.
@@ -203,6 +208,26 @@ test('finishIdOf — the end of a session is a place, so a reload lands back on 
   assert.equal(finishIdOf('#/gym/finish/'), null);
   assert.equal(finishIdOf(''), null);
   assert.equal(finishIdOf(undefined), null);
+});
+
+// A MOVEMENT'S RECORD IS A PLACE (§H), which is what makes its name a link wherever the name is
+// drawn — a session's exercise header, a routine's row, the picker. The id in the URL is the
+// catalog's own, and both shapes it comes in have to survive the parse: a slug for a movement that
+// ships with the account, 'ex_<hex>' for one a lifter minted. A hyphen is an ordinary character in
+// the first, so a parse that stopped at one would open the record of a movement called 'back'.
+test('movementIdOf — the record link a name writes is the link the record reads back', () => {
+  assert.equal(recordHref('back-squat'), '#/gym/movement/back-squat');
+  assert.equal(movementIdOf(recordHref('back-squat')), 'back-squat');
+  assert.equal(movementIdOf(recordHref('ex_31ab77c0')), 'ex_31ab77c0');
+  // No movement named is the picker asking which one, and it is where the retired statistics URL
+  // lands — so this is a hash that resolves without an id rather than one that fails to parse.
+  assert.equal(MOVEMENTS_HREF, '#/gym/movement');
+  assert.equal(movementIdOf(MOVEMENTS_HREF), null);
+  assert.equal(movementIdOf('#/gym/movement/'), null);
+  assert.equal(movementIdOf('#/gym/stats'), null);
+  assert.equal(movementIdOf(sessionHref('ses_9f3a1c22')), null);
+  assert.equal(movementIdOf(''), null);
+  assert.equal(movementIdOf(undefined), null);
 });
 
 // The one id a mint can never produce, so the blank editor survives a reload without asking the
@@ -372,29 +397,18 @@ test('dayLabel, timeLabel and agoLabel — the labels a lifter judges relevance 
   assert.equal(agoLabel(wednesday, wednesday - 86_400_000), 'today');
 });
 
-// TWO SPELLINGS, ONE VOCABULARY. Every date in gym but one is an instant a lifter stood in and is
-// read in the zone they were standing in. The one exception is a statistics week: it arrives as the
-// start of a `date_trunc('week', … AT TIME ZONE 'UTC')` bucket, which is a UTC Monday midnight and
-// no moment anybody trained in — read locally it is the Sunday evening before, for everybody west
-// of Greenwich. Both spellings come off the same tables, which is why they live side by side.
-test('utcDayLabel — a week bucket is named by its UTC day, wherever it is read from', () => {
-  const bucket = Date.UTC(2026, 6, 6);
-  const zone = process.env.TZ;
-  try {
-    for (const where of ['America/Los_Angeles', 'UTC', 'Pacific/Auckland']) {
-      process.env.TZ = where;
-      assert.equal(utcDayLabel(bucket), 'Mon 6 Jul');
-      assert.equal(utcDayLabel(Date.UTC(2026, 0, 4, 23, 59)), 'Sun 4 Jan');
-    }
-    // And the local spelling stays genuinely local — this is the disagreement, and it is the reason
-    // the statistics weeks may not read it.
-    process.env.TZ = 'America/Los_Angeles';
-    assert.equal(dayLabel(bucket), 'Sun 5 Jul');
-    process.env.TZ = 'Pacific/Auckland';
-    assert.equal(dayLabel(bucket), 'Mon 6 Jul');
-  } finally {
-    if (zone == null) delete process.env.TZ; else process.env.TZ = zone;
-  }
+// ONE VOCABULARY, TWO LENGTHS, AND EVERY DATE IN IT IS LOCAL. There used to be a UTC spelling here
+// as well, for the one instant on the statistics surface nobody trained in — the start of a
+// `date_trunc('week', … AT TIME ZONE 'UTC')` bucket, a Monday midnight that reads as Sunday evening
+// west of Greenwich. That surface is retired with §H's record page, so the UTC reading has no
+// producer left and went with it; what the record page needs instead is the SHORT one, because a
+// column of twelve weekday prefixes is noise where a column of twelve dates is a chart's axis.
+test('shortDayLabel — a day named by its date alone, in the zone the session happened in', () => {
+  const wednesday = new Date(2026, 6, 22, 18, 12).getTime();
+  assert.equal(shortDayLabel(wednesday), '22 Jul');
+  assert.equal(dayLabel(wednesday), 'Wed 22 Jul');
+  assert.equal(shortDayLabel(new Date(2026, 0, 1, 0, 0).getTime()), '1 Jan');
+  assert.equal(shortDayLabel(new Date(2026, 11, 31, 23, 59).getTime()), '31 Dec');
 });
 
 // "Yesterday" is a claim about the CALENDAR. Rounding elapsed hours told a lifter who trained at
@@ -528,6 +542,17 @@ test('onThisDevice — only a session that says so is saved on this device only'
   assert.equal(onThisDevice({ id: 'ses_1', onThisDevice: false }), false);
   assert.equal(onThisDevice({ id: 'ses_1' }), false);
   assert.equal(onThisDevice(null), false);
+});
+
+// THE GOLD DOT IS THE STORE'S ANSWER, and it is always sent — so a row that does not carry the word
+// wears nothing rather than claiming the session earned nothing, which is the difference between a
+// dot this surface never draws wrongly and a dot it guesses at. The field is `false` on ~190 rows
+// in 200 and that false is a real answer, not an omission.
+test('hasRecord — only a session the store says holds a record wears the dot', () => {
+  assert.equal(hasRecord({ id: 'ses_1', record: true }), true);
+  assert.equal(hasRecord({ id: 'ses_1', record: false }), false);
+  assert.equal(hasRecord({ id: 'ses_1' }), false);
+  assert.equal(hasRecord(null), false);
 });
 
 // WEEKS ARE A FOLD OVER THE PAGE IN HAND. They start Monday, in the lifter's own zone, and the

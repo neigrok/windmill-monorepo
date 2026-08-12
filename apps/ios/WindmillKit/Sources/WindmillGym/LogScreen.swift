@@ -13,10 +13,11 @@ import WindmillPlatform
 // has answered for. Not "every week but the last on screen" — this device's own unclaimed sessions
 // are merged into the list at any age and one of them can sit below the served page.
 //
-// NO GOLD DOT ON A ROW YET. §G16 draws one for "a record happened in there", and deciding that needs
-// the three record rules replayed against history as of that session — the machinery being built
-// with the movement record (W1c). The space is left; a cheaper dot that is sometimes wrong would be
-// the loudest thing in the product telling a lie.
+// THE GOLD DOT MEANS A RECORD HAPPENED IN THERE (§G16), and the log does not decide that — the
+// domain does, against the log AS IT IS NOW rather than frozen at the finish, so W3's corrections
+// will move records and the dot will move with them. A row this device is the only home for never
+// wears one: the three record rules are claims against a history the device does not hold, and no
+// dot there is an omission rather than the assertion a wrong dot would be.
 
 // The rows of the log, grouped into the weeks they were lived in. Pure: it takes the summaries the
 // store is holding and answers what is on screen, so the fold, the tonnage rule and the four facts
@@ -33,12 +34,14 @@ enum LogWeeks {
         let tonnage: String?
         let e1rm: String?
         let deviceOnly: Bool
+        let record: Bool
 
         var id: String { summary.id }
 
         init(_ summary: SessionSummary, deviceOnly: Bool, now: Int64) {
             self.summary = summary
             self.deviceOnly = deviceOnly
+            record = summary.record
             title = Readout.routine(of: summary.session)
             when = Self.when(summary.session.startedAtMs, now: now)
             working = summary.workingSetCount.map(Readout.workingCount)
@@ -122,9 +125,9 @@ enum LogWeeks {
         return "\(Readout.sessionCount(sessions)) · \(weeks == 1 ? "1 week" : "\(weeks) weeks") loaded"
     }
 
-    // Monday, in the zone the lifter trained in. The statistics window buckets its weeks on a UTC
-    // Monday because the SERVER cut them there; this fold is over a page the client already holds,
-    // and a week a session belongs to is the week that person lived it in.
+    // Monday, in the zone the lifter trained in. This fold is over a page the client already holds,
+    // and a week a session belongs to is the week that person lived it in — nothing here is a UTC
+    // bucket, because nothing here was cut by the server.
     static func weekStart(of ms: Int64) -> Int64 {
         var calendar = Calendar.current
         calendar.firstWeekday = 2
@@ -219,6 +222,15 @@ struct LogScreen: View {
                         .font(WindmillFont.body(16, .bold))
                         .foregroundStyle(skin.ink)
                         .lineLimit(1)
+                    // A filled gold dot: a personal record happened in this workout. It is the one
+                    // loud mark in the log and there are ~10 of them in 200 rows — the finish screen
+                    // said it once, and this is where it stays sayable.
+                    if row.record {
+                        Circle()
+                            .fill(skin.prInk)
+                            .frame(width: 8, height: 8)
+                            .accessibilityLabel("a personal record happened here")
+                    }
                     // A hollow ring, and on this surface it is REAL: the room is anonymous-first, so
                     // a session lives on the device until an account claims it, and the lifter it
                     // belongs to deserves to know which of these rows only this phone has.

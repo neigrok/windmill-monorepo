@@ -27,10 +27,12 @@ RoutineEntry::RoutineEntry(int position, ExerciseId exercise, int targetSets,
 
 Routine::Routine(RoutineId id, UserId user, std::string name, int position,
                  std::vector<RoutineEntry> entries, std::optional<std::uint64_t> lastTrainedAtMs)
-    : id(std::move(id)), user(std::move(user)), name(std::move(name)), position(position),
-      entries(std::move(entries)), lastTrainedAtMs(lastTrainedAtMs) {
+    : id(std::move(id)), user(std::move(user)), name(trimmedName(std::move(name))),
+      position(position), entries(std::move(entries)), lastTrainedAtMs(lastTrainedAtMs) {
   if (!wellFormedId(this->id.str())) throw InvalidTraining("bad routine id");
   if (this->user.empty()) throw InvalidTraining("a routine belongs to an account");
+  // Trimmed like a movement's, by the one rule both display names go through — a routine called
+  // "   " is a blank line in the program and a blank subtitle on every session it froze.
   if (this->name.empty()) throw InvalidTraining("a routine needs a name");
   if (this->name.size() > kMaxNameLength) throw InvalidTraining("routine name too long");
   // Postgres text stops at a NUL, so the name would be stored as its own head — the rule the set

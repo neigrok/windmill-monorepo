@@ -3,6 +3,7 @@ package works.windmill.gym.net
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.ExerciseWrite
 import works.windmill.gym.domain.LastTime
+import works.windmill.gym.domain.MovementRecord
 import works.windmill.gym.domain.Review
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineWrite
@@ -13,12 +14,16 @@ import works.windmill.gym.domain.SessionStart
 import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TrainingSet
-import works.windmill.gym.domain.TrainingStatistics
 
 // What the room needs of the network, and nothing more. TrainingStore depends on this rather than
 // on the HTTP client so the offline and refusal paths — the two that decide whether a set somebody
 // lifted survives — can be driven in a test without a server, a socket, or a stubbed transport.
-// The eighteen owner-scoped doors of /v1/gym; the HTTP twin (GymHttp) lives beside this file.
+// The owner-scoped doors of /v1/gym this room opens; the HTTP twin (GymHttp) lives beside this file.
+//
+// `GET /v1/gym/stats` is deliberately NOT here, and its absence is a UI deletion rather than an
+// engine one: the statistics room was retired in W1c the wave the record page replaced it, and the
+// route and the `get_stats` tool both stay — an agent asking "how has my squat moved" is the
+// product's own thesis. Nothing on this phone draws that answer any more, so nothing asks for it.
 interface TrainingSyncing {
     suspend fun exercises(): List<Exercise>
     suspend fun createExercise(write: ExerciseWrite): Exercise
@@ -67,7 +72,16 @@ interface TrainingSyncing {
 
     suspend fun deleteRoutine(id: String)
 
-    suspend fun statistics(): TrainingStatistics
+    // ONE MOVEMENT READ WHOLE — the page §H is, and the only long-window read this phone makes.
+    // Absent and another account's private movement are the same 404, one fact, so the absence
+    // folds into the type exactly as a session's does.
+    suspend fun record(exerciseId: String): MovementRecord?
+
+    // The rename. A movement the caller created changes in place; a seeded one gets a per-account
+    // display override — either way the ID IS UNCHANGED, which is why every set, routine line and
+    // frozen plan still points at the same movement afterwards. That is the whole promise the page
+    // this is offered on exists to make visible.
+    suspend fun renameExercise(exerciseId: String, name: String): Exercise
 
     // Idempotent on the SESSION and not on a client-minted id — there is no id for a client to
     // mint here, because the token is unguessable and therefore the server's to make. Tapping

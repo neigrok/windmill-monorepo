@@ -120,10 +120,6 @@ public final class TrainingStore: ObservableObject {
         self.undoWindowMs = undoWindowMs
         self.retryAfter = retryAfter
         self.sync = sync
-        // The names before the first frame. A movement is a stable id everywhere except on screen,
-        // so a room that waited for the catalog read would draw `bench-press` at 28pt in the
-        // meantime — in a basement, for a whole session.
-        catalog = deviceCatalog.movements
     }
 
     // How a write reports itself: mono, lower-case, never a toast and never an alert (the journal's
@@ -226,6 +222,14 @@ public final class TrainingStore: ObservableObject {
     public func connect(to account: Account) async {
         seat += 1
         gym = sync(account)
+        // THE NAMES BEFORE THE FIRST FRAME, and they are read here rather than at init because a
+        // name is what ONE ACCOUNT calls a movement: a seed renamed on the record page is a
+        // per-account override, and a movement somebody created is theirs. The device's own
+        // unclaimed movements fold in under every seat — they are this device's, not the log's — and
+        // everything else opens empty under a seat that did not write it. Whatever survives is on
+        // screen in the same synchronous breath as the live session below, so a room in a basement
+        // never waits on a round trip to stop drawing `bench-press` at 28pt.
+        catalog = merged(deviceCatalog.open(under: account.user?.id))
         // Whoever is signed in now brings their own history: every cached last time was computed
         // against the previous log (or none), so the answers go and the movement in hand asks
         // again once the connect has settled — a shelf-computed "first time" surviving a sign-in
@@ -645,19 +649,85 @@ public final class TrainingStore: ObservableObject {
         }
     }
 
-    // The statistics read. Nothing is held: the store keeps no copy to invalidate, so there is no
-    // cache key here to get wrong — the banked lesson from Lift's progress tab, whose cache was
+    // ONE MOVEMENT'S RECORD (§H). Nothing is held: the store keeps no copy to invalidate, so there
+    // is no cache key here to get wrong — the banked lesson from Lift's progress tab, whose cache was
     // keyed on the number of sessions and went stale the day one was edited rather than added.
+    //
+    // THE DEVICE ANSWERS FOR WHAT IT IS STILL THE ONLY HOME OF, and that is two cases and not one:
+    // nobody signed in, and a movement whose CREATE is still owed. The log has never heard of that
+    // id — so a served read would 404 over a movement that is on screen, in the catalog, with sets
+    // under it — and no set naming it can have landed either, because the claim replays a create
+    // before any session that names it. The device's answer is therefore the whole of it.
+    //
+    // What the device can honestly state is the counts, the heaviest set and the recent days, and no
+    // estimate anywhere. WHO ANSWERED rides back with the answer, because the same absence means two
+    // different things: this device computes no Epley for any movement, and the page may not report
+    // that as a fact about the bar. The catalog is a display layer and the sets are the record, so a
+    // movement the catalog has not answered for still has a history here — the slug stands in for
+    // the name exactly as it does in every other line the room draws.
     //
     // It answers with a REASON and not with nil, for the reason every write in this store does: a
     // log that refused with a sentence is not a log that went quiet, and a screen collapsing the two
     // points the lifter at their signal when the answer was on the server.
-    public func statistics() async -> Result<TrainingStatistics, WriteFailure> {
-        guard let gym else { return .success(localLog.statistics()) }
+    public func record(of exerciseId: String) async -> Result<Record.Answer, WriteFailure> {
+        let named = catalog.first { $0.id == exerciseId } ?? Exercise(id: exerciseId, name: exerciseId)
+        guard let gym, !localLog.exercises.contains(where: { $0.id == exerciseId }) else {
+            return .success(Record.Answer(localLog.record(of: named), from: .thisDevice))
+        }
         do {
-            return .success(try await gym.statistics())
+            // Absent and another account's are the same 404, folded into the type by GymApi — so
+            // there is no sentence from the log to repeat, and this is the plain fact instead.
+            guard let record = try await gym.record(of: exerciseId) else {
+                return .failure(.refused("that movement is no longer in your catalog"))
+            }
+            return .success(Record.Answer(record, from: .theLog))
         } catch {
             return .failure(WriteFailure(error))
+        }
+    }
+
+    // Whether this device is still the only home for a session that holds this movement — the
+    // caveat the record page owes when the LOG answered it, because a served record cannot count a
+    // session the log has never been told about. Asked per movement, never off `deviceOnly`: that is
+    // a set of session ids, and a caveat printed on every movement's page is noise on all of them.
+    public func unclaimed(_ exerciseId: String) -> Bool {
+        localLog.holdsSets(of: exerciseId)
+    }
+
+    // RENAME — what this account calls a movement, and nothing else about it. The id never moves, so
+    // every set, routine entry and frozen plan snapshot still points at the same movement: that is
+    // the promise §H's page exists to make visible, and it is why a rename cannot rewrite the past.
+    //
+    // A movement still on this device's own shelf is renamed THERE, whoever is signed in — the shelf
+    // entry is the pending create, so the new name is simply the name the log first hears, and a PATCH
+    // would 404 against a movement the log has never held. Signed out, anything else is the account's
+    // to keep: the catalog is global and a device cannot hold a per-account name for a row it does
+    // not own.
+    public func rename(_ exerciseId: String, to name: String) async -> WriteFailure? {
+        if localLog.exercises.contains(where: { $0.id == exerciseId }) {
+            localLog.rename(exercise: exerciseId, to: name)
+            localLog.flush()
+            // The catalog is what every screen reads a name out of, so a rename that reached only
+            // the shelf would leave the logger, the routines and the log rows spelling the old one
+            // until the next cold launch.
+            catalog = catalog.map {
+                guard $0.id == exerciseId else { return $0 }
+                return Exercise(id: $0.id, name: name, pattern: $0.pattern, equipment: $0.equipment,
+                                stepKg: $0.stepKg, custom: $0.custom)
+            }
+            deviceCatalog.hold(catalog)
+            return nil
+        }
+        guard let gym else { return .refused("renaming this movement needs your account — sign in first") }
+        do {
+            guard let saved = try await gym.renameExercise(exerciseId, to: name) else {
+                return .refused("that movement is no longer in your catalog")
+            }
+            catalog = catalog.map { $0.id == saved.id ? saved : $0 }
+            deviceCatalog.hold(catalog)
+            return nil
+        } catch {
+            return WriteFailure(error)
         }
     }
 

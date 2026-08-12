@@ -99,6 +99,11 @@ TEST(routine_construction_guards_the_id_the_name_and_the_position) {
   CHECK(rejects([] { Routine{RoutineId{"rt_001"}, wm::UserId{"u1"}, "Push A", 0, {bench(1)}}; }));
   CHECK(rejects([] { Routine{RoutineId{"rt_00000001"}, wm::UserId{""}, "Push A", 0, {bench(1)}}; }));
   CHECK(rejects([] { Routine{RoutineId{"rt_00000001"}, wm::UserId{"u1"}, "", 0, {bench(1)}}; }));
+  // Blanks are the empty name in disguise, and both display names in this module refuse it by the
+  // one rule (trimmedName) rather than by two that could drift.
+  CHECK(rejects([] { Routine{RoutineId{"rt_00000001"}, wm::UserId{"u1"}, " \t ", 0, {bench(1)}}; }));
+  CHECK_EQ(Routine(RoutineId{"rt_00000001"}, wm::UserId{"u1"}, "  Push A  ", 0, {bench(1)}).name,
+           std::string("Push A"));
   CHECK(rejects([] {
     Routine{RoutineId{"rt_00000001"}, wm::UserId{"u1"}, std::string(81, 'x'), 0, {bench(1)}};
   }));

@@ -41,6 +41,19 @@ Json::Value bestJson(const Best& best) {
   if (best.e1rm) body["e1rm"] = *best.e1rm;
   return body;
 }
+
+// A bar of the chart and a line of the record list are the same four numbers, written by one hand
+// for the reason the comparison's two sides are: they are the same fact asked twice, and a client
+// draws both from one line of code. `e1rm` is never optional here — a point with no honest estimate
+// is not in either list at all.
+Json::Value pointJson(const RecordPoint& point) {
+  Json::Value body(Json::objectValue);
+  body["at"] = Json::Value::UInt64(point.atMs);
+  body["weightKg"] = point.weightKg;
+  body["reps"] = point.reps;
+  body["e1rm"] = point.e1rm;
+  return body;
+}
 }
 
 SessionStart parseSessionStart(const Json::Value& body) {
@@ -182,6 +195,19 @@ ExerciseWrite parseExerciseWrite(const Json::Value& body) {
   return write;
 }
 
+std::string parseExerciseRename(const Json::Value& body) {
+  if (!body.isObject()) throw InvalidTraining("a rename must be a json object");
+  // Strict about what it does NOT carry, the rule `additionalProperties: false` already publishes
+  // on the tool surface: a body naming `pattern` or `stepKg` would be answered 200 with neither
+  // changed, which is a write silently doing less than it said. Only the name is renamable, and a
+  // seed's pattern and step are the catalog's rather than any one account's.
+  for (const std::string& field : body.getMemberNames())
+    if (field != "name")
+      throw InvalidTraining("unknown rename field \"" + field + "\". A rename takes: name.");
+  if (!body["name"].isString()) throw InvalidTraining("name must be a string");
+  return body["name"].asString();
+}
+
 Json::Value toJson(const Session& session) {
   Json::Value body(Json::objectValue);
   body["id"] = session.id.str();
@@ -245,6 +271,9 @@ Json::Value toJson(const LogRow& row) {
     body["topSet"] = top;
   }
   if (row.topE1rm) body["topE1rm"] = *row.topE1rm;
+  // Always present, like closedItself and for the same reason: the gold dot is a fact about every
+  // row rather than an optional a client tests for, and `false` is the answer ~190 rows in 200 get.
+  body["record"] = row.record;
   body["closedItself"] = row.summary.closedItself;
   return body;
 }
@@ -363,7 +392,9 @@ Json::Value toJson(const Review& review) {
   return body;
 }
 
-// The statistics surface, one way. Every absence is a sentence: no `e1rm` on a point or a best
+// The statistics ENGINE, one way — there has been no statistics surface since W1c retired the room
+// (domain/Statistics.h says what stayed and why). Every absence is a sentence: no `e1rm` on a point
+// or a best
 // means that load has no honest one-rep estimate (a chin-up, a band-assisted pull-up), and an
 // absent `bestE1rm` means no set of that movement ever had one. `weeks` is contiguous — a week with
 // no training is present and zero — because the gap is the fact, and a client filling it in would
@@ -402,6 +433,43 @@ Json::Value toJson(const Statistics& statistics) {
   Json::Value body(Json::objectValue);
   body["weeks"] = weeks;
   body["movements"] = movements;
+  return body;
+}
+
+// A movement's record, one way. Every list here is OMITTED when it is empty rather than sent as an
+// empty array, and each omission is the same sentence: there is nothing true to draw. A movement
+// never lifted carries no series, no records and no days — its page says `never logged` off the two
+// counts, which are always present because zero is a real answer there. A movement whose every set
+// was unloaded (a chin-up at 0 kg, a band-assisted pull-up at −20) carries no `bestE1rm` and no
+// series either, because Epley is undefined at and below zero and a dash in a chart frame is worse
+// than no chart: it still draws its heaviest tile and its sets.
+Json::Value toJson(const MovementRecord& record) {
+  Json::Value body(Json::objectValue);
+  body["exercise"] = toJson(record.exercise);
+  body["routineCount"] = record.routines;
+  body["sessionCount"] = record.sessions;
+  if (record.bestE1rm) body["bestE1rm"] = bestJson(*record.bestE1rm);
+  if (record.heaviest) body["heaviest"] = bestJson(*record.heaviest);
+  if (!record.series.empty()) {
+    Json::Value series(Json::arrayValue);
+    for (const RecordPoint& point : record.series) series.append(pointJson(point));
+    body["e1rmSeries"] = series;
+  }
+  if (!record.records.empty()) {
+    Json::Value records(Json::arrayValue);
+    for (const RecordPoint& point : record.records) records.append(pointJson(point));
+    body["records"] = records;
+  }
+  if (record.recent.empty()) return body;
+  Json::Value days(Json::arrayValue);
+  for (const MovementDay& day : record.recent) {
+    Json::Value line(Json::objectValue);
+    line["sessionId"] = day.session.str();
+    line["startedAt"] = Json::Value::UInt64(day.startedAtMs);
+    line["sets"] = toJson(day.sets);
+    days.append(line);
+  }
+  body["recentDays"] = days;
   return body;
 }
 

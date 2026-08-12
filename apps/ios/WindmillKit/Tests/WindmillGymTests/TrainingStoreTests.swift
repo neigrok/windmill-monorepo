@@ -425,21 +425,34 @@ final class TrainingStoreTests: XCTestCase {
 
     // A movement is a stable id everywhere except on screen. Held only in memory, a cold launch in a
     // basement drew `bench-press` at 28pt where `Bench Press` belongs — for the whole session.
-    func testTheMovementNamesAreHeldOnTheDeviceAndAreThereBeforeTheFirstFrame() async {
+    //
+    // AND THE HELD NAMES BELONG TO A SEAT. What an account CALLS a movement is its own: renaming one
+    // of the 64 global seeds writes a per-account display override (§H), so the file is one
+    // account's names and not everybody's. A relaunch under the same account draws them back before
+    // any read; every other seat — the anonymous room included, where no catalog read ever comes to
+    // replace them — opens on the slug rather than on somebody else's private name for a movement
+    // they share.
+    func testTheMovementNamesAreHeldPerSeatAndAreThereBeforeTheFirstFrame() async {
         let server = FakeTraining()
         server.catalog = [Exercise(id: "bench-press", name: "Bench Press"),
                           Exercise(id: "back-squat", name: "Back Squat")]
         let store = await liveStore(server)
         XCTAssertEqual(store.catalog.map(\.name), ["Bench Press", "Back Squat"])
 
-        // A cold launch with no signal: nothing is read, and the names are already there.
-        let relaunched = makeStore(sync: nil)
+        // A cold launch with no signal under the same account: no read answers, and the names are
+        // there anyway — set in the same synchronous breath as the live session below them.
+        server.online = false
+        let relaunched = makeStore(sync: server, retryAfter: .seconds(600))
+        await relaunched.connect(to: account(signedIn: true))
         XCTAssertEqual(relaunched.catalog.map(\.id), ["bench-press", "back-squat"])
         XCTAssertEqual(Readout.movement("bench-press", in: relaunched.catalog), "Bench Press")
 
-        await relaunched.connect(to: account(signedIn: false))
-        XCTAssertEqual(relaunched.catalog.map(\.name), ["Bench Press", "Back Squat"],
-                       "signing out does not forget what a movement is called")
+        // Nobody's seat is a seat: the anonymous room opens on the slug rather than on the names an
+        // account read, which is the worst this file was ever allowed to cost.
+        let anonymous = makeStore(sync: nil)
+        await anonymous.connect(to: account(signedIn: false))
+        XCTAssertEqual(anonymous.catalog, [])
+        XCTAssertEqual(Readout.movement("bench-press", in: anonymous.catalog), "bench-press")
     }
 
     // ── the foot of the log ────────────────────────────────────────────────────────────────────
@@ -542,6 +555,139 @@ final class TrainingStoreTests: XCTestCase {
 
         XCTAssertEqual(store.logFoot, .bottom)
         XCTAssertEqual(store.servedOldestMs, 100_000, "the second page moved the floor to ses_0")
+    }
+
+    // MARK: - a movement's record, and the name it is read under
+
+    // A movement the log no longer holds and a log that went quiet are two different facts, and the
+    // record page draws a different sentence for each: collapsing them points a lifter at their
+    // signal when the answer was on the server.
+    func testTheRecordReadTellsAMissingMovementApartFromASilentLog() async {
+        let server = FakeTraining()
+        server.records["back-squat"] = MovementRecord(exercise: Exercise(id: "back-squat",
+                                                                        name: "Back Squat"),
+                                                      sessionCount: 34)
+        let store = makeStore(sync: server)
+        await store.connect(to: account(signedIn: true))
+
+        guard case .success(let found) = await store.record(of: "back-squat") else {
+            return XCTFail("the log holds this one")
+        }
+        XCTAssertEqual(found.record.sessionCount, 34)
+        XCTAssertEqual(found.source, .theLog, "and the LOG answered, so the estimates are its to give")
+
+        guard case .failure(let absent) = await store.record(of: "front-squat") else {
+            return XCTFail("a movement the log does not hold is not a record")
+        }
+        XCTAssertEqual(absent, .refused("that movement is no longer in your catalog"))
+
+        server.online = false
+        guard case .failure(let quiet) = await store.record(of: "back-squat") else {
+            return XCTFail("an unreachable log answers with nothing")
+        }
+        XCTAssertEqual(quiet, .noAnswer)
+    }
+
+    // THE ID NEVER MOVES. That is the whole promise the record page exists to make visible: rename
+    // the movement and every set, routine entry and frozen plan snapshot still points at it — so
+    // what changes here is the catalog's name and nothing else, on the log and on the device.
+    func testARenameMovesTheNameAndNeverTheId() async {
+        let server = FakeTraining()
+        server.catalog = [Exercise(id: "back-squat", name: "Back Squat", pattern: "squat",
+                                   equipment: "barbell", stepKg: 2.5)]
+        let store = makeStore(sync: server)
+        await store.connect(to: account(signedIn: true))
+
+        let renamed = await store.rename("back-squat", to: "Low-bar Squat")
+        XCTAssertNil(renamed)
+        XCTAssertEqual(store.catalog, [Exercise(id: "back-squat", name: "Low-bar Squat",
+                                                pattern: "squat", equipment: "barbell", stepKg: 2.5)])
+        XCTAssertEqual(DeviceCatalog(url: catalogURL).open(under: "u1").map(\.name), ["Low-bar Squat"],
+                       "and the next cold launch draws the new name rather than the slug")
+
+        // AND ONLY FOR THIS SEAT. A rename over a seeded row is a per-account display override, so
+        // the held names are held under the account that read them: another lifter's launch, and the
+        // anonymous room — where no catalog read ever comes to replace them — open EMPTY rather than
+        // spelling somebody's private name for a movement everybody shares.
+        XCTAssertEqual(DeviceCatalog(url: catalogURL).open(under: "u2"), [])
+        XCTAssertEqual(DeviceCatalog(url: catalogURL).open(under: nil), [])
+
+        server.online = false
+        let quiet = await store.rename("back-squat", to: "Back Squat")
+        XCTAssertEqual(quiet, .noAnswer, "a rename that did not land says so rather than pretending")
+    }
+
+    // A movement this device minted and has not claimed yet is renamed ON THE SHELF: the shelf entry
+    // IS the pending create, so the new name is simply the name the log first hears — and a PATCH
+    // against a movement the log has never held would 404.
+    func testRenamingAnUnclaimedMovementRewritesTheCreateTheClaimWillReplay() async {
+        let store = makeStore(sync: nil)
+        await store.connect(to: account(signedIn: false))
+        guard case .success(let minted) = await store.create("Bench") else {
+            return XCTFail("the device mints its own movements signed out")
+        }
+
+        let renamed = await store.rename(minted.id, to: "Bench Press")
+        XCTAssertNil(renamed)
+        XCTAssertEqual(store.catalog.map(\.name), ["Bench Press"])
+        XCTAssertEqual(LocalLog(url: localURL).exercises.map(\.name), ["Bench Press"])
+        XCTAssertEqual(LocalLog(url: localURL).exercises.map(\.id), [minted.id],
+                       "the id the sets already name does not move")
+
+        // Signed out, a movement the ACCOUNT owns is the account's to name: the catalog is global
+        // and this device cannot hold a per-account name for a row it does not own.
+        let refused = await store.rename("back-squat", to: "Low-bar Squat")
+        XCTAssertEqual(refused, .refused("renaming this movement needs your account — sign in first"))
+    }
+
+    // A MOVEMENT WHOSE CREATE IS STILL OWED IS THE DEVICE'S TO ANSWER FOR, whoever is signed in —
+    // signed in on a phone with no signal is the ordinary way to be here. The log has never heard of
+    // the id, so a served read would 404 over a movement that is on screen with a finished session
+    // under it; and no set naming it can have landed either, because the claim replays a create
+    // BEFORE any session that names it. The device's answer is therefore the whole of it.
+    //
+    // So the rename rewrites the pending create and the re-read the sheet triggers comes back with
+    // the NEW NAME — rather than the sheet closing as a success over a page that then says the
+    // movement is no longer in a catalog it is visibly in.
+    func testAnUnclaimedMovementReadsAndRenamesOnTheDeviceEvenSignedIn() async {
+        let anonymous = makeStore(sync: nil)
+        await anonymous.connect(to: account(signedIn: false))
+        guard case .success(let minted) = await anonymous.create("Zercher") else {
+            return XCTFail("the device mints its own movements signed out")
+        }
+        _ = await anonymous.start()
+        await anonymous.choose(minted.id)
+        await anonymous.logSet(weightKg: 80, reps: 5)
+        guard case .closed = await anonymous.finish() else { return XCTFail("no close") }
+
+        let server = FakeTraining()
+        server.online = false                   // the claim cannot land, so the shelf keeps both
+        let store = makeStore(sync: server, retryAfter: .seconds(600))
+        await store.connect(to: account(signedIn: true))
+
+        XCTAssertEqual(store.catalog.map(\.id), [minted.id],
+                       "this device's own unclaimed movement is in the catalog under every seat")
+        guard case .success(let answered) = await store.record(of: minted.id) else {
+            return XCTFail("the device answers for what it is still the only home of")
+        }
+        XCTAssertEqual(answered.source, .thisDevice)
+        XCTAssertEqual(answered.record.sessionCount, 1)
+        XCTAssertFalse(server.calls.contains("record"), "and the log is not asked about it at all")
+
+        let renamed = await store.rename(minted.id, to: "Zercher Squat")
+        XCTAssertNil(renamed)
+        guard case .success(let again) = await store.record(of: minted.id) else {
+            return XCTFail("the re-read the rename sheet triggers is the same local read")
+        }
+        XCTAssertEqual(again.record.exercise.name, "Zercher Squat")
+        XCTAssertFalse(server.calls.contains("renameExercise"),
+                       "a PATCH against a movement the log has never held would 404")
+
+        // And the caveat the record page prints is asked PER MOVEMENT: this one has a session the
+        // log has not been told about, and every other movement on the phone does not.
+        XCTAssertTrue(store.unclaimed(minted.id))
+        XCTAssertFalse(store.unclaimed("back-squat"),
+                       "an unclaimed session of one movement is not a caveat on another's page")
     }
 }
 
@@ -782,14 +928,15 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
     var lastTimes: [String: LastTime] = [:]
     var reviews: [String: Review] = [:]
     var shares: [String: SessionShare] = [:]
-    var stats = TrainingStatistics()
+    var records: [String: MovementRecord] = [:]
     var refuse: (SetWrite) -> WindmillApiError? = { _ in nil }
     var refuseStart: WindmillApiError?
     var refuseCreate: WindmillApiError?
     var refuseCreateRoutine: WindmillApiError?
     var refuseShare: WindmillApiError?
     var refuseRevoke: WindmillApiError?
-    var refuseStats: WindmillApiError?
+    var refuseRecord: WindmillApiError?
+    var refuseRename: WindmillApiError?
     // Ids some OTHER account already spent — the 409s whose code asks for a remint.
     var takenSessionIds: Set<String> = []
     var takenRoutineIds: Set<String> = []
@@ -997,11 +1144,26 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         written[id] = nil
     }
 
-    func statistics() async throws -> TrainingStatistics {
-        calls.append("statistics")
+    // One movement's record, and it is a stored answer rather than a computed one: Epley is the
+    // server's, so a fake that derived an estimate would be the second copy this product refuses.
+    func record(of exerciseId: String) async throws -> MovementRecord? {
+        calls.append("record")
         guard online else { throw WindmillApiError.offline }
-        if let refuseStats { throw refuseStats }
-        return stats
+        if let refuseRecord { throw refuseRecord }
+        return records[exerciseId]
+    }
+
+    // The rename the log holds: the id never moves, which is the whole thing the record page is
+    // there to prove, so this rewrites the catalog row in place and hands back the same id.
+    func renameExercise(_ exerciseId: String, to name: String) async throws -> Exercise? {
+        calls.append("renameExercise")
+        guard online else { throw WindmillApiError.offline }
+        if let refuseRename { throw refuseRename }
+        guard let index = catalog.firstIndex(where: { $0.id == exerciseId }) else { return nil }
+        let held = catalog[index]
+        catalog[index] = Exercise(id: held.id, name: name, pattern: held.pattern,
+                                  equipment: held.equipment, stepKg: held.stepKg, custom: held.custom)
+        return catalog[index]
     }
 
     // Idempotent on the session, exactly as the log is: a second mint for a session that already has

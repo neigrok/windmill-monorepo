@@ -42,16 +42,60 @@ test('every list of a routine’s entries is keyed on the position as well as th
 });
 
 // THE TAB COUNT LIVES IN TWO PLACES and neither of them can see the other: the anchors are JSX and
-// the columns are a CSS grid. A fifth anchor over a four-column grid wraps the tab bar onto two
+// the columns are a CSS grid. A fourth anchor over a three-column grid wraps the tab bar onto two
 // rows over the content it is fixed above — which no test that mounts a component would catch,
 // because it is a layout fact and not a render one.
+//
+// THREE, AND THE COUNT ITSELF IS THE DECISION. §B cuts the fourth tab in as many words — *there is
+// no dashboard in this product* — and the statistics room stood in that column until §H replaced it
+// with one movement's page, which is reached by tapping a name and is not a room to visit.
 test('the tab bar draws the same number of tabs the grid has columns for', () => {
   const tabs = read('GymApp.jsx').match(/className=\{screen === '[a-z]+' \? 'gym-tab is-on' : 'gym-tab'\}/g) ?? [];
   const grid = /\.gym-tabs \{[^}]*grid-template-columns: repeat\((\d+), 1fr\)/.exec(read('gym.css'));
-  assert.equal(tabs.length, 4);
+  assert.equal(tabs.length, 3);
   assert.equal(grid?.[1], String(tabs.length));
   // And every one of them is a screen the frame will actually draw a tab bar over.
-  assert.equal(read('GymApp.jsx').includes("const TAB_SCREENS = ['today', 'log', 'routines', 'stats'];"), true);
+  assert.equal(read('GymApp.jsx').includes("const TAB_SCREENS = ['today', 'log', 'routines'];"), true);
+});
+
+// A MOVEMENT'S NAME IS A DOOR (§H), and which text carries the link is a fact about the JSX — no
+// pure module can be asked whether the session's exercise header and the routine's row are links.
+// The premise is "anywhere it appears", so all four sites are pinned: one left as plain text is a
+// record a lifter can reach from the log and not from the program they wrote, or from the workout
+// they just finished and not the one they are in, and the page would be findable by accident
+// rather than by rule.
+//
+// THREE NAMES ARE DELIBERATELY NOT DOORS, and each is the same rule from a different side. The
+// picker's rows inside the routine editor and the backfill form mean "add this movement" — the
+// meaning of a pick belongs to the host, and a tap that navigated out of a form holding unsaved
+// sets would destroy them. The finish screen's keep-as-routine list is that form's own preview of
+// what it will create. And the coach's shared page has no account behind it, so there is no record
+// for its reader to open.
+test('every exercise name a lifter can see is a link to that movement’s record', () => {
+  assert.equal(read('Log.jsx').includes('<a className="gym-movement-door" href={recordHref(exerciseId)}>'), true);
+  assert.equal(read('Routines.jsx').includes('<a className="gym-entry-name gym-movement-door" href={recordHref(entry.exerciseId)}>'), true);
+  assert.equal(read('Finish.jsx').includes('<a className="gym-against-movement gym-movement-door" href={recordHref(row.exerciseId)}>'), true);
+  assert.equal(read('Today.jsx').includes('<a className="gym-movement-door" href={recordHref(newest.exerciseId)}>'), true);
+  // And the ink is one rule in one place: a door that had to be styled per site would be styled
+  // differently per site the first time one of them moved.
+  assert.equal(read('gym.css').includes('.gym-movement-door {'), true);
+  // The one place that rule is extended is the routine's row, where the door takes the row's full
+  // height — and it must not become a flex box doing it: `text-overflow: ellipsis` needs a block's
+  // own inline content, and a name hard-clipped mid-word reads as a complete name.
+  assert.equal(/\.gym-entry \.gym-movement-door \{[^}]*display:/.test(read('gym.css')), false);
+});
+
+// ONE CLASS, ONE MEANING. `.gym-record-title` is the FINISH screen's gold heading over a session's
+// personal record — the only loud thing on that page — and the record page took the same name for
+// its own faint block heads. Equal specificity, so the later rule won everywhere and turned the
+// gold heading grey inside its own gold box. Nothing that mounts a component can catch it: both
+// pages render exactly the markup they meant to, and the collision is only in the stylesheet.
+test('the record page’s block heads do not take the finish screen’s gold class', () => {
+  const blocks = [...read('gym.css').matchAll(/\.gym-record-title \{([^}]*)\}/g)];
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0][1].includes('color: var(--pr-ink);'), true);
+  assert.equal(read('Finish.jsx').includes('className="gym-record-title"'), true);
+  assert.equal(read('Record.jsx').includes('gym-record-title'), false);
 });
 
 // THE CHAT IS NEVER OFFERED MID-SESSION — §L (the Ask section), and ARCHITECTURE §12 cuts "any chat

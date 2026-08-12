@@ -4,20 +4,24 @@ import WindmillPlatform
 // The one place the native gym talks to the backend — the twin of web/src/products/gym/gymApi.js,
 // against the same routes:
 //   GET  /v1/gym/exercises            ·  POST /v1/gym/exercises
+//   PATCH /v1/gym/exercises/:id       ·  GET /v1/gym/exercises/:id/record
 //   POST /v1/gym/sessions             ·  POST /v1/gym/sessions/:id/sets
 //   POST /v1/gym/sessions/:id/finish  ·  DELETE /v1/gym/sessions/:id
 //   GET  /v1/gym/sessions?before=&beforeId=&limit=   ·  GET /v1/gym/sessions/:id
 //   GET  /v1/gym/sessions/:id/review  ·  GET /v1/gym/last?exercise=
 //   GET  /v1/gym/routines             ·  POST /v1/gym/routines
 //   PUT  /v1/gym/routines/:id         ·  DELETE /v1/gym/routines/:id
-//   GET  /v1/gym/stats
 //   POST /v1/gym/sessions/:id/share   ·  DELETE /v1/gym/sessions/:id/share
+//
+// `GET /v1/gym/stats` is NOT here and its absence is deliberate: the statistics ENGINE stays on the
+// server, where an agent asking "how has my squat moved" reads it through `get_stats`, but the room
+// it fed was retired with the board (W1c). What this phone asks for now is one movement's record.
 // The session rides as a Bearer header rather than a cookie (WindmillApi); nothing else differs.
 //
 // `GET /v1/gym/shared/:token` — the coach's own read, and the one unauthenticated route in the
 // product — is deliberately NOT here. Nothing on this phone reads a shared session: the lifter is
-// the owner and reads their own log through the sixteen owner-scoped doors above. The token this
-// client mints is spelled as an address for somebody else to open (CoachShare.swift).
+// the owner and reads their own log through the owner-scoped doors above. The token this client
+// mints is spelled as an address for somebody else to open (CoachShare.swift).
 //
 // EVERY PATH IS PASSED WHOLE, query included. `appendingPathComponent` treats the whole string as one
 // segment and percent-encodes `?` and `&` into it, which silently 404'd the journal's window read and
@@ -29,6 +33,8 @@ import WindmillPlatform
 public protocol TrainingSyncing {
     func exercises() async throws -> [Exercise]
     func createExercise(_ write: ExerciseWrite) async throws -> Exercise
+    func renameExercise(_ exerciseId: String, to name: String) async throws -> Exercise?
+    func record(of exerciseId: String) async throws -> MovementRecord?
 
     func startSession(_ start: SessionStart) async throws -> Session
     func appendSet(to sessionId: String, _ write: SetWrite) async throws -> TrainingSet
@@ -46,7 +52,6 @@ public protocol TrainingSyncing {
     func replaceRoutine(_ id: String, with write: RoutineWrite) async throws -> Routine
     func deleteRoutine(_ id: String) async throws
 
-    func statistics() async throws -> TrainingStatistics
     func share(_ sessionId: String) async throws -> SessionShare
     func revokeShare(_ sessionId: String) async throws
 }
@@ -64,6 +69,33 @@ public struct GymApi: TrainingSyncing {
 
     public func createExercise(_ write: ExerciseWrite) async throws -> Exercise {
         try await api.send("POST", "/v1/gym/exercises", body: write, as: Exercise.self)
+    }
+
+    // ONE FIELD, and the id it answers with is the id that went out — that is the promise the record
+    // page exists to make visible. A movement this account did not create keeps its global row and
+    // gains a per-account display name on the server; from here both are one call and one answer.
+    // Absent and another account's are the same 404, folded into the type as every other read folds
+    // it, because the caller draws nothing either way.
+    public func renameExercise(_ exerciseId: String, to name: String) async throws -> Exercise? {
+        do {
+            return try await api.send("PATCH", "/v1/gym/exercises/\(exerciseId)",
+                                      body: ExerciseRename(name: name), as: Exercise.self)
+        } catch let error as WindmillApiError {
+            if case .refused(404, _) = error { return nil }
+            throw error
+        }
+    }
+
+    // One movement's whole record — the counts, the two standing bests, the twelve-week series, the
+    // record ladder and the recent days, in ONE read. The window is the server's: a client that asked
+    // for a slice of it would be the second place in the product deciding what twelve weeks is.
+    public func record(of exerciseId: String) async throws -> MovementRecord? {
+        do {
+            return try await api.get("/v1/gym/exercises/\(exerciseId)/record", as: MovementRecord.self)
+        } catch let error as WindmillApiError {
+            if case .refused(404, _) = error { return nil }
+            throw error
+        }
     }
 
     // A start JOINS whatever session is already open, so the session that comes back may not be the
@@ -148,13 +180,6 @@ public struct GymApi: TrainingSyncing {
 
     public func deleteRoutine(_ id: String) async throws {
         try await api.send("DELETE", "/v1/gym/routines/\(id)")
-    }
-
-    // The long window, computed on every read and cached nowhere — server-side or here. There is no
-    // parameter: the window is the whole finished log, and a client that asked for a slice of it
-    // would be the second place in the product deciding what a week is.
-    public func statistics() async throws -> TrainingStatistics {
-        try await api.get("/v1/gym/stats", as: TrainingStatistics.self)
     }
 
     // Idempotent on the SESSION and not on a client-minted id — there is no id for a client to mint

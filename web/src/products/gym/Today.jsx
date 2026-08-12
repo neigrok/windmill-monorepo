@@ -11,8 +11,8 @@
 
 import React, { useEffect, useState } from 'react';
 import {
-  clockOf, dayLabel, durLabel, fmt, isFinished, nameOfMovement, NO_ROUTINE, routineNameOf,
-  sessionHref, setCountLabel,
+  clockOf, dayLabel, durLabel, fmt, isFinished, nameOfMovement, NO_ROUTINE, recordHref,
+  routineNameOf, sessionHref, setCountLabel,
 } from './log.js';
 
 const BEAT_MS = 500;
@@ -82,7 +82,13 @@ function TrainingNow({ session, sets, catalog }) {
       {newest && (
         <>
           <p className="gym-mirror-line">
-            {`${nameOfMovement(catalog, newest.exerciseId)} — set ${newest.setNumber}`
+            {/* THE NAME IS A DOOR (§H), here as everywhere a movement is named. This room holds
+                nothing a lifter typed — the mirror is a read, and the workout it draws is running
+                on the phone — so leaving it costs the next poll and nothing else. */}
+            <a className="gym-movement-door" href={recordHref(newest.exerciseId)}>
+              {nameOfMovement(catalog, newest.exerciseId)}
+            </a>
+            {` — set ${newest.setNumber}`
               + `  ·  ${fmt(newest.weightKg)} × ${newest.reps}`
               + `  ·  last set ${clockOf(now - newest.completedAt)} ago`}
           </p>

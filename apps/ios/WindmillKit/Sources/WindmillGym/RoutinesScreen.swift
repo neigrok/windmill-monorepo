@@ -2,7 +2,8 @@ import SwiftUI
 import WindmillPlatform
 
 // ROUTINES — the written-down days of the program, and the third of the room's three tabs (§F). It
-// is a list and a way in: a routine, what it asks for, and a Start on the one you are looking at.
+// is a list and two ways in: a routine, what it asks for, a Start on the one you are looking at, and
+// every movement it names a door onto that movement's record (§H).
 //
 // IT DRAWS NO EDITOR, NO `New` AND NO DUPLICATE, and that is a fact about this surface rather than a
 // gap in this screen. §B screen 5 gives all three a row action, and every one of them writes a
@@ -19,6 +20,7 @@ import WindmillPlatform
 struct RoutinesScreen: View {
     @ObservedObject var store: TrainingStore
     let onStart: (String) -> Void
+    let onMovement: (String) -> Void
 
     @Environment(\.gymSkin) private var skin
 
@@ -60,9 +62,14 @@ struct RoutinesScreen: View {
             .padding(.top, WindmillSpace.x2)
     }
 
+    // THE START IS THE HEADER AND NOT THE WHOLE CARD, since the movement names below it became doors
+    // onto their own records (§H): a button inside a button is not a second tap target on iOS, it is
+    // one that swallows the other. The header is where §B screen 5 draws the row anyway — the name,
+    // its meta and the chevron — and the entries under it are this surface's own preview of what the
+    // day asks for.
     private func row(_ routine: Routine) -> some View {
-        Button { onStart(routine.id) } label: {
-            VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+        VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+            Button { onStart(routine.id) } label: {
                 HStack(alignment: .firstTextBaseline, spacing: WindmillSpace.x3) {
                     Text(routine.name)
                         .font(WindmillFont.body(17, .bold))
@@ -71,28 +78,32 @@ struct RoutinesScreen: View {
                     Text(meta(routine))
                         .font(GymType.numeral(11.5))
                         .foregroundStyle(skin.inkFaint)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(skin.inkFaint)
                 }
-                // Keyed on POSITION and never on the movement: a routine may name one twice — bench
-                // heavy then bench back-off is the case the domain's `Routine` calls out by name —
-                // and two rows sharing an id is undefined behaviour in a ForEach.
-                ForEach(routine.entries.sorted { $0.position < $1.position }, id: \.position) { entry in
-                    HStack(spacing: WindmillSpace.x3) {
-                        Text(Readout.movement(entry.exerciseId, in: store.catalog))
-                            .font(WindmillFont.body(14))
-                            .foregroundStyle(skin.inkDim)
-                        Spacer(minLength: WindmillSpace.x2)
-                        Text(Readout.target(sets: entry.targetSets, reps: entry.targetReps,
-                                            weightKg: entry.targetWeightKg))
-                            .font(GymType.numeral(12.5))
-                            .foregroundStyle(skin.targetInk)
-                    }
+                .frame(minHeight: GymTap.minimum)
+            }
+            // Keyed on POSITION and never on the movement: a routine may name one twice — bench
+            // heavy then bench back-off is the case the domain's `Routine` calls out by name —
+            // and two rows sharing an id is undefined behaviour in a ForEach.
+            ForEach(routine.entries.sorted { $0.position < $1.position }, id: \.position) { entry in
+                HStack(spacing: WindmillSpace.x3) {
+                    MovementDoor(exerciseId: entry.exerciseId,
+                                 name: Readout.movement(entry.exerciseId, in: store.catalog),
+                                 font: WindmillFont.body(14), ink: skin.inkDim, open: onMovement)
+                    Spacer(minLength: WindmillSpace.x2)
+                    Text(Readout.target(sets: entry.targetSets, reps: entry.targetReps,
+                                        weightKg: entry.targetWeightKg))
+                        .font(GymType.numeral(12.5))
+                        .foregroundStyle(skin.targetInk)
                 }
             }
-            .padding(WindmillSpace.x4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
-            .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg).strokeBorder(skin.line, lineWidth: 1))
         }
+        .padding(WindmillSpace.x4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
+        .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg).strokeBorder(skin.line, lineWidth: 1))
     }
 
     private func meta(_ routine: Routine) -> String {

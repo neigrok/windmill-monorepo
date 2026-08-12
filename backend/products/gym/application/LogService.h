@@ -107,8 +107,17 @@ struct SessionDetail {
   bool operator==(const SessionDetail&) const = default;
 };
 
-// One row of the log as a SURFACE reads it: the store's summary, plus the one number on it that is
-// a formula rather than an aggregation.
+// One row of the log as a SURFACE reads it: the store's summary, plus the two facts on it that are
+// rules rather than aggregations.
+//
+// record is §G's gold dot — a personal record happened in this workout. It is the domain's three
+// rules (domain/Review.h), run over the whole page in one walk against the marks standing before
+// it, so the dot on a row and the loud line on that session's finish screen are the same judgement
+// and cannot disagree — which takes the walk being told which rows are FINISHED, because the finish
+// read counts finished sessions alone and the page carries the open workout too. It is recomputed
+// on every read and stored nowhere, which is what keeps it
+// honest: a record is judged against the log AS IT IS NOW, so a set arriving late from a flush
+// queue — or a later correction — moves the dot instead of leaving it lying.
 //
 // topE1rm is `domain/Review`'s `topE1rmOf` over the loads the store handed back — the SAME function
 // the finish screen's `ReviewStats::topE1rm` comes through, which is the whole point of routing it
@@ -126,6 +135,7 @@ struct SessionDetail {
 struct LogRow {
   SessionSummary summary;
   std::optional<double> topE1rm;
+  bool record = false;
 
   bool operator==(const LogRow&) const = default;
 };
@@ -169,6 +179,13 @@ public:
                                      const RoutineWrite& incoming);
   bool deleteRoutine(const UserId& user, const RoutineId& id);
   ExerciseInsertOutcome createExercise(const UserId& user, const ExerciseWrite& incoming);
+  // The rename, and the identity it exists to prove: the movement keeps its id, so every set and
+  // every plan that names it is untouched and the history stays whole. The name is validated where
+  // every other value in this product is — by constructing the entity — so a name the store cannot
+  // hold never reaches it. Absent is the store's one fact: this account's catalog holds no such
+  // movement.
+  std::optional<Exercise> renameExercise(const UserId& user, const ExerciseId& id,
+                                         const std::string& name);
 
   // The finish surface. review is a read with no refusal of its own — an absent review is an absent
   // session, exactly as detail's is — and discard is the one door that takes something away.
@@ -180,6 +197,10 @@ public:
   // no rule at all: it hands back what is stored, which is the point of an export.
   Statistics statistics(const UserId& user);
   std::vector<ExportedSet> exportedSets(const UserId& user);
+  // A movement's record — the same one-load-one-rule shape, narrowed to one movement, and the read
+  // that replaced the statistics room on every surface. Absent is the store's one fact: this
+  // account's catalog holds no such movement.
+  std::optional<MovementRecord> movementRecord(const UserId& user, const ExerciseId& exercise);
 
   // The coach share. The mint answers with the live share on a repeat, so nothing here has to ask
   // first — the store resolves it, the same write-then-resolve every other write in this file uses.

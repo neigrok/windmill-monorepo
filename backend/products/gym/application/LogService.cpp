@@ -122,12 +122,33 @@ FinishOutcome LogService::finish(const UserId& user, const SessionId& session,
   return {*closed, FinishError::none};
 }
 
+// Two rules over one read, and the second one is why the page is loaded whole before a row is
+// built: a record is judged against the history BEFORE its session, so the walk runs oldest first
+// over the whole page while the page itself is handed back newest first. The store's rows arrive
+// newest first, so the walk reads them backwards and never re-sorts them.
+//
+// A page carries the OPEN session like any other row, and the marks standing before the page count
+// finished sessions alone — the finish read's own window. So each row hands the walk whether it is
+// over, and the walk folds only the ones that are; without that the two halves of one history are
+// filtered differently and a row above a still-open workout is judged against a workout its own
+// finish screen cannot see.
 std::vector<LogRow> LogService::log(const UserId& user, const LogCursor& cursor) {
   settleOpen(repo_, user, clock_.nowMs());
+  LogPage page = repo_.log(user, cursor);
+
+  std::vector<SessionMarks> walked;
+  for (auto row = page.sessions.rbegin(); row != page.sessions.rend(); ++row)
+    walked.push_back(SessionMarks{row->session.id, row->workingMarks, row->workingSetCount,
+                                  row->session.finishedAtMs.has_value()});
+  const std::vector<SessionId> earned = recordedIn(walked, page.standing);
+
   std::vector<LogRow> rows;
-  for (SessionSummary& summary : repo_.log(user, cursor)) {
-    std::optional<double> estimate = topE1rmOf(summary.workingLoads);
-    rows.push_back(LogRow{std::move(summary), estimate});
+  for (SessionSummary& summary : page.sessions) {
+    std::optional<double> estimate = topE1rmOf(summary.workingMarks);
+    bool record = false;
+    for (const SessionId& id : earned)
+      if (id == summary.session.id) record = true;
+    rows.push_back(LogRow{std::move(summary), estimate, record});
   }
   return rows;
 }
@@ -192,6 +213,17 @@ ExerciseInsertOutcome LogService::createExercise(const UserId& user, const Exerc
                      incoming.stepKg.value_or(defaultStepKg(incoming.equipment)), true});
 }
 
+// A pass-through like every other write here, and for the same reason: the entity's constructor is
+// the whole validation and the store's answer is the whole refusal. The construction happens where
+// the stored row and the new name are both in hand — inside the store, before it writes — because
+// what a rename changes is what a movement is CALLED and nothing else about it moves: not its
+// pattern, not its step, and least of all its id, which is the promise the record page exists to
+// demonstrate.
+std::optional<Exercise> LogService::renameExercise(const UserId& user, const ExerciseId& id,
+                                                   const std::string& name) {
+  return repo_.renameExercise(user, id, name);
+}
+
 // Two phases and no third: load the session, its sets and the history the rules need, then hand all
 // three to the pure rule and answer with what it computed. Nothing here decides anything — every
 // number on the finish screen is the domain's, so the web and the phone cannot print two different
@@ -226,6 +258,21 @@ DiscardOutcome LogService::discard(const UserId& user, const SessionId& session)
 Statistics LogService::statistics(const UserId& user) {
   settleOpen(repo_, user, clock_.nowMs());
   return wm::gym::statistics(repo_.trainingLog(user));
+}
+
+// The record page, and it is the statistics read's own shape narrowed to one movement: settle
+// staleness, load, hand it to the pure rule. Staleness is settled for the reason it is settled
+// there — this answer counts finished sessions only, so a workout the four-hour rule ended hours
+// ago but nobody has read since would be missing from the chart, and a hole in a chart is read as
+// "I did not train that week". The clock is read once and passed in, so the twelve-week window and
+// the settle cannot disagree about what now is.
+std::optional<MovementRecord> LogService::movementRecord(const UserId& user,
+                                                         const ExerciseId& exercise) {
+  const std::uint64_t nowMs = clock_.nowMs();
+  settleOpen(repo_, user, nowMs);
+  MovementHistory history = repo_.movementHistory(user, exercise);
+  if (!history.exercise) return std::nullopt;
+  return wm::gym::movementRecord(*history.exercise, history, nowMs);
 }
 
 // The export settles nothing on purpose, and it is the only read of the log that could and does

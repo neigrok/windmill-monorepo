@@ -5,6 +5,33 @@
 //   POST /v1/gym/exercises               -> {id, name, pattern, equipment, stepKg?} in; the stored
 //                                           movement out. A movement a lifter created behaves like
 //                                           every other one; an id already spent is 409
+//   PATCH /v1/gym/exercises/:id          -> {name} in — ONE field, and any other key is 400 — the
+//                                           stored movement out, under the SAME id. A movement this
+//                                           account created renames in place; a seeded one gets a
+//                                           per-account display name over it, so renaming Back Squat
+//                                           renames nobody else's. `name` is what THIS account calls
+//                                           it, everywhere a name is read
+//   GET  /v1/gym/exercises/:id/record    -> one movement's page (§H), whole and in one read:
+//                                           { exercise, routineCount, sessionCount, bestE1rm?,
+//                                             heaviest?, e1rmSeries?, records?, recentDays? }.
+//                                           The counts are always there and a zero is a real answer;
+//                                           EVERY LIST IS OMITTED WHEN EMPTY, so a movement nobody
+//                                           has worked answers 200 with two zeros and nothing else.
+//                                           `bestE1rm`, `e1rmSeries` and `records` are absent
+//                                           TOGETHER where Epley is undefined — every load at or
+//                                           below zero — and the page draws no tile and no chart for
+//                                           that rather than a dash in a chart frame (record.js).
+//                                           `e1rmSeries` is oldest first over the server's last
+//                                           twelve weeks, one point per session; `records` is newest
+//                                           first over the whole log; `recentDays` is newest first,
+//                                           at most ten days, warmups excluded. THE COUNT AND THE
+//                                           DAYS COUNT DIFFERENT THINGS: `sessionCount` is the
+//                                           sessions it was WORKED in, `recentDays` every day it was
+//                                           trained in bar a warmup — so a movement logged only as a
+//                                           drop set answers a zero beside a day of sets, and a page
+//                                           reading the count alone says nobody has worked it over
+//                                           the sets they did (record.js). Or null on 404 —
+//                                           absent and another account's private movement alike
 //   POST /v1/gym/sessions                -> {id, startedAt, routineId?} in; the OPEN session out —
 //                                           idempotent, a replayed or double-tapped start joins the
 //                                           open session; an id another account already minted is 409
@@ -33,7 +60,10 @@
 //                                           session carries `topSet` and no `topE1rm`. The web
 //                                           computes no estimate of its own (review.js).
 //                                           `closedItself` says the four-hour rule closed the
-//                                           session rather than a tap
+//                                           session rather than a tap, and `record` — always
+//                                           present — says a personal record happened in there,
+//                                           judged against the log AS IT IS NOW and never frozen at
+//                                           the finish (log.js). False on ~190 rows in 200
 //   GET  /v1/gym/sessions/:id            -> { session, sets } — or null on 404 (absent and
 //                                           another's are the same byte). Every 200 carries a weak
 //                                           ETag — opaque bytes this client only ever echoes; a
@@ -45,14 +75,6 @@
 //   GET  /v1/gym/last?exercise=          -> { exerciseId, session?, routine?, sets? } — the prefill:
 //                                           the newest FINISHED session holding that movement and
 //                                           its working sets in order, warmups excluded
-//   GET  /v1/gym/stats                   -> { weeks: [{startedAt, sessions, workingSets}],
-//                                           movements: [{exerciseId, lastTrainedAt,
-//                                             points: [{at, weightKg, reps, e1rm?}],
-//                                             bestE1rm?, heaviest?}] } — every number the domain
-//                                           already decides, over FINISHED sessions only. Weeks run
-//                                           Monday to Monday in UTC and a week nobody trained is
-//                                           present and zero; movements come back most recently
-//                                           trained first and their points oldest first
 //   POST /v1/gym/sessions/:id/share      -> {token, expiresAt} — the coach link, minted or the live
 //                                           one handed back. Idempotent on the SESSION: there is no
 //                                           id for a client to mint here, so tapping Share twice is
@@ -203,6 +225,35 @@ export const gymApi = {
     return json(await call('/exercises', { method: 'POST', body: JSON.stringify(exercise) }));
   },
 
+  // THE NAME MOVES AND THE IDENTITY DOES NOT — which is the whole of what §H's record page is for.
+  // The id comes back unchanged, so every set, routine entry and frozen plan snapshot still points
+  // at the same movement; the store decides whether that means an update in place (a movement this
+  // account created) or a display name of this account's own over a seeded one, and no client may
+  // guess, because a naive update would rename Back Squat for every lifter on the server.
+  async renameExercise(exerciseId, name) {
+    return json(await call(`/exercises/${encodeURIComponent(exerciseId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    }));
+  },
+
+  // ONE MOVEMENT'S PAGE, whole and in one read (§H). There is no window parameter and no second
+  // route per block: every number in it is the domain's, and a client that could ask for a
+  // different window would be a client that could ask for a different answer.
+  //
+  // Null on 404, for the session read's reason: absent and another account's private movement are
+  // one fact on this wire, and a read that resolves to null is that fact.
+  //
+  // GET /v1/gym/stats is still mounted and is deliberately not called from here. It is the ENGINE
+  // the agent reads through `get_stats` — "how has my squat moved" is the product's thesis — and
+  // what was retired is the ROOM the browser used to draw off it (§H: there is no dashboard in this
+  // product). Nothing on this surface should reach for it again.
+  async record(exerciseId) {
+    const response = await call(`/exercises/${encodeURIComponent(exerciseId)}/record`);
+    if (response.status === 404) return null;
+    return json(response);
+  },
+
   // The client mints the id and the id IS the idempotency key. Two Starts share this route and they
   // differ only in what the caller means, which is why the caller has to say it: the default JOINS
   // whatever session is open, so a lost race and a borrowed second device both land in the live
@@ -316,14 +367,6 @@ export const gymApi = {
   // and a reply that lands after the lifter has moved on has to be discardable.
   async lastTime(exerciseId) {
     return json(await call(`/last?exercise=${encodeURIComponent(exerciseId)}`));
-  },
-
-  // The statistics surface, whole and in one read: there is no window parameter and no per-movement
-  // route, because every number in it is the domain's and none of them is a client's to ask for
-  // differently. What the screen shows LESS of it than this carries is the screen's business
-  // (stats.js) — a second read per movement would be a chart that loads while it is looked at.
-  async stats() {
-    return json(await call('/stats'));
   },
 
   // The coach link, minted. There is no GET beside this: the POST is idempotent on the session and

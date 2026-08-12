@@ -2,8 +2,9 @@
 // the catalog, the page of sessions and the walk deeper into them, the movement mint, the one toast
 // voice — and the live mirror (§11.2): when the boot read finds an open session, this hook POLLS it
 // and Today draws it read-only. The web never starts, drives or finishes a live session; capture
-// lives in the phone rooms (backend/products/gym/ARCHITECTURE.md §11), and the one write door this
-// surface keeps is the past-workout backfill, which talks to gymApi directly.
+// lives in the phone rooms (backend/products/gym/ARCHITECTURE.md §11). What is left here writes
+// three things and none of them is a set: a movement minted from a picker, a movement's name (§H),
+// and the past-workout backfill — which owns its own writes and talks to gymApi directly.
 //
 // The mirror is a poll and not a socket, by decision (§11.3): GET /v1/gym/sessions/{id} every five
 // seconds while the tab is visible, nothing while it is hidden, and a refetch the moment it comes
@@ -230,6 +231,21 @@ export function useTrainingLog({ api = gymApi } = {}) {
     return null;
   }, [api, say]);
 
+  // A MOVEMENT RENAMED, AND NOTHING ELSE ABOUT IT MOVED (§H). The store answers with the stored
+  // movement under the id it already had, so the row is replaced rather than appended — and it is
+  // replaced HERE, in the one catalog this product holds, so the routine editor, the session detail
+  // and every picker are reading the new name a render later without a read of their own.
+  const renameMovement = useCallback(async (exerciseId, name) => {
+    try {
+      const renamed = await api.renameExercise(exerciseId, name.trim());
+      setCatalog((current) => current.map((each) => (each.id === renamed.id ? renamed : each)));
+      return renamed;
+    } catch (error) {
+      say(`That name wasn’t saved — ${failureReason(error)}.`);
+      return null;
+    }
+  }, [api, say]);
+
   // The toast is the one thing here that is counted rather than derived, because it has no instant
   // worth surviving a reload: five seconds after it was said, it has been read or it has not.
   useEffect(() => {
@@ -252,6 +268,7 @@ export function useTrainingLog({ api = gymApi } = {}) {
     // page is, and neither of them owns the list.
     reloadLog,
     createMovement,
+    renameMovement,
     // The one voice in the product. Handed out so a surface that is not this hook — a discard, a
     // backfill that half-landed — says what happened in the same place everything else does.
     say,

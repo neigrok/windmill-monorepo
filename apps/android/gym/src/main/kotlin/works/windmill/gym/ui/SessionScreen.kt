@@ -2,6 +2,7 @@ package works.windmill.gym.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -176,7 +178,12 @@ object Performed {
 // half crosses through CoachDoors, because the mint and the revoke are the two writes this screen
 // may reach.
 @Composable
-fun SessionScreen(summary: SessionSummary, store: TrainingStore, coach: CoachDoors) {
+fun SessionScreen(
+    summary: SessionSummary,
+    store: TrainingStore,
+    coach: CoachDoors,
+    onOpenMovement: (String) -> Unit,
+) {
     var detail by remember(summary.id) { mutableStateOf<SessionDetail?>(null) }
     var setsFailure by remember(summary.id) { mutableStateOf<WriteFailure?>(null) }
     var review by remember(summary.id) { mutableStateOf<Review?>(null) }
@@ -202,7 +209,7 @@ fun SessionScreen(summary: SessionSummary, store: TrainingStore, coach: CoachDoo
             .padding(top = WindmillSpace.x2, bottom = WindmillSpace.x8),
     ) {
         SessionHead(summary)
-        SetsBlock(detail, setsFailure, store.catalog)
+        SetsBlock(detail, setsFailure, store.catalog, onOpenMovement)
         // The section's whole thesis, and the reason the plan line is dim and the sets are not.
         if (detail != null && summary.plan != null) {
             Text(
@@ -266,11 +273,16 @@ private fun SessionHead(summary: SessionSummary) {
 }
 
 @Composable
-private fun SetsBlock(detail: SessionDetail?, setsFailure: WriteFailure?, catalog: List<Exercise>) {
+private fun SetsBlock(
+    detail: SessionDetail?,
+    setsFailure: WriteFailure?,
+    catalog: List<Exercise>,
+    onOpenMovement: (String) -> Unit,
+) {
     if (detail != null) {
         Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
             Performed.movements(detail.sets, catalog, detail.session.plan).forEach { movement ->
-                MovementCard(movement)
+                MovementCard(movement, onOpenMovement)
             }
         }
         return
@@ -287,8 +299,11 @@ private fun SetsBlock(detail: SessionDetail?, setsFailure: WriteFailure?, catalo
     }
 }
 
+// The movement's NAME is a door onto its record (§H) — the one tappable thing on this screen, and
+// the sets under it are deliberately not: correcting a past set is W3, and a set that cannot be
+// fixed may not be drawn as though it could.
 @Composable
-private fun MovementCard(movement: Performed.Movement) {
+private fun MovementCard(movement: Performed.Movement, onOpenMovement: (String) -> Unit) {
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         modifier = Modifier
@@ -297,7 +312,13 @@ private fun MovementCard(movement: Performed.Movement) {
             .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
             .padding(WindmillSpace.x4),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = GymTap.minimum)
+                .clickable { onOpenMovement(movement.id) },
+        ) {
             Text(
                 movement.movement,
                 style = WindmillFont.body(16, FontWeight.Bold),

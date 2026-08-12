@@ -17,37 +17,32 @@ namespace wm::gym {
 // record the product cannot show is not a record, and float noise must never be able to mint one.
 std::optional<double> e1rm(double weightKg, int reps);
 
-// The two numbers Epley reads, and nothing else — a load a session's working sets reached and reps
-// done at it. It is a DOMAIN type for the reason PriorMark below is one: the rule defines the shape
-// and the store's job is to fill it, so nothing under domain/ has to know a port exists.
-struct WorkingLoad {
-  double weightKg;
-  int reps;
-
-  bool operator==(const WorkingLoad&) const = default;
-};
-
-// The best one-rep estimate a session earned, and the ONE definition of it in the product — the
-// finish screen and the log row both come through here, which is what stops one workout from
-// carrying two numbers under the word `e1RM`. It is the best estimate over EVERY working set and
-// deliberately not the estimate over the heaviest one: a lifter who squats 100 × 5 and then three
-// back-offs at 95 × 10 earned 126.7, and the top set's own 116.7 is the smaller, later-superseded
-// answer. Absent exactly where Epley is undefined — no working set at all, or none of them loaded.
+// Every distinct load of a movement, carrying the BEST reps done at it — the ONE projection of
+// working sets in this product, and every rule that reads training history reads it. The WINDOW is
+// the caller's and nothing else changes: the finish read fills these from the finished sessions
+// before the one being reviewed, the log's page read fills one set of them per session on the page
+// AND one set for everything standing before it, the statistics read fills them over a whole
+// account, and the record page fills them per session for one movement.
 //
-// The caller may hand over every working set (the finish read has them all in hand) or one row per
-// distinct load carrying the best reps at it (the log's page read, which will not load a session's
-// sets to make a list). Both answer the same number: at a fixed load Epley rises with reps, so the
-// best-repped set at a load IS the best set at that load — the projection PriorMark is built on.
-std::optional<double> topE1rmOf(const std::vector<WorkingLoad>& loads);
-
-// Every distinct load of a movement, carrying the BEST reps ever done at it in a finished session
-// that started before this one. The shape is deliberate: at a fixed weight e1RM rises with reps, so
-// the best-repped set at a load IS the best set at that load — which makes all three record rules
+// The shape is deliberate: at a fixed weight e1RM rises with reps, so the best-repped set at a load
+// IS the best set at that load — which makes all three record rules and the e1RM estimate
 // answerable from these rows alone, and means the Epley formula never has to exist in SQL (the
 // ladder lesson of §11.5 applied to the second formula in the product: one copy per language, none
 // in the database). Small by construction: a lifter uses a few dozen distinct loads per movement in
-// a lifetime. atMs dates the mark — the earliest instant those best reps were hit, which is the day
-// the mark was set and the date the record line prints beside the number it beat.
+// a lifetime. atMs dates the mark — the EARLIEST SESSION those best reps were hit in, which is the
+// day the mark was set and the date the record line prints beside the number it beat.
+//
+// A projection narrowed to one movement repeats that movement's id on every row, and that is the
+// price of one type serving every rule rather than two that could drift: the field costs memory in
+// a vector nothing on the wire ever sees.
+//
+// WHAT DATES A MARK: the SESSION it was set in, wherever the STORE fills these rows. A set's
+// completed_at is the device's wall clock (§2.2) and nothing ties it to the session it landed in,
+// so an evening session whose best set landed after midnight would date a mark to a day the lifter
+// did not train — and it did: the same standing best came off `GET /v1/gym/stats` on one calendar
+// day and off the record page on another, because one read dated it by the set and the other by the
+// workout. One rule now: a mark read out of the LOG is dated to the workout that set it, which is
+// the day every surface prints beside it. `marksOf` below is the exception and states its reason.
 struct PriorMark {
   ExerciseId exercise;
   double weightKg;
@@ -56,6 +51,26 @@ struct PriorMark {
 
   bool operator==(const PriorMark&) const = default;
 };
+
+// The projection above, taken over one session's sets by a caller that already holds them — the
+// finish read does; the log's page read does not and has the store make it instead. WORKING sets
+// only: a warmup, a drop and a failure make no mark, which is the rule every record rule obeys, so
+// it is applied here rather than left to each caller to remember.
+//
+// These marks carry the SET's instant rather than the session's, which is the one exception to the
+// rule above and not really one: inside a single workout the set instants are the only ordering
+// there is, and the ranking below breaks its last tie on the earlier set. A date read out of these
+// never reaches a surface — only a PRIOR mark's does, and priors are the store's.
+std::vector<PriorMark> marksOf(const std::vector<Set>& sets);
+
+// The best one-rep estimate a set of marks earned, and the ONE definition of it in the product —
+// the finish screen, the log row and the record page's every bar come through here, which is what
+// stops one workout from carrying two numbers under the word `e1RM`. It is the best estimate over
+// EVERY working set and deliberately not the estimate over the heaviest one: a lifter who squats
+// 100 × 5 and then three back-offs at 95 × 10 earned 126.7, and the top set's own 116.7 is the
+// smaller, later-superseded answer. Absent exactly where Epley is undefined — no working set at
+// all, or none of them loaded.
+std::optional<double> topE1rmOf(const std::vector<PriorMark>& marks);
 
 // Everything the finish rules need that is not in the session itself, as one value the port returns
 // in one read. It is a DOMAIN type on purpose: the review is pure, so nothing under domain/ may
@@ -95,6 +110,58 @@ struct PersonalRecord {
 
   bool operator==(const PersonalRecord&) const = default;
 };
+
+// The three record rules of §2.4, and the ONE implementation of them: best e1RM for a movement ·
+// most reps at a load it has used before · heaviest load for any reps. `earned` is what one session
+// made of its working sets, `standing` the marks that stood before it, and the reply is the single
+// line that session gets — ranked kind ▸ e1RM ▸ load ▸ the earlier set, so the finish screen and
+// the log's gold dot can never disagree about whether a workout earned one.
+//
+// Every rule requires a mark to have been PASSED: with no prior history there is nothing to beat,
+// so a first session claims nothing and claiming otherwise devalues every later one. Both sides
+// carry every movement, and each movement is judged against its own marks alone.
+std::optional<PersonalRecord> recordAgainst(const std::vector<PriorMark>& earned,
+                                            const std::vector<PriorMark>& standing);
+
+// One session as the log's record walk reads it: what its working sets made, how many of them there
+// were, and whether the workout is over. The count cannot be recovered from the marks — they
+// collapse a session's sets — and the slight rule below is stated in working sets.
+//
+// `finished` is what keeps the walk and the finish read reading ONE history. The finish read stands
+// a session against its FINISHED predecessors (the store's window, ports/TrainingRepository.h), so
+// a page that folded an open workout into the marks would judge the row above it against history
+// that session's own finish screen cannot see. A page is not sorted by finishedness — started_at is
+// the device's, one-open-at-a-time is the only rule, and a queued offline start flushed late puts an
+// open row in the middle of a page — so the walk cannot assume the open one is on top.
+struct SessionMarks {
+  SessionId session;
+  std::vector<PriorMark> marks;
+  int workingSets;
+  bool finished;
+
+  bool operator==(const SessionMarks&) const = default;
+};
+
+// Which sessions of a page earned a record — the log's gold dot, and the same three rules the
+// finish screen runs, walked forward over a page instead of asked about one workout. `page` arrives
+// OLDEST FIRST and `standing` are the marks that stood before the oldest of them; the walk folds
+// each session into the standing marks as it passes, so every session is judged against the log as
+// it stood that day and never against what came after.
+//
+// A session under kSlightWorkingSets earns no dot, exactly as its own finish screen says nothing —
+// two surfaces printing different verdicts on one workout is the drift this shared rule exists to
+// prevent. Its marks still fold in: the sets happened, and the slight rule is about what a screen
+// says, not about what the log holds.
+//
+// An UNFINISHED session is judged like any other — its own finish screen judges it mid-workout, so
+// the log must say the same thing — and its marks do NOT fold: the workout is not over, and the
+// finish read of every session after it counts finished ones alone.
+//
+// The dot means a record happened here, judged against the log AS IT IS NOW. It is not frozen at
+// finish time: a correction that moves a record moves the dot with it, and a dot that lied after a
+// fix would be worse than no dot at all.
+std::vector<SessionId> recordedIn(const std::vector<SessionMarks>& page,
+                                  const std::vector<PriorMark>& standing);
 
 // The top working set of one movement, and how many sets were done AT that load. Top is the
 // HEAVIEST load, ties broken by more reps and then by the earlier set — never by volume, because

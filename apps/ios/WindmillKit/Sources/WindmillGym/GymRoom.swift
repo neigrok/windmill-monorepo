@@ -42,7 +42,7 @@ public struct GymRoom: View {
     @Environment(\.shellActions) private var shell
     @State private var finished: FinishedSession?
     @State private var tab: Tab = .today
-    @State private var away: Away?
+    @State private var away: [Away] = []
     @State private var keptRoutine = false
     @State private var starting = false
     @State private var note: String?
@@ -60,13 +60,26 @@ public struct GymRoom: View {
         var id: String { rawValue }
     }
 
-    // What a tab can open OVER itself, and both are read-only: the long window over every finished
-    // session, and one past session with its sets. The session travels as the ROW the list already
-    // holds rather than as an id, because that row carries facts no other read gives back — the
-    // working count, the tonnage, and whether the four-hour rule closed it rather than a tap.
+    // What a tab can open OVER itself, and both are read-only: one past session with its sets, and
+    // one movement's record. The session travels as the ROW the list already holds rather than as an
+    // id, because that row carries facts no other read gives back — the working count, the tonnage,
+    // and whether the four-hour rule closed it rather than a tap. A movement travels as its ID and
+    // nothing else: the record page reads its own name, which is the point of the page.
+    //
+    // THEY STACK, and only two deep: a session read back opens the record of a movement in it, and
+    // the way out of that record is the session rather than the tab. §H draws exactly that — the
+    // back reads `Push A` and not `The log`.
     private enum Away: Equatable {
-        case statistics
         case session(SessionSummary)
+        case movement(String)
+
+        // What the way back NAMES when this is the screen underneath.
+        func label(in catalog: [Exercise]) -> String {
+            switch self {
+            case .session(let summary): return Readout.routine(of: summary.session)
+            case .movement(let exerciseId): return Readout.movement(exerciseId, in: catalog)
+            }
+        }
     }
 
     private var skin: GymSkin { .instrument }
@@ -127,41 +140,56 @@ public struct GymRoom: View {
                          onDone: { self.finished = nil })
         } else if store.session != nil {
             LoggerScreen(store: store, say: { note = $0 }, onFinish: { Task { await close() } })
-        } else if let away {
-            switch away {
-            case .statistics:
-                StatisticsScreen(store: store)
+        } else if let showing {
+            switch showing {
             case .session(let summary):
                 SessionScreen(summary: summary, store: store,
-                              coach: doors(to: summary.session.id))
+                              coach: doors(to: summary.session.id),
+                              onMovement: { look(at: .movement($0)) })
+            case .movement(let exerciseId):
+                RecordScreen(exerciseId: exerciseId, store: store, isSignedIn: account.isSignedIn)
             }
         } else {
             switch tab {
             case .today:
                 TodayScreen(store: store, isSignedIn: account.isSignedIn,
                             onStart: { routineId in Task { await open(routineId) } },
-                            onStatistics: { look(at: .statistics) },
+                            onMovement: { look(at: .movement($0)) },
                             onOpenSession: { look(at: .session($0)) },
                             onSignIn: { shell.openYou() })
             case .log:
                 LogScreen(store: store, onOpen: { look(at: .session($0)) })
             case .routines:
-                RoutinesScreen(store: store, onStart: { routineId in Task { await open(routineId) } })
+                RoutinesScreen(store: store, onStart: { routineId in Task { await open(routineId) } },
+                               onMovement: { look(at: .movement($0)) })
             }
         }
     }
 
     private var isAtRest: Bool {
-        finished == nil && store.session == nil && away == nil
+        finished == nil && store.session == nil && away.isEmpty
+    }
+
+    // THE READ-ONLY SCREEN ON STAGE, which is not simply the top of the stack: a live session and
+    // the finish screen both outrank it, and a way back drawn under one of those would be a control
+    // that moves a screen nobody can see.
+    private var showing: Away? {
+        guard finished == nil, store.session == nil else { return nil }
+        return away.last
     }
 
     // Every door in and out of a read-only screen goes through here for one reason: the note is what
     // the room has to say about the door that did not open ON THE SCREEN YOU ARE ON, and a refusal
     // from Today carried under a chart is a sentence about something that is no longer in front of
     // the lifter.
-    private func look(at destination: Away?) {
+    private func look(at destination: Away) {
         note = nil
-        away = destination
+        away.append(destination)
+    }
+
+    private func back() {
+        note = nil
+        away.removeLast()
     }
 
     // THE RAIL, §F: three tabs in one pill, then the hairline and the shell's seat, which `YouSeat`
@@ -169,7 +197,7 @@ public struct GymRoom: View {
     private var rail: some View {
         HStack(spacing: WindmillSpace.x1) {
             ForEach(Tab.allCases) { destination in
-                Button { look(at: nil); tab = destination } label: {
+                Button { note = nil; away.removeAll(); tab = destination } label: {
                     Text(destination.rawValue)
                         .font(WindmillFont.body(13, destination == tab ? .bold : .semibold))
                         .foregroundStyle(destination == tab ? skin.accent : skin.inkFaint)
@@ -191,15 +219,22 @@ public struct GymRoom: View {
 
     // The bar every screen that is NOT a tab carries: the room's own way back at the leading end,
     // and the shell's seat at the trailing one — the same right edge it sits at in every other app.
+    //
+    // The way back NAMES where it goes, which on a stack is the screen underneath and only at the
+    // bottom of it the tab: a record opened from a session says `Push A` (§H), and one opened from
+    // Today says `Today`.
     private var bar: some View {
         HStack(spacing: WindmillSpace.x3) {
-            if away != nil {
-                Button { look(at: nil) } label: {
+            if showing != nil {
+                Button { back() } label: {
                     HStack(spacing: WindmillSpace.x1) {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 12, weight: .semibold))
-                        Text(tab.rawValue)
+                        Text(away.count > 1
+                                ? away[away.count - 2].label(in: store.catalog)
+                                : tab.rawValue)
                             .font(WindmillFont.body(15, .semibold))
+                            .lineLimit(1)
                     }
                     .foregroundStyle(skin.inkDim)
                     .frame(minHeight: GymTap.minimum)
@@ -238,9 +273,9 @@ public struct GymRoom: View {
             return
         }
         // Whatever was open is over: the workout is what this phone is for, and Done on the finish
-        // screen must land on Today — never back on a chart, and never on the routines list a start
-        // happened to be tapped from.
-        away = nil
+        // screen must land on Today — never back on a movement's record, and never on the routines
+        // list a start happened to be tapped from.
+        away.removeAll()
         tab = .today
         // A start JOINS whatever session is already open, so what came back may be a workout with
         // sets in it — stand where that workout is, not at the head of the routine that was asked for.

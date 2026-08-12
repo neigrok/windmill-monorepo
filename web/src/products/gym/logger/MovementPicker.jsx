@@ -1,8 +1,15 @@
-// THE MOVEMENT PICKER — the one door a movement ever comes through on this surface, for both rooms
-// that need one: the routine editor and the backfill form. It offers ids and never a typed string,
-// because a name typed twice is two movements with no history between them; when the catalog holds
-// nothing by that name it offers to MINT one, which is the same rule reached from the other side —
-// the string becomes an identity before it becomes a set.
+// THE MOVEMENT PICKER — the one door a movement ever comes through on this surface, for the three
+// rooms that need one: the routine editor, the backfill form and the record page with no movement
+// named yet (§H's third door). It offers ids and never a typed string, because a name typed twice
+// is two movements with no history between them; when the catalog holds nothing by that name it
+// offers to MINT one, which is the same rule reached from the other side — the string becomes an
+// identity before it becomes a set.
+//
+// WHAT A PICK MEANS IS THE HOST'S TO DECIDE, and the three of them mean different things: two add a
+// movement to work in hand, the third navigates to that movement's page. So `onPick` arrives as a
+// prop and is never decided in here — a tap that navigated out of a form holding unsaved sets would
+// destroy them. `onCreate` is the same rule: the record page does not pass one, so the mint door
+// never opens on a page that only reads.
 //
 // `order` is what this list already holds. No web caller passes it since capture moved to the
 // phones (§11) — a routine may legitimately name the same lift twice, and a past workout may hold

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "products/gym/domain/Record.h"
 #include "products/gym/domain/Review.h"
 #include "products/gym/domain/Routine.h"
 #include "products/gym/domain/Statistics.h"
@@ -44,16 +45,22 @@ struct TopWorkingSet {
 // would go rather than `0.0 t` (domain/Statistics.h states that rule and why it is not the volume
 // this product refuses).
 //
-// workingLoads is the session's working sets collapsed to one row per distinct load, carrying the
-// best reps done at it — PriorMark's projection (domain/Review.h) narrowed to a single session, and
-// heaviest first so both implementations of this port hand back the same vector. It is here because
-// the row's e1RM is Epley over EVERY working set, not over topSet: the heaviest set is rarely the
-// best estimate, and a row that ran Epley on topSet alone printed 116.7 under a session whose finish
-// screen said 126.7. Picking a set by e1RM is not an ordering the store can make — it IS the
-// formula, and the formula does not reach the database (§11.5) — so the store hands over the fewest
-// rows the answer can honestly be computed from and `LogService` runs `topE1rmOf` over them. Loads
-// at or below zero ride along unfiltered: which of them Epley is defined for is the domain's rule to
-// state, and it states it in exactly one place.
+// workingMarks is the session's working sets collapsed to one row per (movement, load), carrying
+// the best reps done at it — PriorMark's projection (domain/Review.h) narrowed to a single session,
+// grouped by movement and heaviest first inside each and dated by the SESSION's own start like
+// every mark a store hands over, so both implementations of this port hand back the same vector. ONE projection serves the row's two questions, because the coarser one it
+// replaced was this one summed again:
+//   · the row's e1RM is Epley over EVERY working set, not over topSet — the heaviest set is rarely
+//     the best estimate, and a row that ran Epley on topSet alone printed 116.7 under a session
+//     whose finish screen said 126.7 — so `topE1rmOf` takes the maximum over these rows and the
+//     movement they name simply does not enter that maximum.
+//   · the row's gold PR dot is a fact about ONE movement, so the same rows carry the movement and
+//     the domain's three record rules read them per movement (§2.4).
+// Picking a set by e1RM is not an ordering the store can make — it IS the formula, and the formula
+// does not reach the database (§11.5) — so the store hands over the fewest rows the answer can
+// honestly be computed from and the domain runs its rules over them. Loads at or below zero ride
+// along unfiltered: which of them Epley is defined for is the domain's rule to state, and it states
+// it in exactly one place.
 //
 // closedItself is INFERRED and carries no column, because the rule that closes a session already
 // signs its work: autoCloseAt (§3.2) stamps finished_at at the last set's instant exactly, or at
@@ -70,10 +77,25 @@ struct SessionSummary {
   double tonnageKg;
   std::vector<std::string> exerciseNames;
   std::optional<TopWorkingSet> topSet;
-  std::vector<WorkingLoad> workingLoads;   // heaviest first, best reps at each
+  std::vector<PriorMark> workingMarks;   // by movement, heaviest first, best reps at each
   bool closedItself = false;
 
   bool operator==(const SessionSummary&) const = default;
+};
+
+// One page of the log, and everything the rules that read a page need in ONE round trip: the rows
+// themselves and the marks that stood before the OLDEST of them. `standing` is what makes the gold
+// dot answerable at all — a record is judged against the history before its session, and a page has
+// history before it that is not on the page. It is bounded by the page's own movements and by
+// distinct loads rather than by set count, so a lifter with ten years of squats hands over a few
+// dozen rows and not a few thousand, and it reads in the order a session's own marks do — by
+// movement, heaviest load first — so both implementations of this port hand back the same vector.
+// An empty page has no oldest session, so nothing stands before it and `standing` is empty too.
+struct LogPage {
+  std::vector<SessionSummary> sessions;   // newest first
+  std::vector<PriorMark> standing;
+
+  bool operator==(const LogPage&) const = default;
 };
 
 // What "last time" is, once resolved: the most recent FINISHED session holding a non-warmup set of
@@ -248,7 +270,7 @@ struct TrainingRepository {
   // write that arrives after the locked row closed, replay or not. Stating it the other way round
   // would be a contract a second implementation could keep and still lose a set.
   virtual SetInsertOutcome insertSet(const Set& incoming) = 0;
-  virtual std::vector<SessionSummary> log(const UserId& user, const LogCursor& cursor) = 0;
+  virtual LogPage log(const UserId& user, const LogCursor& cursor) = 0;
   virtual std::vector<Set> setsOf(const SessionId& id) = 0;
   // The prefill read: what this account did the last time it trained this movement. Fired on every
   // movement change, and the one read in this port with no write behind it anywhere.
@@ -276,6 +298,21 @@ struct TrainingRepository {
   // The owner rides beside the row rather than inside it: a catalog entry has no owner when it is a
   // seed, and `custom` is what the read derives from created_by.
   virtual ExerciseInsertOutcome insertExercise(const UserId& owner, const Exercise& incoming) = 0;
+  // The one write in this port that changes something already stored, and the one that must not
+  // leak across accounts: the 64 seeds are GLOBAL rows, so a movement this account created renames
+  // on its own row while a seed takes a per-account display name instead — and renaming a seed back
+  // to what it is called by default clears that name rather than storing a copy of it. Nothing
+  // about identity moves either way: every set, routine entry and frozen plan snapshot still points
+  // at the same id, which is the promise §4 exists to keep. Absent, and another account's private
+  // movement, are the one answer every read here gives.
+  virtual std::optional<Exercise> renameExercise(const UserId& user, const ExerciseId& id,
+                                                 const std::string& name) = 0;
+
+  // The record read: one movement's whole page in one pass, answered in the DOMAIN value the rule
+  // defines — historyFor's contract applied to one movement instead of one session. Nothing here
+  // computes an e1RM, picks a record or windows a chart; the store hands over orderings and the
+  // pure rule does the rest.
+  virtual MovementHistory movementHistory(const UserId& user, const ExerciseId& exercise) = 0;
 
   // The statistics read: everything the pure rule needs, in one pass, answered in the DOMAIN value
   // the rule defines — historyFor's contract applied to a longer window. `tops` come back grouped

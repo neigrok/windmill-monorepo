@@ -9,8 +9,15 @@
 
 namespace wm::gym {
 
-// The statistics surface is a READ over values this product has already decided, and the list of
+// The statistics ENGINE is a READ over values this product has already decided, and the list of
 // what it refuses is as load-bearing as the list of what it answers.
+//
+// There is no statistics SURFACE any more, and there is no orphan here either. W1c retired the room
+// — the web's fourth tab, the phones' door off Today — because the design says in as many words
+// that there is no dashboard in this product; what replaced it is a movement's record
+// (domain/Record.h), one exercise and one page, reached by tapping a name anywhere. The rules below
+// stayed: `GET /v1/gym/stats` and the `get_stats` tool are what an agent asks "how has my squat
+// moved", which is the product's whole thesis. Do not clean this up as unreachable code.
 //
 // No volume AS A METRIC — no headline number, no series anyone is asked to watch, nothing sessions
 // are ranked by — because `weight × reps` does not rise with getting stronger: band-assisted work
@@ -93,6 +100,10 @@ struct MovementPoint {
 // compare against, which is the only difference. The third record rule has no standing form and is
 // deliberately absent: "more reps at a load you have used before" is a comparison, and with nothing
 // to compare against every mark already IS the best reps ever done at its load.
+//
+// atMs is the mark's, and a mark is dated by the SESSION it was set in — the same instant
+// MovementTop above carries, so a best and the point it sits on in the same reply agree, and so
+// does the record page reading the same fact off its own sessions (domain/Record.h).
 struct Best {
   double weightKg;
   int reps;

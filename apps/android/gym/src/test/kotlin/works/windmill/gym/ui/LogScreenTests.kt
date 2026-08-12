@@ -3,6 +3,7 @@ package works.windmill.gym.ui
 import java.time.LocalDate
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -75,6 +76,28 @@ class LogScreenTests {
         assertEquals("1.2 t", row.tonnage)
         assertEquals("no phone computes an Epley, so a device-held row shows no estimate",
                      null, row.estimate)
+        assertFalse("nor does a phone judge a record — that is the log's verdict", row.record)
+    }
+
+    // §G'S GOLD DOT is the log's own verdict carried through and never re-derived: the three record
+    // rules need the whole history and an Epley, and this phone holds neither. So a row the log
+    // called a record draws one, and a row from a server that never spoke draws none — an omission,
+    // which is exactly what saying nothing means.
+    @Test
+    fun theGoldDotIsTheLogsVerdictAndNeverThisPhonesGuess() {
+        val squat = set(180.0, 5, at("2026-08-07"))
+        val log = listOf(
+            SessionSummary(id = "s1", startedAtMs = at("2026-08-07"),
+                finishedAtMs = at("2026-08-07") + 3_600_000, plan = PlanSnapshot(routine = "Push A"),
+                workingSetCount = 11, topE1rm = 122.5, record = true),
+            session("s2", "2026-08-05", "Legs", listOf(squat)),
+        )
+
+        val rows = weeks(log).single().rows
+
+        assertTrue(rows.first().record)
+        assertEquals("e1RM 122.5", rows.first().estimate)
+        assertFalse("a session the device composed claims no record of its own", rows.last().record)
     }
 
     @Test

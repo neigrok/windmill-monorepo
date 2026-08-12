@@ -1033,7 +1033,7 @@ create table if not exists journal_page_curation (
 -- The third room in the superapp: a training log whose one load-bearing feature is the durable
 -- set write. Tables are gym_*, every row owner-scoped, and account deletion is the cascade.
 -- There is still deliberately NO visibility column: a session row is legible to exactly one
--- account by construction, and every one of the fifteen owner-scoped routes stays
+-- account by construction, and every one of gym's owner-scoped routes stays
 -- `WHERE user_id = :caller`. The one reader who is not the owner comes in through a SEPARATE
 -- table, gym_session_shares (below) — a capability that expires and is revoked by deleting one
 -- row, never a stance on the session itself. All date/time work stays in SQL (to_timestamp,
@@ -1065,6 +1065,26 @@ create table if not exists gym_exercises (
                                                    -- and not yet load-bearing anywhere
   created_by  uuid references users(id) on delete cascade,   -- null = catalog seed
   created_at  timestamptz not null default now()
+);
+
+-- What a lifter calls a SEEDED movement, per account. The 64 seeds are global rows shared by every
+-- account on the server, so `UPDATE gym_exercises SET name` renames Back Squat for everyone — this
+-- table is the whole of why that statement is never written for a seed. A movement the lifter
+-- CREATED is theirs alone and renames in place on its own row; a seed gets a line here instead and
+-- every read coalesces it over the seed's name.
+-- The id never moves, which is the point the rename exists to demonstrate: every set, every routine
+-- entry and every frozen plan snapshot still points at the same movement, so renaming Back Squat
+-- keeps the history whole (§4). Renaming a movement BACK to its seed name deletes the row rather
+-- than storing a copy of the seed's own string — an override that says nothing is not an override.
+-- It is owner-scoped like every other gym row, it joins PgAccountFootprint's owned list in
+-- main.cpp (a movement someone named is their data), and both halves cascade: closing the account
+-- takes the line, and deleting a movement would take it too.
+create table if not exists gym_exercise_names (
+  user_id     uuid not null references users(id) on delete cascade,
+  exercise_id text not null references gym_exercises(id) on delete cascade,
+  name        text not null,
+  updated_at  timestamptz not null default now(),
+  primary key (user_id, exercise_id)
 );
 
 -- The plan. Entries are RELATIONAL, not a JSON blob — Lift persisted per-set pyramid targets as
@@ -1166,7 +1186,7 @@ create index if not exists gym_sets_history  on gym_sets (user_id, exercise_id, 
 -- The coach share, and it is a TABLE rather than a column on gym_sessions for one reason that
 -- decides everything else: a column would put a stance on every session row, and every one of
 -- gym's owner-scoped reads would then have to be re-decided in terms of it. A separate table
--- leaves all fifteen of them exactly as they were — still `WHERE user_id = :caller`, still absent
+-- leaves every one of them exactly as it was — still `WHERE user_id = :caller`, still absent
 -- byte-identical to forbidden — and adds one door beside them. Sharing cannot be reached by
 -- accident from any existing query, because no existing query names this table.
 -- session_id is the primary key, which is what makes the mint idempotent: tapping Share twice

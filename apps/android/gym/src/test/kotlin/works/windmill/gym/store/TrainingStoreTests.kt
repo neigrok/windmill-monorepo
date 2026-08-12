@@ -90,9 +90,9 @@ class TrainingStoreTests {
         sync = { if (it.isSignedIn) sync else null },
     )
 
-    private fun account(signedIn: Boolean) = Account(
+    private fun account(signedIn: Boolean, id: String = "u1") = Account(
         api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
-        user = if (signedIn) User(id = "u1", email = "sam@example.com", name = "Sam") else null,
+        user = if (signedIn) User(id = id, email = "sam@example.com", name = "Sam") else null,
     )
 
     // A store standing where the room stands mid-workout: a session open on the log, a movement in
@@ -424,24 +424,35 @@ class TrainingStoreTests {
         assertEquals(Prefill(82.5, 5), store.prefill)
     }
 
-    // The read-only rooms run off the shelf: statistics over the local finished sessions, and the
-    // review of one of them — the three facts and the slight rule, computed on the device.
+    // The read-only rooms run off the shelf: a movement's record over the local finished sessions,
+    // and the review of one of them — the three facts and the slight rule, computed on the device.
+    // Neither invents an estimate: Epley lives on the log, and this phone draws what it can prove.
     @Test
-    fun testSignedOutStatisticsAndReviewAreComputedFromTheShelf() = runTest {
+    fun testSignedOutTheRecordAndTheReviewAreComputedFromTheShelf() = runTest {
         val store = makeStore(sync = null)
         store.connect(account(signedIn = false))
+        val movement = (store.create("Bench Press") as GymResult.Ok).value
 
         store.start()
-        store.choose("bench-press")
+        store.choose(movement.id)
+        store.logSet(weightKg = 60.0, reps = 10, kind = SetKind.Warmup)
         repeat(4) { store.logSet(weightKg = 82.5, reps = 5) }
         clockMs += 60_000
         val ended = (store.finish() as FinishOutcome.Closed).session
 
-        val statistics = (store.statistics() as GymResult.Ok).value
-        assertEquals(listOf(1), statistics.weeks.map { it.sessions })
-        assertEquals(listOf(4), statistics.weeks.map { it.workingSets })
-        assertEquals(listOf("bench-press"), statistics.movements.map { it.exerciseId })
-        assertEquals(listOf(82.5), statistics.movements.single().points.map { it.weightKg })
+        val record = (store.record(movement.id) as GymResult.Ok).value
+        assertEquals("Bench Press", record.exercise.name)
+        assertEquals(1, record.sessionCount)
+        assertEquals(0, record.routineCount)
+        assertEquals(82.5, record.heaviest?.weightKg)
+        assertEquals(ended.startedAtMs, record.heaviest?.atMs)
+        assertNull("no estimate is computed on this phone", record.heaviest?.e1rm)
+        assertNull("and no best e1RM either, so the page draws no chart", record.bestE1rm)
+        assertEquals(emptyList<Any>(), record.e1rmSeries)
+        assertEquals(emptyList<Any>(), record.records)
+        assertEquals(listOf(ended.id), record.recentDays.map { it.sessionId })
+        assertEquals("a warmup counts toward nothing, here as everywhere",
+            listOf(82.5, 82.5, 82.5, 82.5), record.recentDays.single().sets.map { it.weightKg })
 
         val review = store.review(ended.id)
         assertEquals(4, review?.stats?.workingSets)
@@ -449,7 +460,134 @@ class TrainingStoreTests {
         assertNull("no estimate is computed on this phone", review?.stats?.topE1rm)
 
         val detail = (store.sessionDetail(ended.id) as GymResult.Ok).value
-        assertEquals(4, detail.sets.size)
+        assertEquals(5, detail.sets.size)
+    }
+
+    // RENAME, AND THE IDENTITY IT PROVES: the name moves and the id does not, so every set logged
+    // under it is still the same movement afterwards — which is the whole reason §H offers the
+    // rename on the page that draws the history. A movement the shelf holds renames on the device
+    // and the claim carries the name it finds; a catalog movement the shelf has never seen needs
+    // the account, and says so rather than storing a name that would silently revert on connect.
+    @Test
+    fun testARenameMovesTheNameAndNeverTheIdAndTheShelfKeepsIt() = runTest {
+        val store = makeStore(sync = null)
+        store.connect(account(signedIn = false))
+        val movement = (store.create("Bench Pres") as GymResult.Ok).value
+
+        store.start()
+        store.choose(movement.id)
+        store.logSet(weightKg = 82.5, reps = 5)
+        clockMs += 60_000
+        store.finish()
+
+        assertEquals("the page draws the movement the write confirmed, not the string typed at it",
+            Exercise(id = movement.id, name = "Bench Press", custom = true),
+            (store.rename(movement.id, " Bench Press ") as GymResult.Ok).value)
+        assertEquals("Bench Press", store.catalog.single { it.id == movement.id }.name)
+
+        val record = (store.record(movement.id) as GymResult.Ok).value
+        assertEquals("Bench Press", record.exercise.name)
+        assertEquals("the history is whole — the id never moved", 1, record.sessionCount)
+
+        assertEquals("a movement needs a name",
+            ((store.rename(movement.id, "   ") as GymResult.Failed).why as WriteFailure.Refused).said)
+        assertEquals("renaming a catalog movement needs your account — sign in first",
+            ((store.rename("back-squat", "Squat") as GymResult.Failed).why as WriteFailure.Refused).said)
+
+        val relaunched = makeStore(sync = null)
+        relaunched.connect(account(signedIn = false))
+        assertEquals("Bench Press", relaunched.catalog.single { it.id == movement.id }.name)
+    }
+
+    // Signed in, the rename is the log's and the catalog every other screen reads is updated off
+    // its answer — a routine card still printing the old name after the page said it changed would
+    // be the room disagreeing with itself.
+    @Test
+    fun testSignedInARenameGoesToTheLogAndTheCatalogFollowsIt() = runTest {
+        val server = FakeTraining()
+        server.catalog = listOf(Exercise(id = "back-squat", name = "Back Squat"))
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+
+        assertEquals("Low-bar Squat", (store.rename("back-squat", "Low-bar Squat") as GymResult.Ok).value.name)
+
+        assertEquals(listOf("renameExercise"), server.calls.filter { it == "renameExercise" })
+        assertEquals("Low-bar Squat", server.catalog.single().name)
+        assertEquals("Low-bar Squat", store.catalog.single { it.id == "back-squat" }.name)
+        assertEquals("the id is what every set points at, and it did not move",
+            "back-squat", store.catalog.single { it.id == "back-squat" }.id)
+    }
+
+    // A NAME IS THE SEAT'S AND NOT THE PHONE'S. A rename is a per-account override, so the copy this
+    // device holds belongs to the account it was read for — and the next lifter to hold the phone,
+    // offline or signed out, may not be shown it. This is the on-device half of the wave's one
+    // catastrophic failure: a private name crossing a seat, on the first frame, indefinitely.
+    @Test
+    fun testARenameIsTheAccountsAndNeverCrossesToTheNextSeatOnThisPhone() = runTest {
+        val hers = FakeTraining()
+        hers.catalog = listOf(Exercise(id = "back-squat", name = "Back Squat"))
+        val alice = makeStore(sync = hers)
+        alice.connect(account(signedIn = true, id = "alice"))
+        alice.rename("back-squat", "Alice’s Secret Squat")
+
+        // Her own seat, with no signal at all: the copy on the device is hers and it opens on the
+        // first frame, which is the whole reason the file exists.
+        val herRelaunch = makeStore(sync = null)
+        herRelaunch.connect(account(signedIn = true, id = "alice"))
+        assertEquals("Alice’s Secret Squat", herRelaunch.catalog.single().name)
+
+        // The next seat, equally offline — so nothing can repair the names behind his back. This is
+        // the state this room is built to work in, and the one the leak used to stand in forever.
+        val bob = makeStore(sync = null)
+        bob.connect(account(signedIn = true, id = "bob"))
+        assertEquals("a slug is honest — this phone does not know Bob's names",
+            emptyList<Exercise>(), bob.catalog)
+
+        val anon = makeStore(sync = null)
+        anon.connect(account(signedIn = false))
+        assertEquals("and signing out is not a way back into her catalog either",
+            emptyList<Exercise>(), anon.catalog)
+    }
+
+    // The anonymous seat is a seat like any other, and the movements it minted are the whole catalog
+    // it has: they ride with it across a relaunch, and they ride into the account that signs in over
+    // them, because a movement no claim has landed yet is still on this device to be named.
+    @Test
+    fun testTheShelfsOwnMovementsSurviveARelaunchAndTheSeatTheySignInto() = runTest {
+        val anon = makeStore(sync = null)
+        anon.connect(account(signedIn = false))
+        val made = (anon.create("Sled Push") as GymResult.Ok).value
+
+        val relaunched = makeStore(sync = null)
+        relaunched.connect(account(signedIn = false))
+        assertEquals(listOf(made), relaunched.catalog)
+
+        // A seat this phone holds no copy for, standing over the same shelf: before any account read
+        // answers, the logger still has a name to draw at 28sp over the lifter's own lift.
+        val newSeat = makeStore(sync = null)
+        newSeat.connect(account(signedIn = true, id = "alice"))
+        assertEquals(listOf(made), newSeat.catalog)
+    }
+
+    // A record the log refused is not a record that is empty: the reason is repeated in the log's
+    // own words, and a movement it no longer holds gets the plain fact instead of a signal blamed
+    // for an answer that was on the server.
+    @Test
+    fun testARecordTheLogRefusesSaysWhyRatherThanDrawingNothing() = runTest {
+        val server = FakeTraining()
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+
+        assertEquals("that movement is no longer on the log",
+            ((store.record("back-squat") as GymResult.Failed).why as WriteFailure.Refused).said)
+
+        server.refuseRecord = refusal(500, message = "internal error")
+        assertEquals("internal error",
+            ((store.record("back-squat") as GymResult.Failed).why as WriteFailure.Refused).said)
+
+        server.refuseRecord = null
+        server.online = false
+        assertEquals(WriteFailure.NoAnswer, (store.record("back-squat") as GymResult.Failed).why)
     }
 
     // THE CLAIM, end to end: signing in replays the shelf in the contract's order — routines
@@ -937,9 +1075,11 @@ class TrainingStoreTests {
     }
 
     // A movement is a stable id everywhere except on screen. Held only in memory, a cold launch in
-    // a basement drew `bench-press` at 28sp where `Bench Press` belongs — for the whole session.
+    // a basement drew `bench-press` at 28sp where `Bench Press` belongs — for the whole session. The
+    // copy is the SEAT'S: it opens with no signal at all for the account that filled it, and a name
+    // that account chose is not there for anybody else, because a rename is a per-account override.
     @Test
-    fun testTheMovementNamesAreHeldOnTheDeviceAndAreThereBeforeTheFirstFrame() = runTest {
+    fun testTheMovementNamesAreHeldOnTheDeviceForTheSeatThatReadThem() = runTest {
         val server = FakeTraining()
         server.catalog = listOf(Exercise(id = "bench-press", name = "Bench Press"),
             Exercise(id = "back-squat", name = "Back Squat"))
@@ -948,12 +1088,14 @@ class TrainingStoreTests {
 
         // A cold launch with no signal: nothing is read, and the names are already there.
         val relaunched = makeStore(sync = null)
+        relaunched.connect(account(signedIn = true))
         assertEquals(listOf("bench-press", "back-squat"), relaunched.catalog.map { it.id })
         assertEquals("Bench Press", Readout.movement("bench-press", relaunched.catalog))
 
-        relaunched.connect(account(signedIn = false))
-        assertEquals("signing out does not forget what a movement is called",
-            listOf("Bench Press", "Back Squat"), relaunched.catalog.map { it.name })
+        val signedOut = makeStore(sync = null)
+        signedOut.connect(account(signedIn = false))
+        assertEquals("the names read for an account are that account's, and signing out is not a way to keep reading them",
+            emptyList<Exercise>(), signedOut.catalog)
     }
 
     // THE CLAIM-JOIN TRAP: a server start JOINS whatever session is open, and mid-claim the open

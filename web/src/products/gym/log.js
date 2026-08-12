@@ -12,9 +12,9 @@ const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', '
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // A position is a URL: #/gym is today, #/gym/log the log, #/gym/routines the routines,
-// #/gym/stats the statistics, #/gym/routines/rt_… one routine's editor, #/gym/session/ses_… one
-// session, #/gym/finish/ses_… the end of the one just closed, #/gym/backfill the past-workout form,
-// #/gym/shared/… one workout as a coach reads it.
+// #/gym/movement/… one movement's record, #/gym/routines/rt_… one routine's editor,
+// #/gym/session/ses_… one session, #/gym/finish/ses_… the end of the one just closed,
+// #/gym/backfill the past-workout form, #/gym/shared/… one workout as a coach reads it.
 // Reading and writing that one grammar live together, so a link and the parse that answers it can
 // never drift.
 export function sessionIdOf(hash) {
@@ -56,7 +56,21 @@ export function finishHref(id) {
 
 export const BACKFILL_HREF = '#/gym/backfill';
 
-export const STATS_HREF = '#/gym/stats';
+// A MOVEMENT'S RECORD (§H) — the page an exercise name is a door to, wherever the name appears. The
+// id in it is the CATALOG's, so it is a slug for a seeded movement ('back-squat') and 'ex_<hex>'
+// for one a lifter minted; both are inside the charset every other id here is read with.
+export function movementIdOf(hash) {
+  const match = /^#\/gym\/movement\/([A-Za-z0-9_-]+)/.exec(hash || '');
+  return match ? match[1] : null;
+}
+
+export function recordHref(exerciseId) {
+  return `#/gym/movement/${exerciseId}`;
+}
+
+// The record with no movement named yet — the picker, as a room. It is also where the retired
+// statistics tab's URL lands (`screenOf` below).
+export const MOVEMENTS_HREF = '#/gym/movement';
 
 // THE ONE URL IN GYM THAT IS NOT THE LIFTER'S. The token is the whole credential — the server
 // resolves it with no caller at all — so it is the only position here that means something to
@@ -85,7 +99,11 @@ export function screenOf(hash) {
   if (routineIdOf(hash)) return 'routine';
   if (/^#\/gym\/routines(\/|$|\?)/.test(hash || '')) return 'routines';
   if (/^#\/gym\/backfill(\/|$|\?)/.test(hash || '')) return 'backfill';
-  if (/^#\/gym\/stats(\/|$|\?)/.test(hash || '')) return 'stats';
+  // #/gym/stats WAS the statistics tab, and §H retires it: there is no dashboard in this product,
+  // and what replaces it is one movement's page. The old URL resolves here rather than falling
+  // through to Today, because somebody who kept it wanted a number about a movement and this is the
+  // room that answers that — with no movement named, one tap from it.
+  if (/^#\/gym\/(movement|stats)(\/|$|\?)/.test(hash || '')) return 'record';
   if (/^#\/gym\/log(\/|$|\?)/.test(hash || '')) return 'log';
   return 'today';
 }
@@ -97,16 +115,18 @@ export function dayLabel(ms) {
   return `${WEEKDAYS[day.getDay()]} ${day.getDate()} ${MONTHS[day.getMonth()]}`;
 }
 
-// The same spelling, read in UTC, and it has one caller for one reason: a statistics week is
-// bucketed by `date_trunc('week', started_at AT TIME ZONE 'UTC')`, so the instant that names it is
-// a UTC Monday midnight rather than a moment anybody lived through. Read in the reader's own zone
-// it comes out as Sunday for half the planet, and a week label naming the wrong day is worse than
-// none. Everything else in gym is an instant a lifter stood in and reads in the zone they were
-// standing in, which is `dayLabel` above. iOS spells this the same way and says so in the same
-// place (Readout.day(_:utc:)).
-export function utcDayLabel(ms) {
+// A DAY NAMED BY ITS DATE ALONE — '27 Jul'. The record page prints it under a chart, down a list of
+// personal records and beside every recent day (§H), where twelve weekday prefixes in a column are
+// noise; `dayLabel` above keeps the weekday because it names ONE session, and a lifter remembers
+// standing in a Tuesday. The log's bottom is the third reading — the same date, plus the year.
+//
+// AND ALL THREE ARE LOCAL, because every instant left in this product is one somebody stood in. A
+// UTC spelling used to live here for the one that was not — a statistics week, bucketed by
+// `date_trunc('week', … AT TIME ZONE 'UTC')`, which is a Monday midnight that reads as the Sunday
+// evening before it west of Greenwich. That surface is retired and its weekly bars went with it.
+export function shortDayLabel(ms) {
   const day = new Date(ms);
-  return `${WEEKDAYS[day.getUTCDay()]} ${day.getUTCDate()} ${MONTHS[day.getUTCMonth()]}`;
+  return `${day.getDate()} ${MONTHS[day.getMonth()]}`;
 }
 
 // The day a session happened, spelled the way a lifter names the day they train on. It is the
@@ -126,8 +146,7 @@ export function timeLabel(ms) {
 // they started is the one fact worth arriving at. The year is spelled here and nowhere else —
 // everywhere else in gym is a day inside the last few months, where a year is noise.
 export function firstSessionLabel(ms) {
-  const day = new Date(ms);
-  return `first session · ${day.getDate()} ${MONTHS[day.getMonth()]} ${day.getFullYear()}`;
+  return `first session · ${shortDayLabel(ms)} ${new Date(ms).getFullYear()}`;
 }
 
 export function whenLabel(ms) {
@@ -272,9 +291,8 @@ export function loadedLine(sessions, weeks) {
 
 // WEEKS ARE A FOLD OVER THE PAGE IN HAND, not a read: there is no week endpoint, and the log
 // arrives newest-first in one order the server guarantees, so a week is a run of adjacent rows.
-// They start Monday and they start in the lifter's own zone — a session is an instant somebody
-// stood in, and the statistics week's UTC Monday (utcDayLabel) is a different question with a
-// different reason.
+// They start Monday and they start in the lifter's own zone, because a session is an instant
+// somebody stood in — which is now the only kind of instant left in this product.
 //
 // THE OLDEST LOADED WEEK KEEPS ITS TONNAGE TO ITSELF. It is the one week `Load older` can still add
 // sessions to, so its sum is a floor rather than a fact — and a divider understating a week is the
@@ -331,6 +349,18 @@ export function weeksOf(summaries, { complete = false } = {}) {
 // (`unsyncedInk`, GymSkin.swift / GymSkin.kt — `--unsynced-ink` here).
 export function onThisDevice(session) {
   return session?.onThisDevice === true;
+}
+
+// A GOLD DOT MEANS A PR HAPPENED IN THERE (§G16), and the store decides which sessions those are:
+// the three record rules — best e1RM, most reps at a load, heaviest load — walked over the log's
+// working sets in order (backend domain/Review.h). Nothing on this surface re-derives one.
+//
+// IT IS JUDGED AGAINST THE LOG AS IT IS NOW, never frozen at the finish. W3's corrections will move
+// records, and a dot that went on lying after a fix would be worse than no dot at all. The field is
+// always sent, so a row from a deployment that does not send it wears nothing rather than claiming
+// the session earned nothing — which is why this asks for the true and not for the absence of false.
+export function hasRecord(session) {
+  return session?.record === true;
 }
 
 // A routine row says what it holds and when it was last used, because that is how a lifter picks
