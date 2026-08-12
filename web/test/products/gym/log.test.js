@@ -11,15 +11,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  agoLabel, BACKFILL_HREF, clockOf, CLOSED_ITSELF_NOTE, closedOnItsOwn, dayLabel, durLabel,
-  e1rmLabel, entryLabel, finishHref, finishIdOf, firstSessionLabel, fmt, groupByExercise, hasRecord,
-  isFinished, isFirstSession, loadedLine, logWhenLabel, MOVEMENTS_HREF, movementIdOf, nameOfMovement,
-  NEW_ROUTINE_ID, NO_ROUTINE, NOT_IN_PLAN, onThisDevice, planFrozenLabel, planOf, planReadingOf,
+  agoLabel, alsoReadsLabel, BACKFILL_HREF, clockOf, CLOSED_ITSELF_NOTE, closedOnItsOwn, dayLabel,
+  durLabel, e1rmLabel, entryLabel, finishHref, finishIdOf, firstSessionLabel, fmt, fmtKg,
+  groupByExercise,
+  hasRecord, isFinished, isFirstSession, loadedLine, logWhenLabel, MOVEMENTS_HREF, movementIdOf,
+  nameOfMovement, NEW_ROUTINE_ID, NO_ROUTINE, NOT_IN_PLAN, onThisDevice, planFrozenLabel, planOf,
+  planReadingOf,
   recordHref, routineHref, routineIdOf, routineMetaLabel, routineNameOf, ROUTINES_HREF, screenOf,
   sessionDetailMeta, sessionHref, sessionIdOf, sessionMetaLabel, setCountLabel, setLoadLabel,
   setNoteOf, sharedHref, sharedTokenOf, shortDayLabel, timeLabel, tonnageLabel, tonnageOf,
   topSetLabel, topSetOf, weekdayName, weeksOf, workingLabel, workingSetsOf,
 } from '../../../src/products/gym/log.js';
+import { KG, LB, spellWeightsIn } from '../../../src/products/gym/units.js';
 
 test('sessionIdOf — a session hash yields its id, everything else yields nothing', () => {
   assert.equal(sessionIdOf('#/gym/session/ses_9f3a1c22'), 'ses_9f3a1c22');
@@ -383,6 +386,64 @@ test('fmt — trailing zeros stripped, a real minus, and a negative load is an o
   assert.equal(fmt(-2.25), '−2.25');
   assert.equal(fmt(102.505), '102.51');
   assert.equal(fmt(-20).charCodeAt(0), 0x2212);
+});
+
+// UNITS HAPPEN INSIDE fmt AND NOWHERE ELSE (units.js), which is what makes one account reading in
+// pounds a one-line change rather than twenty. Everything else on this surface — a set's line, a
+// week's tonnage, a record's sentence — comes through it, so all of them move together and none of
+// them can be forgotten.
+test('fmt spells the account’s unit, and fmtKg spells the one the store holds', (t) => {
+  t.after(() => spellWeightsIn(KG));
+  spellWeightsIn(LB);
+
+  assert.equal(fmt(102.5), '226');
+  assert.equal(fmt(100), '220.5');
+  assert.equal(fmt(-20), '−44.1');
+  assert.equal(fmt(0), '0');
+  // The field seams — a backfill line, a correction, a routine target, the keypad's own message —
+  // are typed into and land in the log as they stand, so they say the kilogram whatever the account
+  // reads in, and each of them prints `kg` beside it.
+  assert.equal(fmtKg(102.5), '102.5');
+  assert.equal(fmtKg(-20), '−20');
+  assert.equal(fmtKg(1.25), '1.25');
+
+  // The labels built on fmt follow it without being told.
+  assert.equal(setLoadLabel({ weightKg: 102.5, reps: 5 }), '226 × 5');
+  assert.equal(topSetLabel({ weightKg: 100, reps: 3 }), '220.5 × 3');
+  assert.equal(entryLabel({ targetSets: 5, targetReps: 5, targetWeightKg: 102.5 }), '5 × 5 · 226');
+});
+
+// AND WHERE THE TWO SPELLINGS MEET ON ONE SCREEN, THE PRODUCT SAYS SO. A kilogram field over its
+// own converted reading — the target sheet on the routine's rows, the correction sheet on the
+// session's — is two numerals for one weight, and a lifter has no way to know they are one. In
+// kilograms there is nothing to reconcile and the line is not drawn at all.
+test('a kilogram field over a pounds reading says what the other numeral is', (t) => {
+  t.after(() => spellWeightsIn(KG));
+
+  assert.equal(alsoReadsLabel(100), null);
+  assert.equal(alsoReadsLabel(null), null);
+
+  spellWeightsIn(LB);
+  assert.equal(alsoReadsLabel(100), 'reads 220.5 lb in your log');
+  assert.equal(alsoReadsLabel(102.5), 'reads 226 lb in your log');
+  assert.equal(alsoReadsLabel(-20), 'reads −44.1 lb in your log');
+  // A target a routine declines to set is not a weight, so there is nothing to read it as.
+  assert.equal(alsoReadsLabel(null), null);
+  assert.equal(alsoReadsLabel(undefined), null);
+});
+
+// A TONNE IS THE SCALE WORD A METRIC READER HAS and a pound reader has none, so the same physical
+// threshold prints thousands of pounds rather than a unit they never use. The threshold is the MASS
+// and not the numeral, so both readings change scale on the same week.
+test('the scale of a week follows the reading, and switches at the same mass either way', (t) => {
+  t.after(() => spellWeightsIn(KG));
+  spellWeightsIn(LB);
+
+  assert.equal(tonnageLabel(999), '2202.4 lb');
+  assert.equal(tonnageLabel(1000), '2.2k lb');
+  assert.equal(tonnageLabel(14_200), '31.3k lb');
+  assert.equal(tonnageLabel(0), null);
+  assert.equal(tonnageLabel(null), null);
 });
 
 test('dayLabel, timeLabel and agoLabel — the labels a lifter judges relevance by', () => {

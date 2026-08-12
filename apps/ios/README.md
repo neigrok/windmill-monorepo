@@ -218,6 +218,24 @@ open the door at that tap and resume after, exactly as `auth.md` §2 defines for
   present-and-broken. The code path and the relay-address link door are written and waiting.
 - **Universal links are wired but not live.** See the section below: everything in the repo is done
   and `WMUniversalLinksEnabled` is false until the domain half exists.
+- **Gym's settings have no seam to hang from.** The design reaches them from You: a product registers
+  a settings *section* and the shell composes it, exactly as `web/src/products/gym/routes.js`
+  registers `GymSettingsSection`. `ProductModule` has no such slot — `room`, `hubLine`, `entry`,
+  `holdings`, and nothing about settings — and the shell is not a product's territory, so gym's five
+  rows are reached from a quiet row at the foot of Today instead. The screen is the one the section
+  would show; when the seam lands, the row on Today goes.
+- **Choosing `lb` changes nothing this app draws.** The setting is real and account-level, and gym
+  stores kilograms under either answer — but the ladder, the keypad and the plate math here are
+  kilogram instruments, and a pound numeral over buttons that step in kilos would not add up. The row
+  says so in the row rather than moving and quietly doing nothing.
+- **The rest timer has no alarm the phone is asleep for.** The clock is computed from the set's own
+  instant, so it is right whenever it is looked at; the chime is scheduled in-process, iOS suspends a
+  backgrounded app, and a chime that arrived minutes late is dropped rather than played. This product
+  sends no notifications, so there is nothing to promise instead — and the settings row says it.
+- **Gym's CSV export and the connected-log grant are doors to the web.** The export is a file this
+  app has nowhere to put yet, and the grant state is an entitlements read this client does not have —
+  the same gap the plan meter has. Both rows open the web page that owns them rather than naming a
+  state nobody checked.
 - **No app icon or launch asset yet.**
 - **The plan meter in You is still not drawn.** The board shows one; this client has no entitlements
   call, and a meter that invented a number is worse than the gap. It arrives when the data does.

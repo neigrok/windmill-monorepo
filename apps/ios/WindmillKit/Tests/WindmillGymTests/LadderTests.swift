@@ -137,6 +137,37 @@ final class LadderTests: XCTestCase {
         XCTAssertEqual(Ladder.bumpReps(-3, direction: -1), 1)
     }
 
+    // THE CAPTION MAY NEVER CONTRADICT THE BUTTONS IT IS DRAWN UNDER. It is not in the golden — no
+    // other surface draws it — so the contract it answers to is the label row itself: every number
+    // the caption names has to be a number one of the four buttons is actually moving by, in the
+    // direction it names. The boundaries are where a caption that read ONE band went wrong, and 20 kg
+    // is one of them — the load an empty bar opens on.
+    func testTheCaptionNamesTheStepsTheButtonsActuallyMove() {
+        let loads = golden.weightCases.map(\.weight) + [20, 50, -20, -50, 19.99, 105]
+        for weight in loads {
+            let labels = Ladder.labels(for: weight)
+            let caption = Ladder.caption(for: weight)
+            let downLarge = String(labels[0].dropFirst()), downSmall = String(labels[1].dropFirst())
+            let upSmall = String(labels[2].dropFirst()), upLarge = String(labels[3].dropFirst())
+            let fine = downSmall == upSmall ? "fine \(upSmall)" : "fine \(downSmall)↓ \(upSmall)↑"
+            let plate = downLarge == upLarge ? "plate \(upLarge)" : "plate \(downLarge)↓ \(upLarge)↑"
+            XCTAssertTrue(caption.hasSuffix("\(fine) · \(plate)"),
+                          "at \(weight) kg the caption is \"\(caption)\" over buttons \(labels)")
+        }
+    }
+
+    // And the whole line, spelled out, at the four loads that decide it: the design's own example, the
+    // two band boundaries, and one on the assisted side of zero — where the band is the magnitude's
+    // and the caption says so rather than claiming a −20 kg load is between 20 and 50.
+    func testTheCaptionsWholeLine() {
+        XCTAssertEqual(Ladder.caption(for: 105), "over 50 kg · fine 2.5 · plate 10")
+        XCTAssertEqual(Ladder.caption(for: 10), "under 20 kg · fine 1 · plate 2.5")
+        XCTAssertEqual(Ladder.caption(for: 20), "20–50 kg · fine 1↓ 2.5↑ · plate 2.5↓ 5↑")
+        XCTAssertEqual(Ladder.caption(for: 50), "over 50 kg · fine 2.5 · plate 5↓ 10↑")
+        XCTAssertEqual(Ladder.caption(for: -20), "±20–50 kg · fine 2.5↓ 1↑ · plate 5↓ 2.5↑")
+        XCTAssertEqual(Ladder.caption(for: -60), "over ±50 kg · fine 2.5 · plate 10")
+    }
+
     // The law that makes one rule serve both sides of zero: bump(−w, −direction, big) is exactly
     // −bump(w, direction, big). An implementation that reads its down-band off the SIGNED weight
     // gets the loaded side right and breaks here.

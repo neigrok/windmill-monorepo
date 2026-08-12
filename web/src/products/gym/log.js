@@ -6,6 +6,7 @@
 // browser.
 
 import { round } from './logger/ladder.js';
+import { inDisplayUnit, LB, weightUnit } from './units.js';
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -223,8 +224,33 @@ export const EMPTY_BAR_REPS = 5;
 // a normal point on the number line here — band-assisted work sits below zero.
 // The grid is the ladder's, not a second opinion: this read the magnitude to two decimals itself
 // until the two spellings disagreed on a negative half-cent, and one of them has a golden.
-export function fmt(weight) {
-  return (weight < 0 ? '−' : '') + String(Math.abs(round(weight)));
+//
+// AND IT IS WHERE UNITS HAPPEN, once, for the whole surface (units.js). Every printed weight in gym
+// comes through here, so the account reading in pounds reads in pounds everywhere at the cost of one
+// call — and the value that went into the store is the value that came out of it, untouched.
+export function fmt(weightKg) {
+  const shown = inDisplayUnit(weightKg);
+  return (shown < 0 ? '−' : '') + String(Math.abs(round(shown)));
+}
+
+// THE KILOGRAM SPELLING, for the four places on this desk where a number is not a reading but a
+// FIELD: the backfill's line, the correction sheet, a routine's target and the keypad's own message.
+// Each of them is typed into and lands in the log exactly as it stands — the transform above may
+// never touch a value on its way to a write — so each says `kg` on its face whatever the account
+// reads in, and the Units row says that out loud rather than leaving it to be discovered.
+export function fmtKg(weightKg) {
+  return (weightKg < 0 ? '−' : '') + String(Math.abs(round(weightKg)));
+}
+
+// AND THE SENTENCE THAT RECONCILES THE TWO, because the field and the reading of the same weight are
+// on screen together and under an account reading in pounds they are two different numerals: the
+// target sheet stands over the routine's own rows, the correction sheet over the session's. `100 kg`
+// above `220.5` looks like two weights, and a lifter has no way to know they are one — this is the
+// line that says they are. Null in kilograms, where there is nothing to reconcile and an extra
+// sentence would only be noise on a field that already agrees with everything around it.
+export function alsoReadsLabel(weightKg) {
+  if (weightKg == null || weightUnit() !== LB) return null;
+  return `reads ${fmt(weightKg)} ${LB} in your log`;
 }
 
 export function setCountLabel(count) {
@@ -274,9 +300,15 @@ export function tonnageOf(session, sets = null) {
 // small number: `0.1 t` for 51 kg is not a rounding, it is double, and a divider that doubles a
 // beginner's week is the same false number the zero would have been. Above a tonne the decimal is
 // worth a hundred kilograms, which is the scale the caption is a caption OF.
+//
+// THE SCALE WORD FOLLOWS THE READING. A tonne is what a metric reader calls a week of training; a
+// pound reader has no such word, so the same physical threshold prints thousands of pounds rather
+// than a unit they never use. The threshold itself is the mass and not the numeral, so the two
+// readings switch scale on the same week.
 export function tonnageLabel(kg) {
   if (kg == null || kg <= 0) return null;
-  if (kg < 1000) return `${round(kg)} kg`;
+  if (kg < 1000) return `${fmt(kg)} ${weightUnit()}`;
+  if (weightUnit() === LB) return `${(inDisplayUnit(kg) / 1000).toFixed(1)}k lb`;
   return `${(kg / 1000).toFixed(1)} t`;
 }
 

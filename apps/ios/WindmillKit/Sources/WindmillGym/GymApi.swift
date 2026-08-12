@@ -13,6 +13,7 @@ import WindmillPlatform
 //   GET  /v1/gym/routines             ·  POST /v1/gym/routines
 //   PUT  /v1/gym/routines/:id         ·  DELETE /v1/gym/routines/:id
 //   POST /v1/gym/sessions/:id/share   ·  DELETE /v1/gym/sessions/:id/share
+//   GET  /v1/gym/preferences          ·  PUT /v1/gym/preferences
 //
 // `GET /v1/gym/stats` is NOT here and its absence is deliberate: the statistics ENGINE stays on the
 // server, where an agent asking "how has my squat moved" reads it through `get_stats`, but the room
@@ -57,6 +58,9 @@ public protocol TrainingSyncing {
 
     func share(_ sessionId: String) async throws -> SessionShare
     func revokeShare(_ sessionId: String) async throws
+
+    func preferences() async throws -> GymPreferences
+    func savePreferences(_ preferences: GymPreferences) async throws -> GymPreferences
 }
 
 public struct GymApi: TrainingSyncing {
@@ -216,6 +220,21 @@ public struct GymApi: TrainingSyncing {
     // describe. Nothing to revoke answers the same 404 an absent session gives.
     public func revokeShare(_ sessionId: String) async throws {
         try await api.send("DELETE", "/v1/gym/sessions/\(sessionId)/share")
+    }
+
+    // The settings document, and it NEVER 404s: an account that has never opened the screen is served
+    // the defaults, so the room always has a rest dial and a plate set to draw. That is what lets the
+    // absence of a stored row and the presence of a default one be the same thing to every caller.
+    public func preferences() async throws -> GymPreferences {
+        try await api.get("/v1/gym/preferences", as: GymPreferences.self)
+    }
+
+    // A whole-document replace, exactly as a routine's PUT is: the body is settings as they should now
+    // stand, so a read-modify-write that dropped a field would reset it to its default rather than
+    // leave it. The reply is the STORED document — draw that, never what went out — and last write
+    // wins, which is what makes the claim's replay of this device's copy the one that stands.
+    public func savePreferences(_ preferences: GymPreferences) async throws -> GymPreferences {
+        try await api.send("PUT", "/v1/gym/preferences", body: preferences, as: GymPreferences.self)
     }
 
     // Ids are [A-Za-z0-9_-] by the server's own rule, so this only ever has work to do on the two

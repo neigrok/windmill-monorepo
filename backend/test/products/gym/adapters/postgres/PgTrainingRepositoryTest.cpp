@@ -47,6 +47,7 @@ void reset() {
   w.exec("DELETE FROM gym_routines WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_exercise_names WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_exercises WHERE created_by IN ('" + kUser + "', '" + kOther + "')");
+  w.exec("DELETE FROM gym_preferences WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.commit();
 }
 
@@ -2103,4 +2104,128 @@ TEST(pg_gym_movement_history_of_a_movement_this_account_cannot_see_is_empty) {
   CHECK_EQ(never.routines, 0);
   CHECK(never.sessions.empty());
   CHECK(never.recent.empty());
+}
+
+// ---- §I · the settings row, against the real column checks ------------------------------------
+
+// The absence is the fact this store states: a lifter who has never opened the settings screen has
+// no row, and the defaults are given a layer up rather than invented here. The upsert is the whole
+// write — one row per account, last write wins — and RETURNING is what makes the answer the document
+// the store now holds rather than the one the caller sent.
+TEST(pg_gym_preferences_are_absent_until_written_then_upsert_in_place) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+
+  const std::optional<GymPreferences> before = repo.preferences(wm::UserId{kUser});
+  const GymPreferences saved = repo.savePreferences(
+      GymPreferences{wm::UserId{kUser}, Unit::lb, 15.0, {25, 20, 2.5}, 90, false, false, true});
+  const GymPreferences replaced = repo.savePreferences(
+      GymPreferences{wm::UserId{kUser}, Unit::kg, 20.0, {25}, std::nullopt, true, true, false});
+
+  CHECK_EQ(before, std::optional<GymPreferences>());
+  CHECK_EQ(saved, GymPreferences(wm::UserId{kUser}, Unit::lb, 15.0, {25, 20, 2.5}, 90, false, false,
+                                 true));
+  CHECK_EQ(replaced, GymPreferences(wm::UserId{kUser}, Unit::kg, 20.0, {25}, std::nullopt, true,
+                                    true, false));
+  CHECK_EQ(repo.preferences(wm::UserId{kUser}), std::optional<GymPreferences>(replaced));
+  // One row per account and not a row per write: the second document replaced the first.
+  wm::PgLease conn{*wm::pgTestPool()};
+  pqxx::work txn{*conn};
+  CHECK_EQ(txn.exec_params("SELECT count(*)::int FROM gym_preferences WHERE user_id = $1::uuid",
+                           kUser)[0][0]
+               .as<int>(),
+           1);
+}
+
+// The plate set survives a numeric(5,2)[] round trip in the order the domain normalized it to, and
+// an EMPTY set — a gym with nothing to load onto the bar — is a real stored answer rather than a
+// null. Both are the cases where an array column could quietly disagree with the entity.
+TEST(pg_gym_preferences_round_trip_the_plate_set_including_an_empty_one) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+
+  const GymPreferences full = repo.savePreferences(GymPreferences{
+      wm::UserId{kUser}, Unit::kg, 20.0, {1.25, 25, 2.5, 20, 15, 10, 5}, 120, true, true, false});
+  const GymPreferences bare = repo.savePreferences(
+      GymPreferences{wm::UserId{kUser}, Unit::kg, 20.0, {}, 120, true, true, false});
+
+  CHECK_EQ(full.platesKg, (std::vector<double>{25, 20, 15, 10, 5, 2.5, 1.25}));
+  CHECK_EQ(bare.platesKg, std::vector<double>{});
+  CHECK_EQ(repo.preferences(wm::UserId{kUser})->platesKg, std::vector<double>{});
+}
+
+// One lifter's settings and no other's, the scope every row in this store keeps — and the cascade
+// that takes the row with the account.
+TEST(pg_gym_preferences_are_owner_scoped_and_cascade_with_the_account) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  repo.savePreferences(
+      GymPreferences{wm::UserId{kUser}, Unit::lb, 15.0, {25}, 90, false, false, true});
+
+  CHECK_EQ(repo.preferences(wm::UserId{kOther}), std::optional<GymPreferences>());
+  CHECK_EQ(repo.preferences(wm::UserId{kUser})->units, Unit::lb);
+
+  {
+    wm::PgLease conn{*wm::pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec_params("DELETE FROM users WHERE id = $1::uuid", kUser);
+    txn.commit();
+  }
+  CHECK_EQ(repo.preferences(wm::UserId{kUser}), std::optional<GymPreferences>());
+  reset();
+}
+
+// The columns carry the same bounds the entity does, so a row the domain would refuse is a row this
+// database will not hold either — which is what makes the read's construction safe. Written against
+// raw SQL on purpose: the entity can never send these, and the check is the only thing standing
+// between a hand-edited row and a read that throws for every later request on that account.
+TEST(pg_gym_preferences_columns_refuse_what_the_domain_refuses) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+
+  const std::vector<std::string> refused{
+      "INSERT INTO gym_preferences (user_id, units) VALUES ('" + kUser + "', 'st')",
+      "INSERT INTO gym_preferences (user_id, bar_weight_kg) VALUES ('" + kUser + "', 101)",
+      "INSERT INTO gym_preferences (user_id, plates_kg) VALUES ('" + kUser + "', '{0}')",
+      "INSERT INTO gym_preferences (user_id, plates_kg) VALUES ('" + kUser + "', '{101}')",
+      "INSERT INTO gym_preferences (user_id, plates_kg) VALUES ('" + kUser +
+          "', '{1,2,3,4,5,6,7,8,9,10,11,12,13}')",
+      // The two the read FLATTENS rather than refuses, and so the two a value bound cannot catch: a
+      // null element vanishes through array_to_string (and `<= all` answers null, which a check
+      // passes), and a second dimension slips a cap that counts rows. Either one reads back as a
+      // document the lifter never wrote — a quietly missing plate, or fourteen of them.
+      "INSERT INTO gym_preferences (user_id, plates_kg) VALUES ('" + kUser + "', '{25,NULL,20}')",
+      "INSERT INTO gym_preferences (user_id, plates_kg) VALUES ('" + kUser + "', '{NULL}')",
+      "INSERT INTO gym_preferences (user_id, plates_kg) VALUES ('" + kUser +
+          "', '{{1,2,3,4,5,6,7},{8,9,10,11,12,13,14}}')",
+      "INSERT INTO gym_preferences (user_id, rest_seconds) VALUES ('" + kUser + "', 14)",
+      "INSERT INTO gym_preferences (user_id, rest_seconds) VALUES ('" + kUser + "', 901)"};
+
+  for (const std::string& statement : refused) {
+    bool stopped = false;
+    try {
+      wm::PgLease conn{*wm::pgTestPool()};
+      pqxx::work txn{*conn};
+      txn.exec(statement);
+      txn.commit();
+    } catch (const std::exception&) {
+      stopped = true;
+    }
+    CHECK(stopped);
+  }
+  // And the defaults on the columns are the defaults in the domain, so a row written by hand with
+  // nothing but an owner reads back as the document a fresh lifter is served.
+  {
+    wm::PgLease conn{*wm::pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec_params("INSERT INTO gym_preferences (user_id) VALUES ($1::uuid)", kUser);
+    txn.commit();
+  }
+  PgTrainingRepository repo{wm::pgTestPool()};
+  CHECK_EQ(repo.preferences(wm::UserId{kUser}),
+           std::optional<GymPreferences>(GymPreferences{wm::UserId{kUser}}));
+  reset();
 }

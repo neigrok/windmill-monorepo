@@ -1260,6 +1260,65 @@ create table if not exists gym_session_shares (
 );
 create index if not exists gym_session_shares_user on gym_session_shares (user_id);
 
+-- The settings of §I, one row per account, and the only gym table that is not the log. Five values,
+-- and every one of them changes how the room behaves at the rack: what unit the lifter READS in,
+-- what their gym is loaded with, how long they rest, and how a logged set confirms itself.
+--
+-- UNITS ARE A DISPLAY TRANSFORM AND NOTHING ELSE. There is no lb column here or anywhere in this
+-- file: every weight in this schema is kilograms, forever, and this row cannot change that — it
+-- changes what a screen prints. A lifter who switches to lb and back has the same log, byte for
+-- byte, and no read in the product is scoped by this value. (products/gym/ARCHITECTURE.md §9.4 is
+-- the canonical-units decision, unchanged by this table.)
+--
+-- Account-level rather than device-local, each column for its own reason: a lifter reads in one unit
+-- everywhere; the plates are their GYM's and not their handset's; the rest target is their
+-- program's. The confirmation pair is the one worth stating out loud — it records the lifter's
+-- INTENT and each surface honours what it can (a native haptic where there is one, a sound where
+-- there is not), so a surface that cannot vibrate says so where the row is drawn rather than moving
+-- and doing nothing.
+--
+-- Every default here is the answer a lifter who never opens that screen gets, which is why they sit
+-- on the columns AND in the domain (products/gym/domain/Preferences.h): a client reading before it
+-- has ever written is served the domain's copy, and the two must not disagree. rest_seconds is null
+-- by default and null MEANS something — no timer — because a timer nobody asked for that starts
+-- beeping in a gym is the kind of thing this product does not do. Its band is the band a routine
+-- line's rest target already carries, from one pair of constants, so the global dial and the program
+-- cannot ask for waits the other refuses.
+--
+-- plates_kg is an ARRAY and not a child table, which is the one place this schema takes a
+-- non-relational shape on purpose. The rule gym_routine_entries states is about a thing with an
+-- identity a query can group by; a 2.5 has none — nothing joins to a plate, no read aggregates one,
+-- and the lifter edits the SET as a single value. A gym_plates table would buy a second write, a
+-- second read and a transaction, to serve exactly one document. One side of the bar, heaviest first
+-- and each kind once; the entity normalizes both (Preferences.h) and the check bounds the rest.
+--
+-- That check leads with SHAPE and not with the band, because the read flattens the column through
+-- array_to_string and a flatten is lossy in two ways a value bound cannot see. A null element is
+-- DROPPED, so `0.01 <= all (...)` answers null — which a check PASSES — and the lifter silently
+-- loses a plate on the next read. A second dimension is flattened too, so array_length(...,1) counts
+-- ROWS and a 2x7 matrix walks past a cap that means to count plates. Both are hand-edit paths and
+-- neither is reachable from packedPlates, which is exactly why the column has to say so itself: the
+-- claim next to preferencesFrom is that anything the schema can hold reads as a legal document, and
+-- a bound that only reads values cannot keep it.
+--
+-- It is deliberately NOT in PgAccountFootprint's owned list, and platform/infra/main.cpp carries the
+-- reason beside that list: settings are how an account is set up, never the artifact it holds.
+create table if not exists gym_preferences (
+  user_id         uuid primary key references users(id) on delete cascade,
+  units           text not null default 'kg' check (units in ('kg','lb')),
+  bar_weight_kg   numeric(5,2) not null default 20 check (bar_weight_kg between 0 and 100),
+  plates_kg       numeric(5,2)[] not null default '{25,20,15,10,5,2.5,1.25}'
+                    check (coalesce(array_ndims(plates_kg), 1) = 1
+                           and array_position(plates_kg, null) is null
+                           and coalesce(array_length(plates_kg, 1), 0) <= 12
+                           and 0.01 <= all (plates_kg) and 100 >= all (plates_kg)),
+  rest_seconds    int check (rest_seconds between 15 and 900),   -- null = no timer, and that is the default
+  rest_sound      boolean not null default true,
+  confirm_haptic  boolean not null default true,
+  confirm_sound   boolean not null default false,
+  updated_at      timestamptz not null default now()
+);
+
 -- The catalog seed: 64 movements across the seven patterns (the flat legs-vs-three-arm-buckets
 -- lopsidedness of Lift's taxonomy is refused; pattern is the only classification). Steps by
 -- equipment: barbell 2.5 (smallest plate pair), dumbbell 2.0 (rack gap), machine 5.0 (pin),

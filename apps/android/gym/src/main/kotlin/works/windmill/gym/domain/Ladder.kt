@@ -72,6 +72,29 @@ object Ladder {
         return listOf("−${text(down.large)}", "−${text(down.small)}", "+${text(up.small)}", "+${text(up.large)}")
     }
 
+    // §K'S CAPTION UNDER THE BUTTONS, read off the band table rather than typed beside it: `over 50
+    // kg · fine 2.5 · plate 10`. It exists because the labels re-render as the load climbs and a
+    // lifter watching −5 become −10 deserves to know why — and it is composed from `bands` for the
+    // same reason the labels are, so a retier moves the caption with the buttons or moves neither.
+    //
+    // The band is read the way a LIFT reads it (`<`), because the caption says where you are
+    // standing rather than what the down key will do — at exactly 20 the down key answers 19 out of
+    // the band below, and a caption that followed it would name a tier the lifter has already left.
+    fun tier(weight: Double): String {
+        val magnitude = abs(weight)
+        val index = bands.indices.first { at ->
+            val under = bands[at].under ?: return@first true
+            magnitude < under
+        }
+        val band = bands[index]
+        val where = when (index) {
+            0 -> "under ${text(band.under ?: 0.0)} kg"
+            bands.size - 1 -> "over ${text(bands[index - 1].under ?: 0.0)} kg"
+            else -> "${text(bands[index - 1].under ?: 0.0)}–${text(band.under ?: 0.0)} kg"
+        }
+        return "$where · fine ${text(band.small)} · plate ${text(band.large)}"
+    }
+
     // Steps print bare: the golden reads "−5" and "+10", never "−5.0". The minus is U+2212, the
     // plus is ASCII — every copy must agree on the glyph, not just the number.
     internal fun text(step: Double): String {

@@ -6,7 +6,10 @@
 
 #include <pqxx/pqxx>
 
+#include <algorithm>
+#include <cstddef>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -68,6 +71,15 @@ constexpr std::string_view kRoutineColumns =
 constexpr std::string_view kEntryColumns =
     "routine_id, position, exercise_id, target_sets, target_reps, "
     "target_weight_kg::float8 AS target_weight_kg, rest_seconds";
+
+// The settings row. plates_kg is a numeric[] and it crosses as a JOINED STRING rather than as an
+// array, for the reason kSessionColumns keeps calendar work in SQL: pqxx's array reader is one of
+// the names that differ between the macOS build and the CI's Linux one, and a green local build is
+// not a green CI. `array_to_string` is one function, everywhere, and the parse below is six lines.
+constexpr std::string_view kPreferenceColumns =
+    "user_id, units, bar_weight_kg::float8 AS bar_weight_kg, "
+    "array_to_string(plates_kg, ',') AS plates_kg, rest_seconds, rest_sound, confirm_haptic, "
+    "confirm_sound";
 
 // Read as a signed bigint and clamped into the band the domain accepts. A row written before that
 // band was enforced — a unit-confused client wrapped a huge uint64 into a pre-1970 timestamp — then
@@ -134,6 +146,48 @@ struct Tally {
   std::vector<std::string> exerciseNames;
   std::vector<PriorMark> workingMarks;
 };
+
+// The settings row, and the one construction here that CANNOT throw for anything the schema is able
+// to hold: every bound the entity refuses is also a column check, so a stored row is a legal
+// document by the time it is read. The unit is the exception and the reason `unitFromStored` clamps
+// — a word a newer deploy adds to that check is a word this build has never heard of, and it reads
+// as kg rather than taking down every read of the account.
+template <typename Row>
+GymPreferences preferencesFrom(const Row& row) {
+  const std::string packed = row["plates_kg"].template as<std::string>();
+  std::vector<double> platesKg;
+  for (std::size_t at = 0; at < packed.size();) {
+    const std::size_t comma = std::min(packed.find(',', at), packed.size());
+    platesKg.push_back(std::stod(packed.substr(at, comma - at)));
+    at = comma + 1;
+  }
+  std::optional<int> restSeconds;
+  if (!row["rest_seconds"].is_null()) restSeconds = row["rest_seconds"].template as<int>();
+  return GymPreferences{UserId{row["user_id"].template as<std::string>()},
+                        unitFromStored(row["units"].template as<std::string>()),
+                        row["bar_weight_kg"].template as<double>(),
+                        std::move(platesKg),
+                        restSeconds,
+                        row["rest_sound"].template as<bool>(),
+                        row["confirm_haptic"].template as<bool>(),
+                        row["confirm_sound"].template as<bool>()};
+}
+
+// The other half of that crossing: the set as the `numeric(5,2)[]` literal the write casts. Written
+// beside the read so the two renderings cannot drift — one puts the commas in, the other takes them
+// out — and the column's own check refuses anything the entity somehow let through.
+std::string packedPlates(const std::vector<double>& platesKg) {
+  // The separator rides on a flag rather than on "is the literal empty yet", the rule TrainingCsv
+  // states for the same job: a length test is one rendering away from swallowing a comma.
+  std::string literal = "{";
+  bool first = true;
+  for (const double plate : platesKg) {
+    if (!first) literal += ",";
+    first = false;
+    literal += std::to_string(plate);
+  }
+  return literal + "}";
+}
 
 template <typename Row>
 Exercise exerciseFrom(const Row& row) {
@@ -1247,6 +1301,56 @@ std::vector<ExportedSet> PgTrainingRepository::exportedSets(const UserId& user) 
                               row["note"].as<std::string>(),
                               row["completed_at"].as<std::string>()});
   return out;
+}
+
+std::optional<GymPreferences> PgTrainingRepository::preferences(const UserId& user) {
+  // Absent is a fact and not a fault, so it crosses as an absence: a lifter who has never opened the
+  // settings screen holds no row, and the DEFAULTS are the domain's answer to that rather than a
+  // document this store invents on their behalf (application/LogService.cpp).
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  pqxx::result rows =
+      txn.exec_params("SELECT " + std::string(kPreferenceColumns) +
+                          " FROM gym_preferences WHERE user_id = $1::uuid",
+                      user.str());
+  if (rows.empty()) return std::nullopt;
+  return preferencesFrom(rows[0]);
+}
+
+GymPreferences PgTrainingRepository::savePreferences(const GymPreferences& incoming) {
+  // One row per account, so the upsert IS the whole write: no client-minted id, nothing to replay
+  // against, and last write wins — which is exactly the ordering the claim replay wants when an
+  // anonymous device signs in carrying the settings the lifter just touched (§11.7).
+  //
+  // RETURNING reads the stored row back inside the same statement rather than in a second one,
+  // because the two differ the moment a column rounds a numeric, and what the client draws has to be
+  // what the store holds.
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  pqxx::params params;
+  params.append(incoming.user.str());
+  params.append(toString(incoming.units));
+  params.append(incoming.barWeightKg);
+  params.append(packedPlates(incoming.platesKg));
+  if (incoming.restSeconds) params.append(*incoming.restSeconds);
+  else params.append();
+  params.append(incoming.restSound);
+  params.append(incoming.confirmHaptic);
+  params.append(incoming.confirmSound);
+  pqxx::result rows = txn.exec(
+      "INSERT INTO gym_preferences (user_id, units, bar_weight_kg, plates_kg, rest_seconds, "
+      "                             rest_sound, confirm_haptic, confirm_sound) "
+      "VALUES ($1::uuid, $2, $3, $4::numeric(5,2)[], $5, $6, $7, $8) "
+      "ON CONFLICT (user_id) DO UPDATE SET units = excluded.units, "
+      "  bar_weight_kg = excluded.bar_weight_kg, plates_kg = excluded.plates_kg, "
+      "  rest_seconds = excluded.rest_seconds, rest_sound = excluded.rest_sound, "
+      "  confirm_haptic = excluded.confirm_haptic, confirm_sound = excluded.confirm_sound, "
+      "  updated_at = now() "
+      "RETURNING " + std::string(kPreferenceColumns),
+      params);
+  GymPreferences stored = preferencesFrom(rows[0]);
+  txn.commit();
+  return stored;
 }
 
 std::optional<SessionShare> PgTrainingRepository::insertShare(const SessionShare& incoming,

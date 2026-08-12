@@ -11,6 +11,7 @@
 // nothing in it is coloured.
 
 import { dayLabel, durLabel, fmt, nameOfMovement, NO_ROUTINE, timeLabel } from './log.js';
+import { weightUnit } from './units.js';
 
 export const RECORD_TITLE = 'Personal record';
 
@@ -49,9 +50,10 @@ export function recordSentence(record, catalog) {
   if (!record) return null;
   const movement = nameOfMovement(catalog, record.exerciseId);
   const past = `past ${fmt(record.previous)} from ${dayLabel(record.previousAt)}`;
-  if (record.kind === 'e1rm') return `${movement} e1RM ${fmt(record.value)} kg — ${past}.`;
-  if (record.kind === 'heaviest') return `${movement} ${fmt(record.value)} kg × ${record.reps} — ${past}.`;
-  if (record.kind === 'reps-at-weight') return `${movement} ${record.reps} reps at ${fmt(record.weightKg)} kg — ${past}.`;
+  const unit = weightUnit();
+  if (record.kind === 'e1rm') return `${movement} e1RM ${fmt(record.value)} ${unit} — ${past}.`;
+  if (record.kind === 'heaviest') return `${movement} ${fmt(record.value)} ${unit} × ${record.reps} — ${past}.`;
+  if (record.kind === 'reps-at-weight') return `${movement} ${record.reps} reps at ${fmt(record.weightKg)} ${unit} — ${past}.`;
   return null;
 }
 

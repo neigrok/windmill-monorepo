@@ -16,8 +16,12 @@ import kotlin.math.sin
 // congratulate. The Android statement of web/src/products/gym/logger/sound.js, at the same two pitches.
 //
 // Sound carries the one confirmation the screen cannot: the rest landing while the phone is in a
-// pocket. There are no haptics in this design's world, so everything else the product confirms it
-// confirms visually — the set row appearing, the button saying the weight back at 64dp.
+// pocket. Everything else the product confirms it confirms visually — the set row appearing, the
+// button saying the weight back at 64dp — and, since W4, in the hand: this platform has a haptic,
+// and §I's Set confirmation rows decide which of the two a logged set gets. Neither tone below
+// plays unconditionally any more; GymConfirm is the door, and the lifter's document is what opens
+// it. `setLogged` is OFF by default here for exactly that reason — on native the haptic is the
+// confirmation and the tone is the option.
 //
 // Both halves of the iOS `.ambient` category are kept: USAGE_ASSISTANCE_SONIFICATION MIXES, so a
 // lifter's music is never interrupted by a log, and the ringer check obeys the silence switch, so a

@@ -251,6 +251,94 @@ std::string parseExerciseRename(const Json::Value& body) {
   return body["name"].asString();
 }
 
+GymPreferences parsePreferences(const Json::Value& body, const UserId& user) {
+  if (!body.isObject())
+    throw InvalidPreference("preferences-unreadable", "settings must be a json object");
+  // Strict about names, the rule `parseSetFix` and `parseExerciseRename` already keep: a misspelled
+  // `barWeightKG` read clean would answer 200 with the bar unchanged, which is a write doing less
+  // than it said — and here it would also silently reset the field to 20, because an omission is a
+  // default. The two together are how a lifter's bar quietly becomes somebody else's.
+  for (const std::string& field : body.getMemberNames()) {
+    if (field == "units" || field == "barWeightKg" || field == "platesKg" ||
+        field == "restSeconds" || field == "restSound" || field == "confirmHaptic" ||
+        field == "confirmSound")
+      continue;
+    throw InvalidPreference("preferences-unreadable",
+                            "unknown settings field \"" + field +
+                                "\". Settings take: units, barWeightKg, platesKg, restSeconds, "
+                                "restSound, confirmHaptic, confirmSound.");
+  }
+
+  const GymPreferences fallback{user};
+  Unit units = fallback.units;
+  if (body.isMember("units") && !body["units"].isNull()) {
+    if (!body["units"].isString())
+      throw InvalidPreference("unknown-unit", "units are \"kg\" or \"lb\"");
+    units = parseUnit(body["units"].asString());
+  }
+  double barWeightKg = fallback.barWeightKg;
+  if (body.isMember("barWeightKg") && !body["barWeightKg"].isNull()) {
+    if (!body["barWeightKg"].isNumeric())
+      throw InvalidPreference("bar-weight", "barWeightKg must be a number of kilograms");
+    barWeightKg = body["barWeightKg"].asDouble();
+  }
+  // An omitted plate set is the full one; an EMPTY array is a gym that owns no plates, which is a
+  // real answer and not a missing one — so the two are told apart here rather than folded together.
+  std::vector<double> platesKg = fallback.platesKg;
+  if (body.isMember("platesKg") && !body["platesKg"].isNull()) {
+    if (!body["platesKg"].isArray())
+      throw InvalidPreference("plate-weight", "platesKg must be an array of kilogram numbers");
+    platesKg.clear();
+    for (const Json::Value& plate : body["platesKg"]) {
+      if (!plate.isNumeric())
+        throw InvalidPreference("plate-weight", "every plate must be a number of kilograms");
+      platesKg.push_back(plate.asDouble());
+    }
+  }
+  // The one absence that MEANS something, so it is the one field where omitted and null say the
+  // same thing on purpose: no timer. Everything else defaults; this one is the default.
+  std::optional<int> restSeconds;
+  if (body.isMember("restSeconds") && !body["restSeconds"].isNull()) {
+    if (!body["restSeconds"].isInt())
+      throw InvalidPreference("rest-target", "restSeconds must be a whole number of seconds");
+    restSeconds = body["restSeconds"].asInt();
+  }
+  bool restSound = fallback.restSound;
+  if (body.isMember("restSound") && !body["restSound"].isNull()) {
+    if (!body["restSound"].isBool())
+      throw InvalidPreference("preferences-unreadable", "restSound must be true or false");
+    restSound = body["restSound"].asBool();
+  }
+  bool confirmHaptic = fallback.confirmHaptic;
+  if (body.isMember("confirmHaptic") && !body["confirmHaptic"].isNull()) {
+    if (!body["confirmHaptic"].isBool())
+      throw InvalidPreference("preferences-unreadable", "confirmHaptic must be true or false");
+    confirmHaptic = body["confirmHaptic"].asBool();
+  }
+  bool confirmSound = fallback.confirmSound;
+  if (body.isMember("confirmSound") && !body["confirmSound"].isNull()) {
+    if (!body["confirmSound"].isBool())
+      throw InvalidPreference("preferences-unreadable", "confirmSound must be true or false");
+    confirmSound = body["confirmSound"].asBool();
+  }
+  return GymPreferences{user,        units,     barWeightKg,   std::move(platesKg),
+                        restSeconds, restSound, confirmHaptic, confirmSound};
+}
+
+Json::Value toJson(const GymPreferences& preferences) {
+  Json::Value body(Json::objectValue);
+  body["units"] = toString(preferences.units);
+  body["barWeightKg"] = preferences.barWeightKg;
+  Json::Value plates(Json::arrayValue);
+  for (const double plate : preferences.platesKg) plates.append(plate);
+  body["platesKg"] = plates;
+  if (preferences.restSeconds) body["restSeconds"] = *preferences.restSeconds;
+  body["restSound"] = preferences.restSound;
+  body["confirmHaptic"] = preferences.confirmHaptic;
+  body["confirmSound"] = preferences.confirmSound;
+  return body;
+}
+
 Json::Value toJson(const Session& session) {
   Json::Value body(Json::objectValue);
   body["id"] = session.id.str();

@@ -13,15 +13,16 @@ RoutineEntry::RoutineEntry(int position, ExerciseId exercise, int targetSets,
   if (position < 1) throw InvalidTraining("an entry sits at a position from 1");
   if (this->exercise.empty()) throw InvalidTraining("an entry names an exercise");
   // The same bounds the columns carry, refused here so a routine that cannot be stored is never
-  // built: twenty sets is already a marathon, a hundred reps already a different sport, and a rest
-  // under fifteen seconds or over fifteen minutes is a typo in a number the timer counts down. The
-  // rep target keeps its band when it is named; naming none is `max`, which is not a number at all.
+  // built: twenty sets is already a marathon, a hundred reps already a different sport, and the rest
+  // band is the one pair of numbers a wait is judged by anywhere in this product (Training.h) — the
+  // global dial reads the same constants. The rep target keeps its band when it is named; naming
+  // none is `max`, which is not a number at all.
   if (targetSets < 1 || targetSets > 20) throw InvalidTraining("target sets out of range");
   if (targetReps && (*targetReps < 1 || *targetReps > 100))
     throw InvalidTraining("target reps out of range");
   if (targetWeightKg && (*targetWeightKg < -500 || *targetWeightKg > 500))
     throw InvalidTraining("target weight out of range");
-  if (restSeconds && (*restSeconds < 15 || *restSeconds > 900))
+  if (restSeconds && (*restSeconds < kMinRestSeconds || *restSeconds > kMaxRestSeconds))
     throw InvalidTraining("rest out of range");
 }
 

@@ -154,6 +154,77 @@ class LadderTests {
         assertEquals(1, Ladder.bumpReps(-3, direction = -1))
     }
 
+    // §K'S CAPTION, composed from the SAME band table the buttons are, so a retier moves both or
+    // neither. It is read the way a lift reads the table — the caption says where the lifter is
+    // standing, not what the down key will do — which is why exactly 20 kg reads as the middle band
+    // while the down key answers 19 out of the one below it.
+    @Test
+    fun testTheTierCaptionIsReadOffTheBandTable() {
+        assertEquals("under 20 kg · fine 1 · plate 2.5", Ladder.tier(0.0))
+        assertEquals("under 20 kg · fine 1 · plate 2.5", Ladder.tier(19.99))
+        assertEquals("20–50 kg · fine 2.5 · plate 5", Ladder.tier(20.0))
+        assertEquals("20–50 kg · fine 2.5 · plate 5", Ladder.tier(49.99))
+        assertEquals("over 50 kg · fine 2.5 · plate 10", Ladder.tier(50.0))
+        assertEquals("over 50 kg · fine 2.5 · plate 10", Ladder.tier(105.0))
+        // The bands are read off the MAGNITUDE here too, so band-assisted work is captioned rather
+        // than falling off the table into the top band by accident.
+        assertEquals("under 20 kg · fine 1 · plate 2.5", Ladder.tier(-19.0))
+        assertEquals("over 50 kg · fine 2.5 · plate 10", Ladder.tier(-102.5))
+    }
+
+    // The caption's own numbers ARE the band table's, not a second copy typed beside them — and
+    // WHICH band is the one the lifter is STANDING in, read off the magnitude with `<`. That is
+    // all it claims, and the claim is deliberately narrow: at a band edge the caption does NOT
+    // name every key under it. Standing at exactly 20 kg it reads `fine 2.5` while the key beside
+    // it says −1, because a move that LIGHTENS reads the band below so the +1 that carried you
+    // 19 → 20 is answered by a −1 back. Saying "every step it names is the step the button under
+    // it takes" would be false at every boundary in the golden, on both sides of zero, and the
+    // edges below are pinned so nobody can quietly widen this test into that claim.
+    @Test
+    fun testTheCaptionNamesTheBandTheLifterIsStandingIn() {
+        for (expected in golden.weightCases) {
+            val caption = Ladder.tier(expected.weight)
+            val standing = Ladder.steps(abs(expected.weight), lightening = false)
+            val tail = "· fine ${Ladder.text(standing.small)} · plate ${Ladder.text(standing.large)}"
+            assertTrue(
+                "caption at ${expected.weight} kg reads \"$caption\", which does not end \"$tail\"",
+                caption.endsWith(tail),
+            )
+        }
+    }
+
+    // And for a loaded weight that band IS the two up-keys, which is the half of the old claim
+    // that holds: a lifter reading `fine 2.5` sees +2.5 under it. Only the down-keys drop out of
+    // the band below at an edge — and on the assisted side of zero the mirror swaps which pair
+    // follows the caption, which is why this loop is the positive cases and the edges are spelled
+    // out one by one.
+    @Test
+    fun testTheCaptionNamesTheUpKeysOfALoadedWeight() {
+        for (expected in golden.weightCases.filter { it.weight > 0 }) {
+            val labels = Ladder.labels(expected.weight)
+            val standing = Ladder.steps(expected.weight, lightening = false)
+            assertEquals("up keys at ${expected.weight} kg",
+                         listOf("+${Ladder.text(standing.small)}", "+${Ladder.text(standing.large)}"),
+                         labels.subList(2, 4))
+        }
+    }
+
+    // THE EDGES THE CAPTION DOES NOT SPEAK FOR, spelled out so they cannot be mistaken for drift.
+    // A bare bar and the top boundary both sit on a band line, and there the down-keys answer out
+    // of the band below; assisted work mirrors it and the UP keys are the ones that do.
+    @Test
+    fun testAtABandEdgeTheKeysComeOutOfTwoBandsAndTheCaptionNamesOne() {
+        assertEquals("20–50 kg · fine 2.5 · plate 5", Ladder.tier(20.0))
+        assertEquals(listOf("−2.5", "−1", "+2.5", "+5"), Ladder.labels(20.0))
+
+        assertEquals("over 50 kg · fine 2.5 · plate 10", Ladder.tier(50.0))
+        assertEquals(listOf("−5", "−2.5", "+2.5", "+10"), Ladder.labels(50.0))
+
+        assertEquals("20–50 kg · fine 2.5 · plate 5", Ladder.tier(-20.0))
+        assertEquals("the mirror: the assisted side lightens upward",
+                     listOf("−5", "−2.5", "+1", "+2.5"), Ladder.labels(-20.0))
+    }
+
     // The law that makes one rule serve both sides of zero: bump(−w, −direction, big) is exactly
     // −bump(w, direction, big). An implementation that reads its down-band off the SIGNED weight
     // gets the loaded side right and breaks here.

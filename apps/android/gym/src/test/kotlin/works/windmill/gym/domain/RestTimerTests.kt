@@ -2,29 +2,48 @@ package works.windmill.gym.domain
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 // The rest timer answers from an instant, never from a counter — so a pocketed phone comes back to
 // the truth. And being over the target is a fact, not a fault: the overrun counts up, and nothing
 // here is allowed to read as an error.
+//
+// SINCE W4 THE TARGET IS THE LIFTER'S, and its default is off. What used to answer here was a
+// per-movement table with a two-minute floor under it, which meant every lifter was handed a
+// countdown and a chime nobody had asked for.
 
 class RestTests {
-    // The routine's own line wins: a lifter who wrote three minutes against an accessory meant it.
     @Test
-    fun testTheRoutinesOwnRestBeatsTheTableAndTheTableBeatsTheDefault() {
-        val entry = PlanEntry(exerciseId = "face-pull", sets = 3, reps = 15, restSeconds = 180)
-        assertEquals(180, Rest.target("face-pull", planEntry = entry))
-        assertEquals(60, Rest.target("face-pull", planEntry = null))
-        assertEquals(180, Rest.target("back-squat", planEntry = null))
+    fun testTheDialIsOffUntilTheLifterSetsIt() {
+        assertNull(Rest.target(planEntry = null, preferences = GymPreferences()))
+        assertEquals(120, Rest.target(planEntry = null, preferences = GymPreferences(restSeconds = 120)))
     }
 
-    // A movement the table has never heard of — including one the lifter minted this morning —
-    // rests for two minutes rather than for nothing.
+    // The one thing that outranks the dial, and the only door that authors it: a lifter who had an
+    // agent write three minutes against an accessory through `save_routine` meant it, for that
+    // movement. W4 leaves that field alone — nothing writes it and no screen edits it.
     @Test
-    fun testAMovementNobodyHasWeighedRestsForTheDefault() {
-        assertEquals(Rest.defaultSeconds, Rest.target("ex_31ab", planEntry = null))
-        assertEquals(120, Rest.defaultSeconds)
+    fun testARoutinesOwnLineBeatsTheGlobalDial() {
+        val entry = PlanEntry(exerciseId = "face-pull", sets = 3, reps = 15, restSeconds = 60)
+        assertEquals(60, Rest.target(entry, GymPreferences(restSeconds = 180)))
+        assertEquals(60, Rest.target(entry, GymPreferences()))
+        // A line without one falls through to the dial rather than to a number this file chose.
+        val plain = PlanEntry(exerciseId = "face-pull", sets = 3, reps = 15)
+        assertEquals(180, Rest.target(plain, GymPreferences(restSeconds = 180)))
+        assertNull(Rest.target(plain, GymPreferences()))
+    }
+
+    // Off is not a missing clock. Time since the last set is a fact a lifter can act on; a
+    // countdown is an instruction and an alarm — so with no target it counts UP, quietly, against
+    // nothing, and passes no line to make a sound at.
+    @Test
+    fun testWithNoTargetTheClockCountsUpAgainstNothing() {
+        val line = Rest.Line(targetSeconds = null, startedAtMs = 0, now = 91_000)
+        assertEquals("resting", line.label)
+        assertEquals("1:31", line.time)
+        assertFalse("nothing to be over", line.overrun)
     }
 
     @Test
@@ -52,5 +71,15 @@ class RestTests {
         val line = Rest.Line(targetSeconds = 120, startedAtMs = 1_000_000, now = 1_000_000 + 600_000)
         assertEquals("+8:00", line.time)
         assertTrue(line.overrun)
+        assertEquals("10:00", Rest.Line(null, startedAtMs = 1_000_000, now = 1_600_000).time)
+    }
+
+    // The dial and a routine's line are bounded by the same band, so the global setting can never
+    // ask for a wait a routine entry would be refused for.
+    @Test
+    fun testTheDialSharesTheRoutineLinesOwnBand() {
+        assertEquals(15, GymPreferences.minRestSeconds)
+        assertEquals(900, GymPreferences.maxRestSeconds)
+        assertEquals(900, GymPreferences(restSeconds = 3_600).normalized().restSeconds)
     }
 }

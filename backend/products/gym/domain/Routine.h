@@ -15,7 +15,9 @@ namespace wm::gym {
 // collapsed the pair into one set counter. Three of its fields mean something by their ABSENCE and
 // never by a zero: an absent targetReps is `3 × max` — the chin-up line, a program a required rep
 // target could not express at all — an absent targetWeightKg is "whatever you did last time", and
-// an absent restSeconds is the client's own default.
+// an absent restSeconds falls back to the lifter's global rest target (gym_preferences), which is a
+// value a client can now READ rather than invent — though the fallback is applied by the surface
+// running the timer and never here: this server stores the absence and fills in nothing.
 struct RoutineEntry {
   int position;
   ExerciseId exercise;

@@ -13,7 +13,7 @@
 // The same pad serves both numbers: in reps mode the comma and ± keys are stood down — inert, not
 // absent — so the geometry a chalked thumb learned does not move between the two.
 
-import { fmt } from '../log.js';
+import { fmtKg } from '../log.js';
 import { round } from './ladder.js';
 
 export const MAX_BUFFER = 8;
@@ -61,7 +61,7 @@ export function parseEntry(pad, mode, current) {
   const raw = pad.text.trim();
   const normalised = raw.replace(/,/g, '.');
   if (raw === '' || raw === '-') {
-    return { valid: false, value: null, message: `Enter a number, or cancel to keep ${fmt(current)}` };
+    return { valid: false, value: null, message: `Enter a number, or cancel to keep ${fmtKg(current)}` };
   }
   if ((normalised.match(/\./g) || []).length > 1) {
     return { valid: false, value: null, message: 'One decimal point only — 72,5 or 72.5' };

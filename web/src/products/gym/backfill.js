@@ -19,7 +19,7 @@
 // it holds the draft and the cursor, and asks here what a change means.
 
 import {
-  dayLabel, EMPTY_BAR_KG, EMPTY_BAR_REPS, fmt, isFinished, NO_ROUTINE, routineNameOf,
+  dayLabel, EMPTY_BAR_KG, EMPTY_BAR_REPS, fmtKg, isFinished, NO_ROUTINE, routineNameOf,
   setCountLabel, timeLabel,
 } from './log.js';
 
@@ -79,7 +79,7 @@ export function saveNote(startedAt) {
 }
 
 export function lineLabel(line) {
-  return `${fmt(line.weightKg)} × ${line.reps}`;
+  return `${fmtKg(line.weightKg)} × ${line.reps}`;
 }
 
 // Three is what a remembered block usually is, and the empty bar is the opening value every form in

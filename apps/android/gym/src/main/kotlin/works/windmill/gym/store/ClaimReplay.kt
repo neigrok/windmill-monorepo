@@ -17,7 +17,28 @@ import works.windmill.gym.net.TrainingSyncing
 // last pass stopped on a retryable failure; the order is the whole contract (the three-surface
 // client convention; the server stays surface-blind):
 //
-//   movements → routines → finished sessions SEQUENTIALLY, oldest first → the live session's start.
+//   preferences → movements → routines → finished sessions SEQUENTIALLY, oldest first → the live
+//   session's start.
+//
+// PREFERENCES GO FIRST AND HALT NOTHING, which is the one place this order is not a dependency.
+// Nothing downstream references them — a set does not name a plate and a session does not name a
+// unit — so they lead because they are one cheap PUT and because a lifter who set their rack before
+// signing in should see it survive the moment the account arrives. And when that PUT is the thing
+// that fails, the run CARRIES ON: a plate list that did not land may never park a workout, so every
+// session behind it still replays.
+//
+// IT ALSO RE-ARMS NOTHING, and that half is as load-bearing as the first. `retryable` is the flag
+// the store's 4-second cadence re-runs this WHOLE walk off, and a rack still owed is not a reason
+// to walk it: a document that never landed would otherwise poll the two stops named below that
+// must never be polled — the account's other workout being open, and a live start the log refused
+// outright. So the step that stands alone retries alone (`runPreferences`, which the cadence calls
+// off `LocalPreferences.owed`), and `retryable` keeps meaning what it has always meant: another
+// pass of the SHELF could change this.
+//
+// Where both sides hold a document the DEVICE'S WINS — it is the one the lifter just touched — and
+// it wins by being sent: the write is the same whole-document PUT the settings screen makes, so the
+// claim needs no verb of its own. A seat that never opened the screen holds no document and sends
+// nothing, which is what stops untouched defaults overwriting an account's real rack.
 //
 // Per finished session, strictly: `start` under the client-minted id with the TRUE startedAt, its
 // routineId only if that routine landed, and joinOpenSession FALSE — never default — because a
@@ -63,6 +84,7 @@ class ClaimReplay(
     private val log: TrainingSyncing,
     private val localLog: LocalLog,
     private val queue: SetQueue,
+    private val preferences: LocalPreferences,
     private val mintExercise: () -> String = Ids::exercise,
     private val mintRoutine: () -> String = Ids::routine,
     private val mintSession: () -> String = Ids::session,
@@ -81,6 +103,10 @@ class ClaimReplay(
 
     suspend fun run(): Outcome {
         val said = mutableListOf<RefusedWrite>()
+        // The answer is dropped on purpose: a rack that did not land halts nothing behind it and
+        // arms nothing either. What is still owed is on `LocalPreferences`, and the cadence sends
+        // it through `runPreferences` rather than by walking this shelf again.
+        claimPreferences(said)
         if (!claimExercises(said)) return Outcome(said, liveLanded = false, retryable = true)
         if (!claimRoutines(said)) return Outcome(said, liveLanded = false, retryable = true)
         for (past in localLog.finished.sortedBy { it.session.startedAtMs }) {
@@ -89,6 +115,38 @@ class ClaimReplay(
         }
         val halted = claimLive() ?: return Outcome(said, liveLanded = true, retryable = false)
         return Outcome(said, liveLanded = false, retryable = halted == Halt.Retry)
+    }
+
+    // THE ONE STEP THAT STANDS ALONE, sent by itself. Nothing downstream references the document,
+    // so a rack the log could not take is re-sent on the deliver cadence WITHOUT the shelf behind
+    // it — which is what keeps a `session-already-open` wait and a refused live start unpolled
+    // while a settings PUT keeps failing. It says what it lost the same way `run` does, and it is
+    // the same one copy of the rule: both call `claimPreferences`.
+    suspend fun runPreferences(): List<RefusedWrite> {
+        val said = mutableListOf<RefusedWrite>()
+        claimPreferences(said)
+        return said
+    }
+
+    // The device's document onto the account. It answers nothing, because there is nothing here a
+    // caller decides: a send that could still land LEAVES IT OWED and `LocalPreferences` is where
+    // that fact lives, while a refusal that never will is SAID and let go — a terminal write
+    // re-sent on every connect jams the claim forever behind an answer that cannot change.
+    private suspend fun claimPreferences(said: MutableList<RefusedWrite>) {
+        if (!preferences.owed) return
+        try {
+            preferences.landed(log.savePreferences(preferences.document))
+        } catch (interrupted: CancellationException) {
+            throw interrupted
+        } catch (refusing: Exception) {
+            val facts = RefusalFacts(refusing)
+            if (Verdict.refusing(facts) is Verdict.Retry) return
+            // The document can never land as written — a band this build let through and the log
+            // does not. It is let go rather than kept owed, and the loss is said under the one name
+            // this document has: the settings the lifter set.
+            said += RefusedClaim("your gym settings", facts.sentence ?: "the log refused these settings")
+            preferences.letGo()
+        }
     }
 
     private suspend fun claimExercises(said: MutableList<RefusedWrite>): Boolean {

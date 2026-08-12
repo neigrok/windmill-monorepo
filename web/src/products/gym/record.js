@@ -25,6 +25,7 @@
 // the finish screen keeps the moment.
 
 import { agoLabel, e1rmLabel, fmt, setLoadLabel, shortDayLabel } from './log.js';
+import { weightUnit } from './units.js';
 
 const round2 = (value) => Math.round(value * 100) / 100;
 
@@ -94,7 +95,7 @@ export function tilesOf(record, now) {
     const { weightKg, reps } = record.heaviest;
     tiles.push(weightKg === 0
       ? { label: 'heaviest', value: String(reps), sub: 'reps · bodyweight', standing: false }
-      : { label: 'heaviest', value: fmt(weightKg), sub: `kg · for ${reps}`, standing: false });
+      : { label: 'heaviest', value: fmt(weightKg), sub: `${weightUnit()} · for ${reps}`, standing: false });
   }
   return tiles;
 }

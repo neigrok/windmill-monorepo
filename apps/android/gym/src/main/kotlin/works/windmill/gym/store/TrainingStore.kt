@@ -11,6 +11,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.ExerciseWrite
+import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.LiveOrder
@@ -57,6 +58,7 @@ class TrainingStore(
     private val queue: SetQueue,
     private val deviceCatalog: DeviceCatalog,
     private val localLog: LocalLog,
+    private val localPreferences: LocalPreferences,
     private val scope: CoroutineScope,
     private val now: () -> Long = System::currentTimeMillis,
     private val mintSession: () -> String = Ids::session,
@@ -75,6 +77,13 @@ class TrainingStore(
     // guess. `connect` runs from the room's first effect, so that frame is the one the effect
     // completes in.
     var catalog: List<Exercise> by mutableStateOf(emptyList())
+        private set
+    // §I'S FIVE ROWS, and the reason they are published from here rather than read where they are
+    // drawn: the settings screen edits them, the logger's plate readout, rest clock and set
+    // confirmation all obey them, and a second copy of that document is how two screens start
+    // disagreeing about the same rack. The device's copy answers first and always — the defaults
+    // are a working gym, so a room that waited for a round trip would be a logger with no plates.
+    var preferences: GymPreferences by mutableStateOf(GymPreferences())
         private set
     var routines: List<Routine> by mutableStateOf(emptyList())
         private set
@@ -177,6 +186,14 @@ class TrainingStore(
     // seconds is noise and the parked lanes already say "saved on this device".
     private var claimOwed = false
 
+    // WHAT THE CADENCE IS FOR, and it is two independent facts rather than one. The shelf may be
+    // owed (`claimOwed`), the settings document may be owed (`localPreferences.owed`), and each is
+    // carried by its own send — the whole walk for the first, one PUT for the second. Sharing a
+    // flag is what would make an unsendable rack poll a refused live start every four seconds.
+    // Both need somebody to send to: signed out neither is pending against anybody, and a timer
+    // that woke to find that out would be a battery cost with no write behind it.
+    private val cadenceOwed: Boolean get() = gym != null && (claimOwed || localPreferences.owed)
+
     private companion object {
         // At or under the server's own ceiling: the handler clamps `limit` to 200, and a larger
         // page here would come back short of what was asked for and read as the bottom of the log.
@@ -228,6 +245,12 @@ class TrainingStore(
         // lift. Held straight back, which wipes the last seat's names off the disk as well as off
         // the screen — for the same seat it is the no-op it looks like.
         owner = account.user?.id
+        // The settings change hands here for the reason the names do, and with the one carry the
+        // claim exists for: an anonymous document that has landed nowhere rides onto the account
+        // that just signed in. Drawn straight back, so the first frame after a seat change is this
+        // seat's rack rather than the last one's.
+        localPreferences.adopt(owner)
+        preferences = localPreferences.document
         catalog = deviceCatalog.movements(owner).let { held ->
             held + localLog.exercises.filter { mine -> held.none { it.id == mine.id } }
         }
@@ -302,6 +325,15 @@ class TrainingStore(
                 }
             }
             launch { tried { log.routines() }?.let { routines = it + localLog.routines } }
+            // The account's own document, and it may not land on top of one this device still
+            // owes — `readBack` refuses that, because the owed copy is the one the lifter just
+            // touched. Read after the claim for the same reason: the claim is what makes them agree.
+            launch {
+                tried { log.preferences() }?.let {
+                    localPreferences.readBack(it)
+                    preferences = localPreferences.document
+                }
+            }
         }
         resume()
     }
@@ -629,6 +661,36 @@ class TrainingStore(
         }
     }
 
+    // §I'S WRITE, and the only one in this room that reaches no session and no set. Held on the
+    // device FIRST and always: the plate readout and the rest clock obey it on the next frame,
+    // whether or not there is an account behind it and whether or not the log is reachable.
+    //
+    // It answers with WHAT WENT WRONG rather than with a bool nobody reads. A send that never
+    // landed is not a lost setting — the device is holding it, and the claim carries it on the next
+    // pass — but a room that said nothing would leave the lifter believing the account had it.
+    //
+    // A WHOLE-DOCUMENT PUT, exactly like a routine's: what goes out is the settings as they should
+    // now stand, and the reply is the STORED document rather than the send.
+    suspend fun savePreferences(document: GymPreferences): WriteFailure? {
+        localPreferences.save(document)
+        preferences = localPreferences.document
+        val log = gym ?: return null
+        return try {
+            localPreferences.landed(log.savePreferences(localPreferences.document))
+            preferences = localPreferences.document
+            null
+        } catch (interrupted: CancellationException) {
+            throw interrupted
+        } catch (refusing: Exception) {
+            // Still owed, and the CADENCE carries it — `deliver` arms itself off `localPreferences
+            // .owed` even with an empty queue, and the pass it schedules sends this document ALONE
+            // rather than re-walking the claim. Arming it here is what stops the setting waiting
+            // for the next connect.
+            deliver()
+            WriteFailure(refusing)
+        }
+    }
+
     fun clearRefusals() {
         refusals = emptyList()
     }
@@ -922,9 +984,9 @@ class TrainingStore(
         retryTask = null
         if (queue.pending.isEmpty()) {
             // An owed claim keeps the cadence armed even with no set to walk: the shelf's
-            // finished sessions are backlog too, and nothing else would carry them before the
-            // next connect.
-            if (claimOwed) scheduleDeliver(afterMs = retryAfterMs)
+            // finished sessions are backlog too, and so is a settings document the log could not
+            // take — nothing else would carry either before the next connect.
+            if (cadenceOwed) scheduleDeliver(afterMs = retryAfterMs)
             return
         }
         val log = gym
@@ -980,7 +1042,7 @@ class TrainingStore(
         val carried = queue.pending.filter { it.sessionId != parked }
         val earliestReady = carried.minOfOrNull { it.heldUntilMs ?: 0 }
         if (earliestReady == null) {
-            if (claimOwed) scheduleDeliver(afterMs = retryAfterMs)
+            if (cadenceOwed) scheduleDeliver(afterMs = retryAfterMs)
             if (refusal != null) {
                 settle(SaveState.Refused(refusal))
                 return
@@ -1036,23 +1098,49 @@ class TrainingStore(
             while (claimAgain) {
                 claimAgain = false
                 val seat = gym ?: return
-                val outcome = ClaimReplay(seat, localLog, queue, mintExercise, mintRoutine, mintSession, mintSet).run()
+                val outcome = replay(seat).run()
                 if (gym !== seat) continue
                 refusals = refusals + outcome.said
                 liveUnclaimed = queue.session != null && !outcome.liveLanded
                 claimOwed = outcome.retryable
+                // A landed claim answers with the STORED settings — plates sorted, duplicates gone
+                // — so the room draws what the account now holds rather than what it sent.
+                preferences = localPreferences.document
             }
         } finally {
             claimsRunning -= 1
         }
     }
 
+    // The claim, made for whichever seat is asking. Two callers and one argument list, so the
+    // cadence's send and the sign-in's walk can never be handed different collaborators.
+    private fun replay(seat: TrainingSyncing) =
+        ClaimReplay(seat, localLog, queue, localPreferences,
+                    mintExercise, mintRoutine, mintSession, mintSet)
+
     // The cadence's half of the claim. `claiming` holds while it runs, so a start tapped during a
     // scheduled re-claim still composes on the device; the walk follows the claim exactly as
     // connect's does — the queue goes out before any read — and a claim that stopped being owed
     // re-reads the log, so what landed reaches Today without a remount.
+    //
+    // A SETTINGS DOCUMENT OWED ON ITS OWN TAKES THE SHORT ROAD, and that is the point of the split:
+    // nothing downstream references it, so it is re-sent by itself rather than by walking the shelf
+    // again — which is what keeps a `session-already-open` wait and a live start the log refused
+    // outright from being polled every four seconds behind a PUT that keeps failing.
     private suspend fun reclaimed(): Boolean {
-        if (!claimOwed || claiming || gym == null) return false
+        if (claiming) return false
+        val seat = gym ?: return false
+        if (!claimOwed) {
+            if (!localPreferences.owed) return false
+            val said = replay(seat).runPreferences()
+            // The seat changed while the PUT was in the air: that seat's own connect owns the
+            // state now, exactly as a claim that outlived its seat settles nothing.
+            if (gym !== seat) return true
+            refusals = refusals + said
+            preferences = localPreferences.document
+            deliver()
+            return true
+        }
         runClaim()
         deliver()
         if (!claimOwed) loadLog()

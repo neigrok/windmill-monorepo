@@ -25,6 +25,7 @@ struct TodayScreen: View {
     let onStart: (String?) -> Void
     let onMovement: (String) -> Void
     let onOpenSession: (SessionSummary) -> Void
+    let onSettings: () -> Void
     let onSignIn: () -> Void
 
     @Environment(\.gymSkin) private var skin
@@ -51,6 +52,7 @@ struct TodayScreen: View {
                 }
                 if !isSignedIn { claimOffer }
                 lookingBack
+                settingsDoor
             }
             .padding(.horizontal, WindmillSpace.x5)
             .padding(.top, WindmillSpace.x10)
@@ -195,6 +197,26 @@ struct TodayScreen: View {
                 .frame(minHeight: GymTap.minimum)
             }
             .padding(.top, WindmillSpace.x2)
+        }
+    }
+
+    // THE DOOR THAT SHOULD NOT BE HERE, and it says so in one place rather than two: §I reaches gym's
+    // settings from You, where the shell composes a section every product registers. That seam does
+    // not exist on this surface (`ProductModule` has no settings slot), and the shell is not this
+    // room's territory — so the door sits at the very foot of Today, under everything that starts a
+    // workout, and moves to You the day the seam lands.
+    private var settingsDoor: some View {
+        Button(action: onSettings) {
+            HStack {
+                Text("Gym settings")
+                    .font(GymType.numeral(12.5))
+                    .foregroundStyle(skin.inkFaint)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(skin.inkFaint)
+            }
+            .frame(minHeight: GymTap.minimum)
         }
     }
 

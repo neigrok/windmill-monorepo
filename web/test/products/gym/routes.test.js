@@ -149,3 +149,20 @@ test('the coach link is declared bare, so opening gym never drags it into the ro
     assert.equal(gymRoutes.shell.bare(hash), false, hash);
   }
 });
+
+// ONE SECTION, AND THE SHELL NEVER LEARNS WHOSE IT IS. §I's five rows are registered here and
+// composed by a settings page that names no product; the gym reaches nothing of the shell's own to
+// place them. It sits in `data` — last, and directly above the account's close — because the export
+// row inside it is exactly what that close's consent list means by "export what you want to keep
+// first".
+test('gym registers its settings as one section, in the slot the account’s close reads', () => {
+  assert.equal(Array.isArray(gymRoutes.settingsSections.data), true);
+  assert.equal(gymRoutes.settingsSections.data.length, 1);
+  assert.equal(typeof gymRoutes.settingsSections.data[0], 'object');
+  assert.equal(gymRoutes.settingsSections.main, undefined, 'gym contributes nothing to the product zone');
+
+  // The export door moved INTO the five rows rather than being rebuilt beside them, so the file it
+  // used to live in is gone rather than left behind holding a second copy.
+  assert.equal(fs.existsSync(path.join(GYM, 'settings', 'GymSettingsSection.jsx')), true);
+  assert.equal(fs.existsSync(path.join(GYM, 'settings', 'GymDataSection.jsx')), false);
+});

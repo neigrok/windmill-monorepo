@@ -48,10 +48,23 @@ usable; there are still no app links. The session secret rides `Authorization: B
 behind `SessionStore`; a restore that cannot reach the server keeps the secret — only a definitive
 401 spends it.
 
-Nothing needs an account first: the gym room opens and works signed out (sessions, routines and
-movements live on the device in `LocalLog` + `SetQueue`), and signing in claims all of it onto the
-account through `ClaimReplay` — movements first, then routines, then finished sessions
-oldest-first, each replayed start → sets → finish with `joinOpenSession: false`.
+Nothing needs an account first: the gym room opens and works signed out (sessions, routines,
+movements and the gym's own settings live on the device in `LocalLog` + `SetQueue` +
+`LocalPreferences`), and signing in claims all of it onto the account through `ClaimReplay` — the
+settings first, then movements, then routines, then finished sessions oldest-first, each replayed
+start → sets → finish with `joinOpenSession: false`. Settings lead because nothing else references
+them and a rack set before signing in should survive the door; a settings write that does not land
+halts none of the rest of it and re-arms none of it either — it retries by itself on the delivery
+cadence (`ClaimReplay.runPreferences`) rather than putting the whole walk on a four-second poll,
+which would re-send a live start the log has already refused. A phone whose settings screen was
+never opened claims nothing rather than overwriting the account's own rack with untouched defaults,
+and what this device still owes rides through a change of seat, because it has landed nowhere and
+this is its only copy.
+
+Gym's settings — units, plate math, the rest dial and how a logged set confirms itself
+(`domain/Preferences.kt`, `ui/SettingsScreen.kt`) — are reached from a row at the foot of Today
+rather than from You. `ProductModule` exposes a room and nothing else on this surface, so the
+section carries its own door until that seam grows a settings slot.
 
 ## CI and releases
 

@@ -315,3 +315,75 @@ test('nothing on the fix path refuses a set because its workout is over', () => 
   // the coach panel three lines above it, which is gated on the workout being over.
   assert.equal(read('Log.jsx').includes('{fixing && (\n        <FixSheet'), true);
 });
+
+// A TOGGLE THAT MOVES AND DOES NOTHING IS A LIE ON A SETTINGS SCREEN. The two confirmation flags
+// record an INTENT that each surface honours as far as it can, and nothing here confirms a set at
+// all — so the row says which surface honours it rather than leaving a lifter to discover that the
+// switch they moved changed nothing where they moved it. The sentence is in the SPEECH and not in a
+// comment, because a comment is not on the screen.
+//
+// AND THE REASON IT GIVES HAS TO BE THE TRUE ONE. It said "this browser has no Vibration API" —
+// the design's own caption, and false: Chrome exposes `navigator.vibrate` on the desktop and honours
+// it on Android, which is where this PWA installs. The true limit is that no set is LOGGED at this
+// desk (§11), so there is nothing for either switch to answer. A false reason on a settings row is
+// believed by the next person deciding whether the desk could buzz after all, which is why the
+// browser sentence is banned here rather than only replaced.
+test('the set-confirmation row names the true reason nothing here confirms a set', () => {
+  const said = speech('settings/GymSettingsSection.jsx');
+  assert.equal(said.includes('No set is logged at this desk'), true);
+  assert.equal(said.includes('it does not act here'), true);
+  assert.equal(said.includes('Vibration API'), false);
+  // And the switch is still drawn, because the intent it records is honoured on the phones: the
+  // honest answer was to name the limit, not to withhold the setting from the surface it is set on.
+  assert.equal(said.includes('label="Haptic"'), true);
+});
+
+// THE REST ROW SAYS WHERE THE CLOCK RUNS IN EVERY STATE IT HAS, and OFF is the state a lifter who
+// has never opened this screen sees: the sentence naming the phone lived in the other branch, so the
+// first-open screen drew a writable "Sound when it ends" with nothing on it saying where — or
+// whether — that sound happens.
+test('the rest row names the phone as the clock even with the timer off', () => {
+  const said = speech('settings/GymSettingsSection.jsx');
+  assert.equal(said.includes('your phone runs the clock between sets and sounds it'), true);
+  // Off is still the default and still says so, and the two sentences are one paragraph rather than
+  // two branches — which is what makes the claim unconditional.
+  assert.equal(said.includes('Off, and off is the default'), true);
+  assert.equal(/restSeconds == null\s*\n?\s*&&/.test(said), true);
+});
+
+// NO ALARM ANY SURFACE WOULD NOT KEEP (W4 §5). Nothing in this wave fires on a clock, and a browser
+// tab cannot promise a sound that survives a locked screen — so the rest row names the target and
+// says where the clock actually runs. The scan is for the APIs, because copy can be reworded and a
+// `new Audio` cannot.
+//
+// IT SCANS THE SPEECH AND NOT THE WHOLE FILE, which is the same rule every other scan here follows:
+// a comment has to stay free to NAME the promise it is refusing to make, and the row above refuses
+// `navigator.vibrate` by name. Stripping comments costs the scan nothing — a call survives the
+// strip; only prose about it does not.
+test('the settings section promises no alarm this surface cannot keep', () => {
+  const said = speech('settings/GymSettingsSection.jsx');
+  for (const promise of ['navigator.vibrate', 'new Audio', 'new Notification', 'requestPermission', 'setInterval']) {
+    assert.equal(said.includes(promise), false, promise);
+  }
+  assert.equal(speech('settings/GymSettingsSection.jsx').includes('never sounds an alarm of its own'), true);
+});
+
+// ONE EXPORT DOOR. It moved INTO the five rows rather than being rebuilt beside them, and the row
+// still carries the reason it was gated in the first place: an account that has only ever grown
+// skill trees is not offered a file of a training log it never kept.
+test('the export is one row of the section, and only for an account with a log', () => {
+  const source = read('settings/GymSettingsSection.jsx');
+  assert.equal(source.includes('{hasLog && ('), true);
+  assert.equal(source.includes('href={EXPORT_HREF}'), true);
+  assert.equal((source.match(/EXPORT_HREF/g) ?? []).length, 2);
+});
+
+// THE GRANT IS NAMED HERE AND OWNED ELSEWHERE. The row says which tools reach the training log and
+// walks to the workbench; a revoke drawn here would be a second door onto one decision, which is the
+// same rule that keeps the account's close in the shell alone.
+test('the connected-log row names the grant state without rebuilding it', () => {
+  const source = read('settings/GymSettingsSection.jsx');
+  assert.equal(source.includes('listGrants'), true);
+  assert.equal(source.includes('revokeGrant'), false);
+  assert.equal(source.includes("href=\"#/connect\""), true);
+});

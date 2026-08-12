@@ -61,11 +61,16 @@ test('SHARED_ABSENT — the page does not guess which of the three it is looking
 
 // The coach's page carries the same three facts in the second person — and cannot name a day,
 // because the shared read carries no expiry. It says the link ends rather than inventing when.
+//
+// AND ONE FACT ABOUT THE NUMBERS, because this reader has no settings screen to check. Every other
+// surface in gym is spelled in the unit its lifter chose, and a bare numeral there is unambiguous
+// for that reason; a stranger holding a link chose nothing, so the page says what it is spelling.
 test('SHARED_TERMS — what the coach is told, with no date it cannot see', () => {
   assert.deepEqual(SHARED_TERMS, [
     'One workout, shared by the person who trained it.',
     'The link expires, and they can revoke it at any time.',
     'It carries no name and opens nothing else in their log.',
+    'Weights are in kilograms.',
   ]);
   assert.equal(SHARED_TERMS.join(' ').includes('Expires'), false);
 });

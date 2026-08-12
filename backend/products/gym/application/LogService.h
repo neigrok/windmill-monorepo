@@ -222,6 +222,23 @@ public:
   // account's catalog holds no such movement.
   std::optional<MovementRecord> movementRecord(const UserId& user, const ExerciseId& exercise);
 
+  // Settings (§I), and the one pair here that is not about the log at all — they live on this
+  // service rather than behind a second one because a service of two pass-throughs is indirection
+  // with one call site, and because the HTTP and MCP doors already hold exactly this object: one
+  // core, two doors, and a rule that cannot be true on one surface and not the other.
+  //
+  // The read answers the DEFAULTS where nothing is stored rather than an absence, because every
+  // client needs a rest target and a plate set to draw its first frame — a 404 there would put a
+  // copy of the defaults in each of them, and the fourth copy is the one that disagrees.
+  //
+  // The write is the WHOLE document, the shape a routine travels in and for the shape's own reason:
+  // the settings screen renders all five rows from one value it already holds, so it always has the
+  // whole document in hand, and a partial write would need "omitted" and "cleared" to be different
+  // things on the one field whose absence already means something — an absent rest target IS the
+  // timer off. It answers with the stored row, so a client draws what the store now holds.
+  GymPreferences preferences(const UserId& user);
+  GymPreferences savePreferences(const GymPreferences& incoming);
+
   // The coach share. The mint answers with the live share on a repeat, so nothing here has to ask
   // first — the store resolves it, the same write-then-resolve every other write in this file uses.
   // An absent answer is the one fact a session read gives: absent and another account's alike.

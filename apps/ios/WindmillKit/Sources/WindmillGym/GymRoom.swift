@@ -73,12 +73,17 @@ public struct GymRoom: View {
     private enum Away: Equatable {
         case session(SessionSummary)
         case movement(String)
+        // §I's five rows. It is HERE, on the room's own stack, because the native ProductModule seam
+        // has no settings slot for the shell to compose — see the head of SettingsScreen. Nothing
+        // ever stacks over it, so its label is only ever read by a way back that cannot be drawn.
+        case settings
 
         // What the way back NAMES when this is the screen underneath.
         func label(in catalog: [Exercise]) -> String {
             switch self {
             case .session(let summary): return Readout.routine(of: summary.session)
             case .movement(let exerciseId): return Readout.movement(exerciseId, in: catalog)
+            case .settings: return "Gym"
             }
         }
     }
@@ -149,6 +154,8 @@ public struct GymRoom: View {
                               onMovement: { look(at: .movement($0)) })
             case .movement(let exerciseId):
                 RecordScreen(exerciseId: exerciseId, store: store, isSignedIn: account.isSignedIn)
+            case .settings:
+                SettingsScreen(store: store, web: account.api.baseURL, say: { note = $0 })
             }
         } else {
             switch tab {
@@ -157,6 +164,7 @@ public struct GymRoom: View {
                             onStart: { routineId in Task { await open(routineId) } },
                             onMovement: { look(at: .movement($0)) },
                             onOpenSession: { look(at: .session($0)) },
+                            onSettings: { look(at: .settings) },
                             onSignIn: { shell.openYou() })
             case .log:
                 LogScreen(store: store, onOpen: { look(at: .session($0)) })

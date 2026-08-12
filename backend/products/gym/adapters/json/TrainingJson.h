@@ -27,6 +27,9 @@ namespace wm::gym {
 //   movement in : { "id": "ex_…", "name": "…", "pattern": "squat"|…, "equipment": "barbell"|…,
 //                   "stepKg"?: n }
 //   rename in   : { "name": "…" }                       PATCH /v1/gym/exercises/{id}
+//   settings i/o: { "units": "kg"|"lb", "barWeightKg": n, "platesKg": [n, …], "restSeconds"?: n,
+//                   "restSound": bool, "confirmHaptic": bool, "confirmSound": bool }
+//                                                       GET · PUT /v1/gym/preferences
 //   session out : { "id", "startedAt", "finishedAt"?, "routineId"?, "plan"? }
 //   log row out : the session, plus { "setCount", "workingSetCount", "tonnageKg",
 //                                     "exercises": ["…"], "topSet"?: { "weightKg", "reps" },
@@ -122,6 +125,17 @@ ExerciseWrite parseExerciseWrite(const Json::Value& body); // throws InvalidTrai
 // and everything else about a movement — its pattern, its equipment, its step — is not a thing this
 // write may touch: a body that named them would be a body promising an edit this product refuses.
 std::string parseExerciseRename(const Json::Value& body);  // throws InvalidTraining
+// The settings document, whole, every time. The OWNER is the caller's and never the body's, so the
+// entity is built here rather than through a `…Write` struct: there is nothing left for the service
+// to decide, and one fewer shape between the wire and the value that gets stored.
+//
+// Every field is optional and an OMITTED one takes its default, which is what "the document is
+// this" has to mean — a whole-document PUT that quietly kept a value the body did not name would be
+// keeping something the sender cannot see and cannot clear. Present values type-check strictly, and
+// an unknown unit is refused rather than downgraded. Every refusal it makes is an InvalidPreference
+// carrying a machine `code`, because five independent values arrive at once and "could not read
+// that" would leave a client guessing which of the five to fix.
+GymPreferences parsePreferences(const Json::Value& body, const UserId& user);  // throws InvalidPreference
 
 Json::Value toJson(const Session& session);
 // The log row carries the estimate the application put on it, not the store's summary alone: a
@@ -147,6 +161,11 @@ Json::Value toJson(const std::vector<Exercise>& exercises);
 Json::Value toJson(const Routine& routine);
 Json::Value toJson(const std::vector<Routine>& routines);
 Json::Value toJson(const PlanSnapshot& plan);
+// The settings document out, and it is the same shape parsePreferences reads in — a client PUTs
+// back exactly what it was handed. `restSeconds` is the one omission, and it is the omission that
+// means the timer is off; `platesKg` is always present, and an EMPTY array is a real answer meaning
+// a gym with nothing to load onto the bar.
+Json::Value toJson(const GymPreferences& preferences);
 Json::Value toJson(const Review& review);
 // The other two one-way shapes, for the same reason the review is one: every number in them is
 // computed or read on each call and there is nothing for a client to send back. The share's is

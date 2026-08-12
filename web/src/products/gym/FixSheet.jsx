@@ -12,7 +12,7 @@
 // real because the write is withheld for exactly that long rather than sent and regretted (Log.jsx).
 
 import React, { useState } from 'react';
-import { fmt } from './log.js';
+import { alsoReadsLabel, fmtKg } from './log.js';
 import { fixDraftOf, fixOf, fixSubtitle, keepsItsOwnNumbers, SET_KINDS, withReps, withWeight } from './fix.js';
 import { Keypad } from './logger/Keypad.jsx';
 import { LADDER_KEYS, ladderLabels } from './logger/ladder.js';
@@ -24,6 +24,7 @@ export function FixSheet({ set, movement, session, onSave, onDelete, onClose }) 
   // place that relies on it, so the labels and the keys are read together rather than re-derived.
   const rungs = ladderLabels(draft.weightKg);
   const keeps = keepsItsOwnNumbers(session);
+  const alsoReads = alsoReadsLabel(draft.weightKg);
 
   return (
     <>
@@ -40,9 +41,15 @@ export function FixSheet({ set, movement, session, onSave, onDelete, onClose }) 
           </div>
 
           <button type="button" className="gym-fix-weight" onClick={() => setTyping('weight')}>
-            <span className="gym-fix-kg">{fmt(draft.weightKg)}</span>
+            <span className="gym-fix-kg">{fmtKg(draft.weightKg)}</span>
             <span className="gym-fix-unit">kg</span>
           </button>
+          {/* THE SAME WEIGHT, THE WAY THE SESSION BEHIND THIS SHEET READS IT. The number here is a
+              kilogram FIELD — what is typed lands in the log as it stands — while the row being
+              corrected shows the account's own reading two inches behind it, dimmed but legible. In
+              pounds those are two numerals for one set, and a lifter has no way to know that. Null
+              in kilograms, where they are the same number. */}
+          {alsoReads && <p className="gym-fix-reads">{alsoReads}</p>}
 
           <div className="gym-rungs">
             {LADDER_KEYS.map((rung, index) => (

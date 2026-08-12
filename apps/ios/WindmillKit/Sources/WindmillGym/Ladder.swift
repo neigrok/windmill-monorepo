@@ -34,15 +34,59 @@ public enum Ladder {
     // with no epsilon to pick. It buys reversibility at the edge and nowhere else: 19.5 +1→ 20.5
     // −2.5→ 18 crosses a boundary rather than landing on it, and does not come back.
     public static func steps(magnitude: Double, lightening: Bool) -> (small: Double, large: Double) {
-        // The open top band (`under: nil`) answers true without comparing, so it catches NaN too and
-        // the fallback is unreachable — it is written out because the compiler cannot know that. The
-        // web copy spells its top band `Infinity` and DOES compare, so NaN falls through there and it
-        // needs a live fallback. Neither surface may throw on a weight rehydrated from storage.
-        let band = bands.first { band in
+        let band = bands[self.band(magnitude: magnitude, lightening: lightening)]
+        return (band.small, band.large)
+    }
+
+    // Which row of the table a load sits in. The open top band (`under: nil`) answers true without
+    // comparing, so it catches NaN too and the fallback is unreachable — it is written out because
+    // the compiler cannot know that. The web copy spells its top band `Infinity` and DOES compare, so
+    // NaN falls through there and it needs a live fallback. Neither surface may throw on a weight
+    // rehydrated from storage.
+    static func band(magnitude: Double, lightening: Bool) -> Int {
+        bands.firstIndex { band in
             guard let under = band.under else { return true }
             return lightening ? magnitude <= under : magnitude < under
-        } ?? bands[bands.count - 1]
-        return (band.small, band.large)
+        } ?? bands.count - 1
+    }
+
+    // The caption §K hangs under the buttons — `over 50 kg · fine 2.5 · plate 10`. It is READ OFF THE
+    // TABLE and never typed beside it, so a retier moves the caption in the same edit that moves the
+    // steps.
+    //
+    // IT READS THE BUTTONS' OWN TWO ROWS, not one of them. ON A BOUNDARY the reversibility rule above
+    // sends the DOWN pair to the row below — at exactly 20 kg the buttons are −2.5 −1 +2.5 +5, which
+    // is the design's own "from exactly 20 kg, down lands on 19" — and a single `fine 2.5` over that
+    // would contradict the button it is drawn under, at the load an empty bar opens on. So a step
+    // whose two directions differ is spelled ↓ and ↑, and the caption says exactly what the four
+    // buttons do. Everywhere else the two rows agree and the line is §K's, unchanged.
+    //
+    // The band is the MAGNITUDE's, because the ladder is: band-assisted work at −20 kg steps like
+    // 20 kg does. The `±` says so where it matters, rather than telling a lifter looking at −20 kg
+    // that they are between 20 and 50.
+    public static func caption(for weight: Double) -> String {
+        let magnitude = abs(weight)
+        let down = steps(magnitude: magnitude, lightening: weight > 0)
+        let up = steps(magnitude: magnitude, lightening: weight < 0)
+        let fine = down.small == up.small
+            ? "fine \(text(up.small))"
+            : "fine \(text(down.small))↓ \(text(up.small))↑"
+        let plate = down.large == up.large
+            ? "plate \(text(up.large))"
+            : "plate \(text(down.large))↓ \(text(up.large))↑"
+        let moves = "\(fine) · \(plate)"
+        let index = band(magnitude: magnitude, lightening: false)
+        let row = bands[index]
+        let sign = weight < 0 ? "±" : ""
+        // A row is named by the bounds it has: the first has no floor, the last no ceiling, and a
+        // table of one row names no band at all.
+        switch (index == 0 ? nil : bands[index - 1].under, row.under) {
+        case (nil, let ceiling?): return "under \(sign)\(text(ceiling)) kg · \(moves)"
+        case (let floor?, nil): return "over \(sign)\(text(floor)) kg · \(moves)"
+        case (let floor?, let ceiling?):
+            return "\(sign)\(text(floor))–\(text(ceiling)) kg · \(moves)"
+        case (nil, nil): return moves
+        }
     }
 
     // Half away from zero, which `.rounded()` already is — and it is a law, not a default, because

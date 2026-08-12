@@ -15,13 +15,14 @@ import React, { useRef, useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { failureReason, gymApi } from './gymApi.js';
 import {
-  entryLabel, fmt, nameOfMovement, NEW_ROUTINE_ID, recordHref, routineHref, routineMetaLabel,
-  ROUTINES_HREF,
+  alsoReadsLabel, entryLabel, fmtKg, nameOfMovement, NEW_ROUTINE_ID, recordHref, routineHref,
+  routineMetaLabel, ROUTINES_HREF,
 } from './log.js';
 import { mintId } from './mint.js';
 import { Keypad } from './logger/Keypad.jsx';
 import { MovementPicker } from './logger/MovementPicker.jsx';
 import { EMPTY_BAR_KG } from './log.js';
+import { platesReadout } from './settings/plates.js';
 import {
   blankRoutine, draftFrom, duplicateRoutine, NAME_MAX, NEW_ENTRY_REPS, reorderEntries, routineWrite,
   withEntryAdded, withEntryChanged, withEntryRemoved,
@@ -216,6 +217,7 @@ export function RoutineEditor({ id, log }) {
         <TargetSheet
           movement={nameOfMovement(log.catalog, draft.entries[target].exerciseId)}
           entry={draft.entries[target]}
+          preferences={log.preferences}
           onChange={(change) => editEntries((held) => withEntryChanged(held, target, change))}
           onClose={() => setTarget(null)}
         />
@@ -241,9 +243,17 @@ export function RoutineEditor({ id, log }) {
 // and no keypad can reach — none at all — and neither is a zero somebody has to guess at: an absent
 // load is the wire's "whatever you did last time", an absent rep target is canon screen 6's
 // `3 × max`, and each gets the same way back, one word under the row it belongs to.
-function TargetSheet({ movement, entry, onChange, onClose }) {
+function TargetSheet({ movement, entry, preferences, onChange, onClose }) {
   const [typing, setTyping] = useState(false);
   const reps = entry.targetReps;
+  // WHAT THIS TARGET LOOKS LIKE ON A BAR, from the plates this gym owns (settings/plates.js). The
+  // program is written at the desk and lifted somewhere with a fixed rack, so a line asking for
+  // 102.5 in a gym with no 1.25s is worth catching here rather than at the rack. It says so and
+  // names the loads that ARE makeable; it does not refuse the number, because a lifter may well be
+  // somewhere else next Tuesday. The ladder is untouched by any of this — it is a pure function of
+  // the weight and stays pinned by its golden.
+  const onTheBar = platesReadout(entry.targetWeightKg, preferences);
+  const alsoReads = alsoReadsLabel(entry.targetWeightKg);
   return (
     <>
       <div className="gym-sheet-catch" role="presentation" onClick={onClose}>
@@ -274,7 +284,7 @@ function TargetSheet({ movement, entry, onChange, onClose }) {
           <div className="gym-target-row">
             <span className="gym-target-label">Weight</span>
             <button type="button" className="gym-target-weight" onClick={() => setTyping(true)}>
-              {entry.targetWeightKg == null ? 'last time' : `${fmt(entry.targetWeightKg)} kg`}
+              {entry.targetWeightKg == null ? 'last time' : `${fmtKg(entry.targetWeightKg)} kg`}
             </button>
             {entry.targetWeightKg != null && (
               <button type="button" className="gym-target-clear" onClick={() => onChange({ targetWeightKg: null })}>
@@ -282,6 +292,17 @@ function TargetSheet({ movement, entry, onChange, onClose }) {
               </button>
             )}
           </div>
+          {/* THE SAME TARGET, THE WAY THE ROWS UNDER THIS SHEET READ IT. The button above is a
+              kilogram FIELD — the keypad it opens types kilograms and they land in the routine as
+              they stand — while the entry row behind it prints the account's own reading. In pounds
+              that is `100 kg` over `3 × 5 · 220.5`, one target and two numerals, and this is the
+              line that says so. Null in kilograms, where they are the same number. */}
+          {alsoReads && <p className="gym-target-reads">{alsoReads}</p>}
+          {onTheBar && (
+            <p className={onTheBar.loadable ? 'gym-target-plates' : 'gym-target-plates is-unloadable'}>
+              {onTheBar.line}
+            </p>
+          )}
         </div>
       </div>
       {/* Beside the sheet and never inside it: the keypad brings its own tap-to-commit surface, and

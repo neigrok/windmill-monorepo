@@ -185,6 +185,14 @@ ToolResult getStats(LogService& log, const UserId& caller, const Json::Value& ar
   return ToolResult::json(toJson(stats));
 }
 
+// The settings §I draws, read and never written. A lifter who has never opened that screen is
+// answered with the defaults, exactly as every other surface is — there is no absence here for an
+// agent to interpret, because the whole value of this read is that a proposal can be checked against
+// what the gym actually holds.
+ToolResult getPreferences(LogService& log, const UserId& caller) {
+  return ToolResult::json(toJson(log.preferences(caller)));
+}
+
 // --- The writes ------------------------------------------------------------------------------
 
 ToolResult startSession(LogService& log, const UserId& caller, const Json::Value& args) {
@@ -390,6 +398,7 @@ ToolResult GymTools::dispatch(const std::string& name, const Json::Value& argume
   if (name == "last_time")       return lastTime(log_, caller, arguments);
   if (name == "list_routines")   return listRoutines(log_, caller, arguments);
   if (name == "get_stats")       return getStats(log_, caller, arguments);
+  if (name == "get_preferences") return getPreferences(log_, caller);
 
   if (name == "start_session")   return startSession(log_, caller, arguments);
   if (name == "log_set")         return logSet(log_, caller, arguments);

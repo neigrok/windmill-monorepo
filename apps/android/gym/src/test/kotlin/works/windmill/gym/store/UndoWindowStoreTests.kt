@@ -31,6 +31,7 @@ class UndoWindowStoreTests {
     private lateinit var queueFile: File
     private lateinit var catalogFile: File
     private lateinit var localFile: File
+    private lateinit var preferencesFile: File
 
     @Before
     fun setUp() {
@@ -38,12 +39,14 @@ class UndoWindowStoreTests {
         queueFile = File(tmp.root, "gym-undo-${System.nanoTime()}.json")
         catalogFile = File(tmp.root, "gym-undo-catalog-${System.nanoTime()}.json")
         localFile = File(tmp.root, "gym-undo-local-${System.nanoTime()}.json")
+        preferencesFile = File(tmp.root, "gym-undo-prefs-${System.nanoTime()}.json")
     }
 
     private fun TestScope.makeStore(server: FakeTraining) = TrainingStore(
         queue = SetQueue(queueFile) { clockMs },
         deviceCatalog = DeviceCatalog(catalogFile),
         localLog = LocalLog(localFile),
+        localPreferences = LocalPreferences(preferencesFile),
         scope = backgroundScope,
         now = { clockMs },
         mintSession = { "ses_1" },

@@ -2,6 +2,7 @@ package works.windmill.gym.net
 
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.ExerciseWrite
+import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.MovementRecord
 import works.windmill.gym.domain.Review
@@ -113,4 +114,19 @@ interface TrainingSyncing {
     // Revoked is deleted: the row IS the capability, so there is nothing to mark and nothing left
     // to describe. Nothing to revoke answers the same 404 an absent session gives.
     suspend fun revokeShare(sessionId: String)
+
+    // §I'S FIVE ROWS, as one account-level document. The read NEVER 404s — a lifter with no row is
+    // served the defaults — so it answers with a document rather than folding an absence, and the
+    // absence of a row is a fact the client never has to hold.
+    suspend fun preferences(): GymPreferences
+
+    // A WHOLE-DOCUMENT REPLACE, exactly as a routine PUT is, and with the same consequence: what
+    // goes out is the settings as they should now stand. The one difference is the reason it can be
+    // written that way — an OMITTED field takes its DEFAULT here rather than keeping what is
+    // stored, which is what makes "off" expressible at all (`restSeconds` absent IS off, and there
+    // is no 0 and no false to say it with).
+    //
+    // The document it answers with is the STORED one and may not be the one that went out: plates
+    // come back sorted heaviest-first with duplicates gone. Draw the reply, never the send.
+    suspend fun savePreferences(document: GymPreferences): GymPreferences
 }

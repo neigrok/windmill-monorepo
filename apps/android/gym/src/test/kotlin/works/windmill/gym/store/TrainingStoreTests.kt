@@ -19,6 +19,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import works.windmill.gym.domain.Exercise
+import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.PlanEntry
@@ -30,7 +31,9 @@ import works.windmill.gym.domain.RoutineEntry
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetKind
+import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.domain.Units
 import works.windmill.gym.net.FakeTraining
 import works.windmill.gym.net.TrainingSyncing
 import works.windmill.platform.Account
@@ -38,6 +41,7 @@ import works.windmill.platform.User
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.net.WindmillApiException
+import works.windmill.platform.net.WindmillJson
 
 // What has to be true for a set somebody lifted to survive: it is on the device before the log is
 // consulted, it stays there when the log cannot be reached, the four refusals each get the repair
@@ -60,6 +64,7 @@ class TrainingStoreTests {
     private lateinit var queueFile: File
     private lateinit var catalogFile: File
     private lateinit var localFile: File
+    private lateinit var preferencesFile: File
 
     @Before
     fun setUp() {
@@ -67,6 +72,7 @@ class TrainingStoreTests {
         queueFile = File(tmp.root, "gym-${System.nanoTime()}.json")
         catalogFile = File(tmp.root, "gym-catalog-${System.nanoTime()}.json")
         localFile = File(tmp.root, "gym-local-${System.nanoTime()}.json")
+        preferencesFile = File(tmp.root, "gym-prefs-${System.nanoTime()}.json")
     }
 
     // The undo window is off here on purpose. What every test below is about is what happens to a
@@ -83,6 +89,7 @@ class TrainingStoreTests {
         queue = SetQueue(queueFile) { clockMs },
         deviceCatalog = DeviceCatalog(catalogFile),
         localLog = LocalLog(localFile),
+        localPreferences = LocalPreferences(preferencesFile),
         scope = backgroundScope,
         now = { clockMs += 1; clockMs },
         mintSession = mintSession,
@@ -1662,5 +1669,132 @@ class TrainingStoreTests {
 
         assertEquals(listOf("ses_1"), store.logged.map { it.id })
         assertEquals(Older.End, store.older)
+    }
+
+    // KILOGRAMS ARE THE ONLY THING STORED, AND THIS IS THE PROOF. The unit is a display transform at
+    // the very edge; it reaches no write. An account reading in pounds logs the same 82.5 the wire
+    // has always carried, the queue holds the same number, and the string `lb` appears nowhere
+    // except in the settings document itself.
+    @Test
+    fun testUnitsAreADisplayTransformAndReachNoWrite() = runTest {
+        val server = FakeTraining()
+        val store = liveStore(server)
+
+        assertNull(store.savePreferences(GymPreferences(units = Units.Pounds)))
+        store.logSet(weightKg = 82.5, reps = 5)
+
+        assertEquals(Units.Pounds, store.preferences.units)
+        assertEquals(listOf(82.5), server.appended.map { it.weightKg })
+        assertEquals(listOf(82.5), server.sets.getValue("ses_1").map { it.weightKg })
+        assertEquals(listOf(82.5), store.sets.map { it.weightKg })
+        val written = WindmillJson.encodeToString(SetWrite.serializer(), server.appended.single())
+        assertFalse("no unit reached the set that was written: $written", written.contains("lb"))
+        assertFalse(written.contains("units"))
+
+        // ...and switching back rewrites no history: the row on the log is the row it always was.
+        assertNull(store.savePreferences(GymPreferences(units = Units.Kilograms)))
+        assertEquals(listOf(82.5), server.sets.getValue("ses_1").map { it.weightKg })
+    }
+
+    // A rack set before signing in is the lifter's, and the sign-in claims it exactly as it claims
+    // their movements, routines and sessions. A lifter who set their plates on the bus must not
+    // lose them at the door.
+    @Test
+    fun testARackSetSignedOutIsClaimedOntoTheAccount() = runTest {
+        val server = FakeTraining()
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = false))
+
+        assertNull(store.savePreferences(GymPreferences(barWeightKg = 15.0, restSeconds = 90)))
+        assertEquals(15.0, store.preferences.barWeightKg, 1e-9)
+        assertTrue("nobody to tell yet", server.settingsWritten.isEmpty())
+
+        val relaunched = makeStore(sync = server)
+        relaunched.connect(account(signedIn = true))
+
+        assertEquals(listOf(15.0), server.settingsWritten.map { it.barWeightKg })
+        assertEquals(90, server.settings?.restSeconds)
+        assertEquals(15.0, relaunched.preferences.barWeightKg, 1e-9)
+    }
+
+    // And the other direction: an account that already has a rack hands it to a phone that has
+    // never opened the screen — rather than that phone's untouched defaults overwriting it.
+    @Test
+    fun testAnAccountsOwnRackArrivesOnConnectAndIsNotOverwrittenByAFreshPhone() = runTest {
+        val server = FakeTraining()
+        server.settings = GymPreferences(platesKg = listOf(20.0, 10.0), restSeconds = 180)
+
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+
+        assertEquals(listOf(20.0, 10.0), store.preferences.platesKg)
+        assertEquals(180, store.preferences.restSeconds)
+        assertTrue("a phone with nothing to say says nothing", server.settingsWritten.isEmpty())
+    }
+
+    // A setting the log could not take is not a lost setting — the device is holding it and the
+    // claim carries it — but a room that said nothing would leave the lifter believing the account
+    // had it.
+    @Test
+    fun testASettingTheLogCannotTakeIsHeldHereAndSaidOutLoud() = runTest {
+        val server = FakeTraining()
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+
+        server.online = false
+        val failed = store.savePreferences(GymPreferences(restSeconds = 90))
+
+        assertEquals(WriteFailure.NoAnswer, failed)
+        assertEquals("the row on screen is the one the lifter chose", 90, store.preferences.restSeconds)
+
+        server.online = true
+        val relaunched = makeStore(sync = server)
+        relaunched.connect(account(signedIn = true))
+        assertEquals(90, server.settings?.restSeconds)
+    }
+
+    // A SETTING THAT WILL NOT LAND RETRIES BY ITSELF, and this is the shape of that retry. It is
+    // carried on the same four-second cadence the owed sets ride — so it does not wait for the next
+    // connect — but the pass it schedules sends the DOCUMENT and nothing else. A room that folded
+    // this into `claimOwed` re-walked the whole claim every four seconds forever, re-sending a live
+    // start the log had already refused and starving the log re-read behind it, on an idle screen
+    // with an empty queue. A 404 is what a server that has not deployed this route answers, and it
+    // is retryable, so this is not a hypothetical shape.
+    @Test
+    fun testAnOwedSettingRetriesAloneRatherThanReWalkingTheClaim() = runTest {
+        // The phone's own workout, made signed out, against an account that already has one open:
+        // the claim's live start WAITS for that workout to close, and a wait is event-driven — it
+        // is one of the two stops that must never be polled.
+        val server = FakeTraining()
+        server.open(Session(id = "ses_other", startedAtMs = 500))
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = false))
+        store.start()
+        store.choose("bench-press")
+        store.connect(account(signedIn = true))
+        server.calls.clear()
+        server.started.clear()
+
+        server.refusePreferences = refusal(404, message = "no such route")
+        assertEquals(WriteFailure.Refused("no such route"), store.savePreferences(GymPreferences(restSeconds = 90)))
+
+        advanceTimeBy(20_100)
+        runCurrent()
+
+        assertEquals("every pass is one PUT and nothing else — the send, then five cadence passes",
+            List(6) { "savePreferences" }, server.calls)
+        assertTrue("the waiting start was never re-sent behind it", server.started.isEmpty())
+        assertEquals("the phone keeps its own workout", "ses_minted", store.session?.id)
+        assertEquals("and the row on screen is still the lifter's", 90, store.preferences.restSeconds)
+
+        // ...and it stops the moment the log takes it: no set was ever owed, so nothing stays armed.
+        server.refusePreferences = null
+        advanceTimeBy(4_100)
+        runCurrent()
+        assertEquals(90, server.settings?.restSeconds)
+        server.calls.clear()
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertTrue("the cadence is not a heartbeat", server.calls.isEmpty())
     }
 }

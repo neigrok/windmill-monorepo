@@ -26,7 +26,7 @@ import {
   withMovementAdded,
 } from './backfill.js';
 import { failureReason, gymApi } from './gymApi.js';
-import { fmt, nameOfMovement, sessionHref } from './log.js';
+import { fmtKg, nameOfMovement, sessionHref } from './log.js';
 import { mintId } from './mint.js';
 import { Keypad } from './logger/Keypad.jsx';
 import { MovementPicker } from './logger/MovementPicker.jsx';
@@ -140,12 +140,17 @@ export function Backfill({ log }) {
           <h2 className="gym-block-name">{nameOfMovement(log.catalog, block.exerciseId)}</h2>
           {block.lines.map((line, lineIndex) => (
             <div className="gym-line" key={`${line.weightKg}-${line.reps}-${lineIndex}`}>
+              {/* THE UNIT IS ON THE FIELD, and it has to be from the wave that gave the account a
+                  choice of reading (units.js): every other numeral on this surface is spelled in
+                  that reading, so a bare `82.5` on a form that types KILOGRAMS is read as pounds by
+                  the lifter who set pounds — and typed over as pounds. The keypad that opens from
+                  here says `kg` in its hint; this is the same word on the value it opens with. */}
               <button
                 type="button"
                 className="gym-line-value"
                 onClick={() => setTyping({ blockIndex, lineIndex, mode: 'weight' })}
               >
-                {fmt(line.weightKg)}
+                {`${fmtKg(line.weightKg)} kg`}
               </button>
               <button
                 type="button"

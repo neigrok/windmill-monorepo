@@ -4,21 +4,43 @@ import XCTest
 // The rest timer answers from an instant, never from a counter — so a pocketed phone comes back to
 // the truth. And being over the target is a fact, not a fault: the overrun counts up, and nothing
 // here is allowed to read as an error.
+//
+// The target is one somebody ASKED for — the routine's line, or §I's dial — and there is no third
+// answer any more. The tests below are what stops one growing back.
 
 final class RestTests: XCTestCase {
-    // The routine's own line wins: a lifter who wrote three minutes against an accessory meant it.
-    func testTheRoutinesOwnRestBeatsTheTableAndTheTableBeatsTheDefault() {
+    // The routine's own line wins for the movement it names; the dial answers everything else.
+    func testTheRoutinesOwnRestBeatsTheDial() {
         let entry = PlanEntry(exerciseId: "face-pull", sets: 3, reps: 15, restSeconds: 180)
-        XCTAssertEqual(Rest.target("face-pull", planEntry: entry), 180)
-        XCTAssertEqual(Rest.target("face-pull", planEntry: nil), 60)
-        XCTAssertEqual(Rest.target("back-squat", planEntry: nil), 180)
+        let dialled = GymPreferences.defaults.resting(90)
+        XCTAssertEqual(Rest.target(planEntry: entry, preferences: dialled), 180)
+        XCTAssertEqual(Rest.target(planEntry: nil, preferences: dialled), 90)
     }
 
-    // A movement the table has never heard of — including one the lifter minted this morning —
-    // rests for two minutes rather than for nothing.
-    func testAMovementNobodyHasWeighedRestsForTheDefault() {
-        XCTAssertEqual(Rest.target("ex_31ab", planEntry: nil), Rest.defaultSeconds)
-        XCTAssertEqual(Rest.defaultSeconds, 120)
+    // THE ONE THAT MATTERS: a lifter who has never opened the settings screen is not beeped at. The
+    // per-movement table that used to answer here was exactly that — a timer nobody asked for — and
+    // it went with the dial that replaced it.
+    func testNobodyWhoHasNotAskedForARestTimerGetsOne() {
+        XCTAssertNil(GymPreferences.defaults.restSeconds)
+        XCTAssertNil(Rest.target(planEntry: nil, preferences: .defaults))
+        XCTAssertNil(Rest.target(planEntry: PlanEntry(exerciseId: "back-squat", sets: 5),
+                                 preferences: .defaults))
+    }
+
+    // The dial's four, and `off` is one of them rather than the absence of one.
+    func testTheDialOffersOffAndThreeRests() {
+        XCTAssertEqual(Rest.choices, [nil, 90, 120, 180])
+        XCTAssertEqual(Rest.choices.map(SettingsScreen.spell), ["off", "1:30", "2:00", "3:00"])
+    }
+
+    // The chime is keyed on the whole clock, target included, because the logger schedules it as a
+    // sleep against that key: a dial turned off mid-rest has to REPLACE that task, and a key made of
+    // the instant alone would leave the old one to land and chime for a timer nobody is running.
+    func testTheChimesKeyMovesWhenTheDialDoesAndNotOtherwise() {
+        XCTAssertNotEqual(Rest.Clock(startedAtMs: 1_000, targetSeconds: 120),
+                          Rest.Clock(startedAtMs: 1_000, targetSeconds: 180))
+        XCTAssertEqual(Rest.Clock(startedAtMs: 1_000, targetSeconds: 120),
+                       Rest.Clock(startedAtMs: 1_000, targetSeconds: 120))
     }
 
     func testRestingCountsDownToTheTargetAndNamesIt() {

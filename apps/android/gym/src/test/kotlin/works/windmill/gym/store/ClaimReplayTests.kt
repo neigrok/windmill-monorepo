@@ -4,12 +4,14 @@ import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import works.windmill.gym.domain.Exercise
+import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineEntry
 import works.windmill.gym.domain.Session
@@ -28,6 +30,10 @@ class ClaimReplayTests {
     val tmp = TemporaryFolder()
 
     private fun shelf() = LocalLog(File(tmp.root, "local-${System.nanoTime()}.json"))
+    // Untouched, and that is the ordinary case: a seat that never opened the settings screen holds
+    // no document, so the claim's first step sends nothing and every `calls` assertion below reads
+    // exactly as it did before preferences joined the order.
+    private fun settings() = LocalPreferences(File(tmp.root, "prefs-${System.nanoTime()}.json"))
     private fun queue() = SetQueue(File(tmp.root, "queue-${System.nanoTime()}.json"))
 
     private fun refusal(status: Int, code: String, message: String = "a sentence") =
@@ -52,7 +58,7 @@ class ClaimReplayTests {
             Session(id = "ses_old", startedAtMs = 1_000, finishedAtMs = 2_000),
             listOf(aSet("set_a", at = 1_100))))
 
-        val outcome = ClaimReplay(server, localLog, queue()).run()
+        val outcome = ClaimReplay(server, localLog, queue(), settings()).run()
 
         assertEquals(listOf("createExercise", "createRoutine", "start", "append", "finish",
             "start", "append", "finish"), server.calls)
@@ -60,6 +66,118 @@ class ClaimReplayTests {
         assertTrue(outcome.said.isEmpty())
         assertTrue(outcome.liveLanded)
         assertTrue(localLog.finished.isEmpty() && localLog.routines.isEmpty() && localLog.exercises.isEmpty())
+    }
+
+    // PREFERENCES RIDE FIRST, and only when this device owes them. Nothing downstream references
+    // them, so they lead because they are one cheap PUT and because a lifter who set their rack
+    // before signing in should see it survive the moment the account arrives.
+    @Test
+    fun testTheRackClaimsBeforeAnythingElseAndOnlyWhenItIsOwed() = runTest {
+        val server = FakeTraining()
+        val localLog = shelf()
+        val settings = settings()
+        settings.save(GymPreferences(barWeightKg = 15.0, platesKg = listOf(20.0, 10.0), restSeconds = 90))
+        localLog.hold(LocalLog.FinishedSession(
+            Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000),
+            listOf(aSet("set_a", at = 1_100))))
+
+        ClaimReplay(server, localLog, queue(), settings).run()
+
+        assertEquals("savePreferences", server.calls.first())
+        assertEquals(listOf(15.0), server.settingsWritten.map { it.barWeightKg })
+        assertEquals(listOf(20.0, 10.0), server.settings?.platesKg)
+        assertFalse("the log took them — nothing is owed", settings.owed)
+
+        // And a second pass over a settled device sends nothing at all: the claim is not a heartbeat.
+        server.calls.clear()
+        ClaimReplay(server, localLog, queue(), settings).run()
+        assertFalse("savePreferences" in server.calls)
+    }
+
+    // A RACK THAT DID NOT LAND MAY NOT PARK A WORKOUT, and it may not re-arm one either. The claim
+    // carries on past it and every session behind it still replays; what stays owed is the
+    // DOCUMENT, on LocalPreferences, and `runPreferences` is what carries it. `retryable` keeps
+    // meaning "another pass of the shelf could change this" — folding the rack into it would put
+    // the whole walk on a four-second poll, including the two stops that must never be polled.
+    @Test
+    fun testARackThatCannotBeSentStopsNothingBehindIt() = runTest {
+        val server = FakeTraining()
+        val localLog = shelf()
+        val settings = settings()
+        settings.save(GymPreferences(restSeconds = 90))
+        server.refusePreferences = IOException("offline")
+        localLog.hold(LocalLog.FinishedSession(
+            Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000),
+            listOf(aSet("set_a", at = 1_100))))
+
+        val outcome = ClaimReplay(server, localLog, queue(), settings).run()
+
+        assertEquals(listOf("set_a"), server.sets.getValue("ses_1").map { it.id })
+        assertTrue("the session went, the rack did not", localLog.finished.isEmpty())
+        assertTrue("still owed, and the cadence carries it", settings.owed)
+        assertFalse("the SHELF is settled — a rack does not put the walk on a poll", outcome.retryable)
+        assertTrue("nothing was lost, so nothing is said", outcome.said.isEmpty())
+    }
+
+    // THE TWO STOPS THAT MUST NEVER BE POLLED, with a rack owed behind them. A live workout the
+    // account already has open WAITS for that workout to close, and a live start the log refuses
+    // outright is over — both wait for the next connect, and neither becomes a four-second retry
+    // because a settings PUT could not land in the same pass.
+    @Test
+    fun testAnOwedRackDoesNotPutTheHaltsOnACadence() = runTest {
+        for (answer in listOf(refusal(409, code = "session-already-open"),
+                              refusal(400, code = "session-start", message = "that start cannot be taken"))) {
+            val server = FakeTraining()
+            val settings = settings()
+            val queue = queue()
+            settings.save(GymPreferences(restSeconds = 90))
+            server.refusePreferences = IOException("offline")
+            queue.hold(Session(id = "ses_live", startedAtMs = 9_000))
+            server.refuseStart = { answer }
+
+            val outcome = ClaimReplay(server, shelf(), queue, settings).run()
+
+            assertFalse("halted at $answer with a rack owed", outcome.retryable)
+            assertFalse(outcome.liveLanded)
+            assertTrue("the rack is still the cadence's to send", settings.owed)
+        }
+    }
+
+    // ...and the step that stands alone sends alone: no start, no append, one PUT.
+    @Test
+    fun testTheRackRetriesByItselfWithoutWalkingTheShelf() = runTest {
+        val server = FakeTraining()
+        val settings = settings()
+        val queue = queue()
+        settings.save(GymPreferences(restSeconds = 90))
+        queue.hold(Session(id = "ses_live", startedAtMs = 9_000))
+
+        val said = ClaimReplay(server, shelf(), queue, settings).runPreferences()
+
+        assertEquals(listOf("savePreferences"), server.calls)
+        assertEquals(90, server.settings?.restSeconds)
+        assertFalse(settings.owed)
+        assertTrue(said.isEmpty())
+    }
+
+    // A DOCUMENT THE LOG WILL NEVER TAKE AS WRITTEN is said out loud and let go, exactly as a
+    // refused movement or routine is — a terminal write re-sent on every connect would jam the
+    // claim forever behind an answer that cannot change. The device keeps drawing what the lifter
+    // set; the account's own copy replaces it on the next read.
+    @Test
+    fun testARackTheLogRefusesOutrightIsSaidAndLetGo() = runTest {
+        val server = FakeTraining()
+        val settings = settings()
+        settings.save(GymPreferences(restSeconds = 90))
+        server.refusePreferences = refusal(400, code = "rest-target", message = "a rest target runs from 15 to 900 seconds")
+
+        val outcome = ClaimReplay(server, shelf(), queue(), settings).run()
+
+        assertEquals(listOf("a rest target runs from 15 to 900 seconds"), outcome.said.map { it.reason })
+        assertFalse("let go — not re-sent on every connect", settings.owed)
+        assertEquals("and still drawn, because it is what the lifter chose",
+            90, settings.document.restSeconds)
+        assertFalse("nothing here is worth another pass", outcome.retryable)
     }
 
     // A clock that lied once may not cost the session: every instant is repaired into the server's
@@ -72,7 +190,7 @@ class ClaimReplayTests {
             Session(id = "ses_1", startedAtMs = 0, finishedAtMs = -5),
             listOf(aSet("set_a", at = 0))))
 
-        ClaimReplay(server, localLog, queue()).run()
+        ClaimReplay(server, localLog, queue(), settings()).run()
 
         assertEquals(1L, server.started.single().startedAt)
         assertEquals(1L, server.appended.single().completedAt)
@@ -97,7 +215,7 @@ class ClaimReplayTests {
             } else null
         }
 
-        ClaimReplay(server, localLog, queue(), mintSet = { "set_fresh" }).run()
+        ClaimReplay(server, localLog, queue(), settings(), mintSet = { "set_fresh" }).run()
 
         assertEquals(listOf("set_spent", "set_fresh"), server.appended.map { it.id })
         assertEquals(listOf("set_fresh"), server.sets.getValue("ses_1").map { it.id })
@@ -123,7 +241,7 @@ class ClaimReplayTests {
             } else null
         }
 
-        ClaimReplay(server, localLog, queue(), mintRoutine = { "rt_fresh" }).run()
+        ClaimReplay(server, localLog, queue(), settings(), mintRoutine = { "rt_fresh" }).run()
 
         assertEquals(listOf("rt_fresh"), server.written.keys.toList())
         assertEquals("rt_fresh", server.started.single().routineId)
@@ -144,7 +262,7 @@ class ClaimReplayTests {
             emptyList()))
         server.refuseRoutine = { refusal(400, code = "bad-routine", message = "that document is unclaimable") }
 
-        val outcome = ClaimReplay(server, localLog, queue()).run()
+        val outcome = ClaimReplay(server, localLog, queue(), settings()).run()
 
         assertNull("the start names no routine the account lacks", server.started.single().routineId)
         assertEquals("the loss is said under the routine's name",
@@ -167,7 +285,7 @@ class ClaimReplayTests {
             listOf(aSet("set_a", exerciseId = "ex_bad", at = 1_100))))
         server.refuseCreate = refusal(400, code = "bad-movement", message = "that name is unclaimable")
 
-        val outcome = ClaimReplay(server, localLog, queue()).run()
+        val outcome = ClaimReplay(server, localLog, queue(), settings()).run()
 
         assertEquals("the loss is said under the movement's name",
             listOf(RefusedClaim("Zercher Squat", "that name is unclaimable")), outcome.said)
@@ -189,7 +307,7 @@ class ClaimReplayTests {
             listOf(aSet("set_a", at = 1_100))))
         localLog.fixSet("ses_1", "set_a", SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Drop))
 
-        ClaimReplay(server, localLog, queue()).run()
+        ClaimReplay(server, localLog, queue(), settings()).run()
 
         assertEquals("one row, and it is the one the lifter fixed it to",
             listOf("set_a"), server.sets.getValue("ses_1").map { it.id })
@@ -213,11 +331,11 @@ class ClaimReplayTests {
             listOf(aSet("set_a", at = 1_100), aSet("set_b", at = 1_200))))
         // A first pass that landed both sets and then could not close the session.
         server.onFinish = { throw IOException("offline") }
-        assertTrue(ClaimReplay(server, localLog, queue()).run().retryable)
+        assertTrue(ClaimReplay(server, localLog, queue(), settings()).run().retryable)
         server.onFinish = {}
 
         localLog.fixSet("ses_1", "set_a", SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working))
-        ClaimReplay(server, localLog, queue()).run()
+        ClaimReplay(server, localLog, queue(), settings()).run()
 
         assertEquals("still one row per set — a correction is never a second row",
             listOf("set_a", "set_b"), server.sets.getValue("ses_1").map { it.id })
@@ -239,11 +357,11 @@ class ClaimReplayTests {
             Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000),
             listOf(aSet("set_a", at = 1_100), aSet("set_b", at = 1_200))))
         server.onFinish = { throw IOException("offline") }
-        assertTrue(ClaimReplay(server, localLog, queue()).run().retryable)
+        assertTrue(ClaimReplay(server, localLog, queue(), settings()).run().retryable)
         server.onFinish = {}
 
         localLog.deleteSet("ses_1", "set_a")
-        ClaimReplay(server, localLog, queue()).run()
+        ClaimReplay(server, localLog, queue(), settings()).run()
 
         assertEquals(listOf("set_b"), server.sets.getValue("ses_1").map { it.id })
         assertEquals(listOf("ses_1" to "set_a"), server.removed)
@@ -270,7 +388,7 @@ class ClaimReplayTests {
             }
         }
 
-        ClaimReplay(server, localLog, queue()).run()
+        ClaimReplay(server, localLog, queue(), settings()).run()
 
         assertEquals("one row per set, still", listOf("set_a", "set_b"),
             server.sets.getValue("ses_1").map { it.id })
@@ -294,7 +412,7 @@ class ClaimReplayTests {
             listOf(aSet("set_a", at = 1_100), aSet("set_b", at = 1_200))))
         server.onFinish = { localLog.deleteSet("ses_1", "set_a") }
 
-        ClaimReplay(server, localLog, queue()).run()
+        ClaimReplay(server, localLog, queue(), settings()).run()
 
         assertEquals(listOf("set_b"), server.sets.getValue("ses_1").map { it.id })
         assertEquals(listOf("ses_1" to "set_a"), server.removed)
@@ -313,7 +431,7 @@ class ClaimReplayTests {
             listOf(aSet("set_a", at = 1_100), aSet("set_b", at = 1_200))))
         localLog.deleteSet("ses_1", "set_a")
 
-        val outcome = ClaimReplay(server, localLog, queue()).run()
+        val outcome = ClaimReplay(server, localLog, queue(), settings()).run()
 
         assertEquals("only the surviving set was ever appended",
             listOf("set_b"), server.appended.map { it.id })
@@ -334,13 +452,13 @@ class ClaimReplayTests {
         localLog.deleteSet("ses_1", "set_a")
         server.refuseDelete = refusal(500, code = "storage", message = "internal error")
 
-        val first = ClaimReplay(server, localLog, queue()).run()
+        val first = ClaimReplay(server, localLog, queue(), settings()).run()
         assertTrue("retryable, and the row is still here to try with", first.retryable)
         assertEquals(listOf("set_a"), localLog.finished.single().deleted)
         assertTrue("nothing was said — a 500 has cost the delete nothing", first.said.isEmpty())
 
         server.refuseDelete = null
-        ClaimReplay(server, localLog, queue()).run()
+        ClaimReplay(server, localLog, queue(), settings()).run()
         assertTrue(localLog.finished.isEmpty())
     }
 
@@ -356,13 +474,13 @@ class ClaimReplayTests {
             Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000),
             listOf(aSet("set_a", at = 1_100))))
         server.onFinish = { throw IOException("offline") }
-        ClaimReplay(server, localLog, queue()).run()
+        ClaimReplay(server, localLog, queue(), settings()).run()
         server.onFinish = {}
 
         localLog.fixSet("ses_1", "set_a", SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working))
         server.refuseFix = { refusal(400, code = "fix-unreadable", message = "could not read that fix") }
 
-        val outcome = ClaimReplay(server, localLog, queue()).run()
+        val outcome = ClaimReplay(server, localLog, queue(), settings()).run()
 
         assertEquals(listOf(RefusedSet(id = "set_a", exerciseId = "bench-press", weightKg = 90.0,
             reps = 3, reason = "the log kept the numbers this set was logged with")), outcome.said)
@@ -390,7 +508,7 @@ class ClaimReplayTests {
             else null
         }
 
-        val outcome = ClaimReplay(server, localLog, queue()).run()
+        val outcome = ClaimReplay(server, localLog, queue(), settings()).run()
 
         assertEquals("the 404 start retried without the routine, and the orphan reached ses_2 too",
             listOf("rt_gone", null, null), server.started.map { it.routineId })

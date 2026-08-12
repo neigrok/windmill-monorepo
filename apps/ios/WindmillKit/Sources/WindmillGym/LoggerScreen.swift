@@ -76,7 +76,7 @@ struct LoggerScreen: View {
                 Spacer(minLength: 0)
                 weightBlock
                 repsRow
-                if let target = restTarget { rest(target) }
+                if let clock = restClock { rest(clock) }
                 undoRow
                 logButton
             }
@@ -101,16 +101,26 @@ struct LoggerScreen: View {
             restStartedAtMs = store.todaySets.last?.completedAtMs
         }
         // The chime is scheduled against the instant the set landed rather than watched for while
-        // rendering: a phone in a pocket draws nothing, and the one confirmation a gym leaves us
-        // must not depend on the screen being awake.
-        .task(id: restStartedAtMs) {
-            guard let started = restStartedAtMs, let movement = store.exerciseId else { return }
-            let target = Rest.target(movement, planEntry: store.planEntry)
+        // rendering: a phone in a pocket draws nothing, and a confirmation the screen cannot give
+        // must not depend on the screen being awake. It is keyed on the whole clock — the instant AND
+        // the target — so turning the dial off mid-rest replaces this task instead of leaving a sleep
+        // to land on a timer nobody is running any more.
+        .task(id: restClock) {
+            guard let clock = restClock else { return }
+            let started = clock.startedAtMs
+            let target = clock.targetSeconds
             let waited = (Int64(Date().timeIntervalSince1970 * 1000) - started) / 1000
             guard waited < Int64(target) else { return }
             try? await Task.sleep(for: .seconds(Int64(target) - waited))
             guard !Task.isCancelled else { return }
-            GymSound.restLanded()
+            // WHAT A LOCKED SCREEN GETS IS SILENCE, and it is said rather than worked around. iOS
+            // suspends this app, so the sleep above lands whenever the app is next awake; a chime
+            // minutes after the rest ended confirms nothing and would teach the wrong thing about
+            // when to stand up. The clock is still right the moment it is looked at — it is computed
+            // from the set's own instant — and this product has no notification to promise instead.
+            let elapsed = (Int64(Date().timeIntervalSince1970 * 1000) - started) / 1000
+            guard elapsed <= Int64(target) + Rest.lateChimeSeconds else { return }
+            GymConfirm.restLanded(under: store.preferences)
         }
         .sheet(item: $sheet, onDismiss: settleTheMove) { sheet in
             content(of: sheet)
@@ -291,6 +301,17 @@ struct LoggerScreen: View {
                 }
             }
 
+            // §K's line under the numeral: what would go on the bar, built from the plates this gym
+            // says it owns — or, when they cannot make the number, the loads that can be made
+            // instead. The buttons never hide a weight; this tells the truth about one. The keypad is
+            // named beside it, because the numeral is a button and nothing else on screen says so.
+            Text(plateLine)
+                .font(GymType.numeral(11.5))
+                .foregroundStyle(skin.inkFaint)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity, alignment: .center)
+
             HStack(spacing: WindmillSpace.x2) {
                 ForEach(Array(Ladder.labels(for: weightKg).enumerated()), id: \.offset) { index, label in
                     Button { weightKg = Ladder.bump(weight: weightKg, direction: index < 2 ? -1 : 1,
@@ -303,7 +324,23 @@ struct LoggerScreen: View {
                     }
                 }
             }
+
+            // Read off the ladder rather than typed under it, and read off BOTH of the rows the four
+            // buttons above are using — on a band boundary they are two, and a caption naming one of
+            // them would contradict the button it sits under (Ladder.caption).
+            Text(Ladder.caption(for: weightKg))
+                .font(GymType.numeral(10.5))
+                .textCase(.uppercase)
+                .kerning(0.5)
+                .foregroundStyle(skin.inkFaint)
+                .frame(maxWidth: .infinity, alignment: .center)
         }
+    }
+
+    private var plateLine: String {
+        let keypad = "tap the number to type it"
+        guard let plates = Plates.readout(totalKg: weightKg, under: store.preferences) else { return keypad }
+        return "\(plates) · \(keypad)"
     }
 
     private var repsRow: some View {
@@ -371,15 +408,19 @@ struct LoggerScreen: View {
     }
 
     // No rest line until a set lands: the timer times the gap between two sets, and one drawn before
-    // the first would be counting from the moment the screen opened.
-    private var restTarget: Int? {
-        guard restStartedAtMs != nil, let movement = store.exerciseId else { return nil }
-        return Rest.target(movement, planEntry: store.planEntry)
+    // the first would be counting from the moment the screen opened. No rest line at all until
+    // somebody asked for one either — the dial starts off (§I), and a clock nobody set is a clock
+    // this screen does not draw.
+    private var restClock: Rest.Clock? {
+        guard let started = restStartedAtMs,
+              let target = Rest.target(planEntry: store.planEntry, preferences: store.preferences)
+        else { return nil }
+        return Rest.Clock(startedAtMs: started, targetSeconds: target)
     }
 
-    private func rest(_ target: Int) -> some View {
+    private func rest(_ clock: Rest.Clock) -> some View {
         TimelineView(.periodic(from: .now, by: 1)) { beat in
-            let line = Rest.Line(targetSeconds: target, startedAtMs: restStartedAtMs ?? 0,
+            let line = Rest.Line(targetSeconds: clock.targetSeconds, startedAtMs: clock.startedAtMs,
                                  now: stamp(beat.date))
             HStack(spacing: WindmillSpace.x3) {
                 Text(line.label)
@@ -424,7 +465,7 @@ struct LoggerScreen: View {
         Button {
             let landed = Int64(Date().timeIntervalSince1970 * 1000)
             let kind: SetKind = warmup ? .warmup : .working
-            GymSound.setLogged()
+            GymConfirm.setLogged(under: store.preferences)
             restStartedAtMs = landed
             // Disarmed on the tap and not on the reply: the set is the lifter's the instant they
             // press, and the toggle is about the set that just went, never about the network.

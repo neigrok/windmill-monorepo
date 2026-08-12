@@ -670,6 +670,49 @@ void GymApi::deleteRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
 // movement's record (`GET /v1/gym/exercises/{id}/record`) where a lifter goes instead. It stays for
 // the reader it was always best for — an agent through `get_stats`, asking how a lift has moved
 // (domain/Statistics.h). Unreached by a tab is not unreachable.
+// §I's five rows, read. It is the one read in gym that cannot 404: a lifter who has never opened
+// this screen holds no row and is answered with the DEFAULTS, because every client needs a rest
+// target and a plate set before it can draw a first frame. Nothing is written on the way out.
+void GymApi::preferences(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
+    return;
+  }
+  cb(jsonResponse(toJson(log_->preferences(*caller))));
+}
+
+// And written — the WHOLE document, the shape a routine travels in, because the screen renders all
+// five rows from one value it already holds. A field the body does not name takes its default;
+// there is no partial write, so nothing here has to reconcile one against a store that moved.
+//
+// UNITS REACH NOTHING. `lb` is stored as the lifter's reading unit and changes no column, no wire
+// number and no rule in this product: kilograms are what a set weighs here and always were, and
+// this route is the only place in gym that has ever heard of another unit.
+void GymApi::savePreferences(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
+    return;
+  }
+  std::shared_ptr<Json::Value> json = req->getJsonObject();
+  if (!json) {
+    cb(error(drogon::k400BadRequest, "expected json", "preferences-unreadable"));
+    return;
+  }
+  // The codec builds the entity, so every refusal below is a value the store could not have held —
+  // and each carries the machine word that says which of the five rows to send the lifter back to.
+  // The wider catch is the owner's, which no signed-in caller can trip; it keeps a domain refusal
+  // from riding out as the house 500 the phones' queues are told to retry forever.
+  try {
+    cb(jsonResponse(toJson(log_->savePreferences(parsePreferences(*json, *caller)))));
+  } catch (const InvalidPreference& refused) {
+    cb(error(drogon::k400BadRequest, refused.what(), refused.code.c_str()));
+  } catch (const InvalidTraining& malformed) {
+    cb(error(drogon::k400BadRequest, malformed.what(), "preferences-unreadable"));
+  }
+}
+
 void GymApi::stats(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {

@@ -99,7 +99,9 @@ Json::Value entryArray() {
       boundedInt("Reps per set (1–100). OMIT to mean `max` — as many as you can.", 1, 100);
   fields["targetWeightKg"] = num("Target load in kg. Omit to mean whatever you did last time.");
   fields["restSeconds"] =
-      boundedInt("Rest between sets, 15–900. Omit to take the client's default.", 15, 900);
+      boundedInt("Rest between sets, 15–900. Omit to fall back to their global rest target — the "
+                 "`restSeconds` on `get_preferences`, and no timer at all when that is absent too.",
+                 15, 900);
   // Declared so the round trip this tool PRESCRIBES survives its own schema: list_routines writes a
   // position on every line, and an agent doing exactly what save_routine's description says — read
   // it, change what you mean, send all of it back — would otherwise be refused for handing back a
@@ -156,9 +158,13 @@ ToolDeclaration tool(const char* name, Access access, const char* description, J
 
 // Reads, then writes, then deletes — so a narrower grant sees a PREFIX of this list rather than a
 // list with holes in it, and two connections at different levels read the same surface in the same
-// order. Fifteen tools against roadmap's twenty-seven, and that is on purpose: tools/list is the
+// order. Sixteen tools against roadmap's twenty-seven, and that is on purpose: tools/list is the
 // biggest fixed cost of a connection, so a tool that a parameter on another tool could have served
 // does not get a slot (routines list and read are one; the finish readout rides on the session read).
+//
+// Seven of the sixteen are reads and only six are writes, which is the shape this product wants: an
+// agent here is a reader of one lifter's log that occasionally writes into it, and the two verbs
+// reserved for the HAND — editing a logged set, and saying what a gym owns — have no tool at all.
 std::vector<ToolDeclaration> gymToolCatalog() {
   std::vector<ToolDeclaration> tools;
 
@@ -228,6 +234,26 @@ std::vector<ToolDeclaration> gymToolCatalog() {
         "and when it was last trained. Narrow with `exerciseId`; the whole answer is long. There is "
         "no volume, no score and no streak here — every number is a fact with a direction.",
         p, {}));
+  }
+  {
+    // A READ and there is no write beside it, which is the design and not a gap: what a lifter's gym
+    // owns and whether their phone buzzes is theirs to say, and an agent that could set the plate
+    // inventory could make the loading readout confidently name a weight they cannot build. The
+    // sentence says so out loud, because a description that left it open would send an agent looking
+    // for a tool that is missing on purpose. GymToolsTest pins the absence.
+    tools.push_back(tool("get_preferences", Access::read,
+        "How this lifter's room is set up — the context your other calls need. `platesKg` is the "
+        "plates their gym actually owns, one side of the bar, beside `barWeightKg`: read them before "
+        "proposing a load, because a weight that cannot be built out of those plates is a weight "
+        "they cannot lift today. `restSeconds` is their global rest target and is ABSENT when they "
+        "run no timer; it is the rest a routine line INHERITS when it names no `restSeconds` of its "
+        "own — inherited at the rack and never copied into the line, so that line still comes back "
+        "empty from `list_routines`. `units` is the unit they READ in — loads are kilograms "
+        "everywhere in gym, so it changes nothing you send and nothing that is stored, only how "
+        "they will hear a number said "
+        "back. Nothing writes these: they are the lifter's own statement about their gym, and no "
+        "tool here can change one. Takes no arguments.",
+        Json::Value(Json::objectValue), {}));
   }
 
   {

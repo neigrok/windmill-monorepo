@@ -56,6 +56,7 @@ fun TodayScreen(
     onStart: (String?) -> Unit,
     onOpenSession: (SessionSummary) -> Unit,
     onOpenMovement: (String) -> Unit,
+    onOpenSettings: () -> Unit,
     onSignIn: () -> Unit,
 ) {
     val nowMs = System.currentTimeMillis()
@@ -86,6 +87,28 @@ fun TodayScreen(
         }
         if (!isSignedIn) ClaimCard(onSignIn)
         LastSession(store.recent, onOpenSession)
+        SettingsDoor(onOpenSettings)
+    }
+}
+
+// THE DOOR §I DOES NOT DRAW, and it is here on loan. Gym's settings are a SECTION the shell's You
+// sheet is meant to list and walk you into; this surface's product seam hands the shell a room and
+// nothing else, and You is the platform's file. Rather than reach into the shell or leave four
+// working rows unreachable, the section keeps a door of its own at the foot of the one home — the
+// quietest row on the quietest screen, below everything a lifter came here to do. It goes the day
+// the seam grows a settings slot.
+@Composable
+private fun SettingsDoor(onOpenSettings: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = GymTap.minimum)
+            .clickable(onClick = onOpenSettings),
+    ) {
+        Text("Gym settings", style = GymType.numeral(13), color = GymSkin.inkFaint)
+        Spacer(Modifier.weight(1f))
+        Text("›", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkFaint)
     }
 }
 

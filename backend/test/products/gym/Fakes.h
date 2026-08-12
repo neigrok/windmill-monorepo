@@ -107,6 +107,7 @@ public:
   std::vector<KeptSet> kept;          // what corrections replaced, and what deletes took
   std::vector<Routine> routineRows;   // the stored rows; lastTrainedAtMs is derived on every read
   std::vector<SessionShare> shares;   // one per session at most, exactly as the primary key says
+  std::vector<GymPreferences> preferenceRows;   // one per account at most, likewise
   // gym_exercise_names: what one account calls one SEED. Keyed (owner, movement) like the table's
   // own primary key, and every read of a display name coalesces it over the seed's — a fake that
   // resolved names off the catalog row alone would let the global-rename hazard ship behind green.
@@ -728,6 +729,27 @@ public:
                                 isoUtc(set.completedAtMs)});
     }
     return out;
+  }
+
+  // The settings row, under the primary key's own rule: at most one per account, and a lifter who
+  // has never written holds NONE — the absence is the fact, and the defaults are given a layer up
+  // (LogService), never invented here. The write is a whole-document upsert and last write wins,
+  // which is the same ordering the claim replay leans on when a signed-in account meets the
+  // settings an anonymous device just touched.
+  std::optional<GymPreferences> preferences(const UserId& user) override {
+    for (const GymPreferences& row : preferenceRows)
+      if (row.user == user) return row;
+    return std::nullopt;
+  }
+
+  GymPreferences savePreferences(const GymPreferences& incoming) override {
+    for (GymPreferences& row : preferenceRows) {
+      if (!(row.user == incoming.user)) continue;
+      row = incoming;
+      return row;
+    }
+    preferenceRows.push_back(incoming);
+    return incoming;
   }
 
   // The INSERT..SELECT off the caller's own session row: a session that is absent or another

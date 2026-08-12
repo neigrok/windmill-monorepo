@@ -645,8 +645,8 @@ public struct Against: Equatable, Codable, Sendable {
 }
 
 // THE PREFILL — the number in front of the lifter before they touch anything, and the reason this is
-// a training log and not a form. The twin of web/src/products/gym/logger/prefill.js: three sources in
-// a fixed order, and the one that loses is still on screen.
+// a training log and not a form. Three sources in a fixed order, and the one that loses is still on
+// screen. The web's copy went with its logger on 2026-08-09 (§11), so this rule has one home.
 //
 // The asymmetry in "last time" is deliberate — the weight comes from the LAST working set, where the
 // lifter actually ended up, and the reps from the FIRST, before fatigue cut them.

@@ -18,6 +18,9 @@ import assert from 'node:assert/strict';
 import React from 'react';
 
 import { GymError, UNCHANGED } from '../../../src/products/gym/gymApi.js';
+import { fmt } from '../../../src/products/gym/log.js';
+import { DEFAULT_PREFERENCES } from '../../../src/products/gym/settings/preferences.js';
+import { KG, LB, spellWeightsIn, weightUnit } from '../../../src/products/gym/units.js';
 
 const { ReactCurrentDispatcher } = React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
 const HOUR = 3600_000;
@@ -163,6 +166,13 @@ function phoneWorkout({ startedAt, sets = [] }) {
         wire.push('GET /exercises');
         return [{ id: 'back-squat', name: 'Back Squat' }, { id: 'bench-press', name: 'Bench Press' }];
       },
+      // §I's five settings ride the boot read (W4). The empty document is what the server answers
+      // an account that has never opened the settings screen: it never 404s, and every field in it
+      // is the default — which is the state every test in this file is in unless it says otherwise.
+      async preferences() {
+        wire.push('GET /preferences');
+        return {};
+      },
       async sessions() {
         wire.push('GET /sessions');
         return [{ ...session, setCount: stored.length, exercises: [] }];
@@ -199,6 +209,9 @@ function taggedWorkout({ startedAt, sets = [] }) {
       async exercises() {
         return [{ id: 'back-squat', name: 'Back Squat' }];
       },
+      async preferences() {
+        return {};
+      },
       async sessions() {
         return [{ ...session, setCount: stored.length, exercises: [] }];
       },
@@ -224,6 +237,9 @@ function deepLog(rows) {
     api: {
       async exercises() {
         return [{ id: 'back-squat', name: 'Back Squat' }];
+      },
+      async preferences() {
+        return {};
       },
       async sessions(query = {}) {
         asked.push(query);
@@ -296,7 +312,7 @@ test('the boot read finds the open session, and the mirror holds it with its set
   assert.deepEqual(view.log.sets.map((set) => [set.id, set.weightKg, set.setNumber]), [
     ['set_stored0', 100, 1], ['set_stored1', 102.5, 2],
   ]);
-  assert.deepEqual(backend.wire, ['GET /exercises', 'GET /sessions', 'GET /sessions/ses_phone']);
+  assert.deepEqual(backend.wire, ['GET /exercises', 'GET /sessions', 'GET /preferences', 'GET /sessions/ses_phone']);
 });
 
 test('a log with nothing open is ready, with no session and no detail read', async (t) => {
@@ -374,7 +390,7 @@ test('a failed detail read of the open session does not fail a boot that loaded 
   assert.equal(view.log.session, null);
   assert.deepEqual(view.log.sets, []);
   assert.deepEqual(view.log.summaries.map((each) => each.id), ['ses_phone']);
-  assert.deepEqual(backend.wire, ['GET /exercises', 'GET /sessions', 'GET /sessions/ses_phone']);
+  assert.deepEqual(backend.wire, ['GET /exercises', 'GET /sessions', 'GET /preferences', 'GET /sessions/ses_phone']);
 });
 
 // THE POLL (§11.3 flow 2): five seconds, visible tab only, no new endpoint. The facts on the
@@ -386,14 +402,14 @@ test('the mirror polls the open session every five seconds and takes what the lo
   const backend = phoneWorkout({ startedAt: now - HOUR, sets: [loggedSet(0, now - 300_000, 100)] });
 
   const view = await open(t, backend.api);
-  assert.deepEqual(backend.wire, ['GET /exercises', 'GET /sessions', 'GET /sessions/ses_phone']);
+  assert.deepEqual(backend.wire, ['GET /exercises', 'GET /sessions', 'GET /preferences', 'GET /sessions/ses_phone']);
 
   backend.stored.push(loggedSet(1, now - 30_000, 102.5));
   t.mock.timers.tick(POLL_MS);
   await settle();
 
   assert.deepEqual(backend.wire, [
-    'GET /exercises', 'GET /sessions', 'GET /sessions/ses_phone', 'GET /sessions/ses_phone',
+    'GET /exercises', 'GET /sessions', 'GET /preferences', 'GET /sessions/ses_phone', 'GET /sessions/ses_phone',
   ]);
   assert.deepEqual(view.log.sets.map((set) => set.id), ['set_stored0', 'set_stored1']);
 
@@ -901,4 +917,48 @@ test('a movement the store refuses as written is not blamed on the signal', asyn
 
   assert.equal(refused, null);
   assert.equal(view.log.toast.text, 'That movement wasn’t created — the log wouldn’t take it as written.');
+});
+
+// §I'S FIVE SETTINGS RIDE THE BOOT READ (W4). Two of them reach these rooms: the unit every weight
+// on this surface is spelled in, and the rest target the mirror names beside the last set. The
+// spelling is module-level state at the very edge (units.js), so what is pinned here is that the
+// surface sets it — and sets it BEFORE the phase moves, so no room paints a number twice.
+test('the account’s settings arrive with the log, and the unit is set before the rooms open', async (t) => {
+  t.after(() => spellWeightsIn(KG));
+  const now = Date.now();
+  browserWith();
+  const backend = deepLog(finishedRows(2, now));
+  backend.api.preferences = async () => ({ units: 'lb', restSeconds: 120, platesKg: [25, 20] });
+
+  const view = await open(t, backend.api);
+
+  assert.equal(view.log.phase, 'ready');
+  assert.equal(view.log.preferences.units, 'lb');
+  assert.equal(view.log.preferences.restSeconds, 120);
+  assert.deepEqual(view.log.preferences.platesKg, [25, 20]);
+  // The whole document, so a room reading one field never has to know which fields were stored.
+  assert.equal(view.log.preferences.barWeightKg, 20);
+  assert.equal(view.log.preferences.confirmHaptic, true);
+  assert.equal(weightUnit(), 'lb');
+  assert.equal(fmt(102.5), '226');
+});
+
+// A LOG THAT OPENS IN KILOGRAMS IS A LOG THAT OPENS. The settings are one request beside two others
+// and they may not take the boot down with them: a lifter whose preferences read flapped gets their
+// sessions, in the unit the store holds, which is the same thing an account that has never opened
+// the settings screen gets.
+test('a settings read that does not come back still opens the log, in kilograms', async (t) => {
+  t.after(() => spellWeightsIn(KG));
+  const now = Date.now();
+  browserWith();
+  const backend = deepLog(finishedRows(2, now));
+  spellWeightsIn(LB);
+  backend.api.preferences = async () => { throw new GymError(503, 'the log didn’t answer'); };
+
+  const view = await open(t, backend.api);
+
+  assert.equal(view.log.phase, 'ready');
+  assert.equal(view.log.summaries.length, 2);
+  assert.deepEqual(view.log.preferences, DEFAULT_PREFERENCES);
+  assert.equal(weightUnit(), 'kg');
 });

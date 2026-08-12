@@ -2,8 +2,10 @@ import Foundation
 
 // THE RULES THE LOGGER DRAWS — every decision the live surface makes, with no SwiftUI in them: which
 // movements this session holds and in what order, where to stand when the room opens onto a workout
-// already running, and the exact words above the weight. The twin of the pure half of
-// web/src/products/gym/logger/prefill.js and Logger.jsx's own lists.
+// already running, and the exact words above the weight. It used to be named as the twin of the web
+// logger's `prefill.js` and `Logger.jsx`; the web stopped lifting on 2026-08-09 (§11) and both went
+// with the surface, so this is where these rules live now and there is no second copy to keep in
+// step.
 //
 // The screen never congratulates and never warns. "set 4 of 3" is legal, normal, and drawn in the
 // same ink as "set 3 of 5": the plan is a snapshot of what was written down, the log is what

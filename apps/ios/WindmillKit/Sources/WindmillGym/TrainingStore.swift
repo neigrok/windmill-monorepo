@@ -35,6 +35,9 @@ public final class TrainingStore: ObservableObject {
     // movement the lifter has trained for a year reads as one they never have.
     @Published public private(set) var lastTimeFailed = false
     @Published public private(set) var prefill: Prefill = .emptyBar
+    // How the room is set up (§I). Read from the device before the first frame and from the account
+    // once there is one, so the logger's plate readout and rest clock never wait on a round trip.
+    @Published public private(set) var preferences: GymPreferences = .defaults
     @Published public private(set) var refusals: [RefusedWrite] = []      // writes that never landed
     @Published public private(set) var saveState: SaveState = .idle
     @Published public private(set) var saveTick = 0                       // bumps once per write
@@ -92,6 +95,9 @@ public final class TrainingStore: ObservableObject {
     // claim parked behind the account's open workout (WAIT) does NOT set it — polling a remote
     // human's live session every four seconds is noise, and the next connect resumes it.
     private var claimOwedRetryably = false
+    // True while the settings document is on the wire. It is what keeps two whole documents from
+    // being in flight at once — see `save`, where the reason is written.
+    private var settingsSending = false
 
     // At or under the server's own ceiling: the handler clamps `limit` to 200, and a larger page here
     // would come back short of what was asked for and read as the bottom of the log.
@@ -279,6 +285,11 @@ public final class TrainingStore: ObservableObject {
         // The device's shelves are on screen before any wire answers — the room mounts on local
         // state, and a signed-in read that lands later only ever adds to it.
         routines = Routine.byLastTrained(localLog.routines)
+        // Opened under whoever is signed in, exactly as the catalog is a few lines up and for a
+        // sharper reason: settings are one ACCOUNT's, so a document this seat did not write is let
+        // go of rather than drawn. The anonymous document the claim is about to carry is the one
+        // crossing (LocalLog.open).
+        preferences = localLog.open(preferencesUnder: account.user?.id) ?? .defaults
         served = []
         recent = mergedRecent([])
         isLoading = false
@@ -314,7 +325,92 @@ public final class TrainingStore: ObservableObject {
         if let written = try? await gym.routines() {
             routines = Routine.byLastTrained(written + localLog.routines)
         }
+        // Read AFTER the claim, and only while this device is not still holding an answer the log has
+        // never heard: a served document landing on top of one the lifter set signed-out would take
+        // their own plates off the screen before they were ever sent. Held on the device as well, so
+        // the next cold launch draws the rest dial and the plate set on its first frame.
+        if !localLog.preferencesOwed, let held = try? await gym.preferences() {
+            preferences = held
+            localLog.keep(held, owed: false)
+            localLog.flush()
+        }
         if session != nil, let movement = exerciseId { await choose(movement) }
+    }
+
+    // HOW THE ROOM IS SET UP, CHANGED. The same order as every other write in this file — store on the
+    // device, then tell the log or owe it — and the document travels WHOLE, because the route replaces
+    // it whole: a screen that sent one field would reset the six it did not touch to their defaults.
+    //
+    // Nobody signed in is not a degraded case: the device is the only store there is, the settings are
+    // held exactly as sessions and routines are, and the claim carries them at sign-in.
+    @discardableResult
+    public func save(_ wanted: GymPreferences) async -> WriteFailure? {
+        preferences = wanted
+        localLog.keep(wanted, owed: true)
+        localLog.flush()
+        guard let gym else { return nil }
+        let outcome = await sendWhatIsOwed(with: gym)
+        // Still owed, on a road that heals: the claim's own walk carries it on the queue's cadence
+        // rather than on a second timer. The screen goes on drawing what the lifter chose — it is on
+        // this device and it is what they meant — and the sentence says the log has not got it yet.
+        if outcome.ending == .retry {
+            claimOwedRetryably = true
+            scheduleDeliver(after: retryAfter)
+        }
+        return outcome.why
+    }
+
+    // ONE WRITE AT A TIME, AND THE LAST TAP IS THE ONE THAT STANDS. Two whole documents in flight can
+    // reach the log in either order, and last-write-wins would leave it holding the older one — a
+    // plate chip that came back on by itself. So a send that is already running is left to finish and
+    // this returns, and the running loop picks the newest thing owed up before it ends. That is why
+    // both doors onto this row — the settings screen's tap and the claim's own walk — come through
+    // here: a claim that pushed once would leave a tap that landed mid-claim owed, unsent and unsaid
+    // until the next launch.
+    private func sendWhatIsOwed(with gym: any TrainingSyncing)
+        async -> (ending: ClaimEnding, why: WriteFailure?) {
+        guard !settingsSending else { return (.settled, nil) }
+        var outcome: (ending: ClaimEnding, why: WriteFailure?) = (.settled, nil)
+        while localLog.preferencesOwed, let latest = localLog.preferences {
+            outcome = await push(latest, with: gym)
+            guard outcome.ending == .settled, outcome.why == nil else { break }
+        }
+        return outcome
+    }
+
+    // THE ONE PLACE THIS DOCUMENT MEETS THE LOG, and two callers read different halves of one answer:
+    // the settings screen wants the sentence, the claim wants to know whether to come back for it.
+    // Both reach it through the loop above, which is what makes the single file hold across them —
+    // a connect that lands mid-tap must not put a second copy of this row in flight.
+    private func push(_ wanted: GymPreferences,
+                      with gym: any TrainingSyncing) async -> (ClaimEnding, WriteFailure?) {
+        settingsSending = true
+        defer { settingsSending = false }
+        do {
+            let stored = try await gym.savePreferences(wanted)
+            // A TAP THAT LANDED WHILE THIS WAS ON THE WIRE is a newer document, already drawn and
+            // already owed. This reply is about the older one: it may not put that back on the
+            // screen, and it may not clear a flag that now belongs to the newer one — which is the
+            // flag the loop above reads to send it on the next turn.
+            guard localLog.preferences == wanted else { return (.settled, nil) }
+            preferences = stored
+            localLog.keep(stored, owed: false)
+            localLog.flush()
+            return (.settled, nil)
+        } catch {
+            // There is no remint and no wait here — one row, no id to collide with, nothing queued
+            // behind it — so the two endings are the two roads. A document the log refuses outright
+            // can never land as written, so it is LET GO of rather than replayed against every future
+            // connect; the device goes on drawing it, because it is still what the lifter chose.
+            guard case .retry = claimVerdict(of: error, remintCode: "") else {
+                if localLog.preferences == wanted {
+                    localLog.keep(wanted, owed: false)
+                    localLog.flush()
+                }
+                return (.settled, WriteFailure(error))
+            }
+            return (.retry, WriteFailure(error))
+        }
     }
 
     // Start. Signed in, the log opens the session and freezes the plan snapshot off the routine's
@@ -1086,18 +1182,25 @@ public final class TrainingStore: ObservableObject {
 
     // THE CLAIM (section D of the wave contract; journal's claimWhatIsOwed is the house shape).
     // Everything this device made before there was an account, replayed in dependency order —
-    // movements, then routines, then finished sessions oldest first, then the live session's start —
-    // and strictly per session: start with the client-minted id, the TRUE startedAt and
-    // `joinOpenSession: false` (the join default once filed a past session's sets into a live
-    // workout), then every set per lane in original order, then finish at the true instant. No log
-    // or stats read interleaves, because settleOpen would auto-close a >4h-old session mid-replay
-    // and refuse every later set forever.
+    // movements, then routines, then finished sessions oldest first, then the live session's start,
+    // then the settings — and strictly per session: start with the client-minted id, the TRUE
+    // startedAt and `joinOpenSession: false` (the join default once filed a past session's sets into
+    // a live workout), then every set per lane in original order, then finish at the true instant.
+    // No log or stats read interleaves, because settleOpen would auto-close a >4h-old session
+    // mid-replay and refuse every later set forever.
     //
     // Verdicts by CODE only, and a failure aborts the walk rather than dropping anything: what is
     // still owed is owed. A WAIT — the account's other workout still open — stands down whole and
     // stays event-driven, resumed by the next connect or the next local finish; a RETRYABLE ending
     // (offline, 5xx, 401, 404) arms the queue's own cadence and replays from where this one
     // stopped — idempotent ids make the repetition free.
+    //
+    // SETTINGS RIDE ALONG AND NEED NO NEW VERB (§11.7 step 4): the device's document goes out through
+    // `sendWhatIsOwed` as one ordinary whole-document PUT, and because that write is last-write-wins,
+    // replaying it after sign-in is exactly what makes the DEVICE's copy the one that stands — they
+    // are the values the lifter just touched. It walks LAST, behind every lift, and that order is
+    // load-bearing in one direction only: nothing in the log reads this row, so a settings route an
+    // older server has never heard of must never be able to keep a set off the log.
     //
     // What landed comes back keyed by the id each session wore BEFORE the claim: a remint mid-claim
     // means the log holds the session under a fresh id, and the local finish reads its own session
@@ -1148,9 +1251,10 @@ public final class TrainingStore: ObservableObject {
             landed[local.session.id] = claimed
         }
         if queue.sessionIsUnclaimed, let live = queue.session {
-            return await claimLive(live, with: gym)
+            let ending = await claimLive(live, with: gym)
+            guard ending == .settled else { return ending }
         }
-        return .settled
+        return await sendWhatIsOwed(with: gym).ending
     }
 
     private func claim(exercise write: ExerciseWrite, with gym: any TrainingSyncing) async -> ClaimEnding {

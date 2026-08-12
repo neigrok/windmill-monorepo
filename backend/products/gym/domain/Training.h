@@ -98,6 +98,14 @@ bool storableText(std::string_view text);
 constexpr double kMinStepKg = 0.01;
 constexpr double kMaxStepKg = 99.99;
 
+// The band a rest target lives in, wherever one is named: the global dial in a lifter's preferences
+// (domain/Preferences.h) and the per-line target a routine entry carries. ONE pair of numbers,
+// because a program that could ask for a wait the dial refuses would be two rules about one rest —
+// under fifteen seconds is a typo in a number the timer counts down, and over fifteen minutes is a
+// different session. Both columns carry the same check.
+constexpr int kMinRestSeconds = 15;
+constexpr int kMaxRestSeconds = 900;
+
 // The catalog row: a STABLE slug id that never renders, a mutable display name, and a per-movement
 // increment. custom marks a created_by row; seeds are custom = false.
 struct Exercise {

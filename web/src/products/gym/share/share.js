@@ -53,12 +53,17 @@ export const SHARE_TERMS = [
   'You can revoke it here at any time, and the link stops working.',
 ];
 
-// The coach's own second person, on the page the link opens. Same three facts, none of them a
-// promise this side cannot keep: the expiry has no date here because the wire carries none.
+// The coach's own second person, on the page the link opens. The same three facts, none of them a
+// promise this side cannot keep — the expiry has no date here because the wire carries none — and
+// one fact about the numbers themselves. Nothing else in gym prints a unit beside a load: a lifter's
+// own surface is spelled in the unit they chose and every numeral on it agrees. This page has no
+// account to read a choice from, so it spells what the store holds — and the reader is a stranger
+// with no settings screen to check, which is exactly the reader who cannot infer it.
 export const SHARED_TERMS = [
   'One workout, shared by the person who trained it.',
   'The link expires, and they can revoke it at any time.',
   'It carries no name and opens nothing else in their log.',
+  'Weights are in kilograms.',
 ];
 
 // A token that resolves to nothing. Revoked, expired and never-minted answer byte-identically on

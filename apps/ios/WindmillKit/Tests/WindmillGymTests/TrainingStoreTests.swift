@@ -61,10 +61,10 @@ final class TrainingStoreTests: XCTestCase {
         )
     }
 
-    private func account(signedIn: Bool) -> Account {
+    private func account(signedIn: Bool, id: String = "u1") -> Account {
         Account(
             api: WindmillApi(baseURL: URL(string: "https://windmill.works")!, credential: { nil }),
-            user: signedIn ? User(id: "u1", email: "sam@example.com", name: "Sam") : nil
+            user: signedIn ? User(id: id, email: "\(id)@example.com", name: "Sam") : nil
         )
     }
 
@@ -689,6 +689,220 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertFalse(store.unclaimed("back-squat"),
                        "an unclaimed session of one movement is not a caveat on another's page")
     }
+
+    // §I's settings are the room's, and the room opens signed out: a lifter who sets their plates in
+    // a gym before they have an account keeps them, on this device, across a relaunch.
+    func testSettingsSetBeforeThereIsAnAccountSurviveARelaunch() async {
+        let anonymous = makeStore(sync: nil)
+        await anonymous.connect(to: account(signedIn: false))
+        XCTAssertEqual(anonymous.preferences, .defaults)
+
+        await anonymous.save(GymPreferences.defaults.toggling(1.25).resting(120))
+
+        let relaunched = makeStore(sync: nil)
+        await relaunched.connect(to: account(signedIn: false))
+        XCTAssertFalse(relaunched.preferences.owning(1.25))
+        XCTAssertEqual(relaunched.preferences.restSeconds, 120)
+    }
+
+    // THE CLAIM CARRIES THEM, and the device's copy WINS: those are the values the lifter just
+    // touched, the write is last-write-wins, so replaying theirs after sign-in is what settles it.
+    // No new verb — one ordinary whole-document PUT, walked behind every lift on the shelf.
+    func testSigningInClaimsTheDevicesSettingsOverTheAccountsOwn() async {
+        let anonymous = makeStore(sync: nil)
+        await anonymous.connect(to: account(signedIn: false))
+        await anonymous.save(GymPreferences.defaults.with(barWeightKg: 15).resting(180))
+
+        let server = FakeTraining()
+        server.settings = GymPreferences.defaults.with(confirmSound: true)
+        let store = makeStore(sync: server)
+        await store.connect(to: account(signedIn: true))
+
+        XCTAssertEqual(server.settingsWrites.map(\.barWeightKg), [15])
+        XCTAssertEqual(server.settings?.restSeconds, 180)
+        XCTAssertEqual(store.preferences.barWeightKg, 15)
+        XCTAssertEqual(store.preferences.restSeconds, 180)
+        XCTAssertFalse(store.preferences.confirmSound,
+                       "the account's older answer does not come back over the one just made")
+
+        let relaunched = makeStore(sync: server)
+        await relaunched.connect(to: account(signedIn: true))
+        XCTAssertEqual(server.settingsWrites.count, 1, "nothing is owed any more, so nothing replays")
+        XCTAssertEqual(relaunched.preferences.barWeightKg, 15)
+    }
+
+    // Nothing owed, so the account's document is what the room draws — and it is held on the device
+    // too, which is what puts the plate set and the rest dial on the first frame of the next launch.
+    func testTheAccountsSettingsAreReadAndKeptOnTheDevice() async {
+        let server = FakeTraining()
+        server.settings = GymPreferences.defaults.resting(90).with(platesKg: [25, 20])
+        let store = makeStore(sync: server)
+        await store.connect(to: account(signedIn: true))
+
+        XCTAssertEqual(store.preferences.restSeconds, 90)
+        XCTAssertEqual(store.preferences.platesKg, [25, 20])
+        XCTAssertTrue(server.settingsWrites.isEmpty, "a read is not a write")
+        XCTAssertEqual(LocalLog(url: localURL).preferences?.platesKg, [25, 20])
+    }
+
+    // A setting the log did not take is still the lifter's: it is on the device, it is what the room
+    // draws, the sentence says where it is, and the claim's own cadence sends it again.
+    func testASettingTheLogCannotTakeStaysOnTheDeviceAndIsSaid() async {
+        let server = FakeTraining()
+        let store = makeStore(sync: server, retryAfter: .seconds(600))
+        await store.connect(to: account(signedIn: true))
+
+        server.online = false
+        let why = await store.save(GymPreferences.defaults.resting(120))
+
+        XCTAssertEqual(why, .noAnswer)
+        XCTAssertEqual(why?.line("that setting is on this device, not on the log"),
+                       "the log didn’t answer — that setting is on this device, not on the log")
+        XCTAssertEqual(store.preferences.restSeconds, 120)
+        XCTAssertTrue(LocalLog(url: localURL).preferencesOwed)
+
+        server.online = true
+        let relaunched = makeStore(sync: server)
+        await relaunched.connect(to: account(signedIn: true))
+        XCTAssertEqual(server.settings?.restSeconds, 120, "the claim sends what is still owed")
+        XCTAssertFalse(LocalLog(url: localURL).preferencesOwed)
+    }
+
+    // TWO CHIPS TAPPED IN A SECOND ARE TWO WHOLE DOCUMENTS, and two in flight at once could reach the
+    // log in either order — last-write-wins would then leave it holding the older one, and a plate
+    // would come back on by itself. One at a time, and the send that is in flight picks up the newest
+    // thing owed before it ends: the log's last word is the lifter's last tap.
+    func testTwoTapsInFlightLeaveTheLogHoldingTheSecond() async {
+        let server = FakeTraining()
+        let store = makeStore(sync: server)
+        await store.connect(to: account(signedIn: true))
+
+        server.onSavePreferences = { [weak store] in
+            server.onSavePreferences = {}
+            await store?.save(GymPreferences.defaults.toggling(1.25).toggling(2.5))
+        }
+        await store.save(GymPreferences.defaults.toggling(1.25))
+
+        XCTAssertEqual(server.settingsWrites.count, 2, "the second tap is sent, and only once")
+        XCTAssertEqual(server.settings?.platesKg, [25, 20, 15, 10, 5],
+                       "the log's last word is the lifter's last tap")
+        XCTAssertEqual(store.preferences.platesKg, [25, 20, 15, 10, 5])
+        XCTAssertFalse(LocalLog(url: localURL).preferencesOwed)
+    }
+
+    // A document the log refuses outright can never land as written, so it is LET GO of rather than
+    // replayed against every future connect — and the lifter keeps looking at what they chose.
+    func testADocumentTheLogRefusesIsNotReplayedForever() async {
+        let server = FakeTraining()
+        server.refusePreferences = refusal(400, code: "rest-target", message: "a rest target runs from 15 to 900 seconds")
+        let store = makeStore(sync: server)
+        await store.connect(to: account(signedIn: true))
+
+        _ = await store.save(GymPreferences.defaults.resting(120))
+        XCTAssertEqual(store.preferences.restSeconds, 120)
+        XCTAssertFalse(LocalLog(url: localURL).preferencesOwed)
+
+        let relaunched = makeStore(sync: server)
+        await relaunched.connect(to: account(signedIn: true))
+        XCTAssertEqual(server.settingsWrites.count, 1, "refused once is refused")
+    }
+
+    // SETTINGS BELONG TO AN ACCOUNT, AND A PHONE IS LENT. One lifter's document may not be drawn in
+    // anybody else's room — a rest timer beeping at somebody who never set one — and it may not be
+    // SENT from there either, because every write here is the whole document: the next chip tap would
+    // put the first lifter's bar and plates onto the second one's row.
+    func testOneLiftersSettingsAreNeitherDrawnNorSentInAnothersRoom() async {
+        let hers = FakeTraining()
+        hers.settings = GymPreferences.defaults.resting(180).with(barWeightKg: 25, platesKg: [25, 20])
+        let herRoom = makeStore(sync: hers)
+        await herRoom.connect(to: account(signedIn: true))
+        XCTAssertEqual(herRoom.preferences.restSeconds, 180, "her own document, on her own seat")
+
+        // Signed out on the same phone: the anonymous room is nobody's and opens on the defaults.
+        let anonymous = makeStore(sync: nil)
+        await anonymous.connect(to: account(signedIn: false))
+        XCTAssertEqual(anonymous.preferences, .defaults)
+        XCTAssertNil(LocalLog(url: localURL).preferences, "and the shelf let go of it on disk too")
+
+        // And the next account in, with the log unreachable, draws its own nothing rather than hers —
+        // then sends the defaults it drew, never the 25 kg bar and the 180 s rest she set.
+        let his = FakeTraining()
+        his.online = false
+        his.settings = GymPreferences.defaults.with(barWeightKg: 15)
+        let hisRoom = makeStore(sync: his)
+        await hisRoom.connect(to: account(signedIn: true, id: "u2"))
+        XCTAssertEqual(hisRoom.preferences, .defaults)
+
+        his.online = true
+        await hisRoom.save(hisRoom.preferences.toggling(1.25))
+        XCTAssertEqual(his.settingsWrites.map(\.barWeightKg), [20])
+        XCTAssertEqual(his.settingsWrites.map(\.restSeconds), [nil])
+        XCTAssertEqual(his.settings?.platesKg, [25, 20, 15, 10, 5, 2.5])
+    }
+
+    // The anonymous document is the ONE crossing, and it crosses once: it is what the lifter set
+    // before they had an account, so signing in carries it — and signing out again does not carry it
+    // back, because by then it is the account's.
+    func testTheAnonymousDocumentCrossesIntoTheAccountAndNotBackOut() async {
+        let anonymous = makeStore(sync: nil)
+        await anonymous.connect(to: account(signedIn: false))
+        await anonymous.save(GymPreferences.defaults.resting(120).with(barWeightKg: 15))
+
+        let server = FakeTraining()
+        let store = makeStore(sync: server)
+        await store.connect(to: account(signedIn: true))
+        XCTAssertEqual(server.settings?.barWeightKg, 15, "the claim carried it to the account")
+        XCTAssertEqual(store.preferences.restSeconds, 120)
+
+        let again = makeStore(sync: nil)
+        await again.connect(to: account(signedIn: false))
+        XCTAssertEqual(again.preferences, .defaults, "it is the account's now, not this handset's")
+    }
+
+    // A TAP THAT LANDS WHILE THE CLAIM IS ON THE WIRE is not left owed until the next launch: the
+    // claim's own send picks up the newest document before it ends, the same single-file rule the
+    // settings screen's own taps run under.
+    func testATapDuringTheClaimIsSentByTheClaimItself() async {
+        let anonymous = makeStore(sync: nil)
+        await anonymous.connect(to: account(signedIn: false))
+        await anonymous.save(GymPreferences.defaults.resting(120))
+
+        let server = FakeTraining()
+        let store = makeStore(sync: server)
+        server.onSavePreferences = { [weak store] in
+            server.onSavePreferences = {}
+            await store?.save(GymPreferences.defaults.resting(180))
+        }
+        await store.connect(to: account(signedIn: true))
+
+        XCTAssertEqual(server.settingsWrites.map(\.restSeconds), [120, 180])
+        XCTAssertEqual(server.settings?.restSeconds, 180, "the log's last word is the lifter's last tap")
+        XCTAssertEqual(store.preferences.restSeconds, 180)
+        XCTAssertFalse(LocalLog(url: localURL).preferencesOwed)
+    }
+
+    // Settings walk LAST, behind every lift, and the order is load-bearing in one direction: nothing
+    // in the log reads this row, so a settings route an older server has never heard of must not be
+    // able to keep a set off the log.
+    func testAFailingSettingsWriteDoesNotHoldASetOffTheLog() async {
+        let anonymous = makeStore(sync: nil)
+        await anonymous.connect(to: account(signedIn: false))
+        _ = await anonymous.start()
+        await anonymous.choose("bench-press")
+        await anonymous.logSet(weightKg: 80, reps: 5)
+        guard case .closed = await anonymous.finish() else { return XCTFail("no close") }
+        await anonymous.save(GymPreferences.defaults.resting(120))
+
+        let server = FakeTraining()
+        server.refusePreferences = refusal(503, message: "no such route")
+        let store = makeStore(sync: server, retryAfter: .seconds(600))
+        await store.connect(to: account(signedIn: true))
+
+        XCTAssertEqual(server.sets.values.flatMap { $0 }.map(\.weightKg), [80],
+                       "the lift is on the log even though the settings write failed")
+        XCTAssertTrue(LocalLog(url: localURL).preferencesOwed)
+        XCTAssertTrue(LocalLog(url: localURL).sessions.isEmpty, "and the session was claimed")
+    }
 }
 
 // The four verdicts, derived from the status and the machine word and NEVER from the sentence. The
@@ -939,13 +1153,19 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
     var refuseRevoke: WindmillApiError?
     var refuseRecord: WindmillApiError?
     var refuseRename: WindmillApiError?
+    var refusePreferences: WindmillApiError?
+    // Nil is an account that has never answered, which the read serves as the defaults.
+    var settings: GymPreferences?
     // Ids some OTHER account already spent — the 409s whose code asks for a remint.
     var takenSessionIds: Set<String> = []
     var takenRoutineIds: Set<String> = []
     var takenExerciseIds: Set<String> = []
     var swallowReplies = 0
-    // The close is a round trip, and this is the only way a test can stand inside it.
+    // The close is a round trip, and this is the only way a test can stand inside it. The settings
+    // write is the other one — a second tap while the first is on the wire is the case that decides
+    // which document the log ends up holding.
     var onFinish: () async -> Void = {}
+    var onSavePreferences: () async -> Void = {}
 
     private(set) var appended: [SetWrite] = []
     private(set) var corrected: [String] = []
@@ -954,6 +1174,7 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
     private(set) var finishes: [String: Int64] = [:]
     private(set) var routineWrites: [RoutineWrite] = []
     private(set) var exerciseWrites: [ExerciseWrite] = []
+    private(set) var settingsWrites: [GymPreferences] = []
     private(set) var calls: [String] = []
 
     func open(_ session: Session) {
@@ -1217,5 +1438,25 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         guard shares.removeValue(forKey: sessionId) != nil else {
             throw WindmillApiError.refused(404, Refusal(Data()))
         }
+    }
+
+    // The settings row, and the read NEVER 404s: an account with nothing stored is served the
+    // defaults, which is what lets every client draw a rest dial and a plate set on its first frame.
+    // The write replaces the whole document and answers the stored one — last write wins, which is
+    // the ordering the claim replay rests on.
+    func preferences() async throws -> GymPreferences {
+        calls.append("preferences")
+        guard online else { throw WindmillApiError.offline }
+        return settings ?? .defaults
+    }
+
+    func savePreferences(_ preferences: GymPreferences) async throws -> GymPreferences {
+        calls.append("savePreferences")
+        settingsWrites.append(preferences)
+        await onSavePreferences()
+        guard online else { throw WindmillApiError.offline }
+        if let refusePreferences { throw refusePreferences }
+        settings = preferences
+        return preferences
     }
 }

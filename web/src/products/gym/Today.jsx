@@ -5,15 +5,20 @@
 // than in a greyed-out control, which is the one shape that would make the division of labour read
 // as a restriction.
 //
-// The mirror never says "resting". The rest target is device-local — the phone's ladder module owns
-// it — so this surface cannot know whether 1:47 is a rest that is running or a rest that is over.
-// The band says the same digits under a label it can stand behind: "last set 1:47 ago".
+// The mirror still never says "resting", and the reason moved rather than went away. The rest target
+// is the ACCOUNT's now (§I, settings/preferences.js) instead of the phone's, so this surface can
+// name it — but knowing the target is not knowing whether the lifter is resting, walking to another
+// rack, or already back under the bar. So the band says the digits it can stand behind, "last set
+// 1:47 ago", with the target beside them and no claim between the two. It sounds nothing either: the
+// clock between sets runs on the phone, where the workout is, and a browser tab cannot promise an
+// alarm that survives a locked screen.
 
 import React, { useEffect, useState } from 'react';
 import {
   clockOf, dayLabel, durLabel, fmt, isFinished, nameOfMovement, NO_ROUTINE, recordHref,
   routineNameOf, sessionHref, setCountLabel,
 } from './log.js';
+import { restLabel } from './settings/preferences.js';
 
 const BEAT_MS = 500;
 
@@ -27,7 +32,14 @@ export function Today({ log }) {
     <section className="gym-today-screen">
       <h1 className="gym-title">Today</h1>
 
-      {log.session && <TrainingNow session={log.session} sets={log.sets} catalog={log.catalog} />}
+      {log.session && (
+        <TrainingNow
+          session={log.session}
+          sets={log.sets}
+          catalog={log.catalog}
+          restSeconds={log.preferences.restSeconds}
+        />
+      )}
       {!log.session && (
         <>
           <p className="gym-today-line">Not training now.</p>
@@ -56,7 +68,7 @@ export function Today({ log }) {
 // the day's sets of that movement under them. Every clock is recomputed from an instant on a local
 // beat, so the numbers move between polls and survive a backgrounded tab; the facts themselves only
 // change when the poll answers.
-function TrainingNow({ session, sets, catalog }) {
+function TrainingNow({ session, sets, catalog, restSeconds }) {
   const [, setBeat] = useState(0);
   useEffect(() => {
     const beat = setInterval(() => setBeat((count) => count + 1), BEAT_MS);
@@ -90,7 +102,8 @@ function TrainingNow({ session, sets, catalog }) {
             </a>
             {` — set ${newest.setNumber}`
               + `  ·  ${fmt(newest.weightKg)} × ${newest.reps}`
-              + `  ·  last set ${clockOf(now - newest.completedAt)} ago`}
+              + `  ·  last set ${clockOf(now - newest.completedAt)} ago`
+              + (restSeconds == null ? '' : `  ·  rest ${restLabel(restSeconds)}`)}
           </p>
           <p className="gym-mirror-sets">
             {walked

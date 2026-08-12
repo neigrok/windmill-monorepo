@@ -4,6 +4,7 @@ import kotlinx.serialization.Serializable
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.ExerciseRename
 import works.windmill.gym.domain.ExerciseWrite
+import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.MovementRecord
 import works.windmill.gym.domain.Review
@@ -34,6 +35,7 @@ import works.windmill.platform.net.WindmillApiException
 //   GET  /v1/gym/routines             ·  POST /v1/gym/routines
 //   PUT  /v1/gym/routines/:id         ·  DELETE /v1/gym/routines/:id
 //   POST /v1/gym/sessions/:id/share   ·  DELETE /v1/gym/sessions/:id/share
+//   GET  /v1/gym/preferences          ·  PUT   /v1/gym/preferences
 // The session rides as a Bearer header rather than a cookie (WindmillApi); nothing else differs.
 //
 // `GET /v1/gym/stats` is gone from this list and NOT from the server: the statistics room was
@@ -132,6 +134,18 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
     override suspend fun revokeShare(sessionId: String) {
         api.send<Unit>("DELETE", "/v1/gym/sessions/$sessionId/share")
     }
+
+    // No 404 to fold: a lifter who has never opened the settings screen is answered with the
+    // defaults, so every client gets a rest dial and a plate set on the first paint.
+    override suspend fun preferences(): GymPreferences =
+        api.get<GymPreferences>("/v1/gym/preferences")
+
+    // WindmillJson omits a value that equals its declared default, which is exactly what this route
+    // wants: an omitted field takes its default on the server, so a document dialled back to the
+    // defaults travels as `{}` and stores as the defaults. That alignment is the wire contract's,
+    // not a coincidence of the encoder — see GymPreferences.
+    override suspend fun savePreferences(document: GymPreferences): GymPreferences =
+        api.send<GymPreferences>("PUT", "/v1/gym/preferences", document)
 
     // Ids are [A-Za-z0-9_-] by the server's own rule, so this only ever has work to do on the two
     // punctuation marks in that set — and doing it anyway costs nothing and cannot be forgotten

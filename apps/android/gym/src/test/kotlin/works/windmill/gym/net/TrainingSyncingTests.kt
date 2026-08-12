@@ -8,6 +8,7 @@ import org.junit.Assert.fail
 import org.junit.Test
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.ExerciseWrite
+import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.MovementRecord
 import works.windmill.gym.domain.Review
@@ -118,6 +119,7 @@ class TrainingSyncingTests {
 internal class FakeTraining : TrainingSyncing {
     var online = true
     var catalog = listOf<Exercise>()
+    var settings: GymPreferences? = null
     val stored = mutableMapOf<String, Session>()
     val sets = mutableMapOf<String, MutableList<TrainingSet>>()
     val written = mutableMapOf<String, Routine>()
@@ -135,6 +137,7 @@ internal class FakeTraining : TrainingSyncing {
     var refuseRename: Exception? = null
     var refuseFix: (String) -> Exception? = { null }
     var refuseDelete: Exception? = null
+    var refusePreferences: Exception? = null
     var swallowReplies = 0
     // The close is a round trip, and this is the only way a test can stand inside it.
     var onFinish: suspend () -> Unit = {}
@@ -146,6 +149,7 @@ internal class FakeTraining : TrainingSyncing {
     val started = mutableListOf<SessionStart>()
     val finished = mutableListOf<Pair<String, Long>>()
     val fixes = mutableListOf<Triple<String, String, SetFix>>()
+    val settingsWritten = mutableListOf<GymPreferences>()
     val removed = mutableListOf<Pair<String, String>>()
     val calls = mutableListOf<String>()
 
@@ -381,5 +385,25 @@ internal class FakeTraining : TrainingSyncing {
         reachable()
         refuseRevoke?.let { throw it }
         shares.remove(sessionId) ?: throw IllegalStateException("404")
+    }
+
+    // NEVER A 404: an account with no row is served the defaults, so this answers a document
+    // whether or not anything has ever been written.
+    override suspend fun preferences(): GymPreferences {
+        calls.add("preferences")
+        reachable()
+        return settings ?: GymPreferences()
+    }
+
+    // A whole-document replace that answers with the STORED document — plates sorted heaviest-first
+    // with duplicates gone — so a client that drew its own send would disagree with the account.
+    override suspend fun savePreferences(document: GymPreferences): GymPreferences {
+        calls.add("savePreferences")
+        settingsWritten.add(document)
+        reachable()
+        refusePreferences?.let { throw it }
+        val stored = document.normalized()
+        settings = stored
+        return stored
     }
 }

@@ -126,6 +126,26 @@
 //                                           `coach-not-entitled`), braked per account (429
 //                                           `coach-rate-limited`), and stateless — the client holds
 //                                           the conversation, the server holds none of it
+//   GET  /v1/gym/preferences             -> the settings document (§I). NEVER 404s: an account with
+//                                           no row stored is served the defaults, so every caller
+//                                           gets a whole document on the first read and the store
+//                                           never invents one
+//   PUT  /v1/gym/preferences             -> the WHOLE document in, the STORED document out — draw
+//                                           what comes back, not what was sent, because the server
+//                                           normalises (plates come back heaviest-first, deduped).
+//                                           Every field is optional and an omitted one takes its
+//                                           DEFAULT rather than its stored value: this is a replace
+//                                           and not a merge. `restSeconds` ABSENT is the only way to
+//                                           say the rest timer is off — there is no 0 and no false —
+//                                           which is exactly why the route is not a PATCH. Six
+//                                           refusals, all 400 and all carrying a code:
+//                                           preferences-unreadable, unknown-unit, bar-weight,
+//                                           plate-weight, too-many-plates, rest-target. Nothing
+//                                           lands on a refusal. The sentence beside each names the
+//                                           band ("a plate weighs from 0.01 to 100 kg") and is what
+//                                           a lifter is shown; nothing here branches on the code.
+//                                           UNITS ARE DISPLAY ONLY: every weight on every other
+//                                           route above is kilograms whatever this says
 //   GET  /v1/gym/routines                -> { routines: [Routine…] }, most-recently-trained first
 //   POST /v1/gym/routines                -> the write document in; the stored Routine out —
 //                                           idempotent on the client-minted id, 409 when it is spent
@@ -389,6 +409,22 @@ export const gymApi = {
   // sets that are in flight.
   async discardSession(id) {
     return json(await call(`/sessions/${id}`, { method: 'DELETE' }));
+  },
+
+  // HOW THIS ROOM BEHAVES AT THE RACK (§I) — units, the bar and the plates in this gym, the rest
+  // target, and what a logged set does to confirm itself. One read, and it always answers: a lifter
+  // with nothing stored is served the defaults rather than a 404, so no caller has to know whether
+  // this account has ever opened the screen.
+  async preferences() {
+    return json(await call('/preferences'));
+  },
+
+  // A WHOLE-document replace, like a routine's PUT and for a sharper reason: an omitted field takes
+  // its DEFAULT, and an absent `restSeconds` is how "no timer" is spelled. Sending half a document
+  // therefore resets the other half. The stored document comes back — normalised, so plates arrive
+  // heaviest-first with duplicates gone — and it is what the screen redraws off.
+  async savePreferences(document) {
+    return json(await call('/preferences', { method: 'PUT', body: JSON.stringify(document) }));
   },
 
   async routines() {

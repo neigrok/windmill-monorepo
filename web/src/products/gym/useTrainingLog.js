@@ -1,7 +1,8 @@
 // The training log, read: the one place web gym meets the network. Every room hangs off this hook —
-// the catalog, the page of sessions and the walk deeper into them, the movement mint, the one toast
-// voice — and the live mirror (§11.2): when the boot read finds an open session, this hook POLLS it
-// and Today draws it read-only. The web never starts, drives or finishes a live session; capture
+// the catalog, the page of sessions and the walk deeper into them, the account's five settings, the
+// movement mint, the one toast voice — and the live mirror (§11.2): when the boot read finds an
+// open session, this hook POLLS it and Today draws it read-only.
+// The web never starts, drives or finishes a live session; capture
 // lives in the phone rooms (backend/products/gym/ARCHITECTURE.md §11). What is left here writes
 // three things and none of them is a set logged as it happens: a movement minted from a picker, a
 // movement's name (§H), and the past-workout backfill. Two more surfaces own their own writes and
@@ -18,6 +19,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { failureReason, gymApi, UNCHANGED } from './gymApi.js';
 import { mintId } from './mint.js';
 import { CREATED_MOVEMENT } from './logger/movements.js';
+import { DEFAULT_PREFERENCES, readPreferences } from './settings/preferences.js';
+import { spellWeightsIn } from './units.js';
 
 const POLL_MS = 5000;
 // A toast is up for five seconds, and that is also how long a withheld delete has to be taken back
@@ -54,6 +57,11 @@ export function useTrainingLog({ api = gymApi } = {}) {
   const [sets, setSets] = useState([]);
   const [catalog, setCatalog] = useState([]);
   const [summaries, setSummaries] = useState([]);
+  // §I's five settings, read once on the way in. Two of them reach these rooms: the unit every
+  // weight on this surface is spelled in, and the rest target the mirror names. The defaults stand
+  // until the read answers, which is what a lifter who has never opened the settings screen gets
+  // anyway — so nothing here waits on it and nothing draws a blank while it is in the air.
+  const [preferences, setPreferences] = useState(DEFAULT_PREFERENCES);
   // 'more' until a read says otherwise, so the boot page is what settles this and not the initial
   // value agreeing with it by luck. The foot is never drawn on an empty list, so it is unobservable.
   const [olderStatus, setOlderStatus] = useState('more');
@@ -93,8 +101,19 @@ export function useTrainingLog({ api = gymApi } = {}) {
     }
     (async () => {
       try {
-        const [exercises, log] = await Promise.all([api.exercises(), api.sessions({ limit: LOG_PAGE })]);
+        // The settings ride the boot read rather than a read of their own, and they cannot fail it:
+        // a log that opens in kilograms because one request flapped is a log that opens. The
+        // spelling is set BEFORE the phase moves, so the first frame every room paints is already in
+        // the unit this account reads in and no number is drawn twice.
+        const [exercises, log, settings] = await Promise.all([
+          api.exercises(),
+          api.sessions({ limit: LOG_PAGE }),
+          api.preferences().catch(() => null),
+        ]);
         if (!alive) return;
+        const held = readPreferences(settings);
+        spellWeightsIn(held.units);
+        setPreferences(held);
         setCatalog(exercises);
         // Every wholesale replacement of the list bumps the walk, without exception — an older page
         // in flight continues a tail that this read has just thrown away.
@@ -298,6 +317,11 @@ export function useTrainingLog({ api = gymApi } = {}) {
     sets,
     catalog,
     summaries,
+    // The account's five settings (§I). Handed out whole because the rooms read different halves of
+    // them and none of them should read the wire twice for it — Today names the rest target on the
+    // mirror, the routine editor checks a program's loads against the plates in this gym, and every
+    // weight on every screen is already spelled in `units` by the transform this hook set on boot.
+    preferences,
     // One page of the log is on screen; this is everything the surface needs to walk further down it.
     older: { status: olderStatus, load: loadOlder },
     // The log, re-read to the depth it is open to: the backfill form, the retrospective discard and

@@ -148,6 +148,23 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
         api->deleteRoutine(req, std::move(cb), id);
       },
       {drogon::Delete});
+  // §I's settings section. It is a PUT and not a PATCH for the reason the routine's replace is one:
+  // the screen renders the whole document from one value it already holds, so it always has the
+  // whole document to send back — and a partial write would have to make "omitted" and "cleared"
+  // different things on `restSeconds`, the one field whose absence already means something (no
+  // timer). There is no DELETE: the way back is the defaults, sent as a document like any other.
+  app.registerHandler(
+      "/v1/gym/preferences",
+      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        api->preferences(req, std::move(cb));
+      },
+      {drogon::Get});
+  app.registerHandler(
+      "/v1/gym/preferences",
+      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        api->savePreferences(req, std::move(cb));
+      },
+      {drogon::Put});
   app.registerHandler(
       "/v1/gym/stats",
       [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {

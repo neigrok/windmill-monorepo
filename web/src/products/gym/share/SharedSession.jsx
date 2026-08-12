@@ -17,10 +17,23 @@ import {
   CLOSED_ITSELF_NOTE, closedOnItsOwn, dayLabel, fmt, NO_ROUTINE, sessionMetaLabel, timeLabel,
   topSetLabel, topSetOf,
 } from '../log.js';
+import { KG, spellWeightsIn } from '../units.js';
 import { useGymRead } from '../useGymRead.js';
 import { SHARED_ABSENT, SHARED_TERMS, sharedGroups } from './share.js';
 
 export function SharedSession({ token }) {
+  // THE PAGE WITH NO ACCOUNT BEHIND IT SPELLS KILOGRAMS, and it is the page that has to say so
+  // itself. The spelling is one module-level value (units.js) set by the two surfaces that read an
+  // account — the rooms as they open, and the settings row as it is moved — and this branch is
+  // answered BEFORE either of them (GymApp.jsx). So in a tab that had a pounds-reading log open, the
+  // coach's page inherited that setting: `226 × 5` for the owner, `102.5 × 5` for the coach, on one
+  // document with no unit word anywhere on it and nothing to tell the two readings apart.
+  //
+  // IN THE RENDER AND NOT IN AN EFFECT, deliberately. `fmt` reads this value while the numbers below
+  // are being built, and an effect runs after the paint that already printed them — and sets no
+  // state, so nothing would draw them again. The call is idempotent, which is what makes running it
+  // on every render of this page the whole of the fix.
+  spellWeightsIn(KG);
   const view = useGymRead(() => gymApi.sharedSession(token), [token]);
 
   if (view.phase === 'loading') return <main className="gym-column"><p className="gym-quiet">Opening the workout…</p></main>;

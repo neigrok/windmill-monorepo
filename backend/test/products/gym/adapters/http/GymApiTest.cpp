@@ -2394,3 +2394,217 @@ TEST(gym_record_of_a_movement_never_lifted_omits_every_list) {
   CHECK_EQ(unknown->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ(dump(bodyOf(unknown)), std::string(R"({"error":"no such movement"})"));
 }
+
+// ---- §I · the settings section -----------------------------------------------------------------
+
+// The read that cannot 404. A lifter who has never opened this screen holds no row, and what comes
+// back is the DEFAULTS — kg, a 20 kg bar, the full plate set, no rest target at all — because every
+// client needs those five values before it can draw its first frame, and an absence there would put
+// a copy of the defaults in each of them.
+TEST(gym_settings_answer_the_defaults_for_a_lifter_with_no_row) {
+  Harness h;
+  h.signIn("s-live");
+
+  drogon::HttpResponsePtr response =
+      send(h.api, &GymApi::preferences, getRequest("/v1/gym/preferences", "s-live"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(response)),
+           std::string(R"({"barWeightKg":20.0,"confirmHaptic":true,"confirmSound":false,)"
+                       R"("platesKg":[25.0,20.0,15.0,10.0,5.0,2.5,1.25],"restSound":true,)"
+                       R"("units":"kg"})"));
+  // And nothing was written on the way out: reading settings does not give a lifter a row.
+  CHECK_EQ(h.repo.preferenceRows.size(), std::size_t{0});
+}
+
+// The write is the whole document and it answers with the stored one, so the screen redraws from
+// what the store now holds rather than from what it hoped it sent. The plate set comes back
+// heaviest-first with each kind once, whatever order the chips arrived in.
+TEST(gym_settings_write_the_whole_document_and_answer_with_the_stored_one) {
+  Harness h;
+  h.signIn("s-live");
+
+  Json::Value body(Json::objectValue);
+  body["units"] = "lb";
+  body["barWeightKg"] = 15.0;
+  Json::Value plates(Json::arrayValue);
+  for (const double plate : {2.5, 20.0, 25.0, 20.0}) plates.append(plate);
+  body["platesKg"] = plates;
+  body["restSeconds"] = 90;
+  body["restSound"] = false;
+  body["confirmHaptic"] = false;
+  body["confirmSound"] = true;
+  drogon::HttpResponsePtr saved =
+      send(h.api, &GymApi::savePreferences, putRequest("/v1/gym/preferences", body, "s-live"));
+  drogon::HttpResponsePtr read =
+      send(h.api, &GymApi::preferences, getRequest("/v1/gym/preferences", "s-live"));
+
+  CHECK_EQ(saved->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(saved)),
+           std::string(R"({"barWeightKg":15.0,"confirmHaptic":false,"confirmSound":true,)"
+                       R"("platesKg":[25.0,20.0,2.5],"restSeconds":90,"restSound":false,)"
+                       R"("units":"lb"})"));
+  CHECK_EQ(dump(bodyOf(read)), dump(bodyOf(saved)));
+  CHECK_EQ(h.repo.preferenceRows.size(), std::size_t{1});
+}
+
+// A whole-document PUT means the document IS the body: a field the sender did not name takes its
+// default rather than quietly keeping a value the sender cannot see and cannot clear. `restSeconds`
+// is the field that proves it — omitting it is how a lifter turns the timer off.
+TEST(gym_settings_omitted_fields_take_their_default_and_no_rest_target_is_the_timer_off) {
+  Harness h;
+  h.signIn("s-live");
+
+  Json::Value armed(Json::objectValue);
+  armed["restSeconds"] = 180;
+  armed["barWeightKg"] = 15.0;
+  send(h.api, &GymApi::savePreferences, putRequest("/v1/gym/preferences", armed, "s-live"));
+  drogon::HttpResponsePtr cleared = send(h.api, &GymApi::savePreferences,
+                                         putRequest("/v1/gym/preferences",
+                                                    Json::Value(Json::objectValue), "s-live"));
+
+  CHECK_EQ(cleared->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(cleared)),
+           std::string(R"({"barWeightKg":20.0,"confirmHaptic":true,"confirmSound":false,)"
+                       R"("platesKg":[25.0,20.0,15.0,10.0,5.0,2.5,1.25],"restSound":true,)"
+                       R"("units":"kg"})"));
+}
+
+// An EMPTY plate set is a real answer — a gym with nothing to load onto the bar — and it is told
+// apart from an omitted one, which is the full set. A client that toggled every chip off gets what
+// it asked for and the readout can say something true about it.
+TEST(gym_settings_keep_an_empty_plate_set_apart_from_an_omitted_one) {
+  Harness h;
+  h.signIn("s-live");
+
+  Json::Value body(Json::objectValue);
+  body["platesKg"] = Json::Value(Json::arrayValue);
+  drogon::HttpResponsePtr response =
+      send(h.api, &GymApi::savePreferences, putRequest("/v1/gym/preferences", body, "s-live"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(response)),
+           std::string(R"({"barWeightKg":20.0,"confirmHaptic":true,"confirmSound":false,)"
+                       R"("platesKg":[],"restSound":true,"units":"kg"})"));
+}
+
+// Every refusal this write can make carries a machine word, and they are all different words: five
+// independent values arrive at once, so a screen told only "could not read that" could not say which
+// of its rows to send the lifter back to. The sentences are pinned beside the codes because they are
+// what a lifter reads.
+TEST(gym_settings_refusals_each_name_the_row_that_has_to_be_fixed) {
+  Harness h;
+  h.signIn("s-live");
+
+  const auto refuse = [&](const Json::Value& body) {
+    return send(h.api, &GymApi::savePreferences, putRequest("/v1/gym/preferences", body, "s-live"));
+  };
+  Json::Value unknownUnit(Json::objectValue);
+  unknownUnit["units"] = "st";
+  Json::Value badBar(Json::objectValue);
+  badBar["barWeightKg"] = 101.0;
+  Json::Value badPlate(Json::objectValue);
+  Json::Value plates(Json::arrayValue);
+  plates.append(0.0);
+  badPlate["platesKg"] = plates;
+  Json::Value tooMany(Json::objectValue);
+  Json::Value many(Json::arrayValue);
+  for (int kind = 1; kind <= 13; ++kind) many.append(kind * 1.0);
+  tooMany["platesKg"] = many;
+  Json::Value badRest(Json::objectValue);
+  badRest["restSeconds"] = 5;
+  Json::Value misspelled(Json::objectValue);
+  misspelled["barWeightKG"] = 20.0;
+
+  // Asserted field by field rather than as one dumped line, because a sentence a lifter reads may
+  // hold an em dash and the writer escapes it — the contract is the code and the words, not the
+  // encoding of a punctuation mark.
+  const auto said = [&](const Json::Value& body) {
+    return std::pair(body["code"].asString(), body["error"].asString());
+  };
+  CHECK_EQ(refuse(unknownUnit)->getStatusCode(), drogon::k400BadRequest);
+  CHECK_EQ(said(bodyOf(refuse(unknownUnit))),
+           std::pair(std::string("unknown-unit"), std::string(R"(units are "kg" or "lb")")));
+  CHECK_EQ(said(bodyOf(refuse(badBar))),
+           std::pair(std::string("bar-weight"), std::string("a bar weighs from 0 to 100 kg")));
+  CHECK_EQ(said(bodyOf(refuse(badPlate))),
+           std::pair(std::string("plate-weight"), std::string("a plate weighs from 0.01 to 100 kg")));
+  CHECK_EQ(said(bodyOf(refuse(tooMany))),
+           std::pair(std::string("too-many-plates"),
+                     std::string("a gym holds at most 12 kinds of plate")));
+  CHECK_EQ(said(bodyOf(refuse(badRest))),
+           std::pair(std::string("rest-target"),
+                     std::string("a rest target runs from 15 to 900 seconds — send none for no "
+                                 "timer")));
+  // A misspelled field is refused rather than ignored, and here that is not pedantry: an ignored
+  // `barWeightKG` would answer 200 while the bar it was aiming at silently reset to 20.
+  CHECK_EQ(said(bodyOf(refuse(misspelled))),
+           std::pair(std::string("preferences-unreadable"),
+                     std::string(R"(unknown settings field "barWeightKG". Settings take: units, )"
+                                 R"(barWeightKg, platesKg, restSeconds, restSound, confirmHaptic, )"
+                                 R"(confirmSound.)")));
+  // And nothing landed: a refused document leaves no row behind at all.
+  CHECK_EQ(h.repo.preferenceRows.size(), std::size_t{0});
+}
+
+TEST(gym_settings_are_owner_scoped_on_both_doors) {
+  Harness h;
+  h.signIn("s-live");
+
+  CHECK_EQ(send(h.api, &GymApi::preferences, getRequest("/v1/gym/preferences"))->getStatusCode(),
+           drogon::k401Unauthorized);
+  CHECK_EQ(send(h.api, &GymApi::savePreferences,
+                putRequest("/v1/gym/preferences", Json::Value(Json::objectValue)))
+               ->getStatusCode(),
+           drogon::k401Unauthorized);
+  CHECK_EQ(h.repo.preferenceRows.size(), std::size_t{0});
+}
+
+// §I's first row, proved rather than promised: KILOGRAMS ARE THE ONLY THING STORED. The account
+// below switches to `lb` before it logs anything, and every number that comes back afterwards — the
+// set it wrote, the session read, the log row's tonnage and top set, the CSV cell — is the kilogram
+// it sent. Then it switches back, and the log is byte-identical: history does not get rewritten.
+TEST(gym_units_are_a_display_transform_and_reach_no_write_or_read) {
+  Harness h;
+  h.signIn("s-live");
+
+  Json::Value toPounds(Json::objectValue);
+  toPounds["units"] = "lb";
+  send(h.api, &GymApi::savePreferences, putRequest("/v1/gym/preferences", toPounds, "s-live"));
+  trainedThrough(h, "s-live", "ses_11111111", 1'700'000'000'000, 2);
+
+  const std::string sessionUnderLb =
+      dump(bodyOf(send(h.api, &GymApi::getSession,
+                       getRequest("/v1/gym/sessions/ses_11111111", "s-live"), "ses_11111111")));
+  const std::string logUnderLb =
+      dump(bodyOf(send(h.api, &GymApi::listSessions, getRequest("/v1/gym/sessions", "s-live"))));
+  const std::string csvUnderLb{
+      send(h.api, &GymApi::exportSets, getRequest("/v1/gym/export", "s-live"))->getBody()};
+
+  // The set the lifter logged is the kilogram they sent, in every reply that carries it.
+  CHECK(sessionUnderLb.find(R"("weightKg":82.5)") != std::string::npos);
+  CHECK(logUnderLb.find(R"("tonnageKg":1320.0)") != std::string::npos);
+  CHECK(logUnderLb.find(R"("topSet":{"reps":8,"weightKg":82.5})") != std::string::npos);
+  CHECK(csvUnderLb.find(",82.50,8,working,") != std::string::npos);
+  // Nothing anywhere on the wire says lb but the settings document itself.
+  CHECK(sessionUnderLb.find("lb") == std::string::npos);
+  CHECK(logUnderLb.find("lb") == std::string::npos);
+  CHECK(csvUnderLb.find("lb") == std::string::npos);
+  // And the stored sets hold plain kilograms — the store never heard about the unit at all.
+  CHECK_EQ(h.repo.sets.front().weightKg, 82.5);
+
+  Json::Value toKilos(Json::objectValue);
+  toKilos["units"] = "kg";
+  send(h.api, &GymApi::savePreferences, putRequest("/v1/gym/preferences", toKilos, "s-live"));
+
+  // Switching back rewrites nothing: the same three replies, byte for byte.
+  CHECK_EQ(dump(bodyOf(send(h.api, &GymApi::getSession,
+                            getRequest("/v1/gym/sessions/ses_11111111", "s-live"), "ses_11111111"))),
+           sessionUnderLb);
+  CHECK_EQ(dump(bodyOf(send(h.api, &GymApi::listSessions, getRequest("/v1/gym/sessions", "s-live")))),
+           logUnderLb);
+  CHECK_EQ(std::string{send(h.api, &GymApi::exportSets,
+                                getRequest("/v1/gym/export", "s-live"))
+                           ->getBody()},
+           csvUnderLb);
+}

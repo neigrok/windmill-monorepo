@@ -85,6 +85,7 @@ target_link_libraries(windmill_journal PUBLIC windmill_platform)
 # guard below, so gym stays one lib whether or not the vendor edges are present.
 add_library(windmill_gym
   products/gym/domain/Training.cpp
+  products/gym/domain/Preferences.cpp
   products/gym/domain/Routine.cpp
   products/gym/domain/Review.cpp
   products/gym/domain/Statistics.cpp
@@ -160,6 +161,7 @@ add_executable(windmill_domain_tests
   test/products/journal/application/EchoDerivationsTest.cpp
   test/products/journal/application/WarmEchoRepositoryTest.cpp
   test/products/gym/domain/TrainingTest.cpp
+  test/products/gym/domain/PreferencesTest.cpp
   test/products/gym/domain/RoutineTest.cpp
   test/products/gym/domain/ReviewTest.cpp
   test/products/gym/domain/StatisticsTest.cpp

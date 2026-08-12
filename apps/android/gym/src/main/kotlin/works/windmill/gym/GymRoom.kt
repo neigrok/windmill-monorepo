@@ -54,6 +54,7 @@ import works.windmill.gym.store.DeviceCatalog
 import works.windmill.gym.store.FinishOutcome
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.LocalLog
+import works.windmill.gym.store.LocalPreferences
 import works.windmill.gym.store.SetQueue
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.ui.FinishScreen
@@ -66,6 +67,7 @@ import works.windmill.gym.ui.LoggerScreen
 import works.windmill.gym.ui.RecordScreen
 import works.windmill.gym.ui.RoutinesScreen
 import works.windmill.gym.ui.SessionScreen
+import works.windmill.gym.ui.SettingsScreen
 import works.windmill.gym.ui.TodayScreen
 import works.windmill.platform.Account
 import works.windmill.platform.LocalShellActions
@@ -117,9 +119,19 @@ private enum class Tab(val title: String) {
 // an agent asking "how has my squat moved" is the product's own thesis. What went is a room a
 // lifter visits when they are not training, and the weekly session and working-set bars went with
 // it — the design gives them no home.
+//
+// SETTINGS IS THE THIRD, AND IT IS PUSHED FROM HERE ONLY BECAUSE THE SHELL CANNOT PUSH IT YET. §I
+// draws gym's settings as a SECTION the shell's You sheet lists and walks you into, and that is
+// where it belongs — but this surface's `ProductModule` seam exposes exactly one thing, a room, and
+// `YouSheet` is the platform's file and not gym's to edit. So the section is a self-contained
+// screen with its own way back, reached from a row at the foot of Today, and the day the seam grows
+// a settings slot the row goes and the screen moves across unchanged. The row says "‹ Today"
+// rather than the design's "‹ You" for the reason everything else in this room says what it means:
+// it really did come from Today.
 private sealed interface Away {
     data class Session(val summary: SessionSummary) : Away
     data class Movement(val exerciseId: String) : Away
+    data object Settings : Away
 }
 
 // THE ROOM — gym's whole surface: the three tabs a lifter stands on at rest, the session they are
@@ -145,6 +157,7 @@ fun GymRoom(account: Account) {
             SetQueue(File(context.filesDir, SetQueue.fileName)),
             DeviceCatalog(File(context.filesDir, DeviceCatalog.fileName)),
             LocalLog(File(context.filesDir, LocalLog.fileName)),
+            LocalPreferences(File(context.filesDir, LocalPreferences.fileName)),
             scope,
         )
     }
@@ -371,6 +384,7 @@ fun GymRoom(account: Account) {
         val beneath = when (val under = away.getOrNull(away.size - 2)) {
             is Away.Session -> under.summary.plan?.routine ?: Readout.noRoutine
             is Away.Movement -> Readout.movement(under.exerciseId, store.catalog)
+            Away.Settings -> "Gym"
             null -> tab.title
         }
 
@@ -422,6 +436,12 @@ fun GymRoom(account: Account) {
                     backLabel = beneath,
                     onBack = { back() },
                 )
+                standing is Away.Settings -> SettingsScreen(
+                    store = store,
+                    backLabel = beneath,
+                    onBack = { back() },
+                    say = { note = it },
+                )
                 standing is Away.Session -> SessionScreen(
                     summary = standing.summary,
                     store = store,
@@ -441,6 +461,7 @@ fun GymRoom(account: Account) {
                     onStart = { routineId -> open(routineId) },
                     onOpenSession = { look(Away.Session(it)) },
                     onOpenMovement = { look(Away.Movement(it)) },
+                    onOpenSettings = { look(Away.Settings) },
                     onSignIn = LocalShellActions.current.openYou,
                 )
             }

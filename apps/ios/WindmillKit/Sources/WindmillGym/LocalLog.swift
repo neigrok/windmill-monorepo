@@ -1,10 +1,16 @@
 import Foundation
 
 // THE LOG AS THIS DEVICE HOLDS IT — everything gym made before anybody signed in: finished sessions
-// with their sets, routines, and movements minted from the picker. The room works out of this file
+// with their sets, routines, movements minted from the picker, and the settings the room is set up
+// with (§I — the plates a gym owns and the rest dial, which the logger reads on the first frame of
+// every launch, signed in or not). The room works out of this file
 // signed out (auth canon §2, "claiming, not gating"), and signing in CLAIMS it — the replay in
 // TrainingStore walks these shelves oldest first and empties them as the log answers, the same shape
 // journal's PageStore.claimWhatIsOwed gives its pages.
+//
+// The settings shelf is the one that also carries WHOSE it is, because it is the one a claim does not
+// empty: a session lands on the log and leaves this file, while a document goes on being held here as
+// the copy every cold launch draws from. See `open(preferencesUnder:)`.
 //
 // It sits beside the queue, not inside it: `windmill-gym-sets.json` is the LIVE session and is
 // flushed on every tap; a finished session is history and is written once. The queue's file keeps
@@ -39,6 +45,9 @@ public final class LocalLog {
         var sessions: [LocalSession]?
         var routines: [Routine]?
         var exercises: [ExerciseWrite]?
+        var preferences: GymPreferences?
+        var preferencesOwed: Bool?
+        var preferencesSeat: String?
     }
 
     // Mirrors backend/products/gym/domain/Review.h kSlightWorkingSets — the one threshold the local
@@ -69,6 +78,50 @@ public final class LocalLog {
     public var routines: [Routine] { held.routines ?? [] }
     public var exercises: [ExerciseWrite] { held.exercises ?? [] }
     public var isEmpty: Bool { sessions.isEmpty && routines.isEmpty && exercises.isEmpty }
+
+    // SETTINGS ARE NOT AN ARTIFACT, which is why they are not in `isEmpty` and not in the account
+    // footprint the backend keeps: a lifter who toggled one plate and left has made nothing. Nil is
+    // "nobody has answered on this device", which the room draws as the defaults — never as an empty
+    // document, because an empty document is a real and different answer.
+    //
+    // WHOSE ANSWER IT IS travels with it, so read it through `open(preferencesUnder:)` on every change
+    // of seat and this property only afterwards.
+    public var preferences: GymPreferences? { held.preferences }
+
+    // WHOSE ANSWER IT IS IS PART OF THE SHELF, for the same reason DeviceCatalog's file carries a
+    // seat: this document is one ACCOUNT's, and a phone that lent it to the next lifter would rest
+    // them to a timer they never set and then — because every write here is the WHOLE document —
+    // put that first account's bar and plates onto the second one's row. So a shelf this seat did
+    // not write is let go of, on disk as well as in memory, and the room opens on the defaults until
+    // the log answers.
+    //
+    // The one crossing is the one the claim exists for: an ANONYMOUS document still owed is what the
+    // lifter set before they had an account, and signing in carries it to that account (§2). It goes
+    // the other way for nobody — a document already sent, or one belonging to another account,
+    // leaves with the seat, and an unsent one leaves with it too rather than being sent by a lifter
+    // who did not write it.
+    public func open(preferencesUnder seat: String?) -> GymPreferences? {
+        let carriedByTheClaim = held.preferencesSeat == nil && preferencesOwed
+        let sameSeat = held.preferencesSeat == seat
+        held.preferencesSeat = seat
+        if sameSeat || carriedByTheClaim { return held.preferences }
+        guard held.preferences != nil else { return nil }
+        held.preferences = nil
+        held.preferencesOwed = nil
+        flush()
+        return nil
+    }
+
+    // Whether this device's copy is one the log has never been told about. It is what makes the claim
+    // send the DEVICE's answer after sign-in — those are the values the lifter just touched, so
+    // last-write-wins has to run in their favour — and what keeps a served read from overwriting it
+    // before it has been sent.
+    public var preferencesOwed: Bool { held.preferencesOwed ?? false }
+
+    public func keep(_ preferences: GymPreferences, owed: Bool) {
+        held.preferences = preferences
+        held.preferencesOwed = owed
+    }
 
     public func flush() {
         guard let data = try? JSONEncoder().encode(held) else { return }

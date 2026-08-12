@@ -195,8 +195,10 @@ TEST(the_panel_answers_a_subscriber_and_hands_the_run_a_read_only_grant) {
   CHECK_FALSE(h.agent.grantedScope.allows("gym", Access::write));
   CHECK_FALSE(h.agent.grantedScope.allows("gym", Access::del));
   CHECK_FALSE(h.agent.grantedScope.allows("roadmap", Access::read));
-  // And the catalog it could actually see is that grant made visible.
-  CHECK_EQ(h.agent.seenCatalog.size(), 6u);
+  // And the catalog it could actually see is that grant made visible — every gym read, and since
+  // the settings row landed that includes get_preferences: the panel answers questions about a
+  // workout, and what the lifter's gym is loaded with is one of them.
+  CHECK_EQ(h.agent.seenCatalog.size(), 7u);
 }
 
 TEST(a_lifter_without_windmill_one_is_refused_before_the_question_travels) {

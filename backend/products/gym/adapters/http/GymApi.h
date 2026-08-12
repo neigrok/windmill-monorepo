@@ -37,21 +37,24 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // handler on purpose, because a queue told "your set is malformed" by a five-second lock wait drops
 // it forever.
 //
-// Eleven refusals carry a machine word under `code`, because their repairs differ and prose is not a
-// contract: session-id-taken · session-already-open · session-finished · session-open ·
+// Seventeen refusals carry a machine word under `code`, because their repairs differ and prose is
+// not a contract: session-id-taken · session-already-open · session-finished · session-open ·
 // set-id-taken · set-deleted · routine-id-taken · exercise-id-taken · unknown-exercise ·
-// set-not-found · fix-unreadable. Everything else has exactly one cause and the sentence is the
-// whole of it.
+// set-not-found · fix-unreadable · preferences-unreadable · unknown-unit · bar-weight ·
+// plate-weight · too-many-plates · rest-target. Everything else has exactly one cause and the
+// sentence is the whole of it.
 //
 // `set-id-taken` and `set-deleted` are the pair to keep apart, and they are the reason a code is not
 // a courtesy: the first is repaired by minting a fresh id and sending the set again, and doing that
 // to the second would log a deleted set back into the workout under a new number.
 //
-// The last two are the correction's, and EVERY refusal those two routes can make carries one, which
-// is a tighter rule than the rest of this file keeps. The reason is who calls them: a correction
+// The correction's two and the settings write's six keep a tighter rule than the rest of this file:
+// EVERY refusal those routes can make carries a code. The reason differs for each. A correction
 // rides the phones' offline queue like every other write, and a queue branches — `set-not-found` is
 // terminal (the row is gone, drop the pending edit), `fix-unreadable` is terminal and a bug in the
-// client. Neither is a sentence anything should ever match on.
+// client; neither is a sentence anything should ever match on. A settings write carries five
+// independent values at once, so a single "could not read that" would leave the screen unable to say
+// WHICH row a lifter has to go back and fix.
 class GymApi {
 public:
   GymApi(std::shared_ptr<LogService> log, std::shared_ptr<AuthService> auth,
@@ -89,6 +92,10 @@ public:
                       const std::string& id);                                 // PUT  /v1/gym/routines/{id}
   void deleteRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                      const std::string& id);                                  // DELETE /v1/gym/routines/{id}
+  // §I's five rows. The read never 404s — a lifter with no row is served the defaults — and the
+  // write is the whole document, so the two carry the same shape in both directions.
+  void preferences(const drogon::HttpRequestPtr& req, HttpCallback&& cb);     // GET  /v1/gym/preferences
+  void savePreferences(const drogon::HttpRequestPtr& req, HttpCallback&& cb); // PUT  /v1/gym/preferences
   void stats(const drogon::HttpRequestPtr& req, HttpCallback&& cb);           // GET  /v1/gym/stats
   void exportSets(const drogon::HttpRequestPtr& req, HttpCallback&& cb);      // GET  /v1/gym/export
   void shareSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,

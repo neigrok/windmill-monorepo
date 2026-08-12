@@ -41,15 +41,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import works.windmill.gym.domain.DeviationOffer
+import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.Ladder
 import works.windmill.gym.domain.LiveLines
+import works.windmill.gym.domain.Plates
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Rest
 import works.windmill.gym.domain.SetKind
@@ -67,7 +69,13 @@ import works.windmill.platform.design.WindmillSpace
 //
 // EVERY WEIGHT AND REP TAP GOES THROUGH `Ladder`. Step sizes are not re-derived here, on the web, or
 // anywhere else — one module per language, both answering packages/api-contract/gym-ladder.json, and
-// the labels re-render as the load climbs because the band under it changed.
+// the labels re-render as the load climbs because the band under it changed. The caption under the
+// buttons is read off the same band table rather than typed beside it, so a retier moves both.
+//
+// THREE THINGS ON THIS SCREEN OBEY §I'S SETTINGS, and none of them is stored: the plate readout
+// under the numeral (the lifter's own rack), the rest clock's target (their dial, off by default),
+// and what a logged set does in the hand. Every weight here is kilograms on the way in and on the
+// way out — the settings document changes what is DRAWN and reaches no write.
 //
 // The screen never congratulates and never warns. An overrun rest counts up in the accent, "set 4 of 3"
 // is drawn in the same ink as "set 3 of 5", and the only alarm ink in the product belongs to a write
@@ -84,8 +92,9 @@ private sealed class LoggerSheet {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoggerScreen(store: TrainingStore, say: (String?) -> Unit, onFinish: () -> Unit) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val preferences = store.preferences
+    val confirm = rememberGymConfirm(preferences)
     var weightKg by remember { mutableDoubleStateOf(store.prefill.weightKg) }
     var reps by remember { mutableIntStateOf(store.prefill.reps) }
     var warmup by remember { mutableStateOf(false) }
@@ -156,15 +165,22 @@ fun LoggerScreen(store: TrainingStore, say: (String?) -> Unit, onFinish: () -> U
 
     // The chime is scheduled against the instant the set landed rather than watched for while
     // rendering: a phone in a pocket draws nothing, and the one confirmation a gym leaves us
-    // must not depend on the screen being awake.
-    LaunchedEffect(restStartedAtMs) {
+    // must not depend on the frame loop. It is the app's own sleep and not a system alarm — nothing
+    // is booked with AlarmManager — so whatever ends the app ends the chime, and the settings row
+    // says exactly that rather than promising a background alarm.
+    //
+    // NO TARGET, NO CHIME, and that is the default: the dial's first position is off, and a timer
+    // nobody asked for that starts beeping in a gym is the thing this product does not do. Keyed on
+    // the target and the sound too, so a lifter who arms the dial mid-rest is answered by THIS rest
+    // rather than by the next one.
+    val restTarget = Rest.target(store.planEntry, preferences)
+    LaunchedEffect(restStartedAtMs, restTarget, preferences.restSound) {
         val started = restStartedAtMs ?: return@LaunchedEffect
-        val movement = store.exerciseId ?: return@LaunchedEffect
-        val target = Rest.target(movement, store.planEntry)
+        val target = restTarget ?: return@LaunchedEffect
         val waited = (System.currentTimeMillis() - started) / 1000
         if (waited >= target) return@LaunchedEffect
         delay((target - waited) * 1000)
-        GymSound.restLanded(context)
+        confirm.restLanded()
     }
 
     Column(
@@ -222,7 +238,12 @@ fun LoggerScreen(store: TrainingStore, say: (String?) -> Unit, onFinish: () -> U
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 TodayList(LiveLines.rows(store.todaySets, store.stalled))
             }
-            WeightBlock(weightKg, onType = { sheet = LoggerSheet.Weight }, onDial = { weightKg = it })
+            WeightBlock(
+                weightKg = weightKg,
+                preferences = preferences,
+                onType = { sheet = LoggerSheet.Weight },
+                onDial = { weightKg = it },
+            )
             RepsRow(
                 reps = reps,
                 warmup = warmup,
@@ -234,7 +255,7 @@ fun LoggerScreen(store: TrainingStore, say: (String?) -> Unit, onFinish: () -> U
             // drawn before the first would be counting from the moment the screen opened.
             restStartedAtMs?.let { started ->
                 RestLine(
-                    line = Rest.Line(Rest.target(movement, store.planEntry), started, nowMs),
+                    line = Rest.Line(restTarget, started, nowMs),
                     onReset = { restStartedAtMs = null },
                 )
             }
@@ -247,7 +268,7 @@ fun LoggerScreen(store: TrainingStore, say: (String?) -> Unit, onFinish: () -> U
                 finishing = store.isFinishing,
                 onLog = {
                     val kind = if (warmup) SetKind.Warmup else SetKind.Working
-                    GymSound.setLogged(context)
+                    confirm.setLogged()
                     restStartedAtMs = System.currentTimeMillis()
                     // Disarmed on the tap and not on the reply: the set is the lifter's the instant
                     // they press, and the toggle is about the set that just went, never the network.
@@ -450,8 +471,21 @@ private fun TodayList(rows: List<LiveLines.Row>) {
     }
 }
 
+// THE NUMERAL, WHAT IT WOULD ACTUALLY WEIGH ON THE BAR, THE FOUR STEPS, AND WHY THEY ARE THOSE
+// STEPS — §K, top to bottom. The two captions are drawn at a fixed height whatever they say, because
+// everything below this block is the tail a chalked thumb learns on the first set and a line that
+// appeared and disappeared would move the buttons under it.
+//
+// The readout is remembered on the weight and the rack together: it is a small table search, and it
+// would otherwise be rebuilt every second under the rest clock's own tick.
 @Composable
-private fun WeightBlock(weightKg: Double, onType: () -> Unit, onDial: (Double) -> Unit) {
+private fun WeightBlock(
+    weightKg: Double,
+    preferences: GymPreferences,
+    onType: () -> Unit,
+    onDial: (Double) -> Unit,
+) {
+    val loaded = remember(weightKg, preferences) { Plates.readout(weightKg, preferences) }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
         Row(
             Modifier.fillMaxWidth().clickable(onClick = onType),
@@ -475,6 +509,24 @@ private fun WeightBlock(weightKg: Double, onType: () -> Unit, onDial: (Double) -
             )
         }
 
+        // A load under the bar has no plate answer, and silence there is the honest one — a lifter
+        // at 15 kg is not standing at this bar. The hint stays either way, so the line never moves.
+        //
+        // IT SHRINKS RATHER THAN TRUNCATING, for the reason the numeral above it does: the longest
+        // thing this line ever says is the sentence that matters most — `these plates don’t make
+        // 102.5 · 100 or 105 · tap the number to type it`, half again the width of the loadable
+        // one — and a clip would cut the neighbours off the end of it, leaving a lifter reading a
+        // refusal with no answer in it. The line height is spelled in sp and does NOT follow the
+        // font down, so the row keeps one height at every size and at every accessibility scale:
+        // everything below here is the tail a chalked thumb learns on the first set.
+        BasicText(
+            listOfNotNull(loaded?.line, "tap the number to type it").joinToString(" · "),
+            maxLines = 1,
+            autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = 11.sp),
+            style = GymType.numeral(11).copy(color = GymSkin.inkFaint, lineHeight = 15.sp),
+            modifier = Modifier.fillMaxWidth(),
+        )
+
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
             Ladder.labels(weightKg).forEachIndexed { index, label ->
                 Box(
@@ -493,6 +545,14 @@ private fun WeightBlock(weightKg: Double, onType: () -> Unit, onDial: (Double) -
                 }
             }
         }
+
+        Text(
+            Ladder.tier(weightKg).uppercase(),
+            style = GymType.numeral(10).copy(letterSpacing = 0.05.em),
+            color = GymSkin.inkFaint,
+            maxLines = 1,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
@@ -563,6 +623,8 @@ private fun RepsRow(reps: Int, warmup: Boolean, onDial: (Int) -> Unit, onType: (
     }
 }
 
+// The clock, and what it counts against — which with the dial off is nothing at all: it counts UP
+// from the last set, says "resting", and is a fact rather than an instruction.
 @Composable
 private fun RestLine(line: Rest.Line, onReset: () -> Unit) {
     Row(

@@ -23,12 +23,14 @@ const HomeCard = lazy(() => import('./HomeCard.jsx').then((m) => ({ default: m.H
 const importGymLanding = () => import('./marketing/GymLanding.jsx').then((m) => ({ default: m.GymLanding }));
 const GymLanding = lazy(importGymLanding);
 
-// The training log's one account-settings section — registered here so the neutral settings page
-// composes it without ever naming the gym (shell/settings/SettingsPage.jsx reads settingsSections
-// off the product registry). `data` renders last, beside the account's own close. Lazy, so it keeps
-// its own chunk and never weighs on a settings page opened by somebody who has never trained: it
-// draws nothing at all until it has read that this account has a log.
-const GymDataSection = lazy(() => import('./settings/GymDataSection.jsx').then((m) => ({ default: m.GymDataSection })));
+// The training log's one account-settings section — §I's five rows, registered here so the neutral
+// settings page composes it without ever naming the gym (shell/settings/SettingsPage.jsx reads
+// settingsSections off the product registry). It stays in `data`, which renders last and beside the
+// account's own close, because the export row inside it is exactly what that close's consent list
+// means by "export what you want to keep first". Lazy, so it keeps its own chunk and never weighs on
+// a settings page opened by somebody who has never trained: it draws nothing until the one read that
+// tells it what this account's log is set to.
+const GymSettingsSection = lazy(() => import('./settings/GymSettingsSection.jsx').then((m) => ({ default: m.GymSettingsSection })));
 
 function home() {
   return '#/gym';
@@ -70,7 +72,7 @@ export const gymRoutes = {
   render,
   preloadApp: importGymApp,
   settingsSections: {
-    data: [GymDataSection],
+    data: [GymSettingsSection],
   },
   // The words the brand root's door for the gym is made of. The state beside them is the brand
   // root's own, read off `shell.status` below — so these two lines describe the product and never
