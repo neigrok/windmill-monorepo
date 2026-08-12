@@ -115,6 +115,21 @@ public final class LocalLog {
         }
     }
 
+    // A CORRECTION ON THE SHELF (§G18), and it is the same ruling the log makes: the row is rewritten
+    // in place and the shelf keeps ONE row per set that still stands. That is the whole reason a typo
+    // fixed signed-out survives signing in — the claim replays what is on this shelf, so it replays
+    // the corrected set and never the original.
+    public func fix(set id: String, in sessionId: String, by correction: SetFix) {
+        held.sessions = (held.sessions ?? []).map { local in
+            guard local.session.id == sessionId else { return local }
+            return LocalSession(session: local.session,
+                                sets: local.sets.map { $0.id == id ? $0.corrected(by: correction) : $0 })
+        }
+    }
+
+    // A set off the shelf, and two callers reach it: a claim that met a terminal refusal, and §G18's
+    // delete. Both mean the same thing here — this device stops holding the row, so nothing replays
+    // it and no local read counts it.
     public func drop(set id: String, in sessionId: String) {
         held.sessions = (held.sessions ?? []).map { local in
             guard local.session.id == sessionId else { return local }

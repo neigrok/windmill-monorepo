@@ -305,8 +305,8 @@ class FinishedSessionTests {
                                  slight = ended.slight, first = ended.isFirst).title)
     }
 
-    // A review that never came back cannot make a session slight — and slight is what offers the
-    // one destructive action in the product, so it is never assumed.
+    // A review that never came back cannot make a session slight — and slight is what offers to
+    // destroy the whole workout, so it is never assumed.
     @Test
     fun withoutAReviewASessionIsNeverCalledShort() {
         assertFalse(FinishedSession(session = session(routineId = null), sets = lifted,

@@ -102,6 +102,37 @@ bool wellFormedId(std::string_view id) {
   return true;
 }
 
+// One pass, reading the lead byte for the length and every continuation for its shape, refusing an
+// overlong encoding and a surrogate half by the code point they decode to — the same well-formedness
+// Postgres applies when it takes the parameter, applied here where the answer is still a 400.
+bool storableText(std::string_view text) {
+  for (std::size_t at = 0; at < text.size();) {
+    const unsigned char lead = static_cast<unsigned char>(text[at]);
+    if (lead == 0x00) return false;
+    if (lead < 0x80) {
+      at += 1;
+      continue;
+    }
+    // A continuation byte standing alone, an overlong two-byte form (0xC0/0xC1) and a lead past the
+    // last plane (above 0xF4) are all decided by the lead byte alone.
+    if (lead < 0xC2 || lead > 0xF4) return false;
+    const std::size_t width = lead < 0xE0 ? 2 : (lead < 0xF0 ? 3 : 4);
+    if (at + width > text.size()) return false;
+    unsigned int point = lead & (width == 2 ? 0x1Fu : (width == 3 ? 0x0Fu : 0x07u));
+    for (std::size_t step = 1; step < width; ++step) {
+      const unsigned char next = static_cast<unsigned char>(text[at + step]);
+      if ((next & 0xC0) != 0x80) return false;
+      point = (point << 6) | (next & 0x3Fu);
+    }
+    if (width == 3 && point < 0x800) return false;      // an overlong three-byte form
+    if (width == 4 && point < 0x10000) return false;    // an overlong four-byte form
+    if (point > 0x10FFFF) return false;
+    if (point >= 0xD800 && point <= 0xDFFF) return false;
+    at += width;
+  }
+  return true;
+}
+
 std::string trimmedName(std::string text) {
   const std::string_view blanks = " \t\n\r\f\v";
   const std::size_t first = text.find_first_not_of(blanks);
@@ -134,11 +165,11 @@ Exercise::Exercise(ExerciseId id, std::string name, Pattern pattern, Equipment e
   // back EVERY movement this account can see, on every open of the movement picker, so a name with
   // no ceiling is a name that ships forever on the product's most-fired read.
   if (this->name.size() > kMaxNameLength) throw InvalidTraining("exercise name too long");
-  // Postgres text stops at a NUL and would keep the head of the name as if it were the whole of it.
-  // The set note has lived under this rule since day one; a lifter can now create a movement, so
-  // the display name is the second piece of free text that reaches a text column.
-  if (this->name.find('\0') != std::string::npos)
-    throw InvalidTraining("an exercise name cannot hold a NUL byte");
+  // The one text rule, and the display name is the second piece of free text that reaches a text
+  // column (the set note was the first). A NUL truncates a name to its own head; bytes that are not
+  // UTF-8 are refused by Postgres mid-transaction, which would leave as a retryable 500 for a name
+  // that can never land.
+  if (!storableText(this->name)) throw InvalidTraining("an exercise name must be storable text");
   // step_kg is numeric(4,2), and both ends of that column are refused here rather than by Postgres
   // mid-transaction: a step of 100 raises a numeric overflow, which leaves as the house 500 — the
   // status the ladder documents as retryable, so a queue would resend an unstorable body forever —
@@ -174,12 +205,26 @@ Set::Set(SetId id, SessionId session, ExerciseId exercise, int setNumber, double
   if (reps < 1 || reps > 500) throw InvalidTraining("reps out of range");
   if (rpe && (*rpe < 1 || *rpe > 10)) throw InvalidTraining("rpe out of range");
   if (this->note.size() > 4000) throw InvalidTraining("note too long");
-  // Postgres text stops at a NUL and would store the head of the note as if it were the whole
-  // thing — refuse what storage cannot hold rather than shorten a lifter's words in silence.
-  if (this->note.find('\0') != std::string::npos)
-    throw InvalidTraining("a note cannot hold a NUL byte");
+  // Refuse what storage cannot hold rather than shorten a lifter's words in silence, or hand a
+  // correction queue a 500 it would retry forever over bytes no column will ever take.
+  if (!storableText(this->note)) throw InvalidTraining("a note must be storable text");
   if (completedAtMs == 0 || completedAtMs > kMaxInstantMs)
     throw InvalidTraining("a set completes at an instant");
+}
+
+// Written as one construction rather than a run of assignments, so the fields a correction may NOT
+// move are visibly copied across from the stored row and cannot be forgotten into a default.
+Set corrected(const Set& stored, const SetFix& fix) {
+  return Set{stored.id,
+             stored.session,
+             stored.exercise,
+             stored.setNumber,
+             fix.weightKg.value_or(stored.weightKg),
+             fix.reps.value_or(stored.reps),
+             fix.kind.value_or(stored.kind),
+             fix.rpeNamed ? fix.rpe : stored.rpe,
+             fix.note.value_or(stored.note),
+             stored.completedAtMs};
 }
 
 std::optional<std::uint64_t> autoCloseAt(const Session& session,

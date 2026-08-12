@@ -48,9 +48,11 @@ class SetQueue(
         val sessionId: String,
         val needsPush: Boolean,
         val remints: Int,
-        // THE UNDO WINDOW, and it is a promise the DEVICE keeps rather than a request to the log:
-        // the log is append-only and has no route that takes a set back, so the only moment a
-        // mis-tapped set can be withdrawn is while this device is still the only place it exists.
+        // THE UNDO WINDOW, and it is a promise the DEVICE keeps rather than a request to the log.
+        // A logged row CAN be taken off the log now — §G18's delete does exactly that — but that is
+        // a repair made at rest, on a past session, with a sheet and a second gesture. This is the
+        // mistap seconds ago in a room with a rack in it, and the only moment it can be undone
+        // without telling anybody is while this device is still the only place it exists.
         //
         // Defaulted because a queue file written before the window existed has no such key, and the
         // decoder tolerates a missing key only where there is a default — a file that failed to
@@ -153,8 +155,10 @@ class SetQueue(
     // window. Newest rather than oldest because Undo answers the tap the lifter just made.
     fun withdrawable(at: Long = clock()): Entry? = pending.lastOrNull { it.isHeld(at) }
 
-    // Taking a set back is only ever legal while it is still owed. Once the log holds the row this
-    // returns false and says so, rather than deleting a set from the screen that the account keeps.
+    // Taking a set back HERE is only ever legal while it is still owed. Once the log holds the row
+    // this returns false and says so: the row is the account's now, and taking it off the account is
+    // §G18's delete on a past session — a deliberate repair with its own sheet — never a button that
+    // quietly reaches through the logger.
     fun withdraw(id: String): Boolean {
         val entry = held.entries[id] ?: return false
         if (!entry.needsPush) return false
@@ -307,6 +311,44 @@ sealed class Verdict {
             // both hold, and neither follows from the other's absence — a queue that read "not
             // retryable" as "lost" would throw away a set that was only waiting for the session
             // secret to come back.
+            return Retry
+        }
+    }
+}
+
+// THE FIFTH WORD, and it is about a row that already exists rather than one still trying to land.
+// The four verdicts above answer "will this set ever reach the log"; a correction asks something
+// this vocabulary could not say — "the row you are editing was REFUSED" — and it is told apart by
+// `code` for exactly the reason they are: the sentence is copy and may be reworded any day.
+//
+// Two terminal answers, and the screen owes them different moves. `Gone` means the log does not
+// hold that set at all — absent, already deleted, another account's, or this account's set in a
+// different workout, one answer byte-identical for all four — so the drawn row is stale and the
+// pending edit has nowhere to go. `Unwritable` means these bytes will never land as written and
+// the row is still there. Everything else waits: a 5xx is the server's, a 401 wants a sign-in, and
+// no reply at all is not an answer.
+//
+// A FINISHED SESSION IS NOT HERE. Corrections are allowed after the workout ends — the server
+// publishes no `session-finished` on either route — so a client that branched on one would be
+// carrying a case the wire cannot produce.
+sealed class FixVerdict {
+    data class Gone(val said: String) : FixVerdict()        // 404 set-not-found — that row is not on the log
+    data class Unwritable(val said: String) : FixVerdict()  // 400 fix-unreadable — this body never lands
+    data object Retry : FixVerdict()                        // 5xx, 401, no reply at all
+
+    companion object {
+        fun refusing(facts: RefusalFacts): FixVerdict {
+            val status = facts.status
+            if (facts.offline || facts.malformed || status == null) return Retry
+            val said = facts.sentence ?: "the log refused this fix"
+            if (facts.code == "set-not-found") return Gone("that set is no longer on the log")
+            if (facts.code == "fix-unreadable") return Unwritable(said)
+            if (status >= 500) return Retry
+            // A 404 with no word on it is still the route saying it has no such row, and a 400 is
+            // still a body it could not read — the code is the contract, and its absence is an
+            // older server rather than a different meaning.
+            if (status == 404) return Gone("that set is no longer on the log")
+            if (status == 400 || status == 409) return Unwritable(said)
             return Retry
         }
     }

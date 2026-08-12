@@ -355,7 +355,7 @@ struct RecordScreen: View {
 //
 // TWO OTHER SURFACES NAME A MOVEMENT AND ARE NOT DOORS, both on purpose. Inside a LIVE session the
 // picker's tap is the pick and the logger's name is the movement in hand, and a live session
-// outranks every read-only screen in this room — a door there would either do nothing or walk a
+// outranks every away screen in this room — a door there would either do nothing or walk a
 // lifter out of their workout mid-set. And the FINISH screen, whose record sentence, comparison rows
 // and keep-as-routine preview all name movements: it outranks `showing` in `GymRoom.stage` for the
 // same kind of reason — a workout that just ended owns the screen, and the offer on it dies when it

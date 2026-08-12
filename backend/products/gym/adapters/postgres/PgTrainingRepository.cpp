@@ -28,6 +28,18 @@ constexpr std::string_view kSetColumns =
     "id, session_id, exercise_id, set_number, weight_kg::float8 AS weight_kg, reps, kind, "
     "rpe::float8 AS rpe, note, (extract(epoch from completed_at) * 1000)::bigint AS completed_ms";
 
+// What a revision is a copy of, written once because the correction and the delete copy exactly the
+// same row: a column added to gym_sets must not be kept by one of them and dropped by the other. The
+// two lists are the same columns under the two tables' names, matched by POSITION in the insert, and
+// `deleted` is the only value the two writers disagree on — so it is the one each passes itself.
+constexpr std::string_view kRevisionColumns =
+    "set_id, session_id, user_id, exercise_id, set_number, weight_kg, reps, kind, rpe, note, "
+    "completed_at, deleted";
+
+constexpr std::string_view kRevisionSource =
+    "id, session_id, user_id, exercise_id, set_number, weight_kg, reps, kind, rpe, note, "
+    "completed_at";
+
 // The catalog's columns, and the display name is the CALLER'S. The 64 seeds are global rows shared
 // by every account on this server, so the name a lifter gave one lives in gym_exercise_names and is
 // coalesced over the seed's own — while a movement they created carries its name on its own row and
@@ -355,16 +367,16 @@ SetInsertOutcome PgTrainingRepository::insertSet(const Set& incoming) {
   // and reads max(set_number) still counts the row it waited for as absent (proved: two
   // interleaved appends both minted set 1 that way). Then the insert: the owner copied from the
   // session row, the number max+1 per (session, exercise) — not count+1, which would mint a
-  // duplicate after a phase-2 delete + renumber — and a replayed id no-ops on the PK. Then the
+  // duplicate over the gap a deleted set leaves — and a replayed id no-ops on the PK. Then the
   // read-back, scoped to (id, session_id): a replay is handed the original, and an id spent on a
   // row this session does not hold resolves to nothing, never to a stranger's set.
   //
   // The lock READS THE STATE IT LOCKS, and both of the facts it brings back are refusals only this
-  // statement can make. `finished_at` is the boundary of §3.3: the service checks it too, but on a
-  // row it loaded before the lock existed, so a set that never landed could still land after the
-  // close raced past it — the one loss the finish is supposed to make impossible. And `user_id` is
-  // the scope the movement is resolved in: the foreign key alone would let this set name another
-  // lifter's private movement.
+  // statement can make. `finished_at` is the boundary of §3.3 and it is decided HERE and nowhere
+  // else: the service used to check it too, on a row it had loaded before this lock existed, which
+  // is a fact decided in two layers and therefore in two ORDERS — that copy answered `finished` for
+  // an id this statement would answer `deleted` for. And `user_id` is the scope the movement is
+  // resolved in: the foreign key alone would let this set name another lifter's private movement.
   std::optional<Set> stored;
   {
     pqxx::params params;
@@ -389,6 +401,25 @@ SetInsertOutcome PgTrainingRepository::insertSet(const Set& incoming) {
     // below would reach anyway: the INSERT..SELECT would select nothing, so nothing lands and the
     // read-back finds nothing. The service loads the session before it ever gets here.
     if (locked.empty()) return {std::nullopt, SetInsertError::idTaken};
+    // THE ID IS SPENT ONCE AND FOR GOOD, and this read is the whole of what makes that true. The
+    // primary key stopped being the whole idempotency the moment a row could leave gym_sets: a
+    // delete frees the id, and the append that lost its reply — still on the device's queue, or on
+    // its way through a claim — would land it again and hand the lifter back the set they deleted.
+    // Asked HERE, under the session's lock, so a delete of the same id either committed before this
+    // statement's snapshot (and is seen) or waits behind this transaction (and finds the row it is
+    // meant to remove). It is asked before `finished` on purpose: a deleted set in a closed session
+    // is not a set that never landed, and telling a queue "the session closed before this reached
+    // it" would be false about a set that reached it and was taken out by hand.
+    //
+    // Scoped to the session's OWNER, like every other read in this store: another account's deleted
+    // id is not a fact this caller may learn, and their log is not the one a replay here could put a
+    // set back into. Their own deleted id is refused whichever session replays it — the id named a
+    // set they removed, and a workout is not a fresh namespace for it.
+    pqxx::result deleted = txn.exec_params(
+        "SELECT 1 FROM gym_set_revisions WHERE set_id = $1 AND user_id = $2::uuid AND deleted "
+        "LIMIT 1",
+        incoming.id.str(), locked[0]["user_id"].as<std::string>());
+    if (!deleted.empty()) return {std::nullopt, SetInsertError::deleted};
     if (locked[0]["finished"].as<bool>()) return {std::nullopt, SetInsertError::finished};
     // The catalog's own predicate, in the owner the locked row names — the fact the foreign key
     // cannot state, and it is translated HERE the way every other adapter translates its vendor
@@ -415,6 +446,121 @@ SetInsertOutcome PgTrainingRepository::insertSet(const Set& incoming) {
   }
   if (!stored) return {std::nullopt, SetInsertError::idTaken};
   return {stored, SetInsertError::none};
+}
+
+// The correction. Two statements, and the split between them is the whole correctness argument.
+//
+// THE LOCK IS ITS OWN STATEMENT, AHEAD OF THE WRITE, and it is the SESSION's row — the very row
+// insertSet takes and deleteSet takes. ONE LOCK ORDER FOR ALL THREE WRITES that change what a
+// workout holds: the session row first, its set rows after. Two things follow, and each alone would
+// buy the statement:
+//
+//   · The re-read. Under READ COMMITTED a statement's snapshot is taken when it begins, so a
+//     correction that both copied the row and rewrote it in one statement would copy the version it
+//     read BEFORE waiting on a racing correction's lock — and the value that correction wrote would
+//     leave the log with nothing keeping it. Locked first, the second statement reads at a fresh
+//     snapshot and keeps what actually stood.
+//   · No deadlock. gym_set_revisions carries a foreign key to gym_sessions, so every copy either
+//     writer takes already asks that session row for a KEY SHARE; a writer that took a SET row first
+//     and the session row second would close a cycle with one that took them the other way round.
+//     The order is uniform here, so there is no cycle to close.
+//
+// It is owner-scoped, which also settles the two questions this write would otherwise ask twice: a
+// workout that is not this account's is not locked at all, and there is nothing there to correct.
+//
+// Then ONE statement does both halves, so there is no window in which the row has been rewritten
+// and what it replaced was not kept: the data-modifying CTE copies the row as it stands into
+// gym_set_revisions — such a CTE runs exactly once and to completion whether or not the main query
+// reads it — and the UPDATE beside it, reading the same snapshot, writes the new values and answers
+// with the stored row.
+//
+// The copy is taken only where the row actually MOVES. `{}` is a legal fix and an identical fix is
+// the reply a client resends when the first one is lost, so an unconditional copy would grow a
+// version of the row for every retry of a correction that corrected nothing — rows kept forever, in
+// a table nothing reads, standing for a change nobody made. What a revision is FOR is the value some
+// write replaced; a write that replaced nothing has nothing to keep.
+//
+// The scope is (id, session, owner) on both statements. A set id that resolves under this account
+// but in another workout is not this session's to correct, and another account's is not there at
+// all: one empty answer, and the caller learns nothing either way. Nothing here READS or WRITES
+// gym_sessions' plan or gym_routine_entries — the lock names the session row and takes nothing off
+// it — because the frozen plan is the program's word about the past.
+std::optional<Set> PgTrainingRepository::updateSet(const UserId& user, const Set& corrected) {
+  std::optional<Set> stored;
+  {
+    pqxx::params params;
+    params.append(corrected.id.str());
+    params.append(corrected.session.str());
+    params.append(user.str());
+    params.append(corrected.weightKg);
+    params.append(corrected.reps);
+    params.append(toString(corrected.kind));
+    if (corrected.rpe) params.append(*corrected.rpe);
+    else params.append();
+    params.append(corrected.note);
+
+    PgLease conn{*pool_};
+    pqxx::work txn{*conn};
+    pqxx::result locked = txn.exec_params(
+        "SELECT id FROM gym_sessions WHERE id = $1 AND user_id = $2::uuid FOR UPDATE",
+        corrected.session.str(), user.str());
+    if (locked.empty()) return std::nullopt;
+    pqxx::result rows = txn.exec(
+        "WITH kept AS ("
+        "  INSERT INTO gym_set_revisions (" + std::string(kRevisionColumns) + ") "
+        "  SELECT " + std::string(kRevisionSource) + ", false FROM gym_sets "
+        "  WHERE id = $1 AND session_id = $2 AND user_id = $3::uuid "
+        "    AND (weight_kg, reps, kind, rpe, note) IS DISTINCT FROM "
+        "        ($4::numeric, $5::int, $6::text, $7::numeric, $8::text)) "
+        "UPDATE gym_sets SET weight_kg = $4, reps = $5, kind = $6, rpe = $7, note = $8 "
+        "WHERE id = $1 AND session_id = $2 AND user_id = $3::uuid "
+        "RETURNING " + std::string(kSetColumns),
+        params);
+    if (!rows.empty()) stored = setFrom(rows[0]);
+    txn.commit();
+  }
+  return stored;
+}
+
+// The delete, and it takes the SESSION's lock first for the reason the correction above does — one
+// order for all three writes — plus the one only this write needs. A set id is spent once and for
+// good (ports/TrainingRepository.h): insertSet asks gym_set_revisions whether this id names a set
+// that was deleted, and it asks under this same lock, so a replayed append and the delete it races
+// cannot both look and both find nothing. Locked, the two orders are the only two there are: the
+// append lands and this delete removes it, or this delete commits and the append is refused.
+//
+// The DELETE still takes the row lock itself, and a delete that waits on a racing CORRECTION
+// re-evaluates the row it waited for, so its RETURNING hands the copy the values that correction
+// wrote rather than the ones it read first.
+//
+// One statement for the move, and that is the whole of why it is written this way: the DELETE's
+// RETURNING feeds the INSERT, so there is no instant in which the row has left gym_sets and has not
+// landed in gym_set_revisions. It is marked `deleted` rather than merely kept, because "this set was
+// corrected to something else" and "this set does not stand any more" are different facts about a
+// lifter — and because the append above reads exactly that flag.
+//
+// Nothing is answered and nothing is refused: a set that was never here does not stand either, which
+// is what lets a client whose reply was lost send the same delete again. Numbers are NOT closed up
+// behind it — deleting set 2 of 3 leaves 1 and 3, max+1 keeps minting 4, and the number a set was
+// logged under is not a lifter's to rewrite.
+void PgTrainingRepository::deleteSet(const UserId& user, const SessionId& session, const SetId& id) {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  pqxx::result locked = txn.exec_params(
+      "SELECT id FROM gym_sessions WHERE id = $1 AND user_id = $2::uuid FOR UPDATE",
+      session.str(), user.str());
+  // No workout of this account's under that id, so no set of it either — the sets cascade with the
+  // session row. Nothing to remove and nothing to say, which is the same silence a set that was
+  // already gone gets.
+  if (locked.empty()) return;
+  txn.exec_params(
+      "WITH gone AS ("
+      "  DELETE FROM gym_sets WHERE id = $1 AND session_id = $2 AND user_id = $3::uuid "
+      "  RETURNING " + std::string(kRevisionSource) + ") "
+      "INSERT INTO gym_set_revisions (" + std::string(kRevisionColumns) + ") "
+      "SELECT " + std::string(kRevisionSource) + ", true FROM gone",
+      id.str(), session.str(), user.str());
+  txn.commit();
 }
 
 LogPage PgTrainingRepository::log(const UserId& user, const LogCursor& cursor) {

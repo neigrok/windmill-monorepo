@@ -12,6 +12,7 @@ import works.windmill.gym.domain.SessionDetail
 import works.windmill.gym.domain.SessionShare
 import works.windmill.gym.domain.SessionStart
 import works.windmill.gym.domain.SessionSummary
+import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TrainingSet
 
@@ -33,14 +34,34 @@ interface TrainingSyncing {
     suspend fun startSession(start: SessionStart): Session
 
     // Converges on exactly one row per minted id: a replay answers 200 with the stored set and its
-    // server-assigned number, whether or not the session has since been finished.
+    // server-assigned number, whether or not the session has since been finished. THE ROW IT
+    // ANSWERS WITH MAY BE OLDER THAN THE ONE THAT WENT OUT — a set that landed on an earlier pass
+    // and has been corrected on this device since comes back carrying the numbers it was logged
+    // with, and the caller has to compare rather than assume (ClaimReplay does).
     suspend fun appendSet(sessionId: String, write: SetWrite): TrainingSet
+
+    // THE CORRECTION AND THE DELETE — §G18, and the only two writes in this product that MOVE a row
+    // instead of adding one. Both are owner-scoped and both are idempotent: an identical fix answers
+    // the same stored row, and deleting a set that is already gone — or never existed, or belongs to
+    // another account — is the same 204, so a lost reply is always safe to send again.
+    //
+    // A FINISHED SESSION IS NOT A REFUSAL ON EITHER. A lifter reads the log after the workout, which
+    // is exactly when they see the typo, so there is no `session-finished` here and no branch for one.
+    // A fix that cannot land says which of two things happened by `code`: `set-not-found` (absent,
+    // another account's, already deleted, or this account's set in a different workout — one answer,
+    // byte-identical for all four) or `fix-unreadable`.
+    suspend fun fixSet(sessionId: String, setId: String, fix: SetFix): TrainingSet
+
+    // No 400, no 404 and no 409 at all — 401 and 500 are its only non-204 answers, which is why it
+    // answers with nothing rather than with a row or a bool.
+    suspend fun deleteSet(sessionId: String, setId: String)
 
     suspend fun finishSession(sessionId: String, finishedAtMs: Long): Session
 
-    // Discard — the one destructive action in the product. It refuses a LIVE session 409
-    // `session-open`, because only the device holding the queue knows every set landed, so the
-    // finish screen is the only place it is offered.
+    // Discard — the whole session, and the only place a WORKOUT can be destroyed (a single set has
+    // its own door two methods down). It refuses a LIVE session 409 `session-open`, because only the
+    // device holding the queue knows every set landed, so the finish screen is the only place it is
+    // offered.
     suspend fun discardSession(sessionId: String)
 
     // A page of the log, newest first. The cursor is BOTH halves of the sort key: two sessions can

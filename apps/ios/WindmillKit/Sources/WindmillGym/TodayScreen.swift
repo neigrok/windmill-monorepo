@@ -169,8 +169,8 @@ struct TodayScreen: View {
 
     // THE RETROSPECTIVE DOOR, and it exists exactly when there is something behind it: a log with no
     // finished session has no last session to open, and a door onto an empty screen is the same
-    // defect as a chevron that goes nowhere. It is read-only — nothing on either side of it can
-    // change the log.
+    // defect as a chevron that goes nowhere. It opens the session as it was LIVED, where §G18 can
+    // correct a set of it — the one door on Today that reaches back into the log at all.
     @ViewBuilder
     private var lookingBack: some View {
         if let last = store.recent.first(where: { !$0.session.isOpen }) {

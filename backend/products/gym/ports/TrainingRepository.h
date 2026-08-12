@@ -145,7 +145,13 @@ struct LogCursor {
 // a slug nobody has, and another lifter's private movement alike; finished says the session was
 // already closed when the write took its lock, which is the boundary §3.3 makes the STORE hold,
 // because it is the only layer that reads that column under the lock that decides it.
-enum class SetInsertError { none, idTaken, unknownExercise, finished };
+//
+// `deleted` is the refusal the delete route made necessary, and it is NOT idTaken however alike the
+// two look. An id spent ELSEWHERE is repaired by minting a fresh one and sending the set again —
+// that is precisely what every queue does with it — and a set the LIFTER deleted must never be
+// repaired that way, or the deletion undoes itself under a new id the first time a POST whose reply
+// was lost is replayed. Same shape, opposite move, so it crosses the port as its own fact.
+enum class SetInsertError { none, idTaken, unknownExercise, finished, deleted };
 
 struct SetInsertOutcome {
   std::optional<Set> set;
@@ -253,7 +259,15 @@ struct SharedSession {
 // consumer). Every read and write is owner-scoped by the UserId it carries; absent is byte-
 // identical to forbidden. Writes are idempotent by client-minted id: insertSession, insertSet,
 // insertRoutine and insertExercise all no-op on conflict and answer with the row that is stored,
-// and one open session per user is the partial unique index's rule, never a guard flag.
+// and one open session per user is the partial unique index's rule, never a guard flag. The two
+// writes that CHANGE a stored set are idempotent by shape instead — a correction assigns absolute
+// values, and a delete of a set that is already gone is a delete.
+//
+// A SET ID IS SPENT ONCE AND FOR GOOD, and that is what lets those two live beside the replay. The
+// primary key stopped being the whole of the idempotency the moment a row could LEAVE gym_sets: a
+// replayed append would find the id free and re-create the set a lifter deleted, which is the one
+// thing a delete has to survive. So insertSet refuses an id gym_set_revisions holds as deleted, and
+// it refuses it with `deleted` rather than `idTaken` for the reason that enum states.
 struct TrainingRepository {
   virtual ~TrainingRepository() = default;
 
@@ -265,11 +279,38 @@ struct TrainingRepository {
   virtual void insertSession(const Session& incoming) = 0;                // conflict = no-op
   virtual void close(const SessionId& id, std::uint64_t finishedAtMs) = 0;
   // Assigns the number and returns the stored row; anything that stops the write comes back as a
-  // typed fact beside it. A REPLAY IS NOT RESOLVED HERE — `LogService::append` answers it through
-  // `setOf` before this is ever reached, which is what lets this method answer `finished` for every
-  // write that arrives after the locked row closed, replay or not. Stating it the other way round
-  // would be a contract a second implementation could keep and still lose a set.
+  // typed fact beside it, and EVERY refusal below this line is decided here and nowhere above it —
+  // one fact decided in two layers gets decided in two orders. A REPLAY IS NOT RESOLVED HERE —
+  // `LogService::append` answers it through `setOf` before this is ever reached, which is what lets
+  // this method answer `finished` for every write that arrives after the locked row closed, replay
+  // or not. Stating it the other way round would be a contract a second implementation could keep
+  // and still lose a set. And an id this account holds as DELETED is refused before either: it is
+  // the one refusal the primary key cannot make, because the row it would have collided with is
+  // gone.
   virtual SetInsertOutcome insertSet(const Set& incoming) = 0;
+
+  // The two writes that change a set already stored, and the only pair here that leaves something
+  // behind: what they replace is appended to gym_set_revisions, so a correction rewrites the row the
+  // log reads AND keeps what it replaced. `gym_sets` therefore keeps its meaning exactly — one row
+  // per set that currently stands — and every read above it is untouched and correct by
+  // construction: the tonnage, the marks, the records, the chart, the prefill and the export all
+  // recompute off the live rows. The alternative, a superseding row with a tombstone, would make
+  // every one of those reads project the chain forever to buy a property nothing needs, and a
+  // forgotten projection shows a lifter a set twice.
+  //
+  // `updateSet` takes the WHOLE corrected row — the domain built it from the stored one — rather
+  // than a patch the store would merge, because merging in SQL is the correction rule stated a
+  // second time in a language the domain cannot read. It answers with the stored row, so a retry is
+  // a no-op that reads back the same values. Absent is the one fact: no such set, another account's,
+  // and one this session does not hold, told apart by nobody.
+  //
+  // `deleteSet` answers NOTHING, and that is the contract rather than an omission — a set that was
+  // never there does not stand either, so a client whose reply was lost sends the same delete again
+  // and gets the same silence. Neither write is refused for a finished session: a lifter reads the
+  // log after the workout, and that is exactly when they see the 5 they meant to log as a 4.
+  virtual std::optional<Set> updateSet(const UserId& user, const Set& corrected) = 0;
+  virtual void deleteSet(const UserId& user, const SessionId& session, const SetId& id) = 0;
+
   virtual LogPage log(const UserId& user, const LogCursor& cursor) = 0;
   virtual std::vector<Set> setsOf(const SessionId& id) = 0;
   // The prefill read: what this account did the last time it trained this movement. Fired on every

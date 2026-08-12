@@ -436,9 +436,9 @@ private fun KeepAsRoutine(
     }
 }
 
-// The one destructive action in the product, and it sits here because a three-set session is
-// usually a phone left running rather than a workout. It deletes for good: nothing on this screen
-// may suggest it can be got back.
+// A WHOLE WORKOUT DESTROYED, and it sits here because a three-set session is usually a phone left
+// running rather than a workout. It deletes for good: nothing on this screen may suggest it can be
+// got back — and nothing anywhere else in this product does either, §G18's `Delete set` included.
 @Composable
 private fun Actions(finished: FinishedSession, kept: Boolean, onDiscard: () -> Unit, onDone: () -> Unit) {
     if (finished.slight) {

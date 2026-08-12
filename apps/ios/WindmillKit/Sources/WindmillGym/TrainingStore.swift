@@ -203,18 +203,41 @@ public final class TrainingStore: ObservableObject {
         return session?.plan?.entry(for: exerciseId)
     }
 
-    // Every set still in the queue is saved on this device and nowhere else, whether or not the log
-    // has been asked yet. A retry counter cannot decide this — a set that has been attempted zero
-    // times is exactly as undelivered as one behind a jam.
+    // Every set still in the queue AS AN APPEND is saved on this device and nowhere else, whether or
+    // not the log has been asked yet. A retry counter cannot decide this — a set that has been
+    // attempted zero times is exactly as undelivered as one behind a jam. A correction or a deletion
+    // still owed is a different fact and must not wear this word: the log holds that row, under
+    // numbers this device is trying to move.
     public var stalled: Set<String> {
-        Set(queue.pending.map(\.set.id))
+        Set(queue.pending.filter { $0.owes == .append }.map(\.set.id))
     }
 
-    // The mistake seconds ago. The log is append-only and has no route that takes a set back, so
-    // this is nil the instant the row lands — Undo is offered exactly while it is true, and never
-    // as a button that would have to apologise.
+    // The mistake seconds ago, and it is taken back HERE rather than asked of the log: while the row
+    // is still owed this device is the only place it exists, so withdrawing it costs nobody anything.
+    // It is nil the instant the row lands — a set the account holds is corrected or deleted through
+    // §G18's sheet, which confirms and offers its own way back, and a button here that outlived the
+    // window would be a second door onto that with neither.
     public var undoable: TrainingSet? {
         queue.withdrawable(at: now())?.set
+    }
+
+    // THE DELETION THAT CAN STILL BE TAKEN BACK, and the row it would put back. It is kept here
+    // rather than in the queue because a deleted set comes from one of several homes and each takes
+    // a different repair — the shelf takes its ROW back, the queue takes its DELETE back, and a row
+    // the log never had takes its APPEND back — and one record over all of them is what keeps the
+    // screen from having to know which. It carries the whole set for the same reason a refusal does:
+    // between the tap and the Undo, this is the only copy of it anywhere.
+    public struct Deletion: Equatable {
+        public let set: TrainingSet
+        public let sessionId: String
+        let untilMs: Int64
+    }
+
+    private var taken: Deletion?
+
+    public var restorable: Deletion? {
+        guard let taken, taken.untilMs > now() else { return nil }
+        return taken
     }
 
     // Called on launch and on every change of who is signed in. Draws from the device first and
@@ -400,10 +423,11 @@ public final class TrainingStore: ObservableObject {
 
     // Local-first: the row lands and the device holds it before the network is consulted at all.
     //
-    // THE KIND IS THE CALLER'S, and it is the one thing about a set that cannot be repaired later:
-    // the record rules read `kind == working` and the prefill read exists precisely to exclude
-    // warmups, so a ramp-up filed as working becomes the mark to beat and answers "what did I do last
-    // time" with a lie, in the product's single highest-value pixel.
+    // THE KIND IS THE CALLER'S, and getting it right at the tap still matters most: the record rules
+    // read `kind == working` and the prefill read exists precisely to exclude warmups, so a ramp-up
+    // filed as working becomes the mark to beat and answers "what did I do last time" with a lie, in
+    // the product's single highest-value pixel. §G18 can repair it afterwards — but only for a lifter
+    // who noticed, and the number was already wrong on every screen in between.
     public func logSet(weightKg: Double, reps: Int, kind: SetKind = .working) async {
         guard let live = session, let movement = exerciseId, !isFinishing else { return }
         let set = TrainingSet(id: mintSet(), exerciseId: movement, weightKg: weightKg, reps: reps,
@@ -415,9 +439,9 @@ public final class TrainingStore: ObservableObject {
     }
 
     // Taking back the set just logged, while this device is still the only place it exists. It
-    // answers false rather than pretending once the log holds the row, because the wire has no route
-    // that deletes a set and a screen that removed it anyway would be showing a workout the account
-    // disagrees with.
+    // answers false rather than pretending once the log holds the row: from there a set is moved
+    // through §G18's sheet, which confirms first and offers its own way back, and a logger button
+    // that quietly deleted an account's set would be neither.
     @discardableResult
     public func undoLast() -> Bool {
         guard let set = undoable, queue.withdraw(set.id) else { return false }
@@ -637,16 +661,159 @@ public final class TrainingStore: ObservableObject {
     // into the type by GymApi — so there is no sentence from the log to repeat, and this is the
     // plain fact instead, exactly as the routine read one screen down says it.
     public func sessionDetail(_ sessionId: String) async -> Result<SessionDetail, WriteFailure> {
-        if let local = localLog.detail(of: sessionId) { return .success(local) }
+        if let local = localLog.detail(of: sessionId) { return .success(holding(local)) }
         guard let gym else { return .failure(.refused("that session is on your account — sign in to read it")) }
         do {
             guard let detail = try await gym.session(sessionId) else {
                 return .failure(.refused("that session is no longer on the log"))
             }
-            return .success(detail)
+            return .success(holding(detail))
         } catch {
             return .failure(WriteFailure(error))
         }
+    }
+
+    // THE SESSION AS THIS DEVICE HOLDS IT — whatever the log (or the shelf) answered with, under the
+    // corrections and deletions this device has not managed to send yet. Without it a screen reopened
+    // after a relaunch would draw the numbers the lifter corrected AWAY, because the log is still
+    // honestly answering with the row it has, and a delete would come back from the dead.
+    private func holding(_ detail: SessionDetail) -> SessionDetail {
+        let owed = queue.owed(in: detail.session.id)
+        guard !owed.isEmpty else { return detail }
+        return SessionDetail(session: detail.session,
+                             sets: detail.sets.compactMap { set -> TrainingSet? in
+                                 guard let mine = owed.first(where: { $0.set.id == set.id }) else { return set }
+                                 return mine.owes == .delete ? nil : mine.set
+                             })
+    }
+
+    // FIX A SET (§G18). Local-first exactly as logging one is: the corrected row is on this device
+    // and on screen before the log is consulted, and the wire write rides the same queue with the
+    // same lanes, the same retry cadence and the same verdicts by code. It cannot fail here — a
+    // correction the log will never take is SAID afterwards, in the banner every lost write rides.
+    //
+    // WHERE THE SET LIVES DECIDES WHICH WRITE THIS IS, and `logHasNeverSeen` below is the whole of
+    // that question. A session still on this device's shelf is corrected THERE, so the claim replays
+    // the corrected set and never the original; a row still owed as an append is rewritten in the
+    // queue; only a row the log actually holds is corrected over the wire. No path can reach
+    // `gym_sessions.plan` or a routine — the log moves and the program does not.
+    @discardableResult
+    public func fix(_ set: TrainingSet, in sessionId: String, by correction: SetFix) async -> TrainingSet {
+        let corrected = set.corrected(by: correction)
+        if localLog.holds(session: sessionId) {
+            localLog.fix(set: set.id, in: sessionId, by: correction)
+            localLog.flush()
+            // The log's row for a shelf session is this device's own arithmetic, so it is recomputed
+            // here — the tonnage and the top set both move when a working set does.
+            recent = mergedRecent(served)
+            return corrected
+        }
+        if logHasNeverSeen(set.id, in: sessionId) {
+            queue.rewrite(corrected, in: sessionId)
+            queue.flush()
+            drawFromQueue()
+            await deliver()
+            return corrected
+        }
+        let said = refusals.count
+        queue.fix(corrected, in: sessionId)
+        queue.flush()
+        await deliver()
+        // WHAT STANDS, WHICH IS NOT ALWAYS WHAT WAS ASKED FOR. A change the log refused outright is
+        // not a change: the row is still on the log under the numbers it had, and the screen is told
+        // so here rather than drawing a correction that never happened underneath a banner saying it
+        // never happened. Only refusals THIS call collected are read — an older loss for the same
+        // set is still on the banner, and would otherwise answer for a write nobody has made yet.
+        let refused = refusals.dropFirst(said).contains {
+            guard case .change(let lost) = $0 else { return false }
+            return lost.id == set.id
+        }
+        return refused ? set : corrected
+    }
+
+    // DELETE A SET (§G18) — the one place in gym where a set the log already holds can be taken away,
+    // and the sheet that offers it promises nothing about getting it back. What it does offer is the
+    // same nine seconds the logger's Undo keeps, because a training log is a multi-year artifact
+    // nobody can regenerate and a destruction with no way back is the one thing this screen could get
+    // wrong that a lifter could not repair.
+    //
+    // The homes again, and the deletion is remembered across all of them so one Undo answers any.
+    public func delete(_ set: TrainingSet, in sessionId: String) async {
+        let until = now() + undoWindowMs
+        taken = Deletion(set: set, sessionId: sessionId, untilMs: until)
+        if localLog.holds(session: sessionId) {
+            localLog.drop(set: set.id, in: sessionId)
+            localLog.flush()
+            recent = mergedRecent(served)
+            return
+        }
+        // A row the log has never been told about is taken back HERE and no wire write is ever
+        // enqueued: the id names nothing on the log, so a DELETE would be a write about nothing —
+        // benign today only because the route is unconditionally idempotent. Letting the queue's own
+        // row go IS the whole deletion; the queue was that set's only home, and the Undo below puts
+        // it back the same way.
+        if logHasNeverSeen(set.id, in: sessionId) {
+            queue.drop(set.id)
+            queue.flush()
+            drawFromQueue()
+            return
+        }
+        queue.delete(set, in: sessionId, heldUntilMs: until)
+        queue.flush()
+        await deliver()
+    }
+
+    // The delete taken back, inside its window and never after it: past that the row has left the log
+    // and no route brings it home, which is exactly what the sheet declines to promise.
+    //
+    // THE RECORD IS LET GO ONLY ONCE A REPAIR HAS TAKEN. Clearing it first and then finding the home
+    // it named already gone — the claim empties this shelf on the queue's own cadence, so an ordinary
+    // return to signal does it — is how an Undo ends with the offer off the screen, the row put back
+    // nowhere, and nothing said.
+    @discardableResult
+    public func restore() async -> Bool {
+        guard let taken = restorable else { return false }
+        // The shelf still holding the session is what says the row came off it, and the row simply
+        // goes back — in its performed place, because `keep` sorts.
+        if let local = localLog.session(taken.sessionId) {
+            localLog.keep(local.session, sets: local.sets + [taken.set])
+            localLog.flush()
+            recent = mergedRecent(served)
+            self.taken = nil
+            return true
+        }
+        // The log holds the session and the repair is the DELETE the queue has not sent yet.
+        if queue.restore(taken.set.id) {
+            queue.flush()
+            drawFromQueue()
+            self.taken = nil
+            return true
+        }
+        // Neither, and there are two ways here: the row was withdrawn from the queue because the log
+        // had never seen it, or the claim filed its whole session on the account mid-window and took
+        // the shelf with it. One repair covers both — a set only ever reaches the log one way, so it
+        // goes back as an APPEND under its own idempotent id. A session the log has since closed
+        // refuses that append, and the refusal is SAID with the numbers on it: the one thing this
+        // store may never do with a set somebody lifted is lose it quietly.
+        self.taken = nil
+        queue.store(taken.set, in: taken.sessionId, needsPush: true)
+        queue.flush()
+        drawFromQueue()
+        await deliver()
+        return true
+    }
+
+    // WHETHER THE LOG HAS EVER BEEN TOLD ABOUT THIS ROW — the question §G18's two writes turn on, and
+    // there are THREE homes to ask it of rather than two. The shelf is the first and both callers ask
+    // it directly. The other two live in the queue: a session composed on this device that no account
+    // has claimed yet — gym's default state since the room opened anonymous-first — and a set logged
+    // seconds ago whose append is still owed. The server has no id for either, so a PATCH or a DELETE
+    // naming one is a write about nothing, and the PATCH is worse than nothing: filed over the append
+    // it destroys the only copy of a set on its way to a log that never heard of it. `discard` one
+    // screen up already asks the middle question.
+    private func logHasNeverSeen(_ setId: String, in sessionId: String) -> Bool {
+        if queue.sessionIsUnclaimed, queue.session?.id == sessionId { return true }
+        return queue.owes(setId) == .append
     }
 
     // ONE MOVEMENT'S RECORD (§H). Nothing is held: the store keeps no copy to invalidate, so there
@@ -779,18 +946,55 @@ public final class TrainingStore: ObservableObject {
         let parked = queue.sessionIsUnclaimed ? queue.session?.id : nil
         var blocked: Set<SetQueue.Lane> = Set(parked.map { queue.owed(in: $0).map(\.lane) } ?? [])
         var refusal: String?
+        // Whether anything this walk landed changed a session that is already HISTORY — a correction
+        // or a deletion does, an append into the live workout does not.
+        var movedHistory = false
         while let owed = queue.nextOwed(skipping: blocked, readyAt: force ? nil : now()) {
             do {
-                let stored = try await gym.appendSet(to: owed.sessionId, SetWrite(owed.set))
-                queue.delivered(stored, for: owed.set.id, in: owed.sessionId)
+                switch owed.write {
+                case .append:
+                    let stored = try await gym.appendSet(to: owed.sessionId, SetWrite(owed.set))
+                    queue.delivered(stored, for: owed.set.id, in: owed.sessionId)
+                case .fix:
+                    let stored = try await gym.fixSet(owed.set.id, in: owed.sessionId,
+                                                      SetFix(weightKg: owed.set.weightKg,
+                                                             reps: owed.set.reps, kind: owed.set.kind))
+                    queue.delivered(stored, for: owed.set.id, in: owed.sessionId)
+                    movedHistory = true
+                case .delete:
+                    try await gym.deleteSet(owed.set.id, in: owed.sessionId)
+                    queue.drop(owed.set.id)
+                    movedHistory = true
+                }
             } catch {
                 let verdict = Verdict(refusing: error)
-                if let reason = verdict.terminalReason(afterRemints: owed.remints) {
-                    // Removed and SAID, never swallowed. This is the only copy left of a set somebody
-                    // lifted, and a queue that dropped it quietly would count the loss as intended.
+                // `set-not-found` NAMES a row the write expects to already be there, which makes it a
+                // CHANGE's word and never an append's. Today's log emits it from one handler and an
+                // append cannot honestly meet it — but nothing on either side of the wire pins that,
+                // and a queue that dropped a set on a code it was never sent would be losing training
+                // to a server change nobody here would see. An append keeps waiting instead.
+                if case .gone = verdict, owed.write == .append {
+                    blocked.insert(owed.lane)
+                    continue
+                }
+                // A SPENT ID IS AN APPEND'S REPAIR AND ONLY AN APPEND'S: a correction and a deletion
+                // NAME a row that already stands, so a fresh id would send the write at a set nobody
+                // has ever logged. Spending their whole budget up front is how that is said — the
+                // collision is simply terminal for them, in the log's own words.
+                let budget = owed.write == .append ? owed.remints : SetQueue.maxRemints
+                if let reason = verdict.terminalReason(afterRemints: budget) {
+                    // Removed and SAID, never swallowed. A lost APPEND is the only copy left of a set
+                    // somebody lifted; a lost correction or deletion is a set the log still holds
+                    // under numbers the lifter tried to move it off. Two losses, two sentences, one
+                    // banner — and a queue that dropped either quietly would count it as intended.
                     queue.drop(owed.set.id)
-                    refusals.append(.set(RefusedSet(owed.set, reason: reason)))
-                    refusal = reason
+                    refusals.append(owed.write == .append
+                                    ? .set(RefusedSet(owed.set, reason: reason))
+                                    : .change(RefusedSet(owed.set, reason: reason)))
+                    // The NOTE under the logger speaks for the set the lifter just logged, so only an
+                    // append's loss moves it. A change that will never land is said in the banner and
+                    // nowhere else — the row it names is still on the log, under the numbers it had.
+                    if owed.write == .append { refusal = reason }
                     continue
                 }
                 if case .remint = verdict {
@@ -803,36 +1007,49 @@ public final class TrainingStore: ObservableObject {
 
         queue.flush()
         drawFromQueue()
+        // The log's row for a past session — its working count, its tonnage, its top e1RM, its gold
+        // dot — is the SERVER's arithmetic over the sets it holds, and a correction moves all of
+        // them. A stale row beside a session the lifter just changed is the screen disagreeing with
+        // the log about a number they moved themselves.
+        if movedHistory { await loadLog() }
 
         // WHAT IS STILL OWED IS OWED WHATEVER ELSE THE WALK MET. The next attempt is scheduled off
         // the queue before anything is said, because a refusal in one lane must not take the retry
         // away from a set merely jammed in another: nothing else carries that one, and returning at
-        // the refusal left it on the device with no task at all until the next tap. Parked sets are
-        // not carried by the WALK at all — the claim is their road, riding the same beat when it is
-        // owed retryably — and they read "saved on this device", which is exactly where they are.
+        // the refusal left it on the device with no task at all until the next tap. It is scheduled
+        // off EVERY write still carried — a correction jammed behind a 500 needs the cadence exactly
+        // as much as a set does. Parked sets are not carried by the WALK at all — the claim is their
+        // road, riding the same beat when it is owed retryably.
         let carried = queue.pending.filter { $0.sessionId != parked }
-        guard let earliestReady = carried.map({ $0.heldUntilMs ?? 0 }).min() else {
+        if let earliestReady = carried.map({ $0.heldUntilMs ?? 0 }).min() {
+            let waiting = earliestReady - now()
+            scheduleDeliver(after: waiting > 0 ? .milliseconds(waiting) : retryAfter)
+        } else if claimOwedRetryably {
             // Nothing for the walk to carry — but a claim still owed retryably is the parked
             // sets' own road, and this walk just cancelled the task that was carrying it.
-            if claimOwedRetryably { scheduleDeliver(after: retryAfter) }
-            if let refusal {
-                settle(.refused(refusal))
-                return
-            }
-            settle(queue.pending.isEmpty ? .onTheLog : .onThisDevice)
-            return
+            scheduleDeliver(after: retryAfter)
         }
-        // A set the walk never offered is not a set that failed. Everything owed being inside its own
-        // undo window means this device is holding them ON PURPOSE, so the next walk is the one that
-        // opens — and saying "offline" over a send nobody has attempted would put the wrong word
-        // under a healthy connection.
-        let waiting = earliestReady - now()
-        scheduleDeliver(after: waiting > 0 ? .milliseconds(waiting) : retryAfter)
+
+        // AND THE WORD IS ABOUT SETS THIS DEVICE IS THE ONLY HOME OF. A correction is not one of
+        // them — the log holds that row already — so a fix jammed behind a 500 for a session from
+        // last week may not put "offline · saved here" under a set that landed a second ago, which
+        // is the one thing this note exists to state. `strandedCount` and `stalled` were taught the
+        // same distinction; a change that is lost for good is said in the banner instead.
         if let refusal {
             settle(.refused(refusal))
             return
         }
-        guard waiting > 0 else {
+        let owedSets = queue.pending.filter { $0.owes == .append }
+        // A set the walk never offered is not a set that failed. Everything owed being inside its own
+        // undo window means this device is holding them ON PURPOSE, so the next walk is the one that
+        // opens — and saying "offline" over a send nobody has attempted would put the wrong word
+        // under a healthy connection. Parked sets read "saved on this device", which is where they are.
+        guard let earliestSet = owedSets.filter({ $0.sessionId != parked })
+            .map({ $0.heldUntilMs ?? 0 }).min() else {
+            settle(owedSets.isEmpty ? .onTheLog : .onThisDevice)
+            return
+        }
+        guard earliestSet - now() > 0 else {
             settle(.offline)
             return
         }
@@ -1064,8 +1281,22 @@ public final class TrainingStore: ObservableObject {
             }
         }
 
-        for set in local.sets {
-            var write = set
+        // THE SHELF IS RE-READ PER SET rather than walked off the snapshot taken above, and §G18 is
+        // why: a lifter can correct or delete a set of a session that is still this device's while
+        // this replay is parked on a slow call. Off the snapshot that correction would land on the
+        // account as the ORIGINAL number, or a deleted set would be resurrected there — and the
+        // shelf that held the truth is cleared the moment this session finishes.
+        //
+        // What is left is one race and it is stated rather than hidden: a repair made AFTER its own
+        // set has already gone out, but before the finish below clears the shelf, is lost — the log
+        // has the original and no copy survives to correct it from. It is a window of milliseconds
+        // against a session the lifter is watching being claimed, and the cost is a correction that
+        // has to be made again, never a set.
+        for id in local.sets.map(\.id) {
+            guard let held = localLog.session(local.session.id)?.sets.first(where: { $0.id == id }) else {
+                continue
+            }
+            var write = held
             var remints = 0
             var settled = false
             while !settled {
@@ -1074,6 +1305,10 @@ public final class TrainingStore: ObservableObject {
                     settled = true
                 } catch {
                     let verdict = Verdict(refusing: error)
+                    // The claim only ever appends, and `set-not-found` is not an append's word (the
+                    // walk says why): the set stays on the shelf and the cadence tries again rather
+                    // than the only copy of it being dropped over a code it was never sent.
+                    if case .gone = verdict { return (nil, .retry) }
                     if case .remint = verdict, remints < SetQueue.maxRemints {
                         remints += 1
                         let fresh = mintSet()
@@ -1178,19 +1413,34 @@ public final class TrainingStore: ObservableObject {
         return .retry
     }
 
+    // THE LOG, READ AGAIN — and never shallower than it already was. `served` is both what the log
+    // draws and the cursor `loadOlder` pages from, so an answer of one page would scroll a lifter who
+    // had loaded three back to the top and take the older two with it — including, whenever the
+    // session a correction was just made in is older than a page, the session they are standing in.
+    // The depth is what they asked for themselves, so re-reading it costs one round trip per page
+    // they scrolled and only on the reads that change history.
     private func loadLog() async {
         guard let gym else { return }
         logFoot = .loading
-        guard let page = try? await gym.sessions(before: nil, beforeId: nil, limit: Self.logPage) else {
-            // The rows already on screen stay — they are real sessions and worth reading — and the
-            // foot says the read failed rather than that the log ends here. A screen admitting it
-            // could not load has not earned the right to also name somebody's first session.
-            logFoot = .failed
-            return
+        var read: [SessionSummary] = []
+        var more = true
+        while more, read.count < max(served.count, Self.logPage) {
+            guard let page = try? await gym.sessions(before: read.last?.session.startedAtMs,
+                                                     beforeId: read.last?.id,
+                                                     limit: Self.logPage) else {
+                // The rows already on screen stay — they are real sessions and worth reading — and
+                // the foot says the read failed rather than that the log ends here. A screen
+                // admitting it could not load has not earned the right to also name somebody's
+                // first session.
+                logFoot = .failed
+                return
+            }
+            read += page
+            more = page.count == Self.logPage
         }
-        served = page
-        logFoot = page.count < Self.logPage ? .bottom : .more
-        recent = mergedRecent(page)
+        served = read
+        logFoot = more ? .more : .bottom
+        recent = mergedRecent(read)
 
         // A page read while the claim is mid-replay may hold the replay's own past session open.
         // The merge above stands — history is history — but nothing is settled or adopted off it:
@@ -1198,7 +1448,7 @@ public final class TrainingStore: ObservableObject {
         // and closing would act on a picture the replay is still changing. The read after the
         // claim ends decides.
         guard !claiming else { return }
-        guard let open = page.first(where: { $0.session.isOpen }) else {
+        guard let open = read.first(where: { $0.session.isOpen }) else {
             // The log holds no open session, so whatever this device was holding is over — a finish
             // from another surface, or the four-hour auto-close. The session row goes; a set that is
             // still OWED does not, because a set nobody has answered for has not been refused. An
@@ -1290,12 +1540,15 @@ public final class TrainingStore: ObservableObject {
         // strip would otherwise flash for nine seconds after every set on a healthy connection.
         // Signed out nothing is stranded, and neither is a set parked behind an unclaimed session:
         // there is no log those sets could have reached yet, which is a different fact with its own
-        // word.
+        // word. Nor is a correction or a deletion still owed — the log holds those rows, so they are
+        // not sets this device is the only home for.
         let instant = now()
         let parked = queue.sessionIsUnclaimed ? queue.session?.id : nil
         strandedCount = gym == nil
             ? 0
-            : queue.pending.filter { !$0.isHeld(at: instant) && $0.sessionId != parked }.count
+            : queue.pending.filter {
+                $0.owes == .append && !$0.isHeld(at: instant) && $0.sessionId != parked
+            }.count
         redial()
     }
 

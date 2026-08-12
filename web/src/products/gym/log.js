@@ -355,8 +355,9 @@ export function onThisDevice(session) {
 // the three record rules — best e1RM, most reps at a load, heaviest load — walked over the log's
 // working sets in order (backend domain/Review.h). Nothing on this surface re-derives one.
 //
-// IT IS JUDGED AGAINST THE LOG AS IT IS NOW, never frozen at the finish. W3's corrections will move
-// records, and a dot that went on lying after a fix would be worse than no dot at all. The field is
+// IT IS JUDGED AGAINST THE LOG AS IT IS NOW, never frozen at the finish — which is load-bearing
+// since §G18: a correction moves records, and the log is re-read the moment one lands (Log.jsx),
+// because a dot that went on lying after a fix would be worse than no dot at all. The field is
 // always sent, so a row from a deployment that does not send it wears nothing rather than claiming
 // the session earned nothing — which is why this asks for the true and not for the absence of false.
 export function hasRecord(session) {

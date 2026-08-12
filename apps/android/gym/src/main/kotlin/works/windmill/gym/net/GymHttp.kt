@@ -15,6 +15,7 @@ import works.windmill.gym.domain.SessionFinish
 import works.windmill.gym.domain.SessionShare
 import works.windmill.gym.domain.SessionStart
 import works.windmill.gym.domain.SessionSummary
+import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.store.RefusalFacts
@@ -26,6 +27,7 @@ import works.windmill.platform.net.WindmillApiException
 //   GET  /v1/gym/exercises            ·  POST  /v1/gym/exercises
 //   GET  /v1/gym/exercises/:id/record ·  PATCH /v1/gym/exercises/:id
 //   POST /v1/gym/sessions             ·  POST /v1/gym/sessions/:id/sets
+//   PATCH /v1/gym/sessions/:id/sets/:setId  ·  DELETE /v1/gym/sessions/:id/sets/:setId
 //   POST /v1/gym/sessions/:id/finish  ·  DELETE /v1/gym/sessions/:id
 //   GET  /v1/gym/sessions?before=&beforeId=&limit=   ·  GET /v1/gym/sessions/:id
 //   GET  /v1/gym/sessions/:id/review  ·  GET /v1/gym/last?exercise=
@@ -59,6 +61,13 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
 
     override suspend fun appendSet(sessionId: String, write: SetWrite): TrainingSet =
         api.send<TrainingSet>("POST", "/v1/gym/sessions/$sessionId/sets", write)
+
+    override suspend fun fixSet(sessionId: String, setId: String, fix: SetFix): TrainingSet =
+        api.send<TrainingSet>("PATCH", "/v1/gym/sessions/$sessionId/sets/$setId", fix)
+
+    override suspend fun deleteSet(sessionId: String, setId: String) {
+        api.send<Unit>("DELETE", "/v1/gym/sessions/$sessionId/sets/$setId")
+    }
 
     override suspend fun finishSession(sessionId: String, finishedAtMs: Long): Session =
         api.send<Session>("POST", "/v1/gym/sessions/$sessionId/finish", SessionFinish(finishedAtMs))

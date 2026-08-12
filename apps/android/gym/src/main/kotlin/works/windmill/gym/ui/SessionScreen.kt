@@ -3,6 +3,8 @@ package works.windmill.gym.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,18 +19,26 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import works.windmill.gym.domain.CoachDoors
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.Ladder
@@ -40,6 +50,7 @@ import works.windmill.gym.domain.SessionDetail
 import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.store.FixOutcome
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.WriteFailure
@@ -51,9 +62,14 @@ import works.windmill.platform.design.WindmillSpace
 // the reason this screen exists rather than being a list of numbers. Dim is the plan, bright is the
 // lifter. A miss gets one line and no scolding.
 //
-// It draws no editing of any kind. The log is append-only, the phone owns the OPEN session, and
-// correcting a past set is W3 — so no set here says `tap to fix`, because a set that cannot be
-// fixed may not be drawn as though it could.
+// AND IT IS WHERE A SET IS FIXED. Tapping any set opens §G18 over this screen: weight, reps, kind,
+// or gone. The log moves and the routine does not — the frozen plan beside these rows is a
+// snapshot, so what it says about last Tuesday cannot be rewritten by a repair made today.
+//
+// The affordance is drawn the way §G17 draws it: the row under the thumb raises and says `tap to
+// fix`, where at rest it says what the plan made of the set. That is the trade the design makes and
+// it is the right one — `tap to fix` on forty rows at once would cost every one of them the line
+// this screen exists to print.
 
 // The sets of a session as they are read back: grouped by movement in the order the movements were
 // first touched, and inside a movement in the order the sets were performed. That is the order the
@@ -76,7 +92,16 @@ object Performed {
         data object Silent : Against
     }
 
-    data class Row(val id: String, val effort: String, val kind: SetKind, val note: Note?)
+    // One performed set, ready to draw and ready to fix: the row WHOLE, because the sheet that
+    // corrects it needs every field back; the number the log knows it by; and the one line the plan
+    // gets to say about it. `setNumber` is the log's own and the position is only the fallback for a
+    // session no account has numbered yet — after a delete the log keeps the gap, so 1 and 3 stand
+    // beside each other and the next set still mints 4.
+    data class Row(val set: TrainingSet, val number: Int, val note: Note?) {
+        val id: String get() = set.id
+        val kind: SetKind get() = set.kind
+        val effort: String get() = Readout.effort(set.weightKg, set.reps)
+    }
 
     data class Movement(
         val id: String,
@@ -104,11 +129,10 @@ object Performed {
                 id = exerciseId,
                 movement = Readout.movement(exerciseId, catalog),
                 against = against,
-                rows = mine.map { set ->
+                rows = mine.mapIndexed { index, set ->
                     Row(
-                        id = set.id,
-                        effort = Readout.effort(set.weightKg, set.reps),
-                        kind = set.kind,
+                        set = set,
+                        number = set.setNumber ?: (index + 1),
                         // A set the plan never asked for is not measured against it and still says
                         // what it was: a warmup, a drop, a set taken to failure. Only a working set
                         // is read against a target, because only a working set counts toward one.
@@ -174,20 +198,46 @@ object Performed {
     }
 }
 
-// The store stays for the two reads a revisit is made of (the sets, the review); only the share
-// half crosses through CoachDoors, because the mint and the revoke are the two writes this screen
-// may reach.
+// The store stays for the two reads a revisit is made of (the sets, the review) and for the two
+// writes §G18 adds; only the share half crosses through CoachDoors, because the mint and the revoke
+// belong to a card that is otherwise none of this screen's business.
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SessionScreen(
     summary: SessionSummary,
     store: TrainingStore,
     coach: CoachDoors,
+    say: (String?) -> Unit,
     onOpenMovement: (String) -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
     var detail by remember(summary.id) { mutableStateOf<SessionDetail?>(null) }
     var setsFailure by remember(summary.id) { mutableStateOf<WriteFailure?>(null) }
     var review by remember(summary.id) { mutableStateOf<Review?>(null) }
     var read by remember(summary.id) { mutableStateOf(false) }
+    var fixing by remember(summary.id) { mutableStateOf<String?>(null) }
+    // How many corrections §G18 has landed from this screen. It is half of the review's key — the
+    // session's id does not change when its sets do — and `store.deletedSets` is the other half,
+    // which is the store's own record of the rows it has taken off the log.
+    var corrected by remember(summary.id) { mutableStateOf(0) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    // THE HEAD FOLLOWS THE LOG, not the row that pushed this screen. A fix moves the working count,
+    // the tonnage and the top e1RM, and a header still printing what the list held when the thumb
+    // landed would be this wave writing its own false line.
+    val standing = store.recent.firstOrNull { it.id == summary.id } ?: summary
+    // A delete this device is still holding, and the ones it has already made. Both are filtered out
+    // of what is drawn: the first because it can still come back, the second because the copy in
+    // hand was read before the row left the log.
+    val withheld = store.withheld?.takeIf { it.sessionId == summary.id }
+    // Null until the read lands, which is a different silence from a session with no sets in it.
+    val movements = detail?.let { held ->
+        Performed.movements(
+            held.sets.filterNot { it.id in store.deletedSets || it.id == withheld?.set?.id },
+            store.catalog,
+            held.session.plan,
+        )
+    }
 
     // Two reads, and neither one blocks the other: the sets are the session and the review is what
     // the domain makes of it, so a screen missing one still says everything it can about the other.
@@ -196,8 +246,34 @@ fun SessionScreen(
             is GymResult.Ok -> detail = found.value
             is GymResult.Failed -> setsFailure = found.why
         }
+    }
+
+    // THE REVIEW FOLLOWS THE SETS, and that is why it has its own effect and its own key. It is the
+    // domain's reading of exactly the rows drawn above it — the record sentence, the comparison
+    // against the last time this routine ran — so a working set corrected into a warmup moves it,
+    // and a review still in the hand from before the fix would sit eight lines under sets that
+    // disagree with it. The gold dot may not lie after a correction; neither may a sentence.
+    //
+    // A delete keys off `deletedSets` rather than off the gesture, and the difference is the only
+    // one that matters: it grows when the log has ACTUALLY taken the row — a withheld delete inside
+    // its window has told nobody, and a settle the log refused has changed nothing to re-read.
+    LaunchedEffect(summary.id, corrected, store.deletedSets) {
         review = store.review(summary.id)
         read = true
+    }
+
+    // The withheld delete's own clock, hosted where the row it took is drawn — the sheet closes on
+    // the gesture, and the set has to be visible as taken while it can still come back. Leaving the
+    // room settles whatever is left of it (GymRoom's dispose), so a window nobody waited out is not
+    // a delete nobody made.
+    LaunchedEffect(withheld) {
+        val holding = withheld ?: return@LaunchedEffect
+        delay(holding.untilMs - System.currentTimeMillis())
+        store.settleWithheld()?.let { say(it.line("that set is still on the log")) }
+    }
+
+    fun close() {
+        scope.launch { sheetState.hide() }.invokeOnCompletion { fixing = null }
     }
 
     Column(
@@ -208,10 +284,11 @@ fun SessionScreen(
             .padding(horizontal = WindmillSpace.x5)
             .padding(top = WindmillSpace.x2, bottom = WindmillSpace.x8),
     ) {
-        SessionHead(summary)
-        SetsBlock(detail, setsFailure, store.catalog, onOpenMovement)
+        SessionHead(standing)
+        SetsBlock(movements, setsFailure, onOpenMovement, onFix = { fixing = it })
+        withheld?.let { WithheldRow(it.set, onUndo = { store.keepWithheld() }) }
         // The section's whole thesis, and the reason the plan line is dim and the sets are not.
-        if (detail != null && summary.plan != null) {
+        if (movements != null && standing.plan != null) {
             Text(
                 "Dim is what the plan said. Bright is what you did. A miss gets one line and no scolding.",
                 style = WindmillFont.body(13).copy(lineHeight = 19.sp),
@@ -222,6 +299,68 @@ fun SessionScreen(
         // cannot say: the record, and the comparison against the last time this routine ran.
         if (read) ReviewRemarks(review, store.catalog)
         CoachShareCard(coach, summary.id)
+    }
+
+    // Resolved off the rows being drawn rather than held as a copy: the sheet is an editor over a
+    // row that is still the screen's, and a second copy of it here would be a second answer to
+    // "what does this set say" the moment a fix lands.
+    val open = movements.orEmpty().firstNotNullOfOrNull { movement ->
+        movement.rows.firstOrNull { it.id == fixing }?.let { movement.movement to it }
+    }
+    if (open != null) {
+        ModalBottomSheet(
+            onDismissRequest = { close() },
+            sheetState = sheetState,
+            containerColor = GymSkin.surface,
+            dragHandle = null,
+        ) {
+            val (movement, row) = open
+            FixSheet(
+                set = row.set,
+                movement = movement,
+                setNumber = row.number,
+                routine = standing.plan?.routine,
+                onSave = { fix ->
+                    close()
+                    say(null)
+                    scope.launch {
+                        when (val ended = store.fixSet(summary.id, row.id, fix)) {
+                            is FixOutcome.Corrected -> {
+                                detail = detail?.let { held ->
+                                    held.copy(sets = held.sets.map {
+                                        if (it.id == row.id) ended.set else it
+                                    })
+                                }
+                                corrected += 1
+                            }
+                            // The log does not hold that row at all, so the drawn one is stale: it
+                            // goes, and the sentence says why rather than offering a retry onto
+                            // nothing.
+                            is FixOutcome.Gone -> {
+                                detail = detail?.let { held ->
+                                    held.copy(sets = held.sets.filterNot { it.id == row.id })
+                                }
+                                say(ended.said)
+                                corrected += 1
+                            }
+                            is FixOutcome.Failed -> say(ended.why.line("that set wasn’t changed"))
+                        }
+                    }
+                },
+                // Nothing is told yet. The row comes off the screen and the window opens — the log
+                // has no undelete, so the only moment this can be taken back is before it is sent.
+                // A second delete inside the first one's window sends the first: there is one slot,
+                // and a gesture that destroys something may never quietly destroy nothing.
+                onDelete = {
+                    close()
+                    say(null)
+                    scope.launch {
+                        store.withhold(summary.id, row.set)
+                            ?.let { say(it.line("that set is still on the log")) }
+                    }
+                },
+            )
+        }
     }
 }
 
@@ -274,16 +413,14 @@ private fun SessionHead(summary: SessionSummary) {
 
 @Composable
 private fun SetsBlock(
-    detail: SessionDetail?,
+    movements: List<Performed.Movement>?,
     setsFailure: WriteFailure?,
-    catalog: List<Exercise>,
     onOpenMovement: (String) -> Unit,
+    onFix: (String) -> Unit,
 ) {
-    if (detail != null) {
+    if (movements != null) {
         Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
-            Performed.movements(detail.sets, catalog, detail.session.plan).forEach { movement ->
-                MovementCard(movement, onOpenMovement)
-            }
+            movements.forEach { movement -> MovementCard(movement, onOpenMovement, onFix) }
         }
         return
     }
@@ -299,11 +436,16 @@ private fun SetsBlock(
     }
 }
 
-// The movement's NAME is a door onto its record (§H) — the one tappable thing on this screen, and
-// the sets under it are deliberately not: correcting a past set is W3, and a set that cannot be
-// fixed may not be drawn as though it could.
+// TWO DOORS AND THEY DO NOT COLLIDE. The movement's NAME opens its record (§H) — a name is the one
+// thing about a movement that can change, and the page behind it is where it changes. Each SET under
+// it opens §G18 over this screen. The head is a row of its own and the sets are rows of their own,
+// so no tap is ambiguous about which of the two it meant.
 @Composable
-private fun MovementCard(movement: Performed.Movement, onOpenMovement: (String) -> Unit) {
+private fun MovementCard(
+    movement: Performed.Movement,
+    onOpenMovement: (String) -> Unit,
+    onFix: (String) -> Unit,
+) {
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         modifier = Modifier
@@ -335,43 +477,57 @@ private fun MovementCard(movement: Performed.Movement, onOpenMovement: (String) 
                 Performed.Against.Silent -> Unit
             }
         }
-        movement.rows.forEach { performed -> SetRow(performed) }
+        movement.rows.forEach { performed -> SetRow(performed, onFix) }
     }
 }
 
 // A set that counts toward nothing is drawn in the ink that says so — the tick is the room's
 // "logged, settled, not celebrated", and a warmup does not get one.
+//
+// UNDER THE THUMB IT SAYS WHAT IT DOES, which is §G17's own drawing of this row: the ground raises
+// and the note is replaced by `tap to fix` in the accent. The indication is drawn here rather than
+// left to the platform's ripple because the design specifies the treatment — a raised ground and a
+// changed word — and a ripple over the top would be two answers to one press.
 @Composable
-private fun SetRow(set: Performed.Row) {
+private fun SetRow(set: Performed.Row, onFix: (String) -> Unit) {
+    val pressing = remember { MutableInteractionSource() }
+    val pressed by pressing.collectIsPressedAsState()
     Row(
         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = GymTap.minimum - 12.dp)
+            .clip(RoundedCornerShape(WindmillRadius.sm))
+            .background(if (pressed) GymSkin.raised else Color.Transparent)
+            .clickable(interactionSource = pressing, indication = null) { onFix(set.id) },
     ) {
         val counts = set.kind == SetKind.Working
         Text(
             if (set.kind == SetKind.Warmup) "·" else "✓",
             style = GymType.numeral(13),
             color = if (counts) GymSkin.setDone else GymSkin.warmupInk,
-            modifier = Modifier.alignByBaseline(),
         )
         Text(
             set.effort,
             style = GymType.numeral(14),
             color = if (counts) GymSkin.ink else GymSkin.warmupInk,
-            modifier = Modifier.alignByBaseline(),
         )
         Spacer(Modifier.weight(1f))
-        set.note?.let {
-            Text(
-                it.text,
-                style = GymType.numeral(11),
-                color = when {
-                    !counts -> GymSkin.warmupInk
-                    it.short -> GymSkin.inkDim
-                    else -> GymSkin.inkFaint
-                },
-                modifier = Modifier.alignByBaseline(),
-            )
+        if (pressed) {
+            Text("tap to fix", style = GymType.numeral(11, FontWeight.Bold), color = GymSkin.accent)
+        } else {
+            set.note?.let {
+                Text(
+                    it.text,
+                    style = GymType.numeral(11),
+                    color = when {
+                        !counts -> GymSkin.warmupInk
+                        it.short -> GymSkin.inkDim
+                        else -> GymSkin.inkFaint
+                    },
+                )
+            }
         }
     }
 }

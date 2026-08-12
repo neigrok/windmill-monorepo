@@ -18,6 +18,11 @@ import { fileURLToPath } from 'node:url';
 const GYM = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../src/products/gym');
 const read = (file) => fs.readFileSync(path.join(GYM, file), 'utf8');
 
+// The source with its commentary stripped — roughly, what could end up in front of a lifter, as
+// against what a file says ABOUT what it puts there. A scan for banned copy runs over this: a
+// comment has to stay free to name the promise it is refusing to make.
+const speech = (file) => read(file).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+
 // A DRAFT MAY NOT OUTLIVE THE DOCUMENT IT IS OF. The editor holds one routine under the lifter's
 // hand and nothing reaches the store until Done, so the instance is scoped to the routine id: the
 // key is what makes React drop it when the hash moves to another routine. Without it, the editor's
@@ -176,4 +181,137 @@ test('the account seat and the switcher are drawn in one place, and only outside
   // was being cleared from (gym.css) without naming the /app chrome, which products may not touch.
   assert.equal((app.match(/data-chrome=\{inShell \? 'shell' : 'own'\}/g) ?? []).length, 2);
   assert.equal(read('gym.css').includes(".gym-root[data-chrome='shell'] .gym-column {"), true);
+});
+
+// TAP TO FIX (§G17), true at last. W1b drew the row and deliberately did NOT draw the annotation,
+// because the path did not exist; §G18 built it, so the affordance lands on the same rows. Which
+// text carries a press is a fact about the JSX, and a pure module cannot be asked whether a set is
+// a door — the row is a button or the sheet is unreachable and the design's own note is a lie.
+test('every set in a session read whole is a door onto the fix, and says so', () => {
+  const source = read('Log.jsx');
+  assert.equal(source.includes('onClick={() => setFixing(set)}'), true);
+  assert.equal(source.includes('<span className="gym-set-fix">tap to fix</span>'), true);
+  // Not aria-hidden: it is the only text on the row that says what pressing it does.
+  assert.equal(source.includes('className="gym-set-fix" aria-hidden'), false);
+  // The label lands under the pointer, and on a device that has none it is simply always on —
+  // both halves in the stylesheet, because neither is expressible in the markup.
+  const css = read('gym.css');
+  assert.equal(css.includes('button.gym-set:hover .gym-set-fix,'), true);
+  assert.equal(/@media \(hover: none\) \{\s*\.gym-set-fix \{\s*opacity: 1;/.test(css), true);
+});
+
+// A DRAFT MAY NOT OUTLIVE THE DOCUMENT IT IS OF — the routine editor's rule, one room down. The
+// session detail now holds corrections it has made and a delete withheld under a running timer,
+// and a hash move to another workout with the instance kept would carry both across: the wrong
+// session drawn with another's corrections folded in, and a DELETE fired at a set id that is not
+// in the workout on screen.
+test('the session detail is keyed on the session it reads, and is handed the one voice', () => {
+  const app = read('GymApp.jsx');
+  assert.equal(app.includes('<SessionDetail key={sessionIdOf(hash)} id={sessionIdOf(hash)} log={log} />'), true);
+});
+
+// THE LADDER IS THE ONE THAT EXISTS. Lift had the same rule pasted into three targets and let them
+// drift; the sheet calls `bump` and `ladderLabels` and states no step of its own, so at 47.5 kg the
+// row reads −5 · −2.5 · +2.5 · +5 because the golden says so and not because this screen agrees.
+test('the fix sheet steps a weight on the logger’s ladder and states no step size of its own', () => {
+  assert.equal(read('fix.js').includes("import { bump, bumpReps, round } from './logger/ladder.js';"), true);
+  assert.equal(read('FixSheet.jsx').includes("import { LADDER_KEYS, ladderLabels } from './logger/ladder.js';"), true);
+  assert.equal(read('fix.js').includes('weightKg: bump(draft.weightKg, direction, big)'), true);
+  // A step in this product is 1, 2.5, 5 or 10 kg, and the fractional ones are unmistakable: neither
+  // file writes a number with a decimal point in it at all, so there is nothing here to drift.
+  for (const file of ['fix.js', 'FixSheet.jsx']) {
+    assert.equal(/\d\.\d/.test(speech(file)), false, `${file} states a weight of its own`);
+  }
+});
+
+// NOTHING PROMISES RECOVERY. The G3 canon draws a delete whose toast offers "Trash — recoverable
+// for 30 days in Settings > Trash"; §G18 is the newer decision and it draws no trash, so no copy on
+// this path may imply one. What is deleted leaves the live table — the store keeps what it took
+// where nothing reads it, and a screen that said so would be offering a door that does not exist.
+//
+// The scan is over the SPEECH and not the source, because a comment must stay free to name the
+// promise it is refusing to make. What is banned is the promise reaching a lifter.
+test('no surface of the fix promises a set back', () => {
+  for (const file of ['fix.js', 'FixSheet.jsx', 'Log.jsx', 'gymApi.js', 'gym.css']) {
+    const source = speech(file).toLowerCase();
+    for (const promise of ['30 days', 'thirty days', 'recoverable', 'restore', 'undelete', 'trash']) {
+      assert.equal(source.includes(promise), false, `${file} promises "${promise}"`);
+    }
+  }
+});
+
+// THE TAKE-BACK IS A WITHHELD WRITE, not an undo of one that happened. The DELETE goes over the
+// wire only when the window closes, so Undo is exact — and it has to be this shape: a re-posted set
+// is a NEW row minted at max+1, which would come back at the bottom of its movement instead of
+// where the lifter left it, and a store that answered the re-post late could hold both.
+test('a deleted set is withheld for the window, never sent and re-posted', () => {
+  const source = read('Log.jsx');
+  assert.equal(source.includes('setTimeout(() => sendDelete(set.id), UNDO_MS)'), true);
+  // The one call that could resurrect a set. It is not on this screen and must never be.
+  assert.equal(source.includes('appendSet'), false);
+  // And leaving the room sends what is still held rather than dropping it on the floor.
+  assert.equal(source.includes('useEffect(() => () => { withheld.current.forEach((held) => sendDelete(held.set.id)); }, [sendDelete]);'), true);
+});
+
+// A RE-READ IS THE NEWER ANSWER AND THIS SCREEN MAY NOT PAINT OVER IT. The session is read again for
+// exactly one reason — the log moved underneath — and the corrections in hand are the older answer
+// to the very question that moved: another device's write lands, and the row this screen still holds
+// an entry for is drawn from that entry instead. The rule itself is pure and pinned in fix.test.js;
+// what can only be read here is that BOTH doors into the read go through it, rather than one of them
+// calling `retry` raw and quietly keeping the moves.
+test('every re-read of the session lets go of the corrections this screen was holding', () => {
+  const source = read('Log.jsx');
+  assert.equal(source.includes('const reread = () => {\n    setMoves(movesAfterRead);\n    view.retry();\n  };'), true);
+  assert.equal(source.includes('if (error.setNotFound) reread();'), true);
+  assert.equal(source.includes('className="gym-retry" onClick={reread}'), true);
+  // One call to the read itself, and it is inside that function.
+  assert.equal((source.match(/view\.retry/g) ?? []).length, 1);
+});
+
+// THE OFFER AND THE WINDOW IT IS TRUE IN ARE THE SAME FIVE SECONDS. The toast is where Undo lives,
+// so a window longer than the toast is a take-back nobody can see and a toast longer than the
+// window is a button that has quietly stopped working. Neither module can read the other's constant
+// — fix.js is pure and useTrainingLog.js is a hook — so the equality is pinned here.
+test('the undo window is exactly as long as the toast that offers it', () => {
+  const undo = /export const UNDO_MS = (\d+);/.exec(read('fix.js'));
+  const toast = /const TOAST_MS = (\d+);/.exec(read('useTrainingLog.js'));
+  assert.equal(undo?.[1], '5000');
+  assert.equal(toast?.[1], undo?.[1]);
+});
+
+// A CLOCK CLEARS THE TOAST IT WAS SET FOR AND NEVER WHATEVER IS THERE WHEN IT FIRES. The two
+// constants above are the same five seconds by design, so the delete that closes a window speaks in
+// the same instant the toast holding its Undo runs out: React lands both updates in one batch, the
+// older clock last, and an unconditional clear takes the sentence with it — the row comes back and
+// nothing on the screen says why. Offline is exactly that shape, and it was caught in a browser
+// driving this screen rather than by reading it.
+//
+// The test runner cannot drive it: no DOM here, and the hook harness renders synchronously, which
+// cancels the old clock before it can fire (useTrainingLog.test.js says so where it stops). So what
+// is pinned is the shape that is correct in every order the two updates can arrive in — the clear
+// names the toast it belongs to.
+test('the toast’s own clock clears only that toast, never the one said after it', () => {
+  const source = read('useTrainingLog.js');
+  assert.equal(
+    source.includes('setTimeout(() => setToast((current) => (current === toast ? null : current)), TOAST_MS)'),
+    true,
+  );
+  // The unconditional clear is a deliberate move and belongs to the reader dismissing one, not to a
+  // timer: a press on × means "I have read this", and there is nothing newer for it to swallow.
+  assert.equal((source.match(/setToast\(null\)/g) ?? []).length, 1);
+  assert.equal(source.includes('dismissToast: () => setToast(null)'), true);
+});
+
+// A FINISHED SESSION IS CORRECTABLE, and the client must not invent a refusal the store does not
+// make: a lifter reads the log after the workout, which is exactly when they see the typo. There is
+// no `session-finished` and no 409 on either route, so no branch on this path may test for one.
+test('nothing on the fix path refuses a set because its workout is over', () => {
+  for (const file of ['fix.js', 'FixSheet.jsx']) {
+    const source = read(file);
+    assert.equal(source.includes('sessionFinished'), false, file);
+    assert.equal(source.includes('isFinished'), false, file);
+  }
+  // The sheet is mounted on any set of the session, not on a condition about the session — unlike
+  // the coach panel three lines above it, which is gated on the workout being over.
+  assert.equal(read('Log.jsx').includes('{fixing && (\n        <FixSheet'), true);
 });

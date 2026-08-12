@@ -19,6 +19,8 @@ namespace wm::gym {
 //   session in  : { "id": "ses_…", "startedAt": ms, "joinOpenSession"?: bool, "routineId"?: "rt_…" }
 //   set in      : { "id": "set_…", "exerciseId": "…", "weightKg": n, "reps": n, "completedAt": ms,
 //                   "kind"?: "warmup"|"working"|"drop"|"failure", "rpe"?: n, "note"?: "…" }
+//   fix in      : { "weightKg"?: n, "reps"?: n, "kind"?: "…", "rpe"?: n|null, "note"?: "…" }
+//                                                       PATCH /v1/gym/sessions/{id}/sets/{setId}
 //   routine in  : { "id": "rt_…", "name": "…", "position": n,
 //                   "entries": [ { "exerciseId": "…", "targetSets": n, "targetReps"?: n,
 //                                  "targetWeightKg"?: n, "restSeconds"?: n } ] }
@@ -105,6 +107,14 @@ namespace wm::gym {
 
 SessionStart parseSessionStart(const Json::Value& body);   // throws InvalidTraining
 SetWrite parseSetWrite(const Json::Value& body);           // throws InvalidTraining
+// A correction carries only the fields it changes, and it is STRICT about the ones it does not —
+// the rule parseExerciseRename already keeps, for the reason it keeps it: a body naming `exerciseId`
+// answered 200 with the movement unchanged would be a write doing less than it said. The three
+// fields refused here are refused on purpose and not for want of plumbing (domain/Training.h says
+// which and why). `rpe: null` is the one null that means something — clear it — and every other
+// field type-checks strictly; an EMPTY body is legal and changes nothing, which is what makes a
+// replay of a lost reply free.
+SetFix parseSetFix(const Json::Value& body);               // throws InvalidTraining
 std::uint64_t parseFinish(const Json::Value& body);        // { "finishedAt": ms }; throws InvalidTraining
 RoutineWrite parseRoutineWrite(const Json::Value& body);   // throws InvalidTraining
 ExerciseWrite parseExerciseWrite(const Json::Value& body); // throws InvalidTraining

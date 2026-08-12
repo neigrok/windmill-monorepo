@@ -1,6 +1,7 @@
 package works.windmill.gym.store
 
 import java.io.File
+import java.io.IOException
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -12,6 +13,8 @@ import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineEntry
 import works.windmill.gym.domain.Session
+import works.windmill.gym.domain.SetFix
+import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.net.FakeTraining
 import works.windmill.platform.net.Refusal
@@ -172,6 +175,200 @@ class ClaimReplayTests {
             localLog.exercises.isEmpty())
         assertTrue("and the claim moved on to the sessions", localLog.finished.isEmpty())
         assertEquals(listOf("set_a"), server.sets.getValue("ses_1").map { it.id })
+    }
+
+    // THE CORRECTION MADE SIGNED OUT SURVIVES THE CLAIM, and it is the whole of §G18's hard half.
+    // The session was never sent, so the fix rewrote the row that WILL be sent: the corrected set
+    // replays, the original never does, and there is exactly one row at the end of it.
+    @Test
+    fun testASetCorrectedBeforeTheClaimReplaysCorrectedAndNeverTwice() = runTest {
+        val server = FakeTraining()
+        val localLog = shelf()
+        localLog.hold(LocalLog.FinishedSession(
+            Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000),
+            listOf(aSet("set_a", at = 1_100))))
+        localLog.fixSet("ses_1", "set_a", SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Drop))
+
+        ClaimReplay(server, localLog, queue()).run()
+
+        assertEquals("one row, and it is the one the lifter fixed it to",
+            listOf("set_a"), server.sets.getValue("ses_1").map { it.id })
+        assertEquals(listOf(90.0), server.sets.getValue("ses_1").map { it.weightKg })
+        assertEquals(listOf(3), server.sets.getValue("ses_1").map { it.reps })
+        assertEquals(listOf(SetKind.Drop), server.sets.getValue("ses_1").map { it.kind })
+        assertEquals("the original never went out at all", listOf(90.0), server.appended.map { it.weightKg })
+        assertTrue("and nothing needed correcting after the fact", server.fixes.isEmpty())
+    }
+
+    // THE HALF-CLAIMED SESSION, which is the case that silently loses a correction. An earlier pass
+    // landed the set and then stopped retryably, so the shelf still holds the row — and a replay of
+    // an already-stored id answers with the row AS IT WAS LOGGED. The shelf is what the lifter
+    // fixed it to, so the account is moved to the shelf rather than the other way round.
+    @Test
+    fun testASetCorrectedAfterItAlreadyLandedIsMovedOnTheAccountRatherThanLostToTheReplay() = runTest {
+        val server = FakeTraining()
+        val localLog = shelf()
+        localLog.hold(LocalLog.FinishedSession(
+            Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000),
+            listOf(aSet("set_a", at = 1_100), aSet("set_b", at = 1_200))))
+        // A first pass that landed both sets and then could not close the session.
+        server.onFinish = { throw IOException("offline") }
+        assertTrue(ClaimReplay(server, localLog, queue()).run().retryable)
+        server.onFinish = {}
+
+        localLog.fixSet("ses_1", "set_a", SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working))
+        ClaimReplay(server, localLog, queue()).run()
+
+        assertEquals("still one row per set — a correction is never a second row",
+            listOf("set_a", "set_b"), server.sets.getValue("ses_1").map { it.id })
+        assertEquals(listOf(90.0, 82.5), server.sets.getValue("ses_1").map { it.weightKg })
+        assertEquals("only the set that actually moved was corrected",
+            listOf(Triple("ses_1", "set_a", SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working))),
+            server.fixes)
+        assertTrue("and the session settled", localLog.finished.isEmpty())
+    }
+
+    // ...and the delete's own half. Dropping the set from the shelf alone would let the survivors
+    // replay and leave the deleted one standing on the account forever — the delete undoing itself.
+    // The tombstone is what tells the log, and a DELETE is 204 for a set it never had.
+    @Test
+    fun testASetDeletedAfterItAlreadyLandedIsTakenOffTheAccountByItsTombstone() = runTest {
+        val server = FakeTraining()
+        val localLog = shelf()
+        localLog.hold(LocalLog.FinishedSession(
+            Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000),
+            listOf(aSet("set_a", at = 1_100), aSet("set_b", at = 1_200))))
+        server.onFinish = { throw IOException("offline") }
+        assertTrue(ClaimReplay(server, localLog, queue()).run().retryable)
+        server.onFinish = {}
+
+        localLog.deleteSet("ses_1", "set_a")
+        ClaimReplay(server, localLog, queue()).run()
+
+        assertEquals(listOf("set_b"), server.sets.getValue("ses_1").map { it.id })
+        assertEquals(listOf("ses_1" to "set_a"), server.removed)
+        assertTrue("the session settled and left the shelf with its tombstones",
+            localLog.finished.isEmpty())
+    }
+
+    // THE CORRECTION MADE WHILE THE CLAIM IS WALKING, which is the window a snapshot of the shelf
+    // loses. `connect` publishes the shelf's rows BEFORE the claim starts and the deliver cadence
+    // re-runs it every few seconds, so a session being replayed is a session on screen: the lifter
+    // fixes a set while the pass is out on the wire, and it is written to the row behind the walk.
+    // A snapshot would send the numbers they fixed away from and then forget the row holding the
+    // repair — the correction lost with nothing said. Every pass re-reads instead.
+    @Test
+    fun testASetCorrectedWhileTheClaimIsWalkingIsCarriedRatherThanForgottenWithTheRow() = runTest {
+        val server = FakeTraining()
+        val localLog = shelf()
+        localLog.hold(LocalLog.FinishedSession(
+            Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000),
+            listOf(aSet("set_a", at = 1_100), aSet("set_b", at = 1_200))))
+        server.onAppend = { write ->
+            if (write.id == "set_b") {
+                localLog.fixSet("ses_1", "set_a", SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working))
+            }
+        }
+
+        ClaimReplay(server, localLog, queue()).run()
+
+        assertEquals("one row per set, still", listOf("set_a", "set_b"),
+            server.sets.getValue("ses_1").map { it.id })
+        assertEquals("and the account holds what the lifter fixed it to",
+            listOf(90.0, 82.5), server.sets.getValue("ses_1").map { it.weightKg })
+        assertEquals(listOf(Triple("ses_1", "set_a",
+            SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working))), server.fixes)
+        assertTrue(localLog.finished.isEmpty())
+    }
+
+    // ...and the same window over the CLOSE, which is the last round trip before the row is
+    // forgotten. Neither route refuses a set in a finished session — a lifter reads the log after
+    // the workout, which is exactly when they see the typo — so the delete still goes, and the row
+    // is forgotten only by a pass that found nothing left to do.
+    @Test
+    fun testASetDeletedWhileTheClaimIsClosingTheSessionIsStillTakenOffTheAccount() = runTest {
+        val server = FakeTraining()
+        val localLog = shelf()
+        localLog.hold(LocalLog.FinishedSession(
+            Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000),
+            listOf(aSet("set_a", at = 1_100), aSet("set_b", at = 1_200))))
+        server.onFinish = { localLog.deleteSet("ses_1", "set_a") }
+
+        ClaimReplay(server, localLog, queue()).run()
+
+        assertEquals(listOf("set_b"), server.sets.getValue("ses_1").map { it.id })
+        assertEquals(listOf("ses_1" to "set_a"), server.removed)
+        assertTrue("the row is not forgotten with a repair still standing on it",
+            localLog.finished.isEmpty())
+    }
+
+    // A tombstone for a set that never reached the log costs one 204 and nothing else — the route
+    // answers the same for a set that never existed as for one it just took away.
+    @Test
+    fun testATombstoneForASetTheLogNeverHadIsStillSentAndCostsNothing() = runTest {
+        val server = FakeTraining()
+        val localLog = shelf()
+        localLog.hold(LocalLog.FinishedSession(
+            Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000),
+            listOf(aSet("set_a", at = 1_100), aSet("set_b", at = 1_200))))
+        localLog.deleteSet("ses_1", "set_a")
+
+        val outcome = ClaimReplay(server, localLog, queue()).run()
+
+        assertEquals("only the surviving set was ever appended",
+            listOf("set_b"), server.appended.map { it.id })
+        assertEquals(listOf("ses_1" to "set_a"), server.removed)
+        assertTrue(outcome.said.isEmpty())
+        assertTrue(localLog.finished.isEmpty())
+    }
+
+    // A delete the log could not take is not a delete that is lost: the route has no terminal
+    // refusal at all, so the session stays on the shelf and a later pass carries it.
+    @Test
+    fun testADeleteTheLogCouldNotTakeKeepsTheSessionOnTheShelfForAnotherPass() = runTest {
+        val server = FakeTraining()
+        val localLog = shelf()
+        localLog.hold(LocalLog.FinishedSession(
+            Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000),
+            listOf(aSet("set_a", at = 1_100))))
+        localLog.deleteSet("ses_1", "set_a")
+        server.refuseDelete = refusal(500, code = "storage", message = "internal error")
+
+        val first = ClaimReplay(server, localLog, queue()).run()
+        assertTrue("retryable, and the row is still here to try with", first.retryable)
+        assertEquals(listOf("set_a"), localLog.finished.single().deleted)
+        assertTrue("nothing was said — a 500 has cost the delete nothing", first.said.isEmpty())
+
+        server.refuseDelete = null
+        ClaimReplay(server, localLog, queue()).run()
+        assertTrue(localLog.finished.isEmpty())
+    }
+
+    // A correction the log will never read is a repair that is lost, and it is SAID: the account
+    // keeps the numbers the set was logged with, and this banner is the last copy of what the
+    // lifter meant instead. The session still settles — a terminal write re-sent on every connect
+    // would jam the claim behind an answer that cannot change.
+    @Test
+    fun testACorrectionRefusedOutrightIsSaidAndTheSessionStillSettles() = runTest {
+        val server = FakeTraining()
+        val localLog = shelf()
+        localLog.hold(LocalLog.FinishedSession(
+            Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000),
+            listOf(aSet("set_a", at = 1_100))))
+        server.onFinish = { throw IOException("offline") }
+        ClaimReplay(server, localLog, queue()).run()
+        server.onFinish = {}
+
+        localLog.fixSet("ses_1", "set_a", SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working))
+        server.refuseFix = { refusal(400, code = "fix-unreadable", message = "could not read that fix") }
+
+        val outcome = ClaimReplay(server, localLog, queue()).run()
+
+        assertEquals(listOf(RefusedSet(id = "set_a", exerciseId = "bench-press", weightKg = 90.0,
+            reps = 3, reason = "the log kept the numbers this set was logged with")), outcome.said)
+        assertEquals("the account keeps what it had rather than losing the set",
+            listOf(82.5), server.sets.getValue("ses_1").map { it.weightKg })
+        assertTrue(localLog.finished.isEmpty())
     }
 
     // The one 404 a claimed start can meet: the routine was claimed on an earlier connect, then

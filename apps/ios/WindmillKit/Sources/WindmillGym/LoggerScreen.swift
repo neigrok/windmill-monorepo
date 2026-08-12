@@ -398,8 +398,10 @@ struct LoggerScreen: View {
     }
 
     // The confirmation is visual and it is this: the row above, and the sentence here saying what
-    // was taken. Undo is offered exactly while the set can still be taken back — the log has no
-    // route that deletes one, so a button that outlived the window would have to apologise.
+    // was taken. Undo is offered exactly while the set is still this device's alone, so taking it
+    // back costs nobody anything. Once the log holds the row it is §G18's sheet that moves it —
+    // there, with a confirmation and its own way back — and a button that outlived the window here
+    // would be a second door onto that with neither.
     private var undoRow: some View {
         TimelineView(.periodic(from: .now, by: 1)) { _ in
             HStack {
@@ -529,12 +531,11 @@ struct LoggerScreen: View {
     }
 }
 
-// The last copy of a write somebody lost. It is SAID — a set with its movement and its numbers, a
-// claim-level document under its name — because a queue that dropped it quietly would count the
-// loss as intended, and this is the one place in gym allowed to use alarm ink. ONE component
-// because it is one voice: the logger says a loss over the workout it happened in, and Today says
-// the same loss when a boot claim met it with no logger mounted. Dismiss clears the shown refusals
-// on this surface.
+// A write somebody lost. It is SAID — a set with its movement and its numbers, a claim-level
+// document under its name — because a queue that dropped it quietly would count the loss as
+// intended. ONE component because it is one voice: the logger says a loss over the workout it
+// happened in, and Today says the same loss when a boot claim met it with no logger mounted.
+// Dismiss clears the shown refusals on this surface.
 struct RefusalRows: View {
     let refusals: [RefusedWrite]
     let catalog: [Exercise]
@@ -564,11 +565,19 @@ struct RefusalRows: View {
 
     // The convergence pin, to the word with Android's LoggerScreen.kt: claim-level losses are said
     // by NAME on both platforms, and the server's sentence rides underneath.
+    //
+    // A LOST SET AND A LOST CHANGE ARE NOT THE SAME LOSS and may not share a sentence. The first is
+    // a set that never reached the log at all; the second is a set the log still holds, under the
+    // numbers the lifter was trying to move it off — telling them it "never reached the log" would
+    // be a false statement about training that is sitting there.
     static func headline(of refused: RefusedWrite, in catalog: [Exercise]) -> String {
         switch refused {
         case .set(let set):
             return "\(Readout.movement(set.exerciseId, in: catalog)) "
                 + "\(Readout.effort(weightKg: set.weightKg, reps: set.reps)) never reached the log"
+        case .change(let set):
+            return "\(Readout.movement(set.exerciseId, in: catalog)) "
+                + "\(Readout.effort(weightKg: set.weightKg, reps: set.reps)) — that change didn’t land"
         case .claim(let claim):
             return "“\(claim.name)” couldn’t be claimed"
         }

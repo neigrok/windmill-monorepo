@@ -15,8 +15,13 @@ namespace wm::gym {
 // index both), insertSet locks the session row, computes max+1 numbering in the INSERT and reads
 // the stored row back scoped to that session, so a replay returns the original byte-for-byte and
 // a spent id resolves to nothing rather than to another account's set. insertRoutine is the same
-// story over two tables in one transaction, and insertExercise over one. Every pqxx error the store
-// has an answer for is translated here into the port's typed facts; the rest ride to the house 500.
+// story over two tables in one transaction, and insertExercise over one. updateSet and deleteSet are
+// the two that change a stored set, and each writes gym_set_revisions in the SAME statement that
+// moves the row, so there is no instant in which a version is gone and unkept. All three writes that
+// change what a workout holds take the SESSION's row first and its set rows after — one lock order,
+// which is what makes an append racing a delete of the same id decidable and leaves no cycle for two
+// of them to deadlock on. Every pqxx error the store has an answer for is translated here into the
+// port's typed facts; the rest ride to the house 500.
 class PgTrainingRepository : public TrainingRepository {
 public:
   explicit PgTrainingRepository(std::shared_ptr<PgPool> pool);
@@ -29,6 +34,8 @@ public:
   void insertSession(const Session& incoming) override;
   void close(const SessionId& id, std::uint64_t finishedAtMs) override;
   SetInsertOutcome insertSet(const Set& incoming) override;
+  std::optional<Set> updateSet(const UserId& user, const Set& corrected) override;
+  void deleteSet(const UserId& user, const SessionId& session, const SetId& id) override;
   LogPage log(const UserId& user, const LogCursor& cursor) override;
   std::vector<Set> setsOf(const SessionId& id) override;
   LastTimeOutcome lastTime(const UserId& user, const ExerciseId& exercise) override;

@@ -930,6 +930,8 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
     var shares: [String: SessionShare] = [:]
     var records: [String: MovementRecord] = [:]
     var refuse: (SetWrite) -> WindmillApiError? = { _ in nil }
+    var refuseFix: WindmillApiError?
+    var refuseDelete: WindmillApiError?
     var refuseStart: WindmillApiError?
     var refuseCreate: WindmillApiError?
     var refuseCreateRoutine: WindmillApiError?
@@ -946,6 +948,8 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
     var onFinish: () async -> Void = {}
 
     private(set) var appended: [SetWrite] = []
+    private(set) var corrected: [String] = []
+    private(set) var deleted: [String] = []
     private(set) var started: [SessionStart] = []
     private(set) var finishes: [String: Int64] = [:]
     private(set) var routineWrites: [RoutineWrite] = []
@@ -1034,6 +1038,33 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
             throw WindmillApiError.offline
         }
         return row
+    }
+
+    // The correction, and the log's whole vocabulary for it: a set this account does not hold in this
+    // session is `set-not-found`, and everything else answers the STORED row — so the same body sent
+    // twice comes back byte-identical and the set number never moves.
+    func fixSet(_ setId: String, in sessionId: String, _ fix: SetFix) async throws -> TrainingSet {
+        calls.append("fixSet")
+        corrected.append(setId)
+        guard online else { throw WindmillApiError.offline }
+        if let refuseFix { throw refuseFix }
+        guard var held = sets[sessionId], let index = held.firstIndex(where: { $0.id == setId }) else {
+            throw refusal(404, code: "set-not-found", "no such set")
+        }
+        held[index] = held[index].corrected(by: fix)
+        sets[sessionId] = held
+        return held[index]
+    }
+
+    // 204 however the truth is spelled — already gone, never there, another account's — so absent
+    // stays byte-identical to forbidden and a lost reply is safe to send again. No 400, no 404, no
+    // 409 on this route at all.
+    func deleteSet(_ setId: String, in sessionId: String) async throws {
+        calls.append("deleteSet")
+        deleted.append(setId)
+        guard online else { throw WindmillApiError.offline }
+        if let refuseDelete { throw refuseDelete }
+        sets[sessionId] = sets[sessionId]?.filter { $0.id != setId }
     }
 
     func finishSession(_ sessionId: String, at finishedAtMs: Int64) async throws -> Session {

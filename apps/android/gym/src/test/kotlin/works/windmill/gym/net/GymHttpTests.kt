@@ -5,6 +5,8 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 import works.windmill.gym.domain.ExerciseWrite
 import works.windmill.gym.domain.SessionStart
+import works.windmill.gym.domain.SetFix
+import works.windmill.gym.domain.SetKind
 import works.windmill.gym.store.RefusalFacts
 import works.windmill.gym.store.Verdict
 import works.windmill.platform.net.WindmillApiException
@@ -47,5 +49,25 @@ class GymHttpTests {
             SessionStart(id = "ses_probe", startedAt = 1_000, routineId = null),
         )
         assertEquals("""{"id":"ses_probe","startedAt":1000}""", encoded)
+    }
+
+    // §G18's correction, at the values a defaulted field would hide behind. The same rule bites
+    // harder here than anywhere else on this wire: a field missing from a PATCH body reads on the
+    // server as "leave what is stored", so a `SetFix` that dropped an empty bar or a zero rep count
+    // would silently correct nothing. All three ride, always — and the three that may NOT ride are
+    // absent by construction, because the type has no field for exerciseId, completedAt or
+    // setNumber at all.
+    @Test
+    fun testASetFixStatesAllThreeFieldsEvenAtTheValuesADefaultWouldHide() {
+        val encoded = WindmillJson.encodeToString(
+            SetFix.serializer(),
+            SetFix(weightKg = 0.0, reps = 0, kind = SetKind.Warmup),
+        )
+        assertEquals("""{"weightKg":0.0,"reps":0,"kind":"warmup"}""", encoded)
+        assertEquals(
+            """{"weightKg":82.5,"reps":5,"kind":"working"}""",
+            WindmillJson.encodeToString(SetFix.serializer(),
+                SetFix(weightKg = 82.5, reps = 5, kind = SetKind.Working)),
+        )
     }
 }

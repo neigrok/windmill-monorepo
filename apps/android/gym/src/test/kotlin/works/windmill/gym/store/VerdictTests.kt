@@ -92,6 +92,49 @@ class VerdictTests {
             "no such routine", SaveState.Refused("no such routine").line)
     }
 
+    // §G18'S OWN WORD, and it is a different question from the four above: those ask whether a set
+    // will ever land, this asks what happened to a row that is already there. Told apart by `code`
+    // for the same reason — the sentence is copy and may be reworded any day.
+    @Test
+    fun testAFixMeetingARowTheLogDoesNotHoldIsGoneAndNotRetryable() {
+        assertEquals("absent, another account's, already deleted, or a set in a different workout — " +
+            "one answer, and the screen drops the row rather than offering a retry onto nothing",
+            FixVerdict.Gone("that set is no longer on the log"),
+            FixVerdict.refusing(refusal(404, code = "set-not-found", message = "reworded on a Tuesday")))
+        assertEquals("a 404 with no word on it is still the route saying it has no such row",
+            FixVerdict.Gone("that set is no longer on the log"),
+            FixVerdict.refusing(refusal(404, message = "no such set")))
+    }
+
+    @Test
+    fun testAFixTheLogCannotReadIsTerminalAndKeepsTheRowStanding() {
+        assertEquals(FixVerdict.Unwritable("could not read that fix"),
+            FixVerdict.refusing(refusal(400, code = "fix-unreadable", message = "could not read that fix")))
+        assertEquals(FixVerdict.Unwritable("the log refused this fix"),
+            FixVerdict.refusing(RefusalFacts(status = 400)))
+    }
+
+    // A 5xx is the server's, a 401 wants a sign-in, and no reply at all is not an answer. None of
+    // the three has cost the correction anything, so none of them may be said as a loss.
+    @Test
+    fun testEverythingElseIsOnlyWaiting() {
+        assertEquals(FixVerdict.Retry, FixVerdict.refusing(storageFailure))
+        assertEquals(FixVerdict.Retry, FixVerdict.refusing(RefusalFacts(offline = true)))
+        assertEquals(FixVerdict.Retry, FixVerdict.refusing(RefusalFacts(malformed = true)))
+        assertEquals(FixVerdict.Retry, FixVerdict.refusing(RefusalFacts()))
+        assertEquals(FixVerdict.Retry,
+            FixVerdict.refusing(refusal(401, message = "sign in to open your training log")))
+    }
+
+    // The server publishes no `session-finished` on either route — corrections are allowed after
+    // the workout ends — so nothing here may branch on one. A 409 that arrived anyway is the
+    // client's own and terminal, exactly as an unreadable body is.
+    @Test
+    fun testAFinishedSessionIsNotARefusalThisVocabularyKnows() {
+        assertEquals(FixVerdict.Unwritable("reworded"),
+            FixVerdict.refusing(refusal(409, code = "session-finished", message = "reworded")))
+    }
+
     // The movement and the numbers travel with the reason because a RefusedSet is the LAST COPY of
     // a set somebody lifted.
     @Test

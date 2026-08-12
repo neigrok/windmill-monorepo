@@ -10,6 +10,7 @@
 #include <pqxx/pqxx>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdlib>
 #include <optional>
 #include <string>
@@ -40,6 +41,7 @@ void reset() {
          "ON CONFLICT (id) DO NOTHING");
   // FK order, and the routines before the exercises: an entry references a movement, so a custom
   // one cannot be removed while a plan still names it.
+  w.exec("DELETE FROM gym_set_revisions WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_sets WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_sessions WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_routines WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
@@ -1091,6 +1093,444 @@ TEST(pg_gym_discard_takes_the_session_and_every_set_with_it) {
     CHECK_EQ(w.exec_params("SELECT 1 FROM gym_sets WHERE session_id = $1", "ses_pg000001").size(),
              static_cast<std::size_t>(0));
   }
+}
+
+// ---- fix a set: the SQL half of "the log moves, the routine does not" ------------------------
+
+// The correction, against a real server: the row in gym_sets is rewritten in place and the version
+// it replaced lands in gym_set_revisions unmarked. Both halves are asserted off the tables rather
+// than off the reply, because the reply cannot show what a second statement did.
+TEST(pg_gym_a_correction_rewrites_the_set_in_place_and_keeps_what_it_replaced) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  repo.insertSet(Set{SetId{"set_pg000001"}, SessionId{"ses_pg000001"}, ExerciseId{"bench-press"}, 0,
+                     82.5, 8, SetKind::working, 8.5, "felt heavy", t1 + 1'000});
+
+  SetFix fix;
+  fix.weightKg = 47.5;
+  fix.reps = 4;
+  fix.kind = SetKind::drop;
+  fix.rpeNamed = true;
+  std::optional<Set> stored = repo.setOf(wm::UserId{kUser}, SetId{"set_pg000001"});
+  REQUIRE(stored.has_value());
+  std::optional<Set> fixed = repo.updateSet(wm::UserId{kUser}, corrected(*stored, fix));
+
+  REQUIRE(fixed.has_value());
+  CHECK_EQ(*fixed, Set(SetId{"set_pg000001"}, SessionId{"ses_pg000001"}, ExerciseId{"bench-press"},
+                       1, 47.5, 4, SetKind::drop, std::nullopt, "felt heavy", t1 + 1'000));
+  CHECK_EQ(repo.setsOf(SessionId{"ses_pg000001"}), std::vector<Set>{*fixed});
+  {
+    wm::PgLease c{*wm::pgTestPool()};
+    pqxx::work w{*c};
+    pqxx::result kept = w.exec_params(
+        "SELECT set_id, session_id, user_id::text, exercise_id, set_number, weight_kg::float8, "
+        "reps, kind, rpe::float8, note, deleted FROM gym_set_revisions WHERE set_id = $1",
+        "set_pg000001");
+    REQUIRE_EQ(kept.size(), static_cast<std::size_t>(1));
+    CHECK_EQ(kept[0][0].as<std::string>(), std::string("set_pg000001"));
+    CHECK_EQ(kept[0][1].as<std::string>(), std::string("ses_pg000001"));
+    CHECK_EQ(kept[0][2].as<std::string>(), kUser);
+    CHECK_EQ(kept[0][3].as<std::string>(), std::string("bench-press"));
+    CHECK_EQ(kept[0][4].as<int>(), 1);
+    CHECK_EQ(kept[0][5].as<double>(), 82.5);
+    CHECK_EQ(kept[0][6].as<int>(), 8);
+    CHECK_EQ(kept[0][7].as<std::string>(), std::string("working"));
+    CHECK_EQ(kept[0][8].as<double>(), 8.5);
+    CHECK_EQ(kept[0][9].as<std::string>(), std::string("felt heavy"));
+    CHECK_FALSE(kept[0][10].as<bool>());
+  }
+}
+
+// The reason the lock is its own statement, driven rather than argued. Six corrections land on one
+// set at once; each one keeps whatever stood before it, so the versions kept plus the one still
+// standing are EXACTLY the seven values that ever existed — the original and the six. Dropping the
+// `FOR UPDATE` statement from `updateSet` fails this case every run (checked, before and after the
+// lock moved to the session row): two corrections then copy the same pre-existing row, because a
+// data-modifying CTE reads the snapshot its statement began with and that snapshot is taken before
+// the lock is granted — so a value a lifter saw on screen leaves the log with nothing keeping it,
+// which is the one outcome §2.7 exists to prevent.
+TEST(pg_gym_parallel_corrections_of_one_set_keep_every_version_that_ever_stood) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  repo.insertSet(benchSet("set_pg000001", 82.5, t1 + 1'000));
+
+  std::vector<std::thread> corrections;
+  for (int n = 0; n < 6; ++n)
+    corrections.emplace_back([&repo, n, t1] {
+      repo.updateSet(wm::UserId{kUser},
+                     Set{SetId{"set_pg000001"}, SessionId{"ses_pg000001"},
+                         ExerciseId{"bench-press"}, 1, 100.0 + n, 8, SetKind::working, std::nullopt,
+                         "", t1 + 1'000});
+    });
+  for (std::thread& thread : corrections) thread.join();
+
+  std::vector<double> stood;
+  {
+    wm::PgLease c{*wm::pgTestPool()};
+    pqxx::work w{*c};
+    for (const auto& row : w.exec_params(
+             "SELECT weight_kg::float8 FROM gym_set_revisions WHERE user_id = $1::uuid", kUser))
+      stood.push_back(row[0].as<double>());
+    pqxx::result live = w.exec_params(
+        "SELECT weight_kg::float8 FROM gym_sets WHERE user_id = $1::uuid", kUser);
+    REQUIRE_EQ(live.size(), static_cast<std::size_t>(1));
+    stood.push_back(live[0][0].as<double>());
+  }
+  std::sort(stood.begin(), stood.end());
+  CHECK_EQ(stood, (std::vector<double>{82.5, 100.0, 101.0, 102.0, 103.0, 104.0, 105.0}));
+}
+
+// The scope, on the statements that carry it: another account's set and this account's set in a
+// different workout are both simply not there, and neither leaves a revision behind.
+TEST(pg_gym_a_correction_reaches_no_set_outside_the_workout_or_the_account) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  repo.insertSet(benchSet("set_pg000001", 82.5, t1 + 1'000));
+
+  std::optional<Set> stored = repo.setOf(wm::UserId{kUser}, SetId{"set_pg000001"});
+  REQUIRE(stored.has_value());
+  Set moved = *stored;
+  moved.weightKg = 60;
+
+  CHECK_EQ(repo.updateSet(wm::UserId{kOther}, moved), std::optional<Set>());
+  Set elsewhere{SetId{"set_pg000001"}, SessionId{"ses_pg000009"}, ExerciseId{"bench-press"}, 1,
+                60, 8, SetKind::working, std::nullopt, "", t1 + 1'000};
+  CHECK_EQ(repo.updateSet(wm::UserId{kUser}, elsewhere), std::optional<Set>());
+  CHECK_EQ(repo.setOf(wm::UserId{kUser}, SetId{"set_pg000001"})->weightKg, 82.5);
+  {
+    wm::PgLease c{*wm::pgTestPool()};
+    pqxx::work w{*c};
+    CHECK_EQ(w.exec_params("SELECT 1 FROM gym_set_revisions WHERE user_id = $1::uuid", kUser)
+                 .size(),
+             static_cast<std::size_t>(0));
+  }
+}
+
+// The delete moves the row WHOLE and marks it, in one statement, and it is silent whether or not
+// anything was there — the retry a lost reply produces keeps no second copy. Numbers are not closed
+// up behind it: max+1 keeps minting, so no set ever inherits a number another one wore.
+TEST(pg_gym_a_delete_moves_the_row_into_the_revisions_and_never_reuses_its_number) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  repo.insertSet(benchSet("set_pg000001", 80.0, t1 + 1'000));
+  repo.insertSet(benchSet("set_pg000002", 82.5, t1 + 2'000));
+  repo.insertSet(benchSet("set_pg000003", 85.0, t1 + 3'000));
+
+  repo.deleteSet(wm::UserId{kUser}, SessionId{"ses_pg000001"}, SetId{"set_pg000002"});
+  repo.deleteSet(wm::UserId{kUser}, SessionId{"ses_pg000001"}, SetId{"set_pg000002"});
+  repo.deleteSet(wm::UserId{kOther}, SessionId{"ses_pg000001"}, SetId{"set_pg000003"});
+  SetInsertOutcome next = repo.insertSet(benchSet("set_pg000004", 87.5, t1 + 4'000));
+
+  REQUIRE(next.set.has_value());
+  CHECK_EQ(next.set->setNumber, 4);
+  std::vector<int> numbers;
+  for (const Set& set : repo.setsOf(SessionId{"ses_pg000001"})) numbers.push_back(set.setNumber);
+  CHECK_EQ(numbers, (std::vector<int>{1, 3, 4}));
+  {
+    wm::PgLease c{*wm::pgTestPool()};
+    pqxx::work w{*c};
+    pqxx::result kept = w.exec_params(
+        "SELECT set_id, set_number, weight_kg::float8, deleted FROM gym_set_revisions "
+        "WHERE user_id = $1::uuid ORDER BY revision_id",
+        kUser);
+    REQUIRE_EQ(kept.size(), static_cast<std::size_t>(1));
+    CHECK_EQ(kept[0][0].as<std::string>(), std::string("set_pg000002"));
+    CHECK_EQ(kept[0][1].as<int>(), 2);
+    CHECK_EQ(kept[0][2].as<double>(), 82.5);
+    CHECK(kept[0][3].as<bool>());
+  }
+}
+
+// THE SET A LIFTER DELETED DOES NOT COME BACK, and the append that would bring it is the ordinary
+// one: a POST whose 200 was lost stays on the device's queue and is re-sent, or a claim replays the
+// device's own log. The primary key cannot answer it — the row is gone from gym_sets, so the id is
+// free — which is why the insert asks the revisions instead. `deleted` and not `idTaken`: every
+// queue repairs a spent id by minting a fresh one, and that repair is exactly how the deletion would
+// undo itself, under a number nobody chose.
+TEST(pg_gym_a_deleted_sets_id_is_spent_for_good_and_a_replayed_append_cannot_bring_it_back) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  repo.insertSet(benchSet("set_pg000001", 80.0, t1 + 1'000));
+  repo.insertSet(benchSet("set_pg000002", 82.5, t1 + 2'000));
+  repo.insertSet(benchSet("set_pg000003", 85.0, t1 + 3'000));
+  repo.deleteSet(wm::UserId{kUser}, SessionId{"ses_pg000001"}, SetId{"set_pg000002"});
+
+  // The queue's own bytes, re-sent: same id, same values, same session.
+  SetInsertOutcome replayed = repo.insertSet(benchSet("set_pg000002", 82.5, t1 + 2'000));
+  CHECK_EQ(replayed.set, std::optional<Set>());
+  CHECK(replayed.error == SetInsertError::deleted);
+  // And it is refused whatever else the caller changes about the body, because the ID is the fact.
+  CHECK(repo.insertSet(benchSet("set_pg000002", 60.0, t1 + 9'000)).error ==
+        SetInsertError::deleted);
+
+  std::vector<std::string> live;
+  for (const Set& set : repo.setsOf(SessionId{"ses_pg000001"})) live.push_back(set.id.str());
+  CHECK_EQ(live, (std::vector<std::string>{"set_pg000001", "set_pg000003"}));
+  {
+    wm::PgLease c{*wm::pgTestPool()};
+    pqxx::work w{*c};
+    // One kept row, still the deleted one — a refused append writes nothing anywhere.
+    CHECK_EQ(w.exec_params("SELECT 1 FROM gym_set_revisions WHERE user_id = $1::uuid", kUser).size(),
+             static_cast<std::size_t>(1));
+  }
+  // A closed workout does not change the answer, and does not get to answer FIRST: `session-finished`
+  // would tell a queue the set never reached the log, and this one reached it and was taken out.
+  repo.close(SessionId{"ses_pg000001"}, t1 + 5'000);
+  CHECK(repo.insertSet(benchSet("set_pg000002", 82.5, t1 + 2'000)).error == SetInsertError::deleted);
+}
+
+// The scope on that refusal, which is the scope every read in this store keeps: another account's
+// deleted id is not a fact this caller may learn, and it is not a log a replay here could put a set
+// back into. Their own id stays spent whichever workout replays it — a session is not a fresh
+// namespace for an id they have already used and removed.
+TEST(pg_gym_a_deleted_id_is_spent_for_its_own_account_alone) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  repo.insertSet(benchSet("set_pg000001", 80.0, t1 + 1'000));
+  repo.deleteSet(wm::UserId{kUser}, SessionId{"ses_pg000001"}, SetId{"set_pg000001"});
+  repo.close(SessionId{"ses_pg000001"}, t1 + 2'000);
+  repo.insertSession(sessionAt("ses_pg000002", t1 + 10'000));
+  Session theirs{SessionId{"ses_pg000003"}, wm::UserId{kOther}, t1 + 10'000, std::nullopt,
+                 std::nullopt, std::nullopt};
+  repo.insertSession(theirs);
+
+  // The same account, a different workout: still spent.
+  CHECK(repo.insertSet(Set{SetId{"set_pg000001"}, SessionId{"ses_pg000002"},
+                           ExerciseId{"bench-press"}, 0, 80.0, 8, SetKind::working, std::nullopt, "",
+                           t1 + 11'000})
+            .error == SetInsertError::deleted);
+  // Another account, the same id: a fact about a log this caller cannot see, so it decides nothing.
+  SetInsertOutcome landed =
+      repo.insertSet(Set{SetId{"set_pg000001"}, SessionId{"ses_pg000003"},
+                         ExerciseId{"bench-press"}, 0, 60.0, 5, SetKind::working, std::nullopt, "",
+                         t1 + 11'000});
+  REQUIRE(landed.set.has_value());
+  CHECK_EQ(landed.set->weightKg, 60.0);
+}
+
+// THE RACE, driven rather than argued: a queue re-sending a set's POST while the lifter deletes it
+// on another surface. Both orders are legal and both end the same way — the append lands and the
+// delete removes it, or the delete commits and the append is refused — because all three writes take
+// the SESSION's row first. A delete that took no lock of its own would leave a third outcome
+// reachable: the append reads the revisions before the delete commits and inserts after it, and the
+// set is back.
+TEST(pg_gym_an_append_racing_a_delete_of_the_same_set_always_ends_deleted) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+
+  for (int trial = 0; trial < 12; ++trial) {
+    const std::string id = "set_pg0001" + std::string(trial < 10 ? "0" : "") + std::to_string(trial);
+    repo.insertSet(benchSet(id, 82.5, t1 + 1'000 + trial));
+    std::atomic<int> raised{0};
+    std::thread deleting([&repo, &id, &raised] {
+      try {
+        repo.deleteSet(wm::UserId{kUser}, SessionId{"ses_pg000001"}, SetId{id});
+      } catch (const std::exception&) {
+        raised += 1;
+      }
+    });
+    std::thread appending([&repo, &id, &raised, t1, trial] {
+      try {
+        repo.insertSet(benchSet(id, 82.5, t1 + 1'000 + trial));
+      } catch (const std::exception&) {
+        raised += 1;
+      }
+    });
+    deleting.join();
+    appending.join();
+    // Not merely a right answer — an answer at all. Taken in the other order these two are a cycle
+    // (the append holds the session and wants the set row, the delete holds the set row and wants
+    // the session for its copy's foreign key), and Postgres breaks a cycle by aborting one of them.
+    CHECK_EQ(raised.load(), 0);
+    CHECK_EQ(repo.setOf(wm::UserId{kUser}, SetId{id}), std::optional<Set>());
+  }
+}
+
+// THE OTHER HALF OF THE ONE LOCK ORDER, and it is the half that would fail LOUDLY rather than
+// quietly. `gym_set_revisions` carries a foreign key to `gym_sessions`, so both of these writes ask
+// that session row for a KEY SHARE as they take their copy. Let the delete skip the session lock and
+// the two run in opposite orders — the correction holds the session and wants the set row, the
+// delete holds the set row and wants the session — which is a cycle, and Postgres breaks a cycle by
+// aborting one of them: a `deadlock detected` out of a lifter's ordinary tap. Both take the session
+// first, so there is no cycle to break.
+TEST(pg_gym_a_correction_racing_a_delete_of_the_same_set_never_deadlocks) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+
+  for (int trial = 0; trial < 12; ++trial) {
+    const std::string id = "set_pg0002" + std::string(trial < 10 ? "0" : "") + std::to_string(trial);
+    repo.insertSet(benchSet(id, 82.5, t1 + 1'000 + trial));
+    std::atomic<int> raised{0};
+    std::thread correcting([&repo, &id, &raised, t1, trial] {
+      try {
+        repo.updateSet(wm::UserId{kUser},
+                       Set{SetId{id}, SessionId{"ses_pg000001"}, ExerciseId{"bench-press"}, 1, 90.0,
+                           8, SetKind::working, std::nullopt, "", t1 + 1'000 + trial});
+      } catch (const std::exception&) {
+        raised += 1;
+      }
+    });
+    std::thread deleting([&repo, &id, &raised] {
+      try {
+        repo.deleteSet(wm::UserId{kUser}, SessionId{"ses_pg000001"}, SetId{id});
+      } catch (const std::exception&) {
+        raised += 1;
+      }
+    });
+    correcting.join();
+    deleting.join();
+    CHECK_EQ(raised.load(), 0);
+    // Whichever went first, the delete is the last word: a correction that ran after it finds no
+    // row, and one that ran before it is the version the delete then carried into the revisions.
+    CHECK_EQ(repo.setOf(wm::UserId{kUser}, SetId{id}), std::optional<Set>());
+  }
+}
+
+// A CORRECTION THAT MOVED NOTHING KEPT NOTHING. `{}` is a legal fix and the reply to a lost one is
+// the same bytes sent again, so an unconditional copy would grow a version of the row per retry —
+// rows kept forever, in a table nothing reads, standing for a change nobody made. The guard is on
+// the values, not on the request: a fix that names every field and changes none of them is the same
+// no-op, and a fix that moves one field keeps the whole row it replaced.
+TEST(pg_gym_a_correction_that_moves_nothing_keeps_no_revision) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  repo.insertSet(Set{SetId{"set_pg000001"}, SessionId{"ses_pg000001"}, ExerciseId{"bench-press"}, 0,
+                     82.5, 8, SetKind::working, 8.5, "felt heavy", t1 + 1'000});
+  std::optional<Set> stored = repo.setOf(wm::UserId{kUser}, SetId{"set_pg000001"});
+  REQUIRE(stored.has_value());
+
+  for (int retry = 0; retry < 5; ++retry) CHECK_EQ(repo.updateSet(wm::UserId{kUser}, *stored), stored);
+  SetFix names;
+  names.weightKg = 82.5;
+  names.reps = 8;
+  names.kind = SetKind::working;
+  names.rpeNamed = true;
+  names.rpe = 8.5;
+  names.note = "felt heavy";
+  CHECK_EQ(repo.updateSet(wm::UserId{kUser}, corrected(*stored, names)), stored);
+  {
+    wm::PgLease c{*wm::pgTestPool()};
+    pqxx::work w{*c};
+    CHECK_EQ(w.exec_params("SELECT 1 FROM gym_set_revisions WHERE user_id = $1::uuid", kUser).size(),
+             static_cast<std::size_t>(0));
+  }
+
+  SetFix moves;
+  moves.reps = 9;
+  std::optional<Set> fixed = repo.updateSet(wm::UserId{kUser}, corrected(*stored, moves));
+  REQUIRE(fixed.has_value());
+  CHECK_EQ(fixed->reps, 9);
+  {
+    wm::PgLease c{*wm::pgTestPool()};
+    pqxx::work w{*c};
+    pqxx::result kept = w.exec_params(
+        "SELECT reps, weight_kg::float8, rpe::float8, note FROM gym_set_revisions "
+        "WHERE user_id = $1::uuid",
+        kUser);
+    REQUIRE_EQ(kept.size(), static_cast<std::size_t>(1));
+    CHECK_EQ(kept[0][0].as<int>(), 8);
+    CHECK_EQ(kept[0][1].as<double>(), 82.5);
+    CHECK_EQ(kept[0][2].as<double>(), 8.5);
+    CHECK_EQ(kept[0][3].as<std::string>(), std::string("felt heavy"));
+  }
+}
+
+// *Push A keeps its own numbers*, proved where it could actually be broken — against the real SQL,
+// on a session started from a routine. Neither write goes near gym_sessions.plan or a routine entry,
+// and the reads that stand on the live rows move exactly as far as the correction did.
+TEST(pg_gym_fixing_and_deleting_a_set_leave_the_frozen_plan_and_the_routine_untouched) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+  repo.insertRoutine(routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
+  repo.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, t1, std::nullopt,
+                             RoutineId{"rt_pg000001"}, pushA()});
+  repo.insertSet(benchSet("set_pg000001", 82.5, t1 + 1'000));
+  repo.insertSet(benchSet("set_pg000002", 82.5, t1 + 2'000));
+
+  std::optional<Set> stored = repo.setOf(wm::UserId{kUser}, SetId{"set_pg000001"});
+  REQUIRE(stored.has_value());
+  SetFix fix;
+  fix.weightKg = 60;
+  fix.reps = 3;
+  repo.updateSet(wm::UserId{kUser}, corrected(*stored, fix));
+  repo.deleteSet(wm::UserId{kUser}, SessionId{"ses_pg000001"}, SetId{"set_pg000002"});
+
+  std::optional<Session> after = repo.session(wm::UserId{kUser}, SessionId{"ses_pg000001"});
+  REQUIRE(after.has_value());
+  CHECK_EQ(after->plan, std::optional<PlanSnapshot>(pushA()));
+  CHECK_EQ(after->routine, std::optional<RoutineId>(RoutineId{"rt_pg000001"}));
+  std::optional<Routine> plan = repo.routine(wm::UserId{kUser}, RoutineId{"rt_pg000001"});
+  REQUIRE(plan.has_value());
+  CHECK_EQ(plan->entries, std::vector<RoutineEntry>{entryAt(1, "bench-press")});
+  CHECK_EQ(plan->name, std::string("Push A"));
+  // and the live rows are what every read is computed from, so the log row moved with the fix
+  std::vector<SessionSummary> rows = pageOf(repo, wm::UserId{kUser}, page(t1 + 10'000, 10));
+  REQUIRE_EQ(rows.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(rows[0].setCount, 1);
+  CHECK_EQ(rows[0].tonnageKg, 180.0);
+  CHECK_EQ(rows[0].topSet, std::optional<TopWorkingSet>(TopWorkingSet{60, 3}));
+}
+
+// The discard's own promise — "permanent, and nothing keeps a copy" — reaches the revisions too,
+// which is the whole reason session_id carries a cascading foreign key and set_id carries none.
+TEST(pg_gym_discarding_a_session_takes_its_revisions_with_it) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  repo.insertSet(benchSet("set_pg000001", 82.5, t1 + 1'000));
+  repo.insertSet(benchSet("set_pg000002", 85.0, t1 + 2'000));
+  std::optional<Set> stored = repo.setOf(wm::UserId{kUser}, SetId{"set_pg000001"});
+  REQUIRE(stored.has_value());
+  SetFix fix;
+  fix.weightKg = 60;
+  repo.updateSet(wm::UserId{kUser}, corrected(*stored, fix));
+  repo.deleteSet(wm::UserId{kUser}, SessionId{"ses_pg000001"}, SetId{"set_pg000002"});
+  repo.close(SessionId{"ses_pg000001"}, t1 + 3'000);
+  {
+    wm::PgLease c{*wm::pgTestPool()};
+    pqxx::work w{*c};
+    CHECK_EQ(w.exec_params("SELECT 1 FROM gym_set_revisions WHERE user_id = $1::uuid", kUser)
+                 .size(),
+             static_cast<std::size_t>(2));
+  }
+
+  CHECK(repo.deleteSession(wm::UserId{kUser}, SessionId{"ses_pg000001"}));
+
+  wm::PgLease c{*wm::pgTestPool()};
+  pqxx::work w{*c};
+  CHECK_EQ(w.exec_params("SELECT 1 FROM gym_set_revisions WHERE user_id = $1::uuid", kUser).size(),
+           static_cast<std::size_t>(0));
 }
 
 // ---- the catalog's one write ---------------------------------------------------------------

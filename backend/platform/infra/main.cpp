@@ -154,6 +154,11 @@ int main() {
                 {"journal_page", "user_id"},          // journal
                 {"gym_sessions", "user_id"},          // gym — a workout with no sets is still a workout
                 {"gym_sets", "user_id"},              // gym
+                // gym — a set someone corrected or deleted is still what they lifted. Its session
+                // outlives it, so this row never decides the answer on its own today; it is listed
+                // because this list is about what an account OWNS, and a table left off it is how
+                // the door comes to delete real data the day that stops being true.
+                {"gym_set_revisions", "user_id"},
                 {"gym_routines", "user_id"},          // gym
                 {"gym_session_shares", "user_id"},    // gym — a live coach link is data too
                 // gym — a movement someone created is their data, and an account holding one and

@@ -110,9 +110,14 @@ TEST(routine_construction_guards_the_id_the_name_and_the_position) {
   CHECK_EQ(Routine(RoutineId{"rt_00000001"}, wm::UserId{"u1"}, std::string(80, 'x'), 0, {bench(1)})
                .name.size(),
            static_cast<std::size_t>(80));
-  // Postgres text stops at a NUL, so the name would be stored as its own head.
+  // The one text rule (storableText, domain/Training.h): `text` stops at a NUL, so the name would be
+  // stored as its own head, and bytes that are not UTF-8 are refused by the column mid-transaction
+  // where the answer would be a 500 every client is told to retry.
   CHECK(rejects([] {
     Routine{RoutineId{"rt_00000001"}, wm::UserId{"u1"}, std::string("Push\0A", 6), 0, {bench(1)}};
+  }));
+  CHECK(rejects([] {
+    Routine{RoutineId{"rt_00000001"}, wm::UserId{"u1"}, "Push \xED\xA0\x80 A", 0, {bench(1)}};
   }));
   CHECK(rejects([] { Routine{RoutineId{"rt_00000001"}, wm::UserId{"u1"}, "Push A", -1, {bench(1)}}; }));
   // The last-trained instant obeys the same band every other instant in the module does.

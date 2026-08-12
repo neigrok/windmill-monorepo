@@ -38,6 +38,34 @@
 //   POST /v1/gym/sessions/:id/sets       -> {id, exerciseId, weightKg, reps, completedAt, kind?, rpe?, note?} in;
 //                                           the STORED set out {id, exerciseId, setNumber, weightKg,
 //                                           reps, kind, rpe?, note, completedAt}
+//   PATCH /v1/gym/sessions/:id/sets/:setId
+//                                        -> THE CORRECTION (§G18). Every field is OPTIONAL and an
+//                                           omitted one is left exactly as stored: {weightKg?,
+//                                           reps?, kind?, rpe?, note?}. `rpe` is the one field that
+//                                           takes a null and that null CLEARS it; "" clears a note;
+//                                           `{}` is legal and changes nothing. Any other key is
+//                                           refused BY NAME rather than ignored — `exerciseId`,
+//                                           `completedAt`, `setNumber`, `id` — because a set logged
+//                                           against the wrong movement is a different repair. The
+//                                           STORED set out, the same bare shape the POST above
+//                                           answers, so the same body sent twice answers
+//                                           byte-identically. Two refusals: 400 `fix-unreadable`
+//                                           (a field a fix may not carry, a wrong type, a value the
+//                                           store cannot hold) and 404 `set-not-found` (absent,
+//                                           another account's, already deleted, or this account's
+//                                           set in a DIFFERENT workout — one answer, byte-identical
+//                                           for all four). A FINISHED SESSION IS NOT A REFUSAL: a
+//                                           lifter reads the log after the workout, which is when
+//                                           they see the typo, so there is no `session-finished`
+//                                           and no 409 on this route at all
+//   DELETE /v1/gym/sessions/:id/sets/:setId
+//                                        -> 204, nothing back. Idempotent by design: a set already
+//                                           gone, a set that never existed and another account's
+//                                           are all 204, so absent stays byte-identical to
+//                                           forbidden and a lost reply is safe to retry. NO 400, NO
+//                                           404, NO 409 — 401 and 500 are the only other answers.
+//                                           Set numbers are never reissued: delete set 2 of 3 and
+//                                           1 and 3 stand with a gap, and the next set is 4
 //   POST /v1/gym/sessions/:id/finish     -> {finishedAt} in; the session out, idempotent
 //   GET  /v1/gym/sessions?before=&beforeId=&limit=
 //                                        -> { sessions: [{...session, setCount, workingSetCount,
@@ -68,7 +96,10 @@
 //                                           another's are the same byte). Every 200 carries a weak
 //                                           ETag — opaque bytes this client only ever echoes; a
 //                                           poll that sends it back as If-None-Match is answered
-//                                           304 with no body while the workout is what it was
+//                                           304 with no body while the workout is what it was. The
+//                                           tag covers what the sets SAY and not only how many
+//                                           there are, so a set corrected at the desk moves it and
+//                                           the mirror reads the workout again
 //   DELETE /v1/gym/sessions/:id          -> 204, nothing back — the discard offered at the finish
 //                                           screen. A session still running is refused, 409
 //   GET  /v1/gym/sessions/:id/review     -> Review — the finish screen read whole
@@ -133,12 +164,15 @@ async function json(response) {
   throw new GymError(response.status, body?.error ?? '', body?.code ?? '');
 }
 
-// A refusal answers with a sentence for a human under "error" and — for the eight reasons a client
+// A refusal answers with a sentence for a human under "error" and — for the ten reasons a client
 // must branch on — a machine word under "code". The code is the contract and the sentence is prose
 // that may be reworded any day, so every flag below reads the code. The map is the courtesy: it
 // recovers the code from the sentence a refusal shipped with, so classification never depends on
 // which of the two fields the server it reached happened to fill in. The first four are the ones
 // that ran on servers deployed before the codes existed, and they are why this map is here at all.
+// The correction's two are deliberately absent: they shipped WITH their codes, so a server that
+// speaks them at all speaks them under `code`, and an entry here would be a courtesy to a
+// deployment that never existed.
 const codeForSentence = new Map([
   ['that session is finished', 'session-finished'],
   ['that set id is already used', 'set-id-taken'],
@@ -157,7 +191,9 @@ const codeForSentence = new Map([
 //   5xx  the store failed — a dropped connection, a statement timeout, a deadlock. Retryable.
 //        A request that never produced a response rejects before this class exists, so a throw
 //        that is not a GymError is retryable for the same reason.
-//   401 waits for a sign-in, 404 for a session to exist; neither is terminal nor retryable.
+//   401 waits for a sign-in, 404 for a session to exist; neither is terminal nor retryable by
+//        status. `setNotFound` is the one 404 a caller drops its pending write on instead of
+//        waiting — the row it names is not coming back.
 // Terminal and retryable never both hold, and neither follows from the other's absence — a queue
 // that reads "not retryable" as "lost" throws away a set that was only waiting for a sign-in.
 //
@@ -175,6 +211,12 @@ const codeForSentence = new Map([
 //   sessionAlreadyOpen 409 a start that said `joinOpenSession: false` — a backfill or an import —
 //                         reached a live workout. Nothing to repair either: the past workout waits
 //                         for the close rather than filing its sets into today's session.
+//   fixUnreadable    400  the store read the correction and would not take it — a field a fix may
+//                         not carry, a wrong type, a value it cannot hold. Terminal: those bytes
+//                         never land, and the repair is a different fix rather than the same one.
+//   setNotFound      404  no such set in that workout — absent, another account's, already deleted,
+//                         or this account's set in a different session, one byte for all four. The
+//                         edit is dropped and the session is read again; the log moved underneath.
 // Replaying a set that already landed is not a conflict at all: it answers 200 with the stored row
 // even after the session is finished, so a flush queue can never drop a durable set.
 export class GymError extends Error {
@@ -194,6 +236,8 @@ export class GymError extends Error {
     this.exerciseIdTaken = this.code === 'exercise-id-taken';
     this.sessionOpen = this.code === 'session-open';
     this.sessionAlreadyOpen = this.code === 'session-already-open';
+    this.fixUnreadable = this.code === 'fix-unreadable';
+    this.setNotFound = this.code === 'set-not-found';
   }
 }
 
@@ -281,6 +325,25 @@ export const gymApi = {
   // with its server-assigned number, whether or not the session has since been finished.
   async appendSet(sessionId, set) {
     return json(await call(`/sessions/${sessionId}/sets`, { method: 'POST', body: JSON.stringify(set) }));
+  },
+
+  // A CORRECTION, AND ONLY OF WHAT MOVED (§G18). The fix carries the fields that changed and
+  // nothing else, because an omitted field is left as stored — which is how a set's rpe and its
+  // note survive a sheet that never draws them (fix.js builds the document). The stored set comes
+  // back, so a screen redraws off the store's answer rather than off what it hoped it sent.
+  async fixSet(sessionId, setId, fix) {
+    return json(await call(`/sessions/${sessionId}/sets/${setId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(fix),
+    }));
+  },
+
+  // The set no longer stands. THERE IS NO TRASH BEHIND THIS and no route back: the store keeps what
+  // it took out where nothing reads it, so nothing a lifter logged is destroyed — but no screen may
+  // offer that as a recovery, because there is none to offer. 204 for a set already gone as readily
+  // as for one just removed, which is what makes a retry after a lost reply safe.
+  async deleteSet(sessionId, setId) {
+    return json(await call(`/sessions/${sessionId}/sets/${setId}`, { method: 'DELETE' }));
   },
 
   async finishSession(sessionId, { finishedAt }) {

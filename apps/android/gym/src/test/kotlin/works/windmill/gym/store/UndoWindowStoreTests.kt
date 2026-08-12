@@ -135,8 +135,9 @@ class UndoWindowStoreTests {
         assertNull("and there is nothing left to take back", store.undoable)
     }
 
-    // Past the window the log holds the row, and the wire has no route that deletes one. The
-    // answer is no rather than a screen that quietly disagrees with the account.
+    // Past the window the log holds the row, and this door does not reach the account's. The answer
+    // is no rather than a screen that quietly disagrees with it — the set comes off through §G18's
+    // delete on the session read back, never through the logger mid-workout.
     @Test
     fun testUndoAfterTheSetHasLandedRefusesRatherThanPretending() = runTest {
         val server = FakeTraining()

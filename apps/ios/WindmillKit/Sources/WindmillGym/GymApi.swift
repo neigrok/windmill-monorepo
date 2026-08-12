@@ -6,6 +6,7 @@ import WindmillPlatform
 //   GET  /v1/gym/exercises            ·  POST /v1/gym/exercises
 //   PATCH /v1/gym/exercises/:id       ·  GET /v1/gym/exercises/:id/record
 //   POST /v1/gym/sessions             ·  POST /v1/gym/sessions/:id/sets
+//   PATCH /v1/gym/sessions/:id/sets/:setId  ·  DELETE /v1/gym/sessions/:id/sets/:setId
 //   POST /v1/gym/sessions/:id/finish  ·  DELETE /v1/gym/sessions/:id
 //   GET  /v1/gym/sessions?before=&beforeId=&limit=   ·  GET /v1/gym/sessions/:id
 //   GET  /v1/gym/sessions/:id/review  ·  GET /v1/gym/last?exercise=
@@ -38,6 +39,8 @@ public protocol TrainingSyncing {
 
     func startSession(_ start: SessionStart) async throws -> Session
     func appendSet(to sessionId: String, _ write: SetWrite) async throws -> TrainingSet
+    func fixSet(_ setId: String, in sessionId: String, _ fix: SetFix) async throws -> TrainingSet
+    func deleteSet(_ setId: String, in sessionId: String) async throws
     func finishSession(_ sessionId: String, at finishedAtMs: Int64) async throws -> Session
     func discardSession(_ sessionId: String) async throws
 
@@ -108,6 +111,26 @@ public struct GymApi: TrainingSyncing {
     // server-assigned number, whether or not the session has since been finished.
     public func appendSet(to sessionId: String, _ write: SetWrite) async throws -> TrainingSet {
         try await api.send("POST", "/v1/gym/sessions/\(sessionId)/sets", body: write, as: TrainingSet.self)
+    }
+
+    // THE ONE WRITE THAT MOVES A SET THAT ALREADY STANDS (§G18). It answers the stored row, so the
+    // same body sent again comes back byte-identical and the queue may send it any number of times.
+    // The log moves and the program does not: nothing on this route can reach a frozen plan snapshot
+    // or a routine.
+    //
+    // Unlike every read above, its 404 is THROWN rather than folded into the type. The queue tells
+    // writes apart by CODE, and `set-not-found` is a correction that will never land — a fact the
+    // lifter is owed out loud — where an absent READ is only a screen that draws nothing.
+    public func fixSet(_ setId: String, in sessionId: String, _ fix: SetFix) async throws -> TrainingSet {
+        try await api.send("PATCH", "/v1/gym/sessions/\(sessionId)/sets/\(setId)",
+                           body: fix, as: TrainingSet.self)
+    }
+
+    // 204, and it says the same 204 however the truth is spelled: already gone, never there, another
+    // account's. Absent stays byte-identical to forbidden, and a reply lost on the way back is safe
+    // to send again — which is the whole reason this route carries no 400, no 404 and no 409.
+    public func deleteSet(_ setId: String, in sessionId: String) async throws {
+        try await api.send("DELETE", "/v1/gym/sessions/\(sessionId)/sets/\(setId)")
     }
 
     public func finishSession(_ sessionId: String, at finishedAtMs: Int64) async throws -> Session {

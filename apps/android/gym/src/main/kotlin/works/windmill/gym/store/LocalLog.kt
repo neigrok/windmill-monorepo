@@ -7,6 +7,7 @@ import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.SessionDetail
 import works.windmill.gym.domain.SessionSummary
+import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.TrainingSet
 
 // THE SHELF — everything gym made on this device that no account has claimed yet: locally minted
@@ -19,13 +20,28 @@ import works.windmill.gym.domain.TrainingSet
 // account, and a row leaves the shelf only when the server has confirmed holding it — so the shelf
 // is always exactly what the account does not yet have, and merging reads is one concatenation.
 //
+// It is also where §G18's correction lands for a session no account holds: the fix rewrites the row
+// that will be replayed, and a delete leaves a tombstone rather than only a hole, because a claim
+// that stopped half way through may already have put part of this session on the log.
+//
 // Same discipline as the queue's file: one atomic JSON file, every field optional so an older
 // build's file still opens, and a file this build cannot read opens EMPTY rather than taking the
 // history down with it. Written on every mutation — holds and claims are rare (a finish, a keep,
 // a claim), not per-tap.
 class LocalLog(private val file: File) {
     @Serializable
-    data class FinishedSession(val session: Session, val sets: List<TrainingSet> = emptyList())
+    data class FinishedSession(
+        val session: Session,
+        val sets: List<TrainingSet> = emptyList(),
+        // THE TOMBSTONES — sets §G18 deleted off this row, kept by id until the claim has told the
+        // account. A shelf session is not always wholly unclaimed: a pass that landed the start and
+        // some of the sets and then stopped retryably leaves the row here with part of it already on
+        // the log. Dropping a set from `sets` alone would let the next pass replay the survivors and
+        // leave the deleted one standing on the account forever — the delete would silently undo
+        // itself. Defaulted for the same reason every field here is: a file written before the
+        // tombstones existed has no such key, and a file that fails to decode opens EMPTY.
+        val deleted: List<String> = emptyList(),
+    )
 
     @Serializable
     private data class Held(
@@ -48,8 +64,9 @@ class LocalLog(private val file: File) {
 
     fun routine(id: String): Routine? = routines.firstOrNull { it.id == id }
 
-    fun detail(sessionId: String): SessionDetail? = finished
-        .firstOrNull { it.session.id == sessionId }
+    fun row(sessionId: String): FinishedSession? = finished.firstOrNull { it.session.id == sessionId }
+
+    fun detail(sessionId: String): SessionDetail? = row(sessionId)
         ?.let { SessionDetail(it.session, it.sets) }
 
     fun details(): List<SessionDetail> = finished.map { SessionDetail(it.session, it.sets) }
@@ -94,7 +111,7 @@ class LocalLog(private val file: File) {
                 })
             },
             finished = finished.map { past ->
-                FinishedSession(
+                past.copy(
                     session = remapPlan(past.session, old, fresh),
                     sets = past.sets.map { if (it.exerciseId == old) it.copy(exerciseId = fresh) else it },
                 )
@@ -119,7 +136,7 @@ class LocalLog(private val file: File) {
             routines = routines.map { if (it.id == old) it.copy(id = fresh) else it },
             finished = finished.map { past ->
                 if (past.session.routineId != old) past
-                else FinishedSession(past.session.copy(routineId = fresh), past.sets)
+                else past.copy(session = past.session.copy(routineId = fresh))
             },
         )
         flush()
@@ -130,12 +147,49 @@ class LocalLog(private val file: File) {
     // finish arrives here carrying everything the first hold did plus whatever was lifted since;
     // converging must not cost either copy a set.
     fun hold(finished: FinishedSession) {
-        val standing = this.finished.firstOrNull { it.session.id == finished.session.id }
-        val sets = finished.sets + (standing?.sets ?: emptyList())
-            .filter { old -> finished.sets.none { it.id == old.id } }
+        val standing = row(finished.session.id)
+        // The tombstones survive every re-hold and they filter the merge: the queue's copy of the
+        // same workout still carries a set §G18 deleted off this row, and a merge that took it back
+        // would resurrect a set the lifter removed.
+        val gone = ((standing?.deleted ?: emptyList()) + finished.deleted).distinct()
+        val sets = (finished.sets + (standing?.sets ?: emptyList())
+            .filter { old -> finished.sets.none { it.id == old.id } })
+            .filterNot { it.id in gone }
         held = held.copy(finished = this.finished.filterNot { it.session.id == finished.session.id } +
-            FinishedSession(finished.session, sets))
+            FinishedSession(finished.session, sets, gone))
         flush()
+    }
+
+    // THE SHELF'S OWN §G18, and the reason a fix on an unclaimed session never touches the wire: the
+    // row has not been sent, so a correction rewrites what WILL be sent — no PATCH goes out for an id
+    // the log has never seen, and the claim replays the CORRECTED set, never the original and never
+    // both. Answers null where the shelf does not hold that set, which is how the caller tells the
+    // device's rows from the account's.
+    fun fixSet(sessionId: String, setId: String, fix: SetFix): TrainingSet? {
+        val standing = row(sessionId)?.sets?.firstOrNull { it.id == setId } ?: return null
+        if (!fix.moves(standing)) return standing
+        val corrected = fix.corrected(standing)
+        held = held.copy(finished = finished.map { past ->
+            if (past.session.id != sessionId) past
+            else past.copy(sets = past.sets.map { if (it.id == setId) corrected else it })
+        })
+        flush()
+        return corrected
+    }
+
+    // The delete's shelf half. The set leaves the row AND is remembered as gone, because part of
+    // this session may already be on the account: a claim that landed the start and some of the
+    // sets and then stopped retryably leaves the row here with the log already holding it.
+    fun deleteSet(sessionId: String, setId: String): Boolean {
+        val standing = row(sessionId) ?: return false
+        if (standing.sets.none { it.id == setId }) return false
+        held = held.copy(finished = finished.map { past ->
+            if (past.session.id != sessionId) past
+            else past.copy(sets = past.sets.filterNot { it.id == setId },
+                           deleted = past.deleted + setId)
+        })
+        flush()
+        return true
     }
 
     // The row leaves the shelf for both reasons a row can leave a log: claimed onto the account
@@ -154,7 +208,7 @@ class LocalLog(private val file: File) {
             routines = routines.filterNot { it.id == id },
             finished = finished.map { past ->
                 if (past.session.routineId != id) past
-                else FinishedSession(past.session.copy(routineId = null), past.sets)
+                else past.copy(session = past.session.copy(routineId = null))
             },
         )
         flush()
@@ -163,7 +217,7 @@ class LocalLog(private val file: File) {
     fun remintSession(old: String, fresh: String) {
         held = held.copy(finished = finished.map { past ->
             if (past.session.id != old) past
-            else FinishedSession(past.session.copy(id = fresh), past.sets)
+            else past.copy(session = past.session.copy(id = fresh))
         })
         flush()
     }
@@ -171,17 +225,19 @@ class LocalLog(private val file: File) {
     fun remintSet(sessionId: String, old: String, fresh: String) {
         held = held.copy(finished = finished.map { past ->
             if (past.session.id != sessionId) past
-            else FinishedSession(past.session, past.sets.map { if (it.id == old) it.copy(id = fresh) else it })
+            else past.copy(sets = past.sets.map { if (it.id == old) it.copy(id = fresh) else it })
         })
         flush()
     }
 
     // The claim's one loss door: a set the log refused forever leaves the shelf so it is not
-    // re-refused on every connect — the RefusedSet the store publishes is its last copy.
+    // re-refused on every connect — the RefusedSet the store publishes is its last copy. It leaves
+    // no tombstone, and that is the difference from `deleteSet`: a set the log never took needs
+    // nothing said to the account about it.
     fun dropSet(sessionId: String, setId: String) {
         held = held.copy(finished = finished.map { past ->
             if (past.session.id != sessionId) past
-            else FinishedSession(past.session, past.sets.filterNot { it.id == setId })
+            else past.copy(sets = past.sets.filterNot { it.id == setId })
         })
         flush()
     }

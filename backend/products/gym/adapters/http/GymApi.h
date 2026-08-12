@@ -37,10 +37,21 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // handler on purpose, because a queue told "your set is malformed" by a five-second lock wait drops
 // it forever.
 //
-// Eight refusals carry a machine word under `code`, because their repairs differ and prose is not a
+// Eleven refusals carry a machine word under `code`, because their repairs differ and prose is not a
 // contract: session-id-taken · session-already-open · session-finished · session-open ·
-// set-id-taken · routine-id-taken · exercise-id-taken · unknown-exercise. Everything else has
-// exactly one cause and the sentence is the whole of it.
+// set-id-taken · set-deleted · routine-id-taken · exercise-id-taken · unknown-exercise ·
+// set-not-found · fix-unreadable. Everything else has exactly one cause and the sentence is the
+// whole of it.
+//
+// `set-id-taken` and `set-deleted` are the pair to keep apart, and they are the reason a code is not
+// a courtesy: the first is repaired by minting a fresh id and sending the set again, and doing that
+// to the second would log a deleted set back into the workout under a new number.
+//
+// The last two are the correction's, and EVERY refusal those two routes can make carries one, which
+// is a tighter rule than the rest of this file keeps. The reason is who calls them: a correction
+// rides the phones' offline queue like every other write, and a queue branches — `set-not-found` is
+// terminal (the row is gone, drop the pending edit), `fix-unreadable` is terminal and a bug in the
+// client. Neither is a sentence anything should ever match on.
 class GymApi {
 public:
   GymApi(std::shared_ptr<LogService> log, std::shared_ptr<AuthService> auth,
@@ -55,6 +66,11 @@ public:
   void startSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb);    // POST /v1/gym/sessions
   void appendSet(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                  const std::string& id);                                      // POST /v1/gym/sessions/{id}/sets
+  // §G18's sheet, and the two writes NO AGENT MAY REACH — routes.cpp says why beside the mounts.
+  void fixSet(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id,
+              const std::string& setId);                                      // PATCH  /v1/gym/sessions/{id}/sets/{setId}
+  void deleteSet(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id,
+                 const std::string& setId);                                   // DELETE /v1/gym/sessions/{id}/sets/{setId}
   void finishSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                      const std::string& id);                                  // POST /v1/gym/sessions/{id}/finish
   void listSessions(const drogon::HttpRequestPtr& req, HttpCallback&& cb);    // GET  /v1/gym/sessions?before=&limit=

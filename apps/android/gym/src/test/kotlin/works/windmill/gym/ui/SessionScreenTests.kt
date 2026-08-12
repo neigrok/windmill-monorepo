@@ -163,4 +163,42 @@ class SessionScreenTests {
     fun aSessionWithNoSetsGroupsIntoNothing() {
         assertEquals(emptyList<Performed.Movement>(), Performed.movements(emptyList(), catalog))
     }
+
+    // §G18'S SUBTITLE — "Overhead Press · set 3" — and it is the LOG'S number wherever the log has
+    // spoken for the row. A delete leaves a gap and the numbers after it do not close up, so a
+    // position in the list would name the wrong set the moment one was removed. The position is only
+    // the fallback for a session no account has numbered yet, where it is what the server would
+    // assign anyway: max+1 per movement, warmups counted.
+    @Test
+    fun aSetIsNamedByTheLogsOwnNumberAndFallsBackToItsPositionOnly() {
+        val numbered = Performed.movements(listOf(
+            set("s1", "bench-press", 40.0, 8, at = 1_000, kind = SetKind.Warmup).copy(setNumber = 1),
+            set("s3", "bench-press", 82.5, 5, at = 3_000).copy(setNumber = 3),
+            set("s4", "bench-press", 82.5, 5, at = 4_000).copy(setNumber = 4),
+        ), catalog)
+        assertEquals("the gap a delete left is the log's own and stands",
+                     listOf(1, 3, 4), numbered[0].rows.map { it.number })
+
+        val shelved = Performed.movements(listOf(
+            set("s1", "bench-press", 40.0, 8, at = 1_000, kind = SetKind.Warmup),
+            set("s2", "bench-press", 82.5, 5, at = 2_000),
+        ), catalog)
+        assertEquals("a session no account has numbered counts from one, warmups included",
+                     listOf(1, 2), shelved[0].rows.map { it.number })
+    }
+
+    // The sheet edits the row WHOLE, so the row it is opened from has to carry the whole set — the
+    // kind, the rpe, the note and the instant included. A screen that handed the editor four
+    // strings would save a set with everything else silently defaulted away.
+    @Test
+    fun everyRowCarriesTheSetItselfSoTheSheetCanEditIt() {
+        val logged = set("s1", "bench-press", 82.5, 5, at = 1_000, kind = SetKind.Failure)
+            .copy(rpe = 9.5, note = "left shoulder")
+        val movements = Performed.movements(listOf(logged), catalog)
+
+        assertEquals(logged, movements[0].rows.single().set)
+        assertEquals("s1", movements[0].rows.single().id)
+        assertEquals(SetKind.Failure, movements[0].rows.single().kind)
+        assertEquals("82.5 × 5", movements[0].rows.single().effort)
+    }
 }

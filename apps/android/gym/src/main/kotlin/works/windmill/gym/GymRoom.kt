@@ -102,8 +102,10 @@ private enum class Tab(val title: String) {
     Routines("Routines"),
 }
 
-// What a tab can push on top of itself, and both are read-only: one past session with its sets, and
-// one movement's whole record. The session travels as the ROW the list already holds rather than as
+// What a tab can push on top of itself: one past session with its sets, and one movement's whole
+// record. Neither is read-only any more — the session pushes §G18 over itself and the record page
+// renames the movement — but each holds exactly one write and each says out loud when it does not
+// land. The session travels as the ROW the list already holds rather than as
 // an id, because that row carries facts no other read gives back — the working set count, the
 // tonnage, and whether the four-hour rule closed it rather than a tap. A movement travels as its ID
 // and nothing else, which is the point of the page it opens: the name is the only thing about a
@@ -208,6 +210,17 @@ fun GymRoom(account: Account) {
         // Deviates from iOS, where the ROOM resumes after connect: here connect() owns the resume, so a boot cannot race it.
     }
 
+    // A WITHHELD DELETE BELONGS TO THE SCREEN THE GESTURE WAS MADE ON. Leaving that screen ends its
+    // window exactly as leaving the room does: the row is off the screen it was taken from, so there
+    // is nothing left to take it back from and the delete goes. Keyed on which session is standing
+    // rather than hung off each door, because a start, a back gesture, a chevron and a push are four
+    // ways out of one screen and a settle wired to three of them is the one that loses a write.
+    val standingSession = (away.lastOrNull() as? Away.Session)?.summary?.id
+    LaunchedEffect(standingSession) {
+        if (store.withheld?.sessionId == standingSession) return@LaunchedEffect
+        store.settleWithheld()?.let { note = it.line("that set is still on the log") }
+    }
+
     // The background flush and the parting one. ON_PAUSE is the nearest edge to iOS's
     // scenePhase != .active, and ON_STOP is the second net behind it — a flush on an empty queue
     // costs nothing. The dispose flush is launched unstructured — the composition scope dies with
@@ -224,7 +237,22 @@ fun GymRoom(account: Account) {
         lifecycleOwner.lifecycle.addObserver(watcher)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(watcher)
-            CoroutineScope(Dispatchers.Main.immediate).launch { store.flushPendingSets(force = true) }
+            CoroutineScope(Dispatchers.Main.immediate).launch {
+                // The owed sets first and the withheld delete second, and the order is the stakes:
+                // a set that never landed is refused forever once its session closes, while a
+                // delete has no deadline at all. A §G18 delete still inside its window goes on the
+                // way out for the same reason an owed set does — the row it took is off the screen
+                // the gesture belonged to, so there is nothing left to take it back from.
+                //
+                // ITS FAILURE IS THE ONE THIS ROOM DOES NOT SAY, and that is a decision rather than
+                // an oversight: the sibling settle above answers into `note`, but this composition
+                // and the store remembered in it are both already gone, so there is no surface left
+                // to put a sentence on and no next reader to carry it to. It fails in the surviving
+                // direction — the set stands on the log, and the session it belongs to still draws
+                // it the next time the room opens.
+                store.flushPendingSets(force = true)
+                store.settleWithheld()
+            }
         }
     }
 
@@ -295,8 +323,9 @@ fun GymRoom(account: Account) {
         }
     }
 
-    // The one destructive action in the product, and a delete that did not happen is the one it may
-    // not draw as if it had: the screen only leaves once the log says the session is gone.
+    // A whole workout destroyed, and a delete that did not happen is the one thing this may not draw
+    // as if it had: the screen only leaves once the log says the session is gone. (§G18 takes a
+    // single set and lives on the session read back, behind its own window.)
     fun discard(sessionId: String) {
         scope.launch {
             note = null
@@ -397,6 +426,7 @@ fun GymRoom(account: Account) {
                     summary = standing.summary,
                     store = store,
                     coach = coach,
+                    say = { note = it },
                     onOpenMovement = { look(Away.Movement(it)) },
                 )
                 tab == Tab.Log -> LogScreen(store, onOpenSession = { look(Away.Session(it)) })

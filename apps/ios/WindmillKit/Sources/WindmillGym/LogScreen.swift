@@ -14,8 +14,8 @@ import WindmillPlatform
 // are merged into the list at any age and one of them can sit below the served page.
 //
 // THE GOLD DOT MEANS A RECORD HAPPENED IN THERE (§G16), and the log does not decide that — the
-// domain does, against the log AS IT IS NOW rather than frozen at the finish, so W3's corrections
-// will move records and the dot will move with them. A row this device is the only home for never
+// domain does, against the log AS IT IS NOW rather than frozen at the finish — so a correction
+// (§G18) moves a record and moves the dot with it. A row this device is the only home for never
 // wears one: the three record rules are claims against a history the device does not hold, and no
 // dot there is an omission rather than the assertion a wrong dot would be.
 
@@ -297,8 +297,8 @@ struct LogScreen: View {
                     .frame(maxWidth: .infinity, minHeight: GymTap.minimum)
             }
         case .failed:
-            // Alarm ink is for a failed read or a failed write and for nothing else in this product
-            // — never a missed rep, never a session that ran short.
+            // Alarm ink marks three things in this product and no others: a failed read, a failed
+            // write, and §G18's one destructive control. Never a missed rep, never a short session.
             Button { Task { await store.loadOlder() } } label: {
                 box("That read failed · retry", ink: skin.alarmInk, edge: skin.alarmInk)
             }

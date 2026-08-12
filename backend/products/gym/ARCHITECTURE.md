@@ -29,7 +29,10 @@ happens on the device. The backend's job is narrow and load-bearing:
 **What the backend owns (the whole surface):**
 
 1. **The durable set write** — the single feature without which none of this is a training log.
-   A set bound to an account, idempotent under retry, append-only. Lift protects data with more
+   A set bound to an account, idempotent under retry. Since W3 (2026-08-12) a lifter can also
+   **correct** one: the row is rewritten in place and the version it replaced is kept in
+   `gym_set_revisions`, so `gym_sets` still means *one row per set that currently stands* and
+   nothing anybody logged is destroyed (§2.3, §2.7). Lift protects data with more
    code than it presents data with, and still ships a path that deletes a user's entire history
    to recover from a corrupt store. Server-as-truth is not a feature of gym; it is the reason
    gym exists here. (§3)
@@ -233,8 +236,11 @@ clock is the only honest one, and this is the owner's own data.
 ### 2.3 `gym_sets` — the product, one row at a time
 
 ```sql
--- The unit of the whole product: an append-only event stream from one device at a time.
--- Nothing to converge, so no HLC and no lattice — the client-minted id ('set_<hex>') makes
+-- The unit of the whole product: ONE ROW PER SET THAT CURRENTLY STANDS, written by one device at a
+-- time. A correction rewrites the row and keeps what it replaced in gym_set_revisions (§2.7), so
+-- every read of this table stays exactly what it was — the tonnage, the marks, the records, the
+-- chart, the prefill and the export all recompute off the live rows and none of them projects a
+-- chain. Nothing to converge, so no HLC and no lattice — the client-minted id ('set_<hex>') makes
 -- the background-flush queue replayable (ON CONFLICT DO NOTHING), which is all offline needs.
 -- kind / rpe / note land NOW though their UI is phase 2 — Lift's lesson is that this is a
 -- schema decision, not a feature decision: a warmup must not count toward volume, and
@@ -242,14 +248,16 @@ clock is the only honest one, and this is the owner's own data.
 -- from every total (Lift shipped exactly that). The volume contribution of a set kind is a
 -- domain decision and the finish surface took it: WORKING sets only, and a warmup, a drop and a
 -- failure count toward nothing (products/gym/domain/Review.h). The storage is decided here.
--- set_number is server-assigned max+1 per (session, exercise) — not count+1: after a phase-2
--- delete + renumber, count+1 would mint a duplicate (a bug Lift's own spec had backwards).
+-- set_number is server-assigned max+1 per (session, exercise) — not count+1, and that choice is
+-- what made W3's delete safe to build: deleting set 2 of 3 leaves 1 and 3, and count+1 would then
+-- mint a second 3 (a bug Lift's own spec had backwards). Nothing RENUMBERS after a delete: a gap is
+-- honest and the number a set was logged under is not a lifter's to rewrite.
 -- max+1 is only unique if two appends to one session cannot read the same max, and READ COMMITTED
 -- lets them: a parallel flush of six sets minted four "set 1"s. The invariant is held by a
 -- FOR UPDATE on the session row taken as its own statement before the insert (§3.3) — appends to
--- one session serialize behind it. No unique index on (session_id, exercise_id, set_number) yet:
--- it would be a second arbiter to reconcile with the phase-2 renumber, and the lock already
--- makes the duplicate unreachable.
+-- one session serialize behind it. No unique index on (session_id, exercise_id, set_number): the
+-- lock already makes the duplicate unreachable, and an index would be a second arbiter over a
+-- column that now legitimately holds gaps.
 create table if not exists gym_sets (
   id           text primary key,
   session_id   text not null references gym_sessions(id) on delete cascade,
@@ -400,6 +408,82 @@ resolves to the same nothing an invented one does from the very next request. Th
 session's `on delete cascade`, so a discarded workout leaves no live link pointing at a session
 that is gone, and it is in `PgAccountFootprint`'s owned list in `main.cpp` — a live coach link is
 data, and an account holding one is not empty.
+
+### 2.7 `gym_set_revisions` — what a correction replaced (W3, 2026-08-12)
+
+```sql
+create table if not exists gym_set_revisions (
+  revision_id  bigserial primary key,
+  set_id       text not null,                                        -- deliberately NO foreign key
+  session_id   text not null references gym_sessions(id) on delete cascade,
+  user_id      uuid not null references users(id) on delete cascade,
+  exercise_id  text not null references gym_exercises(id),
+  set_number   int  not null,
+  weight_kg    numeric(6,2) not null,
+  reps         int  not null,
+  kind         text not null,
+  rpe          numeric(3,1),
+  note         text not null default '',
+  completed_at timestamptz not null,
+  deleted      boolean not null default false,
+  replaced_at  timestamptz not null default now()
+);
+create index if not exists gym_set_revisions_set on gym_set_revisions (set_id, replaced_at);
+```
+
+**The ruling, and why it is not append-a-superseding-row.** The instinct — and an advisory board's
+recommendation — was to keep `gym_sets` append-only and correct a set by appending a superseding row
+with a tombstone. That was refused on **blast radius**: a superseding row means *every* read of sets
+must project — filter the superseded, resolve the chain — and that is session detail, the log's
+marks, the record page, the review, the statistics, the prefill, the CSV export and every MCP
+projection. Ten-odd queries, each one a chance to forget, paid forever on every future read, to buy
+a property nothing needs; and a forgotten projection shows a lifter a set twice, or a number they
+corrected weeks ago. So: **a correction UPDATEs the set row and appends the prior version here; a
+delete moves the row here whole, marked `deleted`.** `gym_sets` keeps its one meaning, every
+existing read is untouched and correct by construction, and what append-only was actually protecting
+is preserved where it belongs — **nothing a lifter logged is ever destroyed.**
+
+**Nothing shows this table to a lifter, and that is deliberate rather than unfinished.** There is no
+trash, no recovery route, and no copy anywhere in this repo that promises a set back — §G18 draws
+none, and the wave that built this swept the tree for the older `Trash — recoverable for 30 days`
+line and found no copy of it here. **That line is still drawn in the Design project's G3 canon, and
+it is the owner's to correct** — this repo cannot, and W3 did not. Until it is, the canon promises a
+door this product does not have. The table exists so the sentence above is true, not so a screen can
+offer an undo it would then have to keep honest.
+
+**One write reads it, and it reads one column.** An append asks whether the id it carries names a set
+this account DELETED, because a delete has to survive a replay of the POST that logged the set
+(§3.3). That is not a door back: it hands nothing over, it refuses.
+
+**`set_id` carries no foreign key** because a deleted set's row is gone from `gym_sets` and the whole
+point of this table is to outlive it. `session_id` and `user_id` keep theirs, so closing an account
+takes these rows and **discarding a workout takes its revisions too** — which is what keeps
+`discard_session`'s own promise ("Permanent — nothing keeps a copy") true. The columns carry no
+`CHECK`s: this is a copy of what a row already was, and a constraint tightened on `gym_sets` later
+must never make the history of a set unwritable. `revision_id` is the one id in gym the server
+mints — a kept row is not something a client names, because nothing names it at all.
+
+**Both writes keep their copy in the same statement that moves the row** (`PgTrainingRepository`),
+so there is no instant in which a version is gone and unkept: the delete's `DELETE … RETURNING`
+feeds the `INSERT`, and the correction's data-modifying CTE copies the row beside the `UPDATE` —
+**only where the row actually moves.** `{}` is a legal fix and a resent identical fix is what a
+client does with a lost reply, so an unconditional copy would grow a version per retry standing for
+a change nobody made; the CTE carries an `IS DISTINCT FROM` guard and a write that replaced nothing
+keeps nothing.
+
+**One lock order, taken by all three writes that change what a workout holds: the session row first,
+its set rows after.** `insertSet`, `updateSet` and `deleteSet` each open with an owner-scoped
+`SELECT … FROM gym_sessions … FOR UPDATE` as their own statement, and that one line buys three
+things. Under READ COMMITTED a statement's snapshot is taken when it begins, so a correction that
+both copied the row and rewrote it in one statement would copy the version it read *before* waiting
+on a racing correction's lock — and that correction's value would leave the log with nothing keeping
+it; locked first, the second statement reads fresh. An append replaying a POST while a delete of the
+same id commits is decidable rather than a coin toss: either the append lands and the delete removes
+it, or the delete commits and the append is refused by the revisions read. And the order is uniform,
+so nothing deadlocks — `gym_set_revisions` carries a foreign key to `gym_sessions`, so every copy
+already asks that session row for a `KEY SHARE`, and a writer that took a set row *first* would close
+the cycle. The `DELETE` still takes the set's own row lock and re-evaluates the row it waited for,
+which is how a delete racing a correction keeps the value that correction wrote.
 
 ---
 
@@ -681,19 +765,35 @@ flow control never travels as a throw, and `InvalidTraining` stays reserved for 
   state the session is in now. A row stored under that id in a **different** session is
   `AppendError::idTaken` → 409 — the caller's own earlier session or a stranger's, told apart by
   nobody, because the reply carries the fact that the id is spent and never the row. Only a
-  genuinely new id reaches the finished refusal (`AppendError::finished` → 409) and then the
-  insert: `FOR UPDATE` on the session row, then `set_number = max+1` for that (session, exercise)
+  genuinely new id reaches the insert, and **the insert is where every remaining refusal is
+  decided** — including `finished`, which the service used to answer a second time off the session
+  row it loaded before any lock existed. One fact decided in two layers is one fact decided in two
+  ORDERS: that loaded-row copy answered `finished` for an id the store would have answered
+  `deleted` for, telling a queue that a set it had in fact logged never reached the log at all.
+  So: `FOR UPDATE` on the session row, then `set_number = max+1` for that (session, exercise)
   computed in the next statement, `ON CONFLICT (id) DO NOTHING`, then a read-back scoped to
   **(id, session_id)** — which is the row returned. The device's background flush can replay the
   queue in any order, any number of times; the log converges on exactly one row per minted id.
   A concurrent same-exercise append no longer races the numbering (§2.3): appends to one session
   serialize behind its row, which costs one lock on a write that is already one round trip.
-  The insert's own three refusals come back beside the row as `SetInsertError` (§3.4) and the
+  The insert's own four refusals come back beside the row as `SetInsertError` (§3.4) and the
   service passes them through untouched: `unknownExercise` when the set names a movement no catalog
   **this account can see** holds → `AppendError::unknownExercise` → 400; `idTaken` when the scoped
-  read-back finds nothing; and `finished` when the locked row is already closed →
-  `AppendError::finished` → 409. None is ever an exception in flight — the catalog and the close are
-  storage's to know, and storage says so in a value.
+  read-back finds nothing; `finished` when the locked row is already closed →
+  `AppendError::finished` → 409; and `deleted` → 409 `set-deleted`, below. None is ever an exception
+  in flight — the catalog and the close are storage's to know, and storage says so in a value.
+
+  **A set id is spent once and for good, and the replay above is not the whole of the idempotency.**
+  `setOf` reads the rows that STAND, so a set the lifter deleted (§2.7) resolves to nothing here and
+  falls through to the insert — which, on the primary key alone, would find the id free and log the
+  set again from a queue that never learned its POST had landed. So the insert asks
+  `gym_set_revisions`, under the session's lock and scoped to its owner, whether this id names a
+  deleted set: `SetInsertError::deleted` → `AppendError::deleted` → 409 `set-deleted`. It is asked
+  **before** the `finished` refusal, because a deleted set in a closed workout is not a set that
+  never landed, and it is answered under its own word rather than `idTaken` because the two repairs
+  are opposites: a spent id is repaired by minting a fresh one, which is precisely how a deleted set
+  would come back under a new number. Every surface's queue treats an unrecognised 409 as terminal,
+  so the word is safe to speak at a client that predates it — the set is dropped either way.
 
   **Visibility is checked on the WRITE, not inferred from the FK.** The foreign key only asks
   whether the row exists, so a set could name another account's private custom movement — and the
@@ -721,9 +821,37 @@ flow control never travels as a throw, and `InvalidTraining` stays reserved for 
   device won the race. This was the only write in the service that could answer `error == none` with
   no session, and both wire edges dereference that optional.
 
+- **`fixSet(user, session, id, SetFix)` and `deleteSet(user, session, id)`** — the correction, W3.
+  The fix is this file's own shape narrowed to three steps: load the stored row owner-scoped
+  (`setOf`), hand it to the pure rule (`corrected(stored, fix)` — `domain/Training.h`), write what
+  the rule returned. The rule is where a value the store cannot hold is refused, so nothing
+  unstorable is ever offered to the store; and the rule is also where *what a fix may not change* is
+  stated once — the movement, the instant, the set number and the session are copied across from the
+  stored row by construction, so no layer above can move them by forgetting to.
+
+  **The session in the path has to hold the set**, and that check is in the service rather than the
+  store because it is the same fact the store already answers: absent, another account's, and this
+  account's set in a *different* workout are one empty reply, so a stale set id cannot be walked
+  into a workout the caller is not looking at. `404 set-not-found` for all three, and it is terminal
+  for the queue — nothing about those bytes will ever land.
+
+  **Nothing is refused for a finished session.** A lifter reads the log *after* the workout, which
+  is exactly when they see the 4 they meant to log as a 5, so the `finished` boundary the append has
+  does not exist here. Neither write settles staleness, and neither goes anywhere near
+  `gym_sessions.plan` or a routine entry — *Push A keeps its own numbers*, and `LogServiceTest` and
+  `PgTrainingRepositoryTest` each assert that rather than trust it.
+
+  **The delete answers nothing at all**, which is the contract and not an omission: a set that was
+  never there does not stand either, so the client whose reply was lost sends the same request again
+  and gets the same 204. The one race the fix accepts is stated rather than hidden — two devices
+  correcting one set leave the second one's values standing, merged against a row it read a moment
+  earlier — and every version either of them replaced is kept (§2.7).
+
 Every write returns the resolved row (journal's `PageService::write` lesson): a client that
 lost a race or replayed sees the winning truth in one round trip — and when there is no row it
-is entitled to, it gets a refusal, never a row it is not.
+is entitled to, it gets a refusal, never a row it is not. The delete is the one exception and it
+proves the rule: there is no row left to hand back, and a second reply that differed from the first
+is exactly what an idempotent delete must not have.
 
 ### 3.4 The port (`ports/TrainingRepository.h`)
 
@@ -740,6 +868,12 @@ struct TrainingRepository {
   virtual SetInsertOutcome insertSet(const Set& incoming) = 0;       // assigns number; refusals as
                                                                      // values. The REPLAY is the
                                                                      // service's, through setOf
+  // The two that change a stored set (§2.7). Each keeps what it replaced in gym_set_revisions in the
+  // SAME statement that moves the row. The update takes the WHOLE corrected row — the domain built
+  // it — and answers the stored one; absent = no such set, another's, or not this session's. The
+  // delete answers nothing, because a set that was never there does not stand either.
+  virtual std::optional<Set> updateSet(const UserId&, const Set& corrected) = 0;
+  virtual void deleteSet(const UserId&, const SessionId&, const SetId&) = 0;
   virtual LogPage log(const UserId&, const LogCursor&) = 0;   // the rows + the marks before them
   virtual std::vector<Set> setsOf(const SessionId&) = 0;
   virtual LastTimeOutcome lastTime(const UserId&, const ExerciseId&) = 0;  // the prefill read (§5)
@@ -791,7 +925,7 @@ struct LogPage { std::vector<SessionSummary> sessions; std::vector<PriorMark> st
 struct LogRow { SessionSummary summary; std::optional<double> topE1rm; bool record; };
 struct LogCursor { std::uint64_t beforeMs; std::optional<SessionId> beforeId; int limit; };
 
-enum class SetInsertError { none, idTaken, unknownExercise, finished };
+enum class SetInsertError { none, idTaken, unknownExercise, finished, deleted };
 struct SetInsertOutcome { std::optional<Set> set; SetInsertError error; };
 
 struct LastTime { Session session; std::string routineName; std::vector<Set> sets; };
@@ -1184,7 +1318,9 @@ query, ordered by pattern then name. Identity rules, stated once:
 | `PATCH /v1/gym/exercises/{id}` | rename a movement — `{name}` and nothing else; a seed takes a per-account name, the caller's own row renames in place, the id never moves (§4) | 2 |
 | `GET  /v1/gym/exercises/{id}/record` | a movement's record — the two tiles, twelve weeks of bars, the record ladder and the recent days, in ONE read (§5) | 2 |
 | `POST /v1/gym/sessions` | start — `{id, startedAt, joinOpenSession?, routineId?}`, idempotent; joins an open session unless the caller says it will not (§11.4); a named routine is frozen onto the row (§2.5) | 0 |
-| `POST /v1/gym/sessions/{id}/sets` | append a set — `{id, exerciseId, weightKg, reps, completedAt, kind?, rpe?, note?}` | 0 |
+| `POST /v1/gym/sessions/{id}/sets` | append a set — `{id, exerciseId, weightKg, reps, completedAt, kind?, rpe?, note?}`. A replay of an id this account **deleted** is `409 set-deleted`, not a re-mint (§3.3) | 0 |
+| `PATCH /v1/gym/sessions/{id}/sets/{setId}` | **fix a set** — `{weightKg?, reps?, kind?, rpe?, note?}` and nothing else; answers the stored row, so a retry is a no-op. `404 set-not-found` covers absent, another account's and this account's set in another workout alike; `400 fix-unreadable` covers a field a fix may not carry (`exerciseId`, `completedAt`, `setNumber`) and a value the store cannot hold. **No MCP tool, at any level** (§6, below) | 2 |
+| `DELETE /v1/gym/sessions/{id}/sets/{setId}` | **delete a set** — `204`, and `204` again on a retry: a set that was never there does not stand either. Refuses nothing. The row moves into `gym_set_revisions` marked deleted (§2.7); nothing promises it back. **No MCP tool, at any level** | 2 |
 | `POST /v1/gym/sessions/{id}/finish` | close — `{finishedAt}`, idempotent | 0 |
 | `GET  /v1/gym/sessions?before=&beforeId=&limit=` | the log, newest first | 0 |
 | `GET  /v1/gym/sessions/{id}` | one session with its sets; 200s carry a weak `ETag`, a matching `If-None-Match` answers 304 (§11.3) | 0 |
@@ -1244,6 +1380,16 @@ Five rules hold this together, and each is load-bearing:
 agent holding `list_sessions` + `get_session` + `get_stats` already has every one of those numbers in
 a shape it can read — a sixteenth tool that answered with a wall of comma-separated text would spend
 a `tools/list` slot and a context window to say what three tools already say.
+
+**`PATCH` and `DELETE` on a set have no tool either, and that one is a product rule rather than an
+economy.** *No agent may edit or delete a logged set — not under `gym:write`, not under
+`gym:delete`, not at any level a future grant invents.* This is §L's safeguard ladder made
+structural: the tool layer is the only place gym can tell an agent from a hand, and rewriting what
+somebody lifted is the one verb reserved for the hand. §27 draws the refusal in the coach's own
+words — *"That one is yours to change. I can read what you lifted; I can't edit it."* — and that
+sentence is only honest while this row stays empty. The reason is written beside the two mounts in
+`routes.cpp` so a later wave does not "complete the catalog", and `GymToolsTest` pins the absence by
+name so it cannot be added by accident.
 
 The grant itself is the platform's: `CompositeToolHost` filters `tools/list` by scope, refuses an
 out-of-scope call naming the missing `gym:<level>`, refuses an argument no schema declares, and
@@ -1367,6 +1513,7 @@ on carries a machine word under `code` beside the human sentence:
 | 409 | `session-id-taken` | start with a session id spent by an account this caller cannot see — never the caller's own, which replays | `that session id is taken` | mint a NEW session id and start again |
 | 409 | `session-already-open` | start that said `joinOpenSession: false` while another of this lifter's sessions is open | `another session is already open` | terminal until the open workout ends — a new id changes nothing; finish it (or let the four-hour auto-close fire) and send the same body again |
 | 409 | `set-id-taken` | append a NEW set id already spent by a row outside this session | `that set id is already used` | mint a NEW set id and send the same set again |
+| 409 | `set-deleted` | append an id that names a set **this account deleted** — a replay of the POST that logged it, from a queue whose 200 was lost or from a claim | `that set was deleted` | terminal — drop the set. **Never the re-mint above:** a fresh id is exactly how the deletion would undo itself |
 | 409 | `session-finished` | append a NEW set to a session already finished | `that session is finished` | terminal — this set will never land here |
 | 409 | `routine-id-taken` | create a routine under an id another account holds | `that routine id is taken` | mint a NEW routine id and send the same document again |
 | 409 | `exercise-id-taken` | create a movement under a seeded slug or another account's id — never the caller's **own**, which answers 200 with the movement already stored under it (§2.1: a 409 there forces a re-mint, and the re-mint is a second "Zercher Squat" every later set forks history across) | `that movement id is taken` | mint a NEW movement id and send it again |
@@ -1376,7 +1523,9 @@ on carries a machine word under `code` beside the human sentence:
 **The code is the contract; the sentence is for a human reading a log.** The wording is copy and may
 be edited any day; a client that told the 409s apart by string-comparing it degrades to
 "terminal, reason unknown" the first time one is reworded — and drops a set it should have re-minted
-an id for. Only those eight refusals carry a code, on purpose (`platform/adapters/http/JsonReply.h`):
+an id for. `set-id-taken` and `set-deleted` are the sharpest case: same status, same shape, opposite
+repairs, and telling them apart by prose would put a deleted set back in the log. Only those refusals
+carry a code, on purpose (`platform/adapters/http/JsonReply.h`):
 most refusals have exactly one cause and the sentence is the whole of it, and a key that is
 sometimes an empty string would make a client test it twice.
 
@@ -1620,8 +1769,11 @@ the local stack → push → watch CI → probe prod).
   describes rather than the settings-section stub the table used to promise. `gym-share` — **the
   backend half is shipped**: the separate table, the two owner-scoped doors and the one
   unauthenticated read (§2.6, §5). `gym-landing` — **shipped, and flipped 2026-08-08**: the landing
-  is live and `shell.status` is `'open'`. Still open: `set-kinds` UI · `log-editing` (drafts,
-  renumber) · `rest-timer` (the target column routines now write).
+  is live and `shell.status` is `'open'`. `log-editing` — **the backend half is shipped (W3,
+  2026-08-12)**: the two set routes, the revisions table and the domain's correction rule (§2.7,
+  §3.3, §6). It ships without the drafts and the renumber the bet once named — a draft editor was a
+  shape the decided design (§G18) never drew, and a renumber rewrites rows the lifter did not ask to
+  change. Still open: `set-kinds` UI · `rest-timer` (the target column routines now write).
   `gym-mcp` — **shipped**, both halves: the platform's grant gate, then
   gym's fifteen tools on it (§6). What is left of that bet is client-side — the connect surface, and
   whatever the shell puts in front of a lifter who has no agent of their own.
@@ -1705,18 +1857,23 @@ stand behind: *last set 1:47 ago*.
 1. **Phone → server (the write).** Unchanged from §3.3: client-minted `set_<hex>`, offline queue,
    replay in any order any number of times, `ON CONFLICT DO NOTHING`, flush before finish. The
    living statements of this contract are the phones' queues — `SetQueue.swift` (apps/ios) and
-   `SetQueue.kt` (apps/android) — which branch the three 409 codes the same way: `set-id-taken`
-   re-mints, `session-id-taken` re-mints, `session-finished` drops (§6). The web's `flushQueue.js`
+   `SetQueue.kt` (apps/android) — which branch the 409 codes the same way: `set-id-taken` re-mints,
+   `session-id-taken` re-mints, `session-finished` drops, and every other 409 is terminal and said —
+   which is what makes `set-deleted` (§3.3) land correctly on a client built before it existed (§6). The web's `flushQueue.js`
    was the reference implementation until 2026-08-09; it went with the web logger, and the web now
    holds no set queue at all.
 2. **Server → web (freshness). No new endpoint — built 2026-08-09** (`useTrainingLog.js`). Web
    boots on the log read — which is also what lazily settles a stale open session (§3.2) — finds
    the open session, then polls `GET /v1/gym/sessions/{id}`, which already answers
    `{session, sets}` owner-scoped. Five seconds while the tab is visible, stopped when hidden,
-   refetched on `visibilitychange`. The `ETag` over `(startedAt, setCount, last completedAt,
-   finishedAt)` is built (2026-08-11): every 200 from `GET /v1/gym/sessions/{id}` carries it —
-   weak, because it certifies those facts and not byte equality; the last three are the whole of
-   what can move on an insert-only session, and `startedAt` leads so a session discarded and
+   refetched on `visibilitychange`. The `ETag` over `(startedAt, finishedAt, a fold of the sets as
+   the reply renders them)` is built (2026-08-11, reshaped in W3): every 200 from
+   `GET /v1/gym/sessions/{id}` carries it — weak, because it certifies those facts and not byte
+   equality. It counted sets and read the last `completedAt` until a set stopped being
+   insert-only: a **correction** moves no count, no last instant and no `finished_at`, so the old
+   tag answered 304 over a weight that had changed and the mirror would have polled a stale screen
+   forever. The fold covers anything a poll could act on and nothing else, and `startedAt` still
+   leads so a session discarded and
    recreated under the same id can never answer the dead workout's tag with a 304. The poll sends
    it back as `If-None-Match` — read per RFC 9110 §13.1.2: a comma-separated list, `W/` stripped
    per entry, `*` matching any current representation — and an unchanged workout answers 304 with

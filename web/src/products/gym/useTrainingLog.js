@@ -3,8 +3,10 @@
 // voice — and the live mirror (§11.2): when the boot read finds an open session, this hook POLLS it
 // and Today draws it read-only. The web never starts, drives or finishes a live session; capture
 // lives in the phone rooms (backend/products/gym/ARCHITECTURE.md §11). What is left here writes
-// three things and none of them is a set: a movement minted from a picker, a movement's name (§H),
-// and the past-workout backfill — which owns its own writes and talks to gymApi directly.
+// three things and none of them is a set logged as it happens: a movement minted from a picker, a
+// movement's name (§H), and the past-workout backfill. Two more surfaces own their own writes and
+// talk to gymApi directly — that backfill form, and the session detail's correction of a set
+// already in the log (§G18) — and both speak through the one voice below.
 //
 // The mirror is a poll and not a socket, by decision (§11.3): GET /v1/gym/sessions/{id} every five
 // seconds while the tab is visible, nothing while it is hidden, and a refetch the moment it comes
@@ -18,10 +20,15 @@ import { mintId } from './mint.js';
 import { CREATED_MOVEMENT } from './logger/movements.js';
 
 const POLL_MS = 5000;
+// A toast is up for five seconds, and that is also how long a withheld delete has to be taken back
+// (`UNDO_MS`, fix.js) — the offer and the window it is true in are the same five seconds, and a
+// test pins them equal.
 const TOAST_MS = 5000;
-// Must stay at or under the server's own ceiling: the handler clamps limit to 200, so a larger page
-// size here would come back short of what was asked for and read as the bottom of the log — half a
-// lifter's history hidden under a foot that names the wrong day as their first session.
+// The handler clamps `limit` to 200 (GymApi.cpp), and the whole `end` signal is a page coming back
+// short of what was asked for — so anything asking for more than this would be answered 200 and read
+// as the bottom of the log, hiding half a lifter's history under a foot that names the wrong day as
+// their first session. Both numbers below are bounded by it.
+const SERVER_PAGE_CAP = 200;
 const LOG_PAGE = 50;
 
 // The key the retired web logger kept its resume note under. No build writes it any more, and the
@@ -33,9 +40,11 @@ const LOG_PAGE = 50;
 const RETIRED_LIVE_KEY = 'windmill.gym.live';
 
 // A page shorter than the one asked for is the bottom of the log. The read carries no total, so the
-// count of what came back is the only signal there is — and a full page only ever means "maybe more".
-function olderAfter(page) {
-  if (page.length < LOG_PAGE) return 'end';
+// count of what came back is the only signal there is — and a full page only ever means "maybe
+// more". The size asked for is passed in rather than assumed to be one page, because the re-read
+// below asks for as much of the log as is already on screen.
+function olderAfter(page, asked) {
+  if (page.length < asked) return 'end';
   return 'more';
 }
 
@@ -53,17 +62,27 @@ export function useTrainingLog({ api = gymApi } = {}) {
   // the only phase nothing else leaves. This counter is how the signal returning asks it again.
   const [bootAttempt, setBootAttempt] = useState(0);
 
-  // The log can be re-read from the top while an older page is still in the air — the backfill and
-  // the mirror closing both do exactly that. The walk is stamped, so a page fetched against the old
-  // list's tail is dropped rather than appended onto a list it no longer continues.
+  // The log can be re-read while an older page is still in the air — the backfill and the mirror
+  // closing both do exactly that. The walk is stamped, so a page fetched against the old list's tail
+  // is dropped rather than appended onto a list it no longer continues.
   const walk = useRef(0);
+
+  // HOW FAR DOWN THE LOG HAS BEEN READ, for the re-read below to ask for again. A ref fed by an
+  // effect rather than the state itself, because `reloadLog` must keep ONE identity for the life of
+  // the room: the session detail hangs a withheld delete off a callback built on it, and a new
+  // identity there fires that callback's cleanup — which sends the delete, seconds early, on
+  // whatever keystroke happened to lengthen the log (Log.jsx).
+  const reach = useRef(LOG_PAGE);
 
   // The mirror's freshness tag: the ETag of the last detail read the mirror took, sent back up as
   // If-None-Match so the steady state is a 304 the poll can ignore. A ref, not state — the tag
   // changes exactly when the detail does, and it must never be a render of its own.
   const mirrorTag = useRef(null);
 
-  const say = useCallback((text) => setToast({ text }), []);
+  // The one voice, and it can carry ONE move as well as a sentence: the withheld delete's Undo
+  // lives on it (§G18), and it lives there because the toast's own five seconds are the window the
+  // take-back is offered in — the offer and the truth behind it disappear together.
+  const say = useCallback((text, action = null) => setToast({ text, action }), []);
 
   useEffect(() => {
     let alive = true;
@@ -82,7 +101,7 @@ export function useTrainingLog({ api = gymApi } = {}) {
         walk.current += 1;
         setSummaries(log);
         // The first page settles this too: a log of three sessions must not offer to load older ones.
-        setOlderStatus(olderAfter(log));
+        setOlderStatus(olderAfter(log, LOG_PAGE));
         // An open session on the log is a workout running somewhere else — the phone's, to mirror,
         // never to adopt. The detail read brings its sets; the poll below keeps them fresh. And it
         // fails like a poll, not like the boot: the log LOADED, so the summaries stand and the
@@ -104,6 +123,8 @@ export function useTrainingLog({ api = gymApi } = {}) {
     })();
     return () => { alive = false; };
   }, [api, bootAttempt]);
+
+  useEffect(() => { reach.current = summaries.length; }, [summaries.length]);
 
   // The signal returning is the recovery for a boot that never came back — without this, a lifter
   // who opened the log in a basement stayed on the failure screen while the signal returned around
@@ -136,17 +157,23 @@ export function useTrainingLog({ api = gymApi } = {}) {
       // so no row can cross a page edge between two reads. An id-filter here would buy nothing and
       // hide a broken cursor instead of fixing one.
       setSummaries((current) => [...current, ...page]);
-      setOlderStatus(olderAfter(page));
+      setOlderStatus(olderAfter(page, LOG_PAGE));
     } catch {
       if (walk.current === mine) setOlderStatus('failed');
     }
   }, [api, summaries, olderStatus]);
 
-  // The log, re-read from the top — after a backfill lands, after a discard, and when the mirror
-  // sees the phone's session close. All of them change what the first page IS, so the list goes
-  // back to page one and the walk down it goes back with it: a log the lifter had read to the
-  // bottom is truncated by this read, and leaving the foot saying "there is nothing older" would be
-  // a lie about the middle of their history.
+  // The log, re-read — after a backfill lands, after a discard, when the mirror sees the phone's
+  // session close, and when a set is corrected or deleted on the desk (§G18). Every one of them
+  // changes a row's own four facts, so the list is replaced by the store's answer rather than
+  // patched here, and the walk down it is stamped so a page in the air cannot land on the new list.
+  //
+  // IT IS AS DEEP AS THE LOG IS READ, and it has to be. Every other caller moves page ONE, but a
+  // correction moves whichever row its session sits on — and the desk is exactly where somebody
+  // goes back three months, so a re-read of the top fifty would drop the eighty rows they had walked
+  // AND never contain the row it was fired to move. Read to the same depth, the list comes back
+  // whole and the corrected row is in it. Past the server's ceiling the tail is still truncated:
+  // asking for a page the handler will clamp is the one thing that would make the foot lie.
   //
   // The catch has to speak. The walk bump above orphans any older page already in the air, and that
   // page's own arms fall silent once they see they are stale — so if this read is the one that
@@ -154,11 +181,12 @@ export function useTrainingLog({ api = gymApi } = {}) {
   // reload. 'more' is the honest guess: the list on screen is whatever survived, and asking again is
   // exactly the recovery.
   const reloadLog = useCallback(async () => {
+    const depth = Math.min(SERVER_PAGE_CAP, Math.max(LOG_PAGE, reach.current));
     walk.current += 1;
     try {
-      const log = await api.sessions({ limit: LOG_PAGE });
+      const log = await api.sessions({ limit: depth });
       setSummaries(log);
-      setOlderStatus(olderAfter(log));
+      setOlderStatus(olderAfter(log, depth));
     } catch {
       setOlderStatus('more');
     }
@@ -248,9 +276,17 @@ export function useTrainingLog({ api = gymApi } = {}) {
 
   // The toast is the one thing here that is counted rather than derived, because it has no instant
   // worth surviving a reload: five seconds after it was said, it has been read or it has not.
+  //
+  // AND A CLOCK ONLY EVER CLEARS THE TOAST IT WAS SET FOR. The cleanup above cancels it whenever the
+  // toast changes, but cancelling is a render behind the change, and one caller says its next
+  // sentence at exactly the instant this one runs out: a withheld delete is sent when its five
+  // seconds close, and those are the same five seconds (`UNDO_MS`, fix.js), so a delete the log
+  // refuses speaks inside the millisecond this timer fires. Both updates then land in one batch,
+  // the older clock last, and the lifter watches the row come back with nothing said about why.
+  // Naming the toast is what makes the stale clock harmless in every order the two can arrive in.
   useEffect(() => {
     if (!toast) return undefined;
-    const timer = setTimeout(() => setToast(null), TOAST_MS);
+    const timer = setTimeout(() => setToast((current) => (current === toast ? null : current)), TOAST_MS);
     return () => clearTimeout(timer);
   }, [toast]);
 
@@ -264,13 +300,14 @@ export function useTrainingLog({ api = gymApi } = {}) {
     summaries,
     // One page of the log is on screen; this is everything the surface needs to walk further down it.
     older: { status: olderStatus, load: loadOlder },
-    // The log, re-read: the backfill form and the retrospective discard both change what the first
-    // page is, and neither of them owns the list.
+    // The log, re-read to the depth it is open to: the backfill form, the retrospective discard and
+    // a set corrected on the desk each move a row's own four facts, and none of them owns the list.
     reloadLog,
     createMovement,
     renameMovement,
     // The one voice in the product. Handed out so a surface that is not this hook — a discard, a
-    // backfill that half-landed — says what happened in the same place everything else does.
+    // backfill that half-landed, a set corrected on the desk — says what happened in the same place
+    // everything else does, and offers its one move there too.
     say,
     toast,
     dismissToast: () => setToast(null),

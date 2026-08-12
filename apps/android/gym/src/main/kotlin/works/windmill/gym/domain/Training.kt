@@ -121,7 +121,7 @@ data class SessionSummary(
     // no estimate draws no estimate rather than computing a second.
     val topE1rm: Double? = null,
     // §G's gold dot: a personal record happened inside this workout, judged by the log against
-    // itself AS IT IS NOW rather than frozen at finish — W3's corrections move records, and a dot
+    // itself AS IT IS NOW rather than frozen at finish — §G18's corrections move records, and a dot
     // that lied after a fix would be worse than no dot. Defaulted FALSE and not to null, because
     // the dot is an ASSERTION and its absence is merely an omission: a release APK outlives a
     // deploy, and a server that never wrote this field has said nothing, which is exactly what no
@@ -408,6 +408,28 @@ data class SetWrite(
 ) {
     constructor(set: TrainingSet) :
         this(set.id, set.exerciseId, set.weightKg, set.reps, set.kind, set.completedAtMs)
+}
+
+// THE CORRECTION — §G18, and the three fields a lifter may move. NOT `exerciseId`: a set logged
+// against the wrong movement is a different set, and the design draws no repair for that. Not
+// `completedAt` and not `setNumber`, which the log owns — a delete leaves a gap and the next set
+// still mints max+1, because renumbering would rewrite rows nobody asked to change.
+//
+// All three ride on every fix and none of them has a default: WindmillJson omits a defaulted value,
+// so a default here would vanish from the wire and read on the server as "leave what is stored" —
+// the one thing a correction may never do by accident.
+@Serializable
+data class SetFix(val weightKg: Double, val reps: Int, val kind: SetKind) {
+    constructor(set: TrainingSet) : this(set.weightKg, set.reps, set.kind)
+
+    fun corrected(set: TrainingSet): TrainingSet =
+        set.copy(weightKg = weightKg, reps = reps, kind = kind)
+
+    // Whether this fix actually changes the row, read on the LADDER's grid and never off raw
+    // doubles: a load that went out, was stored and came back is the same load, and a hundredth of
+    // a gram's disagreement would send a correction that corrects nothing on every claim, forever.
+    fun moves(set: TrainingSet): Boolean =
+        Ladder.round(weightKg) != Ladder.round(set.weightKg) || reps != set.reps || kind != set.kind
 }
 
 // An ordinary start omits joinOpenSession — the phone joins by default, so a lost race, a relaunch

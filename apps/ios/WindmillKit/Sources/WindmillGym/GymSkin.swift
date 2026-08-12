@@ -18,8 +18,9 @@ import WindmillPlatform
 // daylight — pietra — for the day that changes; nothing here renders it.)
 //
 // The states are the brand's semantics renamed, never invented: `setDone` is success, `prInk` is
-// warning (gold as a KIND of moment rather than a state), `alarmInk` is danger and fires on a write
-// that FAILED and on nothing else — never on a missed rep, never on a session that ran short.
+// warning (gold as a KIND of moment rather than a state), `alarmInk` is danger and marks exactly
+// three things — a write that failed, a read that failed, and the one destructive control the
+// product draws (§G18's `Delete set`). Never a missed rep, never a session that ran short.
 
 public struct GymSkin: Equatable {
     public let canvas: Color
@@ -94,6 +95,10 @@ public extension EnvironmentValues {
 public enum GymType {
     public static let weight = WindmillFont.display(104, .heavy).monospacedDigit()
     public static let reps = WindmillFont.display(54, .heavy).monospacedDigit()
+    // The same readout one step down, for the sheet that CORRECTS a set rather than logs one (§G18).
+    // Still the loudest thing in front of the thumb, but a sheet is not the room and the session it
+    // is laid over has to stay readable behind it.
+    public static let correction = WindmillFont.display(72, .heavy).monospacedDigit()
 
     public static func numeral(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
         WindmillFont.mono(size, weight).monospacedDigit()

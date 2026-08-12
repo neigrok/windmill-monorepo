@@ -254,8 +254,9 @@ private fun ClaimCard(onSignIn: () -> Unit) {
 
 // THE ONE RETROSPECTIVE DOOR, and it exists exactly when there is something behind it: a log with
 // no finished session has no last session to open, and a door onto an empty screen is the same
-// defect as a chevron that goes nowhere. It is read-only — nothing on the other side of it can
-// change the log.
+// defect as a chevron that goes nowhere. What is on the other side of it can now change the log —
+// §G18 fixes a set from there — but nothing on THIS card can, and the row it draws follows whatever
+// the log says about that session afterwards.
 @Composable
 private fun LastSession(recent: List<SessionSummary>, onOpenSession: (SessionSummary) -> Unit) {
     val last = recent.firstOrNull { !it.session.isOpen } ?: return

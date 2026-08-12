@@ -154,9 +154,12 @@ export function recordsOf(record, now) {
 
 // The last ten times this movement was trained, as they were performed. ONE ROW IS ONE SESSION,
 // under the day it happened: the wire's `recentDays` is keyed by session, and two workouts on one
-// day print that day twice rather than folding into a row claiming to be one workout. Read-only,
-// and they say nothing about being tappable: correcting a set is W3's, and an affordance that does
-// nothing would be worse than none.
+// day print that day twice rather than folding into a row claiming to be one workout.
+//
+// STILL READ-ONLY, now that correcting a set exists (§G18). A row here is a whole day of a movement
+// summarised into one line, and the sheet corrects ONE set — against the plan it was performed
+// under, beside the sets around it, neither of which this page draws. The fix lives where the
+// session is read whole (Log.jsx), and this page deliberately does not grow a second door to it.
 export function daysOf(record, now) {
   return (record.recentDays ?? []).map((day) => ({
     sessionId: day.sessionId,

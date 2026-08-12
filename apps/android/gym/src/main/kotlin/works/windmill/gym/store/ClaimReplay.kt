@@ -6,7 +6,9 @@ import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.Instants
 import works.windmill.gym.domain.RoutineWrite
 import works.windmill.gym.domain.SessionStart
+import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetWrite
+import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.net.RefusalFacts
 import works.windmill.gym.net.TrainingSyncing
 
@@ -41,6 +43,22 @@ import works.windmill.gym.net.TrainingSyncing
 // then the loss is SAID — and every write is idempotent by its minted id, so a claim that dies
 // anywhere resumes from the top and converges: replays answer 200 with the stored row, and only
 // what never landed goes out again.
+//
+// WHAT §G18 CHANGED, and it is the one place mutation reaches this file. A pass that landed the
+// start and some sets and then stopped retryably leaves the session on the shelf with part of it
+// already on the log — and the lifter can correct or delete those sets before the next pass runs,
+// or WHILE it runs, since the shelf's rows are on screen for the whole walk. An append is
+// idempotent by id, so a replay of a corrected set answers with the row AS IT WAS LOGGED and the
+// correction would silently lose to it. So convergence is no longer "one row per id"; it is THE
+// ACCOUNT MATCHES THE SHELF, and it takes two more verbs to say: a reply that disagrees with the
+// shelf is corrected, and a set the shelf tombstoned is deleted. Neither costs a round trip in the
+// ordinary case — a first append answers with exactly what went out, and a session with nothing
+// deleted has nothing to delete.
+//
+// And it is the SHELF, never a snapshot of it: a finished session is walked in passes that re-read
+// the row, and the row is forgotten only by a pass that found nothing left to do. A correction made
+// mid-walk is therefore carried by the next pass instead of being thrown away with the row that
+// held it.
 class ClaimReplay(
     private val log: TrainingSyncing,
     private val localLog: LocalLog,
@@ -145,10 +163,11 @@ class ClaimReplay(
         return true
     }
 
-    private suspend fun claimFinished(past: LocalLog.FinishedSession, said: MutableList<RefusedWrite>): Halt? {
+    private suspend fun claimFinished(shelved: LocalLog.FinishedSession, said: MutableList<RefusedWrite>): Halt? {
         // Off the shelf's CURRENT row rather than the loop's snapshot: an earlier session's 404
-        // repair may already have orphaned this one's routine id.
-        var session = localLog.detail(past.session.id)?.session ?: past.session
+        // repair may already have orphaned this one's routine id, and a §G18 fix made while the
+        // claim was walking an older session is the version this one has to replay.
+        var session = (localLog.row(shelved.session.id) ?: shelved).session
         var remints = 0
         while (true) {
             try {
@@ -189,49 +208,147 @@ class ClaimReplay(
             }
         }
 
-        for (performed in past.sets.sortedBy { it.completedAtMs }) {
-            var set = performed.copy(completedAtMs = Instants.repaired(performed.completedAtMs))
-            var repairs = 0
-            while (true) {
+        // THE SESSION IS WALKED UNTIL THE ACCOUNT MATCHES THE SHELF, and this loop is where §G18
+        // meets the claim. The shelf's rows are on screen for the WHOLE walk — `connect` publishes
+        // them before it starts, and the deliver cadence re-runs this every few seconds while a
+        // backlog is owed — so a lifter browsing an offline log can fix or delete one of these sets
+        // while the walk is out on the wire. A snapshot taken at the top would send the version
+        // they corrected away from and then forget the row that held the repair: the correction
+        // would be lost with nothing said, which is the one failure this wave exists to prevent.
+        //
+        // So every pass RE-READS the row, and the pass that finds nothing left to do is the one
+        // that read the shelf after the last gesture. The row is forgotten in the same breath as
+        // that read — every write in this room lands on the main dispatcher, and there is no await
+        // between the read and the forget for a gesture to slip into.
+        //
+        // IT ENDS BECAUSE EVERY KIND OF WORK IS SPENT BY DOING IT ONCE: a set moves into `landed`
+        // or off the shelf, a tombstone into `toldOf`, a repair the log will never take into
+        // `letGo`. Only a new gesture can put work back, and a lifter's thumb is finite. Anything
+        // added here that can be found again by the next pass would spin this loop forever.
+        val landed = mutableMapOf<String, TrainingSet>()   // what the log is holding, by set id
+        val toldOf = mutableSetOf<String>()                // tombstones the log has taken
+        val letGo = mutableSetOf<String>()                 // repairs that can never land, already said
+        var closed = false
+        while (true) {
+            val past = localLog.row(session.id) ?: return null   // discarded under us; nothing is owed
+            var moved = false
+
+            // The sets, in performed order — the server numbers per lane in arrival order, and
+            // performed order per lane IS that order. What the log answers with is kept beside the
+            // id, because after a correction the two disagree and the disagreement is the only way
+            // this device can find out.
+            for (performed in past.sets.sortedBy { it.completedAtMs }) {
+                if (performed.id in landed) continue
+                var set = performed.copy(completedAtMs = Instants.repaired(performed.completedAtMs))
+                var repairs = 0
+                moved = true
+                while (true) {
+                    try {
+                        landed[set.id] = log.appendSet(session.id, SetWrite(set))
+                        break
+                    } catch (interrupted: CancellationException) {
+                        throw interrupted
+                    } catch (refusing: Exception) {
+                        val facts = RefusalFacts(refusing)
+                        if (facts.code == "set-id-taken" && repairs < SetQueue.maxRemints) {
+                            val fresh = mintSet()
+                            localLog.remintSet(session.id, set.id, fresh)
+                            set = set.copy(id = fresh)
+                            repairs += 1
+                            continue
+                        }
+                        val reason = Verdict.refusing(facts).terminalReason(afterRemints = SetQueue.maxRemints)
+                        if (reason == null) return Halt.Retry
+                        // Removed and SAID, never swallowed — the banner is the last copy of it.
+                        localLog.dropSet(session.id, set.id)
+                        said += RefusedSet(set, reason)
+                        break
+                    }
+                }
+            }
+
+            // THE CORRECTIONS THIS DEVICE MADE AFTER THE SET HAD ALREADY LANDED — on an earlier
+            // pass that stopped short, or on this one while the walk was out on the wire. A first
+            // append answers with exactly what went out, so on an ordinary claim this finds nothing
+            // and makes no call at all. When it does find one the SHELF wins: it is what the lifter
+            // fixed the row to, and the log is holding the version they fixed away from.
+            for (mine in past.sets) {
+                if (mine.id in letGo) continue
+                val stored = landed[mine.id] ?: continue
+                val fix = SetFix(mine)
+                if (!fix.moves(stored)) continue
+                moved = true
                 try {
-                    log.appendSet(session.id, SetWrite(set))
-                    break
+                    val corrected = log.fixSet(session.id, mine.id, fix)
+                    landed[mine.id] = corrected
+                    // A log that answered with a row still disagreeing with the shelf has taken
+                    // this repair as far as it ever will; re-sending it every pass would spin here
+                    // forever rather than converge.
+                    if (fix.moves(corrected)) letGo += mine.id
                 } catch (interrupted: CancellationException) {
                     throw interrupted
                 } catch (refusing: Exception) {
-                    val facts = RefusalFacts(refusing)
-                    if (facts.code == "set-id-taken" && repairs < SetQueue.maxRemints) {
-                        val fresh = mintSet()
-                        localLog.remintSet(session.id, set.id, fresh)
-                        set = set.copy(id = fresh)
-                        repairs += 1
-                        continue
+                    val verdict = FixVerdict.refusing(RefusalFacts(refusing))
+                    if (verdict is FixVerdict.Retry) return Halt.Retry
+                    // Neither answer can change, so the repair is let go rather than re-sent on
+                    // every pass. `Gone` is nothing to say: another surface deleted the row this
+                    // correction was aimed at, and there is no longer anything to correct.
+                    // `Unwritable` leaves the account holding the numbers the set was logged with —
+                    // so it is SAID, because this is its last copy.
+                    letGo += mine.id
+                    if (verdict is FixVerdict.Unwritable) {
+                        said += RefusedSet(mine, "the log kept the numbers this set was logged with")
                     }
-                    val reason = Verdict.refusing(facts).terminalReason(afterRemints = SetQueue.maxRemints)
-                    if (reason == null) return Halt.Retry
-                    // Removed and SAID, never swallowed — the banner is the last copy of it.
-                    localLog.dropSet(session.id, set.id)
-                    said += RefusedSet(set, reason)
-                    break
                 }
             }
-        }
 
-        val startedAt = Instants.repaired(session.startedAtMs)
-        val finishedAt = maxOf(Instants.repaired(session.finishedAtMs ?: startedAt), startedAt)
-        try {
-            log.finishSession(session.id, finishedAt)
-        } catch (interrupted: CancellationException) {
-            throw interrupted
-        } catch (refusing: Exception) {
-            // Refused outright: the sets are on the log and the session stands open there; the
-            // shelf keeps its copy and a later pass closes it (an auto-close on the server ends
-            // the same way — finishing a closed session is the server's own no-op).
-            if (Verdict.refusing(RefusalFacts(refusing)) is Verdict.Retry) return Halt.Retry
+            // ...and the sets it deleted, off the CURRENT row for the same reason. A DELETE is 204
+            // for a set that never existed, so a tombstone for one that never reached the log costs
+            // a call and nothing else — and the one that DID reach it is the whole reason the
+            // tombstone is kept. The route has no terminal refusal at all, so anything that is not
+            // a 204 is worth another pass rather than a loss.
+            for (gone in past.deleted) {
+                if (gone in toldOf) continue
+                moved = true
+                try {
+                    log.deleteSet(session.id, gone)
+                    toldOf += gone
+                } catch (interrupted: CancellationException) {
+                    throw interrupted
+                } catch (refusing: Exception) {
+                    return Halt.Retry
+                }
+            }
+
+            // Anything at all happened on the wire: read the shelf again before believing it is
+            // settled, because the gesture that arrived during those calls is on the row now.
+            if (moved) continue
+
+            if (!closed) {
+                val startedAt = Instants.repaired(session.startedAtMs)
+                val finishedAt = maxOf(Instants.repaired(session.finishedAtMs ?: startedAt), startedAt)
+                try {
+                    log.finishSession(session.id, finishedAt)
+                } catch (interrupted: CancellationException) {
+                    throw interrupted
+                } catch (refusing: Exception) {
+                    // Refused outright: the sets are on the log and the session stands open there;
+                    // the shelf keeps its copy and a later pass closes it (an auto-close on the
+                    // server ends the same way — finishing a closed session is the server's own
+                    // no-op).
+                    if (Verdict.refusing(RefusalFacts(refusing)) is Verdict.Retry) return Halt.Retry
+                    return null
+                }
+                // The close is a round trip too, and a fix made inside it is a fix on a session the
+                // account has now closed — which neither route refuses, because a lifter reads the
+                // log AFTER the workout, which is when they see the typo.
+                closed = true
+                continue
+            }
+
+            localLog.forget(session.id)
             return null
         }
-        localLog.forget(session.id)
-        return null
     }
 
     // The live session claims the same way minus finish; the queue then owns its sets as today.

@@ -35,10 +35,10 @@ Routine::Routine(RoutineId id, UserId user, std::string name, int position,
   // "   " is a blank line in the program and a blank subtitle on every session it froze.
   if (this->name.empty()) throw InvalidTraining("a routine needs a name");
   if (this->name.size() > kMaxNameLength) throw InvalidTraining("routine name too long");
-  // Postgres text stops at a NUL, so the name would be stored as its own head — the rule the set
-  // note already lives under, applied to the other free text this module accepts.
-  if (this->name.find('\0') != std::string::npos)
-    throw InvalidTraining("a routine name cannot hold a NUL byte");
+  // The rule the set note already lives under (domain/Training.h), applied to the other free text
+  // this module accepts: a NUL stores the name as its own head, and bytes that are not UTF-8 are
+  // refused by the column itself, mid-transaction, where the answer would be a retryable 500.
+  if (!storableText(this->name)) throw InvalidTraining("a routine name must be storable text");
   if (position < 0) throw InvalidTraining("a routine sits at a position from 0");
   if (this->entries.empty()) throw InvalidTraining("a routine needs at least one movement");
   // The document's own size, bounded beside every field's value: a write surface that refuses each

@@ -72,6 +72,8 @@ function flagsOf(error) {
     exerciseIdTaken: error.exerciseIdTaken,
     sessionOpen: error.sessionOpen,
     sessionAlreadyOpen: error.sessionAlreadyOpen,
+    fixUnreadable: error.fixUnreadable,
+    setNotFound: error.setNotFound,
   };
 }
 
@@ -202,6 +204,8 @@ test('lastTime — a movement no catalog holds is the one refusal, and it is the
       exerciseIdTaken: false,
       sessionOpen: false,
       sessionAlreadyOpen: false,
+      fixUnreadable: false,
+      setNotFound: false,
     });
     return true;
   });
@@ -220,6 +224,126 @@ test('appendSet — a replay of a stored set answers 200 with the stored row, fi
     credentials: 'include',
     contentType: 'application/json',
     body: '{"id":"set_1","exerciseId":"back-squat","weightKg":82.5,"reps":8,"completedAt":1900000300000}',
+  });
+});
+
+// THE CORRECTION (§G18). The body is the fix and nothing else: an omitted field is left as stored,
+// which is the whole reason the rpe and the note this sheet never draws survive it. The stored set
+// comes back bare, in the same shape the POST above answers.
+test('fixSet — the fix carries only what moved, and the stored set comes back', async () => {
+  const stored = {
+    id: 'set_3', exerciseId: 'overhead-press', setNumber: 3, weightKg: 50, reps: 5,
+    kind: 'working', rpe: 8.5, note: 'felt heavy', completedAt: 1_900_000_300_000,
+  };
+  serve(ok(stored));
+  assert.deepEqual(await gymApi.fixSet('ses_1', 'set_3', { weightKg: 50, reps: 5 }), stored);
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/gym/sessions/ses_1/sets/set_3',
+    method: 'PATCH',
+    credentials: 'include',
+    contentType: 'application/json',
+    body: '{"weightKg":50,"reps":5}',
+  });
+});
+
+// A body a fix may not carry is refused whole — the store never ignores a field it will not take,
+// so a client that sent `exerciseId` learns it rather than believing a set was moved.
+test('fix-unreadable — a fix the store would not take is terminal, and retrying those bytes never lands', async () => {
+  serve(refusal(400, 'could not read that fix', 'fix-unreadable'));
+  await assert.rejects(() => gymApi.fixSet('ses_1', 'set_3', { exerciseId: 'bench-press' }), (error) => {
+    assert.deepEqual(flagsOf(error), {
+      name: 'GymError',
+      status: 400,
+      message: 'could not read that fix',
+      detail: 'could not read that fix',
+      code: 'fix-unreadable',
+      terminal: true,
+      retryable: false,
+      sessionFinished: false,
+      setIdTaken: false,
+      sessionIdTaken: false,
+      unknownExercise: false,
+      routineIdTaken: false,
+      exerciseIdTaken: false,
+      sessionOpen: false,
+      sessionAlreadyOpen: false,
+      fixUnreadable: true,
+      setNotFound: false,
+    });
+    return true;
+  });
+});
+
+// Absent, another account's, already deleted, and this account's set in a DIFFERENT workout are one
+// answer and one byte. It is a 404, so neither `terminal` nor `retryable` by status — and it is
+// still the end of this edit: there is nothing to retry, and the repair is to read the session.
+test('set-not-found — one answer for all four ways a set can fail to be in that workout', async () => {
+  serve(refusal(404, 'no such set', 'set-not-found'));
+  await assert.rejects(() => gymApi.fixSet('ses_1', 'set_gone', { reps: 5 }), (error) => {
+    assert.deepEqual(flagsOf(error), {
+      name: 'GymError',
+      status: 404,
+      message: 'no such set',
+      detail: 'no such set',
+      code: 'set-not-found',
+      terminal: false,
+      retryable: false,
+      sessionFinished: false,
+      setIdTaken: false,
+      sessionIdTaken: false,
+      unknownExercise: false,
+      routineIdTaken: false,
+      exerciseIdTaken: false,
+      sessionOpen: false,
+      sessionAlreadyOpen: false,
+      fixUnreadable: false,
+      setNotFound: true,
+    });
+    return true;
+  });
+});
+
+// A FINISHED SESSION IS NOT A REFUSAL ON THIS ROUTE. A lifter reads the log after the workout, which
+// is when they see the typo — so there is no `session-finished` here, no `session-open`, and no 409
+// at all. The client must never grow a branch for one.
+test('fixSet — a set in a session that is over corrects like any other', async () => {
+  const stored = {
+    id: 'set_3', exerciseId: 'overhead-press', setNumber: 3, weightKg: 47.5, reps: 5,
+    kind: 'working', note: '', completedAt: 1_900_000_300_000,
+  };
+  serve(ok(stored));
+  assert.deepEqual(await gymApi.fixSet('ses_closed', 'set_3', { reps: 5 }), stored);
+  assert.equal(calls.length, 1);
+});
+
+// 204 AND NOTHING BACK, for a set just removed as readily as for one already gone — which is what
+// makes a retry after a lost reply safe, and what keeps absent byte-identical to forbidden. The
+// reply is never asked for its json: there are no bytes, and asking would turn a success into a
+// parse error.
+test('deleteSet — the set does not stand, and a delete of a set that never did answers the same', async () => {
+  serve(nothing());
+  assert.equal(await gymApi.deleteSet('ses_1', 'set_3'), null);
+  assert.equal(await gymApi.deleteSet('ses_1', 'set_3'), null);
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/gym/sessions/ses_1/sets/set_3',
+    method: 'DELETE',
+    credentials: 'include',
+    contentType: 'application/json',
+    body: undefined,
+  });
+  assert.deepEqual(wireOf(calls[1]), wireOf(calls[0]));
+});
+
+// The store failing is the ONE thing a delete can answer besides 204 and a sign-in, and it is
+// retryable — which the screen reads as "the set is still in the log" and says so.
+test('deleteSet — a store that failed is retryable, and it is the only non-204 with a body', async () => {
+  serve(refusal(500, 'the log is not answering'));
+  await assert.rejects(() => gymApi.deleteSet('ses_1', 'set_3'), (error) => {
+    assert.equal(error.status, 500);
+    assert.equal(error.terminal, false);
+    assert.equal(error.retryable, true);
+    assert.equal(error.setNotFound, false);
+    return true;
   });
 });
 
@@ -244,6 +368,8 @@ test('session-finished — the code, not the sentence, says this set will never 
       exerciseIdTaken: false,
       sessionOpen: false,
       sessionAlreadyOpen: false,
+      fixUnreadable: false,
+      setNotFound: false,
     });
     return true;
   });
@@ -268,6 +394,8 @@ test('set-id-taken — the code says mint a fresh set id, so a reword can never 
       exerciseIdTaken: false,
       sessionOpen: false,
       sessionAlreadyOpen: false,
+      fixUnreadable: false,
+      setNotFound: false,
     });
     return true;
   });
@@ -292,6 +420,8 @@ test('session-id-taken — the code says mint a fresh session id', async () => {
       exerciseIdTaken: false,
       sessionOpen: false,
       sessionAlreadyOpen: false,
+      fixUnreadable: false,
+      setNotFound: false,
     });
     return true;
   });
@@ -316,6 +446,8 @@ test('unknown-exercise — a 400 with a repair of its own: reload the catalog, n
       exerciseIdTaken: false,
       sessionOpen: false,
       sessionAlreadyOpen: false,
+      fixUnreadable: false,
+      setNotFound: false,
     });
     return true;
   });
@@ -350,6 +482,8 @@ test('a codeless refusal still classifies by the sentence it shipped with', asyn
         exerciseIdTaken: code === 'exercise-id-taken',
         sessionOpen: code === 'session-open',
         sessionAlreadyOpen: code === 'session-already-open',
+        fixUnreadable: false,
+        setNotFound: false,
       });
       return true;
     });
@@ -377,6 +511,8 @@ test('a 409 with an unknown code, or none at all, is terminal but unrepairable',
       exerciseIdTaken: false,
       sessionOpen: false,
       sessionAlreadyOpen: false,
+      fixUnreadable: false,
+      setNotFound: false,
     });
     return true;
   });
@@ -399,6 +535,8 @@ test('a 409 with an unknown code, or none at all, is terminal but unrepairable',
       exerciseIdTaken: false,
       sessionOpen: false,
       sessionAlreadyOpen: false,
+      fixUnreadable: false,
+      setNotFound: false,
     });
     return true;
   });
@@ -423,6 +561,8 @@ test('400 is terminal and 5xx is retryable — a busy store never reads as a bad
       exerciseIdTaken: false,
       sessionOpen: false,
       sessionAlreadyOpen: false,
+      fixUnreadable: false,
+      setNotFound: false,
     });
     return true;
   });
@@ -445,6 +585,8 @@ test('400 is terminal and 5xx is retryable — a busy store never reads as a bad
       exerciseIdTaken: false,
       sessionOpen: false,
       sessionAlreadyOpen: false,
+      fixUnreadable: false,
+      setNotFound: false,
     });
     return true;
   });
@@ -470,6 +612,8 @@ test('a refusal with no readable body still carries its status', async () => {
       exerciseIdTaken: false,
       sessionOpen: false,
       sessionAlreadyOpen: false,
+      fixUnreadable: false,
+      setNotFound: false,
     });
     return true;
   });
@@ -494,6 +638,8 @@ test('401 and 404 are neither terminal nor retryable — they wait for a sign-in
       exerciseIdTaken: false,
       sessionOpen: false,
       sessionAlreadyOpen: false,
+      fixUnreadable: false,
+      setNotFound: false,
     });
     return true;
   });
@@ -516,6 +662,8 @@ test('401 and 404 are neither terminal nor retryable — they wait for a sign-in
       exerciseIdTaken: false,
       sessionOpen: false,
       sessionAlreadyOpen: false,
+      fixUnreadable: false,
+      setNotFound: false,
     });
     return true;
   });
@@ -804,6 +952,8 @@ test('session-open — a discard against a live session is refused, and it is no
       exerciseIdTaken: false,
       sessionOpen: true,
       sessionAlreadyOpen: false,
+      fixUnreadable: false,
+      setNotFound: false,
     });
     return true;
   });
@@ -890,6 +1040,8 @@ test('routine-id-taken and exercise-id-taken — a spent id, and the same repair
       exerciseIdTaken: false,
       sessionOpen: false,
       sessionAlreadyOpen: false,
+      fixUnreadable: false,
+      setNotFound: false,
     });
     return true;
   });
@@ -912,6 +1064,8 @@ test('routine-id-taken and exercise-id-taken — a spent id, and the same repair
       exerciseIdTaken: true,
       sessionOpen: false,
       sessionAlreadyOpen: false,
+      fixUnreadable: false,
+      setNotFound: false,
     });
     return true;
   });
@@ -941,6 +1095,8 @@ test('unknown-exercise — a routine entry can reach the same refusal a set can'
         exerciseIdTaken: false,
         sessionOpen: false,
         sessionAlreadyOpen: false,
+        fixUnreadable: false,
+        setNotFound: false,
       });
       return true;
     },
@@ -975,6 +1131,8 @@ test('the three routine-era refusals classify from the sentence alone as well', 
         exerciseIdTaken: code === 'exercise-id-taken',
         sessionOpen: code === 'session-open',
         sessionAlreadyOpen: code === 'session-already-open',
+        fixUnreadable: false,
+        setNotFound: false,
       });
       return true;
     });
@@ -1008,6 +1166,8 @@ test('session-already-open — a backfill that met a live workout is its own ref
         exerciseIdTaken: false,
         sessionOpen: false,
         sessionAlreadyOpen: true,
+        fixUnreadable: false,
+        setNotFound: false,
       });
       return true;
     });

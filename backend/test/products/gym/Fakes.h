@@ -76,7 +76,9 @@ inline Routine pushA(std::vector<RoutineEntry> entries = {benchEntry()},
 // An in-memory TrainingRepository that applies the SAME rules as the SQL — the PK no-op on a
 // duplicate id, the one-open-session refusal that makes a second insert a no-op, max+1-per-
 // exercise numbering, the owner scope on every read, the read-back scoped to the session (a set id
-// spent elsewhere resolves to NOTHING, never to that row), the owner-scoped predicate that refuses a
+// spent elsewhere resolves to NOTHING, never to that row), the revisions read that makes a DELETED
+// id spent for good so a replayed append cannot resurrect it, the copy taken only where a correction
+// actually moves the row, the owner-scoped predicate that refuses a
 // set or a routine entry naming a movement this account cannot see, the closed session that refuses
 // a set which never landed, the routine name read off the session's own frozen snapshot, the
 // derived last-trained instant the routines list sorts on, the cascade that nulls a deleted
@@ -88,10 +90,21 @@ inline Routine pushA(std::vector<RoutineEntry> entries = {benchEntry()},
 // fake that mirrors a leak hides it behind green.
 class FakeTrainingRepository : public TrainingRepository {
 public:
+  // gym_set_revisions: what a correction replaced, and what a delete took out of the log. The
+  // product reads it NOWHERE — there is no trash and no recovery door — so it is here for the one
+  // thing that must be provable: a test can assert that nothing a lifter logged was destroyed.
+  struct KeptSet {
+    Set set;
+    bool deleted;
+
+    bool operator==(const KeptSet&) const = default;
+  };
+
   std::vector<Exercise> seeds;
   std::vector<std::pair<std::string, Exercise>> customs;   // (owner, row)
   std::vector<Session> sessions;
-  std::vector<Set> sets;
+  std::vector<Set> sets;              // one row per set that currently stands
+  std::vector<KeptSet> kept;          // what corrections replaced, and what deletes took
   std::vector<Routine> routineRows;   // the stored rows; lastTrainedAtMs is derived on every read
   std::vector<SessionShare> shares;   // one per session at most, exactly as the primary key says
   // gym_exercise_names: what one account calls one SEED. Keyed (owner, movement) like the table's
@@ -181,6 +194,14 @@ public:
     for (const Session& session : sessions)
       if (session.id == incoming.session) ran = session;
     if (!ran) return {std::nullopt, SetInsertError::idTaken};
+    // The revisions read, under the same lock and in the same place the SQL asks it: an id this
+    // account holds as DELETED is spent for good, so a replayed append cannot hand back a set the
+    // lifter took out of the log. Asked before the closed-session refusal, exactly as the SQL asks
+    // it, so the two implementations answer a deleted set in a finished workout with the same word.
+    for (const KeptSet& row : kept) {
+      if (!row.deleted || !(row.set.id == incoming.id)) continue;
+      if (ownsSession(ran->user, row.set.session)) return {std::nullopt, SetInsertError::deleted};
+    }
     if (ran->finishedAtMs) return {std::nullopt, SetInsertError::finished};
     // Scoped on the SESSION's owner, the way the write is scoped in SQL. A foreign key alone would
     // admit another lifter's private movement, and their movement name would then be printed by
@@ -202,6 +223,37 @@ public:
     stored.setNumber = number;
     sets.push_back(stored);
     return {stored, SetInsertError::none};
+  }
+
+  // The correction, scoped (id, session, owner) exactly as the SQL's two statements are: a set id
+  // that resolves under this account but in another workout is not this session's to correct, and
+  // another account's is not there at all. What it replaces is kept BEFORE the row is rewritten —
+  // a fake that skipped that would let the whole promise of §1 ship behind green.
+  std::optional<Set> updateSet(const UserId& user, const Set& corrected) override {
+    for (Set& set : sets) {
+      if (!(set.id == corrected.id) || !(set.session == corrected.session)) continue;
+      if (!ownsSession(user, set.session)) return std::nullopt;
+      // Kept only where the row actually MOVES, the SQL's own `IS DISTINCT FROM` guard: `{}` is a
+      // legal fix and a resent one is what a client does with a lost reply, so an unconditional copy
+      // grows a version per retry standing for a change nobody made.
+      if (!(set == corrected)) kept.push_back(KeptSet{set, false});
+      set = corrected;
+      return set;
+    }
+    return std::nullopt;
+  }
+
+  // The delete, and the same scope. The row moves whole into the kept list marked deleted — it is
+  // never simply dropped — and nothing is answered, because a set that was never here does not stand
+  // either. Set numbers are left alone: the SQL closes no gaps and neither does this.
+  void deleteSet(const UserId& user, const SessionId& session, const SetId& id) override {
+    for (auto row = sets.begin(); row != sets.end(); ++row) {
+      if (!(row->id == id) || !(row->session == session)) continue;
+      if (!ownsSession(user, session)) return;
+      kept.push_back(KeptSet{*row, true});
+      sets.erase(row);
+      return;
+    }
   }
 
   LogPage log(const UserId& user, const LogCursor& cursor) override {
@@ -408,8 +460,11 @@ public:
       if (!(row->id == id) || !(row->user == user)) continue;
       sessions.erase(row);
       // `on delete cascade`: the sets go with the session, so nothing is left pointing at a row
-      // that is gone — and a fake that kept them would hide exactly that leak behind green.
+      // that is gone — and a fake that kept them would hide exactly that leak behind green. The
+      // revisions cascade too, which is what keeps a discard's own promise true: it is permanent,
+      // and nothing keeps a copy of a workout that was thrown away.
       std::erase_if(sets, [&](const Set& set) { return set.session == id; });
+      std::erase_if(kept, [&](const KeptSet& held) { return held.set.session == id; });
       return true;
     }
     return false;   // absent and another account's are the same fact
@@ -756,6 +811,15 @@ private:
     }
     return Routine{stored.id, stored.user, stored.name, stored.position, stored.entries,
                    lastTrained};
+  }
+
+  // The owner scope the two set writes carry in their WHERE clause: a set is this caller's when the
+  // workout holding it is. It is a session lookup rather than the set's own user_id because that is
+  // what the SQL joins on, and a fake that trusted a copy of the owner could disagree with it.
+  bool ownsSession(const UserId& user, const SessionId& id) const {
+    for (const Session& ran : sessions)
+      if (ran.id == id && ran.user == user) return true;
+    return false;
   }
 
   // The catalog read's predicate, applied where a WRITE names a movement: a seed, or one this

@@ -60,6 +60,28 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
         api->appendSet(req, std::move(cb), id);
       },
       {drogon::Post});
+  // Fix a set, and delete one. They hang off the set's own path under the workout that holds it,
+  // because the workout is half the address: a set id alone would let a stale id be walked into a
+  // session the caller is not looking at, and the store scopes on the pair.
+  //
+  // ── NO AGENT MAY EDIT OR DELETE A LOGGED SET, AND THESE TWO ROUTES THEREFORE HAVE NO MCP TOOL ──
+  // Not under `gym:write`, not under `gym:delete`, not at any level a future grant invents. This is
+  // a design rule and it is load-bearing, not a gap in the catalog somebody forgot to fill: the tool
+  // layer is the ONLY place gym can tell an agent from a hand, and rewriting what somebody lifted is
+  // the one verb reserved for the hand. The coach says so out loud rather than failing quietly —
+  // *"That one is yours to change. I can read what you lifted; I can't edit it."* A wave that
+  // "completes the catalog" here deletes that sentence from the product. `GymToolsTest` pins the
+  // absence so it cannot be added by accident.
+  app.registerHandler(
+      "/v1/gym/sessions/{id}/sets/{setId}",
+      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id,
+            const std::string& setId) { api->fixSet(req, std::move(cb), id, setId); },
+      {drogon::Patch});
+  app.registerHandler(
+      "/v1/gym/sessions/{id}/sets/{setId}",
+      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id,
+            const std::string& setId) { api->deleteSet(req, std::move(cb), id, setId); },
+      {drogon::Delete});
   app.registerHandler(
       "/v1/gym/sessions/{id}/finish",
       [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {

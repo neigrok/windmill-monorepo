@@ -26,6 +26,7 @@ import works.windmill.gym.domain.SessionDetail
 import works.windmill.gym.domain.SessionStart
 import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.SessionShare
+import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TrainingSet
@@ -113,6 +114,20 @@ class TrainingStore(
         private set
     var refusals: List<RefusedWrite> by mutableStateOf(emptyList())      // writes that never landed
         private set
+    // §G18'S DELETE, HELD. Nothing is told until the window closes — the log has no undelete, so a
+    // delete already on the wire could only be apologised for, and a training log is a multi-year
+    // artifact nobody can regenerate. It is the logger's own withhold pointed at the one gesture in
+    // this room that destroys something, and it is deliberately NOT on disk: an activity that is
+    // recreated inside the window has taken the row off no screen and told no log, so the set
+    // simply survives — which is the direction this one is allowed to fail in.
+    var withheld: Withheld? by mutableStateOf(null)
+        private set
+    // The sets this room has taken off the log since it opened. A session read BEFORE the delete is
+    // still in a screen's hand, and it would draw a row that no longer stands; the next read of that
+    // session comes back without them, so this is one room's memory of its own writes and never a
+    // tombstone.
+    var deletedSets: Set<String> by mutableStateOf(emptySet())
+        private set
     var saveState: SaveState by mutableStateOf(SaveState.Idle)
         private set
     var saveTick: Int by mutableStateOf(0)                               // bumps once per write
@@ -189,9 +204,10 @@ class TrainingStore(
     val stalled: Set<String>
         get() = queue.pending.map { it.set.id }.toSet()
 
-    // The mistake seconds ago. The log is append-only and has no route that takes a set back, so
-    // this is null the instant the row lands — Undo is offered exactly while it is true, and never
-    // as a button that would have to apologise.
+    // The mistake seconds ago. This is null the instant the row lands, and §G18 did not change
+    // that: taking a set off the ACCOUNT is a repair made at rest, on a session read back, with its
+    // own sheet and its own window. The logger's Undo is not a second door onto it — a button that
+    // reached through a workout in progress would have to apologise for what it removed.
     val undoable: TrainingSet?
         get() = queue.withdrawable(at = now())?.set
 
@@ -225,6 +241,11 @@ class TrainingStore(
         // account now asking. Rows read for somebody else are not this lifter's log.
         logged = emptyList()
         older = Older.More
+        // A withheld delete goes with the seat, and it goes UNSENT: the row it was aimed at belongs
+        // to the seat that is leaving, and settling it now would take a set off the log of the
+        // account that just arrived. The set survives, which is the direction this one may fail in.
+        withheld = null
+        deletedSets = emptySet()
         // A crash between finishOnDevice's hold and the queue's forget leaves one workout both
         // finished on the shelf and live in the queue. The shelf's copy is the finish that
         // happened, so the queue lets go — after its sets, which are the same lift, merge into
@@ -411,9 +432,9 @@ class TrainingStore(
     }
 
     // Taking back the set just logged, while this device is still the only place it exists. It
-    // answers false rather than pretending once the log holds the row, because the wire has no
-    // route that deletes a set and a screen that removed it anyway would be showing a workout the
-    // account disagrees with.
+    // answers false rather than pretending once the log holds the row: from there the set is the
+    // account's, and it comes off through §G18's delete on the session read back — never through a
+    // button that quietly disagrees with the account mid-workout.
     fun undoLast(): Boolean {
         val set = undoable ?: return false
         if (!queue.withdraw(set.id)) return false
@@ -500,10 +521,11 @@ class TrainingStore(
         return FinishOutcome.Closed(closed)
     }
 
-    // The one destructive action in the product, and it is offered only at the finish screen: the
-    // log refuses to delete a session somebody may still be logging into, because only the device
-    // holding the queue knows every set landed. A session only the shelf holds is the device's to
-    // delete without asking anyone.
+    // A WHOLE WORKOUT DESTROYED, and it is offered only at the finish screen: the log refuses to
+    // delete a session somebody may still be logging into, because only the device holding the
+    // queue knows every set landed. A session only the shelf holds is the device's to delete
+    // without asking anyone. §G18's `Delete set` is the only other door of this kind in the
+    // product, and it takes one row rather than the afternoon.
     suspend fun discard(sessionId: String): Boolean {
         if (localLog.detail(sessionId) != null) {
             localLog.forget(sessionId)
@@ -640,6 +662,137 @@ class TrainingStore(
         } catch (refusing: Exception) {
             GymResult.Failed(WriteFailure(refusing))
         }
+    }
+
+    // §G18 — FIXING A SET. The branch is not the network, it is WHOSE ROW IT IS. A session the
+    // shelf holds has never been sent, so the correction rewrites the row that will be sent and no
+    // PATCH goes out for an id the log has never seen; the claim then replays the corrected set,
+    // never the original and never both. Anything else is the account's, and the fix goes over the
+    // wire where a refusal is told apart by `code` exactly as a set's is.
+    //
+    // THE LOG MOVES, THE ROUTINE DOES NOT — the caption of the whole screen, and it is true here by
+    // construction rather than by care: a fix carries three fields, none of them is a target, and
+    // neither path names `session.plan` or a routine document at all.
+    suspend fun fixSet(sessionId: String, setId: String, fix: SetFix): FixOutcome {
+        // THE SESSION decides the road and not the set, because a set the shelf's session does not
+        // hold is not one the log can hold either — the whole workout is here, unsent. Falling
+        // through would PATCH an id the server has never seen.
+        if (localLog.row(sessionId) != null) {
+            val corrected = localLog.fixSet(sessionId, setId, fix)
+                ?: return FixOutcome.Gone("that set is no longer on this device")
+            shelved = localLog.summaries()
+            return FixOutcome.Corrected(corrected)
+        }
+        val log = gym
+            ?: return FixOutcome.Failed(WriteFailure.Refused("that set is on your account — sign in to fix it"))
+        return try {
+            val stored = log.fixSet(sessionId, setId, fix)
+            rereadRow(sessionId)
+            FixOutcome.Corrected(stored)
+        } catch (interrupted: CancellationException) {
+            throw interrupted
+        } catch (refusing: Exception) {
+            when (val verdict = FixVerdict.refusing(RefusalFacts(refusing))) {
+                is FixVerdict.Gone -> FixOutcome.Gone(verdict.said)
+                is FixVerdict.Unwritable -> FixOutcome.Failed(WriteFailure.Refused(verdict.said))
+                FixVerdict.Retry -> FixOutcome.Failed(WriteFailure(refusing))
+            }
+        }
+    }
+
+    // The delete, once the window over it has closed. Same two roads as the fix, and the wire's has
+    // no terminal refusal on it at all: a set that is already gone, one that never existed and one
+    // belonging to somebody else are all 204, so a retry after a lost reply is always safe.
+    //
+    // Nothing here promises recovery, because nothing recovers it: the row leaves the log's live
+    // table, and this room draws no trash, no restore and no destination where it could be found.
+    suspend fun deleteSet(sessionId: String, setId: String): WriteFailure? {
+        // Same road, chosen the same way — and a row the shelf's session no longer holds is the
+        // same nothing-to-do the wire answers 204 with, never a question to put to the account.
+        if (localLog.row(sessionId) != null) {
+            if (localLog.deleteSet(sessionId, setId)) {
+                deletedSets = deletedSets + setId
+                shelved = localLog.summaries()
+            }
+            return null
+        }
+        val log = gym ?: return WriteFailure.Refused("that set is on your account — sign in to delete it")
+        return try {
+            log.deleteSet(sessionId, setId)
+            deletedSets = deletedSets + setId
+            rereadRow(sessionId)
+            null
+        } catch (interrupted: CancellationException) {
+            throw interrupted
+        } catch (refusing: Exception) {
+            WriteFailure(refusing)
+        }
+    }
+
+    // THE ROW A CORRECTION MOVED, RE-READ FROM THE LOG. Its facts all moved with the set — the
+    // working count, the tonnage, the top e1RM, the gold dot — and the log is the only thing in
+    // this product that computes them: the device's own `SessionSummary` deliberately carries no
+    // estimate and no record, so re-deriving the row here would trade a stale dot for a missing one.
+    //
+    // It asks for ONE row, anchored on the one above it, rather than re-reading the head page: a
+    // session the lifter walked down to with `Load older` is BELOW the head, `loadLog` preserves
+    // every walked row verbatim so the walk is not undone under a thumb, and a fix is exactly as
+    // likely to be made down there. Fetching the head would have left that row printing its pre-fix
+    // numbers forever. The answer is taken only if it IS the row asked for — the cursor is a
+    // position, and a session that arrived between the two would otherwise be written over this one.
+    //
+    // A read that does not come back leaves the row exactly as it was and says nothing: the write
+    // itself landed, the sets on the screen are the corrected ones, and the row's aggregates are one
+    // read behind until the next one. There is no foot to fail here — `Older` is about whether the
+    // log has more to give, and one row is not a page.
+    private suspend fun rereadRow(sessionId: String) {
+        val log = gym ?: return
+        val at = logged.indexOfFirst { it.id == sessionId }
+        if (at < 0) return
+        val above = logged.getOrNull(at - 1)
+        val fresh = tried { log.sessions(limit = 1, before = above?.startedAtMs, beforeId = above?.id) }
+            ?.singleOrNull()?.takeIf { it.id == sessionId } ?: return
+        logged = logged.map { if (it.id == sessionId) fresh else it }
+    }
+
+    // Taking the delete back, while this device is still the only place it has happened. It is the
+    // logger's own withhold, aimed at the one gesture in this room that destroys something.
+    //
+    // ONE SLOT, AND A SECOND DELETE SETTLES THE FIRST rather than replacing it — which is the
+    // logger's own rule, where the queue holds every withheld set and only the LAST one is
+    // undoable. Overwriting the slot would make a destructive gesture do nothing at all: the first
+    // set would be told to nobody, and the row it took would walk back onto the screen underneath
+    // the second one's Undo. The failure comes back here because there is no window left to hold
+    // it in and it is the caller that has a sentence to say it with.
+    //
+    // The slot is a slot and not a list, so this one send cannot be left owed the way a cancelled
+    // `settleWithheld` is — the second delete is standing in it. Leaving the screen inside that
+    // round trip therefore costs the first delete, and the set SURVIVES on the log, which is the
+    // one direction everything about this withhold is allowed to fail in.
+    suspend fun withhold(sessionId: String, set: TrainingSet): WriteFailure? {
+        val standing = withheld
+        withheld = Withheld(sessionId, set, untilMs = now() + undoWindowMs)
+        standing ?: return null
+        return deleteSet(standing.sessionId, standing.set.id)
+    }
+
+    fun keepWithheld(): Boolean {
+        withheld ?: return false
+        withheld = null
+        return true
+    }
+
+    // The window closing, or the room being left — and leaving ENDS it, exactly as leaving ends the
+    // logger's: the row is off the screen the gesture belonged to, so the delete goes.
+    suspend fun settleWithheld(): WriteFailure? {
+        val holding = withheld ?: return null
+        val failed = deleteSet(holding.sessionId, holding.set.id)
+        // Let go only once the log has answered, either way. A settle cancelled mid-flight — the
+        // screen it belonged to leaving under it — leaves the delete still owed rather than
+        // silently dropped, and the route is idempotent, so whoever picks it up next cannot send it
+        // twice into anything.
+        withheld = null
+        return failed
     }
 
     // ONE PAGE DEEPER, and the foot's only move. It doubles as the retry for a first page that
@@ -1066,6 +1219,20 @@ sealed interface WriteFailure {
 fun WriteFailure(refusing: Throwable): WriteFailure {
     if (refusing !is WindmillApiException.Refused) return WriteFailure.NoAnswer
     return WriteFailure.Refused(refusing.line)
+}
+
+// A delete this device has made and told nobody about yet — the set whole, because it is the last
+// copy of it while the window is open and Undo has to put it back exactly.
+data class Withheld(val sessionId: String, val set: TrainingSet, val untilMs: Long)
+
+// How a correction can end, and the one distinction a screen must act on rather than only read
+// out: a row the log no longer holds is not a fix that can be tried again. The set is gone — from
+// another surface, or from a delete this device has already made — so the row leaves the screen,
+// where a `Failed` leaves it standing and offers the sentence beside it.
+sealed interface FixOutcome {
+    data class Corrected(val set: TrainingSet) : FixOutcome
+    data class Gone(val said: String) : FixOutcome
+    data class Failed(val why: WriteFailure) : FixOutcome
 }
 
 sealed interface FinishOutcome {

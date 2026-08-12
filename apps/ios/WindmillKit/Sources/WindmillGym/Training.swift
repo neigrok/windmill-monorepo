@@ -184,6 +184,15 @@ public struct TrainingSet: Equatable, Codable, Sendable, Identifiable {
                     reps: reps, kind: kind, rpe: rpe, note: note, completedAtMs: completedAtMs)
     }
 
+    // THE CORRECTION RULE, and it is the same one the backend states in domain/Training.cpp: the fix
+    // carries the three things a thumb can move and everything else is COPIED across, visibly. The
+    // id, the movement, the number and the instant are what make this the SAME set — a body that
+    // moved one of them would be logging a different one under a repair's name.
+    public func corrected(by fix: SetFix) -> TrainingSet {
+        TrainingSet(id: id, exerciseId: exerciseId, setNumber: setNumber, weightKg: fix.weightKg,
+                    reps: fix.reps, kind: fix.kind, rpe: rpe, note: note, completedAtMs: completedAtMs)
+    }
+
     // The same set with its instant repaired into the wire's bound (`Instants`). The claim replays
     // through this so a broken local clock cannot jam a whole session behind a terminal 400.
     public var clamped: TrainingSet {
@@ -283,7 +292,7 @@ public struct TopSet: Equatable, Codable, Sendable {
 //
 // `record` is the gold dot (§G16), and it is a BOOL the server always sends rather than an optional:
 // false is the answer on ~190 rows in 200. It is judged against the log AS IT IS NOW and never
-// frozen at finish — W3's corrections will move records, and a dot that lied after a fix would be
+// frozen at finish — a correction (§G18) moves records, and a dot that lied after a fix would be
 // worse than no dot. It defaults to false for the rows this device composes itself, because the
 // three record rules are claims against a history the device does not hold: no dot there is an
 // omission, which a local read may make, and never an assertion, which it may not.
@@ -703,6 +712,31 @@ public struct SetWrite: Equatable, Codable, Sendable {
     enum CodingKeys: String, CodingKey {
         case id, exerciseId, weightKg, reps, kind
         case completedAtMs = "completedAt"
+    }
+}
+
+// A CORRECTION (§G18), and it carries the three things the sheet lets a thumb move and nothing else.
+// Not `exerciseId` — a set logged against the wrong movement is a different repair and the design
+// does not draw it — and not `completedAt` or `setNumber`, which are the log's own account of when
+// this set happened and where it sits in the movement's run. The server refuses every other key by
+// name rather than ignoring it.
+//
+// All three ride on every fix rather than only the ones that moved: the sheet holds the whole set and
+// knows what it should now read, so "unchanged" has no second spelling here to get wrong. The wire
+// reads an absent field as "leave what is stored", which is the same answer arrived at differently.
+public struct SetFix: Equatable, Codable, Sendable {
+    public let weightKg: Double
+    public let reps: Int
+    public let kind: SetKind
+
+    public init(weightKg: Double, reps: Int, kind: SetKind) {
+        self.weightKg = weightKg
+        self.reps = reps
+        self.kind = kind
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case weightKg, reps, kind
     }
 }
 

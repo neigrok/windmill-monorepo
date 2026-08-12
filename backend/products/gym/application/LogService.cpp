@@ -79,11 +79,22 @@ StartOutcome LogService::start(const UserId& user, const SessionStart& incoming)
 // another's session is the same fact (not found). The replay is resolved BEFORE the finished
 // refusal: a set that is already durable answers with itself however the session ended, so a
 // flush queue that treats 409 as terminal can never drop a row it in fact landed. A set that never
-// landed is another matter — the session is closed and this one is refused (§3.3). The last three
-// refusals are the store's own facts, passed through as they arrive: only it knows the catalog, only
-// its read-back knows whether a fresh id was already spent somewhere this session cannot see, and
-// only its lock knows whether the close landed between the read above and the insert below — which
-// is why `finished` is answered twice, once off the loaded row and once off the locked one.
+// landed is another matter — the session is closed and this one is refused (§3.3), by the STORE and
+// only by the store: `finished` is the boundary the locked row decides, and this method used to
+// answer it a second time off the row it loaded before the lock existed. Two layers deciding one
+// fact is how they end up deciding it in different orders — the loaded-row copy answered `finished`
+// for an id the store would have answered `deleted` for, and told a queue that a set it had in fact
+// logged had never reached the log at all. Every refusal below is the store's own, passed through as
+// it arrives: only it knows the catalog, only its read-back knows whether a fresh id was already
+// spent somewhere this session cannot see, only its lock knows whether the close landed between the
+// read above and the insert, and only it holds the revisions.
+//
+// THE REPLAY ABOVE IS NOT THE WHOLE OF THE IDEMPOTENCY, and that is the fourth. `setOf` reads the
+// rows that STAND, so a set the lifter deleted resolves to nothing here and falls through to the
+// insert — which would log it again, under a fresh number, from a queue that never learned its POST
+// had landed. Only the store holds the revisions that say the id named a set taken out of the log,
+// so only the store can refuse it, and it is passed through under its own word for the reason
+// LogService.h gives: repairing it as a spent id is exactly how the deletion would undo itself.
 AppendOutcome LogService::append(const UserId& user, const SessionId& session,
                                  const SetWrite& incoming) {
   std::optional<Session> stored = repo_.session(user, session);
@@ -93,13 +104,45 @@ AppendOutcome LogService::append(const UserId& user, const SessionId& session,
   std::optional<Set> replayed = repo_.setOf(user, set.id);
   if (replayed && replayed->session == session) return {*replayed, AppendError::none};
   if (replayed) return {std::nullopt, AppendError::idTaken};
-  if (stored->finishedAtMs) return {std::nullopt, AppendError::finished};
   SetInsertOutcome written = repo_.insertSet(set);
   if (written.error == SetInsertError::idTaken) return {std::nullopt, AppendError::idTaken};
   if (written.error == SetInsertError::unknownExercise)
     return {std::nullopt, AppendError::unknownExercise};
   if (written.error == SetInsertError::finished) return {std::nullopt, AppendError::finished};
+  if (written.error == SetInsertError::deleted) return {std::nullopt, AppendError::deleted};
   return {*written.set, AppendError::none};
+}
+
+// The correction — §G18's `Save the fix`, and the first write in this product that changes something
+// a lifter already logged. Three phases and no fourth: load the stored row under the caller's own
+// scope, hand it to the pure rule, write what the rule returned. The rule is where a value the store
+// cannot hold is refused, so nothing unstorable is ever offered to the store — the same order
+// renameExercise keeps.
+//
+// The session in the path has to hold the set, and that check is here rather than in the store
+// because it is the same fact the store already answers: absent, another account's, and this
+// account's set in a different workout are one reply, so nothing above this line can tell them
+// apart. Nothing is settled and nothing is refused for a finished session — a lifter reads the log
+// AFTER the workout, which is precisely when they notice the 4 they meant to log as a 5.
+//
+// The one race it accepts, stated rather than hidden: two devices correcting the same set at once
+// leave the second one's values standing, merged against a row it read a moment earlier. Every
+// version either of them replaced is kept, and the alternative — merging inside the store — would
+// put the correction rule in SQL where the domain could not state it once.
+std::optional<Set> LogService::fixSet(const UserId& user, const SessionId& session, const SetId& id,
+                                      const SetFix& fix) {
+  std::optional<Set> stored = repo_.setOf(user, id);
+  if (!stored || !(stored->session == session)) return std::nullopt;
+  return repo_.updateSet(user, corrected(*stored, fix));
+}
+
+// The delete, and it says nothing back on purpose: a set that was never there does not stand either,
+// so the reply a client whose network dropped sends this again for is the reply it already had. What
+// it does NOT do is destroy anything — the row moves whole into the revisions table, marked deleted
+// (ports/TrainingRepository.h) — and nothing on any surface may promise that back, because there is
+// no door that reads it.
+void LogService::deleteSet(const UserId& user, const SessionId& session, const SetId& id) {
+  repo_.deleteSet(user, session, id);
 }
 
 // The first write to finished_at is permanent (close is first-writer-wins), so the instant is

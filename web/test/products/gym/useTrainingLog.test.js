@@ -22,6 +22,10 @@ import { GymError, UNCHANGED } from '../../../src/products/gym/gymApi.js';
 const { ReactCurrentDispatcher } = React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
 const HOUR = 3600_000;
 const POLL_MS = 5000;
+// The toast's own five seconds, which are also the seconds a withheld delete can be taken back in
+// (`UNDO_MS`, fix.js — screens.test.js pins the two constants equal). They are the same number on
+// purpose, and that is precisely why the test below exists.
+const TOAST_MS = 5000;
 
 // Teardown is registered with the runner at mount, never trailed at the end of a test body: a
 // thrown assertion skips the rest of the body, and the hook's intervals would then hold the event
@@ -765,6 +769,90 @@ test('a failed re-read from the top still releases the foot of the log', async (
 
   assert.equal(view.log.older.status, 'more');
   assert.deepEqual(view.log.summaries.map((each) => each.id), rows.slice(0, PAGE).map((each) => each.id));
+});
+
+// THE ONE VOICE MUST NOT SWALLOW ITS OWN NEXT SENTENCE, and the caller that makes this a live
+// hazard rather than a curiosity is the withheld delete (§G18): its DELETE is sent when its five
+// seconds close, and those are the SAME five seconds a toast is up for. So a delete the log refuses
+// — being offline is exactly this — speaks in the instant the toast holding its Undo is due to
+// expire, and each sentence must get its own window rather than the remainder of the one before it.
+//
+// The far edge of that — the older clock firing AFTER the newer sentence is already state — cannot
+// be driven here: this harness renders synchronously, so the effect's cleanup always cancels the
+// old timer before it can run. That ordering is React's own, and the shape that survives it is read
+// off the source in screens.test.js and driven for real in the wave's browser harness.
+test('a second sentence replaces the first and is up for its own five seconds', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const now = Date.now();
+  browserWith();
+  const backend = deepLog(finishedRows(1, now));
+  const view = await open(t, backend.api);
+
+  view.log.say('47.5 × 4 is out of the log.', { label: 'Undo', run() {} });
+  assert.equal(view.log.toast.action.label, 'Undo');
+
+  t.mock.timers.tick(TOAST_MS - 1);
+  assert.equal(view.log.toast.text, '47.5 × 4 is out of the log.');
+
+  // The refusal, said one millisecond before the toast that offered the Undo would have gone.
+  view.log.say('That set is still in the log — the log didn’t answer. Try again when you have signal.');
+  assert.equal(view.log.toast.action, null);
+
+  // Past the instant the first toast was due, and one millisecond short of its own: still up.
+  t.mock.timers.tick(TOAST_MS - 1);
+  assert.equal(
+    view.log.toast.text,
+    'That set is still in the log — the log didn’t answer. Try again when you have signal.',
+  );
+  t.mock.timers.tick(1);
+  assert.equal(view.log.toast, null);
+});
+
+// A CORRECTION MOVES A ROW WHEREVER IT SITS, and the desk is where somebody goes back three months
+// to make one (§G18). Every other caller of the re-read moves page ONE — a backfill, a discard, the
+// mirror closing — so a re-read of the top fifty was right for them and wrong for this one twice
+// over: it threw away the pages the lifter had walked, AND the page it did read could not contain
+// the row it was fired to move. Read to the depth the log is actually open to, both hold.
+test('the log re-read after a correction is as deep as the walk, and carries the row that moved', async (t) => {
+  const now = Date.now();
+  browserWith();
+  const rows = finishedRows(300, now - 86400_000);
+  const backend = deepLog(rows);
+
+  const view = await open(t, backend.api);
+  await view.log.older.load();
+  await settle();
+  await view.log.older.load();
+  await settle();
+  assert.equal(view.log.summaries.length, 150);
+
+  backend.asked.length = 0;
+  await view.log.reloadLog();
+  await settle();
+
+  assert.deepEqual(backend.asked, [{ limit: 150 }]);
+  assert.deepEqual(view.log.summaries.map((each) => each.id), rows.slice(0, 150).map((each) => each.id));
+  // The row a correction on the third page would have moved is in the read that followed it — which
+  // is the whole of what a re-read of the top fifty could not say.
+  assert.equal(view.log.summaries.some((each) => each.id === rows[120].id), true);
+  assert.equal(view.log.older.status, 'more');
+
+  // Past the handler's own ceiling the tail is still truncated, and the foot says so rather than
+  // claiming the log ends where the clamp did: asking for more than the server will answer is the
+  // one thing that would turn a short page into a lie.
+  await view.log.older.load();
+  await settle();
+  await view.log.older.load();
+  await settle();
+  assert.equal(view.log.summaries.length, 250);
+
+  backend.asked.length = 0;
+  await view.log.reloadLog();
+  await settle();
+
+  assert.deepEqual(backend.asked, [{ limit: 200 }]);
+  assert.equal(view.log.summaries.length, 200);
+  assert.equal(view.log.older.status, 'more');
 });
 
 // A movement minted from the picker lands in the one catalog instance this product has, so it is on

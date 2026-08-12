@@ -311,3 +311,160 @@ TEST(can_finish_at_refuses_zero_the_ceiling_and_ending_before_beginning) {
   CHECK_FALSE(canFinishAt(session, kMaxInstantMs + 1));
   CHECK_FALSE(canFinishAt(session, 18'446'744'073'709'551'615ull));
 }
+
+// ---- corrected: the fix, and what a fix may not reach ---------------------------------------
+
+TEST(a_fix_that_names_nothing_leaves_the_set_exactly_as_it_was) {
+  const Set stored = set(82.5, 8, SetKind::working, 8.5, "felt heavy");
+
+  CHECK_EQ(corrected(stored, SetFix{}), stored);
+}
+
+TEST(a_fix_replaces_only_the_fields_it_names) {
+  const Set stored = set(82.5, 8, SetKind::working, 8.5, "felt heavy");
+
+  SetFix weight;
+  weight.weightKg = 80.0;
+  CHECK_EQ(corrected(stored, weight), set(80.0, 8, SetKind::working, 8.5, "felt heavy"));
+
+  SetFix reps;
+  reps.reps = 4;
+  CHECK_EQ(corrected(stored, reps), set(82.5, 4, SetKind::working, 8.5, "felt heavy"));
+
+  SetFix kind;
+  kind.kind = SetKind::warmup;
+  CHECK_EQ(corrected(stored, kind), set(82.5, 8, SetKind::warmup, 8.5, "felt heavy"));
+
+  SetFix note;
+  note.note = "";
+  CHECK_EQ(corrected(stored, note), set(82.5, 8, SetKind::working, 8.5, ""));
+
+  SetFix everything;
+  everything.weightKg = 47.5;
+  everything.reps = 5;
+  everything.kind = SetKind::drop;
+  everything.note = "back-off";
+  CHECK_EQ(corrected(stored, everything), set(47.5, 5, SetKind::drop, 8.5, "back-off"));
+}
+
+// rpe is the one value a fix can also remove, so it takes two fields: unnamed keeps what is stored,
+// named-and-empty clears it, named-with-a-value replaces it.
+TEST(a_fix_clears_an_rpe_only_when_it_names_it) {
+  const Set stored = set(82.5, 8, SetKind::working, 8.5);
+
+  SetFix unnamed;
+  CHECK_EQ(corrected(stored, unnamed).rpe, std::optional<double>(8.5));
+
+  SetFix cleared;
+  cleared.rpeNamed = true;
+  CHECK_EQ(corrected(stored, cleared).rpe, std::optional<double>());
+
+  SetFix replaced;
+  replaced.rpeNamed = true;
+  replaced.rpe = 9.5;
+  CHECK_EQ(corrected(stored, replaced).rpe, std::optional<double>(9.5));
+}
+
+// The caption of the whole screen, at the one layer that could break it: the movement, the instant,
+// the number and the session a set was lived in are carried through, whatever a fix says.
+TEST(a_fix_never_moves_the_identity_the_log_is_ordered_by) {
+  const Set stored{SetId{"set_00000001"}, SessionId{"ses_00000001"}, ExerciseId{"bench-press"}, 3,
+                   82.5, 8, SetKind::working, std::nullopt, "", 1'700'000'000'000};
+  SetFix fix;
+  fix.weightKg = 60.0;
+  fix.reps = 12;
+  fix.kind = SetKind::failure;
+
+  const Set fixed = corrected(stored, fix);
+
+  CHECK_EQ(fixed.id, stored.id);
+  CHECK_EQ(fixed.session, stored.session);
+  CHECK_EQ(fixed.exercise, stored.exercise);
+  CHECK_EQ(fixed.setNumber, 3);
+  CHECK_EQ(fixed.completedAtMs, 1'700'000'000'000ull);
+  CHECK_EQ(fixed.weightKg, 60.0);
+  CHECK_EQ(fixed.reps, 12);
+  CHECK(fixed.kind == SetKind::failure);
+}
+
+// The correction is a CONSTRUCTION, so every bound a logged set is held to holds here too — and it
+// is refused before the store is ever offered the row, which is the whole reason the rule is pure.
+TEST(a_fix_to_a_value_the_store_cannot_hold_is_refused_by_the_construction) {
+  const Set stored = set(82.5, 8);
+
+  CHECK(rejects([&] {
+    SetFix fix;
+    fix.reps = 0;
+    corrected(stored, fix);
+  }));
+  CHECK(rejects([&] {
+    SetFix fix;
+    fix.reps = 501;
+    corrected(stored, fix);
+  }));
+  CHECK(rejects([&] {
+    SetFix fix;
+    fix.weightKg = 500.5;
+    corrected(stored, fix);
+  }));
+  CHECK(rejects([&] {
+    SetFix fix;
+    fix.rpeNamed = true;
+    fix.rpe = 10.5;
+    corrected(stored, fix);
+  }));
+  CHECK(rejects([&] {
+    SetFix fix;
+    fix.note = std::string("x") + '\0' + "y";
+    corrected(stored, fix);
+  }));
+  // Bytes that are not UTF-8, which the column refuses mid-transaction where the answer would be a
+  // retryable 500 on a body that can never land. Refused here, terminally, as a 400.
+  CHECK(rejects([&] {
+    SetFix fix;
+    fix.note = "ok \xED\xA0\x80 bad";
+    corrected(stored, fix);
+  }));
+}
+
+// WHAT A `text` COLUMN CAN ACTUALLY HOLD, and it is one rule for every piece of free text this
+// product accepts — a set's note, a movement's name, a routine's name. Postgres stores UTF-8 and
+// refuses anything else as it takes the parameter, so a string that fails here is a string no retry
+// can ever land: the domain owes it a 400 rather than the house 500 that the wire calls retryable.
+// A NUL belongs to the same rule with a quieter failure — `text` stops at one, and the head of a
+// lifter's words would store as if it were the whole of them.
+TEST(storable_text_is_what_a_text_column_can_take_and_nothing_else) {
+  CHECK(storableText(""));
+  CHECK(storableText("felt heavy"));
+  // Every width the encoding has, and each is ordinary content: an accent, Cyrillic, a CJK glyph and
+  // an emoji off the astral plane.
+  CHECK(storableText("Bänkpress · Присед · 懸垂 · 💪"));
+  CHECK_FALSE(storableText(std::string("head\0tail", 9)));
+  // A continuation byte with no lead, and a lead with no continuations.
+  CHECK_FALSE(storableText("\x80"));
+  CHECK_FALSE(storableText("\xC3"));
+  // The overlong forms — the same code points spelled in more bytes than they need, which is how a
+  // NUL or a '/' sneaks past a validator that only reads the decoded text.
+  CHECK_FALSE(storableText("\xC0\x80"));
+  CHECK_FALSE(storableText("\xE0\x80\xAF"));
+  CHECK_FALSE(storableText("\xF0\x80\x80\xAF"));
+  // A surrogate half is not a character; UTF-8 has no encoding for one and Postgres takes neither.
+  CHECK_FALSE(storableText("\xED\xA0\x80"));
+  CHECK_FALSE(storableText("\xED\xBF\xBF"));
+  // Past the last plane, U+10FFFF.
+  CHECK_FALSE(storableText("\xF4\x90\x80\x80"));
+  CHECK_FALSE(storableText("\xF5\x80\x80\x80"));
+  // Truncated at the end of the string, which is what a byte-sliced note arrives as.
+  CHECK_FALSE(storableText("ok \xF0\x9F\x92"));
+
+  // And it is the rule the three entities that hold free text are built on, not a predicate sitting
+  // beside them: each refuses the same bytes at construction.
+  CHECK(rejects([] {
+    Set{SetId{"set_11111111"}, SessionId{"ses_11111111"}, ExerciseId{"bench-press"}, 1, 82.5, 8,
+        SetKind::working, std::nullopt, "\xED\xA0\x80", 1'700'000'000'000};
+  }));
+  CHECK(rejects([] {
+    Exercise{ExerciseId{"ex_11111111"}, "Zercher \xED\xA0\x80 Squat", Pattern::squat,
+             Equipment::barbell, 2.5, true};
+  }));
+}

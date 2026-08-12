@@ -75,9 +75,11 @@ import works.windmill.platform.design.WindmillSpace
 // Gold is the one loud ink and it means a personal record, which is a kind of moment rather than
 // a state.
 //
-// IT DRAWS NO EDITING OF A SET. The log is append-only and correcting a past set is W3, so nothing
-// in the recent list says it can be tapped — a set that cannot be fixed may not be drawn as though
-// it could. And no merge affordance: §4's "looks like Bench Press — merge" is real and it is W5's,
+// IT DRAWS NO EDITING OF A SET, and that is a decision rather than a gap now that §G18 exists. A
+// set is fixed where it was performed — on the session it belongs to, beside the plan it was
+// measured against — and this page groups one movement's sets across months, where "which of these
+// forty is the typo" is a question the shape cannot answer. So nothing in the recent list says it
+// can be tapped. And no merge affordance: §4's "looks like Bench Press — merge" is real and W5's,
 // and a control that opened nothing would be the defect this room refuses everywhere else.
 @Composable
 fun RecordScreen(exerciseId: String, store: TrainingStore, backLabel: String, onBack: () -> Unit) {

@@ -132,6 +132,53 @@ TEST(gym_catalog_names_the_grant_level_that_reaches_every_tool) {
                "discard_session gym:delete", "delete_routine gym:delete", "revoke_share gym:delete"}));
 }
 
+// NO AGENT MAY EDIT OR DELETE A LOGGED SET. The table above pins it by being exhaustive, but only
+// implicitly — so this case says the rule out loud, because the failure it guards against is a
+// future wave "completing the catalog" beside two REST routes that exist. The tool layer is the only
+// place gym can tell an agent from a hand, and the coach's own refusal is built on this being true:
+// *"That one is yours to change. I can read what you lifted; I can't edit it."* Every level is
+// searched, because the rule is about the verb and not about which grant reaches it.
+TEST(gym_publishes_no_tool_that_edits_or_deletes_a_logged_set) {
+  Harness h;
+
+  const std::vector<std::string> everything =
+      namesIn(h.tools.listTools(ToolCaller{uid(), ToolScope::everything()}));
+
+  for (const std::string& name : everything) {
+    CHECK(name != "fix_set");
+    CHECK(name != "edit_set");
+    CHECK(name != "update_set");
+    CHECK(name != "correct_set");
+    CHECK(name != "delete_set");
+    CHECK(name != "remove_set");
+  }
+  // And the dispatcher answers no such call under any of those names either, whatever a client
+  // sends: an unroutable name is a refusal here, never a silent write.
+  for (const char* name : {"fix_set", "edit_set", "update_set", "delete_set"})
+    CHECK(h.call(name, Json::Value(Json::objectValue)).isError);
+}
+
+// The rule above has one door left, and it is not a name: `log_set` is a WRITE an agent holds, and a
+// set the lifter deleted by hand leaves its id free of the primary key that used to answer a replay.
+// Re-sending that id under `gym:write` would put the set back — a deletion no agent may make, undone
+// by an agent all the same. It is refused, and the refusal says the opposite thing to the spent-id
+// one beside it: mint no fresh id, because a fresh id logs the deleted set again.
+TEST(gym_log_set_cannot_bring_back_a_set_the_lifter_deleted) {
+  Harness h;
+  h.start("ses_00000001", 1'700'000'000'000);
+  h.logSet("ses_00000001", "set_00000001", "bench-press", 82.5, 8, 1'700'000'060'000);
+  h.service.deleteSet(UserId{"u1"}, SessionId{"ses_00000001"}, SetId{"set_00000001"});
+
+  ToolResult replayed =
+      h.logSet("ses_00000001", "set_00000001", "bench-press", 82.5, 8, 1'700'000'060'000);
+
+  CHECK(replayed.isError);
+  CHECK_EQ(message(replayed),
+           std::string("log_set: that set was deleted from the log. It is not coming back, and a "
+                       "fresh id would only log it again — leave it out."));
+  CHECK_EQ(h.repo.sets, std::vector<Set>{});
+}
+
 TEST(gym_tools_list_carries_exactly_the_levels_a_grant_named) {
   Harness h;
 

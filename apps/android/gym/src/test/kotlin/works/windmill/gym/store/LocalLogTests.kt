@@ -2,6 +2,7 @@ package works.windmill.gym.store
 
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -11,6 +12,8 @@ import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineEntry
 import works.windmill.gym.domain.Session
+import works.windmill.gym.domain.SetFix
+import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.TrainingSet
 
 // What has to be true for the shelf to be trusted with a signed-out training history: it comes
@@ -174,5 +177,114 @@ class LocalLogTests {
         shelf.forget("ses_1")
         assertNull(shelf.detail("ses_1"))
         assertTrue(shelf.finished.isEmpty())
+    }
+
+    // §G18 ON A SESSION NO ACCOUNT HOLDS. The row has never been sent, so the correction rewrites
+    // the version that WILL be sent — in place, under the same id, so the claim replays the
+    // corrected set rather than a second one beside it. And it moves nothing else: the frozen plan
+    // and the routine id are the caption of the whole screen.
+    @Test
+    fun testFixingASetOnTheShelfRewritesTheRowAndLeavesThePlanAlone() {
+        val shelf = LocalLog(logFile())
+        val plan = works.windmill.gym.domain.PlanSnapshot(routine = "Push A",
+            entries = listOf(works.windmill.gym.domain.PlanEntry(exerciseId = "bench-press", sets = 5,
+                reps = 5, weightKg = 82.5)))
+        shelf.hold(Routine(id = "rt_1", name = "Push A",
+            entries = listOf(RoutineEntry(position = 1, exerciseId = "bench-press", targetSets = 5,
+                targetReps = 5, targetWeightKg = 82.5))))
+        shelf.hold(LocalLog.FinishedSession(
+            Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000, routineId = "rt_1", plan = plan),
+            listOf(aSet("set_a", at = 1_100), aSet("set_b", at = 1_200))))
+
+        val corrected = shelf.fixSet("ses_1", "set_a",
+            SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Drop))
+
+        assertEquals(TrainingSet(id = "set_a", exerciseId = "bench-press", weightKg = 90.0, reps = 3,
+            kind = SetKind.Drop, completedAtMs = 1_100), corrected)
+        assertEquals("one row per set, still — a correction is not a second set",
+            listOf("set_a", "set_b"), shelf.detail("ses_1")?.sets?.map { it.id })
+        assertEquals(listOf(90.0, 82.5), shelf.detail("ses_1")?.sets?.map { it.weightKg })
+        assertEquals("the log moves and the routine does not",
+            listOf(82.5), shelf.routines.single().entries.map { it.targetWeightKg })
+        assertEquals(plan, shelf.finished.single().session.plan)
+        assertEquals("rt_1", shelf.finished.single().session.routineId)
+    }
+
+    // A set the shelf does not hold answers null, and that null is how the store tells a device row
+    // from an account row — a PATCH may never go out for an id the log has never seen.
+    @Test
+    fun testFixingASetTheShelfDoesNotHoldAnswersNothingAtAll() {
+        val shelf = LocalLog(logFile())
+        shelf.hold(LocalLog.FinishedSession(
+            Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000),
+            listOf(aSet("set_a", at = 1_100))))
+
+        assertNull(shelf.fixSet("ses_1", "set_gone", SetFix(weightKg = 90.0, reps = 5, kind = SetKind.Working)))
+        assertNull(shelf.fixSet("ses_gone", "set_a", SetFix(weightKg = 90.0, reps = 5, kind = SetKind.Working)))
+        assertEquals(listOf(82.5), shelf.detail("ses_1")?.sets?.map { it.weightKg })
+    }
+
+    // THE TOMBSTONE, and the reason it is kept rather than only a hole being left: this session may
+    // be HALF CLAIMED — a pass that landed the start and some sets and then stopped — so the claim
+    // has to be told the set is gone, or the next pass would leave it standing on the account while
+    // this device shows it deleted.
+    @Test
+    fun testDeletingASetOnTheShelfLeavesATombstoneTheClaimCanRead() {
+        val file = logFile()
+        val shelf = LocalLog(file)
+        shelf.hold(LocalLog.FinishedSession(
+            Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000),
+            listOf(aSet("set_a", at = 1_100), aSet("set_b", at = 1_200))))
+
+        assertTrue(shelf.deleteSet("ses_1", "set_a"))
+        assertEquals(listOf("set_b"), shelf.detail("ses_1")?.sets?.map { it.id })
+        assertEquals(listOf("set_a"), shelf.finished.single().deleted)
+
+        assertFalse("a set the shelf does not hold is not this shelf's to delete",
+            shelf.deleteSet("ses_1", "set_a"))
+
+        val reopened = LocalLog(file)
+        assertEquals(listOf("set_b"), reopened.detail("ses_1")?.sets?.map { it.id })
+        assertEquals("a tombstone that did not survive a relaunch would be a delete that undid itself",
+            listOf("set_a"), reopened.finished.single().deleted)
+    }
+
+    // The queue's copy of the same workout still carries the set §G18 removed — the crash repair in
+    // `connect` re-holds it — and a merge that took it back would resurrect a set the lifter deleted.
+    @Test
+    fun testHoldingASessionAgainCannotResurrectASetItsTombstoneNames() {
+        val shelf = LocalLog(logFile())
+        shelf.hold(LocalLog.FinishedSession(
+            Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000),
+            listOf(aSet("set_a", at = 1_100), aSet("set_b", at = 1_200))))
+        shelf.deleteSet("ses_1", "set_a")
+
+        shelf.hold(LocalLog.FinishedSession(
+            Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_500),
+            listOf(aSet("set_a", at = 1_100), aSet("set_b", at = 1_200))))
+
+        assertEquals(listOf("set_b"), shelf.finished.single().sets.map { it.id })
+        assertEquals(listOf("set_a"), shelf.finished.single().deleted)
+    }
+
+    // The claim's repairs rewrite the row, and a rewrite that dropped the tombstones would lose the
+    // deletes with them — every one of these goes through `copy` for exactly that reason.
+    @Test
+    fun testTheClaimsRepairsCarryTheTombstonesThrough() {
+        val shelf = LocalLog(logFile())
+        shelf.hold(LocalLog.FinishedSession(
+            Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000, routineId = "rt_1"),
+            listOf(aSet("set_a", "ex_1", at = 1_100), aSet("set_b", "ex_1", at = 1_200))))
+        shelf.deleteSet("ses_1", "set_a")
+
+        shelf.remintExercise("ex_1", "ex_2")
+        shelf.remintRoutine("rt_1", "rt_2")
+        shelf.remintSet("ses_1", "set_b", "set_c")
+        shelf.orphanRoutine("rt_2")
+        shelf.remintSession("ses_1", "ses_2")
+        shelf.dropSet("ses_2", "set_c")
+
+        assertEquals(listOf("set_a"), shelf.finished.single().deleted)
+        assertTrue(shelf.finished.single().sets.isEmpty())
     }
 }

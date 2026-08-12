@@ -81,8 +81,14 @@ struct ExerciseWrite {
 // CREATING start that named a plan this account cannot read — refused rather than started ad-hoc,
 // because a session that quietly loses its plan is a workout with no targets and no way to notice.
 // It is unreachable from a replay or a join, which are handed a session that already exists.
+// `deleted` is the store's own fact and the one refusal here that exists because of the delete
+// route: the id names a set this lifter TOOK OUT of the log. It is not idTaken and must never be
+// answered as one — a spent id is repaired by minting a fresh one and sending the set again, which
+// is exactly how a deleted set would come back under a new number the first time an append whose
+// reply was lost is replayed. Nothing repairs this one: the set is not owed, and the queue holding
+// it drops it.
 enum class StartError { none, idTaken, alreadyOpen, unknownRoutine };
-enum class AppendError { none, notFound, finished, idTaken, unknownExercise };
+enum class AppendError { none, notFound, finished, idTaken, unknownExercise, deleted };
 enum class FinishError { none, notFound, badInstant };
 
 struct StartOutcome {
@@ -163,6 +169,20 @@ public:
   StartOutcome start(const UserId& user, const SessionStart& incoming);
   AppendOutcome append(const UserId& user, const SessionId& session, const SetWrite& incoming);
   FinishOutcome finish(const UserId& user, const SessionId& session, std::uint64_t finishedAtMs);
+
+  // The correction, and the delete beside it — the log moves, the routine does not. Both name the
+  // SESSION as well as the set, because a set id that resolves under this account but in another
+  // workout is not this session's to change: it is the same absent fact as one that never existed,
+  // and a client cannot walk a stale id into a workout it is not looking at.
+  //
+  // `fixSet` is the load → pure rule → write → answer-with-the-store shape every write in this file
+  // has; `deleteSet` answers nothing, which is what makes a lost reply safe to send again. NOTHING
+  // either of them does reaches `gym_sessions.plan` or a routine entry — the frozen snapshot is the
+  // program's word about the past and a correction is the log's word about it, and §G18 puts that
+  // on screen: *Push A keeps its own numbers.*
+  std::optional<Set> fixSet(const UserId& user, const SessionId& session, const SetId& id,
+                            const SetFix& fix);
+  void deleteSet(const UserId& user, const SessionId& session, const SetId& id);
   std::vector<LogRow> log(const UserId& user, const LogCursor& cursor);
   std::optional<SessionDetail> detail(const UserId& user, const SessionId& session);
   std::vector<Exercise> catalog(const UserId& user);

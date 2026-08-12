@@ -10,15 +10,19 @@
 // them by the same rules in the same functions (log.js): two sources, one rule, exactly as the top
 // set and the auto-close note already had.
 //
-// The web is the mirror and the desk (§11.2). Nothing on this screen starts, resumes or logs
-// anything; the one write door is the backfill, and it is refused in place while a session is open,
-// on a neutral surface with the live dot and never in alarm ink, because nothing failed — the
-// workout is simply still running (backfill.js).
+// The web is the mirror and the DESK (§11.2). No workout starts here and no set is logged here —
+// but correcting last Tuesday is exactly what somebody sits down at a laptop to do, so this is the
+// surface that has to be good at it: §G18's sheet opens on any set of a session read whole, and
+// §G17's `tap to fix` is on those rows at last. The other write door is the backfill, refused in
+// place while a session is open, on a neutral surface with the live dot and never in alarm ink,
+// because nothing failed — the workout is simply still running (backfill.js).
 
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { gymApi } from './gymApi.js';
 import { MID_WORKOUT_REFUSAL } from './backfill.js';
+import { deletedLine, deleteFailure, fixFailure, movesAfterRead, setsAfter, UNDO_MS } from './fix.js';
+import { FixSheet } from './FixSheet.jsx';
 import {
   BACKFILL_HREF, CLOSED_ITSELF_NOTE, closedOnItsOwn, e1rmLabel, finishHref, firstSessionLabel,
   groupByExercise, hasRecord, isFinished, loadedLine, logWhenLabel, NO_ROUTINE, onThisDevice,
@@ -164,12 +168,97 @@ function SessionRow({ summary }) {
   );
 }
 
-export function SessionDetail({ id }) {
+export function SessionDetail({ id, log }) {
+  // Both are stable for the life of this screen (useTrainingLog), which is what lets the withheld
+  // delete below hang off a callback whose identity never changes. The whole `log` object is a
+  // fresh literal every render, and depending on it would rebuild that callback — and fire its
+  // cleanup, and the delete with it — on every keystroke anywhere in the room.
+  const { say, reloadLog } = log;
   const view = useGymRead(
     () => Promise.all([gymApi.session(id), gymApi.exercises()])
       .then(([detail, catalog]) => (detail ? { detail, catalog } : null)),
     [id],
   );
+  // WHAT THIS SCREEN HAS MOVED SINCE THE READ — one entry per set corrected or deleted, the store's
+  // own answer in each (fix.js). The screen is scoped to one session by its key in the frame, so
+  // this can never outlive the workout it is a set of.
+  const [moves, setMoves] = useState(() => new Map());
+  const [fixing, setFixing] = useState(null);
+
+  // EVERY DELETE IS WITHHELD FOR FIVE SECONDS AND NOTHING IS DESTROYED INSIDE THEM. The row leaves
+  // the screen, the toast offers Undo, and only when the window closes does the DELETE go over the
+  // wire — so the take-back is exact. The alternative shape, deleting now and re-posting on Undo,
+  // cannot be: a re-posted set is a NEW row, minted at max+1, and it would come back at the bottom
+  // of its movement instead of where the lifter left it.
+  //
+  // A list, not one: a second set can be deleted while the first is still in its window, and each
+  // owes the store its own write at its own moment.
+  const withheld = useRef([]);
+
+  const settle = useCallback((setId) => {
+    const held = withheld.current.find((each) => each.set.id === setId);
+    if (held) clearTimeout(held.timer);
+    withheld.current = withheld.current.filter((each) => each.set.id !== setId);
+    return held?.set ?? null;
+  }, []);
+
+  const sendDelete = useCallback(async (setId) => {
+    const set = settle(setId);
+    if (!set) return;
+    try {
+      await gymApi.deleteSet(id, setId);
+    } catch (error) {
+      // The set is still in the log, so it goes back on the screen. If this ran on the way out the
+      // row has nowhere to return to and the toast is the whole of what the lifter gets — which is
+      // why it names the state that is true rather than the action that failed (fix.js).
+      setMoves((current) => new Map(current).set(setId, set));
+      say(deleteFailure(error));
+      return;
+    }
+    // The log row's tonnage, its working count, its top e1RM and its gold dot are all readings of
+    // the sets that stand, and one of them just left.
+    reloadLog();
+  }, [id, settle, say, reloadLog]);
+
+  // Leaving the screen sends whatever is still withheld: the lifter asked for it and the window
+  // merely ran out early. A tab closed inside the window sends nothing at all and the set is still
+  // in the log — of the two ways this can end wrong, a set that survives is the one a lifter can
+  // repair, and a set silently destroyed is the one nobody can.
+  useEffect(() => () => { withheld.current.forEach((held) => sendDelete(held.set.id)); }, [sendDelete]);
+
+  const withholdDelete = (set) => {
+    setFixing(null);
+    setMoves((current) => new Map(current).set(set.id, null));
+    withheld.current = [...withheld.current, { set, timer: setTimeout(() => sendDelete(set.id), UNDO_MS) }];
+    say(deletedLine(set), { label: 'Undo', run: () => { if (settle(set.id)) setMoves((current) => new Map(current).set(set.id, set)); } });
+  };
+
+  // THE SESSION, READ AGAIN — and the corrections in hand let go of in the same breath. A re-read is
+  // asked for because the log moved underneath this screen, so the answer coming back is newer than
+  // every correction this screen is holding, and painting one back over it would undo the repair the
+  // re-read was for. The withheld deletes stay: nothing has been sent for them (fix.js).
+  const reread = () => {
+    setMoves(movesAfterRead);
+    view.retry();
+  };
+
+  const saveFix = async (set, fix) => {
+    setFixing(null);
+    // `{}` is legal on the wire and answers the stored row unchanged — so a Save that moved nothing
+    // is a round trip with nothing to carry, and the sheet closing IS the whole answer.
+    if (Object.keys(fix).length === 0) return;
+    try {
+      const stored = await gymApi.fixSet(id, set.id, fix);
+      setMoves((current) => new Map(current).set(set.id, stored));
+    } catch (error) {
+      say(fixFailure(error));
+      // The log moved under this screen — another device deleted the set, or this is not the
+      // workout it was. One row is not the repair for that; the session is read again.
+      if (error.setNotFound) reread();
+      return;
+    }
+    reloadLog();
+  };
 
   if (view.phase === 'loading') return <p className="gym-quiet">Opening the session…</p>;
   if (view.phase === 'absent') {
@@ -186,13 +275,17 @@ export function SessionDetail({ id }) {
         <a className="gym-back" href="#/gym/log"><ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> The log</a>
         <p className="gym-read-failed">
           The session didn’t load.
-          <button type="button" className="gym-retry" onClick={view.retry}>Retry</button>
+          <button type="button" className="gym-retry" onClick={reread}>Retry</button>
         </p>
       </>
     );
   }
 
-  const { session, sets } = view.data.detail;
+  const { session } = view.data.detail;
+  // The corrections in hand, folded into the read BEFORE anything is derived from it — so the
+  // header's working count, the tonnage, the plan note beside each set and the order they group in
+  // all move with a fix in the same render (fix.js).
+  const sets = setsAfter(view.data.detail.sets, moves);
   const names = new Map(view.data.catalog.map((exercise) => [exercise.id, exercise.name]));
   const frozen = planFrozenLabel(session);
   return (
@@ -241,12 +334,26 @@ export function SessionDetail({ id }) {
               {group.map((set) => {
                 const note = setNoteOf(set, reading, set === opener);
                 return (
-                  <li key={set.id} className={set.kind === 'warmup' ? 'gym-set gym-set-warmup' : 'gym-set'}>
-                    <span className="gym-set-mark" aria-hidden="true">{set.kind === 'warmup' ? '·' : '✓'}</span>
-                    <span className="gym-set-load">{setLoadLabel(set)}</span>
-                    {set.rpe != null && <span className="gym-set-rpe">rpe {set.rpe}</span>}
-                    {note && <span className="gym-set-plan">{note}</span>}
-                    {set.note && <span className="gym-set-note">{set.note}</span>}
+                  <li key={set.id}>
+                    {/* EVERY SET IS A DOOR (§G17's `tap to fix`), and the whole row is it rather
+                        than a control at the end: the thing being corrected is the line, and a
+                        target the width of the row is one a thumb and a pointer both find. The
+                        label is not hidden from a reader — it is the only text saying what
+                        pressing this does. */}
+                    <button
+                      type="button"
+                      className={['gym-set', set.kind === 'warmup' && 'gym-set-warmup', fixing?.id === set.id && 'is-fixing'].filter(Boolean).join(' ')}
+                      onClick={() => setFixing(set)}
+                    >
+                      <span className="gym-set-mark" aria-hidden="true">{set.kind === 'warmup' ? '·' : '✓'}</span>
+                      <span className="gym-set-load">{setLoadLabel(set)}</span>
+                      {set.rpe != null && <span className="gym-set-rpe">rpe {set.rpe}</span>}
+                      <span className="gym-set-tail">
+                        {note && <span className="gym-set-plan">{note}</span>}
+                        <span className="gym-set-fix">tap to fix</span>
+                      </span>
+                      {set.note && <span className="gym-set-note">{set.note}</span>}
+                    </button>
                   </li>
                 );
               })}
@@ -263,6 +370,19 @@ export function SessionDetail({ id }) {
           read. */}
       {isFinished(session) && <CoachPanel sessionId={id} />}
       <CoachShare sessionId={id} />
+      {/* KEYED BY THE SET IT IS OF, for the reason the routine editor is keyed by its routine: the
+          sheet holds a draft, and a draft may not outlive the thing it is a draft of. */}
+      {fixing && (
+        <FixSheet
+          key={fixing.id}
+          set={fixing}
+          movement={names.get(fixing.exerciseId) ?? fixing.exerciseId}
+          session={session}
+          onSave={(fix) => saveFix(fixing, fix)}
+          onDelete={() => withholdDelete(fixing)}
+          onClose={() => setFixing(null)}
+        />
+      )}
     </>
   );
 }

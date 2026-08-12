@@ -3,7 +3,7 @@ import WindmillPlatform
 
 // THE ROOM — gym's whole surface: the three tabs a lifter stands in at rest (Today, The log,
 // Routines), the session they are in the middle of, the screen a session ends on, and the two
-// read-only screens a tab opens over itself. It draws no capsule, no theme control and nothing about
+// screens a tab opens over itself. It draws no capsule, no theme control and nothing about
 // billing: the shell owns all three, and a room that drew one of them would be a second copy of a
 // decision the shell already made.
 //
@@ -18,9 +18,9 @@ import WindmillPlatform
 // in this product, and Insights was refused by name. That stands. "Therefore no tab bar at all" was
 // this room's own inference from it and §F contradicts it; the block arguing for the shape is gone
 // with the shape. The rail is drawn on the three tabs and nowhere else: the logger, the finish and
-// the two read-only screens carry the bar alone, because a workout owns the screen it is on.
+// the two away screens carry the bar alone, because a workout owns the screen it is on.
 //
-// The way back out of a read-only screen is the leading end of the room's own bar, opposite the
+// The way back out of an away screen is the leading end of the room's own bar, opposite the
 // seat, and not the top-left corner §G17 draws it in: that corner is the shell's 38pt capsule lane,
 // reserved by a safe-area inset in every app. The shell's back GESTURE is the left screen edge and
 // takes you home, so a room screen may not claim that edge either.
@@ -60,8 +60,9 @@ public struct GymRoom: View {
         var id: String { rawValue }
     }
 
-    // What a tab can open OVER itself, and both are read-only: one past session with its sets, and
-    // one movement's record. The session travels as the ROW the list already holds rather than as an
+    // What a tab can open OVER itself: one past session with its sets — which §G18 can correct a
+    // set of, so this one is no longer a read — and one movement's record, which is. The session
+    // travels as the ROW the list already holds rather than as an
     // id, because that row carries facts no other read gives back — the working count, the tonnage,
     // and whether the four-hour rule closed it rather than a tap. A movement travels as its ID and
     // nothing else: the record page reads its own name, which is the point of the page.
@@ -127,7 +128,7 @@ public struct GymRoom: View {
         .onDisappear { Task { await store.flushPendingSets(force: true) } }
     }
 
-    // A LIVE SESSION OUTRANKS EVERY TAB AND EVERY READ-ONLY SCREEN. A workout that opens while one
+    // A LIVE SESSION OUTRANKS EVERY TAB AND EVERY AWAY SCREEN. A workout that opens while one
     // of them is up (a start on this phone, a session joined from another device) puts the lifter
     // back where the sets are, because that is the one screen in this product that is time-critical.
     @ViewBuilder
@@ -170,7 +171,7 @@ public struct GymRoom: View {
         finished == nil && store.session == nil && away.isEmpty
     }
 
-    // THE READ-ONLY SCREEN ON STAGE, which is not simply the top of the stack: a live session and
+    // THE AWAY SCREEN ON STAGE, which is not simply the top of the stack: a live session and
     // the finish screen both outrank it, and a way back drawn under one of those would be a control
     // that moves a screen nobody can see.
     private var showing: Away? {
@@ -178,7 +179,7 @@ public struct GymRoom: View {
         return away.last
     }
 
-    // Every door in and out of a read-only screen goes through here for one reason: the note is what
+    // Every door in and out of an away screen goes through here for one reason: the note is what
     // the room has to say about the door that did not open ON THE SCREEN YOU ARE ON, and a refusal
     // from Today carried under a chart is a sentence about something that is no longer in front of
     // the lifter.

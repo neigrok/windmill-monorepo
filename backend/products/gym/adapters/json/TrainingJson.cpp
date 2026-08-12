@@ -104,6 +104,49 @@ SetWrite parseSetWrite(const Json::Value& body) {
   return write;
 }
 
+// A fix names what it changes and nothing else. Every field here is optional and every one of them
+// is checked for PRESENCE alone — a `null` weight is a type error rather than a silent no-op —
+// because the whole shape of this write is "an omission means leave it", and a client that could
+// omit a field two ways would sooner or later mean different things by them. `rpe` is the exception
+// and the one that earns it: it is the only value a set may not have at all, so `"rpe": null` is how
+// a correction removes one, and that is why it travels as a named-plus-value pair.
+SetFix parseSetFix(const Json::Value& body) {
+  if (!body.isObject()) throw InvalidTraining("a fix must be a json object");
+  for (const std::string& field : body.getMemberNames()) {
+    if (field == "weightKg" || field == "reps" || field == "kind" || field == "rpe" ||
+        field == "note")
+      continue;
+    throw InvalidTraining("unknown fix field \"" + field +
+                          "\". A fix takes: weightKg, reps, kind, rpe, note. A set's movement, its "
+                          "instant and its number are not a correction.");
+  }
+  SetFix fix;
+  if (body.isMember("weightKg")) {
+    if (!body["weightKg"].isNumeric()) throw InvalidTraining("weightKg must be a number");
+    fix.weightKg = body["weightKg"].asDouble();
+  }
+  if (body.isMember("reps")) {
+    if (!body["reps"].isInt()) throw InvalidTraining("reps must be a whole number");
+    fix.reps = body["reps"].asInt();
+  }
+  if (body.isMember("kind")) {
+    if (!body["kind"].isString()) throw InvalidTraining("kind must be a string");
+    fix.kind = parseSetKind(body["kind"].asString());
+  }
+  if (body.isMember("note")) {
+    if (!body["note"].isString()) throw InvalidTraining("note must be a string");
+    fix.note = body["note"].asString();
+  }
+  if (body.isMember("rpe")) {
+    fix.rpeNamed = true;
+    if (!body["rpe"].isNull()) {
+      if (!body["rpe"].isNumeric()) throw InvalidTraining("rpe must be a number");
+      fix.rpe = body["rpe"].asDouble();
+    }
+  }
+  return fix;
+}
+
 std::uint64_t parseFinish(const Json::Value& body) {
   if (!body.isObject()) throw InvalidTraining("a finish must be a json object");
   return instantOf(body, "finishedAt");

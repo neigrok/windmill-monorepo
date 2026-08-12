@@ -1038,9 +1038,9 @@ create table if not exists journal_page_curation (
 -- table, gym_session_shares (below) — a capability that expires and is revoked by deleting one
 -- row, never a stance on the session itself. All date/time work stays in SQL (to_timestamp,
 -- extract(epoch …), date_trunc); instants cross the wire and the domain as epoch-ms. Create order
--- is FK order: exercises → routines → routine_entries → sessions → sets → session_shares (the
--- architecture doc reads sessions first; the DDL cannot, because gym_sessions.routine_id
--- references gym_routines).
+-- is FK order: exercises → routines → routine_entries → sessions → sets → set_revisions →
+-- session_shares (the architecture doc reads sessions first; the DDL cannot, because
+-- gym_sessions.routine_id references gym_routines).
 
 -- The identity table. id is a STABLE slug ('back-squat'), never renamed, never displayed;
 -- name is the mutable display string. That separation IS the fix for Lift's worst bug family:
@@ -1153,17 +1153,26 @@ create index if not exists gym_sessions_log on gym_sessions (user_id, started_at
 create unique index if not exists gym_sessions_one_open on gym_sessions (user_id)
   where finished_at is null;
 
--- The unit of the whole product: an append-only event stream from one device at a time.
--- Nothing to converge, so no HLC and no lattice — the client-minted id ('set_<hex>') makes
+-- The unit of the whole product: ONE ROW PER SET THAT CURRENTLY STANDS, written by one device at a
+-- time. A correction rewrites the row and keeps what it replaced in gym_set_revisions (below), so
+-- every read of this table stays exactly what it was — the tonnage, the marks, the records, the
+-- chart, the prefill and the export all recompute off the live rows and none of them projects a
+-- chain. Nothing to converge, so no HLC and no lattice — the client-minted id ('set_<hex>') makes
 -- the background-flush queue replayable (ON CONFLICT DO NOTHING), which is all offline needs.
+-- The primary key is not the whole of that replayability any more, and W3 is why: a row can now
+-- LEAVE this table, which frees its id, and a replayed append would then hand a lifter back the set
+-- they deleted. So a delete SPENDS the id for good — insertSet asks gym_set_revisions whether this
+-- id names a deleted set before it writes (products/gym/adapters/postgres/PgTrainingRepository.cpp).
 -- kind / rpe / note land NOW though their UI is phase 2 — Lift's lesson is that this is a
 -- schema decision, not a feature decision: a warmup must not count toward volume, and
 -- band-assisted work logs NEGATIVE kg, which naive volume = weight × reps silently subtracts
 -- from every total (Lift shipped exactly that). The volume contribution of a set kind is a
 -- domain decision and the finish surface took it: WORKING sets only, and a warmup, a drop and a
 -- failure count toward nothing (products/gym/domain/Review.h). The storage is decided here.
--- set_number is server-assigned max+1 per (session, exercise) — not count+1: after a phase-2
--- delete + renumber, count+1 would mint a duplicate (a bug Lift's own spec had backwards).
+-- set_number is server-assigned max+1 per (session, exercise) — not count+1, and that choice is
+-- what made W3's delete safe to build: deleting set 2 of 3 leaves 1 and 3, and count+1 would then
+-- mint a second 3 (a bug Lift's own spec had backwards). Nothing RENUMBERS after a delete: a gap is
+-- honest and the number a set was logged under is not a lifter's to rewrite.
 -- Canonical unit is kg, numeric(6,2) so 72.5 is 72.5 forever; there is no lb column.
 create table if not exists gym_sets (
   id           text primary key,
@@ -1182,6 +1191,50 @@ create table if not exists gym_sets (
 create index if not exists gym_sets_session  on gym_sets (session_id, set_number);
 -- the prefill read and every per-exercise history: newest sets of one movement, one index
 create index if not exists gym_sets_history  on gym_sets (user_id, exercise_id, completed_at desc);
+
+-- What a correction replaced, and what a delete took out of the log. Fixing a set UPDATEs its row in
+-- gym_sets and appends the version it replaced here; deleting one moves the row here whole, marked
+-- `deleted`. So gym_sets keeps its one meaning and **nothing a lifter logged is ever destroyed** —
+-- the two halves of the ruling that made W3 buildable without projecting a chain through ten reads.
+--
+-- The alternative — keeping gym_sets append-only and superseding a set with a tombstoned row — was
+-- refused on blast radius: EVERY read of sets would then have to filter the superseded and resolve
+-- the chain (session detail, the log's marks, the record page, the review, the statistics, the
+-- prefill, the export, and every MCP projection), a tax paid forever on every future read, and one
+-- forgotten projection shows a lifter a set twice or a number they corrected weeks ago.
+--
+-- NOTHING SHOWS THIS TABLE TO A LIFTER, and that is deliberate, not unfinished: there is no trash,
+-- no recovery route, and no copy anywhere in the product that promises a set back. It exists so the
+-- promise above is true, not so a screen can offer an undo it would then have to keep. The revision
+-- id is the one id in gym the server mints — a kept row is not something a client names.
+--
+-- ONE WRITE READS IT, and it reads one column: an append asks whether the id it carries names a set
+-- this account DELETED, because a delete has to survive the replay of the POST that logged the set.
+-- That is not a door back to a deleted set — it hands nothing over, and refuses instead.
+--
+-- set_id carries NO foreign key on purpose: a deleted set's row is gone from gym_sets, and the whole
+-- point of this table is to outlive it. session_id and user_id keep theirs, so closing an account
+-- takes these rows with it and DISCARDING A WORKOUT TAKES ITS REVISIONS TOO — which is what keeps
+-- `discard_session`'s own promise ("Permanent — nothing keeps a copy") true.
+create table if not exists gym_set_revisions (
+  revision_id  bigserial primary key,
+  set_id       text not null,
+  session_id   text not null references gym_sessions(id) on delete cascade,
+  user_id      uuid not null references users(id) on delete cascade,
+  exercise_id  text not null references gym_exercises(id),
+  set_number   int  not null,
+  weight_kg    numeric(6,2) not null,
+  reps         int  not null,
+  kind         text not null,
+  rpe          numeric(3,1),
+  note         text not null default '',
+  completed_at timestamptz not null,
+  deleted      boolean not null default false,   -- true = the set left the log; false = it was rewritten
+  replaced_at  timestamptz not null default now()
+);
+-- The columns carry no CHECKs: this is a copy of what a row already was, and a constraint tightened
+-- on gym_sets later must never make the history of a set unwritable.
+create index if not exists gym_set_revisions_set on gym_set_revisions (set_id, replaced_at);
 
 -- The coach share, and it is a TABLE rather than a column on gym_sessions for one reason that
 -- decides everything else: a column would put a stance on every session row, and every one of

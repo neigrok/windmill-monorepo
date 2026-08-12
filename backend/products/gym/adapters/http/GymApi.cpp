@@ -2,12 +2,15 @@
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
+#include "platform/adapters/json/JsonText.h"
 #include "products/gym/adapters/csv/TrainingCsv.h"
 #include "products/gym/adapters/json/TrainingJson.h"
 
 #include <algorithm>
 #include <charconv>
+#include <cstdint>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <utility>
 
@@ -20,6 +23,20 @@ std::optional<std::uint64_t> digitsOnlyMs(const std::string& text) {
   const std::from_chars_result parsed = std::from_chars(text.data(), last, value);
   if (parsed.ec != std::errc{} || parsed.ptr != last) return std::nullopt;
   return std::min(value, kMaxInstantMs);
+}
+
+// FNV-1a, 64-bit, over the bytes the session read is about to write. It is what makes a session's
+// ETag cover a CORRECTION: a fix moves neither the set count nor the last instant nor finished_at,
+// so a tag built from those alone answered 304 with a stale weight on the mirror's screen. Folding
+// the rendered sets instead is exact by construction — anything a poll could act on is in those
+// bytes, and nothing else is.
+std::uint64_t fold(const std::string& text) {
+  std::uint64_t hash = 14695981039346656037ull;
+  for (const unsigned char byte : text) {
+    hash ^= byte;
+    hash *= 1099511628211ull;
+  }
+  return hash;
 }
 
 // If-None-Match read per RFC 9110 §13.1.2: the field is a comma-separated list of entity-tags —
@@ -239,7 +256,82 @@ void GymApi::appendSet(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     cb(error(drogon::k400BadRequest, "no such exercise", "unknown-exercise"));
     return;
   }
+  if (outcome.error == AppendError::deleted) {
+    // The id names a set this lifter DELETED, and this append is a replay of the POST that logged
+    // it — from a queue whose 200 was lost, or from a claim replaying the device's own log. The set
+    // is not owed and it is not coming back: drop it. It is deliberately NOT `set-id-taken`, whose
+    // documented repair on all three surfaces is "mint a fresh id and send the set again" — the one
+    // move that would put a deleted set back in the log under a new number. Every queue's default
+    // for a 409 it does not know is terminal, so this word is safe to speak at a client built before
+    // it existed: the pending set is dropped either way, and the sentence is what gets said.
+    cb(error(drogon::k409Conflict, "that set was deleted", "set-deleted"));
+    return;
+  }
   cb(jsonResponse(toJson(*outcome.set)));
+}
+
+// §G18's `Save the fix`: the one write in gym that changes a row a lifter already made. PATCH and
+// not PUT because a fix names the number that was wrong and nothing else — a PUT would promise the
+// whole set, and three of a set's fields are not a lifter's to rewrite (adapters/json/TrainingJson.h
+// lists them and says why). It answers the STORED row, so a retry whose reply was lost reads back
+// the same values rather than compounding a change, and both refusals carry a word a queue can
+// branch on.
+//
+// What it never touches is the caption of the whole screen: the session's frozen plan and the
+// routine it was copied from. *Push A keeps its own numbers.* The log moves; the program does not.
+void GymApi::fixSet(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id,
+                    const std::string& setId) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
+    return;
+  }
+  std::shared_ptr<Json::Value> json = req->getJsonObject();
+  if (!json) {
+    cb(error(drogon::k400BadRequest, "expected json", "fix-unreadable"));
+    return;
+  }
+  std::optional<Set> fixed;
+  try {
+    fixed = log_->fixSet(*caller, SessionId{id}, SetId{setId}, parseSetFix(*json));
+  } catch (const InvalidTraining&) {
+    // One word for every way a correction can be unreadable — a field a fix may not carry, a value
+    // outside the band the store keeps, a kind nobody logs — because they share one repair: the
+    // client is wrong and no retry of these bytes helps. A storage failure is NOT this, and rides
+    // past the catch to the house 500, which is the status a queue retries.
+    cb(error(drogon::k400BadRequest, "could not read that fix", "fix-unreadable"));
+    return;
+  }
+  if (!fixed) {
+    // The set is gone, was never this account's, or belongs to a different workout — one answer for
+    // all three, byte for byte, so a set id cannot be probed for existence. It is terminal for a
+    // queue: nothing about these bytes will land, and the pending edit is dropped.
+    cb(error(drogon::k404NotFound, "no such set", "set-not-found"));
+    return;
+  }
+  cb(jsonResponse(toJson(*fixed)));
+}
+
+// `Delete set`, and it refuses NOTHING — a set that was never here does not stand either, so a
+// client whose reply was lost sends the same request again and gets the same 204. That is the whole
+// reason the idempotency is spelled this way rather than as a 404: the queue behind this route
+// retries, and a delete that answered "no such set" on the second try would teach it to treat its
+// own successful writes as failures.
+//
+// Nothing on screen may promise this back. The row moves whole into the revisions table so nothing
+// a lifter logged is destroyed, and there is no door that reads it — no trash, no recovery, no
+// thirty days. What the copy says is what is true: the set leaves the log.
+void GymApi::deleteSet(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id,
+                       const std::string& setId) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
+    return;
+  }
+  log_->deleteSet(*caller, SessionId{id}, SetId{setId});
+  auto response = drogon::HttpResponse::newHttpResponse();
+  response->setStatusCode(drogon::k204NoContent);
+  cb(response);
 }
 
 void GymApi::finishSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
@@ -333,17 +425,20 @@ void GymApi::getSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     cb(error(drogon::k404NotFound, "no such session"));
     return;
   }
-  // The mirror's freshness tag (§11.3): WEAK, because it certifies the facts a poll acts on — not
-  // byte equality of a body this handler never compared. Sets are insert-only and the rest is
-  // frozen at start, so (set count, last completedAt, finished_at) is the whole of what can move —
-  // and startedAt leads the tag so a session discarded and recreated under the same id is a new
-  // representation, never a 304 echo of the dead workout. Only the two success paths carry it — the
-  // 401 and the 404 above stay byte-identical to what they always answered.
-  const std::vector<Set>& sets = detail->sets;
+  // The mirror's freshness tag (§11.3): WEAK, because it certifies the facts a poll acts on rather
+  // than byte equality of a body this handler never compared. Three terms, none of them subsuming
+  // another — the session's own two instants, and a fold over the sets as this reply renders them.
+  //
+  // The fold replaced (set count, last completedAt) in W3, and it had to: a set is no longer
+  // insert-only, so a correction can change what a lifter reads while leaving all three of the old
+  // terms exactly where they were, and the mirror would have polled a 304 forever over a weight that
+  // had moved. startedAt still leads, so a session discarded and recreated under the same id is a
+  // new representation and never a 304 echo of the dead workout. Only the two success paths carry
+  // the tag — the 401 and the 404 above stay byte-identical to what they always answered.
+  const Json::Value sets = toJson(detail->sets);
   const std::string tag = "W/\"" + std::to_string(detail->session.startedAtMs) + "-" +
-                          std::to_string(sets.size()) + "-" +
-                          std::to_string(sets.empty() ? 0 : sets.back().completedAtMs) + "-" +
-                          std::to_string(detail->session.finishedAtMs.value_or(0)) + "\"";
+                          std::to_string(detail->session.finishedAtMs.value_or(0)) + "-" +
+                          std::to_string(fold(dump(sets))) + "\"";
   if (ifNoneMatchAccepts(req->getHeader("if-none-match"), tag)) {
     auto unchanged = drogon::HttpResponse::newHttpResponse();
     unchanged->setStatusCode(drogon::k304NotModified);
@@ -357,7 +452,7 @@ void GymApi::getSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
   }
   Json::Value body(Json::objectValue);
   body["session"] = toJson(detail->session);
-  body["sets"] = toJson(detail->sets);
+  body["sets"] = sets;
   drogon::HttpResponsePtr response = jsonResponse(body);
   response->addHeader("ETag", tag);
   cb(response);

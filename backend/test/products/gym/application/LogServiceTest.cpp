@@ -1971,3 +1971,299 @@ TEST(a_record_of_a_movement_never_lifted_is_empty_and_of_an_unknown_one_is_absen
   CHECK(page->series.empty());
   CHECK_EQ(h.service.movementRecord(uid(), ExerciseId{"no-such"}), std::nullopt);
 }
+
+// ---- the fix: the log moves, the routine does not -------------------------------------------
+
+TEST(a_fix_rewrites_the_stored_set_and_keeps_the_version_it_replaced) {
+  Harness h;
+  h.startAt(h.clock.now);
+  h.service.append(uid(), sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
+  SetFix fix;
+  fix.weightKg = 80.0;
+  fix.reps = 5;
+
+  std::optional<Set> fixed = h.service.fixSet(uid(), sid(), setId("set_00000001"), fix);
+
+  REQUIRE(fixed.has_value());
+  CHECK_EQ(*fixed, Set(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1, 80.0, 5,
+                       SetKind::working, std::nullopt, "", h.clock.now + 60'000));
+  CHECK_EQ(h.repo.sets, std::vector<Set>{*fixed});
+  REQUIRE_EQ(h.repo.kept.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.kept[0],
+           (FakeTrainingRepository::KeptSet{
+               Set{setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1, 82.5, 8,
+                   SetKind::working, std::nullopt, "", h.clock.now + 60'000},
+               false}));
+}
+
+// A correction assigns absolute values, so sending it again is sending the same values again: the
+// second reply is the first, and the only trace is the second version kept beside the first.
+TEST(a_replayed_fix_answers_the_same_row) {
+  Harness h;
+  h.startAt(h.clock.now);
+  h.service.append(uid(), sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
+  SetFix fix;
+  fix.weightKg = 80.0;
+
+  std::optional<Set> first = h.service.fixSet(uid(), sid(), setId("set_00000001"), fix);
+  std::optional<Set> replayed = h.service.fixSet(uid(), sid(), setId("set_00000001"), fix);
+
+  CHECK_EQ(first, replayed);
+  CHECK_EQ(h.repo.sets.size(), static_cast<std::size_t>(1));
+}
+
+// Absent, another account's, and this account's set in a DIFFERENT workout are one answer — a set
+// id that resolved anywhere the caller could reach would be a way to walk one workout from another.
+TEST(a_fix_reaches_no_set_outside_the_workout_the_path_names) {
+  Harness h;
+  h.startAt(h.clock.now, "ses_00000001");
+  h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
+  h.service.finish(uid(), sid("ses_00000001"), h.clock.now + 3'600'000);
+  h.startAt(h.clock.now + 4'000'000, "ses_00000002");
+  h.repo.sessions.push_back(Session{sid("ses_00000009"), uid("u2"), h.clock.now});
+  h.repo.sets.push_back(Set{setId("set_00000009"), sid("ses_00000009"), ExerciseId{"bench-press"},
+                            1, 100.0, 3, SetKind::working, std::nullopt, "", h.clock.now});
+  SetFix fix;
+  fix.weightKg = 60.0;
+
+  CHECK_EQ(h.service.fixSet(uid(), sid("ses_00000002"), setId("set_00000001"), fix), std::nullopt);
+  CHECK_EQ(h.service.fixSet(uid(), sid("ses_00000001"), setId("set_99999999"), fix), std::nullopt);
+  CHECK_EQ(h.service.fixSet(uid(), sid("ses_00000009"), setId("set_00000009"), fix), std::nullopt);
+  CHECK_EQ(h.repo.sets[0].weightKg, 82.5);
+  CHECK_EQ(h.repo.sets[1].weightKg, 100.0);
+  CHECK(h.repo.kept.empty());
+}
+
+// A lifter reads the log AFTER the workout, which is exactly when they see the 4 they meant to log
+// as a 5. So a finished session is correctable — the one refusal this route does NOT have.
+TEST(a_finished_workout_is_still_correctable) {
+  Harness h;
+  h.startAt(h.clock.now);
+  h.service.append(uid(), sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
+  h.service.finish(uid(), sid(), h.clock.now + 3'600'000);
+  SetFix fix;
+  fix.reps = 5;
+
+  std::optional<Set> fixed = h.service.fixSet(uid(), sid(), setId("set_00000001"), fix);
+
+  REQUIRE(fixed.has_value());
+  CHECK_EQ(fixed->reps, 5);
+}
+
+// The delete: the set leaves the live log and moves whole into the kept rows, marked. Nothing a
+// lifter logged is destroyed — and nothing anywhere offers it back, which is why the mark exists
+// for the promise rather than for a screen.
+TEST(a_deleted_set_leaves_the_log_and_is_kept_marked_deleted) {
+  Harness h;
+  h.startAt(h.clock.now);
+  h.service.append(uid(), sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
+  h.service.append(uid(), sid(), h.bench("set_00000002", 85.0, h.clock.now + 120'000));
+
+  h.service.deleteSet(uid(), sid(), setId("set_00000001"));
+
+  REQUIRE_EQ(h.repo.sets.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.sets[0].id, setId("set_00000002"));
+  REQUIRE_EQ(h.repo.kept.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.kept[0],
+           (FakeTrainingRepository::KeptSet{
+               Set{setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1, 82.5, 8,
+                   SetKind::working, std::nullopt, "", h.clock.now + 60'000},
+               true}));
+}
+
+// The delete's whole idempotency story, and the reason it answers nothing: a client whose reply was
+// lost sends it again. A second delete keeps no second copy, and another account's set is untouched.
+TEST(deleting_a_set_twice_is_the_same_silence_and_reaches_nobody_elses) {
+  Harness h;
+  h.startAt(h.clock.now);
+  h.service.append(uid(), sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
+  h.repo.sessions.push_back(Session{sid("ses_00000009"), uid("u2"), h.clock.now});
+  h.repo.sets.push_back(Set{setId("set_00000009"), sid("ses_00000009"), ExerciseId{"bench-press"},
+                            1, 100.0, 3, SetKind::working, std::nullopt, "", h.clock.now});
+
+  h.service.deleteSet(uid(), sid(), setId("set_00000001"));
+  h.service.deleteSet(uid(), sid(), setId("set_00000001"));
+  h.service.deleteSet(uid(), sid("ses_00000009"), setId("set_00000009"));
+
+  CHECK_EQ(h.repo.sets, std::vector<Set>{Set(setId("set_00000009"), sid("ses_00000009"),
+                                             ExerciseId{"bench-press"}, 1, 100.0, 3,
+                                             SetKind::working, std::nullopt, "", h.clock.now)});
+  CHECK_EQ(h.repo.kept.size(), static_cast<std::size_t>(1));
+}
+
+// THE REPLAY THAT WOULD UNDO A DELETE, and it is the ordinary one: a POST whose 200 was lost stays
+// on the device's queue and goes again, or a claim replays the device's own log. `setOf` reads the
+// rows that STAND, so it resolves to nothing here — the append falls through to the insert, and on
+// the primary key alone the id is free and the set lands again under a fresh number. `deleted` is
+// the store's refusal for it, and it is not `idTaken` for the reason that word exists: every queue
+// repairs a spent id by minting a new one, which is exactly how the deletion would undo itself.
+TEST(a_deleted_set_is_never_logged_again_by_the_queue_that_replays_it) {
+  Harness h;
+  h.startAt(h.clock.now);
+  h.service.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now + 60'000));
+  h.service.append(uid(), sid(), h.bench("set_00000002", 82.5, h.clock.now + 120'000));
+  h.service.deleteSet(uid(), sid(), setId("set_00000002"));
+
+  AppendOutcome replayed =
+      h.service.append(uid(), sid(), h.bench("set_00000002", 82.5, h.clock.now + 120'000));
+
+  CHECK_EQ(replayed.set, std::optional<Set>());
+  CHECK(replayed.error == AppendError::deleted);
+  CHECK_EQ(h.repo.sets.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.sets[0].id, setId("set_00000001"));
+  CHECK_EQ(h.repo.kept.size(), static_cast<std::size_t>(1));
+  // And it stays refused after the workout ends, under its own word — `session-finished` would tell
+  // the queue this set never reached the log, and it reached it and was taken out by hand.
+  h.service.finish(uid(), sid(), h.clock.now + 300'000);
+  CHECK(h.service.append(uid(), sid(), h.bench("set_00000002", 82.5, h.clock.now + 120'000)).error ==
+        AppendError::deleted);
+  CHECK_EQ(h.repo.sets.size(), static_cast<std::size_t>(1));
+}
+
+// A CORRECTION THAT MOVED NOTHING KEEPS NOTHING. `{}` is a legal fix and the reply to a lost one is
+// the same bytes again, so a copy taken unconditionally would grow a version per retry standing for
+// a change nobody made — in a table nothing reads and nothing prunes.
+TEST(a_fix_that_changes_nothing_answers_the_row_and_keeps_no_version_of_it) {
+  Harness h;
+  h.startAt(h.clock.now);
+  h.service.append(uid(), sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
+
+  for (int retry = 0; retry < 4; ++retry) {
+    std::optional<Set> answered = h.service.fixSet(uid(), sid(), setId("set_00000001"), SetFix{});
+    REQUIRE(answered.has_value());
+    CHECK_EQ(answered->weightKg, 82.5);
+  }
+  CHECK_EQ(h.repo.kept.size(), static_cast<std::size_t>(0));
+
+  SetFix moves;
+  moves.weightKg = 90.0;
+  h.service.fixSet(uid(), sid(), setId("set_00000001"), moves);
+  REQUIRE_EQ(h.repo.kept.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.kept[0].set.weightKg, 82.5);
+  CHECK_FALSE(h.repo.kept[0].deleted);
+}
+
+// Numbers are not closed up behind a delete, and that is the rule max+1 numbering was chosen for:
+// deleting set 2 of 3 leaves 1 and 3, and the next set is 4. count+1 would mint a second 3.
+TEST(a_delete_leaves_the_numbers_alone_and_the_next_set_never_reuses_one) {
+  Harness h;
+  h.startAt(h.clock.now);
+  h.service.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now + 60'000));
+  h.service.append(uid(), sid(), h.bench("set_00000002", 82.5, h.clock.now + 120'000));
+  h.service.append(uid(), sid(), h.bench("set_00000003", 85.0, h.clock.now + 180'000));
+
+  h.service.deleteSet(uid(), sid(), setId("set_00000002"));
+  AppendOutcome next = h.service.append(uid(), sid(), h.bench("set_00000004", 87.5,
+                                                              h.clock.now + 240'000));
+
+  REQUIRE(next.set.has_value());
+  CHECK_EQ(next.set->setNumber, 4);
+  std::vector<int> numbers;
+  for (const Set& set : h.repo.sets) numbers.push_back(set.setNumber);
+  CHECK_EQ(numbers, (std::vector<int>{1, 3, 4}));
+}
+
+// The caption of the whole screen, proved rather than trusted: *Push A keeps its own numbers.* A
+// correction and a delete both run against a session started from a routine, and neither the frozen
+// snapshot on the session nor the routine's own entries move a byte.
+TEST(fixing_and_deleting_a_set_never_touch_the_frozen_plan_or_the_routine) {
+  Harness h;
+  h.service.createRoutine(uid(), h.pushAWrite());
+  h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
+  h.service.append(uid(), sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
+  h.service.append(uid(), sid(), h.bench("set_00000002", 82.5, h.clock.now + 120'000));
+  const std::optional<PlanSnapshot> frozen = h.repo.sessions[0].plan;
+  const std::vector<RoutineEntry> planned = h.repo.routineRows[0].entries;
+  REQUIRE(frozen.has_value());
+
+  SetFix fix;
+  fix.weightKg = 60.0;
+  fix.reps = 3;
+  h.service.fixSet(uid(), sid(), setId("set_00000001"), fix);
+  h.service.deleteSet(uid(), sid(), setId("set_00000002"));
+
+  CHECK_EQ(h.repo.sessions[0].plan, frozen);
+  CHECK_EQ(*h.repo.sessions[0].plan,
+           (PlanSnapshot{"Push A", {PlanEntry{ExerciseId{"bench-press"}, 5, 5, 82.5, 180}}}));
+  CHECK_EQ(h.repo.routineRows[0].entries, planned);
+  CHECK_EQ(h.repo.routineRows[0].name, std::string("Push A"));
+  CHECK_EQ(h.repo.sessions[0].routine, std::optional<RoutineId>(rtId()));
+}
+
+// The honesty sweep, end to end: every read in the product is computed from the live rows on each
+// call, so a correction has to move ALL of them at once — and this is the case that proves it
+// rather than trusting it. A record is set, then corrected downward, and the record goes with it.
+TEST(a_correction_moves_the_record_and_every_read_that_stands_on_it) {
+  Harness h;
+  h.trained("ses_00000001", h.clock.now, 100, 5, 4);
+  h.service.start(uid(), SessionStart{sid("ses_00000002"), h.clock.now + kWeek});
+  for (int number = 1; number <= 3; ++number)
+    h.service.append(uid(), sid("ses_00000002"),
+                     SetWrite{setId("set_0000002" + std::to_string(number)),
+                              ExerciseId{"back-squat"}, 100, 5, SetKind::working, std::nullopt, "",
+                              h.clock.now + kWeek + number * 60'000});
+  h.service.append(uid(), sid("ses_00000002"),
+                   SetWrite{setId("set_00000024"), ExerciseId{"back-squat"}, 120, 5,
+                            SetKind::working, std::nullopt, "", h.clock.now + kWeek + 240'000});
+  h.service.finish(uid(), sid("ses_00000002"), h.clock.now + kWeek + 3'600'000);
+  REQUIRE(h.service.review(uid(), sid("ses_00000002"))->record.has_value());   // 120 kg, the PR
+  SetFix fix;
+  fix.weightKg = 90.0;
+
+  std::optional<Set> fixed =
+      h.service.fixSet(uid(), sid("ses_00000002"), setId("set_00000024"), fix);
+
+  REQUIRE(fixed.has_value());
+  // the session itself
+  CHECK_EQ(h.service.detail(uid(), sid("ses_00000002"))->sets[3].weightKg, 90.0);
+  // the finish readout — the loud line is gone with the load that earned it
+  std::optional<Review> review = h.service.review(uid(), sid("ses_00000002"));
+  REQUIRE(review.has_value());
+  CHECK_EQ(review->record, std::nullopt);
+  CHECK_EQ(review->stats.topE1rm, e1rm(100, 5));
+  // the log's row and its gold dot
+  std::vector<LogRow> rows = h.logBefore(h.clock.now + 10 * kWeek);
+  REQUIRE_EQ(rows.size(), static_cast<std::size_t>(2));
+  CHECK_EQ(rows[0].summary.session.id, sid("ses_00000002"));
+  CHECK_EQ(rows[0].summary.topSet, std::optional<TopWorkingSet>(TopWorkingSet{100.0, 5}));
+  CHECK_EQ(rows[0].summary.tonnageKg, 1950.0);
+  CHECK_EQ(rows[0].topE1rm, e1rm(100, 5));
+  CHECK_FALSE(rows[0].record);
+  // the record page
+  std::optional<MovementRecord> page = h.service.movementRecord(uid(), ExerciseId{"back-squat"});
+  REQUIRE(page.has_value());
+  CHECK_EQ(page->heaviest, std::optional<Best>(Best{100, 5, h.clock.now, e1rm(100, 5)}));
+  CHECK_EQ(page->bestE1rm, std::optional<Best>(Best{100, 5, h.clock.now, e1rm(100, 5)}));
+  // the statistics engine
+  Statistics stats = h.service.statistics(uid());
+  REQUIRE_EQ(stats.movements.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(stats.movements[0].heaviest,
+           std::optional<Best>(Best{100, 5, h.clock.now, e1rm(100, 5)}));
+  // the prefill the logger puts on screen before a lifter touches anything
+  LastTimeOutcome prefill = h.service.lastTime(uid(), ExerciseId{"back-squat"});
+  REQUIRE(prefill.lastTime.has_value());
+  CHECK_EQ(prefill.lastTime->sets[3].weightKg, 90.0);
+  // and the file a lifter walks away with
+  std::vector<ExportedSet> exported = h.service.exportedSets(uid());
+  REQUIRE_EQ(exported.size(), static_cast<std::size_t>(8));
+  CHECK_EQ(exported[7].weightKg, std::string("90.00"));
+}
+
+// A deleted set is gone from every one of those reads too, by the same construction — and the one
+// number the log prints beside a session moves with it.
+TEST(a_deleted_set_is_gone_from_the_log_the_review_and_the_export) {
+  Harness h;
+  h.trained("ses_00000001", h.clock.now, 100, 5, 3);
+
+  h.service.deleteSet(uid(), sid("ses_00000001"), setId("set_000000012"));
+
+  std::vector<LogRow> rows = h.logBefore(h.clock.now + kWeek);
+  REQUIRE_EQ(rows.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(rows[0].summary.setCount, 2);
+  CHECK_EQ(rows[0].summary.workingSetCount, 2);
+  CHECK_EQ(rows[0].summary.tonnageKg, 1000.0);
+  CHECK_EQ(h.service.review(uid(), sid("ses_00000001"))->stats.workingSets, 2);
+  CHECK_EQ(h.service.detail(uid(), sid("ses_00000001"))->sets.size(),
+           static_cast<std::size_t>(2));
+  CHECK_EQ(h.service.exportedSets(uid()).size(), static_cast<std::size_t>(2));
+}

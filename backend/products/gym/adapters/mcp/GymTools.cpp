@@ -221,6 +221,13 @@ ToolResult logSet(LogService& log, const UserId& caller, const Json::Value& args
   if (outcome.error == AppendError::idTaken)
     return ToolResult::failure("that set id is already spent on a set in another workout. Mint a "
                                "different one and send it again.");
+  if (outcome.error == AppendError::deleted)
+    // The opposite remedy to the one above, and saying so is the whole of this branch: the lifter
+    // deleted that set BY HAND, and an agent that answered a spent id by minting a fresh one would
+    // put it back — a delete no agent is allowed to make (routes.cpp), undone by an agent all the
+    // same. There is nothing to repair and nothing to re-send.
+    return ToolResult::failure("that set was deleted from the log. It is not coming back, and a "
+                               "fresh id would only log it again — leave it out.");
   if (outcome.error == AppendError::unknownExercise) return ToolResult::failure(kNoExercise);
   return ToolResult::json(toJson(*outcome.set));
 }

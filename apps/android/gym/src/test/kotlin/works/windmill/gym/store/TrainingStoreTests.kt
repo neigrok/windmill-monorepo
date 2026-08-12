@@ -28,6 +28,7 @@ import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineEntry
 import works.windmill.gym.domain.Session
+import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.net.FakeTraining
@@ -77,6 +78,7 @@ class TrainingStoreTests {
         mintSet: () -> String = Ids::set,
         mintSession: () -> String = { "ses_minted" },
         retryAfterMs: Long = 4_000,
+        undoWindowMs: Long = 0,
     ) = TrainingStore(
         queue = SetQueue(queueFile) { clockMs },
         deviceCatalog = DeviceCatalog(catalogFile),
@@ -85,7 +87,7 @@ class TrainingStoreTests {
         now = { clockMs += 1; clockMs },
         mintSession = mintSession,
         mintSet = mintSet,
-        undoWindowMs = 0,
+        undoWindowMs = undoWindowMs,
         retryAfterMs = retryAfterMs,
         sync = { if (it.isSignedIn) sync else null },
     )
@@ -103,9 +105,11 @@ class TrainingStoreTests {
         plan: PlanSnapshot? = null,
         mintSet: () -> String = Ids::set,
         retryAfterMs: Long = 4_000,
+        undoWindowMs: Long = 0,
     ): TrainingStore {
         server.open(Session(id = "ses_1", startedAtMs = 1_000, plan = plan))
-        val store = makeStore(sync = server, mintSet = mintSet, retryAfterMs = retryAfterMs)
+        val store = makeStore(sync = server, mintSet = mintSet, retryAfterMs = retryAfterMs,
+            undoWindowMs = undoWindowMs)
         store.connect(account(signedIn = true))
         store.choose(movement)
         return store
@@ -1317,6 +1321,325 @@ class TrainingStoreTests {
         assertEquals("and the row carries what the log's own row would",
             listOf(1), store.recent.map { it.workingSetCount })
         assertEquals(listOf(500.0), store.recent.map { it.tonnageKg })
+    }
+
+    // §G18, AND THE BRANCH THAT DECIDES WHETHER A SET IS LOST. A session the SHELF holds has never
+    // been sent, so the correction rewrites the row that will be sent and no PATCH may go out for an
+    // id the log has never seen. The head follows: the tonnage and the top set move with the set.
+    @Test
+    fun testFixingASetOnAnUnclaimedSessionRewritesTheDeviceRowAndTouchesNoWire() = runTest {
+        val server = FakeTraining()
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = false))
+        store.start()
+        store.choose("bench-press")
+        store.logSet(weightKg = 82.5, reps = 5)
+        clockMs += 60_000
+        val ended = (store.finish() as FinishOutcome.Closed).session
+
+        val setId = (store.sessionDetail(ended.id) as GymResult.Ok).value.sets.single().id
+        val fixed = store.fixSet(ended.id, setId, SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working))
+
+        assertEquals(listOf(90.0), listOf((fixed as FixOutcome.Corrected).set.weightKg))
+        assertEquals("one row per set — a correction is never a second set",
+            listOf(setId), (store.sessionDetail(ended.id) as GymResult.Ok).value.sets.map { it.id })
+        assertEquals(listOf(90.0),
+            (store.sessionDetail(ended.id) as GymResult.Ok).value.sets.map { it.weightKg })
+        assertEquals("the row the log screen draws moved with it",
+            listOf(270.0), store.recent.map { it.tonnageKg })
+        assertEquals("the SESSION decides the road, not the set: a row this workout does not hold " +
+            "is not one the log can hold either, and no PATCH goes out for an id it has never seen",
+            FixOutcome.Gone("that set is no longer on this device"),
+            store.fixSet(ended.id, "set_gone", SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working)))
+        assertNull(store.deleteSet(ended.id, "set_gone"))
+        assertTrue("nothing on the wire — the log has never heard of this set",
+            server.fixes.isEmpty() && server.removed.isEmpty())
+    }
+
+    // THE HEADLINE OF THE WHOLE WAVE, end to end through the room: a lifter logs signed out, fixes a
+    // typo and deletes a set they never did, then signs in. The CORRECTED set replays — never the
+    // original, and never both — and the deleted one never goes out at all.
+    @Test
+    fun testACorrectionAndADeleteMadeSignedOutBothSurviveSigningIn() = runTest {
+        val server = FakeTraining()
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = false))
+        store.start()
+        store.choose("bench-press")
+        store.logSet(weightKg = 82.5, reps = 5)
+        store.logSet(weightKg = 60.0, reps = 12)
+        clockMs += 60_000
+        val ended = (store.finish() as FinishOutcome.Closed).session
+        val sets = (store.sessionDetail(ended.id) as GymResult.Ok).value.sets
+
+        store.fixSet(ended.id, sets.first().id, SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working))
+        store.deleteSet(ended.id, sets.last().id)
+
+        store.connect(account(signedIn = true))
+
+        assertEquals("one row, and it is the one the lifter fixed it to",
+            listOf(sets.first().id), server.sets.getValue(ended.id).map { it.id })
+        assertEquals(listOf(90.0), server.sets.getValue(ended.id).map { it.weightKg })
+        assertEquals(listOf(3), server.sets.getValue(ended.id).map { it.reps })
+        assertEquals("the original numbers never went out at all",
+            listOf(90.0), server.appended.map { it.weightKg })
+        assertTrue("and neither did the deleted set", server.appended.none { it.id == sets.last().id })
+        assertTrue("the shelf is empty — the account holds the workout as the lifter left it",
+            LocalLog(localFile).finished.isEmpty())
+    }
+
+    // ...AND THE SAME CORRECTION MADE WHILE THE CLAIM IS ALREADY WALKING, through the whole room.
+    // The shelf's rows go on screen before the claim starts and stay there for the length of it, so
+    // this is one tap during one round trip — not an exotic race. The store takes the shelf road
+    // (the row is still there) and answers Corrected; the claim has to end with the account holding
+    // that same number, or the store told the lifter a repair landed that nothing kept.
+    @Test
+    fun testACorrectionMadeWhileTheClaimIsWalkingStillReachesTheAccount() = runTest {
+        val server = FakeTraining()
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = false))
+        store.start()
+        store.choose("bench-press")
+        store.logSet(weightKg = 82.5, reps = 5)
+        store.logSet(weightKg = 60.0, reps = 12)
+        clockMs += 60_000
+        val ended = (store.finish() as FinishOutcome.Closed).session
+        val sets = (store.sessionDetail(ended.id) as GymResult.Ok).value.sets
+
+        var answered: FixOutcome? = null
+        server.onAppend = { write ->
+            if (write.id == sets.last().id) {
+                answered = store.fixSet(ended.id, sets.first().id,
+                    SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working))
+            }
+        }
+        store.connect(account(signedIn = true))
+
+        assertEquals("the store told the lifter it landed",
+            FixOutcome.Corrected(sets.first().copy(weightKg = 90.0, reps = 3, kind = SetKind.Working)),
+            answered)
+        assertEquals("and the account holds it — not the numbers they fixed away from",
+            listOf(90.0, 60.0), server.sets.getValue(ended.id).map { it.weightKg })
+        assertTrue("the shelf is empty, and it emptied only once it agreed with the account",
+            LocalLog(localFile).finished.isEmpty())
+    }
+
+    // ...and a session the ACCOUNT holds goes over the wire. THE LOG MOVES AND THE ROUTINE DOES
+    // NOT: the frozen plan on the session and the routine document are compared whole afterwards,
+    // because that is the caption of the entire screen.
+    @Test
+    fun testFixingASetOnTheAccountGoesOverTheWireAndMovesNoPlanAndNoRoutine() = runTest {
+        val server = FakeTraining()
+        val plan = PlanSnapshot(routine = "Push A",
+            entries = listOf(PlanEntry(exerciseId = "bench-press", sets = 5, reps = 5, weightKg = 82.5)))
+        server.written["rt_1"] = Routine(id = "rt_1", name = "Push A",
+            entries = listOf(RoutineEntry(position = 1, exerciseId = "bench-press", targetSets = 5,
+                targetReps = 5, targetWeightKg = 82.5)))
+        val store = liveStore(server, plan = plan)
+        store.logSet(weightKg = 82.5, reps = 5)
+        clockMs += 60_000
+        store.finish()
+        val setId = server.sets.getValue("ses_1").single().id
+
+        val fixed = store.fixSet("ses_1", setId, SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Drop))
+
+        assertEquals(TrainingSet(id = setId, exerciseId = "bench-press", setNumber = 1,
+            weightKg = 90.0, reps = 3, kind = SetKind.Drop,
+            completedAtMs = server.sets.getValue("ses_1").single().completedAtMs),
+            (fixed as FixOutcome.Corrected).set)
+        assertEquals(listOf(Triple("ses_1", setId, SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Drop))),
+            server.fixes)
+        assertEquals("the frozen plan is what makes last Tuesday still readable — it may not move",
+            plan, server.stored.getValue("ses_1").plan)
+        assertEquals("and next week's target is nobody's business here",
+            listOf(82.5), server.written.getValue("rt_1").entries.map { it.targetWeightKg })
+        assertEquals("the head re-read, and it followed the correction all the way to the KIND — a " +
+            "drop set counts toward no tonnage, so the row that read 412.5 now reads nothing",
+            listOf(0.0), store.logged.map { it.tonnageKg })
+        assertEquals(listOf(0), store.logged.map { it.workingSetCount })
+    }
+
+    // A SESSION BELOW THE HEAD PAGE IS EXACTLY AS LIKELY TO HOLD THE TYPO. The row is re-read BY ID
+    // after a correction rather than by re-reading the head: `loadLog` fetches the newest page and
+    // keeps every walked row verbatim — deliberately, so a re-read on the delivery timer cannot
+    // throw a thumb halfway down the log back to the top — which means a row the lifter walked down
+    // to would have gone on printing its pre-fix tonnage, working count and gold dot forever.
+    @Test
+    fun testARowWalkedDownToWithLoadOlderFollowsItsOwnCorrection() = runTest {
+        val server = FakeTraining()
+        repeat(60) { index ->
+            val id = "ses_$index"
+            server.open(Session(id = id, startedAtMs = 1_000L + index, finishedAtMs = 2_000L + index))
+            server.sets[id] = mutableListOf(TrainingSet(id = "set_$index", exerciseId = "bench-press",
+                setNumber = 1, weightKg = 100.0, reps = 5, kind = SetKind.Working,
+                completedAtMs = 1_500L + index))
+        }
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+        store.loadOlder()
+        assertEquals("the deepest row is a page and a half down", "ses_0", store.logged.last().id)
+        assertEquals(listOf(500.0, 1), listOf(store.logged.last().tonnageKg, store.logged.last().workingSetCount))
+
+        store.fixSet("ses_0", "set_0", SetFix(weightKg = 60.0, reps = 3, kind = SetKind.Warmup))
+
+        assertEquals("the walk is not undone by a fix at the bottom of it", 60, store.logged.size)
+        assertEquals("and the row followed the correction — a warmup counts toward nothing",
+            listOf(0.0, 0), listOf(store.logged.last().tonnageKg, store.logged.last().workingSetCount))
+    }
+
+    // The two terminal refusals, told apart BY CODE and never by the sentence. `set-not-found` is
+    // the row being gone — the screen drops it rather than offering a retry onto nothing — and
+    // `fix-unreadable` leaves the row standing with the log's own words beside it.
+    @Test
+    fun testAFixRefusalIsToldApartByItsCodeAndNeverByItsSentence() = runTest {
+        val server = FakeTraining()
+        val store = liveStore(server)
+        store.logSet(weightKg = 82.5, reps = 5)
+        clockMs += 60_000
+        store.finish()
+        val setId = server.sets.getValue("ses_1").single().id
+        val fix = SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working)
+
+        server.refuseFix = { refusal(404, code = "set-not-found", message = "reworded on a Tuesday") }
+        assertEquals(FixOutcome.Gone("that set is no longer on the log"),
+            store.fixSet("ses_1", setId, fix))
+
+        server.refuseFix = { refusal(400, code = "fix-unreadable", message = "could not read that fix") }
+        assertEquals(FixOutcome.Failed(WriteFailure.Refused("could not read that fix")),
+            store.fixSet("ses_1", setId, fix))
+
+        server.refuseFix = { storageFailure }
+        assertEquals("a storage failure is the log answering, and it is worth another tap",
+            FixOutcome.Failed(WriteFailure.Refused("internal error")), store.fixSet("ses_1", setId, fix))
+
+        server.refuseFix = { null }
+        server.online = false
+        assertEquals("no reply at all is a different fact from a refusal, and says so",
+            FixOutcome.Failed(WriteFailure.NoAnswer), store.fixSet("ses_1", setId, fix))
+        assertEquals("nothing was corrected by any of them",
+            listOf(82.5), server.sets.getValue("ses_1").map { it.weightKg })
+    }
+
+    // Signed out, a session the shelf does not hold is the account's. The sentence says so rather
+    // than blaming a signal nobody used — and no write is attempted at all.
+    @Test
+    fun testSignedOutASetOnTheAccountIsNamedRatherThanBlamedOnTheSignal() = runTest {
+        val server = FakeTraining()
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = false))
+
+        assertEquals(FixOutcome.Failed(
+            WriteFailure.Refused("that set is on your account — sign in to fix it")),
+            store.fixSet("ses_1", "set_a", SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working)))
+        assertEquals(WriteFailure.Refused("that set is on your account — sign in to delete it"),
+            store.deleteSet("ses_1", "set_a"))
+        assertTrue(server.fixes.isEmpty() && server.removed.isEmpty())
+    }
+
+    // THE DELETE IS NOT TOLD UNTIL THE WINDOW CLOSES. The log has no undelete, so a delete already
+    // on the wire could only be apologised for — the row comes off the screen, the offer to take it
+    // back stands for the same nine seconds the logger's does, and only then does anything go out.
+    @Test
+    fun testADeleteIsWithheldUntilTheWindowClosesAndUndoTakesItBackUnsent() = runTest {
+        val server = FakeTraining()
+        val store = liveStore(server, undoWindowMs = SetQueue.undoWindowMs)
+        store.logSet(weightKg = 82.5, reps = 5)
+        store.logSet(weightKg = 90.0, reps = 3)
+        clockMs += 60_000
+        store.flushPendingSets(force = true)
+        store.finish()
+        val taken = server.sets.getValue("ses_1").first()
+
+        store.withhold("ses_1", taken)
+        assertEquals(Withheld("ses_1", taken, untilMs = clockMs + SetQueue.undoWindowMs), store.withheld)
+        assertTrue("nothing has been told yet", server.removed.isEmpty())
+
+        assertTrue(store.keepWithheld())
+        assertNull(store.withheld)
+        assertNull("undo sends nothing at all — it is this device changing its mind",
+            store.settleWithheld())
+        assertTrue(server.removed.isEmpty())
+        assertEquals(2, server.sets.getValue("ses_1").size)
+
+        store.withhold("ses_1", taken)
+        assertNull(store.settleWithheld())
+        assertEquals(listOf("ses_1" to taken.id), server.removed)
+        assertEquals("the set does not stand", listOf(90.0),
+            server.sets.getValue("ses_1").map { it.weightKg })
+        assertEquals("and the screen that read the session before it went knows not to draw it",
+            setOf(taken.id), store.deletedSets)
+        assertEquals("the head re-read — the row lost a set, its tonnage and its top set",
+            listOf(270.0), store.logged.map { it.tonnageKg })
+    }
+
+    // ONE SLOT, AND A SECOND DELETE SETTLES THE FIRST. Overwriting the slot would make a
+    // destructive gesture do nothing at all — the first set told to nobody, and its row walking
+    // back onto the screen underneath the second one's Undo. It is the logger's own rule: the queue
+    // holds every set inside its window and only the LAST one can be taken back.
+    @Test
+    fun testASecondDeleteInsideTheWindowSendsTheFirstRatherThanDroppingIt() = runTest {
+        val server = FakeTraining()
+        val store = liveStore(server, undoWindowMs = SetQueue.undoWindowMs)
+        store.logSet(weightKg = 82.5, reps = 5)
+        store.logSet(weightKg = 60.0, reps = 12)
+        clockMs += 60_000
+        store.flushPendingSets(force = true)
+        store.finish()
+        val first = server.sets.getValue("ses_1").first()
+        val second = server.sets.getValue("ses_1").last()
+
+        assertNull(store.withhold("ses_1", first))
+        assertTrue("nothing is told while it is the one holding the window", server.removed.isEmpty())
+        assertNull(store.withhold("ses_1", second))
+
+        assertEquals("the first went out the moment the second took the slot",
+            listOf("ses_1" to first.id), server.removed)
+        assertEquals("and the screen that read the session knows not to draw it either",
+            setOf(first.id), store.deletedSets)
+        assertEquals(second, store.withheld?.set)
+
+        assertTrue("the second is still the lifter's to take back", store.keepWithheld())
+        assertEquals("so exactly one set is gone — the one whose window ran out",
+            listOf(second.id), server.sets.getValue("ses_1").map { it.id })
+    }
+
+    // A delete the log could not take must not be drawn as one that happened, and the row comes
+    // back: the store answers with what went wrong rather than with a bool nobody can act on.
+    @Test
+    fun testADeleteTheLogCouldNotTakeIsSaidAndTheRowStands() = runTest {
+        val server = FakeTraining()
+        val store = liveStore(server)
+        store.logSet(weightKg = 82.5, reps = 5)
+        clockMs += 60_000
+        store.finish()
+        val taken = server.sets.getValue("ses_1").single()
+
+        server.refuseDelete = storageFailure
+        store.withhold("ses_1", taken)
+
+        assertEquals(WriteFailure.Refused("internal error"), store.settleWithheld())
+        assertEquals(emptySet<String>(), store.deletedSets)
+        assertEquals(listOf(taken.id), server.sets.getValue("ses_1").map { it.id })
+    }
+
+    // A withheld delete goes with the seat, and it goes UNSENT: the row it was aimed at belongs to
+    // the account that is leaving, and settling it after the change would take a set off the log of
+    // the account that just arrived.
+    @Test
+    fun testAWithheldDeleteIsDroppedRatherThanSentAtSomebodyElsesLog() = runTest {
+        val server = FakeTraining()
+        val store = liveStore(server)
+        store.logSet(weightKg = 82.5, reps = 5)
+        clockMs += 60_000
+        store.finish()
+        store.withhold("ses_1", server.sets.getValue("ses_1").single())
+
+        store.connect(account(signedIn = true, id = "u2"))
+
+        assertNull(store.withheld)
+        assertNull(store.settleWithheld())
+        assertTrue("the set survives, which is the direction this one may fail in",
+            server.removed.isEmpty())
     }
 
     // A read that never came back is not an empty log. The rows already in hand stay — they are

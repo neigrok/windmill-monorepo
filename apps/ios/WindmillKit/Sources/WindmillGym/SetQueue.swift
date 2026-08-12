@@ -27,6 +27,19 @@ import WindmillPlatform
 // And the rule the backend made non-negotiable: a set that never landed is REFUSED once the session
 // is finished. So the queue flushes BEFORE finish and before the boot read, and a refusal is
 // reported rather than counted as delivered.
+//
+// SINCE 2026-08-12 THE QUEUE CARRIES MORE THAN APPENDS. §G18 lets a lifter correct or delete a set
+// the log already holds, and both ride here rather than beside here: one walk, one retry cadence,
+// one set of verdicts read by code, and one place a write can be lost instead of three.
+
+// WHAT THIS DEVICE OWES THE LOG ABOUT ONE ROW. Until §G18 there was one verb and `needsPush` was the
+// whole of it — a set was owed or it was settled — and the three cases below are what a client has to
+// tell apart now, because the repair for each is different and using the wrong one loses training.
+public enum Owed: String, Codable, Sendable {
+    case append     // the log has never seen this row
+    case fix        // the log holds this row, and this device holds numbers it does not
+    case delete     // the log holds this row, and this device has taken it back
+}
 
 public final class SetQueue {
     // The key the server numbers sets under. A struct rather than an interpolated string because
@@ -41,16 +54,27 @@ public final class SetQueue {
         public let sessionId: String
         public let needsPush: Bool
         public let remints: Int
-        // THE UNDO WINDOW, and it is a promise the DEVICE keeps rather than a request to the log:
-        // the log is append-only and has no route that takes a set back, so the only moment a
-        // mis-tapped set can be withdrawn is while this device is still the only place it exists.
+        // THE UNDO WINDOW, and it is a promise the DEVICE keeps rather than a request to the log.
+        // A set still owed exists nowhere else, so withdrawing it costs nobody anything; §G18's
+        // delete is the other half — a row the log already holds waits out the same window here
+        // before the DELETE goes, because a destruction with no way back for nine seconds is the
+        // one thing this product could get wrong that a lifter could not repair.
         //
         // Optional because a queue file written before the window existed has no such key, and a
         // synthesized decoder tolerates a missing key only for an optional — a file that failed to
         // decode opens EMPTY and takes a live session's sets down with it.
         let heldUntilMs: Int64?
+        // WHICH WRITE THIS ROW IS. Optional for the same reason and read the same way: a file
+        // written before §G18 has no such key and every owed row in it is an append.
+        let owedWrite: Owed?
 
         public var lane: Lane { Lane(sessionId: sessionId, exerciseId: set.exerciseId) }
+
+        public var write: Owed { owedWrite ?? .append }
+
+        // The two facts as the one question every caller actually asks: what does this device still
+        // have to say to the log about this row, or nothing at all.
+        public var owes: Owed? { needsPush ? write : nil }
 
         public func isHeld(at instant: Int64) -> Bool { (heldUntilMs ?? 0) > instant }
     }
@@ -133,7 +157,8 @@ public final class SetQueue {
         held.entries = held.entries.mapValues { entry in
             guard entry.sessionId == old else { return entry }
             return Entry(set: entry.set, sessionId: fresh, needsPush: entry.needsPush,
-                         remints: entry.remints, heldUntilMs: entry.heldUntilMs)
+                         remints: entry.remints, heldUntilMs: entry.heldUntilMs,
+                         owedWrite: entry.owedWrite)
         }
         guard let live = held.session, live.id == old else { return }
         held.session = Session(id: fresh, startedAtMs: live.startedAtMs,
@@ -158,7 +183,8 @@ public final class SetQueue {
                                     kind: entry.set.kind, rpe: entry.set.rpe, note: entry.set.note,
                                     completedAtMs: entry.set.completedAtMs)
             return Entry(set: moved, sessionId: entry.sessionId, needsPush: entry.needsPush,
-                         remints: entry.remints, heldUntilMs: entry.heldUntilMs)
+                         remints: entry.remints, heldUntilMs: entry.heldUntilMs,
+                         owedWrite: entry.owedWrite)
         }
         held.order = held.order.map { $0.map { $0 == old ? fresh : $0 } }
         guard let live = held.session, let plan = live.plan,
@@ -180,9 +206,12 @@ public final class SetQueue {
         return sets(in: live.id)
     }
 
+    // A row this device has DELETED is not in here from the instant the thumb lifts — its entry
+    // survives only to carry the DELETE, and drawing it would be the screen disagreeing with the
+    // move the lifter just made.
     public func sets(in sessionId: String) -> [TrainingSet] {
         held.entries.values
-            .filter { $0.sessionId == sessionId }
+            .filter { $0.sessionId == sessionId && $0.owes != .delete }
             .map(\.set)
             .sorted { $0.completedAtMs < $1.completedAtMs }
     }
@@ -199,6 +228,14 @@ public final class SetQueue {
         pending.filter { $0.sessionId == sessionId }
     }
 
+    // What this device still owes the log about ONE row, asked by id because a caller holds a set
+    // and not an entry. It is the question that tells §G18's two writes apart from the appends they
+    // ride beside: a row still owed as an append is a row the log has never been told about, and a
+    // PATCH or a DELETE naming it would be a write about nothing.
+    public func owes(_ id: String) -> Owed? {
+        held.entries[id]?.owes
+    }
+
     // `readyAt` is the instant the walk is standing at, and an entry still inside its undo window is
     // not offered at it. A forced walk passes `nil`: a finish, a boot read and a room being left all
     // end the window, because each of them is the moment the gesture the window protects has left
@@ -213,25 +250,77 @@ public final class SetQueue {
 
     // The one set that can still be taken back: the newest one this device is holding for its own
     // window. Newest rather than oldest because Undo answers the tap the lifter just made.
+    //
+    // APPENDS ONLY. A deletion is held on the same clock but is taken back through §G18's own door,
+    // and offering it here would put "Logged 47.5 × 4" under a set nobody just logged.
     public func withdrawable(at instant: Int64) -> Entry? {
-        pending.filter { $0.isHeld(at: instant) }.last
+        pending.filter { $0.isHeld(at: instant) && $0.owes == .append }.last
     }
 
-    // Taking a set back is only ever legal while it is still owed. Once the log holds the row this
-    // returns false and says so, rather than deleting a set from the screen that the account keeps.
+    // Taking a set back is only ever legal while it is still owed AS AN APPEND. Once the log holds
+    // the row this returns false and says so, rather than deleting a set from the screen that the
+    // account keeps.
     public func withdraw(_ id: String) -> Bool {
-        guard let entry = held.entries[id], entry.needsPush else { return false }
+        guard let entry = held.entries[id], entry.owes == .append else { return false }
         held.entries[id] = nil
         return true
     }
 
     // One door for both directions: a set the lifter just logged (owed), and a row the log handed
     // back on a read (not owed). A server row arriving for a set this device owes SETTLES it — the
-    // log holding the row IS delivery, however the news arrived.
+    // log holding the row IS delivery, however the news arrived. This door files APPENDS and
+    // settlements; a correction and a deletion have their own, because each carries a different
+    // repair and a shared door would take the verb as a parameter nobody could read at the call site.
     public func store(_ set: TrainingSet, in sessionId: String, needsPush: Bool, heldUntilMs: Int64? = nil) {
         let remints = held.entries[set.id]?.remints ?? 0
         held.entries[set.id] = Entry(set: set, sessionId: sessionId, needsPush: needsPush,
-                                     remints: remints, heldUntilMs: heldUntilMs)
+                                     remints: remints, heldUntilMs: heldUntilMs, owedWrite: .append)
+    }
+
+    // A CORRECTION THE LOG HAS NOT TAKEN YET (§G18). What lands here is the set as it should NOW
+    // read, so every screen reading this queue draws the corrected numbers from the tap and a
+    // relaunch does not hand the lifter back the number they just moved. The PATCH goes under the
+    // same id and is idempotent, so a repeat costs nothing.
+    //
+    // There may have been no entry at all: a set of a session read back from the log has never been
+    // in this queue. The correction brings the whole row with it, which is also what lets a refusal
+    // say the numbers out loud.
+    public func fix(_ corrected: TrainingSet, in sessionId: String) {
+        held.entries[corrected.id] = Entry(set: corrected, sessionId: sessionId, needsPush: true,
+                                           remints: 0, heldUntilMs: nil, owedWrite: .fix)
+    }
+
+    // A CORRECTION TO A ROW THE LOG HAS NEVER SEEN (§G18, case 1) — the set still owed as an APPEND,
+    // and the whole of the repair is that it stays one. What has to change is the write that is
+    // still going out, not a row the server would have to be asked about: a `fix` filed over it
+    // would replace the append that is the set's only copy, and the set would die on its way to a
+    // log that never heard of it. The hold and the repair budget travel with the row — the window
+    // belongs to the tap that logged the set, and a correction is not a second chance to spend an
+    // id's collisions.
+    public func rewrite(_ corrected: TrainingSet, in sessionId: String) {
+        let owed = held.entries[corrected.id]
+        held.entries[corrected.id] = Entry(set: corrected, sessionId: sessionId, needsPush: true,
+                                           remints: owed?.remints ?? 0,
+                                           heldUntilMs: owed?.heldUntilMs, owedWrite: .append)
+    }
+
+    // A DELETION, HELD. The row leaves `sets` at once and the DELETE waits out the undo window the
+    // way a freshly logged set waits out its own — a delete that went immediately could not be taken
+    // back by anything this device has, because the wire has no route that un-deletes a set.
+    public func delete(_ set: TrainingSet, in sessionId: String, heldUntilMs: Int64) {
+        held.entries[set.id] = Entry(set: set, sessionId: sessionId, needsPush: true,
+                                     remints: 0, heldUntilMs: heldUntilMs, owedWrite: .delete)
+    }
+
+    // The deletion taken back inside its window. What comes back is owed as a CORRECTION rather than
+    // as nothing: this device may have been holding numbers the log does not have — a fix deleted
+    // before it landed — and a PATCH that changes nothing answers the stored row anyway, where a
+    // settle that guessed wrong would drop a correction silently.
+    public func restore(_ id: String) -> Bool {
+        guard let entry = held.entries[id], entry.owes == .delete else { return false }
+        held.entries[id] = Entry(set: entry.set, sessionId: entry.sessionId, needsPush: true,
+                                 remints: entry.remints, heldUntilMs: nil, owedWrite: .fix)
+        return true
     }
 
     // The reply to a send. The row comes back under the id that went out — always, because that id
@@ -239,8 +328,14 @@ public final class SetQueue {
     // disagreed from leaving an entry owed, resent, and owed again forever.
     public func delivered(_ stored: TrainingSet, for id: String, in sessionId: String) {
         held.entries[id] = nil
+        // A SETTLED ROW IS KEPT FOR THE LIVE SESSION AND NOTHING ELSE, because that is the session
+        // this queue draws. A correction to a session that is already history has nothing left to
+        // say once it lands — and nobody would ever collect it: `close` and `forget` run for the
+        // live session alone, so a settled row filed here for a past one would sit in the file
+        // forever, one more on every correction ever made, in a file rewritten on every tap.
+        guard held.session?.id == sessionId else { return }
         held.entries[stored.id] = Entry(set: stored, sessionId: sessionId, needsPush: false,
-                                        remints: 0, heldUntilMs: nil)
+                                        remints: 0, heldUntilMs: nil, owedWrite: nil)
     }
 
     // The one repair a spent id allows: the same set under a new key, still owed, with the budget
@@ -250,7 +345,8 @@ public final class SetQueue {
         // The fresh id carries no hold: the window was spent waiting for the send that collided, and
         // a set the lifter stopped watching nine seconds ago must not wait another nine to land.
         held.entries[fresh] = Entry(set: entry.set.reminted(as: fresh), sessionId: entry.sessionId,
-                                    needsPush: true, remints: entry.remints + 1, heldUntilMs: nil)
+                                    needsPush: true, remints: entry.remints + 1, heldUntilMs: nil,
+                                    owedWrite: entry.owedWrite)
     }
 
     public func drop(_ id: String) {
@@ -287,13 +383,14 @@ public final class SetQueue {
     }
 }
 
-// THE FOUR VERDICTS, and none of them is guesswork about English. The code is the contract; the
+// THE FIVE VERDICTS, and none of them is guesswork about English. The code is the contract; the
 // sentence is copy for a human reading a banner, and it may be reworded any day — a queue that told
 // the 409s apart by string-comparing it degrades to "terminal, reason unknown" the first time one is
 // edited, and drops a set it should have minted a fresh id for.
 public enum Verdict: Equatable {
     case remint(String)     // 409 set-id-taken / session-id-taken — that id names a row elsewhere
     case dropped(String)    // 409 session-finished — this set never landed and never will
+    case gone(String)       // 404 set-not-found — the row this write NAMES is not on the log
     case refused(String)    // 400, any other 409 — this body will never land as written
     case retry              // 5xx, no reply at all, and everything that is only waiting
 
@@ -313,6 +410,19 @@ public enum Verdict: Equatable {
         }
         if refusal.code == "session-finished" {
             self = .dropped("the session closed before this set reached it")
+            return
+        }
+        // The word §G18 had to add, and it is a 404 that means the opposite of the retryable one at
+        // the foot of this initialiser. A correction or a deletion NAMES a row that must already be
+        // there; `set-not-found` says it is not, and no amount of waiting will put it back. Nothing
+        // is lost but the change — the log still holds whatever it had.
+        //
+        // It is a CHANGE'S word. Today's log emits it from one handler (fixSet) and an append's own
+        // 404 is a session that has not been opened yet, which waits — but nothing on either side of
+        // the wire pins that, so the WALK asks which write it is carrying before it treats this as
+        // terminal. A set is never lost to a code it was not sent.
+        if refusal.code == "set-not-found" {
+            self = .gone("that set is no longer on the log")
             return
         }
         // The 500 is the server's and is retryable — a dropped connection, a statement timeout, a
@@ -341,40 +451,45 @@ public enum Verdict: Equatable {
             return nil
         case .remint(let said):
             return remints < SetQueue.maxRemints ? nil : said
-        case .dropped(let said), .refused(let said):
+        case .dropped(let said), .refused(let said), .gone(let said):
             return said
         }
     }
 }
 
 // What is SAID when a write is lost for good — the one surface every loss rides, because a loss
-// dropped quietly would count as intended. Two shapes, one banner: a set carries its numbers, and a
+// dropped quietly would count as intended. Three shapes, one banner: a set that never landed carries
+// its numbers, a CHANGE to a set that did carries the numbers it was trying to reach, and a
 // claim-level document (a movement, a routine) has none, so it is said under its NAME — Android's
 // RefusedWrite in SetQueue.kt. The Identifiable id is this side's own need — ForEach keys the rows
 // by it, so it is the kind plus the DOCUMENT's id, never the name: two same-named losses are two
 // rows, not one drawn twice.
 public enum RefusedWrite: Equatable, Identifiable, Sendable {
     case set(RefusedSet)
+    case change(RefusedSet)
     case claim(RefusedClaim)
 
     public var id: String {
         switch self {
         case .set(let set): return set.id
+        case .change(let set): return "change-\(set.id)"
         case .claim(let claim): return "claim-\(claim.id)"
         }
     }
 
     public var reason: String {
         switch self {
-        case .set(let set): return set.reason
+        case .set(let set), .change(let set): return set.reason
         case .claim(let claim): return claim.reason
         }
     }
 }
 
-// A set that never landed, kept so it can be said out loud. The movement and the numbers travel with
-// the reason because this is the LAST COPY of a set somebody lifted — "82.5 × 8 never reached the
-// log" is unloggable again without knowing of what.
+// The numbers a write was carrying when it was lost, kept so it can be said out loud. Under `.set`
+// this is the LAST COPY of a set somebody lifted — "82.5 × 8 never reached the log" is unloggable
+// again without knowing of what. Under `.change` it is not: the log still holds that row, under the
+// numbers the lifter was trying to move it off. One struct, because both losses are said the same
+// way — a movement and an effort — and only the sentence over them differs.
 public struct RefusedSet: Equatable, Identifiable, Sendable {
     public let id: String
     public let exerciseId: String

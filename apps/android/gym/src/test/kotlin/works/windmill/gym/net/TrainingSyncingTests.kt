@@ -19,6 +19,7 @@ import works.windmill.gym.domain.SessionDetail
 import works.windmill.gym.domain.SessionShare
 import works.windmill.gym.domain.SessionStart
 import works.windmill.gym.domain.SessionSummary
+import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TrainingSet
@@ -132,13 +133,20 @@ internal class FakeTraining : TrainingSyncing {
     var refuseRevoke: Exception? = null
     var refuseRecord: Exception? = null
     var refuseRename: Exception? = null
+    var refuseFix: (String) -> Exception? = { null }
+    var refuseDelete: Exception? = null
     var swallowReplies = 0
     // The close is a round trip, and this is the only way a test can stand inside it.
     var onFinish: suspend () -> Unit = {}
+    // So is every append, and a claim is mostly appends — this is where a test stands to make the
+    // §G18 gesture a lifter can make while the claim is walking their shelf under them.
+    var onAppend: suspend (SetWrite) -> Unit = {}
 
     val appended = mutableListOf<SetWrite>()
     val started = mutableListOf<SessionStart>()
     val finished = mutableListOf<Pair<String, Long>>()
+    val fixes = mutableListOf<Triple<String, String, SetFix>>()
+    val removed = mutableListOf<Pair<String, String>>()
     val calls = mutableListOf<String>()
 
     fun open(session: Session) {
@@ -191,6 +199,7 @@ internal class FakeTraining : TrainingSyncing {
     override suspend fun appendSet(sessionId: String, write: SetWrite): TrainingSet {
         calls.add("append")
         appended.add(write)
+        onAppend(write)
         reachable()
         refuse(write)?.let { throw it }
         // The id IS the idempotency key: a replay answers with the stored row, even after the
@@ -207,6 +216,34 @@ internal class FakeTraining : TrainingSyncing {
             throw IOException("offline")
         }
         return row
+    }
+
+    // §G18's correction. It moves the row it names and nothing else — no session field, no routine
+    // — and an identical fix answers the same stored row. A set this session does not hold is the
+    // same 404 `set-not-found` whether it is absent, already deleted or logged into a DIFFERENT
+    // workout. A FINISHED SESSION IS NOT A REFUSAL: the typo is seen after the workout.
+    override suspend fun fixSet(sessionId: String, setId: String, fix: SetFix): TrainingSet {
+        calls.add("fixSet")
+        fixes.add(Triple(sessionId, setId, fix))
+        reachable()
+        refuseFix(setId)?.let { throw it }
+        val rows = sets[sessionId] ?: mutableListOf()
+        val standing = rows.firstOrNull { it.id == setId }
+            ?: throw works.windmill.platform.net.WindmillApiException.Refused(404,
+                works.windmill.platform.net.Refusal(message = "no such set", code = "set-not-found"))
+        val corrected = fix.corrected(standing)
+        rows[rows.indexOf(standing)] = corrected
+        return corrected
+    }
+
+    // 204 for a set that is already gone, one that never existed and one belonging to somebody else
+    // — absent stays byte-identical to forbidden, and a lost reply is always safe to send again.
+    override suspend fun deleteSet(sessionId: String, setId: String) {
+        calls.add("deleteSet")
+        removed.add(sessionId to setId)
+        reachable()
+        refuseDelete?.let { throw it }
+        sets[sessionId]?.removeAll { it.id == setId }
     }
 
     override suspend fun finishSession(sessionId: String, finishedAtMs: Long): Session {

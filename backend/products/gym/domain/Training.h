@@ -79,6 +79,19 @@ constexpr std::size_t kMaxNameLength = 80;
 // A name made of Unicode blanks alone survives this, and that is where it stops being worth chasing.
 std::string trimmedName(std::string text);
 
+// What a `text` column can actually hold, and the one rule every piece of free text in this product
+// goes through — a set's note, a movement's name, a routine's name. Two ways a string reaches
+// Postgres and does not come back the same, or at all:
+//   · a NUL, where `text` stops. The head of a lifter's words would store as if it were the whole
+//     of them, and nothing would ever say so.
+//   · bytes that are not well-formed UTF-8, which the server refuses MID-TRANSACTION. That vendor
+//     error leaves as the house 500 — the one status every queue on every surface is told to retry —
+//     so a body that can never land would be re-sent forever. A lone surrogate half is in this class
+//     too: it is not a character, and Postgres will not take one.
+// Both are refused at construction, where the answer is the terminal 400 the wire promises for a
+// value the store cannot hold, and where it is stated ONCE for every text this module accepts.
+bool storableText(std::string_view text);
+
 // What the step_kg column can hold: numeric(4,2), two decimals and a ceiling of 99.99. A value
 // outside this band is not an increment the store can keep, so it is refused at construction like
 // every other value in this module that meets a column's own bounds.
@@ -173,6 +186,37 @@ struct Set {
 
   bool operator==(const Set&) const = default;
 };
+
+// What a lifter may change about a set they already logged, and the whole of it. Every field is an
+// omission that means "leave what is stored", so a correction names the one number that was wrong
+// and says nothing about the rest — a client never has to read a row back and echo it to keep it.
+//
+// What is NOT here is the load-bearing half. The MOVEMENT is not a correction: a set logged against
+// the wrong lift is a different repair, and moving it would rewrite two movements' histories at
+// once. The instant and the set number are not a lifter's either — one is what the device stamped,
+// the other is the store's, and a log whose order can be edited stops being a record of what
+// happened. Neither is the session: a set belongs to the workout it was lived in.
+//
+// rpe takes two fields because it is the one value a correction can also REMOVE. `rpeNamed` says the
+// write mentioned it at all and `rpe` says what it mentioned, so omitted keeps what is stored while
+// named-and-empty clears it. A note clears itself by being sent empty.
+struct SetFix {
+  std::optional<double> weightKg;
+  std::optional<int> reps;
+  std::optional<SetKind> kind;
+  std::optional<std::string> note;
+  bool rpeNamed = false;
+  std::optional<double> rpe;
+
+  bool operator==(const SetFix&) const = default;
+};
+
+// The correction itself, and it is the whole rule: the stored row with the named values replaced and
+// every other field carried through untouched. It CONSTRUCTS the set, so a value the store could not
+// hold throws InvalidTraining here — before anything is written, exactly as the write that logged
+// the set in the first place does — and the reps floor is the constructor's own band rather than a
+// second copy of it living in a screen.
+Set corrected(const Set& stored, const SetFix& fix);
 
 // An open session with no activity for four hours is over, and it ended at its last set —
 // not at whenever the server happened to notice. A session with no sets ended when it began.

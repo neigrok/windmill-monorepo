@@ -5,9 +5,9 @@
 //
 // The web is the mirror and the desk, never the capture surface: workouts start on the phone, Today
 // mirrors the one that is running read-only (§11.2), and the write doors here are the backfill, the
-// routines, a movement minted from a picker and a movement's name (§H) — never a set into a live
-// session. Nothing here decides anything: the rules live in log.js, routines.js,
-// review.js, record.js, backfill.js and share/.
+// correction of a set already in the log (§G18), the routines, a movement minted from a picker and
+// a movement's name (§H) — never a set logged into a live session. Nothing here decides anything:
+// the rules live in log.js, fix.js, routines.js, review.js, record.js, backfill.js and share/.
 //
 // `inShell` is the one thing the frame is told rather than works out: whether this is the bare
 // surface at #/gym or a room inside the /app chrome. The route table decides it off the pathname
@@ -142,7 +142,9 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
             without the key the copy's URL would be drawn over the original's unsaved edits, and
             Done would whole-document PUT them back onto the original. */}
         {screen === 'routine' && <RoutineEditor key={routineIdOf(hash)} id={routineIdOf(hash)} log={log} />}
-        {screen === 'session' && <SessionDetail id={sessionIdOf(hash)} />}
+        {/* KEYED FOR THE SAME REASON, one room down: the session holds the corrections it has made
+            and a withheld delete, and neither may cross to another workout. */}
+        {screen === 'session' && <SessionDetail key={sessionIdOf(hash)} id={sessionIdOf(hash)} log={log} />}
         {screen === 'finish' && <FinishScreen id={finishIdOf(hash)} log={log} />}
         {screen === 'backfill' && <Backfill log={log} />}
       </main>
@@ -150,6 +152,18 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
       {log.toast && (
         <div className="gym-toast" role="status">
           <span>{log.toast.text}</span>
+          {/* THE TAKE-BACK IS THE TOAST (§G18's delete). It stands for as long as the write is
+              withheld, so the offer disappears exactly when it stops being true — and dismissing it
+              is reading it, not undoing it: the delete the lifter asked for still goes. */}
+          {log.toast.action && (
+            <button
+              type="button"
+              className="gym-toast-undo"
+              onClick={() => { log.toast.action.run(); log.dismissToast(); }}
+            >
+              {log.toast.action.label}
+            </button>
+          )}
           <button type="button" className="gym-toast-close" onClick={log.dismissToast} aria-label="Dismiss">×</button>
         </div>
       )}

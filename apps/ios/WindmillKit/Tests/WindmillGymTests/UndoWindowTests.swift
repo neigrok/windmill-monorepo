@@ -2,9 +2,10 @@ import XCTest
 @testable import WindmillGym
 @testable import WindmillPlatform
 
-// THE UNDO WINDOW — the one promise in gym that the DEVICE keeps rather than asks the log for. The
-// log is append-only and carries no route that deletes a set, so the only moment a mis-tapped set can
-// be taken back is while this device is still the only place it exists.
+// THE UNDO WINDOW — the one promise in gym that the DEVICE keeps rather than asks the log for. While
+// a set is still owed this device is the only place it exists, so a mis-tapped one is taken back
+// here and nobody else has to be told. A set the log already holds is §G18's business, and it has a
+// window of its own on the same clock.
 //
 // Everything below is a way that window can go wrong: a set that never leaves because the hold never
 // ends, a set taken back after the log already has it, and a session closing over a set still inside
@@ -115,8 +116,9 @@ final class UndoWindowTests: XCTestCase {
         XCTAssertNil(store.undoable, "and there is nothing left to take back")
     }
 
-    // Past the window the log holds the row, and the wire has no route that deletes one. The answer
-    // is no rather than a screen that quietly disagrees with the account.
+    // Past the window the log holds the row, and moving it is §G18's business — it confirms, and it
+    // offers a window of its own. The answer here is no rather than a screen that quietly disagrees
+    // with the account.
     func testUndoAfterTheSetHasLandedRefusesRatherThanPretending() async {
         let server = FakeTraining()
         let store = await liveStore(server)
