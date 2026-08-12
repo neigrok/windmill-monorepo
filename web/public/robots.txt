@@ -1,4 +1,13 @@
 # https://windmill.works/robots.txt
+#
+# THIS FILE IS NOT THE WHOLE ANSWER A CRAWLER GETS. Cloudflare's managed robots.txt is
+# switched on for this zone and PREPENDS its own block to whatever is served here —
+# measured 2026-08-12: `Content-Signal: search=yes,ai-train=no,use=reference` for everyone,
+# then `Disallow: /` for ClaudeBot, GPTBot, Google-Extended, CCBot, Bytespider, Amazonbot,
+# Applebot-Extended, meta-externalagent and CloudflareBrowserRenderingCrawler. So the AI
+# crawlers are blocked by a dashboard setting, not by anything in this repo, and the rules
+# below only ever add to that. Fetch the live URL before concluding what we allow — and
+# change the AI half in the Cloudflare dashboard (AI Crawl Control), not here.
 # Windmill is a single-page app plus static pages: the product landings
 # (/roadmap, /journal and /gym — each a static shell that boots the SPA) and the shelf
 # (connect, privacy, terms, changelog). connect.html is the crawlable MCP
