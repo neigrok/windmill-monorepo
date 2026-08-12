@@ -3,6 +3,14 @@ import Foundation
 // WHAT GOES ON THE BAR — and what to say when this gym's plates cannot make the number. §I's plate
 // row is the input; the line under §K's numeral is the only consumer, and no other screen reads this.
 //
+// THERE ARE THREE COPIES OF THIS RULE — this one, web/src/products/gym/settings/plates.js and
+// Android's Plates.kt — because there are three languages. They were written in one wave and already
+// disagreed on two edges before any of them had shipped a week, so what keeps them one rule is
+// packages/api-contract/gym-plate-readout.json: every copy runs that file as a test, and an answer
+// changed here and not there fails CI. The file pins the ANSWER — which of the five, the per-side
+// decomposition, the two totals an unmakeable load sits between. The SENTENCE stays this room's,
+// because each surface spells a number its own way.
+//
 // THE LADDER DOES NOT READ IT, which is the one contradiction the wave had to rule on. §I said the
 // fine step came from the plate inventory; the ladder is a pure function of the weight, pinned across
 // three languages by packages/api-contract/gym-ladder.json, and a step that depended on one lifter's
@@ -24,61 +32,71 @@ public enum Plates {
         public let count: Int
     }
 
+    // FIVE ANSWERS, AND NOT AN OPTIONAL, which is the shape the contract cost this file. `loading`
+    // returned nil for a bar that is not there AND nil for a load under the bar, and a caller could
+    // not tell the two apart — so the second one drew no line at all, where the golden says say it.
+    // One `nil` meaning two things is how a copy of a rule drifts from the rule.
     public enum Loading: Equatable, Sendable {
-        case bare                                       // the bar, and nothing on it
-        case loaded([Plate])                            // per side, heaviest first
-        case impossible(under: Double?, over: Double?)  // the nearest totals that CAN be loaded
+        case bare                                        // the load is the bar
+        case loaded([Plate])                             // per side, heaviest first
+        case underBar                                    // lighter than the bar, which is why there is no plate list
+        case unloadable(below: Double?, above: Double?)  // the nearest totals that CAN be loaded
+        case none                                        // there is nothing true to say
     }
 
-    // A load past this is not a barbell, and the walk below is bounded by it rather than by a plate
-    // count nobody chose. Nil is "there is nothing true to say", which is a state the readout draws
-    // as no line at all.
-    private static let heaviestBarbell = 2000.0
-    private static let longestWalk = 20_000
+    // Past a tonne nobody is reading a plate list, and the keypad stops at 500 long before it, so this
+    // is the belt behind that rule rather than a second opinion on it. It is also what BOUNDS THE WALK
+    // below — half of it plus one plate is the widest this can ever be asked to count — which is why
+    // the step ceiling this file used to carry is gone: it answered "nothing to say" for legal
+    // inventories the contract has a real answer for, and that is a fourth meaning of silence.
+    public static let capKg = 1000.0
 
-    public static func loading(totalKg: Double, under preferences: GymPreferences) -> Loading? {
+    public static func loading(totalKg: Double, under preferences: GymPreferences) -> Loading {
         // A bar of zero is a machine or a pair of dumbbells: the lifter has said there is no bar, so
-        // there is nothing to say about what goes on one. Neither is a load at or below nothing —
-        // bodyweight sits at zero and band-assisted work below it, and both are points on the number
-        // line rather than something you load.
+        // there is nothing to say about what goes on one, and a per-side split would claim a symmetry
+        // the equipment may not have. Neither is a load at or below nothing — bodyweight sits at zero
+        // and band-assisted work below it, and both are points on the number line rather than
+        // something you load.
         guard preferences.barWeightKg > 0, totalKg.isFinite,
-              totalKg > 0, totalKg <= heaviestBarbell else { return nil }
+              totalKg > 0, totalKg <= capKg else { return .none }
         let bar = cents(preferences.barWeightKg)
         let total = cents(totalKg)
         guard total != bar else { return .bare }
-        guard total > bar else { return .impossible(under: nil, over: preferences.barWeightKg) }
+        // Under the bar the honest line is that it is under the bar. This named the bar as the load
+        // above instead, which is true arithmetic and the wrong sentence: a lifter holding less than
+        // the bar is not shopping for the next loadable total, they are wondering where the plates went.
+        guard total > bar else { return .underBar }
 
         let plates = preferences.platesKg.map(cents).filter { $0 > 0 }.sorted(by: >)
         guard let heaviest = plates.first else {
-            return .impossible(under: preferences.barWeightKg, over: nil)
+            return .unloadable(below: kilograms(bar), above: nil)
         }
         // The finest change this gym can make on one side. Everything below counts in it, which is
         // what keeps the walk short for a real plate set and bounded for an absurd one.
         let step = plates.reduce(0, gcd)
         let perSide = (total - bar) / 2
         let target = perSide / step
-        let ceiling = target + heaviest / step
-        guard ceiling <= longestWalk else { return nil }
-        let reach = reachable(coins: plates.map { $0 / step }, upTo: ceiling)
+        let reach = reachable(coins: plates.map { $0 / step }, upTo: target + heaviest / step)
 
         // Three ways the target misses: an odd remainder cannot be split between two sides, a per-side
         // load off the plate grid cannot be reached at all, and a load on the grid still may not be
         // buildable from these kinds.
         guard (total - bar) % 2 == 0, perSide % step == 0, reach.count[target] != Int.max else {
-            return .impossible(under: largest(reach.count, atOrUnder: target)
+            return .unloadable(below: largest(reach.count, atOrUnder: target)
                                    .map { kilograms(bar + 2 * $0 * step) },
-                               over: smallest(reach.count, over: target)
+                               above: smallest(reach.count, over: target)
                                    .map { kilograms(bar + 2 * $0 * step) })
         }
         return .loaded(stacked(reach.taken, from: target, step: step))
     }
 
     // The design's own line (§K): `20 + 25·2 + 15 + 2.5 per side`. It is the whole sentence under the
-    // numeral, so the two things it can say — what to load, and that this cannot be loaded — read in
-    // the same voice and in the same place.
+    // numeral, so everything it can say — what to load, that the bar is the load, that the load is
+    // under the bar, and that this cannot be loaded — reads in the same voice and in the same place.
+    // The golden pins none of these words: three surfaces spell a number three ways and each prints
+    // its own room's line.
     public static func readout(totalKg: Double, under preferences: GymPreferences) -> String? {
-        guard let loading = loading(totalKg: totalKg, under: preferences) else { return nil }
-        switch loading {
+        switch loading(totalKg: totalKg, under: preferences) {
         case .bare:
             return "\(Readout.weight(preferences.barWeightKg)) · bar only"
         case .loaded(let plates):
@@ -86,10 +104,17 @@ public enum Plates {
                 $0.count == 1 ? Readout.weight($0.weightKg) : "\(Readout.weight($0.weightKg))·\($0.count)"
             }
             return "\(Readout.weight(preferences.barWeightKg)) + \(side.joined(separator: " + ")) per side"
-        case .impossible(let under, let over):
-            let near = [under, over].compactMap { $0 }.map(Readout.weight)
+        case .underBar:
+            return "\(Readout.weight(totalKg)) · lighter than the \(Readout.weight(preferences.barWeightKg)) bar"
+        case .unloadable(let below, let above):
+            // Both empty is unreachable — nothing on the bar is always loadable, so there is always a
+            // total below to name — but the case admits it, and a sentence that names no load is not
+            // a sentence.
+            let near = [below, above].compactMap { $0 }.map(Readout.weight)
             guard !near.isEmpty else { return nil }
             return "\(Readout.weight(totalKg)) won’t load with these plates — \(near.joined(separator: " or "))"
+        case .none:
+            return nil
         }
     }
 
@@ -142,7 +167,7 @@ public enum Plates {
     }
 
     // Hundredths, because a plate set is decimal and the arithmetic below has to be exact: 2.5 + 1.25
-    // in Double does not land where a lifter would put it.
+    // in Double does not land where a lifter would put it. It is the golden's own `grid`.
     private static func cents(_ kg: Double) -> Int {
         Int((kg * 100).rounded())
     }

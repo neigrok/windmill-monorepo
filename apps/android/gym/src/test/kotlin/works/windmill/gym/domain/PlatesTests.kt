@@ -1,16 +1,148 @@
 package works.windmill.gym.domain
 
+import java.io.File
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 // WHAT WOULD GO ON THE BAR, and — the half this wave exists for — what to say when nothing would.
 // A readout that quietly rounded to a weight the lifter cannot build would be worse than no
 // readout: it is a false statement about the physical world, made by the product, on the screen
 // they are standing at a rack reading.
+//
+// The rule's truth is packages/api-contract/gym-plate-readout.json, read here straight out of the
+// repo working tree exactly as LadderTests reads the ladder's — not copied into test resources. A
+// copied fixture is a copy, and copies are the thing that package exists to prevent.
+//
+// THE GOLDEN PINS THE ANSWER; THE SENTENCE IS ANDROID'S. Which of the five answers comes back, the
+// per-side decomposition, and the two neighbours are the rule, and three languages must agree on
+// them. The line under the numeral is presentation — each surface spells a number its own way — so
+// it is pinned below by hand, in this file, where changing it costs nobody else a red build.
 
 class PlatesTests {
+    @Serializable
+    data class Golden(val grid: Double, val capKg: Double, val cases: List<Case>)
+
+    @Serializable
+    data class Case(
+        val totalKg: Double,
+        val barWeightKg: Double,
+        val platesKg: List<Double>,
+        val answer: String,
+        // ABSENT IS A REAL VALUE HERE, and it is why these three carry defaults: only a `loaded`
+        // case spells `perSide` and only an `unloadable` one spells its neighbours. A default that
+        // stood in for a LOST expectation would be a green test on a fixture that no longer says
+        // anything, so the guard below checks that every case still carries what its answer needs.
+        val perSide: List<GoldenPlate> = emptyList(),
+        val belowKg: Double? = null,
+        val aboveKg: Double? = null,
+    )
+
+    @Serializable
+    data class GoldenPlate(val kg: Double, val count: Int)
+
+    companion object {
+        // Walk up from the test JVM's working directory until the golden turns up, rather than
+        // counting directories: a hard-coded depth is a tripwire that fires the day the package
+        // moves, and this suite is exactly the thing that must not quietly stop finding its
+        // contract when that happens.
+        val goldenFile: File = run {
+            val relative = "packages/api-contract/gym-plate-readout.json"
+            var directory: File? = File(System.getProperty("user.dir") ?: ".").absoluteFile
+            while (directory != null) {
+                val candidate = File(directory, relative)
+                if (candidate.exists()) return@run candidate
+                directory = directory.parentFile
+            }
+            File(relative)
+        }
+
+        private val json = Json { ignoreUnknownKeys = true }
+    }
+
+    private lateinit var golden: Golden
+
     private val standard = GymPreferences()
+
+    @Before
+    fun loadGolden() {
+        // A golden that cannot be found must fail the suite, never quietly skip it — an unrun
+        // contract is drift nobody sees.
+        assertTrue(
+            "plate readout golden not found at ${goldenFile.path} — this suite reads the repo's packages/api-contract/gym-plate-readout.json, not a bundled copy",
+            goldenFile.exists()
+        )
+        golden = json.decodeFromString(Golden.serializer(), goldenFile.readText())
+    }
+
+    // A loop over an empty array is a green test, so the case-driven test below is only as honest as
+    // the fixture is full. Emptying it disarms EVERY language at once from a file none of them owns
+    // — exactly the move someone makes to turn a red build green.
+    @Test
+    fun testTheGoldenStillCarriesItsCases() {
+        assertEquals("the golden's grid is no longer the ladder's own", 0.01, golden.grid, 0.0)
+        assertTrue("cases shrank to ${golden.cases.size}", golden.cases.size >= 22)
+        // All five answers, named one by one. Both edges this wave fixed live in exactly one answer
+        // each — `underBar` and `none` — and a pruner looking for redundancy finds those rows first.
+        for (answer in listOf("loaded", "bare", "underBar", "unloadable", "none")) {
+            assertTrue("no $answer case left in the golden", golden.cases.any { it.answer == answer })
+        }
+        assertTrue(
+            "a loaded case lost its perSide — it would compare against an empty expectation",
+            golden.cases.filter { it.answer == "loaded" }.all { it.perSide.isNotEmpty() },
+        )
+        assertTrue(
+            "an unloadable case lost both neighbours — the answer is the two loads that CAN be made",
+            golden.cases.filter { it.answer == "unloadable" }.all { it.belowKg != null || it.aboveKg != null },
+        )
+    }
+
+    // THE CONTRACT ITSELF, every row of it. Exact equality and no tolerance is deliberate: every
+    // number on both sides is whole hundredths over 100, so the parser and the arithmetic land on
+    // the same double, and there is no accumulated step for a tolerance to forgive.
+    @Test
+    fun testEveryCaseAnswersTheGolden() {
+        for (case in golden.cases) {
+            val rack = GymPreferences(barWeightKg = case.barWeightKg, platesKg = case.platesKg)
+            val readout = Plates.readout(case.totalKg, rack)
+            val where = "${case.totalKg} kg on a ${case.barWeightKg} kg bar with ${case.platesKg}"
+            assertEquals("answer at $where", case.answer, answerOf(readout))
+            if (readout is PlateReadout.Loaded) {
+                assertEquals("per side at $where", case.perSide,
+                             readout.perSide.map { GoldenPlate(it.kg, it.count) })
+            }
+            if (readout is PlateReadout.Unloadable) {
+                assertEquals("belowKg at $where", case.belowKg, readout.belowKg)
+                assertEquals("aboveKg at $where", case.aboveKg, readout.aboveKg)
+            }
+        }
+    }
+
+    // The two vocabularies meet HERE and nowhere else: the golden names its five answers as strings,
+    // the logger reads a sealed type, and `none` is the absence of a readout rather than a member of
+    // it. The `when` is exhaustive on purpose — a sixth answer on either side has to be spelled here
+    // before this suite will compile.
+    private fun answerOf(readout: PlateReadout?): String = when (readout) {
+        null -> "none"
+        is PlateReadout.Loaded -> "loaded"
+        PlateReadout.JustTheBar -> "bare"
+        is PlateReadout.UnderBar -> "underBar"
+        is PlateReadout.Unloadable -> "unloadable"
+    }
+
+    // The cap is the golden's own number rather than a second copy typed beside it, and the row it
+    // stops at still answers — a cap that swallowed the last loadable weight would be a silence the
+    // lifter cannot explain.
+    @Test
+    fun testTheReadoutStopsAtTheGoldensCap() {
+        assertNotNull("at the cap", Plates.readout(golden.capKg, standard))
+        assertNull("one grid step past the cap", Plates.readout(golden.capKg + golden.grid, standard))
+    }
 
     // The design's own numeral — and NOT the design's own line, which is a canon defect this test
     // deliberately does not copy. §K draws `20 + 25·2 + 15 + 2.5 per side` under 105 kg, and that
@@ -50,9 +182,9 @@ class PlatesTests {
         assertEquals("20 + 25 + 15 + 1.25 per side", Plates.readout(102.5, standard)?.line)
     }
 
-    // A rack that owns nothing still makes exactly one weight WHILE THERE IS A BAR, and the line
-    // says which: `below` is the bare bar and `above` is the neighbour that goes missing. Take the
-    // bar away as well and `below` goes too — that is the case below this one.
+    // A rack that owns nothing still makes exactly one weight, and the line says which: `below` is
+    // the bare bar, and `above` is the neighbour that goes missing because this gym owns nothing to
+    // put on it.
     @Test
     fun testAGymWithNoPlatesMakesTheBarAndNothingElse() {
         val bare = standard.copy(platesKg = emptyList())
@@ -63,32 +195,33 @@ class PlatesTests {
         assertEquals("these plates don’t make 40 · 20 is the nearest", readout?.line)
     }
 
-    // A machine, or a pair of dumbbells: legal, and the bar term simply goes. Nothing here divides
-    // by the bar, so a zero is a value and never an edge.
+    // THE FIRST RULING: a bar of zero is a machine or a pair of dumbbells, which is the lifter
+    // saying there is no bar — so there is no sentence about one, whatever the plates could make.
+    // This copy used to answer here with a per-side decomposition, which reads plausibly and claims
+    // a symmetry the equipment may not have.
     @Test
-    fun testABarOfZeroDropsTheBarTermRatherThanBreaking() {
+    fun testABarOfZeroSaysNothingAtAll() {
         val machine = standard.copy(barWeightKg = 0.0)
-        assertEquals("25 + 15 per side", Plates.readout(80.0, machine)?.line)
-        assertNull("nothing on a bar that is not there", Plates.readout(0.0, machine))
+        assertNull("a machine is not a bar being loaded", Plates.readout(80.0, machine))
+        assertNull("...and it does not become one at a weight the plates happen to make",
+                   Plates.readout(30.0, machine))
+        assertNull(Plates.readout(0.0, machine))
     }
 
-    // ...AND WITH NO BAR THERE IS NO FLOOR. `below` is the bare bar wherever there is one; on a
-    // machine there is nothing under the lightest plate, and a readout that offered `0` as the
-    // nearest load would be naming a lift nobody performs. Below the lightest plate the line names
-    // only what is above it, and a machine with no plates at all says nothing whatever.
+    // THE SECOND RULING, and it goes the other way: under the bar the line SAYS SO. This copy used
+    // to fall silent, which left a lifter wondering where the plate list went. Below zero is a
+    // different question — a band takes weight off and no bar is being loaded at all — and there
+    // the silence is the honest answer.
     @Test
-    fun testAMachineNeverNamesZeroAsALoadItCanMake() {
-        val machine = standard.copy(barWeightKg = 0.0, platesKg = listOf(25.0))
-        val readout = Plates.readout(10.0, machine)
-        assertEquals(PlateReadout.Unloadable(targetKg = 10.0, belowKg = null, aboveKg = 50.0), readout)
-        assertEquals("these plates don’t make 10 · 50 is the nearest", readout?.line)
+    fun testUnderTheBarItNamesTheBarRatherThanFallingSilent() {
+        assertEquals(PlateReadout.UnderBar(20.0), Plates.readout(15.0, standard))
+        assertEquals("lighter than the 20 kg bar", Plates.readout(15.0, standard)?.line)
+        assertEquals("lighter than the 20 kg bar", Plates.readout(0.5, standard)?.line)
+        // A 15 kg women's bar says its own number, because the sentence is about THIS rack.
+        assertEquals("lighter than the 15 kg bar", Plates.readout(10.0, standard.copy(barWeightKg = 15.0))?.line)
 
-        // A rack that reaches past it keeps both neighbours, and neither of them is zero.
-        val fine = standard.copy(barWeightKg = 0.0, platesKg = listOf(1.25))
-        assertEquals("these plates don’t make 31 · 30 or 32.5", Plates.readout(31.0, fine)?.line)
-
-        assertNull("no bar and no plates makes no load at all",
-                   Plates.readout(30.0, standard.copy(barWeightKg = 0.0, platesKg = emptyList())))
+        assertNull("a bodyweight zero is not a bar being loaded", Plates.readout(0.0, standard))
+        assertNull("and neither is band-assisted work", Plates.readout(-20.0, standard))
     }
 
     // NOTHING HERE THROWS ON A WEIGHT REHYDRATED FROM STORAGE — the same law Ladder.kt states and
@@ -100,8 +233,10 @@ class PlatesTests {
         for (value in listOf(Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY)) {
             assertNull("weight $value", Plates.readout(value, standard))
             assertNull("bar $value", Plates.readout(100.0, standard.copy(barWeightKg = value)))
-            assertNull("plate $value",
-                       Plates.readout(100.0, standard.copy(barWeightKg = 0.0, platesKg = listOf(value))))
+            // A plate that is not a plate is DROPPED rather than searched with, so the rack answers
+            // as the empty one it effectively is.
+            assertEquals("plate $value", "these plates don’t make 100 · 20 is the nearest",
+                         Plates.readout(100.0, standard.copy(platesKg = listOf(value)))?.line)
         }
         // A plate wider than the search itself is the same class of value and the same answer: it
         // is dropped rather than indexed into a table that cannot hold it. This one is exact —
@@ -110,15 +245,6 @@ class PlatesTests {
         // this is only ever a file repaired on read.
         val absurd = standard.copy(platesKg = listOf(42_949_672.91))
         assertEquals("these plates don’t make 40 · 20 is the nearest", Plates.readout(40.0, absurd)?.line)
-    }
-
-    // Under the bar there is no bar being loaded — a fixed barbell, a dumbbell, band-assisted work
-    // below zero — so the line is ABSENT rather than lecturing about a rack nobody is standing at.
-    @Test
-    fun testUnderTheBarItSaysNothingAtAll() {
-        assertNull(Plates.readout(15.0, standard))
-        assertNull(Plates.readout(0.0, standard))
-        assertNull(Plates.readout(-20.0, standard))
     }
 
     // GREEDY IS WRONG ON A REAL RACK, which is why this is a table search. Forty-five a side off 15s

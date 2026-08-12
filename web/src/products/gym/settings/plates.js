@@ -8,6 +8,14 @@
 // button that hides a weight is a product deciding what a lifter may lift; a readout that says
 // "these plates can't make 102.5 — 100 or 105" is a product telling them something true.
 //
+// THE RULE AND THE SENTENCE ARE TWO THINGS, and this file keeps them apart because only one of them
+// is shared. `plateAnswer` is the rule: it is pinned as data by
+// packages/api-contract/gym-plate-readout.json and answered identically by Swift and Kotlin, because
+// three languages wrote it independently in one wave and had already drifted on two edges.
+// `platesReadout` is the sentence, and the sentence is ours alone — each surface spells a number its
+// own way. Anything a golden case can see belongs above the line; anything with a word in it belongs
+// below.
+//
 // THE SEARCH IS EXHAUSTIVE AND NOT GREEDY. Greedy is how a plate calculator is usually written and
 // it is wrong on ordinary gyms: with 25s, 20s and 15s only, greedy takes the 25 for a 30 kg side, is
 // left with 5 it cannot make, and reports a load that two 15s make exactly. "You can't load that"
@@ -25,14 +33,22 @@
 import { fmtKg } from '../log.js';
 
 const PER_KG = 100;
+// Past a tonne nobody is reading a plate list, and the keypad stops at 500 long before it — so the
+// cap is the belt behind that rule rather than a second opinion on it. It is also what keeps the
+// walk below sized by a number a lifter could have typed: the load and the rack both arrive
+// rehydrated from a blob, and neither is allowed to ask this surface for an array of a hundred
+// million cells. `capKg` in the golden.
+const CAP_KG = 1000;
 
 // THE PLATES THIS RACK CAN ACTUALLY HANG ON A BAR, which is not the same list as the one stored. The
 // store has its own band — a plate weighs from 0.01 to 100 kg — but this module turns a list into a
 // sentence about the physical world, so it reads what it was handed rather than trusting it: a zero,
-// a negative and anything that is not a number are not plates, and a search that carried them would
-// name a decomposition of a load nobody asked for.
+// a negative, anything that is not a number and anything past the cap are not plates, and a search
+// that carried them would name a decomposition of a load nobody asked for.
 function rackOf(platesKg) {
-  return (platesKg ?? []).filter((plate) => Number.isFinite(plate) && Math.round(plate * PER_KG) > 0);
+  return (platesKg ?? []).filter(
+    (plate) => Number.isFinite(plate) && Math.round(plate * PER_KG) > 0 && plate <= CAP_KG,
+  );
 }
 
 // Beyond the heaviest plate there is nothing left to find: zero is always reachable, so the nearest
@@ -58,66 +74,96 @@ function reachable(sideCents, rack) {
   return { from, steps, limit };
 }
 
-// A LOAD, READ AS PLATES — or the plainest true thing that can be said about it instead. Null where
-// there is nothing to read: no target at all; a load at or below zero, which is bodyweight work or a
-// band taking weight off and never a bar somebody built; and a load or a bar that is not a number,
-// because every sentence below is arithmetic on the two of them.
-export function platesReadout(totalKg, { barWeightKg, platesKg }) {
-  if (totalKg == null || !Number.isFinite(totalKg) || totalKg <= 0) return null;
-  // A bar that is not a number is not a bar. Every line below is arithmetic on it, and the walk
-  // would run on a NaN and print one — a sentence naming a load in place of the reason there is no
-  // sentence. Nothing to read is the honest answer, and it is the same one bodyweight work gets.
-  if (!Number.isFinite(barWeightKg)) return null;
+// THE RULE — one of five answers, and every one of them is a real state a lifter reaches:
+//
+//   loaded      `perSide`, heaviest first, with a count per plate
+//   bare        the load is the bar
+//   underBar    the load is lighter than the bar — SAY SO; it is true, and it explains the missing
+//               plate list. Falling silent here leaves a lifter wondering where the list went.
+//   unloadable  these plates cannot make it; `belowKg` and `aboveKg` are the nearest totals that can
+//   none        there is nothing true to say
+//
+// A BAR OF NOTHING ANSWERS `none`, and this is the edge the three surfaces were ruled on. A zero bar
+// is a machine or a pair of dumbbells: the lifter has said there is no bar, so there is no sentence
+// about one, and a per-side decomposition would claim a symmetry the equipment may not have. This
+// surface used to print one.
+//
+// The rest of `none` is the same answer for the same reason — nothing to read: no target at all; a
+// load at or below zero, which is bodyweight work or a band taking weight off and never a bar
+// somebody built; a load past the cap; and a load or a bar that is not a number, because every line
+// below is arithmetic on the two of them and a NaN through it would print a sentence naming a load.
+export function plateAnswer(totalKg, { barWeightKg, platesKg }) {
+  if (!Number.isFinite(totalKg) || totalKg <= 0 || totalKg > CAP_KG) return { answer: 'none' };
+  if (!Number.isFinite(barWeightKg) || barWeightKg <= 0) return { answer: 'none' };
+
+  const spare = Math.round(totalKg * PER_KG) - Math.round(barWeightKg * PER_KG);
+  if (spare < 0) return { answer: 'underBar' };
+  if (spare === 0) return { answer: 'bare' };
 
   const rack = rackOf(platesKg);
-  const spare = Math.round(totalKg * PER_KG) - Math.round(barWeightKg * PER_KG);
-  // Past a tonne on the bar nobody is reading a plate list, and the walk below is sized by the load:
-  // a number that arrived from somewhere other than a keypad must not be able to ask this surface
-  // for an array of a hundred million cells.
-  if (spare > 100_000) return null;
-  if (spare < 0) return { loadable: false, line: `lighter than the ${fmtKg(barWeightKg)} kg bar` };
-  if (spare === 0) return { loadable: true, line: 'just the bar' };
-  if (rack.length === 0) {
-    return { loadable: false, line: `no plates in your gym — the bar alone is ${fmtKg(barWeightKg)} kg` };
-  }
-  // An odd number of hundredths cannot be halved onto two sides of a bar, so it is unloadable for a
+  // An odd number of hundredths cannot be halved onto two ends of a bar, so it is unloadable for a
   // reason no plate set can fix — and the search below would round it into a lie.
-  if (spare % 2 !== 0) return refusal(totalKg, barWeightKg, rack);
+  if (spare % 2 !== 0) return nearestLoadable(spare, barWeightKg, rack);
 
   const side = spare / 2;
   const { from, steps } = reachable(side, rack);
-  if (from[side] === -1) return refusal(totalKg, barWeightKg, rack);
+  if (from[side] === -1) return nearestLoadable(spare, barWeightKg, rack);
 
   const counts = new Map();
   for (let amount = side; amount > 0; amount -= steps[from[amount]]) {
     const plate = rack[from[amount]];
     counts.set(plate, (counts.get(plate) ?? 0) + 1);
   }
-  const parts = [...counts.entries()]
+  const perSide = [...counts.entries()]
     .sort(([left], [right]) => right - left)
-    .map(([plate, count]) => (count > 1 ? `${fmtKg(plate)}·${count}` : fmtKg(plate)));
-  // A bar of nothing is a pair of dumbbells or a machine, and printing a 0 in front of the plates
-  // would be a weight in the sentence that is not on the equipment.
-  const bar = barWeightKg > 0 ? [fmtKg(barWeightKg)] : [];
-  return { loadable: true, line: `${[...bar, ...parts].join(' + ')} per side` };
+    .map(([kg, count]) => ({ kg, count }));
+  return { answer: 'loaded', perSide };
 }
 
-// THE HONEST ANSWER, and it names loads rather than refusing one: the nearest total these plates DO
+// THE HONEST REFUSAL, and it names loads rather than refusing one: the nearest total these plates DO
 // make below the target and the nearest above it. Zero per side is always reachable, so there is
-// always something below — the bar itself, at worst. Above can run out only at the top of the
-// search, which is one plate past the target and therefore never on a set that holds any plate.
-function refusal(totalKg, barWeightKg, rack) {
-  const spare = Math.round(totalKg * PER_KG) - Math.round(barWeightKg * PER_KG);
+// always something below — the bar itself, at worst. Above runs out only at the top of the search,
+// which is one plate past the target and therefore only on a rack holding no plate at all.
+function nearestLoadable(spare, barWeightKg, rack) {
   const side = Math.floor(spare / 2);
   const { from, limit } = reachable(side + 1, rack);
-  const totalOf = (amount) => fmtKg(barWeightKg + (amount * 2) / PER_KG);
+  // In hundredths to the last step: the bar plus two of everything, added as integers, so a nearest
+  // load lands on the grid instead of a float a hair beside it.
+  const totalOf = (amount) => (Math.round(barWeightKg * PER_KG) + amount * 2) / PER_KG;
 
   let under = side;
   while (under > 0 && from[under] === -1) under -= 1;
   let over = side + 1;
   while (over <= limit && from[over] === -1) over += 1;
 
-  const nearest = over <= limit ? `${totalOf(under)} or ${totalOf(over)}` : totalOf(under);
+  return { answer: 'unloadable', belowKg: totalOf(under), aboveKg: over <= limit ? totalOf(over) : null };
+}
+
+// THE SENTENCE, which is this surface's own — the rule above is shared, the wording is not. Null
+// where there is nothing to read, so a caller renders no line rather than a line about nothing.
+//
+// `loaded` prints the bar in front of the plates and no longer has to ask whether there is one: a
+// bar of nothing answers `none` a level up, so the only bars that reach this line are bars.
+export function platesReadout(totalKg, preferences) {
+  const { barWeightKg, platesKg } = preferences;
+  const readout = plateAnswer(totalKg, preferences);
+  if (readout.answer === 'none') return null;
+  if (readout.answer === 'bare') return { loadable: true, line: 'just the bar' };
+  if (readout.answer === 'underBar') {
+    return { loadable: false, line: `lighter than the ${fmtKg(barWeightKg)} kg bar` };
+  }
+  if (readout.answer === 'loaded') {
+    const parts = readout.perSide.map(({ kg, count }) => (count > 1 ? `${fmtKg(kg)}·${count}` : fmtKg(kg)));
+    return { loadable: true, line: `${[fmtKg(barWeightKg), ...parts].join(' + ')} per side` };
+  }
+  // A gym with no plates is unloadable for a reason of its own, and "these plates" is the wrong
+  // phrase for a rack that holds none: the true thing to say is what the bar alone weighs.
+  if (rackOf(platesKg).length === 0) {
+    return { loadable: false, line: `no plates in your gym — the bar alone is ${fmtKg(barWeightKg)} kg` };
+  }
+  const nearest = readout.aboveKg == null
+    ? fmtKg(readout.belowKg)
+    : `${fmtKg(readout.belowKg)} or ${fmtKg(readout.aboveKg)}`;
   return { loadable: false, line: `these plates can’t make ${fmtKg(totalKg)} — ${nearest}` };
 }
 
