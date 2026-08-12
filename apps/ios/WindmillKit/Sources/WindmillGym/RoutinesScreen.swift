@@ -16,11 +16,18 @@ import WindmillPlatform
 // The order is the log's own — trained most recently first — so the footer line is a statement about
 // this list and not a wish: `Routine.byLastTrained` puts the device's unclaimed routines in the same
 // order the server sends the rest.
+//
+// IT IS ALSO WHERE §B SCREEN 6's HISTORY SECTION LANDS. The board hangs History off the routine
+// EDITOR, and this surface has none — so it hangs off the card that opens the routine out instead,
+// which on this phone is the same object read the same way, minus the writing. Every proposal an
+// agent ever made against a routine stays under it, applied and dismissed and set aside alike:
+// an agent's suggestion is part of the program's history whichever way it went.
 
 struct RoutinesScreen: View {
     @ObservedObject var store: TrainingStore
     let onStart: (String) -> Void
     let onMovement: (String) -> Void
+    let onProposal: (String) -> Void
 
     @Environment(\.gymSkin) private var skin
 
@@ -68,7 +75,11 @@ struct RoutinesScreen: View {
     // its meta and the chevron — and the entries under it are this surface's own preview of what the
     // day asks for.
     private func row(_ routine: Routine) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+        // Asked once and read twice — the marker and the card's own edge are one fact, and a card
+        // lit at the border with no row to tap would be the loudest thing on this screen saying
+        // nothing.
+        let pending = store.pending(of: routine.id)
+        return VStack(alignment: .leading, spacing: WindmillSpace.x3) {
             Button { onStart(routine.id) } label: {
                 HStack(alignment: .firstTextBaseline, spacing: WindmillSpace.x3) {
                     Text(routine.name)
@@ -84,6 +95,7 @@ struct RoutinesScreen: View {
                 }
                 .frame(minHeight: GymTap.minimum)
             }
+            if let newest = pending.first { waiting(newest, of: pending.count) }
             // Keyed on POSITION and never on the movement: a routine may name one twice — bench
             // heavy then bench back-off is the case the domain's `Routine` calls out by name —
             // and two rows sharing an id is undefined behaviour in a ForEach.
@@ -99,11 +111,86 @@ struct RoutinesScreen: View {
                         .foregroundStyle(skin.targetInk)
                 }
             }
+            history(of: routine)
         }
         .padding(WindmillSpace.x4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
-        .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg).strokeBorder(skin.line, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)
+            .strokeBorder(pending.isEmpty ? skin.line : skin.accent, lineWidth: 1))
+    }
+
+    // `● 1 proposal` (§B screen 5), and on this surface it is the DOOR as well as the mark: the
+    // board reaches the diff through the editor's chevron and this room's rows start a session
+    // instead, so the marker carries the tap.
+    //
+    // IT COUNTS WHAT IS WAITING AND OPENS THE NEWEST. The ledger keeps one pending proposal per
+    // door, so two doors put two on one routine — a mark that said "1" over both would be wrong
+    // about the one number it is here to give. The older ones are not lost behind the tap: applying
+    // the newest sets them aside, dismissing it leaves the next one marked in its place.
+    private func waiting(_ newest: ProposalHead, of count: Int) -> some View {
+        Button { onProposal(newest.id) } label: {
+            HStack(spacing: WindmillSpace.x2) {
+                Circle()
+                    .fill(skin.accent)
+                    .frame(width: 6, height: 6)
+                Text(ProposalHead.waitingLine(count))
+                    .font(WindmillFont.body(13, .bold))
+                    .foregroundStyle(skin.accent)
+                Text(count == 1 ? "from \(newest.source.agentName)"
+                                : "newest from \(newest.source.agentName)")
+                    .font(GymType.numeral(11.5))
+                    .foregroundStyle(skin.inkFaint)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(skin.accent)
+            }
+            .frame(minHeight: GymTap.minimum)
+        }
+    }
+
+    // HISTORY (§B screen 6) — `2 Aug · applied 3 changes from Claude`, most recently DECIDED first
+    // (the store orders it by the day each row prints), every row a door back onto the diff it
+    // settled. The three most recent are drawn and the rest are COUNTED:
+    // a section that grew without bound would push the movements it belongs to off the card, and a
+    // number is the room's own way of saying there is more (Today's `+ 3 more` says it the same way).
+    @ViewBuilder
+    private func history(of routine: Routine) -> some View {
+        let settled = store.history(of: routine.id)
+        if !settled.isEmpty {
+            Text("History")
+                .font(GymType.numeral(10.5, .bold))
+                .textCase(.uppercase)
+                .kerning(0.9)
+                .foregroundStyle(skin.inkFaint)
+                .padding(.top, WindmillSpace.x2)
+            ForEach(settled.prefix(3)) { head in
+                Button { onProposal(head.id) } label: {
+                    HStack(spacing: WindmillSpace.x2) {
+                        Text(head.historyLine(now: Int64(Date().timeIntervalSince1970 * 1000)))
+                            .font(GymType.numeral(12))
+                            .foregroundStyle(skin.inkDim)
+                            .multilineTextAlignment(.leading)
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(skin.inkFaint)
+                    }
+                    .frame(minHeight: GymTap.minimum)
+                    .padding(.horizontal, WindmillSpace.x3)
+                    .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.canvas))
+                    .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md)
+                        .strokeBorder(skin.line, lineWidth: 1))
+                }
+            }
+            if settled.count > 3 {
+                Text("+ \(settled.count - 3) older")
+                    .font(GymType.numeral(12))
+                    .foregroundStyle(skin.inkFaint)
+            }
+        }
     }
 
     private func meta(_ routine: Routine) -> String {

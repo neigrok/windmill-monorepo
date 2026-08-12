@@ -11,16 +11,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  agoLabel, alsoReadsLabel, BACKFILL_HREF, clockOf, CLOSED_ITSELF_NOTE, closedOnItsOwn, dayLabel,
+  agoLabel, alsoReadsLabel, arrivedLabel, BACKFILL_HREF, clockOf, CLOSED_ITSELF_NOTE, closedOnItsOwn,
+  dayLabel,
   durLabel, e1rmLabel, entryLabel, finishHref, finishIdOf, firstSessionLabel, fmt, fmtKg,
   groupByExercise,
   hasRecord, isFinished, isFirstSession, loadedLine, logWhenLabel, MOVEMENTS_HREF, movementIdOf,
-  nameOfMovement, NEW_ROUTINE_ID, NO_ROUTINE, NOT_IN_PLAN, onThisDevice, planFrozenLabel, planOf,
-  planReadingOf,
+  nameOfMovement, NEW_ROUTINE_ID, NO_ROUTINE, NOT_IN_PLAN, numberWord, onThisDevice, planFrozenLabel,
+  planOf, planReadingOf, proposalHref, proposalIdOf,
   recordHref, routineHref, routineIdOf, routineMetaLabel, routineNameOf, ROUTINES_HREF, screenOf,
   sessionDetailMeta, sessionHref, sessionIdOf, sessionMetaLabel, setCountLabel, setLoadLabel,
   setNoteOf, sharedHref, sharedTokenOf, shortDayLabel, timeLabel, tonnageLabel, tonnageOf,
-  topSetLabel, topSetOf, weekdayName, weeksOf, workingLabel, workingSetsOf,
+  topSetLabel, topSetOf, weekdayName, weeksOf, whenLabel, workingLabel, workingSetsOf,
 } from '../../../src/products/gym/log.js';
 import { KG, LB, spellWeightsIn } from '../../../src/products/gym/units.js';
 
@@ -146,7 +147,7 @@ test('sessionMetaLabel — a session read whole, without printing its day twice'
   );
 });
 
-test('screenOf — one grammar decides which of the nine rooms a hash names', () => {
+test('screenOf — one grammar decides which of the ten rooms a hash names', () => {
   assert.equal(screenOf('#/gym'), 'today');
   assert.equal(screenOf('#/gym/'), 'today');
   assert.equal(screenOf('#/gym/log'), 'log');
@@ -158,6 +159,7 @@ test('screenOf — one grammar decides which of the nine rooms a hash names', ()
   assert.equal(screenOf('#/gym/routines/'), 'routines');
   assert.equal(screenOf('#/gym/routines?new=1'), 'routines');
   assert.equal(screenOf('#/gym/routines/rt_9f2c'), 'routine');
+  assert.equal(screenOf('#/gym/proposals/prop_2f9c40a1'), 'proposal');
   assert.equal(screenOf(routineHref(NEW_ROUTINE_ID)), 'routine');
   assert.equal(screenOf(MOVEMENTS_HREF), 'record');
   assert.equal(screenOf(recordHref('back-squat')), 'record');
@@ -231,6 +233,26 @@ test('movementIdOf — the record link a name writes is the link the record read
   assert.equal(movementIdOf(sessionHref('ses_9f3a1c22')), null);
   assert.equal(movementIdOf(''), null);
   assert.equal(movementIdOf(undefined), null);
+});
+
+// ONE PROPOSAL, AS A PLACE (§D14). The id is minted by whoever WROTE the proposal — an agent over
+// MCP — and the deep link in its receipt is this URL, so the parse takes the whole of the id shape
+// the wire allows (`^[A-Za-z0-9_-]{8,64}$`) rather than the narrower one gym's own mints happen to
+// produce. A parse that stopped at an underscore or a hyphen would open somebody's proposal by a
+// prefix of its id, or fail to open it at all.
+test('proposalIdOf — the deep link an agent’s receipt hands out is the link this app reads back', () => {
+  assert.equal(proposalHref('prop_2f9c40a1'), '#/gym/proposals/prop_2f9c40a1');
+  assert.equal(proposalIdOf(proposalHref('prop_2f9c40a1')), 'prop_2f9c40a1');
+  assert.equal(proposalIdOf('#/gym/proposals/a-b_c9'), 'a-b_c9');
+  assert.equal(screenOf(proposalHref('prop_2f9c40a1')), 'proposal');
+  // The routines list is one word away and must never answer for a proposal, or the other way round.
+  assert.equal(proposalIdOf(ROUTINES_HREF), null);
+  assert.equal(proposalIdOf(routineHref('rt_9f2c1a04')), null);
+  assert.equal(routineIdOf(proposalHref('prop_2f9c40a1')), null);
+  assert.equal(proposalIdOf('#/gym/proposals'), null);
+  assert.equal(proposalIdOf('#/gym/proposals/'), null);
+  assert.equal(proposalIdOf(''), null);
+  assert.equal(proposalIdOf(undefined), null);
 });
 
 // The one id a mint can never produce, so the blank editor survives a reload without asking the
@@ -456,6 +478,32 @@ test('dayLabel, timeLabel and agoLabel — the labels a lifter judges relevance 
   assert.equal(agoLabel(wednesday, wednesday + 86_400_000), 'yesterday');
   assert.equal(agoLabel(wednesday, wednesday + 4 * 86_400_000), '4 days ago');
   assert.equal(agoLabel(wednesday, wednesday - 86_400_000), 'today');
+});
+
+// WHEN A PROPOSAL ARRIVED — canon §D14's `Sun 21:14`, which is the weekday and the hour because a
+// lifter reading a diff on Monday morning remembers the Sunday evening they asked for it. The
+// weekday alone repeats every seven days, so past a week it takes the full date instead: a card
+// that waited a fortnight saying `Sun` would let the reader supply the wrong Sunday, which is the
+// one thing a timestamp exists to stop.
+test('arrivedLabel — the weekday and the hour, until a weekday stops naming one day', () => {
+  const sunday = new Date(2026, 7, 2, 21, 14).getTime();
+  assert.equal(arrivedLabel(sunday, sunday), 'Sun 21:14');
+  assert.equal(arrivedLabel(sunday, sunday + 10 * 60 * 60 * 1000), 'Sun 21:14');
+  assert.equal(arrivedLabel(sunday, sunday + 5 * 86_400_000), 'Sun 21:14');
+  assert.equal(arrivedLabel(sunday, sunday + 6 * 86_400_000), 'Sun 2 Aug · 21:14');
+  assert.equal(arrivedLabel(sunday, sunday + 30 * 86_400_000), 'Sun 2 Aug · 21:14');
+  assert.equal(whenLabel(sunday), 'Sun 2 Aug · 21:14');
+});
+
+// ONE TABLE OF SMALL NUMBERS FOR THE PRODUCT — "two short" under a set and "All four or none" under
+// a proposal read the same table, because two of them would disagree the first day either grew.
+// Past ten the word stops being one a lifter would say and the numeral is what is left.
+test('numberWord — a small count spelled, and a large one left as a numeral', () => {
+  assert.equal(numberWord(1), 'one');
+  assert.equal(numberWord(4), 'four');
+  assert.equal(numberWord(10), 'ten');
+  assert.equal(numberWord(11), '11');
+  assert.equal(numberWord(0), 'zero');
 });
 
 // ONE VOCABULARY, TWO LENGTHS, AND EVERY DATE IN IT IS LOCAL. There used to be a UTC spelling here

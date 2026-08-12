@@ -2907,3 +2907,395 @@ button.gym-set:focus-visible .gym-set-fix,
   line-height: 1.45;
   color: var(--gym-ink-faint);
 }
+
+/* ── Proposals ────────────────────────────────────────────────
+   An agent reads and proposes, and it never rewrites a day you
+   already have: a change it wants arrives here as a diff and
+   waits for a tap. (A brand-new day it adds lands directly — it
+   takes nothing away — which is the one write with no card.) The
+   ink says so before a word is read — the brand hue for what is
+   only ever an OFFER, the log's own greens and bricks for what an
+   applied one would add and take away. Nothing on this surface
+   uses the brand fill for a routine an agent already changed,
+   because there is no such thing. */
+
+/* THE CARD, ON TODAY (canon screen 4). It sits under the mirror
+   and over the last session — the one thing on this screen that
+   asks for attention, in a product that has no notifications. */
+.gym-proposals {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 18px;
+}
+.gym-proposal-card {
+  padding: 14px 15px 13px;
+  border: 1px solid var(--color-brand);
+  border-radius: 14px;
+  background: var(--color-brand-soft);
+}
+.gym-proposal-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--color-brand);
+}
+.gym-proposal-when {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 500;
+  color: var(--gym-ink-faint);
+}
+/* One mark for "something is waiting", shared by the card, the
+   routine's row and the routine's history — learned once. */
+.gym-proposal-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--color-brand);
+}
+.gym-proposal-line {
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--gym-ink);
+}
+/* What a removal would do, said by us rather than by the agent's
+   own summary — so it is drawn as a fact and not as prose. */
+.gym-proposal-intent {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  font-weight: 700;
+  color: var(--alarm-ink);
+}
+.gym-proposal-review {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  margin-top: 12px;
+  border-radius: 12px;
+  background: var(--color-brand);
+  color: var(--gym-on-accent);
+  font-size: 14.5px;
+  font-weight: 800;
+  text-decoration: none;
+}
+.gym-proposal-review:hover {
+  background: var(--color-brand-hover);
+}
+
+/* THE SAME FACT ON THE ROUTINE'S ROW (screen 5). The name keeps
+   its ellipsis, which is why it is the only thing in this line
+   allowed to shrink. */
+.gym-routine-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.gym-routine-line .gym-routine-name {
+  min-width: 0;
+}
+.gym-routine-flag {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-brand);
+}
+
+/* THE ROUTINE'S HISTORY (screen 6) — dated records, sunken,
+   because they are the program's past rather than anything to do
+   now. A pending one wears the dot and is a door onto the diff,
+   exactly like a settled one is a door onto what was decided. */
+.gym-history {
+  margin-top: 22px;
+}
+.gym-history-head {
+  margin: 0 0 8px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--gym-ink-faint);
+}
+.gym-history-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.gym-history-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 44px;
+  padding: 10px 13px;
+  border: 1px solid var(--gym-line);
+  border-radius: 12px;
+  background: var(--gym-sunken);
+  color: var(--gym-ink-dim);
+  text-decoration: none;
+}
+.gym-history-row:hover {
+  background: var(--gym-raised);
+  border-color: var(--gym-line-strong);
+}
+.gym-history-line {
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.gym-history-go {
+  margin-left: auto;
+  color: var(--gym-ink-faint);
+  font-size: 14px;
+}
+
+/* THE DIFF (screen 14) — the whole document, on the surface that
+   is best placed to read one. */
+.gym-proposal-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 10px 0 14px;
+}
+.gym-proposal-titles {
+  flex: 1;
+  min-width: 0;
+}
+.gym-proposal-from {
+  margin: 4px 0 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--gym-ink-faint);
+}
+/* The state, said in a word. Superseded is the one canon never
+   drew and it is deliberately the quietest: nobody turned it down
+   — the routine moved first. */
+.gym-proposal-chip {
+  flex: none;
+  padding: 4px 9px;
+  border-radius: 99px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--gym-raised);
+  color: var(--gym-ink-faint);
+}
+.gym-proposal-chip.is-pending {
+  background: var(--color-brand-soft);
+  color: var(--color-brand);
+}
+.gym-proposal-chip.is-applied {
+  background: var(--set-done-soft);
+  color: var(--set-done);
+}
+.gym-proposal-summary {
+  margin: 0 0 16px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--gym-ink);
+}
+
+/* WHAT THE LIST IS, over the list. The diff draws the whole run and
+   not only the changed lines, so this says which rows are which
+   before the eye starts sorting them. */
+.gym-diff-caption {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--gym-ink-faint);
+}
+
+.gym-diff {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.gym-diff-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 9px;
+  padding: 12px 13px;
+  border: 1px solid var(--gym-line);
+  border-radius: 13px;
+  background: var(--gym-surface);
+}
+/* Added and removed carry their own ink, because they are the two
+   rows a lifter scans for. Retargeted and renamed do not: they are
+   a number moving, and a coloured box around every one of them
+   would leave nothing quiet enough to make these two loud. */
+.gym-diff-row.is-added {
+  border-color: var(--set-done);
+  background: var(--set-done-soft);
+}
+.gym-diff-row.is-removed {
+  border-color: var(--alarm-ink);
+  background: var(--alarm-soft);
+}
+/* AND A LINE THAT DID NOT CHANGE IS DRAWN FLAT — no border, no
+   fill, dim ink. It is on the list because the order of the run is
+   part of what applies and this row is the only place a move shows;
+   it is quiet because four changes have to still read as four. */
+.gym-diff-row.is-kept {
+  padding: 6px 13px;
+  border-color: transparent;
+  background: none;
+}
+.gym-diff-row.is-kept .gym-diff-name {
+  font-weight: 600;
+  color: var(--gym-ink-dim);
+}
+/* One line, name then numbers — the shape a routine's own row has in
+   the editor, so an untouched line looks like the routine rather
+   than like a change with its mark missing. */
+.gym-diff-row.is-kept .gym-diff-note {
+  flex-basis: auto;
+  margin-left: auto;
+  color: var(--gym-ink-faint);
+}
+.gym-diff-mark {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+}
+.gym-diff-row.is-added .gym-diff-mark {
+  color: var(--set-done);
+}
+.gym-diff-row.is-removed .gym-diff-mark {
+  color: var(--alarm-ink);
+}
+.gym-diff-name {
+  font-size: 14.5px;
+  font-weight: 800;
+}
+.gym-diff-note {
+  flex-basis: 100%;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--gym-ink-dim);
+  font-variant-numeric: tabular-nums;
+}
+.gym-diff-moves {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.gym-diff-move {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+}
+.gym-diff-field {
+  color: var(--gym-ink-faint);
+}
+/* The before, struck through, and the after in the ink every
+   target in this product is drawn in. */
+.gym-diff-was {
+  color: var(--gym-ink-dim);
+  text-decoration: line-through;
+}
+.gym-diff-arrow {
+  color: var(--gym-ink-faint);
+}
+.gym-diff-is {
+  color: var(--target-ink);
+  font-weight: 700;
+}
+
+/* A SETTLED PROPOSAL STAYS, with its timestamp: the program's
+   history, not a toast that disappears. */
+.gym-proposal-settled {
+  margin: 16px 0 0;
+  padding: 13px 14px;
+  border: 1px solid var(--gym-line);
+  border-radius: 13px;
+  background: var(--gym-sunken);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--gym-ink-dim);
+}
+
+/* THE TAP. Dismiss needs no reason and Apply is all of it or
+   none — the line under them says so, and it is the sentence this
+   whole surface exists to make true. */
+.gym-proposal-decide {
+  margin-top: 20px;
+}
+.gym-proposal-verbs {
+  display: flex;
+  gap: 9px;
+}
+.gym-proposal-dismiss {
+  flex: none;
+  height: 52px;
+  padding: 0 18px;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 15px;
+  background: transparent;
+  color: var(--gym-ink-dim);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gym-proposal-dismiss:hover {
+  background: var(--gym-raised);
+  color: var(--gym-ink);
+}
+.gym-proposal-apply {
+  flex: 1;
+  height: 52px;
+  border: none;
+  border-radius: 15px;
+  background: var(--color-brand);
+  color: var(--gym-on-accent);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.gym-proposal-apply:hover {
+  background: var(--color-brand-hover);
+}
+/* Inert while the tap is in the air, both of them: the two verbs
+   settle the same proposal, and a Dismiss pressed under a landing
+   Apply would ask the store for the other decision. */
+.gym-proposal-apply.is-inert {
+  background: var(--gym-raised);
+  color: var(--gym-ink-faint);
+}
+.gym-proposal-dismiss.is-inert {
+  border-color: var(--gym-line);
+  color: var(--gym-ink-faint);
+}
+.gym-proposal-atomic {
+  margin: 9px 0 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--gym-ink-faint);
+}

@@ -81,6 +81,10 @@ test('every exercise name a lifter can see is a link to that movement’s record
   assert.equal(read('Routines.jsx').includes('<a className="gym-entry-name gym-movement-door" href={recordHref(entry.exerciseId)}>'), true);
   assert.equal(read('Finish.jsx').includes('<a className="gym-against-movement gym-movement-door" href={recordHref(row.exerciseId)}>'), true);
   assert.equal(read('Today.jsx').includes('<a className="gym-movement-door" href={recordHref(newest.exerciseId)}>'), true);
+  // The fifth site, and the one where the door earns its place twice: "should I take heavier
+  // triples" is a question about where that lift stands, and this is the screen the question is
+  // asked on. Nothing is held here, so leaving costs a re-read and nothing else.
+  assert.equal(read('Proposals.jsx').includes('<a className="gym-diff-name gym-movement-door" href={recordHref(row.exerciseId)}>'), true);
   // And the ink is one rule in one place: a door that had to be styled per site would be styled
   // differently per site the first time one of them moved.
   assert.equal(read('gym.css').includes('.gym-movement-door {'), true);
@@ -451,6 +455,154 @@ test('the empty log offers the routine editor, and this surface still starts not
   for (const file of ['Today.jsx', 'Routines.jsx', 'Log.jsx', 'Finish.jsx', 'GymApp.jsx']) {
     assert.equal(speech(file).includes('Start a session'), false, file);
   }
+});
+
+// ── Proposals: the agent proposes, and the tap is the only thing that applies ────────────────────
+
+// A walk of every gym source file, used by the two scans below. The marketing tree is excluded the
+// same way the decline scan excludes it: it is copy about the product rather than the product.
+const gymFiles = () => {
+  const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const at = path.join(dir, entry.name);
+    if (entry.isDirectory()) return entry.name === 'marketing' ? [] : walk(at);
+    return [at];
+  });
+  return walk(GYM);
+};
+
+// THE ONE PLACE A ROUTINE AN AGENT WROTE TO CAN MOVE, and it is a human's tap on a diff they are
+// looking at. Nothing this wave built may grow a second door onto it: not the card, which is a
+// notification; not the routines list; and above all not the routine editor, which holds a DRAFT —
+// a routine applied under an open draft would be a change the lifter never saw, whole-document PUT
+// straight back out by the Done they press next.
+//
+// Which file calls what is a fact about the source and about nothing a pure module can answer, which
+// is why it is pinned here rather than in proposals.test.js.
+test('applying and dismissing live in one file, and only on the diff', () => {
+  for (const file of gymFiles()) {
+    const source = fs.readFileSync(file, 'utf8');
+    const mine = path.basename(file) === 'Proposals.jsx' || path.basename(file) === 'gymApi.js';
+    assert.equal(source.includes('applyProposal') && !mine, false, file);
+    assert.equal(source.includes('dismissProposal') && !mine, false, file);
+  }
+  const source = read('Proposals.jsx');
+  assert.equal(source.includes("onClick={() => settle('apply')}"), true);
+  assert.equal(source.includes("onClick={() => settle('dismiss')}"), true);
+  // Both calls are inside the one function a tap reaches, and it is the only caller of either.
+  assert.equal((source.match(/gymApi\.applyProposal/g) ?? []).length, 1);
+  assert.equal((source.match(/gymApi\.dismissProposal/g) ?? []).length, 1);
+});
+
+// A SETTLEMENT MAY NOT OUTLIVE THE DOCUMENT IT IS OF — the routine editor's rule and the session
+// detail's, one room further along. The diff holds the settled proposal the store answered with, and
+// a hash move to another proposal with the instance kept would draw one document under another's
+// Apply button.
+test('the proposal diff is keyed on the proposal it reads', () => {
+  const app = read('GymApp.jsx');
+  assert.equal(app.includes('<ProposalDiff key={proposalIdOf(hash)} id={proposalIdOf(hash)} log={log} />'), true);
+});
+
+// NO AUTO-APPLY, NOT EVEN HIDDEN (W6 §5). A conditionally false safety claim is the worst artifact
+// this house can produce, and the shape that would let one in is an effect: a render that could
+// settle a proposal is a proposal settled without a tap. There is no effect in this file at all —
+// the read is the shared hook's and every write is under an onClick — so the scan is for the API
+// rather than for a policy, because copy can be reworded and a `useEffect` cannot.
+test('nothing settles a proposal on a render, and no toggle offers to', () => {
+  const source = read('Proposals.jsx');
+  assert.equal(source.includes('useEffect'), false);
+  assert.equal(source.includes('setInterval'), false);
+  assert.equal(source.includes('setTimeout'), false);
+  for (const file of gymFiles()) {
+    const said = fs.readFileSync(file, 'utf8');
+    assert.equal(/autoApply|auto_apply|alwaysApply|trustedConnection/i.test(said), false, file);
+  }
+});
+
+// THE CARD IS THE NOTIFICATION, and it is in both places canon puts it: on Today, and on the
+// routine it touches. Neither draws a verb that changes anything — the card's one button is a LINK
+// onto the diff — because the decision is made where the diff is readable and nowhere else.
+test('a pending proposal waits on Today and on the routine it touches, as a door', () => {
+  assert.equal(read('Today.jsx').includes('<PendingProposals />'), true);
+  assert.equal(read('Routines.jsx').includes('{routine.pendingProposal && <ProposalFlag />}'), true);
+  const source = read('Proposals.jsx');
+  assert.equal(source.includes('<a className="gym-proposal-review" href={proposalHref(head.id)}>{reviewLabel(head)}</a>'), true);
+  // The routine editor grows the History section (screen 6) and every row of it is a door too — a
+  // routine being written for the first time has no history and is not asked for one.
+  assert.equal(read('Routines.jsx').includes('{!fresh && <RoutineHistory routineId={draft.id} />}'), true);
+  assert.equal(source.includes('<a className="gym-history-row" href={proposalHref(head.id)}>'), true);
+});
+
+// THE SENTENCE THIS WHOLE WAVE EXISTS TO MAKE TRUE has to reach a lifter, on the screen where the
+// decision is taken, in the SPEECH rather than in a comment about the speech. It is one line under
+// two buttons and it says both halves: apply is atomic, and nothing has happened yet.
+test('the diff says out loud that it is all-or-none and that nothing has happened yet', () => {
+  const said = speech('proposals.js');
+  assert.equal(said.includes('Nothing is applied until you tap.'), true);
+  assert.equal(said.includes('or none.'), true);
+  assert.equal(speech('Proposals.jsx').includes('{atomicLine(proposal)}'), true);
+  // And a settled one stays, with its timestamp, as a dated record — never a toast.
+  assert.equal(said.includes('the program’s history, not a toast that disappears'), true);
+  assert.equal(speech('Proposals.jsx').includes('{settledLine(proposal)}'), true);
+});
+
+// THE DIFF DRAWS THE WHOLE RUN, and this is the JSX half of that rule — `diffRows` yielding a `kept`
+// row is worth nothing if the renderer has no branch for it, and no test in this runner can mount
+// the screen to find out. The rule itself: a proposal that reorders a routine carries the move only
+// in the POSITION of an unmarked row, so a screen drawing the marked rows alone showed a lifter one
+// weight change over a Monday whose order had been rewritten under it.
+test('the diff draws every line the routine would run, not only the ones that changed', () => {
+  const source = speech('Proposals.jsx');
+  assert.equal(source.includes("if (row.kind === 'kept') {"), true);
+  assert.equal(source.includes('{documentNote && <p className="gym-diff-caption">{documentNote}</p>}'), true);
+  // Nothing filters the rows on the way to the list — the whole document, in the order it holds.
+  assert.equal(source.includes('{rows.map((row, index) => ('), true);
+  assert.equal(/rows\.filter|rows\.slice/.test(source), false);
+  // And an unmarked row is drawn as one: the flat rule is in the stylesheet, not in an inline style.
+  assert.equal(read('gym.css').includes('.gym-diff-row.is-kept {'), true);
+});
+
+// NO SURFACE MAY SAY A CONNECTION REWRITES A ROUTINE OF YOURS, because none of them does any more.
+// These sentences were true this morning and were the loudest false copy in the repo the moment the
+// ledger landed; they are banned by their own words rather than only replaced, so a revert of the
+// copy fails a test instead of quietly shipping. The scan is over the whole file for the landing —
+// its retired claim lived in a COMMENT, which is exactly where a false sentence hides longest.
+//
+// AND THE REPLACEMENT MAY NOT OVERSHOOT EITHER, which is the ban that reads oddly until you check
+// the catalog: "it never writes to your program" was the sentence this wave shipped in that slot,
+// and it is FALSE. `create_routine` is `gym:write` and lands immediately, by decision — a day that
+// did not exist takes nothing away — so a whole day can appear in the program with no tap. The line
+// on the page names the write it makes as well as the ones it does not, because a safety promise
+// that is nearly true is worth less than none: it is believed.
+test('no gym copy claims an agent changes a routine of yours directly, or that it writes nothing', () => {
+  const landing = read('marketing/GymLanding.jsx');
+  for (const claim of [
+    'writes directly',
+    'exactly as it would if you had typed it yourself',
+    'Write next week’s routine',
+    'Add sets, movements and routines',
+    'Delete workouts and routines',
+    'never writes to your program',
+  ]) {
+    assert.equal(landing.includes(claim), false, claim);
+  }
+  // And what stands in their place is the rule itself, on the page rather than in the margin — both
+  // halves of it, the direct write included.
+  const said = speech('marketing/GymLanding.jsx');
+  assert.equal(said.includes('it never rewrites a day you already have'), true);
+  assert.equal(said.includes('adds lands right away: it takes nothing away'), true);
+  assert.equal(said.includes('Propose next week’s routine — you read the diff and tap Apply.'), true);
+  assert.equal(said.includes('Record what happened · add a new day · propose changes to the days you have'), true);
+  assert.equal(said.includes('Discard a workout · end a coach link · propose a removal'), true);
+  // The three `gym:delete` tools are discard_session, propose_routine_removal AND revoke_share, so
+  // the caption under them names three effects rather than two.
+  assert.equal(said.includes('end a coach link, or ask to remove a routine.'), true);
+
+  // The MCP workbench's own page says the same thing in its own voice, and no longer says an agent
+  // "keeps" a routine of yours.
+  const connect = fs.readFileSync(path.join(GYM, '../../../public/connect.html'), 'utf8');
+  assert.equal(connect.includes('keep your routines'), false);
+  assert.equal(connect.includes('What it cannot do is change a routine you already have'), true);
+  assert.equal(connect.includes('nothing moves until you tap Apply'), true);
 });
 
 // NOTHING COUNTS HOW MANY TIMES ANYONE DECLINED ANYTHING — §J's own words, and the finish screen is

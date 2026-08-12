@@ -18,6 +18,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import works.windmill.gym.domain.ChangeKind
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.Ids
@@ -26,6 +27,12 @@ import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.PlanEntry
 import works.windmill.gym.domain.PlanSnapshot
 import works.windmill.gym.domain.Prefill
+import works.windmill.gym.domain.Proposal
+import works.windmill.gym.domain.ProposalChange
+import works.windmill.gym.domain.ProposalIntent
+import works.windmill.gym.domain.ProposalSource
+import works.windmill.gym.domain.ProposalState
+import works.windmill.gym.domain.ProposalTargets
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineEntry
@@ -2073,5 +2080,318 @@ class TrainingStoreTests {
                             "barbell-row", "chin-up"),
             offline.catalog.map { it.id })
         assertFalse("a held copy is the catalog, not a gap in it", offline.catalogUnread)
+    }
+    // ── THE AGENT PROPOSES ────────────────────────────────────────────────────────────────────
+    //
+    // What has to be true for a program not to move under its owner: nothing an agent sends changes
+    // a routine, the tap is the only thing that does, and a routine that moved first refuses the tap
+    // rather than applying over the top. These are the paths that lose a program.
+
+    private fun aRoutine(id: String = "rt_1", revision: Int = 1) = Routine(
+        id = id, name = "Push A", position = 0, revision = revision,
+        entries = listOf(RoutineEntry(position = 1, exerciseId = "bench-press", targetSets = 5,
+            targetReps = 5, targetWeightKg = 82.5)))
+
+    private fun aProposal(
+        id: String = "prop_1",
+        routineId: String = "rt_1",
+        baseRevision: Int = 1,
+        intent: ProposalIntent = ProposalIntent.Revise,
+        name: String = "Push A",
+    ) = Proposal(
+        id = id, routineId = routineId, intent = intent, state = ProposalState.Pending,
+        summary = "Heavier triples.", changeCount = 1, createdAtMs = 7_000,
+        source = ProposalSource(agent = "Claude"), baseRevision = baseRevision,
+        baseName = "Push A", name = name,
+        changes = listOf(ProposalChange(position = 1, kind = ChangeKind.Retargeted,
+            exerciseId = "bench-press", before = ProposalTargets(5, 5, 82.5),
+            after = ProposalTargets(5, 3, 87.5))))
+
+    // THE CARD ARRIVES WITH THE ROUTINES AND NOTHING ELSE FETCHES IT — no poll, no push, no badge.
+    // A boot read is the whole of what puts a proposal in front of a lifter.
+    @Test
+    fun testTheCardArrivesOnTheRoutineTheBootReadAlreadyMakes() = runTest {
+        val server = FakeTraining()
+        server.written["rt_1"] = aRoutine()
+        server.propose(aProposal())
+        val store = makeStore(sync = server)
+
+        store.connect(account(signedIn = true))
+
+        assertEquals(listOf("prop_1"), store.pendingProposals.map { it.id })
+        assertEquals("Claude", store.pendingProposals.single().source.name)
+        assertEquals("prop_1", store.routine("rt_1")?.pendingProposal?.id)
+        assertFalse("no second read went out for it", server.calls.contains("proposals"))
+    }
+
+    // SIGNED OUT THERE IS NOTHING, and nothing is asked for either: a proposal needs an account for
+    // an agent to have been granted anything against, so the shelf holds none, no read is made, and
+    // every verb answers about the ACCOUNT rather than about a signal nobody used.
+    @Test
+    fun testASignedOutRoomHasNoProposalsAndAsksForNone() = runTest {
+        val server = FakeTraining()
+        server.written["rt_1"] = aRoutine()
+        server.propose(aProposal())
+        val store = makeStore(sync = server)
+
+        store.connect(account(signedIn = false))
+        store.keep(listOf(TrainingSet(id = "set_a", exerciseId = "bench-press", weightKg = 82.5,
+            reps = 5, completedAtMs = 1_100)), asRoutineNamed = "Push A")
+
+        assertTrue("the shelf's own routine wears no card",
+            store.routines.isNotEmpty() && store.routines.all { it.pendingProposal == null })
+        assertTrue(store.pendingProposals.isEmpty())
+        assertTrue("nothing on the wire at all", server.calls.isEmpty())
+
+        val read = store.proposalHistory("rt_1")
+        assertEquals(GymResult.Failed(WriteFailure.Refused("a proposal needs your account — sign in first")), read)
+        assertEquals(ProposalOutcome.Failed(WriteFailure.Refused("a proposal needs your account — sign in first")),
+            store.applyProposal("prop_1"))
+        assertTrue("still nothing on the wire", server.calls.isEmpty())
+    }
+
+    // THE TAP IS THE ONLY THING THAT MOVES A PROGRAM. Until it happens the routine reads exactly as
+    // it did — and afterwards it is the log's own document that lands, revision and all, with the
+    // card gone because the thing it was waiting for happened.
+    @Test
+    fun testNothingMovesUntilTheTapAndThenTheLogsOwnRoutineLands() = runTest {
+        val server = FakeTraining()
+        server.written["rt_1"] = aRoutine()
+        server.propose(aProposal(name = "Push A — heavy"))
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+
+        assertEquals("Push A", store.routine("rt_1")?.name)
+        assertEquals(1, store.routine("rt_1")?.revision)
+
+        val decided = store.applyProposal("prop_1")
+
+        assertTrue(decided is ProposalOutcome.Decided)
+        assertEquals(ProposalState.Applied, (decided as ProposalOutcome.Decided).proposal.state)
+        assertEquals("Push A — heavy", store.routine("rt_1")?.name)
+        assertEquals(2, store.routine("rt_1")?.revision)
+        assertEquals("and the diff itself landed, not only the name",
+            listOf(RoutineEntry(position = 1, exerciseId = "bench-press", targetSets = 5,
+                targetReps = 3, targetWeightKg = 87.5)),
+            store.routine("rt_1")?.entries)
+        assertTrue("the card goes because the decision was taken", store.pendingProposals.isEmpty())
+    }
+
+    // AND THE OTHER SURFACE'S DECISION MOVES THE PROGRAM HERE TOO. An apply on the web settles the
+    // proposal AND rewrites the routine, and nothing tells this phone: its one routines read
+    // happened at connect. So the refusal is where this room learns, and it re-reads rather than
+    // leaving a card standing on Today over a Tuesday that no longer says what it says.
+    @Test
+    fun testADecisionTakenOnAnotherSurfaceRedrawsTheProgramHere() = runTest {
+        val server = FakeTraining()
+        server.written["rt_1"] = aRoutine()
+        server.propose(aProposal(name = "Push A — heavy"))
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+        assertEquals(listOf("prop_1"), store.pendingProposals.map { it.id })
+
+        server.applyProposal("prop_1")
+
+        val refused = store.dismissProposal("prop_1")
+
+        assertEquals(ProposalOutcome.Settled("that proposal was already decided"), refused)
+        assertTrue("the card goes with the decision it was waiting for", store.pendingProposals.isEmpty())
+        assertEquals("and the routine is the one the log now holds", "Push A — heavy",
+            store.routine("rt_1")?.name)
+        assertEquals(2, store.routine("rt_1")?.revision)
+        assertEquals(
+            listOf(RoutineEntry(position = 1, exerciseId = "bench-press", targetSets = 5,
+                targetReps = 3, targetWeightKg = 87.5)),
+            store.routine("rt_1")?.entries)
+    }
+
+    // A ROUTINE THAT MOVED FIRST IS NEVER APPLIED OVER THE TOP. The mid-session save is a whole-
+    // document PUT — the exact write this base version exists to defend against — so the diff
+    // written before it is superseded, the tap is refused, and the room redraws the routine AS IT
+    // NOW STANDS rather than as the diff assumed.
+    @Test
+    fun testAMidSessionSaveSupersedesTheDiffAndTheTapIsRefused() = runTest {
+        val server = FakeTraining()
+        server.written["rt_1"] = aRoutine()
+        server.propose(aProposal(baseRevision = 1))
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+
+        // The lifter's own hand, mid-workout: 87.5 goes to Push A from the change offer — through
+        // the store's own door, because the PUT is the write this whole token exists to defend a
+        // diff against and a test that moved the revision by hand would prove nothing about it.
+        assertNull(store.save(87.5, toRoutine = "rt_1", forExercise = "bench-press"))
+        assertEquals("the log moved the revision under the diff", 2,
+            server.written.getValue("rt_1").revision)
+        assertEquals("and this room is holding the log's own answer, not its send", 2,
+            store.routine("rt_1")?.revision)
+
+        val refused = store.applyProposal("prop_1")
+
+        assertEquals(ProposalOutcome.Moved("the routine moved after this was written — nothing was applied"),
+            refused)
+        assertEquals("the routine was re-read, not argued with", 2, store.routine("rt_1")?.revision)
+        assertTrue(store.pendingProposals.isEmpty())
+        assertEquals("the lifter's own 87.5 stands", 87.5,
+            store.routine("rt_1")?.entries?.first()?.targetWeightKg)
+        assertEquals("and the triples the diff wanted never landed", 5,
+            store.routine("rt_1")?.entries?.first()?.targetReps)
+        assertEquals("set aside by the PUT rather than applied", ProposalState.Superseded,
+            server.ledger.getValue("prop_1").state)
+    }
+
+    // AND THE SCREEN KNOWS BEFORE IT ASKS. A base the room is already holding past is superseded on
+    // the spot, so the diff offers no Apply it knows would be refused — while a routine this phone
+    // is merely BEHIND is not superseded at all, because a stale read is not a moved program.
+    @Test
+    fun testASupersededDiffIsReadableOffTheRoutineTheRoomHolds() = runTest {
+        val server = FakeTraining()
+        server.written["rt_1"] = aRoutine(revision = 3)
+        server.propose(aProposal(baseRevision = 2))
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+
+        val waiting = store.pendingProposals.single()
+        assertTrue(waiting.supersededBy(store.routine("rt_1")))
+        assertFalse(waiting.supersededBy(aRoutine(revision = 2)))
+        assertFalse(waiting.supersededBy(aRoutine(revision = 1)))
+    }
+
+    // DISMISS TAKES THE CARD AND LEAVES THE PROGRAM ALONE — no reason asked for, no routine sent
+    // back, and the proposal keeps its dated row so the routine's history can still show it.
+    @Test
+    fun testDismissTakesTheCardAndTouchesNothingElse() = runTest {
+        val server = FakeTraining()
+        server.written["rt_1"] = aRoutine()
+        server.propose(aProposal())
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+
+        val decided = store.dismissProposal("prop_1")
+
+        assertEquals(ProposalState.Dismissed, (decided as ProposalOutcome.Decided).proposal.state)
+        assertTrue(store.pendingProposals.isEmpty())
+        assertEquals("the routine did not move", 1, store.routine("rt_1")?.revision)
+        assertEquals("Push A", store.routine("rt_1")?.name)
+        assertEquals(listOf("prop_1"),
+            (store.proposalHistory("rt_1") as GymResult.Ok).value.map { it.id })
+    }
+
+    // THE OTHER DECISION, ALREADY TAKEN — from the web, or from this phone before a reply was lost.
+    // It is terminal and it is not a loss: the answer is fixed, and the screen re-reads rather than
+    // sending the tap again.
+    @Test
+    fun testDecidingWhatWasAlreadyDecidedTheOtherWayIsTerminal() = runTest {
+        val server = FakeTraining()
+        server.written["rt_1"] = aRoutine()
+        server.propose(aProposal())
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+        store.dismissProposal("prop_1")
+
+        assertEquals(ProposalOutcome.Settled("that proposal was already decided"),
+            store.applyProposal("prop_1"))
+        // The SAME decision replays instead — a lost reply is always safe to send again.
+        assertTrue(store.dismissProposal("prop_1") is ProposalOutcome.Decided)
+    }
+
+    // AN APPLIED REMOVAL TAKES THE ROUTINE WITH IT, and the log sends no routine back because there
+    // is none — the absence is the removal having happened. Every set logged against it stays in
+    // the log: a proposal never touches one.
+    @Test
+    fun testAnAppliedRemovalTakesTheRoutineOffTheProgramAndLeavesTheLog() = runTest {
+        val server = FakeTraining()
+        server.written["rt_1"] = aRoutine()
+        server.propose(aProposal(intent = ProposalIntent.Remove))
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+        assertEquals(1, store.routines.size)
+
+        val decided = store.applyProposal("prop_1")
+
+        assertTrue(decided is ProposalOutcome.Decided)
+        assertNull(store.routine("rt_1"))
+        assertTrue(store.routines.isEmpty())
+        assertTrue(store.pendingProposals.isEmpty())
+    }
+
+    // AND A REMOVAL TAPPED TWICE — the first reply lost, the second answered "no such proposal"
+    // because the routine took its whole ledger with it. That 404 is the removal having HAPPENED,
+    // and what the room does about it is re-read the program rather than keep drawing a routine the
+    // log no longer holds.
+    @Test
+    fun testARemovalTappedTwiceLeavesTheProgramTellingTheTruth() = runTest {
+        val server = FakeTraining()
+        server.written["rt_1"] = aRoutine()
+        server.propose(aProposal(intent = ProposalIntent.Remove))
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+
+        // The log applies it and the reply never arrives, so this room is still holding the routine.
+        server.applyProposal("prop_1")
+        assertEquals("rt_1", store.routine("rt_1")?.id)
+
+        val again = store.applyProposal("prop_1")
+
+        assertEquals(ProposalOutcome.Gone("that proposal is no longer on the log"), again)
+        assertNull("the program was re-read rather than guessed at", store.routine("rt_1"))
+    }
+
+    // A LOG THAT WENT QUIET IS NOT A DECISION. The proposal is still sitting on its routine, the
+    // card stays, and the tap is worth making again — the one refusal here that is not terminal.
+    @Test
+    fun testAnUnreachableLogLeavesTheCardExactlyWhereItWas() = runTest {
+        val server = FakeTraining()
+        server.written["rt_1"] = aRoutine()
+        server.propose(aProposal())
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+        server.refuseApply = IOException("offline")
+
+        assertEquals(ProposalOutcome.Failed(WriteFailure.NoAnswer), store.applyProposal("prop_1"))
+        assertEquals("prop_1", store.routine("rt_1")?.pendingProposal?.id)
+        assertEquals(ProposalState.Pending, server.ledger.getValue("prop_1").state)
+    }
+
+    // A DECISION ON A PROPOSAL THAT IS NOT THERE — another account's, or one this phone read before
+    // the routine it belonged to was removed. Absent and forbidden are one answer, and there is
+    // nothing left to draw.
+    @Test
+    fun testAProposalThatIsNotThereIsOneFactAndNotAnError() = runTest {
+        val server = FakeTraining()
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+
+        assertEquals(ProposalOutcome.Gone("that proposal is no longer on the log"),
+            store.applyProposal("prop_gone"))
+        assertEquals(GymResult.Failed(WriteFailure.Refused("that proposal is no longer on the log")),
+            store.proposal("prop_gone"))
+    }
+
+    // A NEWER PROPOSAL STANDING IN THE SLOT IS NOT HIDDEN BY THE OLD ONE BEING DECIDED. The log
+    // supersedes the old and puts the new one on the routine; a room that blanked the field on any
+    // decision would take a card nobody has read off the screen.
+    @Test
+    fun testDecidingAnOldProposalDoesNotHideTheOneThatReplacedIt() = runTest {
+        val server = FakeTraining()
+        server.written["rt_1"] = aRoutine()
+        server.propose(aProposal(id = "prop_old"))
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+
+        // The agent proposes again: the log supersedes the first and hangs the second on the routine.
+        server.ledger["prop_old"] = server.ledger.getValue("prop_old").copy(state = ProposalState.Superseded)
+        server.propose(aProposal(id = "prop_new"))
+        val fresh = server.written.getValue("rt_1")
+        store.connect(account(signedIn = true))
+        assertEquals("prop_new", store.routine("rt_1")?.pendingProposal?.id)
+        assertEquals("prop_new", fresh.pendingProposal?.id)
+
+        // Dismissing the OLD one — from a screen opened before the new one landed — leaves the new
+        // card exactly where it is.
+        server.ledger["prop_old"] = server.ledger.getValue("prop_old").copy(state = ProposalState.Pending)
+        store.dismissProposal("prop_old")
+
+        assertEquals("prop_new", store.routine("rt_1")?.pendingProposal?.id)
     }
 }

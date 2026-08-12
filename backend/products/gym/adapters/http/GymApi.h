@@ -37,12 +37,19 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // handler on purpose, because a queue told "your set is malformed" by a five-second lock wait drops
 // it forever.
 //
-// Seventeen refusals carry a machine word under `code`, because their repairs differ and prose is
+// Nineteen refusals carry a machine word under `code`, because their repairs differ and prose is
 // not a contract: session-id-taken · session-already-open · session-finished · session-open ·
 // set-id-taken · set-deleted · routine-id-taken · exercise-id-taken · unknown-exercise ·
 // set-not-found · fix-unreadable · preferences-unreadable · unknown-unit · bar-weight ·
-// plate-weight · too-many-plates · rest-target. Everything else has exactly one cause and the
-// sentence is the whole of it.
+// plate-weight · too-many-plates · rest-target · proposal-superseded · proposal-settled.
+// Everything else has exactly one cause and the sentence is the whole of it.
+//
+// The proposal pair is the newest and each is a different move for the client: `proposal-superseded`
+// means the routine moved after the diff was computed, so the card is settled and the lifter reads
+// the routine as it now stands — there is nothing to retry. `proposal-settled` means the other
+// decision was already taken (an Apply on a dismissed proposal, or the reverse) and the screen has
+// gone stale. Asking for the decision that WAS taken is not a refusal at all: it replays 200 with
+// the stored proposal, so a double tap on a slow connection cannot report a failure.
 //
 // `set-id-taken` and `set-deleted` are the pair to keep apart, and they are the reason a code is not
 // a courtesy: the first is repaired by minting a fresh id and sending the set again, and doing that
@@ -96,6 +103,17 @@ public:
                       const std::string& id);                                 // PUT  /v1/gym/routines/{id}
   void deleteRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                      const std::string& id);                                  // DELETE /v1/gym/routines/{id}
+  // The proposal ledger's four owner-scoped doors, and the last two are THE TAP — the only writers
+  // of `applied` and `dismissed` anywhere in this product. No MCP tool reaches them at any grant
+  // level, because Apply is not a capability, it is a human act (routes.cpp says it beside the
+  // mounts, and GymToolsTest pins the absence).
+  void listProposals(const drogon::HttpRequestPtr& req, HttpCallback&& cb);   // GET  /v1/gym/proposals?routineId=&state=pending
+  void getProposal(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                   const std::string& id);                                    // GET  /v1/gym/proposals/{id}
+  void applyProposal(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                     const std::string& id);                                  // POST /v1/gym/proposals/{id}/apply
+  void dismissProposal(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                       const std::string& id);                                // POST /v1/gym/proposals/{id}/dismiss
   // §I's five rows. The read never 404s — a lifter with no row is served the defaults — and the
   // write is the whole document, so the two carry the same shape in both directions.
   void preferences(const drogon::HttpRequestPtr& req, HttpCallback&& cb);     // GET  /v1/gym/preferences

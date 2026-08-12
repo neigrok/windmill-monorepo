@@ -21,8 +21,9 @@ class RestTests {
         assertEquals(120, Rest.target(planEntry = null, preferences = GymPreferences(restSeconds = 120)))
     }
 
-    // The one thing that outranks the dial, and the only door that authors it: a lifter who had an
-    // agent write three minutes against an accessory through `save_routine` meant it, for that
+    // The one thing that outranks the dial, and a lifter stands behind both doors that author it:
+    // an agent CREATING a routine writes the number, and an agent changing one only proposes it —
+    // the tap on the diff is what moves it. Three minutes against an accessory was meant, for that
     // movement. W4 leaves that field alone — nothing writes it and no screen edits it.
     @Test
     fun testARoutinesOwnLineBeatsTheGlobalDial() {

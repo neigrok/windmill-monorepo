@@ -1634,7 +1634,7 @@ TEST(gym_routines_round_trip_the_whole_document) {
   CHECK_EQ(dump(bodyOf(created)),
            std::string(R"({"entries":[{"exerciseId":"bench-press","position":1,"restSeconds":180,)"
                        R"("targetReps":5,"targetSets":5,"targetWeightKg":82.5}],)"
-                       R"("id":"rt_11111111","name":"Push A","position":0})"));
+                       R"("id":"rt_11111111","name":"Push A","position":0,"revision":1})"));
   CHECK_EQ(dump(bodyOf(listed)), R"({"routines":[)" + dump(bodyOf(created)) + R"(]})");
   CHECK_EQ(dump(bodyOf(one)), dump(bodyOf(created)));
 }
@@ -1659,7 +1659,7 @@ TEST(gym_routine_entry_omissions_ride_the_reply_as_omissions) {
            std::string(R"({"entries":[{"exerciseId":"bench-press","position":1,"restSeconds":180,)"
                        R"("targetReps":5,"targetSets":5,"targetWeightKg":82.5},)"
                        R"({"exerciseId":"back-squat","position":2,"targetReps":8,"targetSets":3}],)"
-                       R"("id":"rt_11111111","name":"Push A","position":0})"));
+                       R"("id":"rt_11111111","name":"Push A","position":0,"revision":1})"));
 }
 
 // `Chin-up 3 × max` on the wire. targetReps is the third omission that MEANS something, and it is
@@ -1687,7 +1687,7 @@ TEST(gym_a_routine_line_with_no_rep_target_omits_it_in_and_out) {
   CHECK_EQ(created->getStatusCode(), drogon::k200OK);
   CHECK_EQ(dump(bodyOf(created)),
            std::string(R"({"entries":[{"exerciseId":"chin-up","position":1,"targetSets":3}],)"
-                       R"("id":"rt_11111111","name":"Push A","position":0})"));
+                       R"("id":"rt_11111111","name":"Push A","position":0,"revision":1})"));
   CHECK_EQ(started->getStatusCode(), drogon::k200OK);
   CHECK_EQ(dump(bodyOf(started)),
            std::string(R"({"id":"ses_11111111","plan":{"entries":[{"exerciseId":"chin-up",)"
@@ -1800,7 +1800,7 @@ TEST(gym_replace_routine_rewrites_it_and_a_missing_one_is_404) {
   CHECK_EQ(dump(bodyOf(replaced)),
            std::string(R"({"entries":[{"exerciseId":"back-squat","position":1,"restSeconds":180,)"
                        R"("targetReps":6,"targetSets":4,"targetWeightKg":82.5}],)"
-                       R"("id":"rt_11111111","name":"Push A2","position":0})"));
+                       R"("id":"rt_11111111","name":"Push A2","position":0,"revision":2})"));
   CHECK_EQ(missing->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ(dump(bodyOf(missing)), std::string(R"({"error":"no such routine"})"));
   CHECK_EQ(h.repo.routineRows.size(), static_cast<std::size_t>(1));
@@ -2249,8 +2249,8 @@ TEST(gym_share_answers_the_page_a_coach_opens_and_never_the_json_route) {
   CHECK(url.find("/v1/") == std::string::npos);
 }
 
-// Sharing is a write to the share table and nowhere else: not one of the sixteen owner-scoped
-// routes changed, and the session row a share points at is byte-identical to what it was before.
+// Sharing is a write to the share table and nowhere else: not one row of the lifter's own log or
+// program changed, and the session a share points at is byte-identical to what it was before.
 TEST(gym_share_adds_a_row_beside_the_session_and_never_touches_it) {
   Harness h;
   h.signIn("s-live");
@@ -2704,4 +2704,210 @@ TEST(gym_units_are_a_display_transform_and_reach_no_write_or_read) {
                                 getRequest("/v1/gym/export", "s-live"))
                            ->getBody()},
            csvUnderLb);
+}
+
+// ---- the proposal ledger, and THE TAP ----------------------------------------------------------
+
+namespace {
+// The mint an agent makes, put straight into the store — the HTTP surface has no door for it, and
+// that is the point: proposing is a tool, applying is a tap.
+RoutineProposal proposedFor(const UserId& owner, std::vector<RoutineEntry> becomes,
+                            const std::string& id = "prop_11111111", int baseRevision = 1) {
+  const std::vector<RoutineEntry> base{benchEntry()};
+  std::vector<RoutineChange> changes = changesBetween(base, becomes);
+  return RoutineProposal{ProposalHead{ProposalId{id}, rtId("rt_11111111"), owner,
+                                      ProposalIntent::revise, ProposalState::pending,
+                                      ProposalSource{ProposalDoor::mcp, "", ""},
+                                      "Heavier triples.",
+                                      countedChanges(base, changes, "Push A", "Push A"),
+                                      1'700'000'000'000ull, std::nullopt},
+                         baseRevision, "Push A", "Push A", std::move(changes)};
+}
+
+RoutineEntry benchAt(double weightKg, int reps) {
+  return RoutineEntry{1, ExerciseId{"bench-press"}, 5, reps, weightKg, 180};
+}
+}
+
+// The diff screen's read, and the shape three clients are pinned to. `changes` are the rows a lifter
+// reads; `changeCount` is what the button counts.
+TEST(gym_a_proposal_reads_as_a_typed_field_level_diff) {
+  Harness h;
+  const UserId caller = h.signIn("s-live");
+  h.repo.routineRows.push_back(Routine{rtId("rt_11111111"), caller, "Push A", 0, {benchEntry()}});
+  h.repo.proposalRows.push_back(proposedFor(caller, {benchAt(87.5, 3)}));
+
+  drogon::HttpResponsePtr read =
+      send(h.api, &GymApi::getProposal, getRequest("/v1/gym/proposals/prop_11111111", "s-live"),
+           "prop_11111111");
+
+  CHECK_EQ(read->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(read)),
+           std::string(R"({"baseName":"Push A","baseRevision":1,)"
+                       R"("changeCount":1,)"
+                       R"("changes":[{"after":{"reps":3,"restSeconds":180,"sets":5,)"
+                       R"("weightKg":87.5},"before":{"reps":5,"restSeconds":180,"sets":5,)"
+                       R"("weightKg":82.5},"exerciseId":"bench-press","kind":"retargeted",)"
+                       R"("position":1}],"createdAt":1700000000000,"id":"prop_11111111",)"
+                       R"("intent":"revise","name":"Push A","routineId":"rt_11111111",)"
+                       R"("source":{"door":"mcp"},"state":"pending","summary":"Heavier triples."})"));
+}
+
+// THE TAP: all of it or none, and the reply carries both halves so the card redraws as `Applied`
+// and the editor behind it redraws without a second read.
+TEST(gym_applying_a_proposal_writes_the_whole_document_and_settles_the_card) {
+  Harness h;
+  const UserId caller = h.signIn("s-live");
+  h.repo.routineRows.push_back(Routine{rtId("rt_11111111"), caller, "Push A", 0, {benchEntry()}});
+  h.repo.proposalRows.push_back(proposedFor(caller, {benchAt(87.5, 3)}));
+
+  drogon::HttpResponsePtr applied =
+      send(h.api, &GymApi::applyProposal,
+           postRequest("/v1/gym/proposals/prop_11111111/apply", Json::Value(Json::objectValue),
+                       "s-live"),
+           "prop_11111111");
+
+  CHECK_EQ(applied->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(bodyOf(applied)["proposal"]["state"].asString(), std::string("applied"));
+  CHECK_EQ(bodyOf(applied)["proposal"]["settledAt"].asUInt64(), h.clock.now);
+  CHECK_EQ(bodyOf(applied)["routine"]["revision"].asInt(), 2);
+  CHECK_EQ(bodyOf(applied)["routine"]["entries"][0]["targetWeightKg"].asDouble(), 87.5);
+  CHECK_EQ(bodyOf(applied)["routine"]["entries"][0]["targetReps"].asInt(), 3);
+}
+
+// The line the whole ledger stands on, over the wire: the lifter's own PUT moves the routine, and a
+// proposal minted against what it replaced is SUPERSEDED rather than merged over the top.
+TEST(gym_a_routine_the_lifter_rewrote_refuses_the_proposal_that_predates_it) {
+  Harness h;
+  const UserId caller = h.signIn("s-live");
+  send(h.api, &GymApi::createRoutine, postRequest("/v1/gym/routines", routineBody(), "s-live"));
+  h.repo.proposalRows.push_back(proposedFor(caller, {benchAt(87.5, 3)}));
+
+  Json::Value rewritten = routineBody("rt_11111111", "Push A");
+  rewritten["entries"][0]["targetWeightKg"] = 85.0;
+  send(h.api, &GymApi::replaceRoutine,
+       putRequest("/v1/gym/routines/rt_11111111", rewritten, "s-live"), "rt_11111111");
+  drogon::HttpResponsePtr refused =
+      send(h.api, &GymApi::applyProposal,
+           postRequest("/v1/gym/proposals/prop_11111111/apply", Json::Value(Json::objectValue),
+                       "s-live"),
+           "prop_11111111");
+
+  CHECK_EQ(refused->getStatusCode(), drogon::k409Conflict);
+  CHECK_EQ(bodyOf(refused)["code"].asString(), std::string("proposal-superseded"));
+  // The lifter's own numbers stand.
+  drogon::HttpResponsePtr routine =
+      send(h.api, &GymApi::getRoutine, getRequest("/v1/gym/routines/rt_11111111", "s-live"),
+           "rt_11111111");
+  CHECK_EQ(bodyOf(routine)["entries"][0]["targetWeightKg"].asDouble(), 85.0);
+  CHECK_EQ(bodyOf(routine)["revision"].asInt(), 2);
+  // And the superseded card is still on the routine's history rather than gone.
+  drogon::HttpResponsePtr history = send(
+      h.api, &GymApi::listProposals,
+      getRequest("/v1/gym/proposals?routineId=rt_11111111", "s-live"));
+  CHECK_EQ(bodyOf(history)["proposals"][0]["state"].asString(), std::string("superseded"));
+}
+
+// Dismissing asks for no reason and changes nothing, and the card stays in the history in case the
+// lifter wants it back. Asking again for the SAME decision replays 200; the other one is 409.
+TEST(gym_dismissing_a_proposal_changes_nothing_and_the_other_decision_is_refused) {
+  Harness h;
+  const UserId caller = h.signIn("s-live");
+  h.repo.routineRows.push_back(Routine{rtId("rt_11111111"), caller, "Push A", 0, {benchEntry()}});
+  h.repo.proposalRows.push_back(proposedFor(caller, {benchAt(87.5, 3)}));
+
+  drogon::HttpResponsePtr dismissed =
+      send(h.api, &GymApi::dismissProposal,
+           postRequest("/v1/gym/proposals/prop_11111111/dismiss", Json::Value(Json::objectValue),
+                       "s-live"),
+           "prop_11111111");
+  drogon::HttpResponsePtr again =
+      send(h.api, &GymApi::dismissProposal,
+           postRequest("/v1/gym/proposals/prop_11111111/dismiss", Json::Value(Json::objectValue),
+                       "s-live"),
+           "prop_11111111");
+  drogon::HttpResponsePtr applied =
+      send(h.api, &GymApi::applyProposal,
+           postRequest("/v1/gym/proposals/prop_11111111/apply", Json::Value(Json::objectValue),
+                       "s-live"),
+           "prop_11111111");
+
+  CHECK_EQ(dismissed->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(bodyOf(dismissed)["proposal"]["state"].asString(), std::string("dismissed"));
+  CHECK_EQ(again->getStatusCode(), drogon::k200OK);   // the replayed tap is not a failure
+  CHECK_EQ(applied->getStatusCode(), drogon::k409Conflict);
+  CHECK_EQ(bodyOf(applied)["code"].asString(), std::string("proposal-settled"));
+  CHECK_EQ(h.repo.routineRows[0].entries[0].targetWeightKg, std::optional<double>(82.5));
+  CHECK_EQ(h.repo.routineRows[0].revision, 1);
+}
+
+// Every proposal route is owner-scoped, and absent is byte-identical to another account's — the
+// same rule every other route in this file keeps.
+TEST(gym_another_accounts_proposal_is_404_on_every_route) {
+  Harness h;
+  h.signIn("s-live");
+  h.repo.routineRows.push_back(
+      Routine{rtId("rt_11111111"), uid("another-account"), "Their plan", 0, {benchEntry()}});
+  h.repo.proposalRows.push_back(proposedFor(uid("another-account"), {benchAt(87.5, 3)}));
+
+  drogon::HttpResponsePtr read =
+      send(h.api, &GymApi::getProposal, getRequest("/v1/gym/proposals/prop_11111111", "s-live"),
+           "prop_11111111");
+  drogon::HttpResponsePtr applied =
+      send(h.api, &GymApi::applyProposal,
+           postRequest("/v1/gym/proposals/prop_11111111/apply", Json::Value(Json::objectValue),
+                       "s-live"),
+           "prop_11111111");
+  drogon::HttpResponsePtr listed =
+      send(h.api, &GymApi::listProposals, getRequest("/v1/gym/proposals", "s-live"));
+
+  CHECK_EQ(read->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(dump(bodyOf(read)), std::string(R"({"error":"no such proposal"})"));
+  CHECK_EQ(applied->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(bodyOf(listed)["proposals"].size(), 0u);
+  // And their plan is exactly where it was.
+  CHECK_EQ(h.repo.routineRows[0].entries[0].targetWeightKg, std::optional<double>(82.5));
+}
+
+// Proposals have no anonymous story: no account, no proposal. Every door 401s before it reads
+// anything, which is what the claim replay leans on — there is nothing here for it to replay.
+TEST(gym_every_proposal_route_refuses_a_caller_with_no_session) {
+  Harness h;
+
+  CHECK_EQ(send(h.api, &GymApi::listProposals, getRequest("/v1/gym/proposals"))->getStatusCode(),
+           drogon::k401Unauthorized);
+  CHECK_EQ(send(h.api, &GymApi::getProposal, getRequest("/v1/gym/proposals/prop_11111111"),
+                "prop_11111111")
+               ->getStatusCode(),
+           drogon::k401Unauthorized);
+  CHECK_EQ(send(h.api, &GymApi::applyProposal,
+                postRequest("/v1/gym/proposals/prop_11111111/apply", Json::Value(Json::objectValue)),
+                "prop_11111111")
+               ->getStatusCode(),
+           drogon::k401Unauthorized);
+  CHECK_EQ(send(h.api, &GymApi::dismissProposal,
+                postRequest("/v1/gym/proposals/prop_11111111/dismiss",
+                            Json::Value(Json::objectValue)),
+                "prop_11111111")
+               ->getStatusCode(),
+           drogon::k401Unauthorized);
+}
+
+// §B5's dot, on the read the routines screen already makes.
+TEST(gym_the_routines_list_carries_the_proposal_waiting_on_a_day_of_the_program) {
+  Harness h;
+  const UserId caller = h.signIn("s-live");
+  h.repo.routineRows.push_back(Routine{rtId("rt_11111111"), caller, "Push A", 0, {benchEntry()}});
+
+  drogon::HttpResponsePtr quiet =
+      send(h.api, &GymApi::listRoutines, getRequest("/v1/gym/routines", "s-live"));
+  h.repo.proposalRows.push_back(proposedFor(caller, {benchAt(87.5, 3)}));
+  drogon::HttpResponsePtr waiting =
+      send(h.api, &GymApi::listRoutines, getRequest("/v1/gym/routines", "s-live"));
+
+  CHECK(bodyOf(quiet)["routines"][0]["pendingProposal"].isNull());
+  CHECK_EQ(dump(bodyOf(waiting)["routines"][0]["pendingProposal"]),
+           std::string(R"({"changeCount":1,"createdAt":1700000000000,"id":"prop_11111111",)"
+                       R"("intent":"revise","routineId":"rt_11111111","source":{"door":"mcp"},)"
+                       R"("state":"pending","summary":"Heavier triples."})"));
 }

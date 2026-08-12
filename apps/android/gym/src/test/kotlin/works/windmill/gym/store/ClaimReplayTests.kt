@@ -12,6 +12,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.GymPreferences
+import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineEntry
 import works.windmill.gym.domain.Session
@@ -516,5 +517,30 @@ class ClaimReplayTests {
         assertTrue("both sessions settled", localLog.finished.isEmpty())
         assertTrue("a deterministic 404 is a repair, not a loss", outcome.said.isEmpty())
         assertEquals(listOf("set_a"), server.sets.getValue("ses_1").map { it.id })
+    }
+    // NO PROPOSAL IS EVER REPLAYED, and the shelf is why: a proposal needs an account for an agent
+    // to have been granted anything against, so nothing signed out can hold one. A routine that
+    // somehow arrived on the shelf wearing a card — a disk file written by a build that held one,
+    // a routine copied from a read — lands on the account as the plain document it is: the write
+    // is `RoutineWrite`, which carries neither the card nor the revision, and no proposal door is
+    // touched by the claim at all.
+    @Test
+    fun testTheClaimCarriesTheRoutineAndNeverACardOnIt() = runTest {
+        val server = FakeTraining()
+        val localLog = shelf()
+        localLog.hold(Routine(
+            id = "rt_1", name = "Push A", revision = 7,
+            entries = listOf(RoutineEntry(position = 1, exerciseId = "bench-press", targetSets = 5)),
+            pendingProposal = Proposal(id = "prop_1", routineId = "rt_1", changeCount = 3)))
+
+        val outcome = ClaimReplay(server, localLog, queue(), settings()).run()
+
+        assertEquals(listOf("createRoutine"), server.calls)
+        assertTrue("no proposal door was opened", server.ledger.isEmpty())
+        val landed = server.written.getValue("rt_1")
+        assertNull("the card did not ride", landed.pendingProposal)
+        assertEquals("the revision is the log's to keep", 1, landed.revision)
+        assertTrue(outcome.said.isEmpty())
+        assertTrue(localLog.routines.isEmpty())
     }
 }

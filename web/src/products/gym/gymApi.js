@@ -171,13 +171,43 @@
 //   PUT  /v1/gym/routines/:id            -> the write document in; the stored Routine out. A WHOLE
 //                                           document replace, so every edit is a read-modify-write
 //   DELETE /v1/gym/routines/:id          -> 204, nothing back
+//   GET  /v1/gym/proposals[?routineId=&state=pending]
+//                                        -> { proposals: [head…] }, newest first — the routine's
+//                                           dated history (screen 6). `state` recognises the literal
+//                                           "pending" and nothing else; any other value is
+//                                           unfiltered, so a client that guessed a word gets the
+//                                           whole ledger rather than an empty one
+//   GET  /v1/gym/proposals/:id           -> one whole proposal — the head plus `baseRevision`,
+//                                           `baseName`, `name` and the `changes` rows — or null on
+//                                           404, absent and another account's alike
+//   POST /v1/gym/proposals/:id/apply     -> { proposal, routine? } — THE ONLY THING IN THIS PRODUCT
+//                                           THAT MOVES A ROUTINE AN AGENT WROTE TO, and it happens
+//                                           on a lifter's tap. Atomic: all of the document or none
+//                                           of it, against the frozen `baseRevision`. `routine` is
+//                                           ABSENT when the intent was `remove` — there is nothing
+//                                           left to send back
+//   POST /v1/gym/proposals/:id/dismiss   -> { proposal } — settled, kept, dated
+// Both settlements REPLAY: asking for the decision already taken answers 200 with the settled
+// proposal rather than an error, so a lost reply is safe to send again. The three refusals are 409
+// `proposal-superseded` (the routine moved after the diff was written — terminal, redraw the routine
+// as it now stands), 409 `proposal-settled` (the OTHER decision was already taken — terminal,
+// re-read) and a bare 404 for a proposal that is absent or another account's. A 404 answering your
+// own apply of an intent=remove proposal is a SUCCESS: the routine went and its ledger went with it.
 // Sessions serialize as {id, startedAt, finishedAt?, routineId?, plan?}; instants are epoch-ms
 // numbers, weights are numbers in kg, and ids are client-minted ('ses_<hex>' / 'set_<hex>' /
-// 'rt_<hex>', and 'ex_<hex>' for a movement a lifter mints — the catalog's own are slugs).
-// Routines serialize as {id, name, position, lastTrainedAt?, entries: [{position, exerciseId,
-// targetSets, targetReps?, targetWeightKg?, restSeconds?}]}, and a write sends that document with
-// no `position` on an entry — the entry ORDER is the routine's order and the server renumbers from
-// it. A Review is {stats: {durationMs, workingSets, topE1rm?}, slight, record?, against?}. Every
+// 'rt_<hex>', and 'ex_<hex>' for a movement a lifter mints — the catalog's own are slugs); a
+// proposal's id is minted by whoever wrote it ('prop_<hex>' from our own agents) and never by this
+// client, which decides nothing here and only reads and settles.
+// Routines serialize as {id, name, position, revision, lastTrainedAt?, pendingProposal?, entries:
+// [{position, exerciseId, targetSets, targetReps?, targetWeightKg?, restSeconds?}]}, and a write
+// sends that document with no `position` on an entry — the entry ORDER is the routine's order and
+// the server renumbers from it. `revision` is READ-ONLY on the wire and is what a proposal is frozen
+// against: the human's own PUT moves it and supersedes whatever was pending, which is what stops a
+// mid-session save from destroying a diff's base. `pendingProposal` is a proposal HEAD — {id,
+// routineId, intent, state, summary, changeCount, createdAt, settledAt?, source: {door,
+// connection?, agent?}} — present only while one is waiting, and it is how the card on Today and
+// the dot on the routines list are drawn in the read those screens were already making.
+// A Review is {stats: {durationMs, workingSets, topE1rm?}, slight, record?, against?}. Every
 // optional above is OMITTED when it has no value, never null.
 
 import { API_BASE } from '../../shell/apiBase.js';
@@ -202,15 +232,15 @@ async function json(response) {
   throw new GymError(response.status, body?.error ?? '', body?.code ?? '');
 }
 
-// A refusal answers with a sentence for a human under "error" and — for the ten reasons a client
+// A refusal answers with a sentence for a human under "error" and — for the twelve reasons a client
 // must branch on — a machine word under "code". The code is the contract and the sentence is prose
 // that may be reworded any day, so every flag below reads the code. The map is the courtesy: it
 // recovers the code from the sentence a refusal shipped with, so classification never depends on
 // which of the two fields the server it reached happened to fill in. The first four are the ones
 // that ran on servers deployed before the codes existed, and they are why this map is here at all.
-// The correction's two are deliberately absent: they shipped WITH their codes, so a server that
-// speaks them at all speaks them under `code`, and an entry here would be a courtesy to a
-// deployment that never existed.
+// The correction's two and the proposal's two are deliberately absent: they shipped WITH their
+// codes, so a server that speaks them at all speaks them under `code`, and an entry here would be a
+// courtesy to a deployment that never existed.
 const codeForSentence = new Map([
   ['that session is finished', 'session-finished'],
   ['that set id is already used', 'set-id-taken'],
@@ -255,6 +285,12 @@ const codeForSentence = new Map([
 //   setNotFound      404  no such set in that workout — absent, another account's, already deleted,
 //                         or this account's set in a different session, one byte for all four. The
 //                         edit is dropped and the session is read again; the log moved underneath.
+//   proposalSuperseded 409 the routine moved after the diff was written, so the diff on screen is of
+//                         a routine that no longer exists. Terminal, and there is nothing to repair:
+//                         the proposal is settled `superseded` and the routine stands as it is now.
+//   proposalSettled  409  the OTHER decision was already taken — applied on another tab, dismissed
+//                         on a phone. Terminal too, and the repair is a read: whatever happened is
+//                         what the proposal now says.
 // Replaying a set that already landed is not a conflict at all: it answers 200 with the stored row
 // even after the session is finished, so a flush queue can never drop a durable set.
 export class GymError extends Error {
@@ -276,6 +312,8 @@ export class GymError extends Error {
     this.sessionAlreadyOpen = this.code === 'session-already-open';
     this.fixUnreadable = this.code === 'fix-unreadable';
     this.setNotFound = this.code === 'set-not-found';
+    this.proposalSuperseded = this.code === 'proposal-superseded';
+    this.proposalSettled = this.code === 'proposal-settled';
   }
 }
 
@@ -489,6 +527,47 @@ export const gymApi = {
 
   async deleteRoutine(id) {
     return json(await call(`/routines/${id}`, { method: 'DELETE' }));
+  },
+
+  // THE ROUTINE'S DATED HISTORY (screen 6). Every proposal ever written against one routine, newest
+  // first, settled and pending alike — the ledger supersedes rather than deletes, so nothing an
+  // agent proposed disappears and nothing it proposed happened on its own.
+  //
+  // The pending ones are NOT read through here on Today or on the routines list: a routine carries
+  // its own `pendingProposal`, so the card and the dot come out of the read those rooms already
+  // make. This route is for the whole history of one routine, which no other read carries.
+  async proposals({ routineId, state } = {}) {
+    const query = new URLSearchParams();
+    if (routineId !== undefined) query.set('routineId', routineId);
+    if (state !== undefined) query.set('state', state);
+    const suffix = query.toString();
+    return (await json(await call(`/proposals${suffix ? `?${suffix}` : ''}`))).proposals;
+  },
+
+  // One proposal, whole: the head plus the base it was written against and the change rows. Absent
+  // and another account's are one fact here as they are everywhere else in this file.
+  async proposal(id) {
+    const response = await call(`/proposals/${encodeURIComponent(id)}`);
+    if (response.status === 404) return null;
+    return json(response);
+  },
+
+  // THE TAP. Nothing an agent can call reaches this route — there is no apply tool at any level,
+  // because applying is not a capability, it is a human act — and nothing else in this client moves
+  // a routine an agent wrote to. It is atomic against the frozen base revision, so the two 409s are
+  // both "the world moved" rather than "your request was wrong", and neither leaves half a program
+  // behind: `proposal-superseded` means the routine changed under the diff and `proposal-settled`
+  // means the other decision was already taken. Replaying the decision already taken is a 200.
+  //
+  // There is no body. The proposal IS the document, frozen when it was written, and a client that
+  // could send fields here would be a client that could apply something the lifter never read.
+  async applyProposal(id) {
+    return json(await call(`/proposals/${encodeURIComponent(id)}/apply`, { method: 'POST' }));
+  },
+
+  // No reason is asked for and none is sent. The proposal is settled, dated and kept on the routine.
+  async dismissProposal(id) {
+    return json(await call(`/proposals/${encodeURIComponent(id)}/dismiss`, { method: 'POST' }));
   },
 
   // The prefill, resolved by the store: the whole history is behind this one read, so the answer

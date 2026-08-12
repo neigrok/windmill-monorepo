@@ -20,6 +20,10 @@ import works.windmill.gym.domain.MovementRecord
 import works.windmill.gym.domain.PlanEntry
 import works.windmill.gym.domain.PlanSnapshot
 import works.windmill.gym.domain.Prefill
+import works.windmill.gym.domain.Proposal
+import works.windmill.gym.domain.ProposalDecision
+import works.windmill.gym.domain.ProposalIntent
+import works.windmill.gym.domain.ProposalState
 import works.windmill.gym.domain.Review
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineWrite
@@ -234,6 +238,13 @@ class TrainingStore(
         // At or under the server's own ceiling: the handler clamps `limit` to 200, and a larger
         // page here would come back short of what was asked for and read as the bottom of the log.
         const val logPage = 50
+
+        // A proposal has no anonymous story: no account, no agent, nobody to have proposed
+        // anything. The sentence is about the account and never about the signal, because pointing
+        // a signed-out lifter at their connection would be pointing at the wrong thing entirely.
+        // No screen in this room can reach these verbs signed out — this is what they answer if one
+        // ever could.
+        const val proposalsWantAnAccount = "a proposal needs your account — sign in first"
     }
 
     // This movement's sets in this session, performed order, warmups included — the whole record of
@@ -256,6 +267,21 @@ class TrainingStore(
     // times is exactly as undelivered as one behind a jam.
     val stalled: Set<String>
         get() = queue.pending.map { it.set.id }.toSet()
+
+    // THE CARD IS THE NOTIFICATION (§B), and this is the whole of what draws it: a routine carries
+    // its own pending proposal, so nothing polls, nothing pushes, there is no badge to clear and
+    // this product still sends no notification of any kind. Newest first, because Today draws one.
+    //
+    // SIGNED OUT IT IS EMPTY BY CONSTRUCTION and not by a check: the shelf's routines have no
+    // proposal field filled and there is no account for an agent to have been granted anything on.
+    // A signed-out lifter therefore sees nothing about proposals anywhere — no card, no chip, no
+    // empty history and no offer.
+    val pendingProposals: List<Proposal>
+        get() = routines.mapNotNull { it.pendingProposal }.sortedByDescending { it.createdAtMs }
+
+    // The routine a screen is standing on, by id — the base a proposal is applied against, and the
+    // name the diff is about. Null once it is gone: an applied removal takes the routine with it.
+    fun routine(id: String): Routine? = routines.firstOrNull { it.id == id }
 
     // The mistake seconds ago. This is null the instant the row lands, and §G18 did not change
     // that: taking a set off the ACCOUNT is a repair made at rest, on a session read back, with its
@@ -800,6 +826,128 @@ class TrainingStore(
         } catch (error: Exception) {
             WriteFailure(error)
         }
+    }
+
+    // ONE DIFF, READ WHOLE. The card carries a head — who proposed it, when, and how many changes —
+    // and this is the read that fills in the typed rows a lifter actually decides on. Nothing is
+    // held: a second visit asks again, because a proposal moves the moment anybody decides anything.
+    //
+    // It answers with a REASON and never with null, for the reason every read in this store does: a
+    // log that refused with a sentence is not a log that went quiet.
+    suspend fun proposal(id: String): GymResult<Proposal> {
+        val log = gym ?: return GymResult.Failed(WriteFailure.Refused(proposalsWantAnAccount))
+        return try {
+            val read = log.proposal(id)
+                ?: return GymResult.Failed(WriteFailure.Refused("that proposal is no longer on the log"))
+            GymResult.Ok(read)
+        } catch (interrupted: CancellationException) {
+            throw interrupted
+        } catch (refusing: Exception) {
+            GymResult.Failed(WriteFailure(refusing))
+        }
+    }
+
+    // THE ROUTINE'S DATED HISTORY — every proposal it has ever carried, applied, dismissed or
+    // superseded, newest first. An agent's suggestion is part of the program's history whichever
+    // way it went, so nothing here is a toast that disappeared and nothing was deleted to make room.
+    suspend fun proposalHistory(routineId: String): GymResult<List<Proposal>> {
+        val log = gym ?: return GymResult.Failed(WriteFailure.Refused(proposalsWantAnAccount))
+        return try {
+            GymResult.Ok(log.proposals(routineId))
+        } catch (interrupted: CancellationException) {
+            throw interrupted
+        } catch (refusing: Exception) {
+            GymResult.Failed(WriteFailure(refusing))
+        }
+    }
+
+    // APPLY — the one tap that moves a program, and the only door a proposal has onto a routine.
+    // Atomic against the base the diff was written on: what comes back is the routine as the WHOLE
+    // diff describes it, or a refusal naming which of three things happened instead. Nothing here
+    // merges, retries or applies part of one.
+    suspend fun applyProposal(id: String): ProposalOutcome {
+        val log = gym ?: return ProposalOutcome.Failed(WriteFailure.Refused(proposalsWantAnAccount))
+        return try {
+            decided(log.applyProposal(id))
+        } catch (interrupted: CancellationException) {
+            throw interrupted
+        } catch (refusing: Exception) {
+            refused(refusing)
+        }
+    }
+
+    // DISMISS. No reason is asked for and none is sent — the proposal keeps its dated row on the
+    // routine, so a lifter who changes their mind can still read what was suggested.
+    suspend fun dismissProposal(id: String): ProposalOutcome {
+        val log = gym ?: return ProposalOutcome.Failed(WriteFailure.Refused(proposalsWantAnAccount))
+        return try {
+            decided(log.dismissProposal(id))
+        } catch (interrupted: CancellationException) {
+            throw interrupted
+        } catch (refusing: Exception) {
+            refused(refusing)
+        }
+    }
+
+    // WHAT THE DECISION DID TO THE PROGRAM, drawn from the log's own answer and never from the send:
+    // an applied revision replaces the routine (its new revision and the card's absence come with
+    // it), an applied REMOVAL takes the routine off the list, and a dismissal leaves the routine
+    // exactly as it stands with its card gone.
+    //
+    // The card is dropped BY ID rather than blanked, because a newer proposal may already be
+    // standing in that slot — the log supersedes the old one and puts the new one there, and a
+    // screen that cleared the field would hide a proposal nobody has read yet.
+    private fun decided(decision: ProposalDecision): ProposalOutcome {
+        val settled = decision.proposal
+        val moved = decision.routine
+        routines = when {
+            moved != null -> routines.map { if (it.id == moved.id) moved else it }
+            settled.state == ProposalState.Applied && settled.intent == ProposalIntent.Remove ->
+                routines.filterNot { it.id == settled.routineId }
+            else -> routines.map { held ->
+                if (held.id != settled.routineId) held
+                else held.copy(pendingProposal = held.pendingProposal?.takeIf { it.id != settled.id })
+            }
+        }
+        return ProposalOutcome.Decided(settled)
+    }
+
+    // The three answers a decision can be refused with, and none of them is retryable: a proposal
+    // that could not be decided is still sitting on its routine, and the log is the only thing that
+    // decides.
+    //
+    // ALL THREE MEAN THIS ROOM'S PICTURE IS STALE, so the routines are re-read before the sentence
+    // is said. The routine moved under the diff; the proposal is not there at all, which is also
+    // what a removal that already landed looks like on a second tap, the routine and its whole
+    // ledger having cascaded together; or the OTHER DECISION WAS TAKEN FIRST — and when that
+    // decision was an apply on the web, the program itself has already changed. This room has one
+    // routines read, at connect, so a card left standing here would stand for the life of the room
+    // over a routine that no longer says what it says. Only a log that went quiet leaves the list
+    // alone: nothing was decided, so nothing moved.
+    private suspend fun refused(error: Throwable): ProposalOutcome =
+        when (val verdict = ProposalVerdict.refusing(RefusalFacts(error))) {
+            is ProposalVerdict.Superseded -> {
+                reread()
+                ProposalOutcome.Moved(verdict.said)
+            }
+            is ProposalVerdict.Gone -> {
+                reread()
+                ProposalOutcome.Gone(verdict.said)
+            }
+            is ProposalVerdict.Settled -> {
+                reread()
+                ProposalOutcome.Settled(verdict.said)
+            }
+            ProposalVerdict.Retry -> ProposalOutcome.Failed(WriteFailure(error))
+        }
+
+    // The account's routines, read again — the list that carries both the cards and the base every
+    // diff is applied against. A read that misses leaves what is held: those routines are real, and
+    // one stale revision is a better picture than none.
+    private suspend fun reread() {
+        val log = gym ?: return
+        val written = tried { log.routines() } ?: return
+        routines = written + localLog.routines
     }
 
     // A movement the catalog has never heard of, minted from the picker's `Create "{query}"`. The
@@ -1491,6 +1639,21 @@ sealed interface FixOutcome {
     data class Corrected(val set: TrainingSet) : FixOutcome
     data class Gone(val said: String) : FixOutcome
     data class Failed(val why: WriteFailure) : FixOutcome
+}
+
+// HOW A DECISION CAN END, and the three refusals are three different screens rather than three
+// sentences. `Decided` is the answer either tap gets, including the REPLAY of a decision already
+// taken — asking for the same one twice is not an error. `Moved` is the routine having changed
+// under the diff, so the screen redraws the routine as it now stands and the proposal is over.
+// `Settled` is the other decision having been taken first — and that decision may itself have been
+// an apply somewhere else, so the program is re-read exactly as a supersede's is, and the screen
+// draws what was decided. `Gone` leaves nothing to draw at all. Only `Failed` is worth another tap.
+sealed interface ProposalOutcome {
+    data class Decided(val proposal: Proposal) : ProposalOutcome
+    data class Moved(val said: String) : ProposalOutcome
+    data class Settled(val said: String) : ProposalOutcome
+    data class Gone(val said: String) : ProposalOutcome
+    data class Failed(val why: WriteFailure) : ProposalOutcome
 }
 
 sealed interface FinishOutcome {

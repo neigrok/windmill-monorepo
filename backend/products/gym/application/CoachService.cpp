@@ -105,7 +105,7 @@ void CoachService::ask(const UserId& caller, const std::string& email, const Ses
       [this, caller, session, turns = std::move(turns), done = std::move(done)]() mutable {
         // THE GRANT, SAID OUT LOUD AT THE CALL SITE. The panel acts as the signed-in account, so the
         // widest thing it could inherit is everything that account may do — which for a question
-        // about a workout that already happened is nine tools too many. It gets gym, read, and
+        // about a workout that already happened is ten tools too many. It gets gym, read, and
         // nothing else; the catalog CoachTools then hands the model is that grant made visible.
         const ToolCaller actor{caller, ToolScope({{"gym", Access::read}})};
         CoachTools hands(gymTools_, session);

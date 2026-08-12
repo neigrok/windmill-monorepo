@@ -1,5 +1,5 @@
 // THE COACH PANEL — the second door onto the tools an agent drives over MCP, for a lifter who does
-// not have an agent of their own. Same log, and seven of gym's sixteen tools — the reads, which are
+// not have an agent of their own. Same log, and seven of gym's seventeen tools — the reads, which are
 // all CoachTools hands a panel; what is different is only that the model sits on our side of the
 // wire. (The seventh is `get_preferences`, W4: what's in this gym is a fact about the workout on
 // screen, so the panel reads it like every other one.)

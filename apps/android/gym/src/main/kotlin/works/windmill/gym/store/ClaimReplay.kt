@@ -60,6 +60,14 @@ import works.windmill.gym.net.TrainingSyncing
 // the run on a deterministic refusal. Every instant is repaired into the server's
 // (0, 253402300799000] bound before it rides.
 //
+// NO PROPOSAL IS EVER REPLAYED, and that is a fact about the shelf rather than a check made here.
+// A proposal has no anonymous story at all — it needs an account for an agent to have been granted
+// anything against, so nothing signed out can hold one and `LocalLog` has no shelf for them. The
+// claim's whole vocabulary is the four documents above (a rack, movements, routines, sessions and
+// their sets), and `RoutineWrite` carries neither `revision` nor `pendingProposal`: a routine that
+// somehow arrived on the shelf wearing a card would land on the account as the plain document it
+// is, which is the only honest thing a claim could do with one.
+//
 // A row leaves the shelf only when the server confirms holding it — or refuses it forever, and
 // then the loss is SAID — and every write is idempotent by its minted id, so a claim that dies
 // anywhere resumes from the top and converges: replays answer 200 with the stored row, and only

@@ -160,6 +160,14 @@ int main() {
                 // the door comes to delete real data the day that stops being true.
                 {"gym_set_revisions", "user_id"},
                 {"gym_routines", "user_id"},          // gym
+                // gym — an agent's proposal is the lifter's data: it is what somebody suggested for
+                // their program and what they decided about it, kept as a dated record on the
+                // routine. Its change rows cascade from it AND from the account, so they never
+                // decide the answer on their own today; they are listed for the reason above the
+                // set revisions are — this list is about what an account OWNS, and a table left off
+                // it is how the door comes to delete real data the day that stops being true.
+                {"gym_proposals", "user_id"},
+                {"gym_proposal_changes", "user_id"},
                 {"gym_session_shares", "user_id"},    // gym — a live coach link is data too
                 // gym — a movement someone created is their data, and an account holding one and
                 // nothing else is not empty. The column is created_by rather than user_id BECAUSE

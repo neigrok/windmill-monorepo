@@ -19,6 +19,7 @@ import {
   routineMetaLabel, ROUTINES_HREF,
 } from './log.js';
 import { mintId } from './mint.js';
+import { ProposalFlag, RoutineHistory } from './Proposals.jsx';
 import { Keypad } from './logger/Keypad.jsx';
 import { MovementPicker } from './logger/MovementPicker.jsx';
 import { EMPTY_BAR_KG } from './log.js';
@@ -71,7 +72,13 @@ export function RoutinesList({ log }) {
           {view.data.map((routine) => (
             <li className="gym-routine" key={routine.id}>
               <a className="gym-routine-open" href={routineHref(routine.id)}>
-                <span className="gym-routine-name">{routine.name}</span>
+                {/* The dot rides the read this list already makes: a routine carries its own
+                    pending proposal (gymApi.js), so the card on Today and this row are the same
+                    fact drawn twice rather than two questions asked of the store. */}
+                <span className="gym-routine-line">
+                  <span className="gym-routine-name">{routine.name}</span>
+                  {routine.pendingProposal && <ProposalFlag />}
+                </span>
                 <span className="gym-routine-meta">{routineMetaLabel(routine)}</span>
               </a>
               <button
@@ -189,6 +196,13 @@ export function RoutineEditor({ id, log }) {
       <button type="button" className="gym-editor-add" onClick={() => { setQuery(''); setPicking(true); }}>
         + Add exercise
       </button>
+
+      {/* THE ROUTINE'S HISTORY (screen 6) — and every row of it is a DOOR rather than a decision.
+          Apply lives on the diff and nowhere else, which matters most exactly here: this screen
+          holds a draft, and an Apply drawn beside it would let a routine move under an edit in
+          progress, whose Done would then whole-document PUT the applied change straight back out.
+          A routine being written for the first time has no history and is not asked for one. */}
+      {!fresh && <RoutineHistory routineId={draft.id} />}
 
       <div className="gym-editor-foot">
         <button

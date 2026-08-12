@@ -63,18 +63,22 @@ const MCP_CLIENTS = ['Claude Desktop', 'Claude Code', 'Cursor', 'Codex', 'any MC
 const AGENT_CAN = [
   'Read your last twelve weeks of squats.',
   'Draft next block’s progression.',
-  'Write next week’s routine — if you granted it.',
+  'Propose next week’s routine — you read the diff and tap Apply.',
 ];
 
-// THE GRANT, WHICH IS THE REAL SAFETY MODEL AND NOT A SCREENSHOT OF ONE. This card used to draw a
-// propose-apply flow with an Apply button, and the product does not work that way: a connection you
-// granted `write` writes directly, exactly as it would if you had typed it yourself. What stands
-// where that Apply stood is this — three separate levels, approved one at a time, and a level you
-// did not approve is a tool the connection cannot even see in its own tool list.
+// THE GRANT IS THE REAL SAFETY MODEL, AND IT IS NOT THE WHOLE OF IT. Three separate levels,
+// approved one at a time, and a level you did not approve is a tool the connection cannot even see
+// in its own tool list. What no level buys is a change to a day of the program you ALREADY have: a
+// mutation that takes nothing away lands immediately — a set, a session, a movement, a day that did
+// not exist until now — and a mutation that rewrites or removes a day that already stands mints a
+// proposal that does nothing until you tap Apply on the diff (backend §2.9, GymToolCatalog's own
+// `create_routine` / `propose_routine_change` split). So `write` and `delete` are named here by what
+// they actually do — creating a new day INCLUDED, because a level line that named only the
+// proposing half would be selling a safety property this product does not have.
 const GRANT_LEVELS = [
   { scope: 'gym:read', line: 'Read your log', granted: true },
-  { scope: 'gym:write', line: 'Add sets, movements and routines', granted: true },
-  { scope: 'gym:delete', line: 'Delete workouts and routines', granted: false },
+  { scope: 'gym:write', line: 'Record what happened · add a new day · propose changes to the days you have', granted: true },
+  { scope: 'gym:delete', line: 'Discard a workout · end a coach link · propose a removal', granted: false },
 ];
 
 const BRAND_DUO = [
@@ -362,6 +366,11 @@ function ConnectedLog() {
             ))}
           </div>
           <p style={{ fontSize: 15, lineHeight: 1.55, fontWeight: 700, color: 'var(--text-primary)', margin: '6px 0 0' }}>
+            It reads, it proposes, and it never rewrites a day you already have. That routine changes when
+            you tap Apply on the diff — all of it or none — and never a moment before. A brand-new day it
+            adds lands right away: it takes nothing away, and you can edit or delete it yourself.
+          </p>
+          <p style={{ fontSize: 14.5, lineHeight: 1.55, color: 'var(--text-secondary)', margin: 0 }}>
             You decide what a connection may do — read, write, delete — and it can only see the tools for the
             levels you approved. Delete is never implied by write.
           </p>
@@ -390,7 +399,8 @@ function ConnectedLog() {
               ))}
             </div>
             <div style={{ fontFamily: 'var(--font-body)', fontSize: 12, lineHeight: 1.5, color: 'var(--gym-ink-faint)', marginTop: 14 }}>
-              This connection was never granted delete, so it cannot see the three tools that take something away.
+              This connection was never granted delete, so it cannot see the three tools that discard a workout,
+              end a coach link, or ask to remove a routine.
             </div>
           </div>
         </div>

@@ -32,6 +32,10 @@ const char* kNeedsPostgres = "WM_PG_TEST unset — needs a live Postgres, see RU
 const std::string kUser = "22222222-2222-2222-2222-222222222222";
 const std::string kOther = "22222222-2222-2222-2222-222222222233";
 
+// The instant every write that dates something is driven by. It is a value rather than a clock read
+// so an assertion can name it.
+constexpr std::uint64_t kNow = 1'700'000'000'000ull;
+
 void reset() {
   wm::PgLease c{*wm::pgTestPool()};
   pqxx::work w{*c};
@@ -44,6 +48,8 @@ void reset() {
   w.exec("DELETE FROM gym_set_revisions WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_sets WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_sessions WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
+  w.exec("DELETE FROM gym_proposal_changes WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
+  w.exec("DELETE FROM gym_proposals WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_routines WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_exercise_names WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_exercises WHERE created_by IN ('" + kUser + "', '" + kOther + "')");
@@ -899,7 +905,8 @@ TEST(pg_gym_a_routine_line_with_no_rep_target_round_trips_as_a_null) {
   }
   // A replace writes the null too — the whole document is laid down again, absences and all.
   RoutineWriteOutcome replaced = repo.replaceRoutine(
-      routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press", 5, std::nullopt, 82.5, 180)}));
+      routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press", 5, std::nullopt, 82.5, 180)}),
+      kNow);
   CHECK(replaced.error == RoutineWriteError::none);
   CHECK_EQ(replaced.routine->entries[0].targetReps, std::optional<int>());
 }
@@ -913,7 +920,7 @@ TEST(pg_gym_a_routine_id_another_account_holds_resolves_to_nothing) {
 
   RoutineWriteOutcome taken = repo.insertRoutine(routineAt("rt_pg000001", "Mine", {entryAt(1, "back-squat")}));
   RoutineWriteOutcome replaced =
-      repo.replaceRoutine(routineAt("rt_pg000001", "Mine now", {entryAt(1, "back-squat")}));
+      repo.replaceRoutine(routineAt("rt_pg000001", "Mine now", {entryAt(1, "back-squat")}), kNow);
 
   CHECK(taken.error == RoutineWriteError::idTaken);
   CHECK_EQ(taken.routine, std::optional<Routine>());   // never the stranger's plan
@@ -962,7 +969,8 @@ TEST(pg_gym_a_routine_entry_may_not_name_another_accounts_private_movement) {
   RoutineWriteOutcome created =
       repo.insertRoutine(routineAt("rt_pg000002", "Push B", {entryAt(1, "pg-their-zercher")}));
   RoutineWriteOutcome replaced =
-      repo.replaceRoutine(routineAt("rt_pg000001", "Push A2", {entryAt(1, "pg-their-zercher")}));
+      repo.replaceRoutine(routineAt("rt_pg000001", "Push A2", {entryAt(1, "pg-their-zercher")}),
+                          kNow);
 
   CHECK(created.error == RoutineWriteError::unknownExercise);
   CHECK_EQ(created.routine, std::optional<Routine>());
@@ -981,24 +989,31 @@ TEST(pg_gym_routine_replace_rewrites_every_line_and_a_missing_one_is_not_found) 
   PgTrainingRepository repo{wm::pgTestPool()};
   repo.insertRoutine(routineAt("rt_pg000001", "Push A",
                                {entryAt(1, "bench-press"), entryAt(2, "back-squat")}));
+  // The revision moves on the lifter's own write — the token a proposal is minted against and
+  // superseded by (domain/Proposal.h) — so what the store hands back stands one past what was sent.
   const Routine rewritten = routineAt("rt_pg000001", "Push A2",
                                       {entryAt(1, "back-squat", 4, 6, 100.0, 240)});
+  const Routine standing = Routine{rewritten.id,      rewritten.user,
+                                   rewritten.name,    rewritten.position,
+                                   rewritten.entries, rewritten.lastTrainedAtMs,
+                                   2};
 
-  RoutineWriteOutcome replaced = repo.replaceRoutine(rewritten);
+  RoutineWriteOutcome replaced = repo.replaceRoutine(rewritten, kNow);
   RoutineWriteOutcome missing =
-      repo.replaceRoutine(routineAt("rt_pg000009", "Nowhere", {entryAt(1, "bench-press")}));
+      repo.replaceRoutine(routineAt("rt_pg000009", "Nowhere", {entryAt(1, "bench-press")}), kNow);
   RoutineWriteOutcome refused = repo.replaceRoutine(
-      routineAt("rt_pg000001", "Push A3", {entryAt(1, "pg-no-such-movement")}));
+      routineAt("rt_pg000001", "Push A3", {entryAt(1, "pg-no-such-movement")}), kNow);
 
   CHECK(replaced.error == RoutineWriteError::none);
-  CHECK_EQ(replaced.routine, std::optional<Routine>(rewritten));
+  CHECK_EQ(replaced.routine, std::optional<Routine>(standing));
   CHECK_EQ(repo.routine(wm::UserId{kUser}, RoutineId{"rt_pg000001"}),
-           std::optional<Routine>(rewritten));
+           std::optional<Routine>(standing));
   CHECK(missing.error == RoutineWriteError::notFound);
-  // A refused replace rolls back whole: the lines it deleted are still there, and so is the name.
+  // A refused replace rolls back whole: the lines it deleted are still there, the name is, and so
+  // is the revision — a rolled-back write moves no token.
   CHECK(refused.error == RoutineWriteError::unknownExercise);
   CHECK_EQ(repo.routine(wm::UserId{kUser}, RoutineId{"rt_pg000001"}),
-           std::optional<Routine>(rewritten));
+           std::optional<Routine>(standing));
 }
 
 TEST(pg_gym_routine_delete_cascades_its_lines_and_leaves_every_session_its_snapshot) {
@@ -2303,4 +2318,388 @@ TEST(pg_gym_preferences_columns_refuse_what_the_domain_refuses) {
   CHECK_EQ(repo.preferences(wm::UserId{kUser}),
            std::optional<GymPreferences>(GymPreferences{wm::UserId{kUser}}));
   reset();
+}
+
+// ---- the proposal ledger, against the real store ----------------------------------------------
+
+namespace {
+RoutineProposal proposalAt(const std::string& id, const std::string& routine, int baseRevision,
+                           std::vector<RoutineEntry> becomes, ProposalDoor door = ProposalDoor::mcp,
+                           const std::string& owner = kUser) {
+  const std::vector<RoutineEntry> base{entryAt(1, "bench-press")};
+  std::vector<RoutineChange> changes = changesBetween(base, becomes);
+  const int counted = becomes.empty() ? static_cast<int>(changes.size())
+                                      : countedChanges(base, changes, "Push A", "Push A");
+  return RoutineProposal{ProposalHead{ProposalId{id}, RoutineId{routine}, wm::UserId{owner},
+                                      becomes.empty() ? ProposalIntent::remove
+                                                      : ProposalIntent::revise,
+                                      ProposalState::pending, ProposalSource{door, "", ""},
+                                      "Heavier triples.", counted, kNow, std::nullopt},
+                         baseRevision, "Push A", "Push A", std::move(changes)};
+}
+
+RoutineEntry benchAt(double weightKg, int reps) {
+  return RoutineEntry{1, ExerciseId{"bench-press"}, 5, reps, weightKg, 180};
+}
+}
+
+// The whole round trip through real columns: the typed diff goes down and comes back byte for byte,
+// absences included — a null rest, a null rep target, and the whole `before` side missing on a line
+// the proposal adds.
+TEST(pg_gym_a_proposal_round_trips_its_typed_diff_with_every_absence_intact) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  repo.insertRoutine(routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
+  const RoutineProposal minted = proposalAt(
+      "prop_pg00001", "rt_pg000001", 1,
+      {benchAt(87.5, 3),
+       RoutineEntry{2, ExerciseId{"back-squat"}, 3, std::nullopt, std::nullopt, std::nullopt}});
+
+  ProposalMintOutcome stored = repo.insertProposal(minted);
+
+  CHECK(stored.error == ProposalMintError::none);
+  REQUIRE(stored.proposal.has_value());
+  CHECK_EQ(*stored.proposal, minted);
+  CHECK_EQ(repo.proposal(wm::UserId{kUser}, ProposalId{"prop_pg00001"}),
+           std::optional<RoutineProposal>(minted));
+  // The added line carries no `before` at all, and its three absences are absences.
+  CHECK_EQ(stored.proposal->changes[1].kind, ChangeKind::added);
+  CHECK_EQ(stored.proposal->changes[1].before, std::optional<EntryTargets>());
+  CHECK_EQ(stored.proposal->changes[1].after,
+           std::optional<EntryTargets>(EntryTargets{3, std::nullopt, std::nullopt, std::nullopt}));
+}
+
+// The partial unique index is the arbiter, not an application check: a second proposal from the
+// same door settles the first as superseded and lands beside it in the history.
+TEST(pg_gym_one_pending_proposal_per_routine_and_door_and_the_old_one_drops_into_history) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  repo.insertRoutine(routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
+  repo.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1, {benchAt(87.5, 3)}));
+
+  ProposalMintOutcome second =
+      repo.insertProposal(proposalAt("prop_pg00002", "rt_pg000001", 1, {benchAt(90.0, 3)}));
+  // A different DOOR is a different pending slot — W7's Ask mints through this same object.
+  ProposalMintOutcome ask = repo.insertProposal(
+      proposalAt("prop_pg00003", "rt_pg000001", 1, {benchAt(92.5, 3)}, ProposalDoor::ask));
+
+  CHECK(second.error == ProposalMintError::none);
+  CHECK(ask.error == ProposalMintError::none);
+  const std::vector<ProposalHead> all =
+      repo.proposalHeads(wm::UserId{kUser}, ProposalQuery{RoutineId{"rt_pg000001"}, false});
+  REQUIRE_EQ(all.size(), static_cast<std::size_t>(3));
+  CHECK_EQ(repo.proposalHeads(wm::UserId{kUser}, ProposalQuery{std::nullopt, true}).size(),
+           static_cast<std::size_t>(2));
+  for (const ProposalHead& head : all)
+    if (head.id == ProposalId{"prop_pg00001"}) {
+      CHECK_EQ(head.state, ProposalState::superseded);
+      CHECK_EQ(head.settledAtMs, std::optional<std::uint64_t>(kNow));
+    }
+}
+
+// A replay reads back the proposal already waiting rather than superseding it with itself.
+TEST(pg_gym_a_replayed_mint_reads_back_the_stored_proposal) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  repo.insertRoutine(routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
+  const RoutineProposal minted = proposalAt("prop_pg00001", "rt_pg000001", 1, {benchAt(87.5, 3)});
+  repo.insertProposal(minted);
+
+  ProposalMintOutcome replayed = repo.insertProposal(minted);
+
+  CHECK(replayed.error == ProposalMintError::none);
+  CHECK_EQ(replayed.proposal, std::optional<RoutineProposal>(minted));
+  CHECK_EQ(repo.proposalHeads(wm::UserId{kUser}, ProposalQuery{std::nullopt, true}).size(),
+           static_cast<std::size_t>(1));
+}
+
+// Every refusal the store alone can know, and each as a VALUE: an id spent by an account this
+// caller cannot see, a routine it cannot read, and a line naming a movement it may not name — the
+// last refused at the MINT so a proposal a lifter cannot apply never reaches their screen.
+TEST(pg_gym_a_proposal_is_refused_for_a_spent_id_an_unknown_routine_and_an_unseen_movement) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  repo.insertRoutine(routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
+  repo.insertRoutine(Routine{RoutineId{"rt_pg000009"}, wm::UserId{kOther}, "Their plan", 0,
+                             {entryAt(1, "bench-press")}});
+  repo.insertExercise(wm::UserId{kOther},
+                      Exercise{ExerciseId{"pg-their-zercher"}, "Their Zercher Squat",
+                               Pattern::squat, Equipment::barbell, 2.5, true});
+  repo.insertProposal(proposalAt("prop_pg00009", "rt_pg000009", 1, {benchAt(87.5, 3)},
+                                 ProposalDoor::mcp, kOther));
+
+  ProposalMintOutcome spent =
+      repo.insertProposal(proposalAt("prop_pg00009", "rt_pg000001", 1, {benchAt(87.5, 3)}));
+  ProposalMintOutcome theirs =
+      repo.insertProposal(proposalAt("prop_pg00002", "rt_pg000009", 1, {benchAt(87.5, 3)}));
+  ProposalMintOutcome unseen = repo.insertProposal(proposalAt(
+      "prop_pg00003", "rt_pg000001", 1,
+      {RoutineEntry{1, ExerciseId{"pg-their-zercher"}, 3, 8, 100.0, 180}}));
+
+  CHECK(spent.error == ProposalMintError::idTaken);
+  CHECK(theirs.error == ProposalMintError::unknownRoutine);
+  CHECK(unseen.error == ProposalMintError::unknownExercise);
+  // The refused mint rolled back whole: no header, no lines, and the connection is reusable at once.
+  CHECK_EQ(repo.proposal(wm::UserId{kUser}, ProposalId{"prop_pg00003"}),
+           std::optional<RoutineProposal>());
+  CHECK(repo.insertProposal(proposalAt("prop_pg00004", "rt_pg000001", 1, {benchAt(87.5, 3)}))
+            .error == ProposalMintError::none);
+}
+
+// A REFUSED MINT SPENDS NOTHING OF THE LIFTER'S, and it takes real SQL to prove it: the supersede
+// that clears the pending slot runs INSIDE the mint's transaction, so a refusal reached after it
+// would commit the settle and roll back nothing — the card would be gone off Today with nothing
+// replacing it, behind a message reading "mint a different one and send it again". Proposal ids are
+// client-minted and the key is global across accounts, so a deterministic minting scheme is all it
+// takes to collide with a stranger.
+TEST(pg_gym_a_refused_mint_leaves_the_pending_card_it_could_not_replace) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  repo.insertRoutine(routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
+  repo.insertRoutine(Routine{RoutineId{"rt_pg000009"}, wm::UserId{kOther}, "Their plan", 0,
+                             {entryAt(1, "bench-press")}});
+  repo.insertProposal(proposalAt("prop_pg00009", "rt_pg000009", 1, {benchAt(87.5, 3)},
+                                 ProposalDoor::mcp, kOther));
+  repo.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1, {benchAt(87.5, 3)}));
+
+  ProposalMintOutcome stranger =
+      repo.insertProposal(proposalAt("prop_pg00009", "rt_pg000001", 1, {benchAt(90.0, 3)}));
+  ProposalMintOutcome reused =
+      repo.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1, {benchAt(95.0, 3)}));
+
+  CHECK(stranger.error == ProposalMintError::idTaken);
+  CHECK(reused.error == ProposalMintError::idReused);
+  // Neither refusal moved anything: the card the lifter can see is still waiting, and it is still
+  // the diff that was minted for it.
+  const std::vector<ProposalHead> waiting =
+      repo.proposalHeads(wm::UserId{kUser}, ProposalQuery{std::nullopt, true});
+  REQUIRE_EQ(waiting.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(waiting[0].id, ProposalId{"prop_pg00001"});
+  CHECK_EQ(waiting[0].state, ProposalState::pending);
+  CHECK_EQ(repo.proposal(wm::UserId{kUser}, ProposalId{"prop_pg00001"})->changes[0].after,
+           std::optional<EntryTargets>(EntryTargets{5, 3, 87.5, 180}));
+  // And the stranger's own proposal is untouched by a refusal that named their id.
+  CHECK_EQ(repo.proposalHeads(wm::UserId{kOther}, ProposalQuery{std::nullopt, true}).size(),
+           static_cast<std::size_t>(1));
+}
+
+// The lifter's own hand, asked the one question that decides whether a card dies: did the document
+// or the name actually move? A routine editor saving on close and a logger writing the whole
+// document back to change one weight both land the bytes that already stand, and a drag up the
+// routines screen moves only where the day sits — which no proposal is minted against, because an
+// apply keeps the base's own position. None of the three destroyed a base, so none of them settles
+// a proposal or moves the revision. A real edit still does both.
+TEST(pg_gym_a_put_that_lands_the_same_document_moves_no_revision_and_settles_no_proposal) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  repo.insertRoutine(routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
+  repo.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1, {benchAt(87.5, 3)}));
+
+  RoutineWriteOutcome identical =
+      repo.replaceRoutine(routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}),
+                          kNow + 60'000);
+  RoutineWriteOutcome dragged =
+      repo.replaceRoutine(Routine{RoutineId{"rt_pg000001"}, wm::UserId{kUser}, "Push A", 3,
+                                  {entryAt(1, "bench-press")}},
+                          kNow + 60'000);
+
+  REQUIRE(identical.routine.has_value());
+  REQUIRE(dragged.routine.has_value());
+  CHECK_EQ(identical.routine->revision, 1);
+  CHECK_EQ(dragged.routine->revision, 1);
+  CHECK_EQ(dragged.routine->position, 3);
+  CHECK_EQ(repo.proposalHeads(wm::UserId{kUser}, ProposalQuery{std::nullopt, true}).size(),
+           static_cast<std::size_t>(1));
+
+  RoutineWriteOutcome edited =
+      repo.replaceRoutine(Routine{RoutineId{"rt_pg000001"}, wm::UserId{kUser}, "Push A", 3,
+                                  {entryAt(1, "bench-press", 5, 5, 85.0)}},
+                          kNow + 120'000);
+
+  REQUIRE(edited.routine.has_value());
+  CHECK_EQ(edited.routine->revision, 2);
+  CHECK_EQ(edited.routine->entries[0].targetWeightKg, std::optional<double>(85.0));
+  CHECK(repo.proposalHeads(wm::UserId{kUser}, ProposalQuery{std::nullopt, true}).empty());
+  CHECK_EQ(repo.proposal(wm::UserId{kUser}, ProposalId{"prop_pg00001"})->head.state,
+           ProposalState::superseded);
+}
+
+// THE TAP against real rows: one transaction, the whole document, the revision moved and the row
+// dated. And the tap replayed reads back what it did rather than applying twice.
+TEST(pg_gym_applying_a_proposal_writes_the_document_moves_the_revision_and_dates_the_record) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  repo.insertRoutine(routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
+  repo.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1,
+                                 {benchAt(87.5, 3), entryAt(2, "back-squat", 3, 8, 100.0, 240)}));
+  const Routine becomes =
+      appliedTo(*repo.routine(wm::UserId{kUser}, RoutineId{"rt_pg000001"}),
+                *repo.proposal(wm::UserId{kUser}, ProposalId{"prop_pg00001"}));
+
+  ProposalSettleOutcome tapped =
+      repo.applyRevision(wm::UserId{kUser}, ProposalId{"prop_pg00001"}, becomes, kNow + 60'000);
+  ProposalSettleOutcome again =
+      repo.applyRevision(wm::UserId{kUser}, ProposalId{"prop_pg00001"}, becomes, kNow + 120'000);
+
+  CHECK(tapped.error == ProposalSettleError::none);
+  REQUIRE(tapped.routine.has_value());
+  CHECK_EQ(tapped.routine->revision, 2);
+  REQUIRE_EQ(tapped.routine->entries.size(), static_cast<std::size_t>(2));
+  CHECK_EQ(tapped.routine->entries[0].targetWeightKg, std::optional<double>(87.5));
+  CHECK_EQ(tapped.routine->entries[1].exercise, ExerciseId{"back-squat"});
+  CHECK_EQ(tapped.proposal->head.state, ProposalState::applied);
+  CHECK_EQ(tapped.proposal->head.settledAtMs, std::optional<std::uint64_t>(kNow + 60'000));
+  // The replayed tap is not a second write: the revision did not move again.
+  CHECK(again.error == ProposalSettleError::none);
+  CHECK_EQ(again.routine->revision, 2);
+}
+
+// The lifter's own PUT moves the revision and supersedes what was pending, in the SAME transaction —
+// and the store refuses the apply under its own lock even when it is asked anyway.
+TEST(pg_gym_the_lifters_own_write_supersedes_a_pending_proposal_and_the_tap_refuses) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  repo.insertRoutine(routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
+  repo.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1, {benchAt(87.5, 3)}));
+  const Routine stale = appliedTo(*repo.routine(wm::UserId{kUser}, RoutineId{"rt_pg000001"}),
+                                  *repo.proposal(wm::UserId{kUser}, ProposalId{"prop_pg00001"}));
+
+  RoutineWriteOutcome rewritten = repo.replaceRoutine(
+      routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press", 5, 5, 85.0, 180)}),
+      kNow + 60'000);
+  ProposalSettleOutcome refused =
+      repo.applyRevision(wm::UserId{kUser}, ProposalId{"prop_pg00001"}, stale, kNow + 120'000);
+
+  CHECK(rewritten.error == RoutineWriteError::none);
+  CHECK_EQ(rewritten.routine->revision, 2);
+  CHECK(refused.error == ProposalSettleError::superseded);
+  CHECK_EQ(refused.routine, std::optional<Routine>());
+  // The lifter's own numbers stand, and the proposal is a dated record rather than a row that went.
+  CHECK_EQ(repo.routine(wm::UserId{kUser}, RoutineId{"rt_pg000001"})->entries[0].targetWeightKg,
+           std::optional<double>(85.0));
+  const std::vector<ProposalHead> history =
+      repo.proposalHeads(wm::UserId{kUser}, ProposalQuery{RoutineId{"rt_pg000001"}, false});
+  REQUIRE_EQ(history.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(history[0].state, ProposalState::superseded);
+  CHECK_EQ(history[0].settledAtMs, std::optional<std::uint64_t>(kNow + 60'000));
+}
+
+// Dismissing changes nothing about the program and keeps the card; asking for the other decision is
+// refused, and asking again for the same one replays.
+TEST(pg_gym_dismissing_keeps_the_card_and_refuses_the_other_decision) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  repo.insertRoutine(routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
+  repo.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1, {benchAt(87.5, 3)}));
+  const Routine becomes = appliedTo(*repo.routine(wm::UserId{kUser}, RoutineId{"rt_pg000001"}),
+                                    *repo.proposal(wm::UserId{kUser}, ProposalId{"prop_pg00001"}));
+
+  ProposalSettleOutcome dismissed =
+      repo.dismissProposal(wm::UserId{kUser}, ProposalId{"prop_pg00001"}, kNow + 60'000);
+  ProposalSettleOutcome again =
+      repo.dismissProposal(wm::UserId{kUser}, ProposalId{"prop_pg00001"}, kNow + 120'000);
+  ProposalSettleOutcome tapped =
+      repo.applyRevision(wm::UserId{kUser}, ProposalId{"prop_pg00001"}, becomes, kNow + 180'000);
+
+  CHECK(dismissed.error == ProposalSettleError::none);
+  CHECK_EQ(dismissed.proposal->head.state, ProposalState::dismissed);
+  CHECK_EQ(dismissed.proposal->head.settledAtMs, std::optional<std::uint64_t>(kNow + 60'000));
+  CHECK(again.error == ProposalSettleError::none);
+  CHECK_EQ(again.proposal->head.settledAtMs, std::optional<std::uint64_t>(kNow + 60'000));
+  CHECK(tapped.error == ProposalSettleError::settled);
+  CHECK_EQ(repo.routine(wm::UserId{kUser}, RoutineId{"rt_pg000001"})->revision, 1);
+}
+
+// §D14's *41 logged sets kept*, counted at READ time against the live log — the sentence that makes
+// a removal safe to read has to be true when a lifter reads it.
+TEST(pg_gym_a_removed_line_counts_the_sets_it_keeps_at_read_time) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  repo.insertRoutine(routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
+  repo.insertSession(sessionAt("ses_pg000001", 1'700'000'000'000));
+  repo.insertSet(benchSet("set_pg000001", 82.5, 1'700'000'060'000));
+  repo.insertSet(benchSet("set_pg000002", 82.5, 1'700'000'120'000));
+  repo.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1, {}));
+
+  std::optional<RoutineProposal> read =
+      repo.proposal(wm::UserId{kUser}, ProposalId{"prop_pg00001"});
+
+  REQUIRE(read.has_value());
+  CHECK_EQ(read->head.intent, ProposalIntent::remove);
+  REQUIRE_EQ(read->changes.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(read->changes[0].kind, ChangeKind::removed);
+  CHECK_EQ(read->changes[0].loggedSets, 2);
+}
+
+// Applying a removal takes the day out of the program, and its proposals go with it — a day that
+// has left has no editor to draw a History section in. The log keeps its frozen copy either way.
+TEST(pg_gym_applying_a_removal_takes_the_routine_and_its_ledger_with_it) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  repo.insertRoutine(routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
+  repo.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1, {}));
+
+  ProposalSettleOutcome tapped =
+      repo.applyRemoval(wm::UserId{kUser}, ProposalId{"prop_pg00001"}, kNow + 60'000);
+
+  CHECK(tapped.error == ProposalSettleError::none);
+  REQUIRE(tapped.proposal.has_value());
+  CHECK_EQ(tapped.proposal->head.state, ProposalState::applied);
+  CHECK_EQ(tapped.proposal->head.settledAtMs, std::optional<std::uint64_t>(kNow + 60'000));
+  CHECK_EQ(tapped.routine, std::optional<Routine>());
+  CHECK_EQ(repo.routine(wm::UserId{kUser}, RoutineId{"rt_pg000001"}), std::optional<Routine>());
+  CHECK(repo.proposalHeads(wm::UserId{kUser}, ProposalQuery{std::nullopt, false}).empty());
+}
+
+// Absent, another account's and never-existed are ONE answer on every proposal door, so a caller
+// can never learn that an id exists by the shape of its refusal.
+TEST(pg_gym_a_proposal_another_account_holds_resolves_to_nothing_on_every_door) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  repo.insertRoutine(Routine{RoutineId{"rt_pg000009"}, wm::UserId{kOther}, "Their plan", 0,
+                             {entryAt(1, "bench-press")}});
+  repo.insertProposal(proposalAt("prop_pg00009", "rt_pg000009", 1, {benchAt(87.5, 3)},
+                                 ProposalDoor::mcp, kOther));
+  const Routine theirs = *repo.routine(wm::UserId{kOther}, RoutineId{"rt_pg000009"});
+
+  CHECK_EQ(repo.proposal(wm::UserId{kUser}, ProposalId{"prop_pg00009"}),
+           std::optional<RoutineProposal>());
+  CHECK(repo.proposalHeads(wm::UserId{kUser}, ProposalQuery{std::nullopt, false}).empty());
+  CHECK(repo.applyRevision(wm::UserId{kUser}, ProposalId{"prop_pg00009"}, theirs, kNow).error ==
+        ProposalSettleError::notFound);
+  CHECK(repo.dismissProposal(wm::UserId{kUser}, ProposalId{"prop_pg00009"}, kNow).error ==
+        ProposalSettleError::notFound);
+  CHECK(repo.applyRemoval(wm::UserId{kUser}, ProposalId{"prop_pg00009"}, kNow).error ==
+        ProposalSettleError::notFound);
+  // Their plan is exactly where it was.
+  CHECK_EQ(repo.routine(wm::UserId{kOther}, RoutineId{"rt_pg000009"}),
+           std::optional<Routine>(theirs));
+}
+
+// Deleting a routine by the lifter's own hand takes its ledger with it, the cascade the schema
+// declares — so nothing is left pointing at a day of the program that is gone.
+TEST(pg_gym_deleting_a_routine_takes_its_proposals_with_it) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  repo.insertRoutine(routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
+  repo.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1, {benchAt(87.5, 3)}));
+
+  CHECK(repo.deleteRoutine(wm::UserId{kUser}, RoutineId{"rt_pg000001"}));
+
+  CHECK(repo.proposalHeads(wm::UserId{kUser}, ProposalQuery{std::nullopt, false}).empty());
+  CHECK_EQ(repo.proposal(wm::UserId{kUser}, ProposalId{"prop_pg00001"}),
+           std::optional<RoutineProposal>());
 }

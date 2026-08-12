@@ -27,9 +27,11 @@ RoutineEntry::RoutineEntry(int position, ExerciseId exercise, int targetSets,
 }
 
 Routine::Routine(RoutineId id, UserId user, std::string name, int position,
-                 std::vector<RoutineEntry> entries, std::optional<std::uint64_t> lastTrainedAtMs)
+                 std::vector<RoutineEntry> entries, std::optional<std::uint64_t> lastTrainedAtMs,
+                 int revision)
     : id(std::move(id)), user(std::move(user)), name(trimmedName(std::move(name))),
-      position(position), entries(std::move(entries)), lastTrainedAtMs(lastTrainedAtMs) {
+      position(position), entries(std::move(entries)), lastTrainedAtMs(lastTrainedAtMs),
+      revision(revision) {
   if (!wellFormedId(this->id.str())) throw InvalidTraining("bad routine id");
   if (this->user.empty()) throw InvalidTraining("a routine belongs to an account");
   // Trimmed like a movement's, by the one rule both display names go through — a routine called
@@ -55,6 +57,9 @@ Routine::Routine(RoutineId id, UserId user, std::string name, int position,
       throw InvalidTraining("routine positions run 1..n in order");
   if (lastTrainedAtMs && (*lastTrainedAtMs == 0 || *lastTrainedAtMs > kMaxInstantMs))
     throw InvalidTraining("a routine was last trained at an instant");
+  // A revision counts writes and a routine that exists has had one, so it starts at 1 — and a
+  // proposal minted against a revision that never stood could never be applied against it either.
+  if (revision < 1) throw InvalidTraining("a routine stands at a revision from 1");
 }
 
 PlanSnapshot snapshotOf(const Routine& routine) {

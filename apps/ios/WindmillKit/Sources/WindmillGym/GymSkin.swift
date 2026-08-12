@@ -36,11 +36,13 @@ public struct GymSkin: Equatable {
     public let inkDim: Color
     public let inkFaint: Color
     public let setDone: Color           // logged. settled, not celebrated
+    public let setDoneSoft: Color       // its wash — the ground under a line a proposal would ADD
     public let targetInk: Color         // what the plan said
     public let prInk: Color             // the only loud state, and at most one per session
     public let warmupInk: Color         // counts toward nothing
     public let unsyncedInk: Color       // saved on this device only
     public let alarmInk: Color          // a write that failed. nothing else
+    public let alarmSoft: Color         // its wash — the ground under a line a proposal would REMOVE
 
     // Basalt, step for step with `[data-theme="dark"][data-brand="gym"]`. The ratios in the comments
     // are measured against this ground, not against the family night these values replaced.
@@ -62,13 +64,19 @@ public struct GymSkin: Equatable {
         inkDim: Color(hex: 0xB0ABB8),       // neutral-600
         inkFaint: Color(hex: 0x8D8896),     // neutral-500 — 5.01:1 on the canvas
         setDone: Color(hex: 0x9AA859),      // olive-400: success, and it does not move between rooms
+        // The two washes a diff is read on (§D14), and they are the family's own translucent
+        // semantics rather than gym inventions: `--color-success-bg` and `--color-danger-bg` in the
+        // dark palette, which are olive-400 and brick-400 laid over whatever they sit on. Brick-400
+        // and not the 300 the alarm INK is cut to — the wash is the web's, step for step.
+        setDoneSoft: Color(hex: 0x9AA859).opacity(0.15),
         targetInk: Color(hex: 0x9A90BE),    // the accent — what the plan said
         prInk: Color(hex: 0xD9B04C),        // gold-400: warning as a KIND of moment, not a state
         warmupInk: Color(hex: 0x8D8896),
         unsyncedInk: Color(hex: 0x8D8896),
         // brick-300, not the 400. Basalt is three stops lighter than the family night brick-400 was
         // cut for, where it fell to 3.98:1 on the surface. This step measures 5.82 / 5.22 / 4.69.
-        alarmInk: Color(hex: 0xD08268)
+        alarmInk: Color(hex: 0xD08268),
+        alarmSoft: Color(hex: 0xBF6A50).opacity(0.16)
     )
 }
 

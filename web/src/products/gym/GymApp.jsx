@@ -1,13 +1,14 @@
 // Gym — the training log's web surface, in the instrument skin. This file is the frame and none of
 // the rooms: it resolves the account, holds the ONE read of the log every room shares, and hands
 // each hash to the screen that answers it (Today · The log · Routines, plus one session, one
-// routine, one movement's record, one review and the past-workout door).
+// routine, one movement's record, one proposal, one review and the past-workout door).
 //
 // The web is the mirror and the desk, never the capture surface: workouts start on the phone, Today
 // mirrors the one that is running read-only (§11.2), and the write doors here are the backfill, the
-// correction of a set already in the log (§G18), the routines, a movement minted from a picker and
-// a movement's name (§H) — never a set logged into a live session. Nothing here decides anything:
-// the rules live in log.js, fix.js, routines.js, review.js, record.js, backfill.js and share/.
+// correction of a set already in the log (§G18), the routines, a movement minted from a picker, a
+// movement's name (§H) and the tap that settles a proposal an agent wrote (§D14) — never a set
+// logged into a live session. Nothing here decides anything: the rules live in log.js, fix.js,
+// routines.js, proposals.js, review.js, record.js, backfill.js and share/.
 //
 // `inShell` is the one thing the frame is told rather than works out: whether this is the bare
 // surface at #/gym or a room inside the /app chrome. The route table decides it off the pathname
@@ -22,11 +23,13 @@ import { useSignInDoor, useSignInDoorHost } from '../../shell/auth/SignInDoor.js
 import { Backfill } from './Backfill.jsx';
 import { FinishScreen } from './Finish.jsx';
 import { LogList, SessionDetail } from './Log.jsx';
+import { ProposalDiff } from './Proposals.jsx';
 import { MovementRecord } from './Record.jsx';
 import { RoutineEditor, RoutinesList } from './Routines.jsx';
 import { Today } from './Today.jsx';
 import {
-  finishIdOf, movementIdOf, ROUTINES_HREF, routineIdOf, screenOf, sessionIdOf, sharedTokenOf,
+  finishIdOf, movementIdOf, proposalIdOf, ROUTINES_HREF, routineIdOf, screenOf, sessionIdOf,
+  sharedTokenOf,
 } from './log.js';
 import { SharedSession } from './share/SharedSession.jsx';
 import { useTrainingLog } from './useTrainingLog.js';
@@ -142,6 +145,10 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
             without the key the copy's URL would be drawn over the original's unsaved edits, and
             Done would whole-document PUT them back onto the original. */}
         {screen === 'routine' && <RoutineEditor key={routineIdOf(hash)} id={routineIdOf(hash)} log={log} />}
+        {/* KEYED FOR THE SAME REASON AGAIN: the diff holds the settlement the store answered with,
+            and a hash move to another proposal with the instance kept would draw one proposal's
+            document under another's Apply. */}
+        {screen === 'proposal' && <ProposalDiff key={proposalIdOf(hash)} id={proposalIdOf(hash)} log={log} />}
         {/* KEYED FOR THE SAME REASON, one room down: the session holds the corrections it has made
             and a withheld delete, and neither may cross to another workout. */}
         {screen === 'session' && <SessionDetail key={sessionIdOf(hash)} id={sessionIdOf(hash)} log={log} />}

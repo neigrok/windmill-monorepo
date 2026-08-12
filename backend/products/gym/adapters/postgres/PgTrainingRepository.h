@@ -45,7 +45,7 @@ public:
   std::vector<Routine> routines(const UserId& user) override;
   std::optional<Routine> routine(const UserId& user, const RoutineId& id) override;
   RoutineWriteOutcome insertRoutine(const Routine& incoming) override;
-  RoutineWriteOutcome replaceRoutine(const Routine& incoming) override;
+  RoutineWriteOutcome replaceRoutine(const Routine& incoming, std::uint64_t nowMs) override;
   bool deleteRoutine(const UserId& user, const RoutineId& id) override;
   ExerciseInsertOutcome insertExercise(const UserId& owner, const Exercise& incoming) override;
   std::optional<Exercise> renameExercise(const UserId& user, const ExerciseId& id,
@@ -60,6 +60,15 @@ public:
   bool revokeShare(const UserId& user, const SessionId& id) override;
   std::optional<SharedSession> sharedSession(const std::string& token,
                                              std::uint64_t nowMs) override;
+  std::vector<ProposalHead> proposalHeads(const UserId& user, const ProposalQuery& query) override;
+  std::optional<RoutineProposal> proposal(const UserId& user, const ProposalId& id) override;
+  ProposalMintOutcome insertProposal(const RoutineProposal& incoming) override;
+  ProposalSettleOutcome applyRevision(const UserId& user, const ProposalId& id,
+                                      const Routine& becomes, std::uint64_t nowMs) override;
+  ProposalSettleOutcome applyRemoval(const UserId& user, const ProposalId& id,
+                                     std::uint64_t nowMs) override;
+  ProposalSettleOutcome dismissProposal(const UserId& user, const ProposalId& id,
+                                        std::uint64_t nowMs) override;
 
 private:
   std::shared_ptr<PgPool> pool_;

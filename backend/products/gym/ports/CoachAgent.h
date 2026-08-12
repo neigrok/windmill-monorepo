@@ -9,7 +9,7 @@
 
 namespace wm::gym {
 
-// The panel's head and mouth. ToolHost is its hands, and those already exist — the same sixteen
+// The panel's head and mouth. ToolHost is its hands, and those already exist — the same seventeen
 // tools an agent drives over MCP, executed as the same account, through the same LogService. Putting
 // a panel in front of them is running this loop against them ourselves, which is the whole design:
 // one system, two doors (ARCHITECTURE §0), never a second way for a model to reach this log.

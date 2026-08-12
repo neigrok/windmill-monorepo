@@ -65,7 +65,9 @@ import works.windmill.gym.ui.GymTap
 import works.windmill.gym.ui.GymType
 import works.windmill.gym.ui.LogScreen
 import works.windmill.gym.ui.LoggerScreen
+import works.windmill.gym.ui.ProposalScreen
 import works.windmill.gym.ui.RecordScreen
+import works.windmill.gym.ui.RoutineScreen
 import works.windmill.gym.ui.RoutinesScreen
 import works.windmill.gym.ui.SessionScreen
 import works.windmill.gym.ui.SettingsScreen
@@ -129,9 +131,17 @@ private enum class Tab(val title: String) {
 // a settings slot the row goes and the screen moves across unchanged. The row says "‹ Today"
 // rather than the design's "‹ You" for the reason everything else in this room says what it means:
 // it really did come from Today.
+// A ROUTINE AND A PROPOSAL ARE THE TWO THIS WAVE ADDED, and both travel as IDs for the reason a
+// movement does: what they say changes under them. A routine's revision moves when a proposal is
+// applied and its card goes when one is decided, so a screen holding a copy would be drawing the
+// program as it was when it was opened. The proposal carries the routine it is about beside it —
+// the base it was written against is what decides whether it can still be applied, and the diff
+// read alone cannot say what this room is holding.
 private sealed interface Away {
     data class Session(val summary: SessionSummary) : Away
     data class Movement(val exerciseId: String) : Away
+    data class Program(val routineId: String) : Away
+    data class Proposal(val proposalId: String, val routineId: String) : Away
     data object Settings : Away
 }
 
@@ -188,6 +198,12 @@ fun GymRoom(account: Account) {
     // here — and a rotation that dropped a lifter back on Today would be the room forgetting where
     // they were standing.
     var tab by rememberSaveable { mutableStateOf(Tab.Today) }
+    // The one proposal Today has been asked not to draw for now. Saveable for the reason the tab is
+    // — an activity recreation must not put back a card the lifter just put down — and empty rather
+    // than null so it saves as the String it is. It is NOT a decision and never reaches the log:
+    // the routine still carries the card, and the room forgetting this on a relaunch is the
+    // direction it is allowed to fail in.
+    var putOff by rememberSaveable { mutableStateOf("") }
 
     // Every door in and out of a retrospective screen goes through these two for one reason: the
     // note above the rail is what the room has to say about the door that did not open ON THE
@@ -425,6 +441,11 @@ fun GymRoom(account: Account) {
         val beneath = when (val under = away.getOrNull(away.size - 2)) {
             is Away.Session -> under.summary.plan?.routine ?: Readout.noRoutine
             is Away.Movement -> Readout.movement(under.exerciseId, store.catalog)
+            // Named off the store rather than carried, exactly as a movement is: a routine an
+            // applied proposal renamed leads back under its new name, and one an applied removal
+            // took with it says so rather than naming a program that is gone.
+            is Away.Program -> store.routine(under.routineId)?.name ?: "Routines"
+            is Away.Proposal -> "Proposal"
             Away.Settings -> "Gym"
             null -> tab.title
         }
@@ -496,19 +517,46 @@ fun GymRoom(account: Account) {
                     say = { note = it },
                     onOpenMovement = { look(Away.Movement(it)) },
                 )
+                standing is Away.Program -> RoutineScreen(
+                    routineId = standing.routineId,
+                    store = store,
+                    isSignedIn = account.isSignedIn,
+                    backLabel = beneath,
+                    onBack = { back() },
+                    onStart = { routineId -> open(routineId) },
+                    onOpenMovement = { look(Away.Movement(it)) },
+                    onReview = { look(Away.Proposal(it.id, it.routineId)) },
+                )
+                standing is Away.Proposal -> ProposalScreen(
+                    proposalId = standing.proposalId,
+                    routineId = standing.routineId,
+                    store = store,
+                    backLabel = beneath,
+                    onBack = { back() },
+                )
                 tab == Tab.Log -> LogScreen(store, onOpenSession = { look(Away.Session(it)) })
                 tab == Tab.Routines -> RoutinesScreen(
                     store = store,
                     onStart = { routineId -> open(routineId) },
+                    onOpenRoutine = { look(Away.Program(it)) },
                     onOpenMovement = { look(Away.Movement(it)) },
+                    onReview = { look(Away.Proposal(it.id, it.routineId)) },
                 )
                 else -> TodayScreen(
                     store = store,
                     isSignedIn = account.isSignedIn,
+                    putOff = putOff.ifEmpty { null },
                     onStart = { routineId -> open(routineId) },
                     onOpenSession = { look(Away.Session(it)) },
                     onOpenMovement = { look(Away.Movement(it)) },
                     onOpenSettings = { look(Away.Settings) },
+                    onReview = { look(Away.Proposal(it.id, it.routineId)) },
+                    // LATER IS NOT A DECISION AND NOTHING IS SENT. It puts this card away on Today
+                    // for as long as the room stands — the routine it belongs to still carries it,
+                    // dot and all, so nothing is hidden and nothing was decided by a thumb reaching
+                    // for the quiet button. Saveable, so a rotation does not bring back a card the
+                    // lifter just put down; one slot, because Today draws one card.
+                    onLater = { putOff = it.id },
                     onSignIn = LocalShellActions.current.openYou,
                 )
             }

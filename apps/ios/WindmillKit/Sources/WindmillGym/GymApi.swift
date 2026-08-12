@@ -13,6 +13,8 @@ import WindmillPlatform
 //   GET  /v1/gym/exercises/last
 //   GET  /v1/gym/routines             ·  POST /v1/gym/routines
 //   PUT  /v1/gym/routines/:id         ·  DELETE /v1/gym/routines/:id
+//   GET  /v1/gym/proposals            ·  GET /v1/gym/proposals/:id
+//   POST /v1/gym/proposals/:id/apply  ·  POST /v1/gym/proposals/:id/dismiss
 //   POST /v1/gym/sessions/:id/share   ·  DELETE /v1/gym/sessions/:id/share
 //   GET  /v1/gym/preferences          ·  PUT /v1/gym/preferences
 //
@@ -57,6 +59,11 @@ public protocol TrainingSyncing {
     func createRoutine(_ write: RoutineWrite) async throws -> Routine
     func replaceRoutine(_ id: String, with write: RoutineWrite) async throws -> Routine
     func deleteRoutine(_ id: String) async throws
+
+    func proposals() async throws -> [ProposalHead]
+    func proposal(_ id: String) async throws -> Proposal?
+    func applyProposal(_ id: String) async throws -> AppliedProposal
+    func dismissProposal(_ id: String) async throws -> Proposal
 
     func share(_ sessionId: String) async throws -> SessionShare
     func revokeShare(_ sessionId: String) async throws
@@ -225,6 +232,44 @@ public struct GymApi: TrainingSyncing {
         try await api.send("DELETE", "/v1/gym/routines/\(id)")
     }
 
+    // EVERY PROPOSAL ON THE ACCOUNT, newest first, in ONE read — pending and settled together,
+    // because the room needs both: the pending ones are the cards that wait on Today and on the
+    // routine, and the settled ones are the routine's History. The route can filter by routine and
+    // by state and this client asks for neither: one read answers every card and every history row,
+    // where a filter per routine would be the N+1 the picker's own meta already refused.
+    //
+    // There is no signed-out half of this route and no 404 to fold: no account, no proposal.
+    public func proposals() async throws -> [ProposalHead] {
+        try await api.get("/v1/gym/proposals", as: Ledger.self).proposals
+    }
+
+    // The whole diff. Absent, another account's and never-existed are the same 404, one fact, so the
+    // absence folds into the type exactly as a routine's and a session's do.
+    public func proposal(_ id: String) async throws -> Proposal? {
+        do {
+            return try await api.get("/v1/gym/proposals/\(id)", as: Proposal.self)
+        } catch let error as WindmillApiError {
+            if case .refused(404, _) = error { return nil }
+            throw error
+        }
+    }
+
+    // THE TAP. It is atomic against the base the diff was written on: a routine that moved
+    // underneath is refused 409 rather than merged over the top, and asking again for a decision
+    // already taken REPLAYS rather than erroring. Both refusals are thrown whole — the store reads
+    // the code and decides, because this is the one call in gym where a 409 is the answer and not a
+    // failure.
+    public func applyProposal(_ id: String) async throws -> AppliedProposal {
+        try await api.send("POST", "/v1/gym/proposals/\(id)/apply", as: AppliedProposal.self)
+    }
+
+    // Dismissing changes nothing and asks for no reason. It answers the settled row, because the
+    // proposal stays on the routine as a dated record — the decision is part of the program's
+    // history and not a card that vanishes.
+    public func dismissProposal(_ id: String) async throws -> Proposal {
+        try await api.send("POST", "/v1/gym/proposals/\(id)/dismiss", as: Settled.self).proposal
+    }
+
     // Idempotent on the SESSION and not on a client-minted id — there is no id for a client to mint
     // here, because the token is unguessable and therefore the server's to make. Tapping Share twice
     // answers with the link already live, so a lifter never sends two capabilities to revoke apart.
@@ -264,4 +309,6 @@ public struct GymApi: TrainingSyncing {
     private struct LastSets: Decodable { let movements: [LastSet] }
     private struct Log: Decodable { let sessions: [SessionSummary] }
     private struct Routines: Decodable { let routines: [Routine] }
+    private struct Ledger: Decodable { let proposals: [ProposalHead] }
+    private struct Settled: Decodable { let proposal: Proposal }
 }

@@ -289,10 +289,12 @@ private fun RestRow(preferences: GymPreferences, onPick: (Int?) -> Unit, onToggl
         }
         ToggleLine("Sound when it ends", preferences.restSound, onToggleSound)
         // THE ONE WAY TO BE COUNTED DOWN WITHOUT ASKING, said where the dial is rather than left
-        // for a lifter to discover mid-set. A routine may carry its own rest against a movement —
-        // only an agent writing the routine can set it — and that line outranks this dial, `off`
-        // included. Nothing on this screen edits it, so the honest move is to name it.
-        Caption("A routine can carry its own rest for a movement. That one wins over this dial, off included — and only the routine it was written into can change it.")
+        // for a lifter to discover mid-set. A routine may carry its own rest against a movement,
+        // and that line outranks this dial, `off` included. It arrives written into a routine an
+        // agent created, or through a proposal the lifter applied — never from an agent reaching
+        // into a routine that already stands. Nothing on this screen edits it, so the honest move
+        // is to name it.
+        Caption("A routine can carry its own rest for a movement. That one wins over this dial, off included — and only a change to that routine can move it.")
         // The honest half, and it says only what this build actually does. The room holds the
         // screen awake for the whole workout (GymRoom's FLAG_KEEP_SCREEN_ON), and the chime is a
         // sleep inside the app scheduled against the instant the set landed. NOTHING here books an

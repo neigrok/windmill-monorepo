@@ -41,11 +41,17 @@ happens on the device. The backend's job is narrow and load-bearing:
 3. **The reads the device can't fake** — the training log (sessions + sets back), last-time
    prefill, the finish, a movement's record, the statistics engine, the export, and the coach
    share. (§5)
-4. **The wedge — shipped.** Gym's sixteen MCP tools on `windmill.works/mcp`, behind the platform's
-   grant gate: `gym:read` answers questions, `gym:write` logs and plans, `gym:delete` destroys, and
-   **none of the three implies another**. Every tool goes through `LogService` — the same core the
-   REST handlers use, never the repository — and acts **as** the caller, so an agent is one more
-   owner-scoped client and never an admin. The coach is the user's own agent. (§6, §8)
+4. **The wedge — shipped.** Gym's seventeen MCP tools on `windmill.works/mcp`, behind the platform's
+   grant gate: `gym:read` answers questions, `gym:write` **records what happened and proposes changes
+   to the program**, `gym:delete` destroys a workout or a coach link and **proposes** destructive
+   changes to the program, and **none of the three implies another**. Every tool goes through
+   `LogService` — the same core the REST handlers use, never the repository — and acts **as** the
+   caller, so an agent is one more owner-scoped client and never an admin. The coach is the user's
+   own agent. (§6, §8)
+5. **The proposal ledger — shipped W6, 2026-08-12.** An agent reads this log and never writes to the
+   program: a change to a day that already stands arrives as a typed field-level diff that does
+   nothing until the lifter taps Apply. It is one object with a `source` column, because W7's Ask
+   mints through it too. (§2.9, §6)
 
 **What the backend deliberately does NOT do — it stays on the device:**
 
@@ -79,14 +85,26 @@ happens on the device. The backend's job is narrow and load-bearing:
   read.
 - **One agent path with two doors.** Gym ships a **catalog**, and whatever talks to it reaches this
   log only through those tools, under a grant: the lifter's own Claude over MCP, or the coach panel
-  (§12) for someone who has no agent. **Two refusals this section used to make did not survive.**
-  *Lift's propose-apply contract:* a granted write lands directly, exactly as roadmap's tending writes
-  (`domain/Tending.h`); what stands where the human's Apply stood is the grant — a level nobody
-  approved is a tool the connection cannot even see — and the fact that each of the three destructive
-  tools sits behind `gym:delete` alone. *"No prompt, no tool loop, no token bill":* the panel is all
-  three. What is still true and is the point of the design is that it is not a SECOND system — same
-  tools, same service, same ownership rules, and a scope narrower than any MCP connection's. Still
-  cut: streaming (no SSE parser), proposal chrome, and any chat not attached to one finished workout.
+  (§12) for someone who has no agent. It is not a SECOND system — same tools, same service, same
+  ownership rules, and a scope narrower than any MCP connection's. Still cut: streaming (no SSE
+  parser) and any chat not attached to one finished workout.
+- **It reads. It proposes. It never writes to your program.** Every gym mutation an agent can make
+  declares itself `record` or `intent` (`domain/Proposal.h`), and the split is by what class of
+  object it touches. **A mutation that records something that already happened executes immediately,
+  at every door** — a set, a workout starting or ending, a movement, a new day of the program. **A
+  mutation that changes something that will happen mints a proposal that does nothing until the
+  lifter taps Apply.** A lifter saying "log 100×5" is using the agent as a transcription device: the
+  bar is already back on the rack, the consequence is visible in the room within seconds, and
+  confirming a fact is theatre. A rewritten Tuesday speaks to a tired future person in a room where
+  the conversation that caused it is gone, and Apply is the only UI that decision will ever have. A
+  grant is standing consent to a *class*, given before the content of the act is imaginable; Apply is
+  situated consent to a diff you can read, and the two are not substitutes under the usage this
+  product sells — scheduled agents, forty-step plans skimmed once, subagents. **It is a predicate and
+  not a table**, so a mutation invented in 2027 is classified by what it does rather than by whether
+  somebody remembered to add it to a list. **The enforcement point is the tool layer**, because that
+  is the only place gym can tell an agent from a hand: `LogService::replaceRoutine` is
+  `PUT /v1/gym/routines/{id}` and is unreachable from `GymTools`, and there is **no apply tool at any
+  grant level** — Apply is not a capability, it is a human act (§2.9, §6).
 
 **Billing in gym is one predicate, read in one place.** The log is free — every route in §6 answers a
 signed-in lifter whether or not they pay. The *connected* log is Windmill One, and the only code in
@@ -103,13 +121,15 @@ backend/products/gym/
   domain/Training.h/.cpp     ids · enums · Exercise · Session · Set · PlanSnapshot ·
                              InvalidTraining · codecs · defaultStepKg ·
                              the auto-close rule · the share's lifetime       (pure, no I/O)
-  domain/Routine.h/.cpp      Routine · RoutineEntry · snapshotOf              (pure, no I/O)
+  domain/Routine.h/.cpp      Routine · RoutineEntry · revision · snapshotOf   (pure, no I/O)
+  domain/Proposal.h/.cpp     the record/intent predicate · RoutineProposal ·
+                             the typed diff · what applying makes true         (pure, no I/O)
   domain/Review.h/.cpp       e1RM · the three record rules · the comparison   (pure, no I/O)
   domain/Statistics.h/.cpp   the per-movement line · the standing bests       (pure, no I/O)
   domain/Record.h/.cpp       a movement's record — chart · ladder · tiles     (pure, no I/O)
   ports/TrainingRepository.h the one store port + its DTOs
   ports/CoachAgent.h         the panel's port: CoachTurn · CoachStep · CoachAnswer
-  application/LogService.h/.cpp   start/finish/append/log/routines/stats/export/share
+  application/LogService.h/.cpp   start/finish/append/log/routines/proposals/stats/export/share
   application/CoachService.h/.cpp CoachTools (read-only, one workout) + the panel's refusal ladder
   adapters/
     json/TrainingJson.h/.cpp      the cross-surface wire codec
@@ -117,7 +137,7 @@ backend/products/gym/
     postgres/PgTrainingRepository.h/.cpp
     http/GymApi.h/.cpp            every /v1/gym/* route but one
     http/CoachApi.h/.cpp          POST /v1/gym/sessions/{id}/coach — the one conditional route
-    mcp/GymToolCatalog.h/.cpp     the sixteen declarations + the handshake paragraph
+    mcp/GymToolCatalog.h/.cpp     the seventeen declarations + the handshake paragraph
     mcp/GymTools.h/.cpp           the dispatch behind them, over LogService alone
     llm/AnthropicCoach.h/.cpp     the panel's tool loop and its one vendor call
   routes.h/.cpp              gym::GymDeps + gym::registerRoutes(app, deps)
@@ -298,6 +318,12 @@ create table if not exists gym_routines (
   created_at  timestamptz not null default now()
 );
 create index if not exists gym_routines_user on gym_routines (user_id, position);
+-- The concurrency token (W6, 2026-08-12), load-bearing twice over: it is what an agent's proposal is
+-- minted AGAINST, and it is what stops the mid-session "Save 87.5 to Push A" — a full
+-- read-modify-write PUT — from silently destroying that base. A PUT that moves the document or the
+-- name moves this number and supersedes every pending proposal in the same transaction; one that
+-- lands the bytes already standing moves neither (§2.9).
+alter table gym_routines add column if not exists revision int not null default 1;
 
 create table if not exists gym_routine_entries (
   routine_id       text not null references gym_routines(id) on delete cascade,
@@ -559,7 +585,134 @@ to. `preferences-unreadable` · `unknown-unit` · `bar-weight` · `plate-weight`
 `rest-target`, and the entity is what raises each of them — refused at construction, like every
 other value in this product.
 
----
+### 2.9 `gym_proposals` + `gym_proposal_changes` — what an agent may ask for (W6, 2026-08-12)
+
+```sql
+create table if not exists gym_proposals (
+  id            text primary key,                   -- client-minted 'prop_<hex>', the idempotency key
+  routine_id    text not null references gym_routines(id) on delete cascade,
+  user_id       uuid not null references users(id) on delete cascade,
+  intent        text not null check (intent in ('revise','remove')),
+  base_revision int  not null,
+  base_name     text not null,
+  proposed_name text not null,
+  summary       text not null default '',
+  changes       int  not null default 0,            -- `Apply all N`: rows + rename + reorder
+  state         text not null check (state in ('pending','applied','dismissed','superseded')),
+  door          text not null check (door in ('mcp','ask')),
+  connection    text not null default '',
+  agent         text not null default '',
+  created_at    timestamptz not null,
+  settled_at    timestamptz
+);
+create unique index if not exists gym_proposals_one_pending
+  on gym_proposals (routine_id, door, connection) where state = 'pending';
+
+create table if not exists gym_proposal_changes (
+  proposal_id         text not null references gym_proposals(id) on delete cascade,
+  position            int  not null check (position >= 1),
+  user_id             uuid not null references users(id) on delete cascade,
+  kind                text not null check (kind in ('kept','added','removed','retargeted')),
+  exercise_id         text not null references gym_exercises(id),
+  before_sets int, before_reps int, before_weight_kg numeric(6,2), before_rest_seconds int,
+  after_sets  int, after_reps  int, after_weight_kg  numeric(6,2), after_rest_seconds  int,
+  primary key (proposal_id, position)
+);
+```
+
+**The rows are the DOCUMENT as well as the DIFF, and that is the one structural decision here.** Rows
+`1..k` are the run the routine takes on, in order — `kept`, `added` and `retargeted` alike — and rows
+`k+1..n` are the lines the proposal takes away. So a proposal has exactly one stored representation:
+the field-level diff a lifter reads on §D14 (`sets 5 × 5 → 5 × 3`, `− Cable Fly · removed from the
+routine`) and the document an Apply writes are the same rows read two ways, and they cannot drift
+apart the way a stored diff beside a stored document would. `domain/Proposal.h`'s constructor is what
+keeps the reading safe: the removals come last or the entity refuses to exist.
+
+**Apply is atomic and it applies against `base_revision`.** A proposal is frozen at mint the way a
+session's plan snapshot is — the base revision AND the base name — and the write lands only while
+`gym_routines.revision` still equals it. A routine that moved since is **superseded, never merged
+over the top**, and that comparison is made in exactly ONE place: the store, under its own lock,
+because only a lock decides a race. `LogService::apply` loads the proposal, loads the routine and
+hands the domain's `appliedTo` result down; it deliberately re-decides none of the store's facts,
+because one fact decided in two layers is how the two come to be decided in two orders.
+
+**The revision moves when the DOCUMENT or the NAME moves, and not otherwise.** The lifter's own
+`PUT /v1/gym/routines/{id}` that changes either one moves it and supersedes every pending proposal on
+that routine **in the same transaction**, which is exactly what stops the mid-session "Save 87.5 to
+Push A" from destroying a base underneath a card somebody is about to tap. A PUT that lands the bytes
+already standing — an editor saving on close, the logger writing the whole document back to change a
+weight it did not change — moves nothing and settles nothing: killing a lifter's card for a save that
+did nothing is the ledger deciding for them. Neither does a drag up the routines screen, because
+`position` is not part of any proposal (`appliedTo` keeps the base's own).
+
+**One pending proposal per (routine, door, connection).** A newer one from the same door supersedes
+the older, which keeps a lifter's Today from filling with an agent's second thoughts; another door's
+stands, because two doors are two things to decide and losing one because the other spoke second
+would be the ledger deciding for them. A superseded proposal is **not deleted** — applied, dismissed
+and superseded alike stay as a dated record on the routine, which is the History section §B6 draws:
+*"Kept on the routine as a dated record — the program's history, not a toast that disappears."*
+**For as long as the routine stands**, and that is the honest end of the sentence: `routine_id`
+cascades, so an applied REMOVAL takes the whole ledger with it, the applied rows included (below).
+
+**`door` / `connection` / `agent` are provenance, and they are COLUMNS rather than a fork.** *"A
+change appeared in my Tuesday and I cannot tell whether it was my Claude or Windmill's coach"* is the
+exact mental-model failure this design exists to prevent, and W7's Ask mints through this same object
+with `door = 'ask'`. **`connection` and `agent` are empty today and that is a fact about the
+transport rather than a shrug:** `ToolCaller` (`platform/domain/ToolScope.h`) carries the account and
+the grant and nothing that tells one connection from another, so gym cannot honestly fill either yet.
+The columns exist so that the day it does, one line fills them and the unique index above sharpens
+from "per door" to "per connection" with no index change. Until then a card renders a fallback rather
+than an empty string where a model's name should be — the wire omits both fields when empty.
+
+**Nothing a proposal touches is a logged set or a frozen plan snapshot.** The change rows carry
+targets and nothing else, and applying one writes `gym_routines` + `gym_routine_entries` and no other
+table. A `removed` line's *41 logged sets kept* is counted at READ time against the live log, never
+stored — a count frozen at the mint would be wrong by the time anybody read it.
+
+**Proposals have no anonymous story.** Every route is owner-scoped and 401s before it reads anything,
+so there is nothing here for the anonymous claim replay to carry.
+
+**What `Apply all N` counts, and it is what the `noChange` refusal is decided off.** Every row that
+moves, one for a renamed routine, and **one for a run the proposal reorders** — because the change
+rows are the document, so a reorder is a change they express by their order and in no other way. A
+day is trained top to bottom, so *"move squats to the front"* is a real proposal; counting it zero
+answered it *"that document is what the routine already says"*, which was false about the only thing
+that refusal claimed to know.
+
+**A SPENT PROPOSAL ID SPLITS THREE WAYS, and conflating any two of them is how a mint lies.**
+Another account's id is `idTaken` — the caller learns it is spent and never whose. The caller's own
+id carrying the SAME document is the replay a lost reply deserves, and the stored proposal comes back
+untouched. The caller's own id carrying a DIFFERENT document is `idReused`, refused: answering it
+with the stored proposal would throw the new diff away and hand back a receipt reading *"this
+proposal is waiting in the lifter's app"* about an idea the caller never sent — §2's unforgivable
+defect running backwards, and the exact shape `create_routine` already refuses. `isReplayOf`
+(`domain/Proposal.h`) is the comparison, and it compares what the CALLER sent: never the state a
+lifter has since moved it to, never the `loggedSets` counted on the way out.
+
+**Every mint refusal returns before the commit**, which is a rule about the ORDER of the statements
+rather than about style. The supersede that clears the pending slot runs inside the mint's own
+transaction, so a refusal decided after it would commit that settle and roll nothing back — the
+lifter's card gone off Today, nothing replacing it, behind a message reading *"mint a different one
+and send it again"*. The id is resolved first, before a row moves.
+
+**Two refusals that are decided above the store, and both are product rules.** A document identical
+to what the routine already says is refused at the mint (`noChange`) — a card reading `Apply all 0`
+is a notification about nothing, in an app that has no notifications on purpose. And an applied
+REMOVAL leaves no proposal to read back: the routine's `on delete cascade` takes the ledger with it,
+so a second tap on a slow connection answers `404 no such proposal` rather than replaying. That is
+the honest shape rather than an oversight — a day that has left the program has no editor to draw a
+History section in, exactly as it had none before this ledger existed — and a client treats a 404
+after its own apply of a removal as the removal having landed.
+
+**The change rows carry no CHECKs on their target columns**, for the reason `gym_set_revisions`
+carries none: this is a copy of what a line asked for, and a bound tightened on
+`gym_routine_entries` later must never make an already-minted proposal unreadable. The entity
+refuses out-of-band values at the mint, which is where a proposal a lifter could not apply is
+stopped — before it ever reaches their screen, rather than at the one moment they had decided to
+trust it.
+
+Both tables are in `PgAccountFootprint`'s owned list in `main.cpp`: what somebody suggested for a
+lifter's program and what that lifter decided about it is their data.
 
 ---
 
@@ -1450,11 +1603,15 @@ query, ordered by pattern then name. Identity rules, stated once:
 | `GET  /v1/gym/sessions/{id}/review` | the finish surface — three facts, at most one record, the comparison | 2 |
 | `DELETE /v1/gym/sessions/{id}` | discard — `204`; refused `409 session-open` while it is still running | 2 |
 | `GET  /v1/gym/last?exercise=` | last-time prefill | 1 |
-| `GET  /v1/gym/routines` | the plan, most recently trained first | 2 |
+| `GET  /v1/gym/routines` | the plan, most recently trained first — each routine carrying its `revision` and the `pendingProposal` waiting on it | 2 |
 | `POST /v1/gym/routines` | create a routine — the whole document, idempotent on its id | 2 |
 | `GET  /v1/gym/routines/{id}` | one routine | 2 |
-| `PUT  /v1/gym/routines/{id}` | replace a routine — the whole document | 2 |
-| `DELETE /v1/gym/routines/{id}` | remove a routine — `204`; entries cascade, sessions keep their snapshots | 2 |
+| `PUT  /v1/gym/routines/{id}` | replace a routine — the whole document. Moves `revision` and supersedes every pending proposal on it **only when the document or the name actually moved** (§2.9) | 2 |
+| `DELETE /v1/gym/routines/{id}` | remove a routine — `204`; entries, its proposals and their change rows cascade, sessions keep their snapshots | 2 |
+| `GET  /v1/gym/proposals` | the ledger, newest first. `?routineId=` narrows to one day of the program (the routine editor's History), `?state=pending` to what is waiting (Today's card) | 6 |
+| `GET  /v1/gym/proposals/{id}` | one proposal with its typed diff — the screen an agent's receipt deep-links to | 6 |
+| `POST /v1/gym/proposals/{id}/apply` | **THE TAP.** All of it or none, against the frozen base revision. `{proposal, routine?}` — `routine` absent when the proposal removed it. `409 proposal-superseded` when the routine moved since; `409 proposal-settled` when the other decision was already taken; a replayed tap answers `200` with the stored proposal | 6 |
+| `POST /v1/gym/proposals/{id}/dismiss` | no reason asked for, nothing changed, and it stays in the routine's history. Same two refusals, mirrored | 6 |
 | `GET  /v1/gym/preferences` | **the settings section** (§I) — the five rows, and the one read in gym that cannot 404: no row means the DEFAULTS, because every client needs a rest target and a plate set to draw a first frame (§2.8) | 2 |
 | `PUT  /v1/gym/preferences` | replace the settings document, whole. Omitted fields take their default; every refusal carries a code (`preferences-unreadable` · `unknown-unit` · `bar-weight` · `plate-weight` · `too-many-plates` · `rest-target`). **Units are a display transform and reach no write** | 2 |
 | `GET  /v1/gym/stats` | the statistics ENGINE — per-movement line, standing bests, weekly counts. It has no room of its own on any client since 2026-08-12; its readers are the record page's rules and any agent asking the long question (§5) | 2 |
@@ -1466,25 +1623,51 @@ query, ordered by pattern then name. Identity rules, stated once:
 
 ### The MCP tool catalog (`adapters/mcp/GymToolCatalog`, dispatched by `adapters/mcp/GymTools`)
 
-Sixteen tools against roadmap's twenty-seven, and the smallness is the design: `tools/list` is the
+Seventeen tools against roadmap's twenty-seven, and the smallness is the design: `tools/list` is the
 biggest fixed cost of a connection, so a tool a parameter on another tool could serve does not get a
-slot. The **level is declared beside the description**, in the same `ToolDeclaration` the gate reads,
-so a tool cannot be described as one thing and gated as another. Seven reads against six writes is
-the shape this product wants: an agent here reads one lifter's log and occasionally writes into it,
-and the two verbs reserved for the HAND — editing a logged set, and saying what a gym owns — have no
-tool at any level.
+slot — which is why the pending proposal rides on `list_routines` instead of a `list_proposals` and a
+`get_proposal` of its own. The **level is declared beside the description**, in the same
+`ToolDeclaration` the gate reads, so a tool cannot be described as one thing and gated as another.
+Seven reads is the shape this product wants: an agent here reads one lifter's log and occasionally
+writes into it, and the verbs reserved for the HAND have no tool at any level — editing a logged set,
+saying what a gym owns, and **applying a proposal**.
 
 | `gym:read` | `gym:write` | `gym:delete` |
 |---|---|---|
 | `list_exercises` — the catalog | `start_session` — open a workout | `discard_session` |
-| `list_sessions` — the log, paged | `log_set` — one set into an open workout | `delete_routine` |
+| `list_sessions` — the log, paged | `log_set` — one set into an open workout | `propose_routine_removal` — **deletes nothing** |
 | `get_session` — one workout + its sets (`review: true` adds the finish readout) | `finish_session` | `revoke_share` |
-| `last_time` — the prefill | `save_routine` — the whole document, replace-or-create | |
-| `list_routines` — all, or one by `routineId` | `create_exercise` | |
-| `get_stats` — all movements, or one by `exerciseId` | `share_session` — `{url, token, expiresAt}` | |
-| `get_preferences` — the lifter's plates, bar, rest target and reading unit (§2.8). **No write beside it, at any level** | | |
+| `last_time` — the prefill | `create_routine` — a NEW day; **lands immediately** | |
+| `list_routines` — all, or one by `routineId`; carries `pendingProposal` | `propose_routine_change` — **changes nothing** | |
+| `get_stats` — all movements, or one by `exerciseId` | `create_exercise` | |
+| `get_preferences` — the lifter's plates, bar, rest target and reading unit (§2.8). **No write beside it, at any level** | `share_session` — `{url, token, expiresAt}` | |
 
-Five rules hold this together, and each is load-bearing:
+**W6 broke this contract on purpose, on 2026-08-12.** `save_routine` and `delete_routine` are gone at
+every level. The three names above carry §0's record/intent split so an agent author reads it off the
+catalog rather than out of this document: a day of the program that does not exist yet is `fresh` and
+`create_routine` writes it; a day that already stands is `existing` and the two `propose_` tools mint
+a diff and write nothing. **The receipt is never shaped like a write** — it carries the proposal, its
+`state`, the typed diff and a `reviewUrl`, and no routine at all, so an agent that reads it cannot
+tell its human the program changed. That is the one defect this wave could not afford: a well-behaved
+agent turned into a liar. **The retirement answers name their replacements** rather than reading
+"this connection was not granted gym:write", which would be false — the level was granted, the tool
+was retired. `gymInstructions()` carries the same retirement in the handshake every client reads at
+connect, because a name no product declares never reaches gym's dispatcher over MCP (see the REQUEST
+below).
+
+**No apply tool at any grant level, and that is a product rule rather than an economy.** Apply is not
+a capability, it is a human act: `gym:delete` proposes destructive changes and does not imply the
+right to make one. The two routes that settle a proposal are HTTP and owner-scoped (`routes.cpp` says
+it beside the mounts), `LogService::replaceRoutine` is the human's other hand and is unreachable from
+`GymTools`, and `GymToolsTest` pins every one of those absences by name.
+
+**REQUEST, open against the platform:** `CompositeToolHost` resolves a `tools/call` name against the
+catalogs it was built from, so `save_routine` reaches gym's dispatcher only through an in-process
+host — over MCP it gets the composite's own *"no such tool on this server"*, which is true and
+unnamed. A `retiredTools()` seam on `ToolHost` would let the composite answer with the sentence the
+product wrote. Until it exists the named answer lives in the handshake and in `GymTools::dispatch`.
+
+Six rules hold this together, and each is load-bearing:
 
 - **Every tool goes through `LogService`, never the repository.** The service owns the two-phase
   load → rule → persist shape, the lazy auto-close and the write-then-resolve idempotency; a tool
@@ -1498,9 +1681,19 @@ Five rules hold this together, and each is load-bearing:
   model cannot read a doc between two calls. The domain's own `InvalidTraining` sentence is forwarded
   **verbatim** here, where the browser edge flattens every one of them into `could not read that set`.
 - **Client-minted ids, said out loud in the description.** `start_session`, `log_set`,
-  `save_routine` and `create_exercise` all take the id the caller mints, and each description says a
-  replay answers with the stored row — without that sentence a model invents a fresh id per retry and
-  mints duplicates, which is exactly what §2.1 exists to prevent.
+  `create_routine`, `propose_routine_change`, `propose_routine_removal` and `create_exercise` all
+  take the id the caller mints, and each description says a replay answers with the stored row — without that sentence a model invents a fresh id per retry and
+  mints duplicates, which is exactly what §2.1 exists to prevent. **A replay is the same id carrying
+  the SAME document.** The two document-carrying tools refuse a spent id carrying a different one —
+  `create_routine` points at the proposal door, `propose_routine_change` says nothing was minted —
+  because replaying a caller's second idea with their first, under `[ok]`, is the receipt that turns
+  a well-behaved agent into a liar (§2.9).
+- **A read's own fields survive the write that takes them back.** Duplicating a day is reading one
+  with `list_routines` and sending it back under a fresh id, so every field the read PUTS ON a
+  routine — `position` on a line, `lastTrainedAt`, `revision`, `pendingProposal` — is declared on
+  `create_routine` and ignored. `additionalProperties: false` is enforced by `CompositeToolHost`, and
+  strictness that refuses a typo AND the document we ourselves emitted is not strictness, it is an
+  outage: `lastTrainedAt` is on that list because it already caused one.
 - **`delete` is never merged into `write`.** Two tools may merge where a parameter does the job
   (`list_routines`, `get_stats`) but never across levels, and no read is reachable through a
   write-classified name.
@@ -1533,9 +1726,17 @@ Instants are epoch-ms numbers, weights are
 numbers in kg, sets serialize as
 `{id, exerciseId, setNumber, weightKg, reps, kind, rpe?, note, completedAt}`, sessions as
 `{id, startedAt, finishedAt?, routineId?, plan?}`, routines as
-`{id, name, position, lastTrainedAt?, entries:[{position, exerciseId, targetSets, targetReps?,
-targetWeightKg?, restSeconds?}]}`; list replies wrap (`{"exercises":[…]}`, `{"sessions":[…]}`,
-`{"routines":[…]}`, detail `{"session":…, "sets":[…]}`). A log row is a session plus
+`{id, name, position, revision, lastTrainedAt?, entries:[{position, exerciseId, targetSets,
+targetReps?, targetWeightKg?, restSeconds?}], pendingProposal?}`; list replies wrap
+(`{"exercises":[…]}`, `{"sessions":[…]}`, `{"routines":[…]}`, `{"proposals":[…]}`, detail
+`{"session":…, "sets":[…]}`). A proposal's head is
+`{id, routineId, intent, state, summary, changeCount, createdAt, settledAt?,
+source:{door, connection?, agent?}}` and the whole thing adds
+`{baseRevision, baseName, name, changes:[{position, kind, exerciseId, before?, after?,
+loggedSets?}]}`, where each side is `{sets, reps?, weightKg?, restSeconds?}` — `before` absent on an
+added line, `after` on a removed one, and `loggedSets` on removed lines alone. `changeCount` is what
+`Apply all N` prints: the rows that move, plus one for a rename, plus one for a reordered run.
+`revision` is read-only on the wire: the store is what moves it. A log row is a session plus
 `{setCount, workingSetCount, tonnageKg, exercises:[…], topSet?: {weightKg, reps}, topE1rm?,
 record, closedItself}` — `record` always present, never omitted. Parsing type-checks every jsoncpp
 field before `.as*()` and throws
@@ -1647,6 +1848,9 @@ on carries a machine word under `code` beside the human sentence:
 | 409 | `routine-id-taken` | create a routine under an id another account holds | `that routine id is taken` | mint a NEW routine id and send the same document again |
 | 409 | `exercise-id-taken` | create a movement under a seeded slug or another account's id — never the caller's **own**, which answers 200 with the movement already stored under it (§2.1: a 409 there forces a re-mint, and the re-mint is a second "Zercher Squat" every later set forks history across) | `that movement id is taken` | mint a NEW movement id and send it again |
 | 409 | `session-open` | discard a session that is still running | `that session is still running` | terminal until the workout ends — no id to re-mint and no body to fix; finish it (or let the four-hour auto-close fire) and send the same delete again |
+| 404 | — | the proposal is absent **or** another account's — one fact, not two | `no such proposal` | terminal — re-read `GET /v1/gym/proposals` |
+| 409 | `proposal-superseded` | apply or dismiss a proposal whose routine moved after the diff was written | `that routine changed after this proposal was written…` | terminal — the card is settled; draw the routine as it now stands |
+| 409 | `proposal-settled` | ask for one decision on a proposal that already took the OTHER one | `that proposal was already applied` / `…already dismissed` | terminal — the screen is stale; re-read the proposal. Asking for the decision it DID take is not a refusal: it replays 200 |
 | 500 | — | a storage failure — a dropped connection, a statement timeout, a deadlock | `internal error` (the house handler) | retryable — keep the set queued |
 
 **The code is the contract; the sentence is for a human reading a log.** The wording is copy and may
@@ -1870,9 +2074,11 @@ with the coach's `#/gym/shared/<token>` link held outside the room chrome by the
     owner-scoped client and the ownership rules are enforced in exactly one place. The level rides on
     the declaration beside the description, so the two cannot drift. Tools merge where one argument
     does the job — `list_routines` is the list and the single read, `get_session` carries the finish
-    readout, `get_stats` narrows to one movement, `save_routine` replaces-or-creates — and **never
-    across levels**: no read is reachable through a write-classified name, and `gym:delete` is its
-    own grant. What is deliberately absent: an export tool (three tools already answer it in a shape
+    readout, `get_stats` narrows to one movement, `list_routines` carries the proposal waiting on a
+    day of the program — and **never across levels**: no read is reachable through a
+    write-classified name, and `gym:delete` is its own grant. Since W6 the catalog also carries the
+    record/intent split in its NAMES: `create_routine` lands, `propose_routine_change` and
+    `propose_routine_removal` land nothing (§0, §2.9). What is deliberately absent: an export tool (three tools already answer it in a shape
     a model reads), any tool that would touch another account, and any prompt, model or loop of gym's
     own. (§0, §6, §8)
 
@@ -1908,7 +2114,7 @@ the local stack → push → watch CI → probe prod).
   shape the decided design (§G18) never drew, and a renumber rewrites rows the lifter did not ask to
   change. Still open: `set-kinds` UI · `rest-timer` (the target column routines now write).
   `gym-mcp` — **shipped**, both halves: the platform's grant gate, then
-  gym's sixteen tools on it (§6). What is left of that bet is client-side — the connect surface, and
+  gym's seventeen tools on it (§6). What is left of that bet is client-side — the connect surface, and
   whatever the shell puts in front of a lifter who has no agent of their own.
 - **Phase 3.** `progress-charts` — **the backend half is shipped** as `GET /v1/gym/stats` (§5).
   That is a decision taken **ahead of** the measured gate rather than through it: the gate
@@ -2202,10 +2408,10 @@ merge, exactly as `ScopedToolHost` and the composite do for a tend:
 - **The scope, stated at the call site.** `CoachService::ask` constructs
   `ToolCaller{caller, ToolScope({{"gym", Access::read}})}` on the line that dispatches the run. Not a
   default, not inherited, not `everything()` — the widest thing a panel could inherit is everything
-  the *account* may do, which for a question about a workout that already happened is nine tools too
+  the *account* may do, which for a question about a workout that already happened is ten tools too
   many.
 - **`CoachTools`, which is gym's `ScopedToolHost`.** It drops every declaration whose access is not
-  `read` (so the model is handed seven tools, not sixteen), refuses a non-read name if one is called
+  `read` (so the model is handed seven tools, not seventeen), refuses a non-read name if one is called
   anyway, and **forces `sessionId`** on every tool that takes one — so a set note somebody typed at
   the rack cannot steer the panel onto another workout. It decides all of this by reading the
   declarations, never a list of names, so it cannot drift from the catalog.

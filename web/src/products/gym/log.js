@@ -15,7 +15,8 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 // A position is a URL: #/gym is today, #/gym/log the log, #/gym/routines the routines,
 // #/gym/movement/… one movement's record, #/gym/routines/rt_… one routine's editor,
 // #/gym/session/ses_… one session, #/gym/finish/ses_… the end of the one just closed,
-// #/gym/backfill the past-workout form, #/gym/shared/… one workout as a coach reads it.
+// #/gym/backfill the past-workout form, #/gym/proposals/prop_… one proposal read as a diff,
+// #/gym/shared/… one workout as a coach reads it.
 // Reading and writing that one grammar live together, so a link and the parse that answers it can
 // never drift.
 export function sessionIdOf(hash) {
@@ -57,6 +58,19 @@ export function finishHref(id) {
 
 export const BACKFILL_HREF = '#/gym/backfill';
 
+// ONE PROPOSAL, READ AS A DIFF (§D14). The id is minted by whoever wrote the proposal — an agent
+// over MCP — and the deep link in its receipt is this URL, so the parse has to take the whole id
+// the mint's own rule allows (`prop_` and hex today, `^[A-Za-z0-9_-]{8,64}$` on the wire) rather
+// than the narrower shape gym's own mints happen to have.
+export function proposalIdOf(hash) {
+  const match = /^#\/gym\/proposals\/([A-Za-z0-9_-]+)/.exec(hash || '');
+  return match ? match[1] : null;
+}
+
+export function proposalHref(id) {
+  return `#/gym/proposals/${id}`;
+}
+
 // A MOVEMENT'S RECORD (§H) — the page an exercise name is a door to, wherever the name appears. The
 // id in it is the CATALOG's, so it is a slug for a seeded movement ('back-squat') and 'ex_<hex>'
 // for one a lifter minted; both are inside the charset every other id here is read with.
@@ -97,6 +111,7 @@ export function screenOf(hash) {
   if (sharedTokenOf(hash)) return 'shared';
   if (sessionIdOf(hash)) return 'session';
   if (finishIdOf(hash)) return 'finish';
+  if (proposalIdOf(hash)) return 'proposal';
   if (routineIdOf(hash)) return 'routine';
   if (/^#\/gym\/routines(\/|$|\?)/.test(hash || '')) return 'routines';
   if (/^#\/gym\/backfill(\/|$|\?)/.test(hash || '')) return 'backfill';
@@ -152,6 +167,18 @@ export function firstSessionLabel(ms) {
 
 export function whenLabel(ms) {
   return `${dayLabel(ms)} · ${timeLabel(ms)}`;
+}
+
+// WHEN A PROPOSAL ARRIVED — canon §D14's `Sun 21:14`, which is the weekday and the hour because a
+// lifter reading a diff on Monday morning remembers the Sunday evening they asked for it. The
+// weekday alone repeats every seven days, so past a week it takes the date instead: a card that
+// waited a fortnight must not say `Sun` and let the reader supply the wrong Sunday. Six days is the
+// cut rather than seven, because a Sunday and the Sunday before it are the two that would collide.
+const WEEKDAY_MS = 6 * 86400000;
+
+export function arrivedLabel(ms, now = Date.now()) {
+  if (now - ms >= WEEKDAY_MS) return whenLabel(ms);
+  return `${WEEKDAYS[new Date(ms).getDay()]} ${timeLabel(ms)}`;
 }
 
 // A session read whole says when it ran, how long it took and how much is in it — the day itself
@@ -573,9 +600,15 @@ export function planReadingOf(session, exerciseId) {
   return { kind: 'planned', line: `plan ${line}`, entry };
 }
 
-// Spelled out to ten, because "two short" is a sentence and "2 short" is a score. Past ten the word
-// stops being one a lifter would say, and a rep target that far out is a different session anyway.
-const SHORT_WORDS = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+// A SMALL COUNT, SPELLED — "two short" on a set, "All four or none" under a proposal. Spelled out
+// to ten, because "two short" is a sentence and "2 short" is a score; past ten the word stops being
+// one a lifter would say and the numeral is what is left. ONE table for the product: two of them
+// would disagree the first day either grew, and both sentences are read on the same surface.
+const NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+
+export function numberWord(count) {
+  return NUMBER_WORDS[count] ?? String(count);
+}
 
 // THE ONE THING WORTH SAYING ABOUT A SET, beside what it was. Dim is what the plan said, bright is
 // what you did, and a miss gets one line and no scolding (§G17) — which is why there is no note for
@@ -598,8 +631,7 @@ export function setNoteOf(set, reading, first) {
   const target = targetLoadOf(weightKg);
   const load = round(set.weightKg);
   if (reps != null && set.reps < reps && (target == null || load <= target)) {
-    const missing = reps - set.reps;
-    return `${SHORT_WORDS[missing] ?? missing} short`;
+    return `${numberWord(reps - set.reps)} short`;
   }
   if (target == null) return null;
   if (load > target) return `+${fmt(load - target)} over plan`;

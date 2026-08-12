@@ -1,8 +1,9 @@
 // The gym product's route table — the same uniform shape roadmap and journal export, so the shell
 // composes all three through one loop. #/gym is Today, #/gym/log the log and #/gym/routines the
 // routines — three rooms and deliberately no fourth (§B cuts the Insights tab); one session, one
-// routine, one movement's record, one finished session and the past-workout door hang off those
-// (log.js holds the grammar). GymApp resolves the exact position off the hash — including
+// routine, one movement's record, one finished session, one proposal an agent wrote (#/gym/proposals/…,
+// the deep link its receipt hands out) and the past-workout door hang off those (log.js holds the
+// grammar). GymApp resolves the exact position off the hash — including
 // #/gym/shared/…, the coach's read-only workout, which is the one position here that resolves for a
 // visitor with no account at all.
 

@@ -210,13 +210,19 @@ struct SettingsScreen: View {
     // on a guess: the export is a file this app has nowhere to put yet, and the grant state is an
     // entitlements read this client does not have — a row naming a connection it had not checked
     // would be worse than a row that says where to look.
+    //
+    // "READ THIS LOG AND PROPOSE CHANGES" is the whole of what a connection can do, and this line
+    // used to say "read and write". It was true when it was written and stopped being true on
+    // 2026-08-12: a granted agent records what happened — sets, sessions, a new movement — and
+    // everything it wants to change about the PROGRAM arrives as a proposal that waits for a tap.
+    // The consent copy on every surface says the same thing or none of them can be trusted.
     private var doors: some View {
         VStack(alignment: .leading, spacing: 9) {
             Link(destination: page("/#/settings")) {
                 door(title: "Export", line: "every set as CSV · yours, always", lit: false)
             }
             Link(destination: page("/#/connect")) {
-                door(title: "Connected log", line: "let Claude read and write this log", lit: true)
+                door(title: "Connected log", line: "let Claude read this log and propose changes", lit: true)
             }
         }
     }

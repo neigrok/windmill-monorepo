@@ -1265,6 +1265,11 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
     var stored: [String: Session] = [:]
     var sets: [String: [TrainingSet]] = [:]
     var written: [String: Routine] = [:]
+    // What a routine's PUT moves and what a proposal's base is checked against. It is a column on
+    // the routine on the wire and read-only there, so it is held beside the routines rather than on
+    // them: no client ever sends it and nothing this app draws reads it.
+    var revisions: [String: Int] = [:]
+    var ledger: [Proposal] = []
     var lastTimes: [String: LastTime] = [:]
     var lastSets: [LastSet] = []
     var reviews: [String: Review] = [:]
@@ -1277,6 +1282,8 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
     var refuseCreate: WindmillApiError?
     var refuseCreateRoutine: WindmillApiError?
     var refuseRoutines: WindmillApiError?
+    var refuseProposals: WindmillApiError?
+    var refuseApply: WindmillApiError?
     var refuseShare: WindmillApiError?
     var refuseRevoke: WindmillApiError?
     var refuseRecord: WindmillApiError?
@@ -1520,17 +1527,120 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         return made
     }
 
+    // THE HUMAN'S HAND, and it does what the server does in one transaction: the routine's revision
+    // moves, and every proposal still pending on it is set aside. A fake that only replaced the
+    // document would let a diff apply over a base that no longer stands — which is the exact defect
+    // the revision exists to stop.
     func replaceRoutine(_ id: String, with write: RoutineWrite) async throws -> Routine {
         calls.append("replaceRoutine")
         guard online else { throw WindmillApiError.offline }
         written[id] = nil
-        return try await createRoutine(write)
+        let saved = try await createRoutine(write)
+        revisions[id] = (revisions[id] ?? 1) + 1
+        for index in ledger.indices where ledger[index].routineId == id && ledger[index].state == .pending {
+            settle(index, as: .superseded)
+        }
+        return saved
     }
 
     func deleteRoutine(_ id: String) async throws {
         calls.append("deleteRoutine")
         guard online else { throw WindmillApiError.offline }
         written[id] = nil
+    }
+
+    // THE PROPOSAL LEDGER, and it enforces the two rules the room's whole safety rests on: apply is
+    // refused when the routine has moved under the diff, and a decision already taken is not taken
+    // again. `revisions` is what a routine's PUT moves — the fake bumps it exactly where the server
+    // does, so a test can put a human's hand on a routine and watch the card come back set aside.
+    func proposals() async throws -> [ProposalHead] {
+        calls.append("proposals")
+        guard online else { throw WindmillApiError.offline }
+        if let refuseProposals { throw refuseProposals }
+        return ledger.map(\.head)
+    }
+
+    func proposal(_ id: String) async throws -> Proposal? {
+        calls.append("proposal")
+        guard online else { throw WindmillApiError.offline }
+        return ledger.first { $0.id == id }
+    }
+
+    func applyProposal(_ id: String) async throws -> AppliedProposal {
+        calls.append("applyProposal")
+        guard online else { throw WindmillApiError.offline }
+        if let refuseApply { throw refuseApply }
+        guard let index = ledger.firstIndex(where: { $0.id == id }) else {
+            throw WindmillApiError.refused(404, Refusal(Data(#"{"error":"no such proposal"}"#.utf8)))
+        }
+        let held = ledger[index]
+        // Replay, not an error: asking again for the decision already taken answers the stored row.
+        if held.state == .applied { return AppliedProposal(proposal: held, routine: written[held.routineId]) }
+        if held.state == .dismissed {
+            throw refusal(409, code: "proposal-settled", "that proposal was already dismissed")
+        }
+        if held.state == .superseded || held.baseRevision != (revisions[held.routineId] ?? 1) {
+            settle(index, as: .superseded)
+            throw refusal(409, code: "proposal-superseded", "the routine moved after this was written")
+        }
+        settle(index, as: .applied)
+        guard held.intent == .revise else {
+            // A removal takes its whole ledger with it, exactly as the server's cascade does — so
+            // the applied row is answered once and then no longer exists to be read again.
+            let done = ledger[index]
+            written[held.routineId] = nil
+            ledger.removeAll { $0.routineId == held.routineId }
+            return AppliedProposal(proposal: done)
+        }
+        let base = written[held.routineId]
+        let changed = Routine(id: held.routineId, name: held.name, position: base?.position ?? 0,
+                              lastTrainedAtMs: base?.lastTrainedAtMs,
+                              entries: held.changes.filter { $0.kind != .removed }.map { change in
+                                  RoutineEntry(position: change.position, exerciseId: change.exerciseId,
+                                               targetSets: change.after?.sets ?? 0,
+                                               targetReps: change.after?.reps,
+                                               targetWeightKg: change.after?.weightKg,
+                                               restSeconds: change.after?.restSeconds)
+                              })
+        written[changed.id] = changed
+        revisions[changed.id] = (revisions[changed.id] ?? 1) + 1
+        // AN APPLY IS A WRITE LIKE ANY OTHER: the routine just moved, so every other proposal
+        // waiting on it is against a base that is gone and the server sets them aside in the same
+        // transaction (`supersedeOnRoutine`). A fake that skipped this would leave a card on the
+        // phone the log had already settled — and no test could see it.
+        for other in ledger.indices
+        where ledger[other].routineId == changed.id && ledger[other].state == .pending {
+            settle(other, as: .superseded)
+        }
+        return AppliedProposal(proposal: ledger[index], routine: changed)
+    }
+
+    func dismissProposal(_ id: String) async throws -> Proposal {
+        calls.append("dismissProposal")
+        guard online else { throw WindmillApiError.offline }
+        guard let index = ledger.firstIndex(where: { $0.id == id }) else {
+            throw WindmillApiError.refused(404, Refusal(Data(#"{"error":"no such proposal"}"#.utf8)))
+        }
+        if ledger[index].state == .dismissed { return ledger[index] }
+        guard ledger[index].state == .pending else {
+            throw refusal(409, code: "proposal-settled", "that proposal was already settled")
+        }
+        settle(index, as: .dismissed)
+        return ledger[index]
+    }
+
+    private func settle(_ index: Int, as state: ProposalState) {
+        ledger[index] = settled(ledger[index], as: state)
+    }
+
+    private func settled(_ proposal: Proposal, as state: ProposalState) -> Proposal {
+        let head = proposal.head
+        return Proposal(head: ProposalHead(id: head.id, routineId: head.routineId, intent: head.intent,
+                                           state: state, summary: head.summary,
+                                           changeCount: head.changeCount, createdAtMs: head.createdAtMs,
+                                           settledAtMs: 9_000, source: head.source),
+                        baseRevision: proposal.baseRevision, baseName: proposal.baseName,
+                        name: proposal.name, changes: proposal.changes)
     }
 
     // One movement's record, and it is a stored answer rather than a computed one: Epley is the

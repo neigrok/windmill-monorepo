@@ -22,9 +22,15 @@ import WindmillPlatform
 struct TodayScreen: View {
     @ObservedObject var store: TrainingStore
     let isSignedIn: Bool
+    // Which pending proposals the lifter has said "later" to. Held by the ROOM and not here, so the
+    // answer survives a walk to the log and back — and dies with the room, which is the whole of
+    // what "later" promises.
+    let setAside: Set<String>
     let onStart: (String?) -> Void
     let onMovement: (String) -> Void
     let onOpenSession: (SessionSummary) -> Void
+    let onProposal: (String) -> Void
+    let onLater: (String) -> Void
     let onSettings: () -> Void
     let onSignIn: () -> Void
 
@@ -50,6 +56,7 @@ struct TodayScreen: View {
                 } else {
                     empty
                 }
+                waiting
                 if !isSignedIn { claimOffer }
                 lookingBack
                 settingsDoor
@@ -150,6 +157,31 @@ struct TodayScreen: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
         .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg).strokeBorder(skin.line, lineWidth: 1))
+    }
+
+    // THE ONE THING ON THIS SCREEN THAT ASKS FOR ATTENTION, and the only notification this product
+    // has: a proposal an agent wrote, waiting under the day's routine until it is applied or
+    // dismissed. There is no push, no badge and no unread count anywhere in gym — the card waits
+    // where the lifter is already looking, which is why it does not need any of them.
+    //
+    // SIGNED OUT IT IS NEVER HERE, and not because this screen hides it: a proposal belongs to an
+    // account, so the store's list is empty until there is one and there is nothing to draw.
+    //
+    // The newest one, and only while its routine is on screen to be named. A card that could not
+    // say which program it is about would be asking the lifter to open a diff on faith — and the
+    // list a routine went missing from is one whose read failed, which is a reason to say less.
+    //
+    // NO GATE AND NO PITCH. §D's Windmill One sell is screens 12 and 13 and it is not this wave's
+    // to draw; a proposal that exists is proof enough of a connection, and this client cannot read
+    // an entitlement to say anything else honestly.
+    @ViewBuilder
+    private var waiting: some View {
+        if let head = store.proposals.first(where: { $0.isPending && !setAside.contains($0.id) }),
+           let routine = store.routines.first(where: { $0.id == head.routineId }) {
+            ProposalCard(head: head, routineName: routine.name,
+                         onReview: { onProposal(head.id) },
+                         onLater: { onLater(head.id) })
+        }
     }
 
     private var logWithoutARoutine: some View {

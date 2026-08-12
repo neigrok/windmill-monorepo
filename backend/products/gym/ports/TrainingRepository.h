@@ -1,6 +1,7 @@
 #pragma once
 
 #include "products/gym/domain/Preferences.h"
+#include "products/gym/domain/Proposal.h"
 #include "products/gym/domain/Record.h"
 #include "products/gym/domain/Review.h"
 #include "products/gym/domain/Routine.h"
@@ -197,6 +198,55 @@ struct RoutineWriteOutcome {
   RoutineWriteError error;
 };
 
+// What a surface is asking the proposal ledger for. Today's card reads the pending ones across
+// every routine; the routine editor's History section reads one routine's whole run, settled rows
+// included, because an applied or dismissed proposal is part of the program's history rather than
+// a toast that disappeared.
+struct ProposalQuery {
+  std::optional<RoutineId> routine;
+  bool pendingOnly = false;
+
+  bool operator==(const ProposalQuery&) const = default;
+};
+
+// What became of a mint, under the same rule every other write in this port obeys: each refusal is
+// the store's own fact and crosses as a VALUE.
+//
+// THE SPENT ID SPLITS THREE WAYS, and conflating any two of them is how a mint lies. `idTaken` is
+// the id spent on a proposal this account cannot see. The caller's OWN id, carrying the SAME
+// document, is not a refusal at all — it is the replay, and the stored proposal comes back
+// untouched, so an agent that lost a reply resends the same id instead of minting a second proposal
+// that would supersede its own first. The caller's own id carrying a DIFFERENT document is
+// `idReused`: two ideas cannot share one id, and answering the second with the first is a receipt
+// that says "your proposal is waiting" about somebody else's proposal.
+//
+// `unknownRoutine` is absent and another account's alike. `unknownExercise` is refused HERE rather
+// than at apply, which is the whole point of refusing it at all: a proposal a lifter cannot apply
+// must never reach their screen. `noChange` is the one refusal the STORE never sees, because it is
+// decided before a row is built: a document identical to what the routine already says is a card
+// that would read `Apply all 0`, and putting one in a lifter's product is not nothing — it is a
+// notification about nothing, in an app that has no notifications on purpose.
+enum class ProposalMintError { none, idTaken, idReused, unknownRoutine, unknownExercise, noChange };
+
+struct ProposalMintOutcome {
+  std::optional<RoutineProposal> proposal;
+  ProposalMintError error;
+};
+
+// What became of an apply or a dismiss. `superseded` is the base having moved since the mint — the
+// lifter's own hand, or a newer proposal — and it is the one refusal that is not the caller's
+// fault and not repairable: the diff describes a document that is gone, so it is settled as
+// superseded and the lifter reads the routine as it now stands. `settled` is a proposal already
+// applied or already dismissed being asked for the OTHER one; asking for the state it already
+// holds is a replay and answers with the stored row.
+enum class ProposalSettleError { none, notFound, superseded, settled };
+
+struct ProposalSettleOutcome {
+  std::optional<RoutineProposal> proposal;
+  std::optional<Routine> routine;   // how the routine now stands; absent on a dismiss and a removal
+  ProposalSettleError error;
+};
+
 // The catalog write's one refusal. The read-back is scoped to the caller's own created_by rows, so
 // a seed's slug and another lifter's custom id are both simply taken — the caller mints a new id
 // and sends it again, and learns nothing about who holds the old one.
@@ -365,7 +415,13 @@ struct TrainingRepository {
   // The routine row and its entries land in ONE transaction — the two writes are one document, and
   // a routine with no entries is a plan the domain refuses to build and the editor cannot draw.
   virtual RoutineWriteOutcome insertRoutine(const Routine& incoming) = 0;   // conflict = the stored
-  virtual RoutineWriteOutcome replaceRoutine(const Routine& incoming) = 0;  // whole-document replace
+  // The whole-document replace, and THE HUMAN'S HAND: this is what `PUT /v1/gym/routines/{id}`
+  // reaches, and no MCP tool reaches it at any grant level. It moves the revision and, in the SAME
+  // transaction, supersedes every proposal still pending on that routine — which is what stops the
+  // mid-session "Save 87.5 to Push A" from silently destroying a proposal's base. `nowMs` is the
+  // instant those supersessions are dated by, read from the one clock the service holds rather than
+  // from the database's, so a test can drive it.
+  virtual RoutineWriteOutcome replaceRoutine(const Routine& incoming, std::uint64_t nowMs) = 0;
   virtual bool deleteRoutine(const UserId& user, const RoutineId& id) = 0;  // false = nothing to remove
   // The owner rides beside the row rather than inside it: a catalog entry has no owner when it is a
   // seed, and `custom` is what the read derives from created_by.
@@ -425,6 +481,40 @@ struct TrainingRepository {
   // all — the same value, so nothing above this line can tell them apart and neither can a prober.
   virtual std::optional<SharedSession> sharedSession(const std::string& token,
                                                      std::uint64_t nowMs) = 0;
+
+  // THE PROPOSAL LEDGER. An agent reaches exactly one of these — the mint — and the other three are
+  // the lifter's, because Apply is not a capability, it is a human act.
+  //
+  // The two reads split by what a screen needs: `proposalHeads` is what a CARD draws (Today's
+  // pending card, the dot on the routines list, a row of the routine editor's History), and it
+  // carries no diff rows at all, because a list that shipped every diff of every proposal would be
+  // the token budget spent on a screen that prints a count. `proposal` is the diff screen's whole
+  // read, and it is the one that fills `loggedSets` on a removed line — that count is what makes a
+  // removal safe to read, and frozen at mint it would be wrong by the time anybody read it.
+  virtual std::vector<ProposalHead> proposalHeads(const UserId& user, const ProposalQuery& query) = 0;
+  virtual std::optional<RoutineProposal> proposal(const UserId& user, const ProposalId& id) = 0;
+  // The mint, in ONE transaction: the proposal row, its lines, and the supersession of whatever was
+  // pending from the same door. Idempotent by the client-minted id like every other write here — a
+  // replay reads back the stored proposal rather than minting a second one that would supersede the
+  // first. The routine is resolved under the caller's own scope inside that transaction, and its
+  // revision is what the proposal is frozen against.
+  virtual ProposalMintOutcome insertProposal(const RoutineProposal& incoming) = 0;
+  // The apply, atomic and all-or-none, and the only place a proposal becomes a write. `becomes` is
+  // what the DOMAIN computed from the base (domain/Proposal.h) — the store re-checks the revision
+  // under its own lock and refuses the whole thing if the routine moved between the two, which is
+  // the optimistic half of the same token the mint froze.
+  virtual ProposalSettleOutcome applyRevision(const UserId& user, const ProposalId& id,
+                                              const Routine& becomes, std::uint64_t nowMs) = 0;
+  // The other intent, and its own verb rather than a null `becomes` on the one above: a removal
+  // deletes the routine, so its entries, its sessions' pointers and this very proposal's own row go
+  // with it (`on delete cascade`). The answer is composed before the delete, because after it there
+  // is nothing left to read back.
+  virtual ProposalSettleOutcome applyRemoval(const UserId& user, const ProposalId& id,
+                                             std::uint64_t nowMs) = 0;
+  // No reason is asked for and nothing changes — the proposal stays in the routine's history in
+  // case the lifter wants it back.
+  virtual ProposalSettleOutcome dismissProposal(const UserId& user, const ProposalId& id,
+                                                std::uint64_t nowMs) = 0;
 };
 
 }

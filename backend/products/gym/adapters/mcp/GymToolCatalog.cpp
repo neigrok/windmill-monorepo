@@ -1,5 +1,6 @@
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
 
+#include "products/gym/domain/Proposal.h"
 #include "products/gym/domain/Routine.h"
 #include "products/gym/domain/Training.h"
 
@@ -32,6 +33,16 @@ Json::Value cappedStr(const char* description, std::size_t limit) {
 Json::Value num(const char* description) {
   Json::Value property(Json::objectValue);
   property["type"] = "number";
+  property["description"] = description;
+  return property;
+}
+
+// A field the READS put on an object, declared on a write that takes the same object back. It is
+// ignored on the way in and it is here so that `additionalProperties: false` refuses typos rather
+// than the document we ourselves emitted (see create_routine).
+Json::Value ignoredObject(const char* description) {
+  Json::Value property(Json::objectValue);
+  property["type"] = "object";
   property["description"] = description;
   return property;
 }
@@ -85,12 +96,12 @@ Json::Value routineHandle() {
   return str("The routine's id — list_routines answers with it.");
 }
 
-// One line of a routine, as save_routine takes it. It is an array of objects and the schema says so
-// down to each field: an agent cannot look at an example and recover the way a person reading docs
-// can, so what one entry requires is published rather than discovered by a refusal. Every bound here
-// is the DOMAIN's own (products/gym/domain/Routine.cpp) — a schema advertising a wider band than the
-// entity accepts refuses the whole document over a value it invited, which is the most expensive
-// refusal this surface can make.
+// One line of a routine, as the two tools that carry a document take it. It is an array of objects
+// and the schema says so down to each field: an agent cannot look at an example and recover the way
+// a person reading docs can, so what one entry requires is published rather than discovered by a
+// refusal. Every bound here is the DOMAIN's own (products/gym/domain/Routine.cpp) — a schema
+// advertising a wider band than the entity accepts refuses the whole document over a value it
+// invited, which is the most expensive refusal this surface can make.
 Json::Value entryArray() {
   Json::Value fields(Json::objectValue);
   fields["exerciseId"] = exerciseHandle();
@@ -102,10 +113,11 @@ Json::Value entryArray() {
       boundedInt("Rest between sets, 15–900. Omit to fall back to their global rest target — the "
                  "`restSeconds` on `get_preferences`, and no timer at all when that is absent too.",
                  15, 900);
-  // Declared so the round trip this tool PRESCRIBES survives its own schema: list_routines writes a
-  // position on every line, and an agent doing exactly what save_routine's description says — read
-  // it, change what you mean, send all of it back — would otherwise be refused for handing back a
-  // field we gave it. It is ignored on the way in; the run is renumbered from the order.
+  // Declared so the round trip these tools PRESCRIBE survives their own schema: list_routines writes
+  // a position on every line, and an agent doing exactly what propose_routine_change's description
+  // says — read it, change what you mean, send all of it back — would otherwise be refused for
+  // handing back a field we gave it. It is ignored on the way in; the run is renumbered from the
+  // order.
   fields["position"] = boundedInt("Ignored — the order these arrive in IS the order.", 1, 10000);
 
   Json::Value entry(Json::objectValue);
@@ -133,10 +145,16 @@ Json::Value entryArray() {
 
 // Each tool names the grant level that reaches it beside the sentence describing what it does, so a
 // client cannot be told one thing and gated on another. The three split like this: `read` answers
-// questions, `write` adds to the log or the program (and mints a coach link, which creates a
-// capability without destroying anything), and `delete` takes away something a lifter LIVED — a
-// workout, a day of their program, or a link they handed to a coach. `delete` is never implied by
-// `write`: a connection that was not handed that level does not so much as see these three.
+// questions, `write` RECORDS what happened and PROPOSES changes to the program (and mints a coach
+// link, which creates a capability without destroying anything), and `delete` takes away something a
+// lifter LIVED — a workout or a link they handed to a coach — and PROPOSES the destruction of a day
+// of their program. `delete` is never implied by `write`: a connection that was not handed that
+// level does not so much as see these three.
+//
+// The levels are a grant VOCABULARY and not a risk dial, which is why proposing a routine change
+// stays at `write` after this wave rather than being re-levelled: a lifter approving `gym:write`
+// approved "this may plan with me", and a proposal is the narrower thing that used to be a write,
+// not a new kind of reach.
 ToolDeclaration tool(const char* name, Access access, const char* description, Json::Value properties,
                      std::vector<const char*> required) {
   Json::Value schema(Json::objectValue);
@@ -158,13 +176,23 @@ ToolDeclaration tool(const char* name, Access access, const char* description, J
 
 // Reads, then writes, then deletes — so a narrower grant sees a PREFIX of this list rather than a
 // list with holes in it, and two connections at different levels read the same surface in the same
-// order. Sixteen tools against roadmap's twenty-seven, and that is on purpose: tools/list is the
-// biggest fixed cost of a connection, so a tool that a parameter on another tool could have served
-// does not get a slot (routines list and read are one; the finish readout rides on the session read).
+// order. Seventeen tools against roadmap's twenty-seven, and the smallness is on purpose:
+// tools/list is the biggest fixed cost of a connection, so a tool that a parameter on another tool
+// could have served does not get a slot (routines list and read are one; the finish readout rides
+// on the session read; pending proposals ride on list_routines rather than minting a list and a get
+// of their own).
 //
-// Seven of the sixteen are reads and only six are writes, which is the shape this product wants: an
-// agent here is a reader of one lifter's log that occasionally writes into it, and the two verbs
-// reserved for the HAND — editing a logged set, and saying what a gym owns — have no tool at all.
+// Seven of the seventeen are reads, which is the shape this product wants: an agent here is a reader
+// of one lifter's log that occasionally writes into it. The verbs reserved for the HAND have no tool
+// at any level — editing a logged set, saying what a gym owns, and, since W6 (2026-08-12), APPLYING
+// A PROPOSAL. Apply is not a capability; it is a human act.
+//
+// W6 IS WHY THE ROUTINE TOOLS READ THE WAY THEY DO. `save_routine` and `delete_routine` are gone.
+// What replaced them is the split the whole product turns on: a write that RECORDS something that
+// already happened lands immediately, and a write that CHANGES something that will happen mints a
+// proposal and lands nothing. So `create_routine` writes (a day that did not exist takes nothing
+// away), while `propose_routine_change` and `propose_routine_removal` write nothing at all — they
+// hand the lifter a typed diff and wait. The names say which, because agent authors read names.
 std::vector<ToolDeclaration> gymToolCatalog() {
   std::vector<ToolDeclaration> tools;
 
@@ -221,7 +249,10 @@ std::vector<ToolDeclaration> gymToolCatalog() {
     tools.push_back(tool("list_routines", Access::read,
         "Your program: each routine with its entries, most recently trained first. An entry with no "
         "`targetReps` means `max` — as many as you can — and is omitted rather than zero, which is a "
-        "rep target this product can express and a zero could not.",
+        "rep target this product can express and a zero could not. `revision` is the routine's "
+        "version; read it and never send it. `pendingProposal` is present ONLY while a change is "
+        "waiting for the lifter to tap Apply — read it before you propose anything, because a new "
+        "proposal on that routine replaces the one already waiting there.",
         p, {}));
   }
   {
@@ -298,21 +329,61 @@ std::vector<ToolDeclaration> gymToolCatalog() {
   }
   {
     Json::Value p(Json::objectValue);
-    p["id"] = str("The routine's id — an existing one is replaced, a new one YOU mint is created.");
+    p["id"] = str("The id YOU mint for this NEW routine (`rt_` + hex is the house shape).");
     p["name"] = cappedStr("What this day of the program is called.", kMaxNameLength);
     p["position"] = boundedInt("Where it sits in the program, from 0.", 0, 10000);
-    // Declared for the same reason the entry's `position` is: list_routines puts it on any routine
-    // that has been trained, and this tool tells the caller to send the whole document back. It is
-    // the STORE's answer to "when was this last used" and never an input — ignored on the way in,
-    // recomputed on the way out. Undeclared, the argument gate refused the exact document we handed
-    // over, so a routine became unsavable the moment it was trained under once.
+    // THE THREE FIELDS list_routines PUTS ON A ROUTINE, declared here for one reason: duplicating a
+    // day is reading one and sending it back under a fresh id, and a schema that refuses the
+    // document we ourselves emitted turns our own printed instruction into an outage. Every one of
+    // them is the STORE's answer rather than anybody's input — ignored on the way in, recomputed on
+    // the way out — and every one of them is on a routine an agent reads today.
     p["lastTrainedAt"] = num("Ignored — the log decides when a routine was last trained.");
+    p["revision"] = num("Ignored — the store moves a routine's revision; a client reads it, never "
+                        "sends it.");
+    p["pendingProposal"] =
+        ignoredObject("Ignored — a proposal belongs to the routine it was minted against and is "
+                      "never carried onto a new one.");
     p["entries"] = entryArray();
-    tools.push_back(tool("save_routine", Access::write,
-        "Create or replace one day of your program. A routine travels as its WHOLE document, every "
-        "time — there is no per-line edit — so read it with list_routines, change what you mean, and "
-        "send all of it back. Workouts already trained under it keep the copy they froze.",
+    tools.push_back(tool("create_routine", Access::write,
+        "Add a NEW day to the program. This one LANDS IMMEDIATELY, and that is the rule rather than "
+        "an exception: a day that did not exist takes nothing away, the lifter sees it the next time "
+        "they open Routines, and they can edit or delete it themselves. Changing a day that already "
+        "stands is NOT this tool's — send that to propose_routine_change, which writes nothing and "
+        "waits for the lifter's tap. YOU mint `id` and it IS the idempotency key: send the SAME id "
+        "with the SAME document to replay a lost reply and the stored routine comes back untouched, "
+        "and send it with a DIFFERENT document and you are refused, because that is a change to a "
+        "day that already stands and this tool would land it without asking anyone.",
         p, {"id", "name", "position", "entries"}));
+  }
+  {
+    Json::Value p(Json::objectValue);
+    p["id"] = str("The id YOU mint for this proposal (`prop_` + hex is the house shape).");
+    p["routineId"] = routineHandle();
+    p["name"] = cappedStr("Rename the routine as part of this change. Omit to keep its name.",
+                          kMaxNameLength);
+    p["summary"] = cappedStr("One sentence saying what this changes and why — the line the lifter "
+                             "reads on the card before they open the diff. Omit it and they read "
+                             "the diff alone.",
+                             kMaxSummaryLength);
+    p["entries"] = entryArray();
+    tools.push_back(tool("propose_routine_change", Access::write,
+        "Propose a change to a day of the program that already exists. THIS CHANGES NOTHING. It "
+        "puts a typed, field-level diff in front of the lifter — `sets 5 × 5 → 5 × 3`, "
+        "`weight 82.5 → 87.5`, a line added, a line removed — and their routine keeps reading "
+        "exactly as it does now until they open it and tap Apply. Nothing on this connection can "
+        "tap it for them: there is no apply tool at any grant level. When you answer your human, "
+        "say the routine has not changed and that a proposal is waiting.\n"
+        "Send the WHOLE document every time — read it with list_routines, change what you mean, and "
+        "send all the entries back, the ones you are not changing included, because a line you leave "
+        "out is a line you are proposing to REMOVE. A new proposal replaces whatever you had waiting "
+        "on that routine, and the replaced one goes into the routine's history rather than "
+        "disappearing. YOU mint `id` and it IS the idempotency key: send the SAME id with the SAME "
+        "document to replay a lost reply, never a fresh one, or you supersede your own proposal — "
+        "and never that id with a DIFFERENT document, which is refused rather than answered with the "
+        "proposal already standing under it.\n"
+        "It cannot reach a logged set, a finished workout's frozen plan, or where the day sits in "
+        "the week — only what this routine asks for next time.",
+        p, {"id", "routineId", "entries"}));
   }
   {
     Json::Value p(Json::objectValue);
@@ -351,11 +422,21 @@ std::vector<ToolDeclaration> gymToolCatalog() {
   }
   {
     Json::Value p(Json::objectValue);
+    p["id"] = str("The id YOU mint for this proposal (`prop_` + hex is the house shape).");
     p["routineId"] = routineHandle();
-    tools.push_back(tool("delete_routine", Access::del,
-        "Delete one day of your program. Permanent. Every workout ever trained under it keeps its "
-        "frozen copy, so deleting the plan never edits what the log says you did.",
-        p, {"routineId"}));
+    p["summary"] = cappedStr("One sentence saying why this day should go — the line the lifter "
+                             "reads on the card.",
+                             kMaxSummaryLength);
+    tools.push_back(tool("propose_routine_removal", Access::del,
+        "Propose taking one whole day out of the program. THIS DELETES NOTHING. It puts that day's "
+        "lines in front of the lifter as a diff of what would go, and the routine stays exactly "
+        "where it is until they open it and tap Apply — and nothing on this connection can tap it "
+        "for them. `gym:delete` buys the right to PROPOSE a destructive change; it does not imply "
+        "the right to make one. Every workout ever trained under this routine keeps its frozen copy "
+        "whatever the lifter decides, so nothing here can edit what the log says you did. YOU mint "
+        "`id` and it IS the idempotency key: the same id names this one proposal for good, so a "
+        "resend replays it and a different proposal needs a different id.",
+        p, {"id", "routineId"}));
   }
   {
     Json::Value p(Json::objectValue);
@@ -369,13 +450,31 @@ std::vector<ToolDeclaration> gymToolCatalog() {
   return tools;
 }
 
+// The paragraph every client reads at connect, before it has called anything. The second half is
+// W6's whole contract, said once here so no tool has to say it twice — and the third is the
+// retirement, which lives here because it is the only place gym can put it: a name no product
+// declares never reaches this module's dispatcher, so the composite host answers it with its own
+// "no such tool" and gym gets no chance to name the replacement (see GymTools::dispatch).
 std::string gymInstructions() {
   return "gym is a training log: workouts of sets, a program of routines, and a catalog of "
-         "movements. Every write is idempotent by an id YOU mint — send the same id again to replay "
-         "a lost reply, never a fresh one, or you mint a duplicate. Loads are kg (negative is legal: "
+         "movements. Every write is idempotent by an id YOU mint — send the same id again, carrying the "
+         "SAME body, to replay a lost reply; never a fresh id, or you mint a duplicate, and never a "
+         "spent id for something you changed your mind about, which is refused. Loads are kg "
+         "(negative is legal: "
          "band-assisted work), instants are epoch milliseconds, and only WORKING sets count toward "
          "anything. One workout is open per account at a time. Everything here is one lifter's own "
-         "log — these tools read and write that account and reach no other.";
+         "log — these tools read and write that account and reach no other.\n\n"
+         "Writes split in two and the split is the whole contract. Recording something that ALREADY "
+         "HAPPENED lands immediately: a set, a workout starting or ending, a movement, a new day of "
+         "the program. Changing a day of the program that ALREADY STANDS lands nothing — it mints a "
+         "proposal, a typed field-level diff that sits in the lifter's app until they read it and "
+         "tap Apply. No tool here applies one, at any grant level, because Apply is theirs and not "
+         "yours. So when you propose, tell your human the routine has not changed yet and that "
+         "something is waiting for them.\n\n"
+         "Retired on 2026-08-12: `save_routine` and `delete_routine` no longer exist at any level. "
+         "`create_routine` adds a day that did not exist, `propose_routine_change` proposes a change "
+         "to one that does, and `propose_routine_removal` proposes taking one out. If you were "
+         "written against the old two, that is why they are missing — they were not un-granted.";
 }
 
 }

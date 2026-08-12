@@ -152,13 +152,13 @@ std::uint64_t parseFinish(const Json::Value& body) {
   return instantOf(body, "finishedAt");
 }
 
-RoutineWrite parseRoutineWrite(const Json::Value& body) {
-  if (!body.isObject()) throw InvalidTraining("a routine must be a json object");
-  if (!body["id"].isString()) throw InvalidTraining("id must be a string");
-  if (!body["name"].isString()) throw InvalidTraining("name must be a string");
-  if (!body["position"].isInt()) throw InvalidTraining("position must be a whole number");
+namespace {
+// The lines of a day of the program, read once for the two writes that carry them: the lifter's own
+// routine write and an agent's proposal. It is one function because a proposal's own description
+// tells its caller to read `list_routines`, change what it means and send all of it back — two
+// parsers would make that instruction a trap the day one of them grew a rule the other lacked.
+std::vector<RoutineEntry> entriesFrom(const Json::Value& body) {
   if (!body["entries"].isArray()) throw InvalidTraining("entries must be an array");
-
   std::vector<RoutineEntry> entries;
   for (const Json::Value& entry : body["entries"]) {
     if (!entry.isObject()) throw InvalidTraining("a routine entry must be a json object");
@@ -169,12 +169,12 @@ RoutineWrite parseRoutineWrite(const Json::Value& body) {
     // misspelling that silently wiped the target it was aiming at.
     //
     // `position` is ACCEPTED AND IGNORED, and that is not a softening — it is the difference between
-    // strictness and an outage. A routine travels as its whole document: save_routine's own
-    // description tells the caller to read it with list_routines, change what they mean and send all
-    // of it back, and what list_routines hands them carries `position` on every line (toJson below).
-    // Refusing it would make our own printed instruction a hard refusal. It is redundant rather than
-    // wrong — the run is renumbered 1..n from the order these arrive in, and the entity refuses any
-    // other run — so the honest answer is to take it and pay it no attention.
+    // strictness and an outage. A routine travels as its whole document: propose_routine_change's
+    // own description tells the caller to read it with list_routines, change what they mean and send
+    // all of it back, and what list_routines hands them carries `position` on every line (toJson
+    // below). Refusing it would make our own printed instruction a hard refusal. It is redundant
+    // rather than wrong — the run is renumbered 1..n from the order these arrive in, and the entity
+    // refuses any other run — so the honest answer is to take it and pay it no attention.
     for (const std::string& field : entry.getMemberNames()) {
       if (field == "exerciseId" || field == "targetSets" || field == "targetReps" ||
           field == "targetWeightKg" || field == "restSeconds" || field == "position")
@@ -211,8 +211,39 @@ RoutineWrite parseRoutineWrite(const Json::Value& body) {
                                    entry["targetSets"].asInt(), targetReps, targetWeightKg,
                                    restSeconds});
   }
+  return entries;
+}
+}
+
+RoutineWrite parseRoutineWrite(const Json::Value& body) {
+  if (!body.isObject()) throw InvalidTraining("a routine must be a json object");
+  if (!body["id"].isString()) throw InvalidTraining("id must be a string");
+  if (!body["name"].isString()) throw InvalidTraining("name must be a string");
+  if (!body["position"].isInt()) throw InvalidTraining("position must be a whole number");
   return RoutineWrite{RoutineId{body["id"].asString()}, body["name"].asString(),
-                      body["position"].asInt(), std::move(entries)};
+                      body["position"].asInt(), entriesFrom(body)};
+}
+
+// A proposal names its own id, the routine it is about, and the document it would take on. `name`
+// and `summary` are the two optionals and each means something by its absence: an absent name is
+// the routine keeping the one it has, and an absent summary is an agent that said nothing about why
+// — the card then draws the diff and no sentence, which is honest rather than empty.
+ProposalWrite parseProposalWrite(const Json::Value& body, const ProposalSource& source) {
+  if (!body.isObject()) throw InvalidTraining("a proposal must be a json object");
+  if (!body["id"].isString()) throw InvalidTraining("id must be a string");
+  if (!body["routineId"].isString()) throw InvalidTraining("routineId must be a string");
+  std::optional<std::string> name;
+  if (body.isMember("name") && !body["name"].isNull()) {
+    if (!body["name"].isString()) throw InvalidTraining("name must be a string");
+    name = body["name"].asString();
+  }
+  std::string summary;
+  if (body.isMember("summary") && !body["summary"].isNull()) {
+    if (!body["summary"].isString()) throw InvalidTraining("summary must be a string");
+    summary = body["summary"].asString();
+  }
+  return ProposalWrite{ProposalId{body["id"].asString()}, RoutineId{body["routineId"].asString()},
+                       std::move(name), std::move(summary), entriesFrom(body), source};
 }
 
 ExerciseWrite parseExerciseWrite(const Json::Value& body) {
@@ -449,6 +480,9 @@ Json::Value toJson(const Routine& routine) {
   body["id"] = routine.id.str();
   body["name"] = routine.name;
   body["position"] = routine.position;
+  // The concurrency token, read-only on the wire: a client draws it (a proposal minted against an
+  // older one is stale) and never sends it back, because the store is what moves it.
+  body["revision"] = routine.revision;
   // Absent until the routine has been trained once — the routines screen reads the absence as
   // "never", which is a different sentence from any instant it could otherwise be handed.
   if (routine.lastTrainedAtMs) body["lastTrainedAt"] = Json::Value::UInt64(*routine.lastTrainedAtMs);
@@ -467,10 +501,99 @@ Json::Value toJson(const Routine& routine) {
   return body;
 }
 
-Json::Value toJson(const std::vector<Routine>& routines) {
+Json::Value toJson(const Routine& routine, const std::optional<ProposalHead>& pending) {
+  Json::Value body = toJson(routine);
+  // Present only while one waits, so its ABSENCE is the whole of "this day has nothing to review" —
+  // the rule every other optional on this wire obeys, applied to §B5's dot.
+  if (pending) body["pendingProposal"] = toJson(*pending);
+  return body;
+}
+
+// One pass over the heads per routine rather than a map, because a lifter holds a handful of days
+// and at most one pending proposal on each: the map would be the more expensive of the two.
+Json::Value toJson(const std::vector<Routine>& routines, const std::vector<ProposalHead>& pending) {
   Json::Value array(Json::arrayValue);
-  for (const Routine& routine : routines) array.append(toJson(routine));
+  for (const Routine& routine : routines) {
+    std::optional<ProposalHead> standing;
+    // The heads arrive newest first, so the FIRST match is the newest — which is the one a card
+    // draws when two doors each have one waiting.
+    for (const ProposalHead& head : pending)
+      if (!standing && head.routine == routine.id && head.state == ProposalState::pending)
+        standing = head;
+    array.append(toJson(routine, standing));
+  }
   return array;
+}
+
+Json::Value toJson(const ProposalHead& head) {
+  Json::Value body(Json::objectValue);
+  body["id"] = head.id.str();
+  body["routineId"] = head.routine.str();
+  body["intent"] = toString(head.intent);
+  body["state"] = toString(head.state);
+  body["summary"] = head.summary;
+  // What `Apply all N` counts, and the number is the SERVER's: a client that counted the diff rows
+  // itself would have to know that a `kept` row is not a change and that a renamed routine is one,
+  // and the three clients would then hold three copies of that rule.
+  body["changeCount"] = head.changes;
+  body["createdAt"] = Json::Value::UInt64(head.createdAtMs);
+  if (head.settledAtMs) body["settledAt"] = Json::Value::UInt64(*head.settledAtMs);
+  Json::Value source(Json::objectValue);
+  source["door"] = toString(head.source.door);
+  // Omitted while the transport carries neither, so a card draws a truthful fallback ("your
+  // connected agent") rather than an empty string where a model's name should be.
+  if (!head.source.connection.empty()) source["connection"] = head.source.connection;
+  if (!head.source.agent.empty()) source["agent"] = head.source.agent;
+  body["source"] = source;
+  return body;
+}
+
+Json::Value toJson(const std::vector<ProposalHead>& heads) {
+  Json::Value array(Json::arrayValue);
+  for (const ProposalHead& head : heads) array.append(toJson(head));
+  return array;
+}
+
+namespace {
+Json::Value targetsJson(const EntryTargets& targets) {
+  Json::Value body(Json::objectValue);
+  body["sets"] = targets.sets;
+  // The three absences a routine line already carries, carried through the diff unchanged: no reps
+  // is `max`, no weight is "whatever you did last time", no rest falls back to the global target.
+  if (targets.reps) body["reps"] = *targets.reps;
+  if (targets.weightKg) body["weightKg"] = *targets.weightKg;
+  if (targets.restSeconds) body["restSeconds"] = *targets.restSeconds;
+  return body;
+}
+
+std::string changeKindText(ChangeKind kind) {
+  if (kind == ChangeKind::added) return "added";
+  if (kind == ChangeKind::removed) return "removed";
+  if (kind == ChangeKind::retargeted) return "retargeted";
+  return "kept";
+}
+}
+
+Json::Value toJson(const RoutineProposal& proposal) {
+  Json::Value body = toJson(proposal.head);
+  body["baseRevision"] = proposal.baseRevision;
+  body["baseName"] = proposal.baseName;
+  body["name"] = proposal.proposedName;
+  Json::Value changes(Json::arrayValue);
+  for (const RoutineChange& change : proposal.changes) {
+    Json::Value line(Json::objectValue);
+    line["position"] = change.position;
+    line["kind"] = changeKindText(change.kind);
+    line["exerciseId"] = change.exercise.str();
+    if (change.before) line["before"] = targetsJson(*change.before);
+    if (change.after) line["after"] = targetsJson(*change.after);
+    // §D14's *41 logged sets kept*, on the one row that needs it. Zero is a real answer — a
+    // movement the lifter planned and never trained — so it is present rather than omitted.
+    if (change.kind == ChangeKind::removed) line["loggedSets"] = change.loggedSets;
+    changes.append(line);
+  }
+  body["changes"] = changes;
+  return body;
 }
 
 Json::Value toJson(const PlanSnapshot& plan) {
@@ -678,6 +801,13 @@ std::optional<PlanSnapshot> planFrom(const Json::Value& stored) {
 
 std::string shareUrl(const std::string& appBaseUrl, const std::string& token) {
   return appBaseUrl + "/#/gym/shared/" + token;
+}
+
+// Composed here for the reason the share's link is: three surfaces composing a url is how two of
+// them came to hand a coach a page of JSON. It takes the APP's base url — where the browser app is
+// served — not the API's.
+std::string proposalUrl(const std::string& appBaseUrl, const ProposalId& id) {
+  return appBaseUrl + "/#/gym/proposals/" + id.str();
 }
 
 }

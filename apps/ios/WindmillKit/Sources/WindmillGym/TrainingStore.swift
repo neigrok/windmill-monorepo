@@ -19,6 +19,14 @@ import WindmillPlatform
 public final class TrainingStore: ObservableObject {
     @Published public private(set) var catalog: [Exercise] = []
     @Published public private(set) var routines: [Routine] = []
+    // EVERY PROPOSAL THE ACCOUNT HOLDS, newest first, pending and settled together — the one list
+    // the pending cards and every routine's History are both folded out of. It is deliberately not
+    // read off the routine's own `pendingProposal`: the wire carries that field for the agent's
+    // `list_routines`, and a room reading both would have two answers to "is there a card".
+    //
+    // Signed out it is EMPTY and stays empty. A proposal belongs to an account — no account, no
+    // proposal — so there is no anonymous half of this list and nothing for the claim to replay.
+    @Published public private(set) var proposals: [ProposalHead] = []
     @Published public private(set) var recent: [SessionSummary] = []      // the log, newest first
     // Which of those rows this device is still the only home for — the hollow ring on the log (§G16).
     // Set by the same fold that puts them in `recent`, because it is one fact read twice: a session
@@ -322,6 +330,10 @@ public final class TrainingStore: ObservableObject {
         // The shelf cannot fail, so until the account is asked the routines on screen are answered
         // for. Signed out that is the whole truth and this stays false all the way through.
         routinesFailed = false
+        // The cards go with the seat that left. A proposal is one account's, and one drawn under
+        // another would be a card about a program this lifter cannot see — signed out the list
+        // stays empty, because there is nothing to ask and nobody to ask it of.
+        proposals = []
         // Opened under whoever is signed in, exactly as the catalog is a few lines up and for a
         // sharper reason: settings are one ACCOUNT's, so a document this seat did not write is let
         // go of rather than drawn. The anonymous document the claim is about to carry is the one
@@ -360,14 +372,10 @@ public final class TrainingStore: ObservableObject {
             catalog = merged(exercises)
             deviceCatalog.hold(catalog)
         }
-        // A READ THAT MISSED IS RECORDED RATHER THAN LEFT AS AN EMPTY LIST. The shelf's own routines
-        // stay on screen either way — they are real — but "this lifter has written none" is a claim
-        // only an answer can support, and `holdsNothing` is the caller that acts on it.
-        if let written = try? await gym.routines() {
-            routines = Routine.byLastTrained(written + localLog.routines)
-        } else {
-            routinesFailed = true
-        }
+        await loadRoutines(from: gym)
+        // AFTER the routines, because every proposal names one: a card that landed on screen before
+        // the routine it is about would have nothing to name.
+        await loadProposals(from: gym)
         // Read AFTER the claim, and only while this device is not still holding an answer the log has
         // never heard: a served document landing on top of one the lifter set signed-out would take
         // their own plates off the screen before they were ever sent. Held on the device as well, so
@@ -811,10 +819,222 @@ public final class TrainingStore: ObservableObject {
             let write = RoutineWrite(routine.retargeting(exerciseId, toWeightKg: weightKg))
             let saved = try await gym.replaceRoutine(routineId, with: write)
             routines = routines.map { $0.id == saved.id ? saved : $0 }
+            // THE HUMAN'S HAND SETS EVERY PENDING PROPOSAL ON THAT ROUTINE ASIDE, in the same
+            // transaction as the write — so this device's cards are stale the instant the PUT
+            // answers, and one of them left on screen would be a diff offering to change a base
+            // that no longer stands. The list is re-read rather than re-derived here: the supersede
+            // is the server's rule, and a second copy of it on the phone is a rule that will
+            // eventually disagree.
+            await loadProposals(from: gym)
             return nil
         } catch {
             return WriteFailure(error)
         }
+    }
+
+    // EVERYTHING WAITING ON A ROUTINE, newest first. The ledger's rule is one pending proposal per
+    // (routine, DOOR, connection) and not one per routine — so a routine carries two the moment a
+    // second door exists, and a room that answered this with a single row would draw a marker
+    // saying "1 proposal" over two of them. The list is the COUNT as well as the door: the newest
+    // is what the marker opens, and the rest surface as each one is settled.
+    public func pending(of routineId: String) -> [ProposalHead] {
+        proposals.filter { $0.routineId == routineId && $0.isPending }
+    }
+
+    // The routine's HISTORY (§B screen 6) — every proposal on it that has been settled, applied and
+    // dismissed and set aside alike. An agent's suggestion is part of the program's history
+    // whichever way it went, so nothing is filtered out by its outcome.
+    //
+    // ORDERED BY THE DAY EACH ROW IS ABOUT, which is the day it PRINTS. The log's own order is
+    // newest-MINTED, and a section sorted that way and dated by its settlement reads with its dates
+    // running backwards — a proposal written on Sunday and decided this morning belongs above one
+    // written on Tuesday and dismissed last week. Ties fall back to the log's order, because an
+    // apply stamps every row its supersede touches at the same instant.
+    public func history(of routineId: String) -> [ProposalHead] {
+        proposals
+            .filter { $0.routineId == routineId && !$0.isPending }
+            .sorted {
+                guard $0.recordedAtMs == $1.recordedAtMs else { return $0.recordedAtMs > $1.recordedAtMs }
+                guard $0.createdAtMs == $1.createdAtMs else { return $0.createdAtMs > $1.createdAtMs }
+                return $0.id > $1.id
+            }
+    }
+
+    // The whole diff, read on the way into the screen that draws it. Signed out there is nothing to
+    // ask and nobody to ask it of, and the plain precondition is the honest answer — "the log didn't
+    // answer" over a log nobody asked would be the wrong fact, exactly as it is for a share.
+    public func proposal(_ id: String) async -> Result<Proposal, WriteFailure> {
+        guard let gym else { return .failure(.refused("proposals need your account — sign in first")) }
+        do {
+            // Absent, another account's and never-existed are the same 404, folded into the type by
+            // GymApi — so there is no sentence from the log to repeat, and this is the plain fact.
+            //
+            // A READ THAT FINDS NOTHING IS ALSO AN ANSWER ABOUT THE LIST. The card on Today and the
+            // marker on the routine are drawn from rows this device is holding, and a row the log
+            // denies must not go on offering a decision that has nowhere to land — so it is dropped
+            // here, where this device learns it is gone.
+            guard let found = try await gym.proposal(id) else {
+                forget(proposal: id)
+                return .failure(.refused("that proposal is no longer on the log"))
+            }
+            return .success(found)
+        } catch {
+            return .failure(WriteFailure(error))
+        }
+    }
+
+    // WHAT BECAME OF A DECISION THE LIFTER TOOK. `.settled` carries the row as the LOG now holds it,
+    // which is not always the decision that was tapped: a routine that moved under the diff comes
+    // back set aside, and a proposal the other phone already answered comes back the way that phone
+    // answered it. Both are terminal, both are drawn, and neither is an error the lifter can retry.
+    public enum Settling: Equatable {
+        case settled(Proposal)
+        case removed            // an applied removal: the routine and its ledger are gone
+        case gone               // no such proposal, and there never will be
+        case failed(WriteFailure)
+    }
+
+    // THE TAP, and the only thing in this product that changes a routine on an agent's word. It is
+    // atomic against the base the diff was written on — all of it or none — and the routine that
+    // comes back is the one that now stands, so nothing here composes what the change did.
+    //
+    // It takes the whole proposal rather than an id because the INTENT decides what an absent
+    // routine can mean: a removal that landed takes its own ledger with it, so on that one route a
+    // 404 may be the receipt rather than a refusal — and which of the two it is, is a question the
+    // log answers below rather than one this device settles from the intent alone.
+    public func apply(_ proposal: Proposal) async -> Settling {
+        guard let gym else { return .failed(.refused("proposals need your account — sign in first")) }
+        do {
+            let landed = try await gym.applyProposal(proposal.id)
+            settle(landed.proposal)
+            guard let routine = landed.routine else {
+                // The removal took the routine and, through the cascade, every proposal row that
+                // named it — and nothing else. There is no ledger left on this routine to re-read.
+                forget(routine: proposal.routineId)
+                return .removed
+            }
+            routines = Routine.byLastTrained(routines.map { $0.id == routine.id ? routine : $0 })
+            // AN APPLY IS A WRITE LIKE ANY OTHER, so it sets every OTHER proposal waiting on that
+            // routine aside in the same transaction the lifter's own PUT does — which makes this
+            // device's remaining cards for it stale the instant the tap answers. Re-read rather than
+            // re-derived, exactly as the mid-session save does: the supersede is the server's rule,
+            // and a second copy of it on the phone is a rule that will eventually disagree.
+            await loadProposals(from: gym)
+            return .settled(landed.proposal)
+        } catch let error as WindmillApiError {
+            // A removal's 404 is its RECEIPT — the delete takes this very row with it — and this
+            // device asks rather than assumes: the cascade is the server's invariant, so the
+            // routines are re-read and the day is called gone only where the log agrees it is. A
+            // 404 whose routine still stands is a proposal this account no longer has and nothing
+            // more, which is the sentence `settling` says.
+            if proposal.intent == .remove, case .refused(404, _) = error {
+                await loadRoutines(from: gym)
+                if !routines.contains(where: { $0.id == proposal.routineId }) {
+                    forget(routine: proposal.routineId)
+                    return .removed
+                }
+            }
+            return await settling(after: error, of: proposal.id, with: gym)
+        } catch {
+            return .failed(.noAnswer)
+        }
+    }
+
+    // Dismissing asks for no reason and changes nothing — but it is still a DECISION, so it goes to
+    // the log and the row that comes back is the dated record the routine keeps. A card that
+    // vanished on the tap would be the one outcome this design refuses: an agent's suggestion is
+    // part of the program's history whichever way it went.
+    public func dismiss(_ proposalId: String) async -> Settling {
+        guard let gym else { return .failed(.refused("proposals need your account — sign in first")) }
+        do {
+            let settled = try await gym.dismissProposal(proposalId)
+            settle(settled)
+            return .settled(settled)
+        } catch let error as WindmillApiError {
+            return await settling(after: error, of: proposalId, with: gym)
+        } catch {
+            return .failed(.noAnswer)
+        }
+    }
+
+    // The two 409s the apply route carries — the base moved, or the other decision was already
+    // taken — and they are ANSWERS rather than failures. Neither is retryable and neither may be
+    // drawn as if the tap had landed, so this device stops repeating what it hoped and re-reads
+    // what the log holds: the row's own state is the whole story, and both lists come with it —
+    // the routine that moved is on the screen behind, and the cards on it moved with it.
+    //
+    // The CODE decides, never the sentence — a 409 this build has never heard of is reported in the
+    // log's own words rather than folded into a settlement it may not be.
+    private func settling(after error: WindmillApiError, of proposalId: String,
+                          with gym: any TrainingSyncing) async -> Settling {
+        guard case .refused(let status, let refusal) = error else { return .failed(.noAnswer) }
+        // Gone is gone, and the card goes with it: a row the log denies would otherwise wait on
+        // Today and on its routine until the next seat change, offering a decision with nowhere to
+        // land — and the screen behind this answer only ever redraws the sentence.
+        if status == 404 {
+            forget(proposal: proposalId)
+            return .gone
+        }
+        guard status == 409,
+              refusal.code == "proposal-superseded" || refusal.code == "proposal-settled" else {
+            return .failed(WriteFailure(error))
+        }
+        // Both codes say the same thing about this device: the log moved under it. The routine that
+        // moved is on the screen behind, and every other card on that routine was set aside by
+        // whatever moved it — so both lists are read again before the row itself is.
+        await loadRoutines(from: gym)
+        await loadProposals(from: gym)
+        switch await proposal(proposalId) {
+        case .success(let fresh):
+            settle(fresh)
+            return .settled(fresh)
+        case .failure(let why):
+            // The re-read is the only way this device learns which decision stands, so a re-read
+            // that missed leaves the screen as it was rather than guessing at one.
+            return .failed(why)
+        }
+    }
+
+    // The settled row replaces the head the card was drawn from, in place: the list is the log's own
+    // order and a settlement does not move a proposal in it. A row this device never had is not
+    // invented here — every door onto a proposal on this surface came off this list.
+    private func settle(_ proposal: Proposal) {
+        proposals = proposals.map { $0.id == proposal.id ? proposal.head : $0 }
+    }
+
+    // A routine that is gone takes its whole ledger with it — the server cascades the rows, and a
+    // history row left behind here would point at a proposal nothing can read.
+    private func forget(routine routineId: String) {
+        routines = routines.filter { $0.id != routineId }
+        proposals = proposals.filter { $0.routineId != routineId }
+    }
+
+    // One row the log no longer holds. It is dropped rather than settled: there is no state to draw
+    // and no dated record to keep — the log has nothing to date it by.
+    private func forget(proposal proposalId: String) {
+        proposals = proposals.filter { $0.id != proposalId }
+    }
+
+    // The account's routines under the device's own, in one order. A READ THAT MISSED IS RECORDED
+    // rather than left as an empty list: the shelf's own routines stay on screen either way — they
+    // are real — but "this lifter has written none" is a claim only an answer can support, and
+    // `holdsNothing` is the caller that acts on it.
+    private func loadRoutines(from gym: any TrainingSyncing) async {
+        guard let written = try? await gym.routines() else {
+            routinesFailed = true
+            return
+        }
+        routines = Routine.byLastTrained(written + localLog.routines)
+        routinesFailed = false
+    }
+
+    // The cards, read once per seat — this is what refills the list `connect` let go of above, so a
+    // read that missed draws NOTHING. That is the honest silence rather than a gap: no surface in
+    // gym ever says "nothing is waiting for you", so an absent card asserts nothing at all, where a
+    // card held over from a read that never answered would assert that one is waiting.
+    private func loadProposals(from gym: any TrainingSyncing) async {
+        guard let read = try? await gym.proposals() else { return }
+        proposals = read
     }
 
     // A movement the catalog has never heard of, minted from the picker's `Create “{query}”`. The

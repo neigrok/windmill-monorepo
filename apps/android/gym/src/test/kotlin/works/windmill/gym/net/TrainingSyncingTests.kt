@@ -6,12 +6,18 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.fail
 import org.junit.Test
+import works.windmill.gym.domain.ChangeKind
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.ExerciseWrite
 import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.LastSet
 import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.MovementRecord
+import works.windmill.gym.domain.Proposal
+import works.windmill.gym.domain.ProposalDecision
+import works.windmill.gym.domain.ProposalIntent
+import works.windmill.gym.domain.ProposalState
+import works.windmill.gym.domain.ProposalTargets
 import works.windmill.gym.domain.Review
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineEntry
@@ -112,6 +118,13 @@ class TrainingSyncingTests {
         completedAt = at)
 }
 
+// The refusals this log answers with, as the wire delivers them: a sentence for a human, and — for
+// the reasons a client must branch on — a machine word under `code`. The code is the contract, so
+// nothing that reads these may read the English to decide what to do.
+private fun refusal(status: Int, code: String? = null, message: String) =
+    works.windmill.platform.net.WindmillApiException.Refused(
+        status, works.windmill.platform.net.Refusal(message = message, code = code))
+
 // A log entirely under the test's control: it can be unreachable, it can already hold a session
 // and its sets, it can refuse a named movement, and it can store a set and then lose the reply.
 // The port of the iOS FakeTraining, kept beside the interface so the store wave can drive
@@ -124,6 +137,10 @@ internal class FakeTraining : TrainingSyncing {
     val stored = mutableMapOf<String, Session>()
     val sets = mutableMapOf<String, MutableList<TrainingSet>>()
     val written = mutableMapOf<String, Routine>()
+    // The proposal ledger, and it is append-and-settle rather than delete: a decided proposal keeps
+    // its row, because it is a dated record on the routine and not a message that was read.
+    val ledger = mutableMapOf<String, Proposal>()
+    var settledAtMs = 9_000L
     val lastTimes = mutableMapOf<String, LastTime>()
     val served = mutableListOf<LastSet>()
     val reviews = mutableMapOf<String, Review>()
@@ -140,6 +157,9 @@ internal class FakeTraining : TrainingSyncing {
     var refuseRevoke: Exception? = null
     var refuseRecord: Exception? = null
     var refuseRename: Exception? = null
+    var refuseProposals: Exception? = null
+    var refuseApply: Exception? = null
+    var refuseDismiss: Exception? = null
     var refuseFix: (String) -> Exception? = { null }
     var refuseDelete: Exception? = null
     var refusePreferences: Exception? = null
@@ -349,17 +369,134 @@ internal class FakeTraining : TrainingSyncing {
         return made
     }
 
+    // THE HUMAN'S HAND, with the two lines that make the ledger safe beside it — and they are
+    // modelled here rather than assumed, because a fake that only replaced the document would leave
+    // a client free to ignore the revision entirely and stay green. The store does all of this in
+    // one transaction: the lines are laid down again, the REVISION MOVES, and every proposal still
+    // pending on this routine is superseded in the same breath. The mid-session "Save 87.5 to Push
+    // A" is exactly this write, and it is the one the base version exists to defend a diff against.
     override suspend fun replaceRoutine(id: String, write: RoutineWrite): Routine {
         calls.add("replaceRoutine")
         reachable()
+        refuseRoutine(write)?.let { throw it }
+        val standing = written[id] ?: throw refusal(404, message = "no such routine")
+        // The day it was last trained is the LOG's and survives the replace: it is read off the
+        // sessions, and no PUT can say when a lifter stood under the bar.
+        val saved = Routine(write)
+            .copy(revision = standing.revision + 1, lastTrainedAtMs = standing.lastTrainedAtMs)
         written.remove(id)
-        return createRoutine(write)
+        written[saved.id] = saved
+        // Superseded, never deleted: it drops into the routine's dated history, where a lifter can
+        // still read what an agent suggested and what they did instead.
+        ledger.values.filter { it.routineId == id && it.isPending }.forEach {
+            ledger[it.id] = it.copy(state = ProposalState.Superseded, settledAtMs = settledAtMs)
+        }
+        return saved
     }
 
     override suspend fun deleteRoutine(id: String) {
         calls.add("deleteRoutine")
         reachable()
         written.remove(id)
+    }
+
+    // THE PROPOSAL LEDGER, as the log keeps it: one row per proposal, and the pending one ALSO
+    // hanging off the routine it targets — which is where every card in the product is drawn from.
+    // Nothing here mints one, exactly as no client can: a test puts one on the shelf with `propose`,
+    // standing in for the agent that would have.
+    fun propose(proposal: Proposal) {
+        ledger[proposal.id] = proposal
+        if (!proposal.isPending) return
+        written[proposal.routineId]?.let { written[it.id] = it.copy(pendingProposal = proposal) }
+    }
+
+    override suspend fun proposals(routineId: String): List<Proposal> {
+        calls.add("proposals")
+        reachable()
+        refuseProposals?.let { throw it }
+        return ledger.values
+            .filter { it.routineId == routineId }
+            .sortedByDescending { it.createdAtMs }
+    }
+
+    override suspend fun proposal(id: String): Proposal? {
+        calls.add("proposal")
+        reachable()
+        return ledger[id]
+    }
+
+    // APPLY, as the log applies it: refused outright when the routine has moved past the base the
+    // diff was written on — never merged over the top — and a REPLAY of the decision already taken
+    // answers 200 with the settled row rather than an error. The routine comes back with it, and
+    // does not when the intent was to remove the routine, because there is none left to send.
+    //
+    // A proposal ALREADY SET ASIDE is its own refusal and not the other decision having been taken:
+    // the store tells `superseded` from `dismissed` before it looks at a revision at all, so the two
+    // answers a client must draw differently arrive differently.
+    override suspend fun applyProposal(id: String): ProposalDecision {
+        calls.add("applyProposal")
+        reachable()
+        refuseApply?.let { throw it }
+        val standing = ledger[id] ?: throw refusal(404, message = "no such proposal")
+        if (standing.state == ProposalState.Applied) {
+            return ProposalDecision(standing, written[standing.routineId])
+        }
+        if (standing.state == ProposalState.Superseded) {
+            throw refusal(409, "proposal-superseded", "the routine has changed since this was written")
+        }
+        if (!standing.isPending) throw refusal(409, "proposal-settled", "that proposal was already decided")
+        val base = written[standing.routineId] ?: throw refusal(404, message = "no such proposal")
+        if (base.revision != standing.baseRevision) {
+            throw refusal(409, "proposal-superseded", "the routine has changed since this was written")
+        }
+        val settled = standing.copy(state = ProposalState.Applied, settledAtMs = settledAtMs)
+        ledger[id] = settled
+        if (settled.intent == ProposalIntent.Remove) {
+            // The routine goes and its whole ledger goes with it — which is why a second tap on an
+            // applied removal is answered "no such proposal" rather than replayed: there is no row
+            // left to replay, and the 404 IS the removal having happened.
+            written.remove(base.id)
+            ledger.values.removeAll { it.routineId == base.id }
+            return ProposalDecision(settled)
+        }
+        // THE DIFF LANDS, exactly as the domain lands it (`documentOf`): the routine's lines are
+        // laid down again from the proposal's own rows in order, and the run STOPS at the first
+        // removed row — what a removal takes away is listed after the document rather than inside
+        // it. Everything else is the base's and stays the base's: the id, the position, the day it
+        // was last trained.
+        val moved = base.copy(
+            name = settled.name.ifBlank { base.name },
+            revision = base.revision + 1,
+            pendingProposal = null,
+            entries = settled.changes.takeWhile { it.kind != ChangeKind.Removed }
+                .mapIndexed { index, change ->
+                    val asks = change.after ?: ProposalTargets()
+                    RoutineEntry(position = index + 1, exerciseId = change.exerciseId,
+                        targetSets = asks.sets, targetReps = asks.reps,
+                        targetWeightKg = asks.weightKg, restSeconds = asks.restSeconds)
+                },
+        )
+        written[moved.id] = moved
+        return ProposalDecision(settled, moved)
+    }
+
+    override suspend fun dismissProposal(id: String): ProposalDecision {
+        calls.add("dismissProposal")
+        reachable()
+        refuseDismiss?.let { throw it }
+        val standing = ledger[id] ?: throw refusal(404, message = "no such proposal")
+        if (standing.state == ProposalState.Dismissed) return ProposalDecision(standing)
+        if (standing.state == ProposalState.Superseded) {
+            throw refusal(409, "proposal-superseded", "the routine has changed since this was written")
+        }
+        if (!standing.isPending) throw refusal(409, "proposal-settled", "that proposal was already decided")
+        val settled = standing.copy(state = ProposalState.Dismissed, settledAtMs = settledAtMs)
+        ledger[id] = settled
+        written[settled.routineId]?.let { written[it.id] = it.copy(pendingProposal = null) }
+        // No routine rides on a dismissal, exactly as the route sends none: nothing about the
+        // program moved, and a client that needed one back to drop the card would be reading a
+        // field the wire does not carry.
+        return ProposalDecision(settled)
     }
 
     // The record read, and the one absence it can produce on its own: a movement the catalog does

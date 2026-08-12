@@ -453,6 +453,14 @@ public struct RoutineEntry: Equatable, Codable, Sendable {
 // dense and comes back from the server, so nothing here re-derives it. `lastTrainedAtMs` is absent
 // until the routine has been trained once — the list sorts by it, and a never-trained routine sorts
 // on the absence rather than on a zero pretending to be 1970.
+//
+// THE WIRE CARRIES TWO MORE FIELDS AND NEITHER IS DECODED, deliberately. `revision` is the token an
+// agent's proposal is applied against — read-only, never sent, and the one question it could answer
+// here ("does this diff's base still stand?") belongs to the server, which is the only place that
+// sees both halves at once under the lock that owns them. `pendingProposal` is the same fact
+// `GET /v1/gym/proposals` answers for the whole account in one read: it rides on the routine for
+// the agent's own `list_routines`, and a room that read it here as well would have two answers to
+// "is a card waiting" and eventually two different ones.
 public struct Routine: Equatable, Codable, Sendable, Identifiable {
     public let id: String
     public let name: String

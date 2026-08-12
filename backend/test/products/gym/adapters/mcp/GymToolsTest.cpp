@@ -68,7 +68,32 @@ struct Harness {
     args["finishedAt"] = Json::Value::UInt64(finishedAtMs);
     return call("finish_session", args, user);
   }
+
+  ToolResult propose(const char* id, const char* routine, Json::Value entries,
+                     const char* user = "u1") {
+    Json::Value args(Json::objectValue);
+    args["id"] = id;
+    args["routineId"] = routine;
+    args["entries"] = std::move(entries);
+    return call("propose_routine_change", args, user);
+  }
 };
+
+// One line of a document as an agent sends it.
+Json::Value entryOf(const char* exercise, int sets, int reps, double weightKg) {
+  Json::Value entry(Json::objectValue);
+  entry["exerciseId"] = exercise;
+  entry["targetSets"] = sets;
+  entry["targetReps"] = reps;
+  entry["targetWeightKg"] = weightKg;
+  return entry;
+}
+
+Json::Value oneEntry(const char* exercise, int sets, int reps, double weightKg) {
+  Json::Value entries(Json::arrayValue);
+  entries.append(entryOf(exercise, sets, reps, weightKg));
+  return entries;
+}
 
 Json::Value with(const char* field, const char* value) {
   Json::Value args(Json::objectValue);
@@ -129,8 +154,79 @@ TEST(gym_catalog_names_the_grant_level_that_reaches_every_tool) {
                "last_time gym:read", "list_routines gym:read", "get_stats gym:read",
                "get_preferences gym:read",
                "start_session gym:write", "log_set gym:write", "finish_session gym:write",
-               "save_routine gym:write", "create_exercise gym:write", "share_session gym:write",
-               "discard_session gym:delete", "delete_routine gym:delete", "revoke_share gym:delete"}));
+               "create_routine gym:write", "propose_routine_change gym:write",
+               "create_exercise gym:write", "share_session gym:write",
+               "discard_session gym:delete", "propose_routine_removal gym:delete",
+               "revoke_share gym:delete"}));
+}
+
+// W6'S WHOLE CONTRACT, said as a table so it cannot be read two ways. `create_routine` LANDS — a day
+// of the program that did not exist takes nothing away — and the two `propose_` tools land nothing
+// at all. The names carry it, because agent authors read names and not our architecture doc: the
+// unforgivable outcome of this wave would be a well-behaved agent telling its human that a routine
+// changed when it did not.
+TEST(gym_names_the_two_tools_that_only_propose_and_the_one_that_writes) {
+  for (const ToolDeclaration& tool : gymToolCatalog()) {
+    if (tool.name() != "propose_routine_change" && tool.name() != "propose_routine_removal")
+      continue;
+    const std::string described = tool.descriptor["description"].asString();
+    // Each says what it does NOT do, in the first two sentences, in words a model acts on.
+    CHECK(described.find("CHANGES NOTHING") != std::string::npos ||
+          described.find("DELETES NOTHING") != std::string::npos);
+    CHECK(described.find("tap Apply") != std::string::npos);
+    CHECK(described.find("no apply tool") != std::string::npos ||
+          described.find("nothing on this connection can tap it") != std::string::npos ||
+          described.find("Nothing on this connection can") != std::string::npos);
+  }
+  for (const ToolDeclaration& tool : gymToolCatalog())
+    if (tool.name() == "create_routine")
+      CHECK(tool.descriptor["description"].asString().find("LANDS IMMEDIATELY") !=
+            std::string::npos);
+}
+
+// APPLY IS NOT A CAPABILITY. There is no tool for it at any level — not under `gym:write`, not under
+// `gym:delete`, not under the account-wide grant — and the dispatcher answers no such call under
+// every name a model might reach for. The two set writes above live under the same rule; this is the
+// third verb reserved for the hand.
+TEST(gym_publishes_no_tool_that_applies_or_dismisses_a_proposal) {
+  Harness h;
+
+  const std::vector<std::string> everything =
+      namesIn(h.tools.listTools(ToolCaller{uid(), ToolScope::everything()}));
+
+  for (const std::string& name : everything) {
+    CHECK(name != "apply_proposal");
+    CHECK(name != "apply_routine_change");
+    CHECK(name != "accept_proposal");
+    CHECK(name != "dismiss_proposal");
+    CHECK(name != "settle_proposal");
+  }
+  for (const char* name :
+       {"apply_proposal", "apply_routine_change", "accept_proposal", "dismiss_proposal"})
+    CHECK(h.call(name, Json::Value(Json::objectValue)).isError);
+}
+
+// THE RETIREMENT ANSWER. An agent written against the old catalog calls one of these on its first
+// turn after this deploy, and what it reads is a connected user's whole first experience of the
+// wave. It names the replacement — never "you were not granted gym:write", which would be FALSE:
+// the level was granted, the tool was retired.
+TEST(gym_the_retired_routine_tools_name_what_replaced_them) {
+  Harness h;
+
+  const ToolResult saved = h.call("save_routine", Json::Value(Json::objectValue));
+  const ToolResult deleted = h.call("delete_routine", Json::Value(Json::objectValue));
+
+  CHECK(saved.isError);
+  CHECK(message(saved).find("propose_routine_change") != std::string::npos);
+  CHECK(message(saved).find("create_routine") != std::string::npos);
+  CHECK(message(saved).find("granted") == std::string::npos);
+  CHECK(deleted.isError);
+  CHECK(message(deleted).find("propose_routine_removal") != std::string::npos);
+  CHECK(message(deleted).find("granted") == std::string::npos);
+  // And the handshake every client reads at connect carries the same retirement, because a name no
+  // product declares never reaches this dispatcher over MCP.
+  CHECK(gymInstructions().find("save_routine") != std::string::npos);
+  CHECK(gymInstructions().find("propose_routine_change") != std::string::npos);
 }
 
 // NO AGENT MAY EDIT OR DELETE A LOGGED SET. The table above pins it by being exhaustive, but only
@@ -186,9 +282,12 @@ TEST(gym_tools_list_carries_exactly_the_levels_a_grant_named) {
   const std::vector<std::string> reads{"list_exercises", "list_sessions",  "get_session",
                                        "last_time",      "list_routines", "get_stats",
                                        "get_preferences"};
-  const std::vector<std::string> writes{"start_session", "log_set",         "finish_session",
-                                        "save_routine",  "create_exercise", "share_session"};
-  const std::vector<std::string> deletes{"discard_session", "delete_routine", "revoke_share"};
+  const std::vector<std::string> writes{"start_session",  "log_set",
+                                        "finish_session", "create_routine",
+                                        "propose_routine_change", "create_exercise",
+                                        "share_session"};
+  const std::vector<std::string> deletes{"discard_session", "propose_routine_removal",
+                                         "revoke_share"};
 
   CHECK_EQ(namesIn(h.tools.listTools(ToolCaller{uid(), parseToolScope("gym:read")})), reads);
 
@@ -599,7 +698,7 @@ TEST(gym_stats_narrow_to_one_movement_and_keep_the_weeks) {
 TEST(gym_the_routine_entry_schema_publishes_the_bounds_the_domain_actually_keeps) {
   Json::Value entries(Json::nullValue);
   for (const ToolDeclaration& tool : gymToolCatalog())
-    if (tool.name() == "save_routine")
+    if (tool.name() == "propose_routine_change")
       entries = tool.descriptor["inputSchema"]["properties"]["entries"];
   REQUIRE(entries.isObject());
   const Json::Value& fields = entries["items"]["properties"];
@@ -631,118 +730,256 @@ TEST(gym_the_routine_entry_schema_publishes_the_bounds_the_domain_actually_keeps
 // reaching one level down into the line: a key an entry never declared is REFUSED, never dropped.
 // `targetRepsl: 5` used to read clean — the line stored no rep target at all, and the agent was
 // told the routine had saved while the target it meant to set was gone.
-TEST(gym_save_routine_names_a_misspelled_entry_key_rather_than_dropping_it) {
+TEST(gym_a_proposal_names_a_misspelled_entry_key_rather_than_dropping_it) {
   Harness h;
+  h.repo.routineRows.push_back(pushA());
   Json::Value entry(Json::objectValue);
   entry["exerciseId"] = "bench-press";
   entry["targetSets"] = 5;
   entry["targetRepsl"] = 5;
-  Json::Value args(Json::objectValue);
-  args["id"] = "rt_00000001";
-  args["name"] = "Push A";
-  args["position"] = 0;
-  args["entries"] = Json::Value(Json::arrayValue);
-  args["entries"].append(entry);
+  Json::Value entries(Json::arrayValue);
+  entries.append(entry);
 
-  const ToolResult refused = h.call("save_routine", args);
+  const ToolResult refused = h.propose("prop_00000001", "rt_00000001", entries);
 
   CHECK(refused.isError);
   CHECK_EQ(message(refused),
-           std::string("save_routine: unknown routine entry field \"targetRepsl\". An entry takes: "
-                       "exerciseId, targetSets, targetReps, targetWeightKg, restSeconds."));
-  CHECK(h.repo.routineRows.empty());
+           std::string("propose_routine_change: unknown routine entry field \"targetRepsl\". An "
+                       "entry takes: exerciseId, targetSets, targetReps, targetWeightKg, "
+                       "restSeconds."));
+  CHECK(h.repo.proposalRows.empty());
 }
 
-// THE LOOP THIS TOOL PRINTS HAS TO WORK. save_routine's own description tells the caller to read the
-// routine with list_routines, change what they mean, and send all of it back — and what
-// list_routines hands over carries `position` on every line, plus `lastTrainedAt` on any routine
-// trained under once. Both are the store's answers rather than anybody's input, and refusing them
-// would make our own instruction a hard refusal on the surface gym is sold on. So they are declared,
-// accepted and ignored; the run is renumbered from the order the entries arrive in either way.
+// THE LOOP THESE TOOLS PRINT HAS TO WORK. propose_routine_change's own description tells the caller
+// to read the routine with list_routines, change what they mean, and send all of it back — and what
+// list_routines hands over carries `position` on every line. It is the store's answer rather than
+// anybody's input, and refusing it would make our own printed instruction a hard refusal on the
+// surface gym is sold on. So it is declared, accepted and ignored; the run is renumbered from the
+// order the entries arrive in either way.
 //
-// The misspelling above still has to die, which is the whole point: strictness that refuses a
-// typo AND the document we ourselves emitted is not strictness, it is an outage.
-TEST(gym_a_routine_read_with_list_routines_goes_straight_back_through_save_routine) {
+// The misspelling above still has to die, which is the whole point: strictness that refuses a typo
+// AND the document we ourselves emitted is not strictness, it is an outage.
+TEST(gym_a_routine_read_with_list_routines_goes_straight_back_through_propose_routine_change) {
   Harness h;
-  Json::Value entry(Json::objectValue);
-  entry["exerciseId"] = "bench-press";
-  entry["targetSets"] = 5;
-  entry["targetReps"] = 5;
-  entry["targetWeightKg"] = 82.5;
-  Json::Value args(Json::objectValue);
-  args["id"] = "rt_00000001";
-  args["name"] = "Push A";
-  args["position"] = 0;
-  args["entries"] = Json::Value(Json::arrayValue);
-  args["entries"].append(entry);
-  CHECK(!h.call("save_routine", args).isError);
+  h.repo.routineRows.push_back(pushA());
 
   // Read it back exactly as an agent would, and change the one thing it came for.
   const ToolResult listed = h.call("list_routines", Json::Value(Json::objectValue));
-  CHECK(!listed.isError);
+  REQUIRE(!listed.isError);
   Json::Value document = body(listed)["routines"][0];
   CHECK_EQ(document["entries"][0]["position"].asInt(), 1);   // the key that used to be fatal
   document["entries"][0]["targetWeightKg"] = 85.0;
 
-  const ToolResult saved = h.call("save_routine", document);
+  const ToolResult minted = h.propose("prop_00000001", "rt_00000001", document["entries"]);
 
-  CHECK(!saved.isError);
-  CHECK_EQ(body(saved)["entries"][0]["targetWeightKg"].asDouble(), 85.0);
-  CHECK_EQ(body(saved)["entries"][0]["position"].asInt(), 1);
-  CHECK_EQ(h.repo.routineRows.size(), std::size_t{1});
+  REQUIRE(!minted.isError);
+  const Json::Value& proposal = body(minted)["proposal"];
+  REQUIRE_EQ(proposal["changes"].size(), 1u);
+  CHECK_EQ(proposal["changes"][0]["kind"].asString(), std::string("retargeted"));
+  CHECK_EQ(proposal["changes"][0]["before"]["weightKg"].asDouble(), 82.5);
+  CHECK_EQ(proposal["changes"][0]["after"]["weightKg"].asDouble(), 85.0);
+  // And the routine is exactly where it was: this tool writes nothing.
+  CHECK_EQ(h.repo.routineRows[0].entries[0].targetWeightKg, std::optional<double>(82.5));
 }
 
-TEST(gym_save_routine_creates_a_fresh_id_and_replaces_one_that_exists) {
+// THE CLAIM THIS WHOLE WAVE MAKES, proved by executing it rather than by reading the code: nothing an
+// agent can call changes an existing routine. The stored rows are compared whole, before and after,
+// so a field that moved anywhere in the document fails this case.
+TEST(gym_proposing_a_change_writes_nothing_to_the_program) {
   Harness h;
-  Json::Value entry(Json::objectValue);
-  entry["exerciseId"] = "bench-press";
-  entry["targetSets"] = 5;
-  entry["targetReps"] = 5;
+  h.repo.routineRows.push_back(pushA());
+  const std::vector<Routine> before = h.repo.routineRows;
+
+  const ToolResult minted =
+      h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", 5, 3, 87.5));
+
+  REQUIRE(!minted.isError);
+  CHECK_EQ(h.repo.routineRows, before);
+  // The receipt is not shaped like a write: there is no routine in it at all, the state says so, and
+  // the note tells the agent what to say to its human.
+  CHECK(body(minted)["routine"].isNull());
+  CHECK_EQ(body(minted)["proposal"]["state"].asString(), std::string("pending"));
+  CHECK_EQ(body(minted)["proposal"]["changeCount"].asInt(), 1);
+  CHECK_EQ(body(minted)["reviewUrl"].asString(),
+           std::string("https://windmill.works/#/gym/proposals/prop_00000001"));
+  CHECK(body(minted)["note"].asString().find("Nothing has changed") != std::string::npos);
+  CHECK(body(minted)["note"].asString().find("no tool on this connection can apply it") !=
+        std::string::npos);
+}
+
+// One pending proposal per routine per door: a second one supersedes the first, and the first drops
+// into the routine's dated history rather than vanishing. Nothing piles up, nothing disappears.
+TEST(gym_a_second_proposal_supersedes_the_first_and_the_first_stays_in_the_history) {
+  Harness h;
+  h.repo.routineRows.push_back(pushA());
+  h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", 5, 3, 87.5));
+  h.clock.now += 60'000;
+
+  const ToolResult second =
+      h.propose("prop_00000002", "rt_00000001", oneEntry("bench-press", 5, 3, 90.0));
+
+  REQUIRE(!second.isError);
+  const std::vector<ProposalHead> heads =
+      h.service.proposals(uid(), ProposalQuery{std::nullopt, false});
+  REQUIRE_EQ(heads.size(), std::size_t{2});
+  CHECK_EQ(heads[0].id, ProposalId{"prop_00000002"});
+  CHECK_EQ(heads[0].state, ProposalState::pending);
+  CHECK_EQ(heads[1].id, ProposalId{"prop_00000001"});
+  CHECK_EQ(heads[1].state, ProposalState::superseded);
+  CHECK_EQ(heads[1].settledAtMs, std::optional<std::uint64_t>(h.clock.now));
+  // And only one of them is what a card draws.
+  CHECK_EQ(h.service.proposals(uid(), ProposalQuery{std::nullopt, true}).size(), std::size_t{1});
+}
+
+// A replay reads back the proposal it already minted. Without it an agent that lost a reply would
+// mint a second id, supersede its own first, and leave a spurious superseded row in a lifter's
+// history — which is why the id is the idempotency key here exactly as it is everywhere else.
+TEST(gym_a_replayed_proposal_reads_back_the_one_already_waiting) {
+  Harness h;
+  h.repo.routineRows.push_back(pushA());
+  h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", 5, 3, 87.5));
+
+  const ToolResult replayed =
+      h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", 5, 3, 87.5));
+
+  REQUIRE(!replayed.isError);
+  CHECK_EQ(body(replayed)["proposal"]["state"].asString(), std::string("pending"));
+  CHECK_EQ(h.repo.proposalRows.size(), std::size_t{1});
+}
+
+// THE UNFORGIVABLE DEFECT RUNNING BACKWARDS, and the reason a replay is decided on the DOCUMENT and
+// never on the id alone. A second, genuinely different diff sent under an id that is already spent
+// used to be answered `[ok]` with the note *"this proposal is waiting in the lifter's app"* — while
+// the document just sent was thrown away and what waited was the FIRST idea. An agent that had just
+// told its human it proposed a deload was made a liar by our receipt. It is refused instead, in the
+// same words create_routine refuses the same shape, and nothing of the caller's is spent.
+TEST(gym_a_proposal_id_resent_with_a_different_document_is_refused_rather_than_answered_ok) {
+  Harness h;
+  h.repo.routineRows.push_back(pushA());
+  h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", 5, 3, 87.5));
+
+  const ToolResult second =
+      h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", 3, 12, 50.0));
+
+  CHECK(second.isError);
+  CHECK(message(second).find("DIFFERENT proposal") != std::string::npos);
+  CHECK(message(second).find("NOTHING WAS MINTED") != std::string::npos);
+  // The first idea is still the one waiting, untouched and still pending.
+  REQUIRE_EQ(h.repo.proposalRows.size(), std::size_t{1});
+  CHECK_EQ(h.repo.proposalRows[0].head.state, ProposalState::pending);
+  CHECK_EQ(h.repo.proposalRows[0].changes[0].after,
+           std::optional<EntryTargets>(EntryTargets{5, 3, 87.5, std::nullopt}));
+}
+
+// THE OTHER LOOP THESE TOOLS PRINT. create_routine's own description says a new day is minted under
+// a fresh id, and the way an agent duplicates a Tuesday is by reading one and sending it back — so
+// every field list_routines PUTS ON a routine has to survive the trip. `revision` and
+// `pendingProposal` are this wave's two, and they arrive on a routine an agent reads today. Proved
+// through the COMPOSITE, because `additionalProperties: false` is enforced there and nowhere else.
+TEST(gym_a_routine_read_with_list_routines_goes_straight_back_through_create_routine) {
+  Harness h;
+  CompositeToolHost surface(std::vector<ToolModule>{{h.tools, gymInstructions()}});
+  h.repo.routineRows.push_back(pushA());
+  h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", 5, 3, 87.5));
+
+  Json::Value document = body(h.call("list_routines", Json::Value(Json::objectValue)))["routines"][0];
+  REQUIRE_EQ(document["revision"].asInt(), 1);            // the two keys that used to be fatal
+  REQUIRE(document.isMember("pendingProposal"));
+  document["id"] = "rt_00000002";                        // the duplicate is a NEW day, on a new id
+  document["name"] = "Push B";
+
+  const ToolResult duplicated =
+      surface.callTool("create_routine", document, ToolCaller{uid(), ToolScope::everything()});
+
+  REQUIRE(!duplicated.isError);
+  CHECK_EQ(body(duplicated)["name"].asString(), std::string("Push B"));
+  CHECK_EQ(body(duplicated)["revision"].asInt(), 1);
+  // The new day carries no proposal: a card belongs to the routine it was minted against.
+  CHECK(body(duplicated)["pendingProposal"].isNull());
+  CHECK_EQ(h.repo.routineRows.size(), std::size_t{2});
+}
+
+// The dot §B5 draws, on the read an agent already makes — which is why there is no `list_proposals`
+// and no `get_proposal` in this catalog: a proposal always targets a routine.
+TEST(gym_list_routines_carries_the_proposal_waiting_on_a_day_of_the_program) {
+  Harness h;
+  h.repo.routineRows.push_back(pushA());
+
+  const Json::Value quiet = body(h.call("list_routines", Json::Value(Json::objectValue)));
+  h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", 5, 3, 87.5));
+  const Json::Value waiting = body(h.call("list_routines", Json::Value(Json::objectValue)));
+
+  // Absent while nothing waits, which is the whole of "this day has nothing to review".
+  CHECK(quiet["routines"][0]["pendingProposal"].isNull());
+  CHECK_EQ(quiet["routines"][0]["revision"].asInt(), 1);
+  const Json::Value& pending = waiting["routines"][0]["pendingProposal"];
+  CHECK_EQ(pending["id"].asString(), std::string("prop_00000001"));
+  CHECK_EQ(pending["state"].asString(), std::string("pending"));
+  CHECK_EQ(pending["changeCount"].asInt(), 1);
+  CHECK_EQ(pending["source"]["door"].asString(), std::string("mcp"));
+  // Empty while the transport carries neither, so a card draws a truthful fallback rather than an
+  // empty string where a model's name should be.
+  CHECK(pending["source"]["connection"].isNull());
+  CHECK(pending["source"]["agent"].isNull());
+  // The head alone: a list that shipped every diff row would spend a context window drawing a dot.
+  CHECK(pending["changes"].isNull());
+}
+
+// A day of the program that does not exist yet is `fresh`, and the rule calls that a record: it
+// lands. A day that already stands is not this tool's, and the refusal points at the tool whose
+// name is true for that case rather than quietly replaying and losing the caller's edit.
+TEST(gym_create_routine_lands_and_sends_an_existing_day_to_the_proposal_door) {
+  Harness h;
   Json::Value args(Json::objectValue);
   args["id"] = "rt_00000001";
   args["name"] = "Push A";
   args["position"] = 0;
-  args["entries"] = Json::Value(Json::arrayValue);
-  args["entries"].append(entry);
+  args["entries"] = oneEntry("bench-press", 5, 5, 82.5);
 
-  const ToolResult created = h.call("save_routine", args);
-  CHECK_FALSE(created.isError);
+  const ToolResult created = h.call("create_routine", args);
+  REQUIRE(!created.isError);
   CHECK_EQ(body(created)["name"].asString(), std::string("Push A"));
+  CHECK_EQ(body(created)["revision"].asInt(), 1);
+  CHECK_EQ(h.repo.routineRows.size(), std::size_t{1});
 
-  Json::Value second(Json::objectValue);
-  second["exerciseId"] = "back-squat";
-  second["targetSets"] = 3;
+  // A lost reply is resent verbatim, and this product answers a replay everywhere else — so it
+  // answers one here rather than refusing the caller for doing exactly what it told them to do.
+  const ToolResult replayed = h.call("create_routine", args);
+  CHECK_FALSE(replayed.isError);
+  CHECK_EQ(body(replayed)["revision"].asInt(), 1);
+  CHECK_EQ(h.repo.routineRows.size(), std::size_t{1});
+
   args["name"] = "Push A — heavy";
-  args["entries"].append(second);
-  const ToolResult replaced = h.call("save_routine", args);
+  const ToolResult again = h.call("create_routine", args);
 
-  CHECK_FALSE(replaced.isError);
-  CHECK_EQ(body(replaced)["name"].asString(), std::string("Push A — heavy"));
-  REQUIRE_EQ(body(replaced)["entries"].size(), 2u);
-  CHECK_EQ(body(replaced)["entries"][1]["exerciseId"].asString(), std::string("back-squat"));
-  CHECK_EQ(body(replaced)["entries"][1]["position"].asInt(), 2);
-  CHECK_EQ(h.repo.routineRows.size(), std::size_t{1});   // replaced, never a second document
+  CHECK(again.isError);
+  CHECK(message(again).find("propose_routine_change") != std::string::npos);
+  CHECK_EQ(h.repo.routineRows[0].name, std::string("Push A"));   // the edit did not land
 }
 
-TEST(gym_save_routine_naming_no_movement_points_at_the_catalog) {
+// Refused at the MINT, not at the tap. A proposal a lifter reads and cannot apply is worse than no
+// proposal at all: the refusal would arrive at the one moment they had already decided to trust it.
+TEST(gym_a_proposal_naming_no_movement_is_refused_before_it_is_ever_minted) {
   Harness h;
-  Json::Value entry(Json::objectValue);
-  entry["exerciseId"] = "zercher-squat";
-  entry["targetSets"] = 5;
-  Json::Value args(Json::objectValue);
-  args["id"] = "rt_00000001";
-  args["name"] = "Push A";
-  args["position"] = 0;
-  args["entries"] = Json::Value(Json::arrayValue);
-  args["entries"].append(entry);
+  h.repo.routineRows.push_back(pushA());
 
-  const ToolResult refused = h.call("save_routine", args);
+  const ToolResult refused =
+      h.propose("prop_00000001", "rt_00000001", oneEntry("zercher-squat", 5, 5, 82.5));
 
   CHECK(refused.isError);
-  CHECK_EQ(message(refused),
-           std::string("save_routine: an entry names a movement no catalog holds. Call "
-                       "list_exercises for the ids, or create_exercise to add one, then send the "
-                       "whole routine again."));
+  CHECK(message(refused).find("was not minted") != std::string::npos);
+  CHECK(h.repo.proposalRows.empty());
+}
+
+TEST(gym_proposing_a_change_to_a_routine_that_is_not_yours_points_at_the_two_doors) {
+  Harness h;
+
+  const ToolResult refused =
+      h.propose("prop_00000001", "rt_00000009", oneEntry("bench-press", 5, 5, 82.5));
+
+  CHECK(refused.isError);
+  CHECK(message(refused).find("list_routines") != std::string::npos);
+  CHECK(message(refused).find("create_routine") != std::string::npos);
 }
 
 TEST(gym_a_routine_read_narrows_to_one_and_wears_the_same_wrapper) {
@@ -852,30 +1089,48 @@ TEST(gym_discarding_a_finished_workout_takes_its_sets_with_it) {
                        "the ids you own."));
 }
 
-TEST(gym_deleting_a_routine_leaves_the_workouts_trained_under_it_alone) {
+// `gym:delete` buys the right to PROPOSE a destructive change and buys nothing else. The routine is
+// exactly where it was when this call returns, and the diff draws every line that would go.
+TEST(gym_proposing_a_removal_deletes_nothing_and_draws_what_would_go) {
   Harness h;
   h.repo.routineRows.push_back(pushA());
+  const std::vector<Routine> before = h.repo.routineRows;
   Json::Value args(Json::objectValue);
-  args["id"] = "ses_00000001";
-  args["startedAt"] = Json::Value::UInt64(1'000'000);
+  args["id"] = "prop_00000001";
   args["routineId"] = "rt_00000001";
-  h.call("start_session", args);
-  h.finish("ses_00000001", 1'060'000);
+  args["summary"] = "You have not trained this in three months.";
 
-  const ToolResult deleted = h.call("delete_routine", with("routineId", "rt_00000001"));
+  const ToolResult minted = h.call("propose_routine_removal", args);
 
-  CHECK_FALSE(deleted.isError);
-  CHECK(body(deleted)["deleted"].asBool());
-  CHECK_EQ(h.repo.routineRows.size(), std::size_t{0});
-  // The frozen copy survives the plan it was taken from — the log still says what the workout was.
-  const ToolResult session = h.call("get_session", with("sessionId", "ses_00000001"));
-  CHECK_EQ(body(session)["session"]["plan"]["routine"].asString(), std::string("Push A"));
+  REQUIRE(!minted.isError);
+  CHECK_EQ(h.repo.routineRows, before);
+  const Json::Value& proposal = body(minted)["proposal"];
+  CHECK_EQ(proposal["intent"].asString(), std::string("remove"));
+  CHECK_EQ(proposal["state"].asString(), std::string("pending"));
+  REQUIRE_EQ(proposal["changes"].size(), 1u);
+  CHECK_EQ(proposal["changes"][0]["kind"].asString(), std::string("removed"));
+  CHECK_EQ(proposal["changes"][0]["exerciseId"].asString(), std::string("bench-press"));
+  // §D14's *41 logged sets kept*, counted at read time so it is true when a lifter reads it.
+  CHECK_EQ(proposal["changes"][0]["loggedSets"].asInt(), 0);
+  CHECK(proposal["changes"][0]["after"].isNull());
+}
 
-  const ToolResult again = h.call("delete_routine", with("routineId", "rt_00000001"));
-  CHECK(again.isError);
-  CHECK_EQ(message(again),
-           std::string("delete_routine: no routine of yours has that id. Call list_routines for the "
-                       "ids you own."));
+// The removal's diff names how many sets each line keeps, because that sentence is what makes a
+// removal safe to read: the day leaves the program and nothing about the log moves.
+TEST(gym_a_removal_proposal_counts_the_sets_each_line_keeps) {
+  Harness h;
+  h.repo.routineRows.push_back(pushA());
+  h.start("ses_00000001", 1'700'000'000'000);
+  h.logSet("ses_00000001", "set_00000001", "bench-press", 82.5, 5, 1'700'000'060'000);
+  h.logSet("ses_00000001", "set_00000002", "bench-press", 82.5, 5, 1'700'000'120'000);
+  Json::Value args(Json::objectValue);
+  args["id"] = "prop_00000001";
+  args["routineId"] = "rt_00000001";
+
+  const ToolResult minted = h.call("propose_routine_removal", args);
+
+  REQUIRE(!minted.isError);
+  CHECK_EQ(body(minted)["proposal"]["changes"][0]["loggedSets"].asInt(), 2);
 }
 
 // ---- §I · what an agent may know about a lifter's gym, and what it may not ---------------------
@@ -958,7 +1213,7 @@ TEST(gym_get_preferences_description_promises_only_what_the_code_does) {
 // at the rack and this server fills in nothing. An agent told otherwise would read a line with no
 // `restSeconds` back off `list_routines`, find the field still empty, and conclude the rest it
 // prescribed was dropped — so the description says the field stays empty and this proves it does,
-// with the dial armed the whole time. save_routine's own schema points at the same value now, and
+// with the dial armed the whole time. The routine tools' own schema points at the same value now, and
 // one omission with two names in one catalog is how that misreading gets made.
 TEST(gym_an_armed_rest_dial_is_never_copied_into_a_routine_line_that_names_none) {
   Harness h;
@@ -974,7 +1229,7 @@ TEST(gym_an_armed_rest_dial_is_never_copied_into_a_routine_line_that_names_none)
   args["position"] = 0;
   args["entries"] = Json::Value(Json::arrayValue);
   args["entries"].append(entry);
-  CHECK(!h.call("save_routine", args).isError);
+  CHECK(!h.call("create_routine", args).isError);
 
   const ToolResult listed = h.call("list_routines", Json::Value(Json::objectValue));
 
@@ -983,4 +1238,67 @@ TEST(gym_an_armed_rest_dial_is_never_copied_into_a_routine_line_that_names_none)
   // And the dial an agent reads separately is still the 120 it was: the two values never touch.
   CHECK_EQ(body(h.call("get_preferences", Json::Value(Json::objectValue)))["restSeconds"].asInt(),
            120);
+}
+
+// `gym:read` CANNOT MINT A PROPOSAL. Reading a lifter's log does not buy the right to put a card in
+// their product, and the gate is the composite's rather than gym's — so it is proved by CALLING
+// through the composite, not by reading the catalog. The refusal names the level, which is the one
+// sentence that is TRUE here and would have been false for a retired tool.
+TEST(gym_read_alone_cannot_mint_a_proposal) {
+  Harness h;
+  CompositeToolHost surface(std::vector<ToolModule>{{h.tools, gymInstructions()}});
+  h.repo.routineRows.push_back(pushA());
+  Json::Value args(Json::objectValue);
+  args["id"] = "prop_00000001";
+  args["routineId"] = "rt_00000001";
+  args["entries"] = oneEntry("bench-press", 5, 3, 87.5);
+
+  const ToolResult refused =
+      surface.callTool("propose_routine_change", args, ToolCaller{uid(), parseToolScope("gym:read")});
+
+  CHECK(refused.isError);
+  CHECK(message(refused).find("gym:write") != std::string::npos);
+  CHECK(h.repo.proposalRows.empty());
+  // And a grant that names the level mints, through the very same door.
+  CHECK_FALSE(surface
+                  .callTool("propose_routine_change", args,
+                            ToolCaller{uid(), parseToolScope("gym:read gym:write")})
+                  .isError);
+  CHECK_EQ(h.repo.proposalRows.size(), std::size_t{1});
+  // The routine did not move either way.
+  CHECK_EQ(h.repo.routineRows[0].revision, 1);
+  CHECK_EQ(h.repo.routineRows[0].entries[0].targetWeightKg, std::optional<double>(82.5));
+}
+
+// A removal is `gym:delete`'s, and `gym:write` alone does not reach it — the levels are a grant
+// vocabulary and none of the three implies another.
+TEST(gym_write_alone_cannot_propose_a_removal) {
+  Harness h;
+  CompositeToolHost surface(std::vector<ToolModule>{{h.tools, gymInstructions()}});
+  h.repo.routineRows.push_back(pushA());
+  Json::Value args(Json::objectValue);
+  args["id"] = "prop_00000001";
+  args["routineId"] = "rt_00000001";
+
+  const ToolResult refused = surface.callTool("propose_routine_removal", args,
+                                              ToolCaller{uid(), parseToolScope("gym:write")});
+
+  CHECK(refused.isError);
+  CHECK(message(refused).find("gym:delete") != std::string::npos);
+  CHECK(h.repo.proposalRows.empty());
+}
+
+// A document identical to what the routine already says proposes nothing, and a card reading
+// `Apply all 0` is a notification about nothing in an app that has no notifications on purpose.
+TEST(gym_a_proposal_that_changes_nothing_is_refused_rather_than_shown_to_a_lifter) {
+  Harness h;
+  h.repo.routineRows.push_back(pushA());
+  const Json::Value document = body(h.call("list_routines", Json::Value(Json::objectValue)))
+                                   ["routines"][0]["entries"];
+
+  const ToolResult refused = h.propose("prop_00000001", "rt_00000001", document);
+
+  CHECK(refused.isError);
+  CHECK(message(refused).find("already says") != std::string::npos);
+  CHECK(h.repo.proposalRows.empty());
 }

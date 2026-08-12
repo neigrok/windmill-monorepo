@@ -159,6 +159,39 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
         api->deleteRoutine(req, std::move(cb), id);
       },
       {drogon::Delete});
+  // ── THE PROPOSAL LEDGER, AND WHY APPLY IS ONLY EVER HERE ──
+  // An agent reads this log, and when it wants to change a day of the program it mints a proposal
+  // (`propose_routine_change`, `propose_routine_removal`) and nothing moves. These two writes are
+  // what move it, and NO MCP TOOL REACHES THEM — not under `gym:write`, not under `gym:delete`, not
+  // at any level a future grant invents. That is the same rule the two set writes above live under
+  // and it is load-bearing in the same way: the tool layer is the only place gym can tell an agent
+  // from a hand, and Apply is not a capability, it is a human act. `PUT /v1/gym/routines/{id}` above
+  // stays the hand's other door and is unreachable from `GymTools` for the same reason.
+  // `GymToolsTest` pins the absence so it cannot be added by accident.
+  app.registerHandler(
+      "/v1/gym/proposals",
+      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        api->listProposals(req, std::move(cb));
+      },
+      {drogon::Get});
+  app.registerHandler(
+      "/v1/gym/proposals/{id}",
+      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        api->getProposal(req, std::move(cb), id);
+      },
+      {drogon::Get});
+  app.registerHandler(
+      "/v1/gym/proposals/{id}/apply",
+      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        api->applyProposal(req, std::move(cb), id);
+      },
+      {drogon::Post});
+  app.registerHandler(
+      "/v1/gym/proposals/{id}/dismiss",
+      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        api->dismissProposal(req, std::move(cb), id);
+      },
+      {drogon::Post});
   // §I's settings section. It is a PUT and not a PATCH for the reason the routine's replace is one:
   // the screen renders the whole document from one value it already holds, so it always has the
   // whole document to send back — and a partial write would have to make "omitted" and "cleared"

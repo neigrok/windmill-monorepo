@@ -74,6 +74,8 @@ function flagsOf(error) {
     sessionAlreadyOpen: error.sessionAlreadyOpen,
     fixUnreadable: error.fixUnreadable,
     setNotFound: error.setNotFound,
+    proposalSuperseded: error.proposalSuperseded,
+    proposalSettled: error.proposalSettled,
   };
 }
 
@@ -244,6 +246,8 @@ test('lastTime — a movement no catalog holds is the one refusal, and it is the
       sessionAlreadyOpen: false,
       fixUnreadable: false,
       setNotFound: false,
+      proposalSuperseded: false,
+      proposalSettled: false,
     });
     return true;
   });
@@ -307,6 +311,8 @@ test('fix-unreadable — a fix the store would not take is terminal, and retryin
       sessionAlreadyOpen: false,
       fixUnreadable: true,
       setNotFound: false,
+      proposalSuperseded: false,
+      proposalSettled: false,
     });
     return true;
   });
@@ -336,6 +342,8 @@ test('set-not-found — one answer for all four ways a set can fail to be in tha
       sessionAlreadyOpen: false,
       fixUnreadable: false,
       setNotFound: true,
+      proposalSuperseded: false,
+      proposalSettled: false,
     });
     return true;
   });
@@ -408,6 +416,8 @@ test('session-finished — the code, not the sentence, says this set will never 
       sessionAlreadyOpen: false,
       fixUnreadable: false,
       setNotFound: false,
+      proposalSuperseded: false,
+      proposalSettled: false,
     });
     return true;
   });
@@ -434,6 +444,8 @@ test('set-id-taken — the code says mint a fresh set id, so a reword can never 
       sessionAlreadyOpen: false,
       fixUnreadable: false,
       setNotFound: false,
+      proposalSuperseded: false,
+      proposalSettled: false,
     });
     return true;
   });
@@ -460,6 +472,8 @@ test('session-id-taken — the code says mint a fresh session id', async () => {
       sessionAlreadyOpen: false,
       fixUnreadable: false,
       setNotFound: false,
+      proposalSuperseded: false,
+      proposalSettled: false,
     });
     return true;
   });
@@ -486,6 +500,8 @@ test('unknown-exercise — a 400 with a repair of its own: reload the catalog, n
       sessionAlreadyOpen: false,
       fixUnreadable: false,
       setNotFound: false,
+      proposalSuperseded: false,
+      proposalSettled: false,
     });
     return true;
   });
@@ -522,6 +538,8 @@ test('a codeless refusal still classifies by the sentence it shipped with', asyn
         sessionAlreadyOpen: code === 'session-already-open',
         fixUnreadable: false,
         setNotFound: false,
+        proposalSuperseded: false,
+        proposalSettled: false,
       });
       return true;
     });
@@ -551,6 +569,8 @@ test('a 409 with an unknown code, or none at all, is terminal but unrepairable',
       sessionAlreadyOpen: false,
       fixUnreadable: false,
       setNotFound: false,
+      proposalSuperseded: false,
+      proposalSettled: false,
     });
     return true;
   });
@@ -575,6 +595,8 @@ test('a 409 with an unknown code, or none at all, is terminal but unrepairable',
       sessionAlreadyOpen: false,
       fixUnreadable: false,
       setNotFound: false,
+      proposalSuperseded: false,
+      proposalSettled: false,
     });
     return true;
   });
@@ -601,6 +623,8 @@ test('400 is terminal and 5xx is retryable — a busy store never reads as a bad
       sessionAlreadyOpen: false,
       fixUnreadable: false,
       setNotFound: false,
+      proposalSuperseded: false,
+      proposalSettled: false,
     });
     return true;
   });
@@ -625,6 +649,8 @@ test('400 is terminal and 5xx is retryable — a busy store never reads as a bad
       sessionAlreadyOpen: false,
       fixUnreadable: false,
       setNotFound: false,
+      proposalSuperseded: false,
+      proposalSettled: false,
     });
     return true;
   });
@@ -652,6 +678,8 @@ test('a refusal with no readable body still carries its status', async () => {
       sessionAlreadyOpen: false,
       fixUnreadable: false,
       setNotFound: false,
+      proposalSuperseded: false,
+      proposalSettled: false,
     });
     return true;
   });
@@ -678,6 +706,8 @@ test('401 and 404 are neither terminal nor retryable — they wait for a sign-in
       sessionAlreadyOpen: false,
       fixUnreadable: false,
       setNotFound: false,
+      proposalSuperseded: false,
+      proposalSettled: false,
     });
     return true;
   });
@@ -702,6 +732,8 @@ test('401 and 404 are neither terminal nor retryable — they wait for a sign-in
       sessionAlreadyOpen: false,
       fixUnreadable: false,
       setNotFound: false,
+      proposalSuperseded: false,
+      proposalSettled: false,
     });
     return true;
   });
@@ -992,6 +1024,8 @@ test('session-open — a discard against a live session is refused, and it is no
       sessionAlreadyOpen: false,
       fixUnreadable: false,
       setNotFound: false,
+      proposalSuperseded: false,
+      proposalSettled: false,
     });
     return true;
   });
@@ -1055,6 +1089,225 @@ test('routines — create sends the document, replace sends it whole, delete ans
   assert.equal(await gymApi.deleteRoutine('rt_pull_a'), null);
   assert.equal(wireOf(calls[0]).method, 'DELETE');
   assert.equal(wireOf(calls[0]).path, '/v1/gym/routines/rt_pull_a');
+});
+
+// A ROUTINE CARRIES THE PROPOSAL WAITING ON IT. The card on Today and the dot on the routines list
+// are drawn out of this read and no other — a proposal always targets a routine, so the read those
+// rooms were already making is the read that answers "is anything waiting". `revision` rides along
+// and is READ-ONLY: it is what a proposal is frozen against, and this client never sends one.
+test('routines — a pending proposal and the revision it is frozen against ride the routine', async () => {
+  const routine = {
+    id: 'rt_push_a',
+    name: 'Push A',
+    position: 0,
+    revision: 2,
+    lastTrainedAt: 1_754_300_000_000,
+    pendingProposal: {
+      id: 'prop_2f9c40a1',
+      routineId: 'rt_push_a',
+      intent: 'revise',
+      state: 'pending',
+      summary: 'Four weeks of heavier bench triples.',
+      changeCount: 4,
+      createdAt: 1_754_000_000_000,
+      source: { door: 'mcp' },
+    },
+    entries: [{ position: 1, exerciseId: 'bench-press', targetSets: 5, targetReps: 5, targetWeightKg: 82.5 }],
+  };
+  serve(ok({ routines: [routine] }));
+  assert.deepEqual(await gymApi.routines(), [routine]);
+
+  // A routine with nothing waiting carries no key at all — an omission, never a null, exactly as
+  // every other optional on this wire.
+  const quiet = { id: 'rt_pull_a', name: 'Pull A', position: 1, revision: 1, entries: [] };
+  serve(ok({ routines: [quiet] }));
+  assert.deepEqual(await gymApi.routines(), [quiet]);
+  assert.equal('pendingProposal' in quiet, false);
+});
+
+// THE ROUTINE'S DATED HISTORY (screen 6), and the whole ledger when nothing is asked of it. `state`
+// recognises the literal "pending" and nothing else, so a client that guessed a word gets the whole
+// history rather than an empty screen.
+test('proposals — the ledger, filtered by routine and by the one state word the server knows', async () => {
+  const head = {
+    id: 'prop_2f9c40a1',
+    routineId: 'rt_push_a',
+    intent: 'revise',
+    state: 'applied',
+    summary: 'Heavier bench triples.',
+    changeCount: 3,
+    createdAt: 1_754_000_000_000,
+    settledAt: 1_754_086_400_000,
+    source: { door: 'mcp' },
+  };
+  serve(ok({ proposals: [head] }));
+  assert.deepEqual(await gymApi.proposals({ routineId: 'rt_push_a' }), [head]);
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/gym/proposals?routineId=rt_push_a',
+    method: 'GET',
+    credentials: 'include',
+    contentType: 'application/json',
+    body: undefined,
+  });
+
+  serve(ok({ proposals: [] }));
+  assert.deepEqual(await gymApi.proposals(), []);
+  assert.equal(wireOf(calls[0]).path, '/v1/gym/proposals');
+
+  serve(ok({ proposals: [] }));
+  await gymApi.proposals({ routineId: 'rt_push_a', state: 'pending' });
+  assert.equal(wireOf(calls[0]).path, '/v1/gym/proposals?routineId=rt_push_a&state=pending');
+});
+
+// ONE PROPOSAL, WHOLE: the head, the base it was written against, and the change rows that are the
+// document as well as the diff. Absent and another account's are one fact here as they are for a
+// session, a routine and a movement.
+test('proposal — the diff arrives whole, and one that is not this account’s is null', async () => {
+  const whole = {
+    id: 'prop_2f9c40a1',
+    routineId: 'rt_push_a',
+    intent: 'revise',
+    state: 'pending',
+    summary: 'Heavier bench triples, incline work in place of flies.',
+    changeCount: 2,
+    createdAt: 1_754_000_000_000,
+    source: { door: 'mcp' },
+    baseRevision: 1,
+    baseName: 'Push A',
+    name: 'Push A',
+    changes: [
+      {
+        position: 1,
+        kind: 'retargeted',
+        exerciseId: 'bench-press',
+        before: { sets: 5, reps: 5, weightKg: 82.5, restSeconds: 180 },
+        after: { sets: 5, reps: 3, weightKg: 87.5, restSeconds: 180 },
+      },
+      { position: 2, kind: 'removed', exerciseId: 'cable-fly', before: { sets: 3, reps: 12, weightKg: 22.5 }, loggedSets: 41 },
+    ],
+  };
+  serve(ok(whole));
+  assert.deepEqual(await gymApi.proposal('prop_2f9c40a1'), whole);
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/gym/proposals/prop_2f9c40a1',
+    method: 'GET',
+    credentials: 'include',
+    contentType: 'application/json',
+    body: undefined,
+  });
+
+  serve(refusal(404, 'no such proposal'));
+  assert.equal(await gymApi.proposal('prop_someone_elses'), null);
+});
+
+// THE TAP, AND IT CARRIES NO DOCUMENT. The proposal is what was written and frozen; a client that
+// could send fields here would be a client that could apply something the lifter never read. What
+// comes back is the settled proposal AND the routine as it now stands, so the screen redraws off the
+// store rather than off what it hoped had happened.
+test('applyProposal and dismissProposal — a POST with no body, and the store’s own answer back', async () => {
+  const settled = { id: 'prop_2f9c40a1', routineId: 'rt_push_a', state: 'applied', changeCount: 2, settledAt: 1_754_086_400_000 };
+  const routine = { id: 'rt_push_a', name: 'Push A', position: 0, revision: 2, entries: [] };
+  serve(ok({ proposal: settled, routine }));
+  assert.deepEqual(await gymApi.applyProposal('prop_2f9c40a1'), { proposal: settled, routine });
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/gym/proposals/prop_2f9c40a1/apply',
+    method: 'POST',
+    credentials: 'include',
+    contentType: 'application/json',
+    body: undefined,
+  });
+
+  // A removal that landed has no routine to hand back — the key is absent, not null.
+  const removal = { id: 'prop_9a17', routineId: 'rt_push_b', intent: 'remove', state: 'applied', settledAt: 1_754_086_400_000 };
+  serve(ok({ proposal: removal }));
+  assert.deepEqual(await gymApi.applyProposal('prop_9a17'), { proposal: removal });
+
+  const dismissed = { ...settled, state: 'dismissed' };
+  serve(ok({ proposal: dismissed }));
+  assert.deepEqual(await gymApi.dismissProposal('prop_2f9c40a1'), { proposal: dismissed });
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/gym/proposals/prop_2f9c40a1/dismiss',
+    method: 'POST',
+    credentials: 'include',
+    contentType: 'application/json',
+    body: undefined,
+  });
+});
+
+// THE TWO WAYS THE WORLD MOVES UNDER A DIFF, and both are terminal. `proposal-superseded` is the
+// human's own hand winning — the routine was saved after the proposal was written, so its base is
+// gone and NOTHING from it was applied. `proposal-settled` is the other decision already taken, on
+// another tab or on a phone. Neither is repairable by sending the same request again, and a client
+// that read either as a network failure would offer a retry that fails identically forever.
+test('proposal-superseded and proposal-settled — the world moved, and neither can be retried', async () => {
+  serve(refusal(409, 'Push A changed after this proposal was written', 'proposal-superseded'));
+  await assert.rejects(() => gymApi.applyProposal('prop_2f9c40a1'), (error) => {
+    assert.deepEqual(flagsOf(error), {
+      name: 'GymError',
+      status: 409,
+      message: 'Push A changed after this proposal was written',
+      detail: 'Push A changed after this proposal was written',
+      code: 'proposal-superseded',
+      terminal: true,
+      retryable: false,
+      sessionFinished: false,
+      setIdTaken: false,
+      sessionIdTaken: false,
+      unknownExercise: false,
+      routineIdTaken: false,
+      exerciseIdTaken: false,
+      sessionOpen: false,
+      sessionAlreadyOpen: false,
+      fixUnreadable: false,
+      setNotFound: false,
+      proposalSuperseded: true,
+      proposalSettled: false,
+    });
+    return true;
+  });
+
+  serve(refusal(409, 'that proposal was already dismissed', 'proposal-settled'));
+  await assert.rejects(() => gymApi.dismissProposal('prop_2f9c40a1'), (error) => {
+    assert.deepEqual(flagsOf(error), {
+      name: 'GymError',
+      status: 409,
+      message: 'that proposal was already dismissed',
+      detail: 'that proposal was already dismissed',
+      code: 'proposal-settled',
+      terminal: true,
+      retryable: false,
+      sessionFinished: false,
+      setIdTaken: false,
+      sessionIdTaken: false,
+      unknownExercise: false,
+      routineIdTaken: false,
+      exerciseIdTaken: false,
+      sessionOpen: false,
+      sessionAlreadyOpen: false,
+      fixUnreadable: false,
+      setNotFound: false,
+      proposalSuperseded: false,
+      proposalSettled: true,
+    });
+    return true;
+  });
+});
+
+// A proposal that is gone is a bare 404 with no code — absent, another account's and never-existed
+// are one fact, exactly as they are on every other read here. It is neither terminal nor retryable
+// by status, and the screen reads the status: after a lifter's OWN apply of a removal it is a
+// SUCCESS, because the routine went and its ledger row went with it.
+test('a settled route answers 404 for a proposal that is not there, and it carries no code', async () => {
+  serve(refusal(404, 'no such proposal'));
+  await assert.rejects(() => gymApi.applyProposal('prop_gone'), (error) => {
+    assert.equal(error.status, 404);
+    assert.equal(error.code, '');
+    assert.equal(error.terminal, false);
+    assert.equal(error.retryable, false);
+    assert.equal(error.proposalSuperseded, false);
+    assert.equal(error.proposalSettled, false);
+    return true;
+  });
 });
 
 // §I's five settings. THE READ NEVER 404s — a lifter with nothing stored is served the defaults —
@@ -1140,6 +1393,8 @@ test('routine-id-taken and exercise-id-taken — a spent id, and the same repair
       sessionAlreadyOpen: false,
       fixUnreadable: false,
       setNotFound: false,
+      proposalSuperseded: false,
+      proposalSettled: false,
     });
     return true;
   });
@@ -1164,6 +1419,8 @@ test('routine-id-taken and exercise-id-taken — a spent id, and the same repair
       sessionAlreadyOpen: false,
       fixUnreadable: false,
       setNotFound: false,
+      proposalSuperseded: false,
+      proposalSettled: false,
     });
     return true;
   });
@@ -1195,6 +1452,8 @@ test('unknown-exercise — a routine entry can reach the same refusal a set can'
         sessionAlreadyOpen: false,
         fixUnreadable: false,
         setNotFound: false,
+        proposalSuperseded: false,
+        proposalSettled: false,
       });
       return true;
     },
@@ -1231,6 +1490,8 @@ test('the three routine-era refusals classify from the sentence alone as well', 
         sessionAlreadyOpen: code === 'session-already-open',
         fixUnreadable: false,
         setNotFound: false,
+        proposalSuperseded: false,
+        proposalSettled: false,
       });
       return true;
     });
@@ -1266,6 +1527,8 @@ test('session-already-open — a backfill that met a live workout is its own ref
         sessionAlreadyOpen: true,
         fixUnreadable: false,
         setNotFound: false,
+        proposalSuperseded: false,
+        proposalSettled: false,
       });
       return true;
     });

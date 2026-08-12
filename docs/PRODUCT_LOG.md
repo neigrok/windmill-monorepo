@@ -486,6 +486,35 @@ use** — it knows your last twelve weeks of squats, and it drafts next block's 
 brings their own agent, and the safety model is the **grant**: three levels per product, approved one
 at a time, and a level nobody approved is a tool the connection cannot even see.
 
+**Reversed again 2026-08-12 (`gym-decided-design`, W6).** The first of the two amendments below
+did not survive the decided design, and this is the third position this product has held on one
+question — so it is worth naming why the pendulum stopped here rather than pretending it never
+swung. **The agent proposes; it never writes to your program.** The sentence below beginning *"a
+granted MCP write lands directly"* is no longer true of routines, and neither is *"what stands where
+the human's Apply stood is the grant"*.
+
+What decided it is a split the earlier ruling did not draw: **a mutation that records something
+that already happened is not the same act as one that changes something that will happen.** Logging
+a set, starting and finishing a workout, sharing one — all still land directly, at every door,
+because the lifter is using the agent as a transcription device, the bar is already back on the
+rack, and the consequence is visible in the room within seconds. Confirming a fact is theatre.
+Changing an existing routine mints a proposal, because a rewritten Tuesday speaks to a tired future
+person in a room where the conversation that caused it is gone, and Apply is the only UI that
+decision will ever have. "The grant is the Apply" is true for bounded, self-revealing acts and a
+rationalisation everywhere else: a grant is standing consent to a *class*, given before the content
+of the act is imaginable; Apply is situated consent to a diff you can read.
+
+The catalog is **seventeen** tools as of this wave, not the fifteen this section says below:
+`save_routine` split into `create_routine` (lands) and `propose_routine_change` (mints), and
+`delete_routine` became `propose_routine_removal`. It was split rather than kept as one verb because
+a single tool that lands-or-proposes needs the description *"lands when the id is new, proposes when
+it exists"* — a conditionally true safety claim, which is exactly what this product refuses
+elsewhere, and a tool named `propose_…` that sometimes writes is the worst defect this catalog could
+carry.
+
+The second amendment below — the in-app panel — stands, and grows: §L of the decided design makes
+it **Ask**, a chat for the lifter who has no agent of their own. Same engine, second door.
+
 **Amended 2026-08-06 (`gym-coach`).** Two of the refusals above did not survive contact with the
 owner, and both reversals are written down rather than made quietly. First, *Lift's propose-apply
 contract*: a granted MCP write lands directly, exactly as roadmap's tending writes, so the sentence

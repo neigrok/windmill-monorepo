@@ -49,6 +49,11 @@ public struct GymRoom: View {
     @State private var keptRoutine = false
     @State private var starting = false
     @State private var note: String?
+    // The proposals Today has been told "later" about. It lives here rather than on Today because a
+    // walk to the log and back must not bring the card straight back — and it lives in the ROOM
+    // rather than on disk because "later" means exactly this visit: the card is on Today again the
+    // next time the room is opened, which is what makes it a not-now and not a decision.
+    @State private var setAside: Set<String> = []
 
     public init(account: Account) {
         self.account = account
@@ -76,6 +81,10 @@ public struct GymRoom: View {
     private enum Away: Equatable {
         case session(SessionSummary)
         case movement(String)
+        // One agent's proposal, by ID and nothing else: the diff is a read of its own, and a screen
+        // handed a copy the card was drawn from would be deciding against a document that may have
+        // been settled from the web while this room was open.
+        case proposal(String)
         // §I's five rows. It is HERE, on the room's own stack, because the native ProductModule seam
         // has no settings slot for the shell to compose — see the head of SettingsScreen. Nothing
         // ever stacks over it, so its label is only ever read by a way back that cannot be drawn.
@@ -86,6 +95,7 @@ public struct GymRoom: View {
             switch self {
             case .session(let summary): return Readout.routine(of: summary.session)
             case .movement(let exerciseId): return Readout.movement(exerciseId, in: catalog)
+            case .proposal: return "Proposal"
             case .settings: return "Gym"
             }
         }
@@ -160,23 +170,30 @@ public struct GymRoom: View {
                               onMovement: { look(at: .movement($0)) })
             case .movement(let exerciseId):
                 RecordScreen(exerciseId: exerciseId, store: store, isSignedIn: account.isSignedIn)
+            case .proposal(let proposalId):
+                ProposalScreen(proposalId: proposalId, store: store,
+                               onClosed: { said in back(); note = said },
+                               say: { note = $0 })
             case .settings:
                 SettingsScreen(store: store, web: account.api.baseURL, say: { note = $0 })
             }
         } else {
             switch tab {
             case .today:
-                TodayScreen(store: store, isSignedIn: account.isSignedIn,
+                TodayScreen(store: store, isSignedIn: account.isSignedIn, setAside: setAside,
                             onStart: { routineId in Task { await open(routineId) } },
                             onMovement: { look(at: .movement($0)) },
                             onOpenSession: { look(at: .session($0)) },
+                            onProposal: { look(at: .proposal($0)) },
+                            onLater: { setAside.insert($0) },
                             onSettings: { look(at: .settings) },
                             onSignIn: { shell.openYou() })
             case .log:
                 LogScreen(store: store, onOpen: { look(at: .session($0)) })
             case .routines:
                 RoutinesScreen(store: store, onStart: { routineId in Task { await open(routineId) } },
-                               onMovement: { look(at: .movement($0)) })
+                               onMovement: { look(at: .movement($0)) },
+                               onProposal: { look(at: .proposal($0)) })
             }
         }
     }

@@ -103,7 +103,9 @@ data class GymPreferences(
         val defaultPlatesKg = listOf(25.0, 20.0, 15.0, 10.0, 5.0, 2.5, 1.25)
 
         // The chips §I draws, and the row is the union of these with whatever the document holds —
-        // so a plate set from the web or by an agent still has somewhere to be turned off.
+        // so a plate set from the web still has somewhere to be turned off. Not by an agent: the
+        // catalog has a `get_preferences` and no write beside it, so this document has exactly two
+        // authors and both of them are the lifter.
         fun offeredPlates(held: List<Double>): List<Double> =
             (defaultPlatesKg + held).distinct().sortedDescending()
 

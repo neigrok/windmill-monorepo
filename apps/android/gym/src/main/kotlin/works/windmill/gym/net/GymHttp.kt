@@ -8,6 +8,8 @@ import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.LastSet
 import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.MovementRecord
+import works.windmill.gym.domain.Proposal
+import works.windmill.gym.domain.ProposalDecision
 import works.windmill.gym.domain.Review
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineWrite
@@ -36,6 +38,8 @@ import works.windmill.platform.net.WindmillApiException
 //   GET  /v1/gym/exercises/last
 //   GET  /v1/gym/routines             ·  POST /v1/gym/routines
 //   PUT  /v1/gym/routines/:id         ·  DELETE /v1/gym/routines/:id
+//   GET  /v1/gym/proposals?routineId= ·  GET  /v1/gym/proposals/:id
+//   POST /v1/gym/proposals/:id/apply  ·  POST /v1/gym/proposals/:id/dismiss
 //   POST /v1/gym/sessions/:id/share   ·  DELETE /v1/gym/sessions/:id/share
 //   GET  /v1/gym/preferences          ·  PUT   /v1/gym/preferences
 // The session rides as a Bearer header rather than a cookie (WindmillApi); nothing else differs.
@@ -124,6 +128,27 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
         api.send<Unit>("DELETE", "/v1/gym/routines/$id")
     }
 
+    // The routine's own history, newest first. `state` is deliberately not sent: the pending one is
+    // wanted here too — the History section draws the settled rows and the card draws the pending
+    // one, and two reads for one list would be two chances to disagree.
+    override suspend fun proposals(routineId: String): List<Proposal> =
+        api.get<Proposals>("/v1/gym/proposals?routineId=${escaped(routineId)}").proposals
+
+    override suspend fun proposal(id: String): Proposal? = try {
+        api.get<Proposal>("/v1/gym/proposals/$id")
+    } catch (refused: WindmillApiException.Refused) {
+        if (refused.status == 404) null else throw refused
+    }
+
+    // THE TWO TAPS. Neither carries a body — a decision has no document, and the id in the path is
+    // the whole of what is being decided. Both answer with the proposal as it now stands, so the
+    // screen draws what the log settled rather than what the thumb asked for.
+    override suspend fun applyProposal(id: String): ProposalDecision =
+        api.send<ProposalDecision>("POST", "/v1/gym/proposals/$id/apply")
+
+    override suspend fun dismissProposal(id: String): ProposalDecision =
+        api.send<ProposalDecision>("POST", "/v1/gym/proposals/$id/dismiss")
+
     // Composed on every read and cached nowhere — server-side or here. There is no window
     // parameter: twelve weeks is the log's own, and a client that asked for a slice would be the
     // second place in the product deciding what the arc is.
@@ -195,3 +220,8 @@ private data class Log(val sessions: List<SessionSummary>)
 
 @Serializable
 private data class Routines(val routines: List<Routine>)
+
+// Always present and `[]` for a routine no agent has ever proposed anything about — so the History
+// section draws nothing from an answer rather than from a failure, and the two are never the same.
+@Serializable
+private data class Proposals(val proposals: List<Proposal> = emptyList())

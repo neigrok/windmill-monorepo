@@ -45,6 +45,17 @@ constexpr int kMaxRoutineEntries = 50;
 // construction. A routine with no entries is not a plan, and the editor never composes one.
 // lastTrainedAtMs is the store's derived answer — the newest session started under this routine —
 // and it is absent until the routine has been trained once.
+//
+// `revision` is the concurrency token, and it is load-bearing twice over. It is what an agent's
+// proposal is minted AGAINST — apply lands only while the routine still stands at the revision the
+// diff was computed from — and it is what stops the mid-session "Save 87.5 to Push A", a full
+// read-modify-write PUT, from silently destroying that base: the write moves the token, the
+// pending proposal is superseded, and nobody merges a diff over a document it no longer describes.
+// It starts at 1 and moves on every write that changes the DOCUMENT or the NAME — the two things a
+// proposal freezes — the lifter's own and an applied proposal alike. A write that changes neither
+// destroyed no base and moves nothing: not a PUT landing the bytes that already stand, and not a
+// drag up the routines screen, since `position` is no part of any diff. It is the STORE's to move; a
+// client reads it and never sends it.
 struct Routine {
   RoutineId id;
   UserId user;
@@ -52,10 +63,11 @@ struct Routine {
   int position;
   std::vector<RoutineEntry> entries;
   std::optional<std::uint64_t> lastTrainedAtMs;
+  int revision;
 
   Routine(RoutineId id, UserId user, std::string name, int position,
           std::vector<RoutineEntry> entries,
-          std::optional<std::uint64_t> lastTrainedAtMs = std::nullopt);
+          std::optional<std::uint64_t> lastTrainedAtMs = std::nullopt, int revision = 1);
 
   bool operator==(const Routine&) const = default;
 };

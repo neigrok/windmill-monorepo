@@ -146,10 +146,17 @@ ToolResult lastTime(LogService& log, const UserId& caller, const Json::Value& ar
 
 // The list and the single read are one tool because one argument does the whole job, and both
 // answers wear the same wrapper: a caller that narrowed to one routine parses what it already parses.
+//
+// The pending proposals ride along rather than minting `list_proposals` and `get_proposal` of their
+// own: a proposal always targets a routine, so the read an agent already makes is the read that
+// answers "is something of mine waiting on this day". It is the head alone — an id, a summary, a
+// count — because a list that shipped every diff row of every proposal would spend a context window
+// to draw a dot.
 ToolResult listRoutines(LogService& log, const UserId& caller, const Json::Value& args) {
   Json::Value out(Json::objectValue);
+  const std::vector<ProposalHead> pending = log.proposals(caller, ProposalQuery{std::nullopt, true});
   if (args["routineId"].isNull()) {
-    out["routines"] = toJson(log.routines(caller));
+    out["routines"] = toJson(log.routines(caller), pending);
     return ToolResult::json(out);
   }
 
@@ -162,9 +169,7 @@ ToolResult listRoutines(LogService& log, const UserId& caller, const Json::Value
   if (!one)
     return ToolResult::failure("no routine of yours has that id. Call this tool with no routineId "
                                "to list the ones you own.");
-  Json::Value routines(Json::arrayValue);
-  routines.append(toJson(*one));
-  out["routines"] = routines;
+  out["routines"] = toJson(std::vector<Routine>{*one}, pending);
   return ToolResult::json(out);
 }
 
@@ -254,15 +259,33 @@ ToolResult finishSession(LogService& log, const UserId& caller, const Json::Valu
   return ToolResult::json(toJson(*outcome.session));
 }
 
-// Replace, and create only where there was nothing to replace. Both halves send the same whole
-// document, which is the only shape a routine travels in, so one tool serves the two — and the order
-// matters: a create against an id the caller already owns is a REPLAY in this product and would
-// answer with the routine already stored, silently leaving the edit undone.
-ToolResult saveRoutine(LogService& log, const UserId& caller, const Json::Value& args) {
+// A NEW day of the program, and the predicate is what decides that this one writes: a routine that
+// does not exist yet is `fresh`, and the rule calls a mutation that brings something into being a
+// record — it takes nothing away, and the lifter reads it, edits it or deletes it the moment they
+// open Routines.
+//
+// The routine is resolved FIRST, and what that resolve decides is the difference between a REPLAY
+// and an EDIT wearing a create's clothes. A lost reply is resent verbatim, so a stored routine the
+// incoming document matches exactly is the replay this product promises everywhere else and answers
+// with the stored row. A stored routine it does NOT match is this tool's name disagreeing with the
+// predicate — a change to a day that already stands — and it is sent to the tool whose name is true
+// for that case rather than quietly replaying and leaving the caller's edit silently undone.
+ToolResult createRoutine(LogService& log, const UserId& caller, const Json::Value& args) {
+  static_assert(classify(Subject::program, Standing::fresh) == Mutation::record);
   const RoutineWrite incoming = parseRoutineWrite(args);
-  RoutineWriteOutcome outcome = log.replaceRoutine(caller, incoming.id, incoming);
-  if (outcome.error == RoutineWriteError::notFound) outcome = log.createRoutine(caller, incoming);
+  if (std::optional<Routine> standing = log.routine(caller, incoming.id)) {
+    const Routine sent{incoming.id, caller, incoming.name, incoming.position, incoming.entries};
+    if (standing->name == sent.name && standing->position == sent.position &&
+        standing->entries == sent.entries)
+      return ToolResult::json(toJson(*standing));
+    return ToolResult::failure("that routine already stands and this document is not the one it "
+                               "holds, so this is a change rather than the replay of a lost reply. "
+                               "A day of the program that already stands is not this tool's to "
+                               "rewrite: send it to propose_routine_change, which hands the lifter "
+                               "a typed diff and changes nothing until they tap Apply.");
+  }
 
+  RoutineWriteOutcome outcome = log.createRoutine(caller, incoming);
   if (outcome.error == RoutineWriteError::idTaken)
     return ToolResult::failure("that routine id is already spent. Mint a different one and send it "
                                "again.");
@@ -271,6 +294,77 @@ ToolResult saveRoutine(LogService& log, const UserId& caller, const Json::Value&
                                "the ids, or create_exercise to add one, then send the whole routine "
                                "again.");
   return ToolResult::json(toJson(*outcome.routine));
+}
+
+// THE RECEIPT, and it is the one reply on this surface written to be UNMISTAKABLE. An agent that
+// read a success shaped like a write would tell its human the routine had changed, and a
+// well-behaved agent turned into a liar is the worst thing this wave could produce. So there is no
+// routine in this object at all: a proposal id, the state it is actually in, the diff, and where a
+// human goes to decide.
+ToolResult proposalReceipt(const RoutineProposal& proposal, const std::string& appBaseUrl) {
+  Json::Value out(Json::objectValue);
+  out["proposal"] = toJson(proposal);
+  out["reviewUrl"] = proposalUrl(appBaseUrl, proposal.head.id);
+  if (proposal.head.state == ProposalState::pending)
+    out["note"] = "Nothing has changed. " + proposal.baseName +
+                  " still reads exactly as it did, and this proposal is waiting in the lifter's app "
+                  "until they open it and tap Apply — no tool on this connection can apply it. Say "
+                  "so when you answer: the routine is unchanged and something is waiting for them.";
+  else if (proposal.head.state == ProposalState::applied)
+    out["note"] = "This proposal was already applied by the lifter — this is the record of it, not "
+                  "a second change.";
+  else if (proposal.head.state == ProposalState::dismissed)
+    out["note"] = "The lifter dismissed this proposal. Nothing changed, and it stays in the "
+                  "routine's history. Do not resend the same id; propose again only if you have "
+                  "something different to say.";
+  else
+    out["note"] = "This proposal was superseded — the routine moved after it was minted, so it can "
+                  "no longer be applied. Read the routine again with list_routines before you "
+                  "propose anything else.";
+  return ToolResult::json(out);
+}
+
+// The mint, and the two tools below are the same three lines because they are the same act with two
+// intents. `classify` is what says so out loud: a day of the program that already stands is
+// `existing`, and the rule calls changing one an intent — so this writes nothing and hands back a
+// proposal.
+ToolResult mintOutcome(const ProposalMintOutcome& outcome, const std::string& appBaseUrl) {
+  if (outcome.error == ProposalMintError::unknownRoutine)
+    return ToolResult::failure("no routine of yours has that id, so there is nothing to propose a "
+                               "change to. Call list_routines for the ids you own, or "
+                               "create_routine to add a day that does not exist yet.");
+  if (outcome.error == ProposalMintError::idTaken)
+    return ToolResult::failure("that proposal id is already spent. Mint a different one and send it "
+                               "again — your OWN id would have replayed, answering with the "
+                               "proposal already waiting under it.");
+  if (outcome.error == ProposalMintError::idReused)
+    // The asymmetry with the replay above is the whole reason this refusal exists, and it is
+    // create_routine's refusal wearing the other tool's clothes: an id already holding a DIFFERENT
+    // proposal answered with the stored one would throw this document away and hand back a receipt
+    // saying something is waiting for the lifter — something the caller never wrote.
+    return ToolResult::failure("that proposal id already holds a DIFFERENT proposal of yours, so "
+                               "this is a second idea wearing a spent id rather than the replay of "
+                               "a lost reply. NOTHING WAS MINTED and the proposal standing under "
+                               "that id is untouched — only an identical document replays. Mint a "
+                               "fresh id and send this one again.");
+  if (outcome.error == ProposalMintError::noChange)
+    return ToolResult::failure("that document is what the routine already says, so there is nothing "
+                               "to propose. Read it again with list_routines and send back what you "
+                               "actually mean to change.");
+  if (outcome.error == ProposalMintError::unknownExercise)
+    return ToolResult::failure("an entry names a movement no catalog holds, so this proposal was "
+                               "not minted rather than minted as something the lifter could not "
+                               "apply. Call list_exercises for the ids, or create_exercise to add "
+                               "one, then send the whole document again.");
+  return proposalReceipt(*outcome.proposal, appBaseUrl);
+}
+
+ToolResult proposeRoutineChange(LogService& log, const UserId& caller, const Json::Value& args,
+                                const std::string& appBaseUrl) {
+  static_assert(classify(Subject::program, Standing::existing) == Mutation::intent);
+  return mintOutcome(log.propose(caller, parseProposalWrite(args, ProposalSource{ProposalDoor::mcp,
+                                                                                 "", ""})),
+                     appBaseUrl);
 }
 
 ToolResult createExercise(LogService& log, const UserId& caller, const Json::Value& args) {
@@ -321,17 +415,30 @@ ToolResult discardSession(LogService& log, const UserId& caller, const Json::Val
   return ToolResult::json(out);
 }
 
-ToolResult deleteRoutine(LogService& log, const UserId& caller, const Json::Value& args) {
+// The other intent, at the level that buys the right to PROPOSE a destructive change — and buys
+// nothing else, because `gym:delete` does not imply apply any more than `gym:write` does.
+ToolResult proposeRoutineRemoval(LogService& log, const UserId& caller, const Json::Value& args,
+                                 const std::string& appBaseUrl) {
+  static_assert(classify(Subject::program, Standing::existing) == Mutation::intent);
+  std::string id;
+  if (std::optional<std::string> bad =
+          idArgument(args, "id", "Mint one for this proposal — `prop_` + hex is the house shape.",
+                     id))
+    return ToolResult::failure(*bad);
   std::string routine;
   if (std::optional<std::string> bad =
           idArgument(args, "routineId", "Call list_routines for the ids you own.", routine))
     return ToolResult::failure(*bad);
+  std::string summary;
+  if (!args["summary"].isNull()) {
+    if (!args["summary"].isString())
+      return ToolResult::failure("\"summary\" must be one sentence of text.");
+    summary = args["summary"].asString();
+  }
 
-  if (!log.deleteRoutine(caller, RoutineId{routine})) return ToolResult::failure(kNoRoutine);
-  Json::Value out(Json::objectValue);
-  out["deleted"] = true;
-  out["routineId"] = routine;
-  return ToolResult::json(out);
+  return mintOutcome(log.proposeRemoval(caller, ProposalId{id}, RoutineId{routine}, summary,
+                                        ProposalSource{ProposalDoor::mcp, "", ""}),
+                     appBaseUrl);
 }
 
 ToolResult revokeShare(LogService& log, const UserId& caller, const Json::Value& args) {
@@ -403,13 +510,40 @@ ToolResult GymTools::dispatch(const std::string& name, const Json::Value& argume
   if (name == "start_session")   return startSession(log_, caller, arguments);
   if (name == "log_set")         return logSet(log_, caller, arguments);
   if (name == "finish_session")  return finishSession(log_, caller, arguments);
-  if (name == "save_routine")    return saveRoutine(log_, caller, arguments);
+  if (name == "create_routine")  return createRoutine(log_, caller, arguments);
+  if (name == "propose_routine_change")
+    return proposeRoutineChange(log_, caller, arguments, appBaseUrl_);
   if (name == "create_exercise") return createExercise(log_, caller, arguments);
   if (name == "share_session")   return shareSession(log_, caller, arguments, appBaseUrl_);
 
   if (name == "discard_session") return discardSession(log_, caller, arguments);
-  if (name == "delete_routine")  return deleteRoutine(log_, caller, arguments);
+  if (name == "propose_routine_removal")
+    return proposeRoutineRemoval(log_, caller, arguments, appBaseUrl_);
   if (name == "revoke_share")    return revokeShare(log_, caller, arguments);
+
+  // THE RETIREMENT ANSWER. An agent written against the old catalog calls one of these on its very
+  // first turn after this deploy, and the answer it gets is a connected user's whole first
+  // experience of this wave. It names what replaced it rather than saying "no such tool", because
+  // the true and useless answer costs a round trip and the FALSE one — "this connection was not
+  // granted gym:write" — would be a lie: the level was granted, the tool was retired.
+  //
+  // It is dispatched here and reached only by a host that routes by product. `CompositeToolHost`
+  // resolves a name against the catalogs it was built from, so over MCP these two never arrive —
+  // they get the composite's own "no such tool on this server", which is true but unnamed. That is
+  // why the retirement is also written into the handshake paragraph every client reads at connect
+  // (gymInstructions), and why the platform REQUEST beside this wave is a `retiredTools()` seam on
+  // ToolHost so the composite can answer with these sentences instead.
+  if (name == "save_routine")
+    return ToolResult::failure("retired on 2026-08-12, and the level you hold was not the problem. "
+                               "Use propose_routine_change to change a day of the program that "
+                               "already stands — it hands the lifter a typed diff and changes "
+                               "nothing until they tap Apply — or create_routine to add one that "
+                               "does not exist yet, which still lands immediately.");
+  if (name == "delete_routine")
+    return ToolResult::failure("retired on 2026-08-12, and the level you hold was not the problem. "
+                               "Use propose_routine_removal: it puts the day's lines in front of "
+                               "the lifter as a diff of what would go, and nothing is deleted until "
+                               "they tap Apply.");
 
   // The whole-server answer belongs to CompositeToolHost, which is the only thing that knows what
   // else is connected; a name that reaches this far named nothing in the gym surface.

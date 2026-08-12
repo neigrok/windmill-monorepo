@@ -285,6 +285,16 @@ data class RoutineEntry(
     val restSeconds: Int? = null,
 )
 
+// `revision` is the token a proposal is applied AGAINST, and it is READ-ONLY on the wire — the log
+// moves it, no client ever sends it, and `RoutineWrite` carries no field for it. It is what stops
+// the mid-session "Save 87.5 to Push A" (a whole-document PUT) from silently destroying the base an
+// agent's diff was written on: the PUT bumps the revision, every pending proposal on that routine
+// is superseded in the same breath, and the card says so rather than applying over the top.
+//
+// `pendingProposal` is present only while one is waiting, and it is the CARD — this product has no
+// notifications and needs none, because the proposal lives on Today and on the routine it touches
+// until the lifter applies or dismisses it. A routine the shelf holds never has one: proposals are
+// signed-in only, and the claim has nothing of the kind to replay.
 @Serializable
 data class Routine(
     val id: String,
@@ -292,6 +302,8 @@ data class Routine(
     val position: Int = 0,
     @SerialName("lastTrainedAt") val lastTrainedAtMs: Long? = null,
     val entries: List<RoutineEntry> = emptyList(),
+    val revision: Int = 1,
+    val pendingProposal: Proposal? = null,
 ) {
     // The signed-out create: the routine the write describes, numbered 1..n exactly as the server
     // would number it — so the claim can later send the same document and land the same routine.

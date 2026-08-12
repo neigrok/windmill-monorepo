@@ -106,6 +106,9 @@ public:
   std::vector<Set> sets;              // one row per set that currently stands
   std::vector<KeptSet> kept;          // what corrections replaced, and what deletes took
   std::vector<Routine> routineRows;   // the stored rows; lastTrainedAtMs is derived on every read
+  // gym_proposals + gym_proposal_changes, as one value because the rows are one document: the diff
+  // and the run it describes are the same rows read two ways (domain/Proposal.h).
+  std::vector<RoutineProposal> proposalRows;
   std::vector<SessionShare> shares;   // one per session at most, exactly as the primary key says
   std::vector<GymPreferences> preferenceRows;   // one per account at most, likewise
   // gym_exercise_names: what one account calls one SEED. Keyed (owner, movement) like the table's
@@ -539,13 +542,27 @@ public:
     return {read(incoming), RoutineWriteError::none};
   }
 
-  RoutineWriteOutcome replaceRoutine(const Routine& incoming) override {
+  // The lifter's own hand, and the two facts that make the ledger safe beside it: the revision
+  // moves, and every proposal still pending on this routine is superseded in the same write. A fake
+  // that skipped either would let a proposal be applied over a base the lifter had already replaced,
+  // behind a green suite — which is precisely the bug Lift's own proposal-apply shipped.
+  //
+  // Both turn on the document or the NAME having moved, exactly as the SQL asks it: a PUT that lands
+  // the bytes already standing — an editor saving on close, a logger writing the whole document back
+  // to change one weight, a drag up the routines screen — settles nothing, because it destroyed no
+  // base.
+  RoutineWriteOutcome replaceRoutine(const Routine& incoming, std::uint64_t nowMs) override {
     for (Routine& routine : routineRows) {
       if (!(routine.id == incoming.id) || !(routine.user == incoming.user)) continue;
       for (const RoutineEntry& entry : incoming.entries)
         if (!visibleTo(incoming.user, entry.exercise))
           return {std::nullopt, RoutineWriteError::unknownExercise};
-      routine = incoming;
+      const bool moved =
+          routine.name != incoming.name || !(routine.entries == incoming.entries);
+      routine = Routine{incoming.id,       incoming.user,           incoming.name,
+                        incoming.position, incoming.entries,        incoming.lastTrainedAtMs,
+                        moved ? routine.revision + 1 : routine.revision};
+      if (moved) supersedeOnRoutine(incoming.user, incoming.id, ProposalId{}, nowMs);
       return {read(routine), RoutineWriteError::none};
     }
     return {std::nullopt, RoutineWriteError::notFound};   // absent and another's are one answer
@@ -559,6 +576,10 @@ public:
       // only the pointer, so the log still says which day of the program each one was.
       for (Session& session : sessions)
         if (session.routine == id) session.routine = std::nullopt;
+      // `on delete cascade`: the proposals on a routine go with it, settled ones included. A day
+      // that has left the program has no editor to draw a History section in.
+      std::erase_if(proposalRows,
+                    [&](const RoutineProposal& held) { return held.head.routine == id; });
       return true;
     }
     return false;
@@ -834,7 +855,182 @@ public:
     return std::nullopt;
   }
 
+  // ── The proposal ledger, under the same rules the SQL keeps ──
+
+  std::vector<ProposalHead> proposalHeads(const UserId& user, const ProposalQuery& query) override {
+    std::vector<ProposalHead> out;
+    for (const RoutineProposal& held : proposalRows) {
+      if (!(held.head.user == user)) continue;
+      if (query.routine && !(held.head.routine == *query.routine)) continue;
+      if (query.pendingOnly && held.head.state != ProposalState::pending) continue;
+      out.push_back(held.head);
+    }
+    // Newest first on (createdAt, id), the unique key the SQL orders by.
+    std::sort(out.begin(), out.end(), [](const ProposalHead& a, const ProposalHead& b) {
+      return std::pair(a.createdAtMs, a.id.str()) > std::pair(b.createdAtMs, b.id.str());
+    });
+    return out;
+  }
+
+  std::optional<RoutineProposal> proposal(const UserId& user, const ProposalId& id) override {
+    for (const RoutineProposal& held : proposalRows) {
+      if (!(held.head.id == id) || !(held.head.user == user)) continue;
+      return withLoggedSets(held, user);
+    }
+    return std::nullopt;   // another account's is the same fact as no proposal at all
+  }
+
+  // The mint's four steps in the order the SQL takes them: the routine resolved under the caller's
+  // own scope, the spent id answered before anything is written, the prior pending one from the same
+  // door superseded, then the row. Getting that order wrong is how a REFUSED mint settles the card
+  // its caller could still see, and how a replayed mint supersedes the proposal it was replaying.
+  //
+  // The spent id splits three ways here as it does in SQL, and the split is the domain's own rule
+  // (`isReplayOf`): another account's is taken, the caller's own carrying the same document is the
+  // replay, and the caller's own carrying a different one is refused rather than answered with a
+  // proposal it does not describe.
+  ProposalMintOutcome insertProposal(const RoutineProposal& incoming) override {
+    std::optional<Routine> base = routine(incoming.head.user, incoming.head.routine);
+    if (!base) return {std::nullopt, ProposalMintError::unknownRoutine};
+    for (const RoutineProposal& held : proposalRows) {
+      if (!(held.head.id == incoming.head.id)) continue;
+      if (!(held.head.user == incoming.head.user))
+        return {std::nullopt, ProposalMintError::idTaken};
+      if (isReplayOf(held, incoming))
+        return {withLoggedSets(held, incoming.head.user), ProposalMintError::none};
+      return {std::nullopt, ProposalMintError::idReused};
+    }
+    // Every line names a movement this account may see, under the write's own scope rather than a
+    // foreign key's — and refused HERE, at the mint, so a proposal a lifter could not apply never
+    // reaches their screen.
+    for (const RoutineChange& change : incoming.changes)
+      if (!visibleTo(incoming.head.user, change.exercise))
+        return {std::nullopt, ProposalMintError::unknownExercise};
+    supersedeFromDoor(incoming);
+    proposalRows.push_back(incoming);
+    return {withLoggedSets(incoming, incoming.head.user), ProposalMintError::none};
+  }
+
+  ProposalSettleOutcome applyRevision(const UserId& user, const ProposalId& id,
+                                      const Routine& becomes, std::uint64_t nowMs) override {
+    RoutineProposal* held = pendingOrSettled(user, id);
+    if (!held) return {std::nullopt, std::nullopt, ProposalSettleError::notFound};
+    std::optional<Routine> base = routine(user, held->head.routine);
+    if (!base) return {std::nullopt, std::nullopt, ProposalSettleError::notFound};
+    if (held->head.state == ProposalState::applied)
+      return {withLoggedSets(*held, user), base, ProposalSettleError::none};   // the replayed tap
+    if (held->head.state == ProposalState::dismissed)
+      return {std::nullopt, std::nullopt, ProposalSettleError::settled};
+    if (held->head.state == ProposalState::superseded)
+      return {std::nullopt, std::nullopt, ProposalSettleError::superseded};
+    if (base->revision != held->baseRevision) {
+      held->head.state = ProposalState::superseded;
+      held->head.settledAtMs = nowMs;
+      return {std::nullopt, std::nullopt, ProposalSettleError::superseded};
+    }
+
+    for (Routine& row : routineRows) {
+      if (!(row.id == becomes.id) || !(row.user == user)) continue;
+      row = becomes;
+    }
+    held->head.state = ProposalState::applied;
+    held->head.settledAtMs = nowMs;
+    // The routine just moved, so every other proposal waiting on it is now against a base that is
+    // gone — an apply settles them exactly as the lifter's own write does.
+    supersedeOnRoutine(user, becomes.id, id, nowMs);
+    return {withLoggedSets(*held, user), routine(user, becomes.id), ProposalSettleError::none};
+  }
+
+  ProposalSettleOutcome applyRemoval(const UserId& user, const ProposalId& id,
+                                     std::uint64_t nowMs) override {
+    RoutineProposal* held = pendingOrSettled(user, id);
+    if (!held) return {std::nullopt, std::nullopt, ProposalSettleError::notFound};
+    std::optional<Routine> base = routine(user, held->head.routine);
+    if (!base) return {std::nullopt, std::nullopt, ProposalSettleError::notFound};
+    if (held->head.state == ProposalState::applied ||
+        held->head.state == ProposalState::dismissed)
+      return {std::nullopt, std::nullopt, ProposalSettleError::settled};
+    if (held->head.state == ProposalState::superseded)
+      return {std::nullopt, std::nullopt, ProposalSettleError::superseded};
+    if (base->revision != held->baseRevision) {
+      held->head.state = ProposalState::superseded;
+      held->head.settledAtMs = nowMs;
+      return {std::nullopt, std::nullopt, ProposalSettleError::superseded};
+    }
+
+    // Composed BEFORE the delete, because the delete cascades this very row away with the routine.
+    RoutineProposal answer = withLoggedSets(*held, user);
+    answer.head.state = ProposalState::applied;
+    answer.head.settledAtMs = nowMs;
+    deleteRoutine(user, base->id);
+    return {answer, std::nullopt, ProposalSettleError::none};
+  }
+
+  ProposalSettleOutcome dismissProposal(const UserId& user, const ProposalId& id,
+                                        std::uint64_t nowMs) override {
+    RoutineProposal* held = pendingOrSettled(user, id);
+    if (!held) return {std::nullopt, std::nullopt, ProposalSettleError::notFound};
+    if (held->head.state == ProposalState::applied)
+      return {std::nullopt, std::nullopt, ProposalSettleError::settled};
+    if (held->head.state == ProposalState::superseded)
+      return {std::nullopt, std::nullopt, ProposalSettleError::superseded};
+    if (held->head.state == ProposalState::pending) {
+      held->head.state = ProposalState::dismissed;
+      held->head.settledAtMs = nowMs;
+    }
+    return {withLoggedSets(*held, user), std::nullopt, ProposalSettleError::none};
+  }
+
 private:
+  // The stored row itself, so a settle can move it. Owner-scoped like every read here.
+  RoutineProposal* pendingOrSettled(const UserId& user, const ProposalId& id) {
+    for (RoutineProposal& held : proposalRows)
+      if (held.head.id == id && held.head.user == user) return &held;
+    return nullptr;
+  }
+
+  // The `loggedSets` pass, which the SQL does with a LEFT JOIN onto gym_sets at READ time. It is
+  // counted here rather than stored for the reason it is counted there: §D14's *41 logged sets kept*
+  // has to be true when a lifter reads it.
+  RoutineProposal withLoggedSets(RoutineProposal held, const UserId& user) const {
+    for (RoutineChange& change : held.changes) {
+      if (change.kind != ChangeKind::removed) continue;
+      change.loggedSets = 0;
+      for (const Set& set : sets)
+        if (set.exercise == change.exercise && ownsSession(user, set.session)) ++change.loggedSets;
+    }
+    return held;
+  }
+
+  // What every pending proposal on a routine becomes the moment that routine MOVES — every door's,
+  // because the base they were all minted against is gone. Not a delete: a superseded proposal drops
+  // into the routine's dated history.
+  void supersedeOnRoutine(const UserId& user, const RoutineId& routine, const ProposalId& except,
+                          std::uint64_t nowMs) {
+    for (RoutineProposal& held : proposalRows) {
+      if (!(held.head.user == user) || !(held.head.routine == routine)) continue;
+      if (held.head.state != ProposalState::pending || held.head.id == except) continue;
+      held.head.state = ProposalState::superseded;
+      held.head.settledAtMs = nowMs;
+    }
+  }
+
+  // The narrower rule the partial unique index keys on: ONE PENDING PROPOSAL PER (routine, door,
+  // connection). A mint replaces only what its own door had waiting; another door's stands, because
+  // the lifter has two things to decide and losing one because the other spoke second would be the
+  // ledger deciding for them.
+  void supersedeFromDoor(const RoutineProposal& incoming) {
+    for (RoutineProposal& held : proposalRows) {
+      if (!(held.head.user == incoming.head.user) ||
+          !(held.head.routine == incoming.head.routine))
+        continue;
+      if (held.head.state != ProposalState::pending || held.head.id == incoming.head.id) continue;
+      if (!(held.head.source == incoming.head.source)) continue;
+      held.head.state = ProposalState::superseded;
+      held.head.settledAtMs = incoming.head.createdAtMs;
+    }
+  }
+
   // The join both statistics projections are taken over: this account's working sets, in its
   // FINISHED sessions only, each carrying the session it was lived in. An open workout is today's
   // screen and not history — the same reason lastTime and historyFor step over it.
@@ -859,8 +1055,8 @@ private:
       if (!(session.user == stored.user) || session.routine != stored.id) continue;
       if (!lastTrained || session.startedAtMs > *lastTrained) lastTrained = session.startedAtMs;
     }
-    return Routine{stored.id, stored.user, stored.name, stored.position, stored.entries,
-                   lastTrained};
+    return Routine{stored.id,      stored.user, stored.name,     stored.position,
+                   stored.entries, lastTrained, stored.revision};
   }
 
   // The owner scope the two set writes carry in their WHERE clause: a set is this caller's when the

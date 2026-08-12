@@ -354,6 +354,47 @@ sealed class FixVerdict {
     }
 }
 
+// THE SIXTH WORD, and it is about a DECISION rather than a row. Apply and dismiss are the two taps
+// this product hands an agent's proposal, and both can arrive after the answer is already fixed —
+// told apart by `code` for the reason the five above are: the sentence is copy and may be reworded
+// any day, while the code is the contract.
+//
+// `Superseded` is the one the design exists for. The routine MOVED after the diff was written — the
+// lifter's own mid-session save, a PUT from the web, another proposal applied — so the base this
+// document was composed against is gone, and applying it would write next week from a routine that
+// no longer stands. It is never retried, never merged, and the card says so.
+//
+// None of the three is retryable and neither is a loss: a proposal that could not be decided is
+// still sitting on the routine, and the log is the only thing that decides.
+sealed class ProposalVerdict {
+    data class Superseded(val said: String) : ProposalVerdict()   // 409 proposal-superseded — the routine moved first
+    data class Settled(val said: String) : ProposalVerdict()      // 409 proposal-settled — the other decision was already taken
+    data class Gone(val said: String) : ProposalVerdict()         // 404 — absent, another account's, never existed
+    data object Retry : ProposalVerdict()                         // 5xx, 401, no reply at all
+
+    companion object {
+        fun refusing(facts: RefusalFacts): ProposalVerdict {
+            val status = facts.status
+            if (facts.offline || facts.malformed || status == null) return Retry
+            if (facts.code == "proposal-superseded") {
+                return Superseded("the routine moved after this was written — nothing was applied")
+            }
+            if (facts.code == "proposal-settled") {
+                return Settled("that proposal was already decided")
+            }
+            if (status >= 500) return Retry
+            // A 404 with no word on it is still the route saying it holds no such proposal, and a
+            // 400 or a bare 409 is still a decision that will never land as sent — the code is the
+            // contract, and its absence is an older server rather than a different meaning.
+            if (status == 404) return Gone("that proposal is no longer on the log")
+            if (status == 400 || status == 409) {
+                return Settled(facts.sentence ?: "that proposal was already decided")
+            }
+            return Retry
+        }
+    }
+}
+
 // What is SAID when a write is lost for good — the one surface every loss rides, because a loss
 // dropped quietly would count as intended.
 sealed interface RefusedWrite {

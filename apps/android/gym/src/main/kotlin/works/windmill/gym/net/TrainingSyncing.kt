@@ -6,6 +6,8 @@ import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.LastSet
 import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.MovementRecord
+import works.windmill.gym.domain.Proposal
+import works.windmill.gym.domain.ProposalDecision
 import works.windmill.gym.domain.Review
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineWrite
@@ -90,6 +92,9 @@ interface TrainingSyncing {
     // in hand.
     suspend fun lastSets(): List<LastSet>
 
+    // Each routine carries its own `revision` and, while one is waiting, the `pendingProposal` that
+    // IS the card — so nothing polls a second route to find out whether an agent has proposed
+    // something, and the card cannot disagree with the routine it sits on.
     suspend fun routines(): List<Routine>
 
     // The read half of a read-modify-write. Absent and another account's are the same 404, one
@@ -103,6 +108,33 @@ interface TrainingSyncing {
     suspend fun replaceRoutine(id: String, write: RoutineWrite): Routine
 
     suspend fun deleteRoutine(id: String)
+
+    // THE PROPOSAL DOORS, and there are four of them because there are only four things a client
+    // does with a proposal: read one routine's dated history, open one diff, apply it, dismiss it.
+    // NOTHING HERE MINTS ONE — the agent's tools are the only door in, and a client that could
+    // write a proposal would be the product proposing to itself.
+    //
+    // All four are owner-scoped and all four 401 with no session: a proposal has no anonymous story
+    // at all, so the shelf holds none and the claim replays none.
+
+    // The routine's own history, newest first — every proposal it has ever carried, whatever was
+    // decided. The pending one comes back here too and is drawn as the card rather than as history.
+    suspend fun proposals(routineId: String): List<Proposal>
+
+    // One diff, whole. Absent, another account's and never-existed are the same 404 — one fact —
+    // so the absence folds into the type exactly as a session's does.
+    suspend fun proposal(id: String): Proposal?
+
+    // THE TAP, and it is atomic against the base the diff was written on: the routine ends up as
+    // the whole diff describes it or exactly as it stands. A routine that moved first is refused
+    // `proposal-superseded` rather than merged over the top, and the decision already taken REPLAYS
+    // (200) rather than erroring. The routine comes back with it — absent when the proposal's
+    // intent was to remove the routine, because there is nothing left to send.
+    suspend fun applyProposal(id: String): ProposalDecision
+
+    // No reason is asked for and none is sent. The proposal keeps its row on the routine's history:
+    // an agent's suggestion is part of the program's history whether or not it was taken.
+    suspend fun dismissProposal(id: String): ProposalDecision
 
     // ONE MOVEMENT READ WHOLE — the page §H is, and the only long-window read this phone makes.
     // Absent and another account's private movement are the same 404, one fact, so the absence

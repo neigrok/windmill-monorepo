@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.SessionSummary
@@ -32,6 +33,11 @@ import works.windmill.platform.design.WindmillSpace
 
 // TODAY — the home, and the only surface in gym that ever asks for attention, because this product
 // has no notifications. It answers one question: what am I doing right now.
+//
+// AND IT IS WHERE AN AGENT'S PROPOSAL WAITS. A change to a routine mints a card rather than a
+// write, and the card lives here and on the routine it touches until the lifter applies or
+// dismisses it — no push, no badge, no unread count and nothing that gets louder. That is the whole
+// notification design: the one screen opened before training is the one screen it needs to be on.
 //
 // No tour, no sample program, no questions about goals or experience. This lifter already has a
 // program; the app's job is to CATCH it, not to write it — which is why the empty state's one door
@@ -53,10 +59,13 @@ import works.windmill.platform.design.WindmillSpace
 fun TodayScreen(
     store: TrainingStore,
     isSignedIn: Boolean,
+    putOff: String?,
     onStart: (String?) -> Unit,
     onOpenSession: (SessionSummary) -> Unit,
     onOpenMovement: (String) -> Unit,
     onOpenSettings: () -> Unit,
+    onReview: (Proposal) -> Unit,
+    onLater: (Proposal) -> Unit,
     onSignIn: () -> Unit,
 ) {
     val nowMs = System.currentTimeMillis()
@@ -72,6 +81,25 @@ fun TodayScreen(
         // A loss said during a boot claim has no logger standing to show it, so the banner stands
         // here instead — the logger's own component, the logger's own words — until dismissed.
         Refusals(store.refusals, store.catalog, onDismiss = { store.clearRefusals() })
+        // THE CARD IS THE NOTIFICATION, and Today is where it waits: this product sends no push,
+        // draws no badge and counts nothing unread, because the one screen a lifter opens before
+        // training is the one screen a proposal needs to be on. The newest waiting one, and one at
+        // a time — a stack of cards over the routine somebody came here to start would be a room
+        // asking for attention rather than answering a question. The others keep their dot in the
+        // routines list until this one is decided.
+        //
+        // Signed out this is empty by construction: no account, no agent, no proposal, and nothing
+        // said about any of it.
+        store.pendingProposals.firstOrNull { it.id != putOff }?.let { waiting ->
+            val about = store.routine(waiting.routineId)
+            ProposalCard(
+                proposal = waiting,
+                routineName = about?.name ?: waiting.routineName,
+                nowMs = nowMs,
+                onReview = { onReview(waiting) },
+                onLater = { onLater(waiting) },
+            )
+        }
         when {
             store.routines.isEmpty() -> EmptyStart(onStart)
             else -> {

@@ -1101,6 +1101,15 @@ create table if not exists gym_routines (
   created_at  timestamptz not null default now()
 );
 create index if not exists gym_routines_user on gym_routines (user_id, position);
+-- The concurrency token, added by W6 (2026-08-12) and load-bearing twice over. It is what an
+-- agent's proposal is minted AGAINST — an apply lands only while the routine still stands at the
+-- revision its diff was computed from — and it is what stops the mid-session "Save 87.5 to Push A",
+-- a full read-modify-write PUT, from silently destroying that base: the PUT moves this number, the
+-- pending proposal is superseded in the same transaction, and nobody merges a diff over a document
+-- it no longer describes. It moves on every write that changes the document, the lifter's own and
+-- an applied proposal alike; a client reads it and never sends it. `if not exists` because this run
+-- is re-applied on every deploy and carries no migration machinery.
+alter table gym_routines add column if not exists revision int not null default 1;
 
 -- The same movement twice in one routine — bench heavy, then bench back-off — is two rows with
 -- two positions (Lift collapsed them into one set counter). Positions are dense and 1-based, and
@@ -1126,6 +1135,97 @@ create table if not exists gym_routine_entries (
 -- for, and this column's absence now MEANS something.
 alter table gym_routine_entries alter column target_reps drop not null;
 alter table gym_routine_entries alter column target_reps drop default;
+
+-- THE PROPOSAL LEDGER (W6, 2026-08-12). An agent reads this log, and when it wants to change a day
+-- of the program it does not: it mints a row here, and nothing moves until the lifter opens the
+-- diff and taps Apply. There is no tool at any grant level that applies one — Apply is not a
+-- capability, it is a human act — so the only writers of `applied` are the two owner-scoped routes
+-- in products/gym/routes.cpp.
+--
+-- base_revision and base_name are FROZEN at mint, exactly as a session's plan snapshot is: an apply
+-- lands only while gym_routines.revision still equals base_revision, and a routine that moved since
+-- is SUPERSEDED rather than merged over the top. A superseded row is not deleted — it drops into
+-- the routine's dated history beside the applied and dismissed ones, so nothing piles up on a
+-- lifter's Today and nothing vanishes out from under the History section that draws it.
+--
+-- FOR AS LONG AS THE ROUTINE STANDS, which is the honest end of that sentence. routine_id cascades,
+-- so the day leaving the program takes its whole ledger with it — the applied rows that dated the
+-- changes the lifter accepted included. That is the shape rather than an oversight: a day that has
+-- left has no editor to draw a History section in, and it had none before this ledger existed. The
+-- log is untouched either way (gym_sets keeps every set, gym_sessions keeps its frozen plan and
+-- nulls its routine_id), which is the promise a removal card actually makes.
+--
+-- door / connection / agent are PROVENANCE, and they are columns rather than a fork on purpose: the
+-- lifter's own Claude over MCP and gym's own Ask are two doors onto one object, and "a change
+-- appeared in my Tuesday and I cannot tell whether it was my Claude or Windmill's coach" is the
+-- exact failure this design exists to prevent. connection and agent are EMPTY today because the MCP
+-- transport hands the tool layer an account and a grant and nothing that tells one connection from
+-- another; they are here so that the day it does, one line fills them.
+create table if not exists gym_proposals (
+  id            text primary key,                   -- client-minted 'prop_<hex>', the idempotency key
+  routine_id    text not null references gym_routines(id) on delete cascade,
+  user_id       uuid not null references users(id) on delete cascade,
+  intent        text not null check (intent in ('revise','remove')),
+  base_revision int  not null,
+  base_name     text not null,
+  proposed_name text not null,
+  summary       text not null default '',
+  changes       int  not null default 0,            -- `Apply all N`: rows that move + a rename + a reorder
+  state         text not null check (state in ('pending','applied','dismissed','superseded')),
+  door          text not null check (door in ('mcp','ask')),
+  connection    text not null default '',
+  agent         text not null default '',
+  created_at    timestamptz not null,
+  settled_at    timestamptz
+);
+-- ONE PENDING PROPOSAL PER (routine, door, connection). A newer one supersedes the older, which is
+-- what keeps a lifter's Today from filling up with an agent's second thoughts, and the partial
+-- index is the arbiter rather than an application check — the same stance gym_sessions_one_open
+-- takes. `connection` is '' from every door today, so today the rule reads "one pending proposal
+-- per routine per door"; the column is what sharpens it the moment the transport carries an
+-- identity, with no index change.
+create unique index if not exists gym_proposals_one_pending
+  on gym_proposals (routine_id, door, connection) where state = 'pending';
+-- The routine editor's History section, newest first.
+create index if not exists gym_proposals_routine on gym_proposals (routine_id, created_at desc);
+-- Today's card: the pending proposals of one account, across routines.
+create index if not exists gym_proposals_user on gym_proposals (user_id, state, created_at desc);
+
+-- THE ROWS ARE THE DOCUMENT AS WELL AS THE DIFF, and that is the one structural decision here.
+-- Rows 1..k are the run the routine takes on, in order — kept, added and retargeted alike — and
+-- rows k+1..n are the lines the proposal takes away. So a proposal has exactly one stored
+-- representation: the field-level diff a lifter reads (§D14 draws `sets 5 × 5 → 5 × 3`,
+-- `− Cable Fly · removed from the routine`) and the document an Apply writes are the same rows read
+-- two ways, and they cannot drift apart the way a stored diff beside a stored document would.
+--
+-- Every before_*/after_* pair mirrors gym_routine_entries' own columns and carries its meaning:
+-- a null reps is `max`, a null weight is "whatever you did last time", a null rest falls back to the
+-- lifter's global target. The whole `before` side is null on an added line and the whole `after`
+-- side is null on a removed one.
+--
+-- No CHECKs on the target columns, and it is the reason gym_set_revisions carries none either: this
+-- is a copy of what a line asked for, and a bound tightened on gym_routine_entries later must never
+-- make an already-minted proposal unreadable. The entity refuses out-of-band values at the mint.
+--
+-- user_id rides here beside the proposal's own for one reason: PgAccountFootprint's list is about
+-- what an account OWNS, and a table left off it is how the link door comes to delete real data the
+-- day a row can outlive its parent. It cascades twice over and that is fine.
+create table if not exists gym_proposal_changes (
+  proposal_id         text not null references gym_proposals(id) on delete cascade,
+  position            int  not null check (position >= 1),
+  user_id             uuid not null references users(id) on delete cascade,
+  kind                text not null check (kind in ('kept','added','removed','retargeted')),
+  exercise_id         text not null references gym_exercises(id),
+  before_sets         int,
+  before_reps         int,
+  before_weight_kg    numeric(6,2),
+  before_rest_seconds int,
+  after_sets          int,
+  after_reps          int,
+  after_weight_kg     numeric(6,2),
+  after_rest_seconds  int,
+  primary key (proposal_id, position)
+);
 
 -- A session is started by the device with a CLIENT-MINTED id ('ses_<hex>'). The id IS the
 -- idempotency key: a double-tapped Start, an offline replay, a retried POST all conflict on

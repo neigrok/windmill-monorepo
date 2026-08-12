@@ -39,9 +39,33 @@ namespace wm::gym {
 //   exercise out: { "id", "name", "pattern", "equipment", "stepKg", "custom" }
 //   last sets out: { "movements": [ { "exerciseId", "weightKg", "reps", "at" } ] }
 //                                                       GET /v1/gym/exercises/last
-//   routine out : { "id", "name", "position", "lastTrainedAt"?,
+//   routine out : { "id", "name", "position", "revision", "lastTrainedAt"?,
 //                   "entries": [ { "position", "exerciseId", "targetSets", "targetReps"?,
-//                                  "targetWeightKg"?, "restSeconds"? } ] }
+//                                  "targetWeightKg"?, "restSeconds"? } ],
+//                   "pendingProposal"?: <proposal head> }
+//   proposal in : { "id": "prop_…", "routineId": "rt_…", "name"?: "…", "summary"?: "…",
+//                   "entries": [ <the same entry shape a routine takes> ] }
+//   proposal head out: { "id", "routineId", "intent": "revise"|"remove",
+//                        "state": "pending"|"applied"|"dismissed"|"superseded",
+//                        "summary", "changeCount": n, "createdAt": ms, "settledAt"?: ms,
+//                        "source": { "door": "mcp"|"ask", "connection"?: "…", "agent"?: "…" } }
+//   proposal out: the head, plus { "baseRevision": n, "baseName": "…", "name": "…",
+//                   "changes": [ { "position", "kind": "kept"|"added"|"removed"|"retargeted",
+//                                  "exerciseId",
+//                                  "before"?: { "sets", "reps"?, "weightKg"?, "restSeconds"? },
+//                                  "after"?:  { "sets", "reps"?, "weightKg"?, "restSeconds"? },
+//                                  "loggedSets"?: n } ] }
+//
+// `revision` is the routine's concurrency token: a client READS it and never sends it — the store
+// is what moves it. `pendingProposal` is present only while one is waiting, so its absence is the
+// whole of "this day of the program has nothing to review".
+//
+// A proposal's `changes` are its DIFF and its DOCUMENT at once (domain/Proposal.h): the rows up to
+// the first `removed` are the run the routine takes on, in order, and the rest are the lines it
+// takes away. `before` is absent on an `added` row and `after` on a `removed` one, both by
+// construction rather than by omission. `loggedSets` rides on a `removed` row alone and is counted
+// at READ time — it is §D14's *41 logged sets kept*, and the whole point of it is to be true when a
+// lifter reads it. `connection` and `agent` are omitted while the transport carries neither.
 //   plan        : { "routine": "Push A",
 //                   "entries": [ { "exerciseId", "sets", "reps"?, "weightKg"?, "restSeconds"? } ] }
 //
@@ -122,6 +146,12 @@ SetWrite parseSetWrite(const Json::Value& body);           // throws InvalidTrai
 SetFix parseSetFix(const Json::Value& body);               // throws InvalidTraining
 std::uint64_t parseFinish(const Json::Value& body);        // { "finishedAt": ms }; throws InvalidTraining
 RoutineWrite parseRoutineWrite(const Json::Value& body);   // throws InvalidTraining
+// What an agent proposes, and it reads a routine's entries through the very same parser a routine
+// write does — an agent is told to read `list_routines`, change what it means and send all of it
+// back, so the two shapes have to be one shape or that instruction is a trap. `position` is
+// deliberately not a field here (application/LogService.h says why), and the source rides beside
+// the body because provenance is the caller's fact rather than the body's.
+ProposalWrite parseProposalWrite(const Json::Value& body, const ProposalSource& source);
 ExerciseWrite parseExerciseWrite(const Json::Value& body); // throws InvalidTraining
 // The rename carries ONE field, because one field is what a rename changes. The id is the path's,
 // and everything else about a movement — its pattern, its equipment, its step — is not a thing this
@@ -166,7 +196,15 @@ Json::Value toJson(const std::vector<Exercise>& exercises);
 // nearly every screen and by `list_exercises`, whose reply a whole wave was spent shrinking.
 Json::Value toJson(const std::vector<LastSet>& movements);
 Json::Value toJson(const Routine& routine);
-Json::Value toJson(const std::vector<Routine>& routines);
+// The routine as every LIST and every single read hands it over: the plan, and the one proposal
+// standing on it. The two travel together because every surface that draws a day of the program
+// draws the dot beside it (§B5's `1 proposal`), and a second round trip per routine to learn that
+// is the N+1 the log read already refused.
+Json::Value toJson(const Routine& routine, const std::optional<ProposalHead>& pending);
+Json::Value toJson(const std::vector<Routine>& routines, const std::vector<ProposalHead>& pending);
+Json::Value toJson(const ProposalHead& head);
+Json::Value toJson(const RoutineProposal& proposal);
+Json::Value toJson(const std::vector<ProposalHead>& heads);
 Json::Value toJson(const PlanSnapshot& plan);
 // The settings document out, and it is the same shape parsePreferences reads in — a client PUTs
 // back exactly what it was handed. `restSeconds` is the one omission, and it is the omission that
@@ -190,5 +228,9 @@ std::optional<PlanSnapshot> planFrom(const Json::Value& stored);   // clamps, ne
 // origin answers both, which is exactly why the wrong one went unnoticed. The server composes it
 // once and every surface renders what it is given.
 std::string shareUrl(const std::string& appBaseUrl, const std::string& token);
+// Where a lifter opens the diff and taps. It rides in every mint's receipt, because a receipt that
+// said a proposal was waiting and did not say where would leave an agent inventing a url or telling
+// its human to go and look.
+std::string proposalUrl(const std::string& appBaseUrl, const ProposalId& id);
 
 }

@@ -580,7 +580,10 @@ void GymApi::listRoutines(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
     return;
   }
   Json::Value body(Json::objectValue);
-  body["routines"] = toJson(log_->routines(*caller));
+  // The dot §B5 draws beside a day of the program rides on the list rather than on a second call
+  // per routine — the same N+1 the log read refused when it made its summary carry its own facts.
+  body["routines"] = toJson(log_->routines(*caller),
+                            log_->proposals(*caller, ProposalQuery{std::nullopt, true}));
   cb(jsonResponse(body));
 }
 
@@ -631,7 +634,11 @@ void GymApi::getRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     cb(error(drogon::k404NotFound, "no such routine"));
     return;
   }
-  cb(jsonResponse(toJson(*routine)));
+  // Newest first, so the first is the one a card draws when two doors each have one waiting.
+  std::optional<ProposalHead> pending;
+  for (const ProposalHead& head : log_->proposals(*caller, ProposalQuery{RoutineId{id}, true}))
+    if (!pending) pending = head;
+  cb(jsonResponse(toJson(*routine, pending)));
 }
 
 void GymApi::replaceRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
@@ -682,6 +689,123 @@ void GymApi::deleteRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
   auto response = drogon::HttpResponse::newHttpResponse();
   response->setStatusCode(drogon::k204NoContent);
   cb(response);
+}
+
+// THE PROPOSAL LEDGER, over four handlers, and the last two are the tap §D14 draws. They are HTTP
+// and nothing else on purpose: the tool layer is the only place gym can tell an agent from a hand,
+// and Apply is the one act this whole design exists to keep in the hand. No MCP tool reaches these
+// at any grant level, and `GymToolsTest` pins the absence by name so no wave can "complete the
+// catalog" here without deleting §D from the product.
+//
+// One list read serves the three questions the surfaces ask — every pending proposal on the account
+// (Today's card), one routine's whole run including its settled history (the routine editor's
+// History section), and one routine's pending (the dot). A settled proposal stays in that list
+// forever, because an agent's suggestion is part of the program's history rather than a toast that
+// disappears.
+void GymApi::listProposals(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
+    return;
+  }
+  ProposalQuery query;
+  const std::string routine = req->getParameter("routineId");
+  if (!routine.empty()) query.routine = RoutineId{routine};
+  query.pendingOnly = req->getParameter("state") == "pending";
+  Json::Value body(Json::objectValue);
+  body["proposals"] = toJson(log_->proposals(*caller, query));
+  cb(jsonResponse(body));
+}
+
+// The diff screen's whole read, and the one a deep link from an agent's receipt lands on. Absent,
+// another account's and never-existed are the one answer, exactly as every other read here.
+void GymApi::getProposal(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                         const std::string& id) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
+    return;
+  }
+  std::optional<RoutineProposal> held = log_->proposal(*caller, ProposalId{id});
+  if (!held) {
+    cb(error(drogon::k404NotFound, "no such proposal"));
+    return;
+  }
+  cb(jsonResponse(toJson(*held)));
+}
+
+// The tap. All of it or none — the domain computes the routine the proposal makes true and the
+// store writes it in one transaction against the frozen base revision — so there is no half-applied
+// state for a client to reconcile and no partial reply to draw.
+//
+// The answer carries BOTH: the settled proposal (so the card can redraw as `Applied` with its
+// timestamp and stay) and the routine as it now stands (so the editor behind it redraws without a
+// second read). The routine is absent for a removal, because there is no longer one.
+void GymApi::applyProposal(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                           const std::string& id) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
+    return;
+  }
+  ProposalSettleOutcome outcome{std::nullopt, std::nullopt, ProposalSettleError::none};
+  try {
+    outcome = log_->apply(*caller, ProposalId{id});
+  } catch (const InvalidTraining&) {
+    // Unreachable through the mint, which builds the document through the Routine constructor
+    // before anything is stored — and kept because the alternative is a 500 on the one tap this
+    // product cannot afford to fail opaquely.
+    cb(error(drogon::k400BadRequest, "could not apply that proposal"));
+    return;
+  }
+  if (outcome.error == ProposalSettleError::notFound) {
+    cb(error(drogon::k404NotFound, "no such proposal"));
+    return;
+  }
+  if (outcome.error == ProposalSettleError::superseded) {
+    cb(error(drogon::k409Conflict,
+             "that routine changed after this proposal was written, so it was not applied",
+             "proposal-superseded"));
+    return;
+  }
+  if (outcome.error == ProposalSettleError::settled) {
+    cb(error(drogon::k409Conflict, "that proposal was already dismissed", "proposal-settled"));
+    return;
+  }
+  Json::Value body(Json::objectValue);
+  body["proposal"] = toJson(*outcome.proposal);
+  if (outcome.routine) body["routine"] = toJson(*outcome.routine);
+  cb(jsonResponse(body));
+}
+
+// No reason is asked for and nothing changes. It stays in the routine's history in case the lifter
+// wants it back, which is why this is a settle rather than a delete.
+void GymApi::dismissProposal(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                             const std::string& id) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
+    return;
+  }
+  const ProposalSettleOutcome outcome = log_->dismiss(*caller, ProposalId{id});
+  if (outcome.error == ProposalSettleError::notFound) {
+    cb(error(drogon::k404NotFound, "no such proposal"));
+    return;
+  }
+  if (outcome.error == ProposalSettleError::superseded) {
+    cb(error(drogon::k409Conflict,
+             "that routine changed after this proposal was written, so there is nothing left to "
+             "dismiss",
+             "proposal-superseded"));
+    return;
+  }
+  if (outcome.error == ProposalSettleError::settled) {
+    cb(error(drogon::k409Conflict, "that proposal was already applied", "proposal-settled"));
+    return;
+  }
+  Json::Value body(Json::objectValue);
+  body["proposal"] = toJson(*outcome.proposal);
+  cb(jsonResponse(body));
 }
 
 // The statistics ENGINE, over values the domain already decides: a per-movement line of top working

@@ -22,8 +22,8 @@ namespace wm::gym {
 // would execute. This is that lock, and it is gym's twin of roadmap's ScopedToolHost:
 //
 //   1. READ ONLY. Every declaration carries its own access level, so this refuses by reading the
-//      catalog rather than by keeping a list of names that could drift from it. Nine of gym's sixteen
-//      tools are simply not here, and naming one is refused rather than run.
+//      catalog rather than by keeping a list of names that could drift from it. Ten of gym's
+//      seventeen tools are simply not here, and naming one is refused rather than run.
 //   2. ONE WORKOUT. Every tool that takes a `sessionId` has it FORCED to the session the panel was
 //      opened on, so a set note somebody typed can never redirect the panel onto another workout.
 //

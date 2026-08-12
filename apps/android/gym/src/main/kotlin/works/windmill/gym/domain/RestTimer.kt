@@ -13,9 +13,11 @@ package works.windmill.gym.domain
 // this wave exists to refuse.
 //
 // A ROUTINE'S OWN LINE STILL WINS, and it is the only thing that outranks the dial. `restSeconds`
-// on a plan entry is authored by exactly one door — the `save_routine` MCP tool — so a lifter who
-// had an agent write three minutes against an accessory meant it, for that movement. W4 leaves that
-// field alone: nothing here writes it and no screen edits it.
+// on a plan entry reaches a routine through two doors and a lifter stands behind both: an agent
+// CREATING a routine writes it directly (`create_routine`), and an agent changing one only proposes
+// — the number moves when the lifter taps Apply on the diff, never when the agent sends it. So
+// three minutes against an accessory was meant, for that movement. W4 leaves the field alone:
+// nothing here writes it and no screen edits it.
 //
 // WITH NO TARGET THE CLOCK STILL RUNS, and that is not the same as a timer. Time since the last set
 // is a fact the lifter can read and act on; a countdown is an instruction and an alarm. So `off`

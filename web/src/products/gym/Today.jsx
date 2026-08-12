@@ -18,6 +18,7 @@ import {
   clockOf, dayLabel, durLabel, fmt, isFinished, nameOfMovement, NEW_ROUTINE_ID, NO_ROUTINE,
   recordHref, routineHref, routineNameOf, sessionHref, setCountLabel,
 } from './log.js';
+import { PendingProposals } from './Proposals.jsx';
 import { restLabel } from './settings/preferences.js';
 
 const BEAT_MS = 500;
@@ -47,6 +48,14 @@ export function Today({ log }) {
           {log.summaries.length === 0 && <FirstRun />}
         </>
       )}
+
+      {/* THE CARD IS THE NOTIFICATION (§B4). A proposal an agent wrote waits on Today and on the
+          routine it touches, and it waits in both places until a tap settles it — this product has
+          no notifications and this is the reason it does not need any. It is drawn on a workout
+          running as readily as on a quiet Tuesday: reading a diff is not a mid-session act, but the
+          card is a line of text and hiding it while the phone is busy would mean a lifter who only
+          ever opens this desk mid-workout never learns a proposal exists. */}
+      <PendingProposals />
 
       {last && (
         <section className="gym-last">
