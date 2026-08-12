@@ -58,10 +58,17 @@ fun YouSheet(auth: AuthStore, onDismiss: () -> Unit) {
             }
 
             // The door, not a "please sign in" wall: signing in happens where the person is
-            // standing, and a finished sign-in redraws this sheet as the account it just made.
-            // Unknown lands here too — restore is in flight for at most one round trip, and the
-            // door it may replace is the truthful screen while nobody is signed in.
-            else -> SignInDoor(auth)
+            // standing. Unknown lands here too — restore is in flight for at most one round trip,
+            // and the door it may replace is the truthful screen while nobody is signed in.
+            //
+            // A FINISHED SIGN-IN CLOSES THE SHEET. It used to redraw as the account it had just
+            // made, which read as the app not getting out of the way: the person came here to sign
+            // in, it worked, and a panel stayed over the room until they dismissed it by hand. The
+            // door has always taken an `onDone` for exactly this and this call site passed none, so
+            // the callback fired into nothing. Closing also keeps the promise the account verb makes
+            // — sign in and you land back where you were, mid-set — because there is only one way
+            // out of this sheet and both paths now take it.
+            else -> SignInDoor(auth, onDone = onDismiss)
         }
     }
 }

@@ -16,6 +16,7 @@ import works.windmill.platform.LocalShellActions
 import works.windmill.platform.ShellActions
 import works.windmill.platform.auth.AuthStore
 import works.windmill.platform.auth.PrefsSessions
+import works.windmill.platform.design.WindmillMaterial
 import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.you.YouSheet
 
@@ -55,8 +56,14 @@ private fun Root(auth: AuthStore) {
     // connect-on-account-change lifecycle sees the sign-in the moment the sheet finishes it.
     val account = Account(auth.api, auth.status.user)
 
+    // WindmillMaterial wraps EVERYTHING, and it is the root's job rather than a screen's: every
+    // Material component this app draws — the sheets today, whatever is added later — reads its
+    // defaults from a scheme, and without one it reads Material's baseline purple. See
+    // platform/design/WindmillMaterial.kt for what that actually looked like on screen.
     CompositionLocalProvider(LocalShellActions provides shell) {
-        gym.Room(account)
-        if (youUp) YouSheet(auth, onDismiss = { youUp = false })
+        WindmillMaterial {
+            gym.Room(account)
+            if (youUp) YouSheet(auth, onDismiss = { youUp = false })
+        }
     }
 }
