@@ -252,9 +252,12 @@ struct MovementPicker: View {
 // with.
 //
 // THE ONE ACCOUNT VERB IN THE ROOM is the card at the foot. Everything else here — every movement,
-// every set, the whole log — works signed out forever, and the footer says so in the same breath.
-// The verb opens the door at the tap and puts the lifter back on this screen, mid-session; signing
-// in claims the session they already started, which the claim replay already does.
+// every set, the whole log — works signed out forever. The line that USED to say so under the card
+// ("or just log freely — nothing here needs an account") came off on 2026-08-12: the list above it
+// is already open, already logging, and a screen that stops to tell you it is not asking for a
+// sign-in has just asked you to think about signing in. The verb opens the door at the tap and puts
+// the lifter back on this screen, mid-session; signing in claims the session they already started,
+// which the claim replay already does.
 struct OpeningPicker: View {
     let catalog: [Exercise]
     let taken: [String]
@@ -284,10 +287,6 @@ struct OpeningPicker: View {
                          catalog: catalog, query: $query, onPick: onPick, onCreate: onCreate)
 
             agent
-            Text("Or just log freely — pick a movement and start. Nothing here needs an account.")
-                .font(GymType.numeral(12.5))
-                .foregroundStyle(skin.inkFaint)
-                .lineSpacing(3)
         }
     }
 

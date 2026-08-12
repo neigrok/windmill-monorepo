@@ -89,24 +89,22 @@ export function Today({ log }) {
 // desk activity and exists today. Nothing here parses a typed-out program; the button says what the
 // room it opens actually does.
 //
-// The sentence over it is the design's own, because the by-product rule is what a lifter needs told
-// before they go looking for a program builder: the session assembles the routine, and writing one
-// first is the option rather than the path. And under it the REASON, which screen 1 draws in the
-// frame and this room owes in its own voice — the design writes it about the lifter ("this lifter
-// already has a program"), so it is turned to face them and otherwise left alone. It is the one
-// thing an empty room has to say for itself: a lifter who is told nothing here goes looking for the
-// setup wizard that is deliberately not built, and reads its absence as a missing feature rather
-// than as the product's whole position. Nothing counts how many times it was walked past.
+// The sentence over it is the by-product rule, which is what a lifter needs told before they go
+// looking for a program builder: the session assembles the routine, and writing one first is the
+// option rather than the path. It says what will HAPPEN, and it is the whole of what this room says
+// for itself.
+//
+// THE ARGUMENT UNDER IT IS GONE (W9). A dashed box read "no tour, no sample program, no questions
+// about your goals" — the design's own case for the setup wizard it refuses to build, drawn in front
+// of a lifter who never asked for one. That case is worth making, and the place to make it is beside
+// the screen rather than on it: it now lives in §A's notes on the board and in this comment. Nothing
+// counts how many times the room was walked past.
 function FirstRun() {
   return (
     <section className="gym-first">
       <p className="gym-first-line">
         Start one empty and pick movements as you go — what you do becomes your routine, and you name
         it at the end.
-      </p>
-      <p className="gym-first-why">
-        No tour, no sample program, no questions about your goals or your experience. You already
-        have a program — this app is here to catch it, not to write it.
       </p>
       <a className="gym-first-write" href={routineHref(NEW_ROUTINE_ID)}>Type out a routine first</a>
     </section>

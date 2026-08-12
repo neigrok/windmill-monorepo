@@ -354,7 +354,7 @@ struct FinishScreen: View {
                 }
             }
 
-            Text("In the order you did them, with the weights you actually used as next week’s targets.")
+            Text("Today’s weights become next week’s targets.")
                 .font(GymType.numeral(12))
                 .foregroundStyle(skin.inkFaint)
                 .lineSpacing(3)
@@ -368,19 +368,15 @@ struct FinishScreen: View {
             }
             .disabled(routineName.trimmingCharacters(in: .whitespaces).isEmpty)
 
+            // "Declining costs nothing — the offer comes back next session" was drawn under this
+            // button until 2026-08-12. It is true, and it is a promise about how the OFFER behaves
+            // rather than anything about the workout — so it is said where the offer is designed
+            // (the comment above, and the board's own note) and not on the glass. Nothing is created
+            // until the tap either way, and nothing anywhere counts how often this is passed on.
             Button("Just keep the session", action: onDone)
                 .font(WindmillFont.body(16, .semibold))
                 .foregroundStyle(skin.inkDim)
                 .frame(maxWidth: .infinity, minHeight: GymTap.minimum + 6)
-
-            // Said because it is true and because it is what makes the offer safe to refuse: nothing
-            // is created until the tap, and passing on it costs the session nothing. It is not a
-            // last chance and nothing anywhere counts how often it is passed on.
-            Text("Declining costs nothing — the offer comes back next session.")
-                .font(GymType.numeral(12))
-                .foregroundStyle(skin.inkFaint)
-                .lineSpacing(3)
-                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(WindmillSpace.x4)
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))

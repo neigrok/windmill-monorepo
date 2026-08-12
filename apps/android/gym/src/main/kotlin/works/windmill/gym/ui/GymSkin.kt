@@ -67,13 +67,6 @@ object GymType {
         fontFeatureSettings = "tnum",
     )
 
-    val reps = TextStyle(
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.ExtraBold,
-        fontSize = 54.sp,
-        fontFeatureSettings = "tnum",
-    )
-
     val movementHead = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Bold,

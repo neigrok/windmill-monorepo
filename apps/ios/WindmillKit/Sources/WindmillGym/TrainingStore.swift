@@ -39,8 +39,10 @@ public final class TrainingStore: ObservableObject {
     @Published public private(set) var exerciseId: String?                // the movement in hand
     @Published public private(set) var lastTime: LastTime?
     // Whether the read was ASKED and came back empty-handed, which is a different fact from not
-    // having asked yet. Without it the card says "reading your log…" forever after a failure, and a
-    // movement the lifter has trained for a year reads as one they never have.
+    // having asked yet. §K deleted the card that drew the four states and it was right to: three of
+    // them were numbers already dialled in under the thumb, or a sentence about a read in flight.
+    // This one is not — without it the dial silently shows the empty bar over a movement the lifter
+    // has trained for a year, which is the product lying in the one pixel it exists for.
     @Published public private(set) var lastTimeFailed = false
     // THE PICKER'S META, and it is optional because the absence of a key is an ASSERTION: a movement
     // with no line here has never been trained, which is exactly what `never logged` says. Nil is the
@@ -545,24 +547,24 @@ public final class TrainingStore: ObservableObject {
 
         // Signed out this device's own history is the log, and it answers synchronously: the last
         // finished LOCAL session holding the movement, or an honest first time. Nothing is pending
-        // and nothing failed — a card left saying "reading your log…" would be waiting on a request
-        // nobody made.
+        // and nothing can have failed — there is nobody to ask.
         guard let gym else {
             let answer = lastTimes[movement] ?? localLog.lastTime(movement) ?? LastTime(exerciseId: movement)
             lastTimes[movement] = answer
             lastTime = answer
-            lastTimeFailed = false
             redial()
             return
         }
         guard lastTime == nil else { return }
         guard let answer = try? await gym.lastTime(movement) else {
+            // Said on the dial, and only while the lifter is still standing at the movement it was
+            // asked for: the numbers under the thumb are the empty bar or the plan's, and nothing
+            // else on the screen would tell them apart from their own history.
             lastTimeFailed = exerciseId == movement
             return
         }
-        // The movement is echoed back for exactly this: a reply for a movement the lifter has already
-        // left is dropped, which leaves the card still reading rather than claiming a history the log
-        // never denied.
+        // The movement is echoed back for exactly this: a reply for a movement the lifter has
+        // already left is dropped rather than aimed at the dial in front of them.
         guard answer.exerciseId == movement, exerciseId == movement else { return }
         lastTimes[movement] = answer
         lastTime = answer

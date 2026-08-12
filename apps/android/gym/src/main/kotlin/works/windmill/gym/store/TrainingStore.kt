@@ -292,12 +292,22 @@ class TrainingStore(
     // name the diff is about. Null once it is gone: an applied removal takes the routine with it.
     fun routine(id: String): Routine? = routines.firstOrNull { it.id == id }
 
-    // The mistake seconds ago. This is null the instant the row lands, and §G18 did not change
-    // that: taking a set off the ACCOUNT is a repair made at rest, on a session read back, with its
-    // own sheet and its own window. The logger's Undo is not a second door onto it — a button that
-    // reached through a workout in progress would have to apologise for what it removed.
+    // The mistake seconds ago, ON THE MOVEMENT IN HAND. This is null the instant the row lands, and
+    // §G18 did not change that: taking a set off the ACCOUNT is a repair made at rest, on a session
+    // read back, with its own sheet and its own window. The logger's Undo is not a second door onto
+    // it — a button that reached through a workout in progress would have to apologise for what it
+    // removed.
+    //
+    // SCOPED TO `exerciseId` BECAUSE THE ROW IS THE AFFORDANCE (§K). Undo is drawn on the set it
+    // takes back and the logger only draws THIS movement's sets, so an unscoped answer was a window
+    // held open with its button on no screen: log a set, walk to the next movement, and the set was
+    // still withdrawable with nothing anywhere to withdraw it. Scoped, the verb and its row are the
+    // same fact — and walking back inside the nine seconds finds both again.
     val undoable: TrainingSet?
-        get() = queue.withdrawable(at = now())?.set
+        get() {
+            val movement = exerciseId ?: return null
+            return queue.withdrawable(at = now())?.set?.takeIf { it.exerciseId == movement }
+        }
 
     // NOTHING HAS EVER HAPPENED IN THIS ROOM: no session on the shelf or the log, no routine. It is
     // the whole of what §J22's arrival is allowed to read, and it counts nothing about the lifter —

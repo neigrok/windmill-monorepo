@@ -36,7 +36,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import works.windmill.gym.domain.CoachDoors
@@ -287,14 +286,6 @@ fun SessionScreen(
         SessionHead(standing)
         SetsBlock(movements, setsFailure, onOpenMovement, onFix = { fixing = it })
         withheld?.let { WithheldRow(it.set, onUndo = { store.keepWithheld() }) }
-        // The section's whole thesis, and the reason the plan line is dim and the sets are not.
-        if (movements != null && standing.plan != null) {
-            Text(
-                "Dim is what the plan said. Bright is what you did. A miss gets one line and no scolding.",
-                style = WindmillFont.body(13).copy(lineHeight = 19.sp),
-                color = GymSkin.inkFaint,
-            )
-        }
         // The three facts are the head's now, so what is left of the review here is what the head
         // cannot say: the record, and the comparison against the last time this routine ran.
         if (read) ReviewRemarks(review, store.catalog)

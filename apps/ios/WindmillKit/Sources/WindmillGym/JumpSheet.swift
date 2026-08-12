@@ -154,11 +154,11 @@ struct JumpSheet: View {
                     HStack(spacing: WindmillSpace.x3) {
                         Text(set.index)
                             .font(GymType.numeral(12))
-                            .foregroundStyle(set.isWarmup ? skin.warmupInk : skin.setDone)
+                            .foregroundStyle(set.countsTowardNothing ? skin.warmupInk : skin.setDone)
                             .frame(width: 12, alignment: .leading)
                         Text(set.value)
                             .font(GymType.numeral(13))
-                            .foregroundStyle(set.isWarmup ? skin.warmupInk : skin.inkDim)
+                            .foregroundStyle(set.countsTowardNothing ? skin.warmupInk : skin.inkDim)
                         Text(set.note)
                             .font(GymType.numeral(11))
                             .foregroundStyle(set.isOnThisDevice ? skin.unsyncedInk : skin.inkFaint)

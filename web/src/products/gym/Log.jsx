@@ -3,6 +3,12 @@
 // when, then the working sets, the tonnage and the top e1RM. §G17 draws the session itself with the
 // plan dim and the actual bright.
 //
+// THAT LAST SENTENCE USED TO BE PRINTED UNDER THE SESSION (W9). "Dim is what the plan said. Bright
+// is what you did." was the thesis of the screen, drawn on the screen — a caption explaining a
+// contrast the eye reads in one glance. It is the argument for the design and it belongs beside the
+// screen, in §G's notes and in this comment; the dim and the bright still say it, and they say it
+// without being read.
+//
 // EVERY NUMBER ON A ROW COMES OFF THE WIRE. The session LIST carries no sets, so the working count
 // and the tonnage are the store's own aggregations and the e1RM is the domain's own Epley over the
 // top set it picked (gymApi.js) — nothing here derives one, and a row draws nothing where a
@@ -31,9 +37,6 @@ import {
 } from './log.js';
 import { CoachShare } from './share/CoachShare.jsx';
 import { useGymRead } from './useGymRead.js';
-
-// The thesis of §G17, said on the screen it is about rather than only in the canon.
-const PLAN_BESIDE_ACTUAL = 'Dim is what the plan said. Bright is what you did. A miss gets one line and no scolding.';
 
 export function LogList({ log }) {
   const { phase, summaries, older, session } = log;
@@ -360,7 +363,6 @@ export function SessionDetail({ id, log }) {
           </section>
         );
       })}
-      {frozen && sets.length > 0 && <p className="gym-detail-thesis">{PLAN_BESIDE_ACTUAL}</p>}
       {/* The same door the finish screen carries, at the other end of a session's life: a workout
           worth sending to a coach is usually one somebody went back and looked at. It is offered on
           an open session too — a link to one person says nothing about how the session went.

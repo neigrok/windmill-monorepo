@@ -579,6 +579,50 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(store.lastSets?["deadlift"]?.weightKg, 140, "and the account's stands alone")
     }
 
+    // A LAST-TIME READ THAT WAS ASKED AND DID NOT LAND IS A DIFFERENT FACT from one nobody has asked
+    // yet, and the logger has one line left for it (§K deleted the card, not this). Without the flag
+    // the dial falls silently back to the empty bar: a lifter with a year of 105 kg benches, phone in
+    // a basement, reads 20 kg under the thumb with nothing anywhere saying the log was never reached.
+    func testAPrefillReadThatDidNotLandIsSaidRatherThanDialledOverInSilence() async {
+        let server = FakeTraining()
+        server.lastTimes["back-squat"] = LastTime(
+            exerciseId: "back-squat",
+            session: Session(id: "ses_0", startedAtMs: 100, finishedAtMs: 200),
+            sets: [TrainingSet(id: "set_h", exerciseId: "back-squat", weightKg: 105, reps: 5,
+                               completedAtMs: 150)])
+        let store = await liveStore(server)
+
+        server.online = false
+        await store.choose("back-squat")
+
+        XCTAssertNil(store.lastTime, "nothing was learned about the movement")
+        XCTAssertTrue(store.lastTimeFailed, "and the room may not pretend otherwise")
+        XCTAssertEqual(store.prefill, Prefill.emptyBar)
+
+        // It is about ONE read and not about the connection: the answer landing takes the line off.
+        server.online = true
+        await store.choose("back-squat")
+
+        XCTAssertEqual(store.lastTime?.sets.map(\.weightKg), [105])
+        XCTAssertFalse(store.lastTimeFailed)
+        XCTAssertEqual(store.prefill, Prefill(weightKg: 105, reps: 5))
+    }
+
+    // ...and a reply for a movement the lifter has already walked away from claims nothing about the
+    // one in hand — neither an answer nor a failure, since the dial in front of them is not its dial.
+    func testAFailedReadForAMovementAlreadyLeftDoesNotMarkTheOneInHand() async {
+        let server = FakeTraining()
+        let store = await liveStore(server)
+
+        server.online = false
+        await store.choose("back-squat")
+        XCTAssertTrue(store.lastTimeFailed)
+
+        server.online = true
+        await store.choose("bench-press")
+        XCTAssertFalse(store.lastTimeFailed, "the walk moved on, and the failure went with it")
+    }
+
     // ── the foot of the log ────────────────────────────────────────────────────────────────────
 
     // The server's page is 50 (`TrainingStore.logPage`), so a full one means there may be more and a

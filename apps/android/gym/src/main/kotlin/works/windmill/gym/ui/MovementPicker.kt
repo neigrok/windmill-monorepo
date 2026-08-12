@@ -278,7 +278,8 @@ fun MovementPicker(
 
 // THE ACCOUNT VERB A LIFTER MID-SESSION CAN REACH (§J22), and it is an offer rather than a wall:
 // everything on this screen already works, so the card says what the account is FOR — an agent
-// reading a written program — and the sentence under it says the rest of the room needs nothing.
+// reading a written program. That the rest of the room needs no account was a SENTENCE under it
+// until W9; it is now simply true of the screen behind it, where every movement is already tappable.
 // The door itself is the shell's (screen 23), and it comes back here, mid-session, with the session
 // still running. The room has three doors onto it (Today's card, the rail's seat and this one); a
 // live session covers the other two, which is exactly when this card is on screen.
@@ -308,12 +309,6 @@ private fun BuildMyRoutine(onBuildRoutine: () -> Unit) {
             color = GymSkin.accent,
         )
     }
-    Text(
-        "Or just log freely — pick a movement and start. Nothing here needs an account.",
-        style = GymType.numeral(12).copy(lineHeight = 19.sp),
-        color = GymSkin.inkFaint,
-        modifier = Modifier.fillMaxWidth(),
-    )
 }
 
 @Composable

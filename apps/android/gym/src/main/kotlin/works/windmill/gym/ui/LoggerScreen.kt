@@ -36,12 +36,19 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -62,28 +69,38 @@ import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
-// THE SET LOGGER — one value at a time, at arm's length, in a room where you cannot hear the tone and
-// your hands are chalked. Only the today list is elastic: the big weight, the ladder, the reps and
-// the 64dp primary action never move as sets accumulate, so the thumb learns one geometry and keeps
-// it for the whole session.
+// THE SET LOGGER — §K, rebuilt. Nine times in ten the next set is the same weight and the same reps,
+// so that case is one tap with nothing to read. The first version put thirteen near-equal targets
+// and three lines of instructions in front of a man holding a barbell; what is left is nine, and the
+// rare things each cost one deliberate gesture away from the button pressed out of breath.
+//
+// ONE COMPOSITE VALUE, WEIGHT DOMINANT — `105 kg × 5`. Weight is the SETTING and reps is the
+// OUTCOME, so they stop competing for the same size: the numeral is the loudest pixel in the
+// product and the reps ride beside it as the smaller half of one reading.
+//
+// THE LABELS ARE THE NUMBERS. The fine button IS the program step and the plate button is a visibly
+// smaller neighbour, which is what retired the tier caption — `over 50 kg · fine 2.5 · plate 10` was
+// the buttons explaining themselves. Nothing on this glass explains the design: the dotted underline
+// carries "type it", and the argument for the screen lives beside it on the board.
 //
 // EVERY WEIGHT AND REP TAP GOES THROUGH `Ladder`. Step sizes are not re-derived here, on the web, or
-// anywhere else — one module per language, both answering packages/api-contract/gym-ladder.json, and
-// the labels re-render as the load climbs because the band under it changed. The caption under the
-// buttons is read off the same band table rather than typed beside it, so a retier moves both.
+// anywhere else — one module per language, all three answering packages/api-contract/gym-ladder.json,
+// and the labels re-render as the load climbs because the band under them changed.
 //
 // THREE THINGS ON THIS SCREEN OBEY §I'S SETTINGS, and none of them is stored: the plate readout
-// under the numeral (the lifter's own rack), the rest clock's target (their dial, off by default),
-// and what a logged set does in the hand. Every weight here is kilograms on the way in and on the
-// way out — the settings document changes what is DRAWN and reaches no write.
+// under the value (the lifter's own rack — the one line that does work at the rack, which is why §K
+// keeps it), the rest hairline's target (their dial, off by default), and what a logged set does in
+// the hand. Every weight here is kilograms on the way in and on the way out — the settings document
+// changes what is DRAWN and reaches no write.
 //
-// The screen never congratulates and never warns. An overrun rest counts up in the accent, "set 4 of 3"
-// is drawn in the same ink as "set 3 of 5", and the only alarm ink in the product belongs to a write
-// that actually failed.
+// The screen never congratulates and never warns. An overrun rest counts up in the accent, "set 4 of
+// 3" is drawn in the same ink as "set 3 of 5", and the only alarm ink in the product belongs to a
+// write that actually failed.
 
 private sealed class LoggerSheet {
     data object Weight : LoggerSheet()
     data object Reps : LoggerSheet()
+    data object Kind : LoggerSheet()
     data object Assembly : LoggerSheet()
     data object Picker : LoggerSheet()
     data class Deviation(val offer: DeviationOffer, val movement: String) : LoggerSheet()
@@ -103,7 +120,12 @@ fun LoggerScreen(
     val confirm = rememberGymConfirm(preferences)
     var weightKg by remember { mutableDoubleStateOf(store.prefill.weightKg) }
     var reps by remember { mutableIntStateOf(store.prefill.reps) }
-    var warmup by remember { mutableStateOf(false) }
+    // THE ONE PIECE OF DIAL STATE THAT IS SAVED, and the numbers beside it are deliberately not.
+    // A reclaimed process comes back to a weight and a rep count the LOG can still vouch for — the
+    // prefill is re-read off disk and the effect below re-seeds them — but nothing on disk knows
+    // that the next set was armed as a warmup, and a warmup silently landing as a working set would
+    // file a ramp-up as training. So the kind rides in the bundle.
+    var kind by rememberSaveable { mutableStateOf(SetKind.Working) }
     var restStartedAtMs by remember { mutableStateOf<Long?>(null) }
     var sheet by remember { mutableStateOf<LoggerSheet?>(null) }
     var goingTo by remember { mutableStateOf<String?>(null) }
@@ -135,6 +157,9 @@ fun LoggerScreen(
         }
     }
 
+    // The one way between movements, wherever the gesture came from: the title's own chevrons, a
+    // jump in the assembly list, or a movement picked to be added. The sheet is closed only if one
+    // is standing — `hide()` on a sheet that was never shown has no anchor to animate to.
     fun move(to: String) {
         val leaving = store.exerciseId
         if (leaving != null && leaving != to) {
@@ -144,16 +169,17 @@ fun LoggerScreen(
             }
         }
         goingTo = to
-        close()
+        if (sheet != null) close()
     }
 
     // Leaving a movement is the one boundary the change offer is raised at, and the sheet that
     // raised it cannot be the one still on screen — dismiss-then-present, the iOS `onDismiss:
-    // settleTheMove`. The settle rides an effect keyed on `sheet` because that is the one place
-    // guaranteed to run only after the fallen sheet has LEFT the composition: with one hoisted
-    // sheetState, ModalBottomSheet only shows itself on entering composition, so presenting the
-    // offer in the same frame the old sheet left would raise it under the scrim, hidden.
-    LaunchedEffect(sheet) {
+    // settleTheMove`. The settle rides an effect keyed on the move AND on the sheet because those
+    // are the two ways it can become due: with one hoisted sheetState, ModalBottomSheet only shows
+    // itself on entering composition, so presenting the offer in the same frame the old sheet left
+    // would raise it under the scrim, hidden — and a move made from the title with no sheet open
+    // would never come due at all if only the sheet were watched.
+    LaunchedEffect(sheet, goingTo) {
         if (sheet != null) return@LaunchedEffect
         goingTo?.let { movement ->
             goingTo = null
@@ -216,16 +242,15 @@ fun LoggerScreen(
     Column(
         Modifier
             .fillMaxSize()
-            .padding(horizontal = WindmillSpace.x5)
+            .padding(horizontal = WindmillSpace.x4)
             .padding(top = WindmillSpace.x2, bottom = WindmillSpace.x3),
-        // x3, not the x4 the eye might want: nine gaps ride this screen, and on a 731dp phone the
-        // extra 36dp is the difference between the today list breathing and it being squeezed flat.
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
     ) {
         Header(
             routine = store.session?.plan?.routine ?: Readout.noRoutine,
-            elapsedMs = nowMs - (store.session?.startedAtMs ?: 0L),
+            rest = restStartedAtMs?.let { Rest.Line(restTarget, it, nowMs) },
             onFinish = onFinish,
+            onClearRest = { restStartedAtMs = null },
         )
         LiveLines.onThisDeviceLine(store.strandedCount)?.let { line ->
             Text(
@@ -267,61 +292,72 @@ fun LoggerScreen(
                 modifier = Modifier.weight(1f),
             )
         } else {
-            MovementHead(
+            val counter = LiveLines.counter(LiveLines.workingCount(store.todaySets), store.planEntry)
+            // The walk is the assembly list's order, so the chevrons and the list agree about what
+            // comes next by construction. At either end the arrow is inert rather than wrapping: a
+            // lifter who taps past the last movement wanted the one after it, not the first one.
+            val at = store.order.indexOf(movement)
+            MovementTitle(
                 name = Readout.movement(movement, store.catalog),
-                counter = LiveLines.counter(LiveLines.workingCount(store.todaySets), store.planEntry),
-                onJump = { sheet = LoggerSheet.Assembly },
+                plan = counter.plan,
+                previous = if (at < 0) null else store.order.getOrNull(at - 1),
+                next = if (at < 0) null else store.order.getOrNull(at + 1),
+                onMove = { move(it) },
+                onOpenSession = { sheet = LoggerSheet.Assembly },
             )
-            PrefillCard(
-                card = LiveLines.prefillCard(store.lastTime, store.planEntry,
-                                             routine = store.session?.plan?.routine,
-                                             readFailed = store.lastTimeFailed,
-                                             now = System.currentTimeMillis()),
-                onOpen = { sheet = LoggerSheet.Weight },
-            )
-            // The one elastic region. Android phones run shorter than the iPhones this layout was
-            // drawn for, so the rule is enforced structurally: everything below this box is the
-            // pinned tail, and appearing rows (rest line, undo) compress the LIST — they can never
-            // push the 64dp action out of the thumb zone or off the screen.
-            Box(Modifier.weight(1f).fillMaxWidth()) {
-                TodayList(LiveLines.rows(store.todaySets, store.stalled))
-            }
-            WeightBlock(
-                weightKg = weightKg,
-                preferences = preferences,
-                onType = { sheet = LoggerSheet.Weight },
-                onDial = { weightKg = it },
-            )
-            RepsRow(
-                reps = reps,
-                warmup = warmup,
-                onDial = { reps = it },
-                onType = { sheet = LoggerSheet.Reps },
-                onToggleWarmup = { warmup = !warmup },
-            )
-            // No rest line until a set lands: the timer times the gap between two sets, and one
-            // drawn before the first would be counting from the moment the screen opened.
-            restStartedAtMs?.let { started ->
-                RestLine(
-                    line = Rest.Line(restTarget, started, nowMs),
-                    onReset = { restStartedAtMs = null },
+            // ONE ELASTIC REGION AND ONLY ONE, and it is the history. Android phones run shorter
+            // than the iPhones this layout was drawn for, so the rule is enforced structurally: the
+            // value is measured first and takes what it needs, the history takes the leftover and
+            // scrolls inside it, and everything below is the pinned tail — sets accumulating can
+            // never push the 64dp action out of the thumb zone or shrink the number being dialled.
+            Column(
+                Modifier.weight(1f).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(WindmillSpace.x5),
+            ) {
+                Box(
+                    Modifier.weight(1f).fillMaxWidth(),
+                    contentAlignment = Alignment.BottomStart,
+                ) {
+                    History(
+                        rows = LiveLines.rows(store.todaySets, store.stalled),
+                        undoable = remember(nowMs, store.sets, movement) { store.undoable },
+                        lastTime = LiveLines.prefillCard(
+                            store.lastTime, store.planEntry,
+                            routine = store.session?.plan?.routine,
+                            readFailed = store.lastTimeFailed,
+                            now = nowMs,
+                        ),
+                        onUndo = { store.undoLast() },
+                    )
+                }
+                Value(
+                    counter = counter.count,
+                    weightKg = weightKg,
+                    reps = reps,
+                    preferences = preferences,
+                    onType = { sheet = LoggerSheet.Weight },
                 )
             }
-            UndoRow(
-                undoable = remember(nowMs, store.sets) { store.undoable },
-                onUndo = { store.undoLast() },
+            KindPill(kind, onOpen = { sheet = LoggerSheet.Kind })
+            LadderRow(weightKg, onDial = { weightKg = it })
+            RepsRow(
+                reps = reps,
+                onDial = { reps = it },
+                onType = { sheet = LoggerSheet.Reps },
             )
             LogButton(
                 label = "Log set  ·  ${Readout.effort(weightKg, reps)}",
                 finishing = store.isFinishing,
                 onLog = {
-                    val kind = if (warmup) SetKind.Warmup else SetKind.Working
+                    val logging = kind
                     confirm.setLogged()
                     restStartedAtMs = System.currentTimeMillis()
                     // Disarmed on the tap and not on the reply: the set is the lifter's the instant
-                    // they press, and the toggle is about the set that just went, never the network.
-                    warmup = false
-                    scope.launch { store.logSet(weightKg, reps, kind) }
+                    // they press, and the kind is about the set that just went, never the network.
+                    // A warmup is a single set and not a mode you can be left in — left armed, it
+                    // would file every working set after it as a ramp-up.
+                    kind = SetKind.Working
+                    scope.launch { store.logSet(weightKg, reps, logging) }
                 },
             )
         }
@@ -346,9 +382,14 @@ fun LoggerScreen(
                     onCommit = { reps = it.toInt(); close() },
                     onCancel = { close() },
                 )
+                LoggerSheet.Kind -> KindSheet(
+                    kind = kind,
+                    onPick = { kind = it; close() },
+                )
                 LoggerSheet.Assembly -> AssemblySheet(
                     rows = LiveLines.assemblyRows(store.order, store.sets, store.session?.plan,
                                                   store.catalog, store.exerciseId, store.stalled),
+                    elapsedMs = nowMs - (store.session?.startedAtMs ?: nowMs),
                     onJump = { move(it) },
                     onReorder = { from, to -> store.reorder(from, to) },
                     onDrop = { store.drop(it) },
@@ -394,310 +435,398 @@ fun LoggerScreen(
     }
 }
 
+// WHERE YOU ARE AND THE CLOCK — the frame's one context line (§F), and on this screen the clock is
+// the REST. It is the number a lifter between sets actually reads, and the hairline under it is what
+// the rest USED to be: a line of text saying "resting · target 2:00", now the width of a bar. With
+// the dial off there is no bar at all, because a track drawn against nothing would be a countdown
+// nobody asked for. The session's own elapsed time lives one gesture away, on the assembly list.
+//
+// THE SENTENCE THE BAR REPLACED IS CARRIED BY THE CLOCK, not by the bar: with the dial off there is
+// no bar to hang it on, and hanging it there would have deleted the word `resting` outright for
+// every lifter who never touched the dial — which is the default. So the clock is the labelled
+// thing, always, and the hairline beside it is decoration TalkBack walks past. The tap is named too:
+// a number that silently cancels a chime is not a button anybody can find by ear.
 @Composable
-private fun Header(routine: String, elapsedMs: Long, onFinish: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(8.dp).clip(CircleShape).background(GymSkin.accent))
-        Text(routine, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.ink)
-        Text(Readout.clock(elapsedMs), style = GymType.numeral(14), color = GymSkin.inkDim)
-        Spacer(Modifier.weight(1f))
-        Box(
-            Modifier.sizeIn(minWidth = 70.dp, minHeight = GymTap.minimum).clickable(onClick = onFinish),
-            contentAlignment = Alignment.Center,
+private fun Header(routine: String, rest: Rest.Line?, onFinish: () -> Unit, onClearRest: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Finish", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.accent)
+            Box(Modifier.size(8.dp).clip(CircleShape).background(GymSkin.accent))
+            Text(routine, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.ink)
+            Spacer(Modifier.weight(1f))
+            if (rest != null) {
+                Box(
+                    Modifier
+                        .heightIn(min = GymTap.minimum)
+                        .clickable(onClickLabel = "clear the rest", onClick = onClearRest)
+                        .semantics(mergeDescendants = true) {
+                            contentDescription = "${rest.label}  ·  ${rest.time}"
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    // Being over the target is not an error and must never look like one: the
+                    // overrun counts UP, in the accent — never alarm ink.
+                    Text(rest.time, style = GymType.numeral(14),
+                         color = if (rest.overrun) GymSkin.accent else GymSkin.inkDim)
+                }
+            }
+            Box(
+                Modifier.sizeIn(minWidth = 70.dp, minHeight = GymTap.minimum).clickable(onClick = onFinish),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("Finish", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.accent)
+            }
+        }
+        // Drawn only against a target, and carrying no reading of its own — the clock above says
+        // what this is, at every dial position, so a bar that repeated it would be TalkBack reading
+        // the rest twice.
+        val filled = rest?.fraction
+        if (filled != null) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(2.dp)
+                    .clip(RoundedCornerShape(WindmillRadius.full))
+                    .background(GymSkin.line),
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxWidth(filled)
+                        .height(2.dp)
+                        .clip(RoundedCornerShape(WindmillRadius.full))
+                        .background(GymSkin.accent),
+                )
+            }
         }
     }
 }
 
+// NAVIGATION BELONGS IN THE TITLE, which is where §K moved it: the chevrons walk the session and the
+// name itself opens the list they walk. What the plan asks for sits under the name, in the target's
+// own ink — a movement the plan never named says `no target` there rather than borrowing a number.
 @Composable
-private fun MovementHead(name: String, counter: LiveLines.Counter, onJump: () -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+private fun MovementTitle(
+    name: String,
+    plan: String,
+    previous: String?,
+    next: String?,
+    onMove: (String) -> Unit,
+    onOpenSession: () -> Unit,
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Arrow("‹", previous, onMove)
+        Column(
+            Modifier.weight(1f).clickable(onClick = onOpenSession),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
             BasicText(
                 name,
                 maxLines = 1,
-                autoSize = TextAutoSize.StepBased(minFontSize = 20.sp, maxFontSize = 28.sp),
-                style = GymType.movementHead.copy(color = GymSkin.ink),
+                autoSize = TextAutoSize.StepBased(minFontSize = 20.sp, maxFontSize = 26.sp),
+                style = GymType.movementHead.copy(color = GymSkin.ink, textAlign = TextAlign.Center),
             )
-            Row {
-                Text(counter.count, style = GymType.numeral(12), color = GymSkin.inkDim)
-                Text(counter.tail, style = GymType.numeral(12), color = GymSkin.targetInk)
-            }
+            Text(plan, style = GymType.numeral(12), color = GymSkin.targetInk)
         }
-        Box(
-            Modifier.size(GymTap.minimum).clickable(onClick = onJump),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("›", style = WindmillFont.body(22, FontWeight.SemiBold), color = GymSkin.inkDim)
-        }
+        Arrow("›", next, onMove)
     }
 }
 
 @Composable
-private fun PrefillCard(card: LiveLines.Card, onOpen: () -> Unit) {
-    Column(
+private fun Arrow(glyph: String, to: String?, onMove: (String) -> Unit) {
+    Box(
         Modifier
-            .fillMaxWidth()
-            .heightIn(min = GymTap.minimum)
-            .clip(RoundedCornerShape(WindmillRadius.md))
-            .background(GymSkin.surface)
-            .clickable(onClick = onOpen)
-            .padding(WindmillSpace.x3),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            .size(GymTap.minimum)
+            .clickable(enabled = to != null) { to?.let(onMove) },
+        contentAlignment = Alignment.Center,
     ) {
-        Text(card.title, style = GymType.numeral(11), color = GymSkin.inkFaint)
-        Text(card.body, style = GymType.numeral(14), color = GymSkin.ink)
+        Text(
+            glyph,
+            style = WindmillFont.body(22, FontWeight.SemiBold),
+            color = if (to == null) GymSkin.line else GymSkin.inkDim,
+        )
     }
 }
 
-// ONLY THIS LIST IS ELASTIC, and only up to here. Past the cap it scrolls inside itself, so the
-// weight, the ladder, the reps and the 64dp action do not move as sets accumulate — the thumb
-// learns one geometry on the first set and keeps it for the whole session.
+// "WHERE AM I" IS ANSWERED BY LOOKING — the sets already done, as a column. Before the first one
+// there is nothing to look at, so the same slot says what this movement did last time instead;
+// after it, today is the only thing worth the space. The column scrolls inside itself past its cap,
+// so the ladder, the reps and the 64dp action do not move as sets accumulate — the thumb learns one
+// geometry on the first set and keeps it for the whole session.
+//
+// THE UNDO LIVES ON THE ROW IT WOULD TAKE BACK. The confirmation was always the row appearing; the
+// sentence under it that said so was the screen narrating itself. Undo is offered exactly while the
+// set can still be taken back — the log has no route that deletes one, so a button that outlived the
+// window would have to apologise.
 @Composable
-private fun TodayList(rows: List<LiveLines.Row>) {
+private fun History(
+    rows: List<LiveLines.Row>,
+    undoable: TrainingSet?,
+    lastTime: LiveLines.Card,
+    onUndo: () -> Unit,
+) {
+    if (rows.isEmpty()) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(lastTime.title, style = GymType.numeral(11), color = GymSkin.inkFaint)
+            Text(lastTime.body, style = GymType.numeral(13), color = GymSkin.inkDim)
+        }
+        return
+    }
+    val scroll = rememberScrollState()
+    // The newest row is the one being asked about, so it is the one kept in view when the column
+    // has more sets in it than the cap will draw.
+    LaunchedEffect(rows.size) { scroll.animateScrollTo(scroll.maxValue) }
     Column(
-        Modifier
-            .fillMaxWidth()
-            .heightIn(max = 190.dp)
-            .verticalScroll(rememberScrollState()),
+        Modifier.fillMaxWidth().heightIn(max = 168.dp).verticalScroll(scroll),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        if (rows.isEmpty()) {
-            Text("Nothing logged for this movement yet.", style = GymType.numeral(12), color = GymSkin.inkFaint)
-        }
         rows.forEach { row ->
             Row(
-                Modifier.fillMaxWidth(),
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(WindmillRadius.md))
+                    .background(GymSkin.surface)
+                    .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.md))
+                    .padding(horizontal = WindmillSpace.x3, vertical = WindmillSpace.x2),
                 horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     row.index,
-                    style = GymType.numeral(12),
-                    color = if (row.isWarmup) GymSkin.warmupInk else GymSkin.setDone,
+                    style = GymType.numeral(11),
+                    color = if (row.isWarmup) GymSkin.warmupInk else GymSkin.inkFaint,
                     modifier = Modifier.width(16.dp),
                 )
                 Text(
                     row.value,
-                    style = GymType.numeral(15),
+                    style = GymType.numeral(14),
                     color = if (row.isWarmup) GymSkin.warmupInk else GymSkin.ink,
+                    modifier = Modifier.weight(1f),
                 )
-                Text(
-                    row.note,
-                    style = GymType.numeral(11),
-                    color = if (row.isOnThisDevice) GymSkin.unsyncedInk else GymSkin.inkFaint,
-                )
-                Spacer(Modifier.weight(1f))
-                Text(row.time, style = GymType.numeral(12), color = GymSkin.inkFaint)
+                if (row.id == undoable?.id) {
+                    Box(
+                        Modifier
+                            .sizeIn(minWidth = 60.dp, minHeight = GymTap.minimum - 8.dp)
+                            .clickable(onClick = onUndo),
+                        contentAlignment = Alignment.CenterEnd,
+                    ) {
+                        Text("Undo", style = WindmillFont.body(14, FontWeight.SemiBold),
+                             color = GymSkin.accent)
+                    }
+                } else if (row.isOnThisDevice) {
+                    Text(LiveLines.onThisDevice, style = GymType.numeral(11),
+                         color = GymSkin.unsyncedInk)
+                } else {
+                    Text("✓", style = GymType.numeral(13),
+                         color = if (row.isWarmup) GymSkin.warmupInk else GymSkin.setDone)
+                }
             }
         }
     }
 }
 
-// THE NUMERAL, WHAT IT WOULD ACTUALLY WEIGH ON THE BAR, THE FOUR STEPS, AND WHY THEY ARE THOSE
-// STEPS — §K, top to bottom. The two captions are drawn at a fixed height whatever they say, because
-// everything below this block is the tail a chalked thumb learns on the first set and a line that
-// appeared and disappeared would move the buttons under it.
+// ONE READING, WEIGHT DOMINANT — `105 kg × 5`. The numeral carries a dotted underline instead of a
+// sentence telling anybody to tap it, and the plate line under it is the one line on this screen
+// that does work at the rack: what to actually put on the bar, out of the lifter's own settings.
 //
 // The readout is remembered on the weight and the rack together: it is a small table search, and it
 // would otherwise be rebuilt every second under the rest clock's own tick.
 @Composable
-private fun WeightBlock(
+private fun Value(
+    counter: String,
     weightKg: Double,
+    reps: Int,
     preferences: GymPreferences,
     onType: () -> Unit,
-    onDial: (Double) -> Unit,
 ) {
     val loaded = remember(weightKg, preferences) { Plates.readout(weightKg, preferences) }
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
+    Column(
+        Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
+    ) {
+        Text(
+            counter.uppercase(),
+            style = GymType.numeral(10).copy(letterSpacing = 0.07.em),
+            color = GymSkin.inkFaint,
+        )
         Row(
-            Modifier.fillMaxWidth().clickable(onClick = onType),
-            horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.Bottom,
         ) {
             // A −102.5 is the widest thing this readout ever holds. It shrinks rather than
             // truncating: half a weight is worse than a small one.
+            //
+            // THE NUMERAL IS THE DOOR AND THE UNDERLINE SAYS SO — the reps beside it are the other
+            // half of one reading and are not a target: the whole composite taking a tap would send
+            // a thumb aimed at `× 5` to the weight pad. Reps are typed from the stepper below, on
+            // the number they change.
             BasicText(
                 Readout.weight(weightKg),
                 maxLines = 1,
-                autoSize = TextAutoSize.StepBased(minFontSize = 57.sp, maxFontSize = 104.sp),
+                autoSize = TextAutoSize.StepBased(minFontSize = 44.sp, maxFontSize = 88.sp),
                 style = GymType.weight.copy(color = GymSkin.weightInk),
-                modifier = Modifier.alignByBaseline(),
+                modifier = Modifier
+                    .alignByBaseline()
+                    .clickable(onClick = onType)
+                    .drawBehind {
+                        val y = size.height + 3.dp.toPx()
+                        drawLine(
+                            color = GymSkin.lineStrong,
+                            start = Offset(0f, y),
+                            end = Offset(size.width, y),
+                            strokeWidth = 2.dp.toPx(),
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(3f, 5f)),
+                        )
+                    },
             )
-            Text(
-                "kg",
-                style = GymType.numeral(15),
-                color = GymSkin.inkFaint,
-                modifier = Modifier.alignByBaseline(),
-            )
+            Text("kg", style = WindmillFont.body(18, FontWeight.Bold), color = GymSkin.inkFaint,
+                 modifier = Modifier.alignByBaseline())
+            Text("× $reps", style = WindmillFont.display(28, FontWeight.ExtraBold),
+                 color = GymSkin.inkDim, modifier = Modifier.alignByBaseline())
         }
-
         // A load under the bar has no plate answer, and silence there is the honest one — a lifter
-        // at 15 kg is not standing at this bar. The hint stays either way, so the line never moves.
+        // at 15 kg is not standing at this bar.
         //
         // IT SHRINKS RATHER THAN TRUNCATING, for the reason the numeral above it does: the longest
         // thing this line ever says is the sentence that matters most — `these plates don’t make
-        // 102.5 · 100 or 105 · tap the number to type it`, half again the width of the loadable
-        // one — and a clip would cut the neighbours off the end of it, leaving a lifter reading a
-        // refusal with no answer in it. The line height is spelled in sp and does NOT follow the
-        // font down, so the row keeps one height at every size and at every accessibility scale:
-        // everything below here is the tail a chalked thumb learns on the first set.
+        // 102.5 · 100 or 105` — and a clip would cut the neighbours off the end of it, leaving a
+        // lifter reading a refusal with no answer in it. The line height is spelled in sp and does
+        // NOT follow the font down, so the row keeps one height at every size and at every
+        // accessibility scale.
         BasicText(
-            listOfNotNull(loaded?.line, "tap the number to type it").joinToString(" · "),
+            loaded?.line.orEmpty(),
             maxLines = 1,
             autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = 11.sp),
-            style = GymType.numeral(11).copy(color = GymSkin.inkFaint, lineHeight = 15.sp),
-            modifier = Modifier.fillMaxWidth(),
+            style = GymType.numeral(11).copy(color = GymSkin.inkFaint, lineHeight = 15.sp,
+                                             textAlign = TextAlign.Center),
         )
+    }
+}
 
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
-            Ladder.labels(weightKg).forEachIndexed { index, label ->
-                Box(
-                    Modifier
-                        .weight(1f)
-                        .heightIn(min = GymTap.minimum + 6.dp)
-                        .clip(RoundedCornerShape(WindmillRadius.md))
-                        .background(GymSkin.raised)
-                        .clickable {
-                            onDial(Ladder.bump(weightKg, direction = if (index < 2) -1 else 1,
-                                               big = index == 0 || index == 3))
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(label, style = GymType.numeral(17, FontWeight.SemiBold), color = GymSkin.ink)
-                }
+// THE SET'S KIND, AS ONE PILL THAT STATES THE CURRENT VALUE. It used to be a row of tags sitting in
+// the reach band, one thumb-width from Log set — a mis-tap there filed a set as something it was
+// not. Now it says what the next set is and the alternatives cost one deliberate gesture.
+@Composable
+private fun KindPill(kind: SetKind, onOpen: () -> Unit) {
+    Row(
+        Modifier
+            .heightIn(min = GymTap.minimum - 10.dp)
+            .clip(RoundedCornerShape(WindmillRadius.full))
+            .background(if (kind == SetKind.Working) GymSkin.surface else GymSkin.raised)
+            .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.full))
+            .clickable(onClick = onOpen)
+            .padding(horizontal = WindmillSpace.x3),
+        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(kind.wire, style = GymType.numeral(12, FontWeight.Bold),
+             color = if (kind == SetKind.Working) GymSkin.inkDim else GymSkin.warmupInk)
+        Text("▾", style = GymType.numeral(10), color = GymSkin.inkFaint)
+    }
+}
+
+// The kinds this surface can actually log, and no others: a sheet listing `drop` and `failed` would
+// be offering two writes the logger has never made. A warmup counts toward NOTHING — not the plan
+// counter, not the sticky weight, no record rule, and not "Keep this as a routine".
+@Composable
+private fun KindSheet(kind: SetKind, onPick: (SetKind) -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().background(GymSkin.surface).padding(WindmillSpace.x5),
+        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
+    ) {
+        Text("This set", style = WindmillFont.display(20), color = GymSkin.ink)
+        listOf(SetKind.Working, SetKind.Warmup).forEach { offered ->
+            val picked = offered == kind
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = GymTap.minimum + 6.dp)
+                    .clip(RoundedCornerShape(WindmillRadius.md))
+                    .background(if (picked) GymSkin.raised else Color.Transparent)
+                    .border(1.dp, if (picked) GymSkin.lineStrong else GymSkin.line,
+                            RoundedCornerShape(WindmillRadius.md))
+                    .clickable { onPick(offered) }
+                    .padding(horizontal = WindmillSpace.x4),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(offered.wire, style = WindmillFont.body(16, FontWeight.SemiBold),
+                     color = if (picked) GymSkin.ink else GymSkin.inkDim)
+                Spacer(Modifier.weight(1f))
+                if (picked) Text("✓", style = GymType.numeral(13), color = GymSkin.accent)
             }
         }
-
-        Text(
-            Ladder.tier(weightKg).uppercase(),
-            style = GymType.numeral(10).copy(letterSpacing = 0.05.em),
-            color = GymSkin.inkFaint,
-            maxLines = 1,
-            modifier = Modifier.fillMaxWidth(),
-        )
     }
 }
 
+// THE LABELS ARE THE NUMBERS, and the shapes say which is which: the fine step is the program step
+// and takes the width, the plate step is a visibly smaller neighbour. That is what the tier caption
+// used to say in words, and it is why there is no caption.
 @Composable
-private fun RepsRow(reps: Int, warmup: Boolean, onDial: (Int) -> Unit, onType: () -> Unit,
-                    onToggleWarmup: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier
-                .width(GymTap.minimum + 12.dp)
-                .height(GymTap.minimum + 6.dp)
-                .clip(RoundedCornerShape(WindmillRadius.md))
-                .background(GymSkin.raised)
-                .clickable { onDial(Ladder.bumpReps(reps, direction = -1)) },
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("−", style = WindmillFont.display(24, FontWeight.SemiBold), color = GymSkin.ink)
-        }
-
-        Row(
-            Modifier.weight(1f).clickable(onClick = onType),
-            horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2, Alignment.CenterHorizontally),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            Text(reps.toString(), style = GymType.reps, color = GymSkin.ink,
-                 modifier = Modifier.alignByBaseline())
-            Text("reps", style = GymType.numeral(13), color = GymSkin.inkFaint,
-                 modifier = Modifier.alignByBaseline())
-        }
-
-        Box(
-            Modifier
-                .width(GymTap.minimum + 12.dp)
-                .height(GymTap.minimum + 6.dp)
-                .clip(RoundedCornerShape(WindmillRadius.md))
-                .background(GymSkin.raised)
-                .clickable { onDial(Ladder.bumpReps(reps, direction = 1)) },
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("+", style = WindmillFont.display(24, FontWeight.SemiBold), color = GymSkin.ink)
-        }
-
-        // THE ONE PLACE A SET'S KIND IS DECIDED. It arms the next Log set and disarms itself the
-        // moment that set lands, because a warmup is a single set and not a mode you can be left
-        // in — a toggle that stayed on would file the working sets after it as ramp-ups. A warmup
-        // counts toward NOTHING: it does not advance the plan counter, it is not carried forward
-        // as the sticky weight, no record rule reads it, and "Keep this as a routine" leaves it
-        // out. It sits IN the reps row rather than on a line of its own: the row's height and the
-        // 64dp action below it are what the thumb learns on the first set, and neither may move.
-        Box(
-            Modifier
-                .width(74.dp)
-                .height(GymTap.minimum + 6.dp)
-                .clip(RoundedCornerShape(WindmillRadius.md))
-                .background(if (warmup) GymSkin.raised else Color.Transparent)
-                .border(1.dp, if (warmup) GymSkin.lineStrong else GymSkin.line,
-                        RoundedCornerShape(WindmillRadius.md))
-                .clickable(onClick = onToggleWarmup),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("warmup", style = GymType.numeral(12),
-                 color = if (warmup) GymSkin.warmupInk else GymSkin.inkFaint)
-        }
-    }
-}
-
-// The clock, and what it counts against — which with the dial off is nothing at all: it counts UP
-// from the last set, says "resting", and is a fact rather than an instruction.
-@Composable
-private fun RestLine(line: Rest.Line, onReset: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(line.label, style = GymType.numeral(12), color = GymSkin.inkFaint)
-        // Being over the target is not an error and must never look like one: the overrun counts
-        // UP, in the accent — never alarm ink.
-        Text(line.time, style = GymType.numeral(15),
-             color = if (line.overrun) GymSkin.accent else GymSkin.ink)
-        Spacer(Modifier.weight(1f))
-        Box(
-            Modifier.heightIn(min = GymTap.minimum).clickable(onClick = onReset),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("reset", style = GymType.numeral(12), color = GymSkin.inkFaint)
-        }
-    }
-}
-
-// The confirmation is visual and it is this: the row above, and the sentence here saying what
-// was taken. Undo is offered exactly while the set can still be taken back — the log has no
-// route that deletes one, so a button that outlived the window would have to apologise.
-@Composable
-private fun UndoRow(undoable: TrainingSet?, onUndo: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().height(26.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (undoable != null) {
-            Text(
-                "Logged ${Readout.effort(undoable.weightKg, undoable.reps)}",
-                style = GymType.numeral(12),
-                color = GymSkin.inkDim,
-            )
-            Spacer(Modifier.weight(1f))
+private fun LadderRow(weightKg: Double, onDial: (Double) -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Ladder.labels(weightKg).forEachIndexed { index, label ->
+            val plate = index == 0 || index == 3
             Box(
-                Modifier.sizeIn(minWidth = 60.dp, minHeight = GymTap.minimum - 8.dp).clickable(onClick = onUndo),
+                (if (plate) Modifier.width(GymTap.minimum + 4.dp) else Modifier.weight(1f))
+                    .height(GymTap.minimum + 14.dp)
+                    .clip(RoundedCornerShape(WindmillRadius.md))
+                    .background(if (plate) GymSkin.surface else GymSkin.raised)
+                    .border(1.dp, if (plate) GymSkin.line else GymSkin.lineStrong,
+                            RoundedCornerShape(WindmillRadius.md))
+                    .clickable {
+                        onDial(Ladder.bump(weightKg, direction = if (index < 2) -1 else 1, big = plate))
+                    },
                 contentAlignment = Alignment.Center,
             ) {
-                Text("Undo", style = WindmillFont.body(14, FontWeight.SemiBold), color = GymSkin.accent)
+                Text(
+                    label,
+                    style = if (plate) GymType.numeral(13) else GymType.numeral(18, FontWeight.Bold),
+                    color = if (plate) GymSkin.inkFaint else GymSkin.ink,
+                )
             }
         }
+    }
+}
+
+// The steppers sit next to the number they change, and the number itself is still the door onto the
+// pad — a rep count typed is the same gesture it always was, one tap further from the ladder.
+@Composable
+private fun RepsRow(reps: Int, onDial: (Int) -> Unit, onType: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("reps", style = GymType.numeral(13), color = GymSkin.inkFaint)
+        Spacer(Modifier.weight(1f))
+        Step("−") { onDial(Ladder.bumpReps(reps, direction = -1)) }
+        Box(
+            Modifier.sizeIn(minWidth = 40.dp, minHeight = GymTap.minimum).clickable(onClick = onType),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(reps.toString(), style = GymType.numeral(20, FontWeight.Bold), color = GymSkin.ink)
+        }
+        Step("+") { onDial(Ladder.bumpReps(reps, direction = 1)) }
+    }
+}
+
+@Composable
+private fun Step(glyph: String, onTap: () -> Unit) {
+    Box(
+        Modifier
+            .size(GymTap.minimum)
+            .clip(RoundedCornerShape(WindmillRadius.md))
+            .background(GymSkin.surface)
+            .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.md))
+            .clickable(onClick = onTap),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(glyph, style = WindmillFont.display(20, FontWeight.SemiBold), color = GymSkin.inkDim)
     }
 }
 

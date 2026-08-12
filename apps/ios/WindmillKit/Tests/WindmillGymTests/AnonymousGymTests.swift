@@ -345,8 +345,9 @@ final class AnonymousGymTests: XCTestCase {
         XCTAssertEqual(reopened.routines.first?.entries.map(\.exerciseId), [made.id])
     }
 
-    // The prefill's four states hold signed out too: the device's own history answers, and a
-    // movement it has never seen is an honest first time — never "reading your log…".
+    // The prefill holds signed out too: the device's own history answers synchronously, a movement
+    // it has never seen is an honest first time, and nothing can have FAILED to answer — there is
+    // nobody to ask, so the logger's "the log didn't answer" may never be drawn under this seat.
     func testSignedOutThePrefillReadsThisDevicesHistory() async {
         let store = makeStore(sync: nil)
         await store.connect(to: account(signedIn: false))

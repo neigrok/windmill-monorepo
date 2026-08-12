@@ -4,10 +4,12 @@ import WindmillPlatform
 // A SESSION, REVISITED — what the plan said beside what you did (§G17): the sets as they were
 // performed, the domain's reading of them, and the coach share.
 //
-// EVERY SET ROW IS A DOOR ONTO §G18, since 2026-08-12. The design annotated one row `tap to fix`
-// and the annotation was left undrawn while the wire had no route for it; the route exists now, so
-// the affordance is on every row and the sentence at the foot says so once rather than shouting it
-// on each. A movement's NAME is the other door on this screen: it opens that movement's record (§H).
+// EVERY SET ROW IS A DOOR ONTO §G18, since 2026-08-12, and NOTHING ON THE SCREEN SAYS SO. The
+// paragraph that used to — dim against bright, tap any set to fix it — explained the design at the
+// foot of a screen the design does not need explained, and the sweep took it. Nothing replaced it:
+// `tap to fix` on every row without a plan comment is that paragraph in a smaller font, printed
+// once per set. The row is a 46pt button and the sheet it opens introduces itself.
+// A movement's NAME is the other door on this screen: it opens that movement's record (§H).
 //
 // THE FROZEN PLAN SNAPSHOT IS THE ONLY SOURCE for "what the plan said". Never today's routine: a
 // routine renamed or retargeted since must not rewrite what the log says about the past, and that is
@@ -169,11 +171,6 @@ struct SessionScreen: View {
                             onDismiss: { store.clearRefusals() })
                 undoRow
                 sets
-                Text("Dim is what the plan said. Bright is what you did. A miss gets one line and no "
-                     + "scolding. Tap any set to fix it.")
-                    .font(GymType.numeral(12.5))
-                    .foregroundStyle(skin.inkFaint)
-                    .lineSpacing(3)
                 // The record and the comparison, and only those: the three facts the tiles would
                 // otherwise carry are already in the head line above, and one fact belongs in one
                 // place. Drawn once the log has answered, because "the log didn't answer" is this
@@ -351,6 +348,12 @@ struct SessionScreen: View {
                         .font(GymType.numeral(11))
                         .foregroundStyle(note.emphasised ? skin.inkDim : skin.inkFaint)
                 }
+                // AND NOTHING WHEN THE PLAN HAS NOTHING TO SAY. The board draws `tap to fix` once,
+                // on the one row it is showing under a thumb, and the annotation slot of its last
+                // row is empty. Printed on every unannotated row instead it is an instruction six
+                // times down a session with no routine, which is the paragraph this wave deleted
+                // wearing a smaller font. The row is a door because it is a 46pt button, and the
+                // sheet it opens says what it is.
             }
             .frame(maxWidth: .infinity, minHeight: GymTap.minimum, alignment: .leading)
             .contentShape(Rectangle())

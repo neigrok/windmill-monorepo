@@ -25,6 +25,12 @@ package works.windmill.gym.domain
 //
 // Being over a target is a fact, not a fault: the overrun counts UP, in the accent, calm and quietly
 // present. Nothing in this file may reach for alarm ink, and nothing here moves the lifter on.
+//
+// §K DRAWS THE LINE AS A HAIRLINE, so `fraction` is how full that bar is — and it is null with the
+// dial off, because a track drawn against nothing would be a progress bar toward a target nobody
+// set. `label` is what the rest MEANS, and the logger hands it to TalkBack on the CLOCK rather than
+// on the bar: neither a hairline nor a bare `1:12` has a reading, "resting · target 2:00" is one,
+// and with the dial off — the default — there is no bar to hang it on at all.
 
 object Rest {
     fun target(planEntry: PlanEntry?, preferences: GymPreferences): Int? =
@@ -34,19 +40,25 @@ object Rest {
         val label: String
         val time: String
         val overrun: Boolean
+        val fraction: Float?
 
         init {
             val elapsed = (now - startedAtMs) / 1000
-            if (targetSeconds == null) {
+            if (targetSeconds == null || targetSeconds <= 0) {
                 overrun = false
                 label = "resting"
                 time = Readout.clock(elapsed * 1000)
+                fraction = null
             } else {
                 val left = targetSeconds - elapsed
                 overrun = left < 0
                 label = (if (overrun) "rest done · target " else "resting · target ") +
                     Readout.clock(targetSeconds * 1000L)
                 time = if (overrun) "+" + Readout.clock(-left * 1000) else Readout.clock(left * 1000)
+                // Clamped at both ends: a full bar is the whole of what "past the target" means
+                // here, and a clock that has run backwards — a device whose time was corrected
+                // mid-rest — draws an empty one rather than a negative width.
+                fraction = (elapsed.toFloat() / targetSeconds).coerceIn(0f, 1f)
             }
         }
     }

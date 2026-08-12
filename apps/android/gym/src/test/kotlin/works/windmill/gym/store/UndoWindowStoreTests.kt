@@ -21,8 +21,8 @@ import works.windmill.platform.net.WindmillApi
 
 // THE UNDO WINDOW, DRIVEN THROUGH THE STORE — the wiring above the queue promises pinned in
 // UndoWindowTests: that the walk really skips a held set, that the save line stays silent over a
-// send nobody attempted, and that finish, leaving the room and the boot read each force the window
-// shut rather than stranding the set behind it.
+// send nobody attempted, that finish, leaving the room and the boot read each force the window shut
+// rather than stranding the set behind it, and that the verb is only ever offered where its row is.
 class UndoWindowStoreTests {
     @get:Rule
     val tmp = TemporaryFolder()
@@ -120,6 +120,32 @@ class UndoWindowStoreTests {
         assertTrue(store.undoLast())
 
         assertEquals(listOf(82.5), store.sets.map { it.weightKg })
+    }
+
+    // §K PUT UNDO ON THE ROW IT TAKES BACK, and the logger only draws THIS movement's rows — so an
+    // unscoped answer here was a window held open with its button on no screen: log the last set,
+    // tap the title's `›`, and the set was still withdrawable with nothing anywhere to withdraw it.
+    // The verb and its row are one fact now, and walking back inside the nine seconds finds both.
+    @Test
+    fun testUndoFollowsTheRowAndIsNotOfferedFromAnotherMovement() = runTest {
+        val server = FakeTraining()
+        val store = liveStore(server)
+
+        store.logSet(weightKg = 82.5, reps = 5)
+        assertEquals(82.5, store.undoable?.weightKg)
+
+        store.choose("overhead-press")
+        assertNull("the row is on no screen, so neither is the verb", store.undoable)
+        assertFalse("and it cannot be taken back from here either", store.undoLast())
+        assertEquals("the set is untouched — nothing was withdrawn and nothing was sent",
+            listOf(82.5), store.sets.map { it.weightKg })
+        assertEquals(0, server.appended.size)
+
+        store.choose("bench-press")
+        assertEquals("walking back inside the window finds the row and the Undo on it",
+            82.5, store.undoable?.weightKg)
+        assertTrue(store.undoLast())
+        assertEquals(emptyList<TrainingSet>(), store.sets)
     }
 
     // Once the window closes the set goes out on its own — a hold that never ended would be a set

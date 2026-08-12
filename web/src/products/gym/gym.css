@@ -1317,14 +1317,6 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-detail-review:hover {
   text-decoration: underline;
 }
-/* The thesis of the screen, on the screen. Drawn only where there is a plan to be dim beside — a
-   session nobody planned has no comparison on it, and the line would be describing nothing. */
-.gym-detail-thesis {
-  margin: 14px 0 0;
-  font-size: 12.5px;
-  line-height: 1.5;
-  color: var(--gym-ink-faint);
-}
 
 /* ── Today ─────────────────────────────────────────────────── */
 
@@ -1403,20 +1395,14 @@ button.gym-set:focus-visible .gym-set-fix,
   line-height: 1.5;
   color: var(--gym-ink-dim);
 }
-/* The reason, as canon screen 1 draws it: dashed and dimmer than
-   the line above, because it is the room explaining itself rather
-   than telling a lifter to do anything. */
-.gym-first-why {
-  margin: 12px 0 0;
-  padding: 12px 13px;
-  border: 1px dashed var(--gym-line-strong);
-  border-radius: 12px;
-  font-size: 12.5px;
-  line-height: 1.55;
-  color: var(--gym-ink-faint);
-}
+/* NO DASHED BOX HERE ANY MORE (W9). This held `.gym-first-why` — the
+   room explaining itself rather than telling a lifter to do anything,
+   which its own comment admitted. The verb below had its own top margin
+   before and has its own now — nothing was inherited from the box, which
+   carried its own. One number moved: 12 → 14, so the button keeps a
+   little air now that the block above it is a single line. */
 .gym-first-write {
-  margin-top: 12px;
+  margin-top: 14px;
   height: 44px;
   display: flex;
   align-items: center;

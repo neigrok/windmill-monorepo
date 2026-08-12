@@ -74,17 +74,16 @@ struct DeviationSheet: View {
                     .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
             }
 
+            // "Asked once, when you leave the exercise — never again this session" was drawn here
+            // until 2026-08-12. It described when this sheet appears, to somebody already looking at
+            // it — which is the room explaining its own timing rather than telling a lifter anything
+            // about their training. The rule it described is unchanged and lives in `Deviation`.
             Button(action: onToday) {
                 Text("Today only")
                     .font(WindmillFont.body(16, .semibold))
                     .foregroundStyle(skin.inkDim)
                     .frame(maxWidth: .infinity, minHeight: GymTap.minimum + 6)
             }
-
-            Text("Asked once, when you leave the exercise — never again this session.")
-                .font(GymType.numeral(12))
-                .foregroundStyle(skin.inkFaint)
-                .lineSpacing(3)
         }
         .padding(WindmillSpace.x5)
         .frame(maxWidth: .infinity, alignment: .leading)

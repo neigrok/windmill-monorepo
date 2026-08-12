@@ -50,44 +50,11 @@ public enum Ladder {
         } ?? bands.count - 1
     }
 
-    // The caption §K hangs under the buttons — `over 50 kg · fine 2.5 · plate 10`. It is READ OFF THE
-    // TABLE and never typed beside it, so a retier moves the caption in the same edit that moves the
-    // steps.
-    //
-    // IT READS THE BUTTONS' OWN TWO ROWS, not one of them. ON A BOUNDARY the reversibility rule above
-    // sends the DOWN pair to the row below — at exactly 20 kg the buttons are −2.5 −1 +2.5 +5, which
-    // is the design's own "from exactly 20 kg, down lands on 19" — and a single `fine 2.5` over that
-    // would contradict the button it is drawn under, at the load an empty bar opens on. So a step
-    // whose two directions differ is spelled ↓ and ↑, and the caption says exactly what the four
-    // buttons do. Everywhere else the two rows agree and the line is §K's, unchanged.
-    //
-    // The band is the MAGNITUDE's, because the ladder is: band-assisted work at −20 kg steps like
-    // 20 kg does. The `±` says so where it matters, rather than telling a lifter looking at −20 kg
-    // that they are between 20 and 50.
-    public static func caption(for weight: Double) -> String {
-        let magnitude = abs(weight)
-        let down = steps(magnitude: magnitude, lightening: weight > 0)
-        let up = steps(magnitude: magnitude, lightening: weight < 0)
-        let fine = down.small == up.small
-            ? "fine \(text(up.small))"
-            : "fine \(text(down.small))↓ \(text(up.small))↑"
-        let plate = down.large == up.large
-            ? "plate \(text(up.large))"
-            : "plate \(text(down.large))↓ \(text(up.large))↑"
-        let moves = "\(fine) · \(plate)"
-        let index = band(magnitude: magnitude, lightening: false)
-        let row = bands[index]
-        let sign = weight < 0 ? "±" : ""
-        // A row is named by the bounds it has: the first has no floor, the last no ceiling, and a
-        // table of one row names no band at all.
-        switch (index == 0 ? nil : bands[index - 1].under, row.under) {
-        case (nil, let ceiling?): return "under \(sign)\(text(ceiling)) kg · \(moves)"
-        case (let floor?, nil): return "over \(sign)\(text(floor)) kg · \(moves)"
-        case (let floor?, let ceiling?):
-            return "\(sign)\(text(floor))–\(text(ceiling)) kg · \(moves)"
-        case (nil, nil): return moves
-        }
-    }
+    // THE CAPTION IS GONE, 2026-08-12 (§K). `over 50 kg · fine 2.5 · plate 10` was a line of text
+    // naming the numbers the four buttons already print, drawn under the buttons that print them —
+    // and the rebuilt logger sizes the fine step and the plate step apart instead, so the labels ARE
+    // the caption. The rule it described is untouched: the bands above, the golden that pins them,
+    // and the fine step that never crosses a boundary all stand exactly as W1a shipped them.
 
     // Half away from zero, which `.rounded()` already is — and it is a law, not a default, because
     // it is the mirror symmetry one level down: round(−x) must equal −round(x). JS `Math.round` is

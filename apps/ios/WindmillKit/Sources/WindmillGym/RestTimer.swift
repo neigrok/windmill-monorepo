@@ -17,9 +17,17 @@ import Foundation
 // late would be a false confirmation, so it is dropped rather than played (LoggerScreen). There is no
 // notification in this product to promise instead.
 //
-// Being over the target is not an error and must never look like one: the overrun counts UP, in the
-// accent, calm and quietly present. Nothing in this file may reach for alarm ink, and nothing here
-// moves the lifter on — the rest landing is a fact, not an instruction.
+// IT IS A HAIRLINE AND A NUMERAL NOW, where it was three strings and a button (§K, 2026-08-12). The
+// rule fills toward the target, so the rest is read in one glance from the far side of a rack
+// instead of parsed; the numeral stays beside it because a full rule says "the rest landed" and
+// nothing after that — seven seconds over and twenty minutes over fill it identically, and how long
+// a lifter has been standing there is a number about their training. What went is the LABEL:
+// `resting · target 3:00` named a setting they chose, on the screen, forever.
+//
+// Being over the target is not an error and must never look like one: the rule arrives full and
+// stays there and the numeral counts on with a plus, calm and quietly present. Nothing in this file
+// may reach for alarm ink, and nothing here moves the lifter on — the rest landing is a fact, not
+// an instruction.
 
 public enum Rest {
     // The dial, §I's own four, and `nil` is one of them rather than an absence of one.
@@ -50,17 +58,26 @@ public enum Rest {
         }
     }
 
-    public struct Line: Equatable {
-        public let label: String
-        public let time: String
-        public let overrun: Bool
+    // How much of the hairline is filled, 0 through 1. It is COMPUTED from the instant the set
+    // landed, like everything else here, so a phone that slept through the whole rest comes back to
+    // a full rule rather than to however long the app was awake for.
+    //
+    // A rest past its target is a FULL line and never a longer one. There is nothing after the
+    // target to draw and nothing this screen wants to say about it — a lifter three minutes over is
+    // resting, which is a decision and not a state to be reported on.
+    public static func filled(targetSeconds: Int, startedAtMs: Int64, now: Int64) -> Double {
+        guard targetSeconds > 0 else { return 1 }
+        let elapsed = Double(now - startedAtMs) / 1000
+        return min(1, max(0, elapsed / Double(targetSeconds)))
+    }
 
-        public init(targetSeconds: Int, startedAtMs: Int64, now: Int64) {
-            let left = Int64(targetSeconds) - (now - startedAtMs) / 1000
-            overrun = left < 0
-            label = (overrun ? "rest done · target " : "resting · target ")
-                + Readout.clock(Int64(targetSeconds) * 1000)
-            time = overrun ? "+" + Readout.clock(-left * 1000) : Readout.clock(left * 1000)
-        }
+    // WHAT THE RULE CANNOT SAY. It pins at full on the target and every overrun draws the same
+    // pixel, so the numeral is what tells a rest seven seconds past its target from one twenty
+    // minutes past it. Under the target it is what is left; past it, what has been taken on top,
+    // with a plus and in the same ink — over is a decision, not a fault.
+    public static func reading(targetSeconds: Int, startedAtMs: Int64, now: Int64) -> String {
+        let left = Int64(targetSeconds) - (now - startedAtMs) / 1000
+        guard left < 0 else { return Readout.clock(left * 1000) }
+        return "+" + Readout.clock(-left * 1000)
     }
 }

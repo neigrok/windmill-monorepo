@@ -43,12 +43,10 @@ struct RoutinesScreen: View {
                 if store.routines.isEmpty {
                     nothingYet
                 } else {
+                    // Sorted by last trained rather than by when they were made, and the list says so
+                    // by carrying each routine's own last-trained line — a caption under the list
+                    // naming the sort order is the room explaining itself.
                     ForEach(store.routines) { routine in row(routine) }
-                    Text("Sorted by last trained, not by when you made them.")
-                        .font(GymType.numeral(12))
-                        .foregroundStyle(skin.inkFaint)
-                        .lineSpacing(3)
-                        .padding(.top, WindmillSpace.x2)
                 }
                 // AT THE FOOT, UNDER THE PROGRAM AND NEVER IN FRONT OF IT — including when there is
                 // no program yet, which is the one moment an agent reading a written plan is worth

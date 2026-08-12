@@ -101,11 +101,17 @@ export const INVITATION_FREE = 'It costs nothing.';
 
 // ── Screen 13 · the grant, in the lifter's words ─────────────────────────────────────────────────
 
-// Said beside the DOOR rather than at the top of the room, because it describes what the door leads
-// to: gym has words about a training log, and the account has the approval screen and the revoke.
-export const GRANT_LINE =
-  'Windmill speaks MCP, and one URL is the whole of it. The approval screen belongs to your account '
-  + '— these are the words gym puts around it.';
+// Said beside the DOOR rather than at the top of the room, because it is what a lifter needs before
+// tapping it: one URL is the whole of the job.
+//
+// THE SECOND HALF WENT IN W9. It read "the approval screen belongs to your account — these are the
+// words gym puts around it", which is this product describing its own seams to somebody who only
+// wants to connect a tool. Whose screen renders the consent is our concern; the copy commenting on
+// itself is doubly so. Of the division of labour it named, the half a lifter can act on is still on
+// the screen, one paragraph BELOW the door: `DISCONNECT_LINE` sends them to the account's own
+// Settings → Connected tools. The other half — that gym only supplied the words — is a fact about
+// us and is now said nowhere on the glass, which is the point.
+export const GRANT_LINE = 'Windmill speaks MCP, and one URL is the whole of it.';
 
 // WHAT EACH LEVEL BUYS, IN GYM'S WORDS, and this is the one vocabulary: the landing draws the same
 // three lines from here, so the sentence describing `gym:write` cannot say one thing on a marketing

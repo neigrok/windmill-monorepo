@@ -413,7 +413,7 @@ private fun KeepAsRoutine(
         }
 
         Text(
-            "In the order you did them, with the weights you actually used as next week’s targets.",
+            "Today’s weights become next week’s targets.",
             style = GymType.numeral(12).copy(lineHeight = 17.sp),
             color = GymSkin.inkFaint,
         )

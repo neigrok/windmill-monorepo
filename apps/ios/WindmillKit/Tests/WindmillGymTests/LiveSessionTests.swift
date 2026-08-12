@@ -3,7 +3,8 @@ import XCTest
 
 // The decisions the logger makes before it draws anything: which movements a session holds and in
 // what order, where a lifter is standing when they come back to a workout that never stopped, and
-// the four different things the card above the weight is allowed to say.
+// the two halves of the counter — the set number over the numeral, the target under the movement's
+// name.
 
 private func aSet(_ exerciseId: String, _ weightKg: Double, _ reps: Int,
                   at completedAtMs: Int64, kind: SetKind = .working, id: String = "") -> TrainingSet {
@@ -63,20 +64,20 @@ final class LiveLinesTests: XCTestCase {
         let entry = PlanEntry(exerciseId: "bench-press", sets: 3, reps: 5, weightKg: 82.5)
         let counter = LiveLines.counter(workingSetsToday: 3, planEntry: entry)
         XCTAssertEqual(counter.count, "set 4 of 3")
-        XCTAssertEqual(counter.tail, "  ·  plan 3 × 5 @ 82.5")
+        XCTAssertEqual(counter.plan, "plan 3 × 5 @ 82.5")
     }
 
     func testAMovementWithNoPlanSaysSoRatherThanBorrowingATarget() {
         let counter = LiveLines.counter(workingSetsToday: 0, planEntry: nil)
         XCTAssertEqual(counter.count, "set 1")
-        XCTAssertEqual(counter.tail, "  ·  no target")
+        XCTAssertEqual(counter.plan, "no target")
     }
 
     // A routine line that names sets and reps and leaves the load to last time prints no load —
     // never a zero, which would be a target nobody wrote.
     func testAPlanWithNoTargetWeightPrintsNoLoad() {
         let entry = PlanEntry(exerciseId: "chin-up", sets: 3, reps: 8)
-        XCTAssertEqual(LiveLines.counter(workingSetsToday: 1, planEntry: entry).tail, "  ·  plan 3 × 8")
+        XCTAssertEqual(LiveLines.counter(workingSetsToday: 1, planEntry: entry).plan, "plan 3 × 8")
     }
 
     // A rep target the routine declined to set is `max` — a chin-up taken to whatever it gives that
@@ -86,71 +87,11 @@ final class LiveLinesTests: XCTestCase {
         let entry = PlanEntry(exerciseId: "chin-up", sets: 3)
         let counter = LiveLines.counter(workingSetsToday: 2, planEntry: entry)
         XCTAssertEqual(counter.count, "set 3 of 3")
-        XCTAssertEqual(counter.tail, "  ·  plan 3 × max")
+        XCTAssertEqual(counter.plan, "plan 3 × max")
 
         let loaded = PlanEntry(exerciseId: "chin-up", sets: 3, weightKg: 10)
-        XCTAssertEqual(LiveLines.counter(workingSetsToday: 0, planEntry: loaded).tail,
-                       "  ·  plan 3 × max @ 10")
-    }
-
-    // Four states, not two. A read still in flight and a read that failed are different facts, and
-    // ONLY an answer may say "first time" — a card claiming no history over a movement squatted for
-    // a year, because the phone was in a basement, is the product lying in the pixel it exists for.
-    func testTheCardTellsAPendingReadFromAFailedOne() {
-        let reading = LiveLines.prefillCard(lastTime: nil, planEntry: nil, routine: nil,
-                                            readFailed: false, now: 0)
-        XCTAssertEqual(reading, LiveLines.Card(title: "Last time", body: "reading your log…"))
-
-        let failed = LiveLines.prefillCard(lastTime: nil, planEntry: nil, routine: nil,
-                                           readFailed: true, now: 0)
-        XCTAssertEqual(failed, LiveLines.Card(title: "Last time", body: "the log didn’t answer"))
-    }
-
-    func testAMovementNeverTrainedSaysSoAndNamesThePlansNumber() {
-        let answered = LastTime(exerciseId: "zercher-squat")
-        let entry = PlanEntry(exerciseId: "zercher-squat", sets: 3, reps: 5, weightKg: 60)
-
-        XCTAssertEqual(LiveLines.prefillCard(lastTime: answered, planEntry: entry, routine: nil,
-                                             readFailed: false, now: 0),
-                       LiveLines.Card(title: "First time logging this",
-                                      body: "no history — dialled to the plan’s 60 kg"))
-
-        XCTAssertEqual(LiveLines.prefillCard(lastTime: answered, planEntry: nil, routine: nil,
-                                             readFailed: false, now: 0),
-                       LiveLines.Card(title: "First time logging this",
-                                      body: "no history — start where you like"))
-    }
-
-    // The card names the day of the program that block came from when it was not this one. Hiding
-    // that difference is what makes a lifter read Tuesday's numbers as Thursday's.
-    func testTheCardNamesTheOtherRoutineTheBlockCameFrom() {
-        let day: Int64 = 1_754_000_000_000
-        let answer = LastTime(
-            exerciseId: "bench-press",
-            session: Session(id: "ses_1", startedAtMs: day, finishedAtMs: day + 1),
-            routine: "Push B",
-            sets: [aSet("bench-press", 80, 5, at: day), aSet("bench-press", 80, 5, at: day + 1)]
-        )
-        let card = LiveLines.prefillCard(lastTime: answer, planEntry: nil, routine: "Push A",
-                                         readFailed: false, now: day + 3 * 86_400_000)
-        XCTAssertEqual(card.title, "Last time · \(Readout.day(day)) · 3 days ago  ·  Push B")
-        XCTAssertEqual(card.body, "80 × 5,   80 × 5")
-
-        let sameDay = LiveLines.prefillCard(lastTime: answer, planEntry: nil, routine: "Push B",
-                                            readFailed: false, now: day + 3 * 86_400_000)
-        XCTAssertEqual(sameDay.title, "Last time · \(Readout.day(day)) · 3 days ago")
-    }
-
-    func testTheCardShowsFourSetsAndCountsTheRest() {
-        let day: Int64 = 1_754_000_000_000
-        let answer = LastTime(
-            exerciseId: "bench-press",
-            session: Session(id: "ses_1", startedAtMs: day, finishedAtMs: day + 1),
-            sets: (0..<6).map { aSet("bench-press", 80, 5, at: day + Int64($0)) }
-        )
-        let card = LiveLines.prefillCard(lastTime: answer, planEntry: nil, routine: nil,
-                                         readFailed: false, now: day)
-        XCTAssertEqual(card.body, "80 × 5,   80 × 5,   80 × 5,   80 × 5,   +2 more")
+        XCTAssertEqual(LiveLines.counter(workingSetsToday: 0, planEntry: loaded).plan,
+                       "plan 3 × max @ 10")
     }
 
     // Warmups carry a w and never advance the counter — they count toward no volume, no record and
@@ -165,7 +106,7 @@ final class LiveLinesTests: XCTestCase {
         XCTAssertEqual(rows.map(\.index), ["w", "1", "2"])
         XCTAssertEqual(rows.map(\.note), ["warmup", "", "on this device"])
         XCTAssertEqual(rows.map(\.value), ["40 × 8", "82.5 × 5", "82.5 × 5"])
-        XCTAssertEqual(rows.map(\.isWarmup), [true, false, false])
+        XCTAssertEqual(rows.map(\.countsTowardNothing), [true, false, false])
     }
 
     // ONE WORD FOR WHAT COUNTS. A drop and a failure are things that happened to a set the plan never
@@ -173,9 +114,13 @@ final class LiveLinesTests: XCTestCase {
     // same word log.js `workingSetsOf` counts on, over the same stored session. The phone counted
     // everything that was not a warmup and said "set 5 of 5" where the desk said "set 4 of 5".
     //
-    // THE TODAY LIST IS DELIBERATELY NOT THIS RULE: its ordinal numbers every set that is not a
-    // warmup, drops included, because that column is the record of what was performed and not a
-    // count toward the plan — Logger.jsx's TodayList numbers them the same way.
+    // THE TODAY COLUMN IS DELIBERATELY NOT THIS RULE: its ordinal numbers every set that is not a
+    // warmup, drops included, because that column is the record of what was PERFORMED and not a
+    // count toward the plan. (It used to be justified by Logger.jsx numbering them the same way;
+    // the web stopped lifting on 2026-08-09 and there is no second copy to agree with — the reason
+    // stands on its own.) So the two numbers on the logger disagree on purpose, and the column has
+    // to say why: every kind that counts toward nothing is NAMED in the row's own note, or a drop
+    // numbered 3 under a counter reading "set 3 of 5" is two accounts of one movement.
     func testOnlyWorkingSetsCountTowardThePlanCounterAndTheJumpSheet() {
         let sets = [
             aSet("bench-press", 40, 8, at: 900, kind: .warmup, id: "w1"),
@@ -196,8 +141,57 @@ final class LiveLinesTests: XCTestCase {
                                       current: "bench-press")
         XCTAssertEqual(rows.map(\.meta), ["2 of 5 sets"])
 
-        XCTAssertEqual(LiveLines.rows(sets, stalled: []).map(\.index), ["w", "1", "2", "3", "4"],
-                       "the today list numbers what was performed, which is not what counts")
+        let column = LiveLines.rows(sets, stalled: [])
+        XCTAssertEqual(column.map(\.index), ["w", "1", "2", "3", "4"],
+                       "the today column numbers what was performed, which is not what counts")
+        XCTAssertEqual(column.map(\.note), ["warmup", "", "", "drop", "failure"],
+                       "and it names every kind that counts toward nothing, so the column and the "
+                       + "counter above it cannot be read as one number")
+        XCTAssertEqual(column.map(\.countsTowardNothing), [true, false, false, true, true])
+    }
+
+    // THE COLUMN IS THIS MOVEMENT'S SETS AND NOTHING ELSE, which is the whole of it nine times in
+    // ten: the walk is standing where the sets went in.
+    func testTheColumnDrawsTheMovementInHand() {
+        let sets = [aSet("bench-press", 82.5, 5, at: 1_000, id: "s1"),
+                    aSet("overhead-press", 45, 5, at: 2_000, id: "s2")]
+
+        let column = LiveLines.column(sets, of: "bench-press", undoable: nil, catalog: [], stalled: [])
+        XCTAssertEqual(column.map(\.id), ["s1"])
+        XCTAssertEqual(column.map(\.value), ["82.5 × 5"])
+        XCTAssertEqual(column.map(\.note), [""])
+    }
+
+    // AND THE UNDO TRAVELS. §K hung the verb on the row of the set it takes back and put two
+    // chevrons in the title one tap away — so a set logged seconds before a walk to the next
+    // movement would arm an Undo whose row is on no screen at all, which is the verb deleted rather
+    // than moved. The row follows the lifter, carrying the movement it belongs to: unnamed, it would
+    // be this column claiming a lift that happened somewhere else.
+    func testAnUndoStillOwedFollowsTheWalkToTheNextMovement() {
+        let bench = aSet("bench-press", 82.5, 5, at: 1_000, id: "s1")
+        let sets = [bench, aSet("overhead-press", 45, 5, at: 2_000, id: "s2")]
+        let catalog = [Exercise(id: "bench-press", name: "Bench Press")]
+
+        let column = LiveLines.column(sets, of: "overhead-press", undoable: bench,
+                                      catalog: catalog, stalled: ["s1"])
+        XCTAssertEqual(column.map(\.id), ["s2", "s1"], "it is drawn last, under the sets of the "
+                       + "movement in hand, where a bottom-anchored column cannot scroll it away")
+        XCTAssertEqual(column.map(\.value), ["45 × 5", "82.5 × 5"])
+        XCTAssertEqual(column.map(\.index), ["1", "1"], "and it keeps ITS movement's ordinal")
+        XCTAssertEqual(column.map(\.note), ["", "Bench Press"])
+        XCTAssertEqual(column.map(\.isOnThisDevice), [false, false],
+                       "where it is saved is not the fact a row about to be withdrawn carries")
+    }
+
+    // Standing on the movement the set went into, it is one row and not two — the same set drawn
+    // twice would be the column doubling a lift.
+    func testTheTravellingUndoIsNotDrawnTwiceOnItsOwnMovement() {
+        let bench = aSet("bench-press", 82.5, 5, at: 1_000, id: "s1")
+        let column = LiveLines.column([bench], of: "bench-press", undoable: bench,
+                                      catalog: [Exercise(id: "bench-press", name: "Bench Press")],
+                                      stalled: ["s1"])
+        XCTAssertEqual(column.map(\.id), ["s1"])
+        XCTAssertEqual(column.map(\.note), ["on this device"])
     }
 
     // A movement with nothing in it says what would start it, rather than reading as a mistake. The

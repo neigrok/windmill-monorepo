@@ -72,14 +72,14 @@ class LiveLinesTests {
         val entry = PlanEntry(exerciseId = "bench-press", sets = 3, reps = 5, weightKg = 82.5)
         val counter = LiveLines.counter(workingSetsToday = 3, planEntry = entry)
         assertEquals("set 4 of 3", counter.count)
-        assertEquals("  ·  plan 3 × 5 @ 82.5", counter.tail)
+        assertEquals("plan 3 × 5 @ 82.5", counter.plan)
     }
 
     @Test
     fun testAMovementWithNoPlanSaysSoRatherThanBorrowingATarget() {
         val counter = LiveLines.counter(workingSetsToday = 0, planEntry = null)
         assertEquals("set 1", counter.count)
-        assertEquals("  ·  no target", counter.tail)
+        assertEquals("no target", counter.plan)
     }
 
     // A routine line that names sets and reps and leaves the load to last time prints no load —
@@ -87,7 +87,7 @@ class LiveLinesTests {
     @Test
     fun testAPlanWithNoTargetWeightPrintsNoLoad() {
         val entry = PlanEntry(exerciseId = "chin-up", sets = 3, reps = 8)
-        assertEquals("  ·  plan 3 × 8", LiveLines.counter(workingSetsToday = 1, planEntry = entry).tail)
+        assertEquals("plan 3 × 8", LiveLines.counter(workingSetsToday = 1, planEntry = entry).plan)
     }
 
     // A rep target the routine declined to set is `max` — a chin-up taken to whatever it gives that
@@ -98,11 +98,11 @@ class LiveLinesTests {
         val entry = PlanEntry(exerciseId = "chin-up", sets = 3)
         val counter = LiveLines.counter(workingSetsToday = 2, planEntry = entry)
         assertEquals("set 3 of 3", counter.count)
-        assertEquals("  ·  plan 3 × max", counter.tail)
+        assertEquals("plan 3 × max", counter.plan)
 
         val loaded = PlanEntry(exerciseId = "chin-up", sets = 3, weightKg = 10.0)
-        assertEquals("  ·  plan 3 × max @ 10",
-                     LiveLines.counter(workingSetsToday = 0, planEntry = loaded).tail)
+        assertEquals("plan 3 × max @ 10",
+                     LiveLines.counter(workingSetsToday = 0, planEntry = loaded).plan)
     }
 
     // Four states, not two. A read still in flight and a read that failed are different facts, and

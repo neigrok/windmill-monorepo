@@ -72,10 +72,14 @@ object Ladder {
         return listOf("−${text(down.large)}", "−${text(down.small)}", "+${text(up.small)}", "+${text(up.large)}")
     }
 
-    // §K'S CAPTION UNDER THE BUTTONS, read off the band table rather than typed beside it: `over 50
-    // kg · fine 2.5 · plate 10`. It exists because the labels re-render as the load climbs and a
-    // lifter watching −5 become −10 deserves to know why — and it is composed from `bands` for the
-    // same reason the labels are, so a retier moves the caption with the buttons or moves neither.
+    // THE BAND, SAID IN WORDS: `over 50 kg · fine 2.5 · plate 10`, read off the band table rather
+    // than typed beside it, so a retier moves this with the buttons or moves neither.
+    //
+    // NO SCREEN DRAWS IT ANY MORE. It was the caption under the ladder until §K retired it in W9 —
+    // the fine button is the program step and the plate button is a visibly smaller neighbour, so
+    // the labels already say what this sentence said, and nothing on that glass explains the glass.
+    // It stays here because the golden's own tests read it band by band, and because a table that
+    // can state itself is how a retier gets caught; it is not a line to put back on a screen.
     //
     // The band is read the way a LIFT reads it (`<`), because the caption says where you are
     // standing rather than what the down key will do — at exactly 20 the down key answers 19 out of

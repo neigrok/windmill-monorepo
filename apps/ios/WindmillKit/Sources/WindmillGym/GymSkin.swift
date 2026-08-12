@@ -100,9 +100,14 @@ public extension EnvironmentValues {
 // The weight is the exception to "numerals are mono": it is the display face, heavy, at the one
 // size gym extends the scale to (the brand's scale stops at 60). It is the loudest thing on screen
 // on purpose, and it is the only place in the product that is allowed to be.
+//
+// The reps are its TAIL and not a second number (§K): `105 kg × 5` is one reading, weight dominant,
+// because the weight is the setting and the reps are the outcome. They stood at 54 while the two
+// competed on lines of their own — a lifter's eye had to choose which of two loud numerals to land
+// on, and half the time it chose wrong.
 public enum GymType {
     public static let weight = WindmillFont.display(104, .heavy).monospacedDigit()
-    public static let reps = WindmillFont.display(54, .heavy).monospacedDigit()
+    public static let reps = WindmillFont.display(36, .heavy).monospacedDigit()
     // The same readout one step down, for the sheet that CORRECTS a set rather than logs one (§G18).
     // Still the loudest thing in front of the thumb, but a sheet is not the room and the session it
     // is laid over has to stay readable behind it.

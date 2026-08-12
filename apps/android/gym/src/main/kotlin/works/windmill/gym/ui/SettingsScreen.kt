@@ -207,14 +207,18 @@ private fun UnitsRow(units: Units, onPick: (Units) -> Unit) {
                 }
             }
         }
-        Caption("Changes the display, never the stored value. History does not get rewritten.")
+        Caption("Display only — nothing stored changes.")
         Caption("This phone still draws every weight in kilograms — nothing on this screen converts one. The choice is kept with your gym settings and goes with you when you sign in.")
     }
 }
 
-// ROW 2 — what your gym actually owns. The chips are the plates the design draws plus anything the
-// document already holds, so a rack set from another surface still has somewhere to be turned off.
-// One side of the bar, always: the numbers here are what you slide on, not what the bar weighs.
+// ROW 2 — what your gym owns. The chips are the plates the design draws plus anything the document
+// already holds, so a rack set from another surface still has somewhere to be turned off. One side
+// of the bar, always: the numbers here are what you slide on, not what the bar weighs.
+//
+// WHERE THIS RACK IS READ is no longer said here (W9). The logger's plate line does the saying, on
+// the screen where it matters, and a caption explaining which other screen consumes this row was
+// the settings screen describing the product to itself.
 @Composable
 private fun PlateRow(
     preferences: GymPreferences,
@@ -264,7 +268,7 @@ private fun PlateRow(
                 }
             }
         }
-        Caption("One side of the bar. The readout under the weight comes from this — and says so when these plates can’t make the number.")
+        Caption("What your gym owns, per side.")
     }
 }
 
@@ -418,9 +422,9 @@ private fun ConnectedLogRow(isSignedIn: Boolean, origin: String) {
     }
 }
 
-// The closing note §I ends on, saying where everything this section deliberately does not hold
-// lives — plus the one of its own rows this surface has not built, named rather than drawn as a
-// door that opens nothing.
+// WHERE THE THINGS THIS SECTION DOES NOT HOLD ACTUALLY ARE — two facts of wayfinding, and no longer
+// the paragraph around them. That gym does not restate the account screens and owns no theme switch
+// is an argument for how this section is built; a lifter hunting for Delete needs the address.
 @Composable
 private fun ClosingNote() {
     Column(
@@ -432,15 +436,15 @@ private fun ClosingNote() {
             .padding(WindmillSpace.x3),
     ) {
         Text(
-            "Account, appearance, plan, sessions, devices and delete live in You. Gym does not restate them, and it has no theme switch of its own.",
+            "Account, appearance, plan, sessions, devices and delete live in You.",
             style = GymType.numeral(12).copy(lineHeight = 18.sp),
             color = GymSkin.inkFaint,
         )
         // THE CONNECTED LOG CAME OUT OF THIS SENTENCE IN W8 and into a row of its own, so what is
-        // left is the export — still a web page, and still not drawn as a door here, because this
-        // app's one API client reads JSON and the export route answers CSV.
+        // left is the export — still a web page, because this app's one API client reads JSON and
+        // the export route answers CSV. It is named rather than drawn as a door that opens nothing.
         Text(
-            "Your CSV export is a web page for now — it has no screen on this phone yet, so it is not drawn here as a door.",
+            "Your CSV export is on the web — this phone has no screen for it yet.",
             style = GymType.numeral(12).copy(lineHeight = 18.sp),
             color = GymSkin.inkFaint,
         )

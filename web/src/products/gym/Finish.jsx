@@ -146,11 +146,16 @@ export function FinishScreen({ id, log }) {
 // The one destructive action in the product, and it sits here because a three-set session is usually
 // a phone left running rather than a workout. It is offered only after the close — while a session
 // is open, only the device holding the offline queue knows every set landed (gymApi.js).
+//
+// THE REASON IS IN THIS COMMENT AND NOT ON THE SCREEN (W9). The line used to open "a session this
+// short is usually a phone left running" — our generalisation about sessions, told to a lifter
+// looking at one of their own. The tiles directly above already say 11m and 3 working sets, which is
+// the fact; what was left to say is the question.
 function ShortSession({ id, log }) {
   const [dropping, setDropping] = useState(false);
   return (
     <section className="gym-short">
-      <p className="gym-short-line">A session this short is usually a phone left running. Keep it in the log, or drop it?</p>
+      <p className="gym-short-line">Keep it in the log, or drop it?</p>
       <div className="gym-finish-foot">
         <a className="gym-short-keep" href="#/gym">Keep it</a>
         <button
@@ -220,9 +225,7 @@ function KeepAsRoutine({ session, sets, catalog, log }) {
           </li>
         ))}
       </ul>
-      <p className="gym-keep-line">
-        In the order you did them, with the weights you actually used as next week’s targets.
-      </p>
+      <p className="gym-keep-line">Today’s weights become next week’s targets.</p>
       <div className="gym-finish-foot">
         <button
           type="button"

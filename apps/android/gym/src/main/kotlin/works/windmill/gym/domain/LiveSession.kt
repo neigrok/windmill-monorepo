@@ -64,19 +64,26 @@ object LiveOrder {
 }
 
 object LiveLines {
+    // TWO FACTS AND NOT ONE SENTENCE, because §K draws them in two places: what the plan asks for
+    // sits under the movement's name, and which set this is sits over the number being dialled. The
+    // separator that used to join them was a layout decision living in the domain.
     data class Counter(
         val count: String,      // "set 3 of 5"
-        val tail: String,       // "  ·  plan 5 × 5 @ 82.5"
+        val plan: String,       // "plan 5 × 5 @ 82.5" · "no target"
     )
 
     data class Card(val title: String, val body: String)
+
+    // A SET STILL ON THIS DEVICE SAYS SO IN ITS OWN ROW, and this is the only copy of that sentence:
+    // the logger's column and the assembly list both read it here rather than each spelling it, so
+    // the two cannot drift into disagreeing about the same set.
+    const val onThisDevice = "on this device"
 
     data class Row(
         val id: String,
         val index: String,      // the performed ordinal, or "w" — only a warmup skips a number
         val value: String,
         val note: String,
-        val time: String,
         val isWarmup: Boolean,
         val isOnThisDevice: Boolean,
     )
@@ -101,11 +108,11 @@ object LiveLines {
     // movement gives that day.
     fun counter(workingSetsToday: Int, planEntry: PlanEntry?): Counter {
         if (planEntry == null) {
-            return Counter(count = "set ${workingSetsToday + 1}", tail = "  ·  no target")
+            return Counter(count = "set ${workingSetsToday + 1}", plan = "no target")
         }
         val load = planEntry.weightKg?.let { " @ ${Readout.weight(it)}" } ?: ""
         return Counter(count = "set ${workingSetsToday + 1} of ${planEntry.sets}",
-                       tail = "  ·  plan ${planEntry.sets} × ${Readout.repTarget(planEntry.reps)}$load")
+                       plan = "plan ${planEntry.sets} × ${Readout.repTarget(planEntry.reps)}$load")
     }
 
     // FOUR STATES, NOT TWO, and the difference between them is the whole reason this card exists.
@@ -137,9 +144,10 @@ object LiveLines {
         )
     }
 
-    // This movement's sets in the order performed, with real wall-clock times and never "2 minutes
-    // ago" — the lifter is reconstructing a session, not reading a feed. A set still on this device
-    // says so plainly, in its own row, because that is where the fact belongs.
+    // This movement's sets in the order performed — `1 · 105 × 5 ✓`, which is how §K answers "where
+    // am I" by looking. The wall-clock time each set landed at came OFF this row with the rebuild:
+    // the logger draws the session you are standing in, where "when" is now, and reconstructing a
+    // past one is §G17's job on the session read back, which reads its own instants.
     fun rows(sets: List<TrainingSet>, stalled: Set<String>): List<Row> {
         var ordinal = 0
         return sets.map { set ->
@@ -149,8 +157,7 @@ object LiveLines {
             Row(id = set.id,
                 index = if (isWarmup) "w" else ordinal.toString(),
                 value = Readout.effort(set.weightKg, set.reps),
-                note = if (isWarmup) "warmup" else (if (held) "on this device" else ""),
-                time = Readout.time(set.completedAtMs),
+                note = if (isWarmup) "warmup" else (if (held) onThisDevice else ""),
                 isWarmup = isWarmup,
                 isOnThisDevice = held)
         }

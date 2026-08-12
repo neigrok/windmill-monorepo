@@ -53,23 +53,21 @@ public enum LiveOrder {
 }
 
 public enum LiveLines {
+    // TWO FACTS AND TWO STRINGS, because §K sends them to two places: the count sits over the
+    // numeral and the target under the movement's name. They used to be one line joined by a
+    // separator this struct carried, which is a layout decision a domain string had no business
+    // holding.
     public struct Counter: Equatable {
         public let count: String        // "set 3 of 5"
-        public let tail: String         // "  ·  plan 5 × 5 @ 82.5"
-    }
-
-    public struct Card: Equatable {
-        public let title: String
-        public let body: String
+        public let plan: String         // "plan 5 × 5 @ 82.5" · "no target"
     }
 
     public struct Row: Equatable, Identifiable {
         public let id: String
         public let index: String        // the performed ordinal, or "w" — only a warmup skips a number
         public let value: String
-        public let note: String
-        public let time: String
-        public let isWarmup: Bool
+        public let note: String         // the kind, when it is not a working set — else where it is saved
+        public let countsTowardNothing: Bool
         public let isOnThisDevice: Bool
     }
 
@@ -94,46 +92,20 @@ public enum LiveLines {
     // movement gives that day.
     public static func counter(workingSetsToday: Int, planEntry: PlanEntry?) -> Counter {
         guard let planEntry else {
-            return Counter(count: "set \(workingSetsToday + 1)", tail: "  ·  no target")
+            return Counter(count: "set \(workingSetsToday + 1)", plan: "no target")
         }
         let load = planEntry.weightKg.map { " @ \(Readout.weight($0))" } ?? ""
         return Counter(count: "set \(workingSetsToday + 1) of \(planEntry.sets)",
-                       tail: "  ·  plan \(planEntry.sets) × \(Readout.repTarget(planEntry.reps))\(load)")
+                       plan: "plan \(planEntry.sets) × \(Readout.repTarget(planEntry.reps))\(load)")
     }
 
-    // FOUR STATES, NOT TWO, and the difference between them is the whole reason this card exists.
-    // A read still in flight says so and waits; a read that came back empty-handed says THAT instead
-    // of going on claiming to be reading; and ONLY an answer may say "first time". A card drawing
-    // "no history" over a movement the lifter has squatted for a year, because the phone was in a
-    // basement, is the product lying in the one pixel it exists for.
-    public static func prefillCard(lastTime: LastTime?, planEntry: PlanEntry?, routine: String?,
-                                   readFailed: Bool, now: Int64) -> Card {
-        guard let lastTime else {
-            return Card(title: "Last time", body: readFailed ? "the log didn’t answer" : "reading your log…")
-        }
-        guard let session = lastTime.session else {
-            guard let planned = planEntry?.weightKg else {
-                return Card(title: "First time logging this", body: "no history — start where you like")
-            }
-            return Card(title: "First time logging this",
-                        body: "no history — dialled to the plan’s \(Readout.weight(planned)) kg")
-        }
-        // Which day of the program that block belonged to, when it was not this one — hiding the
-        // difference is what would make a lifter read Tuesday's numbers as Thursday's.
-        let elsewhere = lastTime.routine.flatMap { $0 == routine ? nil : "  ·  \($0)" } ?? ""
-        let shown = lastTime.sets.prefix(4)
-            .map { Readout.effort(weightKg: $0.weightKg, reps: $0.reps) }
-            .joined(separator: ",   ")
-        let more = lastTime.sets.count > 4 ? ",   +\(lastTime.sets.count - 4) more" : ""
-        return Card(
-            title: "Last time · \(Readout.day(session.startedAtMs)) · \(Readout.ago(session.startedAtMs, now: now))\(elsewhere)",
-            body: shown + more
-        )
-    }
-
-    // This movement's sets in the order performed, with real wall-clock times and never "2 minutes
-    // ago" — the lifter is reconstructing a session, not reading a feed. A set still on this device
-    // says so plainly, in its own row, because that is where the fact belongs.
+    // This movement's sets in the order performed, which is why the row carries no wall-clock any
+    // more: at the rack a row is read for its numbers. The instant stays on the set itself
+    // (`completedAtMs`, what everything here sorts by) and no screen in this app draws it now — the
+    // log and the session detail time the SESSION, never its rows. A set the log has not taken yet
+    // says so in its own row, and a kind that counts toward nothing is NAMED there, because a drop
+    // set numbered beside a working one is the column claiming a lift the plan counter above it
+    // does not count.
     public static func rows(_ sets: [TrainingSet], stalled: Set<String>) -> [Row] {
         var ordinal = 0
         return sets.map { set in
@@ -143,11 +115,33 @@ public enum LiveLines {
             return Row(id: set.id,
                        index: isWarmup ? "w" : String(ordinal),
                        value: Readout.effort(weightKg: set.weightKg, reps: set.reps),
-                       note: isWarmup ? "warmup" : (held ? "on this device" : ""),
-                       time: Readout.time(set.completedAtMs),
-                       isWarmup: isWarmup,
+                       note: set.kind == .working ? (held ? "on this device" : "") : set.kind.rawValue,
+                       countsTowardNothing: set.kind != .working,
                        isOnThisDevice: held)
         }
+    }
+
+    // THE COLUMN THE LOGGER DRAWS (§K) — this movement's sets, and then the one row an Undo may
+    // still be owed on when the walk has already moved past the movement it belongs to.
+    //
+    // §K put Undo on the row of the set it takes back, and the title's chevrons can change the
+    // movement INSIDE the undo window: a lifter logs a set, taps `›`, and the row that carried the
+    // verb is no longer in any column. A verb with nowhere to be drawn is a verb that is gone, so
+    // the row travels — NAMED with the movement it would take the set off, because a foreign row
+    // sitting unlabelled under this movement's would be the column claiming a lift that did not
+    // happen here. It leaves again the moment the window closes, with the set that landed.
+    public static func column(_ sets: [TrainingSet], of movement: String?, undoable: TrainingSet?,
+                              catalog: [Exercise], stalled: Set<String>) -> [Row] {
+        let here = rows(sets.filter { $0.exerciseId == movement }, stalled: stalled)
+        guard let undoable, undoable.exerciseId != movement,
+              let left = rows(sets.filter { $0.exerciseId == undoable.exerciseId }, stalled: stalled)
+                  .first(where: { $0.id == undoable.id })
+        else { return here }
+        // The note slot carries the movement rather than "on this device": the row is about to be
+        // withdrawn, and where it is saved is not the fact the lifter needs to read off it.
+        return here + [Row(id: left.id, index: left.index, value: left.value,
+                           note: Readout.movement(undoable.exerciseId, in: catalog),
+                           countsTowardNothing: left.countsTowardNothing, isOnThisDevice: false)]
     }
 
     // ONE WORD FOR WHAT COUNTS. A set counts toward a target, toward a plan counter and toward the

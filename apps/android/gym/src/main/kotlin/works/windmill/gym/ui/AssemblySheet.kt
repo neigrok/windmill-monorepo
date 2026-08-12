@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import kotlin.math.abs
 import works.windmill.gym.domain.LiveLines
+import works.windmill.gym.domain.Readout
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
@@ -61,6 +62,7 @@ import works.windmill.platform.design.WindmillSpace
 @Composable
 fun AssemblySheet(
     rows: List<LiveLines.MovementRow>,
+    elapsedMs: Long,
     onJump: (String) -> Unit,
     onReorder: (from: Int, to: Int) -> Unit,
     // Answers whether the movement actually left. A row that could not go slides back rather than
@@ -91,6 +93,12 @@ fun AssemblySheet(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("This session", style = WindmillFont.display(20), color = GymSkin.ink)
+            Spacer(Modifier.width(WindmillSpace.x3))
+            // HOW LONG THIS WORKOUT HAS BEEN RUNNING, which is the context line the design gives an
+            // in-session list (§A2's own head carries it). It moved here in W9: the logger's one
+            // clock is the rest, and two clocks in one strip is the lifter reading the wrong number
+            // between sets.
+            Text(Readout.clock(elapsedMs), style = GymType.numeral(13), color = GymSkin.inkFaint)
             Spacer(Modifier.weight(1f))
             Box(
                 Modifier.heightIn(min = GymTap.minimum).clickable(onClick = onClose),

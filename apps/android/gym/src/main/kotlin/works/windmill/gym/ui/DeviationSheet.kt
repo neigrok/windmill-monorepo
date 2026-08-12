@@ -27,6 +27,9 @@ import works.windmill.platform.design.WindmillSpace
 // answered; what is at stake is only whether next week's target moves with the lifter. The offer
 // itself is the domain's (DeviationOffer.leaving) and is raised by LoggerScreen at the exercise
 // boundary — this sheet only says it and takes the answer.
+//
+// It is asked once per movement per session and never again, which is a fact about the sheet rather
+// than a line ON it: the rule lives in `asked` and the lifter finds it out by not being asked twice.
 @Composable
 fun DeviationSheet(
     deviation: DeviationOffer,
@@ -71,12 +74,5 @@ fun DeviationSheet(
         ) {
             Text("Today only", style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.inkDim)
         }
-
-        Text(
-            "Asked once, when you leave the exercise — never again this session.",
-            style = GymType.numeral(12),
-            color = GymSkin.inkFaint,
-            lineHeight = 17.sp,
-        )
     }
 }

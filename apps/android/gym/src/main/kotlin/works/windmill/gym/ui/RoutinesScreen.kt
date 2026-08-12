@@ -110,13 +110,6 @@ fun RoutinesScreen(
                 RoutineTile(routine, store, nowMs, onStart, onOpenRoutine, onOpenMovement, onReview)
             }
 
-        Text(
-            "Sorted by last trained, not by when you made them.",
-            style = GymType.numeral(12).copy(lineHeight = 18.sp),
-            color = GymSkin.inkFaint,
-            modifier = Modifier.padding(top = WindmillSpace.x2),
-        )
-
         if (isSignedIn) ConnectInvitation(origin)
     }
 }

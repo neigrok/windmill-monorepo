@@ -121,7 +121,7 @@ export function ConnectLog() {
         </ul>
       </section>
 
-      {/* The door, and the sentence that says whose screen is on the other side of it. */}
+      {/* The door, and the one fact worth having before you tap it: one URL is the whole of it. */}
       <p className="gym-connect-handoff">{GRANT_LINE}</p>
       <a className="gym-connect-door" href={WORKBENCH_HREF}>{WORKBENCH_VERB}</a>
       <p className="gym-connect-disconnect">{DISCONNECT_LINE}</p>

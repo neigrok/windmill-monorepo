@@ -92,21 +92,17 @@ export function GymSettingsSection({ api = gymApi } = {}) {
   return (
     <Section title="Your training log">
       <Row title="Units" aside={<Choices options={UNITS} value={preferences.units} onPick={(units) => change({ units })} />}>
-        Changes the display, never the stored value. History does not get rewritten — every weight in
-        your log is the kilogram it was logged as.
+        Display only — nothing stored changes.
         {preferences.units === LB && (
           <> Weights you type at this desk — a backfill, a correction, a routine target — stay in
-            kilograms and say so on the field, because nothing here converts a number on its way into
-            the log.
+            kilograms, and say so on the field.
           </>
         )}
       </Row>
 
       <Row title="Plate math" aside={<BarWeight preferences={preferences} onChange={change} />}>
         <Plates preferences={preferences} onChange={change} />
-        What your gym actually owns. It is what the readout under a load reads from — the tap ladder
-        is the same everywhere and does not move, so this is what says whether a weight can be built
-        rather than what it is allowed to be. {finestStepLine(preferences.platesKg)}
+        What your gym owns. {finestStepLine(preferences.platesKg)}
       </Row>
 
       <Row title="Rest timer" aside={<span style={look.aside}>{restLabel(preferences.restSeconds)}</span>}>
@@ -126,12 +122,9 @@ export function GymSettingsSection({ api = gymApi } = {}) {
         {/* WHERE THE SWITCH IS HONOURED IS SAID IN EVERY STATE, and off is the state every lifter
             sees first: the sentence naming the phone sat in the other branch, so the default screen
             drew a live "Sound when it ends" beside nothing that said where it sounds. */}
-        {preferences.restSeconds == null
-          && 'Off, and off is the default — a timer nobody asked for that starts beeping in a gym is not something this product does. '}
-        Whichever target you set, your phone runs the clock between sets and sounds it, because that
-        is where the sets are logged. This page mirrors a session it is not capturing, so it names
-        the target and never sounds an alarm of its own — a browser tab cannot promise one that
-        survives a locked screen.
+        {preferences.restSeconds == null && 'Off, and off is the default. '}
+        Whichever target you set, your phone runs the clock between sets and sounds it. This page
+        never sounds an alarm of its own.
       </Row>
 
       <Row title="Set confirmation">
@@ -166,11 +159,11 @@ export function GymSettingsSection({ api = gymApi } = {}) {
       <ConnectedLog />
 
       {refused && <p style={look.refused}>{refused}</p>}
-
-      <p style={{ ...styles.metaText, marginTop: 12 }}>
-        Account, appearance, plan, sessions, devices, export-everything and closing the account are on
-        this page already. Gym does not restate them, and it has no theme switch of its own.
-      </p>
+      {/* AND THE SECTION ENDS HERE (W9). A footnote used to close it, listing what gym does NOT draw
+          — account, appearance, plan, sessions, devices, the account's own export — and saying gym
+          does not restate them. That is the section explaining its own boundary to somebody standing
+          at the boundary: those rows are on this page, above and below, and scrolling past them
+          teaches it without a sentence. The decision itself is in this file's header. */}
     </Section>
   );
 }
@@ -325,9 +318,10 @@ function Plates({ preferences, onChange }) {
   );
 }
 
-// The true version of the design's "the ladder's fine step comes from this": the ladder does not
-// move, and what the rack decides is the smallest change that can actually go on the bar — twice the
-// lightest plate, because one goes on each end.
+// A FACT ABOUT THIS RACK, which is why it survived the row's caption. The ladder does not move and
+// this row does not set it; what the rack decides is the smallest change that can actually go on the
+// bar — twice the lightest plate, because one goes on each end. That is a number a lifter can act
+// on, as against the sentence above it, which only explained where the number came from.
 function finestStepLine(platesKg) {
   const step = finestStepKg(platesKg);
   if (step == null) return 'With no plates, the bar is the only load this rack makes.';

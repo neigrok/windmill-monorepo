@@ -75,6 +75,22 @@ class RestTests {
         assertEquals("10:00", Rest.Line(null, startedAtMs = 1_000_000, now = 1_600_000).time)
     }
 
+    // §K DRAWS THE REST AS A HAIRLINE, so the line has to say how full that bar is — and with the
+    // dial off there is nothing to be full OF. A null fraction is what stops the logger drawing a
+    // track against a target nobody set, which would be a countdown by another shape.
+    @Test
+    fun testTheHairlineFillsTowardTheTargetAndIsAbsentWithoutOne() {
+        assertNull("nothing to fill toward",
+                   Rest.Line(targetSeconds = null, startedAtMs = 0, now = 91_000).fraction)
+        assertEquals(0.5f, Rest.Line(targetSeconds = 120, startedAtMs = 0, now = 60_000).fraction!!, 0.001f)
+        // Full is the whole of what "past the target" means to a bar, and a clock corrected
+        // backwards mid-rest draws an empty one rather than a negative width.
+        assertEquals(1f, Rest.Line(targetSeconds = 120, startedAtMs = 0, now = 600_000).fraction!!, 0.001f)
+        assertEquals(0f, Rest.Line(targetSeconds = 120, startedAtMs = 60_000, now = 0).fraction!!, 0.001f)
+        // A target of zero is not a target: it would divide the bar by nothing.
+        assertNull(Rest.Line(targetSeconds = 0, startedAtMs = 0, now = 60_000).fraction)
+    }
+
     // The dial and a routine's line are bounded by the same band, so the global setting can never
     // ask for a wait a routine entry would be refused for.
     @Test

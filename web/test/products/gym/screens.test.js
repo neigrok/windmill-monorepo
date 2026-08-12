@@ -625,13 +625,19 @@ test('the empty log offers the routine editor, and this surface still starts not
     today.includes('<a className="gym-first-write" href={routineHref(NEW_ROUTINE_ID)}>Type out a routine first</a>'),
     true,
   );
-  // AND THE REASON IS ON THE SCREEN, not in the margin explaining the screen. Canon draws it in the
-  // frame between the line and the verbs, and it is the only thing an empty room says for itself:
-  // without it the absent setup wizard reads as a feature that has not landed. Drawn in the second
-  // person, because the design writes it about the lifter rather than to them.
-  const why = speech('Today.jsx');
-  assert.equal(why.includes('No tour, no sample program, no questions about your goals'), true);
-  assert.equal(why.includes('this app is here to catch it, not to write it'), true);
+  // AND THE ARGUMENT FOR IT IS NOT (W9). A dashed box under the verb used to make the design's case
+  // — "no tour, no sample program, no questions about your goals" — which is a sentence about US,
+  // read by somebody who came here to train. It is the difference the sweep turns on: the line above
+  // says what will HAPPEN to a session they start, and stays; the box argued for the setup wizard we
+  // refuse to build, and belongs beside the screen rather than on it. Asserted absent rather than
+  // merely deleted, because nothing about this room fails when it grows back.
+  const said = speech('Today.jsx');
+  assert.equal(said.includes('No tour'), false);
+  assert.equal(said.includes('sample program'), false);
+  assert.equal(said.includes('catch it, not to write it'), false);
+  assert.equal(read('Today.jsx').includes('gym-first-why'), false);
+  // What DOES stay is the by-product rule, because it tells a lifter what their session becomes.
+  assert.equal(said.includes('what you do becomes your routine, and you name'), true);
   // The one verb the web has never had since §11, said nowhere on it — in a comment, freely; on a
   // screen, never.
   for (const file of ['Today.jsx', 'Routines.jsx', 'Log.jsx', 'Finish.jsx', 'GymApp.jsx']) {
@@ -641,8 +647,10 @@ test('the empty log offers the routine editor, and this surface still starts not
 
 // ── Proposals: the agent proposes, and the tap is the only thing that applies ────────────────────
 
-// A walk of every gym source file, used by the two scans below. The marketing tree is excluded the
-// same way the decline scan excludes it: it is copy about the product rather than the product.
+// A walk of every gym source file UNDER THE APP — `marketing/` is excluded, the same way the decline
+// scan excludes it: it is copy about the product rather than the product. Every scan in this file
+// that walks the tree walks it through here, and the exclusion is load-bearing for the prose sweep,
+// so it is named again there rather than left to be inferred forty lines away.
 const gymFiles = () => {
   const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const at = path.join(dir, entry.name);
@@ -651,6 +659,68 @@ const gymFiles = () => {
   });
   return walk(GYM);
 };
+
+// THE PROSE SWEEP, PINNED (W9). Twenty explainer blocks came off the design board in one edit, and
+// several of them had already been typed into this surface verbatim — a paragraph is cheapest to
+// draw on the web, which is exactly why the web accumulated the most of them. Every one is deleted
+// now, and NOTHING BREAKS WHEN ONE COMES BACK: no screen fails, no read is wrong, no number moves.
+// That is the whole reason this test exists. A retraction with no test is a retraction that lasts
+// until the next person finds the gap and helpfully fills it in.
+//
+// The scan is over the SPEECH, on the rule every other scan in this file follows: a comment must
+// stay free to say what it is refusing to put on a screen, and each deletion below left its reason
+// behind in one. The fragments are the shortest text that identifies a sentence, so a reworded
+// version of the same argument is caught with it.
+//
+// WHAT IT DOES NOT COVER, said here rather than inferred: `gymFiles()` walks the app and stops at
+// `marketing/`. That is deliberate and not an oversight — the swept blocks came off the app board,
+// and a landing page making the product's case is a landing page doing its job, so a positioning
+// line there is not the defect this test is about. The landing has its own copy tests in this file.
+// If a swept sentence is ever wanted as marketing copy, that is the marketing board's call to make,
+// and this test is not the place it gets refused.
+test('no gym screen argues for its own design — the swept prose stays swept', () => {
+  const swept = [
+    // Screen 1 · the dashed box under the empty room's verbs.
+    'No tour',
+    'sample program',
+    'catch it, not to write it',
+    // Screen 3 · what declining costs, said to somebody who has not declined anything.
+    'Declining costs nothing',
+    'behind their back',
+    // Screen 10 · the empty slot, explaining that it is empty on purpose.
+    'left empty on purpose',
+    'implies the session was wasted',
+    // Screen 11 · our generalisation about short sessions, over their own eleven minutes.
+    'usually a phone left running',
+    'nothing honest to say',
+    // Screen 17 · the thesis of the screen, printed on the screen.
+    'Dim is what the plan said',
+    'no scolding',
+    // Screen 20 · four captions that described the settings rather than the setting.
+    'never the stored value',
+    'does not get rewritten',
+    'actually owns',
+    'Vibration API',
+    'does not restate them',
+    'theme switch of its own',
+    // Screen 7 · the picker explaining its own taxonomy, or its absence of one.
+    'no taxonomy screen',
+    'behaves identically',
+    // Screen 5 · the list explaining its own sort order.
+    'Sorted by last trained',
+    // Screen 13 · the copy commenting on which team wrote it.
+    'words gym puts around it',
+    // Screen 25 · the palette, described to the person looking at it.
+    'not parchment',
+  ];
+  for (const file of gymFiles()) {
+    if (!/\.(jsx?|css)$/.test(file)) continue;
+    const said = spoken(fs.readFileSync(file, 'utf8'));
+    for (const fragment of swept) {
+      assert.equal(said.includes(fragment), false, `${path.relative(GYM, file)} — “${fragment}”`);
+    }
+  }
+});
 
 // THE ONE PLACE A ROUTINE AN AGENT WROTE TO CAN MOVE, and it is a human's tap on a diff they are
 // looking at. Nothing this wave built may grow a second door onto it: not the card, which is a

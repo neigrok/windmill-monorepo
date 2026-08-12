@@ -43,7 +43,6 @@ struct SettingsScreen: View {
                 restTimer
                 confirmation
                 doors
-                closing
             }
             .padding(.horizontal, WindmillSpace.x4)
             .padding(.top, WindmillSpace.x8)
@@ -73,7 +72,7 @@ struct SettingsScreen: View {
             Text("Gym")
                 .font(WindmillFont.display(30))
                 .foregroundStyle(skin.ink)
-            Text("five rows. the rest is the shell’s")
+            Text("how the room behaves at the rack")
                 .font(GymType.numeral(12))
                 .foregroundStyle(skin.inkFaint)
         }
@@ -108,9 +107,9 @@ struct SettingsScreen: View {
                 .padding(4)
                 .background(Capsule().fill(skin.canvas))
             }
-            caption("Changes the display, never the stored value. History does not get rewritten.")
+            caption("Display only — nothing stored changes.")
             if store.preferences.units == .lb {
-                caption("Not on this phone yet: the ladder, the keypad and the plate math are kilogram instruments, so this room still draws kg. Your answer is kept on the account.")
+                caption("Not on this phone yet — this room still draws kg. Your answer is kept on the account.")
             }
         }
     }
@@ -152,7 +151,7 @@ struct SettingsScreen: View {
                     .accessibilityAddTraits(owned ? [.isSelected] : [])
                 }
             }
-            caption("What your gym actually owns, per side. The line under the weight in the logger is built from it — including when it says a number can’t be loaded.")
+            caption("What your gym owns, per side.")
         }
     }
 
@@ -189,12 +188,15 @@ struct SettingsScreen: View {
             switching("Sound when it ends", isOn: store.preferences.restSound) {
                 write(store.preferences.with(restSound: $0))
             }
-            caption("The clock reads from your last set, so it is right whenever you look. The sound needs the app awake: a rest that ends while the phone is locked ends quietly, and this product sends no notifications.")
+            caption("The sound needs the app awake: a rest that ends while the phone is locked ends quietly.")
         }
     }
 
-    // ROW 4 — the intent is the account's; what a surface can honour is the surface's. This one has a
-    // haptic, so the caption names what happens HERE first and the general rule second.
+    // ROW 4 — the intent is the account's; what a surface can honour is the surface's, and this one
+    // has a haptic and uses it. The caption under it named that, and then named what the INSTALLED
+    // WEB APP does instead — which is a sentence about another surface, on a screen a lifter opened
+    // to change this one. It came off on 2026-08-12 with the rest of the room's explaining; the two
+    // switches say what they do by being switches.
     private var confirmation: some View {
         card {
             Text("Set confirmation")
@@ -206,7 +208,6 @@ struct SettingsScreen: View {
             switching("Sound", isOn: store.preferences.confirmSound) {
                 write(store.preferences.with(confirmSound: $0))
             }
-            caption("This phone has a haptic and uses it. The installed web app has no Vibration API, so there the confirmation is visual and optionally audible.")
         }
     }
 
@@ -234,19 +235,6 @@ struct SettingsScreen: View {
                      lit: true, away: false)
             }
         }
-    }
-
-    private var closing: some View {
-        Text("Account, appearance, plan, sessions, devices, export-everything and delete live in You. Gym does not restate them, and it has no theme switch of its own — the room follows the app.")
-            .font(GymType.numeral(12.5))
-            .foregroundStyle(skin.inkFaint)
-            .lineSpacing(3)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(WindmillSpace.x3)
-            .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md)
-                .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
-                .foregroundStyle(skin.lineStrong))
-            .padding(.top, WindmillSpace.x2)
     }
 
     // The standard set, plus whatever else the account holds — a plate this screen does not offer is
