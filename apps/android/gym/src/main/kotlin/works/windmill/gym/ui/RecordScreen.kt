@@ -79,8 +79,10 @@ import works.windmill.platform.design.WindmillSpace
 // set is fixed where it was performed — on the session it belongs to, beside the plan it was
 // measured against — and this page groups one movement's sets across months, where "which of these
 // forty is the typo" is a question the shape cannot answer. So nothing in the recent list says it
-// can be tapped. And no merge affordance: §4's "looks like Bench Press — merge" is real and W5's,
-// and a control that opened nothing would be the defect this room refuses everywhere else.
+// can be tapped. And no merge affordance: §4's "looks like Bench Press — merge" belongs on this
+// page and NOTHING IN THIS PRODUCT MERGES TWO MOVEMENTS YET — rewriting exercise identity across a
+// lifter's whole history is an operation that wants its own wave on every surface at once, and a
+// control that opened nothing would be the defect this room refuses everywhere else.
 @Composable
 fun RecordScreen(exerciseId: String, store: TrainingStore, backLabel: String, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()

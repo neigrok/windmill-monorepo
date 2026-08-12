@@ -10,6 +10,7 @@ import WindmillPlatform
 //   POST /v1/gym/sessions/:id/finish  ·  DELETE /v1/gym/sessions/:id
 //   GET  /v1/gym/sessions?before=&beforeId=&limit=   ·  GET /v1/gym/sessions/:id
 //   GET  /v1/gym/sessions/:id/review  ·  GET /v1/gym/last?exercise=
+//   GET  /v1/gym/exercises/last
 //   GET  /v1/gym/routines             ·  POST /v1/gym/routines
 //   PUT  /v1/gym/routines/:id         ·  DELETE /v1/gym/routines/:id
 //   POST /v1/gym/sessions/:id/share   ·  DELETE /v1/gym/sessions/:id/share
@@ -49,6 +50,7 @@ public protocol TrainingSyncing {
     func session(_ id: String) async throws -> SessionDetail?
     func review(of sessionId: String) async throws -> Review
     func lastTime(_ exerciseId: String) async throws -> LastTime
+    func lastSets() async throws -> [LastSet]
 
     func routines() async throws -> [Routine]
     func routine(_ id: String) async throws -> Routine?
@@ -180,6 +182,20 @@ public struct GymApi: TrainingSyncing {
         try await api.get("/v1/gym/last?exercise=\(escaped(exerciseId))", as: LastTime.self)
     }
 
+    // The picker's meta: every movement's last line in ONE read, sparse — only the movements this
+    // account has trained come back, and a movement that is absent is one it never has. Sixty-two
+    // calls to `lastTime` would be the same answer and the N+1 the log read already refused once.
+    //
+    // It is a PICKER-OPEN read and never a per-keystroke one: the live filter runs over the catalog
+    // this client already holds, and these join onto it by id. `last` cannot collide with a movement
+    // id: nothing a lifter mints can be shorter than eight characters (`wellFormedId`,
+    // backend/products/gym/domain/Training.cpp), and none of the sixty-four seeds — which ARE
+    // shorter, `dip` and `plank` among them — is called that. So this route stays reachable however
+    // many movements a lifter mints.
+    public func lastSets() async throws -> [LastSet] {
+        try await api.get("/v1/gym/exercises/last", as: LastSets.self).movements
+    }
+
     public func routines() async throws -> [Routine] {
         try await api.get("/v1/gym/routines", as: Routines.self).routines
     }
@@ -245,6 +261,7 @@ public struct GymApi: TrainingSyncing {
     }
 
     private struct Catalog: Decodable { let exercises: [Exercise] }
+    private struct LastSets: Decodable { let movements: [LastSet] }
     private struct Log: Decodable { let sessions: [SessionSummary] }
     private struct Routines: Decodable { let routines: [Routine] }
 }

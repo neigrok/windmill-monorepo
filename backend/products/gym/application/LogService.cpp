@@ -219,6 +219,13 @@ LastTimeOutcome LogService::lastTime(const UserId& user, const ExerciseId& exerc
   return repo_.lastTime(user, exercise);
 }
 
+// The same read for the whole catalog at once, and it settles nothing for the same reason the one
+// above does not: the picker opens mid-workout, and the only open session it could reach is the
+// caller's own live one.
+std::vector<LastSet> LogService::lastSets(const UserId& user) {
+  return repo_.lastSets(user);
+}
+
 std::vector<Routine> LogService::routines(const UserId& user) {
   return repo_.routines(user);
 }

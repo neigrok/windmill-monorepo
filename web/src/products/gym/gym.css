@@ -1122,12 +1122,19 @@ button.gym-set:focus-visible .gym-set-fix,
   margin: 8px 0 0;
   padding: 0;
 }
+/* A row is the name over its meta (§B7's picker), so it stacks
+   rather than sitting on one line — and it keeps a floor rather
+   than a fixed height, because the second line only appears once
+   the read behind it has answered. */
 .gym-picker-row {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 3px;
   width: 100%;
-  height: 50px;
+  min-height: 50px;
+  padding: 7px 0;
   border: none;
   border-bottom: 1px solid var(--gym-line);
   background: transparent;
@@ -1136,12 +1143,27 @@ button.gym-set:focus-visible .gym-set-fix,
   font-weight: 600;
   text-align: left;
 }
+.gym-picker-named {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
 .gym-picker-tag {
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  color: var(--color-brand);
+}
+/* The lifter's own last set of this movement, or the fact that
+   there isn't one. Mono and tabular so a column of loads lines up
+   under a column of names. */
+.gym-picker-meta {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
   color: var(--gym-ink-faint);
+  font-variant-numeric: tabular-nums;
 }
 .gym-picker-empty {
   margin: 14px 0 0;
@@ -1361,6 +1383,55 @@ button.gym-set:focus-visible .gym-set-fix,
   white-space: pre;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* An empty log (canon screen 1) — the reason on a dim line, and
+   under it the one verb of that screen this desk can honestly
+   offer. The button is the design's secondary: an outline, never
+   the brand fill, because the primary it sits under is on the
+   phone. */
+.gym-first {
+  margin-top: 4px;
+  padding: 14px 15px;
+  border: 1px solid var(--gym-line);
+  border-radius: 14px;
+  background: var(--gym-surface);
+}
+.gym-first-line {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--gym-ink-dim);
+}
+/* The reason, as canon screen 1 draws it: dashed and dimmer than
+   the line above, because it is the room explaining itself rather
+   than telling a lifter to do anything. */
+.gym-first-why {
+  margin: 12px 0 0;
+  padding: 12px 13px;
+  border: 1px dashed var(--gym-line-strong);
+  border-radius: 12px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--gym-ink-faint);
+}
+.gym-first-write {
+  margin-top: 12px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 12px;
+  color: var(--gym-ink-dim);
+  font-size: 14.5px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.gym-first-write:hover {
+  background: var(--gym-raised);
+  border-color: var(--color-brand);
+  color: var(--gym-ink);
 }
 
 .gym-last {

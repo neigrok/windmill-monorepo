@@ -1,6 +1,7 @@
 package works.windmill.gym
 
 import android.app.Activity
+import android.content.Context
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -148,10 +149,22 @@ private sealed interface Away {
 // A ROOM'S STATE DIES WHEN YOU LEAVE IT — the store and everything it scheduled go with the
 // subtree. That is why the queue is on disk after every tap and why leaving flushes: gym would pay
 // for a lost flush with a set that is refused forever once the session closes.
+
+// The key §J22's arrival is remembered under, spelled once — the twin of the iOS AppStorage key.
+private const val firstSessionOpened = "firstSessionOpened"
+
 @Composable
 fun GymRoom(account: Account) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    // THE ONE THING THIS ROOM REMEMBERS ABOUT ITSELF, and it is about the room rather than about
+    // the lifter: whether §J22's arrival has already opened its session on this install. It lives
+    // beside the platform's own preferences file rather than in the store's three JSON files,
+    // because none of those is a record of what the ROOM did — they are the log, the queue and the
+    // rack, and a flag filed in one of them would be a fourth kind of fact in a file with one job.
+    val arrivals = remember {
+        context.getSharedPreferences("works.windmill.gym", Context.MODE_PRIVATE)
+    }
     val store = remember {
         TrainingStore(
             SetQueue(File(context.filesDir, SetQueue.fileName)),
@@ -221,6 +234,34 @@ fun GymRoom(account: Account) {
     LaunchedEffect(account.user?.id) {
         store.connect(account)
         // Deviates from iOS, where the ROOM resumes after connect: here connect() owns the resume, so a boot cannot race it.
+
+        // ARRIVING STARTED IT — §J22, and it is the whole of gym's onboarding. Not a tour, not a
+        // splash, not a question about goals: the real surface with its first move already made, so
+        // that the first thing a lifter sees is the picker over a session that is already running.
+        // The room asks nothing first, and the door it does hold out (`Build my routine`) is an
+        // offer inside that surface rather than a gate in front of it.
+        //
+        // ONCE PER INSTALL, on a room that is KNOWN to hold nothing — `store.firstRun` asks whether
+        // the reads that could say otherwise actually landed, and this asks whether the arrival has
+        // already happened here. Both are needed and neither is the other: without the flag, a
+        // lifter who SIGNS OUT is a room with an empty page and no way to see why, and the arrival
+        // would open a workout nobody started over a log that is merely out of reach — then claim
+        // that empty workout onto them when they signed back in. It is also what makes "once" true
+        // after a first session is DISCARDED: without it, arriving at an emptied room would keep
+        // opening the session the lifter just deleted, forever.
+        //
+        // It is not a decline counter and not a "have they seen this": it counts nothing, holds no
+        // id and no date, and records one thing the ROOM did — the same shape as the iOS
+        // `windmill.gym.firstSessionOpened`, which this is the twin of.
+        if (!arrivals.getBoolean(firstSessionOpened, false) && store.firstRun) {
+            store.start(null)
+            // NOBODY ASKED FOR THIS ONE, so nobody is owed a sentence about it not opening: the
+            // note above the rail speaks for a door the lifter reached for, and Today's own Start
+            // button is where a lifter who DID ask is told, in the log's own words. The flag
+            // follows the session and not the attempt, so a start that never opened is tried again
+            // on the next arrival.
+            if (store.session != null) arrivals.edit().putBoolean(firstSessionOpened, true).apply()
+        }
     }
 
     // A WITHHELD DELETE BELONGS TO THE SCREEN THE GESTURE WAS MADE ON. Leaving that screen ends its
@@ -427,8 +468,14 @@ fun GymRoom(account: Account) {
                 )
                 live -> LoggerScreen(
                     store = store,
+                    isSignedIn = account.isSignedIn,
                     say = { note = it },
                     onFinish = { close() },
+                    // The room's one account verb (§J22), and it is the shell's door: gym does not
+                    // draw a sign-in of its own, and screen 23's promise — that signing in claims
+                    // the session you already started and lands you back here, mid-set — is kept by
+                    // the claim replay rather than by anything on this screen.
+                    onSignIn = LocalShellActions.current.openYou,
                 )
                 standing is Away.Movement -> RecordScreen(
                     exerciseId = standing.exerciseId,

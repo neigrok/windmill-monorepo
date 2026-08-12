@@ -953,6 +953,7 @@ struct TrainingRepository {
   virtual LogPage log(const UserId&, const LogCursor&) = 0;   // the rows + the marks before them
   virtual std::vector<Set> setsOf(const SessionId&) = 0;
   virtual LastTimeOutcome lastTime(const UserId&, const ExerciseId&) = 0;  // the prefill read (§5)
+  virtual std::vector<LastSet> lastSets(const UserId&) = 0;   // the same rule, whole catalog (§5)
   virtual SessionHistory historyFor(const UserId&, const Session&) = 0;    // the finish read (§5)
   virtual bool deleteSession(const UserId&, const SessionId&) = 0;         // the discard; sets cascade
   virtual std::vector<Routine> routines(const UserId&) = 0;       // most recently trained first
@@ -1007,6 +1008,9 @@ struct SetInsertOutcome { std::optional<Set> set; SetInsertError error; };
 struct LastTime { Session session; std::string routineName; std::vector<Set> sets; };
 enum class LastTimeError { none, unknownExercise };
 struct LastTimeOutcome { std::optional<LastTime> lastTime; LastTimeError error; };
+// LastTime projected to the one line a list can print, for every movement at once. Sparse: a
+// movement with no row is the picker's `never logged`, and atMs is the SESSION's start (§5).
+struct LastSet { ExerciseId exercise; double weightKg; int reps; std::uint64_t atMs; };
 
 enum class RoutineWriteError { none, idTaken, notFound, unknownExercise };
 struct RoutineWriteOutcome { std::optional<Routine> routine; RoutineWriteError error; };
@@ -1245,6 +1249,48 @@ query, ordered by pattern then name. Identity rules, stated once:
   No domain rule was added, on purpose: last time is a query, not a calculation. The prefill
   *arithmetic* — plan snapshot → last time → 20 kg, with today's sticky carry-forward on top — is
   client state the server cannot see and must not guess at. The server hands back the block.
+- **The picker's meta** (W5, 2026-08-12, `lastSets`) — `GET /v1/gym/exercises/last`, and it is the
+  read above run over every movement at once. §B7's row prints `last 82.5 × 5 · 3 days ago` under a
+  movement's name, or `never logged`, and a picker firing sixty-four `/v1/gym/last` calls to draw one
+  list is the N+1 the log read already refused. One line per movement: the **last row of that
+  movement's last-time block** — the row the weight prefill dials off, not the session's heaviest —
+  dated by the **session's start**, which is what every mark a store hands over is dated by and what
+  makes "3 days ago" the day it was trained.
+
+  **It is a second read and not four columns on the catalog row**, and the arithmetic is the whole
+  argument. The catalog is 64 rows read on nearly every screen; most of them are movements a given
+  lifter has never touched, so most of those columns would be empty; and `list_exercises` hands the
+  same row to an agent whose reply a deliberate token-budget wave cut by 60–96%. So the annotation is
+  asked for by the one surface that draws it, and it is **sparse** — a movement with no line is the
+  `never logged` the picker prints, said by saying nothing. `custom` needs no help: the `yours` tag
+  is already on the catalog row, derived from `created_by`.
+
+  One `DISTINCT ON (exercise_id)` whose inner `ORDER BY` *is* the locator's rule — newest finished
+  session on `(started_at, id)`, then the highest `set_number` in it — so the two reads cannot name a
+  different set.
+
+  **What it costs, and where it changes character** (measured twice, by two agents, on local
+  Postgres 14 at the default `work_mem = 4MB`; one account training a dozen movements, `EXPLAIN
+  (ANALYZE, BUFFERS)` three times per corpus). The plan hash-joins the account's sets to its sessions
+  and sorts every qualifying row once: **1 600 sets → quicksort, 274 kB, ~2 ms**; **19 000 →
+  quicksort, 3 258 kB, ~23 ms**; **38 000 (a decade of training) → external merge, 3 032 kB spilled
+  to disk, ~53 ms**. The plan *shape* never changes, but the sort crosses `work_mem` somewhere in the
+  low twenty-thousands of working sets and spills from then on — a difference in kind, so it is
+  written down rather than hidden behind "it scales". 53 ms for a read that fires when a picker opens
+  is cheap; the lifter who ever makes it expensive is the one to revisit this for, and the measured
+  alternative is in the code comment.
+
+  **The catalog is what it must not be driven off.** The same rule as a `LATERAL` per catalog row
+  measured **0.72–1.37 s** at that decade, and the plan says exactly why: 64 outer rows, each running
+  a nested loop over the account's finished sessions — 104 024 inner index scans and 2.4 M buffer
+  hits to return 64 rows, because proving "never logged" for a movement nobody trains means walking
+  every session they ever ran. (Driven off the movements the account has *touched*, the same
+  `LATERAL` measures ~9 ms — faster than the shipped sort. It was not taken because it is one edit
+  away from the form above and because its win is a function of how few movements the lifter trains
+  rather than of the statement. It is the noted fallback if the spill ever starts to matter.)
+
+  No MCP tool was added — an agent asking about one movement has `last_time`, and about the whole log
+  has `get_stats`, and neither of them is drawing a list.
 - **The plan** (`routines` + `routine`) — the routines screen's own order, which is *most recently
   trained first* with the never-trained after them rather than above them. The instant it sorts on
   is read off the log (`max(started_at)` over the sessions run under each routine) and not out of a
@@ -1390,6 +1436,7 @@ query, ordered by pattern then name. Identity rules, stated once:
 | Method & path | Purpose | Phase |
 |---|---|---|
 | `GET  /v1/gym/exercises` | the catalog (seeds + own customs), each under the name THIS account calls it | 0 |
+| `GET  /v1/gym/exercises/last` | the picker's meta — one line per movement this lifter has trained (`{exerciseId, weightKg, reps, at}`), and none for the rest, which is `never logged`. Beside the catalog row rather than on it (§5); `last` can never be a movement id, which needs eight characters | 2 |
 | `POST /v1/gym/exercises` | create a movement — `{id, name, pattern, equipment, stepKg?}` | 2 |
 | `PATCH /v1/gym/exercises/{id}` | rename a movement — `{name}` and nothing else; a seed takes a per-account name, the caller's own row renames in place, the id never moves (§4) | 2 |
 | `GET  /v1/gym/exercises/{id}/record` | a movement's record — the two tiles, twelve weeks of bars, the record ladder and the recent days, in ONE read (§5) | 2 |

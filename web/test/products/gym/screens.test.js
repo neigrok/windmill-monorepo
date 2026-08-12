@@ -387,3 +387,90 @@ test('the connected-log row names the grant state without rebuilding it', () => 
   assert.equal(source.includes('revokeGrant'), false);
   assert.equal(source.includes("href=\"#/connect\""), true);
 });
+
+// THE PICKER'S META IS ASKED FOR ONCE, WHEN THE PICKER OPENS (§B7). The read is per-picker rather
+// than per-host — three rooms mount this component and one of them would otherwise forget it — and
+// its deps are empty on purpose: typing filters the list already in hand, so a dep on the query
+// would fire a request per keystroke to redraw rows that never left the screen. Which array a hook
+// is called with is a fact about the source and nothing a pure module can be asked.
+test('the picker reads every movement’s last set when it opens, and never on a keystroke', () => {
+  const picker = read('logger/MovementPicker.jsx');
+  assert.equal(picker.includes('const last = useGymRead(() => gymApi.lastSets(), []);'), true);
+  assert.equal((picker.match(/useGymRead\(/g) ?? []).length, 1);
+  assert.equal(/useGymRead\([^;]*\[[^\]]*query/.test(picker), false);
+  // And the three hosts stay out of it: none of them reads this, so none of them can drift.
+  for (const host of ['Routines.jsx', 'Backfill.jsx', 'Record.jsx']) {
+    assert.equal(read(host).includes('lastSets'), false, host);
+  }
+});
+
+// THE ABSENCE SENTENCE IS DRAWN FROM AN ABSENCE AND FROM NOTHING ELSE. The wire is sparse — no
+// sentinel, no null row, no zero — so a movement missing from the reply is the whole of the fact.
+// The danger is the OTHER absence: a read still in the air holds no entries either, and a row that
+// spelled the sentence off that would say it about every movement in the catalog while the answer
+// was in flight. So the meta is drawn only once the read is ready, and the sentence itself lives in
+// the pure module rather than in this file, where a second copy could disagree with it.
+//
+// AND THE WORD `never` STAYS OFF THIS ROW. The read excludes the open workout and warmups, so a
+// missing movement is one with no LAST TIME and not one nobody has trained — the mirror on Today
+// can be drawing that movement's sets in the next tab over. A picker that reached for canon's
+// `never logged` here would be this surface contradicting itself about a lifter's history.
+test('a picker row says it has no last time, only once the read behind it has answered', () => {
+  const picker = read('logger/MovementPicker.jsx');
+  assert.equal(picker.includes("const meta = last.phase === 'ready' ? lastSetsById(last.data) : null;"), true);
+  assert.equal(
+    picker.includes('{meta && <span className="gym-picker-meta">{lastSetLabel(meta.get(each.id))}</span>}'),
+    true,
+  );
+  assert.equal(speech('logger/MovementPicker.jsx').includes('never logged'), false);
+  assert.equal(speech('logger/movements.js').includes('never logged'), false);
+  assert.equal(speech('logger/movements.js').includes("NO_LAST_TIME_META = 'no last time'"), true);
+});
+
+// SCREEN 1, MINUS THE HALF THIS SURFACE MAY NOT DRAW. Its primary is `Start a session`, and a
+// session cannot start at the desk (§11) — so what the web draws of that screen is its SECOND verb,
+// and the verb has to land somewhere true: paste-to-routine does not exist in gym, and the routine
+// editor does. A button onto a screen that is not built would be the room promising a parser it has
+// not got.
+test('the empty log offers the routine editor, and this surface still starts nothing', () => {
+  const today = read('Today.jsx');
+  assert.equal(today.includes('{log.summaries.length === 0 && <FirstRun />}'), true);
+  assert.equal(
+    today.includes('<a className="gym-first-write" href={routineHref(NEW_ROUTINE_ID)}>Type out a routine first</a>'),
+    true,
+  );
+  // AND THE REASON IS ON THE SCREEN, not in the margin explaining the screen. Canon draws it in the
+  // frame between the line and the verbs, and it is the only thing an empty room says for itself:
+  // without it the absent setup wizard reads as a feature that has not landed. Drawn in the second
+  // person, because the design writes it about the lifter rather than to them.
+  const why = speech('Today.jsx');
+  assert.equal(why.includes('No tour, no sample program, no questions about your goals'), true);
+  assert.equal(why.includes('this app is here to catch it, not to write it'), true);
+  // The one verb the web has never had since §11, said nowhere on it — in a comment, freely; on a
+  // screen, never.
+  for (const file of ['Today.jsx', 'Routines.jsx', 'Log.jsx', 'Finish.jsx', 'GymApp.jsx']) {
+    assert.equal(speech(file).includes('Start a session'), false, file);
+  }
+});
+
+// NOTHING COUNTS HOW MANY TIMES ANYONE DECLINED ANYTHING — §J's own words, and the finish screen is
+// where the temptation lives: "Keep this as a routine" is offered after every session, and a tally
+// behind it would be the first step toward asking harder the third time. Declining costs nothing,
+// the offer comes back next session, and the decline leaves no trace on this device or on the wire.
+// The scan is over identifiers rather than prose, because a comment must stay free to say what it
+// is refusing to build.
+test('no gym surface counts a decline, on the device or on the wire', () => {
+  const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const at = path.join(dir, entry.name);
+    if (entry.isDirectory()) return entry.name === 'marketing' ? [] : walk(at);
+    return [at];
+  });
+  const counters = /timesDeclined|declineCount|declinedCount|declineTally|timesOffered|offerCount|dismissCount/i;
+  for (const file of walk(GYM)) {
+    assert.equal(counters.test(fs.readFileSync(file, 'utf8')), false, file);
+  }
+  // And the one decline this product does draw stays where it was: local to the screen offering it,
+  // forgotten the moment the screen closes.
+  assert.equal(read('Finish.jsx').includes('const [offered, setOffered] = useState(true);'), true);
+  assert.equal(read('Finish.jsx').includes('onClick={() => setOffered(false)}'), true);
+});

@@ -15,15 +15,30 @@
 // phones (§11) — a routine may legitimately name the same lift twice, and a past workout may hold
 // two blocks of it — but which silence a search lands in, and whether it has a door, stays
 // movements.js's to decide, never this component's.
+//
+// AND IT BRINGS ITS OWN META (§B7). The last set of every movement is one read, and this component
+// is the one surface on the desk that draws it — so it is asked for here rather than by each of the
+// three hosts, and it opens and closes with the picker they mount.
 
 import React, { useState } from 'react';
-import { movementOptions } from './movements.js';
+import { gymApi } from '../gymApi.js';
+import { useGymRead } from '../useGymRead.js';
+import { lastSetLabel, lastSetsById, movementOptions } from './movements.js';
 
 export function MovementPicker({
   catalog, order = [], query, onQuery, onPick, onCreate, onClose, title = 'Movements',
 }) {
   const { matches, empty, create } = movementOptions({ catalog, order, query });
   const [minting, setMinting] = useState(false);
+  // READ WHEN THE PICKER OPENS, AND NEVER AGAIN WHILE IT IS UP. The deps are empty deliberately:
+  // typing filters the list already in hand, and hanging this off `query` would fire a request per
+  // keystroke to redraw rows that are already on screen.
+  //
+  // A read that has not answered — or never does — leaves the rows with NO meta at all rather than
+  // the absence sentence under every one of them, which would be the app answering a question about
+  // a lifter's training on the strength of bytes it does not have (gymApi.js).
+  const last = useGymRead(() => gymApi.lastSets(), []);
+  const meta = last.phase === 'ready' ? lastSetsById(last.data) : null;
 
   const mint = async () => {
     if (minting) return;
@@ -54,8 +69,11 @@ export function MovementPicker({
         {matches.map((each) => (
           <li key={each.id}>
             <button type="button" className="gym-picker-row" onClick={() => onPick(each.id)}>
-              <span>{each.name}</span>
-              {each.custom && <span className="gym-picker-tag">yours</span>}
+              <span className="gym-picker-named">
+                {each.name}
+                {each.custom && <span className="gym-picker-tag">yours</span>}
+              </span>
+              {meta && <span className="gym-picker-meta">{lastSetLabel(meta.get(each.id))}</span>}
             </button>
           </li>
         ))}

@@ -16,6 +16,11 @@ import WindmillPlatform
 
 struct LoggerScreen: View {
     @ObservedObject var store: TrainingStore
+    // Only the opening picker's card reads these — §J22's one account verb, and the sentence over it
+    // that is different signed in. Nothing else on this screen changes with the account: logging is
+    // the same act with or without one.
+    let isSignedIn: Bool
+    let onBuildRoutine: () -> Void
     // The room bar's leading slot, lent to this screen. Both writes the logger can make happen behind
     // a sheet that closes either way, and a write that did not land is the one thing a room may not
     // draw as though it had.
@@ -54,8 +59,10 @@ struct LoggerScreen: View {
         var detents: Set<PresentationDetent> {
             switch self {
             case .weight, .reps: return [.height(520)]
-            case .picker: return [.large]
-            case .jump, .deviation: return [.medium, .large]
+            // The jump sheet is the assembly surface now (§A screen 2), and a half-height one would
+            // give the list a few rows and the two gestures nowhere to happen.
+            case .picker, .jump: return [.large]
+            case .deviation: return [.medium, .large]
             }
         }
     }
@@ -159,29 +166,22 @@ struct LoggerScreen: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // No routine, no plan snapshot, and nothing to log into yet. The one way forward is to name what
-    // is about to be lifted — this list IS the routine that gets offered at the end.
+    // Nothing in hand yet, which on the very first arrival is the whole of gym's onboarding: §J22,
+    // the picker already up over a session nobody pressed start on. It is the same screen every
+    // later time a session holds nothing, and it needs no branch for that — "what are you starting
+    // with" is true of a first launch and of a list just swiped empty.
+    //
+    // There is no "Choose a movement" button in front of it any more. A button whose only job is to
+    // open the list it is standing on is a tap this room can simply not charge for.
     private var assembling: some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x4) {
-            Spacer(minLength: WindmillSpace.x8)
-            Text(store.session.map(Readout.routine) ?? Readout.noRoutine)
-                .font(WindmillFont.display(26))
-                .foregroundStyle(skin.ink)
-            Text(store.session?.plan == nil
-                 ? "No routine, no plan snapshot. Pick what you are about to lift."
-                 : "Nothing in this plan to walk yet. Pick what you are about to lift.")
-                .font(WindmillFont.body(16))
-                .foregroundStyle(skin.inkDim)
-                .lineSpacing(4)
-            Button { sheet = .picker } label: {
-                Text("Choose a movement")
-                    .font(WindmillFont.body(17, .bold))
-                    .foregroundStyle(skin.onAccent)
-                    .frame(maxWidth: .infinity, minHeight: GymTap.primary)
-                    .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
-            }
-            Spacer(minLength: 0)
-        }
+        OpeningPicker(catalog: store.catalog, taken: store.order, lastSets: store.lastSets,
+                      isSignedIn: isSignedIn,
+                      onPick: { move(to: $0) },
+                      onCreate: { mint($0) },
+                      onBuildRoutine: onBuildRoutine)
+            // The meta is a PICKER-OPEN read, here and on the sheet: the filter above runs over the
+            // catalog this client already holds, so typing asks the log for nothing.
+            .task { await store.loadLastSets() }
     }
 
     // MARK: - the movement in hand
@@ -500,26 +500,19 @@ struct LoggerScreen: View {
         case .jump:
             JumpSheet(rows: LiveLines.jumpRows(order: store.order, sets: store.sets,
                                                plan: store.session?.plan, catalog: store.catalog,
-                                               current: store.exerciseId),
+                                               current: store.exerciseId, stalled: store.stalled),
+                      assembling: store.session?.routineId == nil,
                       onJump: { move(to: $0) },
+                      onMove: { store.reorder(from: $0, to: $1) },
+                      onDrop: { movement in Task { await store.drop(movement) } },
                       onAdd: { self.sheet = .picker },
                       onClose: { self.sheet = nil })
         case .picker:
-            MovementPicker(catalog: store.catalog, taken: store.order,
+            MovementPicker(catalog: store.catalog, taken: store.order, lastSets: store.lastSets,
                            onPick: { move(to: $0) },
-                           onCreate: { name in
-                               self.sheet = nil
-                               say(nil)
-                               Task {
-                                   // A picker that closed on a movement that was never minted is a
-                                   // lifter left holding nothing, with nothing said about it.
-                                   switch await store.create(name) {
-                                   case .success(let made): await store.choose(made.id)
-                                   case .failure(let why): say(why.line("“\(name)” wasn’t created"))
-                                   }
-                               }
-                           },
+                           onCreate: { mint($0) },
                            onClose: { self.sheet = nil })
+                .task { await store.loadLastSets() }
         case .deviation(let deviation, let movement):
             DeviationSheet(deviation: deviation, movement: movement,
                            onSave: {
@@ -538,9 +531,25 @@ struct LoggerScreen: View {
         }
     }
 
+    // Minting a movement the catalog has never heard of, from either picker. A picker that closed on
+    // a movement that was never minted is a lifter left holding nothing, with nothing said about it.
+    private func mint(_ name: String) {
+        sheet = nil
+        say(nil)
+        Task {
+            switch await store.create(name) {
+            case .success(let made): await store.choose(made.id)
+            case .failure(let why): say(why.line("“\(name)” wasn’t created"))
+            }
+        }
+    }
+
     // Leaving a movement is the one boundary the change offer is raised at, and the sheet that
     // raised it cannot be the one still on screen — so the move is remembered, the sheet closes, and
     // whatever is owed is presented once it has.
+    //
+    // The opening picker is not a sheet, so there is no dismissal to hang the move on and it settles
+    // here. Same move, same offer, one place either road ends.
     private func move(to movement: String) {
         if let leaving = store.exerciseId, leaving != movement,
            let deviation = Deviation(leaving: leaving, session: store.session,
@@ -549,7 +558,11 @@ struct LoggerScreen: View {
             pendingDeviation = deviation
         }
         goingTo = movement
-        sheet = nil
+        guard sheet == nil else {
+            sheet = nil
+            return
+        }
+        settleTheMove()
     }
 
     private func settleTheMove() {

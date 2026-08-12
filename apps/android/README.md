@@ -48,8 +48,32 @@ usable; there are still no app links. The session secret rides `Authorization: B
 behind `SessionStore`; a restore that cannot reach the server keeps the secret — only a definitive
 401 spends it.
 
-Nothing needs an account first: the gym room opens and works signed out (sessions, routines,
-movements and the gym's own settings live on the device in `LocalLog` + `SetQueue` +
+Nothing needs an account first, and the first launch shows that rather than saying it: with nothing
+on the log at all, arriving **starts a session** and the room opens on the picker over it
+(`TrainingStore.firstRun`, canon §J22) — no tour, no splash, no question about goals, and nothing
+anywhere that counts how many times an offer was walked past. The account verb a lifter mid-session
+can reach is *Build my routine*, which opens the shell's own door and comes back to the running
+session; it is drawn only while there is no account, because the step after one is the MCP grant and
+that door is the web's on this surface.
+
+"Nothing on the log" is a question about reads that ANSWERED, never about lists that came back empty:
+the log page has to have said *there is no more* and the routines page has to have arrived, so a
+returning lifter whose phone has no signal is never handed a session over a history the room could
+not see. The arrival opens its session **once per install** (`works.windmill.gym`
+SharedPreferences, the twin of the iOS `windmill.gym.firstSessionOpened`) — that is what keeps a
+**sign-out** from reading as a first run, since a signed-out account's log lives somewhere this phone
+deliberately keeps nothing of, and it is what makes "once" true after a first session is discarded.
+It counts nothing, holds no id and records one thing the room did.
+
+Every gym route wants an account, so an anonymous install would otherwise have no catalog to pick
+from; **the six** — back-squat · bench-press · deadlift · overhead-press · barbell-row · chin-up —
+therefore ride with every seat as a client constant (`domain/Training.kt`, ids and names identical to
+`backend/db/schema.sql`'s seed), filling only ids the catalog does not already hold. An anonymous
+squat is logged against the real `back-squat`, so signing in lands it on the movement the log already
+has instead of minting a duplicate.
+
+The gym room opens and works signed out (sessions, routines, movements and the gym's own settings
+live on the device in `LocalLog` + `SetQueue` +
 `LocalPreferences`), and signing in claims all of it onto the account through `ClaimReplay` — the
 settings first, then movements, then routines, then finished sessions oldest-first, each replayed
 start → sets → finish with `joinOpenSession: false`. Settings lead because nothing else references

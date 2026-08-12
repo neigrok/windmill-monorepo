@@ -200,7 +200,9 @@ final class LiveLinesTests: XCTestCase {
                        "the today list numbers what was performed, which is not what counts")
     }
 
-    // A movement with nothing in it says what would start it, rather than reading as a mistake.
+    // A movement with nothing in it says what would start it, rather than reading as a mistake. The
+    // count and that sentence are two lines and not one — the count is the row's right-hand meta and
+    // the sentence sits under the name, so a plan movement nothing has gone into yet says both.
     func testTheJumpSheetSaysWhereEachMovementStands() {
         let rows = LiveLines.jumpRows(
             order: ["bench-press", "overhead-press", "cable-fly"],
@@ -212,8 +214,47 @@ final class LiveLinesTests: XCTestCase {
             current: "bench-press"
         )
         XCTAssertEqual(rows.map(\.name), ["Bench Press", "overhead-press", "cable-fly"])
-        XCTAssertEqual(rows.map(\.meta), ["1 of 5 sets", "no sets yet — logging one starts it", "1 set"])
+        XCTAssertEqual(rows.map(\.meta), ["1 of 5 sets", "0 of 3 sets", "1 set"])
+        XCTAssertEqual(rows.map(\.note),
+                       [nil, "no sets yet — logging one starts it", nil])
         XCTAssertEqual(rows.map(\.isCurrent), [true, false, false])
+        XCTAssertEqual(rows.map(\.canDrop), [false, false, false],
+                       "two were lifted and the third is a plan line — nothing here is a swipe's to take")
+        XCTAssertEqual(rows.map { $0.sets.map(\.value) },
+                       [["82.5 × 5", "40 × 8"], [], ["22.5 × 12"]],
+                       "each movement carries its own sets, in the order they arrive — which is the "
+                       + "order they were performed, because the queue hands them over sorted")
+    }
+
+    // THE ROW A SWIPE MAY TAKE, and it is the same row that reads `just added`: appended on the
+    // bench, nothing logged into it, and no plan line holding it in place. A movement with a set in
+    // it is a lift that happened, and no gesture on a list may un-happen one.
+    func testOnlyAnEmptyAppendedMovementIsJustAddedAndDroppable() {
+        let sets = [aSet("bench-press", 82.5, 5, at: 1_000)]
+        let rows = LiveLines.jumpRows(
+            order: ["bench-press", "overhead-press", "cable-fly"],
+            sets: sets, plan: pushA,
+            catalog: [Exercise(id: "cable-fly", name: "Cable Fly")],
+            current: "bench-press"
+        )
+        XCTAssertEqual(rows.map(\.canDrop), [false, false, true])
+        XCTAssertEqual(rows.map(\.meta), ["1 of 5 sets", "0 of 3 sets", "just added"])
+
+        XCTAssertFalse(LiveOrder.droppable("bench-press", sets: sets, plan: pushA),
+                       "a movement that was lifted stays")
+        XCTAssertFalse(LiveOrder.droppable("overhead-press", sets: sets, plan: pushA),
+                       "and so does one the frozen plan names")
+        XCTAssertTrue(LiveOrder.droppable("cable-fly", sets: sets, plan: pushA))
+        XCTAssertTrue(LiveOrder.droppable("cable-fly", sets: [], plan: nil))
+    }
+
+    // `just added` is the LAST one appended and only that one: two empty movements are two
+    // appends, and the row the primary aims at is the one the thumb made most recently.
+    func testOnlyTheLastAppendedMovementReadsAsJustAdded() {
+        let rows = LiveLines.jumpRows(order: ["cable-fly", "face-pull"], sets: [], plan: nil,
+                                      catalog: [], current: nil)
+        XCTAssertEqual(rows.map(\.meta), ["0 sets", "just added"])
+        XCTAssertEqual(rows.map(\.canDrop), [true, true])
     }
 
     func testTheOfflineStripCountsSetsAndSaysNothingWhenThereAreNone() {

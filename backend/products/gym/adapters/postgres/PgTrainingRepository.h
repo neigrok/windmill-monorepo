@@ -39,6 +39,7 @@ public:
   LogPage log(const UserId& user, const LogCursor& cursor) override;
   std::vector<Set> setsOf(const SessionId& id) override;
   LastTimeOutcome lastTime(const UserId& user, const ExerciseId& exercise) override;
+  std::vector<LastSet> lastSets(const UserId& user) override;
   SessionHistory historyFor(const UserId& user, const Session& session) override;
   bool deleteSession(const UserId& user, const SessionId& id) override;
   std::vector<Routine> routines(const UserId& user) override;

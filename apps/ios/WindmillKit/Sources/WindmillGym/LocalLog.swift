@@ -351,16 +351,50 @@ public final class LocalLog {
     }
 
     // The prefill's question, answered from this device's history: the newest finished session
-    // holding a WORKING set of the movement, its working sets in performed order — warmups already
-    // dropped, exactly as `GET /v1/gym/last` drops them.
+    // holding a non-warmup set of the movement, those sets in performed order.
+    //
+    // THE PREDICATE IS THE SERVER'S, `kind <> 'warmup'`, and it is not the same as "working only":
+    // a drop set and a set taken to failure both happened and both ride along in the log's own answer
+    // (PgTrainingRepository::lastTime). A phone that cut them here would dial a different weight
+    // signed out than the same session dials signed in — and §G18's sheet can file any of the four
+    // kinds, so this shelf really does hold them.
     public func lastTime(_ exerciseId: String) -> LastTime? {
         for local in sessions.reversed() {
-            let working = local.sets.filter { $0.exerciseId == exerciseId && $0.kind == .working }
-            guard !working.isEmpty else { continue }
+            let performed = local.sets.filter { $0.exerciseId == exerciseId && $0.kind != .warmup }
+            guard !performed.isEmpty else { continue }
             return LastTime(exerciseId: exerciseId, session: local.session,
-                            routine: local.session.plan?.routine, sets: working)
+                            routine: local.session.plan?.routine, sets: performed)
         }
         return nil
+    }
+
+    // The picker's meta, answered from this device — every movement's last line, sparse, exactly as
+    // `GET /v1/gym/exercises/last` answers it. Signed out this shelf is the whole log; signed in it
+    // holds what the account has not claimed yet, which is why the store merges rather than replaces.
+    //
+    // One walk, newest session first, taking the LAST non-warmup set of the first finished session
+    // that holds one — the last row of `lastTime`'s block above, and the same row the server's own
+    // `DISTINCT ON … set_number DESC` answers with, so the picker says the same thing signed out as
+    // signed in. Unfinished sessions are not a last time, however heavy.
+    //
+    // IT IS NOT THE SET THE PREFILL DIALS, and the two are not trying to be. This line REPORTS what
+    // was lifted last, so it is one set read off the block whole; `Prefill` AIMS the next one, so it
+    // takes the weight the block ended on and the reps it opened with (Training.swift) — a block of
+    // 100 × 5 then 100 × 3 reads `last 100 × 3` here and opens the dial on 100 × 5. Same weight,
+    // and the reps differ exactly when the lifter's own reps fell off inside the block.
+    public func lastSets() -> [String: LastSet] {
+        var found: [String: LastSet] = [:]
+        for local in sessions.reversed() where local.session.finishedAtMs != nil {
+            var block: [String: LastSet] = [:]
+            for set in local.sets where set.kind != .warmup {
+                block[set.exerciseId] = LastSet(exerciseId: set.exerciseId, weightKg: set.weightKg,
+                                                reps: set.reps, atMs: local.session.startedAtMs)
+            }
+            // The walk is newest first, so a movement this session names is only news if no newer
+            // session already named it. Merging the other way would let last month overwrite today.
+            found.merge(block) { alreadyFound, _ in alreadyFound }
+        }
+        return found
     }
 
     // The review of a LOCAL session: the three facts and the honest word over a short one. The

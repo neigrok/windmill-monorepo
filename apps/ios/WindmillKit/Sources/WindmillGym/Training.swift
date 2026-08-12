@@ -392,6 +392,37 @@ public struct LastTime: Equatable, Codable, Sendable {
     }
 }
 
+// ONE MOVEMENT'S LAST LINE — `GET /v1/gym/exercises/last`, the picker's meta and nothing else. It is
+// the last set of that movement's last-time block, the same row `LastTime.sets` ends on, and `at` is
+// the SESSION's start rather than the set's own instant, so it is spelled as elapsed time.
+//
+// THE READ IS SPARSE AND THE ABSENCE IS THE ANSWER: a movement with no line here has never been
+// trained by this account, and `never logged` is drawn by finding nothing. There is no sentinel, no
+// null and no zero row, so nothing that reads these may treat a missing key as a fresh start until
+// it knows the read itself landed — which is why the store holds them as an optional map.
+public struct LastSet: Equatable, Codable, Sendable, Identifiable {
+    public let exerciseId: String
+    public let weightKg: Double
+    public let reps: Int
+    public let atMs: Int64
+
+    public var id: String { exerciseId }
+
+    public init(exerciseId: String, weightKg: Double, reps: Int, atMs: Int64) {
+        self.exerciseId = exerciseId
+        self.weightKg = weightKg
+        self.reps = reps
+        self.atMs = atMs
+    }
+
+    // `at` on the wire and `atMs` here, the same rename every instant in this file takes: the unit
+    // belongs in the name on a surface where a seconds-vs-milliseconds mistake is a date in 1970.
+    enum CodingKeys: String, CodingKey {
+        case exerciseId, weightKg, reps
+        case atMs = "at"
+    }
+}
+
 // `targetReps` absent is the routine declining to name one — `3 × max`, a movement taken to whatever
 // it gives that day. The same absence the plan snapshot carries, because the snapshot is frozen off
 // these rows.

@@ -76,10 +76,24 @@ device that is with you, awake and able to log in a basement with no signal
 (`backend/products/gym/ARCHITECTURE.md` §11). The room is anonymous-first: sessions, routines and
 finished history live on the device before there is an account (`LocalLog`), and signing in claims
 them — movements, then routines, then sessions oldest first, each replayed start → sets → finish
-with `joinOpenSession: false`. The queue is the room's load-bearing part: sets are kept on the
-device under their own client-minted ids and replayed until the log takes them, and the three
-refusals are told apart by their machine `code` — two mean re-mint and send again, one means that
-set can never land and the room says so.
+with `joinOpenSession: false`. **The catalog ships in the app** (`DeviceCatalog.seeded`, the same 64
+rows as `backend/db/schema.sql`) because signed out there is no catalog read to make: without them a
+fresh install opened the picker onto "the catalog didn't load", which made the anonymous room a
+promise it could not keep on the one launch that matters.
+
+**Arriving starts the first session.** Gym's answer to the shell's one question is not a tour: it is
+the real surface with its first move already made (`GymRoom.openTheFirstOne`) — a session running, the
+picker already up, the six barbell movements at the head of it, each reading `never logged`. It fires
+once, on a device *known* to hold nothing at all (`TrainingStore.holdsNothing` — no live session, and
+the log and routine reads landed and came back empty, because an empty list is also what a read that
+failed leaves behind), and goes through the same start the Start button uses so the local shelf and
+the claim replay know the session like any other. Signed out that is always true on a fresh install —
+the device is the whole log. Signed in with no signal it is not, so nothing starts and Today draws its
+own Start button instead; a start that fails here says nothing, because nobody asked for it.
+
+The queue is the room's load-bearing part: sets are kept on the device under their own client-minted
+ids and replayed until the log takes them, and the three refusals are told apart by their machine
+`code` — two mean re-mint and send again, one means that set can never land and the room says so.
 
 **Sign in with Apple is the primary door** (one tap, no address to type), with the emailed six-digit
 code beside it rather than behind it: email is the only door that keeps one account across phone and
@@ -204,6 +218,8 @@ the first real thing → the house, once.**
 One); there is no anonymous tending. That is not a wall — everything done by hand works signed out
 forever, and journal's first run spends nothing. Roadmap's "Plant it" and Gym's "Build my routine"
 open the door at that tap and resume after, exactly as `auth.md` §2 defines for Share and Connect.
+Gym's card is on its opening picker and it is the only account verb in that room; signed in it opens
+the connect page instead, because what the agent still needs then is the grant and not a sign-in.
 
 ## Known gaps (wave 2)
 
@@ -248,6 +264,17 @@ open the door at that tap and resume after, exactly as `auth.md` §2 defines for
   of three products have no phone-side state to report and this client has no entitlements call, so
   neither is drawn — a composed sentence that could only speak for journal, or a meter that invented
   a number, would both be worse than the gap.
+- **The account verb reaches the door through You.** `ShellActions` lends a room three moves —
+  `openYou`, `openSwitcher`, `goHome` — and none of them is "open the sign-in door". Gym's "Build my
+  routine" therefore opens You, where the door is one row away, rather than the door itself the way
+  §J23 draws it. The room is behind the sheet either way, so the resume is right; it is one tap
+  longer than the design. A `ShellActions.openDoor` would close it, and the shell is not a product's
+  territory.
+- **Gym's two assembly gestures are built but not driven.** Drag-to-reorder and swipe-to-drop on the
+  session list (§A screen 2) are a `List` with `onMove` and `swipeActions`; what a drag and a swipe
+  DO is covered by tests against the store, and the screen has been read on a simulator, but no
+  synthetic touch is available here so the gestures themselves have never been performed. Same
+  standing as the edge-swipe below.
 - **The edge-swipe home gesture is unverified.** It is hand-rolled (bound to the leading 20pt)
   because each app hides the navigation bar to own its chrome, which is exactly what disables the
   system's interactive pop. Synthetic touches are not available here, so it has been built but not

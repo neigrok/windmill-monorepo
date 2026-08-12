@@ -8,7 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  CREATED_MOVEMENT, movementOptions, PICKER_MATCHES,
+  CREATED_MOVEMENT, lastSetLabel, lastSetsById, movementOptions, NO_LAST_TIME_META, PICKER_MATCHES,
 } from '../../../../src/products/gym/logger/movements.js';
 
 const CATALOG = [
@@ -114,4 +114,64 @@ test('a movement the session already holds is named as such, and is never offere
     'Create “Pendlay Row”',
   );
   assert.equal(movementOptions({ catalog, order: ['ex_31ab'], query: 'Pendlay Row' }).empty, 'No movement by that name.');
+});
+
+// THE META UNDER A ROW (§B7), and the one thing it must never invent. The read behind it is sparse:
+// it carries an entry for every movement this account has a LAST TIME for and NOTHING for the rest,
+// so the absence sentence is drawn from a movement being missing and from no other fact. A
+// sentinel, a null row or a zero would each be the server saying something it deliberately does not
+// say — and a zero is a load in this product, not an absence of one.
+const AT = new Date(2026, 7, 8, 18, 30).getTime();
+const THREE_DAYS_LATER = new Date(2026, 7, 11, 9, 15).getTime();
+
+test('a movement with history reads its last set and the day it was, never its heaviest', () => {
+  const last = { exerciseId: 'bench-press', weightKg: 82.5, reps: 5, at: AT };
+  assert.equal(lastSetLabel(last, THREE_DAYS_LATER), 'last 82.5 × 5 · 3 days ago');
+  assert.equal(lastSetLabel(last, new Date(2026, 7, 8, 23, 59).getTime()), 'last 82.5 × 5 · today');
+  assert.equal(lastSetLabel(last, new Date(2026, 7, 9, 6, 0).getTime()), 'last 82.5 × 5 · yesterday');
+});
+
+// AND THE ABSENCE CLAIMS NO HISTORY. The read is the last-time read: the workout running right now
+// is not a last time, and a warmup is not one either — so a movement missing from it may well have
+// been logged, and on day one every movement the lifter has ever touched is missing while their
+// first session is still open. `never logged` over that is a false sentence on a surface whose own
+// Today screen is drawing those sets; the row says the exact negation of the line it replaces, and
+// the word `never` appears in neither reading.
+test('a movement with no entry says it has no last time, and never that it was never logged', () => {
+  assert.equal(NO_LAST_TIME_META, 'no last time');
+  assert.equal(lastSetLabel(undefined, THREE_DAYS_LATER), NO_LAST_TIME_META);
+  assert.equal(lastSetLabel(null, THREE_DAYS_LATER), NO_LAST_TIME_META);
+  assert.equal(/never/i.test(NO_LAST_TIME_META), false);
+  // A movement that WAS logged at no load is not that: zero is a load here — the chin-up done at
+  // bodyweight — and a band-assisted set is a real point below it.
+  assert.equal(
+    lastSetLabel({ exerciseId: 'chin-up', weightKg: 0, reps: 8, at: AT }, THREE_DAYS_LATER),
+    'last bodyweight × 8 · 3 days ago',
+  );
+  assert.equal(
+    lastSetLabel({ exerciseId: 'chin-up', weightKg: -20, reps: 10, at: AT }, THREE_DAYS_LATER),
+    'last −20 × 10 · 3 days ago',
+  );
+});
+
+// The reply is ordered by exercise id, which is a JOIN key order and not a draw order: the rows are
+// drawn in the catalog's order and each one asks this index for its own line. A movement the index
+// has never heard of answers nothing at all, which is exactly what the picker draws `no last time`
+// from — so the two halves are one rule and there is no third state to get wrong.
+test('the last sets are an index by movement, and a movement outside it has no line', () => {
+  const index = lastSetsById([
+    { exerciseId: 'back-squat', weightKg: 100, reps: 5, at: AT },
+    { exerciseId: 'bench-press', weightKg: 82.5, reps: 5, at: AT },
+  ]);
+  assert.equal(index.size, 2);
+  assert.deepEqual(index.get('back-squat'), { exerciseId: 'back-squat', weightKg: 100, reps: 5, at: AT });
+  assert.equal(index.get('deadlift'), undefined);
+  assert.equal(lastSetLabel(index.get('deadlift'), THREE_DAYS_LATER), NO_LAST_TIME_META);
+  assert.equal(lastSetLabel(index.get('back-squat'), THREE_DAYS_LATER), 'last 100 × 5 · 3 days ago');
+
+  // A lifter with no finished block behind them gets an empty list rather than a list of nothings,
+  // and every row on their picker says so.
+  const nothing = lastSetsById([]);
+  assert.equal(nothing.size, 0);
+  assert.equal(lastSetLabel(nothing.get('back-squat'), THREE_DAYS_LATER), NO_LAST_TIME_META);
 });

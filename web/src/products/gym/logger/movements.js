@@ -11,8 +11,45 @@
 // query that matched nothing anywhere says only that — beside the offer to create what was just
 // typed, which is why the sentence no longer echoes the query back: the button holds it, and
 // holding it twice would be the same words in the same breath.
+//
+// AND WHAT EACH ROW IT DOES OFFER SAYS UNDER THE NAME — the lifter's own last set of that movement,
+// or the fact that there has never been one. Same file, because it is the same row.
+
+import { agoLabel, setLoadLabel } from '../log.js';
 
 export const PICKER_MATCHES = 7;
+
+// WHAT A ROW SAYS UNDER THE NAME (§B7): this lifter's own last time of the movement — the set and
+// the day — or the fact that there is no last time to draw. Both readings come off one sparse read
+// (gymApi.lastSets): an entry per movement this account has a last time for and nothing at all for
+// the rest, so the second reading is an ABSENCE and never a zero anybody sent.
+//
+// The set is the last of that last-time block rather than the heaviest, and the day is that
+// SESSION's start, so "last 82.5 × 5 · 3 days ago" is the set the phone's prefill would open on and
+// the day the lifter stood in. Neither half is spelled here: a load and its reps read the way they
+// read everywhere in this product — where a chin-up at nothing is `bodyweight × 8` rather than a
+// zero — and an elapsed day is `agoLabel`, as on every other screen.
+//
+// AND THE ABSENCE SAYS `no last time`, NOT the design's `never logged`, because the read cannot
+// carry that second claim. "Last time" is this product's own term and it excludes two things on
+// purpose: the workout running right now (it is not a last time until it is finished) and warmup
+// sets. So the movements a lifter is squatting THIS MINUTE are absent from this read — on day one,
+// the wave's own subject, that is every movement they have ever touched — and Today, one tab over
+// on this same surface, is drawing those very sets. `never logged` there is the desk contradicting
+// itself about a lifter's history. `no last time` is exactly the negation of the other half of the
+// line, and it is true of both silences: no finished block, or none that was not a ramp-up. The
+// canon word is raised for the board and the phones rather than repeated here over bytes that do
+// not support it.
+export const NO_LAST_TIME_META = 'no last time';
+
+export function lastSetsById(movements) {
+  return new Map(movements.map((each) => [each.exerciseId, each]));
+}
+
+export function lastSetLabel(last, now = Date.now()) {
+  if (!last) return NO_LAST_TIME_META;
+  return `last ${setLoadLabel(last)} · ${agoLabel(last.at, now)}`;
+}
 
 // The two fields the wire requires of a created movement, and the picker asks for neither: canon
 // screen 7 is a name and a button, and there is no taxonomy screen in this product. So the pair

@@ -76,6 +76,30 @@ void GymApi::listExercises(const drogon::HttpRequestPtr& req, HttpCallback&& cb)
   cb(jsonResponse(body));
 }
 
+// The picker's meta, in ONE read: what this lifter last did of each movement they have trained, and
+// when. It is a second read rather than four more columns on the catalog row, and the reason is
+// arithmetic: the catalog is 64 rows read on nearly every screen, most of them movements a given
+// lifter has never touched, and `list_exercises` hands that same row to an agent whose reply a whole
+// token-budget wave was spent shrinking. So the annotation is asked for by the one surface that
+// draws it, and it carries a line only for the movements that have one — a movement absent here is
+// the picker's `never logged`, said by saying nothing.
+//
+// It is also not sixty-four calls to `/v1/gym/last`, one per catalog row, which is the shape a
+// picker would otherwise reach for: the N+1 the log read already refused when it made a summary
+// carry its own derived facts. Sixty-four is the seeded catalog counted (db/schema.sql), plus
+// whatever this account has created — the design mock says 62 in its search placeholder and the
+// mock is the one that is wrong.
+void GymApi::lastSets(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
+    return;
+  }
+  Json::Value body(Json::objectValue);
+  body["movements"] = toJson(log_->lastSets(*caller));
+  cb(jsonResponse(body));
+}
+
 // The movement a lifter creates from the picker, off "no movement by that name". It is theirs
 // alone — created_by is the owner, and the catalog read only ever serves the seeds plus the
 // caller's own — so the reply is the row every later set and routine entry points at by id.

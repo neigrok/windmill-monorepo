@@ -76,6 +76,138 @@ final class AnonymousGymTests: XCTestCase {
 
     // ── the room, signed out ───────────────────────────────────────────────────────────────────
 
+    // THE FIRST ARRIVAL, END TO END (wave 5 §5, and it is the one thing in that wave that is not a
+    // screen): a phone that has never held anything opens gym, a session starts because arriving
+    // started it, four sets go in, the app dies with nothing drained and nothing finished — and
+    // NOTHING IS LOST. No account, no network, no reply from anybody.
+    //
+    // The precondition asserted first is the room's own test for a first arrival
+    // (`GymRoom.openTheFirstOne` → `holdsNothing`): nothing running, no history, no program, and
+    // every read that could say otherwise landed — which signed out is trivially true, because the
+    // device IS the log. And the picker has to be able to name a movement here or the whole promise
+    // is a screen you cannot get past — which is what the sixty-four seeds in the app bundle are for.
+    func testAFreshArrivalLogsFourSetsAndLosesNothingWhenTheAppDies() async {
+        let store = makeStore(sync: nil)
+        await store.connect(to: account(signedIn: false))
+
+        XCTAssertNil(store.session)
+        XCTAssertTrue(store.recent.isEmpty)
+        XCTAssertTrue(store.routines.isEmpty)
+        XCTAssertEqual(store.logFoot, .bottom)
+        XCTAssertTrue(store.holdsNothing, "so arriving starts the first session")
+
+        guard case .success(let opened) = await store.start() else {
+            return XCTFail("arriving starts the session, and it needs nobody's permission")
+        }
+        XCTAssertNil(store.exerciseId, "the picker is what a session with nothing chosen draws")
+
+        // §J22's list, on a device that has never reached a server.
+        let waiting = PickerOptions.matching(query: "", catalog: store.catalog, taken: store.order,
+                                             lastSets: store.lastSets, now: 0)
+        XCTAssertEqual(waiting.six.map(\.name),
+                       ["Back Squat", "Bench Press", "Deadlift", "Overhead Press", "Barbell Row",
+                        "Chin Up"])
+        XCTAssertEqual(waiting.six.map(\.meta), Array(repeating: nil, count: 6),
+                       "nothing has been read, so nothing is claimed about what was never lifted")
+
+        await store.loadLastSets()
+        let read = PickerOptions.matching(query: "", catalog: store.catalog, taken: store.order,
+                                          lastSets: store.lastSets, now: 0)
+        XCTAssertEqual(read.six.map(\.meta), Array(repeating: "never logged", count: 6),
+                       "the device IS the log signed out, and it has answered")
+
+        await store.choose("back-squat")
+        for weight in [60.0, 80.0, 100.0, 100.0] {
+            await store.logSet(weightKg: weight, reps: 5)
+        }
+        XCTAssertEqual(store.sets.count, 4)
+        XCTAssertEqual(store.saveState, .onThisDevice)
+
+        // The app dies here: no finish, no flush, no drain. A phone in a locker.
+        let reopened = makeStore(sync: nil)
+        await reopened.connect(to: account(signedIn: false))
+
+        XCTAssertEqual(reopened.session?.id, opened.id, "the same workout is still running")
+        XCTAssertEqual(reopened.sets.map(\.weightKg), [60, 80, 100, 100])
+        XCTAssertEqual(reopened.sets.map(\.exerciseId), Array(repeating: "back-squat", count: 4))
+        XCTAssertEqual(reopened.order, ["back-squat"])
+
+        // And the room stands where the lifter left off rather than back in the picker — the walk it
+        // resumes at is the movement the last set went into (GymRoom's own task, in two lines).
+        guard let resumed = LiveOrder.resume(order: reopened.order, sets: reopened.sets) else {
+            return XCTFail("a session with sets in it has somewhere to stand")
+        }
+        XCTAssertEqual(resumed, "back-squat")
+        await reopened.choose(resumed)
+        XCTAssertEqual(reopened.prefill.weightKg, 100, "dialled to the weight the last set was at")
+        XCTAssertEqual(reopened.todaySets.count, 4)
+    }
+
+    // WHAT THE ARRIVAL START ACTUALLY ASKS, and why it is not "are these lists empty". A read that
+    // failed leaves them empty too — and a returning account handed a session it never asked for, on
+    // top of a history the room merely could not see, is the one way §J22 can hurt somebody who is
+    // not new. `holdsNothing` asks the FOOT of the log and whether the routines answered at all.
+    func testTheArrivalStartWillNotReadAFailedLogAsAnEmptyOne() async {
+        let server = FakeTraining()
+        server.online = false
+        let quiet = makeStore(sync: server, retryAfter: .seconds(600))
+        await quiet.connect(to: account(signedIn: true))
+
+        XCTAssertEqual(quiet.logFoot, .failed)
+        XCTAssertTrue(quiet.recent.isEmpty)
+        XCTAssertTrue(quiet.routines.isEmpty)
+        XCTAssertFalse(quiet.holdsNothing, "empty because nothing answered is not empty")
+
+        // The same account and the same genuinely empty log, once the reads land.
+        server.online = true
+        let answered = makeStore(sync: server, retryAfter: .seconds(600))
+        await answered.connect(to: account(signedIn: true))
+        XCTAssertEqual(answered.logFoot, .bottom)
+        XCTAssertTrue(answered.holdsNothing)
+
+        // And a routines read that missed on its own is the same refusal: the log answering "no
+        // sessions" says nothing about whether this lifter has a program written down.
+        server.refuseRoutines = refusal(500, message: "internal error")
+        let halfRead = makeStore(sync: server, retryAfter: .seconds(600))
+        await halfRead.connect(to: account(signedIn: true))
+        XCTAssertEqual(halfRead.logFoot, .bottom)
+        XCTAssertTrue(halfRead.routines.isEmpty)
+        XCTAssertFalse(halfRead.holdsNothing)
+    }
+
+    // THE PICKER'S META CROSSES THE SIGN-IN, because the screen that asked for it does. §J22's card
+    // is a door OUT of the room and the room stays mounted behind it — that is what lands the lifter
+    // back mid-session — so the opening picker's own `.task` never runs a second time. Without the
+    // re-read at the tail of `connect`, every row lost its line for the rest of the session and the
+    // account's real history was never asked for at all: the six read blank to a lifter whose log
+    // holds all six.
+    func testThePickerMetaIsAskedAgainForTheAccountThatArrives() async {
+        let server = FakeTraining()
+        server.catalog = DeviceCatalog.seeded
+        server.lastSets = [LastSet(exerciseId: "back-squat", weightKg: 140, reps: 5, atMs: 900)]
+        let store = makeStore(sync: server, retryAfter: .seconds(600))
+        await store.connect(to: account(signedIn: false))
+
+        // The opening picker asks. Signed out the device is the log, and it has never held a squat.
+        await store.loadLastSets()
+        XCTAssertEqual(store.lastSets, [:])
+
+        // Build my routine → You → signed in. The room never unmounted, so nothing asks again.
+        await store.connect(to: account(signedIn: true))
+        XCTAssertEqual(store.lastSets?["back-squat"]?.weightKg, 140,
+                       "the seat that arrived answered what the seat that left was asked")
+        let six = PickerOptions.matching(query: "", catalog: store.catalog, taken: store.order,
+                                         lastSets: store.lastSets, now: 900)
+        XCTAssertEqual(six.six.first?.meta, "last 140 × 5 · today")
+
+        // And a launch nobody opened a picker on still costs no read: this is a picker-open read.
+        let untouched = FakeTraining()
+        let unopened = makeStore(sync: untouched, retryAfter: .seconds(600))
+        await unopened.connect(to: account(signedIn: true))
+        XCTAssertNil(unopened.lastSets)
+        XCTAssertFalse(untouched.calls.contains("lastSets"))
+    }
+
     // The whole signed-out life of a session, on this device and nowhere else: start, log, finish,
     // and the log page Today draws from local history.
     func testSignedOutASessionRunsWholeOnThisDevice() async {
@@ -184,8 +316,9 @@ final class AnonymousGymTests: XCTestCase {
         XCTAssertEqual(why, "that routine is not on this device")
     }
 
-    // A fresh phone has no catalog at all, so the picker's Create must work signed out — and the
-    // routine kept at the end of a session lands on the same shelf.
+    // A fresh phone holds the sixty-four seeds and nothing else, so the picker's Create must work
+    // signed out for anything they do not name — and the routine kept at the end of a session lands
+    // on the same shelf.
     func testSignedOutCreateAndKeepLandOnTheDevice() async {
         let store = makeStore(sync: nil)
         await store.connect(to: account(signedIn: false))
@@ -194,7 +327,9 @@ final class AnonymousGymTests: XCTestCase {
             return XCTFail("a movement can be minted onto this device")
         }
         XCTAssertTrue(made.custom)
-        XCTAssertEqual(store.catalog.map(\.name), ["Zercher Squat"])
+        XCTAssertEqual(store.catalog.count, DeviceCatalog.seeded.count + 1)
+        XCTAssertEqual(store.catalog.last?.name, "Zercher Squat",
+                       "what this device minted sits after the seeds it shipped with")
 
         let performed = [
             TrainingSet(id: "set_a", exerciseId: made.id, weightKg: 60, reps: 5, completedAtMs: 2_000),
@@ -284,7 +419,7 @@ final class AnonymousGymTests: XCTestCase {
         XCTAssertNil(page.chart, "no series is no chart — never an empty frame")
         XCTAssertEqual(page.noChart, .onThisDevice)
         XCTAssertEqual(page.heaviest, Record.Tile(caption: "heaviest", value: "85", under: "kg · for 3"))
-        XCTAssertEqual(page.subhead, "in no routine · 1 session")
+        XCTAssertEqual(page.subhead, "barbell · in no routine · 1 session")
         XCTAssertEqual(page.days.map(\.sets), ["82.5 × 5 · 85 × 3"])
         XCTAssertFalse(page.neverLogged)
     }
@@ -316,7 +451,7 @@ final class AnonymousGymTests: XCTestCase {
 
         let page = Record.page(answered.record, now: opened.startedAtMs, from: answered.source)
         XCTAssertFalse(page.neverLogged, "there are sets on this page")
-        XCTAssertEqual(page.subhead, "in no routine · no working sets")
+        XCTAssertEqual(page.subhead, "barbell · in no routine · no working sets")
         XCTAssertNil(page.best)
         XCTAssertNil(page.heaviest)
         XCTAssertEqual(page.days.map(\.sets), ["40 × 12 drop"])

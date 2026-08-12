@@ -116,6 +116,29 @@ struct LastTime {
   bool operator==(const LastTime&) const = default;
 };
 
+// The picker's meta line for ONE movement: the last set of it this lifter performed, and when. It
+// is `LastTime` projected to the one line a list can print — the LAST row of that block, which is
+// the row the prefill dials its weight off — so the two reads answer with the same set or the
+// product says two different things about "last time" one tap apart.
+//
+// atMs is the SESSION's start and never the set's own instant, the rule every mark a store hands
+// over already obeys: completed_at is the device's wall clock (§2.2), and dating a line by it put
+// the same set on two calendar days on two different screens. "3 days ago" is the day you trained
+// it.
+//
+// The vector is SPARSE — one row per movement this account has actually worked, nothing for the
+// rest — and that absence is the whole of `never logged`. It is what makes this read proportional
+// to a lifter's history instead of to a 64-row catalog, which is why the annotation is not a column
+// on the catalog row (§5).
+struct LastSet {
+  ExerciseId exercise;
+  double weightKg;
+  int reps;
+  std::uint64_t atMs;
+
+  bool operator==(const LastSet&) const = default;
+};
+
 // A first-ever movement has no last time, and that is a fact, not a fault — it comes back as an
 // empty outcome with no error. unknownExercise is the other thing an empty answer could mean and
 // the store is the only layer that can tell them apart, so it says which in a value, exactly as
@@ -317,6 +340,13 @@ struct TrainingRepository {
   // The prefill read: what this account did the last time it trained this movement. Fired on every
   // movement change, and the one read in this port with no write behind it anywhere.
   virtual LastTimeOutcome lastTime(const UserId& user, const ExerciseId& exercise) = 0;
+  // The picker's read: the same rule as above, run over every movement this account has trained,
+  // in one pass. A picker asking `lastTime` per row would be sixty-four round trips to draw a list,
+  // one per seeded catalog row — the N+1 the log read already refused when it made the summary carry
+  // its own derived facts.
+  // Ordered by movement id, because the caller joins these onto a catalog it already holds and an
+  // id is the key it joins on; the ordering the LIST is drawn in is the catalog's.
+  virtual std::vector<LastSet> lastSets(const UserId& user) = 0;
 
   // The finish read: everything the review rules need that this session does not already hold, in
   // one pass. It answers in a DOMAIN value (SessionHistory) rather than a shape of its own, because

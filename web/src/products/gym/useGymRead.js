@@ -1,8 +1,11 @@
-// ONE READ, FOUR ANSWERS — the shape every route-owned screen in gym uses to ask the store a
-// question: the session detail, the routines list, one routine's editor, the finish screen, a
-// movement's record and the coach's shared page. They all need the same four states and the same
-// repair, and six copies of this dance is six chances for one of them to leave a screen saying
-// "opening…" forever.
+// ONE READ, FOUR ANSWERS — the shape every room in gym uses to ask the store a question: the
+// session detail, the routines list, one routine's editor, the finish screen, a movement's record
+// and the coach's shared page. They all need the same four states and the same repair, and six
+// copies of this dance is six chances for one of them to leave a screen saying "opening…" forever.
+//
+// The movement picker is the seventh and the only one that is not a route: it opens OVER a room
+// rather than being one, so its read (the last set of every movement, §B7) begins when it is mounted
+// and is dropped with it — which is exactly the lifetime this hook already gives a screen.
 //
 // `absent` is its own answer and not a failure: a routine another account owns and a routine that
 // never existed are one fact on this wire, and a read that resolves to null is that fact. A read

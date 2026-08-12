@@ -37,6 +37,8 @@ namespace wm::gym {
 //   set out     : { "id", "exerciseId", "setNumber", "weightKg", "reps", "kind", "rpe"?, "note",
 //                   "completedAt" }
 //   exercise out: { "id", "name", "pattern", "equipment", "stepKg", "custom" }
+//   last sets out: { "movements": [ { "exerciseId", "weightKg", "reps", "at" } ] }
+//                                                       GET /v1/gym/exercises/last
 //   routine out : { "id", "name", "position", "lastTrainedAt"?,
 //                   "entries": [ { "position", "exerciseId", "targetSets", "targetReps"?,
 //                                  "targetWeightKg"?, "restSeconds"? } ] }
@@ -158,6 +160,11 @@ Json::Value toJson(const Set& set);
 Json::Value toJson(const std::vector<Set>& sets);
 Json::Value toJson(const Exercise& exercise);
 Json::Value toJson(const std::vector<Exercise>& exercises);
+// The picker's meta, one line per movement this lifter has trained and no line for any other — a
+// movement with no row here is the `never logged` the picker draws, so nothing needs to be sent to
+// say so. It rides BESIDE the catalog rather than on it (ARCHITECTURE §5): `exercise out` is read on
+// nearly every screen and by `list_exercises`, whose reply a whole wave was spent shrinking.
+Json::Value toJson(const std::vector<LastSet>& movements);
 Json::Value toJson(const Routine& routine);
 Json::Value toJson(const std::vector<Routine>& routines);
 Json::Value toJson(const PlanSnapshot& plan);

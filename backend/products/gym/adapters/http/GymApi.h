@@ -61,6 +61,10 @@ public:
          std::string appBaseUrl);
 
   void listExercises(const drogon::HttpRequestPtr& req, HttpCallback&& cb);   // GET  /v1/gym/exercises
+  // The picker's meta, beside the catalog and not on it. `/v1/gym/last?exercise=` is one movement's
+  // whole block; this is every movement's last line, which is the same rule and the answer a list
+  // can draw.
+  void lastSets(const drogon::HttpRequestPtr& req, HttpCallback&& cb);        // GET  /v1/gym/exercises/last
   void createExercise(const drogon::HttpRequestPtr& req, HttpCallback&& cb);  // POST /v1/gym/exercises
   void renameExercise(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                       const std::string& id);                                 // PATCH /v1/gym/exercises/{id}

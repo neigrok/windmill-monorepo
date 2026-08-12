@@ -40,6 +40,9 @@ public struct GymRoom: View {
     @StateObject private var store = TrainingStore()
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.shellActions) private var shell
+    @Environment(\.openURL) private var openURL
+    // Whether this device has ever been handed its first session — see `openTheFirstOne`.
+    @AppStorage("windmill.gym.firstSessionOpened") private var firstSessionOpened = false
     @State private var finished: FinishedSession?
     @State private var tab: Tab = .today
     @State private var away: [Away] = []
@@ -121,6 +124,7 @@ public struct GymRoom: View {
         // that never stopped stands where the lifter was, not in the picker over a session of sets.
         .task(id: account.user?.id) {
             await store.connect(to: account)
+            await openTheFirstOne()
             guard store.exerciseId == nil,
                   let movement = LiveOrder.resume(order: store.order, sets: store.sets) else { return }
             await store.choose(movement)
@@ -145,7 +149,9 @@ public struct GymRoom: View {
                          onDiscard: { Task { await discard(finished.session) } },
                          onDone: { self.finished = nil })
         } else if store.session != nil {
-            LoggerScreen(store: store, say: { note = $0 }, onFinish: { Task { await close() } })
+            LoggerScreen(store: store, isSignedIn: account.isSignedIn,
+                         onBuildRoutine: buildMyRoutine,
+                         say: { note = $0 }, onFinish: { Task { await close() } })
         } else if let showing {
             switch showing {
             case .session(let summary):
@@ -264,6 +270,47 @@ public struct GymRoom: View {
         CoachDoors(base: account.api.baseURL,
                    mint: { await store.share(sessionId) },
                    revoke: { await store.revokeShare(sessionId) })
+    }
+
+    // ARRIVING STARTS IT (§J22). Gym's answer to the shell's one question is not a tour and not a
+    // pitch: it is the real surface with its first move already made — a session running, the picker
+    // already up, nobody having pressed start. It goes through the same `open` every Start button
+    // uses, because a session opened by a path of its own would be one the device's shelf and the
+    // claim replay had never heard of.
+    //
+    // ONCE, on a device that is KNOWN to hold nothing — `store.holdsNothing`, which asks whether the
+    // reads that could say otherwise actually landed rather than whether their lists came back
+    // empty. A returning lifter whose log read missed must not be handed a session over a history
+    // the room could not see. The flag is what makes "once" true after a first session is discarded —
+    // without it, arriving at an empty room would start a session the lifter just deleted, forever.
+    // It counts nothing and it is not a decline: it records that the first arrival happened, in the
+    // same shape as the shell's Journey.
+    private func openTheFirstOne() async {
+        guard !firstSessionOpened, store.holdsNothing else { return }
+        await open(nil)
+        guard store.session != nil else {
+            // NOBODY ASKED FOR THIS ONE, so nobody is owed a sentence about it not opening. The
+            // room's note speaks for a door the lifter reached for; an error on the first frame of
+            // a first launch, about an action they never took, tells them their gym is broken
+            // before they have touched it. What is left is Today, with its own Start button — which
+            // is where a lifter who DID ask is told, in the log's own words.
+            note = nil
+            return
+        }
+        firstSessionOpened = true
+    }
+
+    // The room's one account verb, §J22's card. Signed out it opens the shell's door — the account is
+    // the shell's business, and everything the lifter has already logged is claimed on the way back.
+    // Signed in the door is already open and what is left is the grant, which lives on the web page
+    // that owns it (the same door §I's settings draw), because this client cannot read entitlements
+    // and a screen naming a connection it never checked would be worse than the door.
+    private func buildMyRoutine() {
+        guard account.isSignedIn else {
+            shell.openYou()
+            return
+        }
+        openURL(URL(string: "/#/connect", relativeTo: account.api.baseURL) ?? account.api.baseURL)
     }
 
     // Start. A double tap is a second session, so the door closes while the first one is in flight —

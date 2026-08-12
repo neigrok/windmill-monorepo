@@ -2,6 +2,24 @@
 // cookie-credentialed (the wm_session the shell already holds) and same-origin in production; in
 // dev it points at the local windmill_server. The wire shapes match the backend exactly:
 //   GET  /v1/gym/exercises               -> { exercises: [{id, name, pattern, equipment, stepKg, custom}] }
+//   GET  /v1/gym/exercises/last          -> { movements: [{exerciseId, weightKg, reps, at}] } — what a
+//                                           picker row says under the name (§B7). SPARSE: one entry
+//                                           per movement THIS account has a LAST TIME for and NO
+//                                           entry for any other, so a movement missing from the list
+//                                           is the picker's `no last time`, said by saying nothing.
+//                                           Absent is not "never trained": the open workout and
+//                                           warmups are out (below), so a movement being lifted this
+//                                           minute is missing too. There is
+//                                           no sentinel, no null and no zero row, and `movements` is
+//                                           always present — `[]` for a lifter with no finished
+//                                           block yet. Ordered by `exerciseId`, which is a JOIN key
+//                                           order and not a draw order: join it onto the catalog
+//                                           above and draw in the catalog's. The set is the LAST set
+//                                           of that movement's last-time block — the same set
+//                                           GET /v1/gym/last answers last, never the heaviest — and
+//                                           `at` is that SESSION's start, which is what "3 days ago"
+//                                           is counted from. Warmups are excluded and an open session
+//                                           is never a last time, both being `last`'s own rules
 //   POST /v1/gym/exercises               -> {id, name, pattern, equipment, stepKg?} in; the stored
 //                                           movement out. A movement a lifter created behaves like
 //                                           every other one; an id already spent is 409
@@ -279,6 +297,26 @@ export const UNCHANGED = Symbol('gym-session-unchanged');
 export const gymApi = {
   async exercises() {
     return (await json(await call('/exercises'))).exercises;
+  },
+
+  // EVERY MOVEMENT'S LAST SET, IN ONE READ — the meta under a picker row (§B7). It is `lastTime`
+  // below asked of the whole catalog rather than sixty-two calls to it, which is the N+1 the log
+  // read already refused once; and it is a SECOND read rather than four more columns on the catalog,
+  // because the catalog is read on nearly every screen while this is drawn on one, and for most
+  // lifters most of those columns would be empty.
+  //
+  // THE ABSENCE IS THE ANSWER, AND IT IS A NARROW ONE. The reply carries nothing at all for a
+  // movement with no last time, so a caller fills no hole in with a zero — and no caller may read
+  // that silence as "never trained", because `last`'s own two exclusions live in it: the workout
+  // running right now is not a last time, and a ramp-up single is not what you did last time. A
+  // caller that has not had the reply yet draws no meta whatsoever, the same rule reached from the
+  // other side — every sentence here is about a lifter's own training, and none of them may be said
+  // over bytes that have not arrived (logger/movements.js).
+  //
+  // It is asked once, when the picker opens. The live filter runs over the list already in hand, so
+  // no keystroke asks it again.
+  async lastSets() {
+    return (await json(await call('/exercises/last'))).movements;
   },
 
   // A movement the catalog does not hold, minted by the lifter who wanted it (screen 7). It is a

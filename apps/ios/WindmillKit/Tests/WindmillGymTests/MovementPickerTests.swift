@@ -66,4 +66,58 @@ final class PickerOptionsTests: XCTestCase {
         XCTAssertEqual(PickerOptions.matching(query: "press", catalog: long, taken: []).matches.count,
                        PickerOptions.shown)
     }
+
+    // THE SIX (§J22) lead an unfiltered list, in their own order and never the catalog's, and they
+    // are not repeated below it. They are a client constant: this product is for a lifter on a
+    // written barbell program, and these are the six that program is made of.
+    func testTheSixLeadAnUnfilteredListAndAreNotRepeatedInIt() {
+        let options = PickerOptions.matching(query: "", catalog: DeviceCatalog.seeded, taken: [])
+        XCTAssertEqual(options.six.map(\.id), PickerOptions.six)
+        XCTAssertEqual(options.six.map(\.name),
+                       ["Back Squat", "Bench Press", "Deadlift", "Overhead Press", "Barbell Row",
+                        "Chin Up"],
+                       "named off the catalog, because a name is what this account calls a movement")
+        XCTAssertTrue(options.matches.allSatisfy { !PickerOptions.six.contains($0.id) })
+        XCTAssertNil(options.empty)
+    }
+
+    // One already in the session drops out of the section for the same reason it drops out of the
+    // list: the picker adds movements, and the assembly list is where a lifter goes back to one.
+    func testASixAlreadyInTheSessionIsNotOfferedAgain() {
+        let options = PickerOptions.matching(query: "", catalog: DeviceCatalog.seeded,
+                                             taken: ["bench-press", "deadlift"])
+        XCTAssertEqual(options.six.map(\.id),
+                       ["back-squat", "overhead-press", "barbell-row", "chin-up"])
+    }
+
+    // Typing is a question about the whole catalog, so the section steps aside — a pinned six over a
+    // search result would be answering something nobody asked.
+    func testTypingPutsTheSixAwayAndFiltersEverything() {
+        let options = PickerOptions.matching(query: "squat", catalog: DeviceCatalog.seeded, taken: [])
+        XCTAssertTrue(options.six.isEmpty)
+        XCTAssertEqual(options.matches.first?.id, "back-squat")
+    }
+
+    // THE META, and its silence is the point. The read is sparse, so an absent movement has never
+    // been trained — but only once the read has landed. Nil says nothing at all, because telling a
+    // lifter of ten years they have never squatted is the product lying in the pixel this exists for.
+    func testTheMetaSaysNothingUntilTheLogHasAnswered() {
+        let quiet = PickerOptions.matching(query: "bench", catalog: catalog, taken: [])
+        XCTAssertEqual(quiet.matches.map(\.meta), [nil, nil])
+
+        let day: Int64 = 86_400_000
+        let answered = PickerOptions.matching(
+            query: "bench", catalog: catalog, taken: [],
+            lastSets: ["bench-press": LastSet(exerciseId: "bench-press", weightKg: 82.5, reps: 5,
+                                              atMs: 10 * day)],
+            now: 13 * day)
+        XCTAssertEqual(answered.matches.map(\.meta), ["last 82.5 × 5 · 3 days ago", "never logged"])
+    }
+
+    // A movement the lifter minted is tagged so they can recognise their own, and behaves
+    // identically in every other respect.
+    func testAMintedMovementIsTaggedYours() {
+        let options = PickerOptions.matching(query: "squat", catalog: catalog, taken: [])
+        XCTAssertEqual(options.matches.map(\.yours), [false, true])
+    }
 }

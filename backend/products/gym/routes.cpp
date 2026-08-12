@@ -30,6 +30,17 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
         api->createExercise(req, std::move(cb));
       },
       {drogon::Post});
+  // The picker's meta line for every movement this lifter has trained. It hangs off the catalog's
+  // own path because it is the catalog it annotates, and `last` can never be mistaken for a movement
+  // id: the id shape refuses anything under eight characters (domain/Training.cpp), so no lifter can
+  // ever mint one, and no seed is called that. The singular of this read is `/v1/gym/last?exercise=`
+  // — same rule, one movement, the whole block instead of its last line.
+  app.registerHandler(
+      "/v1/gym/exercises/last",
+      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        api->lastSets(req, std::move(cb));
+      },
+      {drogon::Get});
   // The rename is a PATCH and not a PUT because ONE field of a movement is a lifter's to change:
   // a PUT would promise the whole row, and the pattern, equipment and step of a seed belong to the
   // catalog rather than to any one account.

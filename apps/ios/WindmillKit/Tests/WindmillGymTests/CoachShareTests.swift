@@ -261,7 +261,10 @@ final class CoachShareStoreTests: XCTestCase {
             return XCTFail("the device's own log always answers")
         }
         XCTAssertEqual(local.record,
-                       MovementRecord(exercise: Exercise(id: "bench-press", name: "bench-press")))
+                       MovementRecord(exercise: Exercise(id: "bench-press", name: "Bench Press",
+                                                         pattern: "press", equipment: "barbell",
+                                                         stepKg: 2.5)),
+                       "the movement is named off the seeds this app ships with, signed out")
         XCTAssertEqual(local.source, .thisDevice, "and it says so, because it computes no estimate")
         XCTAssertTrue(Record.page(local.record, now: 0, from: local.source).neverLogged)
     }

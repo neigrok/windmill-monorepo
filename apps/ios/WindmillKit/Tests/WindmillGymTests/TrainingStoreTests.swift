@@ -430,8 +430,8 @@ final class TrainingStoreTests: XCTestCase {
     // of the 64 global seeds writes a per-account display override (§H), so the file is one
     // account's names and not everybody's. A relaunch under the same account draws them back before
     // any read; every other seat — the anonymous room included, where no catalog read ever comes to
-    // replace them — opens on the slug rather than on somebody else's private name for a movement
-    // they share.
+    // replace them — falls back to the SEEDS this app ships with rather than to somebody else's
+    // private name for a movement they share.
     func testTheMovementNamesAreHeldPerSeatAndAreThereBeforeTheFirstFrame() async {
         let server = FakeTraining()
         server.catalog = [Exercise(id: "bench-press", name: "Bench Press"),
@@ -447,12 +447,136 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(relaunched.catalog.map(\.id), ["bench-press", "back-squat"])
         XCTAssertEqual(Readout.movement("bench-press", in: relaunched.catalog), "Bench Press")
 
-        // Nobody's seat is a seat: the anonymous room opens on the slug rather than on the names an
-        // account read, which is the worst this file was ever allowed to cost.
+        // Nobody's seat is a seat: the anonymous room lets go of the names an account read and opens
+        // on the sixty-four the app ships with, which is the whole of the catalog it ever has.
         let anonymous = makeStore(sync: nil)
         await anonymous.connect(to: account(signedIn: false))
-        XCTAssertEqual(anonymous.catalog, [])
-        XCTAssertEqual(Readout.movement("bench-press", in: anonymous.catalog), "bench-press")
+        XCTAssertEqual(anonymous.catalog, DeviceCatalog.seeded)
+        XCTAssertEqual(Readout.movement("bench-press", in: anonymous.catalog), "Bench Press",
+                       "the seeds are global — the name only becomes an account's when it is changed")
+    }
+
+    // ── the assembly list (§A screen 2) ────────────────────────────────────────────────────────
+
+    // THE WORST DEFECT THIS GESTURE COULD HAVE, asked directly: a reorder that lost a logged set.
+    // It cannot, and the reason is structural rather than careful — the walk order is a list of ids
+    // and the sets are keyed by session and movement, so nothing a drag does can reach one. The
+    // order it leaves behind also has to SURVIVE the next redraw, or the list would spring back
+    // under the thumb that just moved it.
+    func testAReorderMovesTheWalkAndNotOneSet() async {
+        let server = FakeTraining()
+        let store = await liveStore(server)
+        await store.logSet(weightKg: 82.5, reps: 5)
+        await store.choose("cable-fly")
+        await store.logSet(weightKg: 22.5, reps: 12)
+        await store.choose("face-pull")
+        XCTAssertEqual(store.order, ["bench-press", "cable-fly", "face-pull"])
+
+        store.reorder(from: IndexSet(integer: 2), to: 0)
+
+        XCTAssertEqual(store.order, ["face-pull", "bench-press", "cable-fly"])
+        XCTAssertEqual(store.sets.map { "\($0.exerciseId) \(Readout.effort(weightKg: $0.weightKg, reps: $0.reps))" },
+                       ["bench-press 82.5 × 5", "cable-fly 22.5 × 12"],
+                       "every set is where it was, under the movement that owns it")
+        XCTAssertEqual(SetQueue(url: queueURL).order, ["face-pull", "bench-press", "cable-fly"],
+                       "and it is on disk, so the app dying does not undo it")
+
+        let relaunched = makeStore(sync: server)
+        await relaunched.connect(to: account(signedIn: true))
+        XCTAssertEqual(relaunched.order, ["face-pull", "bench-press", "cable-fly"],
+                       "the redraw keeps what the device holds at the head — nothing re-sorts it")
+    }
+
+    // A SWIPE ONLY REACHES WHAT NOTHING IS HOLDING ON TO. A movement that was lifted is a fact, and
+    // a movement the frozen plan names is what the routine asked for — both would be put straight
+    // back by the next redraw, so the store refuses them rather than flickering.
+    func testASwipeCanOnlyTakeAMovementNothingIsHoldingOnTo() async {
+        let server = FakeTraining()
+        let plan = PlanSnapshot(routine: "Push A",
+                                entries: [PlanEntry(exerciseId: "bench-press", sets: 5, reps: 5)])
+        let store = await liveStore(server, plan: plan)
+        await store.logSet(weightKg: 82.5, reps: 5)
+        await store.choose("cable-fly")
+        await store.logSet(weightKg: 22.5, reps: 12)
+        await store.choose("face-pull")
+
+        await store.drop("bench-press")
+        XCTAssertEqual(store.order, ["bench-press", "cable-fly", "face-pull"],
+                       "the plan names it and it has sets — two reasons it stays")
+        await store.drop("cable-fly")
+        XCTAssertEqual(store.order, ["bench-press", "cable-fly", "face-pull"], "and this one was lifted")
+        XCTAssertEqual(store.sets.count, 2, "nothing a refused swipe touched went anywhere")
+
+        await store.drop("face-pull")
+        XCTAssertEqual(store.order, ["bench-press", "cable-fly"])
+        XCTAssertEqual(SetQueue(url: queueURL).order, ["bench-press", "cable-fly"])
+    }
+
+    // Dropping the movement IN HAND moves the hand — standing on a movement the lifter just took off
+    // the list would be the screen disagreeing with the edit. It resumes where the sets are; with
+    // nothing left it is the picker again, which is the same screen the session opened on.
+    func testDroppingTheMovementInHandMovesTheHand() async {
+        let server = FakeTraining()
+        let store = await liveStore(server)
+        await store.logSet(weightKg: 82.5, reps: 5)
+        await store.choose("cable-fly")
+        XCTAssertEqual(store.exerciseId, "cable-fly")
+
+        await store.drop("cable-fly")
+        XCTAssertEqual(store.exerciseId, "bench-press", "back to where the sets are")
+
+        let empty = makeStore(sync: nil)
+        await empty.connect(to: account(signedIn: false))
+        _ = await empty.start()
+        await empty.choose("cable-fly")
+        await empty.drop("cable-fly")
+        XCTAssertNil(empty.exerciseId, "nothing left to stand on is the picker, not a blank movement")
+        XCTAssertEqual(empty.order, [])
+    }
+
+    // ── the picker's meta ──────────────────────────────────────────────────────────────────────
+
+    // The read is SPARSE, so what is absent from it is an assertion — "never logged" — and the store
+    // may only let a screen make it once an answer has landed. A read that failed leaves the map nil,
+    // and the picker says nothing rather than telling a lifter their history is gone.
+    func testThePickerMetaIsNilUntilAReadLandsAndSparseAfterward() async {
+        let server = FakeTraining()
+        server.lastSets = [LastSet(exerciseId: "bench-press", weightKg: 82.5, reps: 5, atMs: 900)]
+        let store = await liveStore(server)
+        XCTAssertNil(store.lastSets, "nothing has been asked yet")
+
+        server.online = false
+        await store.loadLastSets()
+        XCTAssertNil(store.lastSets, "and a read that did not answer asserts nothing either")
+
+        server.online = true
+        await store.loadLastSets()
+        XCTAssertEqual(store.lastSets?["bench-press"]?.weightKg, 82.5)
+        XCTAssertNil(store.lastSets?["cable-fly"], "a movement with no line has never been trained")
+    }
+
+    // Signed in, this device's own unclaimed sessions are folded over the account's answer: those
+    // workouts happened, the log has simply never heard of them, and the newer line is the true one.
+    // The claim is offline here because that is the only way a session stays unclaimed — a shelf the
+    // claim can reach is a shelf it empties, which is the case that needs no fold at all.
+    func testThePickerMetaFoldsThisDevicesOwnSessionsOverTheAccounts() async {
+        let shelf = LocalLog(url: localURL)
+        shelf.keep(Session(id: "ses_local", startedAtMs: 5_000, finishedAtMs: 6_000),
+                   sets: [TrainingSet(id: "set_l", exerciseId: "bench-press", weightKg: 90, reps: 3,
+                                      completedAtMs: 5_500)])
+        shelf.flush()
+
+        let server = FakeTraining()
+        server.online = false
+        server.lastSets = [LastSet(exerciseId: "bench-press", weightKg: 82.5, reps: 5, atMs: 900),
+                           LastSet(exerciseId: "deadlift", weightKg: 140, reps: 3, atMs: 800)]
+        let store = makeStore(sync: server, retryAfter: .seconds(600))
+        await store.connect(to: account(signedIn: true))
+        server.online = true
+        await store.loadLastSets()
+
+        XCTAssertEqual(store.lastSets?["bench-press"]?.weightKg, 90, "the device's is the newer one")
+        XCTAssertEqual(store.lastSets?["deadlift"]?.weightKg, 140, "and the account's stands alone")
     }
 
     // ── the foot of the log ────────────────────────────────────────────────────────────────────
@@ -603,14 +727,14 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(store.catalog, [Exercise(id: "back-squat", name: "Low-bar Squat",
                                                 pattern: "squat", equipment: "barbell", stepKg: 2.5)])
         XCTAssertEqual(DeviceCatalog(url: catalogURL).open(under: "u1").map(\.name), ["Low-bar Squat"],
-                       "and the next cold launch draws the new name rather than the slug")
+                       "and the next cold launch draws the new name rather than the seeded one")
 
         // AND ONLY FOR THIS SEAT. A rename over a seeded row is a per-account display override, so
         // the held names are held under the account that read them: another lifter's launch, and the
-        // anonymous room — where no catalog read ever comes to replace them — open EMPTY rather than
-        // spelling somebody's private name for a movement everybody shares.
-        XCTAssertEqual(DeviceCatalog(url: catalogURL).open(under: "u2"), [])
-        XCTAssertEqual(DeviceCatalog(url: catalogURL).open(under: nil), [])
+        // anonymous room — where no catalog read ever comes to replace them — fall back to the
+        // SHIPPED names rather than spelling somebody's private one for a movement everybody shares.
+        XCTAssertEqual(DeviceCatalog(url: catalogURL).open(under: "u2"), DeviceCatalog.seeded)
+        XCTAssertEqual(DeviceCatalog(url: catalogURL).open(under: nil), DeviceCatalog.seeded)
 
         server.online = false
         let quiet = await store.rename("back-squat", to: "Back Squat")
@@ -629,7 +753,7 @@ final class TrainingStoreTests: XCTestCase {
 
         let renamed = await store.rename(minted.id, to: "Bench Press")
         XCTAssertNil(renamed)
-        XCTAssertEqual(store.catalog.map(\.name), ["Bench Press"])
+        XCTAssertEqual(store.catalog.last?.name, "Bench Press")
         XCTAssertEqual(LocalLog(url: localURL).exercises.map(\.name), ["Bench Press"])
         XCTAssertEqual(LocalLog(url: localURL).exercises.map(\.id), [minted.id],
                        "the id the sets already name does not move")
@@ -665,8 +789,10 @@ final class TrainingStoreTests: XCTestCase {
         let store = makeStore(sync: server, retryAfter: .seconds(600))
         await store.connect(to: account(signedIn: true))
 
-        XCTAssertEqual(store.catalog.map(\.id), [minted.id],
+        XCTAssertEqual(store.catalog.last?.id, minted.id,
                        "this device's own unclaimed movement is in the catalog under every seat")
+        XCTAssertEqual(store.catalog.count, DeviceCatalog.seeded.count + 1,
+                       "over the seeds, which a seat that answered nothing still has")
         guard case .success(let answered) = await store.record(of: minted.id) else {
             return XCTFail("the device answers for what it is still the only home of")
         }
@@ -1140,6 +1266,7 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
     var sets: [String: [TrainingSet]] = [:]
     var written: [String: Routine] = [:]
     var lastTimes: [String: LastTime] = [:]
+    var lastSets: [LastSet] = []
     var reviews: [String: Review] = [:]
     var shares: [String: SessionShare] = [:]
     var records: [String: MovementRecord] = [:]
@@ -1149,6 +1276,7 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
     var refuseStart: WindmillApiError?
     var refuseCreate: WindmillApiError?
     var refuseCreateRoutine: WindmillApiError?
+    var refuseRoutines: WindmillApiError?
     var refuseShare: WindmillApiError?
     var refuseRevoke: WindmillApiError?
     var refuseRecord: WindmillApiError?
@@ -1351,9 +1479,18 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         return lastTimes[exerciseId] ?? LastTime(exerciseId: exerciseId)
     }
 
+    // Sparse, as the route is: only what the test put here comes back, and a movement with no row
+    // is one this account has never trained.
+    func lastSets() async throws -> [LastSet] {
+        calls.append("lastSets")
+        guard online else { throw WindmillApiError.offline }
+        return lastSets
+    }
+
     func routines() async throws -> [Routine] {
         calls.append("routines")
         guard online else { throw WindmillApiError.offline }
+        if let refuseRoutines { throw refuseRoutines }
         return written.values.sorted { $0.position < $1.position }
     }
 

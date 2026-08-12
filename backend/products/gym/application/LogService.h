@@ -187,6 +187,11 @@ public:
   std::optional<SessionDetail> detail(const UserId& user, const SessionId& session);
   std::vector<Exercise> catalog(const UserId& user);
   LastTimeOutcome lastTime(const UserId& user, const ExerciseId& exercise);
+  // The picker's meta beside the catalog, and deliberately NOT inside it: the catalog is 64 rows
+  // read on nearly every screen and most of them are movements a given lifter has never touched, so
+  // the annotation is asked for by the one surface that draws it. Nothing here computes anything —
+  // which set is "last" is the store's ordering, the same one lastTime states.
+  std::vector<LastSet> lastSets(const UserId& user);
 
   // The plan, and the catalog's one write. Every refusal these can answer is the store's own fact,
   // so they hand the port's outcomes straight back rather than re-spelling them into a second enum

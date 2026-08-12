@@ -220,6 +220,76 @@ class TrainingWireTests {
     }
 }
 
+// THE PICKER'S META — the wire's sparse row, and the device's own answer to the same question. Both
+// halves matter: a phone that computed `never logged` differently from the log would draw one thing
+// signed out and another signed in over the same lift.
+class LastSetTests {
+    private fun aSet(exerciseId: String, weightKg: Double, reps: Int,
+                     kind: SetKind = SetKind.Working, at: Long): TrainingSet =
+        TrainingSet(id = "set_$at", exerciseId = exerciseId, weightKg = weightKg,
+                    reps = reps, kind = kind, completedAtMs = at)
+
+    private fun aSession(id: String, startedAt: Long, finishedAt: Long?, sets: List<TrainingSet>) =
+        SessionDetail(Session(id = id, startedAtMs = startedAt, finishedAtMs = finishedAt), sets)
+
+    // `at` is the SESSION's start and not the set's own instant, and it is spelled `at` on the wire.
+    @Test
+    fun testTheWireRowIsTheSessionsMarkAndSpellsItAt() {
+        val row = json.decodeFromString(LastSet.serializer(),
+                                        """{"exerciseId":"bench-press","weightKg":80,"reps":8,"at":1785600000000}""")
+        assertEquals("bench-press", row.exerciseId)
+        assertEquals(80.0, row.weightKg, 0.0)
+        assertEquals(8, row.reps)
+        assertEquals(1_785_600_000_000, row.atMs)
+    }
+
+    // THE LAST SET OF THE LAST-TIME BLOCK, and never the heaviest one: the prefill dials off what
+    // the lifter finished on, and a picker naming their best set instead would answer a different
+    // question in the same words.
+    @Test
+    fun testTheShelfAnswersWithTheLastSetOfTheLastTimeBlock() {
+        val rows = LastSet.of(listOf(
+            aSession("ses_old", startedAt = 1_000, finishedAt = 2_000, sets = listOf(
+                aSet("bench-press", 100.0, 1, at = 1_500))),
+            aSession("ses_new", startedAt = 5_000, finishedAt = 6_000, sets = listOf(
+                aSet("bench-press", 85.0, 5, at = 5_100),
+                aSet("bench-press", 80.0, 8, at = 5_200),
+                aSet("back-squat", 120.0, 3, at = 5_300))),
+        ))
+
+        assertEquals("keyed by movement, in join-key order", listOf("back-squat", "bench-press"),
+                     rows.map { it.exerciseId })
+        assertEquals("the row the lifter finished on, not the 100 they hit last month",
+                     LastSet("bench-press", 80.0, 8, atMs = 5_000), rows.last())
+        assertEquals(LastSet("back-squat", 120.0, 3, atMs = 5_000), rows.first())
+    }
+
+    // A WARMUP IS NOT A LAST TIME and an OPEN SESSION is not one either, however heavy — the log's
+    // own two predicates, restated on the shelf. Drop and failure sets ride along, because both are
+    // things that happened to a set the plan asked for.
+    @Test
+    fun testAWarmupOnlyMovementAndAnOpenSessionAreBothAbsent() {
+        val rows = LastSet.of(listOf(
+            aSession("ses_done", startedAt = 1_000, finishedAt = 2_000, sets = listOf(
+                aSet("chin-up", 0.0, 8, kind = SetKind.Warmup, at = 1_100),
+                aSet("deadlift", 140.0, 5, at = 1_200),
+                aSet("deadlift", 100.0, 8, kind = SetKind.Drop, at = 1_300))),
+            aSession("ses_live", startedAt = 9_000, finishedAt = null, sets = listOf(
+                aSet("deadlift", 200.0, 1, at = 9_100))),
+        ))
+
+        assertEquals("a movement warmed up and never worked has nothing to say",
+                     listOf("deadlift"), rows.map { it.exerciseId })
+        assertEquals("a drop set is still what happened last, and today's session is not a last time",
+                     LastSet("deadlift", 100.0, 8, atMs = 1_000), rows.single())
+    }
+
+    @Test
+    fun testALogWithNothingInItAnswersWithNoRowsAtAll() {
+        assertEquals(emptyList<LastSet>(), LastSet.of(emptyList()))
+    }
+}
+
 class RoutineWriteTests {
     private fun aSet(exerciseId: String, weightKg: Double, reps: Int,
                      kind: SetKind = SetKind.Working, at: Long): TrainingSet =

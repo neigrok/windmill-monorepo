@@ -9,6 +9,7 @@ import org.junit.Test
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.ExerciseWrite
 import works.windmill.gym.domain.GymPreferences
+import works.windmill.gym.domain.LastSet
 import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.MovementRecord
 import works.windmill.gym.domain.Review
@@ -124,6 +125,7 @@ internal class FakeTraining : TrainingSyncing {
     val sets = mutableMapOf<String, MutableList<TrainingSet>>()
     val written = mutableMapOf<String, Routine>()
     val lastTimes = mutableMapOf<String, LastTime>()
+    val served = mutableListOf<LastSet>()
     val reviews = mutableMapOf<String, Review>()
     val shares = mutableMapOf<String, SessionShare>()
     val records = mutableMapOf<String, MovementRecord>()
@@ -131,6 +133,9 @@ internal class FakeTraining : TrainingSyncing {
     var refuseStart: (SessionStart) -> Exception? = { null }
     var refuseCreate: Exception? = null
     var refuseRoutine: (RoutineWrite) -> Exception? = { null }
+    // The READ, apart from the write above it: a page that misses while the log is otherwise
+    // reachable is what tells "this lifter has written none" from "nobody answered".
+    var refuseRoutinesRead: Exception? = null
     var refuseShare: Exception? = null
     var refuseRevoke: Exception? = null
     var refuseRecord: Exception? = null
@@ -308,9 +313,18 @@ internal class FakeTraining : TrainingSyncing {
         return lastTimes[exerciseId] ?: LastTime(exerciseId)
     }
 
+    // Sparse, exactly as the route is: a movement this log has never held simply has no row here,
+    // and there is no zero for a client to mistake for one.
+    override suspend fun lastSets(): List<LastSet> {
+        calls.add("lastSets")
+        reachable()
+        return served.sortedBy { it.exerciseId }
+    }
+
     override suspend fun routines(): List<Routine> {
         calls.add("routines")
         reachable()
+        refuseRoutinesRead?.let { throw it }
         return written.values.sortedBy { it.position }
     }
 

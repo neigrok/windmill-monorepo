@@ -21,6 +21,7 @@ import org.junit.rules.TemporaryFolder
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.Ids
+import works.windmill.gym.domain.LastSet
 import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.PlanEntry
 import works.windmill.gym.domain.PlanSnapshot
@@ -32,6 +33,7 @@ import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.SetWrite
+import works.windmill.gym.domain.TheSix
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.domain.Units
 import works.windmill.gym.net.FakeTraining
@@ -545,19 +547,21 @@ class TrainingStoreTests {
         // first frame, which is the whole reason the file exists.
         val herRelaunch = makeStore(sync = null)
         herRelaunch.connect(account(signedIn = true, id = "alice"))
-        assertEquals("Alice’s Secret Squat", herRelaunch.catalog.single().name)
+        assertEquals("Alice’s Secret Squat", herRelaunch.catalog.single { it.id == "back-squat" }.name)
 
         // The next seat, equally offline — so nothing can repair the names behind his back. This is
         // the state this room is built to work in, and the one the leak used to stand in forever.
+        // What he gets is the six under their SEEDED names, which are a constant every install
+        // carries and nobody's private naming of anything.
         val bob = makeStore(sync = null)
         bob.connect(account(signedIn = true, id = "bob"))
-        assertEquals("a slug is honest — this phone does not know Bob's names",
-            emptyList<Exercise>(), bob.catalog)
+        assertEquals("this phone does not know Bob's names and does not borrow Alice's",
+            TheSix.movements, bob.catalog)
 
         val anon = makeStore(sync = null)
         anon.connect(account(signedIn = false))
         assertEquals("and signing out is not a way back into her catalog either",
-            emptyList<Exercise>(), anon.catalog)
+            TheSix.movements, anon.catalog)
     }
 
     // The anonymous seat is a seat like any other, and the movements it minted are the whole catalog
@@ -571,13 +575,13 @@ class TrainingStoreTests {
 
         val relaunched = makeStore(sync = null)
         relaunched.connect(account(signedIn = false))
-        assertEquals(listOf(made), relaunched.catalog)
+        assertEquals(TheSix.movements + made, relaunched.catalog)
 
         // A seat this phone holds no copy for, standing over the same shelf: before any account read
         // answers, the logger still has a name to draw at 28sp over the lifter's own lift.
         val newSeat = makeStore(sync = null)
         newSeat.connect(account(signedIn = true, id = "alice"))
-        assertEquals(listOf(made), newSeat.catalog)
+        assertEquals(listOf(made) + TheSix.movements, newSeat.catalog)
     }
 
     // A record the log refused is not a record that is empty: the reason is repeated in the log's
@@ -1082,7 +1086,7 @@ class TrainingStoreTests {
         server.refuseCreate = null
         val made = (store.create("Zercher Squat") as? GymResult.Ok)?.value
         assertEquals("the second attempt lands", "Zercher Squat", made?.name)
-        assertEquals(listOf("Zercher Squat"), store.catalog.map { it.name })
+        assertEquals(TheSix.movements.map { it.name } + "Zercher Squat", store.catalog.map { it.name })
     }
 
     // A movement is a stable id everywhere except on screen. Held only in memory, a cold launch in
@@ -1095,18 +1099,22 @@ class TrainingStoreTests {
         server.catalog = listOf(Exercise(id = "bench-press", name = "Bench Press"),
             Exercise(id = "back-squat", name = "Back Squat"))
         val store = liveStore(server)
-        assertEquals(listOf("Bench Press", "Back Squat"), store.catalog.map { it.name })
+        assertEquals("what the log served, then the six it did not",
+            listOf("Bench Press", "Back Squat", "Deadlift", "Overhead Press", "Barbell Row", "Chin Up"),
+            store.catalog.map { it.name })
 
         // A cold launch with no signal: nothing is read, and the names are already there.
         val relaunched = makeStore(sync = null)
         relaunched.connect(account(signedIn = true))
-        assertEquals(listOf("bench-press", "back-squat"), relaunched.catalog.map { it.id })
+        assertEquals(listOf("bench-press", "back-squat", "deadlift", "overhead-press", "barbell-row",
+                            "chin-up"),
+            relaunched.catalog.map { it.id })
         assertEquals("Bench Press", Readout.movement("bench-press", relaunched.catalog))
 
         val signedOut = makeStore(sync = null)
         signedOut.connect(account(signedIn = false))
-        assertEquals("the names read for an account are that account's, and signing out is not a way to keep reading them",
-            emptyList<Exercise>(), signedOut.catalog)
+        assertEquals("the names read for an account are that account's, and signing out is not a way to keep reading them — what is left is the constant every install carries",
+            TheSix.movements, signedOut.catalog)
     }
 
     // THE CLAIM-JOIN TRAP: a server start JOINS whatever session is open, and mid-claim the open
@@ -1796,5 +1804,274 @@ class TrainingStoreTests {
         advanceTimeBy(60_000)
         runCurrent()
         assertTrue("the cadence is not a heartbeat", server.calls.isEmpty())
+    }
+
+    // THE ONE THING FIRST RUN HAS TO GET RIGHT, AND IT IS NOT A SCREEN. A lifter arrives with no
+    // account, no network and nothing on the phone, logs four sets, and the process dies — the app
+    // swiped away, the activity destroyed, the phone out of battery. Every one of those sets has to
+    // still be there, and so does the session they belong to and the order they were walked in.
+    //
+    // The risk the design names is a first-run flow that starts a session through a path the local
+    // shelf does not know about. This drives the real one: `firstRun` is what the room reads, and
+    // the start it triggers is the queue's own.
+    @Test
+    fun testAFreshArrivalLogsFourSetsAndARelaunchLosesNoneOfThem() = runTest {
+        val arriving = makeStore(sync = null)
+        arriving.connect(account(signedIn = false))
+
+        assertTrue("nothing has ever happened in this room, so arriving starts it", arriving.firstRun)
+        arriving.start()
+        assertNotNull("nobody pressed start", arriving.session)
+        assertFalse("and a session already running is not a second first run", arriving.firstRun)
+        assertTrue("the picker stands over it, with the six", arriving.firstSession)
+        assertNull("nothing is chosen yet — that is what the picker is for", arriving.exerciseId)
+
+        arriving.choose("back-squat")
+        arriving.logSet(weightKg = 100.0, reps = 5)
+        arriving.logSet(weightKg = 100.0, reps = 5)
+        arriving.logSet(weightKg = 102.5, reps = 5)
+        arriving.choose("bench-press")
+        arriving.logSet(weightKg = 80.0, reps = 8)
+
+        assertEquals("the whole workout is on this device's disk and nowhere else",
+            4, SetQueue(queueFile).sets(arriving.session!!.id).size)
+
+        // The process dies here. Nothing was flushed on the way out, nobody signed in, and no
+        // network was ever reachable.
+        val reopened = makeStore(sync = null)
+        reopened.connect(account(signedIn = false))
+
+        assertEquals(arriving.session?.id, reopened.session?.id)
+        assertEquals(listOf(100.0, 100.0, 102.5, 80.0), reopened.sets.map { it.weightKg })
+        assertEquals(listOf(5, 5, 5, 8), reopened.sets.map { it.reps })
+        assertEquals(listOf("back-squat", "bench-press"), reopened.order)
+        assertEquals("it stands where the last set went, not in the picker over a session of sets",
+            "bench-press", reopened.exerciseId)
+        assertFalse("and it does not open a second session over the one it just found",
+            reopened.firstRun)
+    }
+
+    // WHAT A FIRST RUN IS: a room whose reads CAME BACK, and came back empty. Nothing on this device
+    // remembers a lifter, counts an arrival or counts a decline — but "this lifter has no log" is a
+    // claim, and an empty list is only a claim once something answered with it. An empty page is not
+    // an empty history; a page that said "there is no more" is.
+    //
+    // The one shape this predicate cannot see is a lifter who SIGNED OUT: their log is on an account
+    // and this phone deliberately keeps nothing of it, so the page they are left with really is
+    // empty. The room refuses that one instead — §J22's arrival opens its session once per install
+    // (`GymRoom`), so a sign-out cannot open a workout over a log that is merely out of reach.
+    @Test
+    fun testAFirstRunIsALogThatAnsweredAndAnsweredEmpty() = runTest {
+        val fresh = makeStore(sync = null)
+        fresh.connect(account(signedIn = false))
+        assertTrue("signed out the shelf IS the log, and it is already in hand", fresh.firstRun)
+
+        // A brand new account is a first run too, and for the same reason: every read landed.
+        val opened = makeStore(sync = FakeTraining())
+        opened.connect(account(signedIn = true))
+        assertTrue("nothing on the log, and the log said so", opened.firstRun)
+
+        // A READ THAT MISSED IS NOT AN EMPTY HISTORY. This is the returning lifter on a phone with
+        // no signal, and a session opened over the log they cannot see would be a workout nobody
+        // started — claimed onto them the moment the signal came back.
+        val offline = FakeTraining()
+        offline.online = false
+        val unreachable = makeStore(sync = offline)
+        unreachable.connect(account(signedIn = true))
+        assertFalse("the log page never answered", unreachable.firstRun)
+        assertFalse(unreachable.firstSession)
+
+        // The same fact through the other read: the sessions page can answer while the routines page
+        // does not, and a routine list that never arrived is not a lifter who has written none.
+        val halfRead = FakeTraining()
+        halfRead.refuseRoutinesRead = IOException("offline")
+        val partly = makeStore(sync = halfRead)
+        partly.connect(account(signedIn = true))
+        assertFalse(partly.firstRun)
+        assertFalse(partly.firstSession)
+
+        val returning = makeStore(sync = null)
+        returning.connect(account(signedIn = false))
+        returning.start()
+        returning.choose("back-squat")
+        returning.logSet(weightKg = 100.0, reps = 5)
+        clockMs += 60_000
+        returning.finish()
+        assertFalse("the shelf holds a session now", returning.firstRun)
+
+        val relaunched = makeStore(sync = null)
+        relaunched.connect(account(signedIn = false))
+        assertFalse("and it still does on the next launch", relaunched.firstRun)
+    }
+
+    // §A2'S TWO GESTURES, and the promise under both: nothing a lifter logged leaves on either. A
+    // drag moves the walk order and only the walk order, and a swipe is refused outright on a
+    // movement with a set in it — the row would be somebody's own work going off the log on a flick
+    // made at arm's length.
+    @Test
+    fun testAReorderMovesTheWalkAndASwipeRefusesAMovementWithASetInIt() = runTest {
+        val store = makeStore(sync = null)
+        store.connect(account(signedIn = false))
+        store.start()
+        store.choose("back-squat")
+        store.logSet(weightKg = 100.0, reps = 5)
+        store.choose("bench-press")
+        store.logSet(weightKg = 80.0, reps = 8)
+        store.choose("romanian-deadlift")
+        assertEquals(listOf("back-squat", "bench-press", "romanian-deadlift"), store.order)
+
+        store.reorder(from = 2, to = 0)
+        assertEquals(listOf("romanian-deadlift", "back-squat", "bench-press"), store.order)
+        assertEquals("every set is exactly where it was — sets are keyed by movement, never position",
+            listOf(100.0, 80.0), store.sets.map { it.weightKg })
+        assertEquals("and the walk is on disk before the finger has left the screen",
+            listOf("romanian-deadlift", "back-squat", "bench-press"), SetQueue(queueFile).order)
+
+        assertFalse("a movement holding a set does not leave on a swipe", store.drop("back-squat"))
+        assertEquals(listOf("romanian-deadlift", "back-squat", "bench-press"), store.order)
+
+        assertTrue(store.drop("romanian-deadlift"))
+        assertEquals(listOf("back-squat", "bench-press"), store.order)
+        assertNull("the movement in hand left the session, so the picker comes back up",
+            store.exerciseId)
+        assertEquals("and nothing logged went with it",
+            listOf(100.0, 80.0), store.sets.map { it.weightKg })
+        assertEquals(listOf("back-squat", "bench-press"), SetQueue(queueFile).order)
+    }
+
+    // THE PICKER'S META, and the absence it is built on. A movement the lifter has never trained
+    // has NO row — there is no zero to tell apart from a real one — and the shelf is merged into
+    // the log's answer rather than losing to it, because drawing `never logged` over a lift this
+    // same phone recorded yesterday would be the product lying about the log it is standing on.
+    @Test
+    fun testThePickerMetaIsSparseAndTakesTheLaterOfTheLogAndTheShelf() = runTest {
+        val store = makeStore(sync = null)
+        store.connect(account(signedIn = false))
+        store.start()
+        store.choose("back-squat")
+        store.logSet(weightKg = 100.0, reps = 5)
+        store.logSet(weightKg = 102.5, reps = 3)
+        clockMs += 60_000
+        store.finish()
+
+        assertNull("nobody has asked yet, and the picker draws no line at all until somebody has",
+            store.lastSets)
+        store.loadLastSets()
+        assertEquals("the shelf answers when it is the whole log there is",
+            LastSet("back-squat", 102.5, 3, atMs = store.recent.single().startedAtMs),
+            store.lastSets?.get("back-squat"))
+        assertNull("and a movement nobody has trained is answered by saying nothing",
+            store.lastSets?.get("chin-up"))
+
+        // Signed in with a claim that cannot land: the account's own rows arrive, and the session
+        // still on this device's shelf is later than the log's line for the same movement.
+        val server = FakeTraining()
+        server.refuseStart = { storageFailure }
+        server.served.add(LastSet("back-squat", 90.0, 5, atMs = 500))
+        server.served.add(LastSet("bench-press", 80.0, 8, atMs = 600))
+        val signedIn = makeStore(sync = server)
+        signedIn.connect(account(signedIn = true))
+        signedIn.loadLastSets()
+
+        assertEquals(setOf("back-squat", "bench-press"), signedIn.lastSets?.keys)
+        assertEquals("the later of the two, which is the one this phone is still holding",
+            102.5, signedIn.lastSets?.getValue("back-squat")?.weightKg)
+        assertEquals(80.0, signedIn.lastSets?.getValue("bench-press")?.weightKg)
+
+        // A read that never came back leaves the last answer standing: `never logged` is an
+        // assertion about a lifter's history, and a phone in a basement has not earned it.
+        server.online = false
+        signedIn.loadLastSets()
+        assertEquals(setOf("back-squat", "bench-press"), signedIn.lastSets?.keys)
+    }
+
+    // A READ THAT NEVER LANDED IS NOT A HISTORY THAT IS EMPTY, and the picker has exactly one place
+    // to keep the difference: the map itself. Absent a row it says `never logged`, so a failure that
+    // published an empty map — or half an answer — would say that about every movement in the
+    // catalog, over a log this same phone is holding.
+    @Test
+    fun testAFailedMetaReadSaysNothingRatherThanNeverLogged() = runTest {
+        val server = FakeTraining()
+        // The claim cannot land, so the workout stays on this phone's own shelf — and it is real.
+        server.refuseStart = { storageFailure }
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = false))
+        store.start()
+        store.choose("bench-press")
+        store.logSet(weightKg = 80.0, reps = 8)
+        clockMs += 60_000
+        store.finish()
+        store.connect(account(signedIn = true))
+        assertEquals(1, store.recent.size)
+
+        server.online = false
+        store.loadLastSets()
+        assertNull("the log never answered, so the picker asserts nothing about any movement",
+            store.lastSets)
+
+        // And when it does answer, the shelf's own row is merged back in rather than lost.
+        server.online = true
+        store.loadLastSets()
+        assertEquals(80.0, store.lastSets!!.getValue("bench-press").weightKg, 0.0)
+    }
+
+    // SIGNING IN UNDER THE OPEN PICKER. The account card is ON the picker (§J22), so the one screen
+    // that reads this meta is still standing when the seat changes — and its own effect does not run
+    // again, because nothing about the picker moved. The seat that arrives answers for itself.
+    @Test
+    fun testSigningInUnderTheOpenPickerRefillsTheMetaItJustDropped() = runTest {
+        val server = FakeTraining()
+        // The claim cannot land, so the shelf keeps its session and its line stays this phone's.
+        server.refuseStart = { storageFailure }
+        server.served.add(LastSet("bench-press", 100.0, 3, atMs = 900))
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = false))
+        store.start()
+        store.choose("back-squat")
+        store.logSet(weightKg = 140.0, reps = 5)
+        clockMs += 60_000
+        store.finish()
+        store.loadLastSets()
+        assertEquals(140.0, store.lastSets!!.getValue("back-squat").weightKg, 0.0)
+
+        // The lifter taps `Build my routine →` and signs in without leaving the picker. Nothing
+        // about the picker moves, so its own effect never runs again.
+        store.connect(account(signedIn = true))
+
+        assertEquals("the seat's own answer arrives without the lifter leaving the screen",
+            setOf("back-squat", "bench-press"), store.lastSets?.keys)
+    }
+
+    // WHAT THE PICKER SAYS WHEN THE CATALOG READ MISSED. The six ride with every seat, so a failed
+    // read no longer leaves an EMPTY catalog — it leaves a short one, and a lifter shown six rows
+    // out of their sixty-four with nothing said about the rest is the app quietly losing their
+    // catalog. A copy this device already held is not that: it is the catalog, one read behind.
+    @Test
+    fun testAMissedCatalogReadIsSaidOnlyWhenTheSixAreAllThatIsLeft() = runTest {
+        val server = FakeTraining()
+        server.online = false
+        val bare = makeStore(sync = server)
+        bare.connect(account(signedIn = true))
+        assertEquals("the six and nothing else", TheSix.movements.map { it.id },
+            bare.catalog.map { it.id })
+        assertTrue(bare.catalogUnread)
+
+        // The read lands, and the sentence goes with it.
+        server.online = true
+        server.catalog = listOf(Exercise(id = "back-squat", name = "Back Squat"),
+                                Exercise(id = "hip-thrust", name = "Hip Thrust"))
+        val holding = makeStore(sync = server)
+        holding.connect(account(signedIn = true))
+        assertFalse(holding.catalogUnread)
+
+        // And a device that already holds this seat's catalog says nothing either: the rows on
+        // screen are the lifter's own, one read behind.
+        server.online = false
+        val offline = makeStore(sync = server)
+        offline.connect(account(signedIn = true))
+        assertEquals(listOf("back-squat", "hip-thrust", "bench-press", "deadlift", "overhead-press",
+                            "barbell-row", "chin-up"),
+            offline.catalog.map { it.id })
+        assertFalse("a held copy is the catalog, not a gap in it", offline.catalogUnread)
     }
 }

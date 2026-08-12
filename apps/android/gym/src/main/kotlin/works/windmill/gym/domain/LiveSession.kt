@@ -36,6 +36,31 @@ object LiveOrder {
         if (last != null && last in order) return last
         return order.firstOrNull()
     }
+
+    // THE GRAB RAIL'S MOVE (§A2). A reorder is a PERMUTATION and nothing else — the list that comes
+    // back holds exactly the movements that went in, which is the whole of what this function has to
+    // guarantee: the sets are keyed by movement and never by position, so a walk order that lost a
+    // row would take a logged movement off the screen it is being logged on. An index nobody can
+    // point at answers with the list unchanged rather than throwing, because the gesture that hands
+    // these in is a thumb on a moving list.
+    fun moved(order: List<String>, from: Int, to: Int): List<String> {
+        if (from !in order.indices || to !in order.indices || from == to) return order
+        val walked = order.toMutableList()
+        walked.add(to, walked.removeAt(from))
+        return walked
+    }
+
+    // SWIPE TO DROP, and the two movements it refuses. A movement with a SET in it is never dropped
+    // by a sideways swipe: the row would be the lifter's own logged work leaving on a gesture made
+    // at arm's length, and taking a set off a log is §G18's own repair — at rest, on a past session,
+    // behind a window. A movement the session's PLAN names is refused for a duller reason: the walk
+    // order is re-seeded from the plan on every draw (`merged`), so a dropped line would walk back
+    // on within the second, and a gesture that undoes itself is worse than one that is not offered.
+    // Changing the day's plan is screen 8's, not this list's.
+    fun droppable(exerciseId: String, sets: List<TrainingSet>, plan: PlanSnapshot?): Boolean {
+        if (sets.any { it.exerciseId == exerciseId }) return false
+        return plan?.entry(exerciseId) == null
+    }
 }
 
 object LiveLines {
@@ -56,11 +81,18 @@ object LiveLines {
         val isOnThisDevice: Boolean,
     )
 
-    data class JumpRow(
+    // ONE MOVEMENT OF THIS SESSION, as the assembly list draws it (§A2): the name, what it has
+    // already taken, and the sets themselves — the same rows the logger prints, so a set never reads
+    // one way under the thumb and another way one screen up.
+    data class MovementRow(
         val id: String,
         val name: String,
-        val meta: String,
+        val tag: String?,          // "3 sets" · "3 of 5 sets" · "just added" · nothing yet
+        val line: String?,         // said only where there are no sets to say it instead
+        val sets: List<Row>,
         val isCurrent: Boolean,
+        val justAdded: Boolean,
+        val canDrop: Boolean,
     )
 
     // Only WORKING sets advance the counter — `workingCount` below is the whole of that rule — and a
@@ -133,19 +165,45 @@ object LiveLines {
     fun workingCount(sets: List<TrainingSet>, of: String? = null): Int =
         sets.count { it.kind == SetKind.Working && (of == null || it.exerciseId == of) }
 
-    // Moving on is the lifter's decision and never the app's: nothing advances when a plan's set
-    // count is reached, and nothing advances when a rest lands. This sheet is the only thing that
-    // moves them, and it says where everything stands so the choice is theirs to make.
-    fun jumpRows(order: List<String>, sets: List<TrainingSet>, plan: PlanSnapshot?,
-                 catalog: List<Exercise>, current: String?): List<JumpRow> =
-        order.map { exerciseId ->
-            val done = workingCount(sets, of = exerciseId)
+    // THE SESSION AS THE ASSEMBLY SURFACE (§A2) — the list a lifter appends to between sets, which
+    // is how a routine gets written in this product: not in an editor, before the first set,
+    // standing up. It is also the only thing that moves them between movements, and moving on stays
+    // their decision — nothing advances when a plan's set count is reached and nothing advances when
+    // a rest lands, so this says where everything stands and lets them choose.
+    //
+    // `just added` belongs to the row with no sets sitting at the FOOT of the walk, which is where
+    // appending puts it — and never to a line the PLAN named, however empty: a movement written down
+    // last week and not reached yet was not just added, it is simply not started. A reorder can
+    // carry the tag elsewhere, and it follows the position rather than the clock, because the lifter
+    // is reading a list and not a history.
+    fun assemblyRows(order: List<String>, sets: List<TrainingSet>, plan: PlanSnapshot?,
+                     catalog: List<Exercise>, current: String?,
+                     stalled: Set<String> = emptySet()): List<MovementRow> {
+        val foot = order.lastOrNull()
+        return order.map { exerciseId ->
+            val performed = sets.filter { it.exerciseId == exerciseId }
+            val done = workingCount(performed)
             val planned = plan?.entry(exerciseId)?.sets
-            JumpRow(id = exerciseId,
-                    name = Readout.movement(exerciseId, catalog),
-                    meta = meta(done, planned),
-                    isCurrent = exerciseId == current)
+            val justAdded = performed.isEmpty() && exerciseId == foot && planned == null
+            MovementRow(
+                id = exerciseId,
+                name = Readout.movement(exerciseId, catalog),
+                tag = when {
+                    justAdded -> "just added"
+                    // Nothing to count and nothing to show: the line below says it instead, and a
+                    // `0 sets` beside it would be the same silence said twice.
+                    performed.isEmpty() -> null
+                    planned == null -> Readout.setCount(done)
+                    else -> "$done of $planned sets"
+                },
+                line = if (performed.isEmpty()) "no sets yet — logging one starts it" else null,
+                sets = rows(performed, stalled),
+                isCurrent = exerciseId == current,
+                justAdded = justAdded,
+                canDrop = LiveOrder.droppable(exerciseId, sets, plan),
+            )
         }
+    }
 
     // The count is the sets the walk has already OFFERED and could not land (`TrainingStore
     // .strandedCount`), never every queued set: every set is briefly pending on purpose, and
@@ -154,11 +212,5 @@ object LiveLines {
         if (count <= 0) return null
         val subject = if (count == 1) "1 set is" else "$count sets are"
         return "$subject saved on this device only. No signal down here — they flush when you’re back up."
-    }
-
-    private fun meta(done: Int, planned: Int?): String {
-        if (done == 0) return "no sets yet — logging one starts it"
-        if (planned == null) return Readout.setCount(done)
-        return "$done of $planned sets"
     }
 }

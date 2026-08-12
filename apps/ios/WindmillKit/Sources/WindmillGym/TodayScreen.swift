@@ -73,6 +73,12 @@ struct TodayScreen: View {
 
     // Screen 1. One way in, and the sentence that says what the empty session is FOR — a lifter who
     // is told a routine gets written at the end does not go looking for an editor first.
+    //
+    // THE SECOND BUTTON THE BOARD DRAWS IS NOT HERE. Screen 1's `Type out a routine first` opens a
+    // routine editor, and this surface has none — RoutinesScreen says why, and it is the same split:
+    // the phone owns the open session, the web owns the desk work. A button onto a screen that does
+    // not exist would be the defect this room refuses everywhere else, so it is absent rather than
+    // dead, and the sentence under it already says how a routine gets made here.
     private var empty: some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x4) {
             Text("Start empty and pick movements as you go. What you do today becomes your routine — you name it at the end.")
@@ -80,6 +86,17 @@ struct TodayScreen: View {
                 .foregroundStyle(skin.inkDim)
                 .lineSpacing(5)
             start(label: "Start a session", routineId: nil)
+            // The board's own reason, in the room's voice rather than the third person it is written
+            // in: what this screen is promising is that nothing is coming BEFORE the first set.
+            Text("No tour, no sample program, no questions about goals or experience. You already have a program — this is here to catch it, not to write it.")
+                .font(GymType.numeral(12.5))
+                .foregroundStyle(skin.inkFaint)
+                .lineSpacing(3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(WindmillSpace.x3)
+                .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md)
+                    .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                    .foregroundStyle(skin.lineStrong))
         }
         .padding(WindmillSpace.x4)
         .frame(maxWidth: .infinity, alignment: .leading)

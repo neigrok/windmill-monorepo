@@ -40,6 +40,35 @@ data class Exercise(
     val custom: Boolean = false,
 )
 
+// THE SIX — the barbell movements a written program is made of, and the one slice of the catalog
+// this client carries itself (§J22 lists them on the first screen, each reading `never logged`).
+//
+// They are here because an anonymous room has no catalog at all: every gym route wants an account,
+// so a fresh install signed out opens its picker over nothing and would make a lifter TYPE "Bench
+// Press" — minting a device movement that duplicates the seeded one the moment they sign in, which
+// is exactly the merge this wave deliberately does not build. With the ids held here, an anonymous
+// squat is logged against `back-squat` and the claim lands it on the movement the log already has.
+//
+// So they ride with every seat, filling only ids the catalog does not already hold — signed in the
+// server's row wins, because that row carries the name THIS account calls it. Ids and names are
+// byte-identical to backend/db/schema.sql's seed for the same reason: signing in must never rename
+// a movement under somebody mid-session.
+object TheSix {
+    val movements = listOf(
+        Exercise("back-squat", "Back Squat", "squat", "barbell", 2.5),
+        Exercise("bench-press", "Bench Press", "press", "barbell", 2.5),
+        Exercise("deadlift", "Deadlift", "hinge", "barbell", 2.5),
+        Exercise("overhead-press", "Overhead Press", "press", "barbell", 2.5),
+        Exercise("barbell-row", "Barbell Row", "pull", "barbell", 2.5),
+        Exercise("chin-up", "Chin Up", "pull", "bodyweight", 2.5),
+    )
+
+    // Everything the catalog does not already hold, in the design's own order. The caller appends
+    // rather than replaces, so a rename this account made is never overwritten by a constant.
+    fun missingFrom(catalog: List<Exercise>): List<Exercise> =
+        movements.filter { six -> catalog.none { it.id == six.id } }
+}
+
 @Serializable
 data class PlanEntry(
     val exerciseId: String,
@@ -188,6 +217,60 @@ data class LastTime(
                     .filter { it.exerciseId == exerciseId && it.kind == SetKind.Working }
                     .sortedBy { it.completedAtMs },
             )
+        }
+    }
+}
+
+// THE PICKER'S META — `GET /v1/gym/exercises/last`, and it is SPARSE: one row per movement this
+// lifter has trained and no row at all for the rest, so a movement absent from the reply is the
+// picker's `never logged`, said by saying nothing. There is no sentinel, no null row and no zero.
+//
+// The row is the LAST set of the movement's last-time block and never its heaviest, and `at` is
+// that SESSION's start rather than the set's own instant — the mark every date in this product is
+// placed by. One read for the whole list rather than one per row: a picker that fired sixty-two
+// requests to draw a list is the N+1 the log read already refused once.
+@Serializable
+data class LastSet(
+    val exerciseId: String,
+    val weightKg: Double,
+    val reps: Int,
+    @SerialName("at") val atMs: Long,
+) {
+    companion object {
+        // The signed-out answer, read off the device's own finished sessions by the server's rule:
+        // the most recent FINISHED session holding a NON-WARMUP set of the movement, then the last
+        // such set in it. Non-warmup and not working-only, because that is the predicate the log
+        // uses here — a drop set and a set taken to failure are both what happened last time — and
+        // one device answering a different question from the wire is how a picker starts saying one
+        // thing signed out and another signed in.
+        //
+        // IT IS NOT THE SET THE PREFILL DIALS, and the two are not trying to be. This line REPORTS
+        // what was lifted last, so it is one set read off the block whole; `LastTime` + `Prefill`
+        // AIM the next one, so they read the WORKING sets only — a ramp-up and a back-off are not
+        // what the next set is aimed at. A block of 100 × 5 then 60 × 12 therefore reads
+        // `last 60 × 12` here and opens the dial at 100 × 5, which is the same pair of answers the
+        // iOS twin gives (LocalLog.lastSets) and the same pair the two routes give signed in.
+        //
+        // The device orders that block by the instant a set was performed where the log orders by
+        // set number, which is one order: the log numbers a movement's sets in the order they land.
+        fun of(history: List<SessionDetail>): List<LastSet> {
+            val closed = history
+                .filter { it.session.finishedAtMs != null }
+                .sortedByDescending { it.session.startedAtMs }
+            val trained = closed
+                .flatMap { it.sets }
+                .filter { it.kind != SetKind.Warmup }
+                .map { it.exerciseId }
+                .distinct()
+            return trained.mapNotNull { movement ->
+                val block = closed.firstOrNull { detail ->
+                    detail.sets.any { it.exerciseId == movement && it.kind != SetKind.Warmup }
+                } ?: return@mapNotNull null
+                val last = block.sets
+                    .filter { it.exerciseId == movement && it.kind != SetKind.Warmup }
+                    .maxByOrNull { it.completedAtMs } ?: return@mapNotNull null
+                LastSet(movement, last.weightKg, last.reps, block.session.startedAtMs)
+            }.sortedBy { it.exerciseId }
         }
     }
 }

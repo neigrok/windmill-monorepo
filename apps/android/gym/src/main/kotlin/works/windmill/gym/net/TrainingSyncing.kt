@@ -3,6 +3,7 @@ package works.windmill.gym.net
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.ExerciseWrite
 import works.windmill.gym.domain.GymPreferences
+import works.windmill.gym.domain.LastSet
 import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.MovementRecord
 import works.windmill.gym.domain.Review
@@ -79,6 +80,15 @@ interface TrainingSyncing {
     // nothing else, so this never folds a 404 — a 404 here would mean the movement does not exist,
     // which is a different and false thing.
     suspend fun lastTime(exerciseId: String): LastTime
+
+    // THE PICKER'S META, for the whole catalog in one read — the same rule `lastTime` answers for
+    // one movement, and the reason there is not one request per row. It is SPARSE: a movement this
+    // lifter has never trained has no entry, and that absence IS `never logged`. Nothing sends a
+    // zero, so nothing here has to tell a real zero from a missing one.
+    //
+    // It is a PICKER-OPEN read and never a per-keystroke one: the filter runs over the list already
+    // in hand.
+    suspend fun lastSets(): List<LastSet>
 
     suspend fun routines(): List<Routine>
 

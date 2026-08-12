@@ -126,6 +126,13 @@ private fun TodayHead(nothingLogged: Boolean, nowMs: Long) {
 
 // Screen 1. One way in, and the sentence that says what the empty session is FOR — a lifter who is
 // told a routine gets written at the end does not go looking for an editor first.
+//
+// THE DESIGN'S SECOND BUTTON, `Type out a routine first`, IS DELIBERATELY NOT DRAWN. It lands in a
+// routine editor, and this surface has none — RoutinesScreen states why: every door that WRITES a
+// routine belongs to the desk (gym ARCHITECTURE.md §11), and the two a phone owns already exist at
+// the moments they make sense, at the finish and mid-session. A button onto a screen that does not
+// exist is the one defect this room refuses everywhere else, and the empty state is not the place
+// to make an exception for it.
 @Composable
 private fun EmptyStart(onStart: (String?) -> Unit) {
     Column(

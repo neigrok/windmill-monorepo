@@ -828,6 +828,64 @@ LastTimeOutcome PgTrainingRepository::lastTime(const UserId& user, const Exercis
   return {found, LastTimeError::none};
 }
 
+std::vector<LastSet> PgTrainingRepository::lastSets(const UserId& user) {
+  // The read above, run over every movement at once and projected to one line each. DISTINCT ON is
+  // what makes it one pass instead of a lateral per catalog row: the ORDER BY inside it IS the
+  // locator's rule — newest finished session on (started_at, id), then the highest set_number in it
+  // — so the first row per movement is exactly the last row of that movement's lastTime block. Say
+  // the two rules differently and one screen dials a weight the other says you did not lift.
+  //
+  // Only the movements this account has WORKED come back. The catalog is not joined in, and that is
+  // the point of the shape: a lifter's history is a dozen movements where the catalog is sixty-four,
+  // and the caller already holds the catalog it joins these onto.
+  //
+  // Owner-scoped on both halves like the locator, never through the invariant that a set row
+  // inherits its session's owner. Warmups are out under the same rule and for the same reason: a
+  // ramp-up single is not what you did last time.
+  //
+  // WHAT IT COSTS, measured rather than asserted, so the next reader inherits numbers instead of a
+  // claim. Local Postgres 14 at the default work_mem = 4MB, one account training a dozen movements,
+  // EXPLAIN (ANALYZE, BUFFERS) three times per corpus. The plan hash-joins this account's sets to
+  // its sessions and then sorts every qualifying row ONCE, and that sort is the whole story:
+  //      1 600 working sets → quicksort, 274 kB in memory              ~2 ms
+  //     19 000 working sets → quicksort, 3 258 kB in memory           ~23 ms
+  //     38 000 working sets → EXTERNAL MERGE, 3 032 kB spilled to disk ~53 ms
+  // The plan SHAPE holds at every size, but somewhere in the low twenty-thousands of working sets —
+  // a decade of hard training — the sort crosses work_mem and spills from then on. That is a change
+  // in kind, not a bigger number, so it is written down rather than left to be discovered. 53 ms is
+  // cheap for a read that fires once when a picker opens; the lifter who ever makes it expensive is
+  // the one to revisit this for, and the measured alternative is the next paragraph.
+  //
+  // WHAT IT MUST NOT BE DRIVEN OFF is the catalog. The same rule as a LATERAL per catalog row — the
+  // shape a picker's mind reaches for first — measured 0.72–1.37 s on that decade, and the plan says
+  // why: 64 outer rows, each running a nested loop over this account's finished sessions — 104 024
+  // inner index scans and 2.4 M buffer hits to return 64 rows. For the fifty-odd movements this
+  // lifter has never touched, "there is no last time" is proved only by walking every session they
+  // ever ran. Driving the same LATERAL off the movements they HAVE touched measures ~9 ms and is
+  // genuinely faster than the sort above; it was not taken because it is one edit away from the
+  // catalog form, and because its win is a function of how few movements the lifter trains rather
+  // than of the statement. It is the noted fallback, not a mystery — if the spill ever starts to
+  // matter, that is the shape to measure again.
+  std::vector<LastSet> out;
+  {
+    PgLease conn{*pool_};
+    pqxx::work txn{*conn};
+    pqxx::result rows = txn.exec_params(
+        "SELECT DISTINCT ON (st.exercise_id) st.exercise_id, st.weight_kg::float8 AS weight_kg, "
+        "       st.reps, (extract(epoch from s.started_at) * 1000)::bigint AS at_ms "
+        "FROM gym_sets st JOIN gym_sessions s ON s.id = st.session_id "
+        "WHERE st.user_id = $1::uuid AND s.user_id = $1::uuid "
+        "      AND s.finished_at IS NOT NULL AND st.kind <> 'warmup' "
+        "ORDER BY st.exercise_id, s.started_at DESC, s.id DESC, st.set_number DESC",
+        user.str());
+    for (const auto& row : rows)
+      out.push_back(LastSet{ExerciseId{row["exercise_id"].as<std::string>()},
+                            row["weight_kg"].as<double>(), row["reps"].as<int>(),
+                            instantFrom(row["at_ms"])});
+  }
+  return out;
+}
+
 SessionHistory PgTrainingRepository::historyFor(const UserId& user, const Session& session) {
   // The finish read, in one transaction and at most three statements — the two the comparison needs
   // fire only for a session that named a routine, because without one the domain draws no

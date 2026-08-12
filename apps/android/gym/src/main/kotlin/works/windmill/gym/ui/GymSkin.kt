@@ -1,9 +1,15 @@
 package works.windmill.gym.ui
 
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -90,4 +96,16 @@ object GymType {
 object GymTap {
     val minimum = 46.dp
     val primary = 64.dp
+}
+
+// THE DASHED EDGE, which in this room means exactly one thing: a place waiting to be filled. The
+// slot the next movement goes in, and the offer that is only an offer. Compose has no dashed border
+// modifier, so it is drawn rather than declared — and it lives here beside the tokens because two
+// screens draw it and a second copy is how two edges start disagreeing.
+fun Modifier.dashedEdge(color: Color, radius: Dp, width: Dp = 1.dp): Modifier = drawBehind {
+    drawRoundRect(
+        color = color,
+        cornerRadius = CornerRadius(radius.toPx()),
+        style = Stroke(width = width.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(9f, 7f))),
+    )
 }

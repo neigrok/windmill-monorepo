@@ -728,6 +728,81 @@ TEST(pg_gym_last_time_names_the_routine_only_when_the_stored_plan_holds_a_string
   }
 }
 
+// The picker's meta, against the real DISTINCT ON. It claims to be the read above run over every
+// movement at once, so the case asserts the claim rather than trusting it: the row it hands back
+// for bench is the LAST set of lastTime's own block, dated by that block's session, and every rule
+// the locator keeps is kept here too. A warmup-only movement yields no row, an open session is not
+// a last time however heavy it is, and another account's log is not in this answer at all.
+TEST(pg_gym_last_sets_is_the_last_row_of_each_movements_last_time_block) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+
+  // An older, HEAVIER bench session, so a row that reported the heaviest set would say 100 here.
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  repo.insertSet(benchSet("set_pg000001", 100.0, t1 + 1'000));
+  repo.close(SessionId{"ses_pg000001"}, t1 + 2'000);
+
+  repo.insertSession(sessionAt("ses_pg000002", t1 + 10'000));
+  repo.insertSet(Set{SetId{"set_pg000002"}, SessionId{"ses_pg000002"}, ExerciseId{"bench-press"}, 0,
+                     40.0, 10, SetKind::warmup, std::nullopt, "", t1 + 11'000});
+  repo.insertSet(benchSet("set_pg000003", 82.5, t1 + 12'000, "ses_pg000002"));
+  repo.insertSet(benchSet("set_pg000004", 80.0, t1 + 13'000, "ses_pg000002"));
+  // Squatted only as a ramp-up, which is the same silence as never squatting at all.
+  repo.insertSet(squatSet("set_pg000005", "ses_pg000002", 60.0, 5, t1 + 14'000, SetKind::warmup));
+  repo.close(SessionId{"ses_pg000002"}, t1 + 15'000);
+
+  // Today, live and far heavier.
+  repo.insertSession(sessionAt("ses_pg000003", t1 + 20'000));
+  repo.insertSet(benchSet("set_pg000006", 140.0, t1 + 21'000, "ses_pg000003"));
+
+  // And another account's newer, heavier bench.
+  repo.insertSession(Session{SessionId{"ses_pg000004"}, wm::UserId{kOther}, t1 + 30'000});
+  repo.insertSet(benchSet("set_pg000007", 142.5, t1 + 31'000, "ses_pg000004"));
+  repo.close(SessionId{"ses_pg000004"}, t1 + 32'000);
+
+  std::vector<LastSet> ours = repo.lastSets(wm::UserId{kUser});
+  std::vector<LastSet> theirs = repo.lastSets(wm::UserId{kOther});
+
+  CHECK_EQ(ours, (std::vector<LastSet>{
+                     LastSet{ExerciseId{"bench-press"}, 80.0, 8, t1 + 10'000}}));
+  CHECK_EQ(theirs, (std::vector<LastSet>{
+                       LastSet{ExerciseId{"bench-press"}, 142.5, 8, t1 + 30'000}}));
+
+  // The claim, stated as an assertion: this IS lastTime's block, projected to its last row.
+  LastTimeOutcome block = repo.lastTime(wm::UserId{kUser}, ExerciseId{"bench-press"});
+  CHECK_EQ(ours[0].weightKg, block.lastTime->sets.back().weightKg);
+  CHECK_EQ(ours[0].reps, block.lastTime->sets.back().reps);
+  CHECK_EQ(ours[0].atMs, block.lastTime->session.startedAtMs);
+}
+
+// One row per movement, keyed by movement id — the key a picker joins these onto its catalog by, and
+// not the order it draws them in. A lifter with two movements gets two rows and neither is the
+// other's; a lifter with none gets nothing, which is every catalog row reading `never logged`.
+TEST(pg_gym_last_sets_carries_one_row_per_movement_ordered_by_id) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+
+  CHECK(repo.lastSets(wm::UserId{kUser}).empty());
+
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  repo.insertSet(benchSet("set_pg000001", 82.5, t1 + 1'000));
+  repo.insertSet(squatSet("set_pg000002", "ses_pg000001", 120.0, 5, t1 + 2'000));
+  repo.close(SessionId{"ses_pg000001"}, t1 + 3'000);
+
+  // A later session squats again, so the two rows are dated by two different workouts.
+  repo.insertSession(sessionAt("ses_pg000002", t1 + 10'000));
+  repo.insertSet(squatSet("set_pg000003", "ses_pg000002", 125.0, 5, t1 + 11'000));
+  repo.close(SessionId{"ses_pg000002"}, t1 + 12'000);
+
+  CHECK_EQ(repo.lastSets(wm::UserId{kUser}),
+           (std::vector<LastSet>{LastSet{ExerciseId{"back-squat"}, 125.0, 5, t1 + 10'000},
+                                 LastSet{ExerciseId{"bench-press"}, 82.5, 8, t1}}));
+}
+
 // The plan is the one shape written at BOTH edges — jsonb here, an object on the wire — and it goes
 // through the same codec, so a session read back holds exactly what was frozen onto it. The name
 // stays a plain string at the top level, which is what the prefill's type check looks for.

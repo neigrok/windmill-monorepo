@@ -34,6 +34,17 @@ public final class TrainingStore: ObservableObject {
     // having asked yet. Without it the card says "reading your log…" forever after a failure, and a
     // movement the lifter has trained for a year reads as one they never have.
     @Published public private(set) var lastTimeFailed = false
+    // THE PICKER'S META, and it is optional because the absence of a key is an ASSERTION: a movement
+    // with no line here has never been trained, which is exactly what `never logged` says. Nil is the
+    // state where nothing may be asserted at all — the read has not landed, or it failed — and the
+    // picker draws no meta rather than telling a lifter of ten years they have never squatted.
+    @Published public private(set) var lastSets: [String: LastSet]?
+    // Whether a picker has ever ASKED for that map on this store. §J22's card is a door out of the
+    // room — the You sheet, then the sign-in — and the room stays mounted behind it, which is what
+    // lands the lifter back mid-session; the price is that the picker's own `.task` never runs a
+    // second time when the account arrives. So the seat that comes in re-answers what the seat that
+    // left was asked, and a launch nobody opened a picker on still costs no read at all.
+    private var lastSetsWanted = false
     @Published public private(set) var prefill: Prefill = .emptyBar
     // How the room is set up (§I). Read from the device before the first frame and from the account
     // once there is one, so the logger's plate readout and rest clock never wait on a round trip.
@@ -72,6 +83,10 @@ public final class TrainingStore: ObservableObject {
     private let sync: (Account) -> (any TrainingSyncing)?
     private var gym: (any TrainingSyncing)?
     private var lastTimes: [String: LastTime] = [:]
+    // Whether the account's routines were ASKED for and never answered. `routines` is empty both for
+    // a lifter who has written none and for a read that missed, and `holdsNothing` is the one caller
+    // that may not confuse the two.
+    private var routinesFailed = false
     private var retryTask: Task<Void, Never>?
     // True while THE claim runner is replaying the shelf — the window in which an ordinary start
     // must compose on the device instead, because the server would default-JOIN a replayed session.
@@ -196,6 +211,21 @@ public final class TrainingStore: ObservableObject {
         case failed
     }
 
+    // WHETHER THIS DEVICE AND THE ACCOUNT BEHIND IT ARE KNOWN TO HOLD NOTHING — no workout running,
+    // no session in the log, no routine written down. KNOWN is the load-bearing word, and it is why
+    // this asks the FOOT rather than counting the rows: an empty list is also what a read that
+    // failed leaves behind, and `.bottom` is the one state that has actually reached the end of the
+    // log. The routines are asked the same question by `routinesFailed`.
+    //
+    // The arrival start (§J22) is the only caller, and it is the only place the difference costs
+    // anything: a returning lifter whose log read missed would be handed a session they never asked
+    // for, over a history the room simply could not see. Signed out the device IS the whole log —
+    // the foot is at the bottom the moment the room draws and the shelf answers for the routines —
+    // so a fresh install still opens on its first session, which is the whole of §J22.
+    public var holdsNothing: Bool {
+        session == nil && recent.isEmpty && logFoot == .bottom && routines.isEmpty && !routinesFailed
+    }
+
     // This movement's sets in this session, performed order, warmups included — the whole record of
     // it, which is what the today list draws. What CARRIES FORWARD is narrower: `Prefill` follows the
     // working sets only, because a ramp-up is not what the next set is aimed at.
@@ -255,9 +285,10 @@ public final class TrainingStore: ObservableObject {
         // name is what ONE ACCOUNT calls a movement: a seed renamed on the record page is a
         // per-account override, and a movement somebody created is theirs. The device's own
         // unclaimed movements fold in under every seat — they are this device's, not the log's — and
-        // everything else opens empty under a seat that did not write it. Whatever survives is on
-        // screen in the same synchronous breath as the live session below, so a room in a basement
-        // never waits on a round trip to stop drawing `bench-press` at 28pt.
+        // a seat that did not write the file falls back to the sixty-four the app SHIPS with
+        // (`DeviceCatalog.seeded`), which is where the anonymous room's catalog comes from at all.
+        // Whatever survives is on screen in the same synchronous breath as the live session below,
+        // so a room in a basement never waits on a round trip to stop drawing `bench-press` at 28pt.
         catalog = merged(deviceCatalog.open(under: account.user?.id))
         // Whoever is signed in now brings their own history: every cached last time was computed
         // against the previous log (or none), so the answers go and the movement in hand asks
@@ -266,6 +297,9 @@ public final class TrainingStore: ObservableObject {
         lastTimes.removeAll()
         lastTime = nil
         lastTimeFailed = false
+        // The picker's lines go with them and for the same reason: this map's whole meaning is
+        // "these are the movements YOU have trained", so one seat's may never be read under another.
+        lastSets = nil
         // A crash between the local finish's two flushes leaves the workout both live and
         // finished. The finished shelf already holds it, so the queue's copy is the stale half:
         // any set only the queue still has folds into the finished session, and the queue lets
@@ -285,6 +319,9 @@ public final class TrainingStore: ObservableObject {
         // The device's shelves are on screen before any wire answers — the room mounts on local
         // state, and a signed-in read that lands later only ever adds to it.
         routines = Routine.byLastTrained(localLog.routines)
+        // The shelf cannot fail, so until the account is asked the routines on screen are answered
+        // for. Signed out that is the whole truth and this stays false all the way through.
+        routinesFailed = false
         // Opened under whoever is signed in, exactly as the catalog is a few lines up and for a
         // sharper reason: settings are one ACCOUNT's, so a document this seat did not write is let
         // go of rather than drawn. The anonymous document the claim is about to carry is the one
@@ -301,6 +338,7 @@ public final class TrainingStore: ObservableObject {
             claimOwedRetryably = false
             saveState = queue.pending.isEmpty ? .idle : .onThisDevice
             if session != nil, let movement = exerciseId { await choose(movement) }
+            if lastSetsWanted { await loadLastSets() }
             return
         }
         // What this device made before anybody signed in goes out FIRST — movements, routines,
@@ -322,8 +360,13 @@ public final class TrainingStore: ObservableObject {
             catalog = merged(exercises)
             deviceCatalog.hold(catalog)
         }
+        // A READ THAT MISSED IS RECORDED RATHER THAN LEFT AS AN EMPTY LIST. The shelf's own routines
+        // stay on screen either way — they are real — but "this lifter has written none" is a claim
+        // only an answer can support, and `holdsNothing` is the caller that acts on it.
         if let written = try? await gym.routines() {
             routines = Routine.byLastTrained(written + localLog.routines)
+        } else {
+            routinesFailed = true
         }
         // Read AFTER the claim, and only while this device is not still holding an answer the log has
         // never heard: a served document landing on top of one the lifter set signed-out would take
@@ -335,6 +378,7 @@ public final class TrainingStore: ObservableObject {
             localLog.flush()
         }
         if session != nil, let movement = exerciseId { await choose(movement) }
+        if lastSetsWanted { await loadLastSets() }
     }
 
     // HOW THE ROOM IS SET UP, CHANGED. The same order as every other write in this file — store on the
@@ -515,6 +559,70 @@ public final class TrainingStore: ObservableObject {
         lastTimes[movement] = answer
         lastTime = answer
         redial()
+    }
+
+    // THE PICKER'S META, read when the picker OPENS and never per keystroke — the live filter runs
+    // over the catalog this client already holds, and these join onto it by id.
+    //
+    // Signed out the device is the log and answers whole. Signed in the served map is the account's,
+    // and this device's unclaimed sessions are folded in on top of it: those workouts happened, the
+    // log has simply never heard of them, and the newer line is the true one either way.
+    //
+    // A read that did not land leaves the map ALONE — nil until one does. Every screen that draws
+    // this treats a missing movement as one that was never trained, so an empty map from a failed
+    // read would tell a lifter their whole history is gone.
+    //
+    // Asking once REGISTERS the picker: `connect` drops the map when the seat changes and asks this
+    // again on the way out, because the screen that wanted it is still on screen and its own `.task`
+    // has already run (see `lastSetsWanted`).
+    public func loadLastSets() async {
+        lastSetsWanted = true
+        guard let gym else {
+            lastSets = localLog.lastSets()
+            return
+        }
+        guard let served = try? await gym.lastSets() else { return }
+        let account = Dictionary(served.map { ($0.exerciseId, $0) }) { first, _ in first }
+        lastSets = account.merging(localLog.lastSets()) { onTheLog, onThisDevice in
+            onThisDevice.atMs > onTheLog.atMs ? onThisDevice : onTheLog
+        }
+    }
+
+    // THE WALK ORDER, MOVED — the drag on the assembly list (§A screen 2), and the only thing in this
+    // room that reorders anything. It moves IDS and nothing else: the sets are keyed by session and
+    // movement and are not consulted here, so no arrangement of this list can lose one, and the same
+    // list redrawn from the queue comes back in the order the thumb left it (`LiveOrder.merged` keeps
+    // what the device already holds at the head).
+    public func reorder(from source: IndexSet, to destination: Int) {
+        var moved = order
+        moved.move(fromOffsets: source, toOffset: destination)
+        queue.hold(order: moved)
+        queue.flush()
+        order = moved
+    }
+
+    // THE SWIPE THAT TAKES A MOVEMENT OFF THE LIST, and it is narrow by construction: only a movement
+    // with no sets that the plan never named can go (`LiveOrder.droppable`). A movement that was
+    // lifted is a fact and a plan line is what the routine said — both would be put straight back by
+    // the next redraw, so neither is ever offered.
+    //
+    // Dropping the movement IN HAND moves the hand: to wherever the walk resumes, or to nothing,
+    // which is the picker again — standing on a movement that is no longer in the session would be
+    // the screen disagreeing with the list the lifter just edited.
+    public func drop(_ movement: String) async {
+        guard LiveOrder.droppable(movement, sets: sets, plan: session?.plan) else { return }
+        queue.hold(order: order.filter { $0 != movement })
+        queue.flush()
+        order = queue.order
+        guard exerciseId == movement else { return }
+        exerciseId = nil
+        lastTime = nil
+        lastTimeFailed = false
+        guard let resumed = LiveOrder.resume(order: order, sets: sets) else {
+            redial()
+            return
+        }
+        await choose(resumed)
     }
 
     // Local-first: the row lands and the device holds it before the network is consulted at all.

@@ -5,6 +5,7 @@ import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.ExerciseRename
 import works.windmill.gym.domain.ExerciseWrite
 import works.windmill.gym.domain.GymPreferences
+import works.windmill.gym.domain.LastSet
 import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.MovementRecord
 import works.windmill.gym.domain.Review
@@ -32,6 +33,7 @@ import works.windmill.platform.net.WindmillApiException
 //   POST /v1/gym/sessions/:id/finish  ·  DELETE /v1/gym/sessions/:id
 //   GET  /v1/gym/sessions?before=&beforeId=&limit=   ·  GET /v1/gym/sessions/:id
 //   GET  /v1/gym/sessions/:id/review  ·  GET /v1/gym/last?exercise=
+//   GET  /v1/gym/exercises/last
 //   GET  /v1/gym/routines             ·  POST /v1/gym/routines
 //   PUT  /v1/gym/routines/:id         ·  DELETE /v1/gym/routines/:id
 //   POST /v1/gym/sessions/:id/share   ·  DELETE /v1/gym/sessions/:id/share
@@ -96,6 +98,12 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
 
     override suspend fun lastTime(exerciseId: String): LastTime =
         api.get<LastTime>("/v1/gym/last?exercise=${escaped(exerciseId)}")
+
+    // `last` can never collide with a movement id: the server's own `wellFormedId` wants eight
+    // characters, so no lifter can mint it and no seed is called that. It takes no arguments — the
+    // whole list comes back and the picker joins it onto the catalog by id.
+    override suspend fun lastSets(): List<LastSet> =
+        api.get<LastSets>("/v1/gym/exercises/last").movements
 
     override suspend fun routines(): List<Routine> =
         api.get<Routines>("/v1/gym/routines").routines
@@ -176,6 +184,11 @@ fun RefusalFacts(refusing: Throwable): RefusalFacts = when (refusing) {
 
 @Serializable
 private data class Catalog(val exercises: List<Exercise>)
+
+// `movements` is always present and is `[]` for a lifter who has logged nothing — so the absence of
+// a row is the only thing this reply ever says about a movement it does not carry.
+@Serializable
+private data class LastSets(val movements: List<LastSet> = emptyList())
 
 @Serializable
 private data class Log(val sessions: List<SessionSummary>)

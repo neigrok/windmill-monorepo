@@ -7,7 +7,7 @@ import works.windmill.gym.domain.Exercise
 // THE MOVEMENT NAMES, KEPT BESIDE THE QUEUE. A movement is a stable id everywhere except on
 // screen, and the id is a slug — so a cold launch in a basement gym, with the queue holding a live
 // session and the catalog read still in flight, draws `bench-press` where `Bench Press` belongs:
-// in the movement head at 28sp, in the jump sheet, and in the refusal banner that is the last copy
+// in the movement head at 28sp, in the assembly list, and in the refusal banner that is the last copy
 // of a set somebody lifted.
 //
 // That is the whole reason ids are stable and names are display strings, and it is why the device

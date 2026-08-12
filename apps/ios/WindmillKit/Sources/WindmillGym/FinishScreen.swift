@@ -318,9 +318,14 @@ struct FinishScreen: View {
     private var keepAsRoutine: some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x3) {
             Text("Keep this as a routine")
-                .font(WindmillFont.display(18))
-                .foregroundStyle(skin.ink)
+                .font(GymType.numeral(10.5, .bold))
+                .textCase(.uppercase)
+                .kerning(0.9)
+                .foregroundStyle(skin.accent)
 
+            // The name sits in a well, because it is the one thing on this screen that is EDITED and
+            // a field that looks like a label is one nobody taps. Screen 3 draws it sunken, with the
+            // instruction at the trailing end rather than under it.
             HStack(spacing: WindmillSpace.x3) {
                 TextField("", text: $routineName)
                     .font(WindmillFont.body(17, .semibold))
@@ -331,6 +336,10 @@ struct FinishScreen: View {
                     .font(GymType.numeral(11))
                     .foregroundStyle(skin.inkFaint)
             }
+            .padding(.horizontal, WindmillSpace.x3)
+            .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.canvas))
+            .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md)
+                .strokeBorder(skin.lineStrong, lineWidth: 1))
 
             ForEach(RoutineWrite(named: routineName, from: finished.sets, position: 0)?.entries ?? [],
                     id: \.exerciseId) { entry in
@@ -363,10 +372,20 @@ struct FinishScreen: View {
                 .font(WindmillFont.body(16, .semibold))
                 .foregroundStyle(skin.inkDim)
                 .frame(maxWidth: .infinity, minHeight: GymTap.minimum + 6)
+
+            // Said because it is true and because it is what makes the offer safe to refuse: nothing
+            // is created until the tap, and passing on it costs the session nothing. It is not a
+            // last chance and nothing anywhere counts how often it is passed on.
+            Text("Declining costs nothing — the offer comes back next session.")
+                .font(GymType.numeral(12))
+                .foregroundStyle(skin.inkFaint)
+                .lineSpacing(3)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(WindmillSpace.x4)
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
-        .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg).strokeBorder(skin.line, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)
+            .strokeBorder(skin.accent, lineWidth: 1))
     }
 
     // The one destructive action in the product, and it sits here because a three-set session is

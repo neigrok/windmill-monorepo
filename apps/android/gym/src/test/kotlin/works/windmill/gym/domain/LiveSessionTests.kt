@@ -194,7 +194,7 @@ class LiveLinesTests {
     // warmup, drops included, because that column is the record of what was performed and not a
     // count toward the plan — Logger.jsx's TodayList numbers them the same way.
     @Test
-    fun testOnlyWorkingSetsCountTowardThePlanCounterAndTheJumpSheet() {
+    fun testOnlyWorkingSetsCountTowardThePlanCounterAndTheAssemblyList() {
         val sets = listOf(
             aSet("bench-press", 40.0, 8, at = 900, kind = SetKind.Warmup, id = "w1"),
             aSet("bench-press", 82.5, 5, at = 1_000, id = "s1"),
@@ -209,10 +209,12 @@ class LiveLinesTests {
                      LiveLines.counter(workingSetsToday = LiveLines.workingCount(sets),
                                        planEntry = pushA.entry("bench-press")).count)
 
-        val rows = LiveLines.jumpRows(order = listOf("bench-press"), sets = sets, plan = pushA,
-                                      catalog = listOf(Exercise(id = "bench-press", name = "Bench Press")),
-                                      current = "bench-press")
-        assertEquals(listOf("2 of 5 sets"), rows.map { it.meta })
+        val rows = LiveLines.assemblyRows(order = listOf("bench-press"), sets = sets, plan = pushA,
+                                          catalog = listOf(Exercise(id = "bench-press", name = "Bench Press")),
+                                          current = "bench-press")
+        assertEquals(listOf("2 of 5 sets"), rows.map { it.tag })
+        assertEquals("the card draws every set that was performed, drops and warmups included",
+                     listOf(5), rows.map { it.sets.size })
 
         assertEquals("the today list numbers what was performed, which is not what counts",
                      listOf("w", "1", "2", "3", "4"),
@@ -221,20 +223,71 @@ class LiveLinesTests {
 
     // A movement with nothing in it says what would start it, rather than reading as a mistake.
     @Test
-    fun testTheJumpSheetSaysWhereEachMovementStands() {
-        val rows = LiveLines.jumpRows(
+    fun testTheAssemblyListSaysWhereEachMovementStands() {
+        val rows = LiveLines.assemblyRows(
             order = listOf("bench-press", "overhead-press", "cable-fly"),
             sets = listOf(aSet("bench-press", 82.5, 5, at = 1_000),
-                          aSet("bench-press", 40.0, 8, at = 900, kind = SetKind.Warmup, id = "w1"),
-                          aSet("cable-fly", 22.5, 12, at = 2_000)),
+                          aSet("bench-press", 40.0, 8, at = 900, kind = SetKind.Warmup, id = "w1")),
             plan = pushA,
             catalog = listOf(Exercise(id = "bench-press", name = "Bench Press")),
             current = "bench-press"
         )
         assertEquals(listOf("Bench Press", "overhead-press", "cable-fly"), rows.map { it.name })
-        assertEquals(listOf("1 of 5 sets", "no sets yet — logging one starts it", "1 set"),
-                     rows.map { it.meta })
+        assertEquals("a plan line nobody has reached yet was not just added — it is not started",
+                     listOf("1 of 5 sets", null, "just added"), rows.map { it.tag })
+        assertEquals("only a movement with no sets says what would start it",
+                     listOf(null, "no sets yet — logging one starts it",
+                            "no sets yet — logging one starts it"),
+                     rows.map { it.line })
         assertEquals(listOf(true, false, false), rows.map { it.isCurrent })
+        assertEquals(listOf(false, false, true), rows.map { it.justAdded })
+        assertEquals("the plan's own line does not leave on a swipe, and the appended one does",
+                     listOf(false, false, true), rows.map { it.canDrop })
+    }
+
+    // WHAT A SWIPE MAY TAKE, and it is the narrowest thing in this wave. A movement holding a set is
+    // a lifter's own logged work and never leaves on a sideways flick; a movement the PLAN names
+    // would walk straight back on at the next draw (`merged`), so the gesture is not offered on it
+    // either. Everything appended on the bench is free to go.
+    @Test
+    fun testASwipeDropsOnlyAMovementThatIsNeitherLoggedNorPlanned() {
+        val sets = listOf(aSet("bench-press", 82.5, 5, at = 1_000))
+
+        assertEquals(false, LiveOrder.droppable("bench-press", sets, pushA))
+        assertEquals(false, LiveOrder.droppable("overhead-press", sets, pushA))
+        assertEquals(true, LiveOrder.droppable("cable-fly", sets, pushA))
+        assertEquals("with no plan, a movement holding a set is still the lifter's own work",
+                     false, LiveOrder.droppable("bench-press", sets, plan = null))
+    }
+
+    // THE GRAB RAIL MOVES THE WALK AND NOTHING ELSE. A reorder is a permutation: the list that comes
+    // back holds exactly what went in, whichever way the finger went, because a movement lost by a
+    // drag would be a logged movement off the screen it is being logged on.
+    @Test
+    fun testAReorderIsAPermutationAndNeverLosesAMovement() {
+        val order = listOf("bench-press", "overhead-press", "cable-fly", "chin-up")
+
+        assertEquals(listOf("overhead-press", "cable-fly", "bench-press", "chin-up"),
+                     LiveOrder.moved(order, from = 0, to = 2))
+        assertEquals(listOf("chin-up", "bench-press", "overhead-press", "cable-fly"),
+                     LiveOrder.moved(order, from = 3, to = 0))
+        for (from in order.indices) {
+            for (to in order.indices) {
+                assertEquals("moving $from to $to kept every movement",
+                             order.sorted(), LiveOrder.moved(order, from, to).sorted())
+            }
+        }
+    }
+
+    // An index nobody can point at leaves the list alone: the gesture that hands these in is a thumb
+    // on a list that is moving under it.
+    @Test
+    fun testAReorderOffTheEndsOfTheListChangesNothing() {
+        val order = listOf("bench-press", "overhead-press")
+        assertEquals(order, LiveOrder.moved(order, from = 0, to = 0))
+        assertEquals(order, LiveOrder.moved(order, from = -1, to = 1))
+        assertEquals(order, LiveOrder.moved(order, from = 1, to = 7))
+        assertEquals(emptyList<String>(), LiveOrder.moved(emptyList(), from = 0, to = 0))
     }
 
     @Test

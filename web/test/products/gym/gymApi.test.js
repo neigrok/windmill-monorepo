@@ -93,6 +93,44 @@ test('every call is cookie-credentialed json against the gym root', async () => 
   });
 });
 
+// THE PICKER'S META, IN ONE READ (§B7) — and the shape of it is the whole contract: the reply
+// carries an entry for a movement this account has a LAST TIME for and NOTHING for one it has not.
+// The bytes below are read off the writer and the handler rather than off a probe — no server was
+// running when this landed, so the claim is only as strong as those two files: `movements` is the
+// object's one key (GymApi.cpp::lastSets) and each line is exactly exerciseId · weightKg · reps ·
+// at, with no name and no nulls (TrainingJson.cpp::toJson(vector<LastSet>)). The account here has
+// two movements behind it and sixty-two it has no last time for; there is no row for those
+// sixty-two — no null, no zero, no sentinel — which is what the picker draws `no last time` from,
+// and it is why nothing here may fill a gap in.
+//
+// It takes no arguments. The list is a join key order (ascending id), not a draw order.
+test('lastSets — every movement’s last set, sparse, and it asks for nothing', async () => {
+  const movements = [
+    { exerciseId: 'back-squat', weightKg: 100, reps: 5, at: 1_785_600_000_000 },
+    { exerciseId: 'bench-press', weightKg: 80, reps: 8, at: 1_785_600_000_000 },
+  ];
+  serve(ok({ movements }));
+  assert.deepEqual(await gymApi.lastSets(), movements);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/gym/exercises/last',
+    method: 'GET',
+    credentials: 'include',
+    contentType: 'application/json',
+    body: undefined,
+  });
+});
+
+// A lifter with no finished block behind them is answered with the key present and the list empty,
+// which is a whole answer and not a missing one: every row on their picker says `no last time`
+// because every row is absent from this list. That is the first-session case — the workout they are
+// in right this minute is not a last time until it is over — and it is exactly why the sentence
+// those rows draw does not claim they have never trained.
+test('lastSets — an account with no history answers an empty list, never an absent one', async () => {
+  serve(ok({ movements: [] }));
+  assert.deepEqual(await gymApi.lastSets(), []);
+});
+
 test('sessions — the pager sends the instant AND the id, and sends neither when unasked', async () => {
   serve(ok({ sessions: [] }));
   assert.deepEqual(await gymApi.sessions(), []);

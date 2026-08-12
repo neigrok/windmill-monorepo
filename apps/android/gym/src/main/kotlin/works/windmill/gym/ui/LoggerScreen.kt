@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -16,7 +17,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -84,14 +84,20 @@ import works.windmill.platform.design.WindmillSpace
 private sealed class LoggerSheet {
     data object Weight : LoggerSheet()
     data object Reps : LoggerSheet()
-    data object Jump : LoggerSheet()
+    data object Assembly : LoggerSheet()
     data object Picker : LoggerSheet()
     data class Deviation(val offer: DeviationOffer, val movement: String) : LoggerSheet()
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LoggerScreen(store: TrainingStore, say: (String?) -> Unit, onFinish: () -> Unit) {
+fun LoggerScreen(
+    store: TrainingStore,
+    isSignedIn: Boolean,
+    say: (String?) -> Unit,
+    onFinish: () -> Unit,
+    onSignIn: () -> Unit,
+) {
     val scope = rememberCoroutineScope()
     val preferences = store.preferences
     val confirm = rememberGymConfirm(preferences)
@@ -112,6 +118,21 @@ fun LoggerScreen(store: TrainingStore, say: (String?) -> Unit, onFinish: () -> U
     // below, once the sheet has actually left.
     fun close() {
         scope.launch { sheetState.hide() }.invokeOnCompletion { sheet = null }
+    }
+
+    // A movement the catalog has never heard of, minted from the picker's own door. Shared by the
+    // sheet and by the inline first-run picker, because a create that answered differently on the
+    // two would be two rules for one gesture.
+    fun mint(name: String) {
+        say(null)
+        scope.launch {
+            // A picker that closed on a movement that was never minted is a lifter left holding
+            // nothing, with nothing said about it.
+            when (val made = store.create(name)) {
+                is GymResult.Ok -> store.choose(made.value.id)
+                is GymResult.Failed -> say(made.why.line("“$name” wasn’t created"))
+            }
+        }
     }
 
     fun move(to: String) {
@@ -142,6 +163,15 @@ fun LoggerScreen(store: TrainingStore, say: (String?) -> Unit, onFinish: () -> U
         val offer = pendingDeviation ?: return@LaunchedEffect
         pendingDeviation = null
         sheet = LoggerSheet.Deviation(offer, Readout.movement(offer.exerciseId, store.catalog))
+    }
+
+    // The picker's meta is read when the picker OPENS and never as the filter runs: the live filter
+    // walks the list already in hand, and a request per keystroke would be the N+1 that one read
+    // exists to refuse. Asked again on every open, because a set logged since is exactly what it
+    // reports.
+    val pickerUp = store.exerciseId == null || sheet == LoggerSheet.Picker
+    LaunchedEffect(pickerUp) {
+        if (pickerUp) store.loadLastSets()
     }
 
     // The dial follows the prefill, and the prefill only moves when the movement does or when a
@@ -210,19 +240,37 @@ fun LoggerScreen(store: TrainingStore, say: (String?) -> Unit, onFinish: () -> U
 
         val movement = store.exerciseId
         if (movement == null) {
-            Assembling(
-                title = store.session?.plan?.routine ?: Readout.noRoutine,
-                line = if (store.session?.plan == null)
-                    "No routine, no plan snapshot. Pick what you are about to lift."
-                else
-                    "Nothing in this plan to walk yet. Pick what you are about to lift.",
-                onChoose = { sheet = LoggerSheet.Picker },
+            // §J22 — THE PICKER IS ALREADY UP, and it is the surface itself rather than a sheet
+            // over one: a session with no movement in it has nothing behind the picker to go back
+            // to, and a Cancel there would be a door onto an empty room. On the first session it
+            // carries the six and the one account verb this room has; on any later one it is the
+            // plain catalog under the header that already names the workout.
+            MovementPicker(
+                catalog = store.catalog,
+                taken = store.order,
+                lastSets = store.lastSets,
+                nowMs = nowMs,
+                // A QUESTION AND NEVER THE ROUTINE'S NAME. The header one line up already says
+                // which workout this is, and a screen that said it twice is the duplicate section
+                // head the phone screenshots caught once already.
+                title = if (store.firstSession) "What are you starting with?" else "What are you lifting?",
+                subtitle = if (store.session?.plan == null) "the session is already running"
+                    else "nothing in this plan is left to walk",
+                firstSession = store.firstSession,
+                signedIn = isSignedIn,
+                catalogUnread = store.catalogUnread,
+                // No change offer to raise: nothing is being LEFT, so this is the plain choice the
+                // sheet's `move` wraps.
+                onPick = { picked -> scope.launch { store.choose(picked) } },
+                onCreate = { name -> mint(name) },
+                onBuildRoutine = onSignIn,
+                modifier = Modifier.weight(1f),
             )
         } else {
             MovementHead(
                 name = Readout.movement(movement, store.catalog),
                 counter = LiveLines.counter(LiveLines.workingCount(store.todaySets), store.planEntry),
-                onJump = { sheet = LoggerSheet.Jump },
+                onJump = { sheet = LoggerSheet.Assembly },
             )
             PrefillCard(
                 card = LiveLines.prefillCard(store.lastTime, store.planEntry,
@@ -298,29 +346,31 @@ fun LoggerScreen(store: TrainingStore, say: (String?) -> Unit, onFinish: () -> U
                     onCommit = { reps = it.toInt(); close() },
                     onCancel = { close() },
                 )
-                LoggerSheet.Jump -> JumpSheet(
-                    rows = LiveLines.jumpRows(store.order, store.sets, store.session?.plan,
-                                              store.catalog, store.exerciseId),
+                LoggerSheet.Assembly -> AssemblySheet(
+                    rows = LiveLines.assemblyRows(store.order, store.sets, store.session?.plan,
+                                                  store.catalog, store.exerciseId, store.stalled),
                     onJump = { move(it) },
+                    onReorder = { from, to -> store.reorder(from, to) },
+                    onDrop = { store.drop(it) },
                     onAdd = { sheet = LoggerSheet.Picker },
                     onClose = { close() },
                 )
                 LoggerSheet.Picker -> MovementPicker(
                     catalog = store.catalog,
                     taken = store.order,
+                    lastSets = store.lastSets,
+                    nowMs = nowMs,
+                    title = "Add exercise",
+                    catalogUnread = store.catalogUnread,
                     onPick = { move(it) },
                     onCreate = { name ->
                         close()
-                        say(null)
-                        scope.launch {
-                            // A picker that closed on a movement that was never minted is a lifter
-                            // left holding nothing, with nothing said about it.
-                            when (val made = store.create(name)) {
-                                is GymResult.Ok -> store.choose(made.value.id)
-                                is GymResult.Failed -> say(made.why.line("“$name” wasn’t created"))
-                            }
-                        }
+                        mint(name)
                     },
+                    modifier = Modifier
+                        .fillMaxHeight(0.92f)
+                        .background(GymSkin.surface)
+                        .padding(WindmillSpace.x5),
                     onClose = { close() },
                 )
                 is LoggerSheet.Deviation -> DeviationSheet(
@@ -360,28 +410,6 @@ private fun Header(routine: String, elapsedMs: Long, onFinish: () -> Unit) {
             contentAlignment = Alignment.Center,
         ) {
             Text("Finish", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.accent)
-        }
-    }
-}
-
-// No routine, no plan snapshot, and nothing to log into yet. The one way forward is to name what
-// is about to be lifted — this list IS the routine that gets offered at the end.
-@Composable
-private fun Assembling(title: String, line: String, onChoose: () -> Unit) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4)) {
-        Spacer(Modifier.height(WindmillSpace.x8))
-        Text(title, style = WindmillFont.display(26), color = GymSkin.ink)
-        Text(line, style = WindmillFont.body(16), color = GymSkin.inkDim, lineHeight = 24.sp)
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .heightIn(min = GymTap.primary)
-                .clip(RoundedCornerShape(WindmillRadius.lg))
-                .background(GymSkin.accent)
-                .clickable(onClick = onChoose),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("Choose a movement", style = WindmillFont.body(17, FontWeight.Bold), color = GymSkin.onAccent)
         }
     }
 }

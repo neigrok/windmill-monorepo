@@ -426,6 +426,24 @@ Json::Value toJson(const std::vector<Exercise>& exercises) {
   return array;
 }
 
+// `at` is the SESSION's start, which is the word every other instant this product hands a screen is
+// dated by, and the picker prints it as "3 days ago". The movement's NAME is not here on purpose:
+// the caller drew this list from the catalog and joins on `exerciseId`, so sending the name again
+// would send sixty-four strings the client already holds — and a renamed movement would then arrive
+// under two spellings in one screen.
+Json::Value toJson(const std::vector<LastSet>& movements) {
+  Json::Value array(Json::arrayValue);
+  for (const LastSet& movement : movements) {
+    Json::Value line(Json::objectValue);
+    line["exerciseId"] = movement.exercise.str();
+    line["weightKg"] = movement.weightKg;
+    line["reps"] = movement.reps;
+    line["at"] = Json::Value::UInt64(movement.atMs);
+    array.append(line);
+  }
+  return array;
+}
+
 Json::Value toJson(const Routine& routine) {
   Json::Value body(Json::objectValue);
   body["id"] = routine.id.str();

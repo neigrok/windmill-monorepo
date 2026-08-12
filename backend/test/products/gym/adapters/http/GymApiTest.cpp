@@ -255,6 +255,8 @@ TEST(gym_routes_without_a_session_are_401) {
 
   drogon::HttpResponsePtr exercises =
       send(h.api, &GymApi::listExercises, getRequest("/v1/gym/exercises"));
+  drogon::HttpResponsePtr lastSets =
+      send(h.api, &GymApi::lastSets, getRequest("/v1/gym/exercises/last"));
   drogon::HttpResponsePtr start =
       send(h.api, &GymApi::startSession, postRequest("/v1/gym/sessions", startBody()));
   drogon::HttpResponsePtr append = send(h.api, &GymApi::appendSet,
@@ -302,6 +304,9 @@ TEST(gym_routes_without_a_session_are_401) {
 
   CHECK_EQ(exercises->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(dump(bodyOf(exercises)), std::string(R"({"error":"sign in to open your training log"})"));
+  // The picker's meta is a read of somebody's LOG under a catalog-shaped path, so it sits on this
+  // side of the gate with every other read of one.
+  CHECK_EQ(lastSets->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(start->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(append->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(routines->getStatusCode(), drogon::k401Unauthorized);
@@ -347,6 +352,98 @@ TEST(gym_exercises_lists_the_catalog_in_pattern_then_name_order) {
                        R"("name":"Bench Press","pattern":"press","stepKg":2.5},)"
                        R"({"custom":false,"equipment":"barbell","id":"back-squat",)"
                        R"("name":"Back Squat","pattern":"squat","stepKg":2.5}]})"));
+}
+
+// The picker's meta line, for the whole catalog in one read. Four rules are on the wire at once, and
+// each of them is the picker drawing something true: the line is the LAST set of the block and not
+// its heaviest (bench reads the 80 back-off, not the 82.5 that opened it); `at` is the SESSION's
+// start, so "3 days ago" is the day it was trained; a movement only ever warmed up has no line, the
+// same silence as one never touched, which is what `never logged` draws; and today's live session is
+// not a last time. The rows come back keyed by movement id — the key the picker joins them onto its
+// catalog by — which is deliberately NOT the order the list is drawn in: the catalog is sorted by
+// pattern then name, and press sorts before squat there while back-squat sorts first here.
+TEST(gym_exercises_last_is_the_final_set_of_each_movement_and_nothing_for_the_rest) {
+  Harness h;
+  h.signIn("s-live");
+
+  send(h.api, &GymApi::startSession,
+       postRequest("/v1/gym/sessions", startBody("ses_11111111", 1'700'000'000'000), "s-live"));
+  send(h.api, &GymApi::appendSet,
+       postRequest("/v1/gym/sessions/ses_11111111/sets",
+                   setBody("set_11111111", "bench-press", 82.5, 1'700'000'060'000), "s-live"),
+       "ses_11111111");
+  send(h.api, &GymApi::appendSet,
+       postRequest("/v1/gym/sessions/ses_11111111/sets",
+                   setBody("set_11111112", "bench-press", 80.0, 1'700'000'120'000), "s-live"),
+       "ses_11111111");
+  Json::Value warmup = setBody("set_11111113", "back-squat", 60.0, 1'700'000'180'000);
+  warmup["kind"] = "warmup";
+  send(h.api, &GymApi::appendSet,
+       postRequest("/v1/gym/sessions/ses_11111111/sets", warmup, "s-live"), "ses_11111111");
+  send(h.api, &GymApi::finishSession,
+       postRequest("/v1/gym/sessions/ses_11111111/finish", finishBody(1'700'000'300'000), "s-live"),
+       "ses_11111111");
+
+  // A later workout that actually squats, so the two lines are dated by two different sessions.
+  send(h.api, &GymApi::startSession,
+       postRequest("/v1/gym/sessions", startBody("ses_22222222", 1'700'000'400'000), "s-live"));
+  send(h.api, &GymApi::appendSet,
+       postRequest("/v1/gym/sessions/ses_22222222/sets",
+                   setBody("set_22222221", "back-squat", 100.0, 1'700'000'460'000), "s-live"),
+       "ses_22222222");
+  send(h.api, &GymApi::finishSession,
+       postRequest("/v1/gym/sessions/ses_22222222/finish", finishBody(1'700'000'700'000), "s-live"),
+       "ses_22222222");
+
+  // And today, still running and much heavier: the today list, never a last time.
+  send(h.api, &GymApi::startSession,
+       postRequest("/v1/gym/sessions", startBody("ses_33333333", 1'700'001'000'000), "s-live"));
+  send(h.api, &GymApi::appendSet,
+       postRequest("/v1/gym/sessions/ses_33333333/sets",
+                   setBody("set_33333331", "bench-press", 140.0, 1'700'001'060'000), "s-live"),
+       "ses_33333333");
+
+  drogon::HttpResponsePtr response =
+      send(h.api, &GymApi::lastSets, getRequest("/v1/gym/exercises/last", "s-live"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(response)),
+           std::string(R"({"movements":[)"
+                       R"({"at":1700000400000,"exerciseId":"back-squat","reps":8,"weightKg":100.0},)"
+                       R"({"at":1700000000000,"exerciseId":"bench-press","reps":8,)"
+                       R"("weightKg":80.0}]})"));
+}
+
+// A lifter who has logged nothing has no meta at all, and the key is still there holding an empty
+// list: the picker draws every catalog row `never logged` from the ABSENCE of a line, so it must be
+// able to tell "nothing yet" from a read that failed.
+TEST(gym_exercises_last_is_an_empty_list_before_anything_is_logged) {
+  Harness h;
+  h.signIn("s-live");
+
+  drogon::HttpResponsePtr response =
+      send(h.api, &GymApi::lastSets, getRequest("/v1/gym/exercises/last", "s-live"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"movements":[]})"));
+}
+
+// One account's picker never draws another's numbers. The meta is a read of the LOG, so it obeys the
+// rule every read of one obeys: absent is byte-identical to forbidden.
+TEST(gym_exercises_last_never_carries_another_accounts_line) {
+  Harness h;
+  h.signIn("s-live");
+  trainedThrough(h, "s-live", "ses_11111111", 1'700'000'000'000, 1);
+
+  User other = h.authRepo.createUser(Email{"coach@example.com"}, "coach");
+  h.authRepo.insertSession(h.tokens.digestOf("s-other"), other.id, h.clock.now + 1'000'000, "", "",
+                           h.clock.now);
+
+  drogon::HttpResponsePtr response =
+      send(h.api, &GymApi::lastSets, getRequest("/v1/gym/exercises/last", "s-other"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"movements":[]})"));
 }
 
 // ---- start: the idempotent door -----------------------------------------------------------

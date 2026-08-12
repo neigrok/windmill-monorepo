@@ -13,6 +13,7 @@ import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.ExerciseWrite
 import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.Ids
+import works.windmill.gym.domain.LastSet
 import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.LiveOrder
 import works.windmill.gym.domain.MovementRecord
@@ -30,6 +31,7 @@ import works.windmill.gym.domain.SessionShare
 import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.SetWrite
+import works.windmill.gym.domain.TheSix
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.net.GymHttp
 import works.windmill.gym.net.RefusalFacts
@@ -114,10 +116,34 @@ class TrainingStore(
         private set
     var lastTime: LastTime? by mutableStateOf(null)
         private set
+    // THE PICKER'S META, keyed by movement — the lifter's own last set of each, and nothing at all
+    // for a movement they have never trained. The read is SPARSE, so the picker says `never logged`
+    // from the absence of a key, which is the same thing the wire says by leaving a row out.
+    //
+    // NULL IS THE MAP THAT HAS NOT LANDED, and it is a different fact from a map with no rows in it
+    // — the same distinction `lastTimeFailed` draws one field down, for the same reason. An empty
+    // map is an answer: this lifter has trained nothing. Null is silence: nobody has asked yet, or
+    // the read did not come back — and a screen that collapsed the two would tell a lifter of ten
+    // years they have never squatted because a phone was in a basement, in the one pixel the picker
+    // exists for. It is null on the first frame and null again on every change of seat.
+    var lastSets: Map<String, LastSet>? by mutableStateOf(null)
+        private set
     // Whether the read was ASKED and came back empty-handed, which is a different fact from not
     // having asked yet. Without it the card says "reading your log…" forever after a failure, and a
     // movement the lifter has trained for a year reads as one they never have.
     var lastTimeFailed: Boolean by mutableStateOf(false)
+        private set
+    // THE CATALOG READ WAS ASKED AND DID NOT ANSWER, and what is on screen is only what this room
+    // could compose without it — `TheSix` and whatever this device minted. A copy held from an
+    // earlier launch is NOT this: that is the catalog, one read behind, and a warning over the
+    // sixty-four rows a lifter can already pick from would be noise. Signed out nothing here can
+    // fail: the shelf and the six are the whole catalog there is.
+    //
+    // It exists because the six made the picker's oldest silence unreachable. "The catalog didn't
+    // load" was keyed on an EMPTY catalog, and no seat has an empty one any more — so a signed-in
+    // lifter whose read missed was shown six rows out of their sixty-four with nothing said about
+    // the other fifty-eight.
+    var catalogUnread: Boolean by mutableStateOf(false)
         private set
     var prefill: Prefill by mutableStateOf(Prefill(Prefill.EMPTY_BAR_KG, Prefill.EMPTY_BAR_REPS))
         private set
@@ -160,6 +186,16 @@ class TrainingStore(
     // device catalog is keyed on it, so every hold has to say whose copy it is writing.
     private var owner: String? = null
     private val lastTimes = mutableMapOf<String, LastTime>()
+    // The picker has asked for its meta at least once, so the screen wanting it is on screen. A
+    // change of seat drops the map (those are somebody else's lifts) and nothing else would refill
+    // it: signing in from the picker's own account card does not close the picker, so its one
+    // effect never runs again and every row would read `never logged` until the lifter left the
+    // screen and came back. `connect` asks again on the way out instead (the iOS `lastSetsWanted`).
+    private var lastSetsWanted = false
+    // A ROUTINE READ THAT MISSED IS RECORDED RATHER THAN LEFT AS AN EMPTY LIST. The shelf's own
+    // routines stay on screen either way — they are real — but "this lifter has written none" is a
+    // claim only an answer can support, and `firstSession` is the one caller that acts on it.
+    private var routinesFailed = false
     private var retryTask: Job? = null
     // The open session could not be claimed yet — the account's other workout is still running, or
     // the claim never reached the log. While this is true the boot read may not trade the phone's
@@ -228,6 +264,37 @@ class TrainingStore(
     val undoable: TrainingSet?
         get() = queue.withdrawable(at = now())?.set
 
+    // NOTHING HAS EVER HAPPENED IN THIS ROOM: no session on the shelf or the log, no routine. It is
+    // the whole of what §J22's arrival is allowed to read, and it counts nothing about the lifter —
+    // no "have they seen this", and, the design names this one twice, nothing anywhere that counts
+    // how many times anybody declined anything.
+    //
+    // IT ASKS WHETHER THE READS THAT COULD SAY OTHERWISE ACTUALLY LANDED, and never whether their
+    // lists came back empty — which is the whole difference between a first run and a returning
+    // lifter the room could not see. `older == End` is the log page answering "there is no more",
+    // so a read that failed (`Failed`), one that has not happened yet (`More`) and one still behind
+    // a claim all say no here; `routinesFailed` is the same fact for the other read. Signed out
+    // both are already in hand — the shelf IS the log, and connect puts the foot at the bottom.
+    //
+    // A signed-out lifter with an account is the case this cannot see and must not pretend to: sign
+    // out and the page they are left with is empty, because their log lives somewhere this phone
+    // deliberately keeps nothing of. The ROOM refuses that one — §J22's arrival opens a session
+    // once per install and never again (`GymRoom`), so a sign-out cannot open a workout over a log
+    // that is merely out of reach, and then claim it back onto the account.
+    //
+    // The session the lifter is IN is not counted, which is what the picker over it needs: while
+    // that first workout runs, the room is still drawing the six and the account verb.
+    val firstSession: Boolean
+        get() = recent.isEmpty() && routines.isEmpty() && !routinesFailed && older == Older.End
+
+    // And with nothing running either, arriving starts one. The room reads this once, after connect
+    // — gym's onboarding is not a tour, it is the real surface with its first move already made,
+    // and nobody pressed start because arriving started it. A session already open makes the start
+    // it triggers a no-op (`startOnDevice`), which is what keeps an activity recreation from
+    // opening a second one.
+    val firstRun: Boolean
+        get() = firstSession && session == null
+
     // Called on launch and on every change of who is signed in. Draws from the device first and
     // always — a room that waited for a round trip would be a workout that waits.
     suspend fun connect(account: Account) {
@@ -251,14 +318,26 @@ class TrainingStore(
         // seat's rack rather than the last one's.
         localPreferences.adopt(owner)
         preferences = localPreferences.document
-        catalog = deviceCatalog.movements(owner).let { held ->
+        // And the six ride with every seat, because an ANONYMOUS ROOM HAS NO CATALOG: every gym
+        // route wants an account, so a fresh install signed out has nothing to pick from at all and
+        // would make a lifter type "Bench Press" — minting a device movement that duplicates the
+        // seeded one on the first sign-in. They fill only ids nothing else here holds, so a name
+        // this account chose is never overwritten by a constant (`TheSix`).
+        val known = deviceCatalog.movements(owner).let { held ->
             held + localLog.exercises.filter { mine -> held.none { it.id == mine.id } }
         }
+        catalog = known + TheSix.missingFrom(known)
         deviceCatalog.hold(owner, catalog)
         // Who is signed in decides which shelf answers "what did I do last time", so the cache
         // dies with the seat — the movement in hand is re-asked at the end of connect, and the
-        // log's answer replaces the one the nobody pass computed off the device.
+        // log's answer replaces the one the nobody pass computed off the device. The picker's meta
+        // goes with it for the blunter reason: those are somebody else's lifts.
         lastTimes.clear()
+        lastSets = null
+        // Neither read has been made for THIS seat, and the failures recorded for the last one are
+        // not this lifter's. Both are answers about a log, and a log belongs to an account.
+        routinesFailed = false
+        catalogUnread = false
         // The pages go with the seat, and this is the ONE place they do: `loadLog` keeps whatever
         // walk is under a thumb, which it may only do while every row it keeps belongs to the
         // account now asking. Rows read for somebody else are not this lifter's log.
@@ -297,6 +376,10 @@ class TrainingStore(
             older = Older.End
             saveState = if (queue.pending.isEmpty()) SaveState.Idle else SaveState.OnThisDevice
             resume()
+            // The picker is still on screen if it was, and its own effect will not run again on a
+            // seat change — so the seat that arrives answers its question rather than leaving every
+            // row of it saying nothing.
+            if (lastSetsWanted) loadLastSets()
             return
         }
         // THE CLAIM, before anything else touches the wire: movements → routines → finished local
@@ -319,12 +402,28 @@ class TrainingStore(
             // display strings, so the next cold launch draws `Bench Press` from here rather than
             // the slug. What the claim could not land yet rides along so no name goes missing.
             launch {
-                tried { log.exercises() }?.let { known ->
-                    catalog = known + localLog.exercises.filter { mine -> known.none { it.id == mine.id } }
-                    deviceCatalog.hold(owner, catalog)
+                val served = tried { log.exercises() }
+                if (served == null) {
+                    // Only when the room has nothing of its own to draw: a device copy from an
+                    // earlier launch is this lifter's catalog and says so, and the six on their own
+                    // are a list with fifty-eight movements missing from it.
+                    catalogUnread = known.isEmpty()
+                    return@launch
                 }
+                val whole = served + localLog.exercises.filter { mine -> served.none { it.id == mine.id } }
+                // The log's rows hold all six already, under this account's own names for them
+                // — this only has work to do against a server that has not seeded one.
+                catalog = whole + TheSix.missingFrom(whole)
+                deviceCatalog.hold(owner, catalog)
             }
-            launch { tried { log.routines() }?.let { routines = it + localLog.routines } }
+            launch {
+                val written = tried { log.routines() }
+                if (written == null) {
+                    routinesFailed = true
+                    return@launch
+                }
+                routines = written + localLog.routines
+            }
             // The account's own document, and it may not land on top of one this device still
             // owes — `readBack` refuses that, because the owed copy is the one the lifter just
             // touched. Read after the claim for the same reason: the claim is what makes them agree.
@@ -336,6 +435,7 @@ class TrainingStore(
             }
         }
         resume()
+        if (lastSetsWanted) loadLastSets()
     }
 
     // Start. Signed in the session opens on the log — the plan snapshot is FROZEN BY THE SERVER
@@ -443,6 +543,76 @@ class TrainingStore(
         lastTimes[movement] = answer
         lastTime = answer
         redial()
+    }
+
+    // §A2'S GRAB RAIL. The walk order is the only thing that moves: sets are keyed by movement and
+    // never by position, so nothing a lifter has logged can be carried off by a drag — which is the
+    // one defect this gesture could have had. Written through to the queue's file on the spot,
+    // because the order is what the session's list IS between two launches.
+    fun reorder(from: Int, to: Int) {
+        val walked = LiveOrder.moved(order, from, to)
+        if (walked == order) return
+        queue.hold(order = walked)
+        queue.flush()
+        order = walked
+    }
+
+    // §A2'S SWIPE. It answers false rather than pretending where the domain refuses (a movement with
+    // a set in it, a movement the plan named — `LiveOrder.droppable` states both), so a row that
+    // cannot leave says so instead of sliding back with no explanation.
+    //
+    // Dropping the movement IN HAND puts the lifter back in the picker, which is where a session
+    // with nothing selected stands: the alternative is a logger pointed at a movement this session
+    // no longer holds.
+    fun drop(exerciseId: String): Boolean {
+        if (!LiveOrder.droppable(exerciseId, sets, session?.plan)) return false
+        val walked = order.filterNot { it == exerciseId }
+        if (walked == order) return false
+        queue.hold(order = walked)
+        queue.flush()
+        order = walked
+        if (this.exerciseId == exerciseId) {
+            this.exerciseId = null
+            lastTime = null
+            lastTimeFailed = false
+            redial()
+        }
+        return true
+    }
+
+    // THE PICKER'S META, read when the picker OPENS and never on a keystroke — the live filter runs
+    // over the list already in hand, and a request per letter would be the N+1 this one read exists
+    // to refuse. It is asked again on every open because a set logged since is exactly what it
+    // reports.
+    //
+    // A READ THAT DID NOT LAND LEAVES THE MAP ALONE — null until one does, and whatever a previous
+    // open landed after that. `never logged` is an ASSERTION about a lifter's history and the map
+    // is the only thing that carries it, so a failure that published half an answer would say it
+    // about every movement the half did not name. The shelf's own rows are real and are not drawn
+    // on their own for exactly that reason: they would answer for six movements and silently deny
+    // the rest.
+    //
+    // Asking once REGISTERS the picker (`lastSetsWanted`), because the screen that wanted this can
+    // outlive the seat that answered it.
+    //
+    // THE SHELF IS MERGED HERE and nowhere else in this store, deliberately. The log page and a
+    // movement's record both keep the account's answer alone, because a count mixing claimed and
+    // unclaimed rows would be one aggregate telling two stories. This is not an aggregate — it is
+    // one movement's most recent set, and the most recent set is the most recent set wherever it is
+    // being held. Drawing `never logged` over a lift this same phone recorded yesterday would be the
+    // product lying about the log it is standing on.
+    suspend fun loadLastSets() {
+        lastSetsWanted = true
+        val mine = LastSet.of(localLog.details())
+        val log = gym
+        if (log == null) {
+            lastSets = mine.associateBy { it.exerciseId }
+            return
+        }
+        val served = tried { log.lastSets() } ?: return
+        lastSets = (served + mine)
+            .groupBy { it.exerciseId }
+            .mapValues { (_, rows) -> rows.maxBy { it.atMs } }
     }
 
     // Local-first: the row lands and the device holds it before the network is consulted at all.

@@ -65,10 +65,12 @@ export function subheadOf(record) {
     const sessions = countLabel(record.sessionCount, 'session', 'sessions');
     return `${record.exercise.equipment} · ${routines} · ${sessions}`;
   }
-  // 'never logged' rather than '0 sessions' — it is the picker's own word for a movement nobody has
-  // worked, and a zero counted out loud reads as a score. It is only true of a movement with
-  // nothing at all in the log, though: a drop set is a set somebody did, so a movement that has
-  // only ever been dropped says what the zero actually is instead of claiming it was never touched.
+  // 'never logged' rather than '0 sessions' — canon's word for a movement nobody has worked (§H,
+  // and the store answers this page off the same word), and a zero counted out loud reads as a
+  // score. It is guarded before it is said: a drop set is a set somebody did, so a movement that
+  // has only ever been dropped says what the zero actually is instead of claiming it was never
+  // touched. The picker's absence sentence is NOT this one and does not borrow it — that read is
+  // the last-time read and its silence is narrower (logger/movements.js).
   const sessions = inTheLog(record) ? 'no working sets' : 'never logged';
   return `${record.exercise.equipment} · ${routines} · ${sessions}`;
 }

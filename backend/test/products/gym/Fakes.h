@@ -397,6 +397,34 @@ public:
             LastTimeError::none};
   }
 
+  // The picker's meta, and it is written as what it is: lastTime run over every movement this
+  // account's sets name, projected to the LAST row of each block and dated by that block's session.
+  // Composing it out of lastTime is the point rather than a shortcut — the SQL's DISTINCT ON claims
+  // to be that same locator, and a fake that re-derived the rule by hand could agree with a green
+  // suite while the two reads disagreed about which set you did last.
+  //
+  // The walk starts at the SETS, exactly as the statement's FROM does, so a movement this account
+  // has never worked yields nothing and the vector stays sparse. Ordered by movement id, which is
+  // the DISTINCT ON key and the key the caller joins on.
+  std::vector<LastSet> lastSets(const UserId& user) override {
+    std::vector<ExerciseId> touched;
+    for (const Set& set : sets) {
+      if (!ownsSession(user, set.session)) continue;
+      if (std::find(touched.begin(), touched.end(), set.exercise) == touched.end())
+        touched.push_back(set.exercise);
+    }
+    std::sort(touched.begin(), touched.end(),
+              [](const ExerciseId& a, const ExerciseId& b) { return a.str() < b.str(); });
+    std::vector<LastSet> out;
+    for (const ExerciseId& exercise : touched) {
+      LastTimeOutcome last = lastTime(user, exercise);
+      if (!last.lastTime) continue;
+      const Set& tail = last.lastTime->sets.back();
+      out.push_back(LastSet{exercise, tail.weightKg, tail.reps, last.lastTime->session.startedAtMs});
+    }
+    return out;
+  }
+
   // The same three answers the SQL gives, under the same rules. The marks are DISTINCT ON in a
   // vector: the qualifying prior working sets ordered by (movement, load, most reps, earliest
   // instant), keeping the first of each pair — so a mark carries the best reps ever done at that

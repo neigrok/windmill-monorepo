@@ -15,8 +15,8 @@
 
 import React, { useEffect, useState } from 'react';
 import {
-  clockOf, dayLabel, durLabel, fmt, isFinished, nameOfMovement, NO_ROUTINE, recordHref,
-  routineNameOf, sessionHref, setCountLabel,
+  clockOf, dayLabel, durLabel, fmt, isFinished, nameOfMovement, NEW_ROUTINE_ID, NO_ROUTINE,
+  recordHref, routineHref, routineNameOf, sessionHref, setCountLabel,
 } from './log.js';
 import { restLabel } from './settings/preferences.js';
 
@@ -44,6 +44,7 @@ export function Today({ log }) {
         <>
           <p className="gym-today-line">Not training now.</p>
           <p className="gym-quiet">Workouts start on your phone.</p>
+          {log.summaries.length === 0 && <FirstRun />}
         </>
       )}
 
@@ -59,6 +60,37 @@ export function Today({ log }) {
           </a>
         </section>
       )}
+    </section>
+  );
+}
+
+// AN EMPTY LOG, AT THE DESK — canon screen 1, minus the half of it this surface may not draw. That
+// screen's primary is `Start a session`, and a session cannot start here (§11): the phone owns the
+// open workout, which is the whole reason the line above names it. So what is left of screen 1 is
+// its SECOND verb, and it lands where it is true — the routine editor, one room over, which is a
+// desk activity and exists today. Nothing here parses a typed-out program; the button says what the
+// room it opens actually does.
+//
+// The sentence over it is the design's own, because the by-product rule is what a lifter needs told
+// before they go looking for a program builder: the session assembles the routine, and writing one
+// first is the option rather than the path. And under it the REASON, which screen 1 draws in the
+// frame and this room owes in its own voice — the design writes it about the lifter ("this lifter
+// already has a program"), so it is turned to face them and otherwise left alone. It is the one
+// thing an empty room has to say for itself: a lifter who is told nothing here goes looking for the
+// setup wizard that is deliberately not built, and reads its absence as a missing feature rather
+// than as the product's whole position. Nothing counts how many times it was walked past.
+function FirstRun() {
+  return (
+    <section className="gym-first">
+      <p className="gym-first-line">
+        Start one empty and pick movements as you go — what you do becomes your routine, and you name
+        it at the end.
+      </p>
+      <p className="gym-first-why">
+        No tour, no sample program, no questions about your goals or your experience. You already
+        have a program — this app is here to catch it, not to write it.
+      </p>
+      <a className="gym-first-write" href={routineHref(NEW_ROUTINE_ID)}>Type out a routine first</a>
     </section>
   );
 }
